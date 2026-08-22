@@ -1,0 +1,43 @@
+{
+  "name": "@readable-studio/desktop",
+  "version": "0.2.2",
+  "description": "Readable Studio desktop shell.",
+  "private": true,
+  "type": "module",
+  "main": "./dist/main/index.js",
+  "files": [
+    "assets",
+    "dist"
+  ],
+  "exports": {
+    "./main": {
+      "types": "./dist/main/index.d.ts",
+      "default": "./dist/main/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run -c vitest.config.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json --noEmit"
+  },
+  "dependencies": {
+    "@readable-studio/contracts": "workspace:*",
+    "@readable-studio/diagnostics": "workspace:*",
+    "@readable-studio/download": "workspace:*",
+    "@readable-studio/host": "workspace:*",
+    "@readable-studio/platform": "workspace:*",
+    "@readable-studio/sidecar": "workspace:*",
+    "@readable-studio/sidecar-proto": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/jsdom": "28.0.3",
+    "@types/node": "24.12.2",
+    "electron": "41.3.0",
+    "jsdom": "29.1.1",
+    "typescript": "6.0.3",
+    "vitest": "4.1.6"
+  },
+  "engines": {
+    "node": "~24"
+  }
+}

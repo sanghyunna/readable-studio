@@ -1,0 +1,38 @@
+{
+  "$schema": "urn:readable-studio:schema:plugin-manifest:v1",
+  "specVersion": "1.0.0",
+  "name": "patch-edit",
+  "title": "Patch edit",
+  "version": "0.1.0",
+  "description": "Apply one rewrite-plan step at a time as small reviewable file edits.",
+  "license": "MIT",
+  "author": {
+    "name": "Readable Studio",
+    "url": "https://github.com/sanghyunna/readable-studio"
+  },
+  "homepage": "https://github.com/sanghyunna/readable-studio/tree/main/plugins/_official/atoms/patch-edit",
+  "tags": [
+    "atom",
+    "first-party",
+    "code-migration",
+    "tune-collab",
+    "phase-7"
+  ],
+  "compat": {
+    "agentSkills": [
+      {
+        "path": "./SKILL.md"
+      }
+    ]
+  },
+  "readable": {
+    "kind": "atom",
+    "scenario": "code-migration",
+    "mode": "edit",
+    "capabilities": [
+      "prompt:inject",
+      "fs:read",
+      "fs:write"
+    ]
+  }
+}

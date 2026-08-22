@@ -1,0 +1,36 @@
+{
+  "$schema": "urn:readable-studio:schema:plugin-manifest:v1",
+  "specVersion": "1.0.0",
+  "name": "code-import",
+  "title": "Code import",
+  "version": "0.1.0",
+  "description": "Read an existing repository's structure into the project cwd as a normalised snapshot.",
+  "license": "MIT",
+  "author": {
+    "name": "Readable Studio",
+    "url": "https://github.com/sanghyunna/readable-studio"
+  },
+  "homepage": "https://github.com/sanghyunna/readable-studio/tree/main/plugins/_official/atoms/code-import",
+  "tags": [
+    "atom",
+    "first-party",
+    "code-migration",
+    "phase-7"
+  ],
+  "compat": {
+    "agentSkills": [
+      {
+        "path": "./SKILL.md"
+      }
+    ]
+  },
+  "readable": {
+    "kind": "atom",
+    "scenario": "code-migration",
+    "mode": "import",
+    "capabilities": [
+      "prompt:inject",
+      "fs:read"
+    ]
+  }
+}

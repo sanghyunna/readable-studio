@@ -1,0 +1,7 @@
+{
+  "name": "readable-studio",
+  "displayName": "Readable Studio",
+  "version": "1.0.0",
+  "description": "Local-first design app · 139 skills + 150 DESIGN.md systems · exposes projects/files/preview tools to your coding agent over stdio MCP. Requires the `readable` daemon on PATH.",
+  "mcpServers": "./.mcp.json"
+}

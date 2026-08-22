@@ -1,0 +1,179 @@
+{
+  "$schema": "urn:readable-studio:schema:plugin-manifest:v1",
+  "specVersion": "1.0.0",
+  "name": "example-report",
+  "title": "Report",
+  "title_i18n": {
+    "zh-CN": "报告",
+    "zh-TW": "報告",
+    "ja": "レポート",
+    "ko": "보고서",
+    "de": "Report",
+    "fr": "Report",
+    "ru": "Отчет",
+    "es": "Report",
+    "pt-BR": "Report",
+    "it": "Report",
+    "vi": "Report",
+    "pl": "Report",
+    "id": "Report",
+    "nl": "Report",
+    "ar": "تقرير",
+    "tr": "Report",
+    "uk": "Звіт",
+    "en": "Report"
+  },
+  "version": "0.1.0",
+  "description": "Flexible long-form report document for any business or technical topic, with a title block, executive summary, body sections, tables, chart blocks, and appendix.",
+  "description_i18n": {
+    "en": "Flexible long-form report document for any business or technical topic, with a title block, executive summary, body sections, tables, chart blocks, and appendix.",
+    "zh-CN": "适用于任何业务或技术主题的灵活长篇报告文档，包含标题区、执行摘要、正文章节、表格、图表模块和附录。",
+    "zh-TW": "適用於任何商業或技術主題的彈性長篇報告文件，包含標題區、執行摘要、正文章節、表格、圖表區塊和附錄。",
+    "ja": "ビジネスまたは技術テーマに対応する柔軟な長文レポート文書。タイトル、エグゼクティブサマリー、本文セクション、表、チャート、付録を含みます。",
+    "ko": "비즈니스 또는 기술 주제에 맞게 조정되는 유연한 장문 보고서 문서입니다. 제목, 요약, 본문 섹션, 표, 차트 블록, 부록을 포함합니다.",
+    "de": "Flexible long-form report document for any business or technical topic, with a title block, executive summary, body sections, tables, chart blocks, and appendix.",
+    "fr": "Flexible long-form report document for any business or technical topic, with a title block, executive summary, body sections, tables, chart blocks, and appendix.",
+    "ru": "Гибкий многостраничный отчет для любой бизнес- или технической темы: титульный блок, резюме, разделы, таблицы, диаграммы и приложение.",
+    "es": "Flexible long-form report document for any business or technical topic, with a title block, executive summary, body sections, tables, chart blocks, and appendix.",
+    "pt-BR": "Flexible long-form report document for any business or technical topic, with a title block, executive summary, body sections, tables, chart blocks, and appendix.",
+    "it": "Flexible long-form report document for any business or technical topic, with a title block, executive summary, body sections, tables, chart blocks, and appendix.",
+    "vi": "Flexible long-form report document for any business or technical topic, with a title block, executive summary, body sections, tables, chart blocks, and appendix.",
+    "pl": "Flexible long-form report document for any business or technical topic, with a title block, executive summary, body sections, tables, chart blocks, and appendix.",
+    "id": "Flexible long-form report document for any business or technical topic, with a title block, executive summary, body sections, tables, chart blocks, and appendix.",
+    "nl": "Flexible long-form report document for any business or technical topic, with a title block, executive summary, body sections, tables, chart blocks, and appendix.",
+    "ar": "مستند تقرير طويل ومرن لأي موضوع تجاري أو تقني، مع عنوان وملخص تنفيذي وأقسام وجداول ومخططات وملحق.",
+    "tr": "Flexible long-form report document for any business or technical topic, with a title block, executive summary, body sections, tables, chart blocks, and appendix.",
+    "uk": "Гнучкий довгий звіт для будь-якої бізнесової або технічної теми з титульним блоком, резюме, розділами, таблицями, діаграмами та додатком."
+  },
+  "license": "MIT",
+  "author": {
+    "name": "Readable Studio",
+    "url": "https://github.com/sanghyunna/readable-studio"
+  },
+  "homepage": "https://github.com/sanghyunna/readable-studio/tree/main/plugins/_official/examples/example-report",
+  "tags": [
+    "example",
+    "first-party",
+    "report",
+    "document",
+    "web",
+    "untitled"
+  ],
+  "compat": {
+    "agentSkills": [
+      {
+        "path": "./SKILL.md"
+      }
+    ]
+  },
+  "readable": {
+    "kind": "scenario",
+    "taskKind": "new-generation",
+    "mode": "prototype",
+    "scenario": "report",
+    "surface": "web",
+    "preview": {
+      "type": "html",
+      "entry": "./example.html"
+    },
+    "useCase": {
+      "query": {
+        "en": "Create a {{length}} {{reportType}} for {{audience}} about {{topic}} using {{designSystem}}. Build a single-file flowing HTML report by copying `assets/template.html`, then paste and adapt section layouts from `references/layouts.md`. Include a title block, executive summary, body sections, tables, chart blocks, and appendix as appropriate.",
+        "zh-CN": "使用 {{designSystem}}，为 {{audience}} 创建一份关于 {{topic}} 的 {{length}} {{reportType}}。复制 `assets/template.html`，并从 `references/layouts.md` 粘贴和调整章节布局，生成单文件、纵向滚动的 HTML 报告。根据需要包含标题区、执行摘要、正文章节、表格、图表区块和附录。"
+      },
+      "exampleOutputs": [
+        {
+          "path": "./example.html",
+          "title": "Report"
+        }
+      ]
+    },
+    "inputs": [
+      {
+        "name": "reportType",
+        "label": "Report type",
+        "type": "select",
+        "required": true,
+        "options": [
+          "business report",
+          "technical report",
+          "research report",
+          "status report",
+          "market analysis"
+        ],
+        "default": "business report"
+      },
+      {
+        "name": "topic",
+        "label": "Topic",
+        "type": "string",
+        "required": true,
+        "placeholder": "AI support operations readiness",
+        "default": "the user's brief"
+      },
+      {
+        "name": "audience",
+        "label": "Audience",
+        "type": "string",
+        "required": true,
+        "placeholder": "executive leadership team",
+        "default": "decision makers"
+      },
+      {
+        "name": "length",
+        "label": "Length",
+        "type": "select",
+        "required": true,
+        "options": [
+          "short (2-4 pages)",
+          "medium (5-8 pages)",
+          "long (9-15 pages)"
+        ],
+        "default": "medium (5-8 pages)"
+      },
+      {
+        "name": "designSystem",
+        "label": "Design system",
+        "type": "string",
+        "placeholder": "the active project design system",
+        "default": "the active project design system"
+      }
+    ],
+    "context": {
+      "skills": [
+        {
+          "path": "./SKILL.md"
+        }
+      ],
+      "designSystem": {
+        "primary": true
+      },
+      "assets": [
+        "./example.html",
+        "./assets/template.html",
+        "./references/checklist.md",
+        "./references/layouts.md"
+      ]
+    },
+    "pipeline": {
+      "stages": [
+        {
+          "id": "discovery",
+          "atoms": [
+            "discovery-question-form"
+          ]
+        },
+        {
+          "id": "generate",
+          "atoms": [
+            "file-write"
+          ]
+        }
+      ]
+    },
+    "capabilities": [
+      "prompt:inject",
+      "fs:write"
+    ]
+  }
+}

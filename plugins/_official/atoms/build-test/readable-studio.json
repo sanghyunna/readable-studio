@@ -1,0 +1,38 @@
+{
+  "$schema": "urn:readable-studio:schema:plugin-manifest:v1",
+  "specVersion": "1.0.0",
+  "name": "build-test",
+  "title": "Build test",
+  "version": "0.1.0",
+  "description": "Run the project's build / typecheck / lint / test commands and emit build.passing + tests.passing signals.",
+  "license": "MIT",
+  "author": {
+    "name": "Readable Studio",
+    "url": "https://github.com/sanghyunna/readable-studio"
+  },
+  "homepage": "https://github.com/sanghyunna/readable-studio/tree/main/plugins/_official/atoms/build-test",
+  "tags": [
+    "atom",
+    "first-party",
+    "code-migration",
+    "tune-collab",
+    "phase-7"
+  ],
+  "compat": {
+    "agentSkills": [
+      {
+        "path": "./SKILL.md"
+      }
+    ]
+  },
+  "readable": {
+    "kind": "atom",
+    "scenario": "code-migration",
+    "mode": "critique",
+    "capabilities": [
+      "prompt:inject",
+      "subprocess",
+      "fs:read"
+    ]
+  }
+}

@@ -1,0 +1,41 @@
+.agentRollbackBanner {
+  margin: 12px 0 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+}
+
+.agentRollbackBannerHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.agentRollbackBannerIcon {
+  display: inline-flex;
+  color: var(--text-muted);
+}
+
+.agentRollbackBannerReason {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.agentRollbackBannerMeta {
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.agentRollbackBannerActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}

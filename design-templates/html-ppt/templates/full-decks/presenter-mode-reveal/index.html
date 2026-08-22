@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en" data-themes="tokyo-night,dracula,catppuccin-mocha,nord,corporate-clean">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Presenter Mode Example · Presenter Mode Deck</title>
+<link rel="stylesheet" href="../../../assets/fonts.css">
+<link rel="stylesheet" href="../../../assets/base.css">
+<link rel="stylesheet" id="theme-link" href="../../../assets/themes/tokyo-night.css">
+<link rel="stylesheet" href="../../../assets/animations/animations.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="tpl-presenter-mode-reveal">
+<div class="deck">
+
+  <!-- ============ 1. COVER ============ -->
+  <section class="slide" data-title="Cover">
+    <p class="kicker">presenter-mode / demo</p>
+    <h1 class="h1 anim-fade-up" data-anim="fade-up">How to give a technical talk<br>with <span style="background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent">speaker notes</span></h1>
+    <p class="lede mt-m">Press <span class="mono">S</span> for presenter view · <span class="mono">T</span> to switch themes · <span class="mono">← →</span> to navigate</p>
+    <div class="speaker">
+      <div class="av"></div>
+      <div><b>@lewis</b><span>sharing talk · 30 min</span></div>
+    </div>
+    <div class="deck-footer">
+      <span class="mono">#presenter #speaker-notes #tech-talk</span>
+      <span class="slide-number" data-current="1" data-total="6"></span>
+    </div>
+    <aside class="notes"><p>Welcome. This talk is about delivering a technical presentation with depth and momentum.</p><p>This template has a presenter mode: the audience sees the current slide while the speaker sees the current slide, next slide, notes, and timer together.</p><p>The hard part of a technical talk is not making slides attractive. It is knowing how to move from one idea to the next without losing the room.</p><p>We have five sections and roughly thirty minutes. Please interrupt with questions.</p></aside>
+  </section>
+
+  <!-- ============ 2. AGENDA ============ -->
+  <section class="slide" data-title="Agenda">
+    <p class="kicker">agenda</p>
+    <h2 class="h2">Five things to cover</h2>
+    <div class="stack mt-l">
+      <div class="agenda-row"><span class="num">01</span><span class="t">Why good slides are not enough</span><span class="d">~5min</span></div>
+      <div class="agenda-row"><span class="num">02</span><span class="t">What information presenter mode needs</span><span class="d">~6min</span></div>
+      <div class="agenda-row"><span class="num">03</span><span class="t">How to write notes without sounding scripted</span><span class="d">~8min</span></div>
+      <div class="agenda-row"><span class="num">04</span><span class="t">Live demo · using the html-ppt skill</span><span class="d">~8min</span></div>
+      <div class="agenda-row"><span class="num">05</span><span class="t">Takeaways + Q&amp;A</span><span class="d">~3min</span></div>
+    </div>
+    <aside class="notes"><p>First, distinguish attractive slides from effective delivery. Plenty of polished decks lose momentum as soon as a speaker starts searching for the next point.</p><p>Then we cover presenter views, useful speaker notes, and a live HTML deck workflow.</p><p>Speaker notes are not a script to recite. They are signals that help you connect the next sentence.</p></aside>
+  </section>
+
+  <!-- ============ 3. PROBLEM ============ -->
+  <section class="slide" data-title="Problem">
+    <p class="kicker">// part 01 · problem</p>
+    <h2 class="h2">Making slides and giving a talk<br>are <span class="accent">different skills</span>.</h2>
+    <div class="grid g3 mt-l">
+      <div class="card card-accent">
+        <h4>✅ Good slides</h4>
+        <p class="dim">A coherent theme, clean layout, clear charts, and restrained motion. These define a static artifact.</p>
+      </div>
+      <div class="card card-accent">
+        <h4>❌ Good delivery</h4>
+        <p class="dim">A clear argument, steady pace, confident answers, and room to adapt.</p>
+      </div>
+      <div class="card card-accent">
+        <h4>💡 The difference</h4>
+        <p class="dim">The first is <strong>work on paper</strong>; the second means <strong>knowing what to say next after one glance</strong>.</p>
+      </div>
+    </div>
+    <aside class="notes"><p>Making slides and giving a talk are different skills. A coherent theme, clean layout, and clear charts can be judged offline.</p><p>Delivery needs a clear argument, a stable pace, answers to questions, and the ability to adapt to the room.</p><p>The key skill is knowing what to say next after one glance at a slide. That comes from a well-designed prompt system, not rote memorization.</p></aside>
+  </section>
+
+  <!-- ============ 4. SOLUTION ============ -->
+  <section class="slide" data-title="Presenter View">
+    <p class="kicker">// part 02 · presenter view</p>
+    <h2 class="h2">A presenter view needs <span class="accent">four panels</span></h2>
+    <div class="grid g2 mt-l">
+      <div>
+        <div class="feature-row"><span class="num blue">1</span><div><b>Large current slide</b><p class="dim">Use more than half the view so one glance shows what the audience sees.</p></div></div>
+        <div class="feature-row"><span class="num green">2</span><div><b>Next-slide preview</b><p class="dim">Prepare the transition before you reach the next slide.</p></div></div>
+      </div>
+      <div>
+        <div class="feature-row"><span class="num orange">3</span><div><b>Speaker notes</b><p class="dim">Large type, high contrast, and scrolling: the part speakers actually read.</p></div></div>
+        <div class="feature-row"><span class="num purple">4</span><div><b>Timer + page count</b><p class="dim">Know elapsed time and remaining slides; pace depends on it.</p></div></div>
+      </div>
+    </div>
+    <aside class="notes"><p>A presenter view needs four panels. The large current slide is the synchronization anchor between speaker and audience.</p><p>The next-slide preview makes transitions natural. The script must be large, high contrast, and scrollable, because the speaker only gets a glance.</p><p>The timer and page count keep the pace visible. This deck implements all four panels; press S to try them.</p></aside>
+  </section>
+
+  <!-- ============ 5. SCRIPT ============ -->
+  <section class="slide" data-title="Script">
+    <p class="kicker">// part 03 · script</p>
+    <h2 class="h2">Three rules for <span class="accent">speaker notes</span></h2>
+    <div class="stack mt-l">
+      <div class="rule-row">
+        <span class="num red">01</span>
+        <div>
+          <b>Not a verbatim script: <span class="accent">“prompt signals”</span></b>
+          <p class="dim">Bold core points, isolate transitions, and list data and names — <em>so one glance is enough to continue</em>.</p>
+        </div>
+      </div>
+      <div class="rule-row">
+        <span class="num red">02</span>
+        <div>
+          <b><span class="accent">150–300 words</span> per slide</b>
+          <p class="dim">Fewer than 150 words is not enough; above 300 is too much to read. Aim for two to three minutes per slide.</p>
+        </div>
+      </div>
+      <div class="rule-row">
+        <span class="num red">03</span>
+        <div>
+          <b>Write in <span class="accent">spoken language</span>, not formal prose</b>
+          <p class="dim">Choose “so” over “therefore.” Read each line aloud; it should sound like speech.</p>
+        </div>
+      </div>
+    </div>
+    <aside class="notes"><p>Speaker notes follow three rules. They are not verbatim scripts: bold key points, separate transitions, and list data and names clearly.</p><p>Keep each slide between 150 and 300 words. Write in spoken language and read it aloud while drafting.</p><p>With these rules, giving a talk becomes more comfortable and more natural.</p></aside>
+  </section>
+
+  <!-- ============ 6. DEMO + CLOSING ============ -->
+  <section class="slide" data-title="Demo & Close">
+    <p class="kicker">// part 04-05 · demo + close</p>
+    <h2 class="h2">Now <span class="accent">you can do it too</span></h2>
+    <div class="code-block mt-m">
+<span class="comment"># install the html-ppt skill</span>
+<span class="cmd">npx</span> skills add <span class="flag">https://github.com/lewislulu/html-ppt-skill</span>
+
+<span class="comment"># copy the presenter-mode template</span>
+<span class="cmd">cp -r</span> templates/full-decks/presenter-mode-reveal examples/my-talk
+<span class="cmd">open</span> examples/my-talk/index.html
+
+<span class="comment"># keyboard controls</span>
+<span class="flag">S</span>  <span class="comment">→ open presenter view</span>
+<span class="flag">T</span>  <span class="comment">→ switch theme (five presets)</span>
+<span class="flag">← →</span> <span class="comment">→ change slide</span>
+<span class="flag">R</span>  <span class="comment">→ reset timer</span>
+    </div>
+    <p class="lede mt-m tc">The key: <strong>write 150–300 words of speaker notes in every &lt;aside class="notes"&gt;</strong>.</p>
+    <div class="deck-footer">
+      <span class="mono">#thanks · Q&amp;A</span>
+      <span class="slide-number" data-current="6" data-total="6"></span>
+    </div>
+    <aside class="notes"><p>Install the html-ppt skill, copy this template into your examples folder, open the HTML file, and press S.</p><p>S opens presenter view, T changes theme, arrow keys navigate, and R resets the timer.</p><p>For every slide, write 150 to 300 words in its notes aside. AI can draft the notes, but read them aloud and make them sound like you.</p><p>That is the workflow. Thank you, and let us take questions.</p></aside>
+  </section>
+
+</div>
+
+<div style="position:fixed;bottom:12px;left:12px;font-size:11px;color:#484f5866;z-index:100;pointer-events:none">
+  S presenter view · T switch theme · ← → navigate · F fullscreen · O overview · R reset timer
+</div>
+
+<script src="../../../assets/runtime.js"></script>
+</body>
+</html>

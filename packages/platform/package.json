@@ -1,0 +1,33 @@
+{
+  "name": "@readable-studio/platform",
+  "version": "0.2.2",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.mjs"
+    }
+  },
+  "scripts": {
+    "build": "node ./esbuild.config.mjs && tsc -p tsconfig.json --emitDeclarationOnly",
+    "build:native:win32": "powershell -NoProfile -ExecutionPolicy Bypass -File ./native/win32/build.ps1",
+    "test": "vitest run",
+    "test:native:win32": "pnpm run build:native:win32 && vitest run tests/isolated-process.win32.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "24.12.2",
+    "esbuild": "0.28.0",
+    "vitest": "4.1.6",
+    "typescript": "6.0.3"
+  },
+  "engines": {
+    "node": "~24"
+  }
+}

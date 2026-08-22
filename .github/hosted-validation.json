@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "pr04": [
+    "pnpm --filter @readable-studio/contracts build",
+    "pnpm --filter @readable-studio/daemon test tests/hosted-server.test.ts tests/hosted-runtime-registry.test.ts tests/hosted-pi-runtime.test.ts tests/provider-cli.test.ts",
+    "pnpm --filter @readable-studio/web test tests/providers/hosted.test.ts tests/components/hosted-provider-panel.test.tsx tests/app/layout-theme-init.test.tsx tests/sidecar-proxy.test.ts tests/i18n/locales.test.ts tests/i18n/hosted.test.tsx",
+    "pnpm guard",
+    "pnpm typecheck"
+  ],
+  "pr06": [
+    "pnpm --filter @readable-studio/daemon test tests/pi-rpc.test.ts tests/runs.test.ts tests/hosted-pi-runtime.test.ts tests/hosted-pi-server.test.ts tests/hosted-runtime-storage.test.ts tests/hosted-runtime-registry.test.ts tests/hosted-snapshots.test.ts tests/hosted-snapshots-adversarial.test.ts tests/hosted-snapshots-failpoints.test.ts tests/hosted-pi-snapshot-quiescence.test.ts",
+    "pnpm --filter @readable-studio/tools-pack test tests/workspace-build.test.ts",
+    "pnpm guard",
+    "pnpm typecheck"
+  ],
+  "pr07": [
+    "pnpm --filter @readable-studio/daemon test tests/hosted-pr07-http.test.ts tests/hosted-catalogue-adapter.test.ts tests/hosted-design-system-tool-adapter.test.ts tests/hosted-event-journal.test.ts tests/hosted-metadata-adapter.test.ts tests/hosted-run-adapter.test.ts tests/hosted-sse-adapter.test.ts tests/hosted-runtime-registry.test.ts tests/hosted-pi-runtime.test.ts tests/hosted-pi-turn.test.ts tests/hosted-request-boundary.test.ts",
+    "pnpm --filter @readable-studio/daemon test tests/hosted-body-capacity.test.ts tests/hosted-pi-broker.test.ts",
+    "pnpm --filter @readable-studio/contracts test tests/hosted-contract.test.ts",
+    "pnpm guard",
+    "pnpm typecheck"
+  ],
+  "pr08": [
+    "pnpm --filter @readable-studio/daemon test tests/hosted-pr08-http.test.ts tests/hosted-runtime-content.test.ts tests/hosted-content-adapter.test.ts tests/hosted-content-quota.test.ts tests/hosted-upload-adapter.test.ts tests/hosted-artifact-adapter.test.ts tests/hosted-download-stream.test.ts tests/hosted-preview-scope.test.ts tests/hosted-request-boundary.test.ts tests/hosted-content-cli.test.ts",
+    "pnpm --filter @readable-studio/contracts test tests/hosted-contract.test.ts",
+    "pnpm --filter @readable-studio/web test tests/providers/hosted.test.ts tests/components/hosted-content-panel.test.tsx tests/hosted-content-provider.test.ts tests/i18n/hosted.test.tsx tests/i18n/locales.test.ts",
+    "pnpm guard",
+    "pnpm typecheck"
+  ],
+  "pr09": [
+    "pnpm --filter @readable-studio/daemon test tests/hosted-pr09-durability.test.ts tests/hosted-run-journal-order.test.ts tests/hosted-durability.test.ts tests/hosted-run-receipts.test.ts tests/hosted-event-journal-durability.test.ts tests/hosted-snapshots-abort.test.ts tests/hosted-runtime-registry.test.ts tests/hosted-server.test.ts",
+    "pnpm --filter @readable-studio/contracts test tests/hosted-contract.test.ts",
+    "pnpm guard",
+    "pnpm typecheck"
+  ],
+  "pr10": [
+    "@pr04",
+    "@pr06",
+    "@pr07",
+    "@pr08",
+    "@pr09",
+    "pnpm --filter @readable-studio/e2e test --no-file-parallelism specs/hosted/main.spec.ts tests/hosted/acceptance.test.ts tests/hosted/recovery.test.ts",
+    "pnpm --filter @readable-studio/e2e exec playwright test -c lib/playwright-hosted.config.ts ui/hosted-acceptance.test.ts",
+    "pnpm --filter @readable-studio/tools-pack hosted:pi:build -- --out .tmp/hosted-pi-artifact-pr10",
+    "pnpm --filter @readable-studio/tools-pack hosted:pi:check -- --out .tmp/hosted-pi-artifact-pr10",
+    "pnpm guard",
+    "pnpm typecheck"
+  ],
+  "pr11": [
+    "@pr10",
+    "pnpm --filter @readable-studio/e2e test --no-file-parallelism tests/hosted/capacity.test.ts",
+    "pnpm guard",
+    "pnpm typecheck"
+  ]
+}

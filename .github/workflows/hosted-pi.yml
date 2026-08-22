@@ -1,0 +1,67 @@
+name: Hosted Pi artifact
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  hosted-pi:
+    name: Hosted / ${{ matrix.displayName }} x64
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            displayName: Windows
+          - os: ubuntu-24.04
+            displayName: Linux
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate checkout
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node -e "const {execFileSync}=require('node:child_process'); const actual=execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(); console.log(actual); if(actual!==process.env.EXPECTED_SHA) process.exit(1)"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: pnpm
+      - name: Assert supported architecture
+        run: node -e "if (process.arch !== 'x64') process.exit(1)"
+      - name: Install build dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm --filter @readable-studio/e2e exec playwright install chromium
+      - name: Install Chromium system dependencies
+        if: runner.os == 'Linux'
+        run: pnpm --filter @readable-studio/e2e exec playwright install-deps chromium
+      - name: Run PR11 complete hosted acceptance and capacity suite
+        run: node --experimental-strip-types tools/pack/src/hosted-validation.ts pr11
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hosted-pi-pr11-${{ matrix.os }}
+          path: .tmp/hosted-pi-artifact-pr10
+          if-no-files-found: error
+          include-hidden-files: true
+      - name: Upload hosted acceptance diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hosted-pr11-diagnostics-${{ matrix.os }}
+          path: |
+            .tmp/e2e
+            .tmp/h
+            ${{ runner.temp }}/readable-h
+            e2e/ui/reports
+          if-no-files-found: warn
+          include-hidden-files: true

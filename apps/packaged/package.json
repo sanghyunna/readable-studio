@@ -1,0 +1,45 @@
+{
+  "name": "@readable-studio/packaged",
+  "version": "0.2.2",
+  "description": "Readable Studio packaged desktop and headless runtime.",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.mjs"
+    },
+    "./headless": {
+      "default": "./dist/headless.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "node ./esbuild.config.mjs && tsc -p tsconfig.json --emitDeclarationOnly",
+    "test": "vitest run -c vitest.config.ts",
+    "typecheck": "pnpm --filter @readable-studio/desktop build && tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json --noEmit"
+  },
+  "dependencies": {
+    "@readable-studio/daemon": "workspace:*",
+    "@readable-studio/desktop": "workspace:*",
+    "@readable-studio/platform": "workspace:*",
+    "@readable-studio/sidecar": "workspace:*",
+    "@readable-studio/sidecar-proto": "workspace:*",
+    "@readable-studio/web": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "24.12.2",
+    "electron": "41.3.0",
+    "esbuild": "0.28.0",
+    "typescript": "6.0.3",
+    "vitest": "4.1.6"
+  },
+  "engines": {
+    "node": "~24"
+  }
+}

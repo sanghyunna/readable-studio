@@ -1,0 +1,74 @@
+{
+  "$schema": "urn:readable-studio:schema:plugin-manifest:v1",
+  "specVersion": "1.0.0",
+  "name": "share-github-pr",
+  "title": "Share as GitHub PR",
+  "version": "0.1.0",
+  "description": "Package an accepted artifact or plugin folder as a GitHub pull request handoff.",
+  "license": "MIT",
+  "tags": [
+    "share",
+    "github-pr",
+    "pull-request",
+    "spec-plugin"
+  ],
+  "compat": {
+    "agentSkills": [
+      {
+        "path": "./SKILL.md"
+      }
+    ]
+  },
+  "readable": {
+    "kind": "skill",
+    "taskKind": "tune-collab",
+    "mode": "share",
+    "scenario": "github-pr",
+    "useCase": {
+      "query": "Prepare a GitHub PR for {{targetRepo}} from the accepted artifact or plugin folder."
+    },
+    "context": {
+      "skills": [
+        {
+          "path": "./SKILL.md"
+        }
+      ],
+      "atoms": [
+        "file-read",
+        "todo-write",
+        "handoff"
+      ]
+    },
+    "pipeline": {
+      "stages": [
+        {
+          "id": "inspect",
+          "atoms": [
+            "file-read",
+            "todo-write"
+          ]
+        },
+        {
+          "id": "handoff",
+          "atoms": [
+            "handoff"
+          ]
+        }
+      ]
+    },
+    "inputs": [
+      {
+        "name": "targetRepo",
+        "type": "string",
+        "required": true,
+        "label": "Target repository",
+        "placeholder": "sanghyunna/readable-studio"
+      }
+    ],
+    "capabilities": [
+      "prompt:inject",
+      "fs:read",
+      "network"
+    ]
+  }
+}

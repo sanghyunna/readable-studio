@@ -1,0 +1,86 @@
+{
+  "$schema": "urn:readable-studio:schema:plugin-marketplace:v1",
+  "specVersion": "1.0.0",
+  "name": "readable-studio-community",
+  "version": "0.1.2",
+  "owner": {
+    "name": "Readable Studio Community",
+    "url": "https://github.com/sanghyunna/readable-studio/tree/main/plugins/community"
+  },
+  "metadata": {
+    "description": "Default community plugin registry seed. Entries here are discoverable by default but remain restricted until the user installs and trusts them.",
+    "version": "0.1.2"
+  },
+  "plugins": [
+    {
+      "name": "community/registry-starter",
+      "title": "Community Registry Starter",
+      "version": "0.1.0",
+      "source": "github:sanghyunna/readable-studio@main/plugins/community/registry-starter",
+      "publisher": {
+        "id": "readable-studio-community",
+        "github": "sanghyunna",
+        "url": "https://github.com/sanghyunna/readable-studio"
+      },
+      "homepage": "https://github.com/sanghyunna/readable-studio/tree/main/plugins/community/registry-starter",
+      "license": "MIT",
+      "capabilitiesSummary": [
+        "prompt:inject"
+      ],
+      "tags": [
+        "community",
+        "registry",
+        "starter"
+      ],
+      "description": "A minimal community plugin that exercises the default registry source and install provenance path."
+    },
+    {
+      "name": "community/import-smoke-test",
+      "title": "Community Import Smoke Test",
+      "version": "0.1.0",
+      "source": "github:sanghyunna/readable-studio@main/plugins/community/import-smoke-test",
+      "publisher": {
+        "id": "readable-studio-community",
+        "github": "sanghyunna",
+        "url": "https://github.com/sanghyunna/readable-studio"
+      },
+      "homepage": "https://github.com/sanghyunna/readable-studio/tree/main/plugins/community/import-smoke-test",
+      "license": "MIT",
+      "capabilitiesSummary": [
+        "prompt:inject"
+      ],
+      "tags": [
+        "community",
+        "import",
+        "smoke-test",
+        "marketplace"
+      ],
+      "description": "A portable community plugin used to verify folder, zip, GitHub subpath, and marketplace import flows."
+    },
+    {
+      "name": "community/hallmark",
+      "title": "Hallmark",
+      "version": "1.0.0",
+      "source": "github:sanghyunna/readable-studio@main/plugins/community/hallmark",
+      "publisher": {
+        "id": "nutlope",
+        "github": "Nutlope",
+        "url": "https://github.com/Nutlope"
+      },
+      "homepage": "https://github.com/Nutlope/hallmark",
+      "license": "MIT",
+      "capabilitiesSummary": [
+        "prompt:inject"
+      ],
+      "tags": [
+        "community",
+        "design",
+        "frontend",
+        "audit",
+        "redesign",
+        "anti-ai-slop"
+      ],
+      "description": "Anti-AI-slop design skill for greenfield pages, audits, redesigns, and design extraction from URLs or screenshots."
+    }
+  ]
+}

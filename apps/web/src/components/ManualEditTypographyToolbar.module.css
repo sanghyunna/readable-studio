@@ -1,0 +1,14 @@
+/* Docked PowerPoint-style typography toolbar. Sits under .viewer-toolbar in the
+   manual-edit accordion slot; matches that toolbar's height/spacing/tokens. The
+   control primitives live in ManualEditTextControls.module.css. */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  padding: 6px 14px;
+  min-height: 40px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text-muted);
+}

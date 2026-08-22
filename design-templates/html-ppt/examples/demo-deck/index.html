@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="aurora">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>html-ppt · Demo Deck</title>
+<link rel="stylesheet" href="../../assets/fonts.css">
+<link rel="stylesheet" href="../../assets/base.css">
+<link rel="stylesheet" id="theme-link" href="../../assets/themes/aurora.css">
+<link rel="stylesheet" href="../../assets/animations/animations.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+</head>
+<body data-themes="aurora,minimal-white,editorial-serif,tokyo-night,catppuccin-mocha,xiaohongshu-white,neo-brutalism,sunset-warm" data-theme-base="../../assets/themes/">
+
+<div class="deck">
+
+  <!-- 1. Cover -->
+  <section class="slide" data-title="Cover">
+    <div class="deck-header"><span class="eyebrow">Tech sharing · 2026-04-15</span><span class="eyebrow">html-ppt</span></div>
+    <p class="kicker">Keynote · Demo</p>
+    <h1 class="h1 anim-rise-in" data-anim="rise-in">make one<span class="gradient-text">like magazine</span>Same<br>Technology sharing draft</h1>
+    <p class="lede">24 theme · 30 format · 25 animation · zero build</p>
+    <div class="row wrap mt-l" style="gap:8px">
+      <span class="pill pill-accent">tokens</span>
+      <span class="pill">keyboard first</span>
+      <span class="pill">PNG export</span>
+      <span class="pill">CN + EN</span>
+    </div>
+    <div class="deck-footer"><span class="dim2">lewis · sudolewis@gmail.com</span><span class="slide-number" data-current="1" data-total="8"></span></div>
+    <div class="notes">Hi, Today I will demonstrate to you html-ppt How does this speech system work?.This demo It's made of it itself—Each slide is just a few lines HTML + one class.</div>
+  </section>
+
+  <!-- 2. TOC -->
+  <section class="slide" data-title="Agenda">
+    <p class="kicker">Agenda</p>
+    <h2 class="h2">today 10 minute, Talk about three things</h2>
+    <div class="grid g3 mt-l anim-stagger-list" data-anim-target>
+      <div class="card card-accent"><h4>① Why</h4><p class="dim">do it every time PPT They're all duplicating work, And this thing 99% Can be templated.</p></div>
+      <div class="card card-accent"><h4>② how to do</h4><p class="dim">tokens + layouts + animations, Three layers of separation.</p></div>
+      <div class="card card-accent"><h4>③ Effect</h4><p class="dim">same copy deck, One click to cut 24 theme.</p></div>
+    </div>
+    <div class="deck-footer"><span class="dim2">agenda</span><span class="slide-number" data-current="2" data-total="8"></span></div>
+    <div class="notes">Three-stage structure—Why / How / Result.This is the most stable way to say it.</div>
+  </section>
+
+  <!-- 3. Big quote -->
+  <section class="slide center tc" data-title="Quote">
+    <div style="max-width:1000px">
+      <div class="serif" style="font-size:120px;line-height:.9;color:var(--accent);opacity:.7">"</div>
+      <blockquote class="serif anim-fade-up" data-anim="fade-up" style="font-size:52px;line-height:1.3;margin:-30px 0 18px;font-weight:600;font-style:italic">
+        Good speeches are written, <br>no“Do”came out.
+      </blockquote>
+      <p class="dim" style="font-size:18px;letter-spacing:.1em">— Every one is PPT tortured person</p>
+    </div>
+    <div class="deck-footer"><span class="dim2">quote</span><span class="slide-number" data-current="3" data-total="8"></span></div>
+    <div class="notes">Stop here for a second.Let the words speak for themselves.</div>
+  </section>
+
+  <!-- 4. Stat -->
+  <section class="slide center tc" data-title="Stat">
+    <div>
+      <p class="kicker">The result</p>
+      <div style="font-size:240px;line-height:1;font-weight:900">
+        <span class="counter gradient-text" data-to="92">0</span><span class="gradient-text">%</span>
+      </div>
+      <h3 class="mt-s">you spend on PPT Time can be saved</h3>
+      <p class="lede" style="margin:14px auto 0">10 truth deck The average test data of.</p>
+    </div>
+    <div class="deck-footer"><span class="dim2">proof</span><span class="slide-number" data-current="4" data-total="8"></span></div>
+    <div class="notes">emphasize:Data source—true to oneself 10 indivual deck.</div>
+  </section>
+
+  <!-- 5. Two column -->
+  <section class="slide" data-title="Tokens">
+    <p class="kicker">How · Core idea</p>
+    <h2 class="h2">Bundle“what does it look like”take in <code>:root</code></h2>
+    <div class="grid g2 mt-l" style="align-items:start">
+      <div class="card anim-fade-left" data-anim="fade-left">
+        <h3>concept</h3>
+        <p class="dim">every visual attribute—color, font, rounded corners, shadow—become semantic variables.</p>
+        <ul class="mt-m">
+          <li><code>--text-1</code> / <code>--text-2</code> / <code>--text-3</code></li>
+          <li><code>--surface</code> / <code>--surface-2</code></li>
+          <li><code>--accent</code> / <code>--accent-2</code> / <code>--accent-3</code></li>
+          <li><code>--radius</code> / <code>--shadow</code> / <code>--grad</code></li>
+        </ul>
+      </div>
+      <div class="card anim-fade-right" data-anim="fade-right">
+        <h3>Example</h3>
+<pre class="mono" style="font-size:13px;background:var(--surface-2);padding:16px;border-radius:var(--radius-sm);overflow:auto;margin:0">
+/* assets/themes/aurora.css */
+:root {
+  --bg: #06091c;
+  --text-1: #e8f0ff;
+  --accent: #5ef2c6;
+  --accent-2: #7aa2ff;
+  --accent-3: #c984ff;
+  --radius: 20px;
+}</pre>
+        <p class="dim mt-m" style="font-size:13px">—entire aurora The subject is so big.</p>
+      </div>
+    </div>
+    <div class="deck-footer"><span class="dim2">how</span><span class="slide-number" data-current="5" data-total="8"></span></div>
+    <div class="notes">The key is:base.css Only recognize variable names, Don’t recognize the specific color value.Change topic = Change a variable.</div>
+  </section>
+
+  <!-- 6. Chart -->
+  <section class="slide" data-title="Chart">
+    <p class="kicker">Numbers · Actual effect</p>
+    <h2 class="h2">Do deck time distribution, Before use/After use</h2>
+    <div class="card mt-l" style="height:440px;padding:24px"><canvas id="chart"></canvas></div>
+    <div class="deck-footer"><span class="dim2">data</span><span class="slide-number" data-current="6" data-total="8"></span></div>
+    <div class="notes">After use, “write content”The proportion of time increased significantly, everything else drops—this is exactly what we want.</div>
+  </section>
+
+  <!-- 7. CTA -->
+  <section class="slide center tc" data-title="CTA">
+    <div style="max-width:920px">
+      <p class="kicker">Your turn</p>
+      <h1 class="h1 anim-rise-in" data-anim="rise-in" style="font-size:96px"><span class="gradient-text">start</span>make your first</h1>
+      <p class="lede" style="margin:14px auto 30px">Make a copy deck, Change your content, according to <b>T</b> Choose a theme that suits you best, After the lecture, you can also guide with one click PNG.</p>
+      <div class="row" style="justify-content:center;gap:14px">
+        <div class="card" style="padding:18px 26px"><code>./scripts/new-deck.sh my-talk</code></div>
+      </div>
+      <p class="dim2 mt-l" style="font-size:14px">←/→ Turn page · T theme · A animation · F full screen · O Overview · S Remark</p>
+    </div>
+    <div class="deck-footer"><span class="dim2">cta</span><span class="slide-number" data-current="7" data-total="8"></span></div>
+    <div class="notes">Finally, give a specific action:a command.don't stay“I'll go back and try”.</div>
+  </section>
+
+  <!-- 8. Thanks -->
+  <section class="slide center tc" data-title="Thanks">
+    <div>
+      <div class="anim-confetti-burst" style="display:inline-block;padding:20px"></div>
+      <h1 class="h1" style="font-size:180px;line-height:1"><span class="gradient-text">Thanks</span></h1>
+      <p class="lede">lewis · sudolewis@gmail.com · MIT 2026</p>
+    </div>
+    <div class="deck-footer"><span class="dim2">end</span><span class="slide-number" data-current="8" data-total="8"></span></div>
+    <div class="notes">thank you all.Q&amp;A time.</div>
+  </section>
+
+</div>
+<script src="../../assets/runtime.js"></script>
+<script>
+addEventListener('DOMContentLoaded',()=>{
+  const css=getComputedStyle(document.documentElement);
+  const a1=css.getPropertyValue('--accent').trim();
+  const a2=css.getPropertyValue('--accent-2').trim();
+  const text2=css.getPropertyValue('--text-2').trim();
+  const border=css.getPropertyValue('--border').trim();
+  new Chart(document.getElementById('chart'),{type:'bar',
+    data:{labels:['write content','Choose the layout','adjust style','Publish the picture','animation'],
+      datasets:[
+        {label:'Before use (minute)',data:[92,48,36,22,14],backgroundColor:a2,borderRadius:6},
+        {label:'After use (minute)',data:[18,3,2,1,1],backgroundColor:a1,borderRadius:6}]},
+    options:{plugins:{legend:{labels:{color:text2}}},
+      scales:{x:{ticks:{color:text2},grid:{color:border}},
+              y:{ticks:{color:text2},grid:{color:border}}}}});
+});
+</script>
+</body></html>

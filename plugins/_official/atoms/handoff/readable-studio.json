@@ -1,0 +1,36 @@
+{
+  "$schema": "urn:readable-studio:schema:plugin-manifest:v1",
+  "specVersion": "1.0.0",
+  "name": "handoff",
+  "title": "Handoff",
+  "version": "0.1.0",
+  "description": "Push the run's accepted artifact to a downstream collaboration surface (cli, other code agents, cloud, desktop, github, figma) and stamp the artifact manifest with the export target.",
+  "license": "MIT",
+  "author": {
+    "name": "Readable Studio",
+    "url": "https://github.com/sanghyunna/readable-studio"
+  },
+  "homepage": "https://github.com/sanghyunna/readable-studio/tree/main/plugins/_official/atoms/handoff",
+  "tags": [
+    "atom",
+    "first-party",
+    "tune-collab",
+    "phase-7",
+    "phase-8"
+  ],
+  "compat": {
+    "agentSkills": [
+      {
+        "path": "./SKILL.md"
+      }
+    ]
+  },
+  "readable": {
+    "kind": "atom",
+    "scenario": "tune-collab",
+    "mode": "handoff",
+    "capabilities": [
+      "prompt:inject"
+    ]
+  }
+}

@@ -1,0 +1,41 @@
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; margin: 0; }
+
+html {
+  font-family: var(--sans);
+}
+
+body {
+  font-family: var(--sans);
+  color: var(--text);
+  background: var(--bg-app);
+  font-size: 13.5px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.readable-loading-shell {
+  min-block-size: 100dvb;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 16px;
+  color: color-mix(in srgb, var(--blue-bg) 78%, transparent);
+  background:
+    radial-gradient(circle at 24% 22%, color-mix(in srgb, var(--purple) 28%, transparent) 0%, color-mix(in srgb, var(--purple) 0%, transparent) 46%),
+    radial-gradient(circle at 86% 18%, color-mix(in srgb, var(--green) 16%, transparent) 0%, color-mix(in srgb, var(--green) 0%, transparent) 40%),
+    linear-gradient(180deg, color-mix(in srgb, var(--shadow-color) 95%, transparent) 0%, color-mix(in srgb, var(--shadow-color) 98%, transparent) 100%),
+    linear-gradient(90deg, color-mix(in srgb, var(--warning) 3%, transparent) 0%, color-mix(in srgb, var(--warning) 3%, transparent) 100%, color-mix(in srgb, var(--warning) 0%, transparent) 100%),
+    var(--black);
+  font: 500 13px/1.4 var(--sans);
+  letter-spacing: 0.01em;
+  position: relative;
+  overflow: hidden;
+}
+
+.readable-loading-shell img {
+  display: block;
+  filter: drop-shadow(0 16px 28px color-mix(in srgb, var(--shadow-color) 28%, transparent));
+}

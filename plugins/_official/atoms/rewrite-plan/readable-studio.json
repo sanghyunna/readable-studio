@@ -1,0 +1,36 @@
+{
+  "$schema": "urn:readable-studio:schema:plugin-manifest:v1",
+  "specVersion": "1.0.0",
+  "name": "rewrite-plan",
+  "title": "Rewrite plan",
+  "version": "0.1.0",
+  "description": "Long-running multi-file rewrite plan with ownership boundaries and patch-safety guarantees.",
+  "license": "MIT",
+  "author": {
+    "name": "Readable Studio",
+    "url": "https://github.com/sanghyunna/readable-studio"
+  },
+  "homepage": "https://github.com/sanghyunna/readable-studio/tree/main/plugins/_official/atoms/rewrite-plan",
+  "tags": [
+    "atom",
+    "first-party",
+    "code-migration",
+    "tune-collab",
+    "phase-7"
+  ],
+  "compat": {
+    "agentSkills": [
+      {
+        "path": "./SKILL.md"
+      }
+    ]
+  },
+  "readable": {
+    "kind": "atom",
+    "scenario": "code-migration",
+    "mode": "planning",
+    "capabilities": [
+      "prompt:inject"
+    ]
+  }
+}

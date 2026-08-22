@@ -1,0 +1,97 @@
+.panel {
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding: 1.5rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 1rem;
+  background: var(--bg-panel);
+}
+
+.panel h2,
+.panel h3 {
+  margin: 0;
+  color: var(--text-strong);
+}
+
+.eyebrow {
+  margin: 0 0 0.35rem;
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.description,
+.status {
+  color: var(--text-muted);
+}
+
+.description {
+  margin: 0.35rem 0 1.25rem;
+}
+
+.pickers {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.pickers form,
+.pickers label,
+.runForm,
+.runForm label {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.pickers form {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+}
+
+.pickers label > span,
+.runForm label > span {
+  color: var(--text-strong);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.runForm {
+  margin-top: 1rem;
+}
+
+.actions {
+  display: flex;
+  gap: 0.625rem;
+}
+
+.status,
+.error {
+  margin: 1rem 0 0;
+  font-size: 0.875rem;
+}
+
+.error {
+  color: var(--danger);
+}
+
+.output {
+  min-height: 5rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: 0.75rem;
+  background: var(--bg-soft);
+}
+
+.output pre {
+  margin: 0.75rem 0 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 56rem) {
+  .pickers {
+    grid-template-columns: 1fr;
+  }
+}

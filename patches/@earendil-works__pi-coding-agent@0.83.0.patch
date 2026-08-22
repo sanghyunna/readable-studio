@@ -1,0 +1,24 @@
+diff --git a/dist/modes/rpc/rpc-mode.js b/dist/modes/rpc/rpc-mode.js
+--- a/dist/modes/rpc/rpc-mode.js
++++ b/dist/modes/rpc/rpc-mode.js
+@@ -576,7 +576,7 @@ export async function runRpcMode(runtimeHost) {
+     let detachInput = () => { };
+     async function shutdown(exitCode = 0, signal) {
+         if (shuttingDown) {
+-            process.exit(exitCode);
++            return;
+         }
+         shuttingDown = true;
+         for (const cleanup of signalCleanupHandlers) {
+@@ -590,6 +590,11 @@ export async function runRpcMode(runtimeHost) {
+         if (signal !== "SIGTERM") {
+             await flushRawStdout();
+         }
++        // Let Windows finish closing libuv/Undici handles instead of aborting them.
++        if (process.platform === "win32") {
++            process.exitCode = exitCode;
++            return;
++        }
+         process.exit(exitCode);
+     }
+     async function checkShutdownRequested() {

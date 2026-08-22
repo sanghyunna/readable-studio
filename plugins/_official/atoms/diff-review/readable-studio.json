@@ -1,0 +1,38 @@
+{
+  "$schema": "urn:readable-studio:schema:plugin-manifest:v1",
+  "specVersion": "1.0.0",
+  "name": "diff-review",
+  "title": "Diff review",
+  "version": "0.1.0",
+  "description": "Surface the accumulated patch as a reviewable diff and persist the accept / reject decision.",
+  "license": "MIT",
+  "author": {
+    "name": "Readable Studio",
+    "url": "https://github.com/sanghyunna/readable-studio"
+  },
+  "homepage": "https://github.com/sanghyunna/readable-studio/tree/main/plugins/_official/atoms/diff-review",
+  "tags": [
+    "atom",
+    "first-party",
+    "code-migration",
+    "tune-collab",
+    "phase-7"
+  ],
+  "compat": {
+    "agentSkills": [
+      {
+        "path": "./SKILL.md"
+      }
+    ]
+  },
+  "readable": {
+    "kind": "atom",
+    "scenario": "code-migration",
+    "mode": "review",
+    "capabilities": [
+      "prompt:inject",
+      "fs:read",
+      "fs:write"
+    ]
+  }
+}

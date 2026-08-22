@@ -1,0 +1,17 @@
+/* Docked shape toolbar wrapper. Owns the flex bar and the `container-type` that
+   the popover container queries in ManualEditShapeControls.module.css resolve
+   against. Control primitives live in ManualEditShapeControls.module.css. */
+.toolbar {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 5px 10px;
+  min-height: 40px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  container-type: inline-size;
+}

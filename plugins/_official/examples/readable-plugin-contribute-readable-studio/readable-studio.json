@@ -1,0 +1,129 @@
+{
+  "$schema": "urn:readable-studio:schema:plugin-manifest:v1",
+  "specVersion": "1.0.0",
+  "name": "readable-plugin-contribute-readable-studio",
+  "title": "Contribute Plugin to Readable Studio",
+  "title_i18n": {
+    "zh-CN": "贡献插件到 Readable Studio",
+    "zh-TW": "貢獻外掛至 Readable Studio",
+    "ja": "Readable Studio にプラグインを投稿",
+    "ko": "Readable Studio에 플러그인 기여",
+    "de": "Plugin zu Readable Studio beitragen",
+    "fr": "Contribuer un plugin à Readable Studio",
+    "ru": "Добавить плагин в Readable Studio",
+    "es": "Contribuir plugin a Readable Studio",
+    "pt-BR": "Contribuir plugin para Readable Studio",
+    "it": "Contribuisci plugin a Readable Studio",
+    "vi": "Đóng góp plugin cho Readable Studio",
+    "pl": "Dodaj wtyczkę do Readable Studio",
+    "id": "Kontribusi Plugin ke Readable Studio",
+    "nl": "Plugin bijdragen aa Readable Studio",
+    "ar": "المساهمة بإضافة إلى Readable Studio",
+    "tr": "Readable Studio'a Eklenti Katkısı",
+    "uk": "Додати плагін до Readable Studio",
+    "en": "Contribute Plugin to Readable Studio"
+  },
+  "version": "0.1.0",
+  "description": "Opens a pull request that adds a local Readable Studio plugin to the Readable Studio community catalog using the GitHub CLI.",
+  "description_i18n": {
+    "zh-CN": "使用 GitHub CLI 打开拉取请求，将本地 Readable Studio 插件添加到 Readable Studio 社区目录。",
+    "zh-TW": "使用 GitHub CLI 開啟拉取請求，將本機 Readable Studio 外掛新增至 Readable Studio 社群目錄。",
+    "ja": "GitHub CLI を使用してプルリクエストを開き、ローカルの Readable Studio プラグインを Readable Studio コミュニティカタログに追加します。",
+    "ko": "GitHub CLI를 사용하여 로컬 Readable Studio 플러그인을 Readable Studio 커뮤니티 카탈로그에 추가하는 풀 리퀘스트를 엽니다.",
+    "de": "Öffnet einen Pull Request, der ein lokales Readable Studio-Plugin mit der GitHub CLI zum Readable Studio-Community-Katalog hinzufügt.",
+    "fr": "Ouvre une pull request pour ajouter un plugin Readable Studio local au catalogue communautaire Readable Studio via GitHub CLI.",
+    "ru": "Открывает pull request для добавления локального плагина Readable Studio в каталог сообщества Readable Studio через GitHub CLI.",
+    "es": "Abre una solicitud de extracción que agrega un plugin local de Readable Studio al catálogo comunitario de Readable Studio usando GitHub CLI.",
+    "pt-BR": "Abre um pull request que adiciona um plugin local do Readable Studio ao catálogo da comunidade Readable Studio usando o GitHub CLI.",
+    "it": "Apre una pull request che aggiunge un plugin locale Readable Studio al catalogo della community Readable Studio utilizzando GitHub CLI.",
+    "vi": "Mở pull request để thêm plugin Readable Studio cục bộ vào danh mục cộng đồng Readable Studio bằng GitHub CLI.",
+    "pl": "Otwiera pull request, który dodaje lokalną wtyczkę Readable Studio do katalogu społeczności Readable Studio przy użyciu GitHub CLI.",
+    "id": "Membuka pull request yang menambahkan plugin Readable Studio lokal ke katalog komunitas Readable Studio menggunakan GitHub CLI.",
+    "nl": "Opent een pull request die een lokale Readable Studio-plugin toevoegt aan de Readable Studio-communitycatalogus met behulp van GitHub CLI.",
+    "ar": "يفتح طلب سحب لإضافة إضافة Readable Studio محلية إلى كتالوج مجتمع Readable Studio باستخدام GitHub CLI.",
+    "tr": "GitHub CLI kullanarak yerel bir Readable Studio eklentisini Readable Studio topluluk kataloğuna ekleyen bir pull request açar.",
+    "uk": "Відкриває pull request для додавання локального плагіна Readable Studio до каталогу спільноти Readable Studio через GitHub CLI.",
+    "en": "Opens a pull request that adds a local Readable Studio plugin to the Readable Studio community catalog using the GitHub CLI."
+  },
+  "license": "MIT",
+  "author": {
+    "name": "Readable Studio",
+    "url": "https://github.com/sanghyunna/readable-studio"
+  },
+  "homepage": "https://github.com/sanghyunna/readable-studio/tree/main/plugins/_official/examples/readable-plugin-contribute-readable-studio",
+  "tags": [
+    "share",
+    "github",
+    "github-pr",
+    "pull-request",
+    "readable-studio",
+    "plugin-authoring",
+    "community-plugin",
+    "first-party"
+  ],
+  "compat": {
+    "agentSkills": [
+      {
+        "path": "./SKILL.md"
+      }
+    ]
+  },
+  "readable": {
+    "kind": "scenario",
+    "taskKind": "new-generation",
+    "mode": "utility",
+    "platform": "desktop",
+    "scenario": "plugin-sharing",
+    "surface": "github",
+    "useCase": {
+      "query": {
+        "en": "Open a pull request to add the staged Readable Studio plugin to sanghyunna/readable-studio using gh CLI.",
+        "zh-CN": "使用 gh CLI 给 sanghyunna/readable-studio 提交一个 PR，加入已暂存的 Readable Studio 插件。"
+      }
+    },
+    "inputs": [
+      {
+        "name": "source_plugin_id",
+        "label": "Source plugin id",
+        "type": "string",
+        "required": true
+      },
+      {
+        "name": "source_plugin_title",
+        "label": "Source plugin title",
+        "type": "string",
+        "required": true
+      },
+      {
+        "name": "source_plugin_version",
+        "label": "Source plugin version",
+        "type": "string"
+      },
+      {
+        "name": "plugin_context_path",
+        "label": "Copied plugin folder",
+        "type": "string",
+        "required": true
+      },
+      {
+        "name": "source_plugin_path",
+        "label": "Original plugin folder",
+        "type": "string"
+      }
+    ],
+    "context": {
+      "skills": [
+        {
+          "path": "./SKILL.md"
+        }
+      ]
+    },
+    "capabilities": [
+      "fs:read",
+      "fs:write",
+      "bash",
+      "subprocess",
+      "network"
+    ]
+  }
+}
