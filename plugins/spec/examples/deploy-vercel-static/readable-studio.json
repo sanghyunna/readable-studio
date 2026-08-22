@@ -1,0 +1,79 @@
+{
+  "$schema": "urn:readable-studio:schema:plugin-manifest:v1",
+  "specVersion": "1.0.0",
+  "name": "deploy-vercel-static",
+  "title": "Deploy To Vercel",
+  "version": "0.1.0",
+  "description": "Deploy an accepted static artifact to Vercel or prepare a deployment handoff.",
+  "license": "MIT",
+  "tags": [
+    "deploy",
+    "vercel",
+    "static",
+    "deployment"
+  ],
+  "compat": {
+    "agentSkills": [
+      {
+        "path": "./SKILL.md"
+      }
+    ]
+  },
+  "readable": {
+    "kind": "skill",
+    "taskKind": "code-migration",
+    "mode": "deploy",
+    "scenario": "deployment",
+    "useCase": {
+      "query": "Deploy the accepted static artifact to Vercel as {{projectName}}."
+    },
+    "context": {
+      "skills": [
+        {
+          "path": "./SKILL.md"
+        }
+      ],
+      "atoms": [
+        "file-read",
+        "build-test",
+        "handoff"
+      ]
+    },
+    "pipeline": {
+      "stages": [
+        {
+          "id": "inspect",
+          "atoms": [
+            "file-read"
+          ]
+        },
+        {
+          "id": "verify",
+          "atoms": [
+            "build-test"
+          ]
+        },
+        {
+          "id": "handoff",
+          "atoms": [
+            "handoff"
+          ]
+        }
+      ]
+    },
+    "inputs": [
+      {
+        "name": "projectName",
+        "type": "string",
+        "required": true,
+        "label": "Project name"
+      }
+    ],
+    "capabilities": [
+      "prompt:inject",
+      "fs:read",
+      "bash",
+      "network"
+    ]
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "$schema": "urn:readable-studio:schema:plugin-manifest:v1",
+  "specVersion": "1.0.0",
+  "name": "token-map",
+  "title": "Token map",
+  "version": "0.1.0",
+  "description": "Map an extracted source-token bag onto the active Readable Studio design system, producing a deterministic crosswalk.",
+  "license": "MIT",
+  "author": {
+    "name": "Readable Studio",
+    "url": "https://github.com/sanghyunna/readable-studio"
+  },
+  "homepage": "https://github.com/sanghyunna/readable-studio/tree/main/plugins/_official/atoms/token-map",
+  "tags": [
+    "atom",
+    "first-party",
+    "figma-migration",
+    "code-migration",
+    "phase-6"
+  ],
+  "compat": {
+    "agentSkills": [
+      {
+        "path": "./SKILL.md"
+      }
+    ]
+  },
+  "readable": {
+    "kind": "atom",
+    "scenario": "figma-migration",
+    "mode": "token-map",
+    "capabilities": [
+      "prompt:inject"
+    ]
+  }
+}

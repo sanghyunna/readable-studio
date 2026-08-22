@@ -1,0 +1,318 @@
+<!--
+  Example slides for the magazine-web-ppt skill.
+
+  Topic: "One-Person Company · The Quiet Hardware" — a fictional but realistic 64-day
+  case study, mirroring the rhythm and content arc of the original Guizang
+  guizang-ppt-skill demo. Used to power the Examples preview without
+  requiring real product imagery on disk — image slots stand in for what a
+  real deck would show.
+
+  Theme rhythm: hero dark → light → dark → light → hero light → dark →
+  hero dark → light → hero light. Hits all 8 layout categories.
+-->
+
+<!-- Layout 1 · Hero Cover ============================================ -->
+<section class="slide hero dark">
+  <div class="chrome">
+    <div>A Talk · 2026.04.22</div>
+    <div>Vol.01</div>
+  </div>
+  <div class="frame" style="display:grid; gap:4vh; align-content:center; min-height:80vh">
+    <div class="kicker">Private Salon · Creator Demo Day</div>
+    <h1 class="h-hero">One-Person Company</h1>
+    <h2 class="h-sub">The Organization AI Folded</h2>
+    <p class="lead" style="max-width:60vw">
+      A solo creator — in 64 days, shipped 110,000 lines of code, reached 9 platforms, spanned 5 time zones,<br>
+      and barely broke stride in daily life.
+    </p>
+    <div class="meta-row">
+      <span>Guizang</span><span>·</span><span>Independent Creator</span><span>·</span><span>Author of CodePilot</span>
+    </div>
+  </div>
+  <div class="foot">
+    <div>A talk about AI, organizations, and the individual</div>
+    <div>— 2026 —</div>
+  </div>
+</section>
+
+<!-- Layout 2 · Big Numbers Grid ======================================= -->
+<section class="slide light">
+  <div class="chrome">
+    <div>The Past 64 Days · Dev Chapter</div>
+    <div>Act I / Dev · 02 / 09</div>
+  </div>
+  <div class="frame" style="padding-top:6vh">
+    <div class="kicker">One person. Here's what got done.</div>
+    <h2 class="h-xl">The Past 64 Days</h2>
+    <p class="lead" style="margin-bottom:5vh">From zero to open-source CodePilot.</p>
+
+    <div class="grid-6" style="margin-top:6vh">
+      <div class="stat-card">
+        <div class="stat-label">Duration</div>
+        <div class="stat-nb">64 <span class="stat-unit">days</span></div>
+        <div class="stat-note">From kickoff to now</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Lines of Code</div>
+        <div class="stat-nb">110K+</div>
+        <div class="stat-note">Written line by line to 110K+</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">GitHub Stars</div>
+        <div class="stat-nb">5,166</div>
+        <div class="stat-note">Single repo · crossed 5K in 60 days</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Downloads</div>
+        <div class="stat-nb">41K+</div>
+        <div class="stat-note">Installed on tens of thousands of machines</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">AI Providers</div>
+        <div class="stat-nb">19</div>
+        <div class="stat-note">Cross-platform model integrations</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Commits</div>
+        <div class="stat-nb">608+</div>
+        <div class="stat-note">No collaborators</div>
+      </div>
+    </div>
+  </div>
+  <div class="foot">
+    <div>Project · CodePilot | github.com/codepilot</div>
+    <div>Act I · Dev Numbers</div>
+  </div>
+</section>
+
+<!-- Layout 4 · Quote + Image ========================================== -->
+<section class="slide dark">
+  <div class="chrome">
+    <div>Identity Contrast · The Twist</div>
+    <div>03 / 09</div>
+  </div>
+  <div class="frame grid-2-7-5" style="padding-top:6vh">
+    <div style="display:flex; flex-direction:column; justify-content:space-between; gap:3vh">
+      <div>
+        <div class="kicker">BUT</div>
+        <h2 class="h-xl" style="white-space:nowrap; font-size:7.2vw">
+          I'm Not a Programmer.
+        </h2>
+        <p class="lead" style="margin-top:3vh">
+          Haven't written a line of production code since graduating college. The past decade: UI design / AI effects / social-media content.
+        </p>
+      </div>
+      <div class="callout">
+        "Three years ago, this would have taken<br>
+        a ten-person team a year."
+        <div class="callout-src">— an observer's assessment</div>
+      </div>
+    </div>
+    <figure class="img-slot r-3x2" style="aspect-ratio:16/10; max-height:56vh">
+      <span class="plus">+</span>
+      <span class="label">Product Screenshot · CodePilot</span>
+    </figure>
+  </div>
+  <div class="foot">
+    <div>Page 03 · I'm Not a Programmer</div>
+    <div>— · —</div>
+  </div>
+</section>
+
+<!-- Layout 6 · Pipeline =============================================== -->
+<section class="slide light">
+  <div class="chrome">
+    <div>My Workflow</div>
+    <div>Act II · 04 / 09</div>
+  </div>
+  <div class="frame">
+    <div class="kicker">Pipeline</div>
+    <h2 class="h-xl">Two Pipelines</h2>
+
+    <div class="pipeline-section">
+      <div class="pipeline-label">Text Pipeline</div>
+      <div class="pipeline">
+        <div class="step">
+          <div class="step-nb">01</div>
+          <div class="step-title">Draft</div>
+          <div class="step-desc">AI drafts the first version for me</div>
+        </div>
+        <div class="step">
+          <div class="step-nb">02</div>
+          <div class="step-title">Polish</div>
+          <div class="step-desc">AI polishes it to remove the 'AI smell'</div>
+        </div>
+        <div class="step">
+          <div class="step-nb">03</div>
+          <div class="step-title">Morph</div>
+          <div class="step-desc">AI reshapes it into Twitter / Xiaohongshu posts</div>
+        </div>
+        <div class="step">
+          <div class="step-nb">04</div>
+          <div class="step-title">Illustrate</div>
+          <div class="step-desc">AI generates infographics</div>
+        </div>
+        <div class="step">
+          <div class="step-nb">05</div>
+          <div class="step-title">Distribute</div>
+          <div class="step-desc">One-click distribution to 9 platforms</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pipeline-section">
+      <div class="pipeline-label">Visual / Video Pipeline</div>
+      <div class="pipeline" data-cols="3">
+        <div class="step">
+          <div class="step-nb">06</div>
+          <div class="step-title">Cut</div>
+          <div class="step-desc">AI edits + auto-generates subtitles</div>
+        </div>
+        <div class="step">
+          <div class="step-nb">07</div>
+          <div class="step-title">Wrap</div>
+          <div class="step-desc">AI packages it + adds background music</div>
+        </div>
+        <div class="step">
+          <div class="step-nb">08</div>
+          <div class="step-title">Cover</div>
+          <div class="step-desc">AI generates the cover image</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot">
+    <div>Page 04 · My Content Factory</div>
+    <div>Workflow</div>
+  </div>
+</section>
+
+<!-- Layout 2 · Act Divider ============================================ -->
+<section class="slide hero light">
+  <div class="chrome">
+    <div>Act Two · Fold</div>
+    <div>Act II · 05 / 09</div>
+  </div>
+  <div class="frame" style="display:grid; gap:6vh; align-content:center; min-height:80vh">
+    <div class="kicker">Act II</div>
+    <h1 class="h-hero" style="font-size:8.5vw">Fold</h1>
+    <p class="lead" style="max-width:55vw">
+      From "one person making content" to "one person is the organization."<br>
+      AI isn't a tool — it's a role-folding machine.
+    </p>
+  </div>
+  <div class="foot">
+    <div>Act Two Prelude</div>
+    <div>— · —</div>
+  </div>
+</section>
+
+<!-- Layout 8 · Big Quote ============================================== -->
+<section class="slide dark">
+  <div class="chrome">
+    <div>The Takeaway · Core Quote</div>
+    <div>06 / 09</div>
+  </div>
+  <div class="frame" style="display:grid; gap:5vh; align-content:center; min-height:80vh">
+    <div class="kicker">Quote</div>
+    <blockquote style="font-family:var(--serif-zh); font-weight:700; font-size:5.6vw; line-height:1.2; letter-spacing:-.01em; max-width:78vw">
+      "There's no handoff —<br>everyone is building."
+    </blockquote>
+    <p class="lead" style="max-width:55vw; opacity:.65">
+      Without the handoff, everyone builds.<br>
+      And that makes all the difference.
+    </p>
+    <div class="meta-row">
+      <span>— Luke Wroblewski</span><span>·</span><span>2026.04.16</span>
+    </div>
+  </div>
+  <div class="foot">
+    <div>Page 06 · Quote</div>
+    <div>— · —</div>
+  </div>
+</section>
+
+<!-- Layout 7 · Hero Question ========================================== -->
+<section class="slide hero dark">
+  <div class="chrome">
+    <div>A Question for You</div>
+    <div>07 / 09</div>
+  </div>
+  <div class="frame" style="display:grid; gap:8vh; align-content:center; min-height:80vh">
+    <div class="kicker">The Question</div>
+    <h1 class="h-hero" style="font-size:7vw; line-height:1.15">
+      In your company,<br>
+      which roles were never meant<br>
+      to be done by humans?
+    </h1>
+    <p class="lead" style="max-width:50vw">
+      This isn't a technical problem — it's an architectural one.
+    </p>
+  </div>
+  <div class="foot">
+    <div>Page 07 · The Question</div>
+    <div>— · —</div>
+  </div>
+</section>
+
+<!-- Layout 9 · Before / After ========================================= -->
+<section class="slide light">
+  <div class="chrome">
+    <div>Old vs. New · The Shift</div>
+    <div>08 / 09</div>
+  </div>
+  <div class="frame" style="padding-top:5vh">
+    <div class="kicker">Before / After · Paradigm Shift</div>
+    <h2 class="h-xl" style="margin-bottom:4vh">From Handoff to Co-Building</h2>
+
+    <div class="grid-2-6-6" style="gap:5vw 4vh">
+      <div style="padding:3vh 2vw; border-left:3px solid currentColor; opacity:.55">
+        <div class="kicker" style="opacity:.9">Before · Old Model</div>
+        <h3 class="h-md" style="margin-top:2vh">Design → Development → Handoff</h3>
+        <ul style="margin-top:3vh; padding-left:1.2em; display:flex; flex-direction:column; gap:1.4vh; font-family:var(--sans-zh); font-size:max(14px,1.1vw); line-height:1.55">
+          <li>Designers mock up in Figma, endlessly pixel-aligning</li>
+          <li>Developers stare at the mockup and hand-translate it</li>
+          <li>Endless back-and-forth in PRs, docs lost in Slack</li>
+          <li>Non-technical members can't touch the code</li>
+        </ul>
+      </div>
+      <div style="padding:3vh 2vw; border-left:3px solid currentColor">
+        <div class="kicker" style="opacity:.9">After · New Model</div>
+        <h3 class="h-md" style="margin-top:2vh">Same Tool · Parallel · Co-Building</h3>
+        <ul style="margin-top:3vh; padding-left:1.2em; display:flex; flex-direction:column; gap:1.4vh; font-family:var(--sans-zh); font-size:max(14px,1.1vw); line-height:1.55">
+          <li>Three roles work on the same Intent at once</li>
+          <li>agents.md / SKILL.md is the shared context</li>
+          <li>Agents handle alignment, conflicts, and motion</li>
+          <li>Anyone can safely contribute code</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="foot">
+    <div>Page 08 · Paradigm Shift</div>
+    <div>Before / After</div>
+  </div>
+</section>
+
+<!-- Layout 2 · Hero Close ============================================= -->
+<section class="slide hero light">
+  <div class="chrome">
+    <div>End · Thanks</div>
+    <div>09 / 09</div>
+  </div>
+  <div class="frame" style="display:grid; gap:5vh; align-content:center; min-height:80vh">
+    <div class="kicker">Thanks for watching</div>
+    <h1 class="h-hero" style="font-size:9vw">Thank You.</h1>
+    <p class="lead" style="max-width:55vw">
+      Slides are a single HTML file —<br>
+      open in any browser, no build, no server.
+    </p>
+    <div class="meta-row">
+      <span>github.com/op7418/guizang-ppt-skill</span><span>·</span><span>MIT License</span>
+    </div>
+  </div>
+  <div class="foot">
+    <div>Made with magazine-web-ppt skill</div>
+    <div>— Fin —</div>
+  </div>
+</section>

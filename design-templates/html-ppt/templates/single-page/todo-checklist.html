@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Checklist</title>
+<link rel="stylesheet" href="../../assets/fonts.css">
+<link rel="stylesheet" href="../../assets/base.css">
+<link rel="stylesheet" id="theme-link" href="../../assets/themes/minimal-white.css">
+<link rel="stylesheet" href="../../assets/animations/animations.css">
+<style>
+.todo{max-width:820px;margin-top:26px}
+.todo li{list-style:none;display:flex;align-items:flex-start;gap:14px;padding:14px 18px;border-bottom:1px solid var(--border)}
+.todo li .b{flex-shrink:0;width:22px;height:22px;border:2px solid var(--border-strong);border-radius:6px;display:flex;align-items:center;justify-content:center;margin-top:2px}
+.todo li.done .b{background:var(--good);border-color:var(--good);color:#fff}
+.todo li.done .b::after{content:"✓";font-weight:900}
+.todo li.done .t{text-decoration:line-through;color:var(--text-3)}
+.todo li .t{font-size:18px}
+.todo li .tag{margin-left:auto;font-size:12px;color:var(--text-3)}
+</style>
+</head><body class="single">
+<div class="deck"><section class="slide is-active" data-title="Checklist">
+  <p class="kicker">Launch · Pre-launch checklist</p>
+  <h2 class="h2">Must go through before publishing 8 thing</h2>
+  <ul class="todo anim-stagger-list" data-anim-target>
+    <li class="done"><span class="b"></span><span class="t">all slide exist Chrome Open no console error</span><span class="tag">#sanity</span></li>
+    <li class="done"><span class="b"></span><span class="t">Font fallback link is correct(Noto Sans SC)</span><span class="tag">#fonts</span></li>
+    <li class="done"><span class="b"></span><span class="t">24 Select one page for each topic and compare screenshots</span><span class="tag">#themes</span></li>
+    <li class="done"><span class="b"></span><span class="t">Keyboard Navigation Key to Talk</span><span class="tag">#runtime</span></li>
+    <li><span class="b"></span><span class="t">PDF Print without cropping across pages</span><span class="tag">#print</span></li>
+    <li><span class="b"></span><span class="t">render.sh for each showcase Run through</span><span class="tag">#ci</span></li>
+    <li><span class="b"></span><span class="t">references/*.md read through</span><span class="tag">#docs</span></li>
+    <li><span class="b"></span><span class="t">LICENSE / README Author information check</span><span class="tag">#legal</span></li>
+  </ul>
+</section></div>
+<script src="../../assets/runtime.js"></script>
+</body></html>

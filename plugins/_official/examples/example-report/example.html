@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI Support Operations Readiness Report</title>
+  <style>
+    :root {
+      --bg: #f4f2ed;
+      --paper: #ffffff;
+      --ink: #171717;
+      --muted: #67635d;
+      --line: #ded8cf;
+      --line-strong: #a79e91;
+      --accent: #2f6f73;
+      --accent-soft: #e4f0ef;
+
+      --font-display: Georgia, 'Times New Roman', serif;
+      --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    html { background: var(--bg); }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--bg);
+      font-family: var(--font-body);
+      font-size: 15px;
+      line-height: 1.62;
+      -webkit-font-smoothing: antialiased;
+    }
+    h1, h2, h3 { text-wrap: balance; }
+    p { text-wrap: pretty; }
+
+    .report {
+      width: min(100% - 32px, 794px);
+      margin: 32px auto;
+      padding: 56px 64px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      box-shadow: 0 18px 50px rgba(24, 22, 19, 0.08);
+    }
+    .report-header {
+      padding-bottom: 28px;
+      border-bottom: 3px solid var(--ink);
+      margin-bottom: 32px;
+    }
+    .kicker {
+      margin: 0 0 10px;
+      color: var(--accent);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+    .title {
+      max-width: 11ch;
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: 52px;
+      line-height: 0.98;
+      letter-spacing: -0.02em;
+    }
+    .lead {
+      max-width: 68ch;
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: 18px;
+      line-height: 1.55;
+    }
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-top: 28px;
+    }
+    .meta-item {
+      padding-top: 10px;
+      border-top: 1px solid var(--line);
+      font-size: 12px;
+    }
+    .meta-item span {
+      display: block;
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .body-section { margin-top: 34px; }
+    .section-title {
+      margin: 0 0 14px;
+      font-family: var(--font-display);
+      font-size: 28px;
+      line-height: 1.12;
+      letter-spacing: -0.01em;
+    }
+    .section-kicker {
+      margin: 0 0 8px;
+      color: var(--accent);
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+    .body-section p {
+      max-width: 72ch;
+      margin: 0 0 14px;
+    }
+    .body-grid {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 26px;
+      align-items: start;
+    }
+    .exec-summary {
+      margin-top: 30px;
+      padding: 24px;
+      background: var(--accent-soft);
+      border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+    }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+      margin-top: 16px;
+    }
+    .summary-item strong {
+      display: block;
+      margin-bottom: 5px;
+      font-size: 15px;
+    }
+    .summary-item p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .key-points {
+      margin: 16px 0 0;
+      padding-left: 18px;
+    }
+    .key-points li {
+      margin-bottom: 8px;
+      padding-left: 4px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 14px;
+      font-size: 13px;
+    }
+    caption {
+      margin-bottom: 8px;
+      color: var(--muted);
+      text-align: left;
+      font-size: 12px;
+    }
+    th, td {
+      padding: 10px 11px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      color: var(--muted);
+      border-bottom-color: var(--line-strong);
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .num {
+      text-align: right;
+      font-family: var(--font-mono);
+      white-space: nowrap;
+    }
+    .chart-panel {
+      margin-top: 18px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      background: color-mix(in srgb, var(--paper) 86%, var(--bg));
+    }
+    .chart-panel h3 {
+      margin: 0 0 4px;
+      font-size: 15px;
+    }
+    .chart-note {
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .chart-placeholder {
+      min-height: 180px;
+      display: grid;
+      align-items: end;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 10px;
+      padding: 18px 14px 28px;
+      border: 1px dashed var(--line-strong);
+      background:
+        linear-gradient(to top, rgba(0,0,0,0.04) 1px, transparent 1px) 0 0 / 100% 25%,
+        var(--paper);
+    }
+    .bar { min-height: 24px; background: var(--accent); }
+    .chart-axis {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 8px;
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+    }
+    .metric-card {
+      padding: 16px;
+      border: 1px solid var(--line);
+      background: var(--paper);
+    }
+    .metric-card .value {
+      display: block;
+      font-family: var(--font-display);
+      font-size: 32px;
+      line-height: 1;
+    }
+    .metric-card .label {
+      display: block;
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .appendix {
+      margin-top: 42px;
+      padding-top: 24px;
+      border-top: 1px solid var(--line-strong);
+    }
+    .refs {
+      margin: 12px 0 0;
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .page-break {
+      break-before: page;
+      page-break-before: always;
+    }
+
+    @page {
+      size: A4 portrait;
+      margin: 18mm;
+    }
+    @media print {
+      html, body { background: #ffffff; }
+      body { font-size: 11pt; line-height: 1.5; }
+      .report {
+        width: auto;
+        max-width: none;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        box-shadow: none;
+      }
+      .report-header,
+      .body-section,
+      .exec-summary,
+      .chart-panel,
+      table {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+      .title { font-size: 38pt; }
+      .lead { font-size: 13pt; }
+      .body-grid,
+      .summary-grid,
+      .meta-grid {
+        break-inside: avoid;
+      }
+    }
+    @media (max-width: 720px) {
+      .report {
+        width: 100%;
+        margin: 0;
+        padding: 32px 22px;
+        border: 0;
+        box-shadow: none;
+      }
+      .title { font-size: 40px; }
+      .meta-grid,
+      .summary-grid,
+      .body-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <article class="report">
+    <header class="report-header">
+      <p class="kicker">Business report / readiness review</p>
+      <h1 class="title">AI Support Operations Readiness</h1>
+      <p class="lead">A medium-form report for the executive leadership team on where AI assistance can reduce support load without weakening quality, privacy, or escalation discipline.</p>
+      <div class="meta-grid" aria-label="Report metadata">
+        <div class="meta-item"><span>Prepared for</span>Executive leadership</div>
+        <div class="meta-item"><span>Prepared by</span>Operations strategy</div>
+        <div class="meta-item"><span>Date</span>July 2026</div>
+        <div class="meta-item"><span>Version</span>Planning draft</div>
+      </div>
+    </header>
+
+    <section class="exec-summary" aria-labelledby="executive-summary">
+      <p class="section-kicker">Executive summary</p>
+      <h2 class="section-title" id="executive-summary">The team is ready for a narrow first deployment.</h2>
+      <p>Support can safely introduce AI assistance in triage, draft replies, and knowledge-base routing. Full automation should wait until quality review and privacy controls are proven on real tickets.</p>
+      <div class="summary-grid">
+        <div class="summary-item">
+          <strong>Best first use</strong>
+          <p>AI should prepare drafts and summarize context, while human agents keep final-send authority.</p>
+        </div>
+        <div class="summary-item">
+          <strong>Main constraint</strong>
+          <p>The knowledge base is uneven. Billing and integration articles need cleanup before automation expands.</p>
+        </div>
+        <div class="summary-item">
+          <strong>Decision needed</strong>
+          <p>Approve a 45-day pilot with weekly QA sampling and a privacy review before broader rollout.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="body-section" aria-labelledby="section-context">
+      <p class="section-kicker">01 / Context</p>
+      <h2 class="section-title" id="section-context">Ticket volume is growing faster than headcount.</h2>
+      <p>The support queue has increased 31% over the last two quarters, while staffed hours increased 12%. The gap is concentrated in repeat setup questions, account-management tasks, and tickets that require a handoff between support and solutions engineering.</p>
+      <p>The goal is not to remove human judgment. The practical opportunity is to reduce context-gathering and first-draft time so senior agents spend more attention on ambiguous or high-risk cases.</p>
+    </section>
+
+    <section class="body-section" aria-labelledby="section-findings">
+      <p class="section-kicker">02 / Findings</p>
+      <h2 class="section-title" id="section-findings">Three workstreams have enough structure for a pilot.</h2>
+      <div class="body-grid">
+        <div>
+          <p>Triage, draft response, and article recommendation have clear inputs, observable outcomes, and low downside when humans approve the final answer. Refunds, enterprise security questions, and contract exceptions should remain outside the pilot.</p>
+          <ul class="key-points">
+            <li>Triage labels already match the routing model used by team leads, reducing retraining work.</li>
+            <li>Drafts save time only when the linked source article is current and specific.</li>
+            <li>Escalation detection must be measured separately from response speed.</li>
+          </ul>
+        </div>
+        <aside class="metric-card" aria-label="Key metric">
+          <span class="value">18%</span>
+          <span class="label">Estimated reduction in agent handling time for pilot-eligible tickets.</span>
+        </aside>
+      </div>
+    </section>
+
+    <section class="body-section" aria-labelledby="section-data">
+      <p class="section-kicker">03 / Evidence table</p>
+      <h2 class="section-title" id="section-data">Pilot candidates differ by risk and readiness.</h2>
+      <table>
+        <caption>Support workflow assessment based on April-June 2026 queue review.</caption>
+        <thead>
+          <tr>
+            <th>Workflow</th>
+            <th>Status</th>
+            <th class="num">Volume share</th>
+            <th class="num">Readiness</th>
+            <th>Note</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Ticket triage</td>
+            <td>Ready</td>
+            <td class="num">28%</td>
+            <td class="num">High</td>
+            <td>Labels are stable and team leads already audit routing misses.</td>
+          </tr>
+          <tr>
+            <td>Draft replies</td>
+            <td>Pilot</td>
+            <td class="num">34%</td>
+            <td class="num">Medium</td>
+            <td>Works for setup and how-to tickets; weak for billing exceptions.</td>
+          </tr>
+          <tr>
+            <td>Refund handling</td>
+            <td>Hold</td>
+            <td class="num">7%</td>
+            <td class="num">Low</td>
+            <td>Requires policy interpretation and account-specific approval.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="body-section" aria-labelledby="section-chart">
+      <p class="section-kicker">04 / Chart</p>
+      <h2 class="section-title" id="section-chart">Handling time should fall gradually, not instantly.</h2>
+      <div class="chart-panel">
+        <h3>Projected eligible-ticket handling time</h3>
+        <p class="chart-note">Minutes per ticket, illustrative pilot model. Assumes human review remains mandatory.</p>
+        <div class="chart-placeholder" role="img" aria-label="Bar chart showing projected handling time declining from 22 minutes to 18 minutes over six pilot weeks.">
+          <div class="bar" style="height: 88%;"></div>
+          <div class="bar" style="height: 80%;"></div>
+          <div class="bar" style="height: 76%;"></div>
+          <div class="bar" style="height: 72%;"></div>
+          <div class="bar" style="height: 68%;"></div>
+          <div class="bar" style="height: 64%;"></div>
+        </div>
+        <div class="chart-axis" aria-hidden="true">
+          <span>Week 1</span>
+          <span>Week 3</span>
+          <span>Week 6</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="body-section" aria-labelledby="section-recommendation">
+      <p class="section-kicker">05 / Recommendation</p>
+      <h2 class="section-title" id="section-recommendation">Approve a controlled pilot with a hard quality gate.</h2>
+      <p>Launch with 12 agents, two queues, and final-send human approval. Continue only if escalation accuracy stays at or above the current baseline and customer satisfaction does not fall by more than one point during the pilot window.</p>
+    </section>
+
+    <section class="appendix page-break" aria-labelledby="appendix">
+      <p class="section-kicker">Appendix</p>
+      <h2 class="section-title" id="appendix">Methodology and assumptions.</h2>
+      <ul class="refs">
+        <li>Queue review sampled 1,200 tickets across setup, billing, integrations, and account operations.</li>
+        <li>Handling-time estimate assumes draft generation saves 3-5 minutes on eligible tickets after week two.</li>
+        <li>Privacy review must confirm prompt logging, data retention, and customer-data redaction before launch.</li>
+      </ul>
+    </section>
+  </article>
+</body>
+</html>

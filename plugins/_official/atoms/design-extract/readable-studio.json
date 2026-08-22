@@ -1,0 +1,37 @@
+{
+  "$schema": "urn:readable-studio:schema:plugin-manifest:v1",
+  "specVersion": "1.0.0",
+  "name": "design-extract",
+  "title": "Design extract",
+  "version": "0.1.0",
+  "description": "Extract design tokens from source code / Figma / screenshots into the canonical token bag.",
+  "license": "MIT",
+  "author": {
+    "name": "Readable Studio",
+    "url": "https://github.com/sanghyunna/readable-studio"
+  },
+  "homepage": "https://github.com/sanghyunna/readable-studio/tree/main/plugins/_official/atoms/design-extract",
+  "tags": [
+    "atom",
+    "first-party",
+    "code-migration",
+    "figma-migration",
+    "phase-7"
+  ],
+  "compat": {
+    "agentSkills": [
+      {
+        "path": "./SKILL.md"
+      }
+    ]
+  },
+  "readable": {
+    "kind": "atom",
+    "scenario": "code-migration",
+    "mode": "extract",
+    "capabilities": [
+      "prompt:inject",
+      "fs:read"
+    ]
+  }
+}

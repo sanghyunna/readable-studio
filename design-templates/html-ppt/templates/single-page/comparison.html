@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Comparison</title>
+<link rel="stylesheet" href="../../assets/fonts.css">
+<link rel="stylesheet" href="../../assets/base.css">
+<link rel="stylesheet" id="theme-link" href="../../assets/themes/minimal-white.css">
+<link rel="stylesheet" href="../../assets/animations/animations.css">
+<style>
+.vs{display:grid;grid-template-columns:1fr 90px 1fr;gap:28px;align-items:stretch;margin-top:30px}
+.vs .side{padding:30px}
+.vs .mid{font-size:56px;font-weight:800;color:var(--text-3);display:flex;align-items:center;justify-content:center}
+.vs .bad-side{border-top:3px solid var(--bad)}
+.vs .good-side{border-top:3px solid var(--good)}
+.vs h3{font-size:24px}
+.vs ul{padding-left:20px;font-size:15px;line-height:1.8;color:var(--text-2)}
+.vs li::marker{color:var(--bad)}
+.vs .good-side li::marker{color:var(--good)}
+</style>
+</head><body class="single">
+<div class="deck"><section class="slide is-active" data-title="Comparison">
+  <p class="kicker">Before vs After · contrast</p>
+  <h2 class="h2">from“redo every time”arrive“One-click draft drafting”</h2>
+  <div class="vs">
+    <div class="card bad-side side anim-fade-left" data-anim="fade-left">
+      <h3>📉 past</h3>
+      <ul>
+        <li>I have to redo the cover every time, Table of contents, Conclusion</li>
+        <li>color, Font size span slide inconsistent</li>
+        <li>Want to change the theme?Manually change each page</li>
+        <li>All animation depends on transition hard write</li>
+        <li>To export screenshots, you need to take them one by one.</li>
+      </ul>
+    </div>
+    <div class="mid">→</div>
+    <div class="card good-side side anim-fade-right" data-anim="fade-right">
+      <h3>📈 Now</h3>
+      <ul>
+        <li>Copy template, exchange data, Finished</li>
+        <li>All pages share tokens</li>
+        <li>according to <b>T</b> Cycle through topics</li>
+        <li>25 Directly select a named animation</li>
+        <li>one piece render.sh All pictures</li>
+      </ul>
+    </div>
+  </div>
+</section></div>
+<script src="../../assets/runtime.js"></script>
+</body></html>

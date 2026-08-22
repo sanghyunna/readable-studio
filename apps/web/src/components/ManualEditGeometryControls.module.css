@@ -1,0 +1,180 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.subheading {
+  margin: 3px 1px 0;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.axes {
+  display: grid;
+  gap: 7px;
+}
+
+.axis {
+  display: grid;
+  grid-template-columns: 64px 72px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+}
+
+.axisName {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.dimension,
+.offset {
+  display: flex;
+  height: 32px;
+  align-items: center;
+  gap: 3px;
+  padding: 0 7px;
+  border: 1px solid var(--manual-edit-field-border, var(--border));
+  border-radius: 7px;
+  background: var(--manual-edit-field-bg, var(--bg-panel));
+}
+
+.dimension:focus-within,
+.offset:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--border));
+}
+
+.dimension input,
+.offset input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  color: var(--text);
+  background: transparent;
+  font-size: 11px;
+  text-align: right;
+}
+
+.dimension em,
+.offset em {
+  color: var(--text-soft);
+  font-size: 9px;
+  font-style: normal;
+}
+
+.segment {
+  display: inline-flex;
+  min-width: 0;
+  padding: 2px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-subtle) 78%, transparent);
+}
+
+.segmentButton {
+  min-width: 0;
+  height: 26px;
+  flex: 1 1 0;
+  padding: 0 5px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.segmentButton.active,
+.aspect.active {
+  color: var(--accent-strong, var(--text));
+  background: var(--accent-tint);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.aspect {
+  align-self: flex-start;
+  min-height: 28px;
+  gap: 5px;
+  padding: 0 8px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.positionModes {
+  width: 100%;
+}
+
+.positionState {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: 8px;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--bg-subtle) 55%, transparent);
+}
+
+.positionState > i {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--accent);
+}
+
+.positionState span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.positionState strong {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.positionState small {
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.offsets {
+  display: grid;
+  grid-template-columns: 1fr 1fr 30px;
+  gap: 6px;
+}
+
+.offset > span {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.resetPosition {
+  width: 30px;
+  min-width: 30px;
+  height: 32px;
+  color: var(--text-muted);
+}
+
+@media (max-width: 380px) {
+  .axis {
+    grid-template-columns: 54px 64px minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .segmentButton {
+    padding-inline: 3px;
+    font-size: 9px;
+  }
+}

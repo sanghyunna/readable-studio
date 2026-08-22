@@ -1,0 +1,15 @@
+{
+  "productId": "readable-studio",
+  "productName": "Readable Studio",
+  "repositoryUrl": "https://github.com/sanghyunna/readable-studio",
+  "appId": "studio.readable.desktop",
+  "cliName": "readable",
+  "packageScope": "@readable-studio",
+  "envPrefix": "READABLE_",
+  "urlScheme": "readable-studio://",
+  "hostGlobal": "__readableStudio__",
+  "projectDataDirName": ".readable-studio",
+  "userDataDirName": "Readable Studio",
+  "pluginManifestName": "readable-studio.json",
+  "pluginMetadataPrefix": "readable."
+}

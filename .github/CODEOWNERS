@@ -1,0 +1,11 @@
+# Repository governance, packaging, and local runtime boundaries.
+/.github/ @sanghyunna
+/scripts/ @sanghyunna
+/tools/pack/ @sanghyunna
+/tools/dev/ @sanghyunna
+/tools/serve/ @sanghyunna
+/apps/packaged/ @sanghyunna
+/apps/desktop/ @sanghyunna
+/packages/platform/ @sanghyunna
+/packages/sidecar/ @sanghyunna
+/packages/sidecar-proto/ @sanghyunna

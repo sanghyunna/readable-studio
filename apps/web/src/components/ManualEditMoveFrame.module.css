@@ -1,0 +1,62 @@
+.container {
+  position: absolute;
+  z-index: 31;
+  pointer-events: none;
+  border: 1px solid var(--selected);
+}
+
+.editing {
+  border-style: dashed;
+}
+
+.selected {
+  border-style: solid;
+}
+
+.ring {
+  position: absolute;
+  pointer-events: auto;
+  cursor: move;
+  touch-action: none;
+}
+
+.ringTop {
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
+.ringBottom {
+  bottom: 0;
+  left: 0;
+  right: 0;
+}
+
+.ringLeft {
+  top: 0;
+  bottom: 0;
+  left: 0;
+}
+
+.ringRight {
+  top: 0;
+  bottom: 0;
+  right: 0;
+}
+
+.interior {
+  position: absolute;
+  pointer-events: auto;
+  cursor: move;
+  touch-action: none;
+}
+
+/* The move surfaces are tabindex="-1" and only ever focused from pointerdown,
+   so Escape reaches the drag handler; they are never tab-reachable. A focus
+   appearance here would just be a third box inside the selection frame and the
+   eight resize handles that already show the state, so declare that they have
+   none instead of inheriting the UA focus ring. */
+.ring:focus-visible,
+.interior:focus-visible {
+  outline: none;
+}

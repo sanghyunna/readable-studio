@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>XHS Pastel Card</title>
+<link rel="stylesheet" href="../../../assets/fonts.css">
+<link rel="stylesheet" href="../../../assets/base.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="tpl-xhs-pastel-card">
+<div class="deck">
+
+  <!-- 1. COVER -->
+  <section class="slide is-active">
+    <div class="xp-blob b1"></div>
+    <div class="xp-blob b2"></div>
+    <div class="xp-blob b3"></div>
+    <div class="xp-topbar"><div class="xp-chip">A soft manifesto</div><div class="xp-page">01 · 08</div></div>
+    <div class="xp-kicker">Living With AI · 2026</div>
+    <h1 class="xp-h1">Slow down,<br>let <em>AI</em> help you<br>live a <span class="rose">gentler</span><br>life</h1>
+    <div class="xp-divider"></div>
+    <p class="xp-sub">This is not a productivity guide. It is a list of ways to use AI to do less — and give four reclaimed hours back to yourself.</p>
+    <div class="xp-footer"><span>by lewis · pastel edition</span><span>cover</span></div>
+  </section>
+
+  <!-- 2. SECTION -->
+  <section class="slide">
+    <div class="xp-blob b2"></div>
+    <div class="xp-blob b3"></div>
+    <div class="xp-topbar"><div class="xp-chip mint">Chapter one</div><div class="xp-page">02 · 08</div></div>
+    <div style="margin:auto 0">
+      <div class="xp-kicker">Ask yourself first</div>
+      <h1 class="xp-h1" style="font-size:120px">What do you<br><span class="mint">not really want</span> to do?</h1>
+      <p class="xp-sub">Not what you have to do — what makes your soul sigh while you do it.</p>
+    </div>
+    <div class="xp-footer"><span>section · chapter 1</span><span>02 · 08</span></div>
+  </section>
+
+  <!-- 3. CONTENT 2x2 pastel cards -->
+  <section class="slide">
+    <div class="xp-blob b1"></div>
+    <div class="xp-topbar"><div class="xp-chip rose">Four little escapes</div><div class="xp-page">03 · 08</div></div>
+    <h2 class="xp-h2">Four small things<br>to hand fully to <em>AI</em></h2>
+    <div class="xp-grid-2">
+      <div class="xp-card peach"><div class="xp-num">01</div><h4>Reply to simple acknowledgement emails</h4><p>They do not need your attention. Let AI answer in your voice and save 40 minutes a week.</p></div>
+      <div class="xp-card mint"><div class="xp-num">02</div><h4>Book restaurants, change flights, find routes</h4><p>Outsource it in one sentence. You choose the final option instead of scrolling through ten apps.</p></div>
+      <div class="xp-card sky"><div class="xp-num">03</div><h4>Turn meeting recordings into action items</h4><p>Recording → summary → to-do list in one step. You only need to confirm and sign off.</p></div>
+      <div class="xp-card lilac"><div class="xp-num">04</div><h4>Organize last week's 300 photos</h4><p>Group by event, choose ten highlights, and write captions. Archiving finally becomes automated.</p></div>
+    </div>
+    <div class="xp-footer"><span>content · 2x2</span><span>03 · 08</span></div>
+  </section>
+
+  <!-- 4. QUOTE -->
+  <section class="slide">
+    <div class="xp-blob b3"></div>
+    <div class="xp-blob b2"></div>
+    <div class="xp-topbar"><div class="xp-chip lilac">A small pause</div><div class="xp-page">04 · 08</div></div>
+    <div class="xp-hero-card">
+      <p class="xp-quote">The purpose of productivity tools is not<em> doing more</em>,<br>but <em>earning the right to do less</em>.</p>
+      <div class="xp-divider"></div>
+      <p class="xp-sub">When you hand off acknowledgement emails, reservations, itineraries, and photo organization, you may discover that four hours of your week were free all along.</p>
+    </div>
+    <div class="xp-footer"><span>quote</span><span>04 · 08</span></div>
+  </section>
+
+  <!-- 5. CODE / PROMPT -->
+  <section class="slide">
+    <div class="xp-blob b1"></div>
+    <div class="xp-topbar"><div class="xp-chip">My auto-reply prompt</div><div class="xp-page">05 · 08</div></div>
+    <h2 class="xp-h2">A <span class="rose">prompt</span> to automate<br><em>acknowledgement emails</em></h2>
+    <pre class="xp-codebox"><span class="cm"># auto-reply skill</span>
+<span class="kw">when</span> email matches <span class="st">"received / okay / confirmed / thanks"</span>:
+  reply:
+    tone: <span class="st">"warm, brief, not too corporate"</span>
+    max_lines: <span class="hl">2</span>
+    sign_with: <span class="st">"— Lewis"</span>
+
+<span class="kw">always_skip</span>:
+  - from: [<span class="st">"family"</span>, <span class="st">"partner"</span>, <span class="st">"close friends"</span>]
+  - contains: [<span class="st">"urgent"</span>, <span class="st">"contract"</span>, <span class="st">"payment"</span>]
+
+<span class="cm"># Saves 38 minutes a week, tested</span></pre>
+    <div class="xp-footer"><span>content · prompt</span><span>05 · 08</span></div>
+  </section>
+
+  <!-- 6. CHART — time donut -->
+  <section class="slide">
+    <div class="xp-blob b2"></div>
+    <div class="xp-topbar"><div class="xp-chip mint">Your week, rebuilt</div><div class="xp-page">06 · 08</div></div>
+    <h2 class="xp-h2">Give <span class="mint">four hours a week</span> back to yourself</h2>
+    <div style="display:flex;align-items:center;gap:60px;margin-top:30px">
+      <svg viewBox="0 0 260 260" style="width:300px;flex-shrink:0">
+        <circle cx="130" cy="130" r="100" fill="none" stroke="#fef0e4" stroke-width="40"/>
+        <!-- email 12% -->
+        <circle cx="130" cy="130" r="100" fill="none" stroke="#f48b5c" stroke-width="40" stroke-dasharray="75 628" stroke-dashoffset="0" transform="rotate(-90 130 130)"/>
+        <!-- logistics 18% -->
+        <circle cx="130" cy="130" r="100" fill="none" stroke="#2e9d70" stroke-width="40" stroke-dasharray="113 628" stroke-dashoffset="-75" transform="rotate(-90 130 130)"/>
+        <!-- meetings 14% -->
+        <circle cx="130" cy="130" r="100" fill="none" stroke="#4e7ed6" stroke-width="40" stroke-dasharray="88 628" stroke-dashoffset="-188" transform="rotate(-90 130 130)"/>
+        <!-- photos 6% -->
+        <circle cx="130" cy="130" r="100" fill="none" stroke="#7b5dc4" stroke-width="40" stroke-dasharray="38 628" stroke-dashoffset="-276" transform="rotate(-90 130 130)"/>
+        <text x="130" y="130" text-anchor="middle" font-family="Playfair Display" font-size="44" font-weight="900" fill="#2a2340">4h</text>
+        <text x="130" y="156" text-anchor="middle" font-family="Inter" font-size="12" fill="#9089a8">per week saved</text>
+      </svg>
+      <div style="flex:1">
+        <div class="xp-grid-2" style="grid-template-columns:1fr;gap:12px;margin-top:0">
+          <div class="xp-card peach" style="padding:14px 20px;display:flex;align-items:center;gap:14px"><div style="width:14px;height:14px;border-radius:50%;background:var(--xp-peach-d)"></div><div><h4 style="margin:0;font-size:17px">48 min · email</h4></div></div>
+          <div class="xp-card mint" style="padding:14px 20px;display:flex;align-items:center;gap:14px"><div style="width:14px;height:14px;border-radius:50%;background:var(--xp-mint-d)"></div><div><h4 style="margin:0;font-size:17px">72 min · book/change/find</h4></div></div>
+          <div class="xp-card sky" style="padding:14px 20px;display:flex;align-items:center;gap:14px"><div style="width:14px;height:14px;border-radius:50%;background:var(--xp-sky-d)"></div><div><h4 style="margin:0;font-size:17px">56 min · meeting summaries</h4></div></div>
+          <div class="xp-card lilac" style="padding:14px 20px;display:flex;align-items:center;gap:14px"><div style="width:14px;height:14px;border-radius:50%;background:var(--xp-lilac-d)"></div><div><h4 style="margin:0;font-size:17px">24 min · photo organization</h4></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="xp-footer"><span>chart · donut</span><span>06 · 08</span></div>
+  </section>
+
+  <!-- 7. CTA -->
+  <section class="slide">
+    <div class="xp-blob b1"></div>
+    <div class="xp-blob b3"></div>
+    <div class="xp-topbar"><div class="xp-chip rose">This weekend</div><div class="xp-page">07 · 08</div></div>
+    <h2 class="xp-h2">This weekend,<br>give yourself <em>a small break</em></h2>
+    <div class="xp-grid-3">
+      <div class="xp-card lemon"><div class="xp-num">☕</div><h4>Saturday morning</h4><p>Choose the chore you dislike most, write a prompt, and stop letting it bother you.</p></div>
+      <div class="xp-card peach"><div class="xp-num">🌸</div><h4>Saturday afternoon</h4><p>Take a walk. Bring nothing. AI can watch your messages at home.</p></div>
+      <div class="xp-card sky"><div class="xp-num">🌙</div><h4>Sunday night</h4><p>Reflect: which four hours were truly open? Keep going next week.</p></div>
+    </div>
+    <div class="xp-footer"><span>cta</span><span>07 · 08</span></div>
+  </section>
+
+  <!-- 8. THANKS -->
+  <section class="slide">
+    <div class="xp-blob b2"></div>
+    <div style="margin:auto 0;text-align:center">
+      <div class="xp-kicker" style="text-align:center">thanks for reading</div>
+      <h1 class="xp-h1" style="font-size:160px;text-align:center">Thanks <em>·</em> take it easy</h1>
+      <div class="xp-divider" style="margin:24px auto"></div>
+      <p class="xp-sub" style="margin:0 auto">If you want a gentler week too, tell me which task you plan to hand off first ♡</p>
+    </div>
+    <div class="xp-footer"><span>end</span><span>08 · 08</span></div>
+  </section>
+
+</div>
+<script src="../../../assets/runtime.js"></script>
+</body>
+</html>

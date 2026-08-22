@@ -1,0 +1,361 @@
+/* ============================================================
+   Readable Studio — neutral document workspace
+   ============================================================ */
+:root {
+  /* Surface palette — neutral app chrome that does not bias generated artifacts.
+     Keep warm/brand colors out of preview backgrounds; generated product UI
+     must choose its own palette through the active skill/design brief. */
+  --bg: #faf9f7;
+  --bg-app: #faf9f7;
+  --bg-panel: #fdfcfa;
+  --bg-subtle: #f4f5f7;
+  --bg-muted: #eef1f5;
+  --bg-fill-tertiary: rgba(0, 0, 0, 0.03);
+  --bg-fill-secondary: rgba(0, 0, 0, 0.06);
+  --bg-fill: rgba(0, 0, 0, 0.12);
+  --bg-elevated: #fffefc;
+  --border: #e1e5eb;
+  --border-strong: #c9d0da;
+  --border-soft: #edf0f4;
+
+  --text: #1a1916;
+  --text-strong: #0d0c0a;
+  --text-muted: #74716b;
+  --text-soft: #989590;
+  --text-faint: #b3b0a8;
+
+  /* Accent — Readable Studio action color for app chrome only. */
+  --accent: #c96442;
+  --accent-strong: #b45a3b;
+  --accent-soft: #f5d8cb;
+  --accent-tint: #fbeee5;
+  --accent-hover: #b45a3b;
+
+  /* Semantic accent tints used by tool / status pills. */
+  --green: #1f7a3a;
+  --green-bg: #e8f7ee;
+  --green-border: #c6ead2;
+  --blue: #2348b8;
+  --blue-bg: #e8efff;
+  --blue-border: #c8d6ff;
+  --purple: #6c3aa6;
+  --purple-bg: #f3ecf9;
+  --purple-border: #e4d4f1;
+  --red: #9c2a25;
+  --red-bg: #fdecea;
+  --red-border: #f5c6c2;
+  --amber: #b26200;
+  --amber-bg: color-mix(in srgb, var(--amber) 16%, var(--bg-panel));
+  --success: var(--green);
+  --success-text: var(--green);
+  --success-bg: var(--green-bg);
+  --warning: var(--amber);
+  --warning-text: var(--amber);
+  --warning-fg: var(--amber);
+  --danger: var(--red);
+  --danger-text: var(--red);
+  --danger-fg: var(--red);
+  --accent-contrast: #0d0c0a;
+  --black: #000000;
+  --white: #ffffff;
+  --shadow-color: #000000;
+  --scrim: rgba(0, 0, 0, 0.45);
+
+  --brand-x: #111111;
+  --brand-linkedin: #0a66c2;
+  --brand-facebook: #1877f2;
+  --brand-reddit: #ff4500;
+  --brand-telegram: #26a5e4;
+  --brand-whatsapp: #25d366;
+  --brand-tiktok: #e6162d;
+  --brand-line: #06c755;
+  --brand-instagram: #e4405f;
+  --brand-discord: #5865f2;
+
+  --window-close: #ff5f57;
+  --window-minimize: #febc2e;
+  --window-zoom: #28c840;
+
+  --shadow-xs: 0 1px 0 rgba(28, 27, 26, 0.04);
+  --shadow-sm: 0 1px 2px rgba(28, 27, 26, 0.05), 0 1px 3px rgba(28, 27, 26, 0.04);
+  --shadow-md: 0 6px 24px rgba(28, 27, 26, 0.07), 0 2px 6px rgba(28, 27, 26, 0.04);
+  --shadow-lg: 0 24px 60px rgba(28, 27, 26, 0.16), 0 8px 16px rgba(28, 27, 26, 0.07);
+
+  /* Corner-radius scale — the only radii UI should reach for (Shape
+     Consistency Lock). xs for inline code / micro-chips, sm for controls,
+     base for cards/menus, md for medium containers, lg for large surfaces,
+     pill for fully-rounded interactive. Off-scale values (7px, 9px, 10px
+     literals) are drift; collapse them to the nearest token. */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+
+  /* Motion — codifies the UI animation philosophy (see AGENTS.md). The
+     built-in `ease` curve is too weak and `ease-in` is banned for UI;
+     --ease-out is the single canonical curve for product transitions.
+     Enter reads gentle, exit reads decisive (asymmetric durations);
+     --dur-quick is for hover / focus micro-feedback. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --dur-quick: 120ms;
+  --dur-enter: 200ms;
+  --dur-exit: 140ms;
+
+  /* "Active option" indicator color, intentionally separate from --accent
+     (brand orange used by primary CTAs like Create / Save). Use --selected
+     for "this option is the one currently picked" affordances — selected
+     fidelity card, focused input ring, active filter pill — so a primary
+     CTA and a selected state can coexist on the same screen without
+     competing. --selected-soft is the 16% tint for outer rings / fills. */
+  --selected: #2563eb;
+  --selected-soft: rgba(37, 99, 235, 0.16);
+
+  --sans: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', 'Microsoft YaHei UI', 'Noto Sans', sans-serif;
+  --serif: var(--sans);
+  --mono: var(--sans);
+  --font: var(--sans);
+  --font-body: var(--sans);
+  --font-display: var(--sans);
+  --font-mono: var(--sans);
+
+  --prose-font-size: 15px;
+  --prose-line-height: 1.75;
+  --code-header-bg: #f4f5f7;
+  --code-body-bg: #f9fafb;
+  --code-font-size: 13px;
+  --code-line-height: 1.65;
+
+  --terminal-bg: #fbfaf8;
+  --terminal-fg: #1f2328;
+  --terminal-muted-fg: rgba(31, 35, 40, 0.68);
+  --terminal-cursor: #1f2328;
+  --terminal-cursor-accent: #fbfaf8;
+  --terminal-selection-bg: rgba(37, 99, 235, 0.24);
+  --terminal-selection-fg: #0f172a;
+  --terminal-selection-inactive-bg: rgba(100, 116, 139, 0.18);
+  --terminal-banner-bg: rgba(15, 23, 42, 0.045);
+  --terminal-banner-border: rgba(15, 23, 42, 0.11);
+  --terminal-button-bg: rgba(15, 23, 42, 0.06);
+  --terminal-button-bg-hover: rgba(15, 23, 42, 0.11);
+  --terminal-button-border: rgba(15, 23, 42, 0.12);
+  --terminal-button-border-hover: rgba(15, 23, 42, 0.2);
+  --terminal-ansi-black: #24292f;
+  --terminal-ansi-red: #b42318;
+  --terminal-ansi-green: #087443;
+  --terminal-ansi-yellow: #9a5b00;
+  --terminal-ansi-blue: #1d4ed8;
+  --terminal-ansi-magenta: #7e22ce;
+  --terminal-ansi-cyan: #047481;
+  --terminal-ansi-white: #ede9e0;
+  --terminal-ansi-bright-black: #6b7280;
+  --terminal-ansi-bright-red: #d92d20;
+  --terminal-ansi-bright-green: #099250;
+  --terminal-ansi-bright-yellow: #b7791f;
+  --terminal-ansi-bright-blue: #2563eb;
+  --terminal-ansi-bright-magenta: #9333ea;
+  --terminal-ansi-bright-cyan: #0891b2;
+  --terminal-ansi-bright-white: #ffffff;
+}
+
+/* Dark theme variables — shared between explicit [data-theme="dark"] and the
+   OS-level prefers-color-scheme media query (system mode = no data-theme attr). */
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #1a1917;
+  --bg-app: #1a1917;
+  --bg-panel: #222120;
+  --bg-subtle: #252321;
+  --bg-muted: #2e2c29;
+  --bg-fill-tertiary: rgba(255, 255, 255, 0.06);
+  --bg-fill-secondary: rgba(255, 255, 255, 0.10);
+  --bg-fill: rgba(255, 255, 255, 0.16);
+  --bg-elevated: #2a2825;
+  --border: #333128;
+  --border-strong: #46433c;
+  --border-soft: #2a2825;
+
+  --text: #e8e4dc;
+  --text-strong: #f2ede4;
+  --text-muted: #9a9690;
+  --text-soft: #6e6b65;
+  --text-faint: #4e4b46;
+
+  --accent: #d97a56;
+  --accent-strong: #e8896a;
+  --accent-soft: #3d2318;
+  --accent-tint: #2e1a12;
+  --accent-hover: #e8896a;
+
+  --green: #4caf72;
+  --green-bg: #0f2a18;
+  --green-border: #1a4028;
+  --blue: #6b8fe8;
+  --blue-bg: #0f1a38;
+  --blue-border: #1a2c58;
+  --purple: #a87dd4;
+  --purple-bg: #1e1030;
+  --purple-border: #321a50;
+  --red: #e06b65;
+  --red-bg: #2a0e0c;
+  --red-border: #451714;
+  --amber: #e09a40;
+  --amber-bg: color-mix(in srgb, var(--amber) 16%, var(--bg-panel));
+  --success: var(--green);
+  --success-text: var(--green);
+  --success-bg: var(--green-bg);
+  --warning: var(--amber);
+  --warning-text: var(--amber);
+  --warning-fg: var(--amber);
+  --danger: var(--red);
+  --danger-text: var(--red);
+  --danger-fg: var(--red);
+  --accent-contrast: #1a1917;
+  --selected: var(--accent);
+  --selected-soft: color-mix(in srgb, var(--selected) 16%, transparent);
+  --black: #000000;
+  --white: #ffffff;
+  --shadow-color: #000000;
+  --scrim: rgba(0, 0, 0, 0.45);
+
+  --shadow-xs: 0 1px 0 rgba(0, 0, 0, 0.2);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 6px 24px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.25);
+  --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.6), 0 8px 16px rgba(0, 0, 0, 0.3);
+
+  --code-header-bg: #1e1e20;
+  --code-body-bg: #18181b;
+
+  --terminal-bg: #1e1e1e;
+  --terminal-fg: #e6e1d9;
+  --terminal-muted-fg: rgba(230, 225, 217, 0.72);
+  --terminal-cursor: #f2ede4;
+  --terminal-cursor-accent: #1e1e1e;
+  --terminal-selection-bg: rgba(96, 165, 250, 0.32);
+  --terminal-selection-fg: #ffffff;
+  --terminal-selection-inactive-bg: rgba(148, 163, 184, 0.22);
+  --terminal-banner-bg: rgba(255, 255, 255, 0.06);
+  --terminal-banner-border: rgba(255, 255, 255, 0.12);
+  --terminal-button-bg: rgba(255, 255, 255, 0.12);
+  --terminal-button-bg-hover: rgba(255, 255, 255, 0.2);
+  --terminal-button-border: rgba(255, 255, 255, 0.18);
+  --terminal-button-border-hover: rgba(255, 255, 255, 0.3);
+  --terminal-ansi-black: #1f2328;
+  --terminal-ansi-red: #ff7b72;
+  --terminal-ansi-green: #7ee787;
+  --terminal-ansi-yellow: #d29922;
+  --terminal-ansi-blue: #79c0ff;
+  --terminal-ansi-magenta: #d2a8ff;
+  --terminal-ansi-cyan: #56d4dd;
+  --terminal-ansi-white: #e6edf3;
+  --terminal-ansi-bright-black: #6e7681;
+  --terminal-ansi-bright-red: #ffa198;
+  --terminal-ansi-bright-green: #7ee787;
+  --terminal-ansi-bright-yellow: #e3b341;
+  --terminal-ansi-bright-blue: #a5d6ff;
+  --terminal-ansi-bright-magenta: #d2a8ff;
+  --terminal-ansi-bright-cyan: #7ee7f2;
+  --terminal-ansi-bright-white: #ffffff;
+}
+
+/* System mode: follow OS preference when no explicit data-theme is set. */
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme]) {
+    color-scheme: dark;
+    --bg: #1a1917;
+    --bg-app: #1a1917;
+    --bg-panel: #222120;
+    --bg-subtle: #252321;
+    --bg-muted: #2e2c29;
+    --bg-fill-tertiary: rgba(255, 255, 255, 0.06);
+    --bg-fill-secondary: rgba(255, 255, 255, 0.10);
+    --bg-fill: rgba(255, 255, 255, 0.16);
+    --bg-elevated: #2a2825;
+    --border: #333128;
+    --border-strong: #46433c;
+    --border-soft: #2a2825;
+
+    --text: #e8e4dc;
+    --text-strong: #f2ede4;
+    --text-muted: #9a9690;
+    --text-soft: #6e6b65;
+    --text-faint: #4e4b46;
+
+    --accent: #d97a56;
+    --accent-strong: #e8896a;
+    --accent-soft: #3d2318;
+    --accent-tint: #2e1a12;
+    --accent-hover: #e8896a;
+
+    --green: #4caf72;
+    --green-bg: #0f2a18;
+    --green-border: #1a4028;
+    --blue: #6b8fe8;
+    --blue-bg: #0f1a38;
+    --blue-border: #1a2c58;
+    --purple: #a87dd4;
+    --purple-bg: #1e1030;
+    --purple-border: #321a50;
+    --red: #e06b65;
+    --red-bg: #2a0e0c;
+    --red-border: #451714;
+    --amber: #e09a40;
+    --amber-bg: color-mix(in srgb, var(--amber) 16%, var(--bg-panel));
+    --success: var(--green);
+    --success-text: var(--green);
+    --success-bg: var(--green-bg);
+    --warning: var(--amber);
+    --warning-text: var(--amber);
+    --warning-fg: var(--amber);
+    --danger: var(--red);
+    --danger-text: var(--red);
+    --danger-fg: var(--red);
+    --accent-contrast: #1a1917;
+    --selected: var(--accent);
+    --selected-soft: color-mix(in srgb, var(--selected) 16%, transparent);
+    --black: #000000;
+    --white: #ffffff;
+    --shadow-color: #000000;
+    --scrim: rgba(0, 0, 0, 0.45);
+
+    --shadow-xs: 0 1px 0 rgba(0, 0, 0, 0.2);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.2);
+    --shadow-md: 0 6px 24px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.25);
+    --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.6), 0 8px 16px rgba(0, 0, 0, 0.3);
+
+    --code-header-bg: #1e1e20;
+    --code-body-bg: #18181b;
+
+    --terminal-bg: #1e1e1e;
+    --terminal-fg: #e6e1d9;
+    --terminal-muted-fg: rgba(230, 225, 217, 0.72);
+    --terminal-cursor: #f2ede4;
+    --terminal-cursor-accent: #1e1e1e;
+    --terminal-selection-bg: rgba(96, 165, 250, 0.32);
+    --terminal-selection-fg: #ffffff;
+    --terminal-selection-inactive-bg: rgba(148, 163, 184, 0.22);
+    --terminal-banner-bg: rgba(255, 255, 255, 0.06);
+    --terminal-banner-border: rgba(255, 255, 255, 0.12);
+    --terminal-button-bg: rgba(255, 255, 255, 0.12);
+    --terminal-button-bg-hover: rgba(255, 255, 255, 0.2);
+    --terminal-button-border: rgba(255, 255, 255, 0.18);
+    --terminal-button-border-hover: rgba(255, 255, 255, 0.3);
+    --terminal-ansi-black: #1f2328;
+    --terminal-ansi-red: #ff7b72;
+    --terminal-ansi-green: #7ee787;
+    --terminal-ansi-yellow: #d29922;
+    --terminal-ansi-blue: #79c0ff;
+    --terminal-ansi-magenta: #d2a8ff;
+    --terminal-ansi-cyan: #56d4dd;
+    --terminal-ansi-white: #e6edf3;
+    --terminal-ansi-bright-black: #6e7681;
+    --terminal-ansi-bright-red: #ffa198;
+    --terminal-ansi-bright-green: #7ee787;
+    --terminal-ansi-bright-yellow: #e3b341;
+    --terminal-ansi-bright-blue: #a5d6ff;
+    --terminal-ansi-bright-magenta: #d2a8ff;
+    --terminal-ansi-bright-cyan: #7ee7f2;
+    --terminal-ansi-bright-white: #ffffff;
+  }
+}

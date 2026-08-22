@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>Jordan Lee · Resume</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  body { background:#e9e6df; font-family:'Inter','Noto Sans SC',sans-serif; color:#1a1a1a; padding:32px 0; -webkit-font-smoothing:antialiased; }
+  .page { width:210mm; min-height:297mm; margin:0 auto; background:#fff; padding:18mm 16mm; box-shadow:0 30px 60px -20px rgba(0,0,0,0.18); }
+  .accent { color:#1f4d8f; }
+  .accent-bar { display:inline-block; width:24px; height:2px; background:#1f4d8f; vertical-align:middle; margin-right:10px; }
+  .section h2 { font-size:11px; font-weight:700; letter-spacing:0.18em; text-transform:uppercase; color:#1f4d8f; margin:0 0 14px; }
+  .role { display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
+  .role .meta { font-size:11px; color:#6b6760; font-family:'Inter',sans-serif; white-space:nowrap; tabular-nums:auto; }
+  ul.bullets { list-style:none; padding:0; margin:8px 0 16px; }
+  ul.bullets li { position:relative; padding-left:14px; font-size:13px; line-height:1.65; color:#262421; margin-bottom:4px; }
+  ul.bullets li::before { content:""; position:absolute; left:0; top:9px; width:5px; height:5px; background:#1f4d8f; border-radius:1px; }
+  @media print { body { background:#fff; padding:0; } .page { box-shadow:none; } }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="pb-7 mb-7" style="border-bottom:1px solid #e7e5e0">
+    <h1 class="text-[42px] font-bold tracking-tight leading-none mb-3">Jordan Lee</h1>
+    <div class="text-[12.5px] text-[#1f4d8f] font-medium tracking-wide mb-3">Senior Frontend Engineer</div>
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11.5px] text-[#5a564e]">
+      <span>📍 Seattle</span><span class="opacity-30">|</span>
+      <span>✉ jordan.lee@example.com</span><span class="opacity-30">|</span>
+      <span>github.com/jordanlee</span><span class="opacity-30">|</span>
+      <span>linkedin.com/in/jordanlee</span>
+    </div>
+  </header>
+
+  <section class="section mb-6">
+    <h2><span class="accent-bar"></span>Profile</h2>
+    <p class="text-[13.5px] leading-[1.75] text-[#262421]">Eight years of frontend experience, including a design-system rebuild for a 50M+ MAU product. Currently focused on productizing AI-assisted developer tools.</p>
+  </section>
+
+  <div class="grid grid-cols-12 gap-8">
+    <div class="col-span-8">
+      <section class="section mb-7">
+        <h2><span class="accent-bar"></span>Experience</h2>
+
+        <div class="mb-5">
+          <div class="role">
+            <div><span class="font-semibold text-[14.5px]">Acme AI</span> <span class="text-[#5a564e] text-[13px]">— Senior Frontend Engineer</span></div>
+            <div class="meta">2023.06 - Present</div>
+          </div>
+          <ul class="bullets">
+            <li>Designed and led an internal AI editor from zero to one, reaching <span class="font-semibold accent">12k</span> DAU and an internal NPS of <span class="font-semibold accent">68</span> in six months.</li>
+            <li>Upgraded the team from React 16 to React 19 with <span class="font-semibold accent">zero production regressions</span> and <span class="font-semibold accent">3.2×</span> faster builds.</li>
+            <li>Abstracted a component library adopted by seven business lines, with 80k+ monthly npm downloads.</li>
+          </ul>
+        </div>
+
+        <div class="mb-5">
+          <div class="role">
+            <div><span class="font-semibold text-[14.5px]">Byte Labs</span> <span class="text-[#5a564e] text-[13px]">— Frontend Engineer</span></div>
+            <div class="meta">2020.07 - 2023.05</div>
+          </div>
+          <ul class="bullets">
+            <li>Led the migration of an admin console from webpack to Vite, cutting cold-start time from <span class="font-semibold accent">18s</span> to <span class="font-semibold accent">2.4s</span>.</li>
+            <li>Designed a low-code form engine for 30+ internal applications, saving 800+ engineering days.</li>
+            <li>Led a four-person squad and increased strict TypeScript coverage from <span class="font-semibold accent">53%</span> to <span class="font-semibold accent">92%</span>.</li>
+          </ul>
+        </div>
+
+        <div class="mb-2">
+          <div class="role">
+            <div><span class="font-semibold text-[14.5px]">MarketWorks</span> <span class="text-[#5a564e] text-[13px]">— Frontend Intern</span></div>
+            <div class="meta">2019.06 - 2019.09</div>
+          </div>
+          <ul class="bullets">
+            <li>Migrated two merchant-console pages from Vue 2 to Vue 3.</li>
+            <li>Wrote an internal talk, “Five Smells of Component Design,” bookmarked 200+ times.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2><span class="accent-bar"></span>Open-source Projects</h2>
+        <ul class="bullets">
+          <li><span class="font-semibold">html-anything</span> <span class="text-[#5a564e]">(1.2k ★)</span> — Turn any document into polished HTML with a local AI agent.</li>
+          <li><span class="font-semibold">lite-form</span> <span class="text-[#5a564e]">(450 ★)</span> — A 9KB React form library, 1.7× faster than react-hook-form.</li>
+        </ul>
+      </section>
+    </div>
+
+    <div class="col-span-4">
+      <section class="section mb-6">
+        <h2><span class="accent-bar"></span>Education</h2>
+        <div class="text-[13.5px] font-semibold mb-1">Northbridge University</div>
+        <div class="text-[12px] text-[#5a564e]">Computer Science · Bachelor of Science</div>
+        <div class="text-[11.5px] text-[#5a564e] mt-1">2016 - 2020 · GPA 3.85 / 4.00</div>
+      </section>
+
+      <section class="section mb-6">
+        <h2><span class="accent-bar"></span>Core Skills</h2>
+        <div class="flex flex-wrap gap-1.5">
+          <span class="px-2 py-0.5 rounded text-[11px]" style="background:#eef2f8; color:#1f4d8f">TypeScript</span><span class="px-2 py-0.5 rounded text-[11px]" style="background:#eef2f8; color:#1f4d8f">React</span><span class="px-2 py-0.5 rounded text-[11px]" style="background:#eef2f8; color:#1f4d8f">Next.js</span><span class="px-2 py-0.5 rounded text-[11px]" style="background:#eef2f8; color:#1f4d8f">Tailwind</span><span class="px-2 py-0.5 rounded text-[11px]" style="background:#eef2f8; color:#1f4d8f">Node.js</span><span class="px-2 py-0.5 rounded text-[11px]" style="background:#eef2f8; color:#1f4d8f">Vite</span><span class="px-2 py-0.5 rounded text-[11px]" style="background:#eef2f8; color:#1f4d8f">Design Systems</span><span class="px-2 py-0.5 rounded text-[11px]" style="background:#eef2f8; color:#1f4d8f">Performance</span><span class="px-2 py-0.5 rounded text-[11px]" style="background:#eef2f8; color:#1f4d8f">Teamwork</span>
+        </div>
+      </section>
+
+      <section class="section mb-6">
+        <h2><span class="accent-bar"></span>Languages</h2>
+        <ul class="text-[12px] text-[#262421] space-y-1.5">
+          <li class="flex justify-between"><span>English</span><span class="text-[#5a564e]">Native</span></li>
+          <li class="flex justify-between"><span>Spanish</span><span class="text-[#5a564e]">Fluent</span></li>
+          <li class="flex justify-between"><span>Japanese</span><span class="text-[#5a564e]">N3</span></li>
+        </ul>
+      </section>
+
+      <section class="section">
+        <h2><span class="accent-bar"></span>Interests</h2>
+        <p class="text-[12px] text-[#262421] leading-[1.7]">Distance running (Seattle Half Marathon 1:42) · Photography · Neighborhood coffee-shop detective work</p>
+      </section>
+    </div>
+  </div>
+</div>
+</body>
+</html>

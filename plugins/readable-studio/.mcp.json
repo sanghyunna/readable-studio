@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "readable-studio": {
+      "type": "stdio",
+      "command": "readable",
+      "args": ["mcp", "--daemon-url", "http://127.0.0.1:7456"]
+    }
+  }
+}

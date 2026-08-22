@@ -1,0 +1,212 @@
+.panel {
+  min-width: 0;
+  padding: 1.5rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 1rem;
+  background: var(--bg-panel);
+}
+
+.header,
+.browserHeading,
+.folders li,
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.header h2,
+.browser h3 {
+  margin: 0;
+  color: var(--text-strong);
+}
+
+.header p {
+  margin: 0.35rem 0 0;
+  color: var(--text-muted);
+}
+
+.header .eyebrow {
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.download {
+  flex: none;
+  padding: 0.65rem 0.9rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.55rem;
+  color: var(--text-strong);
+  text-decoration: none;
+}
+
+.download:hover {
+  background: var(--bg-soft);
+}
+
+.projectPicker,
+.compactForm,
+.editor form,
+.editor label,
+.browser label {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.projectPicker {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  margin-top: 1.25rem;
+}
+
+.projectPicker label > span,
+.compactForm label > span,
+.editor label > span {
+  color: var(--text-strong);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(13rem, 18rem) minmax(0, 1fr);
+  gap: 1rem;
+  margin-top: 1.25rem;
+}
+
+.browser,
+.editor {
+  min-width: 0;
+  padding: 1rem;
+  border-radius: 0.75rem;
+  background: var(--bg-soft);
+}
+
+.browser {
+  display: grid;
+  align-content: start;
+  gap: 0.75rem;
+}
+
+.browser h3:not(:first-child) {
+  margin-top: 0.5rem;
+}
+
+.items,
+.folders {
+  display: grid;
+  gap: 0.35rem;
+  max-height: 15rem;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.items button {
+  display: grid;
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid transparent;
+  border-radius: 0.5rem;
+  color: var(--text-strong);
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+}
+
+.items button:hover,
+.items .selected {
+  border-color: var(--border-subtle);
+  background: var(--bg-panel);
+}
+
+.items small,
+.empty {
+  color: var(--text-muted);
+}
+
+.folders li {
+  min-width: 0;
+  color: var(--text-strong);
+}
+
+.folders li > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.compactForm {
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.compactForm input[type='file'] {
+  max-width: 100%;
+  color: var(--text-muted);
+}
+
+.editor {
+  display: grid;
+  align-content: start;
+  gap: 1rem;
+}
+
+.editor form {
+  gap: 0.75rem;
+}
+
+.editor textarea {
+  min-height: 18rem;
+  resize: vertical;
+  font-family: var(--font-mono, monospace);
+}
+
+.actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.rename {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.preview {
+  width: 100%;
+  min-height: 22rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.5rem;
+  background: var(--white);
+}
+
+.error {
+  margin: 1rem 0 0;
+  font-size: 0.875rem;
+}
+
+.error {
+  color: var(--danger);
+}
+
+@media (max-width: 72rem) {
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 38rem) {
+  .header,
+  .projectPicker,
+  .rename {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+}

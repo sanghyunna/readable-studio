@@ -1,0 +1,137 @@
+// @vitest-environment jsdom
+
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { renderHook } from '@testing-library/react';
+import { installMockReadableStudioHost } from '@readable-studio/host/testing';
+import { detectInitialLocale, useI18n } from '../../src/i18n';
+
+const LS_KEY = 'readable-studio:locale';
+const LS_SOURCE_KEY = 'readable-studio:locale-source';
+
+function setStoredLocale(locale: string, source: 'manual' | 'untagged' = 'manual'): void {
+  window.localStorage.setItem(LS_KEY, locale);
+  if (source === 'manual') {
+    window.localStorage.setItem(LS_SOURCE_KEY, 'manual');
+  } else {
+    window.localStorage.removeItem(LS_SOURCE_KEY);
+  }
+}
+
+function setNavigatorLanguages(languages: readonly string[]): void {
+  Object.defineProperty(window.navigator, 'languages', {
+    configurable: true,
+    get: () => languages,
+  });
+  Object.defineProperty(window.navigator, 'language', {
+    configurable: true,
+    get: () => languages[0] ?? 'en',
+  });
+}
+
+// Track the installed mock so each test can swap it out without leaking
+// state into the next case (installMockReadableStudioHost returns an
+// uninstall callback that restores the previous value).
+let uninstallHost: (() => void) | null = null;
+
+function installHostWithOsLocale(value: unknown): void {
+  uninstallHost?.();
+  uninstallHost = installMockReadableStudioHost({
+    host: {
+      // The mock host's defaultHost() already sets client.type to
+      // 'desktop'; we only override the field exercised here.
+      client: { osLocale: value as string | undefined },
+    },
+  });
+}
+
+function clearHost(): void {
+  uninstallHost?.();
+  uninstallHost = null;
+}
+
+describe('detectInitialLocale priority chain', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    clearHost();
+    setNavigatorLanguages(['en-US']);
+  });
+
+  afterEach(() => {
+    window.localStorage.clear();
+    clearHost();
+  });
+
+  it('prefers a manually-tagged localStorage pick over host and navigator', () => {
+    setStoredLocale('ko', 'manual');
+    installHostWithOsLocale('en-US');
+    setNavigatorLanguages(['en-US']);
+
+    expect(detectInitialLocale()).toBe('ko');
+  });
+
+  it('ignores an untagged localStorage value when a fresh host locale is available', () => {
+    setStoredLocale('en', 'untagged');
+    installHostWithOsLocale('ko-KR');
+
+    expect(detectInitialLocale()).toBe('ko');
+  });
+
+  it('falls through to navigator when an unsupported locale was stored', () => {
+    setStoredLocale('xx-YY', 'manual');
+    setNavigatorLanguages(['ko-KR']);
+
+    expect(detectInitialLocale()).toBe('ko');
+  });
+
+  it('uses the desktop host OS locale when no localStorage pick exists', () => {
+    installHostWithOsLocale('ko-KR');
+    setNavigatorLanguages(['en-US']);
+
+    expect(detectInitialLocale()).toBe('ko');
+  });
+
+  it('routes packaged OS locale strings through resolveSystemLocale', () => {
+    installHostWithOsLocale('ko-KR');
+    setNavigatorLanguages(['en-US']);
+
+    expect(detectInitialLocale()).toBe('ko');
+  });
+
+  it('falls back to navigator when host osLocale is missing or not a string', () => {
+    installHostWithOsLocale(undefined);
+    setNavigatorLanguages(['ko-KR']);
+    expect(detectInitialLocale()).toBe('ko');
+
+    installHostWithOsLocale(42);
+    setNavigatorLanguages(['en-US']);
+    expect(detectInitialLocale()).toBe('en');
+  });
+
+  it('falls back to navigator when host osLocale is not in the supported set', () => {
+    installHostWithOsLocale('nl-NL');
+    setNavigatorLanguages(['ko-KR']);
+
+    expect(detectInitialLocale()).toBe('ko');
+  });
+
+  it('falls back to en when nothing else is available', () => {
+    clearHost();
+    setNavigatorLanguages([]);
+
+    expect(detectInitialLocale()).toBe('en');
+  });
+});
+
+describe('useI18n fallback', () => {
+  it('returns a stable fallback context when no provider is mounted', () => {
+    const { result, rerender } = renderHook(() => useI18n());
+    const firstContext = result.current;
+    const firstTranslator = result.current.t;
+
+    rerender();
+
+    expect(result.current).toBe(firstContext);
+    expect(result.current.t).toBe(firstTranslator);
+    expect(result.current.t('common.save')).toBe('Save');
+  });
+});

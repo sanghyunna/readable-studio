@@ -1,0 +1,33 @@
+.control {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  width: 100%;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.control::placeholder {
+  color: var(--text-faint);
+}
+
+.control:focus {
+  outline: none;
+  border-color: var(--selected);
+  box-shadow: 0 0 0 3px var(--selected-soft);
+}
+
+.textarea {
+  resize: vertical;
+  font-family: inherit;
+}
+
+.select {
+  padding-right: 10px;
+}
+
+.select::-ms-expand {
+  display: none;
+}

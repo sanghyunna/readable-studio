@@ -1,0 +1,129 @@
+{
+  "$schema": "urn:readable-studio:schema:plugin-manifest:v1",
+  "specVersion": "1.0.0",
+  "name": "readable-plugin-publish-github",
+  "title": "Publish Plugin to GitHub",
+  "title_i18n": {
+    "zh-CN": "发布插件到 GitHub",
+    "zh-TW": "發佈外掛程式到 GitHub",
+    "ja": "GitHub にプラグインを公開",
+    "ko": "GitHub에 플러그인 게시",
+    "de": "Plugin auf GitHub veröffentlichen",
+    "fr": "Publier le plugin sur GitHub",
+    "ru": "Опубликовать плагин на GitHub",
+    "es": "Publicar plugin en GitHub",
+    "pt-BR": "Publicar plugin no GitHub",
+    "it": "Pubblica plugin su GitHub",
+    "vi": "Xuất bản plugin lên GitHub",
+    "pl": "Opublikuj wtyczkę na GitHub",
+    "id": "Publikasikan Plugin ke GitHub",
+    "nl": "Plugin publiceren naar GitHub",
+    "ar": "نشر الإضافة على GitHub",
+    "tr": "Eklentiyi GitHub'a Yayınla",
+    "uk": "Опублікувати плагін на GitHub",
+    "en": "Publish Plugin to GitHub"
+  },
+  "version": "0.1.0",
+  "description": "Creates a public GitHub repository for a local Readable Studio plugin using the GitHub CLI.",
+  "description_i18n": {
+    "zh-CN": "使用 GitHub CLI 为本地 Readable Studio 插件创建公共 GitHub 仓库。",
+    "zh-TW": "使用 GitHub CLI 為本機 Readable Studio 外掛程式建立公開 GitHub 儲存庫。",
+    "ja": "GitHub CLI を使用してローカルの Readable Studio プラグイン用のパブリック GitHub リポジトリを作成します。",
+    "ko": "GitHub CLI를 사용하여 로컬 Readable Studio 플러그인용 공개 GitHub 리포지토리를 생성합니다.",
+    "de": "Erstellt ein öffentliches GitHub-Repository für ein lokales Readable Studio Plugin mit der GitHub CLI.",
+    "fr": "Crée un dépôt GitHub public pour un plugin Readable Studio local à l'aide de la GitHub CLI.",
+    "ru": "Создаёт публичный репозиторий GitHub для локального плагина Readable Studio с помощью GitHub CLI.",
+    "es": "Crea un repositorio público de GitHub para un plugin local de Readable Studio usando GitHub CLI.",
+    "pt-BR": "Cria um repositório público no GitHub para um plugin local do Readable Studio usando a GitHub CLI.",
+    "it": "Crea un repository GitHub pubblico per un plugin Readable Studio locale utilizzando la GitHub CLI.",
+    "vi": "Tạo kho lưu trữ GitHub công khai cho plugin Readable Studio cục bộ bằng GitHub CLI.",
+    "pl": "Tworzy publiczne repozytorium GitHub dla lokalnej wtyczki Readable Studio za pomocą GitHub CLI.",
+    "id": "Membuat repositori GitHub publik untuk plugin Readable Studio lokal menggunakan GitHub CLI.",
+    "nl": "Creëert een openbare GitHub-repository voor een lokale Readable Studio plugin met behulp van de GitHub CLI.",
+    "ar": "ينشئ مستودع GitHub عام لإضافة Readable Studio محلية باستخدام GitHub CLI.",
+    "tr": "GitHub CLI kullanarak yerel bir Readable Studio eklentisi için herkese açık GitHub deposu oluşturur.",
+    "uk": "Створює публічний репозиторій GitHub для локального плагіна Readable Studio за допомогою GitHub CLI.",
+    "en": "Creates a public GitHub repository for a local Readable Studio plugin using the GitHub CLI."
+  },
+  "license": "MIT",
+  "author": {
+    "name": "Readable Studio",
+    "url": "https://github.com/sanghyunna/readable-studio"
+  },
+  "homepage": "https://github.com/sanghyunna/readable-studio/tree/main/plugins/_official/examples/readable-plugin-publish-github",
+  "tags": [
+    "share",
+    "publish",
+    "github",
+    "github-repo",
+    "open-source",
+    "plugin-authoring",
+    "community-plugin",
+    "first-party"
+  ],
+  "compat": {
+    "agentSkills": [
+      {
+        "path": "./SKILL.md"
+      }
+    ]
+  },
+  "readable": {
+    "kind": "scenario",
+    "taskKind": "new-generation",
+    "mode": "utility",
+    "platform": "desktop",
+    "scenario": "plugin-sharing",
+    "surface": "github",
+    "useCase": {
+      "query": {
+        "en": "Publish the staged Readable Studio plugin to a new public GitHub repository with gh CLI.",
+        "zh-CN": "使用 gh CLI 把已暂存的 Readable Studio 插件发布成一个新的公开 GitHub 仓库。"
+      }
+    },
+    "inputs": [
+      {
+        "name": "source_plugin_id",
+        "label": "Source plugin id",
+        "type": "string",
+        "required": true
+      },
+      {
+        "name": "source_plugin_title",
+        "label": "Source plugin title",
+        "type": "string",
+        "required": true
+      },
+      {
+        "name": "source_plugin_version",
+        "label": "Source plugin version",
+        "type": "string"
+      },
+      {
+        "name": "plugin_context_path",
+        "label": "Copied plugin folder",
+        "type": "string",
+        "required": true
+      },
+      {
+        "name": "source_plugin_path",
+        "label": "Original plugin folder",
+        "type": "string"
+      }
+    ],
+    "context": {
+      "skills": [
+        {
+          "path": "./SKILL.md"
+        }
+      ]
+    },
+    "capabilities": [
+      "fs:read",
+      "fs:write",
+      "bash",
+      "subprocess",
+      "network"
+    ]
+  }
+}

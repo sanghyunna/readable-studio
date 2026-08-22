@@ -1,0 +1,6 @@
+.guide {
+  position: absolute;
+  background-color: var(--warning);
+  pointer-events: none;
+  z-index: 33;
+}

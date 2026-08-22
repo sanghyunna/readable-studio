@@ -1,0 +1,16 @@
+{
+  "$schema": "https://raw.githubusercontent.com/anthropics/claude-code/main/schemas/marketplace.json",
+  "name": "readable-studio",
+  "owner": {
+    "name": "sanghyunna",
+    "url": "https://github.com/sanghyunna/readable-studio"
+  },
+  "description": "Readable Studio — local-first design app exposed to coding agents over MCP. Install once with your agent's plugin command and projects, files, and skills are reachable through stdio.",
+  "plugins": [
+    {
+      "name": "readable-studio",
+      "source": "./plugins/readable-studio",
+      "description": "Readable Studio MCP server (stdio), served by your local `readable` daemon. Requires `readable` on PATH."
+    }
+  ]
+}
