@@ -364,8 +364,11 @@
   margin-top: 0;
   transition: border-color 120ms var(--ease-out), box-shadow 120ms var(--ease-out);
 }
+/* The session-mode popover is no longer listed here: it is portaled to <body>
+   as a fixed layer, so it needs neither the raised card z-index nor the
+   un-clipping — and un-clipping on `:has()` is what caused the open/close
+   flicker loop. */
 .home-hero__input-card:has(.inline-switcher__popover),
-.home-hero__input-card:has(.session-mode-toggle__popover),
 .home-hero__input-card:has(.home-hero__plugin-picker) {
   z-index: 1700;
   overflow: visible;
@@ -376,12 +379,13 @@
    toward the page header; at its default 360px it crowds (and on smaller
    windows clips) the top chrome. Cap it shorter here so it always clears the
    header, and keep the inner scroll for the overflow. */
-.home-hero__input-card .session-mode-toggle__popover-card {
+.session-mode-toggle__popover--home-hero .session-mode-toggle__popover-card {
   max-height: min(300px, calc(100vh - 120px));
 }
-.home-hero__input-card .session-mode-toggle__popover {
-  right: 0;
-  left: auto;
+/* The popover is a body-level fixed layer whose left/top are JS-computed, so
+   only the internal order is styled here: the menu keeps its edge against the
+   trigger and the description card grows inward. */
+.session-mode-toggle__popover--home-hero {
   flex-direction: row-reverse;
 }
 .home-hero__input-card--compact-authoring {

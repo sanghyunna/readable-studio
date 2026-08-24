@@ -9,7 +9,7 @@
   <rect x="32" y="32" width="2336" height="736" rx="28" ry="28"
     fill="none" stroke="#C2532D" stroke-width="3" stroke-dasharray="16 12" opacity="0.85"/>
   <!--
-    Readable Studio brand mark, reused verbatim from
+    Readable Studio brand mark, reused verbatim from the mark geometry in
     apps/web/public/brand-icon.svg so this banner stays consistent with the
     favicon / app icon / packaged desktop icon.
 
@@ -17,6 +17,12 @@
     uniform 6x scale (48 -> 288) and centred on the 2400x800 canvas. Only the
     transform is new — every path coordinate, stroke width, cap and colour is
     the untouched icon geometry, so the two assets cannot drift apart.
+
+    Deliberately NOT copied from the icon: the white rounded-rectangle plate
+    and its 0.92 inset group transform. Those exist so the app icon reads as a
+    product tile on arbitrary OS chrome; this banner already has its own cream
+    background, so the mark sits on it directly. Copy the mark geometry here,
+    never the plate.
   -->
   <g transform="translate(1056 150) scale(6)">
     <path

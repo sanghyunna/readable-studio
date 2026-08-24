@@ -128,8 +128,12 @@ if (-not (Test-Path -LiteralPath $ExpectedZip -PathType Leaf)) {
     throw "Portable build completed without the expected artifact: $ExpectedZip"
 }
 
-$dropDirInfo = New-Item -ItemType Directory -Path $DropDir -Force
-$DropPath = Join-Path $dropDirInfo.FullName $ArtifactName
+if (Test-Path -LiteralPath $DropDir -PathType Container) {
+    $dropDirRoot = (Resolve-Path -LiteralPath $DropDir).ProviderPath
+} else {
+    $dropDirRoot = (New-Item -ItemType Directory -Path $DropDir -Force).FullName
+}
+$DropPath = Join-Path $dropDirRoot $ArtifactName
 if (-not [string]::Equals($ExpectedZip, $DropPath, [StringComparison]::OrdinalIgnoreCase)) {
     if (Test-Path -LiteralPath $DropPath) {
         Remove-Item -LiteralPath $DropPath -Force

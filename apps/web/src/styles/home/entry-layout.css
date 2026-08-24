@@ -13,18 +13,21 @@
   --entry-rail-width: 56px;
 }
 
+/* `100%` rather than `100vh`: a viewport-unit floor cannot be shrunk by the
+   parent's box, so nested under the workspace shell (whose body row is
+   `100vh - 36px`) it overflows by the chrome row every time. */
 .entry-shell--onboarding {
   display: flex;
   align-items: stretch;
   justify-content: stretch;
-  min-height: 100vh;
+  min-height: 100%;
   padding: 0;
   background: var(--bg);
 }
 
 .entry-onboarding-modal {
   width: 100%;
-  height: 100vh;
+  height: 100%;
   overflow: auto;
   border-radius: 0;
   background: var(--bg);
@@ -457,6 +460,7 @@
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  scrollbar-gutter: stable;
   background: var(--bg);
   padding: 0;
   /* Used by descendants (e.g. the plugins-home Scenario row) to

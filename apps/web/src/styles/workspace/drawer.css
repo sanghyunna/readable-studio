@@ -225,10 +225,12 @@
 @media (hover: none) {
   .design-card .design-card-more { opacity: 1; }
 }
+/* Body-portaled fixed layer with a JS-computed, viewport-clamped rect (see
+   DesignsTab.tsx). Anchored inside the card it was clipped by the card's own
+   `overflow: hidden` (load-bearing for the thumbnail's rounded corners) and by
+   the kanban list/board scrollers above it. */
 .design-card-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
+  position: fixed;
   min-width: 144px;
   background: var(--bg-panel);
   border: 1px solid var(--border-strong);

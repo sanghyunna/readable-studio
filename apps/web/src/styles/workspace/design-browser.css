@@ -813,6 +813,7 @@
   flex-direction: column;
   overflow-x: hidden;
   overflow-y: auto;
+  scrollbar-gutter: stable;
   overscroll-behavior: contain;
   background:
     radial-gradient(120% 78% at 50% -12%, color-mix(in srgb, var(--accent) 7%, transparent) 0%, transparent 56%),

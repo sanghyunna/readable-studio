@@ -1,6 +1,13 @@
 * { box-sizing: border-box; }
 
-html, body, #root { height: 100%; margin: 0; }
+/* The app is `height: 100vh` by construction and delegates every scroll to an
+   inner pane, so the document itself must never scroll. Without this, any of
+   the ~20 `createPortal(..., document.body)` panels that lands near a viewport
+   edge extends `documentElement.scrollWidth` and pops a document scrollbar,
+   which shifts the whole layout under the pointer.
+   (`#root` was dropped: the App Router renders straight into <body>, so no
+   such element exists.) */
+html, body { height: 100%; margin: 0; overflow: hidden; }
 
 html {
   font-family: var(--sans);

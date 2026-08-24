@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { projectKindToTracking } from "@readable-studio/contracts/analytics";
 import { useAnalytics } from "../analytics/provider";
 import {
@@ -28,6 +29,14 @@ type ViewMode = "grid" | "kanban";
 type DesignListItem = { type: "project"; project: Project; updatedAt: number; createdAt: number };
 
 const DESIGNS_VIEW_STORAGE_KEY = "readable:designs:view";
+
+// Geometry for the body-portaled card menu. Width matches `.design-card-menu`'s
+// `min-width`; the height is a conservative over-estimate used only to clamp
+// the menu inside the viewport (over-estimating just nudges it further in).
+const CARD_MENU_WIDTH = 144;
+const CARD_MENU_HEIGHT = 96;
+const CARD_MENU_GAP = 6;
+const CARD_MENU_MARGIN = 8;
 
 export const STATUS_ORDER = [
 	"not_started",
@@ -88,11 +97,14 @@ export function DesignsTab({
 		Record<string, { kind: "html" | "image" | "video" | "logo"; name: string } | null>
 	>({});
 	const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+	const [menuRect, setMenuRect] = useState<{ left: number; top: number } | null>(null);
 	const [selectMode, setSelectMode] = useState(false);
 	const [selected, setSelected] = useState<Set<string>>(new Set());
 	const deleteToastIdRef = useRef(0);
 	const [deleteToast, setDeleteToast] = useState<{ id: number; message: string } | null>(null);
 	const menuContainerRef = useRef<HTMLDivElement | null>(null);
+	const menuPortalRef = useRef<HTMLDivElement | null>(null);
+	const menuAnchorRef = useRef<HTMLButtonElement | null>(null);
 	const [renameTarget, setRenameTarget] = useState<{ id: string; original: string } | null>(null);
 	const [renameInput, setRenameInput] = useState("");
 	const [confirmTarget, setConfirmTarget] = useState<{
@@ -179,11 +191,47 @@ export function DesignsTab({
 		};
 	}, [projects]);
 
+	// The menu is portaled to <body> as a fixed layer, so it never grows the
+	// scroll extent of `.design-card` (which clips it via `overflow: hidden` for
+	// the thumbnail's rounded corners) or of the kanban board's scrollers.
+	// Positioning mirrors SessionModeToggle/modelOptions: compute from the
+	// trigger rect, then clamp to the viewport.
+	const placeMenu = useCallback((anchor: DOMRect) => {
+		const maxLeft = Math.max(
+			CARD_MENU_MARGIN,
+			window.innerWidth - CARD_MENU_WIDTH - CARD_MENU_MARGIN,
+		);
+		const maxTop = Math.max(
+			CARD_MENU_MARGIN,
+			window.innerHeight - CARD_MENU_HEIGHT - CARD_MENU_MARGIN,
+		);
+		return {
+			left: Math.min(Math.max(CARD_MENU_MARGIN, anchor.right - CARD_MENU_WIDTH), maxLeft),
+			top: Math.min(Math.max(CARD_MENU_MARGIN, anchor.bottom + CARD_MENU_GAP), maxTop),
+		};
+	}, []);
+
+	useLayoutEffect(() => {
+		if (!menuOpenId) return;
+		const update = () => {
+			const anchor = menuAnchorRef.current?.getBoundingClientRect();
+			if (anchor) setMenuRect(placeMenu(anchor));
+		};
+		update();
+		window.addEventListener("resize", update);
+		window.addEventListener("scroll", update, true);
+		return () => {
+			window.removeEventListener("resize", update);
+			window.removeEventListener("scroll", update, true);
+		};
+	}, [menuOpenId, placeMenu]);
+
 	useEffect(() => {
 		if (!menuOpenId) return;
 		const onDocClick = (e: MouseEvent) => {
-			const el = menuContainerRef.current;
-			if (el && el.contains(e.target as Node)) return;
+			const target = e.target as Node;
+			if (menuContainerRef.current?.contains(target)) return;
+			if (menuPortalRef.current?.contains(target)) return;
 			setMenuOpenId(null);
 		};
 		const onKey = (e: KeyboardEvent) => {
@@ -550,14 +598,20 @@ export function DesignsTab({
 									>
 										<button
 											type="button"
+											ref={menuOpenId === p.id ? menuAnchorRef : undefined}
 											className="design-card-more"
 											aria-label={t("designs.menuMore")}
 											aria-haspopup="menu"
 											aria-expanded={menuOpenId === p.id}
 											onClick={(e) => {
 												e.stopPropagation();
+												const trigger = e.currentTarget;
 												setMenuOpenId((cur) => {
 													const nextId = cur === p.id ? null : p.id;
+													if (nextId === p.id) {
+														menuAnchorRef.current = trigger;
+														setMenuRect(placeMenu(trigger.getBoundingClientRect()));
+													}
 													if (nextId === p.id) {
 														const projectKind = projectKindToTracking(p.metadata?.kind);
 														trackProjectsListClick(analytics.track, {
@@ -574,10 +628,12 @@ export function DesignsTab({
 										>
 											<Icon name="more-horizontal" size={14} />
 									</button>
-									{menuOpenId === p.id ? (
+									{menuOpenId === p.id && menuRect && typeof document !== "undefined" ? createPortal(
 										<div
+											ref={menuPortalRef}
 											className="design-card-menu"
 											role="menu"
+											style={{ left: `${menuRect.left}px`, top: `${menuRect.top}px` }}
 											onClick={(e) => e.stopPropagation()}
 										>
 											<button
@@ -619,7 +675,8 @@ export function DesignsTab({
 												<Icon name="close" size={12} />
 												<span>{t("designs.menuDelete")}</span>
 											</button>
-										</div>
+										</div>,
+										document.body,
 									) : null}
 								</div>
 								)}

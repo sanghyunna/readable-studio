@@ -212,6 +212,10 @@
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
+  /* Reserve the 8px gutter up front. Otherwise the scrollbar materializes the
+     moment streaming content crosses the height threshold and steals width
+     from every message row mid-stream. */
+  scrollbar-gutter: stable;
   padding: 24px 20px;
   display: flex;
   flex-direction: column;
@@ -870,11 +874,12 @@
   position: relative;
   z-index: 1;
 }
-.split:has(.session-mode-toggle__popover),
-.split-chat-slot:has(.session-mode-toggle__popover),
-.split-chat-slot > .pane:has(.session-mode-toggle__popover) {
-  overflow: visible;
-}
+/* NOTE: the popover is portaled to <body> with `position: fixed` (see
+   SessionModeToggle.tsx), so it never contributes to an ancestor's scroll
+   extent. Un-clipping `.split` / `.split-chat-slot` / `.pane` with `:has()`
+   used to grow those boxes the moment the popover mounted, which produced a
+   scrollbar, pulled the pointer off the trigger, closed the popover, and
+   oscillated at frame rate. Do not reintroduce an `overflow: visible` here. */
 .split-chat-slot:has(.session-mode-toggle__popover),
 .split-chat-slot > .pane:has(.session-mode-toggle__popover),
 .composer:has(.session-mode-toggle__popover) {
@@ -928,10 +933,6 @@
      and must keep their labels ("Ask" / "Design") visible. */
   .composer-row .session-mode-toggle__trigger .session-mode-toggle__label { display: none; }
   .composer-row .session-mode-toggle__trigger { padding: 0 7px; gap: 3px; }
-  /* Right-align the popover so it grows leftward and stays inside the narrow
-     chat pane instead of overflowing past its right edge (where the scroll
-     container clips it). */
-  .composer-row .session-mode-toggle__popover { left: auto; right: 0; }
   .composer-row .composer-send {
     width: 32px;
     padding: 0;
@@ -1308,10 +1309,10 @@
   cursor: default;
   opacity: 0.65;
 }
+/* Body-portaled fixed layer. `left`/`top` are supplied inline by
+   SessionModeToggle.tsx, already clamped to the viewport. */
 .session-mode-toggle__popover {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 0;
+  position: fixed;
   z-index: 1502;
   display: flex;
   width: max-content;
@@ -1380,7 +1381,9 @@
   overflow-y: auto;
   overscroll-behavior: contain;
 }
-.composer .session-mode-toggle__popover-card {
+/* Portaled to <body>, so the composer context travels as a variant class
+   instead of DOM ancestry (see SessionModeToggle.tsx). */
+.session-mode-toggle__popover--composer .session-mode-toggle__popover-card {
   display: none;
 }
 .session-mode-card__head {
@@ -1456,6 +1459,9 @@
   .session-mode-toggle__popover {
     display: grid;
     width: min(292px, calc(100vw - 24px));
+  }
+  .session-mode-toggle__popover.is-flipped {
+    justify-items: end;
   }
   .session-mode-toggle__menu,
   .session-mode-toggle__popover-card {

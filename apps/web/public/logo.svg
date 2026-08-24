@@ -1,29 +1,54 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" fill="none" role="img" aria-label="Readable Studio">
   <!--
-    Readable Studio brand mark.
+    Readable Studio brand mark on the shipped white app plate.
 
-    A document/window frame drawn as one continuous open stroke, wrapping
-    three left-aligned text bars. The stroke starts short of the top-right
-    corner, travels anticlockwise around the three closed corners, and ends
-    part-way up the right edge, leaving the top-right corner open and the
-    right edge visibly detached from the top of the frame.
+    Plate: a rounded rectangle filling the whole 48x48 viewBox with
+    rx/ry = 10.5 (21.875% of the side), the squircle-ish proportion used by
+    modern macOS/Windows app icons. Everything outside the rounded corners
+    stays fully transparent — there is deliberately no full-bleed background
+    rect and no background on the svg root, so the icon keeps its silhouette
+    on any surface. The plate fill is #ffffff rather than the app surface
+    token (bg, #faf9f7) because this asset renders outside the app's CSS
+    custom-property scope (favicon, apple-touch icon, packaged desktop icon)
+    and must read as a neutral product plate on dark chrome too.
+
+    Mark: a document/window frame drawn as one continuous open stroke,
+    wrapping three left-aligned text bars. The stroke starts short of the
+    top-right corner, travels anticlockwise around the three closed corners,
+    and ends part-way up the right edge, leaving the top-right corner open
+    and the right edge visibly detached from the top of the frame.
 
     Geometry is traced from the owner-supplied master artwork; all
-    coordinates are stroke centrelines on a 48x48 grid.
+    coordinates are stroke centrelines on a 48x48 grid and are UNCHANGED.
+    The only new thing is the group transform: a uniform 0.92 scale about the
+    plate centre (24,24), which insets the mark's stroke-outer box from
+    [4.13,5.36]-[43.83,42.57] to [5.72,6.85]-[42.24,41.08]. That keeps at
+    least ~5.7 units of clearance from every plate edge, so the mark never
+    touches or crowds the rounded corners. The mark's own centre (23.98,
+    23.965) already coincides with the plate centre, so scaling about (24,24)
+    preserves optical centring.
 
     Colours mirror the design system in apps/web/src/styles/tokens.css:
       slate frame + lower bars  #343a40
       accent bar                #2563eb  (the "selected" accent token)
-    They are inlined as literals because this asset is rendered outside the
-    app's CSS custom-property scope (favicon, apple-touch icon, packaged
-    desktop icon), where var() cannot resolve.
+    They are inlined as literals for the same out-of-scope reason as the
+    plate fill, where var() cannot resolve.
+
+    Do not hand-edit the raster siblings. app-icon.png, logo.png,
+    docs/assets/logo.png and tools/pack/resources/win/icon.ico are generated
+    from this file by scripts/generate-brand-icons.ts.
+    The pre-plate transparent original is kept as app-icon-transparent.svg
+    (and app-icon-transparent.png) for surfaces that need a bare mark.
   -->
-  <path
-    d="M37.3 6.76H10.43A4.9 4.9 0 0 0 5.53 11.66V36.27A4.9 4.9 0 0 0 10.43 41.17H37.53A4.9 4.9 0 0 0 42.43 36.27V20.46"
-    stroke="#343a40" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" fill="none" />
-  <g stroke-width="3.18" stroke-linecap="round">
-    <line x1="14.99" y1="17.11" x2="32.98" y2="17.11" stroke="#2563eb" />
-    <line x1="14.99" y1="24.4" x2="28.1" y2="24.4" stroke="#343a40" />
-    <line x1="14.99" y1="31.2" x2="23.22" y2="31.2" stroke="#343a40" />
+  <rect x="0" y="0" width="48" height="48" rx="10.5" ry="10.5" fill="#ffffff" />
+  <g transform="translate(1.92 1.92) scale(0.92)">
+    <path
+      d="M37.3 6.76H10.43A4.9 4.9 0 0 0 5.53 11.66V36.27A4.9 4.9 0 0 0 10.43 41.17H37.53A4.9 4.9 0 0 0 42.43 36.27V20.46"
+      stroke="#343a40" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+    <g stroke-width="3.18" stroke-linecap="round">
+      <line x1="14.99" y1="17.11" x2="32.98" y2="17.11" stroke="#2563eb" />
+      <line x1="14.99" y1="24.4" x2="28.1" y2="24.4" stroke="#343a40" />
+      <line x1="14.99" y1="31.2" x2="23.22" y2="31.2" stroke="#343a40" />
+    </g>
   </g>
 </svg>

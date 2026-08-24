@@ -25,6 +25,7 @@
     "i18n:check": "tsx ./scripts/i18n-check.ts",
     "i18n:coverage": "tsx ./scripts/i18n-coverage-report.ts",
     "sync:community-pets": "node --experimental-strip-types scripts/sync-community-pets.ts",
+    "bake:brand-icons": "node --experimental-strip-types scripts/generate-brand-icons.ts",
     "bake:community-pets": "node --experimental-strip-types scripts/bake-community-pets.ts",
     "seed:test-projects": "node --experimental-strip-types scripts/seed-test-projects.ts",
     "seed:curated-design-skills": "node --experimental-strip-types scripts/seed-curated-design-skills.ts",
@@ -37,6 +38,7 @@
     "@readable-studio/tools-dev": "workspace:*",
     "@readable-studio/tools-pack": "workspace:*",
     "@types/node": "20.19.39",
+    "sharp": "0.34.5",
     "tsx": "4.22.3",
     "typescript": "5.9.3"
   },

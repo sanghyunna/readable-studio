@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" fill="none" role="img" aria-label="Readable Studio">
+  <!--
+    Readable Studio brand mark.
+
+    A document/window frame drawn as one continuous open stroke, wrapping
+    three left-aligned text bars. The stroke starts short of the top-right
+    corner, travels anticlockwise around the three closed corners, and ends
+    part-way up the right edge, leaving the top-right corner open and the
+    right edge visibly detached from the top of the frame.
+
+    Geometry is traced from the owner-supplied master artwork; all
+    coordinates are stroke centrelines on a 48x48 grid.
+
+    Colours mirror the design system in apps/web/src/styles/tokens.css:
+      slate frame + lower bars  #343a40
+      accent bar                #2563eb  (the "selected" accent token)
+    They are inlined as literals because this asset is rendered outside the
+    app's CSS custom-property scope (favicon, apple-touch icon, packaged
+    desktop icon), where var() cannot resolve.
+  -->
+  <path
+    d="M37.3 6.76H10.43A4.9 4.9 0 0 0 5.53 11.66V36.27A4.9 4.9 0 0 0 10.43 41.17H37.53A4.9 4.9 0 0 0 42.43 36.27V20.46"
+    stroke="#343a40" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+  <g stroke-width="3.18" stroke-linecap="round">
+    <line x1="14.99" y1="17.11" x2="32.98" y2="17.11" stroke="#2563eb" />
+    <line x1="14.99" y1="24.4" x2="28.1" y2="24.4" stroke="#343a40" />
+    <line x1="14.99" y1="31.2" x2="23.22" y2="31.2" stroke="#343a40" />
+  </g>
+</svg>

@@ -764,6 +764,7 @@
      sidebar nav-item across the gutter. */
   padding: 16px var(--modal-padding) 22px;
   overflow: auto;
+  scrollbar-gutter: stable;
   overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
