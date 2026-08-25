@@ -1,6 +1,7 @@
 import { mkdir, rm } from 'node:fs/promises';
 
 import { runBadRoot } from './portable-qa-fail-closed.ts';
+import { writeActionsEvidence, writeCleanupReceipt, type FullRunResult } from '../lib/portable-qa-evidence.ts';
 import { createNetworkTrap, extractPortable } from './portable-qa-runtime.ts';
 import {
   acceptanceExitCode,
@@ -21,16 +22,33 @@ async function main(): Promise<void> {
   const startedAt = new Date().toISOString();
   let passed = false;
   try {
-    const detail = options.case === 'full'
-      ? await runFull(options, extractionRoot, trap)
-      : await runBadRoot(options, extractionRoot, trap);
+    let fullRun: FullRunResult | null = null;
+    let detail: Record<string, unknown>;
+    if (options.case === 'full') {
+      fullRun = await runFull(options, extractionRoot, trap);
+      detail = fullRun.detail;
+      await writeActionsEvidence(options.evidenceRoot, fullRun.actionEvidence);
+    } else {
+      detail = await runBadRoot(options, extractionRoot, trap);
+    }
+    const proxyPort = Number(new URL(trap.proxyUrl).port);
     await trap.close();
     const cleanup = await cleanupExtractionRoot(extractionRoot);
+    if (fullRun != null) {
+      await writeCleanupReceipt({
+        cleanup,
+        evidenceRoot: options.evidenceRoot,
+        lifecycle: fullRun.lifecycle,
+        proxyPort,
+        zipPath: options.zipPath,
+      });
+    }
     if (cleanup.warning != null) process.stderr.write(`${cleanup.warning}\n`);
     await writeEvidence(options.evidenceRoot, 'summary.json', {
       case: options.case,
       cleanup,
       detail,
+      ...detail,
       finishedAt: new Date().toISOString(),
       offline: options.offline,
       startedAt,

@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
-import { readFile, rm, watch, writeFile } from 'node:fs/promises';
+import { readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { chromium, expect, type Page } from '@playwright/test';
+import { chromium, type ElectronApplication, type Page } from '@playwright/test';
 
+import type { FullRunResult } from '../lib/portable-qa-evidence.ts';
+import { runManualEditTransactions } from '../lib/portable-qa-manual-edit.ts';
 import {
   assertPortableBoundaries,
   captureProcesses,
@@ -19,7 +21,6 @@ import {
 } from './portable-qa-runtime.ts';
 import {
   canonicalProductName,
-  previewSelector,
   toRecord,
   writeEvidence,
   type Options,
@@ -51,117 +52,7 @@ async function seedDeck(input: DeckSeed): Promise<void> {
   ], input.daemonUrl);
 }
 
-type DeckSession = DeckSeed & { readonly page: Page };
-
-async function editDeckAndExport(input: DeckSession): Promise<string> {
-  const { evidenceRoot, page, projectId } = input;
-  await page.evaluate((path) => {
-    window.history.pushState(null, '', path);
-    window.dispatchEvent(new PopStateEvent('popstate'));
-  }, `/projects/${projectId}`);
-  const preview = page.locator(previewSelector).first();
-  const fileButton = page.getByRole('button', { name: /portable-deck\.html/i });
-  await fileButton.waitFor({ state: 'visible', timeout: 30_000 });
-  await fileButton.click();
-  const openButton = page.getByTestId('design-file-preview').getByRole('button', { name: 'Open' });
-  if (await openButton.isVisible()) await openButton.click();
-  await preview.waitFor({ state: 'visible', timeout: 60_000 });
-  const frame = page.frameLocator(previewSelector);
-  const title = frame.locator('[data-readable-id="task30-title"]');
-  await title.waitFor({ state: 'visible', timeout: 30_000 });
-  await page.getByTestId('manual-edit-mode-toggle').click();
-  await title.dblclick();
-  await expect(title).toHaveAttribute('contenteditable', 'true');
-  const stylePersisted = waitForProjectFile(input, (source) => (
-    source.includes('Portable Edited') &&
-    /font-size:\s*44px/u.test(source) &&
-    /rgb\(37,\s*99,\s*235\)/u.test(source)
-  ));
-  await page.keyboard.press('Control+A');
-  await page.keyboard.type('Portable Edited');
-  await page.keyboard.press('Enter');
-  await expect(title).toHaveText('Portable Edited');
-  await preview.evaluate((node) => {
-    node.removeAttribute('data-task30-reloaded');
-    node.addEventListener('load', () => node.setAttribute('data-task30-reloaded', 'true'), { once: true });
-  });
-  const inspector = page.locator('.manual-edit-left-inspector');
-  await inspector.getByLabel(/^(Font size|글꼴 크기)$/u).fill('44');
-  await inspector.getByLabel(/^(Text color value|텍스트 색상 값)$/u).fill('#2563eb');
-  await expect(title).toHaveCSS('font-size', '44px');
-  await expect(title).toHaveCSS('color', 'rgb(37, 99, 235)');
-  const editToggle = page.getByTestId('manual-edit-mode-toggle');
-  await frame.locator('[data-readable-id="task30-copy"]').click();
-  const styled = await stylePersisted;
-  await expect(preview).toHaveAttribute('data-task30-reloaded', 'true');
-  assert.match(styled, /font-size:\s*44px/u);
-  assert.match(styled, /rgb\(37,\s*99,\s*235\)/u);
-
-  await expect(editToggle).toHaveAttribute('aria-pressed', 'true');
-  await expect(frame.locator('html[data-readable-edit-mode]')).toHaveCount(1);
-  await title.click();
-  await expect(title).toHaveAttribute('data-readable-edit-selected', 'true');
-  const undoButton = page.getByRole('button', { name: /^(Undo|실행 취소)$/u }).last();
-  await preview.focus();
-  const moved = waitForProjectFile(input, (source) => /translate:/u.test(source));
-  await page.keyboard.press('ArrowRight');
-  assert.match(await moved, /translate:/u);
-  const undone = waitForProjectFile(input, (source) => !/translate:/u.test(source));
-  await preview.evaluate((node) => {
-    node.removeAttribute('data-task30-undo-reloaded');
-    node.addEventListener('load', () => node.setAttribute('data-task30-undo-reloaded', 'true'), { once: true });
-  });
-  await undoButton.click();
-  assert.doesNotMatch(await undone, /translate:/u, 'undo did not restore geometry');
-  await expect(preview).toHaveAttribute('data-task30-undo-reloaded', 'true');
-  await expect(title).toHaveAttribute('data-readable-edit-selected', 'true');
-  await preview.focus();
-  const movedAgain = waitForProjectFile(input, (source) => /translate:/u.test(source));
-  await page.keyboard.press('ArrowRight');
-  await movedAgain;
-  if (await editToggle.getAttribute('aria-pressed') === 'true') await editToggle.click();
-  const saved = await readProjectFile(input);
-  assert.match(saved, /Portable Edited/u);
-  assert.match(saved, /font-size:\s*44px/u);
-  assert.match(saved, /rgb\(37,\s*99,\s*235\)/u);
-  assert.match(saved, /translate:/u);
-  await preview.evaluate((node) => {
-    node.removeAttribute('data-task30-manual-reload');
-    node.addEventListener('load', () => node.setAttribute('data-task30-manual-reload', 'true'), { once: true });
-  });
-  await title.evaluate(() => window.location.reload());
-  await expect(preview).toHaveAttribute('data-task30-manual-reload', 'true');
-  await frame.getByText('Portable Edited', { exact: true }).waitFor({ state: 'visible', timeout: 30_000 });
-  const exportPath = join(evidenceRoot, 'portable-deck-standalone.html');
-  await runCli(input.extractionRoot, [
-    'export', 'html', '--project', projectId, '--file', 'portable-deck.html',
-    '--output', exportPath, '--force', '--json',
-  ], input.daemonUrl);
-  const exported = await readFile(exportPath, 'utf8');
-  assert.match(exported, /Portable Edited/u);
-  const browser = await chromium.launch({ headless: true });
-  try {
-    const context = await browser.newContext();
-    await context.setOffline(true);
-    const independent = await context.newPage();
-    await independent.goto(pathToFileURL(exportPath).href);
-    await independent.getByText('Portable Edited', { exact: true }).waitFor({ state: 'visible' });
-    await independent.screenshot({ path: join(evidenceRoot, 'standalone-independent.png'), fullPage: true });
-  } finally {
-    await browser.close();
-  }
-  return exportPath;
-}
-
-async function finishColdStart(page: Page): Promise<void> {
-  const skip = page.getByRole('button', { name: /Skip for now/i });
-  if (await skip.isVisible()) await skip.click();
-  const privacyDialog = page.getByRole('dialog').filter({ hasText: /improve Readable Studio/i });
-  if (await privacyDialog.isVisible()) {
-    await privacyDialog.getByRole('button', { name: /not now|got it|don't share/i }).click();
-  }
-  await page.getByTestId('home-hero').waitFor({ state: 'visible', timeout: 30_000 });
-}
+type DeckSession = DeckSeed & { readonly electronApp: ElectronApplication; readonly page: Page };
 
 function projectFilePath(input: DeckSession): string {
   return join(
@@ -176,31 +67,49 @@ function projectFilePath(input: DeckSession): string {
   );
 }
 
-async function readProjectFile(input: DeckSession): Promise<string> {
-  return readFile(projectFilePath(input), 'utf8');
-}
-
-async function waitForProjectFile(input: DeckSession, accepts: (source: string) => boolean): Promise<string> {
-  const path = projectFilePath(input);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30_000);
+async function editDeckAndExport(input: DeckSession) {
+  const manualEdit = await runManualEditTransactions({
+    daemonUrl: input.daemonUrl,
+    electronApp: input.electronApp,
+    evidenceRoot: input.evidenceRoot,
+    page: input.page,
+    projectId: input.projectId,
+    sourcePath: projectFilePath(input),
+  });
+  const exportPath = join(input.evidenceRoot, 'portable-deck-standalone.html');
+  await runCli(input.extractionRoot, [
+    'export', 'html', '--project', input.projectId, '--file', 'portable-deck.html',
+    '--output', exportPath, '--force', '--json',
+  ], input.daemonUrl);
+  const exported = await readFile(exportPath, 'utf8');
+  assert.match(exported, /Portable Edited/u);
+  assert.match(exported, /font-size:\s*44px/u);
+  assert.match(exported, /rgb\(37,\s*99,\s*235\)/u);
+  const browser = await chromium.launch({ headless: true });
   try {
-    for await (const _event of watch(path, { signal: controller.signal })) {
-      const source = await readFile(path, 'utf8');
-      if (accepts(source)) return source;
-    }
-  } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error(`timed out waiting for portable project file change: ${path}`, { cause: error });
-    }
-    throw error;
+    const context = await browser.newContext();
+    await context.setOffline(true);
+    const independent = await context.newPage();
+    await independent.goto(pathToFileURL(exportPath).href);
+    await independent.getByText('Portable Edited', { exact: true }).waitFor({ state: 'visible' });
+    await independent.screenshot({ path: join(input.evidenceRoot, 'standalone-independent.png'), fullPage: true });
   } finally {
-    clearTimeout(timeout);
+    await browser.close();
   }
-  throw new Error(`portable project file watcher ended: ${path}`);
+  return { ...manualEdit, exportPath };
 }
 
-export async function runFull(options: Options, extractionRoot: string, trap: NetworkTrap): Promise<Record<string, unknown>> {
+async function finishColdStart(page: Page): Promise<void> {
+  const skip = page.getByRole('button', { name: /Skip for now/i });
+  if (await skip.isVisible()) await skip.click();
+  const privacyDialog = page.getByRole('dialog').filter({ hasText: /improve Readable Studio/i });
+  if (await privacyDialog.isVisible()) {
+    await privacyDialog.getByRole('button', { name: /not now|got it|don't share/i }).click();
+  }
+  await page.getByTestId('home-hero').waitFor({ state: 'visible', timeout: 30_000 });
+}
+
+export async function runFull(options: Options, extractionRoot: string, trap: NetworkTrap): Promise<FullRunResult> {
   const registryBefore = await registrySnapshot();
   const primary = await launchPortable(extractionRoot, 'task30-a', trap, options.offline);
   let secondary: AppCapture | null = null;
@@ -228,15 +137,17 @@ export async function runFull(options: Options, extractionRoot: string, trap: Ne
 
     await seedDeck({ daemonUrl, evidenceRoot: options.evidenceRoot, extractionRoot, projectId });
     await finishColdStart(primary.page);
-    const exportPath = await editDeckAndExport({
+    const workflow = await editDeckAndExport({
       daemonUrl,
+      electronApp: primary.app,
       evidenceRoot: options.evidenceRoot,
       extractionRoot,
       page: primary.page,
       projectId,
     });
+    const { exportPath } = workflow;
     await primary.page.screenshot({ path: join(options.evidenceRoot, 'edited-reloaded.png'), fullPage: true });
-    process.stdout.write('[portable-qa] edit, undo, reload, and export ready\n');
+    process.stdout.write('[portable-qa] explicit Save, Discard, conflict, undo, reload, and export ready\n');
 
     secondaryRoot = await extractPortable(options.zipPath);
     secondary = await launchPortable(secondaryRoot, 'task30-b', trap, options.offline);
@@ -266,7 +177,20 @@ export async function runFull(options: Options, extractionRoot: string, trap: Ne
       namespaceB: join(secondaryRoot, 'ReadableStudioData', 'namespaces', 'task30-b'),
     });
     await writeEvidence(options.evidenceRoot, 'registry.json', { after: registryAfter, before: registryBefore });
-    return { daemonUrl, exportPath, projectId, status: 'passed' };
+    const { actionEvidence, ...workflowDetail } = workflow;
+    return {
+      actionEvidence,
+      detail: { daemonUrl, projectId, ...workflowDetail, status: 'passed' },
+      lifecycle: {
+        extractionRoots: [extractionRoot, secondaryRoot],
+        listenerPorts: [Number(new URL(daemonUrl).port), Number(new URL(secondaryDaemonUrl).port)],
+        rootPids: [primaryPid, secondaryPid],
+        runtimePaths: [
+          join(extractionRoot, 'ReadableStudioData', 'namespaces', 'task30-a'),
+          join(secondaryRoot, 'ReadableStudioData', 'namespaces', 'task30-b'),
+        ],
+      },
+    };
   } finally {
     if (secondary != null) await closePortable(secondary.app);
     if (secondaryRoot != null) await rm(secondaryRoot, { force: true, recursive: true });
