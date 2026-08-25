@@ -2397,6 +2397,8 @@ export interface Dict {
   'manualEdit.move.up': string;
   'manualEdit.move.down': string;
   'manualEdit.selectBehindHint': string;
+  'manualEdit.saveChanges': string;
+  'manualEdit.discardChanges': string;
   'fileViewer.zoomOut': string;
   'fileViewer.zoomIn': string;
   'fileViewer.resetZoom': string;

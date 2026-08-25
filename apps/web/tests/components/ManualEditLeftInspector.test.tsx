@@ -3,8 +3,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, within } from '@testing-library/react';
 import { ManualEditLeftInspector } from '../../src/components/ManualEditLeftInspector';
+import inspectorStyles from '../../src/components/ManualEditLeftInspector.module.css';
 import type { ManualEditRichFormatState } from '../../src/components/ManualEditTextControls';
 import { emptyManualEditStyles, type ManualEditStyles, type ManualEditTarget } from '../../src/edit-mode/types';
+import { en } from '../../src/i18n/locales/en';
 import type { SystemFontFamily } from '@readable-studio/contracts';
 
 const systemFontsMock = vi.hoisted(() => ({ families: [] as SystemFontFamily[] }));
@@ -38,6 +40,8 @@ function renderInspector(overrides: {
   target?: ManualEditTarget | null;
   styles?: ManualEditStyles;
   pageStylesEnabled?: boolean;
+  dirty?: boolean;
+  saving?: boolean;
 } = {}) {
   const onStyleField = vi.fn<(key: keyof ManualEditStyles, value: string) => void>();
   const onRichFormat = vi.fn();
@@ -48,6 +52,8 @@ function renderInspector(overrides: {
   const onPageStyleChange = vi.fn();
   const onPageInvalidStyle = vi.fn();
   const onExit = vi.fn();
+  const onSave = vi.fn();
+  const onDiscard = vi.fn();
   const utils = render(
     <ManualEditLeftInspector
       target={overrides.target === undefined ? target() : overrides.target}
@@ -59,6 +65,8 @@ function renderInspector(overrides: {
       canUndo
       canRedo
       pageStylesEnabled={overrides.pageStylesEnabled ?? true}
+      dirty={overrides.dirty}
+      saving={overrides.saving}
       onStyleField={onStyleField}
       onRichFormat={onRichFormat}
       onApplyPatch={onApplyPatch}
@@ -68,6 +76,8 @@ function renderInspector(overrides: {
       onPageStyleChange={onPageStyleChange}
       onPageInvalidStyle={onPageInvalidStyle}
       onExit={onExit}
+      onSave={onSave}
+      onDiscard={onDiscard}
     />,
   );
   return { ...utils, onStyleField, onRichFormat, onApplyPatch, onUndo, onRedo, onPageStyleChange, onExit };
@@ -175,5 +185,35 @@ describe('ManualEditLeftInspector', () => {
     const layout = renderInspector({ target: target({ isLayoutContainer: true }) });
     fireEvent.change(layout.getByLabelText('Direction'), { target: { value: 'column' } });
     expect(layout.onStyleField).toHaveBeenCalledWith('flexDirection', 'column');
+  });
+
+  it('hides the persistent actions while the edit is clean', () => {
+    const { container, queryByRole } = renderInspector({ dirty: false });
+
+    expect(container.querySelector('.manual-edit-left-inspector-footer')).toBeNull();
+    expect(queryByRole('button', { name: en['manualEdit.discardChanges'] })).toBeNull();
+    expect(queryByRole('button', { name: en['manualEdit.saveChanges'] })).toBeNull();
+  });
+
+  it('renders discard then save after the scroll region while the edit is dirty', () => {
+    const { container, getByRole } = renderInspector({ dirty: true });
+    const scroll = container.querySelector(`.${inspectorStyles.scroll}`);
+    const footer = container.querySelector('.manual-edit-left-inspector-footer');
+    if (!scroll || !footer) throw new Error('Manual edit scroll shell is incomplete');
+
+    expect(getByRole('button', { name: en['manualEdit.discardChanges'] })).toBeTruthy();
+    expect(getByRole('button', { name: en['manualEdit.saveChanges'] })).toBeTruthy();
+    expect(footer.previousElementSibling).toBe(scroll);
+    expect(footer.children[0]).toBe(getByRole('button', { name: en['manualEdit.discardChanges'] }));
+    expect(footer.children[1]).toBe(getByRole('button', { name: en['manualEdit.saveChanges'] }));
+  });
+
+  it('marks the footer busy and disables both actions while saving', () => {
+    const { container, getByRole } = renderInspector({ dirty: true, saving: true });
+    const footer = container.querySelector('.manual-edit-left-inspector-footer');
+
+    expect(footer?.getAttribute('aria-busy')).toBe('true');
+    expect((getByRole('button', { name: en['manualEdit.discardChanges'] }) as HTMLButtonElement).disabled).toBe(true);
+    expect((getByRole('button', { name: en['manualEdit.saveChanges'] }) as HTMLButtonElement).disabled).toBe(true);
   });
 });

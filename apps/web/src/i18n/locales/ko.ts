@@ -1973,6 +1973,8 @@ export const ko: Dict = {
   'manualEdit.move.up': '위쪽으로 {amount}px 이동',
   'manualEdit.move.down': '아래쪽으로 {amount}px 이동',
   'manualEdit.selectBehindHint': '같은 곳을 다시 클릭하면 뒤에 있는 레이어를 선택합니다',
+  'manualEdit.saveChanges': '저장하기',
+  'manualEdit.discardChanges': '저장 안함',
   'fileViewer.zoomOut': '축소',
   'fileViewer.zoomIn': '확대',
   'fileViewer.resetZoom': '배율 초기화',

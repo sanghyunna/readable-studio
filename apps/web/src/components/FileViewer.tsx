@@ -51,7 +51,6 @@ import {
   type WebDeployProjectFileResponse,
   type WebDeployProviderId,
   type WebUpdateDeployConfigRequest,
-  writeProjectTextFile,
   writeProjectTextFileDetailed,
 } from '../providers/registry';
 import type { ProjectFilePreview } from '../providers/registry';
@@ -3629,12 +3628,12 @@ function HtmlViewer({
   // for hint managing hint box state
   const [openHintBox, setOpenHintBox] = useState(true);
   const [manualEditMode, setManualEditModeRaw] = useState(false);
+  const [manualEditDirty, setManualEditDirty] = useState(false);
+  const manualEditDirtyRef = useRef(false);
   const [manualEditSrcDocActive, setManualEditSrcDocActive] = useState(false);
   const [manualEditFrozenSource, setManualEditFrozenSource] = useState<string | null>(null);
-  // Async saves must not apply their old document after the viewer moves on.
-  const manualEditSourceKey = `${projectId}\0${file.name}\0${liveHtml === undefined ? 'raw' : 'live'}`;
-  const manualEditSourceKeyRef = useRef(manualEditSourceKey);
-  manualEditSourceKeyRef.current = manualEditSourceKey;
+  // Manual edit is a transaction: capture the original source + hash on entry,
+  // mutate source/preview/history in memory, and write exactly once on Save.
   const manualEditSaveGenerationRef = useRef(0);
   // A watcher can return the just-written source before the POST resolves.
   const manualEditInFlightSourceRef = useRef<string | null>(null);
@@ -3838,6 +3837,8 @@ function HtmlViewer({
   const [manualEditResizeFeedback, setManualEditResizeFeedback] = useState<ManualEditResizeFeedback | null>(null);
   const [manualEditSaving, setManualEditSaving] = useState(false);
   const manualEditSavingRef = useRef(false);
+  // Deferred-save transaction: immutable original source captured on entry.
+  const manualEditOriginalSourceRef = useRef<string | null>(null);
   const manualEditHistoryOperationRef = useRef(false);
   const manualEditHistoryQueueRef = useRef<Array<'undo' | 'redo'>>([]);
   const undoManualEditRef = useRef<() => Promise<void>>(async () => {});
@@ -4207,11 +4208,36 @@ function HtmlViewer({
     manualEditModeRef.current = manualEditMode;
   }, [manualEditMode]);
 
+  // Capture the original source when entering manual edit.
+  // The transaction compares all later edits against this snapshot.
+  useEffect(() => {
+    if (manualEditMode) {
+      if (manualEditOriginalSourceRef.current === null) {
+        manualEditOriginalSourceRef.current = sourceRef.current ?? '';
+      }
+    } else {
+      manualEditOriginalSourceRef.current = null;
+    }
+  }, [manualEditMode, source]);
+
+  // Dirty = current source differs from the entry snapshot or a style preview
+  // is pending and has not yet been folded into source.
+  useEffect(() => {
+    const dirty = manualEditMode
+      && (
+        (sourceRef.current ?? '') !== (manualEditOriginalSourceRef.current ?? '')
+        || manualEditPendingStyleRef.current !== null
+      );
+    setManualEditDirty(dirty);
+    manualEditDirtyRef.current = dirty;
+  }, [manualEditMode, source, manualEditDraft, manualEditHistory, manualEditUndone]);
+
   useEffect(() => {
     const sourceFileKey = `${projectId}\0${file.name}\0${liveHtml === undefined ? 'raw' : 'live'}`;
     if (liveHtml !== undefined) {
       sourceFileKeyRef.current = sourceFileKey;
       manualEditSaveGenerationRef.current = 0;
+      if (manualEditModeRef.current && manualEditDirtyRef.current) return;
       dropActiveManualEditMovementForSourceRefresh(liveHtml);
       setSource(liveHtml);
       sourceRef.current = liveHtml;
@@ -4254,6 +4280,10 @@ function HtmlViewer({
         if (cancelled || generationAtRecheck !== manualEditSaveGenerationRef.current) return;
         if (latest == null || latest === sourceRef.current) return;
         text = latest;
+      }
+      if (manualEditModeRef.current && manualEditDirtyRef.current) {
+        manualEditSourceRefreshPendingRef.current = false;
+        return;
       }
       if (manualEditSourceRefreshPendingRef.current) {
         manualEditSourceRefreshPendingRef.current = false;
@@ -6316,10 +6346,7 @@ function HtmlViewer({
 
   async function exitManualEditModeAfterFlush(actionSeq = ++manualEditActionSeqRef.current): Promise<boolean> {
     await flushKeyboardBurst();
-    if (manualEditSavingRef.current) {
-      manualEditPostSaveIntentRef.current = { seq: actionSeq, kind: 'exit' };
-      return false;
-    }
+    if (manualEditSavingRef.current) return false;
     cancelManualEditMovement();
     const ok = await flushManualEditStyleSave();
     if (actionSeq !== manualEditActionSeqRef.current) return false;
@@ -6327,6 +6354,92 @@ function HtmlViewer({
     iframeRef.current?.contentWindow?.postMessage({ type: 'readable-edit-click-cancel' } satisfies ManualEditActivationMessage, '*');
     setManualEditMode(false);
     return true;
+  }
+
+  async function saveManualEditChanges(): Promise<boolean> {
+    if (!manualEditModeRef.current) return false;
+    await flushKeyboardBurst();
+    if (manualEditSavingRef.current) return false;
+    const styleFlushed = await flushManualEditStyleSave();
+    if (!styleFlushed) return false;
+    const finalSource = sourceRef.current ?? '';
+    const originalSource = manualEditOriginalSourceRef.current ?? finalSource;
+    if (finalSource === originalSource && !manualEditPendingStyleRef.current) {
+      setManualEditMode(false);
+      return true;
+    }
+    manualEditSavingRef.current = true;
+    setManualEditSaving(true);
+    let savedOk = false;
+    try {
+      const expectedContentSha256 = await sha256Hex(originalSource);
+      manualEditInFlightSourceRef.current = finalSource;
+      let saved: Awaited<ReturnType<typeof writeProjectTextFileDetailed>>;
+      try {
+        saved = await writeProjectTextFileDetailed(projectId, file.name, finalSource, {
+          artifactManifest: file.artifactManifest,
+          expectedContentSha256,
+        });
+      } catch (error) {
+        manualEditInFlightSourceRef.current = null;
+        throw error;
+      }
+      manualEditInFlightSourceRef.current = null;
+      if (!saved.ok) {
+        if ('conflict' in saved && saved.conflict) {
+          setManualEditError('The file changed outside Manual Edit. Refresh the preview before saving.');
+        } else {
+          const status = 'status' in saved ? saved.status : undefined;
+          const code = 'code' in saved ? saved.code : undefined;
+          const message = 'message' in saved ? saved.message : 'Could not save changes.';
+          setManualEditError(
+            `Could not save the edited file${status ? ` (${status}${code ? ` ${code}` : ''})` : ''}: ${message}`,
+          );
+        }
+        return false;
+      }
+      savedOk = true;
+      manualEditSaveGenerationRef.current += 1;
+      manualEditOriginalSourceRef.current = finalSource;
+      manualEditDirtyRef.current = false;
+      setManualEditDirty(false);
+      setManualEditError(null);
+      manualEditModeRef.current = false;
+      setManualEditMode(false);
+      try {
+        await onFileSaved?.();
+      } catch (error) {
+        if (!(error instanceof Error)) throw error;
+        setManualEditError('Saved changes, but the preview could not be refreshed.');
+      }
+      return true;
+    } finally {
+      manualEditSavingRef.current = false;
+      setManualEditSaving(false);
+      if (!savedOk) {
+        manualEditInFlightSourceRef.current = null;
+      }
+    }
+  }
+
+  function discardManualEditChanges() {
+    const originalSource = manualEditOriginalSourceRef.current ?? sourceRef.current ?? '';
+    setSource(originalSource);
+    sourceRef.current = originalSource;
+    setInlinedSource(null);
+    setManualEditFrozenSource(originalSource);
+    setManualEditDocumentRevision((revision) => revision + 1);
+    setManualEditHistory([]);
+    setManualEditUndone([]);
+    manualEditPendingStyleRef.current = null;
+    setManualEditDraft(emptyManualEditDraft(originalSource));
+    setManualEditError(null);
+    clearManualEditMovement();
+    selectedManualEditTargetIdRef.current = null;
+    selectedManualEditTargetRef.current = null;
+    setSelectedManualEditTarget(null);
+    postSelectedManualEditTargetToIframe(null);
+    setManualEditMode(false);
   }
 
   // Clears the hover affordance and re-arms the iframe's per-element hover
@@ -6426,170 +6539,63 @@ function HtmlViewer({
   }
 
   async function applyManualEdit(patch: ManualEditPatch, label: string): Promise<boolean> {
-    if (manualEditSavingRef.current) return false;
     if (sourceRef.current == null) return false;
-    manualEditSavingRef.current = true;
-    setManualEditSaving(true);
     setManualEditError(null);
-    let saveOk = false;
-    try {
-      const sourceKey = manualEditSourceKey;
-      const baseSource = sourceRef.current;
-      const result = applyManualEditPatch(baseSource, patch);
-      if (!result.ok) {
-        setManualEditError(result.error ?? 'Could not apply edit.');
-        return false;
+    const baseSource = sourceRef.current;
+    const result = applyManualEditPatch(baseSource, patch);
+    if (!result.ok) {
+      setManualEditError(result.error ?? 'Could not apply edit.');
+      return false;
+    }
+    const entry: ManualEditHistoryEntry = {
+      id: `${Date.now()}-${manualEditHistory.length}`,
+      label,
+      patch,
+      beforeSource: baseSource,
+      afterSource: result.source,
+      createdAt: Date.now(),
+      ...(patch.kind === 'duplicate-and-move'
+        ? { selectionIntent: { beforeId: patch.id, afterId: patch.plan.duplicateRootId } }
+        : {}),
+    };
+    setSource(result.source);
+    sourceRef.current = result.source;
+    setInlinedSource(null);
+    if (patch.kind !== 'set-style') {
+      setManualEditFrozenSource(result.source);
+    }
+    setManualEditHistory((current) => [entry, ...current]);
+    setManualEditUndone([]);
+    setManualEditDraft((current) => ({ ...current, fullSource: result.source }));
+    if (patch.kind === 'set-text') {
+      setSelectedManualEditTarget((current) => current?.id === patch.id
+        ? { ...current, text: patch.value, fields: { ...current.fields, text: patch.value } }
+        : current);
+    } else if (patch.kind === 'remove-element') {
+      if (manualEditPendingStyleRef.current?.id === patch.id) {
+        manualEditPendingStyleRef.current = null;
       }
-      if (!(await confirmManualEditHistorySource(
-        baseSource,
-        'The file changed outside manual edit mode. Refreshing before applying manual edits.',
-        sourceKey,
-      ))) return false;
-      let expectedContentSha256: string;
-      try {
-        expectedContentSha256 = await sha256Hex(baseSource);
-      } catch (error) {
-        setManualEditError(error instanceof Error ? error.message : 'Could not verify the source before saving.');
-        return false;
-      }
-      if (!isCurrentManualEditSource(sourceKey)) return false;
-      manualEditInFlightSourceRef.current = result.source;
-      let saved: Awaited<ReturnType<typeof writeProjectTextFileDetailed>>;
-      try {
-        saved = await writeProjectTextFileDetailed(projectId, file.name, result.source, {
-          artifactManifest: file.artifactManifest,
-          expectedContentSha256,
-        });
-      } catch (error) {
-        manualEditInFlightSourceRef.current = null;
-        throw error;
-      }
-      if (!isCurrentManualEditSource(sourceKey)) {
-        manualEditInFlightSourceRef.current = null;
-        return false;
-      }
-      if (!saved.ok) {
-        manualEditInFlightSourceRef.current = null;
-        if ('conflict' in saved && saved.conflict) {
-          setManualEditError('The file changed outside Manual Edit. Refresh the preview before applying this edit.');
-          return false;
-        }
-        const status = 'status' in saved ? saved.status : undefined;
-        const code = 'code' in saved ? saved.code : undefined;
-        const message = 'message' in saved ? saved.message : 'Unknown save error';
-        setManualEditError(
-          `Could not save the edited file${status ? ` (${status}${code ? ` ${code}` : ''})` : ''}: ${message}`,
-        );
-        return false;
-      }
-      const sourceAfterSave = sourceRef.current;
-      if (!recordManualEditSourceCommit(sourceKey)) {
-        manualEditInFlightSourceRef.current = null;
-        return false;
-      }
-      manualEditInFlightSourceRef.current = null;
-      // The source write is the durable commit point. Preview refresh is a
-      // follow-up and must never make a successful write look like a failed
-      // edit or cause its history entry to be lost.
-      saveOk = true;
-      const entry: ManualEditHistoryEntry = {
-        id: `${Date.now()}-${manualEditHistory.length}`,
-        label,
-        patch,
-        beforeSource: baseSource,
-        afterSource: result.source,
-        createdAt: Date.now(),
-        ...(patch.kind === 'duplicate-and-move'
-          ? { selectionIntent: { beforeId: patch.id, afterId: patch.plan.duplicateRootId } }
-          : {}),
-      };
-      if (sourceAfterSave != null && sourceAfterSave !== baseSource && sourceAfterSave !== result.source) {
-        replaceManualEditSource(
-          sourceAfterSave,
-          'The file changed outside Manual Edit. Refresh the preview before applying this edit.',
-        );
-        return false;
-      }
-      setSource(result.source);
-      sourceRef.current = result.source;
-      setInlinedSource(null);
-      if (patch.kind !== 'set-style') {
-        setManualEditFrozenSource(result.source);
-      }
-      setManualEditHistory((current) => [entry, ...current]);
-      setManualEditUndone([]);
+      selectedManualEditTargetIdRef.current = null;
+      selectedManualEditTargetRef.current = null;
+      setSelectedManualEditTarget(null);
+      clearManualEditResizeFeedback();
+      clearManualEditMovement();
+      setManualEditTargets((current) => current.filter((target) => target.id !== patch.id));
+      setManualEditDraft(emptyManualEditDraft(result.source));
+      postSelectedManualEditTargetToIframe(null);
+    } else {
       setManualEditDraft((current) => ({ ...current, fullSource: result.source }));
-      if (patch.kind === 'set-text') {
-        setSelectedManualEditTarget((current) => current?.id === patch.id
-          ? { ...current, text: patch.value, fields: { ...current.fields, text: patch.value } }
-          : current);
-      } else if (patch.kind === 'remove-element') {
-        if (manualEditPendingStyleRef.current?.id === patch.id) {
-          manualEditPendingStyleRef.current = null;
-        }
-        selectedManualEditTargetIdRef.current = null;
-        selectedManualEditTargetRef.current = null;
-        setSelectedManualEditTarget(null);
-        clearManualEditResizeFeedback();
-        clearManualEditMovement();
-        setManualEditTargets((current) => current.filter((target) => target.id !== patch.id));
-        setManualEditDraft(emptyManualEditDraft(result.source));
-        postSelectedManualEditTargetToIframe(null);
-      } else {
-        setManualEditDraft((current) => ({ ...current, fullSource: result.source }));
-      }
-      if (patch.kind === 'set-style') {
-        reconcileManualEditStyleSave(patch.id, patch.styles, result.source);
-        // Track the last persisted translate for the selected target so a later
-        // failed keyboard save reverts to it. Covers EVERY translate write —
-        // keyboard commit, pointer-drag commit, and inspector direct move.
-        if (patch.styles.translate !== undefined && selectedManualEditTargetRef.current?.id === patch.id) {
-          lastPersistedTranslateRef.current = patch.styles.translate;
-        }
-      }
-      setManualEditError(null);
-      try {
-        await onFileSaved?.();
-      } catch {
-        setManualEditError('Saved the edit, but the preview could not be refreshed.');
-      }
-      return true;
-    } finally {
-      manualEditSavingRef.current = false;
-      setManualEditSaving(false);
-      if (manualEditPostSaveIntentRef.current) {
-        window.setTimeout(() => {
-          const intent = manualEditPostSaveIntentRef.current;
-          if (!intent) return;
-          manualEditPostSaveIntentRef.current = null;
-          runManualEditPostSaveIntent(intent);
-        }, 0);
-      }
-      // Commit the burst queued behind this save as its own write. A still-OPEN
-      // burst (keys held) is NOT queued, so a held burst spanning a save commits
-      // once on its own keyup. On failure nothing drains here: the failed commit
-      // already discarded the queue (its entries baselined off the failed move).
-      if (saveOk) {
-        const next = keyboardBurstQueueRef.current.shift();
-        if (next) void commitBurstResult(next.result, next.netDelta, next.startBaseline, 'Style: move');
+    }
+    if (patch.kind === 'set-style') {
+      reconcileManualEditStyleSave(patch.id, patch.styles, result.source);
+      // Track the last persisted translate for the selected target so a later
+      // failed keyboard save reverts to it. Covers EVERY translate write —
+      // keyboard commit, pointer-drag commit, and inspector direct move.
+      if (patch.styles.translate !== undefined && selectedManualEditTargetRef.current?.id === patch.id) {
+        lastPersistedTranslateRef.current = patch.styles.translate;
       }
     }
-  }
-
-  async function confirmManualEditHistorySource(
-    expectedSource: string,
-    message: string,
-    sourceKey: string,
-  ): Promise<boolean> {
-    const persisted = await fetchProjectFileText(projectId, file.name, {
-      cache: 'no-store',
-      cacheBustKey: Date.now(),
-    });
-    if (!isCurrentManualEditSource(sourceKey)) return false;
-    if (persisted == null) return true;
-    if (persisted === expectedSource) return true;
-    replaceManualEditSource(persisted, message);
-    return false;
+    return true;
   }
 
   function replaceManualEditSource(source: string, message: string) {
@@ -6601,16 +6607,6 @@ function HtmlViewer({
     manualEditPendingStyleRef.current = null;
     setManualEditDraft((current) => ({ ...current, fullSource: source }));
     setManualEditError(message);
-  }
-
-  function isCurrentManualEditSource(sourceKey: string): boolean {
-    return sourceKey === manualEditSourceKeyRef.current;
-  }
-
-  function recordManualEditSourceCommit(sourceKey: string): boolean {
-    if (!isCurrentManualEditSource(sourceKey)) return false;
-    manualEditSaveGenerationRef.current += 1;
-    return true;
   }
 
   function refreshManualEditDocument(snapshot: string) {
@@ -6645,46 +6641,14 @@ function HtmlViewer({
     manualEditHistoryOperationRef.current = true;
     setManualEditSaving(true);
     try {
-      const sourceKey = manualEditSourceKey;
-      if (!(await confirmManualEditHistorySource(
-        latest.afterSource,
-        'The file changed outside manual edit mode. History was cleared to avoid overwriting newer content.',
-        sourceKey,
-      ))) return;
-      let expectedContentSha256: string;
-      try {
-        expectedContentSha256 = await sha256Hex(latest.afterSource);
-      } catch (error) {
-        setManualEditError(error instanceof Error ? error.message : 'Could not verify the source before undoing.');
+      const currentSource = sourceRef.current ?? '';
+      if (currentSource !== latest.afterSource) {
+        replaceManualEditSource(
+          currentSource,
+          'The file changed outside Manual Edit. Refresh the preview before undoing.',
+        );
         return;
       }
-      if (!isCurrentManualEditSource(sourceKey)) return;
-      manualEditInFlightSourceRef.current = latest.beforeSource;
-      let saved: Awaited<ReturnType<typeof writeProjectTextFile>>;
-      try {
-        saved = await writeProjectTextFile(projectId, file.name, latest.beforeSource, {
-          artifactManifest: file.artifactManifest,
-          expectedContentSha256,
-        });
-      } catch (error) {
-        manualEditInFlightSourceRef.current = null;
-        throw error;
-      }
-      if (!isCurrentManualEditSource(sourceKey)) {
-        manualEditInFlightSourceRef.current = null;
-        return;
-      }
-      if (!saved) {
-        manualEditInFlightSourceRef.current = null;
-        setManualEditError('Could not save the undo result.');
-        return;
-      }
-      const sourceAfterSave = sourceRef.current;
-      if (!recordManualEditSourceCommit(sourceKey)) {
-        manualEditInFlightSourceRef.current = null;
-        return;
-      }
-      manualEditInFlightSourceRef.current = null;
       if (
         latest.selectionIntent
         && selectedManualEditTargetIdRef.current === latest.selectionIntent.afterId
@@ -6695,13 +6659,6 @@ function HtmlViewer({
           seq: manualEditActionSeqRef.current,
         };
       }
-      if (sourceAfterSave != null && sourceAfterSave !== latest.afterSource && sourceAfterSave !== latest.beforeSource) {
-        replaceManualEditSource(
-          sourceAfterSave,
-          'The file changed outside Manual Edit. Refresh the preview before undoing.',
-        );
-        return;
-      }
       setSource(latest.beforeSource);
       sourceRef.current = latest.beforeSource;
       setInlinedSource(null);
@@ -6709,23 +6666,10 @@ function HtmlViewer({
       setManualEditHistory(rest);
       setManualEditUndone((current) => [latest, ...current]);
       setManualEditDraft((current) => ({ ...current, fullSource: latest.beforeSource }));
-      try {
-        await onFileSaved?.();
-      } catch {
-        setManualEditError('Saved the undo result, but the preview could not be refreshed.');
-      }
     } finally {
       manualEditSavingRef.current = false;
       manualEditHistoryOperationRef.current = false;
       setManualEditSaving(false);
-      if (manualEditPostSaveIntentRef.current) {
-        window.setTimeout(() => {
-          const intent = manualEditPostSaveIntentRef.current;
-          if (!intent) return;
-          manualEditPostSaveIntentRef.current = null;
-          runManualEditPostSaveIntent(intent);
-        }, 0);
-      }
       runNextQueuedManualEditHistory();
     }
   }
@@ -6747,46 +6691,14 @@ function HtmlViewer({
     manualEditHistoryOperationRef.current = true;
     setManualEditSaving(true);
     try {
-      const sourceKey = manualEditSourceKey;
-      if (!(await confirmManualEditHistorySource(
-        latest.beforeSource,
-        'The file changed outside manual edit mode. History was cleared to avoid overwriting newer content.',
-        sourceKey,
-      ))) return;
-      let expectedContentSha256: string;
-      try {
-        expectedContentSha256 = await sha256Hex(latest.beforeSource);
-      } catch (error) {
-        setManualEditError(error instanceof Error ? error.message : 'Could not verify the source before redoing.');
+      const currentSource = sourceRef.current ?? '';
+      if (currentSource !== latest.beforeSource) {
+        replaceManualEditSource(
+          currentSource,
+          'The file changed outside Manual Edit. Refresh the preview before redoing.',
+        );
         return;
       }
-      if (!isCurrentManualEditSource(sourceKey)) return;
-      manualEditInFlightSourceRef.current = latest.afterSource;
-      let saved: Awaited<ReturnType<typeof writeProjectTextFile>>;
-      try {
-        saved = await writeProjectTextFile(projectId, file.name, latest.afterSource, {
-          artifactManifest: file.artifactManifest,
-          expectedContentSha256,
-        });
-      } catch (error) {
-        manualEditInFlightSourceRef.current = null;
-        throw error;
-      }
-      if (!isCurrentManualEditSource(sourceKey)) {
-        manualEditInFlightSourceRef.current = null;
-        return;
-      }
-      if (!saved) {
-        manualEditInFlightSourceRef.current = null;
-        setManualEditError('Could not save the redo result.');
-        return;
-      }
-      const sourceAfterSave = sourceRef.current;
-      if (!recordManualEditSourceCommit(sourceKey)) {
-        manualEditInFlightSourceRef.current = null;
-        return;
-      }
-      manualEditInFlightSourceRef.current = null;
       if (
         latest.selectionIntent
         && selectedManualEditTargetIdRef.current === latest.selectionIntent.beforeId
@@ -6797,13 +6709,6 @@ function HtmlViewer({
           seq: manualEditActionSeqRef.current,
         };
       }
-      if (sourceAfterSave != null && sourceAfterSave !== latest.beforeSource && sourceAfterSave !== latest.afterSource) {
-        replaceManualEditSource(
-          sourceAfterSave,
-          'The file changed outside Manual Edit. Refresh the preview before redoing.',
-        );
-        return;
-      }
       setSource(latest.afterSource);
       sourceRef.current = latest.afterSource;
       setInlinedSource(null);
@@ -6811,23 +6716,10 @@ function HtmlViewer({
       setManualEditUndone(rest);
       setManualEditHistory((current) => [latest, ...current]);
       setManualEditDraft((current) => ({ ...current, fullSource: latest.afterSource }));
-      try {
-        await onFileSaved?.();
-      } catch {
-        setManualEditError('Saved the redo result, but the preview could not be refreshed.');
-      }
     } finally {
       manualEditSavingRef.current = false;
       manualEditHistoryOperationRef.current = false;
       setManualEditSaving(false);
-      if (manualEditPostSaveIntentRef.current) {
-        window.setTimeout(() => {
-          const intent = manualEditPostSaveIntentRef.current;
-          if (!intent) return;
-          manualEditPostSaveIntentRef.current = null;
-          runManualEditPostSaveIntent(intent);
-        }, 0);
-      }
       runNextQueuedManualEditHistory();
     }
   }
@@ -7625,6 +7517,10 @@ function HtmlViewer({
       setDrawOverlayOpen(true);
       closeArtifactToolMenus();
     };
+    if (manualEditMode && manualEditDirtyRef.current) {
+      closeArtifactToolMenus();
+      return;
+    }
     if (manualEditMode) {
       void exitManualEditModeAfterFlush().then((ok) => {
         if (ok) activateDraw();
@@ -7654,6 +7550,10 @@ function HtmlViewer({
       activateBoard('inspect');
       closeArtifactToolMenus();
     };
+    if (manualEditMode && manualEditDirtyRef.current) {
+      closeArtifactToolMenus();
+      return;
+    }
     if (manualEditMode) {
       void exitManualEditModeAfterFlush().then((ok) => {
         if (ok) activateComment();
@@ -7685,6 +7585,10 @@ function HtmlViewer({
       activateBoard('inspect');
       closeArtifactToolMenus();
     };
+    if (manualEditMode && manualEditDirtyRef.current) {
+      closeArtifactToolMenus();
+      return;
+    }
     if (manualEditMode) {
       void exitManualEditModeAfterFlush().then((ok) => {
         if (ok) activateCommentCreate();
@@ -7707,6 +7611,10 @@ function HtmlViewer({
       setMode('preview');
       setManualEditSrcDocActive(true);
       setManualEditMode(true);
+      closeArtifactToolMenus();
+      return;
+    }
+    if (manualEditDirtyRef.current) {
       closeArtifactToolMenus();
       return;
     }
@@ -9066,6 +8974,36 @@ function HtmlViewer({
           onRedo={() => { void redoManualEdit(); }}
         />
       ) : null}
+      {manualEditError && !manualEditMode ? (
+        <p className="manual-edit-error" role="alert">{manualEditError}</p>
+      ) : null}
+      {manualEditMode && manualEditDirty && !manualEditPortalHost ? (
+        <div className="manual-edit-footer" aria-busy={manualEditSaving}>
+          <div className="manual-edit-footer-actions">
+            <div className="manual-edit-footer-left" />
+            <div className="manual-edit-footer-right">
+              <Button
+                type="button"
+                variant="subtle"
+                className="manual-edit-discard-btn"
+                disabled={manualEditSaving}
+                onClick={discardManualEditChanges}
+              >
+                {t('manualEdit.discardChanges')}
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                className="manual-edit-save-btn"
+                disabled={manualEditSaving}
+                onClick={() => { void saveManualEditChanges(); }}
+              >
+                {t('manualEdit.saveChanges')}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {/* Left-panel inspector: the primary manual-edit surface in the project
           workspace. Portaled into the chat slot host provided by ProjectView. */}
       {manualEditMode && manualEditPortalHost
@@ -9086,6 +9024,8 @@ function HtmlViewer({
               canUndo={manualEditHistory.length > 0}
               canRedo={manualEditUndone.length > 0}
               pageStylesEnabled={manualEditPageStylesEnabled}
+              dirty={manualEditDirty}
+              saving={manualEditSaving}
               getActiveTarget={() => selectedManualEditTargetRef.current}
               onStyleField={(key, value) => {
                 if (!selectedManualEditTarget) return;
@@ -9121,6 +9061,8 @@ function HtmlViewer({
               onPageStyleChange={(id, pageStyles, label) => { void handleManualEditStyleChange(id, pageStyles, label); }}
               onPageInvalidStyle={cancelManualEditPendingStyles}
               onExit={activateManualEditTool}
+              onSave={() => { void saveManualEditChanges(); }}
+              onDiscard={discardManualEditChanges}
             />,
             manualEditPortalHost,
           )

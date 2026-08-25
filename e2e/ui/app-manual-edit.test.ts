@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { ensureRailOpen } from '@/playwright/rail';
 import { routeAgents } from '@/playwright/mock-factory';
@@ -17,6 +18,22 @@ function artifactPreview(page: Page) {
 
 function artifactPreviewFrame(page: Page) {
   return page.frameLocator(ACTIVE_ARTIFACT_PREVIEW_SELECTOR);
+}
+
+function captureRendererFileWrites(page: Page, projectId: string): string[] {
+  const writes: string[] = [];
+  page.on('request', (request) => {
+    if (request.method() !== 'POST') return;
+    if (new URL(request.url()).pathname !== `/api/projects/${projectId}/files`) return;
+    const body = request.postData();
+    if (body !== null) writes.push(body);
+  });
+  return writes;
+}
+
+function isProjectFileWrite(response: Response, projectId: string): boolean {
+  return response.request().method() === 'POST'
+    && new URL(response.url()).pathname === `/api/projects/${projectId}/files`;
 }
 
 test.beforeEach(async ({ page }) => {
@@ -60,10 +77,12 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test('[P0] manual edit left inspector previews and persists page and selected element styles', async ({ page }) => {
+test('[P0] manual edit explicit Save writes one final source', async ({ page }, testInfo) => {
   await routeMockAgents(page);
-  const projectId = await createEmptyProject(page, 'Manual edit smoke');
-  await seedHtmlArtifact(page, projectId, 'manual-edit.html', manualEditHtml());
+  const projectId = await createEmptyProject(page, 'Manual edit explicit Save');
+  const baselineSource = manualEditHtml();
+  await seedHtmlArtifact(page, projectId, 'manual-edit.html', baselineSource);
+  const rendererWrites = captureRendererFileWrites(page, projectId);
   await page.goto(`/projects/${projectId}/files/manual-edit.html`);
   await openDesignFile(page, 'manual-edit.html');
 
@@ -103,7 +122,7 @@ test('[P0] manual edit left inspector previews and persists page and selected el
 
   // Edits preview live on the selected element.
   const title = frame.getByRole('heading', { name: 'Original Hero' });
-  await expect.poll(async () => title.evaluate((el) => getComputedStyle(el).fontSize)).toBe('48px');
+  await expect(title).toHaveCSS('font-size', '48px');
   await expect(title).toHaveCSS('color', 'rgb(239, 68, 68)');
 
   // Computed px is still Auto until the user pins it. Switching to Fill must
@@ -111,25 +130,131 @@ test('[P0] manual edit left inspector previews and persists page and selected el
   await inspector.getByRole('button', { name: /Size & position/ }).click();
   await expect(inspector.getByRole('button', { name: 'Auto Width' })).toHaveAttribute('aria-pressed', 'true');
   await inspector.getByRole('button', { name: 'Fill Width' }).click();
-  await expect.poll(async () => title.evaluate((el) => (el as HTMLElement).style.width)).toBe('100%');
+  await expect(title).toHaveAttribute('style', /width:\s*100%/);
 
-  // Exiting edit mode flushes staged edits to the file and restores chat.
-  await page.getByTestId('manual-edit-mode-toggle').click();
-  await expect(page.locator('.manual-edit-left-inspector')).toHaveCount(0);
-  await expectFileSource(page, projectId, 'manual-edit.html', [
-    // Element edits (selected hero title): the browser serializes the applied
-    // color as rgb() when the style attribute round-trips.
-    'font-size: 48px',
-    'rgb(239, 68, 68)',
-    'width: 100%',
-    // Page edits (body) flushed when the element selection took over.
-    'background-color: rgb(238, 242, 255)',
-  ]);
-  await expectFileSourceExcludes(page, projectId, 'manual-edit.html', ['data-readable-edit-selected']);
+  expect(rendererWrites).toHaveLength(0);
+  const beforeSave = await page.request.get(`/api/projects/${projectId}/files/manual-edit.html`);
+  expect(beforeSave.ok()).toBeTruthy();
+  expect(await beforeSave.text()).toBe(baselineSource);
+
+  const saveResponsePromise = page.waitForResponse((response) => isProjectFileWrite(response, projectId));
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  const saveResponse = await saveResponsePromise;
+  expect(saveResponse.status()).toBe(200);
+  await expect(inspector).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Save changes' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Discard changes' })).toHaveCount(0);
+  expect(rendererWrites).toHaveLength(1);
+  const saveBody = rendererWrites[0];
+  if (!saveBody) throw new Error('Save request body was not captured');
+  expect(saveBody).toContain('font-size: 48px');
+  expect(saveBody).toContain('background-color: rgb(238, 242, 255)');
+  expect(saveBody).toContain(createHash('sha256').update(baselineSource).digest('hex'));
+
+  const savedResponse = await page.request.get(`/api/projects/${projectId}/files/manual-edit.html`);
+  expect(savedResponse.ok()).toBeTruthy();
+  const savedSource = await savedResponse.text();
+  expect(savedSource).toContain('font-size: 48px');
+  expect(savedSource).toContain('rgb(239, 68, 68)');
+  expect(savedSource).toContain('width: 100%');
+  expect(savedSource).toContain('background-color: rgb(238, 242, 255)');
+  expect(savedSource).not.toContain('data-readable-edit-selected');
   await expect(page.locator('.manual-edit-error')).toHaveCount(0);
-
   await expect(page.getByRole('button', { name: /^Share$/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /^Download$/ })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('explicit-save.png') });
+  await testInfo.attach('transaction-observables', {
+    body: JSON.stringify({ rendererWriteCount: rendererWrites.length, saveStatus: saveResponse.status() }),
+    contentType: 'application/json',
+  });
+});
+
+test('[P0] manual edit explicit Discard restores without writing', async ({ page }, testInfo) => {
+  await routeMockAgents(page);
+  const projectId = await createEmptyProject(page, 'Manual edit explicit Discard');
+  const baselineSource = manualEditHtml();
+  await seedHtmlArtifact(page, projectId, 'manual-edit.html', baselineSource);
+  const rendererWrites = captureRendererFileWrites(page, projectId);
+  await page.goto(`/projects/${projectId}/files/manual-edit.html`);
+  await openDesignFile(page, 'manual-edit.html');
+
+  const frame = artifactPreviewFrame(page);
+  const title = frame.getByRole('heading', { name: 'Original Hero' });
+  await expect(title).toBeVisible();
+  const baselineFontSize = await title.evaluate((element) => getComputedStyle(element).fontSize);
+  const baselineColor = await title.evaluate((element) => getComputedStyle(element).color);
+
+  await page.getByTestId('manual-edit-mode-toggle').click();
+  await inspectorRow(page, 'Background').locator('input:not([type="color"])').fill('#eef2ff');
+  await selectPreviewElementThroughBridge(page, frame, '[data-readable-id="hero-title"]', 'Text');
+  const inspector = page.locator('.manual-edit-left-inspector');
+  await inspector.getByLabel('Font size', { exact: true }).fill('48');
+  await inspector.getByLabel('Text color value', { exact: true }).fill('#ef4444');
+  await expect(title).toHaveCSS('font-size', '48px');
+  await expect(title).toHaveCSS('color', 'rgb(239, 68, 68)');
+  expect(rendererWrites).toHaveLength(0);
+  const beforeDiscard = await page.request.get(`/api/projects/${projectId}/files/manual-edit.html`);
+  expect(beforeDiscard.ok()).toBeTruthy();
+  expect(await beforeDiscard.text()).toBe(baselineSource);
+
+  const discardExitPromise = inspector.waitFor({ state: 'detached' });
+  await page.getByRole('button', { name: 'Discard changes' }).click();
+  await discardExitPromise;
+  expect(rendererWrites).toHaveLength(0);
+  await expect(page.getByRole('button', { name: 'Save changes' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Discard changes' })).toHaveCount(0);
+  await expect(title).toHaveCSS('font-size', baselineFontSize);
+  await expect(title).toHaveCSS('color', baselineColor);
+  const discardedResponse = await page.request.get(`/api/projects/${projectId}/files/manual-edit.html`);
+  expect(discardedResponse.ok()).toBeTruthy();
+  expect(await discardedResponse.text()).toBe(baselineSource);
+  await page.screenshot({ path: testInfo.outputPath('explicit-discard.png') });
+  await testInfo.attach('transaction-observables', {
+    body: JSON.stringify({ rendererWriteCount: rendererWrites.length, sourceRestored: true }),
+    contentType: 'application/json',
+  });
+});
+
+test('[P0] manual edit Save conflict retains local actions', async ({ page }, testInfo) => {
+  await routeMockAgents(page);
+  const projectId = await createEmptyProject(page, 'Manual edit Save conflict');
+  const baselineSource = manualEditHtml();
+  await seedHtmlArtifact(page, projectId, 'manual-edit.html', baselineSource);
+  const rendererWrites = captureRendererFileWrites(page, projectId);
+  await page.goto(`/projects/${projectId}/files/manual-edit.html`);
+  await openDesignFile(page, 'manual-edit.html');
+
+  const frame = artifactPreviewFrame(page);
+  const title = frame.getByRole('heading', { name: 'Original Hero' });
+  await page.getByTestId('manual-edit-mode-toggle').click();
+  await selectPreviewElementThroughBridge(page, frame, '[data-readable-id="hero-title"]', 'Text');
+  await page.locator('.manual-edit-left-inspector').getByLabel('Font size', { exact: true }).fill('48');
+  await expect(title).toHaveCSS('font-size', '48px');
+  expect(rendererWrites).toHaveLength(0);
+
+  const conflictSetup = await page.request.post(`/api/projects/${projectId}/files`, {
+    data: { name: 'manual-edit.html', content: baselineSource.replace('Original Hero', 'External Hero') },
+  });
+  expect(conflictSetup.ok()).toBeTruthy();
+  expect(rendererWrites).toHaveLength(0);
+
+  const conflictResponsePromise = page.waitForResponse((response) => isProjectFileWrite(response, projectId));
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  const conflictResponse = await conflictResponsePromise;
+  expect(conflictResponse.status()).toBe(409);
+  expect(rendererWrites).toHaveLength(1);
+  await expect(title).toHaveCSS('font-size', '48px');
+  await expect(page.getByTestId('manual-edit-mode-toggle')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Save changes' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Discard changes' })).toBeEnabled();
+  const authoritativeResponse = await page.request.get(`/api/projects/${projectId}/files/manual-edit.html`);
+  expect(authoritativeResponse.ok()).toBeTruthy();
+  expect(await authoritativeResponse.text()).toContain('External Hero');
+  await page.screenshot({ path: testInfo.outputPath('save-conflict.png') });
+  await testInfo.attach('transaction-observables', {
+    body: JSON.stringify({ rendererWriteCount: rendererWrites.length, saveStatus: conflictResponse.status(), localActionsEnabled: true }),
+    contentType: 'application/json',
+  });
 });
 
 test('[P0] manual edit direct text typing persists text-only elements', async ({ page }) => {
@@ -153,9 +278,18 @@ test('[P0] manual edit direct text typing persists text-only elements', async ({
   await page.keyboard.press('ControlOrMeta+A');
   await page.keyboard.type('Edited left panel');
   await page.keyboard.press('Enter');
-
-  await expectFileSource(page, projectId, 'manual-edit.html', ['Edited left panel']);
   await expect(frame.getByText('Edited left panel')).toBeVisible();
+
+  const saveResponsePromise = page.waitForResponse((response) => isProjectFileWrite(response, projectId));
+  const inspector = page.locator('.manual-edit-left-inspector');
+  const saveExitPromise = inspector.waitFor({ state: 'detached', timeout: T.medium });
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  const [saveResponse] = await Promise.all([saveResponsePromise, saveExitPromise]);
+  expect(saveResponse.status()).toBe(200);
+
+  const persistedResponse = await page.request.get(`/api/projects/${projectId}/files/manual-edit.html`);
+  expect(persistedResponse.ok()).toBeTruthy();
+  expect(await persistedResponse.text()).toContain('Edited left panel');
 });
 
 test('[P0] manual edit selects and persists semantic SVG visualization roots', async ({ page }) => {

@@ -1059,6 +1059,36 @@
 .manual-edit-footer-right {
   flex: 0 0 auto;
 }
+
+/* FileViewer's non-portaled save/discard fallback is a wrapping action
+   cluster. Keep these overrides scoped to the direct viewer footer so the
+   left-inspector portal retains its module-owned footer layout. */
+.viewer > .manual-edit-footer {
+  min-inline-size: 0;
+}
+
+.viewer > .manual-edit-footer .manual-edit-footer-actions {
+  flex-wrap: wrap;
+  min-inline-size: 0;
+}
+
+.viewer > .manual-edit-footer .manual-edit-footer-right {
+  flex: 1 1 max-content;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-inline-size: 100%;
+}
+
+.viewer > .manual-edit-footer .manual-edit-discard-btn,
+.viewer > .manual-edit-footer .manual-edit-save-btn {
+  flex: 1 0 max-content;
+  inline-size: auto;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 .manual-edit-footer-btn:disabled {
   cursor: not-allowed;
   opacity: 0.55;

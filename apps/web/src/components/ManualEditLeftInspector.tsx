@@ -24,6 +24,8 @@ export interface ManualEditLeftInspectorProps {
   canUndo: boolean;
   canRedo: boolean;
   pageStylesEnabled: boolean;
+  dirty?: boolean;
+  saving?: boolean;
   getActiveTarget?: () => ManualEditTarget | null;
   onStyleField: (key: keyof ManualEditStyles, value: string) => void;
   onStyleFields?: (styles: Partial<ManualEditStyles>) => void;
@@ -36,6 +38,8 @@ export interface ManualEditLeftInspectorProps {
   onPageStyleChange: (id: string, styles: Partial<ManualEditStyles>, label: string) => void;
   onPageInvalidStyle?: (id: string, keys: Array<keyof ManualEditStyles>) => void;
   onExit?: () => void;
+  onSave?: () => void;
+  onDiscard?: () => void;
 }
 
 export function ManualEditLeftInspector({
@@ -50,6 +54,8 @@ export function ManualEditLeftInspector({
   canUndo,
   canRedo,
   pageStylesEnabled,
+  dirty,
+  saving,
   getActiveTarget,
   onStyleField,
   onStyleFields,
@@ -62,6 +68,8 @@ export function ManualEditLeftInspector({
   onPageStyleChange,
   onPageInvalidStyle,
   onExit,
+  onSave,
+  onDiscard,
 }: ManualEditLeftInspectorProps) {
   const t = useT();
   const isTextLike = !!target
@@ -170,6 +178,33 @@ export function ManualEditLeftInspector({
         )}
         {error ? <div className={inspectorStyles.error} role="alert">{error}</div> : null}
       </div>
+      {dirty ? (
+        <footer
+          className={`manual-edit-left-inspector-footer ${inspectorStyles.footer}`}
+          aria-busy={saving}
+        >
+          <Button
+            type="button"
+            variant="subtle"
+            size="default"
+            className="manual-edit-discard-btn"
+            disabled={saving}
+            onClick={onDiscard}
+          >
+            {t('manualEdit.discardChanges')}
+          </Button>
+          <Button
+            type="button"
+            variant="primary"
+            size="default"
+            className="manual-edit-save-btn"
+            disabled={saving}
+            onClick={onSave}
+          >
+            {t('manualEdit.saveChanges')}
+          </Button>
+        </footer>
+      ) : null}
     </aside>
   );
 }

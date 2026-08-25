@@ -7,10 +7,10 @@
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  width: 100%;
-  min-width: 0;
-  height: 100%;
-  min-height: 0;
+  inline-size: 100%;
+  min-inline-size: 0;
+  block-size: 100%;
+  min-block-size: 0;
   overflow: hidden;
   color: var(--text);
   background: var(--bg-panel);
@@ -87,11 +87,32 @@
 
 .scroll {
   flex: 1 1 auto;
-  min-height: 0;
+  min-block-size: 0;
   padding: 14px 14px 20px 16px;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+}
+
+.footer {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px 16px;
+  border-block-start: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+
+.footer :global(.manual-edit-discard-btn),
+.footer :global(.manual-edit-save-btn) {
+  flex: 1 0 max-content;
+  inline-size: auto;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .error {

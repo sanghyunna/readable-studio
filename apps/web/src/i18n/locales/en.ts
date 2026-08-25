@@ -1973,6 +1973,8 @@ export const en: Dict = {
   'manualEdit.move.up': 'Moved up {amount}px',
   'manualEdit.move.down': 'Moved down {amount}px',
   'manualEdit.selectBehindHint': 'Click again to select the layer behind',
+  'manualEdit.saveChanges': 'Save changes',
+  'manualEdit.discardChanges': 'Discard changes',
   'fileViewer.zoomOut': 'Zoom out',
   'fileViewer.zoomIn': 'Zoom in',
   'fileViewer.resetZoom': 'Reset zoom',
