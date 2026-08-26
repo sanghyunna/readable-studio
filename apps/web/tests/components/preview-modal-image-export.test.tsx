@@ -71,7 +71,8 @@ describe('PreviewModal image export', () => {
     });
     render(<PreviewModal {...baseProps} onClose={() => {}} />);
     openShareMenu();
-    fireEvent.click(screen.getByRole('menuitem', { name: /export as html/i }));
+    // The product renders "Export as standalone HTML" from t('common.exportHtml'); the old regex missed because of "standalone".
+    fireEvent.click(screen.getByRole('menuitem', { name: /export as standalone html/i }));
     await waitFor(() => {
       expect(exportStandaloneHtmlMock).toHaveBeenCalledWith({
         source: { kind: 'plugin', pluginId: 'plugin-1' },
@@ -98,7 +99,7 @@ describe('PreviewModal image export', () => {
     />);
     fireEvent.click(screen.getByRole('tab', { name: 'Tokens' }));
     openShareMenu();
-    fireEvent.click(screen.getByRole('menuitem', { name: /export as html/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /export as standalone html/i }));
     await waitFor(() => {
       expect(exportStandaloneHtmlMock).toHaveBeenCalledWith({
         source: { kind: 'design-system', designSystemId: 'ds-1', view: 'preview' },
@@ -115,7 +116,7 @@ describe('PreviewModal image export', () => {
     exportStandaloneHtmlMock.mockRejectedValueOnce(error);
     render(<PreviewModal {...baseProps} onClose={() => {}} />);
     openShareMenu();
-    fireEvent.click(screen.getByRole('menuitem', { name: /export as html/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /export as standalone html/i }));
     await waitFor(() => expect(document.body.textContent).toContain('Could not export standalone HTML'));
     expect(exportStandaloneHtmlMock).toHaveBeenCalledTimes(1);
   });
