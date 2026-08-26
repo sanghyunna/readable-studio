@@ -117,8 +117,9 @@ describe('FileViewer image export', () => {
     fireEvent.click(screen.getByRole('button', { name: /download/i }));
     fireEvent.click(screen.getByRole('menuitem', { name: /standalone html/i }));
     await waitFor(() => {
+      // The product strips the extension from file.name, so workspace.html produces the lowercase title 'workspace'.
       expect(exportProjectAsHtmlMock).toHaveBeenCalledWith({
-        projectId: 'project-1', filePath: 'workspace.html', title: 'Workspace',
+        projectId: 'project-1', filePath: 'workspace.html', title: 'workspace',
       });
       expect(document.body.textContent).toContain('2 external');
       expect(document.body.textContent).toContain('1 missing');
