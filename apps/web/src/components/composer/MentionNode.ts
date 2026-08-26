@@ -127,7 +127,8 @@ export class MentionNode extends TextNode {
     return updated;
   }
 
-  // Mentions use the CSS-driven `--m-hue`; clear any stale inline value.
+  // Curated plugin mentions get an inline `--m-hue` that tracks the live
+  // theme; every other mention clears it so the CSS default wins.
   private applyBrandHue(dom: HTMLElement): void {
     applyMentionBrandHue(dom, this.__mentionKind, this.__mentionId);
   }
