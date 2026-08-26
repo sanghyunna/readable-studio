@@ -1,2 +1,39 @@
+# Line endings are part of these files' contents, not a local preference.
+#
+# `core.autocrlf=true` is set system-wide on many Windows machines, which
+# rewrites LF to CRLF on checkout. That silently changes bytes on disk while
+# `git status` still reports a clean tree, and it breaks anything that hashes
+# or byte-matches a checked-in file:
+#   - mocks/ golden streams are replayed byte-for-byte and their sha256 is
+#     pinned in scripts/readable-fixture-classification.json
+#   - CSS/TS sources are matched by tests that write multi-line selectors and
+#     snippets with \n
+# Normalising the whole tree to LF keeps the working copy identical to the
+# commit on every platform.
+* text=auto eol=lf
+
+# Binary assets must never be touched.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.icns binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.zip binary
+*.exe binary
+*.dll binary
+*.node binary
+*.sqlite binary
+
+# Windows-only scripts stay CRLF so PowerShell and cmd read them correctly.
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
 design-systems/*/design-tokens.json text eol=lf
 design-systems/*/tailwind-v4.css text eol=lf
