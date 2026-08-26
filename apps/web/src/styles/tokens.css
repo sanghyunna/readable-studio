@@ -111,6 +111,8 @@
      competing. --selected-soft is the 16% tint for outer rings / fills. */
   --selected: #2563eb;
   --selected-soft: rgba(37, 99, 235, 0.16);
+  /* Foreground on a --selected fill (hub primary actions). */
+  --selected-fg: #ffffff;
 
   --sans: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', 'Microsoft YaHei UI', 'Noto Sans', sans-serif;
   --serif: var(--sans);
@@ -214,6 +216,7 @@
   --accent-contrast: #1a1917;
   --selected: var(--accent);
   --selected-soft: color-mix(in srgb, var(--selected) 16%, transparent);
+  --selected-fg: var(--accent-contrast);
   --black: #000000;
   --white: #ffffff;
   --shadow-color: #000000;

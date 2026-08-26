@@ -75,7 +75,9 @@ import { DesignsTab } from './DesignsTab';
 import { DesignSystemPreviewModal } from './DesignSystemPreviewModal';
 import { DesignSystemsTab } from './DesignSystemsTab';
 import { EntryNavRail, type EntryView as EntryViewKind } from './EntryNavRail';
-import { HomeView } from './HomeView';
+import { buildHubSubmission } from './hub/buildHubSubmission';
+import { HubHome } from './hub/HubHome';
+import { openSessionRoute } from './hub/openSessionRoute';
 import {
   createPluginAuthoringHandoff,
   createPluginUseHandoff,
@@ -608,26 +610,30 @@ export function EntryShell({
 
   return (
     <div className="entry-shell entry-shell--no-header">
-      <div className={`entry${railOpen ? ' entry--rail-open' : ''}`}>
+      <div className={`entry${railOpen && view !== 'home' ? ' entry--rail-open' : ''}`}>
+        {/* The hub's left panel is the single navigation model on the home
+            route; the legacy icon rail would duplicate brand/home/new-project. */}
         <EntryNavRail
           view={view}
           onViewChange={changeView}
           onNewProject={() => openNewProject()}
-          open={railOpen}
+          open={railOpen && view !== 'home'}
           onClose={() => setRailOpen(false)}
         />
         <main className="entry-main entry-main--scroll" ref={entryMainScrollRef}>
           <div className="entry-main__topbar">
-            <button
-              type="button"
-              className="entry-rail-toggle"
-              onClick={() => setRailOpen((prev) => !prev)}
-              aria-label={t('entry.navExpand')}
-              aria-expanded={railOpen}
-              data-testid="entry-rail-toggle"
-            >
-              <Icon name="panel-left" size={20} />
-            </button>
+            {view === 'home' ? null : (
+              <button
+                type="button"
+                className="entry-rail-toggle"
+                onClick={() => setRailOpen((prev) => !prev)}
+                aria-label={t('entry.navExpand')}
+                aria-expanded={railOpen}
+                data-testid="entry-rail-toggle"
+              >
+                <Icon name="panel-left" size={20} />
+              </button>
+            )}
             <div className="entry-main__topbar-chips entry-main__topbar-chips--icon-only">
               {executionSwitcher}
             </div>
@@ -639,23 +645,28 @@ export function EntryShell({
             }`}
           >
             <div data-testid="entry-view-home" data-active={view === 'home' ? 'true' : 'false'} {...inactiveViewProps(view === 'home')}>
-              <HomeView
-                isActive={view === 'home'}
+              {/* The welcome/hero screen was replaced by the project + session
+                  hub. Navigation lives in the hub's left panel; the centre stays
+                  a calm start surface instead of a wall of past projects. */}
+              <HubHome
                 projects={projects}
                 projectsLoading={projectsLoading}
+                onOpenSession={openSessionRoute}
                 designSystems={designSystems}
                 defaultDesignSystemId={defaultDesignSystemId}
-                onSubmit={handlePluginLoopSubmit}
-                onOpenProject={onOpenProject}
-                onViewAllProjects={() => changeView('projects')}
-                onBrowseRegistry={() => changeView('plugins')}
-                onOpenMcp={() => openIntegrationTab('mcp')}
-                onOpenNewProject={(tab) => {
-                  openNewProject(tab);
-                }}
-                promptHandoff={homePromptHandoff}
-                skills={skills}
-                skillsLoading={skillsLoading}
+                onSubmitPrompt={(prompt, options) =>
+                  // Same routing the welcome screen used: hidden default
+                  // scenario plugin + projectKind 'other', with the composer's
+                  // design-system choice carried through.
+                  handlePluginLoopSubmit(
+                    buildHubSubmission(prompt, {
+                      designSystemId: options?.designSystemId ?? defaultDesignSystemId,
+                    }),
+                  )
+                }
+                onNewProject={() => openNewProject()}
+                onImportFolder={() => openNewProject('other')}
+                onGoHome={() => changeView('home')}
               />
             </div>
             <div data-testid="entry-view-projects" data-active={view === 'projects' ? 'true' : 'false'} {...inactiveViewProps(view === 'projects')}>

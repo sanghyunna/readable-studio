@@ -1,0 +1,575 @@
+/* Entry hub — replaces the welcome/hero screen.
+ *
+ * Layout: pearl-glass navigation rail on the left, calm start surface in the
+ * centre. Accent comes from --selected (the product's logo blue); the rail is
+ * the only translucent surface so scrolling bodies stay opaque and cheap.
+ */
+
+.hub {
+  display: grid;
+  grid-template-columns: 292px minmax(0, 1fr);
+  min-height: 0;
+  height: 100%;
+}
+
+.hub__nav {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-height: 0;
+  margin: 0 0 10px;
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--bg-elevated) 74%, transparent),
+    color-mix(in srgb, var(--bg-elevated) 58%, transparent)
+  );
+  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  overflow: hidden;
+}
+
+.hub__nav-head {
+  padding: 12px 12px 4px;
+}
+
+.hub__brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 4px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-strong);
+  cursor: pointer;
+}
+
+.hub__brand:hover {
+  background: var(--bg-hover);
+}
+
+.hub__brand-mark {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border: 1.5px solid var(--text-strong);
+  border-radius: 6px;
+  background:
+    linear-gradient(var(--selected), var(--selected)) no-repeat 4px 5px / 9px 2px,
+    linear-gradient(var(--selected), var(--selected)) no-repeat 4px 10px / 6px 2px;
+}
+
+.hub__brand-name {
+  font-size: 13.5px;
+  font-weight: 650;
+  letter-spacing: -0.012em;
+}
+
+.hub__nav-actions {
+  display: grid;
+  gap: 8px;
+  padding: 4px 12px 10px;
+}
+
+.hub__search {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.hub__search:focus-visible {
+  outline: 2px solid var(--selected);
+  outline-offset: -1px;
+}
+
+.hub__new-project {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 36px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--selected);
+  color: var(--selected-fg);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.hub__new-project:hover {
+  background: color-mix(in srgb, var(--selected) 86%, var(--text-strong));
+}
+
+.hub__nav-loading {
+  margin: 0;
+  padding: 12px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/* ---- tree ---- */
+
+.hub-tree {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-auto-rows: auto;
+  min-height: 0;
+}
+
+.hub-tree__filters {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 12px 10px;
+}
+
+.hub-tree__filter,
+.hub-tree__sort {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 550;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.hub-tree__filter:hover,
+.hub-tree__sort:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.hub-tree__filter[aria-pressed='true'],
+.hub-tree__sort[aria-pressed='true'] {
+  border-color: color-mix(in srgb, var(--selected) 24%, transparent);
+  background: var(--selected-soft);
+  color: var(--selected);
+}
+
+.hub-tree__count {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hub-tree__sorts {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.hub-tree__empty {
+  margin: 0;
+  padding: 12px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-muted);
+}
+
+.hub-tree__link {
+  border: 0;
+  background: none;
+  color: var(--selected);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.hub-tree__body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
+  padding: 0 8px 8px;
+}
+
+.hub-tree__group[data-open='false'] {
+  display: none;
+}
+
+.hub-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 8px;
+  border-radius: 8px;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+}
+
+.hub-row:hover {
+  background: var(--bg-hover);
+}
+
+.hub-row:focus-visible {
+  outline: 2px solid var(--selected);
+  outline-offset: -2px;
+}
+
+/* The sessions group is a DOM child of its project treeitem so assistive tech
+   can infer ownership; the project row therefore stacks its own controls in a
+   first line and lets the group flow underneath at full width. */
+.hub-row--project {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    'chevron title state action'
+    'group   group group group';
+  align-items: center;
+  column-gap: 8px;
+  padding-block: 0;
+}
+
+.hub-row--project > .hub-row__chevron { grid-area: chevron; }
+.hub-row--project > .hub-row__title { grid-area: title; padding-block: 8px; }
+.hub-row--project > .hub-row__state { grid-area: state; }
+.hub-row--project > .hub-row__action { grid-area: action; }
+.hub-row--project > .hub-tree__group { grid-area: group; }
+
+.hub-row--project:hover {
+  /* Hovering the project must not tint the whole session list beneath it. */
+  background: transparent;
+}
+
+.hub__ctl {
+  /* A native select stretches to its longest option unless bounded; the
+     composer bar must stay a single row of compact controls. */
+  flex: 0 1 auto;
+  max-width: 220px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.hub-row__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.hub-row__chevron {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border-right: 1.5px solid var(--text-faint);
+  border-bottom: 1.5px solid var(--text-faint);
+  transform: rotate(-45deg) scale(0.6);
+  transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.hub-row__chevron[data-open='true'] {
+  transform: rotate(45deg) scale(0.6);
+}
+
+.hub-row__state {
+  flex: none;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.hub-row__state--running {
+  color: var(--selected);
+}
+
+.hub-row__state--awaiting {
+  color: var(--warning);
+}
+
+.hub-row__state--failed {
+  color: var(--danger);
+}
+
+.hub-row__action {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.hub-row:hover .hub-row__action,
+.hub-row:focus-visible .hub-row__action {
+  opacity: 1;
+}
+
+.hub-row--session {
+  padding-left: 22px;
+  min-height: 32px;
+}
+
+.hub-row--session .hub-row__title {
+  font-size: 12.5px;
+  font-weight: 450;
+  color: var(--text-muted);
+}
+
+.hub-row--session.is-current {
+  background: var(--selected-soft);
+}
+
+.hub-row--session.is-current .hub-row__title {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.hub-row--session.is-current::before {
+  content: '';
+  position: absolute;
+  inset-block: 6px;
+  inset-inline-start: 0;
+  width: 1px;
+  background: var(--selected);
+}
+
+.hub-row--more {
+  padding-left: 22px;
+  min-height: 28px;
+  color: var(--selected);
+  font-size: 12px;
+  font-weight: 550;
+}
+
+/* ---- start surface ---- */
+
+.hub__stage {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.hub__start {
+  width: min(880px, 100%);
+  margin: 0 auto;
+  padding: 6vh 40px 64px;
+}
+
+.hub__live {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 40px;
+  margin-bottom: 38px;
+  padding: 0 14px;
+  border: 1px solid color-mix(in srgb, var(--selected) 72%, transparent);
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    var(--selected-soft),
+    color-mix(in srgb, var(--selected) 5%, transparent)
+  );
+  text-align: left;
+  cursor: pointer;
+}
+
+.hub__live-state {
+  flex: none;
+  padding-inline-end: 10px;
+  border-inline-end: 1px solid color-mix(in srgb, var(--selected) 24%, transparent);
+  color: var(--selected);
+  font-size: 11.5px;
+  font-weight: 650;
+}
+
+.hub__live-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.hub__title {
+  margin: 0 0 10px;
+  font-size: clamp(30px, 2.6vw, 44px);
+  line-height: 1.24;
+  font-weight: 640;
+  letter-spacing: -0.028em;
+  color: var(--text-strong);
+}
+
+.hub__subtitle {
+  margin: 0 0 26px;
+  max-width: 46em;
+  font-size: 14.5px;
+  line-height: 1.7;
+  color: var(--text-muted);
+  word-break: keep-all;
+}
+
+.hub__composer {
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+
+.hub__composer:focus-within {
+  border-color: color-mix(in srgb, var(--selected) 55%, transparent);
+}
+
+.hub__composer-input {
+  display: block;
+  width: 100%;
+  min-height: 82px;
+  max-height: 220px;
+  padding: 16px 18px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.65;
+  resize: none;
+}
+
+.hub__composer-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  row-gap: 8px;
+  padding: 9px 10px 9px 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.hub__send {
+  margin-inline-start: auto;
+  height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--selected);
+  color: var(--selected-fg);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.hub__send[aria-disabled='true'] {
+  background: var(--bg-hover);
+  color: var(--text-faint);
+  cursor: default;
+}
+
+.hub__starters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.hub__starter {
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.hub__starter:hover {
+  border-color: var(--selected);
+  color: var(--text);
+}
+
+.hub__hint,
+.hub__empty {
+  margin-top: 26px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-muted);
+}
+
+@media (max-width: 900px) {
+  /* Narrow windows keep the same navigation, only tighter. Hiding row titles
+     would leave the session list as a column of blank rows, which is worse
+     than a slightly cramped label. */
+  .hub {
+    grid-template-columns: 232px minmax(0, 1fr);
+  }
+
+  .hub__nav {
+    margin-left: 0;
+  }
+
+  .hub__start {
+    padding-inline: 16px;
+  }
+
+  .hub-tree__filters {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+
+  .hub-tree__sorts {
+    margin-left: 0;
+  }
+
+  .hub__brand-name {
+    font-size: 12.5px;
+  }
+}
+
+@media (max-width: 620px) {
+  /* Below this the two-column split stops earning its keep: the navigation
+     collapses to a single scrolling column above the start surface. */
+  .hub {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .hub__nav {
+    max-height: 42vh;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .hub__nav {
+    background: var(--bg-elevated);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hub-row__chevron {
+    transition-duration: 1ms;
+  }
+}

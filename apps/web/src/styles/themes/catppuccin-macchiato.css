@@ -47,6 +47,8 @@
   --danger-fg: var(--red);
   --selected: var(--accent);
   --selected-soft: color-mix(in srgb, var(--selected) 16%, transparent);
+  /* Foreground on a --selected fill (hub primary actions). */
+  --selected-fg: var(--accent-contrast);
   --accent-contrast: #24273a;
   --black: #000000;
   --white: #ffffff;

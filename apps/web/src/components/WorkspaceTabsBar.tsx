@@ -76,10 +76,13 @@ function shouldDeferShortcutToProjectWorkspace(): boolean {
   return document.querySelector('[data-testid="file-workspace"]') !== null;
 }
 
-export function openWorkspaceTab(route: Route): void {
+export function openWorkspaceTab(
+  route: Route,
+  options?: { reuseExisting?: boolean },
+): void {
   window.dispatchEvent(
-    new CustomEvent<{ route: Route }>(OPEN_WORKSPACE_TAB_EVENT, {
-      detail: { route },
+    new CustomEvent<{ route: Route; reuseExisting?: boolean }>(OPEN_WORKSPACE_TAB_EVENT, {
+      detail: { route, ...(options?.reuseExisting ? { reuseExisting: true } : {}) },
     }),
   );
 }
@@ -512,12 +515,18 @@ export function WorkspaceTabsBar({ route, projects, onboardingCompleted = false 
   // scrolled the strip elsewhere.
   useEffect(() => {
     function onOpenWorkspaceTab(event: Event) {
-      const detail = (event as CustomEvent<{ route?: Route }>).detail;
+      const detail = (event as CustomEvent<{ route?: Route; reuseExisting?: boolean }>).detail;
       const nextRoute = detail?.route;
       if (!nextRoute) return;
       const nextTab = tabFromRoute(nextRoute);
       setState((current) => {
         const normalized = normalizeTabsState(current);
+        // Callers that navigate to an already-open project (the entry hub
+        // opening one of its sessions) must not stack a second tab for it;
+        // route sync would otherwise reuse one copy and leave the other behind.
+        if (detail?.reuseExisting) {
+          return syncStateToRoute(normalized, nextRoute);
+        }
         return normalizeTabsState({
           tabs: [...normalized.tabs, nextTab],
           activeTabId: nextTab.id,
