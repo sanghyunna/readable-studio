@@ -7,6 +7,7 @@ import {
   type Spread,
 } from 'lexical';
 import type { InlineMentionEntity, InlineMentionKind } from '../../utils/inlineMentions';
+import { applyMentionBrandHue } from './mentionBrandHueManager';
 
 // The atomic @mention node. It extends TextNode so the node's *text* remains
 // the literal `@token` and serialization back to the wire format is free:
@@ -128,7 +129,7 @@ export class MentionNode extends TextNode {
 
   // Mentions use the CSS-driven `--m-hue`; clear any stale inline value.
   private applyBrandHue(dom: HTMLElement): void {
-    dom.style.removeProperty('--m-hue');
+    applyMentionBrandHue(dom, this.__mentionKind, this.__mentionId);
   }
 
   // Nothing may merge into or split a mention — keeps the token indivisible.
