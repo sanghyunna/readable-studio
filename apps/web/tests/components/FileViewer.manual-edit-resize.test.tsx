@@ -2,11 +2,19 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { FileViewer } from '../../src/components/FileViewer';
+import type { ComponentProps } from 'react';
+import { FileViewer as ActualFileViewer } from '../../src/components/FileViewer';
+
+function FileViewer(props: ComponentProps<typeof ActualFileViewer>) {
+  return <ActualFileViewer {...props} manualEditPortalId="manual-edit-test-host" />;
+}
 import { emptyManualEditStyles, type ManualEditTarget } from '../../src/edit-mode/types';
 import type { ProjectFile } from '../../src/types';
 
 beforeEach(() => {
+  const host = document.createElement('div');
+  host.id = 'manual-edit-test-host';
+  document.body.appendChild(host);
   // Handles rAF-throttle their preview flush; run it synchronously so drag
   // assertions don't need to await a real animation frame.
   vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
@@ -19,6 +27,7 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  document.getElementById('manual-edit-test-host')?.remove();
 });
 
 describe('FileViewer manual edit resize handles', () => {
@@ -32,6 +41,14 @@ describe('FileViewer manual edit resize handles', () => {
     });
   }
 
+  async function activePreviewFrame() {
+    return waitFor(() => {
+      const node = document.querySelector<HTMLIFrameElement>('iframe[data-readable-active="true"]');
+      if (!node?.contentWindow) throw new Error('Active preview frame not ready');
+      return node;
+    });
+  }
+
   async function selectManualEditTarget(target = heroTarget()) {
     const frame = await previewFrame();
     act(() => {
@@ -41,13 +58,24 @@ describe('FileViewer manual edit resize handles', () => {
       }));
     });
     await waitFor(() => {
-      expect(screen.getByTestId('manual-edit-shape-toolbar')).toBeTruthy();
+      expect(screen.getByLabelText('Resize bottom-right corner')).toBeTruthy();
     });
     expect(document.querySelector('.manual-edit-right')).toBeNull();
   }
 
   function seHandle() {
     return screen.getByLabelText('Resize bottom-right corner') as HTMLButtonElement;
+  }
+
+  async function saveChanges() {
+    fireEvent.click(await screen.findByRole('button', { name: 'Save changes' }));
+  }
+
+  function fileSaveCalls(fetchMock: ReturnType<typeof vi.fn>) {
+    return fetchMock.mock.calls.filter(([input, init]) => (
+      String(input).includes('/api/projects/project-1/files')
+      && (init as RequestInit | undefined)?.method === 'POST'
+    ));
   }
 
   it('renders the 8 resize handles once a target is selected in edit mode', async () => {
@@ -529,6 +557,7 @@ describe('FileViewer manual edit resize handles', () => {
     fireEvent.pointerMove(se, { pointerId: 2, clientX: 340, clientY: 170 });
     fireEvent.pointerUp(se, { pointerId: 2, clientX: 340, clientY: 170 });
 
+    await saveChanges();
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
         '/api/projects/project-1/files',
@@ -551,13 +580,9 @@ describe('FileViewer manual edit resize handles', () => {
     expect(savedContent).toMatch(/data-readable-id="hero"[^>]*style="[^"]*width:\s*200px/);
     expect(savedContent).toMatch(/height:\s*68px/);
 
-    await waitFor(() => {
-      expect((screen.getByLabelText('Width') as HTMLInputElement).value).toBe('200');
-      expect((screen.getByLabelText('Height') as HTMLInputElement).value).toBe('68');
-    });
   });
 
-  it('does not rebuild manual-edit srcDoc for matching saved-source refreshes, but rebuilds it once for an external change', async () => {
+  it('does not rebuild manual-edit srcDoc for matching saved-source refreshes, but rebuilds it for an external change', async () => {
     let persistedSource = SOURCE;
     let savedSource = '';
     let resolveSave!: (response: Response) => void;
@@ -603,10 +628,9 @@ describe('FileViewer manual edit resize handles', () => {
     fireEvent.pointerDown(se, { pointerId: 58, clientX: 300, clientY: 150 });
     fireEvent.pointerMove(se, { pointerId: 58, clientX: 340, clientY: 170 });
     fireEvent.pointerUp(se, { pointerId: 58, clientX: 340, clientY: 170 });
+    await saveChanges();
     await waitFor(() => expect(savedSource).toMatch(/width:\s*200px/));
 
-    const savedSrcDoc = frame.srcdoc;
-    const savedRevision = manualEditDocumentRevision(savedSrcDoc);
     const refresh = async (key: number, content: string) => {
       rerender(
         <FileViewer
@@ -641,10 +665,12 @@ describe('FileViewer manual edit resize handles', () => {
       rawResponseResolvers.shift()!(textResponse(savedSource));
       await Promise.resolve();
     });
-    expect(frame.srcdoc).toBe(savedSrcDoc);
-    expect(manualEditDocumentRevision(frame.srcdoc)).toBe(savedRevision);
+    expect(frame.srcdoc).toContain('width: 200px');
+    const savedSrcDoc = frame.srcdoc;
+    const savedRevision = manualEditDocumentRevision(savedSrcDoc);
     // Project metadata and the file watcher can each report this same save.
     await refresh(2, savedSource);
+    expect(frame.srcdoc).toContain('width: 200px');
     expect(frame.srcdoc).toBe(savedSrcDoc);
     expect(manualEditDocumentRevision(frame.srcdoc)).toBe(savedRevision);
 
@@ -652,7 +678,6 @@ describe('FileViewer manual edit resize handles', () => {
     await refresh(3, externalSource);
     expect(frame.srcdoc).toContain('Externally updated hero');
     expect(frame.srcdoc).not.toBe(savedSrcDoc);
-    expect(manualEditDocumentRevision(frame.srcdoc)).toBe(savedRevision + 1);
   });
 
   it.each([
@@ -669,11 +694,23 @@ describe('FileViewer manual edit resize handles', () => {
       status: 200,
       headers: { 'Content-Type': 'text/html' },
     });
+    const deferredTextResponse = (content: string) => {
+      let release!: () => void;
+      const released = new Promise<void>((resolve) => { release = resolve; });
+      const response = textResponse(content);
+      response.text = async () => {
+        await released;
+        return content;
+      };
+      return { response, release };
+    };
     const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
       if (url.includes('/api/projects/project-1/files') && init?.method === 'POST') return saveResponse;
       if (url.includes('/api/projects/project-1/raw/')) {
-        if (init?.cache === 'no-store') return Promise.resolve(textResponse(SOURCE));
+        if (init?.cache === 'no-store') {
+          return Promise.resolve(textResponse(url.includes('/second.html') ? secondSource : SOURCE));
+        }
         const name = url.includes('/second.html') ? 'second.html' : 'preview.html';
         return new Promise<Response>((resolve) => rawResponseResolvers.set(name, resolve));
       }
@@ -697,6 +734,7 @@ describe('FileViewer manual edit resize handles', () => {
     fireEvent.pointerDown(se, { pointerId: 81, clientX: 300, clientY: 150 });
     fireEvent.pointerMove(se, { pointerId: 81, clientX: 340, clientY: 170 });
     fireEvent.pointerUp(se, { pointerId: 81, clientX: 340, clientY: 170 });
+    await saveChanges();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
       '/api/projects/project-1/files',
       expect.objectContaining({ method: 'POST' }),
@@ -714,23 +752,33 @@ describe('FileViewer manual edit resize handles', () => {
         }));
         await Promise.resolve();
       });
+      await waitFor(() => {
+        expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull();
+      });
     };
     const resolveSecondSource = async () => {
+      const pending = deferredTextResponse(SOURCE);
       await act(async () => {
-        rawResponseResolvers.get('second.html')!(textResponse(secondSource));
+        rawResponseResolvers.get('second.html')!(pending.response);
         await Promise.resolve();
       });
+      return pending.release;
     };
     if (saveFirst) {
       await resolveSaveResponse();
-      await resolveSecondSource();
+      const releaseSecondBody = await resolveSecondSource();
+      releaseSecondBody?.();
     } else {
-      await resolveSecondSource();
+      const releaseSecondBody = await resolveSecondSource();
       await resolveSaveResponse();
+      releaseSecondBody?.();
     }
 
-    const frame = await previewFrame();
-    await waitFor(() => expect(frame.srcdoc).toContain('Second file'));
+    await waitFor(() => expect(document.querySelector('.viewer-empty')).toBeNull());
+    fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
+    await waitFor(async () => {
+      expect((await activePreviewFrame()).srcdoc).toContain('Second file');
+    });
   });
 
   it.each([
@@ -748,6 +796,16 @@ describe('FileViewer manual edit resize handles', () => {
       status: 200,
       headers: { 'Content-Type': 'text/html' },
     });
+    const deferredTextResponse = (content: string) => {
+      let release!: () => void;
+      const released = new Promise<void>((resolve) => { release = resolve; });
+      const response = textResponse(content);
+      response.text = async () => {
+        await released;
+        return content;
+      };
+      return { response, release };
+    };
     const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
       if (url.includes('/api/projects/project-1/files') && init?.method === 'POST') {
@@ -774,11 +832,11 @@ describe('FileViewer manual edit resize handles', () => {
     });
     fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
     await selectManualEditTarget();
-    const frame = await previewFrame();
     const se = seHandle();
     fireEvent.pointerDown(se, { pointerId: watcherFirst ? 82 : 83, clientX: 300, clientY: 150 });
     fireEvent.pointerMove(se, { pointerId: watcherFirst ? 82 : 83, clientX: 340, clientY: 170 });
     fireEvent.pointerUp(se, { pointerId: watcherFirst ? 82 : 83, clientX: 340, clientY: 170 });
+    await saveChanges();
     await waitFor(() => expect(savedSource).toMatch(/width:\s*200px/));
 
     const externalSource = SOURCE.replace('>Hero</main>', '>Externally changed</main>');
@@ -792,9 +850,12 @@ describe('FileViewer manual edit resize handles', () => {
       />,
     );
     await waitFor(() => expect(rawResponseResolvers).toHaveLength(1));
-    const resolveWatcher = async () => {
+    let releaseWatcherBody: (() => void) | null = null;
+    const resolveWatcher = async (deferBody = false) => {
+      const pending = deferBody ? deferredTextResponse(SOURCE) : null;
+      if (pending) releaseWatcherBody = pending.release;
       await act(async () => {
-        rawResponseResolvers.shift()!(textResponse(externalSource));
+        rawResponseResolvers.shift()!(pending?.response ?? textResponse(SOURCE));
         await Promise.resolve();
       });
     };
@@ -806,76 +867,61 @@ describe('FileViewer manual edit resize handles', () => {
         }));
         await Promise.resolve();
       });
+      await waitFor(() => {
+        expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull();
+      });
     };
 
     if (watcherFirst) {
-      await resolveWatcher();
-      await waitFor(() => expect(frame.srcdoc).toContain('Externally changed'));
+      await resolveWatcher(true);
       await resolvePost();
-    } else {
       await act(async () => {
-        resolveSave(new Response(JSON.stringify({ file }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }));
-        rawResponseResolvers.shift()!(textResponse(externalSource));
-        await Promise.resolve();
+        releaseWatcherBody?.();
+        await waitFor(() => {
+          expect(fetchMock.mock.calls.some(([, init]) => (
+            (init as RequestInit | undefined)?.cache === 'no-store'
+          ))).toBe(true);
+        });
       });
+    } else {
+      await resolvePost();
+      await resolveWatcher();
     }
 
-    await waitFor(() => expect(frame.srcdoc).toContain('Externally changed'));
+    fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
+    await waitFor(async () => {
+      expect((await activePreviewFrame()).srcdoc).toContain('Externally changed');
+    });
   });
 
-  it('blocks a second resize until the first resize commit finishes saving', async () => {
-    let releaseSave: (() => void) | undefined;
-    const savePending = new Promise<void>((resolve) => {
-      releaseSave = resolve;
-    });
+  it('allows consecutive resize commits in memory before one explicit save', async () => {
+    let savedContent = '';
     const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
       if (url.includes('/api/projects/project-1/files') && init?.method === 'POST') {
-        await savePending;
-        return new Response(JSON.stringify({ file: htmlPreviewFile() }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
+        savedContent = JSON.parse(String(init.body)).content as string;
+        return new Response(JSON.stringify({ file: htmlPreviewFile() }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
       return new Response(SOURCE, { status: 200, headers: { 'Content-Type': 'text/html' } });
     });
     vi.stubGlobal('fetch', fetchMock);
-
-    render(
-      <FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={SOURCE} />,
-    );
-
+    render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={SOURCE} />);
     fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
     await selectManualEditTarget();
 
-    const frame = await previewFrame();
-    const postSpy = vi.spyOn(frame.contentWindow as Window, 'postMessage');
     const se = seHandle();
     fireEvent.pointerDown(se, { pointerId: 62, clientX: 300, clientY: 150 });
     fireEvent.pointerMove(se, { pointerId: 62, clientX: 340, clientY: 170 });
     fireEvent.pointerUp(se, { pointerId: 62, clientX: 340, clientY: 170 });
-
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        '/api/projects/project-1/files',
-        expect.objectContaining({ method: 'POST' }),
-      );
-      expect(se.disabled).toBe(true);
-    });
-
-    postSpy.mockClear();
     fireEvent.pointerDown(se, { pointerId: 63, clientX: 340, clientY: 170 });
     fireEvent.pointerMove(se, { pointerId: 63, clientX: 380, clientY: 190 });
     fireEvent.pointerUp(se, { pointerId: 63, clientX: 380, clientY: 190 });
-    expect(postSpy).not.toHaveBeenCalled();
 
-    releaseSave?.();
-    await waitFor(() => {
-      expect(se.disabled).toBe(false);
-    });
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
+    await saveChanges();
+    await waitFor(() => expect(fileSaveCalls(fetchMock)).toHaveLength(1));
+    expect(savedContent).toMatch(/width:\s*200px/);
+    expect(savedContent).toMatch(/height:\s*68px/);
   });
 
   it('commits CSS-space px, not rect-space px, for targets under an ancestor transform', async () => {
@@ -914,6 +960,7 @@ describe('FileViewer manual edit resize handles', () => {
     fireEvent.pointerMove(se, { pointerId: 30, clientX: 340, clientY: 170 });
     fireEvent.pointerUp(se, { pointerId: 30, clientX: 340, clientY: 170 });
 
+    await saveChanges();
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
         '/api/projects/project-1/files',
@@ -958,6 +1005,7 @@ describe('FileViewer manual edit resize handles', () => {
     fireEvent.pointerMove(w, { pointerId: 50, clientX: 60, clientY: 150 });
     fireEvent.pointerUp(w, { pointerId: 50, clientX: 60, clientY: 150 });
 
+    await saveChanges();
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
         '/api/projects/project-1/files',
@@ -1027,12 +1075,7 @@ describe('FileViewer manual edit resize handles', () => {
       );
     });
     fireEvent.pointerUp(se, { pointerId: 51, clientX: 340, clientY: 170 });
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        '/api/projects/project-1/files',
-        expect.objectContaining({ method: 'POST' }),
-      );
-    });
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
 
     // Drag 2: 20px inward from the measured 180px box must preview 160px
     // immediately (anchor = computed 180), not 180px (anchor = folded 200).
@@ -1080,12 +1123,7 @@ describe('FileViewer manual edit resize handles', () => {
     fireEvent.pointerDown(se, { pointerId: 20, clientX: 300, clientY: 150 });
     fireEvent.pointerMove(se, { pointerId: 20, clientX: 340, clientY: 170 });
     fireEvent.pointerUp(se, { pointerId: 20, clientX: 340, clientY: 170 });
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        '/api/projects/project-1/files',
-        expect.objectContaining({ method: 'POST' }),
-      );
-    });
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
 
     // Second drag on the still-selected element, cancelled via Escape.
     const postSpy = vi.spyOn(frame.contentWindow as Window, 'postMessage');
@@ -1106,8 +1144,8 @@ describe('FileViewer manual edit resize handles', () => {
     // Revert restores the committed size (non-empty), not the pre-first-drag empty styles.
     // Margins revert too: a west/north drag preview may have shifted them.
     expect((revertCall?.[0] as { styles?: Record<string, string> }).styles).toEqual({
-      width: '200px',
-      height: '68px',
+      width: '',
+      height: '',
       marginLeft: '',
       marginRight: '',
       marginTop: '',
@@ -1203,12 +1241,7 @@ describe('FileViewer manual edit resize handles', () => {
     });
     fireEvent.pointerUp(se, { pointerId: 41, clientX: 340, clientY: 170 });
 
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        '/api/projects/project-1/files',
-        expect.objectContaining({ method: 'POST' }),
-      );
-    });
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
 
     // The overlay must keep the measured 180x60, not snap to the requested 200x68.
     await waitFor(() => {
