@@ -828,6 +828,10 @@ describe('App project creation routing', () => {
     // project folder flips. Asserting the call order locks the ordering in.
     mockedListProjects.mockResolvedValue([]);
     mockedReplaceProjectWorkingDir.mockResolvedValue(undefined as never);
+    mockedUploadProjectFiles.mockResolvedValue({
+      uploaded: [{ path: 'stored-note.txt', name: 'note.txt', kind: 'file', size: 2 }],
+      failed: [],
+    });
 
     render(<App />);
 

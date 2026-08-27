@@ -136,12 +136,12 @@ test('[P0] @critical a first run with onboardingCompleted:false lands on the hub
   await expectNoOnboardingSurface(page);
   await expectHubRendered(page);
 
-  // Operable, not merely present. The hub composer is the page's textbox;
-  // target it by role so this cannot silently match a non-editable wrapper.
-  const input = page.getByRole('textbox', { name: /What should we make/i }).first();
-  await expect(input).toBeVisible();
-  await input.fill('todo-4 first run reaches the hub');
-  await expect(input).toHaveValue('todo-4 first run reaches the hub');
+  // Operable, not merely present. Scope to the canonical rich composer and
+  // require its real contenteditable so a legacy textarea cannot satisfy this.
+  const editor = page.getByTestId('hub-composer').locator('[contenteditable="true"]');
+  await expect(editor).toBeVisible();
+  await editor.fill('todo-4 first run reaches the hub');
+  await expect(editor).toHaveText('todo-4 first run reaches the hub');
 
   // The daemon still reports the first-run flag, so the hub is what a real
   // fresh install sees — not a post-onboarding state.

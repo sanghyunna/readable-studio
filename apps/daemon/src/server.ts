@@ -26,6 +26,7 @@ import os from 'node:os';
 import net from 'node:net';
 import {
   defaultScenarioPluginIdForProjectMetadata,
+  MAX_PROJECT_UPLOAD_FILE_SIZE,
   PLUGIN_SHARE_ACTION_PLUGIN_IDS,
 } from '@readable-studio/contracts';
 import {
@@ -3395,14 +3396,14 @@ const projectUpload = multer({
       // multer@1 hands us latin1-decoded multipart filenames; restore the
       // original UTF-8 so the response (and the on-disk name) preserves
       // non-ASCII characters instead of mangling them. Then run the
-      // shared sanitiser and prepend a base36 timestamp so multiple
-      // uploads with the same original name don't clobber each other.
+      // shared sanitiser and prepend a timestamp plus a random suffix so
+      // same-millisecond sanitizer collisions cannot clobber each other.
       file.originalname = decodeMultipartFilename(file.originalname);
       const safe = sanitizeName(file.originalname);
-      cb(null, `${Date.now().toString(36)}-${safe}`);
+      cb(null, `${Date.now().toString(36)}-${randomUUID().slice(0, 8)}-${safe}`);
     },
   }),
-  limits: { fileSize: 200 * 1024 * 1024 },  // 200MB — covers the largest design assets we expect (PPTX/PDF/raw images)
+  limits: { fileSize: MAX_PROJECT_UPLOAD_FILE_SIZE },  // 200 MiB — covers the largest design assets we expect (PPTX/PDF/raw images)
 });
 
 function handleProjectUpload(req, res, next) {

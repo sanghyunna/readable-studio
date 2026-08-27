@@ -17,6 +17,7 @@ vi.mock('../../src/state/projects', () => ({
 
 import { HubHome } from '../../src/components/hub/HubHome';
 import type { Project } from '../../src/types';
+import { setHomeHeroPrompt } from '../helpers/home-hero-lexical';
 
 afterEach(() => {
   cleanup();
@@ -47,10 +48,10 @@ describe('hub composer submit guard', () => {
         onImportFolder={vi.fn()}
       />,
     );
-    const box = (await screen.findByTestId('hub-composer')) as HTMLTextAreaElement;
-    fireEvent.change(box, { target: { value: '분기 리포트' } });
+    await screen.findByTestId('home-hero-input');
+    setHomeHeroPrompt('분기 리포트');
 
-    const send = screen.getByTestId('hub-send') as HTMLButtonElement;
+    const send = screen.getByTestId('home-hero-submit') as HTMLButtonElement;
     fireEvent.click(send);
     fireEvent.click(send);
     fireEvent.click(send);
@@ -75,8 +76,8 @@ describe('hub composer submit guard', () => {
         onImportFolder={vi.fn()}
       />,
     );
-    const box = (await screen.findByTestId('hub-composer')) as HTMLTextAreaElement;
-    fireEvent.change(box, { target: { value: '가격표' } });
+    const box = await screen.findByTestId('home-hero-input');
+    setHomeHeroPrompt('가격표');
     fireEvent.keyDown(box, { key: 'Enter', ctrlKey: true });
     fireEvent.keyDown(box, { key: 'Enter', ctrlKey: true });
     expect(onSubmitPrompt).toHaveBeenCalledTimes(1);

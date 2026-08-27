@@ -14,6 +14,13 @@
   width: 100%;
   max-width: 960px;
 }
+.home-view--hub {
+  gap: 0;
+}
+.home-view--hub > .home-hero {
+  max-width: 100%;
+  padding-top: 0;
+}
 
 /* Hero — large centered prompt input */
 .home-hero {

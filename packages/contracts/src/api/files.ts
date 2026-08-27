@@ -1,6 +1,9 @@
 import type { OkResponse } from '../common.js';
 import type { ArtifactKind, ArtifactManifest } from './artifacts.js';
 
+/** Maximum size accepted by the project attachment upload endpoint (200 MiB). */
+export const MAX_PROJECT_UPLOAD_FILE_SIZE = 200 * 1024 * 1024;
+
 export type ProjectFileKind =
   | 'html'
   | 'image'

@@ -25,6 +25,7 @@ vi.mock('../../src/router', async (importOriginal) => {
 import { HubHome } from '../../src/components/hub/HubHome';
 import { openSessionRoute } from '../../src/components/hub/openSessionRoute';
 import type { Project } from '../../src/types';
+import { setHomeHeroPrompt } from '../helpers/home-hero-lexical';
 
 const OPEN_WORKSPACE_TAB_EVENT = 'readable-studio:workspace-tabs:open';
 
@@ -72,9 +73,9 @@ describe('entry re-homing after the hub replaced the welcome screen', () => {
         onImportFolder={vi.fn()}
       />,
     );
-    const box = (await screen.findByTestId('hub-composer')) as HTMLTextAreaElement;
-    fireEvent.change(box, { target: { value: '분기 리포트' } });
-    fireEvent.click(screen.getByTestId('hub-send'));
+    await screen.findByTestId('home-hero-input');
+    setHomeHeroPrompt('분기 리포트');
+    fireEvent.click(screen.getByTestId('home-hero-submit'));
     expect(onSubmitPrompt).toHaveBeenCalledWith('분기 리포트', { designSystemId: null });
   });
 

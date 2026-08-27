@@ -450,7 +450,14 @@ describe('HomeHero plugin picker', () => {
   it('can mention staged files from the home @ picker and keeps removal in sync', async () => {
     const onPromptChange = vi.fn();
     const onRemoveFile = vi.fn();
-    const stagedFile = new File(['<html></html>'], 'brief.html', { type: 'text/html' });
+    const stagedBlob = new File(['<html></html>'], 'brief.html', { type: 'text/html' });
+    const stagedFile = {
+      id: 'staged-file-1',
+      originalName: 'brief.html',
+      uploadName: 'brief.html',
+      file: stagedBlob,
+      previewUrl: null,
+    };
     const baseProps = {
       onPromptChange,
       onSubmit: () => undefined,
@@ -509,7 +516,7 @@ describe('HomeHero plugin picker', () => {
     onPromptChange.mockClear();
     fireEvent.click(screen.getByLabelText('Remove brief.html'));
     expect(onPromptChange).toHaveBeenLastCalledWith('Use ');
-    expect(onRemoveFile).toHaveBeenCalledWith(0);
+    expect(onRemoveFile).toHaveBeenCalledWith('staged-file-1');
   });
 
   it('can pick skills and MCP servers from the home @ picker', async () => {

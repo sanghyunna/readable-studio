@@ -1152,8 +1152,9 @@ function AppInner() {
         const cohort = deriveUploadCohort(pendingFiles);
         const uploadResult = await uploadProjectFiles(result.project.id, pendingFiles);
         firstMessageAttachments = uploadResult.uploaded;
-        const partial = uploadResult.failed.length > 0;
-        if (partial) {
+        const uploadFailed =
+          uploadResult.failed.length > 0 || uploadResult.uploaded.length !== pendingFiles.length;
+        if (uploadFailed) {
           console.warn('Some Home attachments failed to upload', uploadResult.failed);
         }
         trackFileUploadResult(analytics.track, {
@@ -1161,11 +1162,38 @@ function AppInner() {
           area: 'chat_composer',
           project_id: result.project.id,
           ...cohort,
-          result: partial ? 'failed' : 'success',
-          ...(partial && uploadResult.error
+          result: uploadFailed ? 'failed' : 'success',
+          ...(uploadFailed && uploadResult.error
             ? { error_code: uploadResult.error }
             : {}),
         });
+        if (uploadFailed) {
+          trackProjectCreateResult(
+            analytics.track,
+            {
+              page_name: 'home',
+              area: 'new_project',
+              project_source: 'create_button',
+              project_id: result.project.id,
+              project_kind: projectKindToTracking(kind),
+              fidelity,
+              ...(input.pluginId ? { plugin_id: input.pluginId } : {}),
+              ...(input.pluginType ? { plugin_type: input.pluginType } : {}),
+              result: 'failed',
+              error_code: 'ATTACHMENT_UPLOAD_FAILED',
+            },
+            { requestId: input.requestId },
+          );
+          const failedNames = uploadResult.failed.length > 0
+            ? uploadResult.failed.map((failure) => failure.name)
+            : pendingFiles.map((file) => file.name);
+          const prefix = uploadResult.uploaded.length === 0
+            ? 'No attachments were uploaded.'
+            : 'Some attachments failed to upload.';
+          throw new Error(
+            `${prefix} Failed files: ${failedNames.join(', ')}. Files remain attached; try again.`,
+          );
+        }
       }
       trackProjectCreateResult(
         analytics.track,

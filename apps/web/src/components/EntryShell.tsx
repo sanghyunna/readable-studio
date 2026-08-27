@@ -46,7 +46,6 @@ import { DesignsTab } from './DesignsTab';
 import { DesignSystemPreviewModal } from './DesignSystemPreviewModal';
 import { DesignSystemsTab } from './DesignSystemsTab';
 import { EntryNavRail, type EntryView as EntryViewKind } from './EntryNavRail';
-import { buildHubSubmission } from './hub/buildHubSubmission';
 import { HubHome } from './hub/HubHome';
 import { openSessionRoute } from './hub/openSessionRoute';
 import {
@@ -586,16 +585,14 @@ export function EntryShell({
                 onOpenSession={openSessionRoute}
                 designSystems={designSystems}
                 defaultDesignSystemId={defaultDesignSystemId}
-                onSubmitPrompt={(prompt, options) =>
-                  // Same routing the welcome screen used: hidden default
-                  // scenario plugin + projectKind 'other', with the composer's
-                  // design-system choice carried through.
-                  handlePluginLoopSubmit(
-                    buildHubSubmission(prompt, {
-                      designSystemId: options?.designSystemId ?? defaultDesignSystemId,
-                    }),
-                  )
-                }
+                onSubmit={handlePluginLoopSubmit}
+                onOpenProject={onOpenProject}
+                onViewAllProjects={() => changeView('projects')}
+                onBrowseRegistry={() => changeView('plugins')}
+                onOpenMcp={() => openIntegrationTab('mcp')}
+                onOpenNewProject={(tab) => openNewProject(tab)}
+                skills={skills}
+                skillsLoading={skillsLoading}
                 onNewProject={() => openNewProject()}
                 {...(hubFolderImport.available
                   ? { onImportFolder: () => void hubFolderImport.openFolder() }

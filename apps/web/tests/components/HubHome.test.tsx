@@ -14,6 +14,7 @@ vi.mock('../../src/state/projects', () => ({
 
 import { HubHome } from '../../src/components/hub/HubHome';
 import type { Project } from '../../src/types';
+import { setHomeHeroPrompt } from '../helpers/home-hero-lexical';
 
 afterEach(() => {
   cleanup();
@@ -62,7 +63,7 @@ describe('HubHome', () => {
   it('renders the start surface instead of a wall of past projects', async () => {
     listConversations.mockResolvedValue([]);
     renderHub();
-    expect(await screen.findByTestId('hub-composer')).toBeTruthy();
+    expect(await screen.findByTestId('home-hero-input')).toBeTruthy();
     expect(screen.queryByTestId('recent-projects-strip')).toBeNull();
     expect(screen.getByTestId('hub-nav')).toBeTruthy();
   });
@@ -93,9 +94,9 @@ describe('HubHome', () => {
     const onSubmitPrompt = vi.fn();
     listConversations.mockResolvedValue([]);
     renderHub({ onSubmitPrompt });
-    const box = (await screen.findByTestId('hub-composer')) as HTMLTextAreaElement;
-    fireEvent.change(box, { target: { value: '분기 리포트를 만들어 주세요' } });
-    fireEvent.click(screen.getByTestId('hub-send'));
+    await screen.findByTestId('home-hero-input');
+    setHomeHeroPrompt('분기 리포트를 만들어 주세요');
+    fireEvent.click(screen.getByTestId('home-hero-submit'));
     // The composer carries the design-system choice alongside the prompt.
     expect(onSubmitPrompt).toHaveBeenCalledWith('분기 리포트를 만들어 주세요', {
       designSystemId: null,

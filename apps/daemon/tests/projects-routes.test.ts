@@ -17,7 +17,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { mkdir, readdir, readFile, realpath, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { READABLE_STUDIO_PROJECT_LOCATION_ID } from '@readable-studio/contracts';
 
 import { startServer } from '../src/server.js';
@@ -135,6 +135,50 @@ describe('GET /api/projects/:id resolvedDir', () => {
     const expected = path.join(dataDir, 'projects', projectId);
     expect(detail.resolvedDir).toBe(expected);
     expect(path.isAbsolute(detail.resolvedDir)).toBe(true);
+  });
+
+  it('persists same-millisecond uploads whose sanitized names collide as distinct files', async () => {
+    const projectId = `proj-upload-collision-${Date.now()}`;
+    const createResp = await fetch(`${baseUrl}/api/projects`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: projectId,
+        name: 'Upload collision fixture',
+        skillId: null,
+        designSystemId: null,
+        metadata: { kind: 'prototype' },
+      }),
+    });
+    expect(createResp.status).toBe(200);
+
+    const form = new FormData();
+    form.append('files', new Blob(['first payload'], { type: 'text/plain' }), 'a:b.txt');
+    form.append('files', new Blob(['second payload'], { type: 'text/plain' }), 'a*b.txt');
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_800_000_000_000);
+    let uploadResp: Response;
+    try {
+      uploadResp = await fetch(`${baseUrl}/api/projects/${projectId}/upload`, {
+        method: 'POST',
+        body: form,
+      });
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    expect(uploadResp.status).toBe(200);
+    const uploadBody = (await uploadResp.json()) as { files: Array<{ name: string }> };
+    const storedNames = uploadBody.files.map((file) => file.name);
+    expect(storedNames).toHaveLength(2);
+    expect(new Set(storedNames).size).toBe(2);
+    expect(storedNames.every((name) => name.endsWith('-a_b.txt'))).toBe(true);
+
+    const persistedContents = await Promise.all(storedNames.map(async (name) => {
+      const response = await fetch(`${baseUrl}/api/projects/${projectId}/raw/${encodeURIComponent(name)}`);
+      expect(response.status).toBe(200);
+      return response.text();
+    }));
+    expect(persistedContents.sort()).toEqual(['first payload', 'second payload']);
   });
 
   it('persists skipDiscoveryBrief for batch-created projects', async () => {

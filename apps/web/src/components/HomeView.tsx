@@ -52,6 +52,7 @@ import { inlineMentionToken, mentionTokenPresent } from '../utils/inlineMentions
 import { smoothScrollToTop } from '../utils/smoothScrollToTop';
 import { missingRequiredInputs, pluginInputsAreValid } from '../utils/pluginRequiredInputs';
 import { HomeHero, type ExamplePromptInfo, type HomeHeroHandle } from './HomeHero';
+import { stageFiles as buildStagedFiles, type StagedFileItem } from './composer/stagedFiles';
 import { findChip, HOME_HERO_CHIPS, type HomeHeroChip } from './home-hero/chips';
 import {
   buildPluginAuthoringInputs,
@@ -162,6 +163,8 @@ const AUTHORING_DEFAULT_SCENARIO_INPUTS = {
 
 interface Props {
   isActive?: boolean;
+  surface?: 'default' | 'hub';
+  richDataEnabled?: boolean;
   projects: Project[];
   projectsLoading?: boolean;
   designSystems?: DesignSystemSummary[];
@@ -186,6 +189,8 @@ const EMPTY_SKILLS: SkillSummary[] = [];
 
 export function HomeView({
   isActive = true,
+  surface = 'default',
+  richDataEnabled = true,
   projects,
   projectsLoading,
   designSystems = EMPTY_DESIGN_SYSTEMS,
@@ -230,7 +235,10 @@ export function HomeView({
   const [activeSkill, setActiveSkill] = useState<SkillSummary | null>(null);
   const [selectedPluginContexts, setSelectedPluginContexts] = useState<SelectedPluginContext[]>([]);
   const [selectedMcpContexts, setSelectedMcpContexts] = useState<SelectedMcpContext[]>([]);
-  const [stagedFiles, setStagedFiles] = useState<File[]>([]);
+  const [stagedFiles, setStagedFiles] = useState<StagedFileItem[]>([]);
+  const stagedFileIdRef = useRef(1);
+  const submitInFlightRef = useRef(false);
+  const [submitInFlight, setSubmitInFlight] = useState(false);
   const [continuingWithoutPrompt, setContinuingWithoutPrompt] = useState(false);
   const [mcpServers, setMcpServers] = useState<McpServerConfig[]>([]);
   const [mcpLoading, setMcpLoading] = useState(true);
@@ -273,6 +281,10 @@ export function HomeView({
     });
   }, []);
   useEffect(() => {
+    if (!richDataEnabled) {
+      setPluginsLoading(false);
+      return undefined;
+    }
     let cancelled = false;
     const load = () => {
       void listPlugins().then((rows) => {
@@ -287,9 +299,13 @@ export function HomeView({
       cancelled = true;
       window.removeEventListener('readable-studio:plugins-changed', load);
     };
-  }, []);
+  }, [richDataEnabled]);
 
   useEffect(() => {
+    if (!richDataEnabled) {
+      setMcpLoading(false);
+      return undefined;
+    }
     let cancelled = false;
     void fetchMcpServers().then((result) => {
       if (cancelled) return;
@@ -299,7 +315,7 @@ export function HomeView({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [richDataEnabled]);
 
   useEffect(() => {
     if (!pendingPromptFocusEndRef.current) return;
@@ -880,15 +896,33 @@ export function HomeView({
   }
 
   function stageFiles(files: File[]) {
-    if (files.length === 0) return;
-    setStagedFiles((current) => [...current, ...files]);
-    setError(null);
+    if (files.length === 0 || submitInFlightRef.current) return;
+    setStagedFiles((current) => {
+      const result = buildStagedFiles(files, current, stagedFileIdRef.current);
+      stagedFileIdRef.current = result.nextId;
+      setError(result.errors.length > 0 ? result.errors.join(' ') : null);
+      return result.accepted.length > 0 ? [...current, ...result.accepted] : current;
+    });
     focusPromptAtEnd();
   }
 
-  function removeStagedFile(index: number) {
-    setStagedFiles((current) => current.filter((_, i) => i !== index));
+  function removeStagedFile(id: string) {
+    if (submitInFlightRef.current) return;
+    setStagedFiles((current) => current.filter((item) => item.id !== id));
   }
+
+  const updateStagedFilePreviewUrls = useCallback((previewUrls: ReadonlyMap<string, string>) => {
+    setStagedFiles((current) => {
+      let changed = false;
+      const next = current.map((item) => {
+        const previewUrl = previewUrls.get(item.id) ?? null;
+        if (previewUrl === item.previewUrl) return item;
+        changed = true;
+        return { ...item, previewUrl };
+      });
+      return changed ? next : current;
+    });
+  }, []);
 
   function updateActiveInputs(next: Record<string, unknown>) {
     if (!active) return;
@@ -1106,8 +1140,11 @@ export function HomeView({
   async function submit(autoSendFirstMessage = true): Promise<boolean> {
     const trimmed = prompt.trim();
     const submittedPrompt = autoSendFirstMessage ? trimmed : '';
-    const submittedAttachments = [...stagedFiles];
+    const submittedAttachments = stagedFiles.map((item) => item.file);
     if (autoSendFirstMessage && !trimmed && submittedAttachments.length === 0) return false;
+    if (submitInFlightRef.current) return false;
+    submitInFlightRef.current = true;
+    setSubmitInFlight(true);
     // P0 ui_click area=chat_composer element=send_button. Fires before the
     // async plugin-apply roundtrip so the click count reflects user intent
     // even when the run is rejected (missing inputs, apply failure). The
@@ -1130,6 +1167,8 @@ export function HomeView({
           ? `Fill the required plugin ${missing.length === 1 ? 'parameter' : 'parameters'} before running: ${missing.join(', ')}.`
           : 'Fill the required plugin parameters before running.',
       );
+      submitInFlightRef.current = false;
+      setSubmitInFlight(false);
       return false;
     }
     const defaultInputs = { prompt: submittedPrompt };
@@ -1162,6 +1201,8 @@ export function HomeView({
       const result = await resolveActivePlugin(submittedActive.record, submittedPluginInputs);
       if (!result) {
         setError(`Failed to apply ${submittedActive.record.title}. Check the plugin parameters and try again.`);
+        submitInFlightRef.current = false;
+        setSubmitInFlight(false);
         return false;
       }
       submittedActive = { ...submittedActive, result, inputs: submittedPluginInputs };
@@ -1206,7 +1247,9 @@ export function HomeView({
       sessionMode === 'design'
         ? submittedActive?.record.id ?? DEFAULT_UNSELECTED_SCENARIO_PLUGIN_ID
         : submittedActive?.record.id ?? null;
-    const submission = onSubmit({
+    let submission: Promise<boolean> | boolean | void;
+    try {
+      submission = onSubmit({
       prompt: submittedPrompt,
       pluginId: routedPluginId,
       pluginType: submittedActive?.record.marketplaceTrust ?? (routedPluginId ? 'official' : null),
@@ -1232,17 +1275,26 @@ export function HomeView({
         return { examplePromptContext: examplePromptInfoRef.current };
       })(),
     });
-    if (autoSendFirstMessage) {
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Failed to start the project. Try again.');
+      submitInFlightRef.current = false;
+      setSubmitInFlight(false);
+      return false;
+    }
+    try {
+      const result = await submission;
+      if (result === false) return false;
       setSelectedPluginContexts([]);
       setSelectedMcpContexts([]);
-      return (await submission) !== false;
+      setStagedFiles([]);
+      return true;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Failed to start the project. Try again.');
+      return false;
+    } finally {
+      submitInFlightRef.current = false;
+      setSubmitInFlight(false);
     }
-    const result = await submission;
-    if (result !== false) {
-      setSelectedPluginContexts([]);
-      setSelectedMcpContexts([]);
-    }
-    return result !== false;
   }
 
   async function continueWithoutPrompt() {
@@ -1256,7 +1308,7 @@ export function HomeView({
   }
 
   return (
-    <div className="home-view" data-testid="home-view" ref={homeViewRef}>
+    <div className={`home-view${surface === 'hub' ? ' home-view--hub' : ''}`} data-testid="home-view" ref={homeViewRef}>
       <HomeHero
         ref={inputRef}
         active={isActive}
@@ -1300,8 +1352,10 @@ export function HomeView({
         footerInputNames={footerInputNamesForChip(active?.chipId ?? null)}
         designSystems={designSystemPickerSystems}
         stagedFiles={stagedFiles}
+        stagedFilesLocked={submitInFlight}
         onAddFiles={stageFiles}
         onRemoveFile={removeStagedFile}
+        onPreviewUrlsChange={updateStagedFilePreviewUrls}
         pluginOptions={plugins}
         pluginsLoading={pluginsLoading}
         skillOptions={selectableSkills}
@@ -1314,12 +1368,14 @@ export function HomeView({
           Boolean(pendingApplyId) ||
           Boolean(pendingAuthoringChipId) ||
           Boolean(active && !active.inputsValid) ||
-          continuingWithoutPrompt
+          continuingWithoutPrompt ||
+          submitInFlight
         }
         continueDisabled={
           Boolean(pendingApplyId) ||
           Boolean(pendingAuthoringChipId) ||
-          continuingWithoutPrompt
+          continuingWithoutPrompt ||
+          submitInFlight
         }
         onPickPlugin={(record, nextPrompt) => addPluginContext(record, nextPrompt)}
         onPickExamplePlugin={useExamplePlugin}
@@ -1332,7 +1388,7 @@ export function HomeView({
         executionSwitcher={executionSwitcher}
       />
 
-      <RecentProjectsStrip
+      {surface === 'hub' ? null : <RecentProjectsStrip
         projects={projects}
         designSystems={designSystems}
         {...(projectsLoading !== undefined ? { loading: projectsLoading } : {})}
@@ -1359,7 +1415,7 @@ export function HomeView({
           });
           onViewAllProjects();
         }}
-      />
+      />}
 
       <AnimatePresence>
         {detailsRecord ? (

@@ -9,7 +9,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useT } from '../../i18n';
 import { RUNS_CHANGED_EVENT } from '../../providers/daemon';
 import { createConversation, readConversations } from '../../state/projects';
-import type { DesignSystemSummary, Project } from '../../types';
+import type { DesignSystemSummary, Project, SkillSummary } from '../../types';
+import { HomeView } from '../HomeView';
+import type { PluginLoopSubmit } from '../PluginLoopHome';
 import { HubSessionTree } from './HubSessionTree';
 import {
   projectStateFromStatus,
@@ -40,12 +42,17 @@ interface Props {
   projectsLoading?: boolean;
   /** Open an existing session directly in the workspace. */
   onOpenSession: (projectId: string, conversationId: string) => void;
-  /**
-   * Prompt-first creation; App owns the auto-send handoff. The options carry
-   * the composer's design-system choice so the hub does not silently drop what
-   * the hero used to let the user pick.
-   */
-  onSubmitPrompt: (prompt: string, options?: { designSystemId: string | null }) => unknown;
+  /** Rich creation payload; HomeView owns all composer submission state. */
+  onSubmit?: (payload: PluginLoopSubmit) => Promise<boolean> | boolean | void;
+  /** @deprecated compatibility for callers not yet migrated to the rich payload. */
+  onSubmitPrompt?: (prompt: string, options?: { designSystemId: string | null }) => unknown;
+  onOpenProject?: (id: string) => void;
+  onViewAllProjects?: () => void;
+  onBrowseRegistry?: () => void;
+  onOpenMcp?: () => void;
+  onOpenNewProject?: (tab: 'template') => void;
+  skills?: SkillSummary[];
+  skillsLoading?: boolean;
   designSystems?: DesignSystemSummary[];
   defaultDesignSystemId?: string | null;
   onNewProject: () => void;
@@ -70,7 +77,15 @@ export function HubHome({
   projects,
   projectsLoading = false,
   onOpenSession,
+  onSubmit,
   onSubmitPrompt,
+  onOpenProject,
+  onViewAllProjects,
+  onBrowseRegistry,
+  onOpenMcp,
+  onOpenNewProject,
+  skills,
+  skillsLoading,
   onNewProject,
   onImportFolder,
   importingFolder = false,
@@ -87,15 +102,8 @@ export function HubHome({
   const [sessionsByProject, setSessionsByProject] = useState<
     Record<string, ProjectSessionsEntry>
   >({});
-  const [prompt, setPrompt] = useState('');
   const [announcement, setAnnouncement] = useState('');
   const [query, setQuery] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [designSystemId, setDesignSystemId] = useState<string | null>(defaultDesignSystemId);
-  const composerRef = useRef<HTMLTextAreaElement | null>(null);
-  // State updates are async, so the ref is what actually blocks a second
-  // activation inside the same tick (double-click, key repeat).
-  const submittingRef = useRef(false);
   // One generation counter per project, so a retry (or a runs-changed refresh)
   // can discard a slower in-flight response for the SAME project without
   // touching any sibling's request.
@@ -108,10 +116,6 @@ export function HubHome({
   // identity, while still rendering the translated fallback label.
   const untitledLabel = useRef(t('hub.untitledSession'));
   untitledLabel.current = t('hub.untitledSession');
-
-  useEffect(() => {
-    setDesignSystemId(defaultDesignSystemId);
-  }, [defaultDesignSystemId]);
 
   // Sessions are per-project on the daemon; there is no cross-project
   // conversation endpoint. Fan out per project and commit each result as it
@@ -327,33 +331,6 @@ export function HubHome({
     [handleOpenSession, onOpenSession],
   );
 
-  const submit = useCallback(() => {
-    // State updates are async, so the ref is what actually blocks a second
-    // activation inside the same tick (double-click, key repeat).
-    if (submittingRef.current) return;
-    const value = prompt.trim();
-    if (!value) {
-      composerRef.current?.focus();
-      return;
-    }
-    submittingRef.current = true;
-    setSubmitting(true);
-    const result = onSubmitPrompt(value, { designSystemId }) as Promise<unknown> | unknown;
-    const done = () => {
-      submittingRef.current = false;
-      setSubmitting(false);
-    };
-    if (result && typeof (result as Promise<unknown>).finally === 'function') {
-      void (result as Promise<unknown>).finally(done);
-    } else {
-      // A synchronous handler has already done its work; unlock immediately so
-      // the composer never stays dead after a non-promise create path.
-      done();
-    }
-  }, [prompt, onSubmitPrompt, designSystemId]);
-
-  const ready = prompt.trim().length > 0 && !submitting;
-
   return (
     <div className="hub">
       <div className="sr-only" role="status" aria-live="polite" data-testid="hub-live-region">
@@ -441,55 +418,24 @@ export function HubHome({
             </button>
           ) : null}
 
-          <h1 className="hub__title">{t('hub.startTitle')}</h1>
-          <p className="hub__subtitle">{t('hub.startSubtitle')}</p>
-
-          <div className="hub__composer">
-            <textarea
-              ref={composerRef}
-              className="hub__composer-input"
-              data-testid="hub-composer"
-              rows={3}
-              value={prompt}
-              aria-label={t('hub.startTitle')}
-              placeholder={t('hub.composerPlaceholder')}
-              onChange={(event) => setPrompt(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-                  event.preventDefault();
-                  submit();
-                }
-              }}
-            />
-            <div className="hub__composer-bar">
-              {designSystems.length > 0 ? (
-                <select
-                  className="hub__ctl"
-                  data-testid="hub-design-system"
-                  value={designSystemId ?? ''}
-                  aria-label={t('hub.designSystem')}
-                  onChange={(event) => setDesignSystemId(event.target.value || null)}
-                >
-                  {designSystems.map((system) => (
-                    <option key={system.id} value={system.id}>
-                      {system.title}
-                    </option>
-                  ))}
-                </select>
-              ) : null}
-              <button
-                type="button"
-                className="hub__send"
-                data-testid="hub-send"
-                aria-label={submitting ? t('hub.starting') : t('hub.send')}
-                aria-disabled={!ready}
-                disabled={submitting}
-                onClick={submit}
-              >
-                {submitting ? t('hub.starting') : t('hub.send')}
-              </button>
-            </div>
-          </div>
+          <HomeView
+            surface="hub"
+            richDataEnabled={Boolean(onSubmit)}
+            projects={projects}
+            projectsLoading={projectsLoading}
+            designSystems={designSystems}
+            defaultDesignSystemId={defaultDesignSystemId}
+            onSubmit={onSubmit ?? ((payload) => {
+              onSubmitPrompt?.(payload.prompt, { designSystemId: payload.designSystemId ?? null });
+            })}
+            onOpenProject={onOpenProject ?? (() => undefined)}
+            onViewAllProjects={onViewAllProjects ?? (() => undefined)}
+            onBrowseRegistry={onBrowseRegistry}
+            onOpenMcp={onOpenMcp}
+            onOpenNewProject={onOpenNewProject}
+            skills={skills}
+            skillsLoading={skillsLoading}
+          />
 
           <div className="hub__starters">
             {onImportFolder ? (

@@ -17,6 +17,7 @@ vi.mock('../../src/state/projects', () => ({
 
 import { HubHome } from '../../src/components/hub/HubHome';
 import type { DesignSystemSummary, Project } from '../../src/types';
+import { setHomeHeroPrompt } from '../helpers/home-hero-lexical';
 
 afterEach(() => {
   cleanup();
@@ -28,8 +29,8 @@ const PROJECTS: Project[] = [
 ];
 
 const SYSTEMS: DesignSystemSummary[] = [
-  { id: 'aurora', title: 'Aurora', category: 'web', summary: '' },
-  { id: 'nord', title: 'Nord', category: 'web', summary: '' },
+  { id: 'aurora', title: 'Aurora', category: 'web', summary: '', source: 'user', status: 'published' },
+  { id: 'nord', title: 'Nord', category: 'web', summary: '', source: 'user', status: 'published' },
 ];
 
 function renderHub(overrides = {}) {
@@ -49,25 +50,21 @@ function renderHub(overrides = {}) {
 }
 
 describe('hub composer design system', () => {
-  it('submits the default design system with the prompt', async () => {
+  it('keeps free-form rich submissions explicitly unscoped', async () => {
     listConversations.mockResolvedValue([]);
     const onSubmitPrompt = vi.fn();
     renderHub({ onSubmitPrompt });
-    const box = (await screen.findByTestId('hub-composer')) as HTMLTextAreaElement;
-    fireEvent.change(box, { target: { value: '분기 리포트' } });
-    fireEvent.click(screen.getByTestId('hub-send'));
-    expect(onSubmitPrompt).toHaveBeenCalledWith('분기 리포트', { designSystemId: 'aurora' });
+    await screen.findByTestId('home-hero-input');
+    setHomeHeroPrompt('분기 리포트');
+    fireEvent.click(screen.getByTestId('home-hero-submit'));
+    expect(onSubmitPrompt).toHaveBeenCalledWith('분기 리포트', { designSystemId: null });
   });
 
-  it('lets the user switch the design system before starting', async () => {
+  it('uses the rich composer instead of the removed native hub selector', async () => {
     listConversations.mockResolvedValue([]);
-    const onSubmitPrompt = vi.fn();
-    renderHub({ onSubmitPrompt });
-    const picker = (await screen.findByTestId('hub-design-system')) as HTMLSelectElement;
-    fireEvent.change(picker, { target: { value: 'nord' } });
-    fireEvent.change(screen.getByTestId('hub-composer'), { target: { value: '가격표' } });
-    fireEvent.click(screen.getByTestId('hub-send'));
-    expect(onSubmitPrompt).toHaveBeenCalledWith('가격표', { designSystemId: 'nord' });
+    renderHub();
+    expect(await screen.findByTestId('home-hero-input')).toBeTruthy();
+    expect(screen.queryByTestId('hub-design-system')).toBeNull();
   });
 
   it('omits the picker when no design systems are installed', async () => {
@@ -82,7 +79,7 @@ describe('hub composer design system', () => {
         onImportFolder={vi.fn()}
       />,
     );
-    await screen.findByTestId('hub-composer');
+    await screen.findByTestId('home-hero-input');
     expect(screen.queryByTestId('hub-design-system')).toBeNull();
   });
 });

@@ -82,6 +82,7 @@ import {
   type CaretRect,
 } from './composer/LexicalComposerInput';
 import { CaretFloatingLayer } from './composer/CaretFloatingLayer';
+import type { StagedFileItem } from './composer/stagedFiles';
 
 export interface HomeHeroSubmitHandler {
   (): void;
@@ -150,9 +151,11 @@ interface Props {
   inlineEditableInputNames?: string[];
   footerInputNames?: string[];
   designSystems?: DesignSystemSummary[];
-  stagedFiles?: File[];
+  stagedFiles?: StagedFileItem[];
+  stagedFilesLocked?: boolean;
   onAddFiles?: (files: File[]) => void;
-  onRemoveFile?: (index: number) => void;
+  onRemoveFile?: (id: string) => void;
+  onPreviewUrlsChange?: (previewUrls: ReadonlyMap<string, string>) => void;
   pluginOptions: InstalledPluginRecord[];
   pluginsLoading: boolean;
   skillOptions?: SkillSummary[];
@@ -212,7 +215,8 @@ const EMPTY_INPUT_FIELDS: InputFieldSpec[] = [];
 const EMPTY_PLUGIN_INPUT_VALUES: Record<string, unknown> = {};
 const EMPTY_INPUT_NAMES: string[] = [];
 const EMPTY_DESIGN_SYSTEMS: DesignSystemSummary[] = [];
-const EMPTY_STAGED_FILES: File[] = [];
+const EMPTY_STAGED_FILES: StagedFileItem[] = [];
+const NOOP_PREVIEW_URLS_CHANGE = () => undefined;
 const EMPTY_SKILLS: SkillSummary[] = [];
 const EMPTY_MCP_OPTIONS: McpServerConfig[] = [];
 
@@ -249,8 +253,10 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     footerInputNames = EMPTY_INPUT_NAMES,
     designSystems = EMPTY_DESIGN_SYSTEMS,
     stagedFiles = EMPTY_STAGED_FILES,
+    stagedFilesLocked = false,
     onAddFiles = () => undefined,
     onRemoveFile = () => undefined,
+    onPreviewUrlsChange = NOOP_PREVIEW_URLS_CHANGE,
     pluginOptions,
     pluginsLoading,
     skillOptions = EMPTY_SKILLS,
@@ -294,7 +300,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null);
   const [selectedPromptExample, setSelectedPromptExample] = useState<SelectedPromptExample | null>(null);
   const [previewHomeFileKey, setPreviewHomeFileKey] = useState<string | null>(null);
-  const [stagedFilePreviewUrls, setStagedFilePreviewUrls] = useState<Map<string, string>>(() => new Map());
+  const stagedFilePreviewsRef = useRef<Map<string, { file: File; url: string }>>(new Map());
   // Lexical-driven @-trigger state (replaces the old end-anchored
   // getContextMention regex) + the caret box the popover anchors to.
   const [mentionTrigger, setMentionTrigger] = useState<{ query: string } | null>(null);
@@ -307,9 +313,9 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   const canSubmit = (prompt.trim().length > 0 || stagedFiles.length > 0) && !submitDisabled;
   const previewHomeFile = useMemo(() => {
     if (!previewHomeFileKey) return null;
-    return stagedFiles.find((file, index) => homeFileKey(file, index) === previewHomeFileKey) ?? null;
+    return stagedFiles.find((item) => item.id === previewHomeFileKey) ?? null;
   }, [previewHomeFileKey, stagedFiles]);
-  const previewHomeFileUrl = previewHomeFileKey ? stagedFilePreviewUrls.get(previewHomeFileKey) ?? null : null;
+  const previewHomeFileUrl = previewHomeFile?.previewUrl ?? null;
   const placeholder = activePluginTitle || activeSkillTitle
     ? t('homeHero.placeholderActive')
     : t('homeHero.placeholder');
@@ -319,8 +325,8 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     () =>
       mentionActive
         ? stagedFiles
-            .map((file, index) => ({ file, index }))
-            .filter(({ file }) => fileMatchesQuery(file, mentionQuery))
+            .map((item, index) => ({ item, index }))
+            .filter(({ item }) => fileMatchesQuery(item.file, mentionQuery))
         : [],
     [mentionActive, mentionQuery, stagedFiles],
   );
@@ -366,13 +372,13 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
       ? {
           id: 'files',
           label: t('chat.mentionSectionFiles'),
-          options: (mentionTab === 'files' ? fileMatches : fileMatches.slice(0, HOME_MENTION_ALL_TAB_PREVIEW)).map(({ file, index }) => ({
-            id: `file-${index}-${file.name}`,
-            icon: isImageFile(file) ? 'image' : 'file',
-            title: file.name,
-            description: file.type || t('chat.mentionTabFiles'),
-            meta: formatFileSize(file.size),
-            onPick: () => pickFile(file),
+          options: (mentionTab === 'files' ? fileMatches : fileMatches.slice(0, HOME_MENTION_ALL_TAB_PREVIEW)).map(({ item }) => ({
+            id: `file-${item.id}`,
+            icon: isImageFile(item.file) ? 'image' : 'file',
+            title: item.uploadName,
+            description: item.file.type || t('chat.mentionTabFiles'),
+            meta: formatFileSize(item.file.size),
+            onPick: () => pickFile(item),
           })),
         }
       : null,
@@ -626,18 +632,35 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   }, [shortcutsOpen]);
 
   useEffect(() => {
-    const urls = new Map<string, string>();
-    if (typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
-      stagedFiles.forEach((file, index) => {
-        if (isImageFile(file)) urls.set(homeFileKey(file, index), URL.createObjectURL(file));
-      });
+    const next = new Map(stagedFilePreviewsRef.current);
+    const liveIds = new Set(stagedFiles.map((item) => item.id));
+    for (const [id, preview] of next) {
+      if (liveIds.has(id)) continue;
+      URL.revokeObjectURL(preview.url);
+      next.delete(id);
     }
-    setStagedFilePreviewUrls(urls);
-    return () => {
-      if (typeof URL === 'undefined' || typeof URL.revokeObjectURL !== 'function') return;
-      urls.forEach((url) => URL.revokeObjectURL(url));
-    };
-  }, [stagedFiles]);
+    for (const item of stagedFiles) {
+      const current = next.get(item.id);
+      if (!isImageFile(item.file)) {
+        if (current) {
+          URL.revokeObjectURL(current.url);
+          next.delete(item.id);
+        }
+        continue;
+      }
+      if (!current || current.file !== item.file) {
+        if (current) URL.revokeObjectURL(current.url);
+        next.set(item.id, { file: item.file, url: URL.createObjectURL(item.file) });
+      }
+    }
+    stagedFilePreviewsRef.current = next;
+    onPreviewUrlsChange(new Map(Array.from(next, ([id, preview]) => [id, preview.url])));
+  }, [onPreviewUrlsChange, stagedFiles]);
+
+  useEffect(() => () => {
+    stagedFilePreviewsRef.current.forEach((preview) => URL.revokeObjectURL(preview.url));
+    stagedFilePreviewsRef.current.clear();
+  }, []);
 
   useEffect(() => {
     if (previewHomeFileKey && !previewHomeFile) setPreviewHomeFileKey(null);
@@ -699,9 +722,9 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     onPickPlugin(record, next);
   }
 
-  function pickFile(file: File) {
-    const token = inlineMentionToken(file.name);
-    insertHomeMention(token, { id: file.name, kind: 'file', label: file.name, token });
+  function pickFile(item: StagedFileItem) {
+    const token = inlineMentionToken(item.uploadName);
+    insertHomeMention(token, { id: item.id, kind: 'file', label: item.uploadName, token });
     setSelectedIndex(0);
     // The file is already staged; the editor's onChange has updated the
     // prompt text, so there is nothing else to forward to the host.
@@ -795,14 +818,14 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   }
 
   function handleFiles(files: File[]) {
-    if (files.length === 0) return;
+    if (files.length === 0 || stagedFilesLocked) return;
     onAddFiles(files);
   }
 
-  function removeFileChip(index: number, file: File) {
-    const nextPrompt = stripHomeMentionToken(prompt, file.name);
+  function removeFileChip(item: StagedFileItem) {
+    const nextPrompt = stripHomeMentionToken(prompt, item.uploadName);
     if (nextPrompt !== prompt) onPromptChange(nextPrompt);
-    onRemoveFile(index);
+    onRemoveFile(item.id);
   }
 
   function usePromptExample(example: string) {
@@ -934,9 +957,8 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
           >
             {stagedFiles.length > 0 ? (
               <span className="home-hero__active-file-group" data-testid="home-hero-staged-files">
-                {stagedFiles.map((file, index) => {
-                  const key = homeFileKey(file, index);
-                  const previewUrl = stagedFilePreviewUrls.get(key) ?? null;
+                {stagedFiles.map((item) => {
+                  const previewUrl = item.previewUrl;
                   const fileBody = (
                     <>
                       {previewUrl ? (
@@ -949,25 +971,25 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
                         />
                       ) : (
                         <span className="home-hero__active-icon" aria-hidden>
-                          <Icon name={isImageFile(file) ? 'image' : 'file'} size={12} />
+                          <Icon name={isImageFile(item.file) ? 'image' : 'file'} size={12} />
                         </span>
                       )}
-                      <span className="home-hero__active-label">{file.name}</span>
-                      <span className="home-hero__active-meta">{formatFileSize(file.size)}</span>
+                      <span className="home-hero__active-label">{item.uploadName}</span>
+                      <span className="home-hero__active-meta">{formatFileSize(item.file.size)}</span>
                     </>
                   );
                   return (
                     <span
-                      key={key}
+                      key={item.id}
                       className="home-hero__active-chip home-hero__active-chip--context home-hero__active-chip--file"
-                      title={`${file.name} · ${formatFileSize(file.size)}`}
+                      title={`${item.originalName} · ${formatFileSize(item.file.size)}`}
                     >
                       {previewUrl ? (
                         <button
                           type="button"
                           className="home-hero__active-chip-body home-hero__active-file-body"
-                          onClick={() => setPreviewHomeFileKey(key)}
-                          aria-label={`Preview ${file.name}`}
+                          onClick={() => setPreviewHomeFileKey(item.id)}
+                          aria-label={`Preview ${item.uploadName}`}
                         >
                           {fileBody}
                         </button>
@@ -979,8 +1001,9 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
                       <button
                         type="button"
                         className="home-hero__active-clear readable-tooltip"
-                        onClick={() => removeFileChip(index, file)}
-                        aria-label={t('chat.removeAria', { name: file.name })}
+                        onClick={() => removeFileChip(item)}
+                        disabled={stagedFilesLocked}
+                        aria-label={t('chat.removeAria', { name: item.uploadName })}
                         title={t('homeHero.removeFile')}
                         data-tooltip={t('homeHero.removeFile')}
                       >
@@ -1107,7 +1130,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
             })}
           </div>
         ) : null}
-        <div className="home-hero__prompt-surface">
+        <div className="home-hero__prompt-surface" data-testid="hub-composer">
           <div ref={promptEditorRef} className="home-hero__prompt-editor home-hero__lexical">
             <LexicalComposerInput
               ref={editorRef}
@@ -1267,6 +1290,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
             data-testid="home-hero-file-input"
             type="file"
             multiple
+            disabled={stagedFilesLocked}
             style={{ display: 'none' }}
             onChange={(event) => {
               const files = Array.from(event.target.files ?? []);
@@ -1509,14 +1533,14 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
           className="staged-preview-modal"
           role="dialog"
           aria-modal="true"
-          aria-label={previewHomeFile.name}
+          aria-label={previewHomeFile.uploadName}
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) setPreviewHomeFileKey(null);
           }}
         >
           <div className="staged-preview-card">
             <div className="staged-preview-head">
-              <span title={previewHomeFile.name}>{previewHomeFile.name}</span>
+              <span title={previewHomeFile.originalName}>{previewHomeFile.uploadName}</span>
               <button
                 type="button"
                 className="icon-only readable-tooltip"
@@ -1528,7 +1552,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
                 <Icon name="close" size={14} />
               </button>
             </div>
-            <img src={previewHomeFileUrl} alt={previewHomeFile.name} />
+            <img src={previewHomeFileUrl} alt={previewHomeFile.uploadName} />
           </div>
         </div>,
         document.body,
@@ -1646,10 +1670,6 @@ function promptExampleChipLabel(example: string): string {
   return candidate.length > 64 ? `${candidate.slice(0, 61).trimEnd()}...` : candidate;
 }
 
-function homeFileKey(file: File, index: number): string {
-  return `${file.name}-${file.size}-${file.lastModified}-${index}`;
-}
-
 function isImageFile(file: File): boolean {
   return file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|svg|avif|bmp)$/i.test(file.name);
 }
@@ -1691,20 +1711,17 @@ function buildHomeMentionEntities({
   mcpOptions: McpServerConfig[];
   pluginOptions: InstalledPluginRecord[];
   selectedPluginContexts: InstalledPluginRecord[];
-  stagedFiles: File[];
+  stagedFiles: StagedFileItem[];
   skillOptions: SkillSummary[];
 }): InlineMentionEntity[] {
   const entities: InlineMentionEntity[] = [];
-  const fileSeen = new Set<string>();
-  for (const file of stagedFiles) {
-    if (fileSeen.has(file.name)) continue;
-    fileSeen.add(file.name);
+  for (const item of stagedFiles) {
     entities.push({
-      id: file.name,
+      id: item.id,
       kind: 'file',
-      label: file.name,
-      token: inlineMentionToken(file.name),
-      title: `File: ${file.name}`,
+      label: item.uploadName,
+      token: inlineMentionToken(item.uploadName),
+      title: `File: ${item.originalName}`,
     });
   }
   const pluginSeen = new Set<string>();
