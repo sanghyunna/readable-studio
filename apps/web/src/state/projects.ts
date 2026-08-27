@@ -301,19 +301,81 @@ export async function deleteProject(id: string): Promise<boolean> {
 
 // ---------- conversations ----------
 
+/** Why a conversation read failed, in the shape a retry affordance needs. */
+export interface ConversationsReadError {
+  code: 'network' | 'http' | 'malformed';
+  message: string;
+  status?: number;
+  /** Network blips, 408, 429 and 5xx are worth retrying; 4xx generally is not. */
+  retryable: boolean;
+}
+
+export type ConversationsReadResult =
+  | { ok: true; conversations: Conversation[] }
+  | { ok: false; error: ConversationsReadError };
+
+function isRetryableStatus(status: number): boolean {
+  return status === 408 || status === 429 || status >= 500;
+}
+
+/**
+ * Result-returning conversation read.
+ *
+ * `listConversations()` flattens every failure into `[]`, which makes "this
+ * project has no sessions" indistinguishable from "the daemon is down". Callers
+ * that must tell those apart (the entry hub) read through this instead; the
+ * legacy `[]` contract stays intact for everyone else.
+ */
+export async function readConversations(
+  projectId: string,
+): Promise<ConversationsReadResult> {
+  let resp: Response;
+  try {
+    resp = await fetch(
+      `/api/projects/${encodeURIComponent(projectId)}/conversations`,
+    );
+  } catch (err) {
+    return {
+      ok: false,
+      error: {
+        code: 'network',
+        message: err instanceof Error ? err.message : 'Could not reach the daemon',
+        retryable: true,
+      },
+    };
+  }
+  if (!resp.ok) {
+    return {
+      ok: false,
+      error: {
+        code: 'http',
+        message: `Request failed with status ${resp.status}`,
+        status: resp.status,
+        retryable: isRetryableStatus(resp.status),
+      },
+    };
+  }
+  try {
+    const json = (await resp.json()) as { conversations?: Conversation[] };
+    return { ok: true, conversations: json.conversations ?? [] };
+  } catch (err) {
+    return {
+      ok: false,
+      error: {
+        code: 'malformed',
+        message: err instanceof Error ? err.message : 'Unreadable response body',
+        status: resp.status,
+        retryable: false,
+      },
+    };
+  }
+}
+
 export async function listConversations(
   projectId: string,
 ): Promise<Conversation[]> {
-  try {
-    const resp = await fetch(
-      `/api/projects/${encodeURIComponent(projectId)}/conversations`,
-    );
-    if (!resp.ok) return [];
-    const json = (await resp.json()) as { conversations: Conversation[] };
-    return json.conversations ?? [];
-  } catch {
-    return [];
-  }
+  const result = await readConversations(projectId);
+  return result.ok ? result.conversations : [];
 }
 
 export async function createConversation(

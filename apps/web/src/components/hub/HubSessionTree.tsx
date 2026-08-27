@@ -15,6 +15,7 @@ import {
 } from 'react';
 
 import { useT } from '../../i18n';
+import { relativeTimeLong } from '../../utils/chatTime';
 import {
   HUB_SESSION_PAGE,
   matchesHubFilter,
@@ -33,6 +34,10 @@ interface Props {
   currentSessionId: string | null;
   onOpenSession: (session: HubSessionNode) => void;
   onNewSession?: (project: HubProjectNode) => void;
+  /** Retries ONE project's session read; siblings are left alone. */
+  onRetrySessions?: (project: HubProjectNode) => void;
+  /** The project whose new-session request is currently in flight, if any. */
+  pendingNewSessionProjectId?: string | null;
 }
 
 interface FlatRow {
@@ -56,6 +61,8 @@ export function HubSessionTree({
   currentSessionId,
   onOpenSession,
   onNewSession,
+  onRetrySessions,
+  pendingNewSessionProjectId = null,
 }: Props) {
   const t = useT();
   const [filter, setFilter] = useState<HubFilter>('all');
@@ -303,6 +310,7 @@ export function HubSessionTree({
           const projectIndex = indexOfKey(projectKey);
           const rollup = rollupProjectState(entry.project);
           const rollupKey = stateLabelKey(rollup);
+          const sessionsStatus = entry.project.sessionsStatus ?? 'ready';
           return (
             <div key={entry.project.id} className="hub-tree__node">
               <div
@@ -344,6 +352,8 @@ export function HubSessionTree({
                     className="hub-row__action"
                     data-testid={`hub-new-session-${entry.project.id}`}
                     aria-label={t('hub.newSessionIn', { name: entry.project.name })}
+                    aria-busy={pendingNewSessionProjectId === entry.project.id}
+                    disabled={pendingNewSessionProjectId === entry.project.id}
                     onClick={(event) => {
                       event.stopPropagation();
                       onNewSession(entry.project);
@@ -360,6 +370,45 @@ export function HubSessionTree({
                 data-open={entry.open}
                 hidden={!entry.open}
               >
+                {/* Session-read state lives OUTSIDE the treeitem set on
+                    purpose: adding rows here would change the roving-focus
+                    order and the arrow-key model. */}
+                {sessionsStatus === 'loading' ? (
+                  <p
+                    role="presentation"
+                    className="hub-tree__note"
+                    data-testid={`hub-sessions-loading-${entry.project.id}`}
+                  >
+                    {t('common.loading')}
+                  </p>
+                ) : null}
+                {sessionsStatus === 'unavailable' || sessionsStatus === 'stale' ? (
+                  <p
+                    role="presentation"
+                    className={`hub-tree__note hub-tree__note--${sessionsStatus}`}
+                    data-testid={`hub-sessions-error-${entry.project.id}`}
+                    data-status={sessionsStatus}
+                  >
+                    <span>
+                      {sessionsStatus === 'unavailable'
+                        ? t('hub.sessionsUnavailable')
+                        : t('hub.sessionsStale')}
+                    </span>
+                    {onRetrySessions ? (
+                      <button
+                        type="button"
+                        className="hub-tree__link"
+                        data-testid={`hub-sessions-retry-${entry.project.id}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onRetrySessions(entry.project);
+                        }}
+                      >
+                        {t('hub.retrySessions')}
+                      </button>
+                    ) : null}
+                  </p>
+                ) : null}
                 {entry.sessions.map((session) => {
                   const sessionKey = `s:${session.id}`;
                   const sessionIndex = indexOfKey(sessionKey);
@@ -395,7 +444,19 @@ export function HubSessionTree({
                         >
                           {t(labelKey)}
                         </span>
-                      ) : null}
+                      ) : (
+                        // A completed session carries no status badge, so its
+                        // trailing slot shows last activity - the same thing the
+                        // approved rows show there. The test id deliberately
+                        // avoids the `hub-session-` prefix: row queries select on
+                        // it and a nested match would inflate every row count.
+                        <span
+                          className="hub-row__meta"
+                          data-testid={`hub-row-time-${session.id}`}
+                        >
+                          {relativeTimeLong(session.updatedAt, t)}
+                        </span>
+                      )}
                     </div>
                   );
                 })}

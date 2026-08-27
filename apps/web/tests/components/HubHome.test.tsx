@@ -3,10 +3,13 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { readConversationsFromListMock } from '../helpers/hub-conversations-mock';
+
 const listConversations = vi.hoisted(() => vi.fn());
 
 vi.mock('../../src/state/projects', () => ({
   listConversations,
+  readConversations: readConversationsFromListMock(listConversations),
 }));
 
 import { HubHome } from '../../src/components/hub/HubHome';

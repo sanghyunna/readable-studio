@@ -26,11 +26,24 @@ export interface HubSessionNode {
   sessionMode?: string;
 }
 
+/**
+ * How much the hub actually knows about a project's sessions.
+ *
+ * `listConversations()` collapses every failure into `[]`, so the hub used to
+ * render "no sessions" for a project it simply could not read. These four
+ * states keep "known empty" apart from "still loading" and from "the read
+ * failed", with `stale` reserved for a failure that still has cached rows to
+ * show.
+ */
+export type HubSessionsStatus = 'loading' | 'ready' | 'stale' | 'unavailable';
+
 export interface HubProjectNode {
   id: string;
   name: string;
   updatedAt: number;
   sessions: HubSessionNode[];
+  /** Defaults to `ready` so existing callers keep their current meaning. */
+  sessionsStatus?: HubSessionsStatus;
   /**
    * Project-level state from `project.status.value`. This is the ONLY place
    * `awaiting_input` exists - `Conversation.latestRun.status` is a

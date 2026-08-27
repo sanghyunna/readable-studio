@@ -8,11 +8,14 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { readConversationsFromListMock } from '../helpers/hub-conversations-mock';
+
 const listConversations = vi.hoisted(() => vi.fn());
 const navigate = vi.hoisted(() => vi.fn());
 
 vi.mock('../../src/state/projects', () => ({
   listConversations,
+  readConversations: readConversationsFromListMock(listConversations),
 }));
 vi.mock('../../src/router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/router')>();

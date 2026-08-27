@@ -760,6 +760,12 @@ export interface Dict {
   'hub.newSessionIn': string;
   'hub.emptyFiltered': string;
   'hub.clearFilter': string;
+  'hub.sessionsUnavailable': string;
+  'hub.sessionsStale': string;
+  'hub.retrySessions': string;
+  'hub.sessionsFailed': string;
+  'hub.importingFolder': string;
+  'hub.importingClaudeZip': string;
   'hub.openWork': string;
   'hub.projects': string;
   'hub.results': string;

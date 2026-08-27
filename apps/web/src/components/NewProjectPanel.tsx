@@ -30,6 +30,7 @@ import { formatPickAndImportFailure } from '../utils/pickAndImportError';
 import { Icon } from './Icon';
 import { Skeleton } from './Loading';
 import { Toast } from './Toast';
+import { useClaudeZipImport } from './useClaudeZipImport';
 import { useOpenFolderImport } from './useOpenFolderImport';
 
 type TranslateFn = (key: keyof Dict, vars?: Record<string, string | number>) => string;
@@ -204,11 +205,9 @@ export function NewProjectPanel({
 }: Props) {
   const t = useT();
   const analytics = useAnalytics();
-  const importInputRef = useRef<HTMLInputElement | null>(null);
-  const [importing, setImporting] = useState(false);
-  const [importZipError, setImportZipError] = useState<
-    { message: string; details?: string } | null
-  >(null);
+  const claudeZipImport = useClaudeZipImport({
+    ...(onImportClaudeDesign ? { onImportClaudeDesign } : {}),
+  });
   const [workingDir, setWorkingDir] = useState<string | null>(null);
   const [workingDirToken, setWorkingDirToken] = useState<string | null>(null);
   const [workingDirPicking, setWorkingDirPicking] = useState(false);
@@ -518,29 +517,6 @@ export function NewProjectPanel({
     }
   }
 
-  async function handleImportPicked(ev: React.ChangeEvent<HTMLInputElement>) {
-    const file = ev.target.files?.[0];
-    ev.target.value = '';
-    if (!file || !onImportClaudeDesign) return;
-    setImporting(true);
-    setImportZipError(null);
-    try {
-      const result = await onImportClaudeDesign(file);
-      if (result?.ok === false) {
-        setImportZipError({
-          message: result.message ? `Import failed: ${result.message}` : 'Import failed',
-          details: result.details,
-        });
-      }
-    } catch (err) {
-      setImportZipError({
-        message: err instanceof Error ? `Import failed: ${err.message}` : 'Import failed',
-      });
-    } finally {
-      setImporting(false);
-    }
-  }
-
   const folderImport = useOpenFolderImport({
     skillId: skillIdForTab,
     onImportFolder,
@@ -723,22 +699,22 @@ export function NewProjectPanel({
         {onImportClaudeDesign ? (
           <>
             <input
-              ref={importInputRef}
+              ref={claudeZipImport.inputRef}
               type="file"
               accept=".zip,application/zip"
               hidden
-              onChange={handleImportPicked}
+              onChange={(event) => void claudeZipImport.handleChange(event)}
             />
             <button
               type="button"
               className="ghost newproj-import"
-              disabled={loading || importing}
+              disabled={loading || claudeZipImport.importing}
               title={t('newproj.importClaudeZipTitle')}
-              onClick={() => importInputRef.current?.click()}
+              onClick={claudeZipImport.pickFile}
             >
               <Icon name="import" size={13} />
               <span>
-                {importing
+                {claudeZipImport.importing
                   ? t('newproj.importingClaudeZip')
                   : t('newproj.importClaudeZip')}
               </span>
@@ -760,12 +736,12 @@ export function NewProjectPanel({
         ) : null}
       </div>
       <div className="newproj-footer">{t('newproj.privacyFooter')}</div>
-      {importZipError ? (
+      {claudeZipImport.error ? (
         <Toast
-          message={importZipError.message}
-          details={importZipError.details ?? null}
+          message={claudeZipImport.error.message}
+          details={claudeZipImport.error.details ?? null}
           ttlMs={6000}
-          onDismiss={() => setImportZipError(null)}
+          onDismiss={claudeZipImport.clearError}
         />
       ) : null}
       {folderImport.error ? (
