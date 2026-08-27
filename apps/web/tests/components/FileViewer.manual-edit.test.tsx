@@ -14,6 +14,7 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  document.getElementById('manual-edit-test-host')?.remove();
 });
 
 describe('FileViewer manual edit regressions', () => {
@@ -72,7 +73,7 @@ describe('FileViewer manual edit regressions', () => {
       }));
     });
     await waitFor(() => {
-      expect(screen.getByTestId('manual-edit-shape-toolbar')).toBeTruthy();
+      expect(screen.getByLabelText('Width')).toBeTruthy();
     });
     expect(document.querySelector('.manual-edit-right')).toBeNull();
   }
@@ -428,202 +429,84 @@ describe('FileViewer manual edit regressions', () => {
     );
   });
 
-  it('keeps the latest shape selection requested while a style save is in flight', async () => {
+  it('keeps the latest shape selection requested while style edits are pending', async () => {
     const source = '<!doctype html><html><body><main data-readable-id="hero">Hero</main><section data-readable-id="trend">Trend</section><aside data-readable-id="cta">CTA</aside></body></html>';
-    const save = deferredResponse();
-    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
-      if (url.includes('/api/projects/project-1/files') && init?.method === 'POST') return save.promise;
-      return new Response(source, { status: 200, headers: { 'Content-Type': 'text/html' } });
-    });
+    const fetchMock = vi.fn(async () => new Response(source, { status: 200, headers: { 'Content-Type': 'text/html' } }));
     vi.stubGlobal('fetch', fetchMock);
-
-    render(
-      <FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()}
-        liveHtml={source}
-      />,
-    );
+    render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={source} />);
 
     clickManualTool('manual-edit-mode-toggle');
     await selectManualEditTarget(containerTarget());
-    const frame = await previewFrame();
-    const postSpy = vi.spyOn(frame.contentWindow as Window, 'postMessage');
     fireEvent.change(screen.getByLabelText('Width'), { target: { value: '111' } });
-    await waitFor(() => {
-      expect(postSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'readable-edit-preview-style', id: 'hero' }),
-        '*',
-      );
-    });
+    const frame = await previewFrame();
+    for (const target of [
+      containerTarget({ id: 'trend', label: 'Trend', styles: { ...emptyManualEditStyles(), width: '222px' } }),
+      containerTarget({ id: 'cta', label: 'CTA', styles: { ...emptyManualEditStyles(), width: '333px' } }),
+    ]) {
+      act(() => window.dispatchEvent(new MessageEvent('message', {
+        data: { type: 'readable-edit-select', target }, source: frame.contentWindow,
+      })));
+    }
 
-    act(() => {
-      window.dispatchEvent(new MessageEvent('message', {
-        data: { type: 'readable-edit-select', target: containerTarget({ id: 'trend', label: 'Trend', styles: { ...emptyManualEditStyles(), width: '222px' } }) },
-        source: frame.contentWindow,
-      }));
-    });
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        '/api/projects/project-1/files',
-        expect.objectContaining({ method: 'POST' }),
-      );
-    });
-
-    act(() => {
-      window.dispatchEvent(new MessageEvent('message', {
-        data: { type: 'readable-edit-select', target: containerTarget({ id: 'cta', label: 'CTA', styles: { ...emptyManualEditStyles(), width: '333px' } }) },
-        source: frame.contentWindow,
-      }));
-    });
-    save.resolve(new Response(JSON.stringify({ file: htmlPreviewFile() }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    }));
-
-    await waitFor(() => {
-      expect((screen.getByLabelText('Width') as HTMLInputElement).value).toBe('333');
-    });
+    await waitFor(() => expect((screen.getByLabelText('Width') as HTMLInputElement).value).toBe('333'));
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      '/api/projects/project-1/files', expect.objectContaining({ method: 'POST' }),
+    );
   });
 
-  it('keeps a background click newer than a pending shape selection after the save resolves', async () => {
+  it('blocks a background click while a shape edit is dirty', async () => {
     const source = '<!doctype html><html><body><main data-readable-id="hero">Hero</main><section data-readable-id="trend">Trend</section></body></html>';
-    const save = deferredResponse();
-    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
-      if (url.includes('/api/projects/project-1/files') && init?.method === 'POST') return save.promise;
-      return new Response(source, { status: 200, headers: { 'Content-Type': 'text/html' } });
-    });
+    const fetchMock = vi.fn(async () => new Response(source, { status: 200, headers: { 'Content-Type': 'text/html' } }));
     vi.stubGlobal('fetch', fetchMock);
-
-    render(
-      <FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()}
-        liveHtml={source}
-      />,
-    );
+    render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={source} />);
 
     clickManualTool('manual-edit-mode-toggle');
     await selectManualEditTarget(containerTarget());
     fireEvent.change(screen.getByLabelText('Width'), { target: { value: '111' } });
-    const frame = await previewFrame();
+    await sendManualEditBackground();
 
-    act(() => {
-      window.dispatchEvent(new MessageEvent('message', {
-        data: { type: 'readable-edit-select', target: containerTarget({ id: 'trend', label: 'Trend', styles: { ...emptyManualEditStyles(), width: '222px' } }) },
-        source: frame.contentWindow,
-      }));
-    });
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        '/api/projects/project-1/files',
-        expect.objectContaining({ method: 'POST' }),
-      );
-    });
-
-    act(() => {
-      window.dispatchEvent(new MessageEvent('message', {
-        data: { type: 'readable-edit-background' },
-        source: frame.contentWindow,
-      }));
-    });
-    save.resolve(new Response(JSON.stringify({ file: htmlPreviewFile() }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    }));
-
-    await waitFor(() => {
-      expect(screen.queryByTestId('manual-edit-shape-toolbar')).toBeNull();
-      expect(screen.getByText('PAGE')).toBeTruthy();
-    });
+    expect(screen.getByTestId('manual-edit-shape-toolbar')).toBeTruthy();
+    expect(screen.queryByText('PAGE')).toBeNull();
+    expect(screen.getByTestId('manual-edit-mode-toggle').getAttribute('aria-pressed')).toBe('true');
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      '/api/projects/project-1/files', expect.objectContaining({ method: 'POST' }),
+    );
   });
 
-  it('keeps manual edit mode exited when exit is newer than a pending shape selection save', async () => {
+  it('keeps manual edit mode active when the edit toggle is clicked while dirty', async () => {
     const source = '<!doctype html><html><body><main data-readable-id="hero">Hero</main><section data-readable-id="trend">Trend</section></body></html>';
-    const save = deferredResponse();
-    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
-      if (url.includes('/api/projects/project-1/files') && init?.method === 'POST') return save.promise;
-      return new Response(source, { status: 200, headers: { 'Content-Type': 'text/html' } });
-    });
+    const fetchMock = vi.fn(async () => new Response(source, { status: 200, headers: { 'Content-Type': 'text/html' } }));
     vi.stubGlobal('fetch', fetchMock);
-
-    render(
-      <FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()}
-        liveHtml={source}
-      />,
-    );
+    render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={source} />);
 
     clickManualTool('manual-edit-mode-toggle');
     await selectManualEditTarget(containerTarget());
     fireEvent.change(screen.getByLabelText('Width'), { target: { value: '111' } });
-    const frame = await previewFrame();
-
-    act(() => {
-      window.dispatchEvent(new MessageEvent('message', {
-        data: { type: 'readable-edit-select', target: containerTarget({ id: 'trend', label: 'Trend', styles: { ...emptyManualEditStyles(), width: '222px' } }) },
-        source: frame.contentWindow,
-      }));
-    });
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        '/api/projects/project-1/files',
-        expect.objectContaining({ method: 'POST' }),
-      );
-    });
-
     clickManualTool('manual-edit-mode-toggle');
-    save.resolve(new Response(JSON.stringify({ file: htmlPreviewFile() }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    }));
 
-    await waitFor(() => {
-      expect(screen.queryByTestId('manual-edit-shape-toolbar')).toBeNull();
-      expect(screen.queryByText('PAGE')).toBeNull();
-    });
+    expect(screen.getByTestId('manual-edit-mode-toggle').getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByTestId('manual-edit-shape-toolbar')).toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      '/api/projects/project-1/files', expect.objectContaining({ method: 'POST' }),
+    );
   });
 
-  it('saves a pending text-target style edit before clearing selection on background click', async () => {
+  it('keeps a text target selected when a background click occurs while dirty', async () => {
     const source = '<!doctype html><html><body><main data-readable-id="hero">Hero</main></body></html>';
-    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
-      if (url.includes('/api/projects/project-1/files') && init?.method === 'POST') {
-        return new Response(JSON.stringify({ file: htmlPreviewFile() }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      return new Response(source, { status: 200, headers: { 'Content-Type': 'text/html' } });
-    });
+    const fetchMock = vi.fn(async () => new Response(source, { status: 200, headers: { 'Content-Type': 'text/html' } }));
     vi.stubGlobal('fetch', fetchMock);
-
-    render(
-      <FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()}
-        liveHtml={source}
-      />,
-    );
+    render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={source} />);
 
     clickManualTool('manual-edit-mode-toggle');
     await selectManualEditTarget(heroTarget());
     fireEvent.change(screen.getByLabelText('Width'), { target: { value: '111' } });
+    await sendManualEditBackground();
 
-    const frame = await previewFrame();
-    act(() => {
-      window.dispatchEvent(new MessageEvent('message', {
-        data: { type: 'readable-edit-background' },
-        source: frame.contentWindow,
-      }));
-    });
-
-    await waitFor(() => {
-      const saveCall = fetchMock.mock.calls.find(([input, init]) => {
-        const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
-        return url.includes('/api/projects/project-1/files') && init?.method === 'POST';
-      });
-      expect(saveCall).toBeTruthy();
-      const body = JSON.parse(String((saveCall?.[1] as RequestInit).body));
-      expect(body.content).toContain('width: 111px');
-      expect(screen.getByText('PAGE')).toBeTruthy();
-    });
+    expect(screen.getByTestId('manual-edit-shape-toolbar')).toBeTruthy();
+    expect(screen.queryByText('PAGE')).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      '/api/projects/project-1/files', expect.objectContaining({ method: 'POST' }),
+    );
   });
 
   it('does not let a pending manual edit style save survive a file switch', async () => {
@@ -712,95 +595,65 @@ describe('FileViewer manual edit regressions', () => {
     }
   });
 
-  it('clears a prior manual edit save error after a later successful save', async () => {
+  it('clears a prior manual edit save error after a later explicit save succeeds', async () => {
     const source = '<!doctype html><html><body><main data-readable-id="hero">Hero</main></body></html>';
     let saveAttempts = 0;
     const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
       if (url.includes('/api/projects/project-1/files') && init?.method === 'POST') {
         saveAttempts += 1;
-        if (saveAttempts === 1) {
-          return new Response(JSON.stringify({
-            error: { code: 'FORBIDDEN', message: 'Request failed (403).' },
-          }), { status: 403, headers: { 'Content-Type': 'application/json' } });
-        }
-        return new Response(JSON.stringify({ file: htmlPreviewFile() }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
+        if (saveAttempts === 1) return new Response(JSON.stringify({ error: { message: 'Request failed (403).' } }), { status: 403, headers: { 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ file: htmlPreviewFile() }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
-      if (url.includes('/api/projects/project-1/raw/preview.html')) {
-        return new Response(source, { status: 200 });
-      }
-      return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+      return new Response(source, { status: 200, headers: { 'Content-Type': 'text/html' } });
     });
     vi.stubGlobal('fetch', fetchMock);
-
-    render(
-      <FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()}
-        liveHtml={source}
-      />,
-    );
+    const host = document.createElement('div');
+    host.id = 'manual-edit-test-host';
+    document.body.appendChild(host);
+    render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={source} manualEditPortalId="manual-edit-test-host" />);
 
     clickManualTool('manual-edit-mode-toggle');
     await selectManualEditTarget();
-    const baseSizeInput = await findStyleInput('Width');
+    fireEvent.change(await findStyleInput('Width'), { target: { value: '18' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(screen.getByText(/Could not save the edited file/)).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
 
-    fireEvent.change(baseSizeInput, { target: { value: '18' } });
-    await sendManualEditBackground();
-    await waitFor(() => {
-      expect(screen.getByText(/Could not save the edited file/)).toBeTruthy();
-    });
-
-    fireEvent.change(baseSizeInput, { target: { value: '19' } });
-    await sendManualEditBackground();
     await waitFor(() => {
       expect(screen.queryByText(/Could not save the edited file/)).toBeNull();
       expect(saveAttempts).toBe(2);
+      expect(screen.getByTestId('manual-edit-mode-toggle').getAttribute('aria-pressed')).toBe('false');
     });
   });
 
-  it('retries the actual save when background clear is requested again after a failure', async () => {
+  it('retries the actual save only when explicit Save is requested again after a failure', async () => {
     const source = '<!doctype html><html><body><main data-readable-id="hero">Hero</main></body></html>';
     let postAttempts = 0;
     const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
       if (url.includes('/api/projects/project-1/files') && init?.method === 'POST') {
         postAttempts += 1;
-        return new Response(JSON.stringify({
-          error: { code: 'FORBIDDEN', message: 'Request failed (403).' },
-        }), { status: 403, headers: { 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ error: { message: 'Request failed (403).' } }), { status: 403, headers: { 'Content-Type': 'application/json' } });
       }
-      if (url.includes('/api/projects/project-1/raw/preview.html')) {
-        return new Response(source, { status: 200 });
-      }
-      return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+      return new Response(source, { status: 200, headers: { 'Content-Type': 'text/html' } });
     });
     vi.stubGlobal('fetch', fetchMock);
-
-    render(
-      <FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()}
-        liveHtml={source}
-      />,
-    );
+    const host = document.createElement('div');
+    host.id = 'manual-edit-test-host';
+    document.body.appendChild(host);
+    render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={source} manualEditPortalId="manual-edit-test-host" />);
 
     clickManualTool('manual-edit-mode-toggle');
     await selectManualEditTarget();
-    const baseSizeInput = await findStyleInput('Width');
-
-    fireEvent.change(baseSizeInput, { target: { value: '18' } });
+    fireEvent.change(await findStyleInput('Width'), { target: { value: '18' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(postAttempts).toBe(1));
     await sendManualEditBackground();
-    await waitFor(() => {
-      expect(screen.getByText(/Could not save the edited file/)).toBeTruthy();
-    });
     expect(postAttempts).toBe(1);
-
-    // No further edits: requesting the clear again must retry the write, not
-    // silently treat the still-unsaved change as done.
-    await sendManualEditBackground();
-    await waitFor(() => {
-      expect(postAttempts).toBe(2);
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(postAttempts).toBe(2));
+    expect(screen.getByTestId('manual-edit-mode-toggle').getAttribute('aria-pressed')).toBe('true');
   });
 
   it('surfaces a preview-style-applied failure from the iframe as a manual edit error', async () => {
@@ -840,64 +693,27 @@ describe('FileViewer manual edit regressions', () => {
     });
   });
 
-  it('keeps page styles open when selecting a target fails to save, then selects it on retry', async () => {
+  it('keeps page styles open when selecting a target while page edits are dirty', async () => {
     const source = '<!doctype html><html><body><main data-readable-id="hero">Hero</main></body></html>';
-    let saveAttempts = 0;
-    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
-      if (url.includes('/api/projects/project-1/files') && init?.method === 'POST') {
-        saveAttempts += 1;
-        if (saveAttempts === 1) {
-          return new Response(JSON.stringify({ error: { code: 'FORBIDDEN', message: 'Request failed (403).' } }), {
-            status: 403,
-            headers: { 'Content-Type': 'application/json' },
-          });
-        }
-        return new Response(JSON.stringify({ file: htmlPreviewFile() }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      return new Response(source, { status: 200, headers: { 'Content-Type': 'text/html' } });
-    });
+    const fetchMock = vi.fn(async () => new Response(source, { status: 200, headers: { 'Content-Type': 'text/html' } }));
     vi.stubGlobal('fetch', fetchMock);
-
-    render(
-      <FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()}
-        liveHtml={source}
-      />,
-    );
+    render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={source} />);
 
     clickManualTool('manual-edit-mode-toggle');
     await clickManualEditBackground();
     const baseSizeInput = screen.getByText('Base size').closest('label')?.querySelector('input');
     expect(baseSizeInput).toBeTruthy();
     fireEvent.change(baseSizeInput!, { target: { value: '18' } });
-
     const frame = await previewFrame();
-    const selectTarget = () => act(() => {
-      window.dispatchEvent(new MessageEvent('message', {
-        data: { type: 'readable-edit-select', target: heroTarget() },
-        source: frame.contentWindow,
-      }));
-    });
-    selectTarget();
+    act(() => window.dispatchEvent(new MessageEvent('message', {
+      data: { type: 'readable-edit-select', target: heroTarget() }, source: frame.contentWindow,
+    })));
 
-    await waitFor(() => {
-      expect(saveAttempts).toBe(1);
-      expect(screen.getByText(/Could not save the edited file/)).toBeTruthy();
-    });
     expect(document.querySelector('.manual-edit-right')).not.toBeNull();
-    expect(screen.getByText('Cancel')).toBeTruthy();
     expect(screen.queryByTestId('manual-edit-shape-toolbar')).toBeNull();
-
-    selectTarget();
-
-    await waitFor(() => {
-      expect(saveAttempts).toBe(2);
-      expect(screen.getByTestId('manual-edit-shape-toolbar')).toBeTruthy();
-      expect(document.querySelector('.manual-edit-right')).toBeNull();
-    });
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      '/api/projects/project-1/files', expect.objectContaining({ method: 'POST' }),
+    );
   });
 
   it('closes the page-styles card without saving on cancel, staying in edit mode', async () => {
@@ -927,42 +743,24 @@ describe('FileViewer manual edit regressions', () => {
     );
   });
 
-  it('closes the page-styles card after save succeeds, staying in edit mode', async () => {
+  it('applies page styles to the transaction and closes the card without persisting', async () => {
     const source = '<!doctype html><html><body><main data-readable-id="hero">Hero</main></body></html>';
-    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
-      if (url.includes('/api/projects/project-1/files') && init?.method === 'POST') {
-        return new Response(JSON.stringify({ file: htmlPreviewFile() }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      return new Response(source, { status: 200, headers: { 'Content-Type': 'text/html' } });
-    });
+    const fetchMock = vi.fn(async () => new Response(source, { status: 200, headers: { 'Content-Type': 'text/html' } }));
     vi.stubGlobal('fetch', fetchMock);
-
-    render(
-      <FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()}
-        liveHtml={source}
-      />,
-    );
+    render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={source} />);
 
     clickManualTool('manual-edit-mode-toggle');
     await clickManualEditBackground();
     const baseSizeInput = screen.getByText('Base size').closest('label')?.querySelector('input');
     expect(baseSizeInput).toBeTruthy();
-
     fireEvent.change(baseSizeInput!, { target: { value: '18' } });
     fireEvent.click(screen.getByText('Save'));
 
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        '/api/projects/project-1/files',
-        expect.objectContaining({ method: 'POST' }),
-      );
-      expect(document.querySelector('.manual-edit-right')).toBeNull();
-    });
+    await waitFor(() => expect(document.querySelector('.manual-edit-right')).toBeNull());
     expect(document.querySelector('.manual-edit-workspace')).not.toBeNull();
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      '/api/projects/project-1/files', expect.objectContaining({ method: 'POST' }),
+    );
   });
 });
 

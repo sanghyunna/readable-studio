@@ -62,12 +62,8 @@ afterEach(() => {
 });
 
 describe('FileViewer manual edit history regressions', () => {
-  it('flushes pending style edits before activating draw mode from manual edit', async () => {
+  it('blocks draw mode while manual edit has pending style edits', async () => {
     const initialSource = '<!doctype html><html><body><h1 data-readable-id="hero" style="color: #111111">Hero</h1></body></html>';
-    let saveResolve!: (value: Response) => void;
-    const saveResponse = new Promise<Response>((resolve) => {
-      saveResolve = resolve;
-    });
     const savedSources: string[] = [];
     const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
@@ -80,7 +76,10 @@ describe('FileViewer manual edit history regressions', () => {
       if (url.includes('/api/projects/project-1/files') && init?.method === 'POST') {
         const payload = JSON.parse(String(init.body)) as { content: string };
         savedSources.push(payload.content);
-        return saveResponse;
+        return new Response(JSON.stringify({ file: htmlPreviewFile() }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
       }
       if (url.includes('/api/projects/project-1/raw/preview.html')) {
         return new Response(initialSource, { status: 200 });
@@ -98,30 +97,25 @@ describe('FileViewer manual edit history regressions', () => {
     clickManualTool('manual-edit-mode-toggle');
     await selectManualEditTarget();
 
+    const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
+    const postSpy = vi.spyOn(frame.contentWindow as Window, 'postMessage');
     act(() => {
       toolbarState.props?.onStyleField('color', '#ef4444');
     });
     clickAgentTool('draw-overlay-toggle');
 
-    await waitFor(() => expect(savedSources).toHaveLength(1));
-    expect(savedSources[0]).toContain('rgb(239, 68, 68)');
+    await waitFor(() => expect(postSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'readable-edit-preview-style',
+        id: 'hero',
+        styles: { color: '#ef4444' },
+      }),
+      '*',
+    ));
+    expect(savedSources).toHaveLength(0);
     openManualTools();
     expect(screen.getByTestId('manual-edit-mode-toggle').getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByTestId('draw-overlay-toggle').getAttribute('aria-pressed')).toBe('false');
-
-    await act(async () => {
-      saveResolve(new Response(JSON.stringify({ file: htmlPreviewFile() }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }));
-      await saveResponse;
-    });
-
-    await waitFor(() => {
-      openManualTools();
-      expect(screen.getByTestId('manual-edit-mode-toggle').getAttribute('aria-pressed')).toBe('false');
-    });
-    expect(screen.getByTestId('draw-overlay-toggle').getAttribute('aria-pressed')).toBe('true');
   });
 
   it('keeps the srcDoc iframe mounted when closing manual edit on a srcDoc-only preview', async () => {
@@ -190,26 +184,25 @@ describe('FileViewer manual edit history regressions', () => {
     clickManualTool('manual-edit-mode-toggle');
     await selectManualEditTarget();
 
+    const frameBeforeUndo = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
     act(() => {
       toolbarState.props?.onApplyPatch(
         { kind: 'set-style', id: 'hero', styles: { color: '#ef4444' } },
         'Style: Hero',
       );
     });
-    await waitFor(() => expect(savedSources).toHaveLength(1));
-    expect(savedSources[0]).toContain('rgb(239, 68, 68)');
-    const frameBeforeUndo = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
+    await waitFor(() => expect(toolbarState.props?.canUndo).toBe(true));
     const srcDocBeforeUndo = frameBeforeUndo.srcdoc;
-
+    expect(savedSources).toHaveLength(0);
     act(() => {
       toolbarState.props?.onUndo();
     });
-    await waitFor(() => expect(savedSources).toHaveLength(2));
-    expect(savedSources[1]).toBe(initialSource);
     await waitFor(() => {
       const frameAfterUndo = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
+      expect(toolbarState.props?.canRedo).toBe(true);
       expect(frameAfterUndo).toBe(frameBeforeUndo);
       expect(frameAfterUndo.srcdoc).not.toBe(srcDocBeforeUndo);
+      expect(frameAfterUndo.srcdoc).not.toContain('rgb(239, 68, 68)');
     });
 
     act(() => {
@@ -218,10 +211,28 @@ describe('FileViewer manual edit history regressions', () => {
         'Style: Hero',
       );
     });
-    await waitFor(() => expect(savedSources).toHaveLength(3));
+    await waitFor(() => {
+      expect(toolbarState.props?.canUndo).toBe(true);
+      expect(toolbarState.props?.canRedo).toBe(false);
+    });
+    expect(savedSources).toHaveLength(0);
 
-    expect(savedSources[2]).toContain('background-color: rgb(249, 115, 22)');
-    expect(savedSources[2]).not.toContain('rgb(239, 68, 68)');
+    fireEvent.click(await screen.findByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(savedSources).toHaveLength(1));
+    expect(savedSources[0]).toContain('background-color: rgb(249, 115, 22)');
+    expect(savedSources[0]).not.toContain('rgb(239, 68, 68)');
+    await waitFor(() => {
+      const savedFrame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
+      expect(savedFrame.srcdoc).toContain('background-color: rgb(249, 115, 22)');
+      expect(savedFrame.srcdoc).not.toContain('rgb(239, 68, 68)');
+    });
+
+    const saveCall = fetchMock.mock.calls.find(([input, init]) => {
+      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
+      return url.includes('/api/projects/project-1/files') && init?.method === 'POST';
+    });
+    const payload = JSON.parse(String(saveCall?.[1]?.body)) as { expectedContentSha256?: string };
+    expect(payload.expectedContentSha256).toBe('660752fd51414ab8668473e6a9b54616762478727f1acf72432806874f95cb61');
   });
 
   it('refreshes the manual edit canvas after non-style source patches', async () => {
@@ -272,10 +283,10 @@ describe('FileViewer manual edit history regressions', () => {
       );
     });
 
-    await waitFor(() => expect(savedSources).toHaveLength(1));
     await waitFor(() => {
       expect(getActivePreviewFrame().srcdoc).toContain('Updated hero');
     });
+    expect(savedSources).toHaveLength(0);
   });
 
   it('clears the selected target after deleting an element', async () => {
@@ -326,9 +337,7 @@ describe('FileViewer manual edit history regressions', () => {
       );
     });
 
-    await waitFor(() => expect(savedSources).toHaveLength(1));
-    expect(savedSources[0]).not.toContain('data-readable-id="hero"');
-    expect(savedSources[0]).toContain('data-readable-id="body"');
+    expect(savedSources).toHaveLength(0);
     // Clearing the selection closes the inspector: edit mode returns to a clean
     // canvas (no docked/pinned panel) and the iframe selection marker is reset.
     await waitFor(() => expect(screen.queryByTestId('mock-manual-edit-shape-toolbar')).toBeNull());
@@ -337,8 +346,9 @@ describe('FileViewer manual edit history regressions', () => {
       '*',
     );
     await waitFor(() => {
-      expect((screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement).srcdoc)
-        .not.toContain('data-readable-id="hero"');
+      const source = (screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement).srcdoc;
+      expect(source).not.toContain('data-readable-id="hero"');
+      expect(source).toContain('data-readable-id="body"');
     });
   });
 });

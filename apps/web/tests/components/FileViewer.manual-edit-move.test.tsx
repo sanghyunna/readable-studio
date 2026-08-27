@@ -2,7 +2,12 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { FileViewer } from '../../src/components/FileViewer';
+import type { ComponentProps } from 'react';
+import { FileViewer as ActualFileViewer } from '../../src/components/FileViewer';
+
+function FileViewer(props: ComponentProps<typeof ActualFileViewer>) {
+  return <ActualFileViewer {...props} manualEditPortalId="manual-edit-test-host" />;
+}
 import type { ManualEditMoveFrameProps } from '../../src/components/ManualEditMoveFrame';
 import * as movementSession from '../../src/edit-mode/movement-session';
 import { emptyManualEditStyles, type ManualEditTarget } from '../../src/edit-mode/types';
@@ -24,6 +29,9 @@ vi.mock('../../src/components/ManualEditMoveFrame', async (importOriginal) => {
 });
 
 beforeEach(() => {
+  const host = document.createElement('div');
+  host.id = 'manual-edit-test-host';
+  document.body.appendChild(host);
   // The move frame rAF-throttles its preview flush; run it synchronously so
   // drag assertions don't need to await a real animation frame.
   vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
@@ -88,6 +96,19 @@ describe('FileViewer manual edit move frame', () => {
   }
   function ringSurface() {
     return moveFrame().querySelector('[data-region="ring"]') as HTMLElement;
+  }
+
+  function currentSource() {
+    return (screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement).srcdoc;
+  }
+  function fileSaveCalls(fetchMock: ReturnType<typeof vi.fn>) {
+    return fetchMock.mock.calls.filter(([input, init]) => (
+      String(input).includes('/api/projects/project-1/files')
+      && (init as RequestInit | undefined)?.method === 'POST'
+    ));
+  }
+  async function saveChanges() {
+    fireEvent.click(await screen.findByRole('button', { name: 'Save changes' }));
   }
   function doubleClickSurface(surface: HTMLElement) {
     fireEvent.pointerDown(surface, { pointerId: 11, clientX: 100, clientY: 100 });
@@ -383,6 +404,7 @@ describe('FileViewer manual edit move frame', () => {
       }));
     });
 
+    await saveChanges();
     await waitFor(() => {
       expect(savedContent).toContain('Edited Headline<div class="glow-underline"></div>');
     });
@@ -487,9 +509,18 @@ describe('FileViewer manual edit move frame', () => {
       );
     });
     fireEvent.pointerUp(interior, { pointerId: 1, clientX: 330, clientY: 190 });
-    await waitFor(() => {
-      expect(savedContent).toMatch(/data-readable-id="pic"[^>]*style="[^"]*translate:\s*30px\s+40px/);
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
+    await saveChanges();
+    await waitFor(() => expect(fileSaveCalls(fetchMock)).toHaveLength(1));
+    expect(savedContent).toMatch(/translate:\s*30px\s+40px/);
+    fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
+    const { frame: resumedFrame } = await selectManualEditTarget({
+      ...imageTarget(),
+      styles: { ...emptyManualEditStyles(), translate: '30px 40px' },
     });
+    const resumedWindow = resumedFrame.contentWindow;
+    if (!resumedWindow) throw new Error('Preview frame not ready');
+    const resumedPostSpy = vi.spyOn(resumedWindow, 'postMessage');
     fireEvent.click(screen.getByRole('button', { name: /Size & position/ }));
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Direct move' }).getAttribute('aria-pressed')).toBe('true');
@@ -499,11 +530,10 @@ describe('FileViewer manual edit move frame', () => {
 
     // Drag 2 on the still-selected element folds onto the just-committed base
     // (30px 40px): +10/+0 rect px must preview 40px 40px, not 10px 0px.
-    postSpy.mockClear();
     fireEvent.pointerDown(interiorSurface(), { pointerId: 2, clientX: 330, clientY: 190 });
     fireEvent.pointerMove(interiorSurface(), { pointerId: 2, clientX: 340, clientY: 190 });
     await waitFor(() => {
-      expect(postSpy).toHaveBeenCalledWith(
+      expect(resumedPostSpy).toHaveBeenCalledWith(
         expect.objectContaining({
           type: 'readable-edit-preview-style',
           id: 'pic',
@@ -531,7 +561,8 @@ describe('FileViewer manual edit move frame', () => {
     fireEvent.pointerMove(interior, { pointerId: 17, clientX: 330, clientY: 180 });
     fireEvent.pointerUp(interior, { pointerId: 17, clientX: 340, clientY: 190, shiftKey: true });
 
-    await waitFor(() => expect(savedContent).toMatch(/translate:\s*40px\s+0px/));
+    await saveChanges();
+    await waitFor(() => expect(currentSource()).toMatch(/translate:\s*40px\s+0px/));
     const previewIndex = postSpy.mock.calls.findIndex(([message]) => (
       (message as { type?: string; styles?: { translate?: string } }).type === 'readable-edit-preview-style'
       && (message as { styles?: { translate?: string } }).styles?.translate === '40px 0px'
@@ -674,10 +705,7 @@ describe('FileViewer manual edit move frame', () => {
       }));
     });
 
-    await waitFor(() => expect(savedBodies).toHaveLength(1));
-    expect(savedBodies[0]).toContain('data-readable-id="pic"');
-    expect(savedBodies[0]).toContain('data-readable-id="pic-copy"');
-    expect(savedBodies[0]).toContain('translate: 21.5px -2.25px');
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
     expect(postSpy).toHaveBeenCalledWith(expect.objectContaining({ type: 'readable-edit-duplicate-update' }), '*');
     expect(postSpy.mock.calls.filter(([message]) => (
       (message as { type?: string }).type === 'readable-edit-duplicate-update'
@@ -703,11 +731,18 @@ describe('FileViewer manual edit move frame', () => {
         source: frame.contentWindow,
       }));
     });
-    await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
     expect(postSpy).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: 'readable-edit-selected-target', id: 'pic-copy' }),
       '*',
     );
+
+    await saveChanges();
+    await waitFor(() => expect(fileSaveCalls(fetchMock)).toHaveLength(1));
+    expect(savedBodies).toHaveLength(1);
+    await waitFor(() => expect(currentSource()).toContain('data-readable-id="pic-copy"'));
+    expect(currentSource()).toContain('data-readable-id="pic"');
+    expect(currentSource()).toContain('data-readable-id="pic-copy"');
+    expect(currentSource()).toContain('translate: 21.5px -2.25px');
   });
 
   it('captures movement before ending text edit can synchronously mutate the live target', async () => {
@@ -769,9 +804,7 @@ describe('FileViewer manual edit move frame', () => {
     await waitFor(() => expect(interiorSurface()).not.toBeNull());
 
     fireEvent.pointerUp(ring, { pointerId: 3, clientX: 130, clientY: 140 });
-    await waitFor(() => expect(fetchMock.mock.calls.some(([input, init]) =>
-      String(input).includes('/api/projects/project-1/files') && (init as RequestInit | undefined)?.method === 'POST',
-    )).toBe(true));
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
   });
 
   it('reverts the preview to the base translate and writes no file on Escape mid-drag', async () => {
@@ -812,44 +845,20 @@ describe('FileViewer manual edit move frame', () => {
     );
   });
 
-  it('reverts the preview to base translate when the commit save fails (busy mutex / rejected write)', async () => {
+  it('keeps the committed move active when explicit Save fails', async () => {
     const fetchMock = failingSaveFetch();
     vi.stubGlobal('fetch', fetchMock);
-
-    render(
-      <FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={SOURCE} />,
-    );
-
+    render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={SOURCE} />);
     fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
     await selectManualEditTarget(imageTarget());
-
-    const frame = await previewFrame();
-    const postSpy = vi.spyOn(frame.contentWindow as Window, 'postMessage');
     const interior = interiorSurface();
-
     fireEvent.pointerDown(interior, { pointerId: 6, clientX: 300, clientY: 150 });
     fireEvent.pointerMove(interior, { pointerId: 6, clientX: 330, clientY: 190 });
     fireEvent.pointerUp(interior, { pointerId: 6, clientX: 330, clientY: 190 });
-
-    // The failed save must still be attempted...
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        '/api/projects/project-1/files',
-        expect.objectContaining({ method: 'POST' }),
-      );
-    });
-
-    // ...and since it failed, the iframe must snap the preview back to the
-    // base translate (empty, since the target started with none) rather than
-    // lingering at the dragged value — otherwise the next drag reads a stale
-    // baseline and jumps.
-    await waitFor(() => {
-      const revertCall = postSpy.mock.calls.find((call) => {
-        const msg = call[0] as { type?: string; id?: string; styles?: Record<string, unknown> };
-        return msg.type === 'readable-edit-preview-style' && msg.id === 'pic' && msg.styles?.translate === '';
-      });
-      expect(revertCall).toBeDefined();
-    });
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
+    await saveChanges();
+    await waitFor(() => expect(fileSaveCalls(fetchMock)).toHaveLength(1));
+    expect(screen.getByTestId('manual-edit-mode-toggle').getAttribute('aria-pressed')).toBe('true');
   });
 
   it('re-enters edit mode with the committed translate, not the pre-edit frozen snapshot', async () => {
@@ -868,8 +877,10 @@ describe('FileViewer manual edit move frame', () => {
     fireEvent.pointerDown(interior, { pointerId: 8, clientX: 300, clientY: 150 });
     fireEvent.pointerMove(interior, { pointerId: 8, clientX: 330, clientY: 190 });
     fireEvent.pointerUp(interior, { pointerId: 8, clientX: 330, clientY: 190 });
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
+    await saveChanges();
     await waitFor(() => {
-      expect(savedContent).toMatch(/data-readable-id="pic"[^>]*style="[^"]*translate:\s*30px\s+40px/);
+      expect(currentSource()).toMatch(/data-readable-id="pic"[^>]*style="[^"]*translate:\s*30px\s+40px/);
     });
 
     // Exit and re-enter edit mode. Exit is async (flush-then-exit), so wait
@@ -877,10 +888,6 @@ describe('FileViewer manual edit move frame', () => {
     // exit branch. The canvas must rebuild from the committed source; a
     // survived pre-edit frozen snapshot renders every moved element back at
     // its original position.
-    fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
-    await waitFor(() => {
-      expect(screen.getByTestId('manual-edit-mode-toggle').getAttribute('aria-pressed')).toBe('false');
-    });
     fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
     await waitFor(() => {
       expect(screen.getByTestId('manual-edit-mode-toggle').getAttribute('aria-pressed')).toBe('true');
@@ -910,14 +917,17 @@ describe('FileViewer manual edit move frame', () => {
     fireEvent.pointerMove(interior, { pointerId: 5, clientX: 340, clientY: 190 });
     fireEvent.pointerUp(interior, { pointerId: 5, clientX: 340, clientY: 190 });
 
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
+    await saveChanges();
     await waitFor(() => {
-      expect(savedContent).toMatch(/data-readable-id="pic"[^>]*style="[^"]*translate:\s*20px\s+20px/);
+      expect(currentSource()).toMatch(/data-readable-id="pic"[^>]*style="[^"]*translate:\s*20px\s+20px/);
     });
   });
 
   it('captures a pending inspector translate as the movement baseline', async () => {
     let savedContent = '';
-    vi.stubGlobal('fetch', savingFetch((content) => { savedContent = content; }));
+    const fetchMock = savingFetch((content) => { savedContent = content; });
+    vi.stubGlobal('fetch', fetchMock);
     const inspectorHost = document.createElement('div');
     inspectorHost.id = 'manual-edit-test-host';
     document.body.appendChild(inspectorHost);
@@ -952,6 +962,8 @@ describe('FileViewer manual edit move frame', () => {
       }),
       '*',
     ));
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
+    await saveChanges();
     await waitFor(() => expect(savedContent).toMatch(/translate:\s*20px\s+-5px/));
   });
 
@@ -1079,7 +1091,8 @@ describe('FileViewer manual edit move frame', () => {
   it('persists the final pointerup result from the captured movement session', async () => {
     let savedContent = '';
     const resolverSpy = vi.spyOn(movementSession, 'resolveManualEditMovement');
-    vi.stubGlobal('fetch', savingFetch((content) => { savedContent = content; }));
+    const fetchMock = savingFetch((content) => { savedContent = content; });
+    vi.stubGlobal('fetch', fetchMock);
     render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={SOURCE} />);
     fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
     const initial = { ...imageTarget(), rectScale: { x: 2, y: 2 } };
@@ -1109,6 +1122,8 @@ describe('FileViewer manual edit move frame', () => {
     });
     fireEvent.pointerUp(interior, { pointerId: 53, clientX: 340, clientY: 150 });
 
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
+    await saveChanges();
     await waitFor(() => expect(savedContent).toMatch(/translate:\s*20px\s+0px/));
     expect(resolverSpy).toHaveBeenCalledTimes(2);
   });
@@ -1274,37 +1289,25 @@ describe('FileViewer manual edit move frame', () => {
     const movementFrame = queued.at(-1);
 
     fireEvent.pointerUp(interior, { pointerId: 61, clientX: 330, clientY: 190 });
-    await waitFor(() => expect(savedContent).toMatch(/translate:\s*30px\s+40px/));
     expect(resolverSpy).toHaveBeenCalledTimes(1);
 
     movementFrame!(0);
     expect(resolverSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('restores an exact nonempty captured translate when persistence fails', async () => {
-    vi.stubGlobal('fetch', failingSaveFetch());
+  it('keeps the latest nonempty translate when explicit persistence fails', async () => {
+    const fetchMock = failingSaveFetch();
+    vi.stubGlobal('fetch', fetchMock);
     render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={SOURCE} />);
     fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
-    await selectManualEditTarget({
-      ...imageTarget(),
-      styles: { ...emptyManualEditStyles(), translate: '7px -3px' },
-    });
-    const frame = await previewFrame();
-    const postSpy = vi.spyOn(frame.contentWindow as Window, 'postMessage');
+    await selectManualEditTarget({ ...imageTarget(), styles: { ...emptyManualEditStyles(), translate: '7px -3px' } });
     const interior = interiorSurface();
     fireEvent.pointerDown(interior, { pointerId: 54, clientX: 300, clientY: 150 });
     fireEvent.pointerMove(interior, { pointerId: 54, clientX: 320, clientY: 160 });
-    postSpy.mockClear();
     fireEvent.pointerUp(interior, { pointerId: 54, clientX: 320, clientY: 160 });
-
-    await waitFor(() => expect(postSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'readable-edit-preview-style',
-        id: 'pic',
-        styles: { translate: '7px -3px' },
-      }),
-      '*',
-    ));
+    await saveChanges();
+    await waitFor(() => expect(fileSaveCalls(fetchMock)).toHaveLength(1));
+    expect(screen.getByTestId('manual-edit-mode-toggle').getAttribute('aria-pressed')).toBe('true');
   });
 
   it('restores the captured translate when the source patch rejects the target', async () => {
@@ -1339,92 +1342,45 @@ describe('FileViewer manual edit move frame', () => {
     ))).toHaveLength(0);
   });
 
-  it('restores the captured translate when external source conflict aborts persistence', async () => {
+  it('keeps an in-memory movement isolated from external persistence reads', async () => {
     const changedSource = SOURCE.replace('Hero', 'Externally changed');
-    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
-      if (url.includes('/raw/')) {
-        return new Response(changedSource, { status: 200, headers: { 'Content-Type': 'text/html' } });
-      }
-      return new Response(SOURCE, { status: 200, headers: { 'Content-Type': 'text/html' } });
-    });
+    const fetchMock = vi.fn(async (input: string | URL | Request) => new Response(
+      String(input).includes('/raw/') ? changedSource : SOURCE,
+      { status: 200, headers: { 'Content-Type': 'text/html' } },
+    ));
     vi.stubGlobal('fetch', fetchMock);
     render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={SOURCE} />);
     fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
-    await selectManualEditTarget({
-      ...imageTarget(),
-      styles: { ...emptyManualEditStyles(), translate: '7px 5px' },
-    });
+    await selectManualEditTarget({ ...imageTarget(), styles: { ...emptyManualEditStyles(), translate: '7px 5px' } });
     const frame = await previewFrame();
     const postSpy = vi.spyOn(frame.contentWindow as Window, 'postMessage');
     const interior = interiorSurface();
     fireEvent.pointerDown(interior, { pointerId: 65, clientX: 300, clientY: 150 });
     fireEvent.pointerMove(interior, { pointerId: 65, clientX: 320, clientY: 160 });
-    postSpy.mockClear();
     fireEvent.pointerUp(interior, { pointerId: 65, clientX: 320, clientY: 160 });
-
     await waitFor(() => expect(postSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'readable-edit-preview-style',
-        id: 'pic',
-        styles: { translate: '7px 5px' },
-      }),
-      '*',
+      expect.objectContaining({ styles: { translate: '27px 15px' } }), '*',
     ));
-    expect(fetchMock.mock.calls.filter(([, init]) => (
-      (init as RequestInit | undefined)?.method === 'POST'
-    ))).toHaveLength(0);
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
   });
 
-  it('restores the captured translate when the save mutex rejects a newer movement', async () => {
-    let resolveFirstSave!: (response: Response) => void;
-    const firstSave = new Promise<Response>((resolve) => {
-      resolveFirstSave = resolve;
-    });
-    let postCount = 0;
-    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
-      if (url.includes('/api/projects/project-1/files') && init?.method === 'POST') {
-        postCount += 1;
-        return firstSave;
-      }
-      return new Response(SOURCE, { status: 200, headers: { 'Content-Type': 'text/html' } });
-    });
+  it('accumulates a newer movement without an eager-save mutex', async () => {
+    const fetchMock = savingFetch(() => {});
     vi.stubGlobal('fetch', fetchMock);
     render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={SOURCE} />);
     fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
-    await selectManualEditTarget({
-      ...imageTarget(),
-      styles: { ...emptyManualEditStyles(), translate: '9px 2px' },
-    });
-    const frame = await previewFrame();
+    const { frame } = await selectManualEditTarget({ ...imageTarget(), styles: { ...emptyManualEditStyles(), translate: '9px 2px' } });
     const postSpy = vi.spyOn(frame.contentWindow as Window, 'postMessage');
-    const first = interiorSurface();
-    fireEvent.pointerDown(first, { pointerId: 66, clientX: 300, clientY: 150 });
-    fireEvent.pointerMove(first, { pointerId: 66, clientX: 320, clientY: 150 });
-    fireEvent.pointerUp(first, { pointerId: 66, clientX: 320, clientY: 150 });
-    await waitFor(() => expect(postCount).toBe(1));
-
-    const second = interiorSurface();
-    fireEvent.pointerDown(second, { pointerId: 67, clientX: 300, clientY: 150 });
-    fireEvent.pointerMove(second, { pointerId: 67, clientX: 340, clientY: 150 });
-    postSpy.mockClear();
-    fireEvent.pointerUp(second, { pointerId: 67, clientX: 340, clientY: 150 });
-    await waitFor(() => expect(postSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'readable-edit-preview-style',
-        id: 'pic',
-        styles: { translate: '9px 2px' },
-      }),
-      '*',
-    ));
-    expect(postCount).toBe(1);
-
-    resolveFirstSave(new Response(JSON.stringify({ message: 'save failed' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    }));
-    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('save failed'));
+    for (const [pointerId, delta] of [[66, 20], [67, 40]] as const) {
+      const interior = interiorSurface();
+      fireEvent.pointerDown(interior, { pointerId, clientX: 300, clientY: 150 });
+      fireEvent.pointerMove(interior, { pointerId, clientX: 300 + delta, clientY: 150 });
+      fireEvent.pointerUp(interior, { pointerId, clientX: 300 + delta, clientY: 150 });
+    }
+    await waitFor(() => expect(postSpy.mock.calls.filter(([message]) => (
+      (message as { type?: string }).type === 'readable-edit-preview-style'
+    )).length).toBeGreaterThanOrEqual(2));
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
   });
 
   it('routes one keyboard nudge through one preview and one save', async () => {
@@ -1454,12 +1410,14 @@ describe('FileViewer manual edit move frame', () => {
       }));
     });
 
-    await waitFor(() => expect(savedContent).toMatch(/translate:\s*5px\s+3px/));
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
     const movementPreviews = postSpy.mock.calls.filter(([message]) => {
       const data = message as { type?: string; styles?: { translate?: string } };
       return data.type === 'readable-edit-preview-style' && data.styles?.translate === '5px 3px';
     });
     expect(movementPreviews).toHaveLength(1);
+    await saveChanges();
+    await waitFor(() => expect(currentSource()).toMatch(/translate:\s*5px\s+3px/));
     const posts = fetchMock.mock.calls.filter(([input, init]) => (
       String(input) === '/api/projects/project-1/files'
       && (init as RequestInit | undefined)?.method === 'POST'
@@ -1480,6 +1438,8 @@ describe('FileViewer manual edit move frame', () => {
     fireEvent.pointerMove(interior, { pointerId: 55, clientX: 320, clientY: 160 });
     fireEvent.pointerUp(interior, { pointerId: 55, clientX: 320, clientY: 160 });
 
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
+    await saveChanges();
     await waitFor(() => {
       const posts = fetchMock.mock.calls.filter(([input, init]) => (
         String(input) === '/api/projects/project-1/files'
@@ -1590,9 +1550,10 @@ describe('FileViewer manual edit move frame', () => {
       }));
     });
 
-    await waitFor(() => expect(fetchMock.mock.calls.filter(([, init]) => (
-      (init as RequestInit | undefined)?.method === 'POST'
-    ))).toHaveLength(1));
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
+    await saveChanges();
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Undo' }) as HTMLButtonElement).disabled).toBe(false));
+    expect(fileSaveCalls(fetchMock)).toHaveLength(1);
     expect(postSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'readable-edit-preview-style',
@@ -1603,136 +1564,38 @@ describe('FileViewer manual edit move frame', () => {
     );
   });
 
-  it('does not let an older failed save repaint or clear a newer movement', async () => {
-    let resolveFirstSave!: (response: Response) => void;
-    const firstSave = new Promise<Response>((resolve) => {
-      resolveFirstSave = resolve;
-    });
-    let postCount = 0;
-    let savedContent = '';
-    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
-      if (url.includes('/api/projects/project-1/files') && init?.method === 'POST') {
-        postCount += 1;
-        if (postCount === 1) return firstSave;
-        savedContent = JSON.parse(String(init.body)).content as string;
-        return new Response(JSON.stringify({ file: htmlPreviewFile() }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      return new Response(SOURCE, { status: 200, headers: { 'Content-Type': 'text/html' } });
-    });
+  it('keeps a newer movement independent of persistence until Save', async () => {
+    const fetchMock = savingFetch(() => {});
     vi.stubGlobal('fetch', fetchMock);
     render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={SOURCE} />);
     fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
-    await selectManualEditTarget(imageTarget());
-    const frame = await previewFrame();
+    const { frame, revision } = await selectManualEditTarget(imageTarget());
     const postSpy = vi.spyOn(frame.contentWindow as Window, 'postMessage');
-
-    const first = interiorSurface();
-    fireEvent.pointerDown(first, { pointerId: 56, clientX: 300, clientY: 150 });
-    fireEvent.pointerMove(first, { pointerId: 56, clientX: 320, clientY: 150 });
-    fireEvent.pointerUp(first, { pointerId: 56, clientX: 320, clientY: 150 });
-    await waitFor(() => expect(postCount).toBe(1));
-
-    const second = interiorSurface();
-    fireEvent.pointerDown(second, { pointerId: 57, clientX: 300, clientY: 150 });
-    fireEvent.pointerMove(second, { pointerId: 57, clientX: 340, clientY: 150 });
+    const nudge = () => act(() => window.dispatchEvent(new MessageEvent('message', { data: { type: 'readable-edit-nudge', direction: 'right', targetId: 'pic', revision }, source: frame.contentWindow })));
+    const commit = () => act(() => window.dispatchEvent(new MessageEvent('message', { data: { type: 'readable-edit-nudge-commit', targetId: 'pic', revision }, source: frame.contentWindow })));
+    nudge(); commit(); nudge(); commit();
     await waitFor(() => expect(postSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ styles: { translate: '40px 0px' } }),
+      expect.objectContaining({ styles: { translate: '2px 0px' } }),
       '*',
     ));
-    postSpy.mockClear();
-    resolveFirstSave(new Response(JSON.stringify({ message: 'save failed' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    }));
-    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('save failed'));
-    expect(postSpy.mock.calls.some(([message]) => (
-      (message as { styles?: { translate?: string } }).styles?.translate === ''
-    ))).toBe(false);
-
-    fireEvent.pointerUp(second, { pointerId: 57, clientX: 340, clientY: 150 });
-    await waitFor(() => expect(savedContent).toMatch(/translate:\s*40px\s+0px/));
-    expect(postCount).toBe(2);
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
   });
 
-  it('does not let an older successful save clear a newer movement', async () => {
-    const resolverSpy = vi.spyOn(movementSession, 'resolveManualEditMovement');
-    let resolveFirstOnFileSaved!: () => void;
-    const firstOnFileSaved = new Promise<void>((resolve) => {
-      resolveFirstOnFileSaved = resolve;
-    });
-    let signalFirstOnFileSaved!: () => void;
-    const firstOnFileSavedEntered = new Promise<void>((resolve) => {
-      signalFirstOnFileSaved = resolve;
-    });
-    let signalOlderCommitDrained!: () => void;
-    const olderCommitDrained = new Promise<void>((resolve) => {
-      signalOlderCommitDrained = resolve;
-    });
-    let onFileSavedCount = 0;
-    let postCount = 0;
-    let finalSavedContent = '';
-    let persistedSource = SOURCE;
-    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
-      if (url.includes('/api/projects/project-1/files') && init?.method === 'POST') {
-        postCount += 1;
-        persistedSource = JSON.parse(String(init.body)).content as string;
-        if (postCount === 2) {
-          finalSavedContent = persistedSource;
-        }
-        return new Response(JSON.stringify({ file: htmlPreviewFile() }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      return new Response(persistedSource, { status: 200, headers: { 'Content-Type': 'text/html' } });
-    }));
-    render(
-      <FileViewer
-        projectId="project-1"
-        projectKind="prototype"
-        file={htmlPreviewFile()}
-        liveHtml={SOURCE}
-        onFileSaved={async () => {
-          onFileSavedCount += 1;
-          if (onFileSavedCount !== 1) return;
-          signalFirstOnFileSaved();
-          await firstOnFileSaved;
-          // The timer task cannot run until the promise continuations in
-          // applyManualEdit and commitManualEditMovement have both drained.
-          window.setTimeout(signalOlderCommitDrained, 0);
-        }}
-      />,
-    );
+  it('keeps the latest movement visible before the transaction is saved', async () => {
+    const fetchMock = savingFetch(() => {});
+    vi.stubGlobal('fetch', fetchMock);
+    render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={SOURCE} />);
     fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
-    await selectManualEditTarget(imageTarget());
-
-    const first = interiorSurface();
-    fireEvent.pointerDown(first, { pointerId: 68, clientX: 300, clientY: 150 });
-    fireEvent.pointerMove(first, { pointerId: 68, clientX: 320, clientY: 150 });
-    fireEvent.pointerUp(first, { pointerId: 68, clientX: 320, clientY: 150 });
-    await firstOnFileSavedEntered;
-
-    const second = interiorSurface();
-    fireEvent.pointerDown(second, { pointerId: 69, clientX: 300, clientY: 150 });
-    fireEvent.pointerMove(second, { pointerId: 69, clientX: 340, clientY: 150 });
-    expect(resolverSpy).toHaveBeenCalledTimes(3);
-    await act(async () => {
-      resolveFirstOnFileSaved();
-      await olderCommitDrained;
-    });
-    expect(second.isConnected).toBe(true);
-    expect(interiorSurface()).toBe(second);
-    fireEvent.pointerMove(second, { pointerId: 69, clientX: 350, clientY: 150 });
-    expect(resolverSpy).toHaveBeenCalledTimes(4);
-
-    fireEvent.pointerUp(second, { pointerId: 69, clientX: 350, clientY: 150 });
-    await waitFor(() => expect(finalSavedContent).toMatch(/translate:\s*50px\s+0px/));
-    expect(postCount).toBe(2);
+    const { frame, revision } = await selectManualEditTarget(imageTarget());
+    const postSpy = vi.spyOn(frame.contentWindow as Window, 'postMessage');
+    const nudge = () => act(() => window.dispatchEvent(new MessageEvent('message', { data: { type: 'readable-edit-nudge', direction: 'right', targetId: 'pic', revision }, source: frame.contentWindow })));
+    const commit = () => act(() => window.dispatchEvent(new MessageEvent('message', { data: { type: 'readable-edit-nudge-commit', targetId: 'pic', revision }, source: frame.contentWindow })));
+    nudge(); commit(); nudge(); nudge(); commit();
+    await waitFor(() => expect(postSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ styles: { translate: '3px 0px' } }),
+      '*',
+    ));
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
   });
 
   it('coalesces rapid keyboard nudges into a single save', async () => {
@@ -1755,7 +1618,6 @@ describe('FileViewer manual edit move frame', () => {
     }
     // No save until the burst ends: the bridge only signals commit when the last
     // held arrow key is released.
-    await new Promise((resolve) => setTimeout(resolve, 50));
     expect(fetchMock.mock.calls.filter(([, init]) => (
       (init as RequestInit | undefined)?.method === 'POST'
     ))).toHaveLength(0);
@@ -1766,10 +1628,8 @@ describe('FileViewer manual edit move frame', () => {
       }));
     });
 
-    await waitFor(() => expect(fetchMock.mock.calls.filter(([, init]) => (
-      (init as RequestInit | undefined)?.method === 'POST'
-    ))).toHaveLength(1));
-    expect(savedContent).toMatch(/translate:\s*3px\s+0px/);
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Undo' }) as HTMLButtonElement).disabled).toBe(false));
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
     const previews = postSpy.mock.calls.filter(([message]) => (
       (message as { type?: string }).type === 'readable-edit-preview-style'
     ));
@@ -1795,8 +1655,6 @@ describe('FileViewer manual edit move frame', () => {
     const surface = interiorSurface();
     surface.focus();
     fireEvent.keyDown(surface, { key: 'Escape' });
-
-    await new Promise((resolve) => setTimeout(resolve, 400));
     expect(fetchMock.mock.calls.filter(([, init]) => (
       (init as RequestInit | undefined)?.method === 'POST'
     ))).toHaveLength(0);
@@ -1818,8 +1676,6 @@ describe('FileViewer manual edit move frame', () => {
     input.focus();
 
     fireEvent.keyDown(input, { key: 'ArrowRight' });
-
-    await new Promise((resolve) => setTimeout(resolve, 400));
     expect(fetchMock.mock.calls.filter(([, init]) => (
       (init as RequestInit | undefined)?.method === 'POST'
     ))).toHaveLength(0);
@@ -1840,8 +1696,6 @@ describe('FileViewer manual edit move frame', () => {
         source: frame.contentWindow,
       }));
     });
-
-    await new Promise((resolve) => setTimeout(resolve, 400));
     expect(fetchMock.mock.calls.filter(([, init]) => (
       (init as RequestInit | undefined)?.method === 'POST'
     ))).toHaveLength(0);
@@ -1860,8 +1714,6 @@ describe('FileViewer manual edit move frame', () => {
         source: frame.contentWindow,
       }));
     });
-
-    await new Promise((resolve) => setTimeout(resolve, 400));
     expect(fetchMock.mock.calls.filter(([, init]) => (
       (init as RequestInit | undefined)?.method === 'POST'
     ))).toHaveLength(0);
@@ -1880,16 +1732,13 @@ describe('FileViewer manual edit move frame', () => {
     fireEvent.keyDown(surface, { key: 'ArrowRight' });
     fireEvent.keyDown(surface, { key: 'ArrowRight' });
     // Key still held: no save yet.
-    await new Promise((resolve) => setTimeout(resolve, 50));
     expect(fetchMock.mock.calls.filter(([, init]) => (
       (init as RequestInit | undefined)?.method === 'POST'
     ))).toHaveLength(0);
 
     fireEvent.keyUp(surface, { key: 'ArrowRight' });
-    await waitFor(() => expect(fetchMock.mock.calls.filter(([, init]) => (
-      (init as RequestInit | undefined)?.method === 'POST'
-    ))).toHaveLength(1));
-    expect(savedContent).toMatch(/translate:\s*2px\s+0px/);
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Undo' }) as HTMLButtonElement).disabled).toBe(false));
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
   });
 
   it('does not nudge from the host when focus is outside the selected surface', async () => {
@@ -1904,164 +1753,61 @@ describe('FileViewer manual edit move frame', () => {
     button.focus();
     fireEvent.keyDown(button, { key: 'ArrowRight' });
     fireEvent.keyUp(button, { key: 'ArrowRight' });
-
-    await new Promise((resolve) => setTimeout(resolve, 100));
     expect(fetchMock.mock.calls.filter(([, init]) => (
       (init as RequestInit | undefined)?.method === 'POST'
     ))).toHaveLength(0);
     button.remove();
   });
 
-  it('queues a second burst while the first save is in flight and writes both', async () => {
-    let releaseFirst: () => void = () => {};
-    const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve; });
-    let postCount = 0;
-    // Track the last-saved content so the second save's history-confirm GET sees
-    // the first save's result instead of a stale baseline.
-    let persisted = SOURCE;
-    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
-      if (url.includes('/api/projects/project-1/files') && init?.method === 'POST') {
-        postCount += 1;
-        if (postCount === 1) await firstGate;
-        persisted = JSON.parse(String(init.body)).content as string;
-        return new Response(JSON.stringify({ file: htmlPreviewFile() }), {
-          status: 200, headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      return new Response(persisted, { status: 200, headers: { 'Content-Type': 'text/html' } });
-    });
+  it('keeps completed keyboard bursts ordered in the transaction', async () => {
+    const fetchMock = savingFetch(() => {});
     vi.stubGlobal('fetch', fetchMock);
     render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={SOURCE} />);
     fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
     const { frame, revision } = await selectManualEditTarget(imageTarget());
-
-    const nudge = () => act(() => {
-      window.dispatchEvent(new MessageEvent('message', {
-        data: { type: 'readable-edit-nudge', direction: 'right', targetId: 'pic', revision },
-        source: frame.contentWindow,
-      }));
-    });
-    const commit = () => act(() => {
-      window.dispatchEvent(new MessageEvent('message', {
-        data: { type: 'readable-edit-nudge-commit', targetId: 'pic', revision },
-        source: frame.contentWindow,
-      }));
-    });
-
-    nudge();
-    commit(); // burst 1 -> POST 1 (blocked on firstGate)
-    await waitFor(() => expect(postCount).toBe(1));
-    nudge();
-    commit(); // burst 2 queued while POST 1 in flight
-    releaseFirst();
-    await waitFor(() => expect(postCount).toBe(2));
-    // Both steps land: the second write baselines off the committed first move.
-    expect(persisted).toMatch(/translate:\s*2px\s+0px/);
+    const postSpy = vi.spyOn(frame.contentWindow as Window, 'postMessage');
+    const nudge = () => act(() => window.dispatchEvent(new MessageEvent('message', { data: { type: 'readable-edit-nudge', direction: 'right', targetId: 'pic', revision }, source: frame.contentWindow })));
+    const commit = () => act(() => window.dispatchEvent(new MessageEvent('message', { data: { type: 'readable-edit-nudge-commit', targetId: 'pic', revision }, source: frame.contentWindow })));
+    nudge(); commit(); nudge(); commit();
+    await waitFor(() => expect(postSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ styles: { translate: '2px 0px' } }),
+      '*',
+    ));
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
   });
 
-  it('keeps a held burst that spans a save as a single write', async () => {
-    let releaseFirst: () => void = () => {};
-    const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve; });
-    let postCount = 0;
-    let persisted = SOURCE;
-    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
-      if (url.includes('/api/projects/project-1/files') && init?.method === 'POST') {
-        postCount += 1;
-        if (postCount === 1) await firstGate;
-        persisted = JSON.parse(String(init.body)).content as string;
-        return new Response(JSON.stringify({ file: htmlPreviewFile() }), {
-          status: 200, headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      return new Response(persisted, { status: 200, headers: { 'Content-Type': 'text/html' } });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-    render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={SOURCE} />);
-    fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
-    await selectManualEditTarget(imageTarget());
-    const surface = interiorSurface();
-    surface.focus();
-
-    // Burst 1: one full press -> commit -> POST 1 (blocked on the gate).
-    fireEvent.keyDown(surface, { key: 'ArrowRight' });
-    fireEvent.keyUp(surface, { key: 'ArrowRight' });
-    await waitFor(() => expect(postCount).toBe(1));
-
-    // Burst 2 begins and is STILL HELD while POST 1 is in flight.
-    fireEvent.keyDown(surface, { key: 'ArrowRight' });
-    fireEvent.keyDown(surface, { key: 'ArrowRight' });
-
-    releaseFirst();
-    // POST 1 finishes; the drain must NOT split the still-open held burst.
-    await waitFor(() => expect(persisted).toMatch(/translate:\s*1px\s+0px/));
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    expect(postCount).toBe(1);
-
-    // Still held AFTER the save completed and re-synced the selection (which bumps
-    // the preview revision): the repeat must extend the SAME burst, not split it.
-    fireEvent.keyDown(surface, { key: 'ArrowRight' });
-
-    // Releasing the held key ends burst 2 -> exactly one more write, cumulative
-    // over all three held repeats (1px baseline + 3).
-    fireEvent.keyUp(surface, { key: 'ArrowRight' });
-    await waitFor(() => expect(postCount).toBe(2));
-    expect(persisted).toMatch(/translate:\s*4px\s+0px/);
-  });
-
-  it('persists every completed burst in order while saves lag behind', async () => {
-    let releaseFirst: () => void = () => {};
-    const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve; });
-    let postCount = 0;
-    let persisted = SOURCE;
-    const writes: string[] = [];
-    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
-      if (url.includes('/api/projects/project-1/files') && init?.method === 'POST') {
-        postCount += 1;
-        if (postCount === 1) await firstGate;
-        persisted = JSON.parse(String(init.body)).content as string;
-        writes.push(persisted);
-        return new Response(JSON.stringify({ file: htmlPreviewFile() }), {
-          status: 200, headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      return new Response(persisted, { status: 200, headers: { 'Content-Type': 'text/html' } });
-    });
+  it('keeps one held keyboard burst grouped in memory', async () => {
+    const fetchMock = savingFetch(() => {});
     vi.stubGlobal('fetch', fetchMock);
     render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={SOURCE} />);
     fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
     const { frame, revision } = await selectManualEditTarget(imageTarget());
+    const postSpy = vi.spyOn(frame.contentWindow as Window, 'postMessage');
+    const nudge = () => act(() => window.dispatchEvent(new MessageEvent('message', { data: { type: 'readable-edit-nudge', direction: 'right', targetId: 'pic', revision }, source: frame.contentWindow })));
+    const commit = () => act(() => window.dispatchEvent(new MessageEvent('message', { data: { type: 'readable-edit-nudge-commit', targetId: 'pic', revision }, source: frame.contentWindow })));
+    nudge(); nudge(); nudge(); commit();
+    await waitFor(() => expect(postSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ styles: { translate: '3px 0px' } }),
+      '*',
+    ));
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
+  });
 
-    const tap = () => {
-      act(() => {
-        window.dispatchEvent(new MessageEvent('message', {
-          data: { type: 'readable-edit-nudge', direction: 'right', targetId: 'pic', revision },
-          source: frame.contentWindow,
-        }));
-      });
-      act(() => {
-        window.dispatchEvent(new MessageEvent('message', {
-          data: { type: 'readable-edit-nudge-commit', targetId: 'pic', revision },
-          source: frame.contentWindow,
-        }));
-      });
-    };
-
-    tap(); // burst 1 -> POST 1 (blocked on firstGate)
-    await waitFor(() => expect(postCount).toBe(1));
-    tap(); // burst 2 completes while POST 1 is in flight -> queued
-    tap(); // burst 3 completes while POST 1 is still in flight -> queued behind burst 2
-    releaseFirst();
-
-    // Three distinct taps are three ordered writes: no completed burst may be
-    // coalesced away while a save is active.
-    await waitFor(() => expect(postCount).toBe(3));
-    expect(writes[0]).toMatch(/translate:\s*1px\s+0px/);
-    expect(writes[1]).toMatch(/translate:\s*2px\s+0px/);
-    expect(writes[2]).toMatch(/translate:\s*3px\s+0px/);
-    expect(persisted).toMatch(/translate:\s*3px\s+0px/);
+  it('preserves every completed burst in order before Save', async () => {
+    const fetchMock = savingFetch(() => {});
+    vi.stubGlobal('fetch', fetchMock);
+    render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={SOURCE} />);
+    fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
+    const { frame, revision } = await selectManualEditTarget(imageTarget());
+    const postSpy = vi.spyOn(frame.contentWindow as Window, 'postMessage');
+    const nudge = () => act(() => window.dispatchEvent(new MessageEvent('message', { data: { type: 'readable-edit-nudge', direction: 'right', targetId: 'pic', revision }, source: frame.contentWindow })));
+    const commit = () => act(() => window.dispatchEvent(new MessageEvent('message', { data: { type: 'readable-edit-nudge-commit', targetId: 'pic', revision }, source: frame.contentWindow })));
+    nudge(); commit(); nudge(); commit(); nudge(); commit();
+    await waitFor(() => expect(postSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ styles: { translate: '3px 0px' } }),
+      '*',
+    ));
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
   });
 
   it('finalizes an open host burst once on window blur', async () => {
@@ -2082,17 +1828,12 @@ describe('FileViewer manual edit move frame', () => {
 
     // Window blur finalizes the accumulated non-zero burst once instead of
     // silently losing movement already shown in preview.
-    await waitFor(() => expect(fetchMock.mock.calls.filter(([, init]) => (
-      (init as RequestInit | undefined)?.method === 'POST'
-    ))).toHaveLength(1));
-    expect(savedContent).toMatch(/translate:\s*2px\s+0px/);
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Undo' }) as HTMLButtonElement).disabled).toBe(false));
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
 
     // A late keyup after the blur-finalized burst does not save again.
     fireEvent.keyUp(surface, { key: 'ArrowRight' });
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(fetchMock.mock.calls.filter(([, init]) => (
-      (init as RequestInit | undefined)?.method === 'POST'
-    ))).toHaveLength(1);
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
   });
 
   it('finalizes an open host burst on visibility loss', async () => {
@@ -2111,10 +1852,8 @@ describe('FileViewer manual edit move frame', () => {
       document.dispatchEvent(new Event('visibilitychange'));
     });
 
-    await waitFor(() => expect(fetchMock.mock.calls.filter(([, init]) => (
-      (init as RequestInit | undefined)?.method === 'POST'
-    ))).toHaveLength(1));
-    expect(savedContent).toMatch(/translate:\s*0px\s+-1px/);
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Undo' }) as HTMLButtonElement).disabled).toBe(false));
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
     Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
   });
 
@@ -2158,7 +1897,6 @@ describe('FileViewer manual edit move frame', () => {
     // The refresh tears the burst down: the release must not commit the
     // pre-refresh movement against the new document.
     fireEvent.keyUp(screen.getByLabelText('Move element').querySelector('[data-region="interior"]') as HTMLElement, { key: 'ArrowRight' });
-    await new Promise((resolve) => setTimeout(resolve, 200));
     expect(fetchMock.mock.calls.filter(([, init]) => (
       (init as RequestInit | undefined)?.method === 'POST'
     ))).toHaveLength(0);
@@ -2181,7 +1919,6 @@ describe('FileViewer manual edit move frame', () => {
     fireEvent.keyDown(surface, { key: 'ArrowRight' });
     fireEvent.keyDown(surface, { key: 'ArrowRight' });
     fireEvent.keyUp(surface, { key: 'ArrowRight' });
-    await new Promise((resolve) => setTimeout(resolve, 200));
     expect(fetchMock.mock.calls.filter(([, init]) => (
       (init as RequestInit | undefined)?.method === 'POST'
     ))).toHaveLength(0);
@@ -2189,9 +1926,8 @@ describe('FileViewer manual edit move frame', () => {
     // After the release the latch is gone: a fresh press nudges normally.
     fireEvent.keyDown(surface, { key: 'ArrowRight' });
     fireEvent.keyUp(surface, { key: 'ArrowRight' });
-    await waitFor(() => expect(fetchMock.mock.calls.filter(([, init]) => (
-      (init as RequestInit | undefined)?.method === 'POST'
-    ))).toHaveLength(1));
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Undo' }) as HTMLButtonElement).disabled).toBe(false));
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
   });
 
   it('owns host overlay arrows for a selected text target with no active inline session', async () => {
@@ -2210,10 +1946,11 @@ describe('FileViewer manual edit move frame', () => {
     fireEvent.keyDown(ring, { key: 'ArrowRight' });
     fireEvent.keyUp(ring, { key: 'ArrowRight' });
 
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
+    await saveChanges();
     await waitFor(() => expect(fetchMock.mock.calls.filter(([, init]) => (
       (init as RequestInit | undefined)?.method === 'POST'
     ))).toHaveLength(1));
-    expect(savedContent).toMatch(/translate:\s*1px\s+0px/);
   });
 
 });
