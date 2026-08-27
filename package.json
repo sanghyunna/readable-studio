@@ -21,7 +21,7 @@
     "postinstall": "node ./scripts/postinstall.mjs",
     "tools-dev": "pnpm exec tools-dev",
     "tools-pack": "pnpm exec tools-pack",
-    "guard": "tsx ./scripts/guard.ts && node --import tsx --test scripts/style-policy.test.ts scripts/product-neutrality.test.ts scripts/check-cross-app-imports.test.ts scripts/postinstall.test.ts scripts/bundled-copy-language.test.ts scripts/json-resources.test.ts",
+    "guard": "tsx ./scripts/check-home-capabilities.ts && tsx ./scripts/guard.ts && node --import tsx --test scripts/style-policy.test.ts scripts/product-neutrality.test.ts scripts/check-cross-app-imports.test.ts scripts/postinstall.test.ts scripts/bundled-copy-language.test.ts scripts/json-resources.test.ts",
     "i18n:check": "tsx ./scripts/i18n-check.ts",
     "i18n:coverage": "tsx ./scripts/i18n-coverage-report.ts",
     "sync:community-pets": "node --experimental-strip-types scripts/sync-community-pets.ts",
