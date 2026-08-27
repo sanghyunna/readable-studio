@@ -38,6 +38,8 @@ interface Props {
   onRetrySessions?: (project: HubProjectNode) => void;
   /** The project whose new-session request is currently in flight, if any. */
   pendingNewSessionProjectId?: string | null;
+  /** Opens a project with no sessions rather than leaving a dead row. */
+  onOpenProject?: (project: HubProjectNode) => void;
 }
 
 interface FlatRow {
@@ -63,6 +65,7 @@ export function HubSessionTree({
   onNewSession,
   onRetrySessions,
   pendingNewSessionProjectId = null,
+  onOpenProject,
 }: Props) {
   const t = useT();
   const [filter, setFilter] = useState<HubFilter>('all');
@@ -145,9 +148,15 @@ export function HubSessionTree({
         if (firstHidden) pendingFocusRef.current = `s:${firstHidden}`;
         return;
       }
+      // A project with no sessions has nothing to expand, so activating it
+      // opens the project instead of toggling an empty group.
+      if (onOpenProject && row.project.sessions.length === 0) {
+        onOpenProject(row.project);
+        return;
+      }
       setCollapsed((prev) => ({ ...prev, [row.project.id]: !prev[row.project.id] }));
     },
-    [onOpenSession, filter],
+    [onOpenSession, onOpenProject, filter],
   );
 
   const onKeyDown = useCallback(

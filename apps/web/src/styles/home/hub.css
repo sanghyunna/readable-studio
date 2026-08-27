@@ -363,6 +363,181 @@
   font-weight: 550;
 }
 
+/* ---- rail footer: destinations + workspace ---- */
+
+/* The tree keeps the flexible row; the view-all link and the footer sit
+   underneath it on auto rows so they stay pinned to the bottom of the rail. */
+.hub__view-all {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin: 0 8px 4px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--selected);
+  font-size: 12.5px;
+  font-weight: 550;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hub__view-all:hover {
+  background: var(--bg-hover);
+}
+
+.hub__foot {
+  display: grid;
+  gap: 2px;
+  padding: 6px 8px 8px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.hub__dest-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.hub__menu-anchor {
+  position: relative;
+  min-width: 0;
+  flex: 1;
+}
+
+.hub__dest-more {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-weight: 550;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hub__dest {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.hub__dest-more:hover,
+.hub__dest:hover,
+.hub__user-row:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.hub__user-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.hub__user-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--selected);
+  color: var(--selected-fg);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.hub__user-meta {
+  display: grid;
+  min-width: 0;
+}
+
+.hub__user-name,
+.hub__user-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hub__user-name {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.hub__user-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Footer menus open upward, anchored to their trigger, because the rail
+   footer sits on the bottom edge of the viewport. */
+.hub__menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  min-width: 200px;
+  padding: 5px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+}
+
+.hub__menu-label {
+  padding: 5px 9px 6px;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.hub__menu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--text);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hub__menu-item:hover,
+.hub__menu-item:focus-visible {
+  background: var(--bg-hover);
+}
+
 /* ---- start surface ---- */
 
 .hub__stage {

@@ -12,6 +12,19 @@ export type HubSessionState = 'running' | 'awaiting' | 'failed' | 'idle';
 /** Which rows the left panel is currently showing. */
 export type HubFilter = 'all' | 'attention' | 'running';
 
+/**
+ * Entry destinations the hub can reach from home. These mirror the entry
+ * views the router already owns (`/projects`, `/tasks`, ...); the hub only
+ * names them so the rail footer never has to import the entry-shell view
+ * union and can stay a presentational surface.
+ */
+export type HubDestination =
+  | 'projects'
+  | 'tasks'
+  | 'design-systems'
+  | 'plugins'
+  | 'integrations';
+
 /** Ordering for the project list. */
 export type HubSort = 'recent' | 'name';
 

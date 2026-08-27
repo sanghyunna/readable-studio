@@ -11,11 +11,14 @@ import { RUNS_CHANGED_EVENT } from '../../providers/daemon';
 import { createConversation, readConversations } from '../../state/projects';
 import type { DesignSystemSummary, Project, SkillSummary } from '../../types';
 import { HomeView } from '../HomeView';
+import { Icon } from '../Icon';
 import type { PluginLoopSubmit } from '../PluginLoopHome';
+import { HubRailFooter } from './HubRailFooter';
 import { HubSessionTree } from './HubSessionTree';
 import {
   projectStateFromStatus,
   sessionStateFromRunStatus,
+  type HubDestination,
   type HubProjectNode,
   type HubSessionNode,
   type HubSessionsStatus,
@@ -46,13 +49,22 @@ interface Props {
   onSubmit?: (payload: PluginLoopSubmit) => Promise<boolean> | boolean | void;
   /** @deprecated compatibility for callers not yet migrated to the rich payload. */
   onSubmitPrompt?: (prompt: string, options?: { designSystemId: string | null }) => unknown;
-  onOpenProject?: (id: string) => void;
+  /** Open a project itself, including projects with no sessions. */
+  onOpenProject?: (projectId: string) => void;
   onViewAllProjects?: () => void;
   onBrowseRegistry?: () => void;
   onOpenMcp?: () => void;
   onOpenNewProject?: (tab: 'template') => void;
   skills?: SkillSummary[];
   skillsLoading?: boolean;
+  /** Navigate to one of the entry destinations (rail footer library menu). */
+  onOpenDestination?: (destination: HubDestination) => void;
+  /** Open settings (rail footer gear and workspace menu). */
+  onOpenSettings?: () => void;
+  /** Open the surface that owns the workspace storage roots. */
+  onOpenWorkspaceFolder?: () => void;
+  /** Name of the active workspace, rendered in the rail footer row. */
+  workspaceName?: string | null;
   designSystems?: DesignSystemSummary[];
   defaultDesignSystemId?: string | null;
   onNewProject: () => void;
@@ -80,6 +92,10 @@ export function HubHome({
   onSubmit,
   onSubmitPrompt,
   onOpenProject,
+  onOpenDestination,
+  onOpenSettings,
+  onOpenWorkspaceFolder,
+  workspaceName = null,
   onViewAllProjects,
   onBrowseRegistry,
   onOpenMcp,
@@ -280,6 +296,12 @@ export function HubHome({
     },
     [loadProject],
   );
+  const handleOpenProject = useCallback(
+    (project: HubProjectNode) => {
+      onOpenProject?.(project.id);
+    },
+    [onOpenProject],
+  );
 
   // The new-session action creates a real conversation and hands it to the
   // workspace through the same route the tree uses for existing sessions, so
@@ -395,8 +417,28 @@ export function HubHome({
             onNewSession={handleNewSession}
             onRetrySessions={handleRetrySessions}
             pendingNewSessionProjectId={creatingSessionFor}
+            {...(onOpenProject ? { onOpenProject: handleOpenProject } : {})}
           />
         )}
+        {onOpenDestination ? (
+          <button
+            type="button"
+            className="hub__view-all"
+            data-testid="hub-view-all-projects"
+            onClick={() => onOpenDestination('projects')}
+          >
+            <span>{t('hub.viewAllProjects')}</span>
+            <Icon name="chevron-right" size={13} />
+          </button>
+        ) : null}
+        {onOpenDestination && onOpenSettings && onOpenWorkspaceFolder ? (
+          <HubRailFooter
+            onOpenDestination={onOpenDestination}
+            onOpenSettings={onOpenSettings}
+            onOpenWorkspaceFolder={onOpenWorkspaceFolder}
+            workspaceName={workspaceName}
+          />
+        ) : null}
       </nav>
 
       <div className="hub__stage">

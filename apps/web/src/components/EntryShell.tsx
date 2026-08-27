@@ -45,6 +45,7 @@ import { CenteredLoader } from './Loading';
 import { DesignsTab } from './DesignsTab';
 import { DesignSystemPreviewModal } from './DesignSystemPreviewModal';
 import { DesignSystemsTab } from './DesignSystemsTab';
+import { EntryHelpMenu } from './EntryHelpMenu';
 import { EntryNavRail, type EntryView as EntryViewKind } from './EntryNavRail';
 import { HubHome } from './hub/HubHome';
 import { openSessionRoute } from './hub/openSessionRoute';
@@ -426,6 +427,17 @@ export function EntryShell({
     [designSystems, previewSystemId],
   );
 
+  // The rail footer names the workspace the user actually configured; with no
+  // project location set there is nothing to name, so the row falls back to
+  // its generic label rather than inventing an identity.
+  const activeWorkspaceName = useMemo(() => {
+    const locations = config.projectLocations ?? [];
+    const active =
+      locations.find((location) => location.id === config.defaultProjectLocationId) ??
+      locations[0];
+    return active?.name?.trim() || null;
+  }, [config.projectLocations, config.defaultProjectLocationId]);
+
   function handleCreate(input: CreateInput) {
     // The NewProjectModal no longer asks the user to pick a plugin.
     // Each project kind is silently bound to its default scenario
@@ -568,6 +580,23 @@ export function EntryShell({
             <div className="entry-main__topbar-chips entry-main__topbar-chips--icon-only">
               {executionSwitcher}
             </div>
+            {view === 'home' ? (
+              <>
+                {/* Mockup topbar (`index.html:791`): local-run status, help,
+                    then the account menu. */}
+                <button
+                  type="button"
+                  className={`entry-run-chip${daemonLive ? ' is-live' : ''}`}
+                  data-testid="entry-run-status"
+                  data-live={daemonLive ? 'true' : 'false'}
+                  onClick={() => onOpenSettings('execution')}
+                >
+                  <span className="entry-run-chip__dot" aria-hidden="true" />
+                  <span>{daemonLive ? t('hub.localRunning') : t('hub.localOffline')}</span>
+                </button>
+                <EntryHelpMenu />
+              </>
+            ) : null}
             {avatarMenu}
           </div>
           <div
@@ -583,10 +612,14 @@ export function EntryShell({
                 projects={projects}
                 projectsLoading={projectsLoading}
                 onOpenSession={openSessionRoute}
+                onOpenProject={onOpenProject}
+                onOpenDestination={(destination) => changeView(destination)}
+                onOpenSettings={() => onOpenSettings()}
+                onOpenWorkspaceFolder={() => onOpenSettings('projectLocations')}
+                workspaceName={activeWorkspaceName}
                 designSystems={designSystems}
                 defaultDesignSystemId={defaultDesignSystemId}
                 onSubmit={handlePluginLoopSubmit}
-                onOpenProject={onOpenProject}
                 onViewAllProjects={() => changeView('projects')}
                 onBrowseRegistry={() => changeView('plugins')}
                 onOpenMcp={() => openIntegrationTab('mcp')}

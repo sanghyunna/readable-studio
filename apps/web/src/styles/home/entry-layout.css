@@ -503,6 +503,100 @@
   gap: 8px;
 }
 
+/* Local-run status chip + help launcher — the approved hub topbar
+   (`.tmp/design/main-hub/index.html:791`) states where the run happens and
+   keeps help one click away from the start surface. */
+.entry-run-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 11px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.entry-run-chip:hover {
+  color: var(--text);
+}
+
+.entry-run-chip__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--text-faint);
+}
+
+.entry-run-chip.is-live .entry-run-chip__dot {
+  background: var(--selected);
+}
+
+.entry-help-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.entry-help-menu__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.entry-help-menu__trigger:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.entry-help-menu__popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  min-width: 220px;
+  padding: 5px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+}
+
+.entry-help-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--text);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.entry-help-menu__item:hover,
+.entry-help-menu__item:focus-visible {
+  background: var(--bg-hover);
+}
+
+.entry-help-menu__item > span {
+  flex: 1;
+  min-width: 0;
+}
+
 /* ============================================================
    Icon-only topbar chips
    Collapse the Star / Discord / model-switcher / Use-everywhere

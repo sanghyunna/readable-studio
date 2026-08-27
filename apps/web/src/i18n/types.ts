@@ -785,6 +785,12 @@ export interface Dict {
   'hub.startFromTemplate': string;
   'hub.designSystem': string;
   'hub.starting': string;
+  'hub.library': string;
+  'hub.viewAllProjects': string;
+  'hub.localRunning': string;
+  'hub.localOffline': string;
+  'hub.localWorkspace': string;
+  'hub.workspaceFolder': string;
   'entry.navHome': string;
   'entry.navProjects': string;
   'entry.navTasks': string;
