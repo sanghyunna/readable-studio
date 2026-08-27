@@ -681,13 +681,10 @@ function AppInner() {
 
       void fetchDaemonConfig().then((daemonConfig) => {
         if (cancelled) return;
-        // Compute the next config outside the setConfig updater so we can
-        // both (a) call navigate() after setConfig returns — calling it
-        // inside the updater would trigger a Router setState during React's
-        // render phase — and (b) read next.onboardingCompleted synchronously,
-        // since React batches setConfig and the updater doesn't run until
-        // the next render. latestPersistedConfigRef is kept in sync with
-        // the rendered config and is safe to read here.
+        // Compute the next config outside the setConfig updater so the
+        // merged values can be persisted and stored in
+        // latestPersistedConfigRef synchronously — React batches setConfig
+        // and the updater doesn't run until the next render.
         const baseConfig = latestPersistedConfigRef.current;
         const next = clearStaleAmrModelChoiceOnProfileChange(
           baseConfig,
@@ -701,15 +698,6 @@ function AppInner() {
         latestPersistedConfigRef.current = next;
         setConfig(next);
 
-        // Route first-run users through the global onboarding panel.
-        // The onboarding panel and the privacy banner have independent
-        // lifecycles: onboarding keys off `onboardingCompleted`, the
-        // banner keys off `privacyDecisionAt`. They may coexist on the
-        // first launch; the banner sits above the modal layer so it
-        // stays actionable regardless of the active view.
-        if (!next.onboardingCompleted) {
-          navigate({ kind: 'home', view: 'onboarding' }, { replace: true });
-        }
         setDaemonConfigLoaded(true);
       });
 
@@ -792,14 +780,13 @@ function AppInner() {
   // probe — by the time this runs, daemonConfig has already overlaid the
   // user's previous choice, so we only fill an empty slot.
   //
-  // First-run onboarding is the one time we must NOT do this: the onboarding
-  // flow is the sole authority for the initial agent pick (AMR is the
-  // recommended default there), and AMR (vela) detection is asynchronous. If
-  // this fallback fires during onboarding while AMR is still being detected it
-  // snaps the slot to the registry-first *detected* agent (Claude) and
-  // persists it to the daemon, which then races and clobbers the user's AMR
-  // selection on the next launch. Gate on onboardingCompleted so this only
-  // backfills an empty slot for returning users.
+  // Gated on onboardingCompleted so a brand-new install's slot stays empty
+  // until the user has finished initial setup (the flag flips when Settings
+  // is closed): snapping the slot to the registry-first *detected* agent
+  // while AMR (vela) detection is still settling would persist a choice the
+  // user never made and clobber an AMR selection on the next launch. For
+  // returning users the flag is already set, so this only backfills an
+  // empty slot.
   useEffect(() => {
     if (!daemonConfigLoaded || agentsLoading) return;
     if (config.onboardingCompleted !== true) return;
@@ -1608,16 +1595,6 @@ function AppInner() {
     navigate({ kind: 'home', view: 'plugins' });
   }, []);
 
-  const handleCompleteOnboarding = useCallback(() => {
-    const current = latestPersistedConfigRef.current;
-    if (current.onboardingCompleted) return;
-    const next: AppConfig = { ...current, onboardingCompleted: true };
-    latestPersistedConfigRef.current = next;
-    saveConfig(next);
-    void syncConfigToDaemon(next);
-    setConfig(next);
-  }, []);
-
   // Cmd+, (mac) / Ctrl+, (win/linux) opens Settings. Capture phase so we
   // beat the browser's default Preferences dialog. Platform-gated so
   // meta/ctrl don't conflict across OS.
@@ -1830,7 +1807,6 @@ function AppInner() {
         onDeleteTemplate={handleDeleteTemplate}
         defaultDesignSystemId={config.designSystemId}
         agents={agents}
-        agentsLoading={agentsLoading}
         config={config}
         providerModelsCache={providerModelsCache}
         onProviderModelsCacheChange={setProviderModelsCache}
@@ -1860,7 +1836,6 @@ function AppInner() {
         onOpenDesignSystem={(id: string) => navigate({ kind: 'design-system-detail', designSystemId: id })}
         onDesignSystemsRefresh={refreshDesignSystems}
         onOpenSettings={openSettings}
-        onCompleteOnboarding={handleCompleteOnboarding}
       />
     );
   }
@@ -1873,7 +1848,6 @@ function AppInner() {
         <WorkspaceTabsBar
           route={route}
           projects={projects}
-          onboardingCompleted={config.onboardingCompleted === true}
         />
         <div className="workspace-shell__body">
           {appMain}
@@ -1902,9 +1876,10 @@ function AppInner() {
           onClose={() => {
             // Closing the dialog is the canonical "I'm done" gesture
             // now that there is no global Save button. We mark
-            // onboardingCompleted on close so the welcome modal stops
-            // re-prompting on every refresh, regardless of whether
-            // the user changed anything during the session.
+            // onboardingCompleted on close so the first-run agent
+            // auto-pick backfill (gated on that flag) can proceed,
+            // regardless of whether the user changed anything during
+            // the session.
             const next = resolveSettingsCloseConfig(config, latestPersistedConfigRef.current);
             if (!next.onboardingCompleted || !config.onboardingCompleted) {
               latestPersistedConfigRef.current = next;

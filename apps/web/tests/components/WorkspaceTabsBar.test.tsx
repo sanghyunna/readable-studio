@@ -161,38 +161,6 @@ describe('WorkspaceTabsBar navigation semantics', () => {
     });
   });
 
-  it('auto-closes the Welcome tab once onboarding completes, even when a project opens', async () => {
-    const { rerender } = render(
-      <WorkspaceTabsBar
-        route={{ kind: 'home', view: 'onboarding' }}
-        projects={[project]}
-        onboardingCompleted={false}
-      />,
-    );
-
-    await waitFor(() => {
-      const labels = screen.getAllByRole('tab').map((tab) => tab.textContent ?? '');
-      expect(labels.some((label) => label.includes('Welcome'))).toBe(true);
-    });
-
-    // Completing onboarding via the design-system path navigates to a fresh
-    // project while the entry tab is still parked on the Welcome view.
-    rerender(
-      <WorkspaceTabsBar
-        route={{ ...projectRoute }}
-        projects={[project]}
-        onboardingCompleted={true}
-      />,
-    );
-
-    await waitFor(() => {
-      const labels = screen.getAllByRole('tab').map((tab) => tab.textContent ?? '');
-      expect(labels.some((label) => label.includes('Welcome'))).toBe(false);
-      expect(labels.some((label) => label.includes('Home'))).toBe(true);
-      expect(labels.some((label) => label.includes('Project Alpha'))).toBe(true);
-    });
-  });
-
   it('collapses every entry section into the single leftmost tab (no new tab per section)', async () => {
     const { rerender } = render(
       <WorkspaceTabsBar route={{ kind: 'home', view: 'home' }} projects={[project]} />,

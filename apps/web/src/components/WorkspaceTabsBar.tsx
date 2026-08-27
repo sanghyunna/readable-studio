@@ -53,11 +53,6 @@ interface TabDragTarget {
 interface Props {
   route: Route;
   projects: Project[];
-  // Once onboarding is finished (completed or skipped), the permanent entry
-  // tab must never linger on the 'onboarding' (Welcome) view — some completion
-  // paths navigate straight to a new project/design-system and leave the entry
-  // tab showing Welcome in the background. This flips it back to Home.
-  onboardingCompleted?: boolean;
 }
 
 const STORAGE_KEY = 'readable-studio:workspace-tabs:v1';
@@ -318,7 +313,7 @@ function syncStateToRoute(state: WorkspaceTabsState, route: Route): WorkspaceTab
   const currentActive = current.tabs.find((tab) => tab.id === current.activeTabId) ?? null;
 
   // 1. If we are navigating to any entry view (home / projects / tasks /
-  // design-systems / plugins / integrations / onboarding), reuse the single
+  // design-systems / plugins / integrations), reuse the single
   // entry tab and switch its view IN PLACE — all sidebar sections collapse
   // into the one leftmost tab. Only create one if none exists.
   if (route.kind === 'home') {
@@ -409,7 +404,7 @@ interface HoverPreviewState {
 
 const HOVER_PREVIEW_DELAY_MS = 380;
 
-export function WorkspaceTabsBar({ route, projects, onboardingCompleted = false }: Props) {
+export function WorkspaceTabsBar({ route, projects }: Props) {
   const t = useT();
   const [state, setState] = useState<WorkspaceTabsState>(() => initialTabsState(route));
   const [tabsMenuOpen, setTabsMenuOpen] = useState(false);
@@ -485,28 +480,6 @@ export function WorkspaceTabsBar({ route, projects, onboardingCompleted = false 
   useEffect(() => {
     setState((current) => syncStateToRoute(current, route));
   }, [route]);
-
-  // Auto-close the Welcome tab once onboarding ends: rewrite any entry tab
-  // still parked on the 'onboarding' view back to 'home'. This catches every
-  // finish path uniformly — Skip, last-step Continue, and the design-system
-  // Generate route that navigates to a fresh project while leaving the entry
-  // tab on Welcome in the background.
-  useEffect(() => {
-    if (!onboardingCompleted) return;
-    setState((current) => {
-      if (!current.tabs.some((tab) => tab.kind === 'entry' && tab.view === 'onboarding')) {
-        return current;
-      }
-      return normalizeTabsState({
-        ...current,
-        tabs: current.tabs.map((tab) =>
-          tab.kind === 'entry' && tab.view === 'onboarding'
-            ? { ...tab, view: 'home' }
-            : tab,
-        ),
-      });
-    });
-  }, [onboardingCompleted]);
 
   // Scroll the active tab into view when it changes. The strip itself
   // is native-scrollable horizontally (see CSS), so we just nudge the
@@ -1154,7 +1127,6 @@ function displayTabFor(
   }
   const entryTitle: Record<EntryHomeView, string> = {
     home: t('entry.navHome'),
-    onboarding: t('settings.welcomeTitle'),
     projects: t('entry.navProjects'),
     tasks: t('entry.navTasks'),
     plugins: t('entry.navPlugins'),
@@ -1163,7 +1135,6 @@ function displayTabFor(
   };
   const entryIcon: Record<EntryHomeView, IconName> = {
     home: 'home',
-    onboarding: 'sparkles',
     projects: 'folder',
     tasks: 'kanban',
     plugins: 'grid',

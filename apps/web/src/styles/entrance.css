@@ -353,14 +353,6 @@
    Skills section rows
    ================================================================ */
 
-/* ================================================================
-   Onboarding / new project panels
-   ================================================================ */
-
-.onboarding-view__panel {
-  animation: readable-fade-slide-up 300ms cubic-bezier(0.23, 1, 0.32, 1) both;
-}
-
 .newproj-section {
   animation: readable-fade-slide-up 250ms cubic-bezier(0.23, 1, 0.32, 1) both;
 }

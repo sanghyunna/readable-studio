@@ -42,9 +42,6 @@ interface Props {
   onDeleteTemplate: (id: string) => Promise<boolean>;
   defaultDesignSystemId: string | null;
   agents: AgentInfo[];
-  // Forwarded to EntryShell → OnboardingView so the AMR cloud card can show a
-  // detecting/skeleton state while the cold-start agent stream is in flight.
-  agentsLoading?: boolean;
   // Execution / model-switching context forwarded to the EntryShell so the
   // sticky top-bar can expose the active CLI/BYOK + model and persist
   // changes through the same channels as the project view.
@@ -103,7 +100,6 @@ interface Props {
   onOpenDesignSystem?: (id: string) => void;
   onDesignSystemsRefresh?: () => Promise<void> | void;
   onOpenSettings: (section?: 'execution' | 'integrations' | 'mcpClient' | 'language' | 'appearance' | 'notifications' | 'pet' | 'projectLocations' | 'library' | 'about' | 'memory' | 'designSystems') => void;
-  onCompleteOnboarding: () => void;
 }
 
 export function EntryView({
@@ -115,7 +111,6 @@ export function EntryView({
   onDeleteTemplate,
   defaultDesignSystemId,
   agents,
-  agentsLoading,
   config,
   providerModelsCache,
   onProviderModelsCacheChange,
@@ -145,7 +140,6 @@ export function EntryView({
   onOpenDesignSystem,
   onDesignSystemsRefresh,
   onOpenSettings,
-  onCompleteOnboarding,
 }: Props) {
   void useCallback;
   void useEffect;
@@ -170,7 +164,6 @@ export function EntryView({
       providerModelsCache={providerModelsCache}
       onProviderModelsCacheChange={onProviderModelsCacheChange}
       agents={agents}
-      {...(agentsLoading !== undefined ? { agentsLoading } : {})}
       daemonLive={daemonLive}
       onModeChange={onModeChange}
       onAgentChange={onAgentChange}
@@ -193,7 +186,6 @@ export function EntryView({
       onOpenDesignSystem={onOpenDesignSystem}
       onDesignSystemsRefresh={onDesignSystemsRefresh}
       onOpenSettings={openSettings}
-      onCompleteOnboarding={onCompleteOnboarding}
     />
   );
 }

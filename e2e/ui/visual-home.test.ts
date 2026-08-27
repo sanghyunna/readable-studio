@@ -43,25 +43,6 @@ const VISUAL_CLI_AGENTS = [
   },
 ] as const;
 
-test('[P2] captures the onboarding runtime selection surface', async ({ page }) => {
-  await configureVisualPage(page, {
-    projects: [],
-    agents: VISUAL_CLI_AGENTS,
-    config: {
-      onboardingCompleted: false,
-      agentId: 'claude',
-      agentModels: { claude: { model: 'default', reasoning: 'default' } },
-    },
-  });
-
-  await page.goto('/onboarding', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('main')).toBeVisible();
-  await expect(page.locator('.onboarding-view__card')).toHaveCount(2);
-  await waitForVisualFonts(page);
-
-  await captureVisual(page, 'visual-onboarding-runtime');
-});
-
 test('[P2] captures the visual home harness', async ({ page }) => {
   await configureVisualPage(page, { projects: [] });
   await gotoVisualHome(page);
