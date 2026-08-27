@@ -7,7 +7,7 @@
 import { navigate } from '../../router';
 import { openWorkspaceTab } from '../WorkspaceTabsBar';
 
-export function openSessionRoute(projectId: string, conversationId: string): void {
+function openProjectWorkspace(projectId: string, conversationId: string | null): void {
   const route = {
     kind: 'project' as const,
     projectId,
@@ -18,4 +18,12 @@ export function openSessionRoute(projectId: string, conversationId: string): voi
   // the hub is a place users return to repeatedly.
   openWorkspaceTab(route, { reuseExisting: true });
   navigate(route);
+}
+
+export function openProjectRoute(projectId: string): void {
+  openProjectWorkspace(projectId, null);
+}
+
+export function openSessionRoute(projectId: string, conversationId: string): void {
+  openProjectWorkspace(projectId, conversationId);
 }

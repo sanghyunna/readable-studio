@@ -40,6 +40,8 @@ interface Props {
   pendingNewSessionProjectId?: string | null;
   /** Opens a project with no sessions rather than leaving a dead row. */
   onOpenProject?: (project: HubProjectNode) => void;
+  onRename?: (row: HubProjectNode | HubSessionNode, name: string) => void;
+  onDelete?: (row: HubProjectNode | HubSessionNode) => void;
 }
 
 interface FlatRow {
@@ -66,6 +68,8 @@ export function HubSessionTree({
   onRetrySessions,
   pendingNewSessionProjectId = null,
   onOpenProject,
+  onRename,
+  onDelete,
 }: Props) {
   const t = useT();
   const [filter, setFilter] = useState<HubFilter>('all');
@@ -73,6 +77,10 @@ export function HubSessionTree({
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [expandedOverflow, setExpandedOverflow] = useState<Record<string, boolean>>({});
   const [cursor, setCursor] = useState(0);
+  const [renamingKey, setRenamingKey] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const typeAheadRef = useRef('');
+  const typeAheadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // A row activated out of existence (the overflow row) hands focus to a row
   // that only mounts on the next render, so the target is claimed by whichever
   // ref callback registers it rather than by an effect that may run first.
@@ -122,6 +130,10 @@ export function HubSessionTree({
     if (cursor > rows.length - 1) setCursor(Math.max(0, rows.length - 1));
   }, [rows.length, cursor]);
 
+  useEffect(() => () => {
+    if (typeAheadTimerRef.current) clearTimeout(typeAheadTimerRef.current);
+  }, []);
+
   const focusRow = useCallback(
     (index: number) => {
       const row = rows[index];
@@ -161,6 +173,9 @@ export function HubSessionTree({
 
   const onKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLDivElement>, fallbackIndex: number) => {
+      // Project treeitems own their session groups in the DOM, so a session
+      // key event must not bubble into the parent project's handler.
+      event.stopPropagation();
       // Resolve the row from the focused element so keyboard traversal stays
       // correct even when focus arrived without going through onClick.
       const focusedKey = event.currentTarget.dataset.rowKey;
@@ -169,6 +184,19 @@ export function HubSessionTree({
       const row = rows[index];
       if (!row) return;
       switch (event.key) {
+        case 'F2': {
+          if (row.kind === 'more' || !onRename) break;
+          event.preventDefault();
+          setRenamingKey(row.key);
+          setRenameValue(row.session?.title ?? row.project.name);
+          break;
+        }
+        case 'Delete':
+          if (row.kind === 'more' || !onDelete) break;
+          event.preventDefault();
+          onDelete(row.session ?? row.project);
+          focusRow(Math.min(index + 1, rows.length - 1));
+          break;
         case 'ArrowDown':
           event.preventDefault();
           focusRow(Math.min(index + 1, rows.length - 1));
@@ -212,10 +240,28 @@ export function HubSessionTree({
           activate(row);
           break;
         default:
+          if (
+            event.key.length === 1 &&
+            !event.ctrlKey &&
+            !event.metaKey &&
+            !event.altKey
+          ) {
+            event.preventDefault();
+            typeAheadRef.current += event.key.toLocaleLowerCase();
+            if (typeAheadTimerRef.current) clearTimeout(typeAheadTimerRef.current);
+            typeAheadTimerRef.current = setTimeout(() => {
+              typeAheadRef.current = '';
+            }, 800);
+            const match = rows.findIndex((candidate) => {
+              const name = candidate.session?.title ?? candidate.project.name;
+              return candidate.kind !== 'more' && name.toLocaleLowerCase().startsWith(typeAheadRef.current);
+            });
+            if (match >= 0) focusRow(match);
+          }
           break;
       }
     },
-    [rows, focusRow, collapsed, activate],
+    [rows, focusRow, collapsed, activate, onRename, onDelete],
   );
 
   // Counts are per-project so a project awaiting input is counted once, even
@@ -249,6 +295,30 @@ export function HubSessionTree({
   };
 
   const indexOfKey = (key: string) => rows.findIndex((row) => row.key === key);
+
+  const renameControl = (key: string, row: HubProjectNode | HubSessionNode) => (
+    <input
+      className="hub-row__rename"
+      data-testid={`hub-rename-${key.slice(2)}`}
+      value={renameValue}
+      aria-label="Rename"
+      autoFocus
+      onClick={(event) => event.stopPropagation()}
+      onChange={(event) => setRenameValue(event.target.value)}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (event.key === 'Enter') {
+          const next = renameValue.trim();
+          if (next) onRename?.(row, next);
+          setRenamingKey(null);
+          rowRefs.current.get(key)?.focus();
+        } else if (event.key === 'Escape') {
+          setRenamingKey(null);
+          rowRefs.current.get(key)?.focus();
+        }
+      }}
+    />
+  );
 
   return (
     <div className="hub-tree">
@@ -345,7 +415,9 @@ export function HubSessionTree({
                 onKeyDown={(event) => onKeyDown(event, projectIndex)}
               >
                 <span className="hub-row__chevron" aria-hidden="true" data-open={entry.open} />
-                <span className="hub-row__title">{entry.project.name}</span>
+                {renamingKey === projectKey
+                  ? renameControl(projectKey, entry.project)
+                  : <span className="hub-row__title">{entry.project.name}</span>}
                 {entry.open || !rollupKey ? null : (
                   <span
                     id={`hub-state-${entry.project.id}`}
@@ -445,7 +517,9 @@ export function HubSessionTree({
                       }}
                       onKeyDown={(event) => onKeyDown(event, sessionIndex)}
                     >
-                      <span className="hub-row__title">{session.title}</span>
+                      {renamingKey === sessionKey
+                        ? renameControl(sessionKey, session)
+                        : <span className="hub-row__title">{session.title}</span>}
                       {labelKey ? (
                         <span
                           id={`hub-state-${session.id}`}

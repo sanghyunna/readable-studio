@@ -75,6 +75,39 @@ describe('HubSessionTree keyboard and semantics', () => {
     expect(onOpenSession).toHaveBeenCalledWith(expect.objectContaining({ id: 's2' }));
   });
 
+  it('renames and deletes the focused row without changing the existing activation model', () => {
+    const onRename = vi.fn();
+    const onDelete = vi.fn();
+    render(
+      <HubSessionTree
+        projects={PROJECTS}
+        currentSessionId={null}
+        onOpenSession={vi.fn()}
+        onRename={onRename}
+        onDelete={onDelete}
+      />,
+    );
+    const row = screen.getByTestId('hub-session-s1');
+    row.focus();
+    fireEvent.keyDown(row, { key: 'F2' });
+    const input = screen.getByTestId('hub-rename-s1');
+    fireEvent.change(input, { target: { value: '새 세션 이름' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onRename).toHaveBeenCalledWith(expect.objectContaining({ id: 's1' }), '새 세션 이름');
+
+    const deleteRow = screen.getByTestId('hub-session-s2');
+    fireEvent.keyDown(deleteRow, { key: 'Delete' });
+    expect(onDelete).toHaveBeenCalledWith(expect.objectContaining({ id: 's2' }));
+  });
+
+  it('uses printable-key type-ahead to focus a matching visible row', () => {
+    render(<HubSessionTree projects={PROJECTS} currentSessionId={null} onOpenSession={vi.fn()} />);
+    const first = screen.getByTestId('hub-project-p1');
+    first.focus();
+    fireEvent.keyDown(first, { key: '가' });
+    expect(document.activeElement).toBe(screen.getByTestId('hub-project-p2'));
+  });
+
   it('marks the current session for assistive tech', () => {
     render(<HubSessionTree projects={PROJECTS} currentSessionId="s2" onOpenSession={vi.fn()} />);
     expect(screen.getByTestId('hub-session-s2').getAttribute('aria-current')).toBe('true');

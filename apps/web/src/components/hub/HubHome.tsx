@@ -4,15 +4,21 @@
 // start surface: a live-work strip when something is running, the composer,
 // and import starters. Past work is never dumped into the center canvas.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { useT } from '../../i18n';
 import { RUNS_CHANGED_EVENT } from '../../providers/daemon';
-import { createConversation, readConversations } from '../../state/projects';
+import {
+  createConversation,
+  deleteConversation,
+  patchConversation,
+  readConversations,
+} from '../../state/projects';
 import type { DesignSystemSummary, Project, SkillSummary } from '../../types';
 import { HomeView } from '../HomeView';
 import { Icon } from '../Icon';
 import type { PluginLoopSubmit } from '../PluginLoopHome';
+import { HubCommandPalette, type HubPaletteEntry } from './HubCommandPalette';
 import { HubRailFooter } from './HubRailFooter';
 import { HubSessionTree } from './HubSessionTree';
 import {
@@ -68,6 +74,9 @@ interface Props {
   designSystems?: DesignSystemSummary[];
   defaultDesignSystemId?: string | null;
   onNewProject: () => void;
+  onRenameProject?: (projectId: string, name: string) => void;
+  onDeleteProject?: (projectId: string) => void;
+  onNavigateDestination?: (destination: 'home' | 'projects' | 'tasks' | 'design-systems' | 'plugins' | 'integrations') => void;
   /**
    * Real folder import. Omitted when no import route is available (no desktop
    * host and no local daemon picker), in which case the starter is not shown
@@ -103,6 +112,9 @@ export function HubHome({
   skills,
   skillsLoading,
   onNewProject,
+  onRenameProject,
+  onDeleteProject,
+  onNavigateDestination,
   onImportFolder,
   importingFolder = false,
   onImportClaudeZip,
@@ -128,6 +140,10 @@ export function HubHome({
   // must not create two empty conversations.
   const creatingSessionRef = useRef(new Set<string>());
   const [creatingSessionFor, setCreatingSessionFor] = useState<string | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [railCollapsed, setRailCollapsed] = useState(false);
+  const paletteReturnRef = useRef<HTMLElement | null>(null);
+  const allNodesRef = useRef<HubProjectNode[]>([]);
   // Read through a ref so the fetch effect does not re-run when `t` changes
   // identity, while still rendering the translated fallback label.
   const untitledLabel = useRef(t('hub.untitledSession'));
@@ -264,6 +280,146 @@ export function HubHome({
       );
   }, [allNodes, query]);
 
+  useLayoutEffect(() => {
+    allNodesRef.current = allNodes;
+  }, [allNodes]);
+
+  const closePalette = useCallback(() => {
+    setPaletteOpen(false);
+    const target = paletteReturnRef.current;
+    paletteReturnRef.current = null;
+    window.requestAnimationFrame(() => {
+      if (target?.isConnected) target.focus();
+    });
+  }, []);
+
+  const openPalette = useCallback(() => {
+    if (paletteOpen) return;
+    paletteReturnRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    setPaletteOpen(true);
+  }, [paletteOpen]);
+
+  const createSession = useCallback(async (project: HubProjectNode) => {
+    const conversation = await createConversation(project.id);
+    if (!conversation) return;
+    onOpenSession(project.id, conversation.id);
+  }, [onOpenSession]);
+
+  const renameTreeRow = useCallback((row: HubProjectNode | HubSessionNode, name: string) => {
+    if ('sessions' in row) {
+      onRenameProject?.(row.id, name);
+      return;
+    }
+    setSessionsByProject((previous) => {
+      const entry = previous[row.projectId] ?? { status: 'ready', sessions: EMPTY_SESSIONS };
+      return {
+        ...previous,
+        [row.projectId]: {
+          ...entry,
+          sessions: entry.sessions.map((session) =>
+            session.id === row.id ? { ...session, title: name } : session,
+          ),
+        },
+      };
+    });
+    void patchConversation(row.projectId, row.id, { title: name });
+  }, [onRenameProject]);
+
+  const deleteTreeRow = useCallback((row: HubProjectNode | HubSessionNode) => {
+    if ('sessions' in row) {
+      onDeleteProject?.(row.id);
+      return;
+    }
+    setSessionsByProject((previous) => {
+      const entry = previous[row.projectId] ?? { status: 'ready', sessions: EMPTY_SESSIONS };
+      return {
+        ...previous,
+        [row.projectId]: {
+          ...entry,
+          sessions: entry.sessions.filter((session) => session.id !== row.id),
+        },
+      };
+    });
+    void deleteConversation(row.projectId, row.id);
+  }, [onDeleteProject]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const primary = (event.ctrlKey || event.metaKey) && !event.altKey;
+      const key = event.key.toLocaleLowerCase();
+      if (primary && !event.shiftKey && key === 'k') {
+        event.preventDefault();
+        openPalette();
+      } else if (primary && event.shiftKey && key === 'n') {
+        event.preventDefault();
+        const focusedProjectId = document.activeElement instanceof HTMLElement
+          ? document.activeElement.closest<HTMLElement>('[data-project-id]')?.dataset.projectId
+          : undefined;
+        const project = allNodesRef.current.find((candidate) => candidate.id === focusedProjectId)
+          ?? allNodesRef.current[0];
+        if (project) void createSession(project);
+      } else if (primary && !event.shiftKey && key === 'n') {
+        event.preventDefault();
+        onNewProject();
+      } else if (primary && !event.shiftKey && key === 'b') {
+        const typing = document.activeElement instanceof HTMLInputElement
+          || document.activeElement instanceof HTMLTextAreaElement;
+        if (!typing) {
+          event.preventDefault();
+          setRailCollapsed((current) => !current);
+        }
+      } else if (primary && !event.shiftKey && key === 'i') {
+        event.preventDefault();
+        // Todo 11 owns the inspector. This event is its stable integration seam.
+        window.dispatchEvent(new CustomEvent('readable:hub-inspector-toggle'));
+      } else if (event.key === 'Escape' && paletteOpen) {
+        event.preventDefault();
+        closePalette();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', onKeyDown, { capture: true });
+  }, [closePalette, createSession, onNewProject, openPalette, paletteOpen]);
+
+  const paletteEntries = useMemo<HubPaletteEntry[]>(() => {
+    const projectEntries = allNodes.map((project) => ({
+      id: `project-${project.id}`,
+      group: t('hub.projects'),
+      title: project.name,
+      kind: 'project' as const,
+      activate: () => onOpenProject?.(project.id),
+    }));
+    const sessionEntries = allNodes.flatMap((project) => project.sessions.map((session) => ({
+      id: `session-${session.id}`,
+      group: t('hub.treeLabel'),
+      title: session.title,
+      meta: project.name,
+      kind: 'session' as const,
+      activate: () => onOpenSession(project.id, session.id),
+    })));
+    const destinations = [
+      ['home', t('entry.navHome')],
+      ['projects', t('entry.navProjects')],
+      ['tasks', t('entry.navTasks')],
+      ['design-systems', t('entry.navDesignSystems')],
+      ['plugins', t('entry.navPlugins')],
+      ['integrations', t('entry.navIntegrations')],
+    ] as const;
+    return [
+      ...projectEntries,
+      ...sessionEntries,
+      ...destinations.map(([destination, title]) => ({
+        id: `destination-${destination}`,
+        group: 'Navigate',
+        title,
+        kind: 'destination' as const,
+        activate: () => onNavigateDestination?.(destination),
+      })),
+    ];
+  }, [allNodes, onNavigateDestination, onOpenProject, onOpenSession, t]);
+
   const running = useMemo(
     () =>
       allNodes
@@ -354,7 +510,7 @@ export function HubHome({
   );
 
   return (
-    <div className="hub">
+    <div className={`hub${railCollapsed ? ' hub--rail-collapsed' : ''}`} data-rail-collapsed={railCollapsed ? 'true' : 'false'}>
       <div className="sr-only" role="status" aria-live="polite" data-testid="hub-live-region">
         {announcement}
       </div>
@@ -396,15 +552,20 @@ export function HubHome({
           <button type="button" className="hub__new-project" onClick={onNewProject}>
             {t('entry.navNewProject')}
           </button>
-          <input
-            type="search"
-            className="hub__search"
-            data-testid="hub-search"
-            value={query}
-            aria-label={t('hub.searchPlaceholder')}
-            placeholder={t('hub.searchPlaceholder')}
-            onChange={(event) => setQuery(event.target.value)}
-          />
+          <div className="hub__search-wrap">
+            <input
+              type="search"
+              className="hub__search"
+              data-testid="hub-search"
+              value={query}
+              aria-label={t('hub.searchPlaceholder')}
+              placeholder={t('hub.searchPlaceholder')}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            <button type="button" className="hub__search-shortcut" data-testid="hub-open-palette" aria-label="Open command palette" onClick={openPalette}>
+              <kbd className="hub-kbd">Ctrl K</kbd>
+            </button>
+          </div>
         </div>
         {projectsLoading ? (
           <p className="hub__nav-loading">{t('common.loading')}</p>
@@ -418,6 +579,8 @@ export function HubHome({
             onRetrySessions={handleRetrySessions}
             pendingNewSessionProjectId={creatingSessionFor}
             {...(onOpenProject ? { onOpenProject: handleOpenProject } : {})}
+            onRename={renameTreeRow}
+            onDelete={deleteTreeRow}
           />
         )}
         {onOpenDestination ? (
@@ -541,6 +704,7 @@ export function HubHome({
           )}
         </div>
       </div>
+      {paletteOpen ? <HubCommandPalette entries={paletteEntries} onClose={closePalette} /> : null}
     </div>
   );
 }

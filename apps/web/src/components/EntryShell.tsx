@@ -48,7 +48,7 @@ import { DesignSystemsTab } from './DesignSystemsTab';
 import { EntryHelpMenu } from './EntryHelpMenu';
 import { EntryNavRail, type EntryView as EntryViewKind } from './EntryNavRail';
 import { HubHome } from './hub/HubHome';
-import { openSessionRoute } from './hub/openSessionRoute';
+import { openProjectRoute, openSessionRoute } from './hub/openSessionRoute';
 import {
   createPluginAuthoringHandoff,
   createPluginUseHandoff,
@@ -627,6 +627,9 @@ export function EntryShell({
                 skills={skills}
                 skillsLoading={skillsLoading}
                 onNewProject={() => openNewProject()}
+                onRenameProject={onRenameProject}
+                onDeleteProject={(projectId) => { void onDeleteProject(projectId); }}
+                onNavigateDestination={changeView}
                 {...(hubFolderImport.available
                   ? { onImportFolder: () => void hubFolderImport.openFolder() }
                   : {})}

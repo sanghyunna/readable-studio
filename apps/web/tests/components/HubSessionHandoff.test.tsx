@@ -21,7 +21,7 @@ vi.mock('../../src/router', async (importOriginal) => {
   return { ...actual, navigate };
 });
 
-import { openSessionRoute } from '../../src/components/hub/openSessionRoute';
+import { openProjectRoute, openSessionRoute } from '../../src/components/hub/openSessionRoute';
 import { HubHome } from '../../src/components/hub/HubHome';
 import type { Project } from '../../src/types';
 
@@ -58,6 +58,18 @@ describe('hub session handoff', () => {
 
   afterEach(() => {
     window.removeEventListener(OPEN_WORKSPACE_TAB_EVENT, listener);
+  });
+
+  it('opens a project palette result in a workspace tab', () => {
+    openProjectRoute('p1');
+    const route = {
+      kind: 'project',
+      projectId: 'p1',
+      conversationId: null,
+      fileName: null,
+    };
+    expect(navigate).toHaveBeenCalledWith(route);
+    expect(opened).toEqual([route]);
   });
 
   it('navigates to the project route carrying the conversation id', () => {
