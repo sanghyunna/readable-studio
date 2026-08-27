@@ -9,10 +9,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   closeDatabase,
+  DataIdentityError,
   getProject,
   insertProject,
   listProjects,
   openDatabase,
+  openHostedDatabaseAtPath,
+  READABLE_STUDIO_SQLITE_APPLICATION_ID,
 } from '../src/db.js';
 
 const roots: string[] = [];
@@ -21,6 +24,17 @@ async function fixtureRoot(): Promise<string> {
   const root = await mkdtemp(path.join(tmpdir(), 'readable-data-identity-'));
   roots.push(root);
   return root;
+}
+
+function expectDataIdentityError(open: () => unknown): void {
+  try {
+    open();
+    expect.fail('expected database identity validation to fail');
+  } catch (error) {
+    expect(error).toBeInstanceOf(DataIdentityError);
+    if (!(error instanceof DataIdentityError)) throw error;
+    expect(error.code).toBe('foreign_data_identity');
+  }
 }
 
 function fixtureHashes(root: string): Readonly<Record<string, string>> {
@@ -46,6 +60,57 @@ afterEach(async () => {
 });
 
 describe('Readable Studio data identity', () => {
+  it('adopts and back-stamps an unstamped Readable Studio database', async () => {
+    const projectRoot = await fixtureRoot();
+    const dataRoot = path.join(projectRoot, '.readable-studio');
+    const legacyDb = openDatabase(projectRoot);
+    expect(legacyDb.prepare("SELECT name FROM sqlite_schema WHERE name IN ('conversations', 'messages')").all())
+      .toHaveLength(2);
+    legacyDb.pragma('application_id = 0');
+    closeDatabase();
+
+    const adoptedDb = openDatabase(projectRoot);
+
+    expect(adoptedDb.pragma('application_id', { simple: true }))
+      .toBe(READABLE_STUDIO_SQLITE_APPLICATION_ID);
+    expect(readFileSync(path.join(dataRoot, 'app.sqlite')).byteLength).toBeGreaterThan(0);
+  });
+
+  it('adopts an empty unstamped database', async () => {
+    const root = await fixtureRoot();
+    const file = path.join(root, 'app.sqlite');
+    new Database(file).close();
+
+    const adoptedDb = openHostedDatabaseAtPath(file);
+    try {
+      expect(adoptedDb.pragma('application_id', { simple: true }))
+        .toBe(READABLE_STUDIO_SQLITE_APPLICATION_ID);
+    } finally {
+      adoptedDb.close();
+    }
+  });
+
+  it('rejects a database with a foreign non-zero application id', async () => {
+    const root = await fixtureRoot();
+    const file = path.join(root, 'app.sqlite');
+    const foreignDb = new Database(file);
+    foreignDb.pragma('application_id = 305419896');
+    foreignDb.close();
+
+    expectDataIdentityError(() => openHostedDatabaseAtPath(file));
+  });
+
+  it('rejects an unstamped database containing only foreign tables', async () => {
+    const projectRoot = await fixtureRoot();
+    const dataRoot = path.join(projectRoot, '.readable-studio');
+    await mkdir(dataRoot, { recursive: true });
+    const foreignDb = new Database(path.join(dataRoot, 'app.sqlite'));
+    foreignDb.exec('CREATE TABLE foreign_records (id INTEGER PRIMARY KEY)');
+    foreignDb.close();
+
+    expectDataIdentityError(() => openDatabase(projectRoot));
+  });
+
   it('rejects old data without mutation', async () => {
     // Given: a complete old Readable Studio root with SQLite, project, and artifact payloads.
     const projectRoot = await fixtureRoot();
@@ -63,9 +128,7 @@ describe('Readable Studio data identity', () => {
     const before = fixtureHashes(oldDataRoot);
 
     // When: Readable Studio is pointed at the old store, then opens its default store.
-    expect(() => openDatabase(projectRoot, { dataDir: oldDataRoot })).toThrow(
-      'database does not belong to Readable Studio',
-    );
+    expectDataIdentityError(() => openDatabase(projectRoot, { dataDir: oldDataRoot }));
     const readableDb = openDatabase(projectRoot);
 
     // Then: the old format is rejected, the default starts empty, and every old fixture byte is untouched.

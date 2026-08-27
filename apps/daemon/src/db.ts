@@ -40,14 +40,25 @@ export class DataIdentityError extends Error {
   }
 }
 
-function assertReadableStudioDatabaseIdentity(file: string): void {
-  if (!fs.existsSync(file)) return;
+function assertReadableStudioDatabaseIdentity(file: string): boolean {
+  if (!fs.existsSync(file)) return true;
   const probe = new Database(file, { fileMustExist: true, readonly: true });
   try {
     const applicationId = probe.pragma('application_id', { simple: true });
-    if (applicationId !== READABLE_STUDIO_SQLITE_APPLICATION_ID) {
+    if (applicationId === READABLE_STUDIO_SQLITE_APPLICATION_ID) return false;
+    if (applicationId !== 0) throw new DataIdentityError(file);
+
+    const userTables = probe.prepare(`
+      SELECT name
+      FROM sqlite_schema
+      WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+    `).pluck().all();
+    const hasReadableStudioSchema = ['conversations', 'messages']
+      .every((table) => userTables.includes(table));
+    if (userTables.length > 0 && !hasReadableStudioSchema) {
       throw new DataIdentityError(file);
     }
+    return true;
   } finally {
     probe.close();
   }
@@ -67,10 +78,9 @@ export function openDatabase(projectRoot: string, { dataDir }: { dataDir?: strin
   if (dbInstance && dbFile === file) return dbInstance;
   if (dbInstance) closeDatabase();
   fs.mkdirSync(dir, { recursive: true });
-  assertReadableStudioDatabaseIdentity(file);
-  const isFresh = !fs.existsSync(file);
+  const shouldStampIdentity = assertReadableStudioDatabaseIdentity(file);
   const db = new Database(file);
-  if (isFresh) db.pragma(`application_id = ${READABLE_STUDIO_SQLITE_APPLICATION_ID}`);
+  if (shouldStampIdentity) db.pragma(`application_id = ${READABLE_STUDIO_SQLITE_APPLICATION_ID}`);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   migrate(db);
@@ -96,13 +106,12 @@ export function openHostedDatabaseAtPath(file: string): SqliteDb {
     }
   }
 
-  assertReadableStudioDatabaseIdentity(file);
-  const isFresh = !fs.existsSync(file);
+  const shouldStampIdentity = assertReadableStudioDatabaseIdentity(file);
   let db: SqliteDb | null = null;
   const startedAt = performance.now();
   try {
     db = new Database(file, { timeout: HOSTED_DATABASE_OPEN_TIMEOUT_MS });
-    if (isFresh) db.pragma(`application_id = ${READABLE_STUDIO_SQLITE_APPLICATION_ID}`);
+    if (shouldStampIdentity) db.pragma(`application_id = ${READABLE_STUDIO_SQLITE_APPLICATION_ID}`);
     db.pragma('journal_mode = WAL');
     db.pragma('foreign_keys = ON');
     migrate(db);
