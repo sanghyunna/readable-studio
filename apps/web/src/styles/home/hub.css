@@ -50,15 +50,14 @@
   background: var(--bg-hover);
 }
 
+/* The real brand asset (apps/web/public/logo.svg) already carries its own
+   white rounded plate and the accent bar, so this rule only sizes it. It must
+   never be recoloured or re-approximated in CSS. */
 .hub__brand-mark {
   width: 22px;
   height: 22px;
   flex: none;
-  border: 1.5px solid var(--text-strong);
-  border-radius: 6px;
-  background:
-    linear-gradient(var(--selected), var(--selected)) no-repeat 4px 5px / 9px 2px,
-    linear-gradient(var(--selected), var(--selected)) no-repeat 4px 10px / 6px 2px;
+  object-fit: contain;
 }
 
 .hub__brand-name {
@@ -137,7 +136,7 @@
 .hub-tree__filter,
 .hub-tree__sort {
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   gap: 5px;
   height: 26px;
   padding: 0 9px;

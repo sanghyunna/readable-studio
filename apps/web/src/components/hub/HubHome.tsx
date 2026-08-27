@@ -381,7 +381,15 @@ export function HubHome({
             data-testid="hub-brand"
             onClick={() => onGoHome?.()}
           >
-            <span className="hub__brand-mark" aria-hidden="true" />
+            <img
+              className="hub__brand-mark"
+              src="/logo.svg"
+              alt=""
+              width={22}
+              height={22}
+              draggable={false}
+              aria-hidden="true"
+            />
             <span className="hub__brand-name">{t('app.brand')}</span>
           </button>
         </div>
