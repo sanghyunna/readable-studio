@@ -125,7 +125,10 @@
 }
 
 .hub-tree__filters {
+  /* The rail is narrow at every width, so the row has to wrap rather than
+     stretch its grid track past the panel and clip the trailing sort button. */
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
   padding: 0 12px 10px;
@@ -531,11 +534,6 @@
 
   .hub__start {
     padding-inline: 16px;
-  }
-
-  .hub-tree__filters {
-    flex-wrap: wrap;
-    row-gap: 4px;
   }
 
   .hub-tree__sorts {
