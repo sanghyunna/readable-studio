@@ -158,7 +158,7 @@ test('todo 10 command palette, global shortcuts, and tree shortcuts', async ({ p
     response.request().method() === 'PATCH' && response.url().endsWith(`/conversations/${alpha.sessions[1]!.id}`),
   );
   await page.keyboard.press('F2');
-  const renameInput = page.getByTestId(`hub-rename-${alpha.sessions[1]!.id}`);
+  const renameInput = page.getByTestId(`hub-rename-s-${alpha.sessions[1]!.id}`);
   await renameInput.fill('Renamed legend');
   await renameInput.press('Enter');
   expect((await renameRequest).ok()).toBeTruthy();

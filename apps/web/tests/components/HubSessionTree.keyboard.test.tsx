@@ -83,14 +83,14 @@ describe('HubSessionTree keyboard and semantics', () => {
         projects={PROJECTS}
         currentSessionId={null}
         onOpenSession={vi.fn()}
-        onRename={onRename}
-        onDelete={onDelete}
+        onRenameSession={onRename}
+        onDeleteSession={onDelete}
       />,
     );
     const row = screen.getByTestId('hub-session-s1');
     row.focus();
     fireEvent.keyDown(row, { key: 'F2' });
-    const input = screen.getByTestId('hub-rename-s1');
+    const input = screen.getByTestId('hub-rename-s-s1');
     fireEvent.change(input, { target: { value: '새 세션 이름' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(onRename).toHaveBeenCalledWith(expect.objectContaining({ id: 's1' }), '새 세션 이름');

@@ -234,9 +234,11 @@ test('[P1] a completed session row renders its relative last activity', async ({
 
   await gotoHub(page);
 
-  const meta = page.getByTestId(`hub-row-time-${conversation.id}`);
+  const meta = page.getByTestId(`hub-when-${conversation.id}`);
   await expect(meta).toBeVisible({ timeout: 20_000 });
-  await expect(meta).toHaveText(/just now|minute|hour|day|\d/i);
+  await expect(meta).toHaveText(
+    /^(?:now|(?:[1-9]|[1-5]\d)m|(?:[1-9]|1\d|2[0-3])h|[1-6]d|[1-3]w|(?:[1-9]|1[0-2])\/(?:[1-9]|[12]\d|3[01])\/\d{4})$/,
+  );
 });
 
 test('[P1] an aborted session read shows a retry, re-issues the request, and never says "no sessions"', async ({

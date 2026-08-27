@@ -19,8 +19,11 @@ import { HomeView } from '../HomeView';
 import { Icon } from '../Icon';
 import type { PluginLoopSubmit } from '../PluginLoopHome';
 import { HubCommandPalette, type HubPaletteEntry } from './HubCommandPalette';
+import { HubInspector } from './HubInspector';
+import { HubOpenWork, type HubOpenWorkItem } from './HubOpenWork';
 import { HubRailFooter } from './HubRailFooter';
 import { HubSessionTree } from './HubSessionTree';
+import { relativeTimeShort } from './relativeTime';
 import {
   projectStateFromStatus,
   sessionStateFromRunStatus,
@@ -31,6 +34,22 @@ import {
 } from './types';
 
 const EMPTY_DESIGN_SYSTEMS: DesignSystemSummary[] = [];
+const OPEN_WORK_STORAGE_KEY = 'readable-studio:hub-open-work';
+/**
+ * The rail's Ctrl/Cmd+I shortcut is owned by the hub's keyboard layer, which
+ * dispatches this event rather than reaching into inspector state directly.
+ */
+const HUB_INSPECTOR_TOGGLE_EVENT = 'readable:hub-inspector-toggle';
+
+function loadOpenWorkIds(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const value = JSON.parse(window.sessionStorage.getItem(OPEN_WORK_STORAGE_KEY) ?? '[]');
+    return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+}
 
 /**
  * What the hub knows about ONE project's sessions.
@@ -74,8 +93,9 @@ interface Props {
   designSystems?: DesignSystemSummary[];
   defaultDesignSystemId?: string | null;
   onNewProject: () => void;
+  /** Persisted rename/delete for a project row; the hub never invents these. */
   onRenameProject?: (projectId: string, name: string) => void;
-  onDeleteProject?: (projectId: string) => void;
+  onDeleteProject?: (projectId: string) => Promise<boolean | void> | boolean | void;
   onNavigateDestination?: (destination: 'home' | 'projects' | 'tasks' | 'design-systems' | 'plugins' | 'integrations') => void;
   /**
    * Real folder import. Omitted when no import route is available (no desktop
@@ -144,6 +164,18 @@ export function HubHome({
   const [railCollapsed, setRailCollapsed] = useState(false);
   const paletteReturnRef = useRef<HTMLElement | null>(null);
   const allNodesRef = useRef<HubProjectNode[]>([]);
+  // Open work is client-side: which sessions the user is holding open. The
+  // daemon has no concept of an open tab, so this must not be inferred from it.
+  const [openWorkIds, setOpenWorkIds] = useState<string[]>(loadOpenWorkIds);
+  const openWorkIdsRef = useRef(openWorkIds);
+  const updateOpenWorkIds = useCallback((update: (current: string[]) => string[]) => {
+    const next = update(openWorkIdsRef.current);
+    openWorkIdsRef.current = next;
+    window.sessionStorage.setItem(OPEN_WORK_STORAGE_KEY, JSON.stringify(next));
+    setOpenWorkIds(next);
+  }, []);
+  const [peekedSessionId, setPeekedSessionId] = useState<string | null>(null);
+  const [removedSessionIds, setRemovedSessionIds] = useState<string[]>([]);
   // Read through a ref so the fetch effect does not re-run when `t` changes
   // identity, while still rendering the translated fallback label.
   const untitledLabel = useRef(t('hub.untitledSession'));
@@ -243,12 +275,16 @@ export function HubHome({
           id: project.id,
           name: project.name,
           updatedAt: project.updatedAt,
-          sessions: entry?.sessions ?? EMPTY_SESSIONS,
+          // A deleted session must leave the list immediately; a cached fetch
+          // result would otherwise keep rendering a row that no longer exists.
+          sessions: (entry?.sessions ?? EMPTY_SESSIONS).filter(
+            (session) => !removedSessionIds.includes(session.id),
+          ),
           sessionsStatus: entry?.status ?? 'loading',
           state: projectStateFromStatus(project.status?.value),
         };
       }),
-    [projects, sessionsByProject],
+    [projects, sessionsByProject, removedSessionIds],
   );
 
   // The failure is announced as a count in the live region, so it is never
@@ -306,44 +342,6 @@ export function HubHome({
     if (!conversation) return;
     onOpenSession(project.id, conversation.id);
   }, [onOpenSession]);
-
-  const renameTreeRow = useCallback((row: HubProjectNode | HubSessionNode, name: string) => {
-    if ('sessions' in row) {
-      onRenameProject?.(row.id, name);
-      return;
-    }
-    setSessionsByProject((previous) => {
-      const entry = previous[row.projectId] ?? { status: 'ready', sessions: EMPTY_SESSIONS };
-      return {
-        ...previous,
-        [row.projectId]: {
-          ...entry,
-          sessions: entry.sessions.map((session) =>
-            session.id === row.id ? { ...session, title: name } : session,
-          ),
-        },
-      };
-    });
-    void patchConversation(row.projectId, row.id, { title: name });
-  }, [onRenameProject]);
-
-  const deleteTreeRow = useCallback((row: HubProjectNode | HubSessionNode) => {
-    if ('sessions' in row) {
-      onDeleteProject?.(row.id);
-      return;
-    }
-    setSessionsByProject((previous) => {
-      const entry = previous[row.projectId] ?? { status: 'ready', sessions: EMPTY_SESSIONS };
-      return {
-        ...previous,
-        [row.projectId]: {
-          ...entry,
-          sessions: entry.sessions.filter((session) => session.id !== row.id),
-        },
-      };
-    });
-    void deleteConversation(row.projectId, row.id);
-  }, [onDeleteProject]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -427,12 +425,117 @@ export function HubHome({
         .find((entry) => entry.session.state === 'running') ?? null,
     [allNodes],
   );
+  const sessionIndex = useMemo(() => {
+    const map = new Map<string, { project: HubProjectNode; session: HubSessionNode }>();
+    for (const project of allNodes) {
+      for (const session of project.sessions) map.set(session.id, { project, session });
+    }
+    return map;
+  }, [allNodes]);
+
   const handleOpenSession = useCallback(
     (session: HubSessionNode) => {
       setAnnouncement(t('hub.liveWorking', { project: '', session: session.title }));
+      updateOpenWorkIds((prev) =>
+        prev.includes(session.id) ? prev : [session.id, ...prev],
+      );
       onOpenSession(session.projectId, session.id);
     },
-    [onOpenSession, t],
+    [onOpenSession, t, updateOpenWorkIds],
+  );
+
+  const openWork = useMemo<HubOpenWorkItem[]>(
+    () =>
+      openWorkIds.flatMap((id) => {
+        const entry = sessionIndex.get(id);
+        if (!entry) return [];
+        return [
+          {
+            sessionId: entry.session.id,
+            projectId: entry.project.id,
+            title: entry.session.title,
+            projectName: entry.project.name,
+          },
+        ];
+      }),
+    [openWorkIds, sessionIndex],
+  );
+
+  const peeked = peekedSessionId ? (sessionIndex.get(peekedSessionId) ?? null) : null;
+
+  const handlePeekSession = useCallback((session: HubSessionNode) => {
+    setPeekedSessionId(session.id);
+  }, []);
+
+  // The rail's Ctrl/Cmd+I shortcut is dispatched as an event rather than wired
+  // directly, so the shortcut owner does not need to reach into inspector
+  // state. All three entry points - the peek button, Space on a focused row,
+  // and this shortcut - converge on the same `peekedSessionId`.
+  useEffect(() => {
+    const toggleInspector = () => {
+      setPeekedSessionId((current) => {
+        if (current) return null;
+        // Prefer whatever the keyboard is already on, then the open session,
+        // so the shortcut inspects what the user is looking at.
+        const focusedId = document.activeElement?.getAttribute('data-session-id') ?? null;
+        const target = focusedId ?? currentSessionId;
+        return target && sessionIndex.has(target) ? target : null;
+      });
+    };
+    window.addEventListener(HUB_INSPECTOR_TOGGLE_EVENT, toggleInspector);
+    return () => window.removeEventListener(HUB_INSPECTOR_TOGGLE_EVENT, toggleInspector);
+  }, [currentSessionId, sessionIndex]);
+
+  const handleRenameSession = useCallback((session: HubSessionNode, title: string) => {
+    setSessionsByProject((prev) => {
+      const entry = prev[session.projectId] ?? { status: 'ready', sessions: EMPTY_SESSIONS };
+      return {
+        ...prev,
+        [session.projectId]: {
+          ...entry,
+          sessions: entry.sessions.map((candidate) =>
+            candidate.id === session.id ? { ...candidate, title } : candidate,
+          ),
+        },
+      };
+    });
+    void patchConversation(session.projectId, session.id, { title });
+  }, []);
+
+  const handleDeleteSession = useCallback(
+    (session: HubSessionNode) => {
+      setRemovedSessionIds((prev) => (prev.includes(session.id) ? prev : [...prev, session.id]));
+      updateOpenWorkIds((prev) => prev.filter((id) => id !== session.id));
+      setPeekedSessionId((prev) => (prev === session.id ? null : prev));
+      setAnnouncement(t('hub.sessionDeleted', { name: session.title }));
+      void deleteConversation(session.projectId, session.id).then((ok) => {
+        if (ok) return;
+        // The daemon refused, so the row is real; putting it back is the only
+        // honest outcome of a failed delete.
+        setRemovedSessionIds((prev) => prev.filter((id) => id !== session.id));
+      });
+    },
+    [t, updateOpenWorkIds],
+  );
+
+  const handleRenameProjectRow = useCallback(
+    (project: HubProjectNode, name: string) => {
+      onRenameProject?.(project.id, name);
+    },
+    [onRenameProject],
+  );
+
+  const handleDeleteProjectRow = useCallback(
+    (project: HubProjectNode) => {
+      updateOpenWorkIds((prev) =>
+        prev.filter((id) => sessionIndex.get(id)?.project.id !== project.id),
+      );
+      setPeekedSessionId((prev) =>
+        prev && sessionIndex.get(prev)?.project.id === project.id ? null : prev,
+      );
+      void onDeleteProject?.(project.id);
+    },
+    [onDeleteProject, sessionIndex, updateOpenWorkIds],
   );
   const handleRetrySessions = useCallback(
     (project: HubProjectNode) => {
@@ -510,7 +613,10 @@ export function HubHome({
   );
 
   return (
-    <div className={`hub${railCollapsed ? ' hub--rail-collapsed' : ''}`} data-rail-collapsed={railCollapsed ? 'true' : 'false'}>
+    <div
+      className={`hub${railCollapsed ? ' hub--rail-collapsed' : ''}${peeked ? ' hub--inspecting' : ''}`}
+      data-rail-collapsed={railCollapsed ? 'true' : 'false'}
+    >
       <div className="sr-only" role="status" aria-live="polite" data-testid="hub-live-region">
         {announcement}
       </div>
@@ -570,18 +676,35 @@ export function HubHome({
         {projectsLoading ? (
           <p className="hub__nav-loading">{t('common.loading')}</p>
         ) : (
-          <HubSessionTree
-            key={query.trim() ? 'filtered' : 'all'}
-            projects={tree}
-            currentSessionId={currentSessionId}
-            onOpenSession={handleOpenSession}
-            onNewSession={handleNewSession}
-            onRetrySessions={handleRetrySessions}
-            pendingNewSessionProjectId={creatingSessionFor}
-            {...(onOpenProject ? { onOpenProject: handleOpenProject } : {})}
-            onRename={renameTreeRow}
-            onDelete={deleteTreeRow}
-          />
+          <div className="hub__nav-list">
+            <HubOpenWork
+              items={openWork}
+              currentSessionId={currentSessionId}
+              onOpen={(item) => {
+                const entry = sessionIndex.get(item.sessionId);
+                if (entry) handleOpenSession(entry.session);
+              }}
+              onClose={(item) => {
+                updateOpenWorkIds((prev) => prev.filter((id) => id !== item.sessionId));
+                setAnnouncement(t('hub.closedOpenWork', { name: item.title }));
+              }}
+            />
+            <HubSessionTree
+              key={query.trim() ? 'filtered' : 'all'}
+              projects={tree}
+              currentSessionId={currentSessionId}
+              onOpenSession={handleOpenSession}
+              onPeekSession={handlePeekSession}
+              onNewSession={handleNewSession}
+              onRetrySessions={handleRetrySessions}
+              pendingNewSessionProjectId={creatingSessionFor}
+              {...(onOpenProject ? { onOpenProject: handleOpenProject } : {})}
+              onRenameSession={handleRenameSession}
+              onDeleteSession={handleDeleteSession}
+              {...(onRenameProject ? { onRenameProject: handleRenameProjectRow } : {})}
+              {...(onDeleteProject ? { onDeleteProject: handleDeleteProjectRow } : {})}
+            />
+          </div>
         )}
         {onOpenDestination ? (
           <button
@@ -620,6 +743,10 @@ export function HubHome({
                   session: running.session.title,
                 })}
               </span>
+              <span className="hub__live-time" data-testid="hub-live-time">
+                {relativeTimeShort(running.session.updatedAt, t)}
+              </span>
+              <Icon name="arrow-up" size={15} className="hub__live-arrow" />
             </button>
           ) : null}
 
@@ -705,6 +832,24 @@ export function HubHome({
         </div>
       </div>
       {paletteOpen ? <HubCommandPalette entries={paletteEntries} onClose={closePalette} /> : null}
+      {peeked ? (
+        <HubInspector
+          session={peeked.session}
+          projectName={peeked.project.name}
+          onOpen={(session) => {
+            setPeekedSessionId(null);
+            handleOpenSession(session);
+          }}
+          onClose={() => {
+            setPeekedSessionId(null);
+            // Peeking is a rail interaction, so dismissing it belongs back on
+            // the row that opened it rather than at the top of the document.
+            document
+              .querySelector<HTMLElement>(`[data-testid="hub-session-${peeked.session.id}"]`)
+              ?.focus();
+          }}
+        />
+      ) : null}
     </div>
   );
 }

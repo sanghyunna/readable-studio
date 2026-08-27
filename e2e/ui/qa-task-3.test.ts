@@ -8,8 +8,8 @@ import { fileURLToPath } from 'node:url';
  * QA for todo 3 of hub-restore-and-match-mockup:
  *   (a) defect #79 - the brand mark must be the REAL logo asset, not a
  *       CSS-drawn approximation painted with linear-gradients.
- *   (b) defect #80 - filter/sort pill text must be vertically centred inside
- *       its fixed-height pill.
+ *   (b) defect #80 - filter text and the canonical single sort icon must be
+ *       vertically centred inside their fixed-height controls.
  *
  * Every assertion is a RUNTIME measurement against the rendered page. Nothing
  * here passes by inspecting source, and nothing passes merely because a node
@@ -62,26 +62,33 @@ async function openHub(page: Page, width: number): Promise<void> {
 }
 
 /**
- * The pill's own box vs the box of the text it contains. `Range` gives the
- * real inline text box, which is what the eye reads - the button's own
- * client rect would hide the baseline defect entirely.
+ * The control's own box vs its visible direct content. Text controls use a
+ * `Range` for the real inline text box; the canonical sort control uses its
+ * direct SVG icon. Measuring only the button box would hide alignment defects.
  */
-async function measurePillCentring(pill: Locator) {
-  return pill.evaluate((el) => {
+async function measureControlCentring(control: Locator) {
+  return control.evaluate((el) => {
     const textNode = Array.from(el.childNodes).find(
-      (n): n is Text => n.nodeType === Node.TEXT_NODE && (n.textContent ?? '').trim().length > 0,
+      (node): node is Text =>
+        node.nodeType === Node.TEXT_NODE && (node.textContent ?? '').trim().length > 0,
     );
-    if (!textNode) throw new Error('pill has no direct text node');
-    const range = document.createRange();
-    range.selectNodeContents(textNode);
-    const textRect = range.getBoundingClientRect();
-    const pillRect = el.getBoundingClientRect();
+    const contentRect = (() => {
+      if (textNode) {
+        const range = document.createRange();
+        range.selectNodeContents(textNode);
+        return range.getBoundingClientRect();
+      }
+      const icon = el.querySelector(':scope > svg');
+      if (!icon) throw new Error('control has no visible direct content');
+      return icon.getBoundingClientRect();
+    })();
+    const controlRect = el.getBoundingClientRect();
     return {
-      label: (textNode.textContent ?? '').trim(),
-      pillCentre: pillRect.top + pillRect.height / 2,
-      textCentre: textRect.top + textRect.height / 2,
-      pillHeight: pillRect.height,
-      textHeight: textRect.height,
+      label: (textNode?.textContent ?? el.getAttribute('aria-label') ?? '').trim(),
+      controlCentre: controlRect.top + controlRect.height / 2,
+      contentCentre: contentRect.top + contentRect.height / 2,
+      controlHeight: controlRect.height,
+      contentHeight: contentRect.height,
       alignItems: getComputedStyle(el).alignItems,
     };
   });
@@ -173,29 +180,28 @@ test('[P1] hub brand hover behaviour is preserved', async ({ page }) => {
 });
 
 for (const width of [1280, 1920]) {
-  test(`[P1] filter/sort pill text is vertically centred at ${width}`, async ({ page }) => {
+  test(`[P1] filter and sort controls are vertically centred at ${width}`, async ({ page }) => {
     await openHub(page, width);
 
-    const pills = [
+    const controls = [
       'hub-filter-all',
       'hub-filter-attention',
       'hub-filter-running',
-      'hub-sort-recent',
-      'hub-sort-name',
+      'hub-sort',
     ];
 
-    for (const id of pills) {
-      const pill = page.getByTestId(id);
-      await expect(pill).toBeVisible();
-      const m = await measurePillCentring(pill);
-      const delta = Math.abs(m.pillCentre - m.textCentre);
+    for (const id of controls) {
+      const control = page.getByTestId(id);
+      await expect(control).toBeVisible();
+      const measured = await measureControlCentring(control);
+      const delta = Math.abs(measured.controlCentre - measured.contentCentre);
       console.log(
-        `PILL width=${width} id=${id} label="${m.label}" align=${m.alignItems} ` +
-          `pillH=${m.pillHeight.toFixed(2)} textH=${m.textHeight.toFixed(2)} ` +
-          `delta=${delta.toFixed(3)}px`,
+        `CONTROL width=${width} id=${id} label="${measured.label}" align=${measured.alignItems} ` +
+          `controlH=${measured.controlHeight.toFixed(2)} ` +
+          `contentH=${measured.contentHeight.toFixed(2)} delta=${delta.toFixed(3)}px`,
       );
-      expect(m.alignItems).toBe('center');
-      // ACCEPTANCE: text box centre within 1px of the pill box centre.
+      expect(measured.alignItems).toBe('center');
+      // ACCEPTANCE: visible content centre within 1px of its control centre.
       expect(delta).toBeLessThanOrEqual(1);
     }
   });
@@ -239,7 +245,7 @@ test('[P1] stale CSS bundle cannot mask the fix', async ({ page }) => {
   // re-measure. If a cached bundle were serving the old rule, the second
   // measurement would regress.
   await openHub(page, 1280);
-  const first = await measurePillCentring(page.getByTestId('hub-filter-all'));
+  const first = await measureControlCentring(page.getByTestId('hub-filter-all'));
 
   await page.reload({ waitUntil: 'load' });
   await page.evaluate(async () => {
@@ -251,7 +257,7 @@ test('[P1] stale CSS bundle cannot mask the fix', async ({ page }) => {
   await page.reload({ waitUntil: 'load' });
   await expect(page.getByTestId('hub-brand')).toBeVisible();
 
-  const second = await measurePillCentring(page.getByTestId('hub-filter-all'));
+  const second = await measureControlCentring(page.getByTestId('hub-filter-all'));
   const mark = await page
     .locator('[data-testid="hub-brand"] .hub__brand-mark')
     .evaluate((el) => ({
@@ -261,16 +267,16 @@ test('[P1] stale CSS bundle cannot mask the fix', async ({ page }) => {
 
   console.log(
     'STALE_STATE first=' +
-      Math.abs(first.pillCentre - first.textCentre).toFixed(3) +
+      Math.abs(first.controlCentre - first.contentCentre).toFixed(3) +
       ' afterHardReload=' +
-      Math.abs(second.pillCentre - second.textCentre).toFixed(3) +
+      Math.abs(second.controlCentre - second.contentCentre).toFixed(3) +
       ' markBg=' +
       mark.bg +
       ' markNatural=' +
       mark.natural,
   );
 
-  expect(Math.abs(second.pillCentre - second.textCentre)).toBeLessThanOrEqual(1);
+  expect(Math.abs(second.controlCentre - second.contentCentre)).toBeLessThanOrEqual(1);
   expect(second.alignItems).toBe('center');
   expect(mark.bg.toLowerCase()).not.toContain('linear-gradient');
   expect(mark.natural).toBeGreaterThan(0);

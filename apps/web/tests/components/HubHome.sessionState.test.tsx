@@ -235,7 +235,7 @@ describe('hub session metadata', () => {
     readConversations.mockResolvedValue(ok([conversation('c1', 'p1', { updatedAt })]));
     renderHub([P1]);
 
-    const meta = await screen.findByTestId('hub-row-time-c1');
+    const meta = await screen.findByTestId('hub-when-c1');
     expect(meta.textContent).toMatch(/2/);
   });
 

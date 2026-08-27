@@ -66,9 +66,12 @@ describe('HubSessionTree', () => {
     expect(new Set(titles).size).toBe(titles.length);
   });
 
-  it('sorts projects by name when asked', () => {
+  it('sorts projects by name through the single sort control', () => {
     render(<HubSessionTree projects={[MANY, OTHER]} currentSessionId={null} onOpenSession={vi.fn()} />);
-    fireEvent.click(screen.getByTestId('hub-sort-name'));
+    // One control, not one pill per order: opening it reveals both orders.
+    expect(screen.getAllByTestId(/^hub-sort$/)).toHaveLength(1);
+    fireEvent.click(screen.getByTestId('hub-sort'));
+    fireEvent.click(screen.getByTestId('hub-sort-menu-name'));
     const order = screen.getAllByTestId(/^hub-project-/).map((el) => el.getAttribute('data-project-id'));
     expect(order).toEqual(['p2', 'p1']);
   });

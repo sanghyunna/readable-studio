@@ -15,7 +15,9 @@ import {
 } from 'react';
 
 import { useT } from '../../i18n';
-import { relativeTimeLong } from '../../utils/chatTime';
+import { Icon } from '../Icon';
+import { HubMenu, type HubMenuItem } from './HubMenu';
+import { relativeTimeShort } from './relativeTime';
 import {
   HUB_SESSION_PAGE,
   matchesHubFilter,
@@ -40,8 +42,12 @@ interface Props {
   pendingNewSessionProjectId?: string | null;
   /** Opens a project with no sessions rather than leaving a dead row. */
   onOpenProject?: (project: HubProjectNode) => void;
-  onRename?: (row: HubProjectNode | HubSessionNode, name: string) => void;
-  onDelete?: (row: HubProjectNode | HubSessionNode) => void;
+  /** Open the inspector for a session without navigating to it. */
+  onPeekSession?: (session: HubSessionNode) => void;
+  onRenameProject?: (project: HubProjectNode, name: string) => void;
+  onDeleteProject?: (project: HubProjectNode) => void;
+  onRenameSession?: (session: HubSessionNode, title: string) => void;
+  onDeleteSession?: (session: HubSessionNode) => void;
 }
 
 interface FlatRow {
@@ -49,6 +55,11 @@ interface FlatRow {
   kind: 'project' | 'session' | 'more';
   project: HubProjectNode;
   session?: HubSessionNode;
+}
+
+interface MenuState {
+  rowKey: string;
+  anchor: HTMLElement;
 }
 
 type StateLabelKey = 'hub.stateRunning' | 'hub.stateAwaiting' | 'hub.stateFailed';
@@ -68,8 +79,11 @@ export function HubSessionTree({
   onRetrySessions,
   pendingNewSessionProjectId = null,
   onOpenProject,
-  onRename,
-  onDelete,
+  onPeekSession,
+  onRenameProject,
+  onDeleteProject,
+  onRenameSession,
+  onDeleteSession,
 }: Props) {
   const t = useT();
   const [filter, setFilter] = useState<HubFilter>('all');
@@ -77,8 +91,10 @@ export function HubSessionTree({
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [expandedOverflow, setExpandedOverflow] = useState<Record<string, boolean>>({});
   const [cursor, setCursor] = useState(0);
-  const [renamingKey, setRenamingKey] = useState<string | null>(null);
-  const [renameValue, setRenameValue] = useState('');
+  const [menu, setMenu] = useState<MenuState | null>(null);
+  const [sortAnchor, setSortAnchor] = useState<HTMLElement | null>(null);
+  // Rename happens in place: a modal for one field is heavier than the edit.
+  const [renaming, setRenaming] = useState<string | null>(null);
   const typeAheadRef = useRef('');
   const typeAheadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // A row activated out of existence (the overflow row) hands focus to a row
@@ -130,6 +146,13 @@ export function HubSessionTree({
     if (cursor > rows.length - 1) setCursor(Math.max(0, rows.length - 1));
   }, [rows.length, cursor]);
 
+  // A row removed underneath an open menu would leave the menu anchored to a
+  // detached node and its focus-restore target gone.
+  useEffect(() => {
+    if (menu && !rows.some((row) => row.key === menu.rowKey)) setMenu(null);
+    if (renaming && !rows.some((row) => row.key === renaming)) setRenaming(null);
+  }, [rows, menu, renaming]);
+
   useEffect(() => () => {
     if (typeAheadTimerRef.current) clearTimeout(typeAheadTimerRef.current);
   }, []);
@@ -160,9 +183,7 @@ export function HubSessionTree({
         if (firstHidden) pendingFocusRef.current = `s:${firstHidden}`;
         return;
       }
-      // A project with no sessions has nothing to expand, so activating it
-      // opens the project instead of toggling an empty group.
-      if (onOpenProject && row.project.sessions.length === 0) {
+      if (row.project.sessions.length === 0 && onOpenProject) {
         onOpenProject(row.project);
         return;
       }
@@ -173,9 +194,6 @@ export function HubSessionTree({
 
   const onKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLDivElement>, fallbackIndex: number) => {
-      // Project treeitems own their session groups in the DOM, so a session
-      // key event must not bubble into the parent project's handler.
-      event.stopPropagation();
       // Resolve the row from the focused element so keyboard traversal stays
       // correct even when focus arrived without going through onClick.
       const focusedKey = event.currentTarget.dataset.rowKey;
@@ -183,18 +201,24 @@ export function HubSessionTree({
       const index = resolved >= 0 ? resolved : fallbackIndex;
       const row = rows[index];
       if (!row) return;
+      // A session group lives INSIDE its project treeitem for ARIA ownership, so
+      // an unstopped key would run this handler again on the ancestor row and
+      // act twice - Space on a session would also collapse its project.
+      event.stopPropagation();
       switch (event.key) {
         case 'F2': {
-          if (row.kind === 'more' || !onRename) break;
+          if (row.kind === 'more') break;
+          const canRename = row.kind === 'project' ? onRenameProject : onRenameSession;
+          if (!canRename) break;
           event.preventDefault();
-          setRenamingKey(row.key);
-          setRenameValue(row.session?.title ?? row.project.name);
+          setRenaming(row.key);
           break;
         }
         case 'Delete':
-          if (row.kind === 'more' || !onDelete) break;
+          if (row.kind === 'more') break;
           event.preventDefault();
-          onDelete(row.session ?? row.project);
+          if (row.kind === 'project') onDeleteProject?.(row.project);
+          else if (row.session) onDeleteSession?.(row.session);
           focusRow(Math.min(index + 1, rows.length - 1));
           break;
         case 'ArrowDown':
@@ -235,8 +259,18 @@ export function HubSessionTree({
           break;
         }
         case 'Enter':
+          event.preventDefault();
+          activate(row);
+          break;
         case ' ':
           event.preventDefault();
+          // Space peeks a session rather than opening it - the whole point of
+          // the inspector is inspecting without leaving the rail. Projects have
+          // nothing to peek, so Space keeps toggling them.
+          if (row.kind === 'session' && row.session && onPeekSession) {
+            onPeekSession(row.session);
+            break;
+          }
           activate(row);
           break;
         default:
@@ -254,14 +288,25 @@ export function HubSessionTree({
             }, 800);
             const match = rows.findIndex((candidate) => {
               const name = candidate.session?.title ?? candidate.project.name;
-              return candidate.kind !== 'more' && name.toLocaleLowerCase().startsWith(typeAheadRef.current);
+              return candidate.kind !== 'more'
+                && name.toLocaleLowerCase().startsWith(typeAheadRef.current);
             });
             if (match >= 0) focusRow(match);
           }
           break;
       }
     },
-    [rows, focusRow, collapsed, activate, onRename, onDelete],
+    [
+      rows,
+      focusRow,
+      collapsed,
+      activate,
+      onPeekSession,
+      onRenameProject,
+      onRenameSession,
+      onDeleteProject,
+      onDeleteSession,
+    ],
   );
 
   // Counts are per-project so a project awaiting input is counted once, even
@@ -273,6 +318,13 @@ export function HubSessionTree({
     }),
     [projects],
   );
+
+  // The heading counts what the list is actually showing: projects when
+  // unfiltered, matching sessions once a filter narrows the view.
+  const groupCount = useMemo(() => {
+    if (filter === 'all') return visible.length;
+    return visible.reduce((total, entry) => total + entry.sessions.length, 0);
+  }, [visible, filter]);
 
   const syncCursorToFocus = useCallback(
     (key: string) => {
@@ -296,26 +348,124 @@ export function HubSessionTree({
 
   const indexOfKey = (key: string) => rows.findIndex((row) => row.key === key);
 
-  const renameControl = (key: string, row: HubProjectNode | HubSessionNode) => (
+  const menuRow = menu ? (rows.find((row) => row.key === menu.rowKey) ?? null) : null;
+
+  const menuItems = useMemo<HubMenuItem[]>(() => {
+    if (!menuRow) return [];
+    if (menuRow.kind === 'project') {
+      const items: HubMenuItem[] = [];
+      if (onRenameProject) {
+        items.push({
+          id: 'rename',
+          label: t('common.rename'),
+          icon: 'pencil',
+          onSelect: () => setRenaming(menuRow.key),
+        });
+      }
+      if (onNewSession) {
+        items.push({
+          id: 'new-session',
+          label: t('hub.newSession'),
+          icon: 'plus',
+          onSelect: () => onNewSession(menuRow.project),
+        });
+      }
+      if (onDeleteProject) {
+        items.push({
+          id: 'delete',
+          label: t('common.delete'),
+          icon: 'trash',
+          danger: true,
+          onSelect: () => onDeleteProject(menuRow.project),
+        });
+      }
+      return items;
+    }
+    const session = menuRow.session;
+    if (!session) return [];
+    const items: HubMenuItem[] = [];
+    if (onRenameSession) {
+      items.push({
+        id: 'rename',
+        label: t('common.rename'),
+        icon: 'pencil',
+        onSelect: () => setRenaming(menuRow.key),
+      });
+    }
+    if (onPeekSession) {
+      items.push({
+        id: 'info',
+        label: t('hub.sessionInfo'),
+        icon: 'info',
+        shortcut: 'Space',
+        onSelect: () => onPeekSession(session),
+      });
+    }
+    if (onDeleteSession) {
+      items.push({
+        id: 'delete',
+        label: t('common.delete'),
+        icon: 'trash',
+        danger: true,
+        onSelect: () => onDeleteSession(session),
+      });
+    }
+    return items;
+  }, [
+    menuRow,
+    onRenameProject,
+    onNewSession,
+    onDeleteProject,
+    onRenameSession,
+    onPeekSession,
+    onDeleteSession,
+    t,
+  ]);
+
+  const sortItems = useMemo<HubMenuItem[]>(
+    () => [
+      {
+        id: 'recent',
+        label: t('hub.sortRecent'),
+        checked: sort === 'recent',
+        onSelect: () => setSort('recent'),
+      },
+      {
+        id: 'name',
+        label: t('hub.sortName'),
+        checked: sort === 'name',
+        onSelect: () => setSort('name'),
+      },
+    ],
+    [sort, t],
+  );
+
+  const renameField = (rowKey: string, current: string, commit: (next: string) => void) => (
     <input
       className="hub-row__rename"
-      data-testid={`hub-rename-${key.slice(2)}`}
-      value={renameValue}
-      aria-label="Rename"
+      defaultValue={current}
+      data-testid={`hub-rename-${rowKey.replace(':', '-')}`}
+      aria-label={t('common.rename')}
       autoFocus
       onClick={(event) => event.stopPropagation()}
-      onChange={(event) => setRenameValue(event.target.value)}
       onKeyDown={(event) => {
+        // The tree owns every bare key, so the editor has to keep its own.
         event.stopPropagation();
         if (event.key === 'Enter') {
-          const next = renameValue.trim();
-          if (next) onRename?.(row, next);
-          setRenamingKey(null);
-          rowRefs.current.get(key)?.focus();
-        } else if (event.key === 'Escape') {
-          setRenamingKey(null);
-          rowRefs.current.get(key)?.focus();
+          const next = event.currentTarget.value.trim();
+          setRenaming(null);
+          rowRefs.current.get(rowKey)?.focus();
+          if (next && next !== current) commit(next);
         }
+        if (event.key === 'Escape') {
+          setRenaming(null);
+          rowRefs.current.get(rowKey)?.focus();
+        }
+      }}
+      onBlur={(event) => {
+        const next = event.currentTarget.value.trim();
+        setRenaming(null);
+        if (next && next !== current) commit(next);
       }}
     />
   );
@@ -352,26 +502,29 @@ export function HubSessionTree({
           {t('hub.filterRunning')}
           <span className="hub-tree__count">{counts.running}</span>
         </button>
-        <span className="hub-tree__sorts">
-          <button
-            type="button"
-            className="hub-tree__sort"
-            data-testid="hub-sort-recent"
-            aria-pressed={sort === 'recent'}
-            onClick={() => setSort('recent')}
-          >
-            {t('hub.sortRecent')}
-          </button>
-          <button
-            type="button"
-            className="hub-tree__sort"
-            data-testid="hub-sort-name"
-            aria-pressed={sort === 'name'}
-            onClick={() => setSort('name')}
-          >
-            {t('hub.sortName')}
-          </button>
-        </span>
+        {/* One sort control, not one button per order: the orders are mutually
+            exclusive and the rail has no room for a pill each. */}
+        <button
+          type="button"
+          className="hub-tree__sort"
+          data-testid="hub-sort"
+          aria-haspopup="menu"
+          aria-expanded={sortAnchor !== null}
+          aria-label={t('hub.sortLabel')}
+          title={t('hub.sortLabel')}
+          onClick={(event) => {
+            // Read the button out of the event BEFORE the state updater runs.
+            // React clears `currentTarget` once the handler returns, so a
+            // deferred updater would anchor the menu to `null` and silently
+            // swallow the click - which is exactly what happened on the click
+            // right after selecting an item, when the menu's focus handoff
+            // leaves React scheduling this update outside the handler.
+            const button = event.currentTarget as HTMLElement;
+            setSortAnchor((prev) => (prev ? null : button));
+          }}
+        >
+          <Icon name="sliders" size={15} />
+        </button>
       </div>
 
       {rows.length === 0 ? (
@@ -381,7 +534,14 @@ export function HubSessionTree({
             {t('hub.clearFilter')}
           </button>
         </p>
-      ) : null}
+      ) : (
+        <p className="hub-tree__group-label" data-testid="hub-group-label">
+          {filter === 'all' ? t('hub.projects') : t('hub.results')}{' '}
+          <span className="hub-tree__group-count" data-testid="hub-group-count">
+            {groupCount}
+          </span>
+        </p>
+      )}
 
       <div className="hub-tree__body" role="tree" aria-label={t('hub.treeLabel')}>
         {visible.map((entry) => {
@@ -390,6 +550,7 @@ export function HubSessionTree({
           const rollup = rollupProjectState(entry.project);
           const rollupKey = stateLabelKey(rollup);
           const sessionsStatus = entry.project.sessionsStatus ?? 'ready';
+          const projectRenaming = renaming === projectKey;
           return (
             <div key={entry.project.id} className="hub-tree__node">
               <div
@@ -405,7 +566,9 @@ export function HubSessionTree({
                 data-row-key={projectKey}
                 data-project-id={entry.project.id}
                 data-state={rollup}
-                className="hub-row hub-row--project"
+                className={`hub-row hub-row--project${
+                  menu?.rowKey === projectKey ? ' is-menu-open' : ''
+                }`}
                 onFocus={() => syncCursorToFocus(projectKey)}
                 onClick={() => {
                   setCursor(projectIndex);
@@ -415,9 +578,13 @@ export function HubSessionTree({
                 onKeyDown={(event) => onKeyDown(event, projectIndex)}
               >
                 <span className="hub-row__chevron" aria-hidden="true" data-open={entry.open} />
-                {renamingKey === projectKey
-                  ? renameControl(projectKey, entry.project)
-                  : <span className="hub-row__title">{entry.project.name}</span>}
+                {projectRenaming && onRenameProject ? (
+                  renameField(projectKey, entry.project.name, (next) =>
+                    onRenameProject(entry.project, next),
+                  )
+                ) : (
+                  <span className="hub-row__title">{entry.project.name}</span>
+                )}
                 {entry.open || !rollupKey ? null : (
                   <span
                     id={`hub-state-${entry.project.id}`}
@@ -426,24 +593,50 @@ export function HubSessionTree({
                     {t(rollupKey)}
                   </span>
                 )}
-                {onNewSession ? (
-                  <button
-                    type="button"
-                    tabIndex={-1}
-                    className="hub-row__action"
-                    data-testid={`hub-new-session-${entry.project.id}`}
-                    aria-label={t('hub.newSessionIn', { name: entry.project.name })}
-                    aria-busy={pendingNewSessionProjectId === entry.project.id}
-                    disabled={pendingNewSessionProjectId === entry.project.id}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onNewSession(entry.project);
-                    }}
-                  >
-                    +
-                  </button>
-                ) : null}
+                <span className="hub-row__actions">
+                  {onNewSession ? (
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      className="hub-row__action"
+                      data-testid={`hub-new-session-${entry.project.id}`}
+                      aria-label={t('hub.newSessionIn', { name: entry.project.name })}
+                      aria-busy={pendingNewSessionProjectId === entry.project.id}
+                      disabled={pendingNewSessionProjectId === entry.project.id}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onNewSession(entry.project);
+                      }}
+                    >
+                      <Icon name="plus" size={14} />
+                    </button>
+                  ) : null}
+                  {onRenameProject || onDeleteProject ? (
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      className="hub-row__action"
+                      data-testid={`hub-menu-project-${entry.project.id}`}
+                      aria-haspopup="menu"
+                      aria-expanded={menu?.rowKey === projectKey}
+                      aria-label={t('hub.rowMenu', { name: entry.project.name })}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        const anchor = event.currentTarget as HTMLElement;
+                        setCursor(projectIndex);
+                        setMenu((prev) =>
+                          prev?.rowKey === projectKey ? null : { rowKey: projectKey, anchor },
+                        );
+                      }}
+                    >
+                      <Icon name="more-horizontal" size={14} />
+                    </button>
+                  ) : null}
+                </span>
 
+              {/* The group is a DESCENDANT of the project treeitem, not a
+                  sibling: ARIA ownership is what lets assistive tech say which
+                  project owns which sessions. */}
               <div
                 role="group"
                 aria-label={entry.project.name}
@@ -451,9 +644,6 @@ export function HubSessionTree({
                 data-open={entry.open}
                 hidden={!entry.open}
               >
-                {/* Session-read state lives OUTSIDE the treeitem set on
-                    purpose: adding rows here would change the roving-focus
-                    order and the arrow-key model. */}
                 {sessionsStatus === 'loading' ? (
                   <p
                     role="presentation"
@@ -494,6 +684,7 @@ export function HubSessionTree({
                   const sessionKey = `s:${session.id}`;
                   const sessionIndex = indexOfKey(sessionKey);
                   const labelKey = stateLabelKey(session.state);
+                  const sessionRenaming = renaming === sessionKey;
                   return (
                     <div
                       key={session.id}
@@ -509,17 +700,24 @@ export function HubSessionTree({
                       data-state={session.state}
                       className={`hub-row hub-row--session${
                         session.id === currentSessionId ? ' is-current' : ''
-                      }`}
+                      }${menu?.rowKey === sessionKey ? ' is-menu-open' : ''}`}
                       onFocus={() => syncCursorToFocus(sessionKey)}
-                      onClick={() => {
+                      onClick={(event) => {
+                        // Nested inside the project treeitem, so opening a
+                        // session must not also toggle its project.
+                        event.stopPropagation();
                         setCursor(sessionIndex);
                         onOpenSession(session);
                       }}
                       onKeyDown={(event) => onKeyDown(event, sessionIndex)}
                     >
-                      {renamingKey === sessionKey
-                        ? renameControl(sessionKey, session)
-                        : <span className="hub-row__title">{session.title}</span>}
+                      {sessionRenaming && onRenameSession ? (
+                        renameField(sessionKey, session.title, (next) =>
+                          onRenameSession(session, next),
+                        )
+                      ) : (
+                        <span className="hub-row__title">{session.title}</span>
+                      )}
                       {labelKey ? (
                         <span
                           id={`hub-state-${session.id}`}
@@ -528,18 +726,52 @@ export function HubSessionTree({
                           {t(labelKey)}
                         </span>
                       ) : (
-                        // A completed session carries no status badge, so its
-                        // trailing slot shows last activity - the same thing the
-                        // approved rows show there. The test id deliberately
-                        // avoids the `hub-session-` prefix: row queries select on
-                        // it and a nested match would inflate every row count.
-                        <span
-                          className="hub-row__meta"
-                          data-testid={`hub-row-time-${session.id}`}
-                        >
-                          {relativeTimeLong(session.updatedAt, t)}
+                        // A settled session carries its last activity instead of
+                        // a state word - the fetched `updatedAt` was previously
+                        // dropped on the floor.
+                        <span className="hub-row__meta" data-testid={`hub-when-${session.id}`}>
+                          {relativeTimeShort(session.updatedAt, t)}
                         </span>
                       )}
+                      <span className="hub-row__actions">
+                        {onPeekSession ? (
+                          <button
+                            type="button"
+                            tabIndex={-1}
+                            className="hub-row__action"
+                            data-testid={`hub-peek-${session.id}`}
+                            aria-label={t('hub.peekSession', { name: session.title })}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setCursor(sessionIndex);
+                              onPeekSession(session);
+                            }}
+                          >
+                            <Icon name="info" size={14} />
+                          </button>
+                        ) : null}
+                        {onRenameSession || onDeleteSession ? (
+                          <button
+                            type="button"
+                            tabIndex={-1}
+                            className="hub-row__action"
+                            data-testid={`hub-menu-session-${session.id}`}
+                            aria-haspopup="menu"
+                            aria-expanded={menu?.rowKey === sessionKey}
+                            aria-label={t('hub.rowMenu', { name: session.title })}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              const anchor = event.currentTarget as HTMLElement;
+                              setCursor(sessionIndex);
+                              setMenu((prev) =>
+                                prev?.rowKey === sessionKey ? null : { rowKey: sessionKey, anchor },
+                              );
+                            }}
+                          >
+                            <Icon name="more-horizontal" size={14} />
+                          </button>
+                        ) : null}
+                      </span>
                     </div>
                   );
                 })}
@@ -554,9 +786,10 @@ export function HubSessionTree({
                     data-row-key={`m:${entry.project.id}`}
                     className="hub-row hub-row--more"
                     onFocus={() => syncCursorToFocus(`m:${entry.project.id}`)}
-                    onClick={() =>
-                      setExpandedOverflow((prev) => ({ ...prev, [entry.project.id]: true }))
-                    }
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setExpandedOverflow((prev) => ({ ...prev, [entry.project.id]: true }));
+                    }}
                     onKeyDown={(event) => onKeyDown(event, indexOfKey(`m:${entry.project.id}`))}
                   >
                     {t('hub.showMoreSessions', { count: String(entry.hiddenCount) })}
@@ -568,6 +801,27 @@ export function HubSessionTree({
           );
         })}
       </div>
+
+      {menu && menuRow && menuItems.length > 0 ? (
+        <HubMenu
+          title={menuRow.kind === 'project' ? menuRow.project.name : (menuRow.session?.title ?? '')}
+          items={menuItems}
+          anchor={menu.anchor}
+          returnFocusTo={rowRefs.current.get(menu.rowKey) ?? menu.anchor}
+          testId="hub-row-menu"
+          onClose={() => setMenu(null)}
+        />
+      ) : null}
+
+      {sortAnchor ? (
+        <HubMenu
+          title={t('hub.sortLabel')}
+          items={sortItems}
+          anchor={sortAnchor}
+          testId="hub-sort-menu"
+          onClose={() => setSortAnchor(null)}
+        />
+      ) : null}
     </div>
   );
 }

@@ -53,6 +53,7 @@ export interface Dict {
   'common.minutesShort': string;
   'common.hoursShort': string;
   'common.daysShort': string;
+  'common.weeksShort': string;
   'common.untitled': string;
 
   // Plugin registry / details
@@ -753,11 +754,30 @@ export interface Dict {
   'hub.filterRunning': string;
   'hub.sortRecent': string;
   'hub.sortName': string;
+  'hub.sortLabel': string;
   'hub.stateRunning': string;
   'hub.stateAwaiting': string;
   'hub.stateFailed': string;
+  'hub.stateDone': string;
   'hub.showMoreSessions': string;
+  'hub.newSession': string;
   'hub.newSessionIn': string;
+  'hub.sessionCreated': string;
+  'hub.sessionDeleted': string;
+  'hub.sessionInfo': string;
+  'hub.peekSession': string;
+  'hub.rowMenu': string;
+  'hub.closeOpenWork': string;
+  'hub.closedOpenWork': string;
+  'hub.inspectorTitle': string;
+  'hub.inspectorClose': string;
+  'hub.inspectorState': string;
+  'hub.inspectorMode': string;
+  'hub.inspectorMessages': string;
+  'hub.inspectorLastActivity': string;
+  'hub.inspectorOpen': string;
+  'hub.modeDesign': string;
+  'hub.modeChat': string;
   'hub.emptyFiltered': string;
   'hub.clearFilter': string;
   'hub.sessionsUnavailable': string;
