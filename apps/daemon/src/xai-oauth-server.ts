@@ -180,8 +180,9 @@ export async function startCallbackListener(
   const server = http.createServer((req, res) => {
     void handle(req, res);
   });
+  serverRef = server;
 
-  await new Promise<void>((resolve, reject) => {
+  const address = await new Promise<AddressInfo>((resolve, reject) => {
     const onError = (err: NodeJS.ErrnoException) => {
       if (err.code === 'EADDRINUSE') {
         reject(
@@ -196,11 +197,15 @@ export async function startCallbackListener(
     server.once('error', onError);
     server.listen(port, host, () => {
       server.removeListener('error', onError);
-      resolve();
+      const addr = server.address();
+      if (!addr || typeof addr === 'string') {
+        reject(new Error('Callback listener did not provide a network address'));
+        return;
+      }
+      resolve(addr);
     });
   });
 
-  serverRef = server;
   timer = setTimeout(() => {
     Promise.resolve(
       input.onCallback({
@@ -215,9 +220,8 @@ export async function startCallbackListener(
   // unref so the timer doesn't keep the event loop alive in tests.
   timer.unref?.();
 
-  const addr = server.address() as AddressInfo;
   return {
-    address: { host: addr.address, port: addr.port },
+    address: { host: address.address, port: address.port },
     stop,
   };
 }
