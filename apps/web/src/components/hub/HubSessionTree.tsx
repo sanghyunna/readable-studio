@@ -17,6 +17,7 @@ import {
 import { useT } from '../../i18n';
 import { Icon } from '../Icon';
 import { HubMenu, type HubMenuItem } from './HubMenu';
+import { initialGlyph } from './initialGlyph';
 import { relativeTimeShort } from './relativeTime';
 import {
   HUB_SESSION_PAGE,
@@ -33,6 +34,11 @@ import {
 
 interface Props {
   projects: HubProjectNode[];
+  /**
+   * The rail is showing glyphs only. Sessions are not rendered inline, so a
+   * project's sessions are reached through the flyout instead of by expanding.
+   */
+  collapsed?: boolean;
   currentSessionId: string | null;
   onOpenSession: (session: HubSessionNode) => void;
   onNewSession?: (project: HubProjectNode) => void;
@@ -62,6 +68,10 @@ interface MenuState {
   anchor: HTMLElement;
 }
 
+// Hovering must not fire a flyout the pointer only crossed on its way
+// somewhere else, and it must not lag behind a deliberate hover either.
+const FLYOUT_HOVER_DELAY_MS = 180;
+
 type StateLabelKey = 'hub.stateRunning' | 'hub.stateAwaiting' | 'hub.stateFailed';
 
 function stateLabelKey(state: HubSessionState): StateLabelKey | null {
@@ -73,6 +83,7 @@ function stateLabelKey(state: HubSessionState): StateLabelKey | null {
 
 export function HubSessionTree({
   projects,
+  collapsed: railCollapsed = false,
   currentSessionId,
   onOpenSession,
   onNewSession,
@@ -92,6 +103,9 @@ export function HubSessionTree({
   const [expandedOverflow, setExpandedOverflow] = useState<Record<string, boolean>>({});
   const [cursor, setCursor] = useState(0);
   const [menu, setMenu] = useState<MenuState | null>(null);
+  // The collapsed rail's project flyout. Kept apart from `menu` so a row's
+  // overflow menu and its flyout can never both claim the same anchor.
+  const [flyout, setFlyout] = useState<{ projectId: string; anchor: HTMLElement } | null>(null);
   const [sortAnchor, setSortAnchor] = useState<HTMLElement | null>(null);
   // Rename happens in place: a modal for one field is heavier than the edit.
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -102,6 +116,24 @@ export function HubSessionTree({
   // ref callback registers it rather than by an effect that may run first.
   const pendingFocusRef = useRef<string | null>(null);
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelHoverFlyout = useCallback(() => {
+    if (hoverTimerRef.current === null) return;
+    clearTimeout(hoverTimerRef.current);
+    hoverTimerRef.current = null;
+  }, []);
+
+  // A pending hover that fires after the rail expands would open a flyout with
+  // no rail to anchor it to, and an unmounted timer would set state on a dead
+  // component.
+  useEffect(() => cancelHoverFlyout, [cancelHoverFlyout]);
+
+  useEffect(() => {
+    if (railCollapsed) return;
+    cancelHoverFlyout();
+    setFlyout(null);
+  }, [railCollapsed, cancelHoverFlyout]);
 
   const ordered = useMemo(() => sortProjects(projects, sort), [projects, sort]);
 
@@ -131,6 +163,9 @@ export function HubSessionTree({
     const next: FlatRow[] = [];
     for (const entry of visible) {
       next.push({ key: `p:${entry.project.id}`, kind: 'project', project: entry.project });
+      // Session rows are hidden in the collapsed rail, so leaving them in the
+      // row model would send arrow-key focus to invisible rows.
+      if (railCollapsed) continue;
       if (!entry.open) continue;
       for (const session of entry.sessions) {
         next.push({ key: `s:${session.id}`, kind: 'session', project: entry.project, session });
@@ -140,7 +175,7 @@ export function HubSessionTree({
       }
     }
     return next;
-  }, [visible]);
+  }, [visible, railCollapsed]);
 
   useEffect(() => {
     if (cursor > rows.length - 1) setCursor(Math.max(0, rows.length - 1));
@@ -151,7 +186,8 @@ export function HubSessionTree({
   useEffect(() => {
     if (menu && !rows.some((row) => row.key === menu.rowKey)) setMenu(null);
     if (renaming && !rows.some((row) => row.key === renaming)) setRenaming(null);
-  }, [rows, menu, renaming]);
+    if (flyout && !rows.some((row) => row.key === `p:${flyout.projectId}`)) setFlyout(null);
+  }, [rows, menu, renaming, flyout]);
 
   useEffect(() => () => {
     if (typeAheadTimerRef.current) clearTimeout(typeAheadTimerRef.current);
@@ -173,6 +209,17 @@ export function HubSessionTree({
         onOpenSession(row.session);
         return;
       }
+      if (row.kind === 'project' && railCollapsed) {
+        // There is nothing to expand into: the sessions group is not rendered
+        // in the collapsed rail, so activating a project offers them directly.
+        const anchor = rowRefs.current.get(row.key);
+        if (anchor) {
+          setFlyout((prev) =>
+            prev?.projectId === row.project.id ? null : { projectId: row.project.id, anchor },
+          );
+        }
+        return;
+      }
       if (row.kind === 'more') {
         // The "more" row disappears once its sessions render, so hand focus to
         // the first newly revealed session rather than letting it fall to body.
@@ -189,7 +236,7 @@ export function HubSessionTree({
       }
       setCollapsed((prev) => ({ ...prev, [row.project.id]: !prev[row.project.id] }));
     },
-    [onOpenSession, onOpenProject, filter],
+    [onOpenSession, onOpenProject, filter, railCollapsed],
   );
 
   const onKeyDown = useCallback(
@@ -440,6 +487,30 @@ export function HubSessionTree({
     [sort, t],
   );
 
+  const flyoutProject = flyout
+    ? (visible.find((entry) => entry.project.id === flyout.projectId)?.project ?? null)
+    : null;
+
+  const flyoutItems = useMemo<HubMenuItem[]>(() => {
+    if (!flyoutProject) return [];
+    const items: HubMenuItem[] = flyoutProject.sessions.map((session) => ({
+      id: session.id,
+      label: session.title,
+      icon: 'file' as const,
+      checked: session.id === currentSessionId,
+      onSelect: () => onOpenSession(session),
+    }));
+    if (onNewSession) {
+      items.push({
+        id: 'new-session',
+        label: t('hub.newSession'),
+        icon: 'plus',
+        onSelect: () => onNewSession(flyoutProject),
+      });
+    }
+    return items;
+  }, [flyoutProject, currentSessionId, onOpenSession, onNewSession, t]);
+
   const renameField = (rowKey: string, current: string, commit: (next: string) => void) => (
     <input
       className="hub-row__rename"
@@ -551,12 +622,37 @@ export function HubSessionTree({
           const rollupKey = stateLabelKey(rollup);
           const sessionsStatus = entry.project.sessionsStatus ?? 'ready';
           const projectRenaming = renaming === projectKey;
+          const hasCurrent =
+            currentSessionId !== null &&
+            entry.project.sessions.some((session) => session.id === currentSessionId);
           return (
             <div key={entry.project.id} className="hub-tree__node">
               <div
                 ref={registerRow(projectKey)}
                 role="treeitem"
-                aria-expanded={entry.open}
+                // A collapsed project has no rendered group to expand, and
+                // claiming otherwise would promise screen readers a subtree
+                // that is not there.
+                {...(railCollapsed
+                  ? { 'aria-haspopup': 'menu' as const, 'aria-expanded': flyout?.projectId === entry.project.id }
+                  : { 'aria-expanded': entry.open })}
+                {...(railCollapsed ? { 'aria-label': entry.project.name } : {})}
+                title={entry.project.name}
+                data-initial={initialGlyph(entry.project.name)}
+                data-current={hasCurrent ? 'true' : 'false'}
+                onMouseEnter={
+                  railCollapsed
+                    ? (event) => {
+                        const anchor = event.currentTarget;
+                        cancelHoverFlyout();
+                        hoverTimerRef.current = setTimeout(() => {
+                          hoverTimerRef.current = null;
+                          setFlyout({ projectId: entry.project.id, anchor });
+                        }, FLYOUT_HOVER_DELAY_MS);
+                      }
+                    : undefined
+                }
+                onMouseLeave={railCollapsed ? cancelHoverFlyout : undefined}
                 aria-level={1}
                 {...(!entry.open && rollupKey
                   ? { 'aria-describedby': `hub-state-${entry.project.id}` }
@@ -641,8 +737,8 @@ export function HubSessionTree({
                 role="group"
                 aria-label={entry.project.name}
                 className="hub-tree__group"
-                data-open={entry.open}
-                hidden={!entry.open}
+                data-open={entry.open && !railCollapsed}
+                hidden={!entry.open || railCollapsed}
               >
                 {sessionsStatus === 'loading' ? (
                   <p
@@ -810,6 +906,17 @@ export function HubSessionTree({
           returnFocusTo={rowRefs.current.get(menu.rowKey) ?? menu.anchor}
           testId="hub-row-menu"
           onClose={() => setMenu(null)}
+        />
+      ) : null}
+
+      {flyout && flyoutProject && flyoutItems.length > 0 ? (
+        <HubMenu
+          title={flyoutProject.name}
+          items={flyoutItems}
+          anchor={flyout.anchor}
+          returnFocusTo={rowRefs.current.get(`p:${flyoutProject.id}`) ?? flyout.anchor}
+          testId="hub-project-flyout"
+          onClose={() => setFlyout(null)}
         />
       ) : null}
 

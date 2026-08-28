@@ -6,6 +6,12 @@
  */
 
 .hub {
+  /* One width for the collapsed rail so the grid, the narrow breakpoint and
+     the measurement in QA all read the same number. */
+  --hub-rail-collapsed: 78px;
+  /* The collapsed search glyph. A mask source, so it is a shape and not a
+     colour - the paint comes from a theme token at the use site. */
+  --hub-search-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E");
   display: grid;
   grid-template-columns: 292px minmax(0, 1fr);
   min-height: 0;
@@ -42,6 +48,9 @@
 }
 
 .hub__nav-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   padding: 12px 12px 4px;
 }
 
@@ -49,13 +58,49 @@
   display: flex;
   align-items: center;
   gap: 9px;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   padding: 4px;
   border: 0;
   border-radius: 8px;
   background: none;
   color: var(--text-strong);
   cursor: pointer;
+}
+
+/* The rail owns its own collapse control: the entry topbar is not rendered on
+   the home route, so a toggle placed there would be unreachable here. */
+.hub__rail-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.hub__rail-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-strong);
+}
+
+.hub__rail-toggle:focus-visible {
+  outline: 2px solid var(--selected);
+  outline-offset: -2px;
+}
+
+.hub__rail-toggle[aria-pressed='true'] {
+  color: var(--selected);
+}
+
+.hub__rail-toggle[disabled] {
+  color: var(--text-faint);
+  cursor: default;
 }
 
 .hub__brand:hover {
@@ -793,15 +838,6 @@
   font-size: 11.5px;
 }
 
-.hub--rail-collapsed {
-  grid-template-columns: 0 minmax(0, 1fr);
-}
-
-.hub--rail-collapsed .hub__nav {
-  visibility: hidden;
-  pointer-events: none;
-}
-
 /* ---- start surface ---- */
 
 .hub__stage {
@@ -1177,37 +1213,213 @@
   }
 }
 
+/* ---- collapsed rail ----
+ *
+ * The rail narrows to a column of project glyphs rather than disappearing, so
+ * navigation survives the collapse: every project stays a focusable row whose
+ * sessions open in a flyout. Narrow viewports render the SAME state - the rail
+ * is never stacked above the canvas, which would push the composer below the
+ * fold on exactly the screens with the least vertical room.
+ */
+
+.hub--rail-collapsed {
+  grid-template-columns: var(--hub-rail-collapsed) minmax(0, 1fr);
+}
+
+.hub--rail-collapsed.hub--inspecting {
+  grid-template-columns: var(--hub-rail-collapsed) minmax(0, 1fr) 300px;
+}
+
+.hub--rail-collapsed .hub__brand-name,
+.hub--rail-collapsed .hub-tree__filters,
+.hub--rail-collapsed .hub-tree__group-label,
+.hub--rail-collapsed .hub-tree__empty,
+.hub--rail-collapsed .hub-tree__group,
+.hub--rail-collapsed .hub-open__label,
+.hub--rail-collapsed .hub-row__title,
+.hub--rail-collapsed .hub-row__state,
+.hub--rail-collapsed .hub-row__meta,
+.hub--rail-collapsed .hub-row__actions,
+.hub--rail-collapsed .hub-row__chevron {
+  display: none;
+}
+
+.hub--rail-collapsed .hub__nav-head,
+.hub--rail-collapsed .hub__nav-actions {
+  padding-inline: 10px;
+}
+
+.hub--rail-collapsed .hub__nav-head {
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hub--rail-collapsed .hub__brand {
+  justify-content: center;
+  flex: none;
+  width: 100%;
+  padding: 4px 0;
+}
+
+.hub--rail-collapsed .hub__new-project {
+  /* The label cannot fit, so the button becomes the '+' glyph the mockup uses
+     while keeping its accessible name. */
+  font-size: 0;
+  gap: 0;
+}
+
+.hub--rail-collapsed .hub__new-project::before {
+  content: '+';
+  font-size: 19px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+/* Search stays a real, focusable field rather than being hidden: collapsing
+   the rail must not remove a control from the tab order. It shrinks to the
+   glyph width and opens back up while it holds focus.
+
+   The placeholder cannot survive that width, so the field carries the mockup's
+   magnifier as a mask instead - an empty bordered box gives the user nothing to
+   recognise. A mask rather than a background image because it inherits
+   `currentColor` and therefore every theme, with no literal colour anywhere. */
+.hub--rail-collapsed .hub__search {
+  padding-inline: 0;
+  text-align: center;
+  transition: width 160ms ease;
+}
+
+.hub--rail-collapsed .hub__search::placeholder {
+  color: transparent;
+}
+
+/* The glyph is painted on the wrapper so the input keeps its own background,
+   border and focus ring. */
+.hub--rail-collapsed .hub__nav-actions {
+  position: relative;
+}
+
+.hub--rail-collapsed .hub__nav-actions::after {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  bottom: 20px;
+  height: 15px;
+  pointer-events: none;
+  background: var(--text-muted);
+  -webkit-mask: var(--hub-search-glyph) no-repeat center / 15px 15px;
+  mask: var(--hub-search-glyph) no-repeat center / 15px 15px;
+}
+
+/* Once the field is focused it is a real text box again, so the decorative
+   glyph must not sit on top of what the user is typing. */
+.hub--rail-collapsed .hub__nav-actions:focus-within::after {
+  display: none;
+}
+
+.hub--rail-collapsed .hub__search:focus-visible {
+  position: relative;
+  z-index: 1;
+  width: 232px;
+  padding-inline: 10px;
+  text-align: start;
+}
+
+.hub--rail-collapsed .hub__search:focus-visible::placeholder {
+  color: var(--text-faint);
+}
+
+.hub--rail-collapsed .hub-tree__body,
+.hub--rail-collapsed .hub-open {
+  padding-inline: 8px;
+}
+
+/* The open-work group keeps a rule under it so its glyphs read as a distinct
+   list rather than merging into the project column. */
+.hub--rail-collapsed .hub-open {
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+}
+
+.hub--rail-collapsed .hub-row {
+  justify-content: center;
+  min-height: 38px;
+  margin-bottom: 2px;
+  padding: 0;
+  border-radius: var(--radius-md);
+}
+
+.hub--rail-collapsed .hub-row--project {
+  /* The grid areas exist to lay out a title, state and actions that are all
+     hidden here; a single centred glyph is the whole row. */
+  display: flex;
+}
+
+.hub--rail-collapsed .hub-row--project:hover {
+  background: var(--bg-hover);
+}
+
+.hub--rail-collapsed .hub-row--more {
+  display: none;
+}
+
+.hub--rail-collapsed .hub-row::before {
+  content: attr(data-initial);
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text-muted);
+}
+
+.hub--rail-collapsed .hub-row--open::before {
+  color: var(--selected);
+}
+
+.hub--rail-collapsed .hub-row--open.is-current,
+.hub--rail-collapsed .hub-row--project[data-current='true'] {
+  background: var(--selected-soft);
+}
+
+.hub--rail-collapsed .hub-row--open.is-current::before,
+.hub--rail-collapsed .hub-row--project[data-current='true']::before {
+  color: var(--selected);
+}
+
+.hub--rail-collapsed .hub-row--open.is-current::before,
+.hub--rail-collapsed .hub-row--project[data-state='running'] {
+  box-shadow: inset 2px 0 0 var(--selected);
+}
+
+.hub--rail-collapsed .hub-row--project[data-state='running']::before {
+  color: var(--selected);
+}
+
+.hub--rail-collapsed .hub-row--project[data-state='awaiting'],
+.hub--rail-collapsed .hub-row--project[data-state='failed'] {
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+}
+
+.hub--rail-collapsed .hub-row--project[data-state='awaiting']::before,
+.hub--rail-collapsed .hub-row--project[data-state='failed']::before {
+  color: var(--warning);
+}
+
+/* The inset current marker on an open-work row is drawn by ::before in the
+   expanded rail, which the glyph now occupies. */
+.hub--rail-collapsed .hub-row--open.is-current::after,
+.hub--rail-collapsed .hub-row--session.is-current::after {
+  content: none;
+}
+
 @media (max-width: 900px) {
-  /* Narrow windows keep the same navigation, only tighter. Hiding row titles
-     would leave the session list as a column of blank rows, which is worse
-     than a slightly cramped label. */
-  .hub {
-    grid-template-columns: 232px minmax(0, 1fr);
-  }
-
-  .hub__nav {
-    margin-left: 0;
-  }
-
+  /* The mockup keeps the compact icon rail at every narrow width instead of
+     stacking a full-width rail above the canvas. */
   .hub__start {
     padding-inline: 16px;
   }
 
-  .hub__brand-name {
-    font-size: 12.5px;
-  }
-}
-
-@media (max-width: 620px) {
-  /* Below this the two-column split stops earning its keep: the navigation
-     collapses to a single scrolling column above the start surface. */
-  .hub {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr);
-  }
-
   .hub__nav {
-    max-height: 42vh;
+    margin-left: 0;
   }
 }
 
@@ -1220,7 +1432,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hub-row__chevron {
+  .hub-row__chevron,
+  .hub--rail-collapsed .hub__search {
     transition-duration: 1ms;
   }
 }

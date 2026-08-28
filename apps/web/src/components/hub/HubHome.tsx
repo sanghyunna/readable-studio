@@ -40,6 +40,23 @@ const OPEN_WORK_STORAGE_KEY = 'readable-studio:hub-open-work';
  * dispatches this event rather than reaching into inspector state directly.
  */
 const HUB_INSPECTOR_TOGGLE_EVENT = 'readable:hub-inspector-toggle';
+// Collapsing the rail is a durable preference, not a per-tab one: a user who
+// works in the narrow rail expects it still narrow tomorrow.
+const RAIL_COLLAPSED_STORAGE_KEY = 'readable-studio:hub-rail-collapsed';
+// The mockup's breakpoint. Below it the rail is ALWAYS the icon rail, so the
+// stored preference is irrelevant until the window widens again.
+const NARROW_RAIL_QUERY = '(max-width: 900px)';
+
+function loadRailCollapsed(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.localStorage.getItem(RAIL_COLLAPSED_STORAGE_KEY) === 'true';
+}
+
+/** The narrow-rail media query, or `null` where no viewport is available. */
+function narrowRailQuery(): MediaQueryList | null {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return null;
+  return window.matchMedia(NARROW_RAIL_QUERY);
+}
 
 function loadOpenWorkIds(): string[] {
   if (typeof window === 'undefined') return [];
@@ -161,7 +178,6 @@ export function HubHome({
   const creatingSessionRef = useRef(new Set<string>());
   const [creatingSessionFor, setCreatingSessionFor] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [railCollapsed, setRailCollapsed] = useState(false);
   const paletteReturnRef = useRef<HTMLElement | null>(null);
   const allNodesRef = useRef<HubProjectNode[]>([]);
   // Open work is client-side: which sessions the user is holding open. The
@@ -174,6 +190,12 @@ export function HubHome({
     window.sessionStorage.setItem(OPEN_WORK_STORAGE_KEY, JSON.stringify(next));
     setOpenWorkIds(next);
   }, []);
+  // The stored preference and the rendered state are deliberately separate:
+  // below the narrow breakpoint the rail is forced collapsed WITHOUT rewriting
+  // the preference, so widening the window restores what the user chose.
+  const [railCollapsedPreference, setRailCollapsedPreference] = useState(loadRailCollapsed);
+  const [narrow, setNarrow] = useState(() => narrowRailQuery()?.matches ?? false);
+  const railCollapsed = railCollapsedPreference || narrow;
   const [peekedSessionId, setPeekedSessionId] = useState<string | null>(null);
   const [removedSessionIds, setRemovedSessionIds] = useState<string[]>([]);
   // Read through a ref so the fetch effect does not re-run when `t` changes
@@ -181,6 +203,48 @@ export function HubHome({
   const untitledLabel = useRef(t('hub.untitledSession'));
   untitledLabel.current = t('hub.untitledSession');
 
+  useEffect(() => {
+    const query = narrowRailQuery();
+    if (!query) return undefined;
+    // Resizing between the initial read and this effect would otherwise leave
+    // a stale value on screen until the next crossing of the breakpoint.
+    setNarrow(query.matches);
+    const onChange = (event: MediaQueryListEvent) => setNarrow(event.matches);
+    query.addEventListener('change', onChange);
+    return () => query.removeEventListener('change', onChange);
+  }, []);
+
+  const toggleRail = useCallback(() => {
+    setRailCollapsedPreference((current) => {
+      const next = !current;
+      window.localStorage.setItem(RAIL_COLLAPSED_STORAGE_KEY, String(next));
+      setAnnouncement(t(next ? 'entry.navCollapse' : 'entry.navExpand'));
+      return next;
+    });
+  }, [t]);
+
+  useEffect(() => {
+    // Ctrl/Cmd+B is a global binding, but it must not steal the character from
+    // someone typing into the composer or a rename field, and it is inert while
+    // the viewport forces the collapsed rail.
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
+      if (event.key.toLowerCase() !== 'b') return;
+      const active = document.activeElement;
+      if (
+        active instanceof HTMLInputElement ||
+        active instanceof HTMLTextAreaElement ||
+        (active instanceof HTMLElement && active.isContentEditable)
+      ) {
+        return;
+      }
+      if (narrow) return;
+      event.preventDefault();
+      toggleRail();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [narrow, toggleRail]);
   // Sessions are per-project on the daemon; there is no cross-project
   // conversation endpoint. Fan out per project and commit each result as it
   // lands so one slow or failing project cannot hide every other project's
@@ -361,13 +425,6 @@ export function HubHome({
       } else if (primary && !event.shiftKey && key === 'n') {
         event.preventDefault();
         onNewProject();
-      } else if (primary && !event.shiftKey && key === 'b') {
-        const typing = document.activeElement instanceof HTMLInputElement
-          || document.activeElement instanceof HTMLTextAreaElement;
-        if (!typing) {
-          event.preventDefault();
-          setRailCollapsed((current) => !current);
-        }
       } else if (primary && !event.shiftKey && key === 'i') {
         event.preventDefault();
         // Todo 11 owns the inspector. This event is its stable integration seam.
@@ -614,7 +671,9 @@ export function HubHome({
 
   return (
     <div
-      className={`hub${railCollapsed ? ' hub--rail-collapsed' : ''}${peeked ? ' hub--inspecting' : ''}`}
+      className={`hub${peeked ? ' hub--inspecting' : ''}${
+        railCollapsed ? ' hub--rail-collapsed' : ''
+      }`}
       data-rail-collapsed={railCollapsed ? 'true' : 'false'}
     >
       <div className="sr-only" role="status" aria-live="polite" data-testid="hub-live-region">
@@ -652,6 +711,21 @@ export function HubHome({
               aria-hidden="true"
             />
             <span className="hub__brand-name">{t('app.brand')}</span>
+          </button>
+          {/* Disabled rather than hidden below the breakpoint: a control that
+              vanishes at a width the user cannot see is worse than one that
+              says why it cannot act. */}
+          <button
+            type="button"
+            className="hub__rail-toggle"
+            data-testid="hub-rail-toggle"
+            aria-pressed={railCollapsed}
+            aria-label={t(railCollapsed ? 'entry.navExpand' : 'entry.navCollapse')}
+            title={t(railCollapsed ? 'entry.navExpand' : 'entry.navCollapse')}
+            disabled={narrow}
+            onClick={toggleRail}
+          >
+            <Icon name="panel-left" size={17} />
           </button>
         </div>
         <div className="hub__nav-actions">
@@ -692,6 +766,7 @@ export function HubHome({
             <HubSessionTree
               key={query.trim() ? 'filtered' : 'all'}
               projects={tree}
+              collapsed={railCollapsed}
               currentSessionId={currentSessionId}
               onOpenSession={handleOpenSession}
               onPeekSession={handlePeekSession}

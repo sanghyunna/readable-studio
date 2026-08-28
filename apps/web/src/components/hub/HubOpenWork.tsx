@@ -7,6 +7,7 @@
 
 import { useT } from '../../i18n';
 import { Icon } from '../Icon';
+import { initialGlyph } from './initialGlyph';
 
 export interface HubOpenWorkItem {
   sessionId: string;
@@ -38,6 +39,10 @@ export function HubOpenWork({ items, currentSessionId, onOpen, onClose }: Props)
           role="button"
           tabIndex={0}
           data-testid={`hub-open-work-${item.sessionId}`}
+          data-initial={initialGlyph(item.title)}
+          // The collapsed rail hides the title, so the row's name has to come
+          // from an attribute rather than from its (display:none) contents.
+          aria-label={`${item.projectName} · ${item.title}`}
           title={`${item.projectName} · ${item.title}`}
           onClick={() => onOpen(item)}
           onKeyDown={(event) => {
