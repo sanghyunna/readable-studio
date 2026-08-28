@@ -107,7 +107,7 @@ describe('LexicalComposerInput', () => {
       );
       expect(pill?.textContent).toBe('@Deck Builder');
     });
-    expect(ref.current?.getText()).toBe('@Deck Builder ');
+    expect(ref.current?.getText()).toBe('@Deck Builder');
   });
 
   it('clear() empties the editor', async () => {

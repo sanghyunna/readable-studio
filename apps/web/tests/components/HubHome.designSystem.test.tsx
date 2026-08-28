@@ -102,7 +102,7 @@ describe('hub composer design system', () => {
       'home-hero-footer-option-designSystem',
       'home-hero-template-control',
     ]);
-    expect(screen.getByTestId('hub-composer').querySelector('.session-mode-toggle')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Design mode' })).toBeTruthy();
 
     fireEvent.click(screen.getByTestId('home-hero-context-control'));
     expect(await screen.findByTestId('home-hero-plugin-picker')).toBeTruthy();

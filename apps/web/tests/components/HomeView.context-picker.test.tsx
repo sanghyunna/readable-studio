@@ -18,8 +18,7 @@ import { homeHeroPromptText, setHomeHeroPrompt } from '../helpers/home-hero-lexi
 //     the old tests did `fireEvent.change(input, { target: { value } })`.
 //   - reading text uses `homeHeroPromptText()` where they read `input.value`.
 // Picking from the @-picker still inserts an atomic mention PILL whose literal
-// text is `@<token>`, and the editor appends a trailing space — so serialized
-// editor text carries that space (the host trims it before submit).
+// text is `@<token>` without adding whitespace the user did not type.
 
 // Settle the Lexical update listener's onChange/onTrigger React state updates
 // (they flush a microtask after the discrete editor update) before asserting,
@@ -199,10 +198,10 @@ describe('HomeView context picker', () => {
     await screen.findByTestId('home-hero-input');
     setHomeHeroPrompt('Build @chart');
     await settle();
-    fireEvent.mouseDown(await screen.findByRole('option', { name: /chart plugin/i }));
+    fireEvent.click(await screen.findByRole('option', { name: /chart plugin/i }));
 
-    // Picking inserts an atomic plugin mention pill (`@Chart Plugin`) plus a
-    // trailing space, and stages the plugin as context in HomeView state. The
+    // Picking inserts an atomic plugin mention pill (`@Chart Plugin`) and stages
+    // the plugin as context in HomeView state. The
     // inline pill is now the only on-screen representation of the staged context
     // (the duplicate top context-badge row was removed), so the submit payload
     // below is the authoritative check that the plugin was staged.
@@ -215,7 +214,7 @@ describe('HomeView context picker', () => {
     // second plugin reconstructs both mention pills via the host's draft sync.
     setHomeHeroPrompt('Build @Chart Plugin @deck');
     await settle();
-    fireEvent.mouseDown(await screen.findByRole('option', { name: /deck plugin/i }));
+    fireEvent.click(await screen.findByRole('option', { name: /deck plugin/i }));
 
     await waitFor(() => {
       expect(homeHeroPromptText().trim()).toBe('Build @Chart Plugin @Deck Plugin');
@@ -271,7 +270,7 @@ describe('HomeView context picker', () => {
     await screen.findByTestId('home-hero-input');
     setHomeHeroPrompt('@proto');
     await settle();
-    fireEvent.mouseDown(await screen.findByRole('option', { name: /prototype lab/i }));
+    fireEvent.click(await screen.findByRole('option', { name: /prototype lab/i }));
 
     await waitFor(() => {
       expect(homeHeroPromptText().trim()).toBe('@Prototype Lab');
@@ -329,7 +328,7 @@ describe('HomeView context picker', () => {
     screen.getByTestId('home-hero-input');
     setHomeHeroPrompt('@deck');
     await settle();
-    fireEvent.mouseDown(await screen.findByRole('option', { name: /deck lab/i }));
+    fireEvent.click(await screen.findByRole('option', { name: /deck lab/i }));
 
     await waitFor(() => {
       expect(screen.getByTestId('home-hero-active-skill')).toBeTruthy();
@@ -396,7 +395,7 @@ describe('HomeView context picker', () => {
     await screen.findByTestId('home-hero-input');
     setHomeHeroPrompt('@proto');
     await settle();
-    fireEvent.mouseDown(await screen.findByRole('option', { name: /prototype lab/i }));
+    fireEvent.click(await screen.findByRole('option', { name: /prototype lab/i }));
     await waitFor(() => {
       expect(screen.getByTestId('home-hero-active-skill')).toBeTruthy();
     });

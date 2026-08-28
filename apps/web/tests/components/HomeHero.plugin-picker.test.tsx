@@ -188,13 +188,13 @@ describe('HomeHero plugin picker', () => {
     expect(screen.getByTestId('home-hero-plugin-picker')).toBeTruthy();
     expect(screen.getByText('Official')).toBeTruthy();
     expect(screen.getByText('My plugin')).toBeTruthy();
-    fireEvent.mouseDown(screen.getByRole('option', { name: /sample user plugin/i }));
+    fireEvent.click(screen.getByRole('option', { name: /sample user plugin/i }));
 
-    // Picking inserts an atomic mention pill (replacing the in-flight `@sam`)
-    // plus a trailing space; the host receives the editor's new serialized text.
+    // Picking inserts an atomic mention pill (replacing the in-flight `@sam`);
+    // the host receives the editor's new serialized text without invented whitespace.
     expect(onPickPlugin).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'sample-user-plugin' }),
-      'Make @Sample User Plugin ',
+      'Make @Sample User Plugin',
     );
   });
 
@@ -490,12 +490,12 @@ describe('HomeHero plugin picker', () => {
     setHomeHeroPrompt('Use @br');
     await settle();
 
-    fireEvent.mouseDown(screen.getByRole('option', { name: /brief\.html/i }));
+    fireEvent.click(screen.getByRole('option', { name: /brief\.html/i }));
     // pickFile inserts the atomic file pill; the editor's onChange forwards the
-    // new serialized text (with the trailing space insertMention adds) to the
-    // host, replacing the old explicit `onPromptChange('Use @brief.html')` path.
+    // new serialized text to the host, replacing the old explicit
+    // `onPromptChange('Use @brief.html')` path.
     await waitFor(() =>
-      expect(onPromptChange).toHaveBeenLastCalledWith('Use @brief.html '),
+      expect(onPromptChange).toHaveBeenLastCalledWith('Use @brief.html'),
     );
 
     rerender(
@@ -552,8 +552,8 @@ describe('HomeHero plugin picker', () => {
     setHomeHeroPrompt('Make @proto');
     await settle();
 
-    fireEvent.mouseDown(screen.getByRole('option', { name: /prototype lab/i }));
-    expect(onPickSkill).toHaveBeenCalledWith(skill, 'Make @Prototype Lab ');
+    fireEvent.click(screen.getByRole('option', { name: /prototype lab/i }));
+    expect(onPickSkill).toHaveBeenCalledWith(skill, 'Make @Prototype Lab');
 
     rerender(
       <HomeHero
@@ -583,8 +583,8 @@ describe('HomeHero plugin picker', () => {
     setHomeHeroPrompt('@lin');
     await settle();
 
-    fireEvent.mouseDown(screen.getByRole('option', { name: /linear/i }));
-    expect(onPickMcp).toHaveBeenCalledWith(mcp, '@Linear ');
+    fireEvent.click(screen.getByRole('option', { name: /linear/i }));
+    expect(onPickMcp).toHaveBeenCalledWith(mcp, '@Linear');
   });
 
   it('submits on a plain Enter through the editor once content is present', async () => {

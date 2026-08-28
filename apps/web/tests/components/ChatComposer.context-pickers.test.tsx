@@ -356,7 +356,7 @@ describe('ChatComposer context pickers', () => {
 
     pressEnter();
 
-    await waitFor(() => expect(composerText()).toBe('@designs/landing.html '));
+    await waitFor(() => expect(composerText()).toBe('@designs/landing.html'));
     expect(screen.getByTestId('staged-contexts').textContent).toContain('landing.html');
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/apply'))).toBe(false);
   });
@@ -387,7 +387,7 @@ describe('ChatComposer context pickers', () => {
     expect(labels[0]).toBe('Tabs');
     fireEvent.click(screen.getByText('Dribbble'));
 
-    await waitFor(() => expect(composerText()).toBe('@Dribbble '));
+    await waitFor(() => expect(composerText()).toBe('@Dribbble'));
     const pill = screen
       .getByTestId('chat-composer-input')
       .querySelector('.composer-inline-mention');
@@ -409,7 +409,7 @@ describe('ChatComposer context pickers', () => {
     await waitFor(() => expect(screen.getByText('Slack MCP')).toBeTruthy());
     fireEvent.click(screen.getByText('Slack MCP'));
 
-    await waitFor(() => expect(composerText()).toBe('@Slack MCP '));
+    await waitFor(() => expect(composerText()).toBe('@Slack MCP'));
     const pill = screen
       .getByTestId('chat-composer-input')
       .querySelector('.composer-inline-mention');
@@ -433,7 +433,7 @@ describe('ChatComposer context pickers', () => {
     fireEvent.click(screen.getByText('Deck Builder'));
 
     await waitFor(() => expect(onProjectSkillChange).toHaveBeenCalledWith('deck-builder'));
-    await waitFor(() => expect(composerText()).toBe('@Deck Builder '));
+    await waitFor(() => expect(composerText()).toBe('@Deck Builder'));
     const pill = screen
       .getByTestId('chat-composer-input')
       .querySelector('.composer-inline-mention');
@@ -494,7 +494,7 @@ describe('ChatComposer context pickers', () => {
     await waitFor(() => expect(screen.getByText('My Export')).toBeTruthy());
     fireEvent.click(screen.getByText('My Export'));
 
-    await waitFor(() => expect(composerText()).toBe('@My Export '));
+    await waitFor(() => expect(composerText()).toBe('@My Export'));
     const pill = screen
       .getByTestId('chat-composer-input')
       .querySelector('.composer-inline-mention');
@@ -511,7 +511,7 @@ describe('ChatComposer context pickers', () => {
     await waitFor(() => expect(screen.getByText('My Export')).toBeTruthy());
     fireEvent.click(screen.getByText('My Export'));
 
-    await waitFor(() => expect(composerText()).toBe('@My Export '));
+    await waitFor(() => expect(composerText()).toBe('@My Export'));
     await waitFor(() => expect(stagedPluginChip()?.textContent).toContain(USER_PLUGIN.id));
 
     await typeAndSettle('');
@@ -593,7 +593,7 @@ describe('ChatComposer context pickers', () => {
     await waitFor(() => expect(screen.getByText('My Export')).toBeTruthy());
     fireEvent.click(screen.getByText('My Export'));
 
-    await waitFor(() => expect(composerText()).toBe('@My Export '));
+    await waitFor(() => expect(composerText()).toBe('@My Export'));
     await waitFor(() => expect(stagedPluginChip()?.textContent).toContain(USER_PLUGIN.id));
 
     await typeAndSettle('@My Export, refine this export');
@@ -612,7 +612,7 @@ describe('ChatComposer context pickers', () => {
     await waitFor(() => expect(screen.getByText('My Export')).toBeTruthy());
     fireEvent.click(screen.getByText('My Export'));
 
-    await waitFor(() => expect(composerText()).toBe('@My Export '));
+    await waitFor(() => expect(composerText()).toBe('@My Export'));
     // The applied-plugin chip now rides the shared staged-context row as a
     // `.staged-context--plugin` chip (rendered by the host, not PluginsSection's
     // own ContextChipStrip). It is keyed off the plugin id when no display title
@@ -659,7 +659,7 @@ describe('ChatComposer context pickers', () => {
     await waitFor(() => expect(screen.getByText('designs/landing.html')).toBeTruthy());
     fireEvent.click(screen.getByText('designs/landing.html'));
 
-    await waitFor(() => expect(composerText()).toBe('Use @designs/landing.html '));
+    await waitFor(() => expect(composerText()).toBe('Use @designs/landing.html'));
     expect(screen.getByTestId('staged-contexts').textContent).toContain('landing.html');
 
     await act(async () => {
@@ -695,12 +695,12 @@ describe('ChatComposer context pickers', () => {
     fireEvent.click(screen.getByText('designs/landing.html'));
 
     await waitFor(() =>
-      expect(composerText()).toBe('Plan:\n\n@designs/landing.html '),
+      expect(composerText()).toBe('Plan:\n\n@designs/landing.html'),
     );
     expect(screen.getByTestId('staged-contexts').textContent).toContain('landing.html');
 
-    // The user keeps typing after the trailing space; re-seed the full draft to
-    // capture that, then remove the staged chip.
+    // The user keeps typing after the mention; re-seed the full draft to capture
+    // that, then remove the staged chip.
     await typeAndSettle('Plan:\n\n@designs/landing.html \n\nKeep spacing');
     await waitFor(() =>
       expect(composerText()).toBe('Plan:\n\n@designs/landing.html \n\nKeep spacing'),
@@ -734,7 +734,7 @@ describe('ChatComposer context pickers', () => {
 
     await waitFor(() => expect(screen.getByText('designs/landing.html')).toBeTruthy());
     fireEvent.click(screen.getByText('designs/landing.html'));
-    await waitFor(() => expect(composerText()).toBe('Use @designs/landing.html '));
+    await waitFor(() => expect(composerText()).toBe('Use @designs/landing.html'));
 
     await typeAndSettle('Use @designs/landing.html, please');
 
@@ -766,7 +766,7 @@ describe('ChatComposer context pickers', () => {
 
     await waitFor(() => expect(screen.getByText('designs/landing.html')).toBeTruthy());
     fireEvent.click(screen.getByText('designs/landing.html'));
-    await waitFor(() => expect(composerText()).toBe('@designs/landing.html '));
+    await waitFor(() => expect(composerText()).toBe('@designs/landing.html'));
 
     await typeAndSettle('"@designs/landing.html"');
 

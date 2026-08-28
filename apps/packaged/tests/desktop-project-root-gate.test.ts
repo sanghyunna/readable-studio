@@ -19,6 +19,19 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("electron", () => ({
+  BrowserWindow: class {},
+  Menu: {},
+  app: {},
+  dialog: {},
+  globalShortcut: {},
+  ipcMain: {},
+  nativeImage: {},
+  screen: {},
+  session: {},
+  shell: {},
+}));
+
 import {
   validateExistingDirectory,
   fetchResolvedProjectDir,

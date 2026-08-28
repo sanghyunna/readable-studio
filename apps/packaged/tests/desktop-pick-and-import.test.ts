@@ -26,6 +26,19 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
+vi.mock("electron", () => ({
+  BrowserWindow: class {},
+  Menu: {},
+  app: {},
+  dialog: {},
+  globalShortcut: {},
+  ipcMain: {},
+  nativeImage: {},
+  screen: {},
+  session: {},
+  shell: {},
+}));
+
 import { pickAndImportFolder } from "@readable-studio/desktop/main";
 
 // Test secret bytes — the helper's mint is injected, so the secret
