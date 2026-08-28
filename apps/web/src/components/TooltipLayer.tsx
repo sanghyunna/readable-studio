@@ -17,6 +17,8 @@ interface TooltipState {
 
 const TOOLTIP_MARGIN = 8;
 const TOOLTIP_GAP = 7;
+const POINTER_TOOLTIP_DELAY_MS = 350;
+const TOOLTIP_ID = 'readable-tooltip-layer';
 
 function isTooltipTarget(el: Element | null): el is HTMLElement {
   return el instanceof HTMLElement
@@ -84,8 +86,10 @@ function sameStyle(
 export function TooltipLayer() {
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const rafRef = useRef<number | null>(null);
+  const pointerTimerRef = useRef<number | null>(null);
   const lastInputRef = useRef<InputModality>('pointer');
   const suppressedTitleRef = useRef<{ target: HTMLElement; title: string } | null>(null);
+  const describedTargetRef = useRef<{ target: HTMLElement; describedBy: string | null } | null>(null);
   const [state, setState] = useState<TooltipState | null>(null);
 
   const restoreNativeTitle = useCallback(() => {
@@ -110,14 +114,29 @@ export function TooltipLayer() {
     suppressedTitleRef.current = { target, title };
   }, [restoreNativeTitle]);
 
+  const restoreDescription = useCallback(() => {
+    const described = describedTargetRef.current;
+    if (!described) return;
+    if (document.contains(described.target)) {
+      if (described.describedBy) described.target.setAttribute('aria-describedby', described.describedBy);
+      else described.target.removeAttribute('aria-describedby');
+    }
+    describedTargetRef.current = null;
+  }, []);
+
   const hideTooltip = useCallback((options: { restoreTitle?: boolean } = {}) => {
     if (rafRef.current !== null) {
       window.cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
     }
+    if (pointerTimerRef.current !== null) {
+      window.clearTimeout(pointerTimerRef.current);
+      pointerTimerRef.current = null;
+    }
+    restoreDescription();
     if (options.restoreTitle !== false) restoreNativeTitle();
     setState(null);
-  }, [restoreNativeTitle]);
+  }, [restoreDescription, restoreNativeTitle]);
 
   const hideTooltipForActivation = useCallback((target: HTMLElement | null) => {
     if (!target) {
@@ -132,6 +151,12 @@ export function TooltipLayer() {
     const text = target.dataset.tooltip?.trim();
     if (!text) return;
     suppressNativeTitle(target);
+    if (describedTargetRef.current?.target !== target) {
+      restoreDescription();
+      const describedBy = target.getAttribute('aria-describedby');
+      describedTargetRef.current = { target, describedBy };
+      target.setAttribute('aria-describedby', [describedBy, TOOLTIP_ID].filter(Boolean).join(' '));
+    }
     const placement = tooltipPlacement(target);
     setState((current) => {
       if (current?.target === target) {
@@ -145,7 +170,7 @@ export function TooltipLayer() {
         style: { x: 0, y: 0, visibility: 'hidden' },
       };
     });
-  }, [suppressNativeTitle]);
+  }, [restoreDescription, suppressNativeTitle]);
 
   const updatePosition = useCallback(() => {
     setState((current) => {
@@ -189,9 +214,11 @@ export function TooltipLayer() {
   useEffect(() => {
     return () => {
       if (rafRef.current !== null) window.cancelAnimationFrame(rafRef.current);
+      if (pointerTimerRef.current !== null) window.clearTimeout(pointerTimerRef.current);
+      restoreDescription();
       restoreNativeTitle();
     };
-  }, [restoreNativeTitle]);
+  }, [restoreDescription, restoreNativeTitle]);
 
   useEffect(() => {
     if (!state?.target || typeof MutationObserver === 'undefined') return;
@@ -220,7 +247,14 @@ export function TooltipLayer() {
     const onPointerOver = (event: PointerEvent) => {
       lastInputRef.current = 'pointer';
       const target = readTooltipTarget(event.target);
-      if (target) showTooltip(target);
+      if (!target) return;
+      const previous = event.relatedTarget;
+      if (previous instanceof Node && target.contains(previous)) return;
+      if (pointerTimerRef.current !== null) window.clearTimeout(pointerTimerRef.current);
+      pointerTimerRef.current = window.setTimeout(() => {
+        pointerTimerRef.current = null;
+        showTooltip(target);
+      }, POINTER_TOOLTIP_DELAY_MS);
     };
     const onPointerOut = (event: PointerEvent) => {
       const target = readTooltipTarget(event.target);
@@ -293,6 +327,7 @@ export function TooltipLayer() {
   return createPortal(
     <div
       ref={tooltipRef}
+      id={TOOLTIP_ID}
       className="readable-tooltip-layer"
       role="tooltip"
       style={{

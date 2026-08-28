@@ -25,6 +25,19 @@ function ruleValue(block: string, property: string): string {
   return match[1]!.trim();
 }
 
+function mediaBlock(css: string, query: string): string {
+  const start = css.indexOf(`@media ${query}`);
+  if (start < 0) throw new Error(`Missing media query ${query}`);
+  const open = css.indexOf('{', start);
+  let depth = 1;
+  for (let index = open + 1; index < css.length; index += 1) {
+    if (css[index] === '{') depth += 1;
+    if (css[index] === '}') depth -= 1;
+    if (depth === 0) return css.slice(open + 1, index);
+  }
+  throw new Error(`Unclosed media query ${query}`);
+}
+
 describe('workspace tabs chrome styles', () => {
   it('lets the workspace shell inherit the viewport width without forcing horizontal page overflow', () => {
     const shell = cssDeclarations(shellCss, '.workspace-shell');
@@ -34,6 +47,31 @@ describe('workspace tabs chrome styles', () => {
     expect(ruleValue(shell, 'max-width')).toBe('100%');
     expect(shell).not.toContain('100vw');
     expect(ruleValue(entryMain, 'overflow-x')).toBe('hidden');
+  });
+
+  it('lets the shell grid own the legacy rail width on narrow home and non-home views', () => {
+    const shell = cssDeclarations(entryLayoutCss, '.entry-shell--no-header .entry');
+    const openShell = cssDeclarations(entryLayoutCss, '.entry-shell--no-header .entry.entry--rail-open');
+    const narrowCss = mediaBlock(entryLayoutCss, '(max-width: 900px)');
+    const narrowShell = cssDeclarations(narrowCss, '.entry-shell--no-header .entry');
+    const narrowOpenShell = cssDeclarations(
+      narrowCss,
+      '.entry-shell--no-header .entry.entry--rail-open',
+    );
+    const rail = cssDeclarations(entryLayoutCss, '.entry-nav-rail');
+
+    expect(ruleValue(shell, 'grid-template-columns')).toContain('0 minmax(0, 1fr)');
+    expect(ruleValue(openShell, 'grid-template-columns')).toContain(
+      'var(--entry-rail-width, 56px) minmax(0, 1fr)',
+    );
+    expect(ruleValue(narrowShell, 'grid-template-columns')).toBe(
+      '0 minmax(0, 1fr) !important',
+    );
+    expect(ruleValue(narrowOpenShell, 'grid-template-columns')).toBe(
+      'var(--entry-rail-width, 56px) minmax(0, 1fr) !important',
+    );
+    expect(ruleValue(rail, 'width')).toBe('100%');
+    expect(entryLayoutCss).not.toContain('  .entry-nav-rail {\n    width: 56px;\n  }');
   });
 
   it('keeps only a small intentional inset before the first tab', () => {

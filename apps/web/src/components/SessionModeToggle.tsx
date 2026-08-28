@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from
 import { createPortal } from 'react-dom';
 import type { ChatSessionMode } from '@readable-studio/contracts';
 import { useT } from '../i18n';
-import { Icon } from './Icon';
+import { Icon, type IconName } from './Icon';
 
 // Gap between the trigger and the popover, and the minimum breathing room kept
 // against every viewport edge when the computed rect is clamped.
@@ -53,6 +53,8 @@ interface Props {
   mode: ChatSessionMode;
   onChange?: (mode: ChatSessionMode) => void;
   disabled?: boolean;
+  triggerIcon?: IconName;
+  triggerLabel?: string;
 }
 
 const MODE_META: Array<{
@@ -155,7 +157,13 @@ function ModeDescriptionCard({
   );
 }
 
-export function SessionModeToggle({ mode, onChange, disabled = false }: Props) {
+export function SessionModeToggle({
+  mode,
+  onChange,
+  disabled = false,
+  triggerIcon,
+  triggerLabel,
+}: Props) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const [previewMode, setPreviewMode] = useState<ChatSessionMode | null>(null);
@@ -277,8 +285,8 @@ export function SessionModeToggle({ mode, onChange, disabled = false }: Props) {
           setPreviewMode(mode);
         }}
       >
-        <Icon name={active.icon} size={13} />
-        <span className="session-mode-toggle__label">{active.label}</span>
+        <Icon name={triggerIcon ?? active.icon} size={13} />
+        <span className="session-mode-toggle__label">{triggerLabel ?? active.label}</span>
         <Icon name="chevron-down" size={12} />
       </button>
       {open && rect && typeof document !== 'undefined' ? createPortal(

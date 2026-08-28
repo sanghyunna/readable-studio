@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { Toast } from '../../src/components/Toast';
@@ -55,6 +55,22 @@ describe('Toast', () => {
       vi.advanceTimersByTime(1);
     });
     expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('routes an optional action without dismissing it implicitly', () => {
+    const onAction = vi.fn();
+    const onDismiss = vi.fn();
+    render(
+      <Toast
+        message="Session deleted"
+        actionLabel="Undo"
+        onAction={onAction}
+        onDismiss={onDismiss}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onDismiss).not.toHaveBeenCalled();
   });
 
   it('shows a leading status glyph for the success tone', () => {

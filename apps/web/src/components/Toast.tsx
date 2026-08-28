@@ -28,6 +28,8 @@ export interface ToastProps {
   code?: string | null;
   ttlMs?: number;
   onDismiss?: () => void;
+  actionLabel?: string;
+  onAction?: () => void;
   /** ARIA role. Use "alert" for error messages (announced immediately),
    *  "status" (default) for non-urgent confirmations. */
   role?: 'status' | 'alert';
@@ -53,7 +55,7 @@ const TONE_ICON: Record<NonNullable<ToastProps['tone']>, 'check' | 'close' | 'sp
   loading: 'spinner',
 };
 
-export function Toast({ message, details, code, ttlMs = DEFAULT_TTL, onDismiss, role = 'status', tone = 'default', placement = 'bottom' }: ToastProps) {
+export function Toast({ message, details, code, ttlMs = DEFAULT_TTL, onDismiss, actionLabel, onAction, role = 'status', tone = 'default', placement = 'bottom' }: ToastProps) {
   // When code is present the toast is a manual-action surface; never
   // auto-dismiss it out from under the user mid-copy.
   const effectiveTtl = code ? 0 : ttlMs;
@@ -97,6 +99,11 @@ export function Toast({ message, details, code, ttlMs = DEFAULT_TTL, onDismiss, 
         <div className="readable-toast-message">{message}</div>
       </div>
       {details ? <div className="readable-toast-details">{details}</div> : null}
+      {actionLabel && onAction ? (
+        <button type="button" className="readable-toast-undo" onClick={onAction}>
+          {actionLabel}
+        </button>
+      ) : null}
       {code ? (
         <pre className="readable-toast-code">{code}</pre>
       ) : null}

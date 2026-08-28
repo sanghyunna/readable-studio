@@ -580,7 +580,7 @@
     var(--bg-subtle);
 }
 .plugins-home__media-skeleton.is-active {
-  animation: plugins-home-shimmer 1.6s ease-in-out infinite;
+  background-position: 50% 0, 0 0;
 }
 .plugins-home__media-fallback {
   width: 100%;
@@ -600,11 +600,6 @@
   font-weight: 650;
   line-height: 1;
   opacity: 0.86;
-}
-@keyframes plugins-home-shimmer {
-  to {
-    background-position: -200% 0, 0 0;
-  }
 }
 /* Sandboxed HTML iframe — scaled-down "thumbnail" of a real page */
 .plugins-home__html {
@@ -644,7 +639,7 @@
   background-size: 200% 100%;
 }
 .plugins-home__html-skeleton.is-active span {
-  animation: plugins-home-shimmer 1.6s ease-in-out infinite;
+  background-position: 50% 0;
 }
 .plugins-home__html-skeleton span:nth-child(1) { width: 70%; }
 .plugins-home__html-skeleton span:nth-child(2) { width: 90%; }
@@ -1159,23 +1154,7 @@ button.plugins-home__use-menu-item:focus-visible {
   opacity: 1;
 }
 .home-templates-reveal__hint-arrow {
-  animation: home-templates-bob 1.8s ease-in-out infinite;
-}
-/* Fade + lift the arrow on each cycle so the affordance reads clearly:
-   it rises and brightens, then settles and dims — a gentle "pull me up". */
-@keyframes home-templates-bob {
-  0% {
-    transform: translateY(3px);
-    opacity: 0.25;
-  }
-  50% {
-    transform: translateY(-4px);
-    opacity: 1;
-  }
-  100% {
-    transform: translateY(3px);
-    opacity: 0.25;
-  }
+  opacity: 0.85;
 }
 @media (prefers-reduced-motion: reduce) {
   .home-templates-reveal__hint-arrow,

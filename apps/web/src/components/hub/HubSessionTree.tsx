@@ -12,6 +12,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
 } from 'react';
 
 import { useT } from '../../i18n';
@@ -34,6 +35,10 @@ import {
 
 interface Props {
   projects: HubProjectNode[];
+  /** Open only the first project when this tree is used in the compact hub rail. */
+  compactByDefault?: boolean;
+  /** Content placed after the shared filters and before the project tree. */
+  openWork?: ReactNode;
   /**
    * The rail is showing glyphs only. Sessions are not rendered inline, so a
    * project's sessions are reached through the flyout instead of by expanding.
@@ -71,6 +76,8 @@ interface MenuState {
 // Hovering must not fire a flyout the pointer only crossed on its way
 // somewhere else, and it must not lag behind a deliberate hover either.
 const FLYOUT_HOVER_DELAY_MS = 180;
+const COMPACT_SESSION_QUERY = '(max-height: 760px) and (max-width: 900px)';
+const COMPACT_SESSION_PAGE = 4;
 
 type StateLabelKey = 'hub.stateRunning' | 'hub.stateAwaiting' | 'hub.stateFailed';
 
@@ -83,6 +90,8 @@ function stateLabelKey(state: HubSessionState): StateLabelKey | null {
 
 export function HubSessionTree({
   projects,
+  compactByDefault = false,
+  openWork,
   collapsed: railCollapsed = false,
   currentSessionId,
   onOpenSession,
@@ -107,6 +116,9 @@ export function HubSessionTree({
   // overflow menu and its flyout can never both claim the same anchor.
   const [flyout, setFlyout] = useState<{ projectId: string; anchor: HTMLElement } | null>(null);
   const [sortAnchor, setSortAnchor] = useState<HTMLElement | null>(null);
+  const [compactSessionPage, setCompactSessionPage] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(COMPACT_SESSION_QUERY).matches,
+  );
   // Rename happens in place: a modal for one field is heavier than the edit.
   const [renaming, setRenaming] = useState<string | null>(null);
   const typeAheadRef = useRef('');
@@ -135,15 +147,26 @@ export function HubSessionTree({
     setFlyout(null);
   }, [railCollapsed, cancelHoverFlyout]);
 
+  useEffect(() => {
+    const query = window.matchMedia(COMPACT_SESSION_QUERY);
+    const onChange = (event: MediaQueryListEvent) => setCompactSessionPage(event.matches);
+    setCompactSessionPage(query.matches);
+    query.addEventListener('change', onChange);
+    return () => query.removeEventListener('change', onChange);
+  }, []);
+
   const ordered = useMemo(() => sortProjects(projects, sort), [projects, sort]);
+  const sessionPageSize = compactSessionPage ? COMPACT_SESSION_PAGE : HUB_SESSION_PAGE;
 
   const visible = useMemo(() => {
     return ordered
-      .map((project) => {
-        const matching = project.sessions.filter((s) => matchesHubFilter(s.state, filter));
+      .map((project, projectIndex) => {
+        const matching = [...project.sessions]
+          .sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id))
+          .filter((session) => matchesHubFilter(session.state, filter));
         const capped =
           filter === 'all' && !expandedOverflow[project.id]
-            ? matching.slice(0, HUB_SESSION_PAGE)
+            ? matching.slice(0, sessionPageSize)
             : matching;
         return {
           project,
@@ -151,13 +174,18 @@ export function HubSessionTree({
           hiddenCount: matching.length - capped.length,
           // A filtered view always reveals its matches, so only the unfiltered
           // list is allowed to stay collapsed.
-          open: filter !== 'all' ? true : !collapsed[project.id],
+          open:
+            filter !== 'all'
+              ? true
+              : collapsed[project.id] === undefined
+                ? !compactByDefault || projectIndex === 0
+                : !collapsed[project.id],
           empty: matching.length === 0,
           selfMatches: projectMatchesFilter(project, filter),
         };
       })
       .filter((entry) => (filter === 'all' ? true : !entry.empty || entry.selfMatches));
-  }, [ordered, filter, collapsed, expandedOverflow]);
+  }, [ordered, filter, collapsed, expandedOverflow, sessionPageSize, compactByDefault]);
 
   const rows = useMemo<FlatRow[]>(() => {
     const next: FlatRow[] = [];
@@ -225,7 +253,7 @@ export function HubSessionTree({
         // the first newly revealed session rather than letting it fall to body.
         // Index against the rows the current filter actually shows.
         const shown = row.project.sessions.filter((s) => matchesHubFilter(s.state, filter));
-        const firstHidden = shown[HUB_SESSION_PAGE]?.id;
+        const firstHidden = shown[sessionPageSize]?.id;
         setExpandedOverflow((prev) => ({ ...prev, [row.project.id]: true }));
         if (firstHidden) pendingFocusRef.current = `s:${firstHidden}`;
         return;
@@ -236,7 +264,7 @@ export function HubSessionTree({
       }
       setCollapsed((prev) => ({ ...prev, [row.project.id]: !prev[row.project.id] }));
     },
-    [onOpenSession, onOpenProject, filter, railCollapsed],
+    [onOpenSession, onOpenProject, filter, railCollapsed, sessionPageSize],
   );
 
   const onKeyDown = useCallback(
@@ -594,9 +622,11 @@ export function HubSessionTree({
             setSortAnchor((prev) => (prev ? null : button));
           }}
         >
-          <Icon name="sliders" size={15} />
+          <Icon name="sort" size={15} />
         </button>
       </div>
+
+      {openWork}
 
       {rows.length === 0 ? (
         <p className="hub-tree__empty" data-testid="hub-tree-empty">
@@ -888,7 +918,8 @@ export function HubSessionTree({
                     }}
                     onKeyDown={(event) => onKeyDown(event, indexOfKey(`m:${entry.project.id}`))}
                   >
-                    {t('hub.showMoreSessions', { count: String(entry.hiddenCount) })}
+                    <Icon name="chevron-right" size={12} strokeWidth={1.8} />
+                    <span>{t('hub.showMoreSessions', { count: String(entry.hiddenCount) })}</span>
                   </div>
                 ) : null}
               </div>

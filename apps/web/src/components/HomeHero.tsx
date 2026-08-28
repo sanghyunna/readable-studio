@@ -108,6 +108,8 @@ export interface ExamplePromptInfo {
 
 interface Props {
   active?: boolean;
+  surface?: 'default' | 'hub';
+  submitting?: boolean;
   // Arms the first-run guidance trail (prototype chip → first preset
   // card sheen). Tri-state: true = brand-new user (no projects), false =
   // existing user, undefined = projects still loading — the guide neither
@@ -117,6 +119,7 @@ interface Props {
   onPromptChange: (value: string) => void;
   onSubmit: HomeHeroSubmitHandler;
   onContinueWithoutPrompt?: () => void;
+  onOpenTemplate?: () => void;
   sessionMode?: ChatSessionMode;
   onSessionModeChange?: (mode: ChatSessionMode) => void;
   activePluginTitle: string | null;
@@ -227,10 +230,13 @@ const EMPTY_MCP_OPTIONS: McpServerConfig[] = [];
 export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   {
     active = true,
+    surface = 'default',
+    submitting = false,
     prompt,
     onPromptChange,
     onSubmit,
     onContinueWithoutPrompt = () => undefined,
+    onOpenTemplate = () => undefined,
     firstRunGuide,
     sessionMode = 'design',
     onSessionModeChange,
@@ -326,7 +332,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   const previewHomeFileUrl = previewHomeFile?.previewUrl ?? null;
   const placeholder = activePluginTitle || activeSkillTitle
     ? t('homeHero.placeholderActive')
-    : t('homeHero.placeholder');
+    : t(surface === 'hub' ? 'hub.composerPlaceholder' : 'homeHero.placeholder');
   const mentionActive = Boolean(mentionTrigger);
   const mentionQuery = mentionTrigger?.query ?? '';
   const fileMatches = useMemo(
@@ -475,8 +481,9 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   const footerInputFields = useMemo(
     () => footerInputNames
       .map((name) => fieldByName.get(name))
-      .filter((field): field is InputFieldSpec => Boolean(field)),
-    [fieldByName, footerInputNames],
+      .filter((field): field is InputFieldSpec => Boolean(field))
+      .filter((field) => surface !== 'hub' || field.name !== 'designSystem'),
+    [fieldByName, footerInputNames, surface],
   );
   const activeCreateChip = useMemo(
     () => activeChipId
@@ -927,21 +934,29 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
 
   return (
     <section className="home-hero" data-testid="home-hero">
-      <div className="home-hero__brand" aria-hidden>
-        <span className="home-hero__brand-mark">
-          <img src="/app-icon.svg" alt="" draggable={false} />
-        </span>
-        <span className="home-hero__brand-name">Readable Studio</span>
-      </div>
-      <h1 className="home-hero__title">{t('homeHero.title')}</h1>
+      {surface === 'hub' ? null : (
+        <div className="home-hero__brand" aria-hidden>
+          <span className="home-hero__brand-mark">
+            <img src="/app-icon.svg" alt="" draggable={false} />
+          </span>
+          <span className="home-hero__brand-name">Readable Studio</span>
+        </div>
+      )}
+      <h1 className="home-hero__title">
+        {t(surface === 'hub' ? 'hub.startTitle' : 'homeHero.title')}
+      </h1>
       <p className="home-hero__subtitle">
-        {t('homeHero.subtitlePrefix')}
+        {t(surface === 'hub' ? 'hub.startSubtitle' : 'homeHero.subtitlePrefix')}
       </p>
 
       <div
         className={`home-hero__input-card${
           authoringLayoutActive ? ' home-hero__input-card--compact-authoring' : ''
-        }${dragActive ? ' is-drag-active' : ''}`}
+        }${dragActive ? ' is-drag-active' : ''}${error ? ' is-error' : ''}${
+          submitting ? ' is-busy' : ''
+        }`}
+        data-testid={surface === 'hub' ? 'hub-composer' : undefined}
+        data-guide-active={surface === 'hub' && guidePulseChipId ? 'true' : undefined}
         style={inputCardStyle}
         onDragEnter={(event) => {
           if (event.dataTransfer.types.includes('Files')) setDragActive(true);
@@ -957,6 +972,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
           setDragActive(false);
         }}
         onDrop={handleDrop}
+        aria-busy={submitting ? 'true' : undefined}
       >
         {showActiveContextRow ? (
           <div
@@ -1144,13 +1160,14 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
             })}
           </div>
         ) : null}
-        <div className="home-hero__prompt-surface" data-testid="hub-composer">
+        <div className="home-hero__prompt-surface">
           <div ref={promptEditorRef} className="home-hero__prompt-editor home-hero__lexical">
             <LexicalComposerInput
               ref={editorRef}
               testId="home-hero-input"
               draft={prompt}
               editable={!interactionLocked}
+              invalid={Boolean(error)}
               placeholder={placeholder}
               title={placeholder}
               knownEntities={promptMentionEntities}
@@ -1199,6 +1216,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
                   key={item.id}
                   type="button"
                   role="tab"
+                  aria-label={item.label}
                   aria-selected={mentionTab === item.id}
                   className={`home-hero__mention-tab${mentionTab === item.id ? ' is-active' : ''}`}
                   onMouseDown={(event) => event.preventDefault()}
@@ -1245,8 +1263,8 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
                           setSelectedIndex(optionIndex);
                           setHoveredPlugin(item.pluginRecord ?? null);
                         }}
-                        onMouseDown={(event) => {
-                          event.preventDefault();
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => {
                           if (!item.disabled) item.onPick();
                         }}
                         disabled={item.disabled}
@@ -1371,12 +1389,53 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
                 });
                 fileInputRef.current?.click();
               }}
+              disabled={interactionLocked}
             />
             {activeCreateChip ? (
               <ActiveTypeChip chip={activeCreateChip} onClear={onClearActiveChip} />
             ) : null}
-            {footerInputFields.length > 0 ? (
+            {surface === 'hub' || footerInputFields.length > 0 ? (
               <div className="home-hero__footer-options" data-testid="home-hero-footer-options">
+                {surface === 'hub' ? (
+                  <button
+                    type="button"
+                    className="home-hero__hub-control"
+                    data-testid="home-hero-context-control"
+                    disabled={interactionLocked}
+                    aria-disabled={interactionLocked}
+                    onClick={() => {
+                      editorRef.current?.focus();
+                      editorRef.current?.insertText('@');
+                    }}
+                  >
+                    <Icon name="at-sign" size={14} />
+                    <span>{t('hub.context')}</span>
+                  </button>
+                ) : null}
+                {surface === 'hub' ? (
+                  <DesignSystemPicker
+                    variant="footer"
+                    label={t('homeHero.footer.designSystem')}
+                    designSystems={designSystems}
+                    selectedId={designSystemId}
+                    disabled={interactionLocked}
+                    onChange={onDesignSystemIdChange}
+                  />
+                ) : null}
+                {surface === 'hub' ? (
+                  <button
+                    type="button"
+                    className="home-hero__hub-control"
+                    data-testid="home-hero-template-control"
+                    disabled={interactionLocked}
+                    aria-disabled={interactionLocked}
+                    onClick={onOpenTemplate}
+                  >
+                    <Icon name="layout" size={14} />
+                    <span>{t('hub.noTemplate')}</span>
+                    <Icon name="chevron-down" size={12} />
+                  </button>
+                ) : null}
                 {footerInputFields.map((field) => (
                   <FooterInputOption
                     key={field.name}
@@ -1384,6 +1443,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
                     value={pluginInputValues[field.name]}
                     designSystems={designSystems}
                     designSystemId={designSystemId}
+                    disabled={interactionLocked}
                     onDesignSystemIdChange={onDesignSystemIdChange}
                     onChange={(value) => {
                       onPluginInputValuesChange({
@@ -1412,7 +1472,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
                 }
                 onSessionModeChange?.(next);
               }}
-              disabled={Boolean(submitDisabled)}
+              disabled={interactionLocked || Boolean(submitDisabled)}
             />
             {executionSwitcher ? (
               <div className="home-hero__execution-switcher">
@@ -1428,14 +1488,26 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
               disabled={!canSubmit}
               title={canSubmit ? t('homeHero.run') : t('homeHero.typeSomethingToRun')}
               data-tooltip={canSubmit ? t('homeHero.run') : t('homeHero.typeSomethingToRun')}
-              aria-label={t('homeHero.run')}
+              aria-label={t(submitting ? 'hub.starting' : 'homeHero.run')}
             >
-              <Icon name="send" size={13} />
-              <span>{t('chat.send')}</span>
+              {submitting ? (
+                <span data-spinner aria-hidden>
+                  <Icon name="spinner" size={16} />
+                </span>
+              ) : (
+                <Icon name={surface === 'hub' ? 'arrow-up' : 'send'} size={13} />
+              )}
+              {surface === 'hub' ? null : <span>{t('chat.send')}</span>}
             </button>
           </div>
         </div>
       </div>
+      {error ? (
+        <div role="alert" className="home-hero__error" data-testid="home-hero-error">
+          <Icon name="info" size={13} />
+          <span>{error}</span>
+        </div>
+      ) : null}
 
       {activeCreateChip ? null : (
         <RailGroup
@@ -1541,11 +1613,6 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
         </div>
       ) : null}
 
-      {error ? (
-        <div role="alert" className="home-hero__error">
-          {error}
-        </div>
-      ) : null}
       {previewHomeFile && previewHomeFileUrl ? createPortal(
         <div
           className="staged-preview-modal"
@@ -1820,6 +1887,7 @@ function FooterInputOption({
   value,
   designSystems,
   designSystemId,
+  disabled,
   onDesignSystemIdChange,
   onChange,
   t,
@@ -1828,6 +1896,7 @@ function FooterInputOption({
   value: unknown;
   designSystems: DesignSystemSummary[];
   designSystemId: string | null;
+  disabled: boolean;
   onDesignSystemIdChange: (id: string | null) => void;
   onChange: (value: unknown) => void;
   t: ReturnType<typeof useT>;
@@ -1842,6 +1911,8 @@ function FooterInputOption({
         aria-label={label}
         aria-pressed={checked}
         data-testid="home-hero-footer-option-speakerNotes"
+        disabled={disabled}
+        aria-disabled={disabled}
         onClick={() => onChange(checked ? 'no speaker notes' : 'include speaker notes')}
       >
         <span>{t('homeHero.footer.speakerNotes')}</span>
@@ -1856,6 +1927,7 @@ function FooterInputOption({
         label={label}
         designSystems={designSystems}
         selectedId={designSystemId}
+        loading={disabled}
         onChange={onDesignSystemIdChange}
       />
     );
@@ -1876,6 +1948,7 @@ function FooterInputOption({
             ratioIcon: field.name === 'ratio' ? ratioOptionIcon(option) : undefined,
           })),
         ]}
+        disabled={disabled}
         onChange={onChange}
       />
     );
@@ -1888,6 +1961,8 @@ function FooterInputOption({
         onChange={(event) => onChange(event.target.value)}
         placeholder={field.placeholder ?? ''}
         aria-label={label}
+        disabled={disabled}
+        aria-disabled={disabled}
         data-testid={`home-hero-footer-option-${field.name}`}
       />
     </label>
@@ -1901,6 +1976,7 @@ function FooterSelectOption({
   options,
   searchable = false,
   searchPlaceholder,
+  disabled = false,
   onChange,
 }: {
   fieldName: string;
@@ -1909,6 +1985,7 @@ function FooterSelectOption({
   options: FooterSelectItemOption[];
   searchable?: boolean;
   searchPlaceholder?: string;
+  disabled?: boolean;
   onChange: (value: unknown) => void;
 }) {
   const t = useT();
@@ -1974,6 +2051,8 @@ function FooterSelectOption({
         aria-label={label}
         aria-haspopup="listbox"
         aria-expanded={open}
+        disabled={disabled}
+        aria-disabled={disabled}
         data-testid={`home-hero-footer-option-${fieldName}`}
         onClick={() => setOpen((prev) => !prev)}
       >

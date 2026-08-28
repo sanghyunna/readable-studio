@@ -119,6 +119,23 @@ describe('DesignSystemPicker', () => {
     expect(onChange).toHaveBeenCalledWith(null);
   });
 
+  it('exposes the footer loading state through native and ARIA disabled semantics', () => {
+    renderPicker({ variant: 'footer', loading: true });
+
+    const trigger = screen.getByTestId('home-hero-footer-option-designSystem');
+    expect(trigger.getAttribute('disabled')).toBe('');
+    expect(trigger.getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('preserves the selected label when the footer is locked without loading', () => {
+    renderPicker({ variant: 'footer', selectedId: null, disabled: true });
+
+    const trigger = screen.getByTestId('home-hero-footer-option-designSystem');
+    expect(trigger.getAttribute('disabled')).toBe('');
+    expect(trigger.textContent).toContain('No design system');
+    expect(trigger.textContent).not.toContain('Loading design systems');
+  });
+
   it('uses localized picker copy', async () => {
     renderPicker({}, 'en');
 

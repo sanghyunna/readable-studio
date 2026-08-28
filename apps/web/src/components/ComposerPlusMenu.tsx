@@ -131,6 +131,8 @@ export interface ComposerPlusMenuProps {
 
   /** Test id for the trigger button. */
   triggerTestId?: string;
+  /** Locks the trigger and any open menu while the composer is submitting. */
+  disabled?: boolean;
 
   /**
    * Notified when the menu opens. The project composer uses this to latch its
@@ -174,6 +176,7 @@ export function ComposerPlusMenu({
   renderToolbox,
   toolboxLabel,
   triggerTestId,
+  disabled = false,
   onOpen,
 }: ComposerPlusMenuProps) {
   const t = useT();
@@ -333,6 +336,10 @@ export function ComposerPlusMenu({
       filteredPlugins.find((p) => p.id === hoveredPluginId) ?? filteredPlugins[0]
     );
   }, [submenu, filteredPlugins, hoveredPluginId]);
+  useEffect(() => {
+    if (disabled) close();
+  }, [disabled]);
+
   const popupStyle = menuStyle
     ? ({
         ...menuStyle,
@@ -347,6 +354,8 @@ export function ComposerPlusMenu({
         type="button"
         className={`icon-btn plus-menu__trigger readable-tooltip${open ? ' is-active' : ''}`}
         data-testid={triggerTestId}
+        disabled={disabled}
+        aria-disabled={disabled}
         onClick={() => {
           if (open) {
             close();

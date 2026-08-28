@@ -182,6 +182,8 @@ interface Props {
   skills?: SkillSummary[];
   skillsLoading?: boolean;
   executionSwitcher?: ReactNode;
+  /** Hub command-palette selection routed through the same chip dispatcher as pointer input. */
+  commandChip?: { readonly id: string; readonly nonce: number } | null;
 }
 
 const EMPTY_DESIGN_SYSTEMS: DesignSystemSummary[] = [];
@@ -205,6 +207,7 @@ export function HomeView({
   skills = EMPTY_SKILLS,
   skillsLoading = false,
   executionSwitcher,
+  commandChip = null,
 }: Props) {
   const { locale, t } = useI18n();
   const analytics = useAnalytics();
@@ -903,6 +906,7 @@ export function HomeView({
   function handlePromptChange(nextPrompt: string) {
     if (rejectDraftMutationDuringSubmit()) return;
     setPrompt(nextPrompt);
+    setError(null);
     setPromptEditedByUser(true);
     if (!active?.queryTemplate) return;
     const extracted = extractPluginInputsFromPrompt(
@@ -1186,11 +1190,30 @@ export function HomeView({
     }
   }
 
+  useEffect(() => {
+    if (!commandChip) return;
+    if (commandChip.id === 'continue') {
+      void continueWithoutPrompt();
+      return;
+    }
+    const chip = findChip(commandChip.id);
+    if (chip) pickChip(chip);
+  }, [commandChip]);
+
   async function submit(autoSendFirstMessage = true): Promise<boolean> {
     const trimmed = prompt.trim();
     const submittedPrompt = autoSendFirstMessage ? trimmed : '';
     const submittedAttachments = stagedFiles.map((item) => item.file);
     if (autoSendFirstMessage && !trimmed && submittedAttachments.length === 0) return false;
+    if (
+      surface === 'hub'
+      && autoSendFirstMessage
+      && submittedAttachments.length === 0
+      && trimmed.length < 4
+    ) {
+      setError(t('hub.shortPromptError'));
+      return false;
+    }
     if (submitInFlightRef.current) return false;
     submitInFlightRef.current = true;
     setSubmitInFlight(true);
@@ -1406,6 +1429,8 @@ export function HomeView({
       <HomeHero
         ref={inputRef}
         active={isActive}
+        surface={surface}
+        submitting={phase === 'submitting'}
         firstRunGuide={projectsLoading ? undefined : projects.length === 0}
         prompt={prompt}
         onPromptChange={handlePromptChange}
@@ -1415,6 +1440,7 @@ export function HomeView({
         onContinueWithoutPrompt={() => {
           void continueWithoutPrompt();
         }}
+        onOpenTemplate={() => onOpenNewProject?.('template')}
         sessionMode={sessionMode}
         onSessionModeChange={(nextMode) => {
           if (!rejectDraftMutationDuringSubmit()) setSessionMode(nextMode);

@@ -4,8 +4,10 @@
 // row mutations. A delete that leaves a ghost row or a stale count is the
 // failure this file exists to catch.
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { readConversationsFromListMock } from '../helpers/hub-conversations-mock';
 
 const listConversations = vi.hoisted(() => vi.fn());
 const createConversation = vi.hoisted(() => vi.fn());
@@ -14,6 +16,7 @@ const patchConversation = vi.hoisted(() => vi.fn());
 
 vi.mock('../../src/state/projects', () => ({
   listConversations,
+  readConversations: readConversationsFromListMock(listConversations),
   createConversation,
   deleteConversation,
   patchConversation,
@@ -29,6 +32,7 @@ afterEach(() => {
   createConversation.mockReset();
   deleteConversation.mockReset();
   patchConversation.mockReset();
+  vi.useRealTimers();
 });
 
 function project(id: string, name: string, updatedAt: number): Project {
@@ -159,33 +163,93 @@ describe('HubHome rail', () => {
     expect(document.activeElement).toBe(row);
   });
 
-  it('deletes the session the menu targeted, leaving no ghost row or stale count', async () => {
+  it('defers daemon deletion until the undo window expires', async () => {
     seedTwoSessions();
     deleteConversation.mockResolvedValue(true);
     renderHub();
     await screen.findByTestId('hub-session-c2');
+    vi.useFakeTimers();
     expect(screen.getByTestId('hub-group-count').textContent).toBe('2');
 
     fireEvent.click(screen.getByTestId('hub-menu-session-c2'));
     fireEvent.click(screen.getByTestId('hub-row-menu-delete'));
 
-    expect(deleteConversation).toHaveBeenCalledWith('p1', 'c2');
+    expect(deleteConversation).not.toHaveBeenCalled();
     expect(screen.queryByTestId('hub-session-c2')).toBeNull();
-    // The sibling survives and the tree is not rebuilt from a stale cache.
     expect(screen.getByTestId('hub-session-c1')).toBeTruthy();
-    fireEvent.click(screen.getByTestId('hub-filter-running'));
-    expect(screen.getByTestId('hub-group-count').textContent).toBe('1');
+    act(() => vi.advanceTimersByTime(6000));
+    expect(deleteConversation).toHaveBeenCalledWith('p1', 'c2');
   });
 
-  it('restores a session the daemon refused to delete', async () => {
+  it('undoes an optimistic deletion without calling the daemon', async () => {
     seedTwoSessions();
-    deleteConversation.mockResolvedValue(false);
     renderHub();
     await screen.findByTestId('hub-session-c2');
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByTestId('hub-session-c2'));
+    fireEvent.click(screen.getByTestId('hub-peek-c2'));
 
     fireEvent.click(screen.getByTestId('hub-menu-session-c2'));
     fireEvent.click(screen.getByTestId('hub-row-menu-delete'));
-    await waitFor(() => expect(screen.getByTestId('hub-session-c2')).toBeTruthy());
+    expect(screen.queryByTestId('hub-session-c2')).toBeNull();
+    expect(screen.queryByTestId('hub-open-work-c2')).toBeNull();
+    expect(screen.queryByTestId('hub-inspector')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(screen.getByTestId('hub-session-c2')).toBeTruthy();
+    expect(screen.getByTestId('hub-open-work-c2')).toBeTruthy();
+    expect(screen.getByTestId('hub-inspector')).toBeTruthy();
+    expect(deleteConversation).not.toHaveBeenCalled();
+  });
+
+  it('commits a pending deletion when the hub unmounts', async () => {
+    seedTwoSessions();
+    deleteConversation.mockResolvedValue(true);
+    const hub = renderHub();
+    await screen.findByTestId('hub-session-c2');
+    fireEvent.click(screen.getByTestId('hub-menu-session-c2'));
+    fireEvent.click(screen.getByTestId('hub-row-menu-delete'));
+
+    hub.unmount();
+    expect(deleteConversation).toHaveBeenCalledWith('p1', 'c2');
+  });
+
+  it('commits the first back-to-back deletion and keeps the second undoable', async () => {
+    seedTwoSessions();
+    deleteConversation.mockResolvedValue(true);
+    renderHub();
+    await screen.findByTestId('hub-session-c2');
+    fireEvent.click(screen.getByTestId('hub-menu-session-c2'));
+    fireEvent.click(screen.getByTestId('hub-row-menu-delete'));
+    fireEvent.click(screen.getByTestId('hub-menu-session-c1'));
+    fireEvent.click(screen.getByTestId('hub-row-menu-delete'));
+
+    expect(deleteConversation).toHaveBeenCalledTimes(1);
+    expect(deleteConversation).toHaveBeenCalledWith('p1', 'c2');
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(screen.getByTestId('hub-session-c1')).toBeTruthy();
+    expect(screen.queryByTestId('hub-session-c2')).toBeNull();
+    expect(deleteConversation).toHaveBeenCalledTimes(1);
+  });
+
+  it('restores a session the daemon refuses to delete', async () => {
+    seedTwoSessions();
+    let resolveDelete: ((result: boolean) => void) | undefined;
+    deleteConversation.mockReturnValue(new Promise<boolean>((resolve) => {
+      resolveDelete = resolve;
+    }));
+    renderHub();
+    await screen.findByTestId('hub-session-c2');
+    vi.useFakeTimers();
+
+    fireEvent.click(screen.getByTestId('hub-menu-session-c2'));
+    fireEvent.click(screen.getByTestId('hub-row-menu-delete'));
+    act(() => vi.advanceTimersByTime(6000));
+    await act(async () => {
+      resolveDelete?.(false);
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId('hub-session-c2')).toBeTruthy();
   });
 
   it('renames the targeted session through the daemon', async () => {

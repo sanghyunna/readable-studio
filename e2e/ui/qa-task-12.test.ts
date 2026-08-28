@@ -9,8 +9,12 @@
 
 import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const EVIDENCE_DIR = 'D:/readable-studio/.omo/evidence/task-12';
+const EVIDENCE_DIR =
+  process.env.READABLE_TASK12_EVIDENCE_DIR ??
+  resolve(dirname(fileURLToPath(import.meta.url)), '../../../../../.omo/evidence/task-12');
 
 // Kept in sync with `--hub-rail-collapsed` in apps/web/src/styles/home/hub.css.
 const COLLAPSED_RAIL_PX = 78;

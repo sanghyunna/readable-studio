@@ -58,6 +58,9 @@ describe('hub composer submit guard', () => {
     expect(onSubmitPrompt).toHaveBeenCalledTimes(1);
 
     await waitFor(() => expect(send.disabled).toBe(true));
+    expect(screen.getByTestId('home-hero-footer-option-designSystem').textContent).toContain(
+      'No design system',
+    );
 
     release?.();
     await waitFor(() => expect(send.disabled).toBe(false));
@@ -77,9 +80,39 @@ describe('hub composer submit guard', () => {
       />,
     );
     const box = await screen.findByTestId('home-hero-input');
-    setHomeHeroPrompt('가격표');
+    setHomeHeroPrompt('가격표 만들기');
     fireEvent.keyDown(box, { key: 'Enter', ctrlKey: true });
     fireEvent.keyDown(box, { key: 'Enter', ctrlKey: true });
     expect(onSubmitPrompt).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a trimmed three-character prompt and clears the error on input', async () => {
+    listConversations.mockResolvedValue([]);
+    const onSubmitPrompt = vi.fn();
+    render(
+      <HubHome
+        projects={PROJECTS}
+        projectsLoading={false}
+        onOpenSession={vi.fn()}
+        onSubmitPrompt={onSubmitPrompt}
+        onNewProject={vi.fn()}
+        onImportFolder={vi.fn()}
+      />,
+    );
+    await screen.findByTestId('home-hero-input');
+    setHomeHeroPrompt('가격표');
+    fireEvent.click(screen.getByTestId('home-hero-submit'));
+
+    expect(onSubmitPrompt).not.toHaveBeenCalled();
+    const composer = screen.getByTestId('hub-composer');
+    const alert = screen.getByRole('alert');
+    expect(composer.classList.contains('is-error')).toBe(true);
+    expect(composer.contains(alert)).toBe(false);
+    expect(composer.nextElementSibling).toBe(alert);
+    expect(alert.textContent?.trim().length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+
+    setHomeHeroPrompt('가격표!');
+    expect(screen.queryByTestId('home-hero-error')).toBeNull();
   });
 });

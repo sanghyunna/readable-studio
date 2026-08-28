@@ -12,7 +12,7 @@ function powerShellQuote(value: string): string {
 
 export default defineConfig({
   testDir: './ui',
-  testMatch: 'visual-*.test.ts',
+  testMatch: ['visual-*.test.ts', 'qa-task-13.test.ts'],
   outputDir: './ui/reports/visual-test-results',
   timeout: Number(process.env.READABLE_PLAYWRIGHT_TIMEOUT) || 90_000,
   retries: 0,
@@ -27,7 +27,7 @@ export default defineConfig({
     trace: 'off',
     screenshot: 'off',
     viewport: { width: 1440, height: 900 },
-    deviceScaleFactor: 1,
+    deviceScaleFactor: 2,
   },
   webServer: {
     command:

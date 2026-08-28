@@ -1919,10 +1919,10 @@
   box-shadow: none;
 }
 .home-hero__error {
-  color: var(--red);
+  color: var(--danger-fg);
   font-size: 12.5px;
-  background: var(--red-bg);
-  border: 1px solid var(--red-border);
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
   padding: 8px 12px;
   border-radius: var(--radius-sm);
   max-width: 720px;
@@ -2287,6 +2287,241 @@
 .home-hero__rail-chip.is-pending {
   opacity: 0.75;
   box-shadow: none;
+}
+
+/* Hub composition adopts the approved pearl-and-blue start surface without
+   changing the hero on other entry routes. Component code owns copy and ARIA;
+   these selectors are the visual interface for its hub-only states. */
+.home-view--hub .home-hero {
+  align-items: stretch;
+  gap: 0;
+  padding: 0;
+}
+
+.home-view--hub .home-hero__brand {
+  display: none;
+}
+
+.home-view--hub .home-hero__title {
+  margin: 0 0 10px;
+  font-family: var(--font-display);
+  font-size: clamp(30px, 2.6vw, 44px);
+  font-weight: 640;
+  line-height: 1.24;
+  letter-spacing: -0.028em;
+  text-align: left;
+}
+
+.home-view--hub .home-hero__subtitle {
+  max-width: 46em;
+  margin: 0 0 26px;
+  font-size: 14.5px;
+  line-height: 1.7;
+  text-align: left;
+  word-break: keep-all;
+}
+
+.home-view--hub .home-hero__type-tabs,
+.home-view--hub .home-hero__continue-row {
+  display: none;
+}
+
+.home-view--hub .home-hero__input-card {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 0;
+  max-width: 100%;
+  min-height: 155px;
+  padding: 0;
+  overflow: hidden;
+  border-color: var(--hub-control-border);
+  background: var(--hub-composer-body);
+  box-shadow: none;
+}
+
+.home-view--hub .home-hero__input-card:focus-within,
+.home-view--hub .home-hero__input-card.is-ready {
+  border-color: color-mix(in srgb, var(--hub-accent) 55%, var(--border));
+}
+
+.home-view--hub .home-hero__input-card.is-busy,
+.home-view--hub .home-hero__input-card[aria-busy='true'] {
+  border-color: var(--hub-accent);
+}
+
+.home-view--hub .home-hero__input-card.is-error {
+  border-color: var(--danger-opaque) !important;
+}
+
+.home-view--hub .home-hero__error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--danger);
+}
+
+.home-view--hub .home-hero__prompt-surface {
+  min-height: 0;
+  padding: 14px 14px 0;
+  background: var(--hub-composer-body);
+}
+
+.home-view--hub .home-hero__lexical .composer-editable {
+  min-height: 82px;
+  padding: 16px 4px 10px;
+  caret-color: var(--hub-accent);
+}
+
+.home-view--hub .home-hero__lexical .composer-input-placeholder {
+  top: var(--hub-placeholder-reference-top);
+}
+
+.home-view--hub .home-hero__lexical .composer-editable::selection,
+.home-view--hub .home-hero__lexical .composer-editable *::selection {
+  background: var(--hub-accent-fill);
+}
+
+.home-view--hub .home-hero__input-foot {
+  position: relative;
+  min-height: 40px;
+  margin: 0;
+  padding: 3px 10px 3px 12px;
+  border-top: 1px solid var(--border-soft);
+  background: linear-gradient(
+    180deg,
+    var(--hub-composer-top),
+    var(--hub-composer-bottom)
+  );
+}
+
+.home-view--hub .plus-menu {
+  display: inline-flex;
+}
+
+.home-view--hub .plus-menu__trigger {
+  width: 30px;
+  height: 30px;
+  color: var(--hub-accent);
+}
+
+.home-view--hub .home-hero__foot-left {
+  gap: 6px;
+}
+
+.home-view--hub .home-hero__foot-left {
+  position: relative;
+  z-index: 130;
+}
+
+.home-view--hub .home-hero__footer-options {
+  position: relative;
+}
+
+.home-view--hub .home-hero__footer-option,
+.home-view--hub .home-hero__footer-select-trigger,
+.home-view--hub .home-hero__hub-control,
+.home-view--hub .home-hero__rail-chip {
+  border-color: var(--hub-control-border);
+  background: var(--hub-control-surface);
+}
+
+.home-view--hub .home-hero__hub-control {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.home-view--hub .home-hero__hub-control:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.home-view--hub .home-hero__footer-option:hover,
+.home-view--hub .home-hero__footer-select-trigger:hover,
+.home-view--hub .home-hero__hub-control:hover:not(:disabled),
+.home-view--hub .home-hero__rail-chip:hover:not(:disabled) {
+  border-color: var(--hub-accent);
+}
+
+.home-view--hub .home-hero__footer-option-icon,
+.home-view--hub .home-hero__footer-select-trigger svg,
+.home-view--hub .home-hero__hub-control svg,
+.home-view--hub .home-hero__rail-chip-icon {
+  color: var(--hub-accent);
+  opacity: 0.8;
+}
+
+.home-view--hub .home-hero__submit {
+  margin-inline-start: auto;
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  padding: 0;
+  border-color: var(--hub-accent-line);
+  background: var(--hub-accent-tint);
+  color: var(--hub-accent);
+  box-shadow: none;
+}
+
+.home-view--hub .home-hero__submit > span {
+  display: none;
+}
+
+.home-view--hub .home-hero__submit.is-ready,
+.home-view--hub .home-hero__submit:not(:disabled) {
+  border-color: var(--hub-accent);
+  background: var(--hub-accent);
+  color: var(--hub-accent-fg);
+  box-shadow:
+    0 1px 2px var(--hub-ready-shadow),
+    inset 0 1px 0 var(--hub-ready-highlight);
+}
+
+.home-view--hub .home-hero__submit:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--hub-accent) 86%, var(--text-strong));
+  background: color-mix(in srgb, var(--hub-accent) 86%, var(--text-strong));
+}
+
+.home-view--hub .home-hero__submit:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.home-view--hub .home-hero__submit:disabled {
+  border-color: var(--hub-send-disabled);
+  background: var(--hub-send-disabled);
+  color: var(--text-soft);
+  opacity: 1;
+}
+
+.home-view--hub .home-hero__submit [data-spinner] {
+  display: inline-flex;
+}
+
+.home-view--hub .home-hero__submit .icon-spin {
+  animation: icon-spin 720ms linear infinite;
+  transform-origin: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-view--hub .home-hero__submit .icon-spin {
+    animation: none;
+  }
 }
 
 @media (max-width: 900px) {

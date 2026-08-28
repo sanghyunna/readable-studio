@@ -8,6 +8,13 @@
 /* Header-less shell variant. The rail's logo replaces the chrome
    brand and a floating top-right control replaces the chrome
    actions, so the entry view does not render `AppChromeHeader`. */
+.workspace-shell:has(> .workspace-shell__body > .entry-shell--no-header) {
+  grid-template-rows: minmax(0, 1fr);
+}
+.workspace-shell:has(> .workspace-shell__body > .entry-shell--no-header)
+  > .workspace-tabs-chrome {
+  display: none;
+}
 .entry-shell--no-header {
   grid-template-rows: 1fr;
   --entry-rail-width: 56px;
@@ -456,11 +463,28 @@
   flex-direction: column;
   gap: 32px;
 }
-/* Wider variant retained for the Projects / Design systems
-   sub-views that historically opted into a wider canvas. The
-   home view now also breathes out to ~1440px so the plugins
-   gallery can fit 4-5 preview tiles per row on desktop displays
-   while the hero card self-constrains to a readable column. */
+/* Home owns its complete fixed-sidenav shell. The hub grid must begin at the
+   scroll body's inline origin so its own 10px/8px rail inset remains the only
+   inset. Non-home views retain the wrapper's 40px 32px 64px workspace bounds. */
+.entry-main--scroll:has(.entry-main__inner--home) {
+  overflow: hidden;
+  scrollbar-gutter: auto;
+  background: var(--hub-canvas);
+}
+
+.entry-main__inner.entry-main__inner--home {
+  max-width: none;
+  height: calc(100% - var(--entry-topbar-h));
+  margin: 0;
+  padding: 0;
+  gap: 0;
+}
+.entry-main__inner--home > [data-testid='entry-view-home'] {
+  height: 100%;
+  min-height: 0;
+}
+
+/* Wider variant retained for the Projects / Design systems sub-views. */
 .entry-main__inner--wide {
   max-width: 1440px;
 }
@@ -486,13 +510,41 @@
   background: var(--bg);
   isolation: isolate;
 }
+.entry-main__topbar:has(~ .entry-main__inner--home) {
+  background: linear-gradient(
+    100deg,
+    color-mix(in srgb, var(--hub-wash) 42%, var(--hub-canvas)),
+    var(--hub-canvas) 38%
+  );
+}
+.entry-main__topbar:has(~ .entry-main__inner--home) .entry-main__topbar-chips {
+  display: none;
+}
+.entry-main__topbar:has(~ .entry-main__inner--home) .settings-icon-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--hub-pearl-highlight);
+  background: var(--hub-accent);
+  color: transparent;
+  font-size: 0;
+}
+.entry-main__topbar:has(~ .entry-main__inner--home) .settings-icon-btn::before {
+  content: 'SH';
+  color: var(--hub-accent-fg);
+  font-size: 11px;
+  font-weight: 650;
+}
+.entry-main__topbar:has(~ .entry-main__inner--home) .settings-icon-btn svg {
+  display: none;
+}
 .entry-main__topbar::before {
   content: '';
   position: absolute;
   inset: -1px 0;
   z-index: -1;
   pointer-events: none;
-  background: var(--bg);
+  background: inherit;
 }
 /* Chip group — the GitHub star, inline model switcher, and Use
    everywhere chip live inside this wrapper so the responsive
@@ -512,9 +564,9 @@
   gap: 7px;
   height: 30px;
   padding: 0 11px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 999px;
-  background: var(--bg-elevated);
+  border: 1px solid var(--hub-control-border);
+  border-radius: var(--radius-pill);
+  background: var(--hub-control-surface);
   color: var(--text-muted);
   font-size: 12px;
   font-weight: 550;
@@ -523,6 +575,10 @@
 
 .entry-run-chip:hover {
   color: var(--text);
+}
+
+.entry-main__topbar:has(~ .entry-main__inner--home) .entry-run-chip__dot {
+  display: none;
 }
 
 .entry-run-chip__dot {
@@ -547,16 +603,21 @@
   justify-content: center;
   width: 32px;
   height: 32px;
+  padding: 0;
   border: 0;
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--text-muted);
   cursor: pointer;
 }
 
 .entry-help-menu__trigger:hover {
-  background: var(--bg-hover);
   color: var(--text);
+}
+
+.entry-help-menu__trigger:focus-visible {
+  outline: 2px solid var(--hub-accent);
+  outline-offset: -2px;
 }
 
 .entry-help-menu__popover {
@@ -1632,9 +1693,32 @@
   }
 }
 
+@media (max-height: 760px) and (min-width: 901px) {
+  .entry-main--scroll {
+    --entry-topbar-h: 36px;
+  }
+
+  .entry-main__topbar {
+    padding-top: 4px;
+  }
+
+  .entry-main__topbar:has(~ .entry-main__inner--home) {
+    background: linear-gradient(
+      100deg,
+      color-mix(in srgb, var(--hub-wash) 24%, var(--hub-canvas)),
+      var(--hub-canvas) 32%
+    );
+  }
+}
+
 @media (max-width: 900px) {
-  .entry-nav-rail {
-    width: 56px;
+  /* Legacy workspace CSS applies a global narrow `.entry` !important rule;
+     reassert this shell's collapsed/open tracks without crossing that boundary. */
+  .entry-shell--no-header .entry {
+    grid-template-columns: 0 minmax(0, 1fr) !important;
+  }
+  .entry-shell--no-header .entry.entry--rail-open {
+    grid-template-columns: var(--entry-rail-width, 56px) minmax(0, 1fr) !important;
   }
   .entry-main__inner {
     padding: 24px 16px 56px;

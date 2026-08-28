@@ -18,6 +18,7 @@ import type { DesignSystemSummary, Project, SkillSummary } from '../../types';
 import { HomeView } from '../HomeView';
 import { Icon } from '../Icon';
 import type { PluginLoopSubmit } from '../PluginLoopHome';
+import { Toast } from '../Toast';
 import { HubCommandPalette, type HubPaletteEntry } from './HubCommandPalette';
 import { HubInspector } from './HubInspector';
 import { HubOpenWork, type HubOpenWorkItem } from './HubOpenWork';
@@ -79,6 +80,12 @@ interface ProjectSessionsEntry {
   status: HubSessionsStatus;
   sessions: HubSessionNode[];
 }
+
+type PendingSessionDeletion = {
+  readonly session: HubSessionNode;
+  readonly wasOpen: boolean;
+  readonly wasPeeked: boolean;
+};
 
 const EMPTY_SESSIONS: HubSessionNode[] = [];
 
@@ -178,6 +185,7 @@ export function HubHome({
   const creatingSessionRef = useRef(new Set<string>());
   const [creatingSessionFor, setCreatingSessionFor] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [commandChip, setCommandChip] = useState<{ readonly id: string; readonly nonce: number } | null>(null);
   const paletteReturnRef = useRef<HTMLElement | null>(null);
   const allNodesRef = useRef<HubProjectNode[]>([]);
   // Open work is client-side: which sessions the user is holding open. The
@@ -198,6 +206,9 @@ export function HubHome({
   const railCollapsed = railCollapsedPreference || narrow;
   const [peekedSessionId, setPeekedSessionId] = useState<string | null>(null);
   const [removedSessionIds, setRemovedSessionIds] = useState<string[]>([]);
+  const [pendingSessionDeletion, setPendingSessionDeletion] = useState<PendingSessionDeletion | null>(null);
+  const pendingSessionDeletionRef = useRef<PendingSessionDeletion | null>(null);
+  const mountedRef = useRef(true);
   // Read through a ref so the fetch effect does not re-run when `t` changes
   // identity, while still rendering the translated fallback label.
   const untitledLabel = useRef(t('hub.untitledSession'));
@@ -462,7 +473,23 @@ export function HubHome({
       ['plugins', t('entry.navPlugins')],
       ['integrations', t('entry.navIntegrations')],
     ] as const;
+    const creationCommands = [
+      ['prototype', t('homeHero.chip.prototype')],
+      ['deck', t('homeHero.chip.deck')],
+      ['report', t('homeHero.chip.report')],
+      ['create-plugin', t('homeHero.chip.createPlugin')],
+      ['figma', t('homeHero.chip.figma')],
+      ['template', t('homeHero.chip.template')],
+      ['continue', t('homeHero.continueWithoutPrompt')],
+    ] as const;
     return [
+      ...creationCommands.map(([chipId, title]) => ({
+        id: `command-create-${chipId}`,
+        group: 'Create',
+        title,
+        kind: 'command' as const,
+        activate: () => setCommandChip({ id: chipId, nonce: Date.now() }),
+      })),
       ...projectEntries,
       ...sessionEntries,
       ...destinations.map(([destination, title]) => ({
@@ -559,20 +586,63 @@ export function HubHome({
     void patchConversation(session.projectId, session.id, { title });
   }, []);
 
+  const restorePendingSession = useCallback(
+    (pending: PendingSessionDeletion) => {
+      setRemovedSessionIds((prev) => prev.filter((id) => id !== pending.session.id));
+      if (pending.wasOpen) {
+        updateOpenWorkIds((prev) => prev.includes(pending.session.id) ? prev : [...prev, pending.session.id]);
+      }
+      if (pending.wasPeeked) setPeekedSessionId(pending.session.id);
+    },
+    [updateOpenWorkIds],
+  );
+
+  const commitPendingSessionDeletion = useCallback(() => {
+    const pending = pendingSessionDeletionRef.current;
+    if (!pending) return;
+    pendingSessionDeletionRef.current = null;
+    setPendingSessionDeletion(null);
+    void deleteConversation(pending.session.projectId, pending.session.id).then((ok) => {
+      if (!ok && mountedRef.current) restorePendingSession(pending);
+    });
+  }, [restorePendingSession]);
+
+  const undoPendingSessionDeletion = useCallback(() => {
+    const pending = pendingSessionDeletionRef.current;
+    if (!pending) return;
+    pendingSessionDeletionRef.current = null;
+    setPendingSessionDeletion(null);
+    restorePendingSession(pending);
+  }, [restorePendingSession]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      const pending = pendingSessionDeletionRef.current;
+      pendingSessionDeletionRef.current = null;
+      if (pending) {
+        void deleteConversation(pending.session.projectId, pending.session.id);
+      }
+    };
+  }, []);
+
   const handleDeleteSession = useCallback(
     (session: HubSessionNode) => {
+      commitPendingSessionDeletion();
+      const pending = {
+        session,
+        wasOpen: openWorkIdsRef.current.includes(session.id),
+        wasPeeked: peekedSessionId === session.id,
+      } satisfies PendingSessionDeletion;
       setRemovedSessionIds((prev) => (prev.includes(session.id) ? prev : [...prev, session.id]));
       updateOpenWorkIds((prev) => prev.filter((id) => id !== session.id));
       setPeekedSessionId((prev) => (prev === session.id ? null : prev));
+      pendingSessionDeletionRef.current = pending;
+      setPendingSessionDeletion(pending);
       setAnnouncement(t('hub.sessionDeleted', { name: session.title }));
-      void deleteConversation(session.projectId, session.id).then((ok) => {
-        if (ok) return;
-        // The daemon refused, so the row is real; putting it back is the only
-        // honest outcome of a failed delete.
-        setRemovedSessionIds((prev) => prev.filter((id) => id !== session.id));
-      });
     },
-    [t, updateOpenWorkIds],
+    [commitPendingSessionDeletion, peekedSessionId, t, updateOpenWorkIds],
   );
 
   const handleRenameProjectRow = useCallback(
@@ -676,6 +746,7 @@ export function HubHome({
       }`}
       data-rail-collapsed={railCollapsed ? 'true' : 'false'}
     >
+      <div className="hub__wash" aria-hidden="true" />
       <div className="sr-only" role="status" aria-live="polite" data-testid="hub-live-region">
         {announcement}
       </div>
@@ -693,12 +764,28 @@ export function HubHome({
           : ''}
       </div>
 
+      <button
+        type="button"
+        className="hub__rail-toggle readable-tooltip"
+        data-testid="hub-rail-toggle"
+        aria-pressed={railCollapsed}
+        aria-label={t(railCollapsed ? 'entry.navExpand' : 'entry.navCollapse')}
+        title={t(railCollapsed ? 'entry.navExpand' : 'entry.navCollapse')}
+        data-tooltip={t(railCollapsed ? 'entry.navExpand' : 'entry.navCollapse')}
+        data-tooltip-placement="bottom"
+        disabled={narrow}
+        onClick={toggleRail}
+      >
+        <Icon name="panel-left" size={18} strokeWidth={1.8} />
+      </button>
+
       <nav className="hub__nav" aria-label={t('hub.treeLabel')} data-testid="hub-nav">
         <div className="hub__nav-head">
           <button
             type="button"
             className="hub__brand"
             data-testid="hub-brand"
+            aria-label={t('entry.navHome')}
             onClick={() => onGoHome?.()}
           >
             <img
@@ -711,21 +798,7 @@ export function HubHome({
               aria-hidden="true"
             />
             <span className="hub__brand-name">{t('app.brand')}</span>
-          </button>
-          {/* Disabled rather than hidden below the breakpoint: a control that
-              vanishes at a width the user cannot see is worse than one that
-              says why it cannot act. */}
-          <button
-            type="button"
-            className="hub__rail-toggle"
-            data-testid="hub-rail-toggle"
-            aria-pressed={railCollapsed}
-            aria-label={t(railCollapsed ? 'entry.navExpand' : 'entry.navCollapse')}
-            title={t(railCollapsed ? 'entry.navExpand' : 'entry.navCollapse')}
-            disabled={narrow}
-            onClick={toggleRail}
-          >
-            <Icon name="panel-left" size={17} />
+            <span className="hub__brand-home">{t('entry.navHome')}</span>
           </button>
         </div>
         <div className="hub__nav-actions">
@@ -751,21 +824,24 @@ export function HubHome({
           <p className="hub__nav-loading">{t('common.loading')}</p>
         ) : (
           <div className="hub__nav-list">
-            <HubOpenWork
-              items={openWork}
-              currentSessionId={currentSessionId}
-              onOpen={(item) => {
-                const entry = sessionIndex.get(item.sessionId);
-                if (entry) handleOpenSession(entry.session);
-              }}
-              onClose={(item) => {
-                updateOpenWorkIds((prev) => prev.filter((id) => id !== item.sessionId));
-                setAnnouncement(t('hub.closedOpenWork', { name: item.title }));
-              }}
-            />
             <HubSessionTree
               key={query.trim() ? 'filtered' : 'all'}
               projects={tree}
+              compactByDefault
+              openWork={
+                <HubOpenWork
+                  items={openWork}
+                  currentSessionId={currentSessionId}
+                  onOpen={(item) => {
+                    const entry = sessionIndex.get(item.sessionId);
+                    if (entry) handleOpenSession(entry.session);
+                  }}
+                  onClose={(item) => {
+                    updateOpenWorkIds((prev) => prev.filter((id) => id !== item.sessionId));
+                    setAnnouncement(t('hub.closedOpenWork', { name: item.title }));
+                  }}
+                />
+              }
               collapsed={railCollapsed}
               currentSessionId={currentSessionId}
               onOpenSession={handleOpenSession}
@@ -781,17 +857,6 @@ export function HubHome({
             />
           </div>
         )}
-        {onOpenDestination ? (
-          <button
-            type="button"
-            className="hub__view-all"
-            data-testid="hub-view-all-projects"
-            onClick={() => onOpenDestination('projects')}
-          >
-            <span>{t('hub.viewAllProjects')}</span>
-            <Icon name="chevron-right" size={13} />
-          </button>
-        ) : null}
         {onOpenDestination && onOpenSettings && onOpenWorkspaceFolder ? (
           <HubRailFooter
             onOpenDestination={onOpenDestination}
@@ -842,6 +907,7 @@ export function HubHome({
             onOpenNewProject={onOpenNewProject}
             skills={skills}
             skillsLoading={skillsLoading}
+            commandChip={commandChip}
           />
 
           <div className="hub__starters">
@@ -854,7 +920,8 @@ export function HubHome({
                 aria-busy={importingFolder}
                 onClick={onImportFolder}
               >
-                {importingFolder ? t('hub.importingFolder') : t('hub.importFolder')}
+                <Icon name={importingFolder ? 'spinner' : 'folder'} size={15} />
+                <span>{importingFolder ? t('hub.importingFolder') : t('hub.importFolder')}</span>
               </button>
             ) : null}
             {onImportClaudeZip ? (
@@ -866,7 +933,8 @@ export function HubHome({
                 aria-busy={importingClaudeZip}
                 onClick={onImportClaudeZip}
               >
-                {importingClaudeZip ? t('hub.importingClaudeZip') : t('hub.importClaudeZip')}
+                <Icon name={importingClaudeZip ? 'spinner' : 'package'} size={15} />
+                <span>{importingClaudeZip ? t('hub.importingClaudeZip') : t('hub.importClaudeZip')}</span>
               </button>
             ) : null}
             {/* Third starter from the approved mockup, beside Import folder and
@@ -880,7 +948,8 @@ export function HubHome({
                 data-testid="hub-start-from-template"
                 onClick={() => onOpenNewProject('template')}
               >
-                {t('hub.startFromTemplate')}
+                <Icon name="layout" size={15} />
+                <span>{t('hub.startFromTemplate')}</span>
               </button>
             ) : null}
           </div>
@@ -902,11 +971,23 @@ export function HubHome({
               <strong>{t('hub.noProjectsTitle')}</strong> {t('hub.noProjectsBody')}
             </p>
           ) : (
-            <p className="hub__hint">{t('hub.startHint')}</p>
+            <p className="hub__hint">
+              {t('hub.startHint')} <kbd className="hub-kbd">Ctrl K</kbd>{' '}
+              {t('hub.startHintContinuation')}
+            </p>
           )}
         </div>
       </div>
       {paletteOpen ? <HubCommandPalette entries={paletteEntries} onClose={closePalette} /> : null}
+      {pendingSessionDeletion ? (
+        <Toast
+          message={t('hub.sessionDeleted', { name: pendingSessionDeletion.session.title })}
+          ttlMs={6000}
+          actionLabel={t('manualEdit.undo')}
+          onAction={undoPendingSessionDeletion}
+          onDismiss={commitPendingSessionDeletion}
+        />
+      ) : null}
       {peeked ? (
         <HubInspector
           session={peeked.session}

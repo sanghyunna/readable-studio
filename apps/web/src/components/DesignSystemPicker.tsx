@@ -36,6 +36,7 @@ interface Props {
   designSystems: DesignSystemSummary[];
   selectedId: string | null;
   loading?: boolean;
+  disabled?: boolean;
   onChange: (id: string | null) => void;
   /** Trigger pill styling only; the popover is identical. Defaults to 'project'. */
   variant?: 'project' | 'footer';
@@ -46,7 +47,8 @@ interface Props {
 export function DesignSystemPicker({
   designSystems,
   selectedId,
-  loading,
+  loading = false,
+  disabled = false,
   onChange,
   variant = 'project',
   label,
@@ -464,7 +466,8 @@ export function DesignSystemPicker({
           data-testid="home-hero-footer-option-designSystem"
           aria-haspopup="listbox"
           aria-expanded={open}
-          disabled={loading}
+          aria-disabled={loading || disabled}
+          disabled={loading || disabled}
           onClick={() => setOpen((v) => !v)}
         >
           {triggerSwatches}
@@ -493,7 +496,7 @@ export function DesignSystemPicker({
         className={`project-ds-picker-trigger${selected ? ' picked' : ''}`}
         data-testid="project-ds-picker-trigger"
         onClick={() => setOpen((v) => !v)}
-        disabled={loading}
+        disabled={loading || disabled}
         title={selected?.title ?? t('designSystemPicker.select')}
       >
         {triggerSwatches}

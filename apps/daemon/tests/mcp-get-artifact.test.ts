@@ -1,5 +1,4 @@
 import http from 'node:http';
-import type { AddressInfo } from 'node:net';
 import express from 'express';
 import type { Express } from 'express';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -61,15 +60,16 @@ function makeDaemonApp(opts: DaemonAppOpts = {}): Express {
 }
 
 function startServer(app: Express): Promise<Harness> {
-  return new Promise((resolve) => {
-    const tmp = http.createServer();
-    tmp.listen(0, '127.0.0.1', () => {
-      const { port } = tmp.address() as AddressInfo;
-      tmp.close(() => {
-        const server = app.listen(port, '127.0.0.1', () =>
-          resolve({ server, baseUrl: `http://127.0.0.1:${port}` }),
-        );
-      });
+  return new Promise((resolve, reject) => {
+    const server = http.createServer(app);
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      if (address == null || typeof address === 'string') {
+        reject(new Error('expected an ephemeral TCP address'));
+        return;
+      }
+      resolve({ server, baseUrl: `http://127.0.0.1:${address.port}` });
     });
   });
 }

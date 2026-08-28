@@ -165,18 +165,19 @@ export function HubRailFooter({
     if (restoreFocus) workspaceRef.current?.focus();
   }, []);
 
-  // The mockup's library menu carries the four management destinations;
-  // Projects stays a first-class row above the footer and Help lives in the
-  // topbar, exactly as the approved composition places them.
+  // Projects remains reachable in the library menu without adding a separate
+  // row above the reference footer hierarchy.
   const libraryItems = useMemo<MenuItem[]>(
     () =>
-      (['tasks', 'design-systems', 'plugins', 'integrations'] as const).map((destination) => ({
+      (['projects', 'tasks', 'design-systems', 'plugins', 'integrations'] as const).map((destination) => ({
         id: destination,
         icon: DESTINATION_ICON[destination],
         label: t(
-          destination === 'tasks'
-            ? 'entry.navTasks'
-            : destination === 'design-systems'
+          destination === 'projects'
+            ? 'entry.navProjects'
+            : destination === 'tasks'
+              ? 'entry.navTasks'
+              : destination === 'design-systems'
               ? 'entry.navDesignSystems'
               : destination === 'plugins'
                 ? 'entry.navPlugins'
@@ -188,8 +189,8 @@ export function HubRailFooter({
     [onOpenDestination, t],
   );
 
+  const userLabel = t('hub.localUser');
   const workspaceLabel = workspaceName?.trim() || t('hub.localWorkspace');
-  const workspaceSub = workspaceName?.trim() ? t('hub.localWorkspace') : null;
 
   const workspaceItems = useMemo<MenuItem[]>(
     () => [
@@ -225,7 +226,7 @@ export function HubRailFooter({
             aria-controls={openMenu === 'library' ? 'hub-library' : undefined}
             onClick={() => setOpenMenu((current) => (current === 'library' ? null : 'library'))}
           >
-            <Icon name="layers-filled" size={16} />
+            <Icon name="swatch" size={16} strokeWidth={1.6} />
             <span>{t('hub.library')}</span>
           </button>
           <HubMenu
@@ -245,7 +246,7 @@ export function HubRailFooter({
           title={t('avatar.settings')}
           onClick={onOpenSettings}
         >
-          <Icon name="settings" size={17} />
+          <Icon name="settings" size={17} strokeWidth={1.6} />
         </button>
       </div>
       <div className="hub__menu-anchor">
@@ -260,16 +261,16 @@ export function HubRailFooter({
           onClick={() => setOpenMenu((current) => (current === 'workspace' ? null : 'workspace'))}
         >
           <span className="hub__user-avatar" aria-hidden="true">
-            {workspaceInitials(workspaceLabel)}
+            {workspaceInitials(userLabel)}
           </span>
           <span className="hub__user-meta">
-            <span className="hub__user-name">{workspaceLabel}</span>
-            {workspaceSub ? <span className="hub__user-sub">{workspaceSub}</span> : null}
+            <span className="hub__user-name">{userLabel}</span>
+            <span className="hub__user-sub">{workspaceLabel}</span>
           </span>
         </button>
         <HubMenu
           id="hub-workspace"
-          label={workspaceLabel}
+          label={userLabel}
           items={workspaceItems}
           open={openMenu === 'workspace'}
           onClose={closeWorkspace}

@@ -34,6 +34,8 @@
   --red: #f92672;
   --red-bg: #421224;
   --red-border: #7a2544;
+  --danger-bg: var(--red-bg);
+  --danger-border: var(--red-border);
   --amber: #fd971f;
   --amber-bg: color-mix(in srgb, var(--amber) 16%, var(--bg-panel));
   --success: var(--green);

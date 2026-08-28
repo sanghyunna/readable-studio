@@ -17,12 +17,41 @@
   --border: #e1e5eb;
   --border-strong: #c9d0da;
   --border-soft: #edf0f4;
+  --border-subtle: var(--border-soft);
+  --bg-hover: var(--bg-fill-tertiary);
+
+  /* Hub material and interaction palette. Blue remains blue in every theme;
+     it must not inherit the terracotta primary-action accent. */
+  --hub-canvas: #ffffff;
+  --hub-accent: #2563eb;
+  --hub-accent-ink: #1e3a8a;
+  --hub-accent-fill: rgba(37, 99, 235, 0.09);
+  --hub-accent-line: rgba(37, 99, 235, 0.22);
+  --hub-accent-tint: #eff4ff;
+  --hub-accent-fg: #ffffff;
+  --hub-pearl-top: rgba(255, 255, 255, 0.74);
+  --hub-pearl-mid: rgba(255, 255, 255, 0.5);
+  --hub-pearl-bottom: rgba(255, 255, 255, 0.64);
+  --hub-pearl-border: rgba(255, 255, 255, 0.5);
+  --hub-pearl-highlight: rgba(255, 255, 255, 0.9);
+  --hub-pearl-elevation: rgba(28, 27, 26, 0.07);
+  --hub-wash: rgba(37, 99, 235, 0.08);
+  --hub-composer-body: #ffffff;
+  --hub-composer-top: rgba(37, 99, 235, 0.016);
+  --hub-composer-bottom: rgba(37, 99, 235, 0.038);
+  --hub-stage-reference-offset: 1px;
+  --hub-placeholder-reference-top: 3px;
+  --hub-control-surface: rgba(255, 255, 255, 0.75);
+  --hub-control-border: rgba(16, 24, 40, 0.55);
+  --hub-send-disabled: rgba(16, 24, 40, 0.12);
+  --hub-ready-shadow: rgba(29, 78, 216, 0.28);
+  --hub-ready-highlight: rgba(255, 255, 255, 0.22);
 
   --text: #1a1916;
   --text-strong: #0d0c0a;
-  --text-muted: #74716b;
+  --text-muted: #5f5c56;
   --text-soft: #989590;
-  --text-faint: #b3b0a8;
+  --text-faint: #6b6862;
 
   /* Accent — Readable Studio action color for app chrome only. */
   --accent: #c96442;
@@ -42,6 +71,7 @@
   --purple-bg: #f3ecf9;
   --purple-border: #e4d4f1;
   --red: #9c2a25;
+  --danger-opaque: rgb(156 42 37);
   --red-bg: #fdecea;
   --red-border: #f5c6c2;
   --amber: #b26200;
@@ -55,6 +85,8 @@
   --danger: var(--red);
   --danger-text: var(--red);
   --danger-fg: var(--red);
+  --danger-bg: var(--red-bg);
+  --danger-border: var(--red-border);
   --accent-contrast: #0d0c0a;
   --black: #000000;
   --white: #ffffff;
@@ -177,7 +209,6 @@
   --border: #333128;
   --border-strong: #46433c;
   --border-soft: #2a2825;
-
   --text: #e8e4dc;
   --text-strong: #f2ede4;
   --text-muted: #9a9690;
@@ -213,6 +244,8 @@
   --danger: var(--red);
   --danger-text: var(--red);
   --danger-fg: var(--red);
+  --danger-bg: var(--red-bg);
+  --danger-border: var(--red-border);
   --accent-contrast: #1a1917;
   --selected: var(--accent);
   --selected-soft: color-mix(in srgb, var(--selected) 16%, transparent);
@@ -262,6 +295,30 @@
   --terminal-ansi-bright-white: #ffffff;
 }
 
+[data-theme="dark"] .hub {
+  --hub-canvas: var(--bg-app);
+  --hub-accent: #6b8fe8;
+  --hub-accent-ink: #c5d2ff;
+  --hub-accent-fill: rgba(107, 143, 232, 0.16);
+  --hub-accent-line: rgba(107, 143, 232, 0.34);
+  --hub-accent-tint: #172344;
+  --hub-accent-fg: #111827;
+  --hub-pearl-top: rgba(42, 40, 37, 0.88);
+  --hub-pearl-mid: rgba(34, 33, 32, 0.78);
+  --hub-pearl-bottom: rgba(42, 40, 37, 0.84);
+  --hub-pearl-border: rgba(255, 255, 255, 0.12);
+  --hub-pearl-highlight: rgba(255, 255, 255, 0.14);
+  --hub-pearl-elevation: rgba(0, 0, 0, 0.34);
+  --hub-wash: rgba(107, 143, 232, 0.12);
+  --hub-composer-top: rgba(107, 143, 232, 0.06);
+  --hub-composer-bottom: rgba(107, 143, 232, 0.1);
+  --hub-control-surface: rgba(42, 40, 37, 0.86);
+  --hub-control-border: rgba(255, 255, 255, 0.34);
+  --hub-send-disabled: rgba(255, 255, 255, 0.14);
+  --hub-ready-shadow: rgba(42, 75, 160, 0.38);
+  --hub-ready-highlight: rgba(255, 255, 255, 0.18);
+}
+
 /* System mode: follow OS preference when no explicit data-theme is set. */
 @media (prefers-color-scheme: dark) {
   html:not([data-theme]) {
@@ -278,7 +335,6 @@
     --border: #333128;
     --border-strong: #46433c;
     --border-soft: #2a2825;
-
     --text: #e8e4dc;
     --text-strong: #f2ede4;
     --text-muted: #9a9690;
@@ -314,6 +370,8 @@
     --danger: var(--red);
     --danger-text: var(--red);
     --danger-fg: var(--red);
+    --danger-bg: var(--red-bg);
+    --danger-border: var(--red-border);
     --accent-contrast: #1a1917;
     --selected: var(--accent);
     --selected-soft: color-mix(in srgb, var(--selected) 16%, transparent);
@@ -360,5 +418,28 @@
     --terminal-ansi-bright-magenta: #d2a8ff;
     --terminal-ansi-bright-cyan: #7ee7f2;
     --terminal-ansi-bright-white: #ffffff;
+  }
+
+  html:not([data-theme]) .hub {
+    --hub-canvas: var(--bg-app);
+    --hub-accent: #6b8fe8;
+    --hub-accent-ink: #c5d2ff;
+    --hub-accent-fill: rgba(107, 143, 232, 0.16);
+    --hub-accent-line: rgba(107, 143, 232, 0.34);
+    --hub-accent-tint: #172344;
+    --hub-accent-fg: #111827;
+    --hub-pearl-top: rgba(42, 40, 37, 0.88);
+    --hub-pearl-mid: rgba(34, 33, 32, 0.78);
+    --hub-pearl-bottom: rgba(42, 40, 37, 0.84);
+    --hub-pearl-border: rgba(255, 255, 255, 0.12);
+    --hub-pearl-highlight: rgba(255, 255, 255, 0.14);
+    --hub-pearl-elevation: rgba(0, 0, 0, 0.34);
+    --hub-wash: rgba(107, 143, 232, 0.12);
+    --hub-composer-top: rgba(107, 143, 232, 0.06);
+    --hub-composer-bottom: rgba(107, 143, 232, 0.1);
+    --hub-control-surface: rgba(42, 40, 37, 0.86);
+    --hub-send-disabled: rgba(255, 255, 255, 0.14);
+    --hub-ready-shadow: rgba(42, 75, 160, 0.38);
+    --hub-ready-highlight: rgba(255, 255, 255, 0.18);
   }
 }

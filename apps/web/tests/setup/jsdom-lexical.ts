@@ -12,6 +12,30 @@
 // powers the project composer be exercised under jsdom on the homepage.
 
 if (typeof window !== 'undefined') {
+  type MediaQueryListener = (event: MediaQueryListEvent) => void;
+  const mediaQueries = new Map<string, Set<MediaQueryListener>>();
+  window.matchMedia = (media: string): MediaQueryList => {
+    const listeners = mediaQueries.get(media) ?? new Set<MediaQueryListener>();
+    mediaQueries.set(media, listeners);
+    return {
+      matches: false,
+      media,
+      onchange: null,
+      addEventListener: (_type: string, listener: EventListenerOrEventListenerObject) => {
+        if (typeof listener === 'function') listeners.add(listener as MediaQueryListener);
+      },
+      removeEventListener: (_type: string, listener: EventListenerOrEventListenerObject) => {
+        if (typeof listener === 'function') listeners.delete(listener as MediaQueryListener);
+      },
+      addListener: (listener: MediaQueryListener) => listeners.add(listener),
+      removeListener: (listener: MediaQueryListener) => listeners.delete(listener),
+      dispatchEvent: (event: Event) => {
+        for (const listener of listeners) listener(event as MediaQueryListEvent);
+        return true;
+      },
+    };
+  };
+
   const zeroRect = (): DOMRect => ({
     x: 0,
     y: 0,

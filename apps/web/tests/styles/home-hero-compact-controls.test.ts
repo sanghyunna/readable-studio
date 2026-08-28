@@ -27,6 +27,12 @@ function ruleValue(block: string, property: string): string {
 }
 
 describe('HomeHero compact composer controls', () => {
+  it('keeps the compact plus trigger reachable without expanding the Hub', () => {
+    const plus = cssDeclarations('.home-view--hub .plus-menu');
+
+    expect(ruleValue(plus, 'display')).toBe('inline-flex');
+  });
+
   it('keeps the floating @ picker shell stable while result tabs change', () => {
     const floatingPicker = cssDeclarations(
       '.caret-floating-layer .home-hero__plugin-picker--floating',

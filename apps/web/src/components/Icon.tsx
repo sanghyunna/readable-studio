@@ -4,6 +4,7 @@ export type IconName =
   | 'alert-triangle'
   | 'arrow-left'
   | 'arrow-up'
+  | 'at-sign'
   | 'attach'
   | 'bell'
   | 'blocks'
@@ -40,7 +41,9 @@ export type IconName =
   | 'import'
   | 'info'
   | 'kanban'
+  | 'library'
   | 'layers-filled'
+  | 'layout'
   | 'languages'
   | 'lightbulb'
   | 'link'
@@ -49,6 +52,7 @@ export type IconName =
   | 'minus'
   | 'more-horizontal'
   | 'orbit'
+  | 'package'
   | 'paint-bucket'
   | 'panel-left'
   | 'palette'
@@ -65,10 +69,13 @@ export type IconName =
   | 'search'
   | 'send'
   | 'settings'
+  | 'gear'
   | 'share'
   | 'sliders'
+  | 'sort'
   | 'spinner'
   | 'sparkles'
+  | 'swatch'
   | 'stop'
   | 'sun'
   | 'moon'
@@ -109,6 +116,13 @@ export function Icon({ name, size = 14, strokeWidth = 1.6, ...rest }: Props) {
     ...rest,
   };
   switch (name) {
+    case 'at-sign':
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="3.4" />
+          <path d="M15.4 12v1.6a2.6 2.6 0 0 0 5.1 0V12a8.5 8.5 0 1 0-3.4 6.8" />
+        </svg>
+      );
     case 'alert-triangle':
       return (
         <svg {...common}>
@@ -402,6 +416,14 @@ export function Icon({ name, size = 14, strokeWidth = 1.6, ...rest }: Props) {
           <path d="M12 3v12" />
         </svg>
       );
+    case 'package':
+      return (
+        <svg {...common}>
+          <path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z" />
+          <path d="m4.4 7.7 7.6 4.2 7.6-4.2" />
+          <path d="M12 21v-9.1" />
+        </svg>
+      );
     case 'info':
       return (
         <svg {...common}>
@@ -418,10 +440,26 @@ export function Icon({ name, size = 14, strokeWidth = 1.6, ...rest }: Props) {
           <rect x="17" y="4" width="4" height="13" rx="1" />
         </svg>
       );
+    case 'library':
+      return (
+        <svg {...common}>
+          <path d="M7 3v18" />
+          <path d="M7 15.5c1.5-2.4 3.2-3.6 5.1-3.6 2.7 0 4.9 2.2 4.9 4.9v.2H12a5 5 0 0 1-5-5" />
+          <path d="M12 7.5h5" />
+        </svg>
+      );
     case 'layers-filled':
       return (
         <svg {...common} fill="currentColor" stroke="none">
           <path d="M20.0833 15.1999L21.2854 15.9212C21.5221 16.0633 21.5989 16.3704 21.4569 16.6072C21.4146 16.6776 21.3557 16.7365 21.2854 16.7787L12.5144 22.0412C12.1977 22.2313 11.8021 22.2313 11.4854 22.0412L2.71451 16.7787C2.47772 16.6366 2.40093 16.3295 2.54301 16.0927C2.58523 16.0223 2.64413 15.9634 2.71451 15.9212L3.9166 15.1999L11.9999 20.0499L20.0833 15.1999ZM20.0833 10.4999L21.2854 11.2212C21.5221 11.3633 21.5989 11.6704 21.4569 11.9072C21.4146 11.9776 21.3557 12.0365 21.2854 12.0787L11.9999 17.6499L2.71451 12.0787C2.47772 11.9366 2.40093 11.6295 2.54301 11.3927C2.58523 11.3223 2.64413 11.2634 2.71451 11.2212L3.9166 10.4999L11.9999 15.3499L20.0833 10.4999ZM12.5144 1.30864L21.2854 6.5712C21.5221 6.71327 21.5989 7.0204 21.4569 7.25719C21.4146 7.32757 21.3557 7.38647 21.2854 7.42869L11.9999 12.9999L2.71451 7.42869C2.47772 7.28662 2.40093 6.97949 2.54301 6.7427C2.58523 6.67232 2.64413 6.61343 2.71451 6.5712L11.4854 1.30864C11.8021 1.11864 12.1977 1.11864 12.5144 1.30864ZM11.9999 3.33233L5.88723 6.99995L11.9999 10.6676L18.1126 6.99995L11.9999 3.33233Z" />
+        </svg>
+      );
+    case 'layout':
+      return (
+        <svg {...common}>
+          <rect x="3.5" y="4.5" width="17" height="15" rx="2.2" />
+          <path d="M3.5 9.5h17" />
+          <path d="M9.5 9.5v10" />
         </svg>
       );
     case 'languages':
@@ -590,6 +628,21 @@ export function Icon({ name, size = 14, strokeWidth = 1.6, ...rest }: Props) {
           <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 0 1-2.82 2.83l-.06-.07a1.7 1.7 0 0 0-1.88-.33 1.7 1.7 0 0 0-1.04 1.56V21a2 2 0 0 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.82l.07-.06a1.7 1.7 0 0 0 .33-1.88 1.7 1.7 0 0 0-1.56-1.04H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.56-1.04 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.07A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1.04-1.56V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1.04 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.07.06a1.7 1.7 0 0 0-.33 1.87V9a1.7 1.7 0 0 0 1.56 1.04H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.56 1.04Z" />
         </svg>
       );
+    case 'gear':
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="3" />
+          <path d="m19.4 14-.7 1.2a1.5 1.5 0 0 1-1.9.6l-.5-.2a1.5 1.5 0 0 0-2.1 1.2v.6a1.5 1.5 0 0 1-1.5 1.4h-1.4a1.5 1.5 0 0 1-1.5-1.4v-.6a1.5 1.5 0 0 0-2.1-1.2l-.5.2a1.5 1.5 0 0 1-1.9-.6L4.6 14a1.5 1.5 0 0 1 .4-1.9l.5-.4a1.5 1.5 0 0 0 0-2.4L5 8.9A1.5 1.5 0 0 1 4.6 7l.7-1.2a1.5 1.5 0 0 1 1.9-.6l.5.2a1.5 1.5 0 0 0 2.1-1.2v-.6A1.5 1.5 0 0 1 11.3 2h1.4a1.5 1.5 0 0 1 1.5 1.4V4a1.5 1.5 0 0 0 2.1 1.2l.5-.2a1.5 1.5 0 0 1 1.9.6l.7 1.2a1.5 1.5 0 0 1-.4 1.9l-.5.4a1.5 1.5 0 0 0 0 2.4l.5.4a1.5 1.5 0 0 1 .4 1.9Z" />
+        </svg>
+      );
+    case 'sort':
+      return (
+        <svg {...common}>
+          <path d="M5 7.5h14" />
+          <path d="M7.5 12h9" />
+          <path d="M10 16.5h4" />
+        </svg>
+      );
     case 'share':
       return (
         <svg {...common}>
@@ -632,6 +685,14 @@ export function Icon({ name, size = 14, strokeWidth = 1.6, ...rest }: Props) {
       return (
         <svg {...common}>
           <path d="M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
+        </svg>
+      );
+    case 'swatch':
+      return (
+        <svg {...common}>
+          <path d="M4 18a2.5 2.5 0 0 0 5 0V5.5A1.5 1.5 0 0 0 7.5 4h-2A1.5 1.5 0 0 0 4 5.5z" />
+          <path d="m9 13.5 4-4a1.5 1.5 0 0 1 2.1 0l1.4 1.4a1.5 1.5 0 0 1 0 2.1L11 19" />
+          <path d="M11 20h7.5A1.5 1.5 0 0 0 20 18.5v-2a1.5 1.5 0 0 0-1.5-1.5H16" />
         </svg>
       );
     case 'stop':

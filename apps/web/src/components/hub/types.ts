@@ -136,6 +136,6 @@ export function sortProjects(projects: HubProjectNode[], sort: HubSort): HubProj
     next.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
     return next;
   }
-  next.sort((a, b) => b.updatedAt - a.updatedAt);
+  next.sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
   return next;
 }

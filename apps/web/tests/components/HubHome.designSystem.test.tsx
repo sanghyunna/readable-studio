@@ -50,11 +50,25 @@ function renderHub(overrides = {}) {
 }
 
 describe('hub composer design system', () => {
-  it('keeps free-form rich submissions explicitly unscoped', async () => {
+  it('submits the controlled default before the user changes it', async () => {
     listConversations.mockResolvedValue([]);
     const onSubmitPrompt = vi.fn();
     renderHub({ onSubmitPrompt });
     await screen.findByTestId('home-hero-input');
+    setHomeHeroPrompt('분기 리포트');
+    fireEvent.click(screen.getByTestId('home-hero-submit'));
+    expect(onSubmitPrompt).toHaveBeenCalledWith('분기 리포트', { designSystemId: 'aurora' });
+  });
+
+  it('submits null after the user explicitly selects no design system', async () => {
+    listConversations.mockResolvedValue([]);
+    const onSubmitPrompt = vi.fn();
+    renderHub({ onSubmitPrompt });
+    await screen.findByTestId('home-hero-input');
+    fireEvent.click(screen.getByTestId('home-hero-footer-option-designSystem'));
+    const noneOption = screen.getAllByRole('option').at(0);
+    if (!noneOption) throw new Error('No design-system none option rendered');
+    fireEvent.mouseDown(noneOption);
     setHomeHeroPrompt('분기 리포트');
     fireEvent.click(screen.getByTestId('home-hero-submit'));
     expect(onSubmitPrompt).toHaveBeenCalledWith('분기 리포트', { designSystemId: null });
@@ -67,8 +81,9 @@ describe('hub composer design system', () => {
     expect(screen.queryByTestId('hub-design-system')).toBeNull();
   });
 
-  it('omits the picker when no design systems are installed', async () => {
+  it('connects the three zero-plugin composer controls to context, design system, and template actions', async () => {
     listConversations.mockResolvedValue([]);
+    const onOpenNewProject = vi.fn();
     render(
       <HubHome
         projects={PROJECTS}
@@ -76,10 +91,24 @@ describe('hub composer design system', () => {
         onOpenSession={vi.fn()}
         onSubmitPrompt={vi.fn()}
         onNewProject={vi.fn()}
+        onOpenNewProject={onOpenNewProject}
         onImportFolder={vi.fn()}
       />,
     );
     await screen.findByTestId('home-hero-input');
+    const controls = screen.getByTestId('home-hero-footer-options').querySelectorAll('button');
+    expect(Array.from(controls, (control) => control.dataset.testid)).toEqual([
+      'home-hero-context-control',
+      'home-hero-footer-option-designSystem',
+      'home-hero-template-control',
+    ]);
+    expect(screen.getByTestId('hub-composer').querySelector('.session-mode-toggle')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('home-hero-context-control'));
+    expect(await screen.findByTestId('home-hero-plugin-picker')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('home-hero-template-control'));
+    expect(onOpenNewProject).toHaveBeenCalledWith('template');
     expect(screen.queryByTestId('hub-design-system')).toBeNull();
   });
 });

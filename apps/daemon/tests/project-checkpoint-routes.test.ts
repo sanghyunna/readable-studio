@@ -17,7 +17,20 @@ describe('project checkpoint routes', () => {
 
   beforeAll(async () => {
     process.env.READABLE_DESKTOP_APPROVAL_TOKEN = approvalToken;
-    const started = (await startServer({ port: 0, returnServer: true })) as {
+    const started = (await startServer({
+      port: 0,
+      returnServer: true,
+      isolatedAgentProbe: async () => ({
+        supported: true,
+        capabilities: {
+          appContainer: true,
+          filesystemAcl: true,
+          internetClient: true,
+          killOnJobClose: true,
+          loopbackDenied: true,
+        },
+      }),
+    })) as {
       url: string;
       server: http.Server;
     };

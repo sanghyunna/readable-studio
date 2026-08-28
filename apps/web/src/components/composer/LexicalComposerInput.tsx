@@ -168,6 +168,8 @@ export interface LexicalComposerInputProps {
   comboboxAria?: { activeId: string | null; expanded: boolean };
   /** Locks every editor mutation while the host is submitting an immutable draft. */
   editable?: boolean;
+  /** Exposes host-owned validation state on the contenteditable boundary. */
+  invalid?: boolean;
   title?: string;
   // Test hook for the contenteditable host. Defaults to the project
   // composer's id; HomeHero overrides it so its own tests/selectors keep
@@ -691,6 +693,7 @@ export const LexicalComposerInput = forwardRef<
     comboboxAria,
     draft,
     editable = true,
+    invalid = false,
     title,
     testId = 'chat-composer-input',
   } = props;
@@ -778,8 +781,6 @@ export const LexicalComposerInput = forwardRef<
           const active = $getSelection();
           if ($isRangeSelection(active)) {
             active.insertNodes([node]);
-            const after = $getSelection();
-            if ($isRangeSelection(after)) after.insertText(' ');
           }
         }, { discrete: true });
       },
@@ -815,6 +816,7 @@ export const LexicalComposerInput = forwardRef<
               title={title ?? placeholder}
               role="combobox"
               aria-expanded={comboboxAria?.expanded ? 'true' : 'false'}
+              aria-invalid={invalid ? 'true' : undefined}
               aria-controls="mention-listbox"
               {...(comboboxAria?.activeId
                 ? { 'aria-activedescendant': comboboxAria.activeId }

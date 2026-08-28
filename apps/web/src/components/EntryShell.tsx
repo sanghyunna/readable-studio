@@ -601,7 +601,9 @@ export function EntryShell({
           </div>
           <div
             className={`entry-main__inner${
-              view === 'home' ? '' : ' entry-main__inner--wide'
+              view === 'home'
+                ? ' entry-main__inner--home'
+                : ' entry-main__inner--wide'
             }`}
           >
             <div data-testid="entry-view-home" data-active={view === 'home' ? 'true' : 'false'} {...inactiveViewProps(view === 'home')}>

@@ -10,7 +10,7 @@ The canonical palette is implemented in `apps/web/src/styles/tokens.css`. Compon
 
 | Role | Canonical tokens | Usage |
 |---|---|---|
-| App surfaces | `--bg`, `--bg-app`, `--bg-panel`, `--bg-elevated` | Shell, panels, dialogs |
+| App surfaces | `--bg`, `--bg-app`, `--bg-panel`, `--bg-elevated`, `--hub-canvas`, `--hub-composer-body`, `--hub-composer-*` | Shell, panels, dialogs; the approved hub uses a neutral white room, a pure-white composer body, and a pale blue composer footer around its pearl rail |
 | Subtle surfaces | `--bg-subtle`, `--bg-muted`, `--bg-fill-*` | Rows, chips, quiet controls |
 | Text | `--text`, `--text-strong`, `--text-muted`, `--text-soft`, `--text-faint` | Content hierarchy |
 | Borders | `--border`, `--border-strong`, `--border-soft` | Dividers and control boundaries |
@@ -41,7 +41,11 @@ Spacing follows a 4px base and the existing values in product styles: 4, 8, 12, 
 
 The workspace is a bounded application shell. Fixed chrome stays outside each named scrolling body; grid and flex scroll children require `min-block-size: 0`. Home and settings reflow at content-driven breakpoints and must not create horizontal primary-content scroll at 375px.
 
+The hub adopts StyleGallery's `fixed-sidenav-shell` contract (`https://github.com/changeroa/StyleGallery/blob/main/patterns/viewport-shell/fixed-sidenav-shell.md`) and its nested `scroll-body-shell` contract (`https://github.com/changeroa/StyleGallery/blob/main/patterns/viewport-shell/scroll-body-shell.md`): its pearl rail stays inset on the sides/top and flush to the viewport bottom. `.hub__stage` owns stage scrolling; within the fixed rail, `.hub__nav-list` is the bounded tree scroll owner while the rail header, actions, and `HubRailFooter` remain fixed. Rail, stage, and inspector own explicit grid tracks so transient status/live-region siblings can never displace the shell. The reference-calibration tokens `--hub-stage-reference-offset` and `--hub-placeholder-reference-top` own the DPR2 alignment adjustments. The home route owns one 44px topbar, not a second workspace-tab row, and its centered start content has an 880px maximum measure inside the stage.
+
 The loading surface adopts StyleGallery's `cover` spatial contract (`https://github.com/changeroa/StyleGallery/blob/main/patterns/viewport-shell/cover.md`): a viewport-bounded centered region with no internal scroll owner. It uses `min-block-size: 100dvb` and ordinary document reading order.
+
+The hub command palette composes StyleGallery's `imposter` overlay contract (`https://github.com/changeroa/StyleGallery/blob/main/patterns/overlay-exception/imposter.md`) with a bounded `scroll-body-shell`: the translucent scrim and compact dialog stay fixed, while `.hub-palette__list` alone owns overflow. Search and keyboard guidance remain fixed so the next result-group label never strands at the viewport fold.
 
 ## 5. Components
 

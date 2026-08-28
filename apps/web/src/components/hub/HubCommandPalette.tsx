@@ -5,7 +5,7 @@ export interface HubPaletteEntry {
   group: string;
   title: string;
   meta?: string;
-  kind: 'project' | 'session' | 'destination';
+  kind: 'project' | 'session' | 'destination' | 'command';
   activate: () => void;
 }
 

@@ -793,10 +793,14 @@ export interface Dict {
   'hub.startTitle': string;
   'hub.startSubtitle': string;
   'hub.composerPlaceholder': string;
+  'hub.context': string;
+  'hub.noTemplate': string;
   'hub.send': string;
+  'hub.shortPromptError': string;
   'hub.liveRunning': string;
   'hub.liveWorking': string;
   'hub.startHint': string;
+  'hub.startHintContinuation': string;
   'hub.noProjectsTitle': string;
   'hub.noProjectsBody': string;
   'hub.untitledSession': string;
@@ -809,6 +813,7 @@ export interface Dict {
   'hub.viewAllProjects': string;
   'hub.localRunning': string;
   'hub.localOffline': string;
+  'hub.localUser': string;
   'hub.localWorkspace': string;
   'hub.workspaceFolder': string;
   'entry.navHome': string;
