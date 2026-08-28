@@ -782,6 +782,7 @@ export interface Dict {
   'hub.untitledSession': string;
   'hub.importFolder': string;
   'hub.importClaudeZip': string;
+  'hub.startFromTemplate': string;
   'hub.designSystem': string;
   'hub.starting': string;
   'entry.navHome': string;

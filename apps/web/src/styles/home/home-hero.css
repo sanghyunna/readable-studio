@@ -278,6 +278,14 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.home-hero__subtype-chip-count {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: color-mix(in srgb, currentColor 62%, transparent);
+}
 .home-hero__shortcut-menu {
   position: relative;
   display: inline-flex;

@@ -462,6 +462,20 @@ export function HubHome({
                 {importingClaudeZip ? t('hub.importingClaudeZip') : t('hub.importClaudeZip')}
               </button>
             ) : null}
+            {/* Third starter from the approved mockup, beside Import folder and
+                the Claude ZIP import. It is a DIRECT starter, distinct from the
+                composer's "From template" overflow shortcut: both open the New
+                Project modal on its template tab. */}
+            {onOpenNewProject ? (
+              <button
+                type="button"
+                className="hub__starter"
+                data-testid="hub-start-from-template"
+                onClick={() => onOpenNewProject('template')}
+              >
+                {t('hub.startFromTemplate')}
+              </button>
+            ) : null}
           </div>
 
           {starterError ? (

@@ -552,6 +552,7 @@ export const en: Dict = {
   'hub.untitledSession': 'Untitled session',
   'hub.importFolder': 'Import folder',
   'hub.importClaudeZip': 'Claude Design ZIP',
+  'hub.startFromTemplate': 'Start from template',
   'hub.designSystem': 'Design system',
   'hub.starting': 'Starting…',
   'entry.navHome': 'Home',

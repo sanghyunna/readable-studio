@@ -29,6 +29,9 @@ export interface HomeHeroSubChip {
   slug: string;
   label: string;
   icon: IconName;
+  // Installed plugins in this sub-category, straight off the facet catalog so
+  // the rail's badge matches the Community section's count for the same slug.
+  count: number;
 }
 
 const PARENT_IDS: readonly SubChipParentId[] = ['prototype', 'deck'];
@@ -76,6 +79,7 @@ export function subChipsForChip(
       slug: option.slug,
       label: option.label,
       icon: SUBCATEGORY_ICONS[option.slug] ?? DEFAULT_SUBCATEGORY_ICON,
+      count: option.count,
     }));
 }
 

@@ -2528,6 +2528,14 @@ function SubTypeRow({
             <span className="home-hero__subtype-chip-label">
               {pluginSubfacetLabel(sub.slug, sub.label, t)}
             </span>
+            {/* Same count the Community section shows for this slug — the rail
+                is derived from the full install set, so the two agree. */}
+            <span
+              className="home-hero__subtype-chip-count"
+              data-testid={`home-hero-subtype-count-${sub.slug}`}
+            >
+              {sub.count}
+            </span>
           </button>
         );
       })}

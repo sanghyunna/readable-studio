@@ -552,6 +552,7 @@ export const ko: Dict = {
   'hub.untitledSession': '제목 없는 세션',
   'hub.importFolder': '폴더 가져오기',
   'hub.importClaudeZip': 'Claude Design ZIP',
+  'hub.startFromTemplate': '템플릿에서 시작',
   'hub.designSystem': '디자인 시스템',
   'hub.starting': '시작하는 중…',
   'entry.navHome': '홈',
