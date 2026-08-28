@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   startCallbackListener,
@@ -19,6 +19,7 @@ describe('startCallbackListener', () => {
       await listener.stop().catch(() => {});
       listener = null;
     }
+    vi.useRealTimers();
   });
 
   async function fetchCallback(
@@ -294,6 +295,35 @@ describe('startCallbackListener', () => {
     } finally {
       await first.stop().catch(() => {});
     }
+  });
+
+  it('does not invoke onCallback again when timeout fires during a pending callback', async () => {
+    vi.useFakeTimers();
+    let resolveCallback: (() => void) | undefined;
+    const callbackPending = new Promise<void>((resolve) => {
+      resolveCallback = resolve;
+    });
+    let onCallbackCount = 0;
+    listener = await startCallbackListener({
+      expectedState: 'state-pending',
+      onCallback: async () => {
+        onCallbackCount += 1;
+        await callbackPending;
+      },
+      port: TEST_PORT,
+      timeoutMs: 50,
+    });
+
+    const responsePromise = fetchCallback(listener.address, {
+      code: 'pending-code',
+      state: 'state-pending',
+    });
+    await responsePromise;
+    expect(onCallbackCount).toBe(1);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(onCallbackCount).toBe(1);
+
+    resolveCallback?.();
   });
 
   it('fires onCallback with a timeout error when nobody redirects in time', async () => {

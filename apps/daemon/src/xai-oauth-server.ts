@@ -87,6 +87,16 @@ export async function startCallbackListener(
       reaper.unref?.();
     });
 
+  const claim = (): boolean => {
+    if (consumed || stopped) return false;
+    consumed = true;
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    return true;
+  };
+
   const stop = async () => {
     if (stopped) return;
     stopped = true;
@@ -153,15 +163,13 @@ export async function startCallbackListener(
     const errorConsumes =
       Boolean(errorParam) && (!state || state === input.expectedState);
     const consumesListener = outcome.kind === 'ok' || errorConsumes;
-    if (consumesListener) {
-      consumed = true;
-    }
+    const claimed = consumesListener && claim();
 
     res.statusCode = outcome.kind === 'ok' ? 200 : 400;
     res.setHeader('content-type', 'text/html; charset=utf-8');
     res.end(renderResultPage(outcome));
 
-    if (!consumesListener) {
+    if (!claimed) {
       // Stale-tab replay or malformed request — don't surface to the
       // caller and don't tear down the listener. The browser sees the
       // 400 page; the real flow can still complete on a later hit.
@@ -207,6 +215,7 @@ export async function startCallbackListener(
   });
 
   timer = setTimeout(() => {
+    if (!claim()) return;
     Promise.resolve(
       input.onCallback({
         kind: 'error',
