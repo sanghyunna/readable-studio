@@ -1097,6 +1097,8 @@ describe('HomeView prompt handoff', () => {
       expect(screen.getByTestId('home-hero-plugin-presets')).toBeTruthy();
     });
     fireEvent.click(screen.getAllByTestId('home-hero-plugin-preset')[0]!);
+    const replaceDialog = await screen.findByRole('dialog', { name: /replace current prompt/i });
+    fireEvent.click(within(replaceDialog).getByRole('button', { name: 'Replace' }));
     expect(fetchMock.mock.calls.some(([url]) => (
       typeof url === 'string' && url.includes('/api/plugins/example-web-prototype/apply')
     ))).toBe(false);
@@ -1172,12 +1174,13 @@ describe('HomeView prompt handoff', () => {
     ));
   });
 
-  it('seeds the rendered query on use-with-query and writes placeholder edits back into inputs', async () => {
+  it('keeps edited draft inputs over a stale reapply snapshot and excludes stripped inputs', async () => {
     // For a plugin whose query is already human-readable, use-with-query seeds
     // the rendered query itself. Because the seed came from the query (not a
     // description/meta-instruction fallback), the raw `{{...}}` template is kept
-    // so editing a hydrated value in the composer flows back into pluginInputs
-    // and submit resolves the snapshot from what the user sees.
+    // so editing a hydrated value in the composer flows back into pluginInputs.
+    // WEB_PROTOTYPE_APPLY_RESULT deliberately returns the original audience and
+    // hidden fidelity, exercising the submit-time reapply reconciliation seam.
     const fetchMock = vi.fn<typeof fetch>(async (url) => {
       if (typeof url === 'string' && url === '/api/plugins') {
         return new Response(JSON.stringify({ plugins: [WEB_PROTOTYPE_PLUGIN] }), {
@@ -1241,6 +1244,10 @@ describe('HomeView prompt handoff', () => {
       pluginId: 'example-web-prototype',
       pluginInputs: expect.objectContaining({ audience: 'enterprise architects' }),
     })));
+    const [{ pluginInputs: submittedInputs }] = onSubmit.mock.calls[0] as [
+      { pluginInputs: Record<string, unknown> },
+    ];
+    expect(submittedInputs).not.toHaveProperty('fidelity');
   });
 
   it('extracts a placeholder edit even after the use-with-query draft prefix is also edited', async () => {

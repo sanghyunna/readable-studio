@@ -11,7 +11,8 @@ import type { InputFieldSpec } from '@readable-studio/contracts';
 // broken send path.
 
 function hasValue(value: unknown): boolean {
-  return value !== undefined && value !== null && value !== '';
+  if (typeof value === 'string') return value.trim().length > 0;
+  return value !== undefined && value !== null;
 }
 
 /**

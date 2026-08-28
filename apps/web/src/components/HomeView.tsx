@@ -447,6 +447,12 @@ export function HomeView({
     });
   }
 
+  function rejectDraftMutationDuringSubmit(): boolean {
+    if (!submitInFlightRef.current) return false;
+    setError('A project is already starting. Wait for it to finish, then try this selection again.');
+    return true;
+  }
+
   async function usePlugin(
     record: InstalledPluginRecord,
     nextPrompt?: string | null,
@@ -486,6 +492,7 @@ export function HomeView({
     // (inputs valid, apply not failed/superseded) — callers use this to
     // decide whether the Send cue should fire.
   ): Promise<boolean> {
+    if (rejectDraftMutationDuringSubmit()) return false;
     const applyRequestId = activePluginApplyRequestRef.current + 1;
     activePluginApplyRequestRef.current = applyRequestId;
     setActiveSkill(null);
@@ -554,6 +561,12 @@ export function HomeView({
 
     if (!inputsValid) {
       setPendingChipId(null);
+      const missing = missingRequiredInputs(inputFields, optimisticInputs);
+      setError(
+        missing.length > 0
+          ? `Fill the required plugin ${missing.length === 1 ? 'parameter' : 'parameters'} before running: ${missing.join(', ')}.`
+          : 'Fill the required plugin parameters before running.',
+      );
       // Required inputs without defaults: the inputs form is the next step,
       // not Send.
       return false;
@@ -581,22 +594,31 @@ export function HomeView({
       options?.preserveInputFields ? inputFields : result.inputs ?? inputFields,
       reconciledInputs,
     );
-    setActive((prev) =>
-      prev && prev.record.id === record.id
-        ? {
-            ...prev,
-            result,
-            inputs: reconciledInputs,
-            inputFields: options?.preserveInputFields ? inputFields : result.inputs ?? inputFields,
-            inputsValid: reconciledInputsValid,
-            projectMetadata: homeCreateProjectMetadata(
-              prev.projectKind,
-              reconciledInputs,
-              prev.projectMetadata,
-            ),
-          }
-        : prev,
-    );
+    setActive((prev) => {
+      if (!prev || prev.record.id !== record.id) return prev;
+      const fields = options?.preserveInputFields ? inputFields : result.inputs ?? inputFields;
+      // Input controls stay live while a non-submit apply is resolving. If the
+      // user edits one, the response belongs to the older input generation:
+      // retain the edit and discard that snapshot instead of overwriting the
+      // draft with the stale daemon result.
+      const inputsChangedWhileApplying = !inputsEqual(prev.inputs, optimisticInputs);
+      const currentInputs = inputsChangedWhileApplying ? prev.inputs : reconciledInputs;
+      const currentResult = inputsEqual(result.appliedPlugin.inputs, currentInputs)
+        ? result
+        : null;
+      return {
+        ...prev,
+        result: currentResult,
+        inputs: currentInputs,
+        inputFields: fields,
+        inputsValid: pluginInputsAreValid(fields, currentInputs),
+        projectMetadata: homeCreateProjectMetadata(
+          prev.projectKind,
+          currentInputs,
+          prev.projectMetadata,
+        ),
+      };
+    });
     // The daemon may have filled in `topic`/`audience` defaults the
     // optimistic render didn't know about (the manifest is inspected
     // client-side but field.default lives on the apply result). Re-
@@ -659,6 +681,7 @@ export function HomeView({
       deferApply?: boolean;
     },
   ) {
+    if (rejectDraftMutationDuringSubmit()) return;
     const replacement = previewPluginReplacement(record, nextPrompt, {
       inputs: withHomeDesignSystemDefault(options?.inputs, options?.inputFields ?? record.manifest?.readable?.inputs ?? [], selectedDesignSystemTitle),
       inputFields: options?.inputFields,
@@ -772,12 +795,15 @@ export function HomeView({
     confirm: () => Promise<void>,
     pluginIds: { before: string | null; after: string },
   ) {
-    if (
+    if (rejectDraftMutationDuringSubmit()) return;
+    const replacesActivePlugin =
+      pluginIds.before !== null && pluginIds.before !== pluginIds.after;
+    const replacesEditedPrompt =
       replacementPrompt !== null &&
       promptEditedByUser &&
       prompt.trim().length > 0 &&
-      prompt.trim() !== replacementPrompt.trim()
-    ) {
+      prompt.trim() !== replacementPrompt.trim();
+    if (replacesActivePlugin || replacesEditedPrompt) {
       setPendingReplacement({
         title,
         confirm,
@@ -827,6 +853,7 @@ export function HomeView({
   }, [pendingPluginUseHandoff, pluginsLoading, plugins]);
 
   function addPluginContext(record: InstalledPluginRecord, nextPrompt: string | null) {
+    if (rejectDraftMutationDuringSubmit()) return;
     setSelectedPluginContexts((prev) => {
       if (prev.some((item) => item.record.id === record.id)) return prev;
       return [...prev, { record, inlineBacked: true }];
@@ -837,7 +864,6 @@ export function HomeView({
   }
 
   function useExamplePlugin(record: InstalledPluginRecord, chipId: string, promptText: string) {
-    setError(null);
     // Picking a preset card *binds* the plugin (not just a textarea fill):
     // active switches to this exact preset so submit resolves its snapshot and
     // injects the plugin's SKILL.md + example.html as generation context — the
@@ -847,19 +873,25 @@ export function HomeView({
     // submit (submit() already re-resolves), so a preset click stays instant
     // and doesn't fire an /apply roundtrip per card. The chip is already
     // active when preset cards are visible, so reuse its project kind/metadata.
-    void usePlugin(record, promptText, {
-      chipId,
-      projectKind: active?.projectKind ?? undefined,
-      projectMetadata: active?.projectMetadata ?? null,
-      deferApply: true,
-      explicitPick: true,
-    }).then((submittable) => {
+    const confirm = async () => {
+      const submittable = await usePlugin(record, promptText, {
+        chipId,
+        projectKind: active?.projectKind ?? undefined,
+        projectMetadata: active?.projectMetadata ?? null,
+        deferApply: true,
+        explicitPick: true,
+      });
       if (submittable) inputRef.current?.pulseSend();
+      focusPromptAtEnd();
+    };
+    runWithReplacementConfirmation(record.title, promptText, confirm, {
+      before: active?.record.id ?? null,
+      after: record.id,
     });
-    focusPromptAtEnd();
   }
 
   function removePluginContext(pluginId: string) {
+    if (rejectDraftMutationDuringSubmit()) return;
     const record = selectedPluginContexts.find((item) => item.record.id === pluginId)?.record ?? null;
     setSelectedPluginContexts((prev) => prev.filter((item) => item.record.id !== pluginId));
     if (record) {
@@ -869,6 +901,7 @@ export function HomeView({
   }
 
   function handlePromptChange(nextPrompt: string) {
+    if (rejectDraftMutationDuringSubmit()) return;
     setPrompt(nextPrompt);
     setPromptEditedByUser(true);
     if (!active?.queryTemplate) return;
@@ -926,7 +959,7 @@ export function HomeView({
   }, []);
 
   function updateActiveInputs(next: Record<string, unknown>) {
-    if (!active) return;
+    if (!active || rejectDraftMutationDuringSubmit()) return;
     const normalized = next;
     const inputFields = active.inputFields;
     const queryTemplate = active.queryTemplate;
@@ -967,6 +1000,7 @@ export function HomeView({
   }
 
   function clearActivePlugin() {
+    if (rejectDraftMutationDuringSubmit()) return;
     activePluginApplyRequestRef.current += 1;
     setActive(null);
     setFallbackProjectKind(null);
@@ -978,6 +1012,7 @@ export function HomeView({
   }
 
   function clearActiveChipSelection() {
+    if (rejectDraftMutationDuringSubmit()) return;
     activePluginApplyRequestRef.current += 1;
     setActive(null);
     setFallbackProjectKind(null);
@@ -990,6 +1025,7 @@ export function HomeView({
   }
 
   function useSkill(skill: SkillSummary, nextPrompt: string | null) {
+    if (rejectDraftMutationDuringSubmit()) return;
     activePluginApplyRequestRef.current += 1;
     setActive(null);
     setPendingChipId(null);
@@ -1007,6 +1043,7 @@ export function HomeView({
   }
 
   function useMcpServer(_server: McpServerConfig, nextPrompt: string) {
+    if (rejectDraftMutationDuringSubmit()) return;
     setSelectedMcpContexts((current) => (
       current.some((item) => item.server.id === _server.id)
         ? current
@@ -1018,6 +1055,7 @@ export function HomeView({
   }
 
   function removeMcpContext(serverId: string) {
+    if (rejectDraftMutationDuringSubmit()) return;
     const server = selectedMcpContexts.find((item) => item.server.id === serverId)?.server ?? null;
     setSelectedMcpContexts((current) => current.filter((item) => item.server.id !== serverId));
     if (server) {
@@ -1030,6 +1068,7 @@ export function HomeView({
   }
 
   function queuePluginAuthoring(chipId: string | null, goal?: string) {
+    if (rejectDraftMutationDuringSubmit()) return;
     const nextInputs = buildPluginAuthoringInputs(goal);
     const nextPrompt = buildPluginAuthoringPromptForInputs(nextInputs);
     runWithReplacementConfirmation('Plugin authoring', nextPrompt, async () => {
@@ -1079,6 +1118,7 @@ export function HomeView({
   // existing handlers. Migration chips that don't have a bound plugin
   // (`open-template-picker`) forward to callbacks threaded in from EntryShell.
   function pickChip(chip: HomeHeroChip) {
+    if (rejectDraftMutationDuringSubmit()) return;
     setError(null);
     // P0 ui_click area=chat_composer element=plugin_chip|action_chip. The
     // chip's `action.kind` discriminates: plugin-bound chips
@@ -1197,21 +1237,58 @@ export function HomeView({
     // `onSubmit.pluginInputs` was stripped. Stripping only removes non-required
     // fields (`subject`/`style`/`aspect`/`mediaKind` stay), so the
     // apply still validates.
-    const submittedPluginInputs = submittedActive
+    let submittedPluginInputs = submittedActive
       ? stripArtifactFooterInputs(submittedApplyInputs)
       : defaultInputs;
     const activeInputsChangedForSubmit = submittedActive
-      ? !inputsEqual(submittedActive.result?.appliedPlugin?.inputs ?? submittedActive.inputs, submittedPluginInputs)
+      ? !submittedActive.result ||
+        !inputsEqual(submittedActive.result.appliedPlugin.inputs, submittedPluginInputs)
       : false;
     if (autoSendFirstMessage && submittedActive && (!submittedActive.result || activeInputsChangedForSubmit)) {
       const result = await resolveActivePlugin(submittedActive.record, submittedPluginInputs);
       if (!result) {
-        setError(`Failed to apply ${submittedActive.record.title}. Check the plugin parameters and try again.`);
+        const failedPluginId = submittedActive.record.id;
+        setActive((current) =>
+          current?.record.id === failedPluginId
+            ? { ...current, result: null, inputsValid: false }
+            : current,
+        );
+        setError(`Failed to apply ${submittedActive.record.title}. Check the plugin parameters, then select the plugin again to retry.`);
         submitInFlightRef.current = false;
         setSubmitInFlight(false);
         return false;
       }
-      submittedActive = { ...submittedActive, result, inputs: submittedPluginInputs };
+      const reconciledFields = submittedActive.preserveInputFields
+        ? submittedActive.inputFields
+        : result.inputs ?? submittedActive.inputFields;
+      submittedPluginInputs = stripArtifactFooterInputs(hydratePluginInputs(reconciledFields, {
+        ...stripArtifactFooterInputs(result.appliedPlugin.inputs ?? {}),
+        ...submittedPluginInputs,
+      }));
+      const missingAfterApply = missingRequiredInputs(reconciledFields, submittedPluginInputs);
+      if (missingAfterApply.length > 0) {
+        submittedActive = {
+          ...submittedActive,
+          result,
+          inputs: submittedPluginInputs,
+          inputFields: reconciledFields,
+          inputsValid: false,
+        };
+        setActive(submittedActive);
+        setError(
+          `Fill the required plugin ${missingAfterApply.length === 1 ? 'parameter' : 'parameters'} before running: ${missingAfterApply.join(', ')}.`,
+        );
+        submitInFlightRef.current = false;
+        setSubmitInFlight(false);
+        return false;
+      }
+      submittedActive = {
+        ...submittedActive,
+        result,
+        inputs: submittedPluginInputs,
+        inputFields: reconciledFields,
+        inputsValid: true,
+      };
       setActive(submittedActive);
     }
     // Reconcile each selected context against the serialized prompt text before
@@ -1339,7 +1416,9 @@ export function HomeView({
           void continueWithoutPrompt();
         }}
         sessionMode={sessionMode}
-        onSessionModeChange={setSessionMode}
+        onSessionModeChange={(nextMode) => {
+          if (!rejectDraftMutationDuringSubmit()) setSessionMode(nextMode);
+        }}
         activePluginTitle={activeBadgeTitle}
         activePluginIsExplicit={activePluginIsExplicit}
         activePluginRecord={active?.record ?? null}
@@ -1349,7 +1428,9 @@ export function HomeView({
         showActivePluginChip={showActivePluginChip}
         onClearActivePlugin={clearActivePlugin}
         onClearActiveChip={clearActiveChipSelection}
-        onClearActiveSkill={() => setActiveSkill(null)}
+        onClearActiveSkill={() => {
+          if (!rejectDraftMutationDuringSubmit()) setActiveSkill(null);
+        }}
         selectedPluginContexts={selectedPluginContexts.map((item) => item.record)}
         selectedMcpContexts={selectedMcpContexts.map((item) => item.server)}
         contextOnlyPlugins={selectedPluginContexts.filter((item) => !item.inlineBacked).map((item) => item.record)}
@@ -1359,19 +1440,18 @@ export function HomeView({
         onAddPlugin={onBrowseRegistry}
         onAddMcp={onOpenMcp}
         onOpenPluginDetails={setDetailsRecord}
-        pluginInputFields={(active?.inputFields ?? []).filter(
-          (field) => !ARTIFACT_FOOTER_FIELD_NAMES.has(field.name),
-        )}
+        pluginInputFields={active?.inputFields ?? []}
         pluginInputValues={active?.inputs ?? {}}
         pluginInputTemplate={active?.queryTemplate ?? null}
         onPluginInputValuesChange={updateActiveInputs}
         inlineEditableInputNames={active?.editableInputNames ?? []}
-        footerInputNames={footerInputNamesForChip(active?.chipId ?? null)}
+        footerInputNames={visiblePluginInputNames(active)}
         designSystems={designSystemPickerSystems}
         designSystemId={designSystemId}
         onDesignSystemIdChange={updateDesignSystemId}
         stagedFiles={stagedFiles}
         stagedFilesLocked={submitInFlight}
+        interactionLocked={submitInFlight}
         onAddFiles={stageFiles}
         onRemoveFile={removeStagedFile}
         onPreviewUrlsChange={updateStagedFilePreviewUrls}
@@ -1623,6 +1703,19 @@ function stripArtifactFooterInputs(
     next[key] = value;
   }
   return next;
+}
+
+function visiblePluginInputNames(active: ActivePlugin | null): string[] {
+  if (!active) return [];
+  if (!active.explicitPick && active.chipId) {
+    return footerInputNamesForChip(active.chipId);
+  }
+  const inlineNames = new Set(active.editableInputNames);
+  return active.inputFields
+    .filter((field) => (
+      !ARTIFACT_FOOTER_FIELD_NAMES.has(field.name) && !inlineNames.has(field.name)
+    ))
+    .map((field) => field.name);
 }
 
 function footerInputNamesForChip(chipId: string | null): string[] {

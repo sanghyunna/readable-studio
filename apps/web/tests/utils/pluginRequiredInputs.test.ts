@@ -17,7 +17,9 @@ describe('pluginRequiredInputs', () => {
     const fields = [field({ name: 'subject', label: 'Subject', required: true })];
     expect(missingRequiredInputs(fields, {})).toEqual(['Subject']);
     expect(missingRequiredInputs(fields, { subject: '' })).toEqual(['Subject']);
+    expect(missingRequiredInputs(fields, { subject: '   ' })).toEqual(['Subject']);
     expect(pluginInputsAreValid(fields, { subject: '' })).toBe(false);
+    expect(pluginInputsAreValid(fields, { subject: '\t' })).toBe(false);
   });
 
   it('treats a provided value or a usable default as satisfied', () => {

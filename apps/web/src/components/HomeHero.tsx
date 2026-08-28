@@ -155,6 +155,7 @@ interface Props {
   onDesignSystemIdChange?: (id: string | null) => void;
   stagedFiles?: StagedFileItem[];
   stagedFilesLocked?: boolean;
+  interactionLocked?: boolean;
   onAddFiles?: (files: File[]) => void;
   onRemoveFile?: (id: string) => void;
   onPreviewUrlsChange?: (previewUrls: ReadonlyMap<string, string>) => void;
@@ -259,6 +260,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     onDesignSystemIdChange = () => undefined,
     stagedFiles = EMPTY_STAGED_FILES,
     stagedFilesLocked = false,
+    interactionLocked = false,
     onAddFiles = () => undefined,
     onRemoveFile = () => undefined,
     onPreviewUrlsChange = NOOP_PREVIEW_URLS_CHANGE,
@@ -316,7 +318,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   const mentionPickerRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const shortcutsMenuRef = useRef<HTMLDivElement>(null);
-  const canSubmit = submitReady ?? ((prompt.trim().length > 0 || stagedFiles.length > 0) && !submitDisabled);
+  const canSubmit = !interactionLocked && (submitReady ?? ((prompt.trim().length > 0 || stagedFiles.length > 0) && !submitDisabled));
   const previewHomeFile = useMemo(() => {
     if (!previewHomeFileKey) return null;
     return stagedFiles.find((item) => item.id === previewHomeFileKey) ?? null;
@@ -357,7 +359,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
         : [],
     [mcpOptions, mentionActive, mentionQuery],
   );
-  const pickerOpen = active && mentionActive;
+  const pickerOpen = active && !interactionLocked && mentionActive;
   const tabs: Array<{ id: HomeMentionTab; label: string; count: number }> = [
     // The All overview previews at most HOME_MENTION_ALL_TAB_PREVIEW files, so
     // its badge counts the previewed slice — not the full staged total — to keep
@@ -835,6 +837,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   }
 
   function usePromptExample(example: string) {
+    if (interactionLocked) return;
     trackHomeChatComposerClick(analytics.track, {
       page_name: 'home',
       area: 'chat_composer',
@@ -858,6 +861,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   }
 
   function pickExamplePluginPreset(record: InstalledPluginRecord, chipId: string, promptText: string) {
+    if (interactionLocked) return;
     trackHomeChatComposerClick(analytics.track, {
       page_name: 'home',
       area: 'chat_composer',
@@ -881,6 +885,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   // The task-type rail (原型 / 幻灯片 / 报告 / …). Records which
   // task type the user picked before delegating to the host's chip handler.
   function handlePickTaskChip(chip: HomeHeroChip) {
+    if (interactionLocked) return;
     trackHomeChatComposerClick(analytics.track, {
       page_name: 'home',
       area: 'chat_composer',
@@ -897,6 +902,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   }
 
   function handleDrop(event: ReactDragEvent<HTMLDivElement>) {
+    if (interactionLocked) return;
     const files = Array.from(event.dataTransfer.files ?? []);
     if (files.length === 0) return;
     event.preventDefault();
@@ -1034,7 +1040,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
                     openActivePluginDetails();
                   }}
                   onClick={openActivePluginDetails}
-                  disabled={!activePluginRecord}
+                  disabled={!activePluginRecord || interactionLocked}
                   title={activePluginRecord ? t('homeHero.pluginTitle', { title: activePluginRecord.title }) : undefined}
                 >
                   <span className="home-hero__active-icon" aria-hidden>
@@ -1055,6 +1061,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
                       });
                       onClearActivePlugin();
                     }}
+                    disabled={interactionLocked}
                     aria-label={t('homeHero.clearActivePlugin')}
                     title={t('homeHero.clearActivePlugin')}
                     data-tooltip={t('homeHero.clearActivePlugin')}
@@ -1077,6 +1084,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
                   type="button"
                   className="home-hero__active-clear readable-tooltip"
                   onClick={onClearActiveSkill}
+                  disabled={interactionLocked}
                   aria-label={t('homeHero.clearActiveSkill')}
                   title={t('homeHero.clearActiveSkill')}
                   data-tooltip={t('homeHero.clearActiveSkill')}
@@ -1142,6 +1150,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
               ref={editorRef}
               testId="home-hero-input"
               draft={prompt}
+              editable={!interactionLocked}
               placeholder={placeholder}
               title={placeholder}
               knownEntities={promptMentionEntities}
@@ -1296,7 +1305,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
             data-testid="home-hero-file-input"
             type="file"
             multiple
-            disabled={stagedFilesLocked}
+            disabled={stagedFilesLocked || interactionLocked}
             style={{ display: 'none' }}
             onChange={(event) => {
               const files = Array.from(event.target.files ?? []);
@@ -1434,7 +1443,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
           activeChipId={activeChipId}
           pendingChipId={pendingChipId}
           pendingPluginId={pendingPluginId}
-          pluginsLoading={pluginsLoading}
+          pluginsLoading={pluginsLoading || interactionLocked}
           onPickChip={handlePickTaskChip}
           variant="tabs"
           pulseChipId={guidePulseChipId}
@@ -1443,7 +1452,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
             activeChipId={activeChipId}
             pendingChipId={pendingChipId}
             pendingPluginId={pendingPluginId}
-            pluginsLoading={pluginsLoading}
+            pluginsLoading={pluginsLoading || interactionLocked}
             open={shortcutsOpen}
             refNode={shortcutsMenuRef}
             onOpenChange={setShortcutsOpen}
@@ -1459,7 +1468,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
         <SubTypeRow
           subChips={activeSubChips}
           selectedSlug={selectedSubcategory}
-          pluginsLoading={pluginsLoading}
+          pluginsLoading={pluginsLoading || interactionLocked}
           onPickSubChip={(sub) => {
             trackHomeChatComposerClick(analytics.track, {
               page_name: 'home',
@@ -1502,7 +1511,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
           chipId={activeChipId}
           plugins={filteredExamplePlugins}
           activePluginId={activePluginRecord?.id ?? null}
-          pendingPluginId={pendingPluginId}
+          pendingPluginId={interactionLocked ? '__locked__' : pendingPluginId}
           locale={locale}
           onPick={pickExamplePluginPreset}
           pulseFirstPreset={guidePulseFirstPreset}
@@ -1522,6 +1531,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
                 type="button"
                 className={`home-hero__prompt-example${guidePulseFirstPreset && index === 0 ? ' home-hero__attention-sheen' : ''}`}
                 data-testid="home-hero-prompt-example"
+                disabled={interactionLocked}
                 onClick={() => usePromptExample(example)}
               >
                 <span>{example}</span>

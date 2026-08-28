@@ -166,6 +166,8 @@ export interface LexicalComposerInputProps {
   // Optional combobox a11y. When set, the ContentEditable announces the active
   // mention row (id lives in the portaled listbox) without moving DOM focus.
   comboboxAria?: { activeId: string | null; expanded: boolean };
+  /** Locks every editor mutation while the host is submitting an immutable draft. */
+  editable?: boolean;
   title?: string;
   // Test hook for the contenteditable host. Defaults to the project
   // composer's id; HomeHero overrides it so its own tests/selectors keep
@@ -291,6 +293,14 @@ function removeMentionAtCaret(selection: RangeSelection, isBackward: boolean): b
     parent.select(offset, offset);
   }
   return true;
+}
+
+function EditablePlugin({ editable }: { editable: boolean }) {
+  const [editor] = useLexicalComposerContext();
+  useEffect(() => {
+    editor.setEditable(editable);
+  }, [editable, editor]);
+  return null;
 }
 
 function EditorRefPlugin({
@@ -680,6 +690,7 @@ export const LexicalComposerInput = forwardRef<
     onPopoverKey,
     comboboxAria,
     draft,
+    editable = true,
     title,
     testId = 'chat-composer-input',
   } = props;
@@ -821,6 +832,7 @@ export const LexicalComposerInput = forwardRef<
       </div>
       <HistoryPlugin />
       <EditorRefPlugin editorRef={editorRef} />
+      <EditablePlugin editable={editable} />
       <OnChangePlugin
         onChange={onChange}
         knownEntities={knownEntities}
