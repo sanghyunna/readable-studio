@@ -232,6 +232,7 @@ export function HomeView({
     useState<ProjectMetadata | null>(null);
   const [active, setActive] = useState<ActivePlugin | null>(null);
   const [sessionMode, setSessionMode] = useState<ChatSessionMode>('design');
+  const [designSystemId, setDesignSystemId] = useState<string | null>(defaultDesignSystemId);
   const [activeSkill, setActiveSkill] = useState<SkillSummary | null>(null);
   const [selectedPluginContexts, setSelectedPluginContexts] = useState<SelectedPluginContext[]>([]);
   const [selectedMcpContexts, setSelectedMcpContexts] = useState<SelectedMcpContext[]>([]);
@@ -435,9 +436,9 @@ export function HomeView({
     () => selectableHomeDesignSystems(designSystems, defaultDesignSystemId),
     [defaultDesignSystemId, designSystems],
   );
-  const defaultDesignSystemTitle = useMemo(
-    () => homeDefaultDesignSystemTitle(designSystems, defaultDesignSystemId, t),
-    [defaultDesignSystemId, designSystems, t],
+  const selectedDesignSystemTitle = useMemo(
+    () => homeDesignSystemTitle(designSystems, designSystemId, t),
+    [designSystemId, designSystems, t],
   );
 
   function focusPromptAtEnd() {
@@ -492,7 +493,7 @@ export function HomeView({
     const inputFields = options?.inputFields ?? record.manifest?.readable?.inputs ?? [];
     const optimisticInputs = hydratePluginInputs(
       inputFields,
-      withHomeDesignSystemDefault(options?.inputs, inputFields, defaultDesignSystemTitle),
+      withHomeDesignSystemDefault(options?.inputs, inputFields, selectedDesignSystemTitle),
     );
     const inputsValid = pluginInputsAreValid(inputFields, optimisticInputs);
     const queryTemplate =
@@ -659,7 +660,7 @@ export function HomeView({
     },
   ) {
     const replacement = previewPluginReplacement(record, nextPrompt, {
-      inputs: withHomeDesignSystemDefault(options?.inputs, options?.inputFields ?? record.manifest?.readable?.inputs ?? [], defaultDesignSystemTitle),
+      inputs: withHomeDesignSystemDefault(options?.inputs, options?.inputFields ?? record.manifest?.readable?.inputs ?? [], selectedDesignSystemTitle),
       inputFields: options?.inputFields,
       queryTemplate: options?.queryTemplate,
     });
@@ -957,6 +958,14 @@ export function HomeView({
     });
   }
 
+  function updateDesignSystemId(nextId: string | null) {
+    if (submitInFlightRef.current) return;
+    setDesignSystemId(nextId);
+    if (!active?.inputFields.some((field) => field.name === 'designSystem')) return;
+    const nextTitle = homeDesignSystemTitle(designSystems, nextId, t);
+    updateActiveInputs({ ...active.inputs, designSystem: nextTitle });
+  }
+
   function clearActivePlugin() {
     activePluginApplyRequestRef.current += 1;
     setActive(null);
@@ -1145,6 +1154,7 @@ export function HomeView({
     if (submitInFlightRef.current) return false;
     submitInFlightRef.current = true;
     setSubmitInFlight(true);
+    setError(null);
     // P0 ui_click area=chat_composer element=send_button. Fires before the
     // async plugin-apply roundtrip so the click count reflects user intent
     // even when the run is rejected (missing inputs, apply failure). The
@@ -1172,11 +1182,7 @@ export function HomeView({
       return false;
     }
     const defaultInputs = { prompt: submittedPrompt };
-    const submittedDesignSystemId = homeDesignSystemSelectionForInputs(
-      submittedActive?.inputs ?? null,
-      designSystemPickerSystems,
-      t('designSystemPicker.noneTitle'),
-    );
+    const submittedDesignSystemId = designSystemId;
     // Composer inputs are forwarded as-is; deferred footer fields are stripped
     // from this set just below to form the run-facing inputs.
     const submittedApplyInputs = submittedActive ? submittedActive.inputs : defaultInputs;
@@ -1239,42 +1245,43 @@ export function HomeView({
       submittedProjectKind,
       submittedActive?.inputs ?? null,
       submittedActive?.projectMetadata ?? fallbackProjectMetadata ?? null,
-    );
+    ) ?? { kind: submittedProjectKind };
     // Scenario plugins (chips / preset cards) and explicit skill picks are
     // mutually exclusive routing sources — never send both (#2972).
     const resolvedSkillId = submittedActive ? null : activeSkill?.id ?? null;
-    const routedPluginId =
-      sessionMode === 'design'
+    const routedPluginId = activeSkill
+      ? null
+      : sessionMode === 'design'
         ? submittedActive?.record.id ?? DEFAULT_UNSELECTED_SCENARIO_PLUGIN_ID
         : submittedActive?.record.id ?? null;
+    const examplePromptContext = (() => {
+      if (!autoSendFirstMessage || !examplePromptInfoRef.current) return null;
+      const key = 'readable:example-prompt-used';
+      if (localStorage.getItem(key)) return null;
+      localStorage.setItem(key, '1');
+      return examplePromptInfoRef.current;
+    })();
     let submission: Promise<boolean> | boolean | void;
     try {
       submission = onSubmit({
-      prompt: submittedPrompt,
-      pluginId: routedPluginId,
-      pluginType: submittedActive?.record.marketplaceTrust ?? (routedPluginId ? 'official' : null),
-      skillId: resolvedSkillId,
-      appliedPluginSnapshotId: submittedActive?.result?.appliedPlugin?.snapshotId ?? null,
-      pluginTitle: submittedActive?.record.title ?? null,
-      taskKind: submittedActive?.result?.appliedPlugin?.taskKind ?? null,
-      pluginInputs: submittedPluginInputs,
-      projectKind: submittedProjectKind,
-      projectMetadata: submittedProjectMetadata,
-      designSystemId: submittedDesignSystemId,
-      contextPlugins,
-      contextMcpServers,
-      attachments: submittedAttachments,
-      conversationMode: sessionMode,
-      ...(autoSendFirstMessage ? {} : { autoSendFirstMessage: false }),
-      ...(() => {
-        if (!autoSendFirstMessage) return {};
-        if (!examplePromptInfoRef.current) return {};
-        const key = 'readable:example-prompt-used';
-        if (localStorage.getItem(key)) return {};
-        localStorage.setItem(key, '1');
-        return { examplePromptContext: examplePromptInfoRef.current };
-      })(),
-    });
+        prompt: submittedPrompt,
+        pluginId: routedPluginId,
+        pluginType: submittedActive?.record.marketplaceTrust ?? (routedPluginId ? 'official' : null),
+        skillId: resolvedSkillId,
+        appliedPluginSnapshotId: submittedActive?.result?.appliedPlugin?.snapshotId ?? null,
+        pluginTitle: submittedActive?.record.title ?? null,
+        taskKind: submittedActive?.result?.appliedPlugin?.taskKind ?? null,
+        pluginInputs: submittedPluginInputs,
+        projectKind: submittedProjectKind,
+        projectMetadata: submittedProjectMetadata,
+        designSystemId: submittedDesignSystemId,
+        contextPlugins,
+        contextMcpServers,
+        attachments: submittedAttachments,
+        conversationMode: sessionMode,
+        autoSendFirstMessage,
+        examplePromptContext,
+      });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Failed to start the project. Try again.');
       submitInFlightRef.current = false;
@@ -1283,7 +1290,10 @@ export function HomeView({
     }
     try {
       const result = await submission;
-      if (result === false) return false;
+      if (result === false) {
+        setError('Failed to start the project. Try again.');
+        return false;
+      }
       setSelectedPluginContexts([]);
       setSelectedMcpContexts([]);
       setStagedFiles([]);
@@ -1306,6 +1316,13 @@ export function HomeView({
       setContinuingWithoutPrompt(false);
     }
   }
+
+  const phase = submitInFlight || continuingWithoutPrompt ? 'submitting' : 'idle';
+  const pluginApplyPending = pendingApplyId !== null;
+  const pluginAuthoringPending = pendingAuthoringChipId !== null;
+  const blocked = phase !== 'idle' || pluginApplyPending || pluginAuthoringPending
+    || (active !== null && !active.inputsValid);
+  const ready = !blocked && (prompt.trim().length > 0 || stagedFiles.length > 0);
 
   return (
     <div className={`home-view${surface === 'hub' ? ' home-view--hub' : ''}`} data-testid="home-view" ref={homeViewRef}>
@@ -1351,6 +1368,8 @@ export function HomeView({
         inlineEditableInputNames={active?.editableInputNames ?? []}
         footerInputNames={footerInputNamesForChip(active?.chipId ?? null)}
         designSystems={designSystemPickerSystems}
+        designSystemId={designSystemId}
+        onDesignSystemIdChange={updateDesignSystemId}
         stagedFiles={stagedFiles}
         stagedFilesLocked={submitInFlight}
         onAddFiles={stageFiles}
@@ -1364,13 +1383,8 @@ export function HomeView({
         mcpLoading={mcpLoading}
         pendingPluginId={pendingApplyId}
         pendingChipId={pendingChipId}
-        submitDisabled={
-          Boolean(pendingApplyId) ||
-          Boolean(pendingAuthoringChipId) ||
-          Boolean(active && !active.inputsValid) ||
-          continuingWithoutPrompt ||
-          submitInFlight
-        }
+        submitDisabled={blocked}
+        submitReady={ready}
         continueDisabled={
           Boolean(pendingApplyId) ||
           Boolean(pendingAuthoringChipId) ||
@@ -1664,23 +1678,16 @@ function selectableHomeDesignSystems(
   return [defaultSystem, ...sorted.filter((system) => system.id !== defaultSystem.id)];
 }
 
-// The composer's default selection title. A user-owned ("Personal") default
-// design system stays pre-selected; otherwise the composer defaults to
-// "不指定 / No design system" so nothing is imposed implicitly and the project
-// opens with an empty Design system.
-function homeDefaultDesignSystemTitle(
+// Resolve the controlled composer's selected id to the title expected by a
+// plugin's designSystem input. No selection uses the picker's explicit none
+// title so the query template and project-level id stay in sync.
+function homeDesignSystemTitle(
   systems: DesignSystemSummary[],
-  defaultDesignSystemId: string | null,
+  designSystemId: string | null,
   t: ReturnType<typeof useI18n>['t'],
 ): string {
-  const defaultSystem = systems.find(
-    (system) =>
-      system.id === defaultDesignSystemId &&
-      Boolean(system.title) &&
-      designSystemOptionGroup(system) === 'Personal' &&
-      (system.status ?? 'draft') === 'published',
-  );
-  return defaultSystem?.title ?? t('designSystemPicker.noneTitle');
+  return systems.find((system) => system.id === designSystemId)?.title
+    ?? t('designSystemPicker.noneTitle');
 }
 
 function designSystemOptionGroup(
@@ -1715,24 +1722,6 @@ function withHomeDesignSystemDefault(
     designSystem: defaultDesignSystemTitle,
   };
 }
-
-// Resolve the composer's `designSystem` input (a title string) to the
-// designSystemId sent at submit. "不指定 / No design system" (or an unset
-// value) resolves to null so the project is created without a design system.
-function homeDesignSystemSelectionForInputs(
-  inputs: Record<string, unknown> | null,
-  systems: DesignSystemSummary[],
-  noneTitle: string,
-): string | null {
-  const value = inputs?.designSystem;
-  if (typeof value !== 'string') return null;
-  const selectedTitle = value.trim();
-  if (!selectedTitle || selectedTitle === noneTitle || selectedTitle === 'the active project design system') {
-    return null;
-  }
-  return systems.find((system) => system.title === selectedTitle)?.id ?? null;
-}
-
 
 function estimatePluginContextItemCount(
   record: InstalledPluginRecord,

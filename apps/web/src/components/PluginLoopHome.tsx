@@ -3,6 +3,7 @@ import type {
   ApplyResult,
   ChatSessionMode,
   InstalledPluginRecord,
+  ProjectKind,
   ProjectMetadata,
 } from '@readable-studio/contracts';
 import {
@@ -23,32 +24,21 @@ import { trackPluginLoopClick } from '../analytics/events';
 export interface PluginLoopSubmit {
   prompt: string;
   pluginId: string | null;
-  // Marketplace trust of the routed plugin (official / community / …), used
-  // to attribute project_create_result to a plugin type. Null when no plugin.
-  pluginType?: string | null;
-  skillId?: string | null;
+  pluginType: string | null;
+  skillId: string | null;
   appliedPluginSnapshotId: string | null;
   pluginTitle: string | null;
   taskKind: string | null;
-  pluginInputs?: Record<string, unknown> | null;
-  contextPlugins?: Array<{ id: string; title: string; description?: string }> | null;
-  contextMcpServers?: Array<{ id: string; label?: string; transport?: string; url?: string; command?: string }> | null;
-  designSystemId?: string | null;
-  // Stage B of plugin-driven-flow-plan: when the user picked a Home
-  // chip the rail tells the submit handler which `ProjectKind` to
-  // stamp on the new project's metadata. The daemon-side default
-  // binding then resolves to the matching scenario plugin for that kind.
-  // Null means the caller did not stamp an explicit kind. HomeView's
-  // free-form fallback uses `other` and binds the hidden readable-default
-  // router plugin so the agent asks for the exact task type in-chat.
-  projectKind?: 'prototype' | 'deck' | 'template' | 'image' | 'video' | 'audio' | 'other' | null;
-  projectMetadata?: ProjectMetadata | null;
-  conversationMode?: ChatSessionMode;
-  // Files staged on Home before the project exists. App uploads them
-  // into the created project's Design Files before the first auto-send.
-  attachments?: File[];
-  autoSendFirstMessage?: boolean;
-  examplePromptContext?: { title: string; artifactType: string; brief: Record<string, string> };
+  pluginInputs: Record<string, unknown>;
+  contextPlugins: Array<{ id: string; title: string; description?: string }>;
+  contextMcpServers: Array<{ id: string; label?: string; transport?: string; url?: string; command?: string }>;
+  designSystemId: string | null;
+  projectKind: ProjectKind;
+  projectMetadata: ProjectMetadata;
+  conversationMode: ChatSessionMode;
+  attachments: File[];
+  autoSendFirstMessage: boolean;
+  examplePromptContext: { title: string; artifactType: string; brief: Record<string, string> } | null;
 }
 
 interface Props {
@@ -140,9 +130,21 @@ export function PluginLoopHome({ onSubmit }: Props) {
     onSubmit({
       prompt: trimmed,
       pluginId: active?.record.id ?? null,
+      pluginType: active?.record.marketplaceTrust ?? (active ? 'official' : null),
+      skillId: null,
       appliedPluginSnapshotId: active?.result.appliedPlugin?.snapshotId ?? null,
       pluginTitle: active?.record.title ?? null,
       taskKind: active?.result.appliedPlugin?.taskKind ?? null,
+      pluginInputs: active?.inputs ?? { prompt: trimmed },
+      contextPlugins: [],
+      contextMcpServers: [],
+      designSystemId: null,
+      projectKind: 'prototype',
+      projectMetadata: { kind: 'prototype' },
+      conversationMode: 'design',
+      attachments: [],
+      autoSendFirstMessage: true,
+      examplePromptContext: null,
     });
   }
 

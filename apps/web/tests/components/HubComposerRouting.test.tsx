@@ -1,38 +1,38 @@
-// @vitest-environment jsdom
-
-// The welcome screen routed bare prompts through the hidden default scenario
-// plugin with projectKind='other', so the agent asks for the exact task type.
-// The hub composer replaced that surface and must keep the same routing.
-
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_UNSELECTED_SCENARIO_PLUGIN_ID } from '@readable-studio/contracts';
+import type { PluginLoopSubmit } from '../../src/components/PluginLoopHome';
 
-import { buildHubSubmission } from '../../src/components/hub/buildHubSubmission';
+// The hub no longer has a bare-prompt submission builder. HomeView owns the
+// stateful values and emits this normalized boundary contract to EntryShell.
+describe('hub composer submission boundary', () => {
+  it('requires every normalized field and the four-value project kind', () => {
+    const payload = {
+      prompt: '',
+      pluginId: null,
+      pluginType: null,
+      skillId: 'qa-skill',
+      appliedPluginSnapshotId: null,
+      pluginTitle: null,
+      taskKind: null,
+      pluginInputs: { prompt: '' },
+      contextPlugins: [],
+      contextMcpServers: [],
+      designSystemId: 'qa-design-system',
+      projectKind: 'other',
+      projectMetadata: { kind: 'other' },
+      conversationMode: 'chat',
+      attachments: [],
+      autoSendFirstMessage: false,
+      examplePromptContext: null,
+    } satisfies PluginLoopSubmit;
 
-describe('hub composer routing parity with the welcome screen', () => {
-  it('routes bare prompts through the default scenario plugin', () => {
-    const payload = buildHubSubmission('분기 리포트', { designSystemId: null });
-    expect(payload.pluginId).toBe(DEFAULT_UNSELECTED_SCENARIO_PLUGIN_ID);
-    expect(payload.pluginType).toBe('official');
-  });
-
-  it("stamps projectKind 'other' so the agent asks for the task type", () => {
-    expect(buildHubSubmission('가격표', { designSystemId: null }).projectKind).toBe('other');
-  });
-
-  it('creates the conversation in design mode like the hero did', () => {
-    expect(buildHubSubmission('가격표', { designSystemId: null }).conversationMode).toBe('design');
-  });
-
-  it('carries the composer design system and auto-sends the first message', () => {
-    const payload = buildHubSubmission('분기 리포트', { designSystemId: 'aurora' });
-    expect(payload.designSystemId).toBe('aurora');
-    expect(payload.autoSendFirstMessage).toBe(true);
-    expect(payload.prompt).toBe('분기 리포트');
-  });
-
-  it('never routes a skill alongside the scenario plugin', () => {
-    // Scenario plugins and explicit skill picks are mutually exclusive (#2972).
-    expect(buildHubSubmission('분기 리포트', { designSystemId: null }).skillId).toBeNull();
+    expect(payload).toMatchObject({
+      skillId: 'qa-skill',
+      designSystemId: 'qa-design-system',
+      projectKind: 'other',
+      conversationMode: 'chat',
+      autoSendFirstMessage: false,
+    });
+    expect(payload.pluginId).toBeNull();
+    expect(payload.pluginInputs).toEqual({ prompt: '' });
   });
 });

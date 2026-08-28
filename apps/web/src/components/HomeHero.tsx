@@ -151,6 +151,8 @@ interface Props {
   inlineEditableInputNames?: string[];
   footerInputNames?: string[];
   designSystems?: DesignSystemSummary[];
+  designSystemId?: string | null;
+  onDesignSystemIdChange?: (id: string | null) => void;
   stagedFiles?: StagedFileItem[];
   stagedFilesLocked?: boolean;
   onAddFiles?: (files: File[]) => void;
@@ -165,6 +167,7 @@ interface Props {
   pendingPluginId: string | null;
   pendingChipId: string | null;
   submitDisabled?: boolean;
+  submitReady?: boolean;
   continueDisabled?: boolean;
   onPickPlugin: (record: InstalledPluginRecord, nextPrompt: string | null) => void;
   onPickExamplePlugin?: (record: InstalledPluginRecord, chipId: string, promptText: string) => void;
@@ -252,6 +255,8 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     onPluginInputValuesChange = () => undefined,
     footerInputNames = EMPTY_INPUT_NAMES,
     designSystems = EMPTY_DESIGN_SYSTEMS,
+    designSystemId = null,
+    onDesignSystemIdChange = () => undefined,
     stagedFiles = EMPTY_STAGED_FILES,
     stagedFilesLocked = false,
     onAddFiles = () => undefined,
@@ -266,6 +271,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     pendingPluginId,
     pendingChipId,
     submitDisabled = false,
+    submitReady,
     continueDisabled,
     onPickPlugin,
     onPickExamplePlugin = () => undefined,
@@ -310,7 +316,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   const mentionPickerRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const shortcutsMenuRef = useRef<HTMLDivElement>(null);
-  const canSubmit = (prompt.trim().length > 0 || stagedFiles.length > 0) && !submitDisabled;
+  const canSubmit = submitReady ?? ((prompt.trim().length > 0 || stagedFiles.length > 0) && !submitDisabled);
   const previewHomeFile = useMemo(() => {
     if (!previewHomeFileKey) return null;
     return stagedFiles.find((item) => item.id === previewHomeFileKey) ?? null;
@@ -1368,6 +1374,8 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
                     field={field}
                     value={pluginInputValues[field.name]}
                     designSystems={designSystems}
+                    designSystemId={designSystemId}
+                    onDesignSystemIdChange={onDesignSystemIdChange}
                     onChange={(value) => {
                       onPluginInputValuesChange({
                         ...pluginInputValues,
@@ -1801,12 +1809,16 @@ function FooterInputOption({
   field,
   value,
   designSystems,
+  designSystemId,
+  onDesignSystemIdChange,
   onChange,
   t,
 }: {
   field: InputFieldSpec;
   value: unknown;
   designSystems: DesignSystemSummary[];
+  designSystemId: string | null;
+  onDesignSystemIdChange: (id: string | null) => void;
   onChange: (value: unknown) => void;
   t: ReturnType<typeof useT>;
 }) {
@@ -1828,25 +1840,13 @@ function FooterInputOption({
     );
   }
   if (field.name === 'designSystem') {
-    // The composer binds its design-system choice as a TITLE string in the
-    // plugin input (used by the apply query template). The shared picker is
-    // id-based, so adapt: "不指定 / No design system" (or an unset value) maps
-    // to a null id; otherwise resolve the title to its system id.
-    const noneTitle = t('designSystemPicker.noneTitle');
-    const currentTitle = value === undefined || value === null ? '' : String(value).trim();
-    const selectedId =
-      currentTitle && currentTitle !== noneTitle && currentTitle !== 'the active project design system'
-        ? designSystems.find((system) => system.title === currentTitle)?.id ?? null
-        : null;
     return (
       <DesignSystemPicker
         variant="footer"
         label={label}
         designSystems={designSystems}
-        selectedId={selectedId}
-        onChange={(id) =>
-          onChange(id == null ? noneTitle : designSystems.find((system) => system.id === id)?.title ?? noneTitle)
-        }
+        selectedId={designSystemId}
+        onChange={onDesignSystemIdChange}
       />
     );
   }
