@@ -1703,29 +1703,19 @@ function homeHeroChipLabelForId(chipId: string, t: ReturnType<typeof useI18n>['t
   }
 }
 
-// Prototype/deck-specific settings (fidelity, slide count, speaker notes) are
-// no longer promoted into the home composer footer; the agent asks for those
-// via the first-turn discovery flow, so the prototype/deck footer keeps only
-// the design-system picker.
-const ARTIFACT_FOOTER_FIELD_NAMES = new Set([
-  'fidelity',
-  'slideCount',
-  'speakerNotes',
-]);
+// Slide count remains a first-turn discovery value. Fidelity and speaker notes
+// are controlled artifact-footer inputs and must stay in the apply snapshot.
+const HIDDEN_ARTIFACT_INPUT_NAMES = new Set(['slideCount']);
 
-// The prototype/deck footer no longer exposes these settings, so any plugin
-// default for them must NOT be seeded into the Home composer's inputs — that
-// would forward a prefilled value (e.g. `fidelity: high-fidelity`) to the run
-// instead of leaving it "unknown" for the first-turn discovery flow to ask.
 function stripArtifactFooterInputs(
   inputs: Record<string, unknown>,
 ): Record<string, unknown> {
-  if (!Object.keys(inputs).some((key) => ARTIFACT_FOOTER_FIELD_NAMES.has(key))) {
+  if (!Object.keys(inputs).some((key) => HIDDEN_ARTIFACT_INPUT_NAMES.has(key))) {
     return inputs;
   }
   const next: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(inputs)) {
-    if (ARTIFACT_FOOTER_FIELD_NAMES.has(key)) continue;
+    if (HIDDEN_ARTIFACT_INPUT_NAMES.has(key)) continue;
     next[key] = value;
   }
   return next;
@@ -1739,13 +1729,14 @@ function visiblePluginInputNames(active: ActivePlugin | null): string[] {
   const inlineNames = new Set(active.editableInputNames);
   return active.inputFields
     .filter((field) => (
-      !ARTIFACT_FOOTER_FIELD_NAMES.has(field.name) && !inlineNames.has(field.name)
+      !HIDDEN_ARTIFACT_INPUT_NAMES.has(field.name) && !inlineNames.has(field.name)
     ))
     .map((field) => field.name);
 }
 
 function footerInputNamesForChip(chipId: string | null): string[] {
-  if (chipId === 'prototype' || chipId === 'deck') return ['designSystem'];
+  if (chipId === 'prototype') return ['fidelity', 'designSystem'];
+  if (chipId === 'deck') return ['speakerNotes', 'designSystem'];
   return [];
 }
 

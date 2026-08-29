@@ -132,6 +132,30 @@ describe('HomeHero intent rail', () => {
     expect(footer).toBeTruthy();
   });
 
+  it('keeps model, ratio, duration, and resolution footer controls controlled', () => {
+    const onPluginInputValuesChange = vi.fn();
+    const values = { model: 'default', ratio: '16:9', duration: 'short', resolution: '1080p' };
+    renderHero({
+      pluginInputFields: [
+        { name: 'model', type: 'select', options: ['default', 'quality'] },
+        { name: 'ratio', type: 'select', options: ['16:9', '4:3'] },
+        { name: 'duration', type: 'select', options: ['short', 'long'] },
+        { name: 'resolution', type: 'select', options: ['1080p', '4k'] },
+      ],
+      pluginInputValues: values,
+      footerInputNames: ['model', 'ratio', 'duration', 'resolution'],
+      onPluginInputValuesChange,
+    });
+
+    for (const [name, option] of [
+      ['model', 'quality'], ['ratio', '4:3'], ['duration', 'long'], ['resolution', '4k'],
+    ] as const) {
+      fireEvent.click(screen.getByTestId(`home-hero-footer-option-${name}`));
+      fireEvent.click(screen.getByRole('option', { name: option }));
+      expect(onPluginInputValuesChange).toHaveBeenCalledWith({ ...values, [name]: option });
+    }
+  });
+
   it('forwards the matching chip descriptor when clicked', () => {
     const { onPickChip } = renderHero();
     fireEvent.click(screen.getByTestId('home-hero-rail-deck'));

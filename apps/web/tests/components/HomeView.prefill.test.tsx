@@ -665,9 +665,11 @@ describe('HomeView prompt handoff', () => {
     expect(
       screen.getByTestId('home-hero-footer-option-designSystem').textContent,
     ).toContain('Refly Design System');
-    // Fidelity is no longer a prototype footer control — the agent asks for it
-    // in discovery instead. Only the design-system picker stays in the footer.
-    expect(screen.queryByTestId('home-hero-footer-option-fidelity')).toBeNull();
+    const fidelity = screen.getByTestId('home-hero-footer-option-fidelity');
+    expect(fidelity.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(fidelity);
+    fireEvent.click(screen.getByRole('option', { name: 'Wireframe' }));
+    expect(fidelity.textContent).toContain('Wireframe');
     expect(screen.getByTestId('home-hero-footer-option-designSystem')).toBeTruthy();
     expect(homeHeroPromptValue()).toBe('');
     expect(screen.getByTestId('home-hero-plugin-presets')).toBeTruthy();
@@ -695,6 +697,7 @@ describe('HomeView prompt handoff', () => {
     const protoApplyInputs = JSON.parse(String((applyCall?.[1] as RequestInit).body)).inputs;
     expect(protoApplyInputs).toMatchObject({
       artifactKind: 'web prototype',
+      fidelity: 'wireframe',
       audience: 'product evaluators',
       designSystem: 'Refly Design System',
       template: 'the bundled web prototype seed',
@@ -708,13 +711,10 @@ describe('HomeView prompt handoff', () => {
         kind: 'prototype',
       }),
     })));
-    // Fidelity is deferred to first-turn discovery: the plugin is still applied
-    // with its full inputs, but its default must NOT be forwarded to the run, so
-    // the question-form flow collects it instead of inheriting a baked-in value.
     const [{ pluginInputs: protoSubmittedInputs }] = onSubmit.mock.calls[0] as [
       { pluginInputs?: Record<string, unknown> },
     ];
-    expect(protoSubmittedInputs).not.toHaveProperty('fidelity');
+    expect(protoSubmittedInputs).toMatchObject({ fidelity: 'wireframe' });
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
@@ -892,8 +892,7 @@ describe('HomeView prompt handoff', () => {
     expect(
       screen.getByTestId('home-hero-footer-option-designSystem').textContent,
     ).toContain('Refly Design System');
-    // Fidelity is no longer a prototype footer control (asked in discovery).
-    expect(screen.queryByTestId('home-hero-footer-option-fidelity')).toBeNull();
+    expect(screen.getByTestId('home-hero-footer-option-fidelity').textContent).toContain('High fidelity');
     // Inline `{{slot}}` prompt widgets were removed in the Lexical migration.
     expect(screen.queryByTestId('home-hero-prompt-slot-fidelity')).toBeNull();
     expect(screen.queryByTestId('home-hero-prompt-slot-artifactKind')).toBeNull();
@@ -939,10 +938,7 @@ describe('HomeView prompt handoff', () => {
     })));
   });
 
-  it('binds the deck chip and keeps only the design-system picker in the footer', async () => {
-    // Slide count + speaker-notes footer controls were removed from the deck
-    // composer; the agent asks for them in the first-turn discovery flow. The
-    // deck footer now mirrors the prototype footer — design system only.
+  it('binds the deck chip and routes controlled speaker notes through the snapshot payload', async () => {
     const fetchMock = vi.fn<typeof fetch>(async (url) => {
       if (typeof url === 'string' && url === '/api/plugins') {
         return new Response(JSON.stringify({ plugins: [SIMPLE_DECK_PLUGIN] }), {
@@ -979,7 +975,10 @@ describe('HomeView prompt handoff', () => {
     await waitFor(() => {
       expect(screen.getByTestId('home-hero-active-type-chip').textContent).toContain('Slide deck');
     });
-    expect(screen.queryByTestId('home-hero-footer-option-speakerNotes')).toBeNull();
+    const speakerNotes = screen.getByTestId('home-hero-footer-option-speakerNotes');
+    expect(speakerNotes.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(speakerNotes);
+    expect(speakerNotes.getAttribute('aria-pressed')).toBe('false');
     expect(screen.queryByTestId('home-hero-footer-option-slideCount')).toBeNull();
     expect(screen.getByTestId('home-hero-footer-option-designSystem')).toBeTruthy();
 
@@ -989,10 +988,17 @@ describe('HomeView prompt handoff', () => {
     await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
       pluginId: 'example-simple-deck',
       projectKind: 'deck',
+      pluginInputs: expect.objectContaining({ speakerNotes: 'no speaker notes' }),
       projectMetadata: expect.objectContaining({
         kind: 'deck',
       }),
     })));
+    const applyCall = fetchMock.mock.calls.find(([url]) => (
+      typeof url === 'string' && url.includes('/api/plugins/example-simple-deck/apply')
+    ));
+    expect(JSON.parse(String((applyCall?.[1] as RequestInit).body))).toMatchObject({
+      inputs: { speakerNotes: 'no speaker notes' },
+    });
   });
 
   it('switches output-type chips without replacing an existing prompt', async () => {
@@ -1247,7 +1253,7 @@ describe('HomeView prompt handoff', () => {
     const [{ pluginInputs: submittedInputs }] = onSubmit.mock.calls[0] as [
       { pluginInputs: Record<string, unknown> },
     ];
-    expect(submittedInputs).not.toHaveProperty('fidelity');
+    expect(submittedInputs).toMatchObject({ fidelity: 'high-fidelity' });
   });
 
   it('extracts a placeholder edit even after the use-with-query draft prefix is also edited', async () => {
