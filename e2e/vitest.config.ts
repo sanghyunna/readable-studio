@@ -10,5 +10,9 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['specs/**/*.spec.ts', 'tests/**/*.test.ts'],
+    // Every e2e file boots its own daemon + Next runtime. Running files in
+    // parallel exhausts Windows memory (VirtualAlloc failures, esbuild/tsx
+    // worker crashes) and the resulting timeouts look like product defects.
+    fileParallelism: false,
   },
 });
