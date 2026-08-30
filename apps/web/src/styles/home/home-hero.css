@@ -2444,7 +2444,11 @@
   height: 30px;
   min-width: 0;
   padding: 0 10px;
-  border: 1px solid var(--border-strong);
+  /* Must stay --hub-control-border: the mockup gives every composer control
+     the same strong outline. Using the shorthand with a different colour here
+     would silently reset the border-color set by the grouped rule above, which
+     sits at equal specificity earlier in source order. */
+  border: 1px solid var(--hub-control-border);
   border-radius: var(--radius-pill);
   color: var(--text);
   font: inherit;
