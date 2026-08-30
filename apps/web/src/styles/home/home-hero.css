@@ -2410,16 +2410,20 @@
 }
 
 .home-view--hub .home-hero__foot-left {
-  gap: 6px;
-}
-
-.home-view--hub .home-hero__foot-left {
   position: relative;
   z-index: 130;
+  gap: 4px;
+  flex-wrap: wrap;
 }
 
 .home-view--hub .home-hero__footer-options {
   position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .home-view--hub .home-hero__footer-option,

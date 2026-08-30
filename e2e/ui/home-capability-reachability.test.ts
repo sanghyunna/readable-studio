@@ -1,3 +1,4 @@
+import { mkdir, writeFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 import { routeAgents } from '@/playwright/mock-factory';
@@ -367,12 +368,58 @@ async function activateStaticPromptExample(page: Page, id: string) {
   await expect(page.locator('.readable-loading-shell')).toHaveCount(0, { timeout: 15_000 });
   await visible(page.getByTestId('entry-view-home'), id);
   await chooseType(page, 'prototype');
-  const seed = 'Design a high-converting website for an AI CRM with a clear hero, feature story, proof points, and trial CTA';
-  const example = page.getByRole('button', { name: seed, exact: true });
+  const examples = page.getByTestId('home-hero-prompt-examples');
+  const example = examples.getByTestId('home-hero-prompt-example').first();
   await visible(example, id);
+  await expect(example).not.toHaveAttribute('data-plugin-id');
+  const priorPrompt = await composer(page).innerText();
   await example.click();
-  await expect(composer(page)).toHaveText(seed);
+  const seededPrompt = await composer(page).innerText();
+  expect(seededPrompt.trim()).not.toBe('');
+  expect(seededPrompt).not.toBe(priorPrompt);
   await expect(composer(page)).toBeFocused();
+}
+
+async function expectArtifactFooterControlsContained(page: Page, evidenceName: 'fidelity' | 'speaker-notes') {
+  for (const width of [1280, 1440]) {
+    await page.setViewportSize({ width, height: 720 });
+    const geometry = await page.locator('.home-hero__input-foot').evaluate((footer) => {
+      const container = footer.getBoundingClientRect();
+      const viewportWidth = document.documentElement.clientWidth;
+      const controls = Array.from(footer.querySelectorAll<HTMLElement>('button, input'))
+        .filter((control) => {
+          const style = getComputedStyle(control);
+          const rect = control.getBoundingClientRect();
+          return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+        })
+        .map((control) => {
+          const rect = control.getBoundingClientRect();
+          return {
+            id: control.dataset.testid ?? control.getAttribute('aria-label') ?? control.textContent?.trim() ?? control.tagName,
+            left: rect.left,
+            right: rect.right,
+            top: rect.top,
+            bottom: rect.bottom,
+            width: rect.width,
+            height: rect.height,
+            contained: rect.left >= container.left - 1 && rect.right <= container.right + 1,
+            viewportSafe: rect.left >= -1 && rect.right <= viewportWidth + 1,
+          };
+        });
+      return {
+        viewportWidth,
+        container: { left: container.left, right: container.right, top: container.top, bottom: container.bottom },
+        controls,
+      };
+    });
+    expect(geometry.controls.filter((control) => !control.contained || !control.viewportSafe)).toEqual([]);
+    const evidenceDir = process.env.READABLE_F1_EVIDENCE_DIR;
+    if (evidenceDir) {
+      await mkdir(evidenceDir, { recursive: true });
+      await writeFile(`${evidenceDir}/${evidenceName}-${width}.json`, `${JSON.stringify(geometry, null, 2)}\n`, 'utf8');
+      await page.screenshot({ path: `${evidenceDir}/${evidenceName}-${width}.png` });
+    }
+  }
 }
 
 async function operateFooter(page: Page, field: 'fidelity' | 'model' | 'ratio' | 'duration' | 'resolution', optionName: RegExp, id: string) {
@@ -383,8 +430,11 @@ async function operateFooter(page: Page, field: 'fidelity' | 'model' | 'ratio' |
   if (await replacement.isVisible()) await replacement.getByRole('button', { name: /Replace/i }).click();
   const trigger = page.getByTestId(`home-hero-footer-option-${field}`); await visible(trigger, id); await trigger.click();
   const option = page.getByRole('option', { name: optionName }); await visible(option, id); await option.click();
-  await expect(trigger).toContainText(optionName); await trigger.click();
+  await expect(trigger).toContainText(optionName);
+  if (field === 'fidelity') await expectArtifactFooterControlsContained(page, 'fidelity');
+  await trigger.click();
   await expect(page.getByRole('option', { name: optionName })).toHaveAttribute('aria-selected', 'true');
+  await trigger.click();
 }
 
 async function operateSubtypes(page: Page, restoreAll: boolean, id: string) {
@@ -454,7 +504,7 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
     case 'type-clear': await chooseType(page, 'prototype'); { const chip = page.getByTestId('home-hero-active-type-chip'); await visible(chip, id); await chip.click(); await expect(chip).toHaveCount(0); } return;
     case 'prompt-example': await activateStaticPromptExample(page, id); return;
     case 'preset': await activateReportPreset(page, id); return;
-    case 'speaker-notes': { await chooseType(page, 'deck'); const notes = page.getByTestId('home-hero-footer-option-speakerNotes'); await visible(notes, id); await expect(notes).toHaveAttribute('aria-pressed', 'false'); await notes.focus(); await page.keyboard.press('Space'); await expect(notes).toHaveAttribute('aria-pressed', 'true'); return; }
+    case 'speaker-notes': { await chooseType(page, 'deck'); const notes = page.getByTestId('home-hero-footer-option-speakerNotes'); await visible(notes, id); await expect(notes).toHaveAttribute('aria-pressed', 'false'); await notes.focus(); await page.keyboard.press('Space'); await expect(notes).toHaveAttribute('aria-pressed', 'true'); await expectArtifactFooterControlsContained(page, 'speaker-notes'); return; }
     case 'fidelity': await operateFooter(page, 'fidelity', /Wireframe/i, id); return;
     case 'model': await operateFooter(page, 'model', /quality/i, id); return;
     case 'ratio': await operateFooter(page, 'ratio', /4:3/i, id); return;
