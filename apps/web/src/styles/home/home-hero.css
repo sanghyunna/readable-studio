@@ -2429,6 +2429,8 @@
 .home-view--hub .home-hero__footer-option,
 .home-view--hub .home-hero__footer-select-trigger,
 .home-view--hub .home-hero__hub-control,
+.home-view--hub .home-hero__active-type-chip,
+.home-view--hub .home-hero__subtype-chip,
 .home-view--hub .home-hero__rail-chip {
   border-color: var(--hub-control-border);
   background: var(--hub-control-surface);

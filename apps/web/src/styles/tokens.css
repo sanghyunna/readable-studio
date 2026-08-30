@@ -14,9 +14,14 @@
   --bg-fill-secondary: rgba(0, 0, 0, 0.06);
   --bg-fill: rgba(0, 0, 0, 0.12);
   --bg-elevated: #fffefc;
-  --border: #e1e5eb;
-  --border-strong: #c9d0da;
-  --border-soft: #edf0f4;
+  /* Border scale matches the approved hub mockup exactly
+     (.tmp/design/main-hub/index.html): ink-tinted alphas, not opaque greys.
+     --border-control is the strong control outline the mockup puts on chips,
+     composer controls and starters; the softer values stay surface dividers. */
+  --border: rgba(16, 24, 40, 0.085);
+  --border-strong: rgba(16, 24, 40, 0.14);
+  --border-soft: rgba(16, 24, 40, 0.05);
+  --border-control: rgba(16, 24, 40, 0.55);
   --border-subtle: var(--border-soft);
   --bg-hover: var(--bg-fill-tertiary);
 
@@ -27,7 +32,7 @@
   --hub-accent-ink: #1e3a8a;
   --hub-accent-fill: rgba(37, 99, 235, 0.09);
   --hub-accent-line: rgba(37, 99, 235, 0.22);
-  --hub-accent-tint: #eff4ff;
+  --hub-accent-tint: #eef3ff;
   --hub-accent-fg: #ffffff;
   --hub-pearl-top: rgba(255, 255, 255, 0.74);
   --hub-pearl-mid: rgba(255, 255, 255, 0.5);
@@ -47,10 +52,11 @@
   --hub-ready-shadow: rgba(29, 78, 216, 0.28);
   --hub-ready-highlight: rgba(255, 255, 255, 0.22);
 
-  --text: #1a1916;
+  /* Ink scale matches the approved hub mockup exactly. */
+  --text: #1f1e1b;
   --text-strong: #0d0c0a;
-  --text-muted: #5f5c56;
-  --text-soft: #989590;
+  --text-muted: #63605a;
+  --text-soft: #6a6761;
   --text-faint: #6b6862;
 
   /* Accent — Readable Studio action color for app chrome only. */
@@ -74,7 +80,7 @@
   --danger-opaque: rgb(156 42 37);
   --red-bg: #fdecea;
   --red-border: #f5c6c2;
-  --amber: #b26200;
+  --amber: #a75d00;
   --amber-bg: color-mix(in srgb, var(--amber) 16%, var(--bg-panel));
   --success: var(--green);
   --success-text: var(--green);
@@ -114,15 +120,19 @@
   --shadow-lg: 0 24px 60px rgba(28, 27, 26, 0.16), 0 8px 16px rgba(28, 27, 26, 0.07);
 
   /* Corner-radius scale — the only radii UI should reach for (Shape
-     Consistency Lock). xs for inline code / micro-chips, sm for controls,
-     base for cards/menus, md for medium containers, lg for large surfaces,
-     pill for fully-rounded interactive. Off-scale values (7px, 9px, 10px
-     literals) are drift; collapse them to the nearest token. */
-  --radius-xs: 4px;
-  --radius-sm: 6px;
-  --radius: 8px;
-  --radius-md: 10px;
-  --radius-lg: 12px;
+     Consistency Lock). The approved hub mockup defines just two real radii:
+     8px for controls and 12px for surfaces. The xs/sm/base/md names are kept
+     as aliases of --radius-control so existing call sites keep working while
+     resolving to the mockup's geometry; lg aliases --radius-surface, and pill
+     stays fully-rounded. Off-scale literals (7px, 9px, 10px) are drift;
+     collapse them to the nearest token. */
+  --radius-control: 8px;
+  --radius-surface: 12px;
+  --radius-xs: var(--radius-control);
+  --radius-sm: var(--radius-control);
+  --radius: var(--radius-control);
+  --radius-md: var(--radius-control);
+  --radius-lg: var(--radius-surface);
   --radius-pill: 999px;
 
   /* Motion — codifies the UI animation philosophy (see AGENTS.md). The
@@ -209,6 +219,9 @@
   --border: #333128;
   --border-strong: #46433c;
   --border-soft: #2a2825;
+  /* Dark counterpart of the mockup's strong control outline; matches the
+     hub's existing dark control border so the two layers stay consistent. */
+  --border-control: rgba(255, 255, 255, 0.34);
   --text: #e8e4dc;
   --text-strong: #f2ede4;
   --text-muted: #9a9690;
@@ -335,6 +348,7 @@
     --border: #333128;
     --border-strong: #46433c;
     --border-soft: #2a2825;
+    --border-control: rgba(255, 255, 255, 0.34);
     --text: #e8e4dc;
     --text-strong: #f2ede4;
     --text-muted: #9a9690;

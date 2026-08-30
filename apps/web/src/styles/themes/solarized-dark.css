@@ -12,6 +12,7 @@
   --border: #245260;
   --border-strong: #586e75;
   --border-soft: #073642;
+  --border-control: rgba(255, 255, 255, 0.34);
   --text: #839496;
   --text-strong: #93a1a1;
   --text-muted: #6d8588;
