@@ -347,7 +347,8 @@
   --terminal-ansi-bright-white: #ffffff;
 }
 
-[data-theme="dark"] .hub {
+[data-theme="dark"] .hub,
+[data-theme="dark"] .entry-main--scroll:has(.entry-main__inner--home) {
   --hub-canvas: var(--bg-app);
   --hub-accent: #6b8fe8;
   --hub-accent-ink: #c5d2ff;
@@ -492,7 +493,8 @@
     --terminal-ansi-bright-white: #ffffff;
   }
 
-  html:not([data-theme]) .hub {
+  html:not([data-theme]) .hub,
+  html:not([data-theme]) .entry-main--scroll:has(.entry-main__inner--home) {
     --hub-canvas: var(--bg-app);
     --hub-accent: #6b8fe8;
     --hub-accent-ink: #c5d2ff;

@@ -17,16 +17,11 @@
   grid-template-columns: clamp(262px, calc(20vw + 4px), 292px) minmax(0, 1fr);
   min-height: 0;
   height: 100%;
-  /* The approved mockup paints the canvas itself, not just a bloom overlay:
-     four tinted radials over a cool base give the glass something saturated to
-     refract at every edge. A flat white fill here is what left most of the
-     viewport white with the rail reading as a plain grey panel. */
-  background:
-    radial-gradient(1100px 640px at 10% -8%, var(--hub-canvas-blue) 0%, transparent 58%),
-    radial-gradient(880px 560px at 92% -4%, var(--hub-canvas-pink) 0%, transparent 54%),
-    radial-gradient(760px 620px at 74% 108%, var(--hub-canvas-cyan) 0%, transparent 58%),
-    radial-gradient(620px 520px at 22% 96%, var(--hub-canvas-green) 0%, transparent 56%),
-    var(--hub-canvas-base);
+  /* The scroll surface owns the single full-height canvas so its gradients run
+     continuously behind both the topbar and this hub. Repainting them here
+     restarted the gradient below the topbar and exposed the parent's light
+     fallback as a white strip in packaged dark mode. */
+  background: transparent;
 }
 
 /* Peeking opens a third column rather than covering the stage, so the row that
