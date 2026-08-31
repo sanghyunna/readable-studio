@@ -578,7 +578,7 @@ export const ko: Dict = {
   'hub.viewAllProjects': '모든 프로젝트 보기',
   'hub.localRunning': '로컬 실행 중',
   'hub.localOffline': '데몬 오프라인',
-  'hub.localUser': '상현',
+  'hub.localUserUnavailable': '로컬 사용자',
   'hub.localWorkspace': '로컬 워크스페이스',
   'hub.workspaceFolder': '워크스페이스 폴더',
   'entry.navHome': '홈',

@@ -21,6 +21,7 @@ export * from './api/providerModels.js';
 export * from './api/projects.js';
 export * from './api/proxy.js';
 export * from './api/routines.js';
+export * from './api/runtime-user.js';
 export * from './api/registry.js';
 export * from './api/research.js';
 export * from './api/social-share.js';

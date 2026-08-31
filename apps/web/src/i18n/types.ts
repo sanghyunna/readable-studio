@@ -808,7 +808,7 @@ export interface Dict {
   'hub.viewAllProjects': string;
   'hub.localRunning': string;
   'hub.localOffline': string;
-  'hub.localUser': string;
+  'hub.localUserUnavailable': string;
   'hub.localWorkspace': string;
   'hub.workspaceFolder': string;
   'entry.navHome': string;

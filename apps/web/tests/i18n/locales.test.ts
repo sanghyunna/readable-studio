@@ -45,6 +45,17 @@ function explicitLocaleKeys(locale: Locale): string[] {
 }
 
 describe('i18n locales', () => {
+  it('keeps personal-name fallbacks out of shipped product UI copy', () => {
+    // Given: every shipped product UI locale source.
+    const shippedCopy = [...Object.values(en), ...Object.values(ko)].join(' ');
+
+    // When: local identity is unavailable.
+
+    // Then: no historical personal-name fallback can ship.
+    expect(shippedCopy).not.toContain('Sanghyeon');
+    expect(shippedCopy).not.toContain('상현');
+  });
+
   it('resolves the initial locale from browser language preferences', () => {
     expect(resolveSystemLocale(['ko-KR', 'en-US'])).toBe('ko');
     expect(resolveSystemLocale(['en-US', 'ko-KR'])).toBe('en');

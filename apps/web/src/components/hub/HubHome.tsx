@@ -91,6 +91,8 @@ const EMPTY_SESSIONS: HubSessionNode[] = [];
 
 interface Props {
   projects: Project[];
+  /** Windows account running the local daemon, when available. */
+  username?: string | null;
   projectsLoading?: boolean;
   /** Open an existing session directly in the workspace. */
   onOpenSession: (projectId: string, conversationId: string) => void;
@@ -136,6 +138,7 @@ interface Props {
 
 export function HubHome({
   projects,
+  username = null,
   projectsLoading = false,
   onOpenSession,
   onSubmit,
@@ -851,6 +854,7 @@ export function HubHome({
         )}
         {onOpenDestination && onOpenSettings && onOpenWorkspaceFolder ? (
           <HubRailFooter
+            username={username}
             onOpenDestination={onOpenDestination}
             onOpenSettings={onOpenSettings}
             onOpenWorkspaceFolder={onOpenWorkspaceFolder}

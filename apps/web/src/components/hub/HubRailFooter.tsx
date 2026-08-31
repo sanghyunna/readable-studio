@@ -22,6 +22,8 @@ interface MenuItem {
 }
 
 interface Props {
+  /** Windows account running the local daemon, when available. */
+  username: string | null;
   /** Open one of the entry destinations. */
   onOpenDestination: (destination: HubDestination) => void;
   /** Open the settings surface (gear in the destination row). */
@@ -48,8 +50,8 @@ const DESTINATION_ICON: Record<HubDestination, IconName> = {
 export function workspaceInitials(name: string): string {
   const words = name.trim().split(/\s+/).filter(Boolean);
   if (words.length === 0) return '';
-  if (words.length === 1) return words[0]!.slice(0, 2).toUpperCase();
-  return `${words[0]!.slice(0, 1)}${words[1]!.slice(0, 1)}`.toUpperCase();
+  if (words.length === 1) return Array.from(words[0] ?? '').slice(0, 2).join('').toUpperCase();
+  return `${Array.from(words[0] ?? '')[0] ?? ''}${Array.from(words[1] ?? '')[0] ?? ''}`.toUpperCase();
 }
 
 /**
@@ -146,6 +148,7 @@ function HubMenu({
 }
 
 export function HubRailFooter({
+  username,
   onOpenDestination,
   onOpenSettings,
   onOpenWorkspaceFolder,
@@ -189,7 +192,7 @@ export function HubRailFooter({
     [onOpenDestination, t],
   );
 
-  const userLabel = t('hub.localUser');
+  const userLabel = username?.trim() || t('hub.localUserUnavailable');
   const workspaceLabel = workspaceName?.trim() || t('hub.localWorkspace');
 
   const workspaceItems = useMemo<MenuItem[]>(

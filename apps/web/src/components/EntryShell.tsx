@@ -71,6 +71,7 @@ import type {
   PluginShareProjectOutcome,
 } from '../state/projects';
 import { TasksView } from './TasksView';
+import { useRuntimeUsername } from '../hooks/useRuntimeUser';
 import { useClaudeZipImport } from './useClaudeZipImport';
 import { useOpenFolderImport } from './useOpenFolderImport';
 import { AnimatePresence } from 'motion/react';
@@ -328,6 +329,7 @@ export function EntryShell({
   // to /design-systems lands on that section. We derive the active
   // view from the route rather than keeping it in component state.
   const route = useRoute();
+  const username = useRuntimeUsername();
   const view: EntryViewKind = route.kind === 'home' ? route.view : 'home';
   // The hub's starters drive the REAL import flows, not a create form: the
   // folder hook picks the desktop host path or the daemon picker, and the ZIP
@@ -612,6 +614,7 @@ export function EntryShell({
                   a calm start surface instead of a wall of past projects. */}
               <HubHome
                 projects={projects}
+                username={username}
                 projectsLoading={projectsLoading}
                 onOpenSession={openSessionRoute}
                 onOpenProject={onOpenProject}

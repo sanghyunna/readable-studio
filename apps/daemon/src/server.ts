@@ -462,6 +462,7 @@ import {
 } from './agent-session-resume.js';
 import { registerActiveContextRoutes } from './routes/active-context.js';
 import { registerSystemFontsRoutes } from './routes/system-fonts.js';
+import { registerRuntimeUserRoute } from './routes/runtime-user.js';
 import { registerMcpRoutes } from './mcp-routes.js';
 import { registerXaiRoutes } from './routes/xai.js';
 import { registerDesignSystemToolRoutes } from './routes/design-system-tool.js';
@@ -4456,6 +4457,8 @@ export async function startServer({
     const version = await readCurrentAppVersionInfo();
     res.json({ descriptor: createRuntimeDescriptor(version.version), version });
   });
+
+  registerRuntimeUserRoute(app);
 
   // Plan §3.F2 / spec §11.7 — daemon lifecycle status. Returns the
   // host / port the server is bound to plus the data dir,

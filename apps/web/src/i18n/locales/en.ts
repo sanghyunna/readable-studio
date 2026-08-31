@@ -578,7 +578,7 @@ export const en: Dict = {
   'hub.viewAllProjects': 'View all projects',
   'hub.localRunning': 'Running locally',
   'hub.localOffline': 'Daemon offline',
-  'hub.localUser': 'Sanghyeon',
+  'hub.localUserUnavailable': 'Local user',
   'hub.localWorkspace': 'Local workspace',
   'hub.workspaceFolder': 'Workspace folder',
   'entry.navHome': 'Home',
