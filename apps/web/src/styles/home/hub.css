@@ -1686,8 +1686,8 @@
   padding: 8px 10px 8px 14px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-pill);
-  background: var(--text-strong);
-  color: var(--bg-panel);
+  background: var(--bg-panel);
+  color: var(--text-strong);
   box-shadow: var(--shadow-lg);
   transform: translateX(-50%);
   font-size: 12.5px;
@@ -1710,8 +1710,8 @@
   padding: 5px 10px;
   border: 0;
   border-radius: var(--radius-pill);
-  background: var(--bg-fill-secondary);
-  color: inherit;
+  background: var(--hub-accent-fill);
+  color: var(--hub-accent-ink);
   font: inherit;
   font-size: 12px;
   font-weight: 620;
@@ -1759,14 +1759,15 @@
    inset top highlight, soft shadow - and no 1px border. Rows stay completely
    borderless at rest and only lift into glass on hover.
 
-   The toast is deliberately absent: it is an inverted pill (near-white ink on
-   an inked plate), so a light translucent fill would put white text on white
-   glass. It keeps its solid contrast and only sheds its border. */
+   The toast joins them: it reads as the same floating pane as the menus, so
+   its ink is the strong text token over the strong glass fill (never the old
+   inverted plate, which glass would have turned into white-on-white). */
 
 .hub__menu,
 .hub-menu,
 .hub-palette,
-.hub-inspector {
+.hub-inspector,
+.readable-toast {
   border: 0;
   background: var(--hub-glass-fill-strong);
   -webkit-backdrop-filter: var(--hub-glass-blur);
@@ -1778,10 +1779,6 @@
 
 .hub-inspector {
   border-inline-start: 0;
-}
-
-.readable-toast {
-  border: 0;
 }
 
 /* Separators inside glass become a light ray rather than a dark rule, so the
@@ -1867,6 +1864,7 @@
   .hub-menu,
   .hub-palette,
   .hub-inspector,
+  .readable-toast,
   .home-view--hub .home-hero__input-card {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
