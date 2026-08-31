@@ -100,7 +100,6 @@ describe('hub session handoff', () => {
         onOpenSession={openSessionRoute}
         onSubmitPrompt={vi.fn()}
         onNewProject={vi.fn()}
-        onImportFolder={vi.fn()}
       />,
     );
     fireEvent.click(await screen.findByTestId('hub-session-c9'));

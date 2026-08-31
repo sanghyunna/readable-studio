@@ -632,14 +632,6 @@ export function EntryShell({
                 onRenameProject={onRenameProject}
                 onDeleteProject={(projectId) => { void onDeleteProject(projectId); }}
                 onNavigateDestination={changeView}
-                {...(hubFolderImport.available
-                  ? { onImportFolder: () => void hubFolderImport.openFolder() }
-                  : {})}
-                importingFolder={hubFolderImport.importing}
-                {...(hubClaudeZipImport.available
-                  ? { onImportClaudeZip: hubClaudeZipImport.pickFile }
-                  : {})}
-                importingClaudeZip={hubClaudeZipImport.importing}
                 starterError={hubClaudeZipImport.error ?? hubFolderImport.error}
                 onDismissStarterError={() => {
                   hubClaudeZipImport.clearError();

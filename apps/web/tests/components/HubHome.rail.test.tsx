@@ -53,7 +53,6 @@ function renderHub(overrides: Partial<Parameters<typeof HubHome>[0]> = {}) {
       onOpenSession={vi.fn()}
       onSubmitPrompt={vi.fn()}
       onNewProject={vi.fn()}
-      onImportFolder={vi.fn()}
       {...overrides}
     />,
   );

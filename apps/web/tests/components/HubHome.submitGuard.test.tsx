@@ -45,7 +45,6 @@ describe('hub composer submit guard', () => {
         onOpenSession={vi.fn()}
         onSubmitPrompt={onSubmitPrompt}
         onNewProject={vi.fn()}
-        onImportFolder={vi.fn()}
       />,
     );
     await screen.findByTestId('home-hero-input');
@@ -76,7 +75,6 @@ describe('hub composer submit guard', () => {
         onOpenSession={vi.fn()}
         onSubmitPrompt={onSubmitPrompt}
         onNewProject={vi.fn()}
-        onImportFolder={vi.fn()}
       />,
     );
     const box = await screen.findByTestId('home-hero-input');
@@ -96,7 +94,6 @@ describe('hub composer submit guard', () => {
         onOpenSession={vi.fn()}
         onSubmitPrompt={onSubmitPrompt}
         onNewProject={vi.fn()}
-        onImportFolder={vi.fn()}
       />,
     );
     await screen.findByTestId('home-hero-input');

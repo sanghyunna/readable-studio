@@ -37,7 +37,6 @@ function renderHub(overrides = {}) {
       onOpenSession={vi.fn()}
       onSubmitPrompt={vi.fn()}
       onNewProject={vi.fn()}
-      onImportFolder={vi.fn()}
       {...overrides}
     />,
   );

@@ -126,10 +126,6 @@ interface Props {
    * host and no local daemon picker), in which case the starter is not shown
    * at all rather than opening an unrelated form.
    */
-  onImportFolder?: () => void;
-  importingFolder?: boolean;
-  onImportClaudeZip?: () => void;
-  importingClaudeZip?: boolean;
   /** Failure text from either starter; rendered as a visible alert. */
   starterError?: { message: string; details?: string } | null;
   onDismissStarterError?: () => void;
@@ -159,10 +155,6 @@ export function HubHome({
   onRenameProject,
   onDeleteProject,
   onNavigateDestination,
-  onImportFolder,
-  importingFolder = false,
-  onImportClaudeZip,
-  importingClaudeZip = false,
   starterError = null,
   onDismissStarterError,
   currentSessionId = null,
@@ -910,49 +902,11 @@ export function HubHome({
             commandChip={commandChip}
           />
 
-          <div className="hub__starters">
-            {onImportFolder ? (
-              <button
-                type="button"
-                className="hub__starter"
-                data-testid="hub-import-folder"
-                disabled={importingFolder}
-                aria-busy={importingFolder}
-                onClick={onImportFolder}
-              >
-                <Icon name={importingFolder ? 'spinner' : 'folder'} size={15} />
-                <span>{importingFolder ? t('hub.importingFolder') : t('hub.importFolder')}</span>
-              </button>
-            ) : null}
-            {onImportClaudeZip ? (
-              <button
-                type="button"
-                className="hub__starter"
-                data-testid="hub-import-claude-zip"
-                disabled={importingClaudeZip}
-                aria-busy={importingClaudeZip}
-                onClick={onImportClaudeZip}
-              >
-                <Icon name={importingClaudeZip ? 'spinner' : 'package'} size={15} />
-                <span>{importingClaudeZip ? t('hub.importingClaudeZip') : t('hub.importClaudeZip')}</span>
-              </button>
-            ) : null}
-            {/* Third starter from the approved mockup, beside Import folder and
-                the Claude ZIP import. It is a DIRECT starter, distinct from the
-                composer's "From template" overflow shortcut: both open the New
-                Project modal on its template tab. */}
-            {onOpenNewProject ? (
-              <button
-                type="button"
-                className="hub__starter"
-                data-testid="hub-start-from-template"
-                onClick={() => onOpenNewProject('template')}
-              >
-                <Icon name="layout" size={15} />
-                <span>{t('hub.startFromTemplate')}</span>
-              </button>
-            ) : null}
-          </div>
+          {/* The three starter buttons (import folder / Claude ZIP / from
+              template) were removed from the hub on purpose: they crowded the
+              composer, and the same capabilities stay reachable through the New
+              Project modal, which renders the folder picker, the Claude ZIP
+              picker and the template tab. Import errors still surface below. */}
 
           {starterError ? (
             <p className="hub__starter-error" role="alert" data-testid="hub-starter-error">

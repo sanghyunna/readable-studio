@@ -43,7 +43,6 @@ function renderHub(overrides = {}) {
       onOpenSession={vi.fn()}
       onSubmitPrompt={vi.fn()}
       onNewProject={vi.fn()}
-      onImportFolder={vi.fn()}
       {...overrides}
     />,
   );
@@ -92,7 +91,6 @@ describe('hub composer design system', () => {
         onSubmitPrompt={vi.fn()}
         onNewProject={vi.fn()}
         onOpenNewProject={onOpenNewProject}
-        onImportFolder={vi.fn()}
       />,
     );
     await screen.findByTestId('home-hero-input');

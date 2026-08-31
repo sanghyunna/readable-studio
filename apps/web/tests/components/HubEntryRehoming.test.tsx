@@ -70,7 +70,6 @@ describe('entry re-homing after the hub replaced the welcome screen', () => {
         onOpenSession={vi.fn()}
         onSubmitPrompt={onSubmitPrompt}
         onNewProject={vi.fn()}
-        onImportFolder={vi.fn()}
       />,
     );
     await screen.findByTestId('home-hero-input');
@@ -79,22 +78,23 @@ describe('entry re-homing after the hub replaced the welcome screen', () => {
     expect(onSubmitPrompt).toHaveBeenCalledWith('분기 리포트', { designSystemId: null });
   });
 
-  it('keeps folder import reachable from the start surface', async () => {
-    const onImportFolder = vi.fn();
+  // The hub used to carry its own "import folder" starter button. That button
+  // was removed; folder import now lives in the New Project modal. What still
+  // has to hold is that the hub offers a route to it, so this asserts the hub
+  // opens the New Project surface rather than asserting a starter that is gone.
+  it('keeps folder import reachable by routing to the new-project surface', async () => {
+    const onNewProject = vi.fn();
     render(
       <HubHome
         projects={[PROJECT]}
         projectsLoading={false}
         onOpenSession={vi.fn()}
         onSubmitPrompt={vi.fn()}
-        onNewProject={vi.fn()}
-        onImportFolder={onImportFolder}
-        onImportClaudeZip={vi.fn()}
+        onNewProject={onNewProject}
       />,
     );
-    const starters = await screen.findAllByRole('button', { name: /가져오기|Import/ });
-    fireEvent.click(starters[0]!);
-    expect(onImportFolder).toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole('button', { name: /새 프로젝트|New project/i }));
+    expect(onNewProject).toHaveBeenCalled();
   });
 
   it('keeps new-project creation reachable from the navigation panel', async () => {
@@ -106,7 +106,6 @@ describe('entry re-homing after the hub replaced the welcome screen', () => {
         onOpenSession={vi.fn()}
         onSubmitPrompt={vi.fn()}
         onNewProject={onNewProject}
-        onImportFolder={vi.fn()}
       />,
     );
     const nav = await screen.findByTestId('hub-nav');
@@ -135,7 +134,6 @@ describe('entry re-homing after the hub replaced the welcome screen', () => {
         onOpenSession={vi.fn()}
         onSubmitPrompt={vi.fn()}
         onNewProject={vi.fn()}
-        onImportFolder={vi.fn()}
       />,
     );
     expect(await screen.findByTestId('hub-empty')).toBeTruthy();
