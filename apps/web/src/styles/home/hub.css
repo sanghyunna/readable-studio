@@ -46,20 +46,23 @@
   min-height: 0;
   margin: 0 0 10px 10px;
   border-radius: var(--radius-lg);
-  border: 1px solid var(--hub-pearl-border);
-  background: linear-gradient(
-    180deg,
-    var(--hub-pearl-top),
-    var(--hub-pearl-mid) 42%,
-    var(--hub-pearl-bottom)
-  );
-  box-shadow: inset 0 1px 0 var(--hub-pearl-highlight);
+  /* Borderless: the rail is separated from the stage by its translucent fill,
+     an inset top highlight and a soft drop shadow - not by a 1px line. */
+  border: 0;
+  background: var(--hub-glass-fill);
+  box-shadow:
+    inset 0 1px 0 var(--hub-pearl-highlight),
+    var(--hub-glass-shadow);
   /* Lightning CSS requires prefix-first order to retain both declarations. */
-  -webkit-backdrop-filter: blur(22px) saturate(150%);
-  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: var(--hub-glass-blur);
+  backdrop-filter: var(--hub-glass-blur);
   overflow: hidden;
 }
 
+/* Glass only reads as glass when there is something saturated behind it to
+   refract. A single faint wash left the blurred surfaces looking flat grey, so
+   the canvas carries several coloured blooms that the rail and composer pick
+   up at their edges. */
 .hub__wash {
   position: fixed;
   z-index: 0;
@@ -70,6 +73,35 @@
   background: radial-gradient(circle, var(--hub-wash), transparent 62%);
   filter: blur(48px);
   pointer-events: none;
+}
+
+.hub__wash::before,
+.hub__wash::after {
+  content: '';
+  position: fixed;
+  border-radius: var(--radius-pill);
+  filter: blur(72px);
+  pointer-events: none;
+}
+
+/* The warm bloom owns the upper right, where the stage is otherwise bare
+   white. Sized in vw like the mockup and pulled mostly on-screen (-8vw, not a
+   fixed -260px) so the colour actually lands in the viewport instead of
+   clipping off the edge - an off-screen bloom leaves the glass reading grey. */
+.hub__wash::before {
+  inset: 4vh -8vw auto auto;
+  width: 46vw;
+  height: 46vw;
+  background: radial-gradient(circle, var(--hub-wash-warm), transparent 66%);
+  filter: blur(90px);
+}
+
+.hub__wash::after {
+  inset: auto auto -14vh 30%;
+  width: 42vw;
+  height: 42vw;
+  background: radial-gradient(circle, var(--hub-wash-cool), transparent 66%);
+  filter: blur(88px);
 }
 
 .hub__nav-head {
@@ -1077,41 +1109,9 @@
   transform: translateX(2px) rotate(90deg);
 }
 
-.hub__starters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 16px;
-}
 
-.hub__starter {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: 34px;
-  padding: 0 12px;
-  border: 1px solid var(--hub-control-border);
-  border-radius: var(--radius-pill);
-  background: var(--hub-control-surface);
-  color: var(--text-muted);
-  font-size: 12.5px;
-  font-weight: 500;
-  cursor: pointer;
-  transition:
-    border-color var(--dur-quick) var(--ease-out),
-    transform var(--dur-quick) var(--ease-out);
-}
 
-.hub__starter svg {
-  color: var(--hub-accent);
-  opacity: 0.8;
-}
 
-.hub__starter:hover {
-  border-color: var(--hub-accent);
-  color: var(--text);
-  transform: translateY(-1px);
-}
 
 .hub__hint,
 .hub__empty {
@@ -1584,18 +1584,6 @@
 }
 
 @media (max-height: 760px) and (min-width: 901px) {
-  .hub {
-    --hub-wash: color-mix(in srgb, var(--hub-accent) 4.5%, transparent);
-  }
-
-  .hub__nav {
-    background: linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--hub-pearl-top) 58%, var(--white)),
-      color-mix(in srgb, var(--hub-pearl-mid) 54%, var(--white)) 42%,
-      color-mix(in srgb, var(--hub-pearl-bottom) 58%, var(--white))
-    );
-  }
 
   .hub__start {
     padding-top: calc(clamp(64px, 21vh, 192px) + var(--hub-stage-reference-offset) - 4px);
@@ -1648,10 +1636,6 @@
 
   .home-view--hub .home-hero__lexical .composer-editable {
     min-height: 76px;
-  }
-
-  .hub__starters {
-    margin-top: 14px;
   }
 
   .hub__hint,
@@ -1766,5 +1750,170 @@
 
   .hub .icon-spin {
     animation: none !important;
+  }
+}
+
+
+/* ── Glass layer ────────────────────────────────────────────────────────────
+   Floating surfaces share the rail/composer recipe: translucent fill, blur,
+   inset top highlight, soft shadow - and no 1px border. Rows stay completely
+   borderless at rest and only lift into glass on hover.
+
+   The toast is deliberately absent: it is an inverted pill (near-white ink on
+   an inked plate), so a light translucent fill would put white text on white
+   glass. It keeps its solid contrast and only sheds its border. */
+
+.hub__menu,
+.hub-menu,
+.hub-palette,
+.hub-inspector {
+  border: 0;
+  background: var(--hub-glass-fill-strong);
+  -webkit-backdrop-filter: var(--hub-glass-blur);
+  backdrop-filter: var(--hub-glass-blur);
+  box-shadow:
+    inset 0 1px 0 var(--hub-pearl-highlight),
+    var(--hub-glass-shadow-lg);
+}
+
+.hub-inspector {
+  border-inline-start: 0;
+}
+
+.readable-toast {
+  border: 0;
+}
+
+/* Separators inside glass become a light ray rather than a dark rule, so the
+   panel keeps reading as one continuous pane. */
+.hub__foot,
+.hub-inspector__head,
+.hub-palette__input-row,
+.hub-palette__foot {
+  border: 0;
+  box-shadow: inset 0 1px 0 var(--hub-pearl-highlight);
+}
+
+.hub-palette__input-row,
+.hub-inspector__head {
+  box-shadow: inset 0 -1px 0 var(--hub-pearl-highlight);
+}
+
+.hub-palette__foot {
+  background: transparent;
+}
+
+/* Controls trade their outline for a faint glass pill. */
+.hub-kbd,
+.hub-tree__filter,
+.hub-tree__sort,
+.hub__search {
+  border: 0;
+}
+
+.hub-tree__filter[aria-pressed='true'],
+.hub-tree__sort[aria-expanded='true'] {
+  border-color: transparent;
+  box-shadow: inset 0 1px 0 var(--hub-pearl-highlight);
+}
+
+/* Rows and destinations are already borderless; hover lifts them into glass. */
+.hub-row:hover,
+.hub__dest:hover,
+.hub__dest-more:hover,
+.hub__user-row:hover,
+.hub__view-all:hover,
+.hub__menu-item:hover,
+.hub-menu__item:hover {
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  box-shadow: inset 0 1px 0 var(--hub-pearl-highlight);
+}
+
+/* The live strip loses its outline; the accent gradient alone carries it. */
+.hub__live {
+  border: 0;
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  backdrop-filter: blur(12px) saturate(160%);
+  box-shadow:
+    inset 0 1px 0 var(--hub-pearl-highlight),
+    0 2px 10px var(--hub-accent-fill);
+}
+
+.hub__live:hover {
+  border-color: transparent;
+  box-shadow:
+    inset 0 1px 0 var(--hub-pearl-highlight),
+    0 6px 18px var(--hub-accent-line);
+}
+
+.hub__live-state {
+  border-inline-end: 0;
+  box-shadow: inset -1px 0 0 var(--hub-accent-line);
+}
+
+/* The palette scrim frosts the stage behind it so the panel reads as glass
+   over content rather than a card on a flat dim layer. */
+.hub-palette__scrim {
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+/* Respect a reduced-transparency preference: drop every blur, restore opaque
+   surfaces, and fall back to a faint outline so the shapes stay legible. */
+@media (prefers-reduced-transparency: reduce) {
+  .hub__nav,
+  .hub__menu,
+  .hub-menu,
+  .hub-palette,
+  .hub-inspector,
+  .home-view--hub .home-hero__input-card {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--bg-panel);
+    box-shadow:
+      0 1px 2px var(--hub-pearl-elevation),
+      0 0 0 1px var(--border);
+  }
+
+  /* The composer's state rings must survive the opaque fallback - they are the
+     only signal left once the glass shadow is gone. */
+  .home-view--hub .home-hero__input-card:focus-within,
+  .home-view--hub .home-hero__input-card.is-ready {
+    box-shadow:
+      0 1px 2px var(--hub-pearl-elevation),
+      0 0 0 3px color-mix(in srgb, var(--hub-accent) 16%, transparent);
+  }
+
+  .home-view--hub .home-hero__input-card.is-busy,
+  .home-view--hub .home-hero__input-card[aria-busy='true'] {
+    box-shadow:
+      0 1px 2px var(--hub-pearl-elevation),
+      0 0 0 3px color-mix(in srgb, var(--hub-accent) 24%, transparent);
+  }
+
+  .home-view--hub .home-hero__input-card.is-error {
+    box-shadow:
+      0 1px 2px var(--hub-pearl-elevation),
+      0 0 0 3px color-mix(in srgb, var(--danger-opaque) 42%, transparent);
+  }
+
+  .hub__live,
+  .hub-palette__scrim,
+  .hub-row:hover,
+  .hub__dest:hover,
+  .hub__dest-more:hover,
+  .hub__user-row:hover,
+  .hub__view-all:hover,
+  .hub__menu-item:hover,
+  .hub-menu__item:hover {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .hub__wash,
+  .hub__wash::before,
+  .hub__wash::after {
+    display: none;
   }
 }

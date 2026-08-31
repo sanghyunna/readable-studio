@@ -40,7 +40,17 @@
   --hub-pearl-border: rgba(255, 255, 255, 0.5);
   --hub-pearl-highlight: rgba(255, 255, 255, 0.9);
   --hub-pearl-elevation: rgba(28, 27, 26, 0.07);
-  --hub-wash: rgba(37, 99, 235, 0.08);
+  --hub-wash: rgba(37, 99, 235, 0.16);
+  /* Two more blooms so the blurred surfaces have saturated colour to refract;
+     without them the glass reads as flat grey. */
+  --hub-wash-warm: rgba(236, 72, 153, 0.26);
+  --hub-wash-cool: rgba(16, 185, 129, 0.2);
+  /* Glass surface recipe shared by the rail, composer and floating panels. */
+  --hub-glass-fill: rgba(255, 255, 255, 0.55);
+  --hub-glass-fill-strong: rgba(255, 255, 255, 0.72);
+  --hub-glass-blur: blur(22px) saturate(165%);
+  --hub-glass-shadow: 0 8px 32px rgba(16, 24, 40, 0.1), 0 2px 8px rgba(16, 24, 40, 0.05);
+  --hub-glass-shadow-lg: 0 20px 56px rgba(16, 24, 40, 0.14), 0 4px 14px rgba(16, 24, 40, 0.06);
   --hub-composer-body: #ffffff;
   --hub-composer-top: rgba(37, 99, 235, 0.016);
   --hub-composer-bottom: rgba(37, 99, 235, 0.038);
@@ -329,7 +339,16 @@
   --hub-pearl-border: rgba(255, 255, 255, 0.12);
   --hub-pearl-highlight: rgba(255, 255, 255, 0.14);
   --hub-pearl-elevation: rgba(0, 0, 0, 0.34);
-  --hub-wash: rgba(107, 143, 232, 0.12);
+  --hub-wash: rgba(107, 143, 232, 0.2);
+  --hub-wash-warm: rgba(214, 118, 156, 0.15);
+  --hub-wash-cool: rgba(72, 166, 148, 0.13);
+  /* Dark glass keeps the app's warm-neutral hue (the canvas is #1a1917, not a
+     cool blue-grey); a cold fill here reads as a foreign panel, not glass. */
+  --hub-glass-fill: rgba(38, 36, 33, 0.62);
+  --hub-glass-fill-strong: rgba(38, 36, 33, 0.8);
+  --hub-glass-blur: blur(22px) saturate(150%);
+  --hub-glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.36), 0 2px 8px rgba(0, 0, 0, 0.24);
+  --hub-glass-shadow-lg: 0 20px 56px rgba(0, 0, 0, 0.46), 0 4px 14px rgba(0, 0, 0, 0.28);
   --hub-composer-top: rgba(107, 143, 232, 0.06);
   --hub-composer-bottom: rgba(107, 143, 232, 0.1);
   --hub-control-surface: rgba(42, 40, 37, 0.86);
@@ -455,7 +474,14 @@
     --hub-pearl-border: rgba(255, 255, 255, 0.12);
     --hub-pearl-highlight: rgba(255, 255, 255, 0.14);
     --hub-pearl-elevation: rgba(0, 0, 0, 0.34);
-    --hub-wash: rgba(107, 143, 232, 0.12);
+    --hub-wash: rgba(107, 143, 232, 0.2);
+    --hub-wash-warm: rgba(214, 118, 156, 0.15);
+    --hub-wash-cool: rgba(72, 166, 148, 0.13);
+    --hub-glass-fill: rgba(38, 36, 33, 0.62);
+    --hub-glass-fill-strong: rgba(38, 36, 33, 0.8);
+    --hub-glass-blur: blur(22px) saturate(150%);
+    --hub-glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.36), 0 2px 8px rgba(0, 0, 0, 0.24);
+    --hub-glass-shadow-lg: 0 20px 56px rgba(0, 0, 0, 0.46), 0 4px 14px rgba(0, 0, 0, 0.28);
     --hub-composer-top: rgba(107, 143, 232, 0.06);
     --hub-composer-bottom: rgba(107, 143, 232, 0.1);
     --hub-control-surface: rgba(42, 40, 37, 0.86);

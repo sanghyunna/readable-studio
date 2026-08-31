@@ -784,8 +784,6 @@ export interface Dict {
   'hub.sessionsStale': string;
   'hub.retrySessions': string;
   'hub.sessionsFailed': string;
-  'hub.importingFolder': string;
-  'hub.importingClaudeZip': string;
   'hub.openWork': string;
   'hub.projects': string;
   'hub.results': string;
@@ -804,9 +802,6 @@ export interface Dict {
   'hub.noProjectsTitle': string;
   'hub.noProjectsBody': string;
   'hub.untitledSession': string;
-  'hub.importFolder': string;
-  'hub.importClaudeZip': string;
-  'hub.startFromTemplate': string;
   'hub.designSystem': string;
   'hub.starting': string;
   'hub.library': string;

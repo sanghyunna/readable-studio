@@ -281,6 +281,15 @@ async function visible(locator: Locator, id: string) {
   await expect(locator, `[${id}] control must be visible on the real home surface`).toBeVisible({ timeout: 2_000 });
 }
 
+// Folder import and the Claude ZIP starter moved off the hub surface into the
+// New Project modal, so reaching them starts at the rail's New project button.
+async function openNewProjectModal(page: Page, id: string) {
+  const trigger = page.getByRole('button', { name: /New project/i }).first();
+  await visible(trigger, id);
+  await trigger.click();
+  await visible(page.getByTestId('new-project-modal'), id);
+}
+
 async function chooseType(page: Page, id: 'prototype' | 'deck' | 'report') {
   await page.getByTestId('hub-open-palette').click();
   const input = page.getByTestId('hub-palette-input');
@@ -528,7 +537,7 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
     case 'nav-projects': case 'nav-tasks': case 'nav-plugins': case 'nav-design-systems': case 'nav-integrations': { const suffix = kind.replace('nav-', ''); const routeSuffix = suffix === 'tasks' ? 'automations' : suffix; const library = page.getByTestId('hub-library'); await visible(library, id); await library.click(); const nav = page.getByTestId(`hub-library-${suffix}`); await visible(nav, id); await nav.click(); await expect(page).toHaveURL(new RegExp(`/${routeSuffix}$`)); return; }
     case 'help': { const help = page.getByRole('button', { name: /Help/i }).first(); await visible(help, id); await help.click(); await expect(help).toHaveAttribute('aria-expanded', 'true'); return; }
     case 'first-run-guide': { await page.evaluate(() => window.localStorage.removeItem('readable-studio:home-guide-stage')); await page.route('**/api/projects', async route => { if (route.request().method() === 'GET') await route.fulfill({ json: { projects: [] } }); else await route.fulfill({ json: { project: PROJECTS[0], conversationId: 'created-session' } }); }); await page.reload({ waitUntil: 'domcontentloaded' }); await visible(page.getByTestId('entry-view-home'), id); await expect(page.locator('.home-hero__guide-sheen, [data-guide-active="true"]').first()).toBeVisible({ timeout: 2_000 }); return; }
-    case 'import-folder': { const button = page.getByRole('button', { name: /Import folder/i }); await visible(button, id); const response = page.waitForResponse(r => new URL(r.url()).pathname === '/api/dialog/open-folder' && r.status() === 200); await Promise.all([response, button.click()]); return; }
+    case 'import-folder': { await openNewProjectModal(page, id); const button = page.getByTestId('new-project-modal').getByRole('button', { name: /Open folder/i }); await visible(button, id); const response = page.waitForResponse(r => new URL(r.url()).pathname === '/api/dialog/open-folder' && r.status() === 200); await Promise.all([response, button.click()]); return; }
     case 'onboarding-absent': { await page.addInitScript(({ key, value }) => window.localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: { ...HOME_CONFIG, onboardingCompleted: false } }); await page.route('**/api/app-config', async route => route.fulfill({ json: { config: { ...HOME_CONFIG, onboardingCompleted: false } } })); await page.goto('/onboarding', { waitUntil: 'domcontentloaded' }); await expect(page.locator('.onboarding-view'), `[${id}] onboarding must not render`).toHaveCount(0); await visible(page.getByTestId('entry-view-home'), id); return; }
     case 'c-hierarchy': { const project = page.getByTestId('hub-project-qa-running'); await visible(project, id); await expect(project).toHaveAttribute('aria-expanded', 'true'); await project.evaluate(element => (element as HTMLElement).click()); await expect(project).toHaveAttribute('aria-expanded', 'false'); await project.evaluate(element => (element as HTMLElement).click()); await expect(project).toHaveAttribute('aria-expanded', 'true'); return; }
     case 'c-status': { await visible(page.getByTestId('hub-session-qa-session-1'), id); await expect(page.getByTestId('hub-session-qa-session-1')).toHaveAttribute('data-state', 'running'); await expect(page.getByTestId('hub-session-qa-session-2')).toHaveAttribute('data-state', 'failed'); await expect(page.getByTestId('hub-project-qa-attention')).toHaveAttribute('data-state', 'awaiting'); return; }
@@ -538,11 +547,21 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
     case 'c-empty': { await page.getByTestId('hub-search').fill('no deterministic match'); await page.getByTestId('hub-filter-running').click(); const empty = page.getByTestId('hub-tree-empty'); await visible(empty, id); await empty.getByRole('button').click(); await expect(page.getByTestId('hub-filter-all')).toHaveAttribute('aria-pressed', 'true'); return; }
     case 'c-sort': { const body = page.locator('.hub-tree__body'); await expect(body.getByRole('treeitem', { level: 1 }).first()).toContainText('Zulu'); await page.getByTestId('hub-sort').click(); const menu = page.getByTestId('hub-sort-menu'); await visible(menu, id); await menu.getByRole('menuitem', { name: /Name/i }).click(); await expect(body.getByRole('treeitem', { level: 1 }).first()).toContainText('Alpha'); return; }
     case 'c-keyboard': { const first = page.getByTestId('hub-project-qa-running'); await visible(first, id); await first.focus(); await first.press('ArrowDown'); await expect(page.getByTestId('hub-session-qa-session-1')).toBeFocused(); await page.keyboard.press('Home'); await expect(first).toBeFocused(); return; }
-    case 'c-claude': { const button = page.getByTestId('hub-import-claude-zip'); await visible(button, id); const chooser = page.waitForEvent('filechooser'); await button.click(); await chooser; return; }
-    case 'c-blur': { const nav = page.getByTestId('hub-nav'); await visible(nav, id); const surface = await nav.evaluate(element => ({
-      backgroundImage: getComputedStyle(element).backgroundImage,
-      borderRadius: getComputedStyle(element).borderRadius,
-    })); expect(surface.backgroundImage).toContain('linear-gradient'); expect(surface.borderRadius).not.toBe('0px'); return; }
+    case 'c-claude': { await openNewProjectModal(page, id); const button = page.getByTestId('new-project-modal').getByRole('button', { name: /Import Claude Design ZIP/i }); await visible(button, id); const chooser = page.waitForEvent('filechooser'); await button.click(); await chooser; return; }
+    // The rail is glass now, not a painted gradient: assert the material that
+    // actually makes it glass - a real backdrop blur over a translucent fill -
+    // plus the rounded surface the mockup keeps.
+    case 'c-blur': { const nav = page.getByTestId('hub-nav'); await visible(nav, id); const surface = await nav.evaluate(element => {
+      const style = getComputedStyle(element);
+      const alphaOf = (color: string) => { const parts = (color.match(/[\d.]+/g) ?? []).map(Number); return parts.length > 3 ? (parts[3] as number) : 1; };
+      return {
+        backdropFilter: style.backdropFilter || style.webkitBackdropFilter,
+        backgroundColor: style.backgroundColor,
+        backgroundAlpha: alphaOf(style.backgroundColor),
+        borderRadius: style.borderRadius,
+        borderTopWidth: style.borderTopWidth,
+      };
+    }); expect(surface.backdropFilter, `[${id}] rail must carry a real backdrop blur`).toMatch(/blur\(\s*[1-9][\d.]*px\s*\)/); expect(surface.backgroundAlpha, `[${id}] rail fill must stay translucent so the blur is visible`).toBeGreaterThan(0); expect(surface.backgroundAlpha).toBeLessThan(1); expect(surface.borderRadius).not.toBe('0px'); expect(surface.borderTopWidth, `[${id}] the glass rail is borderless`).toBe('0px'); return; }
   }
 }
 
