@@ -567,6 +567,9 @@
   border: 1px solid var(--hub-control-border);
   border-radius: var(--radius-pill);
   background: var(--hub-control-surface);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  backdrop-filter: blur(10px) saturate(150%);
+  box-shadow: var(--hub-control-shadow);
   color: var(--text-muted);
   font-size: 12px;
   font-weight: 550;
@@ -574,6 +577,8 @@
 }
 
 .entry-run-chip:hover {
+  background: var(--hub-control-surface-hover);
+  box-shadow: var(--hub-control-shadow-hover);
   color: var(--text);
 }
 

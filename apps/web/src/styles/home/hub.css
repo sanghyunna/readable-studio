@@ -17,7 +17,16 @@
   grid-template-columns: clamp(262px, calc(20vw + 4px), 292px) minmax(0, 1fr);
   min-height: 0;
   height: 100%;
-  background: var(--hub-canvas);
+  /* The approved mockup paints the canvas itself, not just a bloom overlay:
+     four tinted radials over a cool base give the glass something saturated to
+     refract at every edge. A flat white fill here is what left most of the
+     viewport white with the rail reading as a plain grey panel. */
+  background:
+    radial-gradient(1100px 640px at 10% -8%, var(--hub-canvas-blue) 0%, transparent 58%),
+    radial-gradient(880px 560px at 92% -4%, var(--hub-canvas-pink) 0%, transparent 54%),
+    radial-gradient(760px 620px at 74% 108%, var(--hub-canvas-cyan) 0%, transparent 58%),
+    radial-gradient(620px 520px at 22% 96%, var(--hub-canvas-green) 0%, transparent 56%),
+    var(--hub-canvas-base);
 }
 
 /* Peeking opens a third column rather than covering the stage, so the row that
@@ -66,12 +75,13 @@
 .hub__wash {
   position: fixed;
   z-index: 0;
-  inset: -220px auto auto -210px;
-  width: 620px;
-  height: 680px;
+  inset: -180px auto auto -160px;
+  width: 680px;
+  height: 740px;
   border-radius: var(--radius-pill);
-  background: radial-gradient(circle, var(--hub-wash), transparent 62%);
-  filter: blur(48px);
+  background: radial-gradient(circle, var(--hub-wash), transparent 68%);
+  filter: blur(80px);
+  opacity: 0.62;
   pointer-events: none;
 }
 
@@ -89,19 +99,23 @@
    fixed -260px) so the colour actually lands in the viewport instead of
    clipping off the edge - an off-screen bloom leaves the glass reading grey. */
 .hub__wash::before {
-  inset: 4vh -8vw auto auto;
-  width: 46vw;
-  height: 46vw;
-  background: radial-gradient(circle, var(--hub-wash-warm), transparent 66%);
+  inset: 8vh -8vw auto auto;
+  width: 44vw;
+  height: 44vw;
+  background: radial-gradient(circle, var(--hub-wash-warm), transparent 68%);
   filter: blur(90px);
+  opacity: 0.5;
 }
 
+/* Pulled to the lower left (not centre-right) so the cyan-green bloom reads
+   under the rail's bottom edge at 1440x900, matching the mockup. */
 .hub__wash::after {
-  inset: auto auto -14vh 30%;
-  width: 42vw;
-  height: 42vw;
-  background: radial-gradient(circle, var(--hub-wash-cool), transparent 66%);
+  inset: auto auto -10vh -6vw;
+  width: 38vw;
+  height: 38vw;
+  background: radial-gradient(circle, var(--hub-wash-cool), transparent 68%);
   filter: blur(88px);
+  opacity: 0.46;
 }
 
 .hub__nav-head {
@@ -1025,7 +1039,9 @@
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
-  background: var(--hub-canvas);
+  /* Transparent so the stage shows the canvas washes behind it; an opaque
+     fill here would mask the pink-purple and cyan-green blooms entirely. */
+  background: transparent;
 }
 
 .hub__start {
@@ -1800,13 +1816,29 @@
   background: transparent;
 }
 
-/* Controls trade their outline for a faint glass pill. */
+/* Controls trade their outline for a faint glass pill: translucent fill, inset
+   white highlight, soft shadow - the mockup's rest treatment for every hub
+   control. Focus-visible rings are declared elsewhere and stay untouched. */
 .hub-kbd,
 .hub-tree__filter,
 .hub-tree__sort,
 .hub__search {
   border: 0;
 }
+
+.hub-kbd,
+.hub-tree__filter,
+.hub-tree__sort {
+  background: var(--hub-control-surface);
+  box-shadow: inset 0 1px 0 var(--hub-control-highlight);
+}
+
+.hub-tree__filter:hover,
+.hub-tree__sort:hover {
+  background: var(--hub-control-surface-hover);
+  box-shadow: var(--hub-control-shadow-hover);
+}
+
 
 .hub-tree__filter[aria-pressed='true'],
 .hub-tree__sort[aria-expanded='true'] {
@@ -1913,5 +1945,31 @@
   .hub__wash::before,
   .hub__wash::after {
     display: none;
+  }
+
+  /* Opaque and restrained: the tinted canvas collapses to a flat neutral and
+     the glass pills fall back to a solid fill with one faint outline. */
+  .hub {
+    background: var(--hub-canvas);
+  }
+
+  .hub__stage {
+    background: var(--hub-canvas);
+  }
+
+  .hub-kbd,
+  .hub-tree__filter,
+  .hub-tree__sort,
+  .entry-run-chip,
+  .home-view--hub .home-hero__footer-option,
+  .home-view--hub .home-hero__footer-select-trigger,
+  .home-view--hub .home-hero__hub-control,
+  .home-view--hub .home-hero__active-type-chip,
+  .home-view--hub .home-hero__subtype-chip,
+  .home-view--hub .home-hero__rail-chip {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--bg-panel);
+    box-shadow: 0 0 0 1px var(--border);
   }
 }

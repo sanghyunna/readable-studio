@@ -2444,6 +2444,10 @@
   max-width: 100%;
 }
 
+/* Composer footer controls are soft glass pills in the approved mockup: a
+   translucent fill plus an inset white highlight and a soft shadow, never a
+   dark outlined capsule. The border stays declared (transparent) so the
+   focus-visible ring and the box metrics are unchanged. */
 .home-view--hub .home-hero__footer-option,
 .home-view--hub .home-hero__footer-select-trigger,
 .home-view--hub .home-hero__hub-control,
@@ -2452,6 +2456,9 @@
 .home-view--hub .home-hero__rail-chip {
   border-color: var(--hub-control-border);
   background: var(--hub-control-surface);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  backdrop-filter: blur(10px) saturate(150%);
+  box-shadow: var(--hub-control-shadow);
 }
 
 .home-view--hub .home-hero__hub-control {
@@ -2463,7 +2470,7 @@
   min-width: 0;
   padding: 0 10px;
   /* Must stay --hub-control-border: the mockup gives every composer control
-     the same strong outline. Using the shorthand with a different colour here
+     the same rest treatment. Using the shorthand with a different colour here
      would silently reset the border-color set by the grouped rule above, which
      sits at equal specificity earlier in source order. */
   border: 1px solid var(--hub-control-border);
@@ -2480,11 +2487,15 @@
   opacity: 0.5;
 }
 
+/* Hover lifts the pill with a brighter fill and shadow instead of painting an
+   accent outline around it. */
 .home-view--hub .home-hero__footer-option:hover,
 .home-view--hub .home-hero__footer-select-trigger:hover,
 .home-view--hub .home-hero__hub-control:hover:not(:disabled),
 .home-view--hub .home-hero__rail-chip:hover:not(:disabled) {
-  border-color: var(--hub-accent);
+  border-color: transparent;
+  background: var(--hub-control-surface-hover);
+  box-shadow: var(--hub-control-shadow-hover);
 }
 
 .home-view--hub .home-hero__footer-option-icon,
@@ -2501,10 +2512,10 @@
   min-width: 34px;
   height: 34px;
   padding: 0;
-  border-color: var(--hub-accent-line);
+  border-color: transparent;
   background: var(--hub-accent-tint);
   color: var(--hub-accent);
-  box-shadow: none;
+  box-shadow: var(--hub-control-shadow);
 }
 
 .home-view--hub .home-hero__submit > span {

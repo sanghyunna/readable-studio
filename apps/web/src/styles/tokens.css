@@ -40,11 +40,20 @@
   --hub-pearl-border: rgba(255, 255, 255, 0.5);
   --hub-pearl-highlight: rgba(255, 255, 255, 0.9);
   --hub-pearl-elevation: rgba(28, 27, 26, 0.07);
-  --hub-wash: rgba(37, 99, 235, 0.16);
+  --hub-wash: rgba(37, 99, 235, 0.3);
   /* Two more blooms so the blurred surfaces have saturated colour to refract;
      without them the glass reads as flat grey. */
-  --hub-wash-warm: rgba(236, 72, 153, 0.26);
-  --hub-wash-cool: rgba(16, 185, 129, 0.2);
+  --hub-wash-warm: rgba(236, 72, 153, 0.34);
+  --hub-wash-cool: rgba(16, 185, 129, 0.28);
+  /* The canvas the glass refracts. The approved mockup does not sit the rail
+     and composer on white: it paints four tinted blooms over a cool base so
+     blue/pink/cyan/green stay visible at 1440x900. A white canvas here is what
+     made the surfaces read as flat panels instead of glass. */
+  --hub-canvas-base: #e7ecf5;
+  --hub-canvas-blue: #b9cffb;
+  --hub-canvas-pink: #f9c9dc;
+  --hub-canvas-cyan: #bfe6f7;
+  --hub-canvas-green: #c8ead9;
   /* Glass surface recipe shared by the rail, composer and floating panels. */
   --hub-glass-fill: rgba(255, 255, 255, 0.55);
   --hub-glass-fill-strong: rgba(255, 255, 255, 0.72);
@@ -56,8 +65,15 @@
   --hub-composer-bottom: rgba(37, 99, 235, 0.038);
   --hub-stage-reference-offset: 1px;
   --hub-placeholder-reference-top: 3px;
-  --hub-control-surface: rgba(255, 255, 255, 0.75);
-  --hub-control-border: rgba(16, 24, 40, 0.55);
+  /* Composer/topbar controls are soft glass pills in the approved mockup, not
+     dark outlined capsules: a translucent fill, an inset white highlight and a
+     soft shadow carry the shape, so the rest border is transparent. */
+  --hub-control-surface: rgba(255, 255, 255, 0.42);
+  --hub-control-surface-hover: rgba(255, 255, 255, 0.72);
+  --hub-control-border: transparent;
+  --hub-control-highlight: rgba(255, 255, 255, 0.6);
+  --hub-control-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 1px 2px rgba(16, 24, 40, 0.05);
+  --hub-control-shadow-hover: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 2px 8px rgba(16, 24, 40, 0.08);
   --hub-send-disabled: rgba(16, 24, 40, 0.12);
   --hub-ready-shadow: rgba(29, 78, 216, 0.28);
   --hub-ready-highlight: rgba(255, 255, 255, 0.22);
@@ -349,10 +365,19 @@
   --hub-glass-blur: blur(22px) saturate(150%);
   --hub-glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.36), 0 2px 8px rgba(0, 0, 0, 0.24);
   --hub-glass-shadow-lg: 0 20px 56px rgba(0, 0, 0, 0.46), 0 4px 14px rgba(0, 0, 0, 0.28);
+  --hub-canvas-base: #1a1917;
+  --hub-canvas-blue: #232b3d;
+  --hub-canvas-pink: #33222b;
+  --hub-canvas-cyan: #1d2a31;
+  --hub-canvas-green: #1d2c26;
   --hub-composer-top: rgba(107, 143, 232, 0.06);
   --hub-composer-bottom: rgba(107, 143, 232, 0.1);
-  --hub-control-surface: rgba(42, 40, 37, 0.86);
-  --hub-control-border: rgba(255, 255, 255, 0.34);
+  --hub-control-surface: rgba(255, 255, 255, 0.07);
+  --hub-control-surface-hover: rgba(255, 255, 255, 0.13);
+  --hub-control-border: transparent;
+  --hub-control-highlight: rgba(255, 255, 255, 0.12);
+  --hub-control-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --hub-control-shadow-hover: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 2px 8px rgba(0, 0, 0, 0.38);
   --hub-send-disabled: rgba(255, 255, 255, 0.14);
   --hub-ready-shadow: rgba(42, 75, 160, 0.38);
   --hub-ready-highlight: rgba(255, 255, 255, 0.18);
@@ -482,9 +507,18 @@
     --hub-glass-blur: blur(22px) saturate(150%);
     --hub-glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.36), 0 2px 8px rgba(0, 0, 0, 0.24);
     --hub-glass-shadow-lg: 0 20px 56px rgba(0, 0, 0, 0.46), 0 4px 14px rgba(0, 0, 0, 0.28);
+    --hub-canvas-base: #1a1917;
+    --hub-canvas-blue: #232b3d;
+    --hub-canvas-pink: #33222b;
+    --hub-canvas-cyan: #1d2a31;
+    --hub-canvas-green: #1d2c26;
     --hub-composer-top: rgba(107, 143, 232, 0.06);
     --hub-composer-bottom: rgba(107, 143, 232, 0.1);
-    --hub-control-surface: rgba(42, 40, 37, 0.86);
+    --hub-control-surface: rgba(255, 255, 255, 0.07);
+    --hub-control-surface-hover: rgba(255, 255, 255, 0.13);
+    --hub-control-highlight: rgba(255, 255, 255, 0.12);
+    --hub-control-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 1px 2px rgba(0, 0, 0, 0.3);
+    --hub-control-shadow-hover: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 2px 8px rgba(0, 0, 0, 0.38);
     --hub-send-disabled: rgba(255, 255, 255, 0.14);
     --hub-ready-shadow: rgba(42, 75, 160, 0.38);
     --hub-ready-highlight: rgba(255, 255, 255, 0.18);
