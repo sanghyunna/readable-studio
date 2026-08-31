@@ -555,7 +555,7 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
       const style = getComputedStyle(element);
       const alphaOf = (color: string) => { const parts = (color.match(/[\d.]+/g) ?? []).map(Number); return parts.length > 3 ? (parts[3] as number) : 1; };
       return {
-        backdropFilter: style.backdropFilter || style.webkitBackdropFilter,
+        backdropFilter: style.backdropFilter || style.getPropertyValue('-webkit-backdrop-filter'),
         backgroundColor: style.backgroundColor,
         backgroundAlpha: alphaOf(style.backgroundColor),
         borderRadius: style.borderRadius,
