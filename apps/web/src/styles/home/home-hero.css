@@ -2338,7 +2338,7 @@
      fill, an inset top highlight and a soft shadow. State changes ride on the
      focus ring instead of a border colour, so nothing needs a 1px line. */
   border: 0;
-  background: var(--hub-glass-fill-strong);
+  background: var(--hub-composer-fill);
   -webkit-backdrop-filter: var(--hub-glass-blur);
   backdrop-filter: var(--hub-glass-blur);
   box-shadow:

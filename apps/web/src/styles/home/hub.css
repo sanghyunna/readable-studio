@@ -1957,6 +1957,20 @@
     background: var(--hub-canvas);
   }
 
+  /* The prompt body is transparent by default so the composer glass refracts
+     the canvas. With transparency reduced there is no glass left to show
+     through, so the body takes the same opaque panel fill as its card. */
+  .home-view--hub .home-hero__prompt-surface,
+  .home-view--hub .home-hero__input-foot {
+    background: var(--bg-panel);
+  }
+
+  /* The topbar is transparent at rest so the canvas continues behind it; the
+     opaque fallback restores a flat neutral strip to match the flat stage. */
+  .entry-main__topbar:has(~ .entry-main__inner--home) {
+    background: var(--hub-canvas);
+  }
+
   .hub-kbd,
   .hub-tree__filter,
   .hub-tree__sort,

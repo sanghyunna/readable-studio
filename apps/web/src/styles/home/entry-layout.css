@@ -510,12 +510,16 @@
   background: var(--bg);
   isolation: isolate;
 }
+/* Home topbar: the approved mockup (`.tmp/design/main-hub/glass.html` .topbar)
+   paints no strip at all - the tinted canvas runs unbroken behind it and only
+   the status / help / profile controls carry glass or solid material. Painting
+   a fill here (opaque or gradient) is what produced the white horizontal band
+   across the top of the hub. The `::before` bleed is suppressed with it. */
 .entry-main__topbar:has(~ .entry-main__inner--home) {
-  background: linear-gradient(
-    100deg,
-    color-mix(in srgb, var(--hub-wash) 42%, var(--hub-canvas)),
-    var(--hub-canvas) 38%
-  );
+  background: transparent;
+}
+.entry-main__topbar:has(~ .entry-main__inner--home)::before {
+  display: none;
 }
 .entry-main__topbar:has(~ .entry-main__inner--home) .entry-main__topbar-chips {
   display: none;
@@ -1707,13 +1711,8 @@
     padding-top: 4px;
   }
 
-  .entry-main__topbar:has(~ .entry-main__inner--home) {
-    background: linear-gradient(
-      100deg,
-      color-mix(in srgb, var(--hub-wash) 24%, var(--hub-canvas)),
-      var(--hub-canvas) 32%
-    );
-  }
+  /* Short viewports only tighten the strip's padding - the canvas still runs
+     unbroken behind it, same as the full-height case. */
 }
 
 @media (max-width: 900px) {

@@ -60,7 +60,13 @@
   --hub-glass-blur: blur(22px) saturate(165%);
   --hub-glass-shadow: 0 8px 32px rgba(16, 24, 40, 0.1), 0 2px 8px rgba(16, 24, 40, 0.05);
   --hub-glass-shadow-lg: 0 20px 56px rgba(16, 24, 40, 0.14), 0 4px 14px rgba(16, 24, 40, 0.06);
-  --hub-composer-body: #ffffff;
+  /* The composer is the most translucent glass on the canvas: the mockup's
+     final override layer lands it at rgba(255,255,255,0.62) so the blue/pink/
+     cyan/green blooms refract through the prompt body. The body itself paints
+     nothing - an opaque fill here is what turned the composer into a white
+     card sitting on the canvas instead of glass over it. */
+  --hub-composer-fill: rgba(255, 255, 255, 0.62);
+  --hub-composer-body: transparent;
   --hub-composer-top: rgba(37, 99, 235, 0.016);
   --hub-composer-bottom: rgba(37, 99, 235, 0.038);
   --hub-stage-reference-offset: 1px;
@@ -370,6 +376,7 @@
   --hub-canvas-pink: #33222b;
   --hub-canvas-cyan: #1d2a31;
   --hub-canvas-green: #1d2c26;
+  --hub-composer-fill: rgba(38, 36, 33, 0.68);
   --hub-composer-top: rgba(107, 143, 232, 0.06);
   --hub-composer-bottom: rgba(107, 143, 232, 0.1);
   --hub-control-surface: rgba(255, 255, 255, 0.07);
@@ -512,6 +519,7 @@
     --hub-canvas-pink: #33222b;
     --hub-canvas-cyan: #1d2a31;
     --hub-canvas-green: #1d2c26;
+    --hub-composer-fill: rgba(38, 36, 33, 0.68);
     --hub-composer-top: rgba(107, 143, 232, 0.06);
     --hub-composer-bottom: rgba(107, 143, 232, 0.1);
     --hub-control-surface: rgba(255, 255, 255, 0.07);
