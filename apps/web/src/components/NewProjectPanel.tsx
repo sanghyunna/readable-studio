@@ -700,6 +700,7 @@ export function NewProjectPanel({
           <>
             <input
               ref={claudeZipImport.inputRef}
+              data-testid="new-project-import-claude-zip-input"
               type="file"
               accept=".zip,application/zip"
               hidden
@@ -707,6 +708,7 @@ export function NewProjectPanel({
             />
             <button
               type="button"
+              data-testid="new-project-import-claude-zip"
               className="ghost newproj-import"
               disabled={loading || claudeZipImport.importing}
               title={t('newproj.importClaudeZipTitle')}
@@ -725,6 +727,7 @@ export function NewProjectPanel({
           <div className="newproj-open-folder">
             <button
               type="button"
+              data-testid="new-project-import-folder"
               className="ghost newproj-import"
               disabled={folderImport.importing}
               onClick={() => void folderImport.openFolder()}

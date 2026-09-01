@@ -430,6 +430,111 @@ describe('NewProjectPanel project folder picker', () => {
 });
 
 describe('NewProjectPanel folder import feedback', () => {
+  it('renders current folder and ZIP controls and reaches their import seams', async () => {
+    const onImportClaudeDesign = vi.fn().mockResolvedValue({ ok: true });
+    const onImportFolder = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (url) => {
+      if (typeof url === 'string' && url === '/api/dialog/open-folder') {
+        return new Response(
+          JSON.stringify({ path: '/selected/project' }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    }));
+
+    const { container } = render(
+      <NewProjectPanel
+        skills={skills}
+        designSystems={designSystems}
+        defaultDesignSystemId="clay"
+        templates={templates}
+        onDeleteTemplate={vi.fn()}
+        onCreate={vi.fn()}
+        onImportClaudeDesign={onImportClaudeDesign}
+        onImportFolder={onImportFolder}
+      />,
+    );
+
+    const zipInput = container.querySelector('input[type="file"]');
+    expect(zipInput).toBeTruthy();
+    fireEvent.change(zipInput!, {
+      target: { files: [new File(['zip'], 'project.zip', { type: 'application/zip' })] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Open folder' }));
+
+    await waitFor(() => {
+      expect(onImportClaudeDesign).toHaveBeenCalledTimes(1);
+      expect(onImportFolder).toHaveBeenCalledWith('/selected/project');
+    });
+  });
+
+  it('exposes stable import control contracts only when callbacks are available', async () => {
+    const onImportClaudeDesign = vi.fn().mockResolvedValue({ ok: true });
+    const onImportFolder = vi.fn().mockResolvedValue(undefined);
+    mockedOpenFolderDialog.mockResolvedValue('/selected/project');
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (url) => {
+      if (typeof url === 'string' && url === '/api/dialog/open-folder') {
+        return new Response(
+          JSON.stringify({ path: '/selected/project' }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    }));
+    const { unmount } = render(
+      <NewProjectPanel
+        skills={skills}
+        designSystems={designSystems}
+        defaultDesignSystemId="clay"
+        templates={templates}
+        onCreate={vi.fn()}
+        onImportClaudeDesign={onImportClaudeDesign}
+        onImportFolder={onImportFolder}
+      />,
+    );
+
+    expect(screen.getAllByTestId('new-project-import-folder')).toHaveLength(1);
+    expect(screen.getByTestId('new-project-import-folder').tagName).toBe('BUTTON');
+    expect(screen.getByTestId('new-project-import-folder').getAttribute('type')).toBe('button');
+    expect(screen.getAllByTestId('new-project-import-claude-zip')).toHaveLength(1);
+    expect(screen.getByTestId('new-project-import-claude-zip').tagName).toBe('BUTTON');
+    expect(screen.getByTestId('new-project-import-claude-zip').getAttribute('type')).toBe('button');
+    expect(screen.getAllByTestId('new-project-import-claude-zip-input')).toHaveLength(1);
+    expect(screen.getByTestId('new-project-import-claude-zip-input').getAttribute('accept')).toBe(
+      '.zip,application/zip',
+    );
+    expect(screen.getByTestId('new-project-import-claude-zip-input')).toHaveProperty('hidden', true);
+
+    const folderButton = screen.getByTestId('new-project-import-folder');
+    fireEvent.click(folderButton);
+    const zipButton = screen.getByTestId('new-project-import-claude-zip');
+    const zipInput = screen.getByTestId('new-project-import-claude-zip-input');
+    const inputClick = vi.spyOn(zipInput, 'click');
+    fireEvent.click(zipButton);
+    expect(inputClick).toHaveBeenCalledTimes(1);
+    const file = new File(['zip'], 'project.zip', { type: 'application/zip' });
+    fireEvent.change(zipInput, { target: { files: [file] } });
+    await waitFor(() => {
+      expect(onImportFolder).toHaveBeenCalledWith('/selected/project');
+      expect(onImportClaudeDesign).toHaveBeenCalledWith(file);
+    });
+
+    unmount();
+    render(
+      <NewProjectPanel
+        skills={skills}
+        designSystems={designSystems}
+        defaultDesignSystemId="clay"
+        templates={templates}
+        onCreate={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryAllByTestId('new-project-import-claude-zip')).toHaveLength(0);
+    expect(screen.queryAllByTestId('new-project-import-claude-zip-input')).toHaveLength(0);
+  });
+
   it('shows an error when Claude Design zip import resolves as failed', async () => {
     const onImportClaudeDesign = vi.fn().mockResolvedValue({
       ok: false,
