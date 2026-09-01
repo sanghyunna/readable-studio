@@ -2,16 +2,24 @@ import { expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
 /**
- * The entry nav rail is collapsed by default; its destinations
- * (`entry-nav-*`) only become interactable once the rail is expanded via the
- * topbar toggle. This helper is idempotent — when the rail is already docked
- * the toggle is hidden, so it no-ops. Call it before clicking any rail nav
- * item or asserting the rail/logo is visible.
+ * Expands the navigation rail rendered by the current entry view. Home owns
+ * the Hub rail; the other entry views use the legacy entry rail.
  */
 export async function ensureRailOpen(page: Page): Promise<void> {
+  const hubRail = page.getByTestId('hub-nav');
+  if (await hubRail.isVisible()) {
+    const toggle = page.getByTestId('hub-rail-toggle');
+    if ((await toggle.getAttribute('aria-pressed')) === 'true') {
+      await toggle.click();
+    }
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(hubRail).toBeVisible();
+    await expect(page.locator('.hub__new-project')).toBeVisible();
+    return;
+  }
+
   const toggle = page.getByTestId('entry-rail-toggle');
-  // The toggle is only present while collapsed (it's display:none once docked).
-  if (await toggle.isVisible().catch(() => false)) {
+  if (await toggle.isVisible()) {
     await toggle.click();
   }
   await expect(page.locator('.entry-nav-rail')).toBeVisible();
