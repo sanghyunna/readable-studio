@@ -123,14 +123,6 @@ interface Props {
   onRenameProject?: (projectId: string, name: string) => void;
   onDeleteProject?: (projectId: string) => Promise<boolean | void> | boolean | void;
   onNavigateDestination?: (destination: 'home' | 'projects' | 'tasks' | 'design-systems' | 'plugins' | 'integrations') => void;
-  /**
-   * Real folder import. Omitted when no import route is available (no desktop
-   * host and no local daemon picker), in which case the starter is not shown
-   * at all rather than opening an unrelated form.
-   */
-  /** Failure text from either starter; rendered as a visible alert. */
-  starterError?: { message: string; details?: string } | null;
-  onDismissStarterError?: () => void;
   currentSessionId?: string | null;
   /** Brand click returns to the hub itself; entry chrome owns the target. */
   onGoHome?: () => void;
@@ -158,8 +150,6 @@ export function HubHome({
   onRenameProject,
   onDeleteProject,
   onNavigateDestination,
-  starterError = null,
-  onDismissStarterError,
   currentSessionId = null,
   onGoHome,
   designSystems = EMPTY_DESIGN_SYSTEMS,
@@ -905,24 +895,6 @@ export function HubHome({
             skillsLoading={skillsLoading}
             commandChip={commandChip}
           />
-
-          {/* The three starter buttons (import folder / Claude ZIP / from
-              template) were removed from the hub on purpose: they crowded the
-              composer, and the same capabilities stay reachable through the New
-              Project modal, which renders the folder picker, the Claude ZIP
-              picker and the template tab. Import errors still surface below. */}
-
-          {starterError ? (
-            <p className="hub__starter-error" role="alert" data-testid="hub-starter-error">
-              <span>{starterError.message}</span>
-              {starterError.details ? <span>{starterError.details}</span> : null}
-              {onDismissStarterError ? (
-                <button type="button" className="hub-tree__link" onClick={onDismissStarterError}>
-                  {t('common.close')}
-                </button>
-              ) : null}
-            </p>
-          ) : null}
 
           {projects.length === 0 && !projectsLoading ? (
             <p className="hub__empty" data-testid="hub-empty">

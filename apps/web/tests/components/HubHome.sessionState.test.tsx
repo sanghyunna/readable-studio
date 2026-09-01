@@ -249,19 +249,3 @@ describe('hub session metadata', () => {
     expect(screen.queryByTestId('hub-row-time-c1')).toBeNull();
   });
 });
-
-describe('hub starters', () => {
-  it('omits the folder starter when no import route is available', async () => {
-    readConversations.mockResolvedValue(ok([]));
-    renderHub([P1]);
-    await waitFor(() => expect(screen.queryByTestId('hub-import-folder')).toBeNull());
-  });
-
-  it('renders a starter failure as a visible alert', async () => {
-    readConversations.mockResolvedValue(ok([]));
-    renderHub([P1], { starterError: { message: 'Import failed: bad zip' } });
-    const alert = await screen.findByTestId('hub-starter-error');
-    expect(alert.textContent).toContain('Import failed: bad zip');
-    expect(alert.getAttribute('role')).toBe('alert');
-  });
-});

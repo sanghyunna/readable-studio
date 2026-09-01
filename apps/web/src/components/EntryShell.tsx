@@ -72,8 +72,6 @@ import type {
 } from '../state/projects';
 import { TasksView } from './TasksView';
 import { useRuntimeUsername } from '../hooks/useRuntimeUser';
-import { useClaudeZipImport } from './useClaudeZipImport';
-import { useOpenFolderImport } from './useOpenFolderImport';
 import { AnimatePresence } from 'motion/react';
 import { smoothScrollToTop } from '../utils/smoothScrollToTop';
 import {
@@ -331,16 +329,6 @@ export function EntryShell({
   const route = useRoute();
   const username = useRuntimeUsername();
   const view: EntryViewKind = route.kind === 'home' ? route.view : 'home';
-  // The hub's starters drive the REAL import flows, not a create form: the
-  // folder hook picks the desktop host path or the daemon picker, and the ZIP
-  // controller owns the hidden input, the duplicate guard and both failure
-  // shapes. Both live here because EntryShell is what receives the callbacks.
-  const hubFolderImport = useOpenFolderImport({
-    skillId: null,
-    ...(onImportFolder ? { onImportFolder } : {}),
-    ...(onImportFolderResponse ? { onImportFolderResponse } : {}),
-  });
-  const hubClaudeZipImport = useClaudeZipImport({ onImportClaudeDesign });
   const [previewSystemId, setPreviewSystemId] = useState<string | null>(null);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   // The entry nav rail is collapsed by default (Manus-style) so the entry
@@ -635,22 +623,7 @@ export function EntryShell({
                 onRenameProject={onRenameProject}
                 onDeleteProject={(projectId) => { void onDeleteProject(projectId); }}
                 onNavigateDestination={changeView}
-                starterError={hubClaudeZipImport.error ?? hubFolderImport.error}
-                onDismissStarterError={() => {
-                  hubClaudeZipImport.clearError();
-                  hubFolderImport.clearError();
-                }}
                 onGoHome={() => changeView('home')}
-              />
-              {/* The hub's ZIP starter is a button; the input it opens has to
-                  exist in the tree, so it lives beside the hub. */}
-              <input
-                ref={hubClaudeZipImport.inputRef}
-                type="file"
-                accept=".zip,application/zip"
-                hidden
-                data-testid="hub-import-claude-zip-input"
-                onChange={(event) => void hubClaudeZipImport.handleChange(event)}
               />
             </div>
             <div data-testid="entry-view-projects" data-active={view === 'projects' ? 'true' : 'false'} {...inactiveViewProps(view === 'projects')}>
