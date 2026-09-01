@@ -14,14 +14,18 @@ test.beforeEach(async ({ page }) => {
 test('[P0] @critical home loads with the primary entry controls', async ({ page }) => {
   await gotoEntryHome(page);
 
-  // The rail is collapsed by default — the hero owns the first screen and the
-  // only chrome affordance is the topbar toggle. Expand to reach the rail nav.
-  await expect(page.getByTestId('entry-rail-toggle')).toBeVisible();
+  // The Hub rail is the primary Home navigation surface. Its toggle and New
+  // Project action must both be discoverable and interactable after expansion.
+  const hubRail = page.getByTestId('hub-nav');
+  const railToggle = page.getByTestId('hub-rail-toggle');
+  await expect(hubRail).toBeVisible();
+  await expect(railToggle).toBeVisible();
+  await expect(railToggle).toBeEnabled();
   await expect(page.getByTestId('home-hero-input')).toBeVisible();
   await ensureRailOpen(page);
-  await expect(page.getByTestId('entry-nav-logo')).toBeVisible();
-  await expect(page.getByTestId('entry-nav-home')).toHaveAttribute('aria-current', 'page');
-  await expect(page.getByTestId('entry-nav-new-project')).toBeVisible();
+  await expect(railToggle).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.getByTestId('hub-new-project')).toBeVisible();
+  await expect(page.getByTestId('hub-new-project')).toBeEnabled();
 });
 
 test('[P0] @critical settings dialog is reachable from home', async ({ page }) => {
