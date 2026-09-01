@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import type { Page, Request } from '@playwright/test';
 import { applyStandardMocks } from '@/playwright/mock-factory';
+import { openNewProjectModal } from '@/playwright/new-project-modal';
 
 test.describe.configure({ timeout: 90_000 });
 
@@ -114,8 +115,9 @@ test('[P1] the folder starter runs the real folder import instead of opening the
   });
 
   await gotoHub(page);
+  await openNewProjectModal(page);
 
-  const starter = page.getByTestId('hub-import-folder');
+  const starter = page.getByTestId('new-project-import-folder');
   await expect(starter).toBeVisible();
   await starter.click();
 
@@ -126,10 +128,7 @@ test('[P1] the folder starter runs the real folder import instead of opening the
   expect(importRequests[0]).toContain(baseDir.replaceAll('\\', '\\\\'));
   await expect.poll(() => importResponses.length, { timeout: 20_000 }).toBeGreaterThan(0);
 
-  // Proof 2: the create form did NOT open - the old miswiring's only effect.
-  await expect(page.getByTestId('new-project-panel')).toHaveCount(0);
-
-  // Proof 3: the daemon created a project rooted at the picked folder and the
+  // Proof 2: the daemon created a project rooted at the picked folder and the
   // app opened it. `GET /api/projects` deliberately hides projects outside the
   // configured locations, so the import RESPONSE is the authoritative payload.
   // The imported folder is recorded on `project.metadata.baseDir`; the row has
@@ -147,9 +146,7 @@ test('[P1] the folder starter runs the real folder import instead of opening the
 
 test('[P1] the hub exposes the Claude ZIP starter and surfaces its failure', async ({ page }) => {
   await gotoHub(page);
-
-  const starter = page.getByTestId('hub-import-claude-zip');
-  await expect(starter).toBeVisible();
+  await openNewProjectModal(page);
 
   // The controller must surface a REJECTED import instead of silently doing
   // nothing - the failure mode the shared picker was extracted to prevent.
@@ -157,15 +154,34 @@ test('[P1] the hub exposes the Claude ZIP starter and surfaces its failure', asy
     await route.fulfill({ status: 400, json: { error: 'not a claude design export' } });
   });
 
-  await page.getByTestId('hub-import-claude-zip-input').setInputFiles({
+  const importRequestPromise = page.waitForRequest((request) => {
+    const url = new URL(request.url());
+    return url.pathname === '/api/import/claude-design' && request.method() === 'POST';
+  });
+  const importResponsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === '/api/import/claude-design' && response.request().method() === 'POST';
+  });
+  const fileChooserPromise = page.waitForEvent('filechooser');
+  const starter = page.getByTestId('new-project-import-claude-zip');
+  await expect(starter).toBeVisible();
+  await starter.click();
+  const fileChooser = await fileChooserPromise;
+  await fileChooser.setFiles({
     name: 'design.zip',
     mimeType: 'application/zip',
     buffer: Buffer.from('PK\u0003\u0004 not really a zip'),
   });
+  const [importRequest, importResponse] = await Promise.all([
+    importRequestPromise,
+    importResponsePromise,
+  ]);
+  expect(importRequest.postData() ?? '').toContain('design.zip');
+  expect(importResponse.status()).toBe(400);
 
-  const alert = page.getByTestId('hub-starter-error');
+  const alert = page.getByTestId('new-project-modal').locator('.readable-toast');
   await expect(alert).toBeVisible({ timeout: 20_000 });
-  await expect(alert).toContainText(/Import failed/i);
+  await expect(alert).toContainText('Import failed');
 });
 
 test('[P1] the new-session action creates a conversation and navigates to it', async ({ page }) => {
