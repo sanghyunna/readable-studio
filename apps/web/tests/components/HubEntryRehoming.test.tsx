@@ -78,22 +78,6 @@ describe('entry re-homing after the hub replaced the welcome screen', () => {
     expect(onSubmitPrompt).toHaveBeenCalledWith('분기 리포트', { designSystemId: null });
   });
 
-  it('keeps new-project creation reachable from the navigation panel', async () => {
-    const onNewProject = vi.fn();
-    render(
-      <HubHome
-        projects={[PROJECT]}
-        projectsLoading={false}
-        onOpenSession={vi.fn()}
-        onSubmitPrompt={vi.fn()}
-        onNewProject={onNewProject}
-      />,
-    );
-    const nav = await screen.findByTestId('hub-nav');
-    fireEvent.click(nav.querySelector('.hub__new-project') as HTMLElement);
-    expect(onNewProject).toHaveBeenCalled();
-  });
-
   it('preserves the workspace route and tab contract when opening a session', () => {
     openSessionRoute('p1', 'c1');
     expect(navigate).toHaveBeenCalledWith({

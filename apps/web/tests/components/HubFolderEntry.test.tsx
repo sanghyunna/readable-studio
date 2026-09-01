@@ -70,8 +70,8 @@ describe('New Project folder entry', () => {
       />,
     );
 
-    // When: the user selects the current folder import control.
-    fireEvent.click(screen.getByRole('button', { name: 'Open folder' }));
+    // When: the user selects the stable current folder import control.
+    fireEvent.click(screen.getByTestId('new-project-import-folder'));
 
     // Then: the panel delegates to the folder-import hook exactly once.
     expect(folderImport.openFolder).toHaveBeenCalledTimes(1);
@@ -95,6 +95,6 @@ describe('New Project folder entry', () => {
     );
 
     // Then: no non-actionable folder control is exposed.
-    expect(screen.queryByRole('button', { name: 'Open folder' })).toBeNull();
+    expect(screen.queryByTestId('new-project-import-folder')).toBeNull();
   });
 });

@@ -501,15 +501,19 @@ describe('NewProjectPanel folder import feedback', () => {
     expect(screen.getByTestId('new-project-import-claude-zip').tagName).toBe('BUTTON');
     expect(screen.getByTestId('new-project-import-claude-zip').getAttribute('type')).toBe('button');
     expect(screen.getAllByTestId('new-project-import-claude-zip-input')).toHaveLength(1);
-    expect(screen.getByTestId('new-project-import-claude-zip-input').getAttribute('accept')).toBe(
-      '.zip,application/zip',
-    );
-    expect(screen.getByTestId('new-project-import-claude-zip-input')).toHaveProperty('hidden', true);
 
     const folderButton = screen.getByTestId('new-project-import-folder');
-    fireEvent.click(folderButton);
     const zipButton = screen.getByTestId('new-project-import-claude-zip');
     const zipInput = screen.getByTestId('new-project-import-claude-zip-input');
+    expect(zipInput).toBeInstanceOf(HTMLInputElement);
+    if (!(zipInput instanceof HTMLInputElement)) {
+      throw new TypeError('Claude ZIP import control must be an HTMLInputElement');
+    }
+    expect(zipInput.type).toBe('file');
+    expect(zipInput.accept).toBe('.zip,application/zip');
+    expect(zipInput.hidden).toBe(true);
+
+    fireEvent.click(folderButton);
     const inputClick = vi.spyOn(zipInput, 'click');
     fireEvent.click(zipButton);
     expect(inputClick).toHaveBeenCalledTimes(1);
@@ -531,6 +535,7 @@ describe('NewProjectPanel folder import feedback', () => {
       />,
     );
 
+    expect(screen.queryAllByTestId('new-project-import-folder')).toHaveLength(0);
     expect(screen.queryAllByTestId('new-project-import-claude-zip')).toHaveLength(0);
     expect(screen.queryAllByTestId('new-project-import-claude-zip-input')).toHaveLength(0);
   });
