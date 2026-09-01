@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { ensureRailOpen } from '@/playwright/rail';
+import { openNewProjectModal } from '@/playwright/new-project-modal';
 import { routeAgents } from '@/playwright/mock-factory';
 import type { Locator, Page, Response } from '@playwright/test';
 import { T } from '@/timeouts';
@@ -1979,13 +1979,6 @@ async function gotoEntryHome(page: Page) {
   }
   await expect(page.getByTestId('home-hero')).toBeVisible();
   await expect(page.getByTestId('home-hero-input')).toBeVisible();
-}
-
-async function openNewProjectModal(page: Page) {
-  await ensureRailOpen(page);
-  await page.getByTestId('entry-nav-new-project').click();
-  await expect(page.getByTestId('new-project-modal')).toBeVisible();
-  await expect(page.getByTestId('new-project-panel')).toBeVisible();
 }
 
 async function seedHtmlArtifact(page: Page, projectId: string, fileName: string, content: string) {

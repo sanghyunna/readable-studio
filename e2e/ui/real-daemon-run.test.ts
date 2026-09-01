@@ -463,16 +463,6 @@ async function sendPromptAndReloadBeforeCreateResponse(page: Page, prompt: strin
   await page.unroute(runRoute).catch(() => {});
 }
 
-async function openNewProjectModal(page: Page) {
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await waitForLoadingToClear(page);
-  await dismissPrivacyDialog(page);
-  await ensureRailOpen(page);
-  await page.getByTestId('entry-nav-new-project').click();
-  await expect(page.getByTestId('new-project-modal')).toBeVisible();
-  await expect(page.getByTestId('new-project-panel')).toBeVisible();
-}
-
 async function dismissPrivacyDialog(page: Page) {
   const privacyDialog = page.getByRole('dialog').filter({ hasText: 'Help us improve Readable Studio' });
   if (await privacyDialog.isVisible()) {

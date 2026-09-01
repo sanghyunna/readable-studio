@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { ensureRailOpen } from '@/playwright/rail';
+import { openNewProjectModal } from '@/playwright/new-project-modal';
 import { routeAgents } from '@/playwright/mock-factory';
 import type { Locator, Page, Request, Response } from '@playwright/test';
 import { automatedUiScenarios } from '@/playwright/resources';
@@ -132,13 +132,6 @@ async function gotoEntryHome(page: Page) {
   }
   await expect(page.getByTestId('home-hero')).toBeVisible();
   await expect(page.getByTestId('home-hero-input')).toBeVisible();
-}
-
-async function openNewProjectModal(page: Page) {
-  await ensureRailOpen(page);
-  await page.getByTestId('entry-nav-new-project').click();
-  await expect(page.getByTestId('new-project-modal')).toBeVisible();
-  await expect(page.getByTestId('new-project-panel')).toBeVisible();
 }
 
 async function expectWorkspaceReady(page: Page) {

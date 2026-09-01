@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import { ensureRailOpen } from '@/playwright/rail';
 import type { Locator, Page, Response } from '@playwright/test';
 import { applyStandardMocks } from '@/playwright/mock-factory';
+import { openNewProjectModal } from '@/playwright/new-project-modal';
 
 const CHAT_PANEL_WIDTH_STORAGE_KEY = 'readable-studio.project.chatPanelWidth';
 
@@ -403,13 +404,6 @@ async function gotoEntryHome(page: Page) {
   }
   await expect(page.getByTestId('home-hero')).toBeVisible();
   await expect(page.getByTestId('home-hero-input')).toBeVisible();
-}
-
-async function openNewProjectModal(page: Page) {
-  await ensureRailOpen(page);
-  await page.getByTestId('entry-nav-new-project').click();
-  await expect(page.getByTestId('new-project-modal')).toBeVisible();
-  await expect(page.getByTestId('new-project-panel')).toBeVisible();
 }
 
 async function expectProjectsView(page: Page) {
