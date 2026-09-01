@@ -969,6 +969,10 @@
   animation-duration: 5s;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .shimmer-text { animation: none; }
+}
+
 /* Status pills */
 .status-pill {
   display: inline-flex;
