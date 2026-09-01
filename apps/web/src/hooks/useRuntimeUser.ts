@@ -9,18 +9,49 @@ function runtimeUserResponse(value: unknown): RuntimeUserResponse {
   return { username: typeof username === 'string' && username.length > 0 ? username : null };
 }
 
+const MAX_ATTEMPTS = 5;
+const RETRY_DELAY_MS = 5000;
+
 export function useRuntimeUsername(): string | null {
   const [username, setUsername] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
-    void fetch('/api/runtime/user', { signal: controller.signal })
-      .then(async (response) => response.ok ? runtimeUserResponse(await response.json()) : { username: null })
-      .then((result) => {
-        if (!controller.signal.aborted) setUsername(result.username);
-      })
-      .catch(() => undefined);
-    return () => controller.abort();
+    let attempts = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+
+    function scheduleRetry(): void {
+      if (controller.signal.aborted || attempts >= MAX_ATTEMPTS) return;
+      retryTimer = setTimeout(requestUsername, RETRY_DELAY_MS);
+    }
+
+    function requestUsername(): void {
+      retryTimer = undefined;
+      attempts += 1;
+      void fetch('/api/runtime/user', { signal: controller.signal }).then(
+        (response) => {
+          if (!response.ok) {
+            scheduleRetry();
+            return;
+          }
+          void response.json().then(
+            (value: unknown) => {
+              if (!controller.signal.aborted) setUsername(runtimeUserResponse(value).username);
+            },
+            () => {
+              if (!controller.signal.aborted) setUsername(null);
+            },
+          );
+        },
+        scheduleRetry,
+      );
+    }
+
+    requestUsername();
+    return () => {
+      controller.abort();
+      if (retryTimer !== undefined) clearTimeout(retryTimer);
+    };
   }, []);
 
   return username;
