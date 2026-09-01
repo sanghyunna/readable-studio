@@ -787,7 +787,12 @@ export function HubHome({
           </button>
         </div>
         <div className="hub__nav-actions">
-          <button type="button" className="hub__new-project" onClick={onNewProject}>
+          <button
+            type="button"
+            className="hub__new-project"
+            data-testid="hub-new-project"
+            onClick={onNewProject}
+          >
             {t('entry.navNewProject')}
           </button>
           <div className="hub__search-wrap">

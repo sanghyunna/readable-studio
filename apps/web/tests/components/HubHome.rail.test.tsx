@@ -74,6 +74,15 @@ function seedTwoSessions() {
 }
 
 describe('HubHome rail', () => {
+  it('calls New Project once when the current Hub trigger is clicked', () => {
+    const onNewProject = vi.fn();
+    renderHub({ onNewProject });
+
+    fireEvent.click(screen.getByTestId('hub-new-project'));
+
+    expect(onNewProject).toHaveBeenCalledTimes(1);
+  });
+
   it('has no open-work section until a session is opened, then lists it', async () => {
     seedTwoSessions();
     renderHub();
