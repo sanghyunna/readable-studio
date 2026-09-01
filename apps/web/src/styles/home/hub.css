@@ -1700,7 +1700,7 @@
   background: var(--bg-panel);
   color: var(--text-strong);
   box-shadow: var(--shadow-lg);
-  transform: translateX(-50%);
+  translate: -50% 0;
   font-size: 12.5px;
 }
 
