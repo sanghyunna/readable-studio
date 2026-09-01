@@ -1,9 +1,8 @@
-// Shared Claude Design ZIP picker.
+// New Project modal Claude Design ZIP picker.
 //
-// Both the New Project panel and the entry hub offer this starter, and both
-// need exactly the same three behaviours: reset the input so re-picking the
-// same file still fires `change`, refuse a second import while one is in
-// flight, and surface the failure whether the callback RETURNS `{ok:false}`
+// The New Project modal needs exactly the same three behaviours: reset the
+// input so re-picking the same file still fires `change`, refuse a second import
+// while one is in flight, and surface the failure whether the callback RETURNS `{ok:false}`
 // or THROWS. Keeping one controller keeps those from drifting apart.
 
 import { useCallback, useRef, useState, type ChangeEvent } from 'react';

@@ -83,7 +83,7 @@ async function fillDefaultConversation(page: Page, projectId: string) {
   return after[0]!;
 }
 
-test('[P1] the folder starter runs the real folder import instead of opening the Other tab', async ({
+test('[P1] the New Project modal folder import runs the real folder import instead of opening the Other tab', async ({
   page,
 }) => {
   // The native picker cannot open in CI, so only the picker RESPONSE is
@@ -144,7 +144,7 @@ test('[P1] the folder starter runs the real folder import instead of opening the
   await expect.poll(() => page.url(), { timeout: 20_000 }).toContain(importBody.project!.id!);
 });
 
-test('[P1] the hub exposes the Claude ZIP starter and surfaces its failure', async ({ page }) => {
+test('[P1] the New Project modal exposes the Claude ZIP import and surfaces its failure', async ({ page }) => {
   await gotoHub(page);
   await openNewProjectModal(page);
 

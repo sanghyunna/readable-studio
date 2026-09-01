@@ -1,5 +1,4 @@
 import { expect, test } from '@playwright/test';
-import { ensureRailOpen } from '@/playwright/rail';
 import { openNewProjectModal } from '@/playwright/new-project-modal';
 import { routeAgents } from '@/playwright/mock-factory';
 import type { Dialog, Locator, Page, Request, Response } from '@playwright/test';

@@ -2,7 +2,7 @@
 //
 // Left panel owns navigation (project -> session tree). The center is a calm
 // start surface: a live-work strip when something is running, the composer,
-// and import starters. Past work is never dumped into the center canvas.
+// and the New Project modal launcher. Past work is never dumped into the center canvas.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
