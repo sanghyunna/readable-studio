@@ -1,6 +1,5 @@
-// QA for todo 8 — artifact-type shortcuts, the more-shortcuts overflow, the
-// direct "Start from template" starter, subcategory tabs with counts, and the
-// Design/Chat session mode toggle.
+// QA for todo 8 — artifact-type shortcuts, the more-shortcuts overflow,
+// subcategory tabs with counts, and the Design/Chat session mode toggle.
 //
 // Every assertion drives the REAL home surface and, where the control causes
 // state, proves it through the outgoing `/api/projects` payload rather than a
@@ -268,6 +267,10 @@ for (const tab of TYPE_TABS) {
 }
 
 // (b) The overflow menu carries the three migrate-group shortcuts.
+// Historical note: 4b72960 introduced the direct starter guarantee; 6d88559
+// deliberately invalidated it when all three starters were removed. Current
+// template reachability belongs to the New Project modal/reachability tests;
+// the accepted path is two clicks.
 test('the more-shortcuts overflow exposes Create plugin, From Figma and From template', async ({ page }) => {
   await gotoHome(page);
 
@@ -285,26 +288,6 @@ test('the more-shortcuts overflow exposes Create plugin, From Figma and From tem
 
   // The template shortcut opens the New Project modal on its template tab.
   await menu.getByTestId('home-hero-rail-template').click();
-  await expect(page.getByTestId('new-project-tab-template')).toHaveAttribute('aria-selected', 'true');
-});
-
-// (b2) Defect #71 — the direct starter button, a separate element from the
-// overflow shortcut above.
-test('a third "Start from template" starter sits beside the import starters and opens the template tab', async ({ page }) => {
-  await gotoHome(page);
-
-  const starters = page.locator('.hub__starters');
-  const templateStarter = page.getByTestId('hub-start-from-template');
-  await expect(templateStarter).toBeVisible();
-  await expect(templateStarter).toContainText('Start from template');
-
-  // It is a starter, not the composer's overflow item: it lives in the starter
-  // row next to Import folder, and the overflow menu is closed.
-  await expect(starters.getByRole('button')).toContainText(['Import folder', 'Start from template']);
-  await expect(page.getByTestId('home-hero-shortcuts-menu')).toHaveCount(0);
-  await starters.screenshot({ path: EVIDENCE('starters.png') });
-
-  await templateStarter.click();
   await expect(page.getByTestId('new-project-tab-template')).toHaveAttribute('aria-selected', 'true');
 });
 
