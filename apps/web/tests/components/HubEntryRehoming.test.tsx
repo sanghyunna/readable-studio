@@ -78,25 +78,6 @@ describe('entry re-homing after the hub replaced the welcome screen', () => {
     expect(onSubmitPrompt).toHaveBeenCalledWith('분기 리포트', { designSystemId: null });
   });
 
-  // The hub used to carry its own "import folder" starter button. That button
-  // was removed; folder import now lives in the New Project modal. What still
-  // has to hold is that the hub offers a route to it, so this asserts the hub
-  // opens the New Project surface rather than asserting a starter that is gone.
-  it('keeps folder import reachable by routing to the new-project surface', async () => {
-    const onNewProject = vi.fn();
-    render(
-      <HubHome
-        projects={[PROJECT]}
-        projectsLoading={false}
-        onOpenSession={vi.fn()}
-        onSubmitPrompt={vi.fn()}
-        onNewProject={onNewProject}
-      />,
-    );
-    fireEvent.click(await screen.findByRole('button', { name: /새 프로젝트|New project/i }));
-    expect(onNewProject).toHaveBeenCalled();
-  });
-
   it('keeps new-project creation reachable from the navigation panel', async () => {
     const onNewProject = vi.fn();
     render(
