@@ -2447,9 +2447,14 @@
 /* Composer footer controls are soft glass pills in the approved mockup: a
    translucent fill plus an inset white highlight and a soft shadow, never a
    dark outlined capsule. The border stays declared (transparent) so the
-   focus-visible ring and the box metrics are unchanged. */
+   focus-visible ring and the box metrics are unchanged.
+
+   Exactly ONE element per control paints the glass. `--hub-control-surface` is
+   translucent, so a select chip whose wrapper AND inner trigger both paint it
+   composites two fills (0.42 over 0.42) and stacks the trigger's square box
+   inside the wrapper's pill — the double-layered blob. The select trigger is a
+   transparent inner control; `.home-hero__footer-option` owns its surface. */
 .home-view--hub .home-hero__footer-option,
-.home-view--hub .home-hero__footer-select-trigger,
 .home-view--hub .home-hero__hub-control,
 .home-view--hub .home-hero__active-type-chip,
 .home-view--hub .home-hero__subtype-chip,
@@ -2488,9 +2493,9 @@
 }
 
 /* Hover lifts the pill with a brighter fill and shadow instead of painting an
-   accent outline around it. */
+   accent outline around it. A select chip hovers as one pill from its wrapper;
+   hovering the inner trigger must not add a second fill. */
 .home-view--hub .home-hero__footer-option:hover,
-.home-view--hub .home-hero__footer-select-trigger:hover,
 .home-view--hub .home-hero__hub-control:hover:not(:disabled),
 .home-view--hub .home-hero__rail-chip:hover:not(:disabled) {
   border-color: transparent;

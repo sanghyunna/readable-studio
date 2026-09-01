@@ -1970,8 +1970,10 @@
   .hub-tree__filter,
   .hub-tree__sort,
   .entry-run-chip,
+  /* Same single-surface rule as the glass path: the select trigger stays
+     transparent so the opaque fallback does not paint a second filled box
+     plus its own outline ring inside the wrapper's pill. */
   .home-view--hub .home-hero__footer-option,
-  .home-view--hub .home-hero__footer-select-trigger,
   .home-view--hub .home-hero__hub-control,
   .home-view--hub .home-hero__active-type-chip,
   .home-view--hub .home-hero__subtype-chip,
