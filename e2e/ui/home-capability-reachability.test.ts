@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 import { routeAgents } from '@/playwright/mock-factory';
+import { openNewProjectModal } from '@/playwright/new-project-modal';
 
 test.describe.configure({ timeout: 30_000 });
 
@@ -279,15 +280,6 @@ async function gotoHome(page: Page) {
 
 async function visible(locator: Locator, id: string) {
   await expect(locator, `[${id}] control must be visible on the real home surface`).toBeVisible({ timeout: 2_000 });
-}
-
-// Folder import and the Claude ZIP starter moved off the hub surface into the
-// New Project modal, so reaching them starts at the rail's New project button.
-async function openNewProjectModal(page: Page, id: string) {
-  const trigger = page.getByRole('button', { name: /New project/i }).first();
-  await visible(trigger, id);
-  await trigger.click();
-  await visible(page.getByTestId('new-project-modal'), id);
 }
 
 async function chooseType(page: Page, id: 'prototype' | 'deck' | 'report') {
