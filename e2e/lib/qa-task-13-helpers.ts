@@ -37,6 +37,22 @@ export interface RegionEvidence {
   readonly observation: string;
 }
 
+export interface MotionOffender {
+  readonly selector: string;
+  readonly tag: string;
+  readonly classes: readonly string[];
+  readonly snippet: string;
+  readonly visible: boolean;
+  readonly animationName: string;
+  readonly transitionProperty: string;
+  readonly animationDuration: string;
+  readonly animationDelay: string;
+  readonly transitionDuration: string;
+  readonly transitionDelay: string;
+  readonly maxDurationMs: number;
+  readonly owningRules: readonly string[];
+}
+
 interface DiffEvidence {
   readonly state: CanonicalState;
   readonly reference: string;
@@ -49,8 +65,44 @@ interface DiffEvidence {
   readonly similarityScore: number;
 }
 
+const requiredRegions = [
+  'R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8',
+  'R10', 'R11', 'R12', 'R13', 'R14', 'R15', 'R16', 'R17', 'R18',
+] as const;
+const requiredRegionSet = new Set<string>(requiredRegions);
+const cssTimeNumber = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/iu;
 const regions: RegionEvidence[] = [];
 const diffs: DiffEvidence[] = [];
+
+export function describeMotionOffenders(offenders: readonly MotionOffender[]): string {
+  return offenders.map((offender) =>
+    `${offender.selector} [animation=${offender.animationName} ${offender.animationDuration}/${offender.animationDelay}; transition=${offender.transitionProperty} ${offender.transitionDuration}/${offender.transitionDelay}; max=${offender.maxDurationMs}ms; rules=${offender.owningRules.join(' || ')}]`,
+  ).join(' | ');
+}
+
+export function maxCssTimeMilliseconds(durationLists: readonly string[]): number {
+  let maximum = 0;
+  for (const durationList of durationLists) {
+    for (const rawToken of durationList.split(',')) {
+      const token = rawToken.trim();
+      const unit = token.endsWith('ms') ? 'ms' : token.endsWith('s') ? 's' : undefined;
+      if (!unit) throw new TypeError(`Unsupported CSS time token: ${JSON.stringify(token)}`);
+      const numberText = token.slice(0, -unit.length);
+      if (!cssTimeNumber.test(numberText)) {
+        throw new TypeError(`Malformed CSS time token: ${JSON.stringify(token)}`);
+      }
+      const value = Number(numberText);
+      if (!Number.isFinite(value)) {
+        throw new TypeError(`Malformed CSS time token: ${JSON.stringify(token)}`);
+      }
+      if (value < 0 || Object.is(value, -0)) {
+        throw new RangeError(`Negative CSS time token: ${JSON.stringify(token)}`);
+      }
+      maximum = Math.max(maximum, unit === 'ms' ? value : value * 1000);
+    }
+  }
+  return maximum;
+}
 
 function readPng(path: string): PNG {
   const bytes = readFileSync(path);
@@ -115,10 +167,12 @@ export function flushReport(): void {
     const byRegion = Number(a.region.slice(1)) - Number(b.region.slice(1));
     return byRegion || a.state.localeCompare(b.state);
   });
-  const missing = Array.from({ length: 18 }, (_, index) => `R${index + 1}`).filter(
-    (region) => !ordered.some((row) => row.region === region),
-  );
+  const missing = requiredRegions.filter((region) => !ordered.some((row) => row.region === region));
   if (missing.length > 0) throw new Error(`region report incomplete: ${missing.join(', ')}`);
+  const unexpected = ordered.filter((row) => !requiredRegionSet.has(row.region));
+  if (unexpected.length > 0) {
+    throw new Error(`region report contains retired or unknown regions: ${unexpected.map((row) => row.region).join(', ')}`);
+  }
 
   const lines = [
     '# Task 13 rendered region report',
