@@ -200,6 +200,17 @@ describe('renderMarkdown', () => {
     expect(out).not.toContain('class="md-code-comment"');
   });
 
+  it('renders task syntax as noninteractive Open and Done status markers', () => {
+    // Given / When
+    const out = html(['- [ ] Draft outline', '- [x] Publish notes'].join('\n'));
+
+    // Then
+    expect(out).toContain('class="md-task-status"');
+    expect(out).toContain('data-state="open">Open</span>');
+    expect(out).toContain('data-state="done">Done</span>');
+    expect(out).not.toContain('md-task-check');
+  });
+
   it('renders a GFM pipe table with header, body, and alignment', () => {
     const md = [
       '| L | C | R |',

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
-import { Button } from '@readable-studio/components';
+import { Button, Switch } from '@readable-studio/components';
 import { useI18n, useT } from '../i18n';
 import {
   localizeSkillDescription,
@@ -668,18 +668,13 @@ function SkillRow({
               ) : null}
             </>
           )}
-          <label
-            className="toggle-switch toggle-switch-sm skills-row-enable"
+          <Switch
+            className="skills-row-enable"
+            checked={enabled}
+            onCheckedChange={onToggleEnabled}
+            aria-label={`${t('settings.libraryToggleLabel')}: ${summaryName}`}
             title={t('settings.libraryToggleLabel')}
-          >
-            <input
-              type="checkbox"
-              checked={enabled}
-              onChange={(e) => onToggleEnabled(e.target.checked)}
-              aria-label={t('settings.libraryToggleLabel')}
-            />
-            <span className="toggle-slider" />
-          </label>
+          />
         </div>
       </div>
 

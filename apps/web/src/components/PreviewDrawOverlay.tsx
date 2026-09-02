@@ -919,7 +919,7 @@ export function PreviewDrawOverlay({
                 className="preview-draw-subtool-action"
                 style={subToolButtonStyle(markTool === 'box')}
               >
-                <RemixIcon name="checkbox-blank-line" size={14} />
+                <RemixIcon name="crop-line" size={14} />
               </button>
               <button
                 type="button"

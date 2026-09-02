@@ -566,7 +566,7 @@
   font-variant-numeric: tabular-nums;
   font-weight: 500;
 }
-/* GFM task list — checkbox glyph replaces the bullet marker. */
+/* GFM task syntax renders as read-only status, not a form control. */
 .prose-block .md-task-list {
   list-style: none;
   padding-left: 4px;
@@ -577,24 +577,25 @@
   gap: 8px;
 }
 .prose-block .md-task-item::marker { content: none; }
-.prose-block .md-task-check {
+.prose-block .md-task-status {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  margin-top: 3px;
-  border-radius: var(--radius-xs);
-  border: 1.5px solid var(--border-soft);
-  background: var(--bg-panel);
-  color: var(--white);
+  min-height: 18px;
+  margin-top: 2px;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-muted);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
 }
-.prose-block .md-task-item[data-checked="true"] .md-task-check {
-  background: var(--green);
-  border-color: var(--green);
+.prose-block .md-task-status[data-state="done"] {
+  background: var(--success-bg);
+  color: var(--success-text);
 }
-.prose-block .md-task-item[data-checked="true"] > span:last-child {
+.prose-block .md-task-item[data-state="done"] > span:last-child {
   color: var(--text-muted);
   text-decoration: line-through;
   text-decoration-color: var(--text-faint);

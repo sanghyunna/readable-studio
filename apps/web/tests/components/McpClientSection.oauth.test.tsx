@@ -41,6 +41,35 @@ describe('McpClientSection OAuth controls', () => {
     vi.unstubAllGlobals();
   });
 
+  it('uses a switch and persists one enabled-state mutation on save', async () => {
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    render(<McpClientSection />);
+
+    const toggle = await screen.findByRole('switch', { name: 'Enable this MCP server' });
+    expect(toggle.tagName).toBe('BUTTON');
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => {
+      const saveCalls = fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT');
+      expect(saveCalls).toHaveLength(1);
+      expect(JSON.parse(String(saveCalls[0]?.[1]?.body))).toEqual({
+        servers: [{
+          id: 'figma-use',
+          label: 'figma-use',
+          templateId: 'figma-use',
+          transport: 'http',
+          enabled: false,
+          authMode: 'none',
+          url: 'http://localhost:38451/mcp',
+        }],
+      });
+    });
+  });
+
   it('does not force managed OAuth for saved localhost HTTP MCP servers', async () => {
     render(<McpClientSection />);
 

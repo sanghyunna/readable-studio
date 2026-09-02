@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
   saveMessage: vi.fn(),
   saveTabs: vi.fn(),
   streamViaDaemon: vi.fn(),
+  updateDesignSystemDraft: vi.fn(),
   uploadProjectFile: vi.fn(),
   writeProjectTextFile: vi.fn(),
 }));
@@ -84,6 +85,7 @@ vi.mock('../../src/providers/registry', async () => {
     fetchDesignSystemRevisions: mocks.fetchDesignSystemRevisions,
     fetchProjectDesignSystemPackageAudit: mocks.fetchProjectDesignSystemPackageAudit,
     fetchProjectFiles: mocks.fetchProjectFiles,
+    updateDesignSystemDraft: mocks.updateDesignSystemDraft,
     uploadProjectFile: mocks.uploadProjectFile,
     writeProjectTextFile: mocks.writeProjectTextFile,
   };
@@ -127,6 +129,7 @@ beforeEach(() => {
   mocks.saveMessage.mockResolvedValue(null);
   mocks.saveTabs.mockResolvedValue(null);
   mocks.streamViaDaemon.mockImplementation(async () => {});
+  mocks.updateDesignSystemDraft.mockResolvedValue(null);
   mocks.uploadProjectFile.mockImplementation(async (_projectId: string, file: File, desiredName?: string) => ({
     name: desiredName ?? file.name,
     size: file.size,
@@ -1885,5 +1888,53 @@ describe('DesignSystemDetailView', () => {
         locale: 'en',
       }),
     );
+  });
+
+  it('persists published and default state through semantic toggle buttons', async () => {
+    const system: DesignSystemDetail = {
+      id: 'user:acme-design-system',
+      title: 'Acme Design System',
+      category: 'Custom',
+      summary: 'Acme product workspace.',
+      swatches: [],
+      surface: 'web',
+      body: '# Acme Design System\n',
+      source: 'user',
+      status: 'draft',
+      isEditable: true,
+    };
+    const publishedSystem: DesignSystemDetail = { ...system, status: 'published' };
+    const onSetDefault = vi.fn();
+    mocks.fetchDesignSystem.mockResolvedValue(system);
+    mocks.updateDesignSystemDraft.mockResolvedValue(publishedSystem);
+
+    render(
+      <DesignSystemDetailView
+        id={system.id}
+        selectedId={null}
+        config={{ mode: 'daemon', agentId: 'codex' } as AppConfig}
+        agents={[]}
+        onBack={() => {}}
+        onSetDefault={onSetDefault}
+      />,
+    );
+
+    const publishedToggle = await screen.findByRole('button', { name: 'Unpublished' });
+    expect(publishedToggle.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(publishedToggle);
+
+    await waitFor(() => {
+      expect(mocks.updateDesignSystemDraft).toHaveBeenCalledWith(system.id, {
+        body: system.body,
+        status: 'published',
+      });
+    });
+    expect((await screen.findByRole('button', { name: 'Published' })).getAttribute('aria-pressed')).toBe('true');
+
+    const defaultToggle = screen.getByRole('button', { name: 'Set as default' });
+    expect(defaultToggle.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(defaultToggle);
+    expect(onSetDefault).toHaveBeenCalledWith(system.id);
+    expect(defaultToggle.getAttribute('aria-pressed')).toBe('false');
   });
 });

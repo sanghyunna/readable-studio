@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
-import { Button, Textarea } from '@readable-studio/components';
+import { Button, Textarea, ToggleButton } from '@readable-studio/components';
 import { streamViaDaemon } from '../providers/daemon';
 import {
   createDesignSystemDraft,
@@ -1749,40 +1749,39 @@ export function DesignSystemDetailView({
                       : 'Readable Studio is still working, but you can start giving feedback on the work so far.'
                   : 'Readable Studio is ready for review. Give feedback on the work so far, then publish when it is useful for future projects.'}
               </p>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={published}
-                  disabled={!editable || saving}
-                  onChange={(event) => void togglePublished(event.target.checked)}
-                />
-                Published
-              </label>
-              {selectedId !== system.id ? (
-                <Button
-                  variant="ghost"
-                  className="compact"
-                  onClick={() => {
-                    const statusBefore = mapDsStatusToTracking(system.status);
-                    onSetDefault(system.id);
-                    trackDesignSystemStatusResult(analytics.track, {
-                      page_name: 'design_system_project',
-                      area: 'design_system_status',
-                      action: 'set_default',
-                      result: 'success',
-                      design_system_id: system.id,
-                      project_id: workspaceProjectId ?? undefined,
-                      status_before: statusBefore,
-                      status_after: statusBefore,
-                      is_default_before: false,
-                      is_default_after: true,
-                      duration_ms: 0,
-                    });
-                  }}
-                >
-                  Make default
-                </Button>
-              ) : null}
+              <ToggleButton
+                pressed={published}
+                disabled={!editable}
+                pending={saving}
+                onPressedChange={(pressed: boolean) => void togglePublished(pressed)}
+              >
+                {published ? 'Published' : 'Unpublished'}
+              </ToggleButton>
+              <ToggleButton
+                className="ghost compact"
+                pressed={selectedId === system.id}
+                disabled={selectedId === system.id}
+                onPressedChange={(pressed: boolean) => {
+                  if (!pressed) return;
+                  const statusBefore = mapDsStatusToTracking(system.status);
+                  onSetDefault(system.id);
+                  trackDesignSystemStatusResult(analytics.track, {
+                    page_name: 'design_system_project',
+                    area: 'design_system_status',
+                    action: 'set_default',
+                    result: 'success',
+                    design_system_id: system.id,
+                    project_id: workspaceProjectId ?? undefined,
+                    status_before: statusBefore,
+                    status_after: statusBefore,
+                    is_default_before: false,
+                    is_default_after: true,
+                    duration_ms: 0,
+                  });
+                }}
+              >
+                {selectedId === system.id ? 'Default' : 'Set as default'}
+              </ToggleButton>
             </div>
             <DesignSystemPackageCard
               system={system}

@@ -112,11 +112,11 @@ describe('QuestionFormView', () => {
 
   it('updates locked answers when submitted history arrives after the initial render', () => {
     const onSubmit = vi.fn();
-    const { container, rerender } = render(
+    const { rerender } = render(
       <QuestionFormView form={form} interactive submittedAnswers={undefined} onSubmit={onSubmit} />,
     );
 
-    expect(container.querySelectorAll('input[type="checkbox"]:checked')).toHaveLength(0);
+    expect(screen.getAllByRole('button', { pressed: false })).toHaveLength(3);
 
     rerender(
       <QuestionFormView
@@ -128,7 +128,7 @@ describe('QuestionFormView', () => {
     );
 
     expect(screen.getByText('answered')).toBeTruthy();
-    expect(container.querySelectorAll('input[type="checkbox"]:checked')).toHaveLength(2);
+    expect(screen.getAllByRole('button', { pressed: true })).toHaveLength(2);
   });
 
   it('renders select options with labels and submits the selected voice id', () => {
@@ -197,9 +197,7 @@ describe('QuestionFormView', () => {
 
   it('submits required checkbox object options with stable values', () => {
     const onSubmit = vi.fn();
-    const { container } = render(
-      <QuestionFormView form={checkboxObjectForm} interactive onSubmit={onSubmit} />,
-    );
+    render(<QuestionFormView form={checkboxObjectForm} interactive onSubmit={onSubmit} />);
 
     const submit = screen.getByRole('button', { name: 'Send answers' });
     // Required field unanswered → submit stays disabled (regression guard:
@@ -210,7 +208,7 @@ describe('QuestionFormView', () => {
     fireEvent.click(screen.getByLabelText('Editorial / magazine'));
     fireEvent.click(screen.getByLabelText('Soft gradients'));
 
-    expect(container.querySelectorAll('input[type="checkbox"]:checked')).toHaveLength(2);
+    expect(screen.getAllByRole('button', { pressed: true })).toHaveLength(2);
     expect((submit as HTMLButtonElement).disabled).toBe(false);
 
     fireEvent.click(submit);
@@ -221,6 +219,31 @@ describe('QuestionFormView', () => {
     expect(onSubmit.mock.calls[0]?.[1]).toEqual({
       tone: ['editorial', 'soft-gradients'],
     });
+  });
+
+  it('disables unselected toggles at maxSelections while preserving selected toggle removal', () => {
+    // Given
+    const onSubmit = vi.fn();
+    render(<QuestionFormView form={form} interactive onSubmit={onSubmit} />);
+    const editorial = screen.getByRole('button', { name: 'Editorial / magazine' });
+    const modern = screen.getByRole('button', { name: 'Modern minimal' });
+    const gradients = screen.getByRole('button', { name: 'Soft gradients' });
+
+    // When
+    fireEvent.click(editorial);
+    fireEvent.click(modern);
+
+    // Then
+    expect(editorial.getAttribute('aria-pressed')).toBe('true');
+    expect(modern.getAttribute('aria-pressed')).toBe('true');
+    expect((gradients as HTMLButtonElement).disabled).toBe(true);
+
+    // When
+    fireEvent.click(editorial);
+
+    // Then
+    expect(editorial.getAttribute('aria-pressed')).toBe('false');
+    expect((gradients as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('marks required fields with the inline indicator even when the footer is hidden', () => {

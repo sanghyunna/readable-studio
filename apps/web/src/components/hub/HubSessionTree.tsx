@@ -431,6 +431,7 @@ export function HubSessionTree({
       const items: HubMenuItem[] = [];
       if (onRenameProject) {
         items.push({
+          kind: 'action',
           id: 'rename',
           label: t('common.rename'),
           icon: 'pencil',
@@ -439,6 +440,7 @@ export function HubSessionTree({
       }
       if (onNewSession) {
         items.push({
+          kind: 'action',
           id: 'new-session',
           label: t('hub.newSession'),
           icon: 'plus',
@@ -447,6 +449,7 @@ export function HubSessionTree({
       }
       if (onDeleteProject) {
         items.push({
+          kind: 'action',
           id: 'delete',
           label: t('common.delete'),
           icon: 'trash',
@@ -461,6 +464,7 @@ export function HubSessionTree({
     const items: HubMenuItem[] = [];
     if (onRenameSession) {
       items.push({
+        kind: 'action',
         id: 'rename',
         label: t('common.rename'),
         icon: 'pencil',
@@ -469,6 +473,7 @@ export function HubSessionTree({
     }
     if (onPeekSession) {
       items.push({
+        kind: 'action',
         id: 'info',
         label: t('hub.sessionInfo'),
         icon: 'info',
@@ -478,6 +483,7 @@ export function HubSessionTree({
     }
     if (onDeleteSession) {
       items.push({
+        kind: 'action',
         id: 'delete',
         label: t('common.delete'),
         icon: 'trash',
@@ -500,12 +506,14 @@ export function HubSessionTree({
   const sortItems = useMemo<HubMenuItem[]>(
     () => [
       {
+        kind: 'radio',
         id: 'recent',
         label: t('hub.sortRecent'),
         checked: sort === 'recent',
         onSelect: () => setSort('recent'),
       },
       {
+        kind: 'radio',
         id: 'name',
         label: t('hub.sortName'),
         checked: sort === 'name',
@@ -522,14 +530,16 @@ export function HubSessionTree({
   const flyoutItems = useMemo<HubMenuItem[]>(() => {
     if (!flyoutProject) return [];
     const items: HubMenuItem[] = flyoutProject.sessions.map((session) => ({
+      kind: 'radio',
       id: session.id,
       label: session.title,
-      icon: 'file' as const,
+      icon: 'file',
       checked: session.id === currentSessionId,
       onSelect: () => onOpenSession(session),
     }));
     if (onNewSession) {
       items.push({
+        kind: 'action',
         id: 'new-session',
         label: t('hub.newSession'),
         icon: 'plus',

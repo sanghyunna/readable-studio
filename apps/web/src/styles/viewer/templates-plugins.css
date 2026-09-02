@@ -395,12 +395,16 @@
   gap: 6px;
   min-width: 0;
 }
-.mcp-row-toggle {
+.mcp-row-toggle.mcp-row-toggle {
   display: inline-flex;
   align-items: center;
+  min-block-size: 28px;
+  padding: 4px;
   flex-shrink: 0;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
 }
-.mcp-row-toggle input { width: auto; }
 .mcp-row-label {
   flex: 1;
   min-width: 0;
@@ -666,8 +670,8 @@
   --trust-border: color-mix(in srgb, var(--white) 24%, transparent);
   --trust-dot: var(--white);
 
-  backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
 }
 
 /* xAI OAuth paste-back: shown while a Sign in flow is in flight, in case
@@ -1038,6 +1042,7 @@
   inset: 0;
   z-index: 920;
   background: color-mix(in srgb, var(--text-strong) 42%, transparent);
+  -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
   display: flex;
   align-items: center;

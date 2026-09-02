@@ -13,6 +13,7 @@ import { DesignSystemPreviewModal } from './DesignSystemPreviewModal';
 import { Icon } from './Icon';
 import { orderDesignSystemGroups } from './design-system-group-order';
 import { AnimatePresence } from 'motion/react';
+import { Switch, ToggleButton } from '@readable-studio/components';
 
 // Sibling Settings section that hosts the design-systems registry.
 // Lifted out of the previous LibrarySection so each surface (functional
@@ -381,31 +382,25 @@ export function DesignSystemsSection({
                 <span className="library-import-option-label">
                   {t('settings.designSystemsCraft')}
                 </span>
-                <div className="library-import-checkboxes">
-                  <label className="library-import-checkbox">
-                    <input
-                      type="checkbox"
-                      checked={craftApplies.includes('color')}
-                      onChange={(e) =>
-                        setCraftApplies((current) =>
-                          toggleCraftSlug(current, 'color', e.target.checked),
-                        )
-                      }
-                    />
-                    <span>{t('settings.designSystemsCraftColor')}</span>
-                  </label>
-                  <label className="library-import-checkbox">
-                    <input
-                      type="checkbox"
-                      checked={craftApplies.includes('accessibility-baseline')}
-                      onChange={(e) =>
-                        setCraftApplies((current) =>
-                          toggleCraftSlug(current, 'accessibility-baseline', e.target.checked),
-                        )
-                      }
-                    />
-                    <span>{t('settings.designSystemsCraftAccessibility')}</span>
-                  </label>
+                <div className="library-import-toggles">
+                  <ToggleButton
+                    pressed={craftApplies.includes('color')}
+                    onPressedChange={(pressed: boolean) =>
+                      setCraftApplies((current) => toggleCraftSlug(current, 'color', pressed))
+                    }
+                  >
+                    {t('settings.designSystemsCraftColor')}
+                  </ToggleButton>
+                  <ToggleButton
+                    pressed={craftApplies.includes('accessibility-baseline')}
+                    onPressedChange={(pressed: boolean) =>
+                      setCraftApplies((current) =>
+                        toggleCraftSlug(current, 'accessibility-baseline', pressed),
+                      )
+                    }
+                  >
+                    {t('settings.designSystemsCraftAccessibility')}
+                  </ToggleButton>
                 </div>
               </div>
               <div className="library-import-row">
@@ -572,20 +567,12 @@ export function DesignSystemsSection({
                         <div className="library-ds-summary">{ds.summary}</div>
                       </div>
                       <div className="library-ds-toggle-cell">
-                        <label
-                          className="toggle-switch toggle-switch-sm"
+                        <Switch
+                          aria-label={t('settings.designSystemsShowInHomeGallery')}
                           title={t('settings.designSystemsShowInHomeGallery')}
-                        >
-                          <input
-                            type="checkbox"
-                            aria-label={t('settings.designSystemsShowInHomeGallery')}
-                            checked={!disabledDS.has(ds.id)}
-                            onChange={(e) =>
-                              toggleDSDisabled(ds.id, e.target.checked)
-                            }
-                          />
-                          <span className="toggle-slider" />
-                        </label>
+                          checked={!disabledDS.has(ds.id)}
+                          onCheckedChange={(checked: boolean) => toggleDSDisabled(ds.id, checked)}
+                        />
                       </div>
                     </div>
                   ))}

@@ -249,7 +249,7 @@ export function TodoCard({ input, runStreaming, runSucceeded, onDismiss }: { inp
           onClick={() => setOverrideExpanded(!expanded)}
           title={expanded ? t('tool.todosCollapse') : t('tool.todosExpand')}
         >
-          <span className="op-icon" aria-hidden>☐</span>
+          <span className="op-icon" aria-hidden><Icon name={allComplete ? 'check' : 'minus'} size={14} /></span>
           <span className="op-title">{t('tool.todos')}</span>
           <span className="op-meta">
             {done}/{todos.length}

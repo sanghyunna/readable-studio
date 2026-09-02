@@ -7,7 +7,7 @@ import {
   type DragEvent as ReactDragEvent,
   type ReactNode,
 } from 'react';
-import { Button } from '@readable-studio/components';
+import { Button, ToggleButton } from '@readable-studio/components';
 import type { TrackingProjectKind } from '@readable-studio/contracts/analytics';
 import { useAnalytics } from '../analytics/provider';
 import {
@@ -2667,29 +2667,29 @@ function DesignSystemProjectPanel({
                   : undefined
               }
             >
-              <button
-                type="button"
+              <ToggleButton
                 className={published ? 'ghost compact' : 'primary'}
                 data-testid="design-system-publish"
-                disabled={statusBusy || (!published && !githubEvidence.ready)}
-                onClick={() => void togglePublished(!published)}
+                pressed={published}
+                pending={statusBusy}
+                disabled={!published && !githubEvidence.ready}
+                onPressedChange={(pressed: boolean) => void togglePublished(pressed)}
               >
                 {published ? <Icon name="check" size={14} /> : null}
-                {published ? 'Published' : 'Publish'}
-              </button>
+                {published ? 'Published' : 'Unpublished'}
+              </ToggleButton>
             </span>
             {published ? (
-              <label>
-                <input
-                  type="checkbox"
-                  checked={isDefault}
-                  disabled={statusBusy}
-                  onChange={(event) => {
-                    onSetDefaultDesignSystem?.(event.target.checked ? system.id : null);
-                  }}
-                />
-                Default
-              </label>
+              <ToggleButton
+                className="ghost compact"
+                pressed={isDefault}
+                pending={statusBusy}
+                onPressedChange={(pressed: boolean) => {
+                  onSetDefaultDesignSystem?.(pressed ? system.id : null);
+                }}
+              >
+                {isDefault ? 'Default' : 'Set as default'}
+              </ToggleButton>
             ) : null}
           </div>
         </div>

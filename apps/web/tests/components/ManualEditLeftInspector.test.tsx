@@ -133,8 +133,9 @@ describe('ManualEditLeftInspector', () => {
     const { getByRole, onStyleField } = renderInspector({ target: target({ kind: 'container' }), styles });
 
     fireEvent.click(getByRole('button', { name: /Appearance/ }));
-    const noFill = getByRole('checkbox', { name: 'No fill' });
-    expect((noFill as HTMLInputElement).checked).toBe(false);
+    const noFill = getByRole('button', { name: 'No fill' });
+    expect(noFill.getAttribute('aria-pressed')).toBe('false');
+    expect(noFill.querySelector('input')).toBeNull();
 
     fireEvent.click(noFill);
     expect(onStyleField).toHaveBeenLastCalledWith('backgroundColor', 'transparent');

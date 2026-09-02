@@ -16,6 +16,7 @@
   align-items: center;
   justify-content: center;
   background: color-mix(in srgb, var(--bg) 70%, transparent);
+  -webkit-backdrop-filter: blur(1px);
   backdrop-filter: blur(1px);
 }
 .df-main {
@@ -23,13 +24,19 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--bg);
-  border-right: 1px solid var(--border);
+  /* Tonal tier. The panel's host (`.app .ws-body`) is an opaque neutral, and
+     hub-dna 10 refuses glass over a flat canvas — it reads as grey, not
+     material. So the pane takes the tonal surface and separates its columns
+     with a pearl light ray instead of a hard grey rule (hub-dna 2, tier 4).
+     Translucency stays where it refracts something: rows and controls. */
+  background: var(--hub-pearl-mid);
+  border-right: 0;
+  box-shadow: inset -1px 0 0 var(--hub-pearl-highlight);
   /* Query container so the toolbar can react to the *list column* width
      (which depends on the chat/preview split, not the viewport). */
   container-type: inline-size;
 }
-.df-main:last-child { border-right: none; }
+.df-main:last-child { box-shadow: none; }
 .df-body {
   flex: 1;
   min-height: 0;
@@ -226,6 +233,7 @@
 .df-batch-clear { color: var(--text-faint); }
 .df-section { display: flex; flex-direction: column; gap: 0; }
 .df-section + .df-section { margin-top: 0; }
+/* Folder headers ride the pane surface: no grey band, no divider grid. */
 .df-section-label {
   font-size: 10.5px;
   letter-spacing: 0.08em;
@@ -233,8 +241,8 @@
   color: var(--text-soft);
   font-weight: 600;
   padding: 8px 20px;
-  background: var(--bg-subtle);
-  border-bottom: 1px solid var(--border-soft);
+  background: transparent;
+  border-bottom: 0;
 }
 .df-section-count {
   margin-left: 8px;
@@ -245,16 +253,11 @@
 .df-file-row {
   transition: background 120ms var(--ease-out);
 }
-.df-file-row:hover { background: var(--blue-bg); }
-.df-file-row.active:not(.selected) { background: var(--blue-bg); }
-.df-file-row.active.selected { background: var(--blue); }
+.df-file-row:hover { background: var(--hub-control-surface); }
+.df-file-row.active:not(.selected) { background: var(--hub-accent-fill); }
+.df-file-row.active.selected { background: var(--selected-soft); }
 .df-file-row.active:not(.selected) .df-row-name { color: var(--text-strong); }
-.df-file-row.selected { background: var(--blue); }
-
-.df-cell-check {
-  text-align: center;
-  vertical-align: middle;
-}
+.df-file-row.selected { background: var(--selected-soft); }
 .df-cell-icon {
   text-align: center;
   vertical-align: middle;
@@ -297,14 +300,16 @@
 
 .df-row {
   display: grid;
-  grid-template-columns: 20px 30px 1fr auto auto;
+  grid-template-columns: 30px minmax(0, 1fr) auto auto auto;
   align-items: center;
   gap: 8px;
   margin: 0;
   padding: 11px 16px;
   background: transparent;
   border: none;
-  border-bottom: 1px solid var(--border-soft);
+  /* Borderless at rest: rows separate by rhythm and hover material, never by
+     a divider grid (hub-dna 10). */
+  border-bottom: 0;
   border-radius: 0;
   text-align: left;
   cursor: pointer;
@@ -376,36 +381,32 @@
   text-underline-offset: 2px;
   word-break: break-all;
 }
-.df-row:hover { background: var(--blue-bg); }
-.df-row.active:not(.selected) { background: var(--blue-bg); color: var(--text); }
-.df-row.active:not(.selected) .df-row-name { color: var(--text-strong); }
-.df-row.selected { background: var(--blue); }
-.df-row.selected .df-row-name { color: var(--white); }
-.df-row.selected .df-row-sub,
-.df-row.selected .df-row-time { color: color-mix(in srgb, var(--white) 82%, transparent); }
-.df-row.selected .df-row-check { color: var(--white); }
-
-.df-row-check {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  font-size: 13px;
-  color: var(--text-muted);
-  user-select: none;
-  width: 20px;
-  height: 20px;
-  border-radius: var(--radius-xs);
-  opacity: 0;
-  transition: opacity 120ms cubic-bezier(0.23, 1, 0.32, 1), background 120ms var(--ease-out), color 120ms var(--ease-out);
+.df-row:hover {
+  background: var(--hub-control-surface);
+  box-shadow: inset 0 1px 0 var(--hub-pearl-highlight);
 }
-.df-row:hover .df-row-check,
-.df-row-check:focus-visible,
-.df-row-check[aria-checked="true"],
-.df-panel.has-selection .df-row-check { opacity: 1; }
-.df-row-check:hover { background: var(--border); color: var(--text); }
-.df-row-check[aria-checked="true"] { color: var(--accent-strong); }
-.df-dir-row .df-row-check { cursor: default; }
+.df-row.active:not(.selected) { background: var(--hub-accent-fill); color: var(--text); }
+.df-row.active:not(.selected) .df-row-name { color: var(--text-strong); }
+.df-row.selected {
+  background: var(--selected-soft);
+  box-shadow: inset 4px 0 0 var(--selected);
+}
+.df-row.selected .df-row-name { color: var(--text-strong); }
+.df-row.selected .df-row-sub,
+.df-row.selected .df-row-time { color: var(--text-muted); }
+.df-row-select {
+  min-block-size: 28px;
+  padding: 4px 8px;
+  border-radius: var(--radius-xs);
+  font-size: 11px;
+  opacity: 0;
+}
+.df-row:hover .df-row-select,
+.df-row-select:focus-visible,
+.df-row-select[aria-pressed="true"],
+.df-panel.has-selection .df-row-select { opacity: 1; }
+.df-row.selected .df-row-select { color: var(--text-strong); }
+.df-row-select-placeholder { visibility: hidden; }
 
 .df-row-icon {
   width: 32px;
@@ -546,11 +547,13 @@
   color: var(--text-muted);
   font-size: 13px;
   min-height: 320px;
-  background-color: var(--bg);
+  background-color: transparent;
+  /* Colour audit: the 24px grid at full --border-soft read as a hard graph
+     paper behind the empty pill. Halved contrast, wider pitch. */
   background-image:
-    linear-gradient(to right, var(--border-soft) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--border-soft) 1px, transparent 1px);
-  background-size: 24px 24px;
+    linear-gradient(to right, color-mix(in srgb, var(--border-soft) 45%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--border-soft) 45%, transparent) 1px, transparent 1px);
+  background-size: 32px 32px;
   background-position: -1px -1px;
 }
 .df-empty-pill {
@@ -613,8 +616,10 @@
   flex-direction: column;
   justify-content: center;
   gap: 10px;
-  background: color-mix(in srgb, var(--accent) 3.5%, transparent);
-  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  /* Footer band sits on the pane surface; a light ray, not a rule, marks it. */
+  background: transparent;
+  border-top: 0;
+  box-shadow: inset 0 1px 0 var(--hub-pearl-highlight);
 }
 .df-drop-hint {
   display: flex;
@@ -748,8 +753,10 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--bg);
-  border-left: 1px solid var(--border);
+  /* One glass tier per pane: the preview column is a region of .df-panel, not
+     a second translucent card stacked on it. */
+  background: transparent;
+  border-left: 0;
   position: relative;
 }
 .df-preview-empty {
@@ -957,6 +964,57 @@
   min-width: 160px;
   display: flex;
   flex-direction: column;
+}
+
+/* Inside the app shell, `viewer/routines.css` re-paints the panel opaque and
+   re-adds per-cell divider rules at `.app .df-*` (0,2,0). The material tier
+   is owned here, so these rules carry one extra class of specificity to keep
+   the glass/tonal intent in the real workspace without editing that file. */
+.app .df-panel .df-main {
+  background: var(--hub-pearl-mid);
+  border-right-color: transparent;
+  box-shadow: inset -1px 0 0 var(--hub-pearl-highlight);
+}
+.app .df-panel .df-main:last-child { box-shadow: none; }
+.app .df-panel .df-body { background: transparent; }
+.app .df-panel .df-preview { background: transparent; }
+.app .df-panel .df-file-row:hover { background: var(--hub-control-surface); }
+.app .df-panel .df-file-row.selected:hover { background: var(--selected-soft); }
+.app .df-panel .df-file-row + .df-file-row .df-cell-icon,
+.app .df-panel .df-file-row + .df-file-row .df-cell-name,
+.app .df-panel .df-file-row + .df-file-row .df-cell-kind,
+.app .df-panel .df-file-row + .df-file-row .df-cell-time,
+.app .df-panel .df-file-row + .df-file-row .df-cell-menu {
+  border-top: 0;
+}
+
+/* Opaque fallback: drop every blur and restore hairline separation so the
+   panel stays legible without translucency (hub-dna 9). */
+@media (prefers-reduced-transparency: reduce) {
+  .df-main {
+    background: var(--bg-panel);
+    box-shadow: inset -1px 0 0 var(--border);
+  }
+  .df-main:last-child { box-shadow: none; }
+  .df-preview { background: var(--bg-panel); }
+  .df-row:hover,
+  .df-file-row:hover {
+    background: var(--bg-subtle);
+    box-shadow: none;
+  }
+  .df-row.active:not(.selected),
+  .df-file-row.active:not(.selected) { background: var(--accent-tint); }
+  .df-footer-info { box-shadow: inset 0 1px 0 var(--border); }
+  .df-empty { background-color: var(--bg-panel); }
+
+  .app .df-panel .df-main {
+    background: var(--bg-panel);
+    box-shadow: inset -1px 0 0 var(--border);
+  }
+  .app .df-panel .df-main:last-child { box-shadow: none; }
+  .app .df-panel .df-body,
+  .app .df-panel .df-preview { background: var(--bg-panel); }
+  .app .df-panel .df-file-row:hover { background: var(--bg-subtle); }
 }
 .df-row-popover button {
   background: transparent;

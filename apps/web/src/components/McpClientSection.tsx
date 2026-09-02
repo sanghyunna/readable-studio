@@ -13,7 +13,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { Button } from '@readable-studio/components';
+import { Button, Switch } from '@readable-studio/components';
 import { useAnalytics } from '../analytics/provider';
 import {
   trackIntegrationsMcpTabClick,
@@ -776,14 +776,13 @@ function McpRow({ row, idx, total, template, onChange, onRemove, onMoveUp, onMov
       }`}
     >
       <div className="mcp-row-head">
-        <label className="mcp-row-toggle" title={row.enabled ? 'Enabled' : 'Disabled'}>
-          <input
-            type="checkbox"
-            checked={row.enabled}
-            onChange={(e) => onChange({ enabled: e.target.checked })}
-            aria-label="Enable this MCP server"
-          />
-        </label>
+        <Switch
+          className="mcp-row-toggle"
+          checked={row.enabled}
+          onCheckedChange={(enabled) => onChange({ enabled })}
+          aria-label="Enable this MCP server"
+          title={row.enabled ? 'Enabled' : 'Disabled'}
+        />
         {expanded ? (
           <input
             type="text"

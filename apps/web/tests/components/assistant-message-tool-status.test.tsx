@@ -3,6 +3,7 @@
 import { cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { AssistantMessage } from '../../src/components/AssistantMessage';
+import { TodoCard } from '../../src/components/ToolCard';
 import type { AgentEvent, ChatMessage } from '../../src/types';
 
 function messageWithEvents(events: AgentEvent[]): ChatMessage {
@@ -19,6 +20,29 @@ function messageWithEvents(events: AgentEvent[]): ChatMessage {
 
 describe('AssistantMessage tool status', () => {
   afterEach(() => cleanup());
+
+  it('renders Todo tools with checkbox-free markers and explicit task state', () => {
+    // Given / When
+    const { container } = render(
+      <TodoCard
+        input={{
+          todos: [
+            { content: 'Draft layout', status: 'completed' },
+            { content: 'Run QA', status: 'pending' },
+          ],
+        }}
+        runStreaming={false}
+        runSucceeded
+      />,
+    );
+
+    // Then
+    expect(container.textContent).not.toMatch(/[☐☑☒]/u);
+    expect(container.querySelector('.op-todo .op-icon svg')).not.toBeNull();
+    expect(container.querySelector('.op-meta')?.textContent).toBe('1/2');
+    expect(container.querySelector('.todo-completed .todo-check')?.textContent).toBe('✓');
+    expect(container.querySelector('.todo-pending .todo-check')?.textContent).toBe('○');
+  });
 
   it('shows Done for a completed run tool use that has no tool result', () => {
     const { container } = render(

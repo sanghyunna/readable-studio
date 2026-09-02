@@ -1,3 +1,4 @@
+import { ToggleButton } from '@readable-studio/components';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAnalytics } from '../analytics/provider';
 import { trackFileManagerClick } from '../analytics/events';
@@ -474,6 +475,15 @@ export function DesignFilesPanel({
     setSelected(new Set());
   }
 
+  useEffect(() => {
+    if (selected.size === 0) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') clearSelection();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selected.size]);
+
   function openMenuFor(name: string, el: HTMLElement) {
     const rect = el.closest('.df-row-menu')?.getBoundingClientRect();
     if (!rect) return;
@@ -566,25 +576,6 @@ export function DesignFilesPanel({
         onMouseLeave={() => setHover((c) => (c === f.name ? null : c))}
       >
         <span
-          className="df-row-check"
-          onClick={(e) => {
-            e.stopPropagation();
-            toggleSelect(f.name);
-          }}
-          role="checkbox"
-          aria-checked={isSelected}
-          tabIndex={0}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              e.stopPropagation();
-              toggleSelect(f.name);
-            }
-          }}
-        >
-          {isSelected ? '☑' : '☐'}
-        </span>
-        <span
           className="df-row-icon df-row-openable"
           data-kind={category}
           aria-hidden
@@ -659,27 +650,27 @@ export function DesignFilesPanel({
         >
           {relativeTime(f.mtime, t)}
         </span>
-        <span
+        <ToggleButton
+          className="df-row-select"
+          pressed={isSelected}
+          aria-label={`Select ${f.name}`}
+          onPressedChange={() => toggleSelect(f.name)}
+        >
+          Select
+        </ToggleButton>
+        <button
+          type="button"
           data-testid={`design-file-menu-${f.name}`}
           className="df-row-menu"
           style={isHovered || active ? { opacity: 1 } : undefined}
-          role="button"
-          tabIndex={0}
           aria-label={t('designFiles.rowMenu')}
           onClick={(e) => {
             e.stopPropagation();
-            openMenuFor(f.name, e.target as HTMLElement);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              e.stopPropagation();
-              openMenuFor(f.name, e.currentTarget as HTMLElement);
-            }
+            openMenuFor(f.name, e.currentTarget);
           }}
         >
           ⋯
-        </span>
+        </button>
       </div>
     );
   }
@@ -690,7 +681,6 @@ export function DesignFilesPanel({
     const count = files.filter((f) => f.name.startsWith(prefix)).length;
     return (
       <div key={`dir:${fullPath}`} className="df-row df-dir-row" onClick={() => setCurrentDir(fullPath)}>
-        <span className="df-row-check" aria-hidden />
         <span className="df-row-icon" data-kind="folder" aria-hidden>
           <Icon name="folder" size={14} />
         </span>
@@ -703,6 +693,7 @@ export function DesignFilesPanel({
           </button>
         </div>
         <span className="df-row-time" />
+        <span className="df-row-select df-row-select-placeholder" aria-hidden />
         <span className="df-row-menu df-row-menu-placeholder" aria-hidden />
       </div>
     );

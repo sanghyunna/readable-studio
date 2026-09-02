@@ -60,8 +60,10 @@ describe('GenUISurfaceRenderer — Phase 2A.5 form/choice schema bridge', () => 
     const slides = screen.getByTestId('genui-field-control-slides') as HTMLInputElement;
     expect(slides.type).toBe('number');
     expect(slides.step).toBe('1');
-    const dark = screen.getByTestId('genui-field-control-dark') as HTMLInputElement;
-    expect(dark.type).toBe('checkbox');
+    const dark = screen.getByRole('switch', { name: 'Dark mode' });
+    expect(dark).toBe(screen.getByTestId('genui-field-control-dark'));
+    expect(dark.getAttribute('aria-checked')).toBe('false');
+    expect(dark.querySelector('input')).toBeNull();
 
     // Local validation: required string missing → form should not submit.
     fireEvent.click(screen.getByTestId('genui-form-submit'));
@@ -82,6 +84,53 @@ describe('GenUISurfaceRenderer — Phase 2A.5 form/choice schema bridge', () => 
       slides: 5,
       dark: true,
     });
+  });
+
+  it('requires an explicit Yes or No and supports arrow-key selection for required booleans', () => {
+    // Given
+    const onAnswered = vi.fn();
+    render(
+      <GenUISurfaceRenderer
+        pending={{
+          surface: surface({
+            id: 'approval',
+            kind: 'form',
+            schema: {
+              type: 'object',
+              required: ['publish'],
+              properties: {
+                publish: { type: 'boolean', title: 'Publish now' },
+              },
+            },
+          }),
+          runId: 'run-required-boolean',
+        }}
+        onAnswered={onAnswered}
+      />,
+    );
+    const group = screen.getByRole('radiogroup', { name: 'Publish now' });
+    const yes = screen.getByRole('radio', { name: 'Yes' });
+    const no = screen.getByRole('radio', { name: 'No' });
+
+    // When
+    fireEvent.click(screen.getByTestId('genui-form-submit'));
+
+    // Then
+    expect(onAnswered).not.toHaveBeenCalled();
+    expect(screen.getByText('Publish now is required.')).toBeTruthy();
+    expect(group.querySelector('input')).toBeNull();
+    expect(yes.getAttribute('aria-checked')).toBe('false');
+    expect(no.getAttribute('aria-checked')).toBe('false');
+
+    // When
+    yes.focus();
+    fireEvent.keyDown(yes, { key: 'ArrowRight' });
+    fireEvent.click(screen.getByTestId('genui-form-submit'));
+
+    // Then
+    expect(document.activeElement).toBe(no);
+    expect(no.getAttribute('aria-checked')).toBe('true');
+    expect(onAnswered).toHaveBeenCalledWith({ publish: false });
   });
 
   it('seeds defaultValue into the form so re-asks prefill', () => {

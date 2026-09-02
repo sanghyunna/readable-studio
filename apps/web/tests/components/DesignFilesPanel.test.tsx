@@ -201,8 +201,8 @@ describe('DesignFilesPanel selection', () => {
 
     const firstName = rows[0]!.getAttribute('data-testid')!.replace(/^design-file-row-/, '');
     const secondName = rows[1]!.getAttribute('data-testid')!.replace(/^design-file-row-/, '');
-    fireEvent.click(rows[0]!.querySelector('.df-row-check')!);
-    fireEvent.click(rows[1]!.querySelector('.df-row-check')!);
+    fireEvent.click(screen.getByRole('button', { name: `Select ${firstName}` }));
+    fireEvent.click(screen.getByRole('button', { name: `Select ${secondName}` }));
 
     expect(container.querySelector('[data-testid="design-files-batch-bar"]')).toBeTruthy();
 
@@ -211,12 +211,32 @@ describe('DesignFilesPanel selection', () => {
     expect(onDeleteFiles).toHaveBeenCalledWith([firstName, secondName]);
   });
 
+  it('exposes file selection through a named pressed button', () => {
+    renderPanel(generateFiles(1));
+    const toggle = screen.getByRole('button', { name: 'Select file-1.html' });
+
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('clears selected rows with Escape', () => {
+    const { container } = renderPanel(generateFiles(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Select file-1.html' }));
+    expect(container.querySelector('.df-file-row.selected')).toBeTruthy();
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(container.querySelector('.df-file-row.selected')).toBeNull();
+    expect(container.querySelector('[data-testid="design-files-batch-bar"]')).toBeNull();
+  });
+
   it('does not preview or open files from row controls', () => {
     const files = generateFiles(1);
     const { container, onOpenFile } = renderPanel(files);
     const row = container.querySelector('.df-file-row')!;
 
-    fireEvent.click(row.querySelector('.df-row-check')!);
+    fireEvent.click(screen.getByRole('button', { name: 'Select file-1.html' }));
     expect(container.querySelector('[data-testid="design-file-preview"]')).toBeNull();
     expect(onOpenFile).not.toHaveBeenCalled();
 
@@ -443,7 +463,7 @@ describe('DesignFilesPanel directory navigation', () => {
     ]);
 
     const topRow = screen.getByTestId('design-file-row-top.html');
-    fireEvent.click(topRow.querySelector('.df-row-check')!);
+    fireEvent.click(screen.getByRole('button', { name: 'Select top.html' }));
     expect(topRow.classList.contains('selected')).toBe(true);
 
     fireEvent.click(document.querySelector('.df-dir-row .df-row-name-btn')!);

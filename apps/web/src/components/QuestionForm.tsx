@@ -1,4 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from 'react';
+import { ToggleButton } from '@readable-studio/components';
 import { useT } from '../i18n';
 import type { DirectionCard, FormOption, QuestionForm } from '../artifacts/question-form';
 import { formatFormAnswers, formOptionValueForLabel } from '../artifacts/question-form';
@@ -85,15 +86,12 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
     onAnswerChange?.(id, value);
   }
 
-  function toggleCheckbox(id: string, option: string, maxSelections?: number) {
+  function toggleOption(id: string, option: string, maxSelections?: number) {
     if (locked) return;
-    const current = Array.isArray(answers[id]) ? (answers[id] as string[]) : [];
-    const has = current.includes(option);
-    if (!has && maxSelections !== undefined && current.length >= maxSelections) return;
-    const next = has ? current.filter((v) => v !== option) : [...current, option];
-    const nextAnswers = { ...answers, [id]: next };
-    setAnswers(nextAnswers);
-    onDraftChange?.(nextAnswers);
+    const current = Array.isArray(answers[id]) ? answers[id] : [];
+    const selected = current.includes(option);
+    if (!selected && maxSelections !== undefined && current.length >= maxSelections) return;
+    update(id, selected ? current.filter((value) => value !== option) : [...current, option]);
   }
 
   function handleSubmit() {
@@ -190,21 +188,17 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
                     const maxed =
                       q.maxSelections !== undefined && !on && arr.length >= q.maxSelections;
                     return (
-                      <label
+                      <ToggleButton
                         key={opt.value}
                         title={opt.description}
                         className={`qf-chip${on ? ' qf-chip-on' : ''}${maxed ? ' qf-chip-disabled' : ''}`}
+                        pressed={on}
+                        disabled={locked || maxed}
+                        aria-label={opt.label}
+                        onPressedChange={() => toggleOption(q.id, opt.value, q.maxSelections)}
                       >
-                        <input
-                          type="checkbox"
-                          value={opt.value}
-                          checked={on}
-                          disabled={locked || maxed}
-                          aria-label={opt.label}
-                          onChange={() => toggleCheckbox(q.id, opt.value, q.maxSelections)}
-                        />
                         <OptionCopy option={opt} />
-                      </label>
+                      </ToggleButton>
                     );
                   })}
                 </div>

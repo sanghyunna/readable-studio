@@ -9,6 +9,7 @@
 // preview + a generic "value-json" textarea.
 
 import { useEffect, useRef, useState } from 'react';
+import { Switch } from '@readable-studio/components';
 import type { GenUISurfaceSpec } from '@readable-studio/contracts';
 
 export interface PendingSurface {
@@ -620,9 +621,13 @@ function JsonSchemaFormSurface(props: {
         seed[f.key] = provided;
         continue;
       }
-      if (f.kind === 'boolean') seed[f.key] = false;
-      else if (f.kind === 'enum') seed[f.key] = f.options[0];
-      else seed[f.key] = '';
+      if (f.kind === 'boolean') {
+        if (!f.required) seed[f.key] = false;
+      } else if (f.kind === 'enum') {
+        seed[f.key] = f.options[0];
+      } else {
+        seed[f.key] = '';
+      }
     }
     return seed;
   });
@@ -663,6 +668,10 @@ function JsonSchemaFormSurface(props: {
         continue;
       }
       if (f.kind === 'boolean') {
+        if (raw === undefined && f.required) {
+          setLocalError(`${f.label} is required.`);
+          return;
+        }
         out[f.key] = Boolean(raw);
         continue;
       }
@@ -695,16 +704,16 @@ function JsonSchemaFormSurface(props: {
       </div>
       <div className="genui-surface__fields">
         {fields.map((f) => (
-          <label key={f.key} className="genui-surface__field" data-testid={`genui-field-${f.key}`}>
-            <span className="genui-surface__field-label">
+          <div key={f.key} className="genui-surface__field" data-testid={`genui-field-${f.key}`}>
+            <span id={`genui-field-label-${f.key}`} className="genui-surface__field-label">
               {f.label}
               {f.required ? <span className="genui-surface__field-required" aria-hidden="true">*</span> : null}
             </span>
             {renderFieldControl(f, values[f.key], (v) => setField(f.key, v))}
-            {f.kind !== 'boolean' && f.description ? (
+            {f.description ? (
               <span className="genui-surface__field-help">{f.description}</span>
             ) : null}
-          </label>
+          </div>
         ))}
       </div>
       {localError ? <div className="genui-surface__error">{localError}</div> : null}
@@ -754,14 +763,49 @@ function renderFieldControl(
     );
   }
   if (field.kind === 'boolean') {
+    if (!field.required) {
+      return (
+        <Switch
+          checked={Boolean(value)}
+          onCheckedChange={onChange}
+          aria-label={field.label}
+          stateText={Boolean(value) ? 'On' : 'Off'}
+          data-testid={testId}
+        />
+      );
+    }
     return (
-      <input
-        type="checkbox"
-        className="genui-surface__checkbox"
-        checked={Boolean(value)}
-        onChange={(e) => onChange(e.target.checked)}
+      <div
+        role="radiogroup"
+        aria-labelledby={`genui-field-label-${field.key}`}
+        className="genui-surface__boolean-options"
         data-testid={testId}
-      />
+      >
+        {[true, false].map((option) => {
+          const selected = value === option;
+          return (
+            <button
+              key={String(option)}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              tabIndex={selected || (value === undefined && option) ? 0 : -1}
+              className="genui-surface__boolean-option"
+              onClick={() => onChange(option)}
+              onKeyDown={(event) => {
+                if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+                event.preventDefault();
+                const nextValue = event.key === 'ArrowLeft' || event.key === 'ArrowUp';
+                onChange(nextValue);
+                const controls = event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="radio"]');
+                controls?.item(nextValue ? 0 : 1).focus();
+              }}
+            >
+              {option ? 'Yes' : 'No'}
+            </button>
+          );
+        })}
+      </div>
     );
   }
   if (field.kind === 'number') {

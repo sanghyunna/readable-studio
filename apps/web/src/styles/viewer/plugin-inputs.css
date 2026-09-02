@@ -38,8 +38,13 @@
   border-color: var(--border);
   color: var(--text);
 }
-.settings-skills .skills-row-enable {
+.settings-skills .skills-row-enable.skills-row-enable {
+  min-block-size: 28px;
   margin-left: 4px;
+  padding: 4px;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
 }
 .settings-skills .skills-delete-confirm {
   display: inline-flex;

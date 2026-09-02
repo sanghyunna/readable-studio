@@ -531,7 +531,7 @@ describe('FileWorkspace design-system project surface', () => {
     expect(colors?.textContent).toContain('before publishing');
   });
 
-  it('routes the default checkbox to the selected design system id', async () => {
+  it('routes the Set as default toggle button to the selected design system id', async () => {
     const onSetDefault = vi.fn();
     const container = renderWorkspace(
       <FileWorkspace
@@ -547,10 +547,11 @@ describe('FileWorkspace design-system project surface', () => {
         onSetDefaultDesignSystem={onSetDefault}
       />,
     );
-    const defaultToggle = container.querySelector<HTMLInputElement>(
-      '.ds-project-publish-card__toggles input[type="checkbox"]',
+    const defaultToggle = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Set as default',
     );
 
+    expect(defaultToggle?.getAttribute('aria-pressed')).toBe('false');
     await act(async () => {
       defaultToggle?.click();
       await Promise.resolve();
@@ -559,7 +560,7 @@ describe('FileWorkspace design-system project surface', () => {
     expect(onSetDefault).toHaveBeenCalledWith('user:acme');
   });
 
-  it('clears the default design system when the selected default checkbox is unchecked', async () => {
+  it('clears the default design system when the selected Default toggle is pressed', async () => {
     const onSetDefault = vi.fn();
     const container = renderWorkspace(
       <FileWorkspace
@@ -575,17 +576,34 @@ describe('FileWorkspace design-system project surface', () => {
         onSetDefaultDesignSystem={onSetDefault}
       />,
     );
-    const defaultToggle = container.querySelector<HTMLInputElement>(
-      '.ds-project-publish-card__toggles input[type="checkbox"]',
+    const defaultToggle = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Default',
     );
 
-    expect(defaultToggle?.checked).toBe(true);
-
+    expect(defaultToggle?.getAttribute('aria-pressed')).toBe('true');
     await act(async () => {
       defaultToggle?.click();
       await Promise.resolve();
     });
 
     expect(onSetDefault).toHaveBeenCalledWith(null);
+  });
+
+  it('exposes published state through a pressed button', () => {
+    const container = renderWorkspace(
+      <FileWorkspace
+        projectId="ds-acme"
+        projectKind="prototype"
+        files={[workspaceFile('DESIGN.md'), workspaceFile('preview/colors.html')]}
+        onRefreshFiles={vi.fn()}
+        isDeck={false}
+        tabsState={{ tabs: [], active: null }}
+        onTabsStateChange={vi.fn()}
+        designSystemProject={designSystem({ status: 'published' })}
+      />,
+    );
+    const publishToggle = container.querySelector('button[aria-pressed="true"]');
+
+    expect(publishToggle).toBeTruthy();
   });
 });

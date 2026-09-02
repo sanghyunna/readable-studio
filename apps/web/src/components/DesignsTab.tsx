@@ -1,3 +1,4 @@
+import { ToggleCard } from "@readable-studio/components";
 import type { CSSProperties } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -269,6 +270,15 @@ export function DesignsTab({
 		if (view === "kanban" && selectMode) exitSelectMode();
 	}, [selectMode, view]);
 
+	useEffect(() => {
+		if (!selectMode) return;
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.key === "Escape") exitSelectMode();
+		};
+		window.addEventListener("keydown", onKeyDown);
+		return () => window.removeEventListener("keydown", onKeyDown);
+	}, [selectMode]);
+
 	const filtered = useMemo(() => {
 		const q = filter.trim().toLowerCase();
 		let list: DesignListItem[] = projects
@@ -469,7 +479,6 @@ export function DesignsTab({
 								setSelectMode(true);
 							}}
 						>
-							<Icon name="check" size={13} />
 							<span>{t("designs.selectMode")}</span>
 						</button>
 					) : null}
@@ -558,40 +567,33 @@ export function DesignsTab({
 							<div
 								key={p.id}
 								className={`design-card${isSelected ? " is-selected" : ""}${selectMode ? " select-mode" : ""}${designSystemProject ? " is-design-system-project" : ""}`}
-								role="button"
-								tabIndex={0}
-								onClick={() => {
-									if (selectMode) {
-										toggleSelected(p.id);
-									} else {
-										// P0 ui_click area=list element=project_card.
-										const projectKind = projectKindToTracking(p.metadata?.kind);
-										trackProjectsListClick(analytics.track, {
-											page_name: "projects",
-											area: "list",
-											element: "project_card",
-											project_id: p.id,
-											...(projectKind ? { project_kind: projectKind } : {}),
-										});
-										onOpen(p.id);
-									}
-								}}
-								onKeyDown={(e) => {
-									if (e.key === "Enter" || e.key === " ") {
-										e.preventDefault();
-										if (selectMode) toggleSelected(p.id);
-										else onOpen(p.id);
-									}
-								}}
 							>
 								{selectMode ? (
-									<span
-										className={`design-card-checkbox${isSelected ? " checked" : ""}`}
-										aria-hidden
-									>
-										{isSelected ? <Icon name="check" size={12} /> : null}
-									</span>
+									<ToggleCard
+										className="design-card-action"
+										pressed={isSelected}
+										aria-label={p.name}
+										onPressedChange={() => toggleSelected(p.id)}
+									/>
 								) : (
+									<button
+										type="button"
+										className="design-card-action"
+										aria-label={p.name}
+										onClick={() => {
+											const projectKind = projectKindToTracking(p.metadata?.kind);
+											trackProjectsListClick(analytics.track, {
+												page_name: "projects",
+												area: "list",
+												element: "project_card",
+												project_id: p.id,
+												...(projectKind ? { project_kind: projectKind } : {}),
+											});
+											onOpen(p.id);
+										}}
+									/>
+								)}
+								{!selectMode ? (
 									<div
 										className="design-card-menu-anchor"
 										ref={menuOpenId === p.id ? menuContainerRef : undefined}
@@ -679,7 +681,7 @@ export function DesignsTab({
 										document.body,
 									) : null}
 								</div>
-								)}
+								) : null}
 								<div
 									className={`design-card-thumb project-thumb project-thumb-${cover.kind}`}
 									style={cover.style}

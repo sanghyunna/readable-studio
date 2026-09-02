@@ -21,21 +21,44 @@ import { Icon, type IconName } from '../Icon';
 const MENU_MARGIN = 10;
 const MENU_GAP = 6;
 const MENU_WIDTH = 208;
+const MENU_ITEM_SELECTOR =
+  '[role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]';
+const SELECTED_ITEM_STYLE = {
+  background: 'var(--selected-soft)',
+  color: 'var(--selected)',
+} as const;
 
-export interface HubMenuItem {
-  id: string;
-  label: string;
-  icon?: IconName;
-  shortcut?: string;
-  danger?: boolean;
-  checked?: boolean;
-  onSelect: () => void;
-}
+type HubMenuItemBase = {
+  readonly id: string;
+  readonly label: string;
+  readonly icon?: IconName;
+  readonly shortcut?: string;
+  readonly danger?: boolean;
+  readonly onSelect: () => void;
+};
+
+type HubMenuActionItem = HubMenuItemBase & {
+  readonly kind: 'action';
+};
+
+type HubMenuRadioItem = HubMenuItemBase & {
+  readonly kind: 'radio';
+  readonly checked: boolean;
+};
+
+type HubMenuToggleItem = HubMenuItemBase & {
+  readonly kind: 'toggle';
+  readonly checked: boolean;
+  readonly onLabel: string;
+  readonly offLabel: string;
+};
+
+export type HubMenuItem = HubMenuActionItem | HubMenuRadioItem | HubMenuToggleItem;
 
 interface Props {
   /** Heading rendered above the items, as in the mockup's labelled menus. */
   title: string;
-  items: HubMenuItem[];
+  items: readonly HubMenuItem[];
   anchor: HTMLElement | null;
   /**
    * Where focus goes when the menu closes. Defaults to the anchor; row menus
@@ -48,6 +71,8 @@ interface Props {
 
 export function HubMenu({ title, items, anchor, returnFocusTo, onClose, testId }: Props) {
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const typeAheadRef = useRef('');
+  const typeAheadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [rect, setRect] = useState<{ left: number; top: number } | null>(null);
   // Read the return target through a ref so a re-render cannot change where a
   // close lands mid-interaction.
@@ -91,8 +116,15 @@ export function HubMenu({ title, items, anchor, returnFocusTo, onClose, testId }
   const placed = rect !== null;
   useEffect(() => {
     if (!placed) return;
-    menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
+    menuRef.current?.querySelector<HTMLButtonElement>(MENU_ITEM_SELECTOR)?.focus();
   }, [placed]);
+
+  useEffect(
+    () => () => {
+      if (typeAheadTimerRef.current) clearTimeout(typeAheadTimerRef.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     const onPointerDown = (event: MouseEvent) => {
@@ -109,7 +141,7 @@ export function HubMenu({ title, items, anchor, returnFocusTo, onClose, testId }
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const nodes = Array.from(
-      menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [],
+      menuRef.current?.querySelectorAll<HTMLButtonElement>(MENU_ITEM_SELECTOR) ?? [],
     );
     const index = nodes.indexOf(document.activeElement as HTMLButtonElement);
     switch (event.key) {
@@ -141,6 +173,23 @@ export function HubMenu({ title, items, anchor, returnFocusTo, onClose, testId }
         close(true);
         break;
       default:
+        if (
+          event.key.length === 1 &&
+          !event.ctrlKey &&
+          !event.metaKey &&
+          !event.altKey
+        ) {
+          event.preventDefault();
+          typeAheadRef.current += event.key.toLocaleLowerCase();
+          if (typeAheadTimerRef.current) clearTimeout(typeAheadTimerRef.current);
+          typeAheadTimerRef.current = setTimeout(() => {
+            typeAheadRef.current = '';
+          }, 800);
+          const match = nodes.find((node) =>
+            node.textContent?.trim().toLocaleLowerCase().startsWith(typeAheadRef.current),
+          );
+          match?.focus();
+        }
         break;
     }
   };
@@ -158,29 +207,55 @@ export function HubMenu({ title, items, anchor, returnFocusTo, onClose, testId }
       onKeyDown={onKeyDown}
     >
       <p className="hub-menu__label">{title}</p>
-      {items.map((item) => (
-        <button
-          key={item.id}
-          type="button"
-          role="menuitem"
-          className={`hub-menu__item${item.danger ? ' hub-menu__item--danger' : ''}`}
-          data-testid={testId ? `${testId}-${item.id}` : undefined}
-          aria-checked={item.checked === undefined ? undefined : item.checked}
-          onClick={() => {
-            close(true);
-            item.onSelect();
-          }}
-        >
-          {item.icon ? <Icon name={item.icon} size={15} /> : null}
-          <span className="hub-menu__text">{item.label}</span>
-          {item.shortcut ? <kbd className="hub-menu__shortcut">{item.shortcut}</kbd> : null}
-          {item.checked ? (
-            <span className="hub-menu__check" aria-hidden="true">
-              <Icon name="check" size={14} />
-            </span>
-          ) : null}
-        </button>
-      ))}
+      {items.map((item) => {
+        const presentation = (() => {
+          switch (item.kind) {
+            case 'action':
+              return { role: 'menuitem' as const, checked: undefined, selected: false, state: null };
+            case 'radio':
+              return {
+                role: 'menuitemradio' as const,
+                checked: item.checked,
+                selected: item.checked,
+                state: null,
+              };
+            case 'toggle':
+              return {
+                role: 'menuitemcheckbox' as const,
+                checked: item.checked,
+                selected: item.checked,
+                state: item.checked ? item.onLabel : item.offLabel,
+              };
+            default: {
+              const exhaustive: never = item;
+              return exhaustive;
+            }
+          }
+        })();
+        return (
+          <button
+            key={item.id}
+            type="button"
+            role={presentation.role}
+            className={`hub-menu__item${item.danger ? ' hub-menu__item--danger' : ''}`}
+            data-testid={testId ? `${testId}-${item.id}` : undefined}
+            aria-label={presentation.state ? `${item.label} ${presentation.state}` : undefined}
+            aria-checked={presentation.checked}
+            style={presentation.selected ? SELECTED_ITEM_STYLE : undefined}
+            onClick={() => {
+              close(true);
+              item.onSelect();
+            }}
+          >
+            {item.icon ? <Icon name={item.icon} size={15} /> : null}
+            <span className="hub-menu__text">{item.label}</span>
+            {item.shortcut ? <kbd className="hub-menu__shortcut">{item.shortcut}</kbd> : null}
+            {presentation.state ? (
+              <span className="hub-menu__shortcut">{presentation.state}</span>
+            ) : null}
+          </button>
+        );
+      })}
     </div>
   );
 

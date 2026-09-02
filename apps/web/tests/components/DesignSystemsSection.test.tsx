@@ -5,7 +5,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DesignSystemSummary } from '@readable-studio/contracts';
 
 import { DesignSystemsSection } from '../../src/components/DesignSystemsSection';
-import { fetchDesignSystems, updateDesignSystemDraft } from '../../src/providers/registry';
+import {
+  fetchDesignSystems,
+  importLocalDesignSystem,
+  updateDesignSystemDraft,
+} from '../../src/providers/registry';
 import type { AppConfig } from '../../src/types';
 
 const editable: DesignSystemSummary = {
@@ -38,6 +42,7 @@ vi.mock('../../src/providers/registry', async () => {
   return {
     ...actual,
     fetchDesignSystems: vi.fn(async () => [editable, builtIn]),
+    importLocalDesignSystem: vi.fn(async () => ({ designSystem: editable })),
     updateDesignSystemDraft: vi.fn(async () => ({ ...editable, title: 'Acme v2', body: '' })),
   };
 });
@@ -48,6 +53,59 @@ afterEach(() => {
 });
 
 const cfg = { disabledDesignSystems: [] } as unknown as AppConfig;
+
+describe('DesignSystemsSection selection controls', () => {
+  it('submits import craft selections from semantic toggle buttons', async () => {
+    render(<DesignSystemsSection cfg={cfg} setCfg={() => {}} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add design system' }));
+    const color = screen.getByRole('button', { name: 'Color' });
+    const accessibility = screen.getByRole('button', { name: 'Accessibility' });
+
+    expect(color.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(color);
+    fireEvent.click(accessibility);
+    expect(color.getAttribute('aria-pressed')).toBe('true');
+
+    fireEvent.change(screen.getByPlaceholderText('/path/to/project'), {
+      target: { value: '/work/acme' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Import from project' }));
+
+    await waitFor(() => {
+      expect(vi.mocked(importLocalDesignSystem)).toHaveBeenCalledWith({
+        baseDir: '/work/acme',
+        importMode: 'hybrid',
+        craftApplies: ['color', 'accessibility-baseline'],
+      });
+    });
+  });
+
+  it('persists home-gallery visibility from a semantic switch', async () => {
+    const setCfg = vi.fn();
+    render(<DesignSystemsSection cfg={cfg} setCfg={setCfg} />);
+
+    const switches = await screen.findAllByRole('switch', { name: 'Show in home gallery' });
+    const firstSwitch = switches.at(0);
+    if (!firstSwitch) throw new TypeError('Expected a design-system gallery switch');
+    expect(firstSwitch.getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(firstSwitch);
+
+    const update = setCfg.mock.calls[0]?.[0];
+    if (typeof update !== 'function') throw new TypeError('Expected a config updater');
+    expect(update(cfg)).toEqual({ ...cfg, disabledDesignSystems: ['user:acme'] });
+  });
+
+  it('exposes gallery visibility through checked switches with accessible names', async () => {
+    render(<DesignSystemsSection cfg={cfg} setCfg={() => {}} />);
+
+    const switches = await screen.findAllByRole('switch', { name: 'Show in home gallery' });
+    expect(switches.length).toBeGreaterThan(0);
+    for (const control of switches) {
+      expect(control.getAttribute('aria-checked')).toBe('true');
+    }
+  });
+});
 
 describe('DesignSystemsSection rename (issue #2811)', () => {
   it('renames an editable design system from Settings', async () => {

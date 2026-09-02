@@ -3,7 +3,7 @@
 // (`layout="stack"`). Whole-element style edits go through onStyleField; image
 // replace and delete go through onApplyPatch.
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { Button, VisuallyHidden } from '@readable-studio/components';
+import { Button, ToggleButton, VisuallyHidden } from '@readable-studio/components';
 import { useT } from '../i18n';
 import type { ManualEditPatch, ManualEditResizeConstraint, ManualEditStyles, ManualEditTarget } from '../edit-mode/types';
 import { RemixIcon } from './RemixIcon';
@@ -365,14 +365,13 @@ function ShapeStack({
               update('backgroundColor', value);
             }}
           />
-          <label className={styles.noFillToggle}>
-            <input
-              type="checkbox"
-              checked={noFill}
-              onChange={(event) => update('backgroundColor', event.currentTarget.checked ? 'transparent' : lastFillRef.current)}
-            />
-            <span>{t('manualEdit.shape.noFill')}</span>
-          </label>
+          <ToggleButton
+            className={styles.noFillToggle}
+            pressed={noFill}
+            onPressedChange={(pressed) => update('backgroundColor', pressed ? 'transparent' : lastFillRef.current)}
+          >
+            {t('manualEdit.shape.noFill')}
+          </ToggleButton>
         </div>
         <NumberRow
           label={t('manualEdit.shape.radius')}

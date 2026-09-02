@@ -66,6 +66,21 @@ describe('HubSessionTree', () => {
     expect(new Set(titles).size).toBe(titles.length);
   });
 
+  it('exposes sort choices as an exclusive radio group without selection glyphs', () => {
+    // Given: the recent sort is active by default.
+    render(<HubSessionTree projects={[MANY, OTHER]} currentSessionId={null} onOpenSession={vi.fn()} />);
+
+    // When: the sort menu opens.
+    fireEvent.click(screen.getByTestId('hub-sort'));
+
+    // Then: exactly one radio choice is selected and tone replaces the old glyph.
+    const choices = screen.getAllByRole('menuitemradio');
+    expect(choices).toHaveLength(2);
+    expect(choices.map((choice) => choice.getAttribute('aria-checked'))).toEqual(['true', 'false']);
+    expect(screen.getByTestId('hub-sort-menu').querySelector('.hub-menu__check')).toBeNull();
+    expect(choices[0]?.style.background).toBe('var(--selected-soft)');
+  });
+
   it('sorts projects by name through the single sort control', () => {
     render(<HubSessionTree projects={[MANY, OTHER]} currentSessionId={null} onOpenSession={vi.fn()} />);
     // One control, not one pill per order: opening it reveals both orders.
@@ -74,6 +89,28 @@ describe('HubSessionTree', () => {
     fireEvent.click(screen.getByTestId('hub-sort-menu-name'));
     const order = screen.getAllByTestId(/^hub-project-/).map((el) => el.getAttribute('data-project-id'));
     expect(order).toEqual(['p2', 'p1']);
+  });
+
+  it('exposes collapsed-project sessions as exclusive radio choices', () => {
+    // Given: one session is the current destination in a collapsed rail.
+    render(
+      <HubSessionTree
+        projects={[MANY]}
+        collapsed
+        currentSessionId="s1"
+        onOpenSession={vi.fn()}
+      />,
+    );
+
+    // When: the project session menu opens.
+    fireEvent.click(screen.getByTestId('hub-project-p1'));
+
+    // Then: every session is a radio item and only the current one is selected.
+    const choices = screen.getAllByRole('menuitemradio');
+    expect(choices).toHaveLength(MANY.sessions.length);
+    expect(choices.filter((choice) => choice.getAttribute('aria-checked') === 'true')).toHaveLength(1);
+    expect(screen.getByTestId('hub-project-flyout-s1').getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByTestId('hub-project-flyout').querySelector('.hub-menu__check')).toBeNull();
   });
 
   it('opens a session on click without an intermediate view', () => {

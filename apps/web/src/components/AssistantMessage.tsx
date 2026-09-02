@@ -1970,7 +1970,7 @@ function familyIcon(family: string): string {
   if (family === "read") return "↗";
   if (family === "glob" || family === "grep" || family === "search") return "⌕";
   if (family === "bash") return "$";
-  if (family === "todo") return "☐";
+  if (family === "todo") return "·";
   if (family === "fetch") return "↬";
   return "·";
 }

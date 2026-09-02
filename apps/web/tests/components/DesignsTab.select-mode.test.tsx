@@ -45,6 +45,48 @@ describe('DesignsTab select mode', () => {
     cleanup();
   });
 
+  it('exposes card selection through a named pressed button', () => {
+    render(
+      <DesignsTab
+        projects={[project]}
+        skills={[]}
+        designSystems={[]}
+        onOpen={vi.fn()}
+        onDelete={vi.fn()}
+        onRename={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select' }));
+
+    const toggle = screen.getByRole('button', { name: /Landing refresh/ });
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('exits select mode and clears selection with Escape', () => {
+    render(
+      <DesignsTab
+        projects={[project]}
+        skills={[]}
+        designSystems={[]}
+        onOpen={vi.fn()}
+        onDelete={vi.fn()}
+        onRename={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Landing refresh' }));
+    expect(screen.getByText('1 selected')).toBeTruthy();
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(screen.queryByText('1 selected')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Select' })).toBeTruthy();
+  });
+
   it('only exposes select mode in grid view', () => {
     render(
       <DesignsTab
@@ -109,8 +151,8 @@ describe('DesignsTab select mode', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Select' }));
-    fireEvent.click(screen.getByText('Landing refresh').closest('.design-card') as HTMLElement);
-    fireEvent.click(screen.getByText('Brand system').closest('.design-card') as HTMLElement);
+    fireEvent.click(screen.getByRole('button', { name: 'Landing refresh' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Brand system' }));
 
     expect(screen.getByText('2 selected')).toBeTruthy();
 
@@ -144,7 +186,7 @@ describe('DesignsTab select mode', () => {
     };
     const deleteSelectedProject = async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Select' }));
-      fireEvent.click(screen.getByText('Landing refresh').closest('.design-card') as HTMLElement);
+      fireEvent.click(screen.getByRole('button', { name: 'Landing refresh' }));
       fireEvent.click(screen.getByRole('button', { name: 'Delete selected' }));
       fireEvent.click(
         within(screen.getByRole('alertdialog')).getByRole('button', {

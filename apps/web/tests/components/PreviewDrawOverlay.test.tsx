@@ -77,6 +77,18 @@ function installImageCompositeMocks() {
 }
 
 describe('PreviewDrawOverlay', () => {
+  it('exposes box selection as a named toolbar button', () => {
+    // Given / When
+    const { getByRole } = render(
+      <PreviewDrawOverlay active>
+        <div style={{ width: 320, height: 200 }} />
+      </PreviewDrawOverlay>,
+    );
+
+    // Then
+    expect(getByRole('button', { name: 'Box select' })).toBeTruthy();
+  });
+
   it('keeps the draw toolbar responsive inside narrow preview surfaces', () => {
     const { container } = render(
       <PreviewDrawOverlay active>

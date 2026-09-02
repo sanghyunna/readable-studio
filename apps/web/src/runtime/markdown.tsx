@@ -258,11 +258,11 @@ function renderBlock(block: Block, key: number, options?: RenderMarkdownOptions)
         {block.items.map((item, i) => {
           const task = /^\[([ xX])\]\s+(.*)$/.exec(item);
           if (task) {
-            const checked = task[1] !== ' ';
+            const done = task[1] !== ' ';
             return (
-              <li key={i} className="md-task-item" data-checked={checked ? 'true' : 'false'}>
-                <span className="md-task-check" aria-hidden>
-                  {checked ? <Icon name="check" size={11} /> : null}
+              <li key={i} className="md-task-item" data-state={done ? 'done' : 'open'}>
+                <span className="md-task-status" data-state={done ? 'done' : 'open'}>
+                  {done ? 'Done' : 'Open'}
                 </span>
                 <span>{renderInline(task[2] ?? '', options)}</span>
               </li>

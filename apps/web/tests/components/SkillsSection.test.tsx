@@ -143,6 +143,24 @@ describe('SkillsSection', () => {
     vi.restoreAllMocks();
   });
 
+  it('renders an accessible switch and changes disabledSkills once when clicked', async () => {
+    const { setCfg } = renderSkillsSection([
+      makeSkill({ id: 'builtin-skill', name: 'Built-in skill' }),
+    ]);
+
+    const row = await screen.findByTestId('skill-row-builtin-skill');
+    const toggle = within(row).getByRole('switch', { name: /Built-in skill/i });
+    expect(toggle.tagName).toBe('BUTTON');
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+
+    fireEvent.click(toggle);
+
+    expect(setCfg).toHaveBeenCalledTimes(1);
+    const update = setCfg.mock.calls[0]?.[0];
+    if (typeof update !== 'function') throw new TypeError('Expected config updater');
+    expect(update(TEST_CONFIG).disabledSkills).toEqual(['builtin-skill']);
+  });
+
   it('does not expose delete actions for built-in skills', async () => {
     renderSkillsSection([
       makeSkill({
