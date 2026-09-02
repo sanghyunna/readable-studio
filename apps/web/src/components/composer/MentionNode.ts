@@ -93,8 +93,6 @@ export class MentionNode extends TextNode {
   createDOM(config: EditorConfig): HTMLElement {
     const dom = super.createDOM(config); // <span> wrapping the token text
     dom.className = `composer-inline-mention composer-inline-mention--${this.__mentionKind}`;
-    dom.contentEditable = 'false';
-    dom.setAttribute('contenteditable', 'false');
     dom.setAttribute('data-mention', '');
     dom.setAttribute('data-mention-id', this.__mentionId);
     dom.setAttribute('data-mention-kind', this.__mentionKind);

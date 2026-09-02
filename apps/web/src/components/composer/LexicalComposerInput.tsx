@@ -781,6 +781,7 @@ export const LexicalComposerInput = forwardRef<
           const active = $getSelection();
           if ($isRangeSelection(active)) {
             active.insertNodes([node]);
+            selectAfterMention(node);
           }
         }, { discrete: true });
       },
@@ -813,7 +814,7 @@ export const LexicalComposerInput = forwardRef<
               data-testid={testId}
               className="ph-no-capture composer-editable"
               aria-placeholder={placeholder}
-              title={title ?? placeholder}
+              title={title}
               role="combobox"
               aria-expanded={comboboxAria?.expanded ? 'true' : 'false'}
               aria-invalid={invalid ? 'true' : undefined}

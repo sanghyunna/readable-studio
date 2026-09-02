@@ -1472,9 +1472,13 @@ export function HomeView({
         onPluginInputValuesChange={updateActiveInputs}
         inlineEditableInputNames={active?.editableInputNames ?? []}
         footerInputNames={visiblePluginInputNames(active)}
-        designSystems={designSystemPickerSystems}
-        designSystemId={designSystemId}
-        onDesignSystemIdChange={updateDesignSystemId}
+        {...(surface === 'hub'
+          ? {}
+          : {
+              designSystems: designSystemPickerSystems,
+              designSystemId,
+              onDesignSystemIdChange: updateDesignSystemId,
+            })}
         stagedFiles={stagedFiles}
         stagedFilesLocked={submitInFlight}
         interactionLocked={submitInFlight}

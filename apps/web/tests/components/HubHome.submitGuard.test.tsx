@@ -57,9 +57,9 @@ describe('hub composer submit guard', () => {
     expect(onSubmitPrompt).toHaveBeenCalledTimes(1);
 
     await waitFor(() => expect(send.disabled).toBe(true));
-    expect(screen.getByTestId('home-hero-footer-option-designSystem').textContent).toContain(
-      'No design system',
-    );
+    expect(screen.queryAllByTestId('home-hero-footer-option-designSystem')).toHaveLength(0);
+    expect(screen.getByTestId('home-hero-context-control')).toBeTruthy();
+    expect(screen.getByTestId('home-hero-template-control')).toBeTruthy();
 
     release?.();
     await waitFor(() => expect(send.disabled).toBe(false));

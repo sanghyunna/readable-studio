@@ -1938,6 +1938,7 @@
   justify-content: center;
   padding: 24px;
   background: color-mix(in srgb, var(--shadow-color) 34%, transparent);
+  -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
 }
 .home-hero-confirm {
@@ -2327,6 +2328,7 @@
 }
 
 .home-view--hub .home-hero__input-card {
+  --hub-composer-content-inset-top: 16px;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   gap: 0;
@@ -2391,12 +2393,12 @@
 
 .home-view--hub .home-hero__lexical .composer-editable {
   min-height: 82px;
-  padding: 16px 4px 10px;
+  padding: var(--hub-composer-content-inset-top) 4px 10px;
   caret-color: var(--hub-accent);
 }
 
 .home-view--hub .home-hero__lexical .composer-input-placeholder {
-  top: var(--hub-placeholder-reference-top);
+  top: var(--hub-composer-content-inset-top);
 }
 
 .home-view--hub .home-hero__lexical .composer-editable::selection,

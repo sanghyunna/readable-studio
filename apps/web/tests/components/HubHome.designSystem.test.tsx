@@ -59,28 +59,15 @@ describe('hub composer design system', () => {
     expect(onSubmitPrompt).toHaveBeenCalledWith('분기 리포트', { designSystemId: 'aurora' });
   });
 
-  it('submits null after the user explicitly selects no design system', async () => {
-    listConversations.mockResolvedValue([]);
-    const onSubmitPrompt = vi.fn();
-    renderHub({ onSubmitPrompt });
-    await screen.findByTestId('home-hero-input');
-    fireEvent.click(screen.getByTestId('home-hero-footer-option-designSystem'));
-    const noneOption = screen.getAllByRole('option').at(0);
-    if (!noneOption) throw new Error('No design-system none option rendered');
-    fireEvent.mouseDown(noneOption);
-    setHomeHeroPrompt('분기 리포트');
-    fireEvent.click(screen.getByTestId('home-hero-submit'));
-    expect(onSubmitPrompt).toHaveBeenCalledWith('분기 리포트', { designSystemId: null });
-  });
-
   it('uses the rich composer instead of the removed native hub selector', async () => {
     listConversations.mockResolvedValue([]);
     renderHub();
     expect(await screen.findByTestId('home-hero-input')).toBeTruthy();
     expect(screen.queryByTestId('hub-design-system')).toBeNull();
+    expect(screen.queryAllByTestId('home-hero-footer-option-designSystem')).toHaveLength(0);
   });
 
-  it('connects the three zero-plugin composer controls to context, design system, and template actions', async () => {
+  it('connects the remaining zero-plugin composer controls to context and template actions', async () => {
     listConversations.mockResolvedValue([]);
     const onOpenNewProject = vi.fn();
     render(
@@ -97,7 +84,6 @@ describe('hub composer design system', () => {
     const controls = screen.getByTestId('home-hero-footer-options').querySelectorAll('button');
     expect(Array.from(controls, (control) => control.dataset.testid)).toEqual([
       'home-hero-context-control',
-      'home-hero-footer-option-designSystem',
       'home-hero-template-control',
     ]);
     expect(screen.getByRole('button', { name: 'Design mode' })).toBeTruthy();
@@ -108,5 +94,6 @@ describe('hub composer design system', () => {
     fireEvent.click(screen.getByTestId('home-hero-template-control'));
     expect(onOpenNewProject).toHaveBeenCalledWith('template');
     expect(screen.queryByTestId('hub-design-system')).toBeNull();
+    expect(screen.queryAllByTestId('home-hero-footer-option-designSystem')).toHaveLength(0);
   });
 });

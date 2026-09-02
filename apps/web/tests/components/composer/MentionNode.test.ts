@@ -165,7 +165,9 @@ describe('MentionNode', () => {
     expect(pill?.className).toContain('composer-inline-mention--plugin');
     expect(pill?.getAttribute('data-mention-id')).toBe('p1');
     expect(pill?.getAttribute('data-mention-kind')).toBe('plugin');
-    expect(pill?.getAttribute('contenteditable')).toBe('false');
+    expect(
+      root.querySelector('[data-lexical-text="true"][contenteditable="false"]'),
+    ).toBeNull();
     expect(pill?.textContent).toBe('@Deck');
     editor.setRootElement(null);
     root.remove();

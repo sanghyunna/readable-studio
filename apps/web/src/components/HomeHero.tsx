@@ -1169,7 +1169,6 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
               editable={!interactionLocked}
               invalid={Boolean(error)}
               placeholder={placeholder}
-              title={placeholder}
               knownEntities={promptMentionEntities}
               onChange={(plainText) => {
                 // A programmatic seed (host setPrompt → draft prop →
@@ -1411,16 +1410,6 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
                     <Icon name="at-sign" size={14} />
                     <span>{t('hub.context')}</span>
                   </button>
-                ) : null}
-                {surface === 'hub' ? (
-                  <DesignSystemPicker
-                    variant="footer"
-                    label={t('homeHero.footer.designSystem')}
-                    designSystems={designSystems}
-                    selectedId={designSystemId}
-                    disabled={interactionLocked}
-                    onChange={onDesignSystemIdChange}
-                  />
                 ) : null}
                 {surface === 'hub' ? (
                   <button

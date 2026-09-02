@@ -71,6 +71,20 @@ describe('LexicalComposerInput', () => {
     expect(editable.className).toContain('ph-no-capture');
   });
 
+  it('announces a placeholder without exposing it as a native title', () => {
+    const { getByTestId } = setup({ placeholder: 'Describe your project' });
+    const editable = getByTestId('chat-composer-input');
+
+    expect(editable.getAttribute('title')).toBeNull();
+    expect(editable.getAttribute('aria-placeholder')).toBe('Describe your project');
+  });
+
+  it('preserves an explicit title supplied by a caller', () => {
+    const { getByTestId } = setup({ title: 'Editing active file' });
+
+    expect(getByTestId('chat-composer-input').getAttribute('title')).toBe('Editing active file');
+  });
+
   it('seeds from the draft prop and renders known @tokens as atomic pills', async () => {
     const { getByTestId } = setup({ draft: 'Use @designs/landing.html now' });
     await waitFor(() => {
@@ -108,6 +122,46 @@ describe('LexicalComposerInput', () => {
       expect(pill?.textContent).toBe('@Deck Builder');
     });
     expect(ref.current?.getText()).toBe('@Deck Builder');
+  });
+
+  it('keeps live typing after an inserted mention while retaining editor focus', async () => {
+    const { ref, getByTestId } = setup({ draft: '@De' });
+    const host = getByTestId('chat-composer-input');
+    await waitFor(() => expect(ref.current?.getText()).toBe('@De'));
+    const editor = liveEditor(host);
+    act(() => {
+      ref.current?.focus();
+    });
+    await waitFor(() => expect(document.activeElement).toBe(host));
+    act(() => {
+      editor.update(() => {
+        $getRoot().selectEnd();
+      }, { discrete: true });
+    });
+
+    let selectionWasInsideMention = false;
+    const originalUpdate = editor.update.bind(editor);
+    const updateSpy = vi.spyOn(editor, 'update').mockImplementation((updateFn, options) => {
+      originalUpdate(() => {
+        updateFn();
+        const selection = $getSelection();
+        if (!$isRangeSelection(selection) || !findMention($getRoot().getFirstChild())) return;
+        selectionWasInsideMention = $isMentionNode(selection.anchor.getNode());
+        selection.insertText(' follow-up');
+      }, options);
+    });
+
+    act(() => {
+      ref.current?.insertMention({
+        token: '@Deck Builder',
+        entity: { id: 'deck-builder', kind: 'skill', label: 'Deck Builder' },
+      });
+    });
+    updateSpy.mockRestore();
+
+    expect(selectionWasInsideMention).toBe(false);
+    expect(ref.current?.getText()).toBe('@Deck Builder follow-up');
+    expect(document.activeElement).toBe(host);
   });
 
   it('clear() empties the editor', async () => {
