@@ -8,6 +8,8 @@ pnpm guard
 tsx ./scripts/guard.ts        # checks only, skips the chained tests
 ```
 
+`guard.ts` includes `checkNoCheckboxUi` from `check-no-checkbox-ui.ts`: a fail-closed scan of the web/components production source for banned checkbox UI (JSX/role/glyph/class/selector/icons). Its exceptions live in that file, not in prose.
+
 ## Generated — do not hand-edit
 
 - `plugins/registry/official/readable-studio-marketplace.json` is owned by

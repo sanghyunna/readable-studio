@@ -68,6 +68,14 @@ The hub command palette composes StyleGallery's `imposter` overlay contract (`ht
 - Product-specific composition stays beside its component, preferably in CSS Modules.
 - Every interactive primitive preserves hover, active, focus-visible, disabled, loading, success, and error states where applicable.
 
+### Selection Primitives
+- **Product checkbox ban**: visible product UI must not use checkbox inputs or checkbox glyphs. Protocol strings, serialized content, source-code examples, and other non-visible machine-consumed content are exceptions because they do not define product UI. `pnpm guard` enforces the ban fail-closed via `scripts/check-no-checkbox-ui.ts`.
+- **Switch**: use only for a controlled binary setting whose effect can be understood as on/off. It is a native `button` with `role="switch"`, `aria-checked`, a moving thumb, and visible state text or an accessible label; pending state is busy and aria-disabled without changing the controlled value.
+- **ToggleButton**: use for compact, independently pressable view or tool states such as formatting, alignment, or filters. It is a native `button` with `aria-pressed`; icon-only instances require an accessible name, while icon-and-text and text-only content are supported.
+- **ToggleCard**: use when one selectable option needs title/description-scale content and the entire card is the target. It is a native `button` with `aria-pressed`; selected treatment covers the full surface, and interactive descendants are prohibited.
+- All three expose `data-state="on|off"`, default to `type="button"`, retain native Enter/Space behavior, and use tonal rest/hover/pressed/selected states. State is communicated without color alone through thumb position, surface depth/position, pressed semantics, and visible text where context needs it.
+- Focus-visible treatment uses the semantic selection token at a minimum 3:1 contrast against adjacent surfaces. Selection controls honor reduced motion, reduced transparency, and forced-colors modes; they use no gradients, black overlays, thick borders, nested pill decoration, hidden inputs, or checkbox descendants.
+
 ## 6. Motion & Interaction
 
 | Type | Token | Usage |

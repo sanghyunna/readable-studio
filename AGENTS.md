@@ -125,7 +125,7 @@ is genuinely not applicable. "I'll do the CLI later" is not a valid reason.
   package-scoped tests/builds matching the files changed.
 - `pnpm guard` enforces workspace identity, residual JavaScript, bundled copy language,
   dependency specs, product neutrality, daemon Windows footguns, cross-app imports, test
-  layout, theme token parity, style policy and the design-system check family, then
+  layout, theme token parity, the checkbox UI ban, style policy and the design-system check family, then
   chains six `node --test` files. See `scripts/AGENTS.md`.
 - Stream/parser changes replay through `mocks/`. Stamp/namespace changes validate two
   concurrent namespaces plus desktop `inspect eval` and `inspect screenshot`. Path/log

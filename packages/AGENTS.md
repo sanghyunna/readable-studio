@@ -5,7 +5,7 @@ Follow the root `AGENTS.md` first. This file only records module-level boundarie
 ## Package responsibilities
 
 - `packages/contracts`: web/daemon app contract layer. Keep it pure TypeScript; it must not depend on Next.js, Express, Node filesystem/process APIs, browser APIs, SQLite, daemon internals, or the sidecar control-plane protocol.
-- `packages/components`: shared React UI primitives and primitive CSS. It may depend on React types/runtime only; keep product workflows and app-specific layout/styling in the apps.
+- `packages/components`: shared React UI primitives and primitive CSS. It may depend on React types/runtime only; keep product workflows and app-specific layout/styling in the apps. It also owns the selection primitives (`Switch`, `ToggleButton`, `ToggleCard` in `src/selection-primitives.tsx`) that replace banned checkbox UI; the shared `InputProps` in `src/form-controls.tsx` excludes `type="checkbox"` so a checkbox input does not typecheck.
 - `packages/host`: web/desktop host bridge contract. It models renderer-facing host capabilities and helpers while keeping `window.__readableStudio__` access out of app UI code.
 - `packages/metatool`: internal metadata helpers for repo-local tool build outputs. Keep reusable hash/check/write mechanics here; each concrete tool owns its own `meta.json`.
 - `packages/sidecar-proto`: Readable Studio sidecar business protocol. Owns app/mode/source constants, namespace validation, stamp descriptor/fields/flags, IPC message schema, status shapes, error semantics, and default product path constants.

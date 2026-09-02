@@ -51,7 +51,9 @@ signal by scanning streamed text for a `<question-form` marker reassembled acros
 `/api/runs/:id/tool-result` endpoint, and no host-answer return path — do not add one.
 The rendering half lives in `apps/web/AGENTS.md`.
 
-## Known host limitation
+## Agent defaults derive from the registry
+
+- `AGENT_DEFS` (`src/runtimes/registry.ts`) is the canonical agent catalog. Daemon defaults for enabled agents derive from it, including local profiles present at startup; the previous hardcoded `['codex','cursor-agent']` default is gone. Explicit persisted `enabledAgentIds` stays restrictive and is never migrated. Settings reset selects the live catalog.
 
 Tests that spawn an AppContainer child fail with `ERROR_ACCESS_DENIED` on a normal
 non-elevated Windows session. Baseline against a clean checkout before treating such a
