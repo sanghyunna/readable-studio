@@ -3,8 +3,8 @@
 // The static-resource route is the only HTTP entry point for the agent
 // picker. It must:
 //
-//   - Default to DEFAULT_ENABLED_AGENT_IDS (['codex', 'cursor-agent'])
-//     when the saved app-config has no enabledAgentIds field.
+//   - Default to every canonical registry id when the saved app-config has no
+//     enabledAgentIds field.
 //   - Honor the override when the user has saved a custom set.
 //   - Pass that set straight through to detectAgents() so the daemon
 //     does not silently fan out to every AGENT_DEF.
@@ -20,6 +20,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 
 import { isLocalSameOrigin } from '../../src/origin-validation.js';
 import { writeAppConfig } from '../../src/app-config.js';
+import { AGENT_DEFS } from '../../src/runtimes/registry.js';
 import { listSkills } from '../../src/skills.js';
 
 type FakeAgent = { id: string; available?: boolean };
@@ -161,7 +162,7 @@ describe('GET /api/agents respects enabledAgentIds', () => {
     expect(body.skills.map((skill) => skill.id)).toContain('Route Cache Skill');
   });
 
-  it('defaults enabledAgentIds to ["codex","cursor-agent"] when config has none', async () => {
+  it('defaults enabledAgentIds to every canonical registry id when config has none', async () => {
     const res = await fetch(`${baseUrl}/api/agents`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { agents: Array<{ id: string }> };
@@ -171,9 +172,7 @@ describe('GET /api/agents respects enabledAgentIds', () => {
     const callArgs = detectAgentsMock.mock.calls[0]!;
     const options = callArgs[1] as { enabledAgentIds?: string[] } | undefined;
     expect(options?.enabledAgentIds).toBeDefined();
-    expect([...(options!.enabledAgentIds ?? [])].sort()).toEqual(
-      ['codex', 'cursor-agent'].sort(),
-    );
+    expect(options?.enabledAgentIds).toEqual(AGENT_DEFS.map((agent) => agent.id));
   });
 
   it('honors a saved enabledAgentIds override from app-config', async () => {

@@ -16,6 +16,12 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { createHash, randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { expandHomePrefix } from './home-expansion.js';
+import {
+  AGENT_DEFS,
+  DEFAULT_ENABLED_AGENT_IDS,
+} from './runtimes/registry.js';
+
+export { DEFAULT_ENABLED_AGENT_IDS } from './runtimes/registry.js';
 
 import {
   readInstallationFile,
@@ -101,8 +107,8 @@ export interface AppConfigPrefs {
   customInstructions?: string | null;
   projectLocations?: ProjectLocationPrefs[];
   defaultProjectLocationId?: string | null;
-  // Canonical agent ids that /api/agents will probe. When absent, defaults to
-  // DEFAULT_ENABLED_AGENT_IDS at read time. Aliases normalized on write.
+  // Canonical agent ids that /api/agents will probe. When absent, every id in
+  // the process-startup registry is enabled. Aliases are normalized on write.
   enabledAgentIds?: string[];
 }
 
@@ -124,10 +130,6 @@ const ALLOWED_KEYS: ReadonlySet<keyof AppConfigPrefs> = new Set([
   'enabledAgentIds',
 ] as const);
 
-// Default set probed on cold start. VDI optimization: only the two most
-// commonly pre-installed agents so PATH probing stays cheap.
-export const DEFAULT_ENABLED_AGENT_IDS: ReadonlyArray<string> = ['codex', 'cursor-agent'];
-
 // Normalize common aliases to their canonical agent id. Every alias that maps
 // to the same binary must be collapsed so the enabled set can be compared
 // against AGENT_DEFS by canonical id.
@@ -138,9 +140,15 @@ const AGENT_ID_ALIASES: Readonly<Record<string, string>> = {
   'codex': 'codex',
 };
 
-function normalizeAgentId(raw: string): string {
-  const trimmed = raw.trim().toLowerCase();
-  return AGENT_ID_ALIASES[trimmed] ?? trimmed;
+const CANONICAL_AGENT_IDS = new Map(
+  AGENT_DEFS.map((agent) => [agent.id.toLowerCase(), agent.id]),
+);
+
+function normalizeAgentId(raw: string): string | null {
+  const trimmed = raw.trim();
+  const normalized = trimmed.toLowerCase();
+  const candidate = AGENT_ID_ALIASES[normalized] ?? normalized;
+  return CANONICAL_AGENT_IDS.get(candidate) ?? null;
 }
 
 export function validateEnabledAgentIds(raw: unknown): string[] | undefined {
@@ -151,11 +159,11 @@ export function validateEnabledAgentIds(raw: unknown): string[] | undefined {
   for (const item of raw) {
     if (typeof item !== 'string') continue;
     const normalized = normalizeAgentId(item);
-    if (!normalized || seen.has(normalized)) continue;
+    if (normalized === null || seen.has(normalized)) continue;
     seen.add(normalized);
     result.push(normalized);
   }
-  return result.length > 0 ? result : undefined;
+  return result;
 }
 
 function configFile(dataDir: string): string {

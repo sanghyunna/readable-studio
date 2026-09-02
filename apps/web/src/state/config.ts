@@ -72,7 +72,9 @@ export const DEFAULT_CONFIG: AppConfig = {
   notifications: DEFAULT_NOTIFICATIONS,
   projectLocations: [],
   defaultProjectLocationId: READABLE_STUDIO_PROJECT_LOCATION_ID,
-  enabledAgentIds: ['codex', 'cursor-agent'],
+  // The daemon registry owns the enabled-agent default. Fresh hydration fills
+  // this from /api/agents/catalog so local profiles are included without a
+  // duplicated browser-side id list.
   // Corporate fork policy: telemetry is off by default. Runtime sinks are
   // disabled separately so old daemon configs with opted-in prefs cannot
   // re-enable network egress.
@@ -537,7 +539,25 @@ export async function fetchDaemonConfig(): Promise<AppConfigPrefs | null> {
     const res = await fetch('/api/app-config');
     if (!res.ok) return null;
     const data = await res.json();
-    return data?.config ?? null;
+    const config: AppConfigPrefs | null = data?.config ?? null;
+    if (config === null || config.enabledAgentIds !== undefined) return config;
+
+    try {
+      const catalogResponse = await fetch('/api/agents/catalog');
+      if (!catalogResponse.ok) return config;
+      const catalog = await catalogResponse.json();
+      if (!Array.isArray(catalog?.agents)) return config;
+      const enabledAgentIds = catalog.agents
+        .map((agent: unknown) =>
+          agent && typeof agent === 'object' && 'id' in agent && typeof agent.id === 'string'
+            ? agent.id
+            : null,
+        )
+        .filter((id: string | null): id is string => id !== null);
+      return { ...config, enabledAgentIds };
+    } catch {
+      return config;
+    }
   } catch {
     return null;
   }

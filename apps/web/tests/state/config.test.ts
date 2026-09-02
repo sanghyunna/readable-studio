@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_CONFIG,
+  fetchDaemonConfig,
   loadConfig,
   mergeDaemonConfig,
   saveConfig,
@@ -43,6 +44,50 @@ describe('Readable Studio browser storage identity', () => {
     const retiredConfigKey = `${['open', 'design'].join('-')}:config`;
     expect(store.has(retiredConfigKey)).toBe(false);
     expect(JSON.parse(store.get('readable-studio:config') ?? '{}').theme).toBe('dark');
+  });
+});
+
+describe('fetchDaemonConfig', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.stubGlobal('fetch', originalFetch);
+  });
+
+  it('hydrates an absent daemon selection from the live agent catalog', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ config: {} }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            agents: [{ id: 'codex' }, { id: 'claude' }, { id: 'local-profile' }],
+          }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchDaemonConfig()).resolves.toEqual({
+      enabledAgentIds: ['codex', 'claude', 'local-profile'],
+    });
+  });
+
+  it('preserves an explicit persisted daemon selection without catalog fallback', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({ config: { agentId: 'codex', enabledAgentIds: ['codex'] } }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchDaemonConfig()).resolves.toEqual({
+      agentId: 'codex',
+      enabledAgentIds: ['codex'],
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -130,6 +175,26 @@ describe('syncConfigToDaemon', () => {
 });
 
 describe('mergeDaemonConfig', () => {
+  it('uses the daemon all-agent default during fresh hydration', () => {
+    const merged = mergeDaemonConfig(DEFAULT_CONFIG, {
+      enabledAgentIds: ['codex', 'claude', 'local-profile'],
+    });
+
+    expect(merged.enabledAgentIds).toEqual([
+      'codex',
+      'claude',
+      'local-profile',
+    ]);
+  });
+
+  it('keeps an explicit persisted daemon selection restrictive', () => {
+    const merged = mergeDaemonConfig(DEFAULT_CONFIG, {
+      enabledAgentIds: ['codex'],
+    });
+
+    expect(merged.enabledAgentIds).toEqual(['codex']);
+  });
+
   it('clears stale local CLI env prefs when the daemon has none', () => {
     const merged = mergeDaemonConfig(
       {
@@ -449,6 +514,10 @@ describe('loadConfig', () => {
     expect(DEFAULT_CONFIG.apiProtocol).toBe('anthropic');
     expect(DEFAULT_CONFIG.configMigrationVersion).toBe(1);
     expect(DEFAULT_CONFIG.accentColor).toBe('#c96442');
+  });
+
+  it('does not embed a stale browser-owned enabled-agent default', () => {
+    expect(DEFAULT_CONFIG.enabledAgentIds).toBeUndefined();
   });
 });
 

@@ -1,6 +1,7 @@
 // @ts-nocheck
 export {
   AGENT_DEFS,
+  DEFAULT_ENABLED_AGENT_IDS,
   getAgentDef,
   readLocalAgentProfileDefs,
 } from './runtimes/registry.js';

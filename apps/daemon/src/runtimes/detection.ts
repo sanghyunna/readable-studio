@@ -1,6 +1,8 @@
-import { DEFAULT_ENABLED_AGENT_IDS } from '../app-config.js';
 import { resolveAmrProfile } from '../integrations/vela.js';
-import { AGENT_DEFS } from './registry.js';
+import {
+  AGENT_DEFS,
+  DEFAULT_ENABLED_AGENT_IDS,
+} from './registry.js';
 import { rememberLiveModels } from './models.js';
 import {
   cachedSafeProbe,

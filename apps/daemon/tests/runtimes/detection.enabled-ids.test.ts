@@ -1,7 +1,6 @@
-// RED spec: detectAgents() must filter the probed registry by an
-// `enabledAgentIds` set so VDI cold start only pays for the agents the
-// user has opted into. Default set is ['codex', 'cursor-agent'] (see
-// DEFAULT_ENABLED_AGENT_IDS in apps/daemon/src/app-config.ts). The
+// detectAgents() filters the probed registry when the user has persisted an
+// explicit `enabledAgentIds` set. With no selection, every registered agent is
+// enabled by default. The
 // `cursor-agent` id must accept the legacy `agent` alias on disk via
 // `fallbackBins`. Unknown ids must be ignored, duplicates collapsed,
 // and aliases (`agent`, `cursor`) normalized to `cursor-agent`.
@@ -11,10 +10,8 @@ import { describe, expect, test } from 'vitest';
 import { detectAgents } from '../../src/runtimes/detection.js';
 import { shouldRunAgentNetworkDiscovery } from '../../src/runtimes/detection-probe.js';
 import { AGENT_DEFS } from '../../src/runtimes/registry.js';
-import {
-  DEFAULT_ENABLED_AGENT_IDS,
-  validateEnabledAgentIds,
-} from '../../src/app-config.js';
+import { validateEnabledAgentIds } from '../../src/app-config.js';
+import { DEFAULT_ENABLED_AGENT_IDS } from '../../src/runtimes/registry.js';
 
 function ids(agents: { id: string }[]): string[] {
   return agents.map((a) => a.id).sort();
@@ -28,10 +25,10 @@ describe('packaged offline discovery', () => {
 });
 
 describe('detectAgents enabledAgentIds filter', () => {
-  test('default (no options) probes only DEFAULT_ENABLED_AGENT_IDS', async () => {
+  test('default (no options) probes every canonical registered agent', async () => {
     const agents = await detectAgents();
-    expect(ids(agents)).toEqual([...DEFAULT_ENABLED_AGENT_IDS].sort());
-    expect(agents.length).toBeLessThan(AGENT_DEFS.length);
+    expect(ids(agents)).toEqual(ids(AGENT_DEFS));
+    expect(DEFAULT_ENABLED_AGENT_IDS).toEqual(AGENT_DEFS.map((agent) => agent.id));
   });
 
   test('enabledAgentIds: ["codex"] probes ONLY codex', async () => {
@@ -71,9 +68,7 @@ describe('detectAgents enabledAgentIds filter', () => {
     expect(def?.fallbackBins).toContain('agent');
   });
 
-  test('DEFAULT_ENABLED_AGENT_IDS is exactly [codex, cursor-agent]', () => {
-    expect([...DEFAULT_ENABLED_AGENT_IDS].sort()).toEqual(
-      ['codex', 'cursor-agent'].sort(),
-    );
+  test('an explicit empty enabled set remains restrictive', () => {
+    expect(validateEnabledAgentIds([])).toEqual([]);
   });
 });

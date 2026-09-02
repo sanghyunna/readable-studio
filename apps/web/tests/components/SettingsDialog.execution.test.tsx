@@ -3224,6 +3224,204 @@ describe('SettingsDialog design systems section', () => {
   });
 });
 
+describe('SettingsDialog code agents roster', () => {
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  const catalog = [
+    { id: 'codex', name: 'Codex' },
+    { id: 'cursor-agent', name: 'Cursor Agent' },
+    { id: 'local-profile', name: 'Local Profile' },
+    { id: 'claude', name: 'Claude Code' },
+  ];
+
+  type CodeAgentsRenderOptions = {
+    readonly initial: Partial<AppConfig>;
+    readonly agents: AgentInfo[];
+    readonly agentsLoading?: boolean;
+    readonly daemonLive?: boolean;
+  };
+
+  function renderCodeAgents({
+    initial,
+    agents,
+    agentsLoading = false,
+    daemonLive = true,
+  }: CodeAgentsRenderOptions) {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      if (input.toString() === '/api/agents/catalog') {
+        return new Response(JSON.stringify({ agents: catalog }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    }));
+    const view = renderSettingsDialog(initial, {
+      agents,
+      daemonLive,
+      initialSection: 'codeAgents',
+    });
+    if (agentsLoading) {
+      view.rerender(
+        <SettingsDialog
+          initial={{ ...baseConfig, ...initial }}
+          agents={agents}
+          agentsLoading={true}
+          daemonLive={daemonLive}
+          appVersionInfo={null}
+          initialSection="codeAgents"
+          onPersist={view.onPersist}
+          onClose={view.onClose}
+          onRefreshAgents={view.onRefreshAgents}
+        />,
+      );
+    }
+    return view;
+  }
+
+  it('keeps catalog order and renders factual icon, current, status, and version content', async () => {
+    const { container } = renderCodeAgents({
+      initial: {
+        mode: 'daemon',
+        agentId: 'local-profile',
+        enabledAgentIds: ['cursor-agent', 'local-profile', 'claude'],
+      },
+      agents: [
+        { id: 'cursor-agent', name: 'Detected Cursor', bin: 'cursor-agent', available: true, version: '1.2.3', authStatus: 'ok' },
+        { id: 'local-profile', name: 'Detected Local', bin: 'local', available: true, authStatus: 'missing' },
+        { id: 'claude', name: 'Detected Claude', bin: 'claude', available: false },
+      ],
+    });
+
+    await screen.findByText('Local Profile');
+    const cards = Array.from(container.querySelectorAll('[data-agent-id]'));
+    expect(cards.map((card) => card.getAttribute('data-agent-id'))).toEqual([
+      'codex',
+      'cursor-agent',
+      'local-profile',
+      'claude',
+    ]);
+    expect(cards[2]?.querySelector('.agent-icon-fallback')?.textContent).toBe('L');
+    expect((cards[1]?.querySelector('.agent-icon-mono') as HTMLElement | null)?.style.width).toBe('32px');
+    expect(within(cards[2] as HTMLElement).getByText('Current')).toBeTruthy();
+    expect(within(cards[1] as HTMLElement).getByText('Available · 1.2.3')).toBeTruthy();
+    expect(screen.queryByText('Default')).toBeNull();
+    expect(screen.getAllByRole('heading', { name: 'Code agents' })).toHaveLength(1);
+  });
+
+  it('derives enabled status only from live detection fields and labels disabled rows not checked', async () => {
+    const { container } = renderCodeAgents({
+      initial: { mode: 'api', agentId: 'cursor-agent', enabledAgentIds: ['cursor-agent', 'local-profile', 'claude'] },
+      agents: [
+        { id: 'cursor-agent', name: 'Detected Cursor', bin: 'cursor-agent', available: true, version: '1.2.3', authStatus: 'ok' },
+        { id: 'local-profile', name: 'Detected Local', bin: 'local', available: true, authStatus: 'missing' },
+        { id: 'claude', name: 'Detected Claude', bin: 'claude', available: false },
+      ],
+    });
+
+    await screen.findByText('Local Profile');
+    const row = (id: string) => container.querySelector(`[data-agent-id="${id}"]`) as HTMLElement;
+    expect(row('cursor-agent').textContent).toContain('Available');
+    expect(row('cursor-agent').textContent).toContain('1.2.3');
+    expect(row('local-profile').textContent).toContain('Authentication required');
+    expect(row('claude').textContent).toContain('Unavailable');
+    expect(row('codex').textContent).toContain('Not checked');
+    expect(screen.queryByText('Current')).toBeNull();
+    expect(document.body.textContent).not.toContain('Install');
+    expect(document.body.textContent).not.toContain('Model');
+  });
+
+  it('uses only aria-pressed native buttons and persists each card toggle twice', async () => {
+    const first = renderCodeAgents({
+      initial: { enabledAgentIds: ['cursor-agent'] },
+      agents: [],
+    });
+    await screen.findByText('Cursor Agent');
+
+    const codexToggle = screen.getByRole('button', { name: 'Codex' });
+    expect(codexToggle.getAttribute('aria-pressed')).toBe('false');
+    codexToggle.focus();
+    fireEvent.keyDown(codexToggle, { key: ' ' });
+    fireEvent.click(codexToggle);
+    expect(document.activeElement).toBe(codexToggle);
+    await waitFor(() => {
+      expect(first.onPersist).toHaveBeenCalledWith(expect.objectContaining({
+        enabledAgentIds: ['cursor-agent', 'codex'],
+      }));
+    });
+    expect(codexToggle.getAttribute('aria-pressed')).toBe('true');
+
+    fireEvent.click(codexToggle);
+    await waitFor(() => {
+      expect(first.onPersist).toHaveBeenCalledWith(expect.objectContaining({
+        enabledAgentIds: ['cursor-agent'],
+      }));
+    });
+    expect(codexToggle.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('shows loading and offline only from their real boundary fields', async () => {
+    renderCodeAgents({
+      initial: { enabledAgentIds: ['cursor-agent'] },
+      agents: [],
+      agentsLoading: true,
+    });
+    await screen.findByText('Cursor Agent');
+    expect(screen.getByText(en['common.loading'])).toBeTruthy();
+
+    cleanup();
+    renderCodeAgents({
+      initial: { enabledAgentIds: ['cursor-agent'] },
+      agents: [],
+      daemonLive: false,
+    });
+    await screen.findByText('Cursor Agent');
+    expect(screen.getByText(en['common.offline'])).toBeTruthy();
+  });
+
+  it('resets to every catalog id including local profiles', async () => {
+    const { onPersist } = renderCodeAgents({
+      initial: { enabledAgentIds: ['cursor-agent'] },
+      agents: [],
+    });
+    await screen.findByText('Local Profile');
+    fireEvent.click(screen.getByRole('button', { name: 'Reset to defaults' }));
+    await waitFor(() => {
+      expect(onPersist).toHaveBeenCalledWith(expect.objectContaining({
+        enabledAgentIds: ['codex', 'cursor-agent', 'local-profile', 'claude'],
+      }));
+    });
+  });
+});
+
+describe('SettingsDialog Critique Theater selection control', () => {
+  afterEach(() => {
+    cleanup();
+    window.localStorage.clear();
+  });
+
+  it('persists Critique Theater state through the shared switch', async () => {
+    window.localStorage.setItem(
+      'readable-studio:config',
+      JSON.stringify({ critiqueTheaterEnabled: false }),
+    );
+    renderSettingsDialog({}, { initialSection: 'critiqueTheater' });
+
+    const control = screen.getByRole('switch', {
+      name: 'Show Design Jury during agent runs',
+    });
+    expect(control.getAttribute('aria-checked')).toBe('false');
+
+    fireEvent.click(control);
+    await waitFor(() => {
+      expect(control.getAttribute('aria-checked')).toBe('true');
+    });
+  });
+});
+
 describe('SettingsDialog about interactions', () => {
   afterEach(() => {
     cleanup();

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, Dispatch, KeyboardEvent as ReactKeyboardEvent, SetStateAction } from 'react';
-import { Button } from '@readable-studio/components';
+import { Button, Switch, ToggleCard } from '@readable-studio/components';
 import { validateBaseUrl } from '@readable-studio/contracts/api/connectionTest';
 import {
   agentIdToTracking,
@@ -1267,7 +1267,7 @@ export function SettingsDialog({
   };
   const toggleEnabledAgent = (agentId: string, nextEnabled: boolean) => {
     setCfg((current) => {
-      const currentIds = new Set(current.enabledAgentIds ?? DEFAULT_CONFIG.enabledAgentIds ?? []);
+      const currentIds = new Set(current.enabledAgentIds ?? []);
       if (nextEnabled) {
         currentIds.add(agentId);
       } else {
@@ -1280,7 +1280,7 @@ export function SettingsDialog({
   const resetEnabledAgents = () => {
     setCfg((current) => ({
       ...current,
-      enabledAgentIds: [...(DEFAULT_CONFIG.enabledAgentIds ?? [])],
+      enabledAgentIds: agentCatalog.map((agent) => agent.id),
     }));
   };
 
@@ -2444,6 +2444,7 @@ export function SettingsDialog({
     about: { title: t('settings.about'), subtitle: t('settings.aboutHint') },
   };
   const activeHeader = sectionHeader[activeSection];
+  const enabledAgentIds = new Set(cfg.enabledAgentIds ?? []);
   const installedAgents = agents.filter((a) => a.available);
   const unavailableAgents = agents.filter((a) => !a.available);
   const initialAgentScanRunning = agentsLoading && agents.length === 0;
@@ -3860,16 +3861,12 @@ export function SettingsDialog({
 
           {activeSection === 'codeAgents' ? (
             <section className="settings-section">
-              <div className="section-head">
-                <div>
-                  <h3>{t('settings.codeAgentsTitle')}</h3>
-                  <p className="hint">{t('settings.codeAgentsSubtitle')}</p>
-                </div>
+              <div className={styles.codeAgentsToolbar}>
                 <button
                   type="button"
                   className="ghost"
                   onClick={resetEnabledAgents}
-                  disabled={agentCatalogLoading}
+                  disabled={agentCatalogLoading || agentCatalog.length === 0}
                 >
                   {t('settings.codeAgentsReset')}
                 </button>
@@ -3881,19 +3878,49 @@ export function SettingsDialog({
               ) : (
                 <div className={styles.codeAgentsList}>
                   {agentCatalog.map((agent) => {
-                    const enabled = (cfg.enabledAgentIds ?? DEFAULT_CONFIG.enabledAgentIds ?? []).includes(agent.id);
+                    const enabled = enabledAgentIds.has(agent.id);
+                    const current = cfg.mode === 'daemon' && cfg.agentId === agent.id;
+                    const detected = agents.find((item) => item.id === agent.id);
+                    const status = !enabled
+                      ? t('settings.codeAgentNotChecked')
+                      : agentsLoading
+                        ? t('common.loading')
+                        : !daemonLive
+                          ? t('common.offline')
+                          : detected?.authStatus === 'missing'
+                            ? t('settings.agentAuthRequired')
+                            : detected?.authStatus === 'unknown'
+                              ? t('settings.agentAuthUnknown')
+                              : detected?.available
+                                ? t('settings.codeAgentAvailable')
+                                : t('settings.codeAgentUnavailable');
                     return (
-                      <label key={agent.id} className={`field ${styles.codeAgentToggle}`}>
-                        <span className="field-label">
-                          <input
-                            type="checkbox"
-                            checked={enabled}
-                            onChange={(e) => toggleEnabledAgent(agent.id, e.target.checked)}
-                          />
-                          {' '}
-                          {agent.name}
+                      <ToggleCard
+                        key={agent.id}
+                        data-agent-id={agent.id}
+                        className={styles.codeAgentCard}
+                        pressed={enabled}
+                        aria-label={agent.name}
+                        onPressedChange={(pressed: boolean) => toggleEnabledAgent(agent.id, pressed)}
+                      >
+                        <AgentIcon id={agent.id} size={32} className={styles.codeAgentIcon} />
+                        <span className={styles.codeAgentContent}>
+                          <span className={styles.codeAgentNameLine}>
+                            <strong className={styles.codeAgentName}>{agent.name}</strong>
+                            {current ? (
+                              <span className={styles.codeAgentCurrent}>{t('settings.codeAgentCurrent')}</span>
+                            ) : null}
+                          </span>
+                          {status ? (
+                            <span className={styles.codeAgentStatus}>
+                              {status}
+                              {enabled && detected?.available && detected.version
+                                ? ` · ${detected.version}`
+                                : ''}
+                            </span>
+                          ) : null}
                         </span>
-                      </label>
+                      </ToggleCard>
                     );
                   })}
                 </div>
@@ -4904,31 +4931,27 @@ function CritiqueTheaterSection() {
           <p className="hint">{t('critiqueTheater.settingsNavHint')}</p>
         </div>
       </div>
-      <label className="field">
-        <span className="field-label">
-          <input
-            type="checkbox"
-            checked={enabled}
-            onChange={(e) => {
-              const next = e.target.checked;
-              trackSettingsDesignReviewClick(analytics.track, {
-                page_name: 'settings',
-                area: 'design_review',
-                element: 'enable_toggle',
-                status_before: enabled ? 'on' : 'off',
-                status_after: next ? 'on' : 'off',
-                has_active_project: activeProjectId !== null,
-              });
-              if (activeProjectId !== null) {
-                void setCritiqueTheaterEnabled(next, { projectId: activeProjectId });
-              } else {
-                void setCritiqueTheaterEnabled(next);
-              }
-            }}
-          />
-          {' '}
+      <div className="field">
+        <Switch
+          checked={enabled}
+          onCheckedChange={(next: boolean) => {
+            trackSettingsDesignReviewClick(analytics.track, {
+              page_name: 'settings',
+              area: 'design_review',
+              element: 'enable_toggle',
+              status_before: enabled ? 'on' : 'off',
+              status_after: next ? 'on' : 'off',
+              has_active_project: activeProjectId !== null,
+            });
+            if (activeProjectId !== null) {
+              void setCritiqueTheaterEnabled(next, { projectId: activeProjectId });
+            } else {
+              void setCritiqueTheaterEnabled(next);
+            }
+          }}
+        >
           {t('critiqueTheater.settingsEnabledLabel')}
-        </span>
+        </Switch>
         <small className="hint">
           {t('critiqueTheater.settingsEnabledDescription')}
         </small>
@@ -4941,7 +4964,7 @@ function CritiqueTheaterSection() {
             {t('critiqueTheater.settingsEnabledNoProjectHint')}
           </small>
         )}
-      </label>
+      </div>
     </section>
   );
 }
