@@ -1,0 +1,77 @@
+/* Shared host-chrome material recipe. Source themes own semantic color;
+   Screen Mode derives the Hub material without theme-specific branches. */
+:root,
+[data-theme='light'],
+[data-theme='dark'],
+[data-theme='monokai'],
+[data-theme='dracula'],
+[data-theme='catppuccin-latte'],
+[data-theme='catppuccin-frappe'],
+[data-theme='catppuccin-macchiato'],
+[data-theme='catppuccin-mocha'],
+[data-theme='nord'],
+[data-theme='gruvbox'],
+[data-theme='solarized-dark'],
+[data-theme='one-dark'] {
+  --hub-canvas: var(--bg-app);
+  --hub-accent: var(--accent);
+  --hub-accent-ink: color-mix(in srgb, var(--accent) 72%, var(--text-strong));
+  --hub-accent-fill: color-mix(in srgb, var(--accent) 10%, transparent);
+  --hub-accent-line: color-mix(in srgb, var(--accent) 24%, transparent);
+  --hub-accent-tint: var(--accent-tint);
+  --hub-accent-fg: var(--accent-contrast);
+  --hub-pearl-top: color-mix(in srgb, var(--bg-elevated) 80%, transparent);
+  --hub-pearl-mid: color-mix(in srgb, var(--bg-panel) 64%, transparent);
+  --hub-pearl-bottom: color-mix(in srgb, var(--bg-elevated) 72%, transparent);
+  --hub-pearl-border: color-mix(in srgb, var(--border-soft) 72%, transparent);
+  --hub-pearl-highlight: color-mix(in srgb, var(--bg-elevated) 88%, transparent);
+  --hub-pearl-elevation: color-mix(in srgb, var(--shadow-color) 8%, transparent);
+  --hub-wash: color-mix(in srgb, var(--accent) 28%, transparent);
+  --hub-wash-warm: color-mix(in srgb, var(--purple) 30%, transparent);
+  --hub-wash-cool: color-mix(in srgb, var(--green) 26%, transparent);
+  --hub-canvas-base: var(--bg-app);
+  /* Bloom stops are mixed hard enough that a mid-height sample still reads as
+     ambient colour rather than flat `--bg`. At the previous 16-24% the light
+     palette collapsed to within 2-4 of `--bg` anywhere the corner gradients
+     had faded, which is what made the working area read flat white. */
+  --hub-canvas-blue: color-mix(in srgb, var(--blue) 28%, var(--bg-app));
+  --hub-canvas-pink: color-mix(in srgb, var(--purple) 24%, var(--bg-app));
+  --hub-canvas-cyan: color-mix(in srgb, var(--blue) 22%, var(--bg-panel));
+  --hub-canvas-green: color-mix(in srgb, var(--green) 24%, var(--bg-app));
+  /* The glass tier separates from an opaque stage only by how much canvas it
+     lets through. In light, `--bg-panel` and `--bg` are 3/255 apart, so a
+     panel-dominant fill composites onto the stage value; the lower percentage
+     hands the separation to the ambient canvas, which is the tier's actual
+     material story. */
+  --hub-glass-fill: color-mix(in srgb, var(--bg-panel) 52%, transparent);
+  --hub-glass-fill-strong: color-mix(in srgb, var(--bg-elevated) 76%, transparent);
+  --hub-glass-blur: blur(22px) saturate(165%);
+  --hub-glass-shadow: var(--shadow-md);
+  --hub-glass-shadow-lg: var(--shadow-lg);
+  --hub-composer-fill: color-mix(in srgb, var(--bg-elevated) 64%, transparent);
+  --hub-composer-body: transparent;
+  --hub-composer-top: color-mix(in srgb, var(--accent) 2%, transparent);
+  --hub-composer-bottom: color-mix(in srgb, var(--accent) 5%, transparent);
+  --hub-control-surface: color-mix(in srgb, var(--bg-elevated) 46%, transparent);
+  --hub-control-surface-hover: color-mix(in srgb, var(--bg-elevated) 72%, transparent);
+  --hub-control-blur: blur(6px);
+  --hub-control-border: transparent;
+  --hub-control-highlight: color-mix(in srgb, var(--bg-elevated) 60%, transparent);
+  --hub-control-shadow: var(--shadow-sm);
+  --hub-control-shadow-hover: var(--shadow-md);
+  --hub-send-disabled: color-mix(in srgb, var(--text) 14%, transparent);
+  --hub-ready-shadow: color-mix(in srgb, var(--accent-strong) 28%, transparent);
+  --hub-ready-highlight: color-mix(in srgb, var(--bg-elevated) 22%, transparent);
+}
+
+@media (prefers-color-scheme: light) {
+  html:not([data-theme]) {
+    color-scheme: light;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme]) {
+    color-scheme: dark;
+  }
+}

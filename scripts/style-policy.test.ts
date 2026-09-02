@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   collectStylePolicyViolationsFromSource,
+  collectWebThemeRecipeViolationsFromSource,
   collectWebThemeTokenParityViolationsFromSource,
 } from "./guard.ts";
 import {
@@ -170,6 +171,47 @@ test("rejects stale design-system identity", () => {
         match: ["Open", "Design"].join(" "),
         reason: "design-system product attribution must use Readable Studio metadata",
       },
+    ],
+  );
+});
+
+test("theme recipe guard reports missing import, token, selector, and semantic source", () => {
+  const recipeTokens = new Set(["--hub-canvas", "--hub-accent"]);
+  const validRecipe = [
+    ":root,",
+    "[data-theme='light'],",
+    "[data-theme='dark'],",
+    "[data-theme='dracula'] {",
+    "  --hub-canvas: var(--bg-app);",
+    "  --hub-accent: var(--accent);",
+    "}",
+    "@media (prefers-color-scheme: light) { html:not([data-theme]) { color-scheme: light; } }",
+    "@media (prefers-color-scheme: dark) { html:not([data-theme]) { color-scheme: dark; } }",
+  ].join("\n");
+
+  assert.deepEqual(
+    collectWebThemeRecipeViolationsFromSource({
+      explicitThemeIds: ["light", "dark", "dracula"],
+      indexSource: "@import './dracula.css';",
+      recipeSource: validRecipe.replace("  --hub-accent: var(--accent);\n", ""),
+      requiredTokens: recipeTokens,
+    }),
+    [
+      "apps/web/src/styles/themes/index.css must import ./recipes.css after all source themes",
+      "apps/web/src/styles/themes/recipes.css missing --hub-accent",
+    ],
+  );
+
+  assert.deepEqual(
+    collectWebThemeRecipeViolationsFromSource({
+      explicitThemeIds: ["light", "dark", "dracula"],
+      indexSource: "@import './dracula.css';\n@import './recipes.css';",
+      recipeSource: validRecipe.replace("[data-theme='dracula'] {\n", ":root {\n").replace("var(--accent)", "currentColor"),
+      requiredTokens: recipeTokens,
+    }),
+    [
+      "apps/web/src/styles/themes/recipes.css missing [data-theme='dracula']",
+      "apps/web/src/styles/themes/recipes.css --hub-accent must reference a semantic source token",
     ],
   );
 });

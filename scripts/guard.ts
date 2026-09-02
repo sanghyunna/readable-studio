@@ -10,6 +10,7 @@ import { checkDesignSystemPackageQuality } from "./check-design-system-package-q
 import { checkDesignSystemComponentFixtureReport } from "./check-components-fixtures.ts";
 import { checkDesignSystemFlagParity } from "./check-design-system-flag-parity.ts";
 import { checkComponentsManifestExtraction } from "./check-components-manifest-extraction.ts";
+import { checkNoCheckboxUi } from "./check-no-checkbox-ui.ts";
 import {
   checkDesignSystemA1RequiredTokens,
   checkDesignSystemA2DefaultsParity,
@@ -1342,6 +1343,107 @@ function validateAccentContrast(repositoryPath: string, body: string, violations
   }
 }
 
+const requiredHubMaterialTokens = new Set([
+  "--hub-canvas",
+  "--hub-accent",
+  "--hub-accent-ink",
+  "--hub-accent-fill",
+  "--hub-accent-line",
+  "--hub-accent-tint",
+  "--hub-accent-fg",
+  "--hub-pearl-top",
+  "--hub-pearl-mid",
+  "--hub-pearl-bottom",
+  "--hub-pearl-border",
+  "--hub-pearl-highlight",
+  "--hub-pearl-elevation",
+  "--hub-wash",
+  "--hub-wash-warm",
+  "--hub-wash-cool",
+  "--hub-canvas-base",
+  "--hub-canvas-blue",
+  "--hub-canvas-pink",
+  "--hub-canvas-cyan",
+  "--hub-canvas-green",
+  "--hub-glass-fill",
+  "--hub-glass-fill-strong",
+  "--hub-glass-blur",
+  "--hub-glass-shadow",
+  "--hub-glass-shadow-lg",
+  "--hub-composer-fill",
+  "--hub-composer-body",
+  "--hub-composer-top",
+  "--hub-composer-bottom",
+  "--hub-control-surface",
+  "--hub-control-surface-hover",
+  "--hub-control-blur",
+  "--hub-control-border",
+  "--hub-control-highlight",
+  "--hub-control-shadow",
+  "--hub-control-shadow-hover",
+  "--hub-send-disabled",
+  "--hub-ready-shadow",
+  "--hub-ready-highlight",
+]);
+
+const semanticThemeSourcePattern = /var\(--(?:bg(?:-app|-panel|-elevated|-fill(?:-secondary|-tertiary)?)?|border(?:-strong|-soft)?|text(?:-strong|-muted|-soft|-faint)?|accent(?:-strong|-soft|-tint|-hover|-contrast)?|blue(?:-bg|-border)?|purple(?:-bg|-border)?|green(?:-bg|-border)?|shadow-(?:color|sm|md|lg))\)/;
+
+type WebThemeRecipeSources = {
+  readonly explicitThemeIds: readonly string[];
+  readonly indexSource: string;
+  readonly recipeSource: string;
+  readonly requiredTokens: ReadonlySet<string>;
+};
+
+export function collectWebThemeRecipeViolationsFromSource(input: WebThemeRecipeSources): string[] {
+  const violations: string[] = [];
+  const imports = [...input.indexSource.matchAll(/@import\s+['"]([^'"]+)['"]\s*;/g)].map((match) => match[1]);
+  if (imports.at(-1) !== "./recipes.css") {
+    violations.push("apps/web/src/styles/themes/index.css must import ./recipes.css after all source themes");
+  }
+
+  for (const themeId of input.explicitThemeIds) {
+    if (!input.recipeSource.includes(`[data-theme='${themeId}']`)) {
+      violations.push(`apps/web/src/styles/themes/recipes.css missing [data-theme='${themeId}']`);
+    }
+  }
+
+  const recipeTokens = cssCustomPropertyNames(input.recipeSource);
+  for (const token of input.requiredTokens) {
+    if (!recipeTokens.has(token)) {
+      violations.push(`apps/web/src/styles/themes/recipes.css missing ${token}`);
+    }
+  }
+  for (const token of recipeTokens) {
+    if (token.startsWith("--hub-") && !input.requiredTokens.has(token)) {
+      violations.push(`apps/web/src/styles/themes/recipes.css unexpected ${token}`);
+    }
+  }
+
+  if (/#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(/.test(input.recipeSource)) {
+    violations.push("apps/web/src/styles/themes/recipes.css must not contain literal colors");
+  }
+
+  for (const token of input.requiredTokens) {
+    const value = cssCustomPropertyValue(input.recipeSource, token);
+    if (value === undefined || value === "transparent" || token === "--hub-glass-blur" || token === "--hub-control-blur") continue;
+    if (!semanticThemeSourcePattern.test(value)) {
+      violations.push(`apps/web/src/styles/themes/recipes.css ${token} must reference a semantic source token`);
+    }
+  }
+
+  for (const scheme of ["light", "dark"]) {
+    const systemRulePattern = new RegExp(
+      `@media\\s*\\(prefers-color-scheme:\\s*${scheme}\\)[\\s\\S]*?html:not\\(\\[data-theme\\]\\)`,
+    );
+    if (!systemRulePattern.test(input.recipeSource)) {
+      violations.push(`apps/web/src/styles/themes/recipes.css missing system ${scheme} selector`);
+    }
+  }
+
+  return violations;
+}
+
 export function collectWebThemeTokenParityViolationsFromSource(
   repositoryPath: string,
   themeId: string,
@@ -1381,11 +1483,13 @@ async function checkWebThemeTokenParity(): Promise<boolean> {
 
   const expected = cssCustomPropertyNames(darkBody);
   const entries = await readdir(themesDir, { withFileTypes: true });
+  const namedThemeEntries = entries.filter(
+    (entry) => entry.isFile() && entry.name.endsWith(".css") && entry.name !== "index.css" && entry.name !== "recipes.css",
+  );
   const violations: string[] = [];
   validateAccentContrast("apps/web/src/styles/tokens.css :root", rootBody, violations);
   validateAccentContrast("apps/web/src/styles/tokens.css [data-theme=\"dark\"]", darkBody, violations);
-  for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.endsWith(".css") || entry.name === "index.css") continue;
+  for (const entry of namedThemeEntries) {
     const repositoryPath = `apps/web/src/styles/themes/${entry.name}`;
     const themeId = path.basename(entry.name, ".css");
     violations.push(
@@ -1398,13 +1502,22 @@ async function checkWebThemeTokenParity(): Promise<boolean> {
     );
   }
 
+  violations.push(
+    ...collectWebThemeRecipeViolationsFromSource({
+      explicitThemeIds: ["light", "dark", ...namedThemeEntries.map((entry) => path.basename(entry.name, ".css"))],
+      indexSource: await readFile(path.join(themesDir, "index.css"), "utf8"),
+      recipeSource: await readFile(path.join(themesDir, "recipes.css"), "utf8"),
+      requiredTokens: requiredHubMaterialTokens,
+    }),
+  );
+
   if (violations.length > 0) {
-    console.error("Web theme token parity violations found:");
+    console.error("Web theme token parity or recipe violations found:");
     for (const violation of violations) console.error(`- ${violation}`);
     return false;
   }
 
-  console.log(`Web theme token parity passed: ${entries.filter((entry) => entry.isFile() && entry.name.endsWith(".css") && entry.name !== "index.css").length} named themes match the dark token override contract.`);
+  console.log(`Web theme token parity and recipes passed: ${namedThemeEntries.length} named themes match the 92-token source contract and ${requiredHubMaterialTokens.size} Hub material tokens derive from semantic sources.`);
   return true;
 }
 
@@ -1486,6 +1599,7 @@ const checks: GuardCheck[] = [
   { name: "tools layout", run: checkToolsLayout },
   { name: "web theme token parity", run: checkWebThemeTokenParity },
   { name: "style policy", run: checkStylePolicy },
+  { name: "no checkbox product UI", run: checkNoCheckboxUi },
   { name: "design system manifests", run: checkDesignSystemManifests },
   { name: "design system package quality", run: checkDesignSystemPackageQuality },
   { name: "design system component fixture report", run: checkDesignSystemComponentFixtureReport },
