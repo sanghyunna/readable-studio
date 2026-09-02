@@ -342,7 +342,7 @@
   background: var(--accent-tint);
   border-color: var(--accent-soft);
 }
-.assistant-copy-button:not(.readable-studio-tooltip)[data-tooltip]::after {
+.assistant-copy-button:not(.readable-tooltip)[data-tooltip]::after {
   position: absolute;
   z-index: 20;
   left: 50%;
@@ -366,8 +366,8 @@
     transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
   white-space: nowrap;
 }
-.assistant-copy-button:not(.readable-studio-tooltip)[data-tooltip]:hover::after,
-.assistant-copy-button:not(.readable-studio-tooltip)[data-tooltip]:focus-visible::after {
+.assistant-copy-button:not(.readable-tooltip)[data-tooltip]:hover::after,
+.assistant-copy-button:not(.readable-tooltip)[data-tooltip]:focus-visible::after {
   opacity: 1;
   transform: translate(-50%, 0);
 }

@@ -217,7 +217,7 @@
 .entry-nav-rail [data-tooltip] {
   position: relative;
 }
-.entry-nav-rail [data-tooltip]::after {
+.entry-nav-rail [data-tooltip]:not(.readable-tooltip)::after {
   content: attr(data-tooltip);
   position: absolute;
   left: calc(100% + 10px);
@@ -236,25 +236,25 @@
   transition: opacity 120ms var(--ease-out), transform 120ms var(--ease-out);
   z-index: 60;
 }
-.entry-nav-rail [data-tooltip]:hover::after,
-.entry-nav-rail [data-tooltip]:focus-visible::after {
+.entry-nav-rail [data-tooltip]:not(.readable-tooltip):hover::after,
+.entry-nav-rail [data-tooltip]:not(.readable-tooltip):focus-visible::after {
   opacity: 1;
   transform: translateY(-50%) translateX(0);
 }
-.entry-nav-rail [data-tooltip][aria-expanded='true']::after {
+.entry-nav-rail [data-tooltip]:not(.readable-tooltip)[aria-expanded='true']::after {
   display: none;
 }
 /* RTL: the rail still lives on the left so the tooltip remains on
    the right of the button — but using `left: calc(100% + 10px)` in
    RTL would flip incorrectly via the parent's `dir="rtl"`. Pin the
    anchor explicitly so the bubble stays where the user expects. */
-[dir='rtl'] .entry-nav-rail [data-tooltip]::after {
+[dir='rtl'] .entry-nav-rail [data-tooltip]:not(.readable-tooltip)::after {
   left: auto;
   right: calc(100% + 10px);
   transform: translateY(-50%) translateX(4px);
 }
-[dir='rtl'] .entry-nav-rail [data-tooltip]:hover::after,
-[dir='rtl'] .entry-nav-rail [data-tooltip]:focus-visible::after {
+[dir='rtl'] .entry-nav-rail [data-tooltip]:not(.readable-tooltip):hover::after,
+[dir='rtl'] .entry-nav-rail [data-tooltip]:not(.readable-tooltip):focus-visible::after {
   transform: translateY(-50%) translateX(0);
 }
 
@@ -716,7 +716,7 @@
 .entry-main__topbar-chips--icon-only [data-tooltip] {
   position: relative;
 }
-.entry-main__topbar-chips--icon-only [data-tooltip]::after {
+.entry-main__topbar-chips--icon-only [data-tooltip]:not(.readable-tooltip)::after {
   content: attr(data-tooltip);
   display: none;
   position: absolute;
@@ -736,15 +736,15 @@
   transition: opacity 120ms var(--ease-out), transform 120ms var(--ease-out);
   z-index: 60;
 }
-.entry-main__topbar-chips--icon-only [data-tooltip]:hover::after,
-.entry-main__topbar-chips--icon-only [data-tooltip]:focus-visible::after {
+.entry-main__topbar-chips--icon-only [data-tooltip]:not(.readable-tooltip):hover::after,
+.entry-main__topbar-chips--icon-only [data-tooltip]:not(.readable-tooltip):focus-visible::after {
   display: block;
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
 /* While the model-switcher popover is open, suppress its tooltip so the
    bubble doesn't collide with the menu. */
-.entry-main__topbar-chips--icon-only [data-tooltip][aria-expanded='true']::after {
+.entry-main__topbar-chips--icon-only [data-tooltip]:not(.readable-tooltip)[aria-expanded='true']::after {
   display: none;
 }
 

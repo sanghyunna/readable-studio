@@ -497,7 +497,8 @@ export function DesignSystemPicker({
         data-testid="project-ds-picker-trigger"
         onClick={() => setOpen((v) => !v)}
         disabled={loading || disabled}
-        title={selected?.title ?? t('designSystemPicker.select')}
+        aria-haspopup="listbox"
+        aria-expanded={open}
       >
         {triggerSwatches}
         <span className="project-ds-picker-label">

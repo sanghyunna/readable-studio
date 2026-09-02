@@ -67,6 +67,15 @@ describe('HubHome', () => {
     expect(screen.getByTestId('hub-nav')).toBeTruthy();
   });
 
+  it('announces the composer placeholder without a native hover tooltip', async () => {
+    listConversations.mockResolvedValue([]);
+    renderHub();
+
+    const composer = await screen.findByTestId('home-hero-input');
+    expect(composer.getAttribute('title')).toBeNull();
+    expect(composer.getAttribute('aria-placeholder')).toBeTruthy();
+  });
+
   it('loads each project session into the tree', async () => {
     listConversations.mockImplementation(async (projectId: string) =>
       projectId === 'p1'

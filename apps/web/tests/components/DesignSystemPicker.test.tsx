@@ -59,6 +59,15 @@ describe('DesignSystemPicker', () => {
     );
   }
 
+  it('keeps the project trigger accessible without a native hover tooltip', () => {
+    renderPicker();
+
+    const trigger = screen.getByTestId('project-ds-picker-trigger');
+    expect(trigger.getAttribute('title')).toBeNull();
+    expect(trigger.getAttribute('aria-haspopup')).toBe('listbox');
+    expect(trigger.textContent).toContain('Editorial Noir');
+  });
+
   it('checks the active project design system and previews it by default', async () => {
     renderPicker();
 
