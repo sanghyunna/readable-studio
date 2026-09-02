@@ -281,8 +281,8 @@
 .modal-backdrop {
   position: fixed; inset: 0;
   background: color-mix(in srgb, var(--text-strong) 42%, transparent);
-  backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
   -webkit-app-region: no-drag;
   display: flex;
   align-items: center;
@@ -557,8 +557,8 @@
   color: var(--text-muted);
   cursor: pointer;
   transition: color 140ms var(--ease-out), border-color 140ms var(--ease-out), background-color 140ms var(--ease-out), transform 140ms var(--ease-out);
-  backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
 }
 .settings-close:hover {
   color: var(--text);
@@ -598,8 +598,8 @@
   color: var(--text-muted);
   background: color-mix(in srgb, var(--bg-panel) 90%, transparent);
   border: 1px solid transparent;
-  backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
   transition: opacity 160ms var(--ease-out), color 160ms var(--ease-out), background-color 160ms var(--ease-out), border-color 160ms var(--ease-out), transform 160ms var(--ease-out);
   pointer-events: none;
   user-select: none;

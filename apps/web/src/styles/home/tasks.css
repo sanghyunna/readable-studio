@@ -807,6 +807,7 @@
   justify-content: center;
   padding: 24px;
   background: color-mix(in srgb, var(--scrim) 92%, transparent);
+  -webkit-backdrop-filter: blur(3px);
   backdrop-filter: blur(3px);
   animation: automation-modal-fade-in 160ms cubic-bezier(0.23, 1, 0.32, 1);
 }

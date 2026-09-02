@@ -1176,6 +1176,7 @@
   inset: 0;
   z-index: 1700;
   background: color-mix(in srgb, var(--text-strong) 42%, transparent);
+  -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
   -webkit-app-region: no-drag;
   display: flex;

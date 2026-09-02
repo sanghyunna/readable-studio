@@ -699,8 +699,8 @@
   background: color-mix(in srgb, var(--black) 32%, transparent);
   color: color-mix(in srgb, var(--white) 78%, transparent);
   border-top: 1px solid color-mix(in srgb, var(--white) 12%, transparent);
-  backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
 }
 
 /* Design-system showcase tile */
@@ -845,8 +845,8 @@
   border-radius: 50%;
   background: color-mix(in srgb, var(--white) 18%, transparent);
   color: var(--white);
-  backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
 }
 .plugins-home__card-overlay-body {
   display: flex;
@@ -884,8 +884,8 @@
   border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--white) 18%, transparent);
   color: var(--white);
-  backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
 }
 .plugins-home__overlay-actions {
   display: flex;
@@ -1062,8 +1062,8 @@ button.plugins-home__use-menu-item:focus-visible {
   background: color-mix(in srgb, var(--white) 14%, transparent);
   color: var(--white);
   border: 1px solid color-mix(in srgb, var(--white) 32%, transparent);
-  backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
 }
 .plugins-home__action--secondary:hover:not(:disabled) {
   background: color-mix(in srgb, var(--white) 24%, transparent);
