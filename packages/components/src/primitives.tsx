@@ -5,7 +5,13 @@ export type { ButtonProps, ButtonSize, ButtonVariant } from './button';
 // @dsp func-381d3c4a
 // @dsp func-52708c19
 export { Input, Select, Textarea } from './form-controls';
-export type { InputProps, SelectProps, TextareaProps } from './form-controls';
+export type { InputProps, InputType, SelectProps, TextareaProps } from './form-controls';
+export { Switch, ToggleButton, ToggleCard } from './selection-primitives';
+export type {
+  SwitchProps,
+  ToggleButtonProps,
+  ToggleCardProps,
+} from './selection-primitives';
 // @dsp func-d6ed4107
 export { VisuallyHidden } from './visually-hidden';
 export type { VisuallyHiddenProps } from './visually-hidden';

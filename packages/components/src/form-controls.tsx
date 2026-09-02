@@ -4,7 +4,32 @@ import type { InputHTMLAttributes, SelectHTMLAttributes, TextareaHTMLAttributes 
 import { joinClassNames } from './class-names';
 import styles from './form-controls.module.css';
 
-export type InputProps = InputHTMLAttributes<HTMLInputElement>;
+export type InputType =
+  | 'button'
+  | 'color'
+  | 'date'
+  | 'datetime-local'
+  | 'email'
+  | 'file'
+  | 'hidden'
+  | 'image'
+  | 'month'
+  | 'number'
+  | 'password'
+  | 'radio'
+  | 'range'
+  | 'reset'
+  | 'search'
+  | 'submit'
+  | 'tel'
+  | 'text'
+  | 'time'
+  | 'url'
+  | 'week';
+
+export type InputProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> & {
+  readonly type?: InputType;
+};
 
 // @dsp func-624e2b49
 export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(

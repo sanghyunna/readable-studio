@@ -1,0 +1,190 @@
+.selectionControl {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    background var(--dur-quick) var(--ease-out),
+    border-color var(--dur-quick) var(--ease-out),
+    box-shadow var(--dur-quick) var(--ease-out),
+    color var(--dur-quick) var(--ease-out),
+    transform var(--dur-quick) var(--ease-out);
+}
+
+.selectionControl:hover:not(:disabled):not([aria-disabled='true']) {
+  background: var(--bg-subtle);
+  border-color: var(--border-strong);
+}
+
+.selectionControl:active:not(:disabled):not([aria-disabled='true']) {
+  background: var(--bg-muted);
+  transform: translateY(1px);
+}
+
+.selectionControl:focus-visible {
+  outline: 2px solid var(--selected);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 1px var(--bg-panel);
+}
+
+.selectionControl[data-state='on'] {
+  color: var(--text-strong);
+  background: var(--selected-soft);
+  border-color: var(--selected);
+  box-shadow: inset 0 -1px 0 var(--selected);
+}
+
+.selectionControl[data-state='on']:hover:not(:disabled):not([aria-disabled='true']) {
+  background: color-mix(in srgb, var(--selected) 16%, var(--bg-panel));
+}
+
+.selectionControl:disabled,
+.selectionControl[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.selectionControl[aria-busy='true'] {
+  cursor: progress;
+}
+
+.switch {
+  display: inline-grid;
+  grid-template-columns: minmax(0, auto) auto minmax(0, auto);
+  align-items: center;
+  gap: 8px;
+  min-block-size: 36px;
+  padding: 8px 10px;
+  text-align: start;
+}
+
+.label,
+.stateText {
+  min-inline-size: 0;
+}
+
+.stateText {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.track {
+  display: inline-flex;
+  align-items: center;
+  inline-size: 36px;
+  block-size: 20px;
+  padding: 2px;
+  background: var(--bg-muted);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  box-shadow: inset 0 1px 1px var(--border-soft);
+  transition:
+    background var(--dur-quick) var(--ease-out),
+    border-color var(--dur-quick) var(--ease-out);
+}
+
+.thumb {
+  inline-size: 14px;
+  block-size: 14px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-xs);
+  transform: translateX(0);
+  transition: transform var(--dur-quick) var(--ease-out);
+}
+
+.switch[data-state='on'] .track {
+  background: var(--selected);
+  border-color: var(--selected);
+  box-shadow: inset 0 -1px 0 var(--accent-strong);
+}
+
+.switch[data-state='on'] .thumb {
+  border-color: var(--bg-panel);
+  transform: translateX(16px);
+}
+
+.toggleButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-block-size: 36px;
+  padding: 8px 12px;
+  font-weight: 500;
+}
+
+.toggleButton > svg {
+  inline-size: 16px;
+  block-size: 16px;
+  flex: none;
+}
+
+.toggleCard {
+  display: grid;
+  gap: 4px;
+  inline-size: 100%;
+  min-block-size: 64px;
+  padding: 12px;
+  text-align: start;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .selectionControl,
+  .track,
+  .thumb {
+    transition: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .selectionControl:disabled,
+  .selectionControl[aria-disabled='true'] {
+    opacity: 1;
+    color: var(--text-muted);
+    background: var(--bg-muted);
+  }
+}
+
+@media (forced-colors: active) {
+  .selectionControl {
+    color: ButtonText;
+    background: ButtonFace;
+    border-color: ButtonText;
+    forced-color-adjust: none;
+  }
+
+  .selectionControl:focus-visible {
+    outline-color: Highlight;
+    box-shadow: none;
+  }
+
+  .selectionControl[data-state='on'] {
+    color: HighlightText;
+    background: Highlight;
+    border-color: Highlight;
+    box-shadow: inset 0 -2px 0 HighlightText;
+  }
+
+  .track,
+  .thumb {
+    background: ButtonFace;
+    border-color: ButtonText;
+    box-shadow: none;
+  }
+
+  .switch[data-state='on'] .track {
+    background: HighlightText;
+    border-color: HighlightText;
+    box-shadow: none;
+  }
+
+  .switch[data-state='on'] .thumb {
+    background: Highlight;
+    border-color: Highlight;
+  }
+}
