@@ -458,21 +458,21 @@ test.describe('Settings Memory and Automations flows', () => {
     const dialog = await openMemorySettings(page);
 
     await dialog.getByRole('tab', { name: /Learn from chats/i }).click();
-    const toggle = dialog.getByRole('checkbox', {
+    const toggle = dialog.getByRole('switch', {
       name: 'Learn from chat conversations',
     });
 
-    await expect(toggle).toBeChecked();
-    await dialog.locator('.memory-chat-learning-toggle').click();
-    await expect(toggle).not.toBeChecked();
+    await expect(toggle).toHaveAttribute('aria-checked', 'true');
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-checked', 'false');
     await expect(dialog.getByText('Off')).toBeVisible();
 
     await dialog.getByRole('button', { name: 'Close', exact: true }).click();
     const reopened = await openMemorySettings(page);
     await reopened.getByRole('tab', { name: /Learn from chats/i }).click();
     await expect(
-      reopened.getByRole('checkbox', { name: 'Learn from chat conversations' }),
-    ).not.toBeChecked();
+      reopened.getByRole('switch', { name: 'Learn from chat conversations' }),
+    ).toHaveAttribute('aria-checked', 'false');
   });
 
 

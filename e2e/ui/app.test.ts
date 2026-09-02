@@ -851,30 +851,23 @@ async function runQuestionFormSelectionLimitFlow(
   });
   await expect(toneQuestion).toBeVisible();
 
-  const editorialChip = toneQuestion.locator('label.qf-chip', {
-    has: page.getByText('Editorial / magazine'),
-  });
-  const modernChip = toneQuestion.locator('label.qf-chip', {
-    has: page.getByText('Modern minimal'),
-  });
-  const softChip = toneQuestion.locator('label.qf-chip', {
-    has: page.getByText('Soft / warm'),
-  });
-  const editorial = editorialChip.locator('input[type="checkbox"]');
-  const modern = modernChip.locator('input[type="checkbox"]');
-  const soft = softChip.locator('input[type="checkbox"]');
+  const editorial = toneQuestion.getByRole('button', { name: 'Editorial / magazine' });
+  const modern = toneQuestion.getByRole('button', { name: 'Modern minimal' });
+  const soft = toneQuestion.getByRole('button', { name: 'Soft / warm' });
 
-  await editorialChip.click();
-  await modernChip.click();
+  await editorial.click();
+  await modern.click();
 
-  await expect(editorial).toBeChecked();
-  await expect(modern).toBeChecked();
+  await expect(editorial).toHaveAttribute('aria-pressed', 'true');
+  await expect(modern).toHaveAttribute('aria-pressed', 'true');
   await expect(soft).toBeDisabled();
 
-  const checkedOptions = toneQuestion.locator('input[type="checkbox"]:checked');
-  await expect(checkedOptions).toHaveCount(2);
-  await expect(soft).not.toBeChecked();
-  await expect(checkedOptions).toHaveCount(2);
+  const pressedOptions = toneQuestion
+    .getByRole('button')
+    .and(toneQuestion.locator('[aria-pressed="true"]'));
+  await expect(pressedOptions).toHaveCount(2);
+  await expect(soft).toHaveAttribute('aria-pressed', 'false');
+  await expect(pressedOptions).toHaveCount(2);
 }
 
 async function runQuestionFormSubmitPersistenceFlow(
@@ -892,8 +885,8 @@ async function runQuestionFormSubmitPersistenceFlow(
   const toneQuestion = form.locator('.qf-field', {
     has: page.getByText('Visual tone (pick up to two)'),
   });
-  await toneQuestion.locator('label.qf-chip', { has: page.getByText('Editorial / magazine') }).click();
-  await toneQuestion.locator('label.qf-chip', { has: page.getByText('Modern minimal') }).click();
+  await toneQuestion.getByRole('button', { name: 'Editorial / magazine' }).click();
+  await toneQuestion.getByRole('button', { name: 'Modern minimal' }).click();
 
   await form.getByRole('button', { name: 'Send answers' }).click();
 
@@ -914,7 +907,11 @@ async function runQuestionFormSubmitPersistenceFlow(
   const restoredForm = page.locator('.question-form').first();
   await expect(restoredForm).toBeVisible();
   await expect(restoredForm.getByText('answered', { exact: true })).toBeVisible();
-  await expect(restoredForm.locator('input[type="checkbox"]:checked')).toHaveCount(2);
+  await expect(
+    restoredForm
+      .getByRole('button')
+      .and(restoredForm.locator('[aria-pressed="true"]')),
+  ).toHaveCount(2);
   await expect(restoredForm.getByRole('button', { name: 'Send answers' })).toHaveCount(0);
 }
 
