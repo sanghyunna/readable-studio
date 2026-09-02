@@ -74,6 +74,26 @@ function seedTwoSessions() {
 }
 
 describe('HubHome rail', () => {
+  it('updates collapsed semantics and the rendered tree synchronously', () => {
+    renderHub();
+    const hub = screen.getByTestId('hub-nav').parentElement;
+    const toggle = screen.getByTestId('hub-rail-toggle');
+
+    expect(hub?.dataset['railCollapsed']).toBe('false');
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    const expandedLabel = toggle.getAttribute('aria-label');
+
+    fireEvent.click(toggle);
+
+    expect(hub?.dataset['railCollapsed']).toBe('true');
+    expect(hub?.classList.contains('hub--rail-collapsed')).toBe(true);
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    expect(toggle.getAttribute('aria-label')).not.toBe(expandedLabel);
+
+    fireEvent.click(toggle);
+    expect(hub?.dataset['railCollapsed']).toBe('false');
+  });
+
   it('calls New Project once when the current Hub trigger is clicked', () => {
     const onNewProject = vi.fn();
     renderHub({ onNewProject });

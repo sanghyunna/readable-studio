@@ -15,6 +15,7 @@
   position: relative;
   display: grid;
   grid-template-columns: clamp(262px, calc(20vw + 4px), 292px) minmax(0, 1fr);
+  transition: grid-template-columns var(--dur-enter) var(--ease-out);
   min-height: 0;
   height: 100%;
   /* The scroll surface owns the single full-height canvas so its gradients run
@@ -1349,6 +1350,7 @@
 
 .hub--rail-collapsed {
   grid-template-columns: var(--hub-rail-collapsed) minmax(0, 1fr);
+  transition-duration: var(--dur-exit);
 }
 
 .hub--rail-collapsed.hub--inspecting {
