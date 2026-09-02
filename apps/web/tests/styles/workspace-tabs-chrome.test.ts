@@ -89,15 +89,13 @@ describe('workspace tabs chrome styles', () => {
     expect(ruleValue(projectStrip, 'align-items')).toBe('center');
   });
 
-  it('keeps the project composer input inset and focus ring polished', () => {
+  it('keeps the project composer inset while leaving its material to chat.css', () => {
     const composerShell = cssDeclarations(routinesCss, '.app .composer-shell');
-    const focusedComposerShell = cssDeclarations(routinesCss, '.app .composer-shell:focus-within');
 
     expect(ruleValue(composerShell, 'padding')).toBe('7px');
-    expect(ruleValue(composerShell, 'border-color')).toBe('color-mix(in srgb, var(--border) 84%, var(--border-strong))');
-    expect(ruleValue(composerShell, 'box-shadow')).toBe('var(--shadow-sm)');
-    expect(ruleValue(focusedComposerShell, 'border-color')).toBe('color-mix(in srgb, var(--accent) 34%, var(--border-strong))');
-    expect(ruleValue(focusedComposerShell, 'box-shadow')).toContain('0 0 0 1px');
+    expect(ruleValue(composerShell, 'border-radius')).toBe('var(--radius-md)');
+    expect(composerShell).not.toMatch(/(?:background|border-color|box-shadow)\s*:/);
+    expect(routinesCss).not.toContain('.app .composer-shell:focus-within');
   });
 
   it('uses hairline dividers for the tab chrome and entry rail', () => {

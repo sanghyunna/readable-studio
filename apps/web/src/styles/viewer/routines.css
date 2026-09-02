@@ -887,9 +887,6 @@
   color: var(--text-soft);
 }
 
-.app .split {
-  background: var(--bg-panel);
-}
 .app .split:not(.split-focus) {
   grid-template-columns: minmax(320px, var(--chat-panel-width, 460px)) 8px minmax(400px, 1fr);
 }
@@ -900,10 +897,7 @@
   padding: 0;
 }
 .app .split-chat-slot > .pane {
-  border: none;
   border-radius: 0;
-  box-shadow: none;
-  background: var(--bg-panel);
 }
 .app .split-resize-handle {
   width: 8px;
@@ -954,7 +948,6 @@
 .app .chat-log {
   gap: 14px;
   padding: 18px 18px 20px;
-  background: var(--bg-panel);
 }
 /* Cancel the 14px flex gap so the idle spacer adds no trailing space. */
 .app .chat-log-tail-spacer {
@@ -1491,10 +1484,7 @@
 }
 .app .composer-shell {
   padding: 7px;
-  border-color: color-mix(in srgb, var(--border) 84%, var(--border-strong));
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--bg-panel) 96%, var(--bg-subtle));
-  box-shadow: var(--shadow-sm);
 }
 .chat-composer-fixed-layer .composer-shell {
   /* Vertical breathing room only. The side inset is applied as a margin on the
@@ -1502,9 +1492,7 @@
      content-box width — which is what the shared label-collapse @container in
      chat.css measures — stays full and that breakpoint can remain generic. */
   padding: 6px 0;
-  border-color: var(--border);
   border-radius: var(--radius-md);
-  box-shadow: none;
 }
 /* Inset the staged chips, the input field and the toolbar off the card's
    rounded frame (giving + and Send a real side margin) without shrinking the
@@ -1512,31 +1500,6 @@
 .chat-composer-fixed-layer .composer-shell > * {
   margin-left: 8px;
   margin-right: 8px;
-}
-.app .composer-shell:focus-within {
-  border-color: color-mix(in srgb, var(--accent) 34%, var(--border-strong));
-  box-shadow:
-    0 1px 2px color-mix(in srgb, var(--text) 6%, transparent),
-    0 0 0 1px color-mix(in srgb, var(--accent) 6%, transparent);
-}
-.chat-composer-fixed-layer .composer-shell:focus-within {
-  border-color: var(--border-strong);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--text) 4%, transparent);
-}
-.app .composer.drag-active .composer-shell {
-  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 9%, transparent);
-}
-.chat-composer-fixed-layer .composer.drag-active .composer-shell {
-  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 9%, transparent);
-}
-/* Keep the typing area a clean var(--white) field with a soft border so it reads as
-   the one input surface inside the tinted card — the resting border replaces
-   the removed toolbar divider as the only separator in the footer. */
-.chat-composer-fixed-layer .composer-input-wrap {
-  background: var(--bg-panel);
-  border-color: var(--border-soft);
 }
 .app .composer textarea {
   min-height: 56px;
@@ -1564,11 +1527,7 @@
   /* Match the 28px control height exactly — the old 32px min-height left 4px
      of dead space that made the footer band feel too tall. */
   min-height: 28px;
-  /* No divider above the toolbar: the var(--white) input box already separates it
-     from the textarea, so the extra border-top + its 2px spacing just stacked
-     another line into the footer. Drop both so the card reads as fewer layers. */
   padding-top: 0;
-  border-top: none;
 }
 .app .composer-row .icon-btn,
 .app .composer-import,
@@ -1602,7 +1561,6 @@
   padding: 0 12px;
   font-size: 12.5px;
   font-weight: 600;
-  box-shadow: none;
 }
 .chat-composer-fixed-layer .composer-send {
   height: 28px;
@@ -1610,7 +1568,6 @@
   padding: 0 12px;
   font-size: 12.5px;
   font-weight: 600;
-  box-shadow: none;
 }
 /* The session-mode ("Design"/CLI) toggle and the agent avatar are authored in
    their own components and default to 32px. The composer now mounts under
@@ -1627,18 +1584,6 @@
   height: 28px;
   min-height: 28px;
   box-sizing: border-box;
-}
-.app .composer-send:disabled {
-  background: var(--bg-subtle);
-  border-color: var(--border);
-  color: var(--text-faint);
-  cursor: default;
-}
-.chat-composer-fixed-layer .composer-send:disabled {
-  background: var(--bg-subtle);
-  border-color: var(--border);
-  color: var(--text-faint);
-  cursor: default;
 }
 .app .composer-hint {
   margin: 4px 8px 0;
@@ -1671,7 +1616,6 @@
 
 .app .workspace {
   padding: 0;
-  background: var(--bg-panel);
 }
 .app .ws-tabs-shell {
   padding: 6px 14px;
@@ -1711,8 +1655,7 @@
   box-shadow: none;
 }
 
-.app .df-panel,
-.app .df-main {
+.app .df-panel {
   background: var(--bg-panel);
 }
 .app .df-panel:not(.no-preview) {
@@ -1723,9 +1666,6 @@
      buttons and the preview off-screen. With `minmax(0, …)` the preview
      shrinks first so the panel never exceeds its container width. */
   grid-template-columns: minmax(280px, 1fr) minmax(0, 360px);
-}
-.app .df-main {
-  border-right-color: var(--border);
 }
 .app .df-body {
   padding: 4px 20px 20px;
@@ -1840,8 +1780,7 @@
 .app .df-table thead {
   border-bottom: 1px solid var(--border-soft);
 }
-.app .df-th-check,
-.app .df-cell-check {
+.app .df-th-check {
   width: 28px;
   padding-left: 8px;
 }
@@ -1911,14 +1850,6 @@
 }
 .app .df-cell-name {
   padding-right: 14px;
-}
-.app .df-file-row + .df-file-row .df-cell-check,
-.app .df-file-row + .df-file-row .df-cell-icon,
-.app .df-file-row + .df-file-row .df-cell-name,
-.app .df-file-row + .df-file-row .df-cell-kind,
-.app .df-file-row + .df-file-row .df-cell-time,
-.app .df-file-row + .df-file-row .df-cell-menu {
-  border-top: 1px solid var(--border-soft);
 }
 .app .df-file-row:hover {
   background: color-mix(in srgb, var(--bg-subtle) 62%, transparent);
@@ -2259,6 +2190,7 @@
   inset: 0;
   z-index: 210;
   background: color-mix(in srgb, var(--text) 38%, transparent);
+  -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
   display: flex;
   align-items: center;

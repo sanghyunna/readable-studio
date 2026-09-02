@@ -4723,7 +4723,7 @@ function HtmlViewer({
     // Bump the revision only when the preview document actually changes (a
     // different file, an srcDoc reload, or a render-mode flip) — never on a plain
     // selection re-sync — so the bridge and host never drift out of sync.
-    const docKey = `${file.name} ${useUrlLoadPreview ? 'url' : 'srcdoc'} ${srcDoc ?? ''}`;
+    const docKey = `${file.name}\u0000${useUrlLoadPreview ? 'url' : 'srcdoc'}\u0000${srcDoc ?? ''}`;
     if (manualEditPreviewDocRef.current !== docKey) {
       manualEditPreviewRevisionRef.current += 1;
       manualEditPreviewDocRef.current = docKey;
@@ -8799,9 +8799,18 @@ function HtmlViewer({
             </span>
           ) : null}
         </div>
-        <div className="viewer-toolbar-actions">
-          {showPreviewToolbarControls ? (
-            <>
+        {showPreviewToolbarControls ? (
+          <div
+            className="viewer-tool-rail"
+            role="toolbar"
+            aria-label={t('fileViewer.previewToolsAria')}
+          >
+            <div
+              className="viewer-tool-group viewer-tool-group-llm"
+              role="group"
+              aria-label={t('fileViewer.sendToLlm')}
+            >
+              <span className="viewer-tool-group-label">{t('fileViewer.sendToLlm')}</span>
               {mode === 'preview' ? (
                 <button
                   type="button"
@@ -8821,10 +8830,10 @@ function HtmlViewer({
                   type="button"
                   className={`viewer-action viewer-action-icon viewer-comment-toggle readable-tooltip${boardMode && !commentCreateMode && boardTool === 'inspect' ? ' active' : ''}`}
                   data-testid="board-mode-toggle"
-                  data-tooltip={t('fileViewer.comment')}
+                  data-tooltip={t('fileViewer.commentOnElement')}
                   data-tooltip-placement="bottom"
-                  title={t('fileViewer.comment')}
-                  aria-label={t('fileViewer.comment')}
+                  title={t('fileViewer.commentOnElement')}
+                  aria-label={t('fileViewer.commentOnElement')}
                   aria-pressed={boardMode && !commentCreateMode && boardTool === 'inspect'}
                   onClick={activateCommentTool}
                 >
@@ -8844,9 +8853,15 @@ function HtmlViewer({
               >
                 <RemixIcon name="mark-pen-line" size={15} />
               </button>
-              <span className="viewer-toolbar-tool-divider" aria-hidden />
+            </div>
+            <span className="viewer-tool-divider" aria-hidden />
+            <div
+              className="viewer-tool-group viewer-tool-group-direct"
+              role="group"
+              aria-label={t('fileViewer.directEdit')}
+            >
               <button
-                className={`viewer-action viewer-action-icon readable-tooltip${manualEditMode ? ' active' : ''}`}
+                className={`viewer-action viewer-direct-edit readable-tooltip${manualEditMode ? ' active' : ''}`}
                 type="button"
                 data-testid="manual-edit-mode-toggle"
                 data-tooltip={t('fileViewer.edit')}
@@ -8857,8 +8872,14 @@ function HtmlViewer({
                 onClick={activateManualEditTool}
               >
                 <RemixIcon name="edit-line" size={15} />
+                <span className="viewer-direct-edit-label">{t('fileViewer.directEdit')}</span>
               </button>
-              <span className="viewer-toolbar-tool-divider" aria-hidden />
+            </div>
+          </div>
+        ) : null}
+        <div className="viewer-toolbar-utilities">
+          {showPreviewToolbarControls ? (
+            <>
               <button
                 type="button"
                 className={`viewer-action viewer-comment-count-trigger viewer-comment-toggle readable-tooltip${boardMode && commentCreateMode ? ' active' : ''}`}

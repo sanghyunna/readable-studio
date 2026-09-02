@@ -1204,19 +1204,57 @@ a.avatar-item:visited {
 }
 
 /* -------- Split / panes -------------------------------------------- */
-.split {
+/* Project workspace shell material — the same family as the Hub
+   (`.tmp/design/workspace-redesign/hub-dna.md`): an ambient saturated canvas
+   with detached, borderless glass panes floating on it. Panes are separated by
+   canvas gutters, radius, tinted shadow and a pearl inset highlight — never by
+   a 1px grey rule. Every value below resolves through the `--hub-*` recipe in
+   `themes/recipes.css`, so all 13 themes propagate without a theme branch.
+
+   The doubled `.split.split` is a deliberate specificity anchor, not a typo:
+   `viewer/routines.css` is imported after this file and repaints `.app .split`
+   with a flat `--bg-panel`. The shell material is the newer contract, so it
+   has to out-specify that legacy compiled-routine override; routines.css is
+   owned by another surface and is not edited here. */
+.split,
+.app .split.split,
+.app .split.split-focus {
   --project-chat-panel-width: 460px;
   --project-workspace-panel-track: minmax(400px, 1fr);
+  --workspace-shell-gutter: 10px;
   display: grid;
   grid-template-columns:
     var(--project-chat-panel-width)
     8px
     var(--project-workspace-panel-track);
+  gap: var(--workspace-shell-gutter);
+  padding: var(--workspace-shell-gutter);
   min-height: 0;
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
-  background: var(--bg);
+  /* Ambient canvas. The corner blooms alone (geometry from the Hub canvas in
+     `home/entry-layout.css`) are corner-weighted: measured at 1440x900 they
+     faded to within 2-4 of flat `--bg` across y=300..600, so the middle of the
+     working area — where the user actually looks — showed no ambient colour and
+     the glass tier read as flat white on flat white.
+
+     The Hub does not have this problem because it layers large, heavily blurred
+     `.hub__wash` blooms (`home/hub.css`) on top of the same corner stack, and
+     those blooms are anchored on-screen rather than off the edges. Reproduced
+     here without extra elements: two mid-anchored blooms lead the stack, sized
+     past the viewport so their falloff — not their tail — covers the working
+     band, with the corner stack kept behind them for the same edge character.
+     Anchors sit at the left gutter and the stage's right edge so the tint reads
+     strongest exactly where the pane/stage boundary needs separating. */
+  background:
+    radial-gradient(1200px 900px at 34% 46%, var(--hub-canvas-cyan) 0%, transparent 46%),
+    radial-gradient(1000px 820px at 88% 58%, var(--hub-canvas-pink) 0%, transparent 44%),
+    radial-gradient(1100px 640px at 10% -8%, var(--hub-canvas-blue) 0%, transparent 62%),
+    radial-gradient(880px 560px at 92% -4%, var(--hub-canvas-pink) 0%, transparent 58%),
+    radial-gradient(760px 620px at 74% 108%, var(--hub-canvas-cyan) 0%, transparent 62%),
+    radial-gradient(620px 520px at 22% 96%, var(--hub-canvas-green) 0%, transparent 60%),
+    var(--hub-canvas-base);
 }
 .split.is-resizing-chat {
   cursor: col-resize;
@@ -1256,8 +1294,8 @@ a.avatar-item:visited {
   width: 8px;
   min-width: 8px;
   height: 100%;
-  border-right: 1px solid var(--border);
-  background: var(--bg-panel);
+  border: 0;
+  background: transparent;
 }
 .comment-left-host {
   position: absolute;
@@ -1331,6 +1369,44 @@ a.avatar-item:visited {
   background: var(--bg-panel);
   overflow: hidden;
 }
+/* Tier 1 glass slab — the chat pane floats on the canvas: borderless, 12px
+   corners, translucent fill over a saturating blur, lit by a pearl inset
+   highlight above the ambient-tinted drop shadow.
+   Scoped through `.app` because `viewer/routines.css` (imported after this
+   file) flattens `.app .split-chat-slot > .pane` back to an opaque bordered
+   panel; the shell material has to out-specify that legacy compiled-routine
+   override rather than silently lose the cascade. */
+.split > .split-chat-slot > .pane,
+.split > .split-chat-slot > .comment-left-host,
+.split > .split-chat-slot > .manual-edit-left-host,
+.app .split > .split-chat-slot > .pane,
+.app .split > .split-chat-slot > .comment-left-host,
+.app .split > .split-chat-slot > .manual-edit-left-host {
+  border: 0;
+  border-radius: var(--radius-surface);
+  background: var(--hub-glass-fill);
+  -webkit-backdrop-filter: var(--hub-glass-blur);
+  backdrop-filter: var(--hub-glass-blur);
+  box-shadow:
+    inset 0 1px 0 var(--hub-pearl-highlight),
+    var(--hub-glass-shadow);
+}
+/* The absolutely-positioned inspector hosts fill the slot, so the slot owns
+   the clip that rounds them. */
+.app .split > .split-chat-slot {
+  border-radius: var(--radius-surface);
+}
+/* Tier 5 artifact stage — the same detached slab geometry, but opaque and
+   palette-neutral: ambient colour must never sit behind a generated document
+   (DESIGN.md §7). Only the elevation is shared with the glass tier. */
+.app .split > .workspace {
+  border: 0;
+  border-radius: var(--radius-surface);
+  background: var(--bg);
+  box-shadow:
+    inset 0 1px 0 var(--hub-pearl-highlight),
+    var(--hub-glass-shadow);
+}
 .split-resize-handle {
   position: relative;
   z-index: 45;
@@ -1350,20 +1426,27 @@ a.avatar-item:visited {
   right: -10px;
   cursor: col-resize;
 }
+/* The gutter itself is the separation device, so the handle paints nothing at
+   rest — it materialises as a soft glass grip only on hover / keyboard focus /
+   drag. Hit area, role and key handling are untouched. */
 .split-resize-handle::after {
   content: "";
   position: absolute;
-  top: 0;
-  bottom: 0;
-  left: calc(50% - 0.5px);
-  width: 1px;
+  top: 50%;
+  bottom: auto;
+  left: calc(50% - 1.5px);
+  width: 3px;
+  height: 34px;
+  border-radius: var(--radius-pill);
   pointer-events: none;
-  background: color-mix(in srgb, var(--border) 92%, transparent);
-  opacity: 0.9;
+  background: var(--hub-control-surface);
+  box-shadow: inset 0 1px 0 var(--hub-control-highlight);
+  opacity: 0;
+  transform: translateY(-50%);
   transition:
-    background-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
-    box-shadow 140ms cubic-bezier(0.23, 1, 0.32, 1),
-    opacity 140ms cubic-bezier(0.23, 1, 0.32, 1);
+    background-color var(--dur-quick) var(--ease-out),
+    box-shadow var(--dur-quick) var(--ease-out),
+    opacity var(--dur-quick) var(--ease-out);
 }
 .split-resize-handle:hover,
 .split-resize-handle:focus-visible,
@@ -1372,11 +1455,49 @@ a.avatar-item:visited {
 }
 .split-resize-handle:hover::after,
 .split-resize-handle:focus-visible::after,
-.split.is-resizing-chat .split-resize-handle::after {
-  background: color-mix(in srgb, var(--accent) 70%, var(--border));
+.split.is-resizing-chat .split-resize-handle::after,
+.app .split-resize-handle:hover::after,
+.app .split-resize-handle:focus-visible::after,
+.app .split.is-resizing-chat .split-resize-handle::after {
+  background: var(--hub-accent);
   box-shadow: none;
   opacity: 1;
 }
 .split-resize-handle:focus-visible {
   outline: none;
+}
+
+/* Reduced transparency: drop every blur, collapse the canvas to a flat neutral
+   and restate hierarchy with an opaque panel fill plus a hairline ring, per the
+   Hub's own fallback (`home/hub.css`). */
+@media (prefers-reduced-transparency: reduce) {
+  .split,
+  .app .split.split,
+  .app .split.split-focus {
+    background: var(--hub-canvas);
+  }
+  .split > .split-chat-slot > .pane,
+  .split > .split-chat-slot > .comment-left-host,
+  .split > .split-chat-slot > .manual-edit-left-host,
+  .app .split > .split-chat-slot > .pane,
+  .app .split > .split-chat-slot > .comment-left-host,
+  .app .split > .split-chat-slot > .manual-edit-left-host {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--bg-panel);
+    box-shadow:
+      0 1px 2px var(--hub-pearl-elevation),
+      0 0 0 1px var(--border);
+  }
+  /* The stage stays the neutral artifact surface; only its elevation flattens. */
+  .app .split > .workspace {
+    box-shadow:
+      0 1px 2px var(--hub-pearl-elevation),
+      0 0 0 1px var(--border);
+  }
+  .split-resize-handle::after,
+  .app .split-resize-handle::after {
+    background: var(--border-strong);
+    box-shadow: none;
+  }
 }

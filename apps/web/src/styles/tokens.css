@@ -70,7 +70,6 @@
   --hub-composer-top: rgba(37, 99, 235, 0.016);
   --hub-composer-bottom: rgba(37, 99, 235, 0.038);
   --hub-stage-reference-offset: 1px;
-  --hub-placeholder-reference-top: 3px;
   /* Composer/topbar controls are soft glass pills in the approved mockup, not
      dark outlined capsules: a translucent fill, an inset white highlight and a
      soft shadow carry the shape, so the rest border is transparent. */

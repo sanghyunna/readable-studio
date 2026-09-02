@@ -1,15 +1,25 @@
+/* The chat PANE surface (glass fill, blur, pearl highlight, tinted
+   shadow) is owned by `shell.css` at `.app .split > .split-chat-slot >
+   .pane`, which outranks the flat repaint in the later-imported
+   `viewer/routines.css`. This file must therefore never declare a
+   competing pane fill: everything below sits ON that glass, borderless
+   and unboxed, and stays transparent so the tier shows through. */
+
 /* -------- Chat project header (single row) --------------------------
    The former standalone chrome header row was removed. This single row
    now carries: back button, design-system picker, editable project
    title, and (right-aligned) the session-history trigger. position:
-   relative anchors the absolutely-positioned history popover. */
+   relative anchors the absolutely-positioned history popover.
+   v5: it sits ON the pane glass — no fill of its own, and its bottom
+   edge is a pearl light ray (hub-dna §2 tier 4), never a grey rule. */
 .chat-project-header {
   display: flex;
   align-items: center;
   gap: 4px;
   padding: 8px 12px;
   border-bottom: none;
-  background: var(--bg-panel);
+  background: transparent;
+  box-shadow: inset 0 -1px 0 var(--hub-pearl-highlight);
   min-width: 0;
   height: 38px;
   position: sticky;
@@ -30,7 +40,8 @@
   flex: 0 0 auto;
 }
 .chat-project-back:hover {
-  background: var(--bg-subtle);
+  background: var(--hub-control-surface-hover);
+  box-shadow: var(--hub-control-shadow-hover);
   color: var(--text);
 }
 .chat-project-design-system {
@@ -121,7 +132,8 @@
 }
 .chat-session-trigger:hover,
 .chat-session-switcher.open .chat-session-trigger {
-  background: var(--bg-subtle);
+  background: var(--hub-control-surface-hover);
+  box-shadow: var(--hub-control-shadow-hover);
   color: var(--text);
 }
 .chat-header-tabs { display: inline-flex; gap: 16px; flex: 1; }
@@ -206,10 +218,16 @@
   align-items: center;
   justify-content: center;
 }
-.chat-header-actions .icon-only:hover { background: var(--bg-subtle); color: var(--text); }
+.chat-header-actions .icon-only:hover {
+  background: var(--hub-control-surface-hover);
+  box-shadow: var(--hub-control-shadow-hover);
+  color: var(--text);
+}
 
 .chat-log {
   flex: 1;
+  /* The transcript paints nothing: the pane glass below is the surface. */
+  background: transparent;
   overflow-y: auto;
   overflow-x: hidden;
   /* Reserve the 8px gutter up front. Otherwise the scrollbar materializes the
@@ -908,17 +926,29 @@
 .chat-composer-fixed-layer .composer {
   pointer-events: auto;
 }
+/* The composer is the strongest single glass surface on the pane
+   (hub-dna §2 tier 3): one continuous shell carrying the accent tint
+   gradient over the composer fill. Nothing inside it draws a second box
+   — internal separation is tonal (zones + pearl rays), never nested
+   borders. An opaque fill here is the documented failure that turns the
+   composer into a white card. */
 .composer-shell {
   container-type: inline-size;
-  border: 1px solid var(--bg-fill-secondary);
+  border: 0;
   border-radius: var(--radius-lg);
-  background: var(--bg-fill-tertiary);
-  box-shadow: none;
+  background:
+    linear-gradient(var(--hub-composer-top), var(--hub-composer-bottom)),
+    var(--hub-composer-fill);
+  -webkit-backdrop-filter: var(--hub-glass-blur);
+  backdrop-filter: var(--hub-glass-blur);
+  box-shadow:
+    inset 0 1px 0 var(--hub-pearl-highlight),
+    var(--hub-glass-shadow);
   padding: 8px 10px 6px;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  transition: border-color 120ms var(--ease-out), background 120ms var(--ease-out);
+  transition: box-shadow 120ms var(--ease-out), background 120ms var(--ease-out);
 }
 /* When the chat pane is narrow, compact the footer cluster: tighten the
    model chip + mode toggle, collapse the mode label, and make send/stop
@@ -941,10 +971,10 @@
   .composer-row .composer-send span { display: none; }
 }
 .composer-shell:focus-within {
-  border-color: color-mix(in srgb, var(--accent) 22%, var(--border-strong));
   box-shadow:
-    0 1px 2px color-mix(in srgb, var(--text) 6%, transparent),
-    0 0 0 1px color-mix(in srgb, var(--accent) 6%, transparent);
+    inset 0 1px 0 var(--hub-pearl-highlight),
+    var(--hub-glass-shadow),
+    0 0 0 3px var(--hub-accent-fill);
 }
 /* Design-system picker row at the top of the composer card (moved out of
    the former chrome header). A full-bleed hairline divider separates it
@@ -956,11 +986,18 @@
   gap: 8px;
   min-width: 0;
   padding: 7px 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-bottom: 0;
+  box-shadow: inset 0 -1px 0 var(--hub-pearl-highlight);
 }
+/* Drag-active keeps the shell's geometry and only re-tints it. */
 .composer.drag-active .composer-shell {
-  border-color: var(--accent);
-  background: var(--accent-tint);
+  background:
+    linear-gradient(var(--hub-accent-fill), var(--hub-accent-fill)),
+    var(--hub-composer-fill);
+  box-shadow:
+    inset 0 1px 0 var(--hub-pearl-highlight),
+    var(--hub-glass-shadow),
+    0 0 0 1px var(--hub-accent-line);
 }
 .composer-active-file {
   display: flex;
@@ -971,9 +1008,10 @@
   max-width: calc(100% - 24px);
   margin: 0 12px;
   padding: 5px 8px;
-  border: 1px solid var(--border-soft);
+  border: 0;
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--accent) 7%, var(--bg-panel));
+  background: var(--hub-accent-fill);
+  box-shadow: inset 0 1px 0 var(--hub-control-highlight);
   color: var(--text);
   font-size: 12px;
   line-height: 1.25;
@@ -992,20 +1030,21 @@
   font-weight: 650;
 }
 /* -------- Lexical contenteditable input ---------------------------- */
+/* Tonal zone, not a box: the input area inherits the shell's glass and
+   contributes no border and no elevation of its own (hub-dna §2 tier 3,
+   `--hub-composer-body: transparent`). */
 .composer-input-wrap {
   position: relative;
   display: flex;
   flex-direction: column;
-  border: 1px solid transparent;
+  border: 0;
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--bg-panel) 94%, var(--bg-subtle));
-  transition:
-    background-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
-    border-color 140ms cubic-bezier(0.23, 1, 0.32, 1);
+  background: var(--hub-composer-body);
+  box-shadow: none;
+  transition: background-color 140ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 .composer-input-wrap:focus-within {
-  background: var(--bg-panel);
-  border-color: color-mix(in srgb, var(--selected) 28%, var(--border));
+  background: var(--hub-control-surface);
 }
 /* The wrapper that owns scroll + max-height (Lexical's ContentEditable is
    the inner [contenteditable] element). */
@@ -1153,10 +1192,12 @@
   gap: 6px;
   /* Center the divider between the input above (8px composer gap) and the
      controls below (8px padding) so the toolbar isn't cramped against the
-     border. */
+     ray. Geometry is unchanged from the bordered version — only the
+     separation device changed to a pearl light ray (hub-dna §2 tier 4). */
   margin-top: 0;
   padding-top: 8px;
-  border-top: 1px solid var(--border-soft);
+  border-top: 0;
+  box-shadow: inset 0 1px 0 var(--hub-pearl-highlight);
   /* Anchors the standalone design-toolbox popover (opened from the assistant
      next-step card) above this toolbar row. */
   position: relative;
@@ -1222,11 +1263,15 @@
     border-color 140ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 .composer-row .icon-btn:hover:not(:disabled) {
-  background: var(--bg-subtle);
+  background: var(--hub-control-surface-hover);
+  box-shadow: var(--hub-control-shadow-hover);
   color: var(--text);
-  border-color: var(--border);
+  border-color: transparent;
 }
-.composer-row .icon-btn:active:not(:disabled) { background: var(--bg-muted); }
+.composer-row .icon-btn:active:not(:disabled) {
+  background: var(--hub-control-surface);
+  box-shadow: inset 0 1px 0 var(--hub-control-highlight);
+}
 .composer-row .icon-btn:disabled { opacity: 0.45; cursor: default; }
 .composer-spacer { flex: 1; }
 
@@ -1501,6 +1546,8 @@
   border-radius: 50%;
   background: var(--accent);
 }
+/* The single solid fill in the resting workspace (hub-dna §4). It stays
+   solid on purpose — it is the only opaque element on the glass. */
 .composer-send {
   display: inline-flex;
   align-items: center;
@@ -1510,14 +1557,16 @@
   white-space: nowrap;
   min-width: 0;
   height: 32px;
-  background: var(--accent);
-  border: 1px solid var(--accent);
-  color: var(--white);
+  background: var(--hub-accent);
+  border: 1px solid var(--hub-accent);
+  color: var(--hub-accent-fg);
   font-weight: 650;
   padding: 0 11px;
   font-size: 12.5px;
   border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-xs);
+  box-shadow:
+    0 1px 2px var(--hub-ready-shadow),
+    inset 0 1px 0 var(--hub-ready-highlight);
   transition:
     background-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
     border-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
@@ -1526,16 +1575,30 @@
     opacity 140ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 .composer-send:hover:not(:disabled) {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
-  box-shadow: var(--shadow-sm);
+  background: color-mix(in srgb, var(--hub-accent) 86%, var(--text-strong));
+  border-color: color-mix(in srgb, var(--hub-accent) 86%, var(--text-strong));
+  box-shadow:
+    0 2px 6px var(--hub-ready-shadow),
+    inset 0 1px 0 var(--hub-ready-highlight);
 }
-.composer-send:active:not(:disabled) { transform: translateY(1px); box-shadow: var(--shadow-xs); }
+.composer-send:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow:
+    0 1px 2px var(--hub-ready-shadow),
+    inset 0 1px 0 var(--hub-ready-highlight);
+}
 .composer-send:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px var(--selected-soft);
+  outline: 2px solid var(--hub-accent);
+  outline-offset: 2px;
 }
-.composer-send:disabled { opacity: 0.5; cursor: default; box-shadow: none; }
+/* Busy/stop and disabled keep the button's geometry: only fill changes. */
+.composer-send:disabled {
+  background: var(--hub-send-disabled);
+  border-color: transparent;
+  color: var(--text-faint);
+  cursor: default;
+  box-shadow: none;
+}
 .composer-send.stop { background: var(--text); border-color: var(--text); color: var(--bg-panel); }
 .composer-send.stop:hover { background: var(--text-strong); border-color: var(--text-strong); color: var(--bg-panel); }
 .composer-hint {
@@ -1556,12 +1619,12 @@
   margin: 0 var(--chat-composer-inline-inset, 12px) 2px;
   padding: 7px;
   overflow: visible;
-  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border: 0;
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--bg-panel) 92%, var(--bg-subtle));
+  background: var(--hub-control-surface);
   box-shadow:
-    0 10px 24px -18px color-mix(in srgb, var(--black) 32%, transparent),
-    0 1px 2px color-mix(in srgb, var(--black) 5%, transparent);
+    inset 0 1px 0 var(--hub-control-highlight),
+    var(--hub-glass-shadow);
 }
 
 .chat-queued-send-list {
@@ -1626,13 +1689,17 @@
     opacity 140ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
+/* Queued rows keep their grid geometry; only the resting/selected
+   material changes to hub control values (hub-dna §3). */
 .chat-queued-send-row-active {
-  border-color: color-mix(in srgb, var(--border) 80%, transparent);
-  background: color-mix(in srgb, var(--bg-subtle) 82%, transparent);
+  border-color: transparent;
+  background: var(--hub-accent-fill);
+  box-shadow: inset 0 1px 0 var(--hub-pearl-highlight);
 }
 
 .chat-queued-send-row:hover {
-  background: color-mix(in srgb, var(--bg-subtle) 70%, transparent);
+  background: var(--hub-control-surface);
+  box-shadow: inset 0 1px 0 var(--hub-pearl-highlight);
 }
 
 .chat-queued-send-row-dragging {
@@ -1773,7 +1840,7 @@
   position: relative;
 }
 
-.chat-queued-send-tooltip:not(.readable-studio-tooltip)[data-tooltip]::after {
+.chat-queued-send-tooltip:not(.readable-tooltip)[data-tooltip]::after {
   content: attr(data-tooltip);
   position: absolute;
   top: 50%;
@@ -1795,14 +1862,14 @@
     transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
-.chat-queued-send-drag-handle:not(.readable-studio-tooltip)[data-tooltip]::after {
+.chat-queued-send-drag-handle:not(.readable-tooltip)[data-tooltip]::after {
   right: auto;
   left: calc(100% + 6px);
   transform: translate(2px, -50%);
 }
 
-.chat-queued-send-tooltip:not(.readable-studio-tooltip)[data-tooltip]:hover::after,
-.chat-queued-send-tooltip:not(.readable-studio-tooltip)[data-tooltip]:focus-visible::after {
+.chat-queued-send-tooltip:not(.readable-tooltip)[data-tooltip]:hover::after,
+.chat-queued-send-tooltip:not(.readable-tooltip)[data-tooltip]:focus-visible::after {
   opacity: 1;
   transform: translate(0, -50%);
 }
@@ -1837,22 +1904,22 @@
   min-width: 0;
   min-height: 22px;
   padding: 2px 5px 2px 3px;
-  background: color-mix(in srgb, var(--bg-panel) 96%, var(--bg-subtle));
-  border: 1px solid var(--border-soft);
+  background: var(--hub-control-surface);
+  border: 0;
   border-radius: var(--radius-sm);
   max-width: min(190px, 100%);
   overflow: hidden;
   white-space: nowrap;
   font-size: 10.5px;
   line-height: 14px;
-  box-shadow: none;
+  box-shadow: inset 0 1px 0 var(--hub-control-highlight);
   transition:
     background-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
-    border-color 140ms cubic-bezier(0.23, 1, 0.32, 1);
+    box-shadow 140ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 .staged-chip:hover {
-  background: var(--bg-panel);
-  border-color: var(--border-strong);
+  background: var(--hub-control-surface-hover);
+  box-shadow: var(--hub-control-shadow-hover);
 }
 .staged-order {
   display: inline-flex;
@@ -2024,6 +2091,7 @@
   justify-content: center;
   padding: 24px;
   background: color-mix(in srgb, var(--shadow-color) 75%, transparent);
+  -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
 }
 .staged-preview-card {
@@ -2194,4 +2262,39 @@
   white-space: nowrap;
   max-width: 106px;
   line-height: 12px;
+}
+
+/* The fixed-layer toolbar intentionally omits the in-pane pearl separator. */
+.chat-composer-fixed-layer .composer-row {
+  box-shadow: none;
+}
+
+/* -------- Reduced transparency fallback ----------------------------
+   Drop every backdrop filter, collapse glass to an opaque panel with a
+   hairline ring, and flatten control surfaces without changing geometry. */
+@media (prefers-reduced-transparency: reduce) {
+  .composer-shell {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--bg-panel);
+    box-shadow:
+      0 1px 2px var(--hub-pearl-elevation),
+      0 0 0 1px var(--border);
+  }
+  .composer-shell:focus-within,
+  .composer.drag-active .composer-shell {
+    background: var(--bg-panel);
+    box-shadow: 0 0 0 1px var(--hub-accent-line);
+  }
+  .composer-input-wrap:focus-within,
+  .chat-queued-send-row:hover,
+  .composer-row .icon-btn:hover:not(:disabled),
+  .chat-project-back:hover,
+  .chat-session-trigger:hover,
+  .chat-session-switcher.open .chat-session-trigger,
+  .chat-header-actions .icon-only:hover,
+  .staged-chip {
+    background: var(--bg-subtle);
+    box-shadow: 0 0 0 1px var(--border);
+  }
 }

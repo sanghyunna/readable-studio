@@ -45,6 +45,7 @@ import {
 } from '../../src/components/IframeKeepAlivePool';
 import type { InspectOverrideMap } from '../../src/components/FileViewer';
 import type { PreviewComment, ProjectFile } from '../../src/types';
+import { I18nProvider } from '../../src/i18n';
 import type { Dict } from '../../src/i18n/types';
 import { emptyManualEditStyles } from '../../src/edit-mode/types';
 import { readExpandedIndexCss } from '../helpers/read-expanded-css';
@@ -207,6 +208,22 @@ function installPreviewSnapshotBridge(iframe: HTMLIFrameElement) {
     }));
   });
 }
+
+describe('FileViewer manual edit document key', () => {
+  it('keeps the escaped document-key composition free of source control characters', () => {
+    // Given
+    const source = readFileSync(join(process.cwd(), 'src/components/FileViewer.tsx'), 'utf8');
+
+    // When
+    const docKeyLine = source.split('\n').find((line) => line.includes('const docKey ='));
+
+    // Then
+    expect(docKeyLine?.trim()).toBe(
+      "const docKey = `${file.name}\\u0000${useUrlLoadPreview ? 'url' : 'srcdoc'}\\u0000${srcDoc ?? ''}`;",
+    );
+    expect(docKeyLine).not.toMatch(/[\u0000-\u001f\u007f]/);
+  });
+});
 
 describe('FileViewer preview scale', () => {
   it('keeps file viewer selectors in the effective global stylesheet', () => {
@@ -2807,6 +2824,59 @@ describe('FileViewer tweaks toolbar', () => {
       ...overrides,
     });
   }
+
+  it('groups preview tools by LLM handoff and direct editing in source order', () => {
+    render(
+      <FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()}
+        liveHtml='<html><body><main data-readable-id="hero">Hero</main></body></html>'
+      />,
+    );
+
+    const host = screen.getByTestId('artifact-preview-frame').closest('.viewer')?.querySelector('.viewer-toolbar');
+    expect(host).toBeTruthy();
+    expect(Array.from(host?.children ?? []).map((child) => child.className)).toEqual([
+      'viewer-toolbar-left',
+      'viewer-tool-rail',
+      'viewer-toolbar-utilities',
+    ]);
+
+    const rail = screen.getByRole('toolbar', { name: 'Preview tools' });
+    const llmGroup = within(rail).getByRole('group', { name: 'Send to LLM' });
+    const directGroup = within(rail).getByRole('group', { name: 'Direct edit' });
+
+    expect(llmGroup.parentElement).toBe(rail);
+    expect(directGroup.parentElement).toBe(rail);
+    expect(within(llmGroup).getAllByRole('button').map((button) => button.getAttribute('aria-label'))).toEqual([
+      'Screenshot',
+      'Comment on element',
+      'Mark',
+    ]);
+    expect(within(directGroup).getAllByRole('button').map((button) => button.getAttribute('aria-label'))).toEqual([
+      'Edit',
+    ]);
+    expect(Array.from(rail.children).map((child) => child.className)).toEqual([
+      'viewer-tool-group viewer-tool-group-llm',
+      'viewer-tool-divider',
+      'viewer-tool-group viewer-tool-group-direct',
+    ]);
+  });
+
+  it('gives element picking and the comment list distinct tooltip labels', () => {
+    render(
+      <I18nProvider initial="ko">
+        <FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()}
+          liveHtml='<html><body><main data-readable-id="hero">Hero</main></body></html>'
+        />
+      </I18nProvider>,
+    );
+
+    const boardTooltip = screen.getByTestId('board-mode-toggle').getAttribute('data-tooltip');
+    const panelTooltip = screen.getByTestId('comment-panel-toggle').getAttribute('data-tooltip');
+
+    expect(boardTooltip).toBeTruthy();
+    expect(panelTooltip).toBeTruthy();
+    expect(boardTooltip).not.toBe(panelTooltip);
+  });
 
   it('renders Annotation, Edit, and Draw as the primary preview tools', async () => {
     render(
