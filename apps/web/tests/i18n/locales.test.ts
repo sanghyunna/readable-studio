@@ -16,6 +16,7 @@ const RETIRED_KEYS = [
   'socialShare.openDesignText',
   'socialShare.openDesignCopyText',
   'assistant.shareToOpenDesign',
+  'settings.codeAgentDefault',
 ] as const;
 
 function placeholders(value: string): string[] {
@@ -73,7 +74,10 @@ describe('i18n locales', () => {
     for (const locale of LOCALES) {
       const dict = await loadDict(locale);
       expect(dict['app.brand'], `${locale}.app.brand`).toBe('Readable Studio');
-      expect(explicitLocaleKeys(locale)).not.toEqual(expect.arrayContaining([...RETIRED_KEYS]));
+      const localeKeys = explicitLocaleKeys(locale);
+      for (const retiredKey of RETIRED_KEYS) {
+        expect(localeKeys, `${locale}.${retiredKey}`).not.toContain(retiredKey);
+      }
     }
   });
 

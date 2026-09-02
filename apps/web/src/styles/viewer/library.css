@@ -1051,10 +1051,6 @@
   cursor: default;
 }
 
-.library-ds-toggle-cell .toggle-switch {
-  margin-top: 1px;
-}
-
 .library-preview {
   width: 100%;
   padding: 12px;
@@ -1547,7 +1543,7 @@
   white-space: nowrap;
 }
 
-.memory-source-toggle {
+.memory-source-toggle.memory-source-toggle {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -1562,17 +1558,17 @@
   white-space: nowrap;
 }
 
-.memory-source-toggle:has(input:checked) {
+.memory-source-toggle.memory-source-toggle[data-state='on'] {
   color: var(--text);
 }
 
-.memory-source-toggle:has(input:disabled) {
+.memory-source-toggle.memory-source-toggle:disabled,
+.memory-source-toggle.memory-source-toggle[aria-disabled='true'] {
   cursor: not-allowed;
   opacity: 0.55;
 }
 
-.memory-chat-learning-toggle,
-.modal label.memory-chat-learning-toggle {
+.memory-chat-learning-toggle.memory-chat-learning-toggle {
   flex-direction: row;
   align-items: center;
   justify-content: flex-end;
@@ -1586,11 +1582,14 @@
   font-size: 12px;
 }
 
-.memory-chat-learning-toggle:has(input:checked) {
+.memory-chat-learning-toggle.memory-chat-learning-toggle[data-state='on'] {
   color: var(--text);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
 }
 
-.memory-chat-learning-toggle > span:first-child {
+.memory-chat-learning-toggle > span:last-child {
   min-width: 20px;
   text-align: right;
 }

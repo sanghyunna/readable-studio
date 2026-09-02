@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, } from 'react';
-import { Button } from '@readable-studio/components';
+import { Button, Switch } from '@readable-studio/components';
 import { Icon, type IconName } from './Icon';
 import { useT } from '../i18n';
 type Translate = ReturnType<typeof useT>;
@@ -150,7 +150,7 @@ interface FriendlyExtractionFailure {
     detail: string;
     action?: string;
 }
-function providerDisplayName(provider: MemoryExtractionRecord['provider'] | undefined): string {
+function providerDisplayName(provider: MemoryExtractionRecord['provider'] | undefined, t: Translate): string {
     if (provider?.credentialSource === 'chat-cli') {
         if (provider.kind === 'anthropic')
             return 'Claude Code';
@@ -168,7 +168,7 @@ function providerDisplayName(provider: MemoryExtractionRecord['provider'] | unde
         case 'openai':
             return 'OpenAI';
         default:
-            return 'Memory model';
+            return t('settings.memoryModelInlineLabel');
     }
 }
 function parseProviderError(raw: string): {
@@ -210,46 +210,46 @@ function parseProviderError(raw: string): {
         status,
     };
 }
-function describeExtractionFailure(record: MemoryExtractionRecord): FriendlyExtractionFailure | null {
+function describeExtractionFailure(record: MemoryExtractionRecord, t: Translate): FriendlyExtractionFailure | null {
     if (record.phase !== 'failed' || !record.error)
         return null;
-    const providerName = providerDisplayName(record.provider);
+    const providerName = providerDisplayName(record.provider, t);
     const usesChatCli = record.provider?.credentialSource === 'chat-cli';
     const parsed = parseProviderError(record.error);
     const haystack = `${parsed.message} ${parsed.code} ${record.error}`.toLowerCase();
-    const source = 'Readable Studio could not run memory extraction for this chat.';
+    const source = t('settings.memoryExtractionFailureSource');
     if (parsed.status === 401
         || /token[_ -]?expired|authentication token has expired|invalid[_ -]?api[_ -]?key|unauthorized/.test(haystack)) {
         return {
-            title: `${providerName} authentication expired`,
+            title: t('settings.memoryExtractionFailureAuth', { provider: providerName }),
             detail: source,
             action: usesChatCli
-                ? 'Sign in to the selected Local CLI or choose a different Memory model.'
-                : 'Update the Memory extraction model key or sign in again.',
+                ? t('settings.memoryExtractionActionCliAuth')
+                : t('settings.memoryExtractionActionModelAuth'),
         };
     }
     if (parsed.status === 429 || /rate limit|quota|too many requests|insufficient_quota/.test(haystack)) {
         return {
-            title: `${providerName} quota or rate limit hit`,
+            title: t('settings.memoryExtractionFailureQuota', { provider: providerName }),
             detail: source,
-            action: 'Try again later or switch the Memory extraction model.',
+            action: t('settings.memoryExtractionActionQuota'),
         };
     }
     if (/network|fetch failed|timeout|timed out|econnreset|enotfound/.test(haystack)) {
         return {
-            title: `${providerName} request failed`,
+            title: t('settings.memoryExtractionFailureRequest', { provider: providerName }),
             detail: source,
             action: usesChatCli
-                ? 'Check the selected Local CLI and try again.'
-                : 'Check the model provider connection and try again.',
+                ? t('settings.memoryExtractionActionCliRequest')
+                : t('settings.memoryExtractionActionProviderRequest'),
         };
     }
     return {
-        title: 'Memory extraction failed',
+        title: t('settings.memoryExtractionFailureGeneric'),
         detail: parsed.message || source,
         action: usesChatCli
-            ? 'Try again after checking the selected Local CLI.'
-            : 'Try again after checking the Memory extraction model settings.',
+            ? t('settings.memoryExtractionActionCliGeneric')
+            : t('settings.memoryExtractionActionModelGeneric'),
     };
 }
 // Drop one extraction row server-side. Returns true on a 2xx — the
@@ -306,7 +306,7 @@ function describeRecord(record: MemoryExtractionRecord, t: Translate): {
         if (reason === 'memory-disabled')
             return t('settings.memoryExtractionSkipDisabled');
         if (reason === 'chat-disabled')
-            return 'Chat conversation learning is off.';
+            return t('settings.memoryExtractionSkipChatDisabled');
         if (reason === 'empty-message')
             return t('settings.memoryExtractionSkipEmpty');
         if (reason === 'no-match')
@@ -323,15 +323,15 @@ function describeRecord(record: MemoryExtractionRecord, t: Translate): {
             t('settings.memoryExtractionKindLlm');
     return { phaseLabel, reasonLabel, kindLabel, tone };
 }
-function formatRelativeTime(at: number, now: number): string {
+function formatRelativeTimeAgo(at: number, now: number, t: Translate): string {
     const delta = Math.max(0, now - at);
     if (delta < 60000)
-        return `${Math.round(delta / 1000)}s`;
+        return t('common.justNow');
     if (delta < 3600000)
-        return `${Math.round(delta / 60000)}m`;
+        return t('common.minutesAgo', { n: Math.floor(delta / 60000) });
     if (delta < 86400000)
-        return `${Math.round(delta / 3600000)}h`;
-    return `${Math.round(delta / 86400000)}d`;
+        return t('common.hoursAgo', { n: Math.floor(delta / 3600000) });
+    return t('common.daysAgo', { n: Math.floor(delta / 86400000) });
 }
 // Wall-clock timestamp shown next to the relative age. The user asked
 // to "see when each extraction started" — relative ages on their own
@@ -369,28 +369,21 @@ function formatDuration(record: MemoryExtractionRecord): string | null {
         return `${(ms / 1000).toFixed(1)}s`;
     return `${Math.round(ms / 1000)}s`;
 }
-function formatRelativeTimeAgo(at: number, now: number): string {
-    const relative = formatRelativeTime(at, now);
-    return relative === '0s' ? 'just now' : `${relative} ago`;
-}
-function memoryCountLabel(count: number): string {
-    return count === 1 ? 'memory' : 'memories';
-}
 function extractionCardTitle(record: MemoryExtractionRecord, t: Translate): string {
     return record.userMessagePreview || t('settings.memoryExtractions');
 }
 function extractionCardMeta(record: MemoryExtractionRecord, now: number, t: Translate): string {
     const kind = record.kind ?? 'llm';
-    const age = formatRelativeTimeAgo(record.startedAt, now);
+    const age = formatRelativeTimeAgo(record.startedAt, now, t);
     const duration = formatDuration(record);
     const parts = [
         formatAbsoluteTime(record.startedAt, now),
-        formatRelativeTime(record.startedAt, now),
+        age,
     ];
     if (duration)
         parts.push(`${t('settings.memoryExtractionDuration')} ${duration}`);
     if (record.phase === 'success' && typeof record.writtenCount === 'number') {
-        parts.push(`${record.writtenCount} ${t('settings.memoryExtractionWritten')}`);
+        parts.push(t('settings.memoryExtractionWrittenCount', { count: record.writtenCount }));
     }
     return parts.join(' · ');
 }
@@ -404,6 +397,8 @@ export function MemorySection({ chatAgentId = null, chatModel = null, }: MemoryS
     const t = useT();
     const [enabled, setEnabled] = useState(true);
     const [chatExtractionEnabled, setChatExtractionEnabled] = useState(true);
+    const [memoryTogglePending, setMemoryTogglePending] = useState(false);
+    const [chatTogglePending, setChatTogglePending] = useState(false);
     const [rootDir, setRootDir] = useState('');
     const [index, setIndex] = useState('');
     const [indexDraft, setIndexDraft] = useState<string | null>(null);
@@ -663,13 +658,25 @@ export function MemorySection({ chatAgentId = null, chatModel = null, }: MemoryS
     }, [reload, fireFlash]);
     const onToggleEnabled = useCallback(async (next: boolean) => {
         setEnabled(next);
-        await setMemoryEnabled(next);
+        setMemoryTogglePending(true);
+        try {
+            await setMemoryEnabled(next);
+        }
+        finally {
+            setMemoryTogglePending(false);
+        }
     }, []);
     const onToggleChatExtraction = useCallback(async (next: boolean) => {
         setChatExtractionEnabled(next);
-        const ok = await setMemoryChatExtractionEnabled(next);
-        if (!ok)
-            setChatExtractionEnabled((current) => !current);
+        setChatTogglePending(true);
+        try {
+            const ok = await setMemoryChatExtractionEnabled(next);
+            if (!ok)
+                setChatExtractionEnabled((current) => !current);
+        }
+        finally {
+            setChatTogglePending(false);
+        }
     }, []);
     const onSaveIndex = useCallback(async () => {
         if (indexDraft === null)
@@ -715,14 +722,14 @@ export function MemorySection({ chatAgentId = null, chatModel = null, }: MemoryS
     }> = [
         {
             id: 'manual',
-            label: 'Add manually',
-            caption: 'Write a fact or preference',
+            label: t('settings.memoryTabManual'),
+            caption: t('settings.memoryTabManualCaption'),
             icon: 'edit',
         },
         {
             id: 'chat',
-            label: 'Learn from chats',
-            caption: 'Capture useful context',
+            label: t('settings.memoryTabChat'),
+            caption: t('settings.memoryTabChatCaption'),
             icon: 'history',
         },
     ];
@@ -778,7 +785,7 @@ export function MemorySection({ chatAgentId = null, chatModel = null, }: MemoryS
             </div>) : null}
           {record.phase === 'failed' && record.error ? (<div className="memory-extraction-failure">
               {(() => {
-                    const failure = describeExtractionFailure(record);
+                    const failure = describeExtractionFailure(record, t);
                     if (!failure)
                         return null;
                     return (<>
@@ -825,7 +832,7 @@ export function MemorySection({ chatAgentId = null, chatModel = null, }: MemoryS
           translation sweep can lift it later.
         */}
             {rootDir ? (<span className="memory-info-wrap">
-                <button type="button" className="memory-info-btn" onClick={() => void onCopyPath()} title={rootDir} aria-label="Memory storage path — click to copy">
+                <button type="button" className="memory-info-btn" onClick={() => void onCopyPath()} title={rootDir} aria-label={t('settings.memoryStoragePathAria')}>
                   <Icon name="info" size={13}/>
                 </button>
                 {flash?.kind === 'pathCopied' ? (<span key={flash.key} className="memory-path-copied-badge">
@@ -835,10 +842,15 @@ export function MemorySection({ chatAgentId = null, chatModel = null, }: MemoryS
           </h3>
           <p className="hint">{t('settings.memoryDescription')}</p>
         </div>
-        <label className="toggle-switch" title={t('settings.memoryEnableLabel')} aria-label={t('settings.memoryEnableLabel')}>
-          <input type="checkbox" checked={enabled} onChange={(e) => onToggleEnabled(e.target.checked)}/>
-          <span className="toggle-slider"/>
-        </label>
+        <Switch
+          className="memory-enable-switch"
+          checked={enabled}
+          pending={memoryTogglePending}
+          onCheckedChange={(next) => void onToggleEnabled(next)}
+          aria-label={t('settings.memoryEnableLabel')}
+          title={t('settings.memoryEnableLabel')}
+          stateText={enabled ? t('settings.memoryOn') : t('settings.memoryOff')}
+        />
       </div>
 
       {!enabled ? (<div role="status" className="memory-disabled-banner">
@@ -851,7 +863,7 @@ export function MemorySection({ chatAgentId = null, chatModel = null, }: MemoryS
           {t('settings.memoryNoProviderBannerBody')}
         </div>) : null}
 
-      <div className="memory-source-tabs" role="tablist" aria-label="Memory areas">
+      <div className="memory-source-tabs" role="tablist" aria-label={t('settings.memoryAreasAria')}>
         {memoryTabs.map((tab) => (<button key={tab.id} type="button" role="tab" aria-label={tab.label} aria-selected={activeTab === tab.id} className={activeTab === tab.id ? 'active' : ''} onClick={() => setActiveTab(tab.id)}>
             <span className="memory-source-tab-icon">
               <Icon name={tab.icon} size={14}/>
@@ -869,11 +881,8 @@ export function MemorySection({ chatAgentId = null, chatModel = null, }: MemoryS
               <Icon name="edit" size={15}/>
             </span>
             <div>
-              <h4>Add manually</h4>
-              <p className="hint">
-                Add facts, preferences, or project context yourself. Fixed assistant
-                behavior lives in Instructions / Rules.
-              </p>
+              <h4>{t('settings.memoryTabManual')}</h4>
+              <p className="hint">{t('settings.memoryManualDescription')}</p>
             </div>
             <button type="button" className="primary memory-source-action" onClick={startNew} disabled={editing !== null}>
               <Icon name="plus" size={14}/>
@@ -1001,19 +1010,19 @@ export function MemorySection({ chatAgentId = null, chatModel = null, }: MemoryS
               <Icon name="history" size={15}/>
             </span>
             <div>
-              <h4>Learn from chats</h4>
-              <p className="hint">
-                Readable Studio can learn preferences and project facts from future
-                chat turns.
-              </p>
+              <h4>{t('settings.memoryTabChat')}</h4>
+              <p className="hint">{t('settings.memoryChatDescription')}</p>
             </div>
-            <label className="memory-source-toggle memory-chat-learning-toggle" title="Learn from chat conversations">
-              <span>{chatExtractionEnabled ? 'On' : 'Off'}</span>
-              <span className="toggle-switch toggle-switch-sm">
-                <input type="checkbox" aria-label="Learn from chat conversations" checked={chatExtractionEnabled} onChange={(e) => onToggleChatExtraction(e.target.checked)} disabled={!enabled}/>
-                <span className="toggle-slider"/>
-              </span>
-            </label>
+            <Switch
+              className="memory-source-toggle memory-chat-learning-toggle"
+              checked={chatExtractionEnabled}
+              disabled={!enabled}
+              pending={chatTogglePending}
+              onCheckedChange={(next) => void onToggleChatExtraction(next)}
+              aria-label={t('settings.memoryChatToggleAria')}
+              title={t('settings.memoryChatToggleAria')}
+              stateText={chatExtractionEnabled ? t('settings.memoryOn') : t('settings.memoryOff')}
+            />
           </div>
         </div>) : null}
 
@@ -1025,17 +1034,17 @@ export function MemorySection({ chatAgentId = null, chatModel = null, }: MemoryS
         <div className="memory-management-panel">
           <div className="memory-subsection-head">
             <div>
-              <h4>Saved memory</h4>
-              <p className="hint">
-                Saved facts, preferences, and project context available to future chats.
-              </p>
+              <h4>{t('settings.memorySavedTitle')}</h4>
+              <p className="hint">{t('settings.memorySavedHint')}</p>
             </div>
             <div className="memory-management-counts">
               <span className="memory-source-badge">
-                {entries.length} saved
+                {t('settings.memorySavedCount', { count: entries.length })}
               </span>
               {visibleExtractions.length > 0 ? (<span className="memory-source-badge">
-                  {visibleExtractions.length} extraction{visibleExtractions.length === 1 ? '' : 's'}
+                  {t(visibleExtractions.length === 1
+                    ? 'settings.memoryExtractionCountOne'
+                    : 'settings.memoryExtractionCountMany', { count: visibleExtractions.length })}
                 </span>) : null}
             </div>
           </div>
@@ -1076,7 +1085,7 @@ export function MemorySection({ chatAgentId = null, chatModel = null, }: MemoryS
 
           {treeFolders.length > 0 ? (<details className="library-group memory-collapsible-card" open>
               <summary className="memory-details-summary">
-                <span className="memory-details-title">Memory tree</span>
+                <span className="memory-details-title">{t('settings.memoryTree')}</span>
                 <span className="filter-pill-count">{memoryTree.length}</span>
               </summary>
               <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
@@ -1089,7 +1098,9 @@ export function MemorySection({ chatAgentId = null, chatModel = null, }: MemoryS
                           <span className="library-card-badge">{folder.path}</span>
                         </div>
                         <div className="library-card-desc">
-                          {children.length} {children.length === 1 ? 'node' : 'nodes'}
+                          {t(children.length === 1
+                            ? 'settings.memoryTreeNodeCountOne'
+                            : 'settings.memoryTreeNodeCountMany', { count: children.length })}
                         </div>
                         {children.length > 0 ? (<ul style={{
                             display: 'grid',
@@ -1136,9 +1147,9 @@ export function MemorySection({ chatAgentId = null, chatModel = null, }: MemoryS
                   {t('settings.memoryEmpty')}
                 </p>
                 <p className="library-empty-hint">
-                  Tell the assistant a fact in chat — e.g.{' '}
-                  <code>I prefer dark mode</code> — and it will be saved
-                  here automatically.
+                  {t('settings.memoryEmptyHintBefore')}{' '}
+                  <code>{t('settings.memoryEmptyExample')}</code>{' '}
+                  {t('settings.memoryEmptyHintAfter')}
                 </p>
               </div>) : (<>
 	                {filtered.map(renderMemoryEntry)}
@@ -1151,10 +1162,10 @@ export function MemorySection({ chatAgentId = null, chatModel = null, }: MemoryS
       <section className="settings-section settings-section-card memory-advanced-section">
         <details className="memory-advanced">
           <summary className="memory-details-summary">
-            <span className="memory-details-title">Advanced</span>
+            <span className="memory-details-title">{t('settings.memoryAdvanced')}</span>
           </summary>
           <p className="memory-advanced-hint">
-            Inspect or edit the underlying memory index.
+            {t('settings.memoryAdvancedHint')}
           </p>
           <div className="memory-advanced-stack">
             <details className="library-group memory-advanced-card">

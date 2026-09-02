@@ -1164,6 +1164,8 @@ describe('MemorySection', () => {
 
     const banner = await screen.findByRole('status');
     expect(banner.textContent).toContain('Memory is currently OFF.');
+    fireEvent.click(screen.getByRole('tab', { name: 'Learn from chats' }));
+    expect(screen.getByRole('switch', { name: 'Learn from chat conversations' }).hasAttribute('disabled')).toBe(true);
   });
 
   it('toggles memory injection off and persists the PATCH payload', async () => {
@@ -1199,13 +1201,17 @@ describe('MemorySection', () => {
 
     renderMemorySection();
 
-    const toggle = await screen.findByRole('checkbox', { name: 'Enable memory injection' }) as HTMLInputElement;
+    const toggle = await screen.findByRole('switch', { name: 'Enable memory injection' });
+
+    expect(toggle.tagName).toBe('BUTTON');
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
 
     fireEvent.click(toggle);
 
     await waitFor(() => {
       expect(screen.getByRole('status').textContent).toContain('Memory is currently OFF.');
     });
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
     expect(patchBodies).toEqual([{ enabled: false }]);
   });
 
@@ -1248,15 +1254,92 @@ describe('MemorySection', () => {
     renderMemorySection();
 
     fireEvent.click(await screen.findByRole('tab', { name: 'Learn from chats' }));
-    const toggle = screen.getByRole('checkbox', {
+    const toggle = screen.getByRole('switch', {
       name: 'Learn from chat conversations',
-    }) as HTMLInputElement;
+    });
 
-    expect(toggle.checked).toBe(true);
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
     fireEvent.click(toggle);
 
-    await waitFor(() => expect(toggle.checked).toBe(false));
+    await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('false'));
     expect(screen.getByText('Off')).toBeTruthy();
     expect(patchBodies).toEqual([{ chatExtractionEnabled: false }]);
+  });
+
+  it('blocks repeated memory mutations while the PATCH is pending', async () => {
+    globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
+    let resolvePatch!: (response: Response) => void;
+    const patchResponse = new Promise<Response>((resolve) => {
+      resolvePatch = resolve;
+    });
+    const patchBodies: unknown[] = [];
+
+    globalThis.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      if (url === '/api/memory' && (!init || init.method === undefined)) {
+        return Promise.resolve(new Response(JSON.stringify({
+          enabled: true,
+          chatExtractionEnabled: true,
+          rootDir: '/tmp/memory',
+          index: '# Memory\n',
+          entries: [],
+          extraction: null,
+        }), { status: 200, headers: { 'content-type': 'application/json' } }));
+      }
+      if (url === '/api/memory/extractions') {
+        return Promise.resolve(new Response(JSON.stringify({ extractions: [] }), { status: 200 }));
+      }
+      if (url === '/api/memory/config' && init?.method === 'PATCH') {
+        patchBodies.push(JSON.parse(String(init.body)));
+        return patchResponse;
+      }
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 404 }));
+    }) as typeof fetch;
+
+    renderMemorySection();
+
+    const toggle = await screen.findByRole('switch', { name: 'Enable memory injection' });
+    fireEvent.click(toggle);
+
+    expect(toggle.getAttribute('aria-busy')).toBe('true');
+    expect(toggle.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(toggle);
+    expect(patchBodies).toEqual([{ enabled: false }]);
+
+    resolvePatch(new Response(JSON.stringify({ enabled: false }), { status: 200 }));
+    await waitFor(() => expect(toggle.getAttribute('aria-busy')).toBeNull());
+  });
+
+  it('restores chat learning when its PATCH fails', async () => {
+    globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      if (url === '/api/memory' && (!init || init.method === undefined)) {
+        return new Response(JSON.stringify({
+          enabled: true,
+          chatExtractionEnabled: true,
+          rootDir: '/tmp/memory',
+          index: '',
+          entries: [],
+          extraction: null,
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      if (url === '/api/memory/extractions') {
+        return new Response(JSON.stringify({ extractions: [] }), { status: 200 });
+      }
+      if (url === '/api/memory/config' && init?.method === 'PATCH') {
+        return new Response(JSON.stringify({}), { status: 500 });
+      }
+      return new Response(JSON.stringify({}), { status: 404 });
+    }) as typeof fetch;
+
+    renderMemorySection();
+    fireEvent.click(await screen.findByRole('tab', { name: 'Learn from chats' }));
+    const toggle = screen.getByRole('switch', { name: 'Learn from chat conversations' });
+
+    fireEvent.click(toggle);
+
+    await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('true'));
+    expect(within(toggle).getByText('On')).toBeTruthy();
   });
 });
