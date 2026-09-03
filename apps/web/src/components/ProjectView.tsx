@@ -333,8 +333,6 @@ const CHAT_PANEL_WIDTH_STORAGE_KEY = 'readable-studio.project.chatPanelWidth';
 const DEFAULT_CHAT_PANEL_WIDTH = 460;
 const MIN_CHAT_PANEL_WIDTH = 345;
 const MAX_CHAT_PANEL_WIDTH = 720;
-const COMMENT_INSPECTOR_PANEL_WIDTH = 320;
-const MANUAL_EDIT_INSPECTOR_PANEL_WIDTH = 404;
 const MIN_WORKSPACE_PANEL_WIDTH = 400;
 const SPLIT_RESIZE_HANDLE_WIDTH = 8;
 const CHAT_PANEL_KEYBOARD_STEP = 16;
@@ -4865,11 +4863,13 @@ export function ProjectView({
     workspacePanelMinWidth === 0
       ? 'minmax(0, 1fr)'
       : `minmax(${workspacePanelMinWidth}px, 1fr)`;
-  const splitLeftPanelWidth = manualEditInspectorActive
-    ? MANUAL_EDIT_INSPECTOR_PANEL_WIDTH
-    : commentInspectorActive
-      ? COMMENT_INSPECTOR_PANEL_WIDTH
-    : chatPanelWidthRef.current;
+  // The left column is one slot with one width: entering comment or manual-edit
+  // mode swaps the slot's CONTENT, never its track. Sizing the inspectors with
+  // their own constants used to shove the divider (460 -> 404 for manual edit,
+  // 460 -> 320 for comments) and threw away a user-resized width on the way
+  // back out. `chatPanelWidth` is the persisted, clamped source of truth for the
+  // track; the inspectors inherit it.
+  const splitLeftPanelWidth = chatPanelWidth;
   const chatPanelAriaMinWidth = Math.min(MIN_CHAT_PANEL_WIDTH, chatPanelMaxWidth);
 
   const renderPreferredChatPanelWidth = useCallback((

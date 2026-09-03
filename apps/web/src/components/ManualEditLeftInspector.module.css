@@ -1,9 +1,16 @@
 .root {
-  --manual-edit-field-bg: color-mix(in srgb, var(--bg-panel) 82%, var(--text) 18%);
-  --manual-edit-field-bg-hover: color-mix(in srgb, var(--bg-panel) 74%, var(--text) 26%);
-  --manual-edit-field-border: color-mix(in srgb, var(--border) 68%, var(--text) 22%);
+  /* Control material = the Hub's control grammar (hub-dna §3): borderless,
+     soft translucent surface + pearl top highlight at rest, lifting to a
+     brighter surface on hover. The old values were an opaque grey fill plus a
+     1px outline on every widget, which is exactly the "dark outlined control
+     capsule" the Hub refuses (hub-dna §10). */
+  --manual-edit-field-bg: var(--hub-control-surface);
+  --manual-edit-field-bg-hover: var(--hub-control-surface-hover);
+  --manual-edit-field-border: transparent;
   --manual-edit-field-text: var(--text);
   --manual-edit-field-muted: var(--text-muted);
+  --manual-edit-field-shadow: inset 0 1px 0 var(--hub-control-highlight);
+  --manual-edit-field-shadow-hover: var(--hub-control-shadow-hover);
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
@@ -43,24 +50,26 @@
   gap: 2px;
 }
 
+/* Selection kind reads as Hub group-label copy (11.5px/600), not a shouting
+   9px all-caps tag. */
 .selectionType {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  color: var(--accent-strong, var(--accent));
-  font-size: 9px;
-  font-weight: 750;
-  letter-spacing: 0.07em;
+  color: var(--hub-accent);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   line-height: 1.2;
-  text-transform: uppercase;
 }
 
 .title {
   display: block;
   overflow: hidden;
-  color: var(--text);
-  font-size: 12px;
+  color: var(--text-strong, var(--text));
+  font-size: 13px;
   font-weight: 650;
+  letter-spacing: -0.012em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -81,22 +90,26 @@
   margin-left: 2px;
   padding: 0;
   border: 0;
-  border-radius: var(--radius-sm, 6px);
+  border-radius: var(--radius-control);
   color: var(--text-muted);
   background: transparent;
   cursor: pointer;
-  transition: background 140ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition:
+    background-color var(--dur-quick) var(--ease-out),
+    box-shadow var(--dur-quick) var(--ease-out),
+    color var(--dur-quick) var(--ease-out);
 }
 
 .exit:hover {
   color: var(--text);
-  background: var(--bg-subtle);
+  background: var(--hub-control-surface-hover);
+  box-shadow: var(--hub-control-shadow-hover);
 }
 
 .scroll {
   flex: 1 1 auto;
   min-block-size: 0;
-  padding: 14px 14px 20px 16px;
+  padding: 16px 12px 24px;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
@@ -129,57 +142,95 @@
 .error {
   margin-top: 12px;
   padding: 8px 10px;
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-control);
   color: var(--danger, var(--text));
   background: color-mix(in srgb, var(--danger, var(--text)) 12%, transparent);
   box-shadow: inset 2px 0 0 var(--danger, var(--text));
-  font-size: 11px;
+  font-size: 11.5px;
+  line-height: 1.45;
 }
 
 /* Opaque fallback: the host drops its blur, so the inspector's internal light
    rays become hairlines and the pane reads on a solid panel (hub-dna 9). */
 @media (prefers-reduced-transparency: reduce) {
+  .root {
+    --manual-edit-field-bg: var(--bg-subtle);
+    --manual-edit-field-bg-hover: var(--bg-panel);
+    --manual-edit-field-shadow: inset 0 0 0 1px var(--border);
+    --manual-edit-field-shadow-hover: inset 0 0 0 1px var(--border-strong, var(--border));
+  }
   .header { box-shadow: inset 0 -1px 0 var(--border); }
   .footer { box-shadow: inset 0 1px 0 var(--border); }
+  .root :global(.cc-disclosure) { box-shadow: inset 0 -1px 0 var(--border); }
+  .root :global(.cc-section + .cc-section),
+  .root :global(.cc-subsection + .cc-subsection) { box-shadow: inset 0 1px 0 var(--border); }
+  .root :global(.cc-disclosure-head:hover) { box-shadow: inset 0 0 0 1px var(--border); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .root :global(.cc-row),
+  .root :global(.cc-quad-cell),
+  .root :global(.cc-action),
+  .root :global(.cc-disclosure-head),
+  .exit { transition-duration: 1ms; }
 }
 
 .root :global(.cc-section) {
   gap: 12px;
 }
 
+/* Disclosures separate with a pearl light ray, never a grey rule (hub-dna §4).
+   The last one drops its ray so the list closes instead of trailing an
+   unattached rule into the empty scroll area. */
 .root :global(.cc-disclosure) {
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+  border-bottom: 0;
+  box-shadow: inset 0 -1px 0 var(--hub-pearl-highlight);
 }
 
+.root :global(.cc-disclosure:last-child) {
+  box-shadow: none;
+}
+
+/* Destination rows: borderless at rest, lifting into glass on hover — the
+   Hub's row affordance (hub-dna §3). */
 .root :global(.cc-disclosure-head) {
   display: grid;
   grid-template-columns: 18px auto minmax(0, 1fr) 18px;
   width: 100%;
-  min-height: 43px;
+  min-height: 40px;
   align-items: center;
-  gap: 7px;
-  padding: 0 2px;
+  gap: 8px;
+  padding: 0 8px;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-control);
   color: var(--text-muted);
   background: transparent;
   text-align: left;
+  transition:
+    background-color var(--dur-quick) var(--ease-out),
+    box-shadow var(--dur-quick) var(--ease-out),
+    color var(--dur-quick) var(--ease-out);
 }
 
 .root :global(.cc-disclosure-head:hover) {
   color: var(--text);
-  background: color-mix(in srgb, var(--bg-subtle) 42%, transparent);
+  background: var(--hub-control-surface);
+  box-shadow: inset 0 1px 0 var(--hub-pearl-highlight);
 }
 
 .root :global(.cc-disclosure-head:focus-visible) {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--hub-accent);
   outline-offset: -2px;
+}
+
+.root :global(.cc-disclosure-head[aria-expanded='true']) {
+  color: var(--text);
 }
 
 .root :global(.cc-disclosure-head > strong) {
   color: currentColor;
-  font-size: 11px;
-  font-weight: 650;
+  font-size: 12.5px;
+  font-weight: 550;
   white-space: nowrap;
 }
 
@@ -187,8 +238,9 @@
   overflow: hidden;
   min-width: 0;
   color: var(--text-muted);
-  font-size: 9px;
-  font-weight: 500;
+  font-size: 11.5px;
+  font-weight: 450;
+  font-variant-numeric: tabular-nums;
   text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -208,7 +260,7 @@
 }
 
 .root :global(.cc-disclosure-body) {
-  padding: 2px 2px 14px;
+  padding: 4px 8px 16px;
 }
 
 .root :global(.cc-disclosure .accordion-collapsible) {
@@ -224,27 +276,29 @@
 }
 
 .root :global(.cc-section + .cc-section) {
-  margin-top: 22px;
+  margin-top: 20px;
   padding-top: 20px;
-  border-top: 1px solid var(--border);
+  border-top: 0;
+  box-shadow: inset 0 1px 0 var(--hub-pearl-highlight);
 }
 
 .root :global(.cc-section-head) {
-  padding: 0 2px;
-  color: var(--text);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  padding: 0 8px;
+  color: var(--text-strong, var(--text));
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.012em;
   text-transform: none;
 }
 
 .root :global(.cc-section-description) {
-  margin: -8px 2px 0;
+  margin: -8px 8px 0;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 400;
   line-height: 1.45;
   letter-spacing: normal;
+  word-break: keep-all;
 }
 
 .root :global(.cc-section-body),
@@ -261,27 +315,47 @@
 }
 
 .root :global(.cc-subsection + .cc-subsection) {
-  margin-top: 7px;
-  padding-top: 13px;
-  border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 0;
+  box-shadow: inset 0 1px 0 var(--hub-pearl-highlight);
 }
 
 .root :global(.cc-subsection-title) {
-  margin: 0 2px;
+  margin: 0 8px;
   color: var(--text-muted);
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
 }
 
 .root :global(.cc-row) {
-  min-height: 44px;
+  min-height: 40px;
   height: auto;
-  padding: 7px 8px 7px 10px;
-  border-radius: var(--radius-sm, 6px);
-  font-size: 11px;
+  padding: 6px 8px 6px 10px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--manual-edit-field-bg);
+  box-shadow: var(--manual-edit-field-shadow);
+  font-size: 12.5px;
   gap: 10px;
+  transition:
+    background-color var(--dur-quick) var(--ease-out),
+    box-shadow var(--dur-quick) var(--ease-out);
+}
+
+.root :global(.cc-row:hover) {
+  background: var(--manual-edit-field-bg-hover);
+  box-shadow: var(--manual-edit-field-shadow-hover);
+}
+
+.root :global(.cc-row:focus-within) {
+  border-color: transparent;
+  background: var(--manual-edit-field-bg-hover);
+  box-shadow:
+    var(--manual-edit-field-shadow-hover),
+    inset 0 0 0 1px var(--hub-accent-line);
 }
 
 .root :global(.cc-field-copy) {
@@ -296,18 +370,20 @@
 .root :global(.cc-quad-label) {
   padding: 0;
   color: var(--manual-edit-field-text);
-  font-size: 11px;
-  font-weight: 550;
+  font-size: 12.5px;
+  font-weight: 500;
   line-height: 1.25;
   white-space: normal;
+  word-break: keep-all;
 }
 
 .root :global(.cc-description) {
   display: block;
   color: var(--manual-edit-field-muted);
-  font-size: 10px;
+  font-size: 11.5px;
   font-weight: 400;
   line-height: 1.35;
+  word-break: keep-all;
 }
 
 .root :global(.cc-value) {
@@ -317,14 +393,17 @@
 .root :global(.cc-value > input),
 .root :global(.cc-value > select) {
   min-height: 24px;
-  font-size: 11px;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
 }
 
+/* The quad is a grouping, not a card: no outline, no second fill tier — the
+   cells inside carry the control material. */
 .root :global(.cc-quad) {
-  padding: 10px;
-  border: 1px solid var(--manual-edit-field-border);
-  border-radius: var(--radius-sm, 6px);
-  background: color-mix(in srgb, var(--manual-edit-field-bg) 60%, transparent);
+  padding: 2px 0 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   gap: 8px;
 }
 
@@ -342,16 +421,29 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  min-height: 44px;
+  min-height: 42px;
   height: auto;
-  padding: 5px 7px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--manual-edit-field-bg);
+  box-shadow: var(--manual-edit-field-shadow);
   gap: 2px;
+  transition:
+    background-color var(--dur-quick) var(--ease-out),
+    box-shadow var(--dur-quick) var(--ease-out);
+}
+
+.root :global(.cc-quad-cell:hover),
+.root :global(.cc-quad-cell:focus-within) {
+  background: var(--manual-edit-field-bg-hover);
+  box-shadow: var(--manual-edit-field-shadow-hover);
 }
 
 .root :global(.cc-quad-side) {
   overflow: hidden;
   color: var(--manual-edit-field-muted);
-  font-size: 9px;
+  font-size: 10.5px;
   line-height: 1.2;
   white-space: normal;
 }
@@ -365,14 +457,47 @@
   text-align: right;
 }
 
+/* Colour swatch: a 20px rounded chip with a pearl ring, not a 14px hard-edged
+   square that reads as a tick box next to its label. */
+.root :global(.cc-swatch) {
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: var(--radius-control);
+  box-shadow: inset 0 0 0 1px var(--hub-pearl-border);
+}
+
 .root :global(.cc-action) {
   min-height: 34px;
   margin-top: 8px;
   padding: 0 10px;
-  border-radius: var(--radius-sm, 6px);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--manual-edit-field-bg);
+  box-shadow: var(--manual-edit-field-shadow);
+  font-size: 12.5px;
+  transition:
+    background-color var(--dur-quick) var(--ease-out),
+    box-shadow var(--dur-quick) var(--ease-out);
 }
 
+.root :global(.cc-action:hover:not(:disabled)) {
+  background: var(--manual-edit-field-bg-hover);
+  box-shadow: var(--manual-edit-field-shadow-hover);
+}
+
+.root :global(.cc-action:focus-visible) {
+  outline: 2px solid var(--hub-accent);
+  outline-offset: -2px;
+}
+
+/* Danger keeps its semantics as a tonal wash, not a coloured outline. */
 .root :global(.cc-action-danger) {
-  border-color: color-mix(in srgb, var(--danger, var(--text)) 28%, var(--manual-edit-field-border));
-  background: color-mix(in srgb, var(--danger, var(--text)) 7%, var(--bg-panel));
+  border: 0;
+  background: color-mix(in srgb, var(--danger, var(--text)) 10%, transparent);
+  box-shadow: inset 0 1px 0 var(--hub-control-highlight);
+}
+
+.root :global(.cc-action-danger:hover:not(:disabled)) {
+  background: color-mix(in srgb, var(--danger, var(--text)) 16%, transparent);
 }

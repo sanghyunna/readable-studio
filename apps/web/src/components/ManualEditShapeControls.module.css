@@ -275,11 +275,13 @@
   gap: 4px;
   margin: 0 0 8px;
   padding: 8px 10px;
-  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border));
-  border-radius: 8px;
+  border: 0;
+  border-radius: var(--radius-control);
   color: var(--text);
-  background: var(--accent-tint);
-  font-size: 11px;
+  background: var(--hub-accent-fill);
+  box-shadow: inset 0 1px 0 var(--hub-pearl-highlight);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
 }
 
 .resizeFeedbackBar {
@@ -298,36 +300,40 @@
   color: var(--text-muted);
 }
 
+/* Separated by a pearl light ray, matching the Hub's in-glass divider. */
 .quickPanel {
   display: flex;
   flex-direction: column;
   gap: 8px;
   margin: 0 -2px;
-  padding: 0 2px 15px;
-  border-bottom: 1px solid var(--border);
+  padding: 0 2px 16px;
+  border-bottom: 0;
+  box-shadow: inset 0 -1px 0 var(--hub-pearl-highlight);
 }
 
 .quickPanel .quickHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 2px;
+  padding: 0 8px;
 }
 
 .quickHeader strong {
-  color: var(--text);
-  font-size: 12px;
-  font-weight: 700;
+  color: var(--text-strong, var(--text));
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.012em;
 }
 
 .quickHeader > span {
-  padding: 2px 6px;
-  border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border));
-  border-radius: 999px;
-  color: var(--accent-strong, var(--accent));
-  background: var(--accent-tint);
-  font-size: 9px;
-  font-weight: 700;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  color: var(--hub-accent);
+  background: var(--hub-accent-fill);
+  box-shadow: inset 0 1px 0 var(--hub-pearl-highlight);
+  font-size: 11.5px;
+  font-weight: 600;
 }
 
 .quickPanel .quickBody {
@@ -349,19 +355,26 @@
   align-items: center;
   gap: 6px;
   padding: 0 8px;
-  border: 1px solid var(--manual-edit-field-border, var(--border));
-  border-radius: 8px;
+  border: 0;
+  border-radius: var(--radius-control);
   color: var(--text-muted);
-  background: var(--manual-edit-field-bg, var(--bg-panel));
+  background: var(--manual-edit-field-bg, var(--hub-control-surface));
+  box-shadow: var(--manual-edit-field-shadow, inset 0 1px 0 var(--hub-control-highlight));
   transition:
-    background 140ms cubic-bezier(0.23, 1, 0.32, 1),
-    border-color 140ms cubic-bezier(0.23, 1, 0.32, 1);
+    background-color var(--dur-quick) var(--ease-out),
+    box-shadow var(--dur-quick) var(--ease-out);
 }
 
-.quickField:hover,
+.quickField:hover {
+  background: var(--manual-edit-field-bg-hover, var(--hub-control-surface-hover));
+  box-shadow: var(--manual-edit-field-shadow-hover, var(--hub-control-shadow-hover));
+}
+
 .quickField:focus-within {
-  border-color: color-mix(in srgb, var(--accent) 36%, var(--border));
-  background: var(--manual-edit-field-bg-hover, var(--bg-subtle));
+  background: var(--manual-edit-field-bg-hover, var(--hub-control-surface-hover));
+  box-shadow:
+    var(--manual-edit-field-shadow-hover, var(--hub-control-shadow-hover)),
+    inset 0 0 0 1px var(--hub-accent-line);
 }
 
 .quickField > i {
@@ -371,8 +384,8 @@
 .quickLabel {
   flex: 0 0 auto;
   color: var(--text-muted);
-  font-size: 10px;
-  font-weight: 600;
+  font-size: 11.5px;
+  font-weight: 500;
   white-space: nowrap;
 }
 
@@ -381,8 +394,9 @@
   min-width: 0;
   margin-left: auto;
   color: var(--text);
-  font-size: 10px;
-  font-weight: 650;
+  font-size: 12.5px;
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -390,7 +404,8 @@
 .quickField .swatch {
   width: 26px;
   height: 26px;
-  border-color: color-mix(in srgb, var(--border) 80%, transparent);
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--hub-pearl-border);
 }
 
 .quickInput {
@@ -402,14 +417,15 @@
   outline: 0;
   color: var(--text);
   background: transparent;
-  font-size: 11px;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
   text-align: right;
 }
 
 .quickUnit {
   flex: 0 0 auto;
   color: var(--text-soft);
-  font-size: 9px;
+  font-size: 10.5px;
   font-style: normal;
 }
 
@@ -427,21 +443,31 @@
 
 .noFillToggle {
   align-self: flex-start;
-  min-height: 24px;
+  min-height: 26px;
   padding: 2px 8px;
   color: var(--text-muted);
-  font-size: 10px;
-  font-weight: 600;
+  font-size: 11.5px;
+  font-weight: 550;
 }
 
 .noFillToggle[aria-pressed="true"] {
   color: var(--text);
 }
 
+/* Light ray, not a grey rule (hub-dna §4/§10). */
 .detailDivider {
   height: 1px;
-  margin: 5px 0;
-  background: color-mix(in srgb, var(--border) 76%, transparent);
+  margin: 6px 0;
+  background: var(--hub-pearl-highlight);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .detailDivider { background: var(--border); }
+  .quickPanel { box-shadow: inset 0 -1px 0 var(--border); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quickField { transition-duration: 1ms; }
 }
 
 @media (max-width: 370px) {
