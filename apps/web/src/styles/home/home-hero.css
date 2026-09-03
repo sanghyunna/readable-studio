@@ -579,7 +579,25 @@
 .home-hero__lexical .composer-input-placeholder {
   top: 8px;
   left: 4px;
-  color: var(--text-soft);
+  /* Placeholder ink is its own rung, one deliberate step below typed --text.
+     --text-soft read as already-typed copy (users confused it for their own
+     text); the scheme pair keeps the placeholder >= 3:1 on the composer
+     surface while staying clearly fainter in both themes. Attribute + media
+     rules, not light-dark(): Lightning CSS lowers light-dark() to a two-part
+     var() trick that only resolves when the matching color-scheme declaration
+     exists, and the light side has none - the declaration died as invalid and
+     the placeholder silently inherited typed-text colour. */
+  color: var(--text-placeholder-light);
+}
+
+[data-theme='dark'] .home-hero__lexical .composer-input-placeholder {
+  color: var(--text-placeholder-dark);
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme]) .home-hero__lexical .composer-input-placeholder {
+    color: var(--text-placeholder-dark);
+  }
 }
 .home-hero__input-card .plugin-inputs-form {
   display: grid;
@@ -2328,8 +2346,7 @@
 }
 
 .home-view--hub .home-hero__input-card {
-  --hub-composer-content-inset-top: 16px;
-  display: grid;
+  --hub-composer-content-inset-top: 16px;  display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   gap: 0;
   max-width: 100%;
@@ -2371,6 +2388,16 @@
     inset 0 1px 0 var(--hub-pearl-highlight),
     var(--hub-glass-shadow-lg),
     0 0 0 3px color-mix(in srgb, var(--danger-opaque) 42%, transparent);
+}
+
+/* Staged attachments are a direct child of the padding:0 composer, so without
+   an inset of their own the chips render flush against the card's rounded
+   corner - the "no breathing room" report. 12px keeps the row on the 4px grid
+   and level with the prompt body's own 14px edge. The row only exists when a
+   file is staged, so the empty composer's height and typed baseline are
+   untouched. */
+.home-view--hub .home-hero__active {
+  padding: 12px 12px 0;
 }
 
 .home-view--hub .home-hero__error {
