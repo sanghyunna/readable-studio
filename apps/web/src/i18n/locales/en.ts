@@ -1391,6 +1391,8 @@ export const en: Dict = {
   'chat.copyPrompt': 'Copy prompt',
   'chat.copyErrorDiagnostic': 'Copy error diagnostics',
   'chat.copyDone': 'Copied!',
+  'chat.errorTextExpand': 'Show full error',
+  'chat.errorTextCollapse': 'Show less',
   'chat.inspect.noEditableTargets': 'No editable text or style targets found.',
   'chat.inspect.noCommentTargets': 'No commentable text or visual targets found.',
   'chat.inspect.editHint': 'Select a text or style target in the preview to edit it.',

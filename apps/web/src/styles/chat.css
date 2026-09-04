@@ -763,6 +763,13 @@
   gap: 10px;
 }
 .chat-error-text { min-width: 0; }
+/* Expanded long error: the message block becomes multi-line, so the recovery
+   actions top-align against its first line instead of floating at the middle
+   of a tall stack trace. Keyed on the disclosure button's own aria state so a
+   short (untruncated) error keeps the centered single-line layout. */
+.msg.error:has(.chat-error-text button[aria-expanded='true']) {
+  align-items: flex-start;
+}
 .chat-error-actions {
   flex: 0 0 auto;
   display: flex;

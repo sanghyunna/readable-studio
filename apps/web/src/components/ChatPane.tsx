@@ -40,6 +40,7 @@ import type { AgentRollbackRequestEvent, AppConfig, ChatAttachment, ChatCommentA
 import { exactDateTime, messageTime, shortTime } from '../utils/chatTime';
 import { commentTargetDisplayName, commentsToAttachments, simplePositionLabel } from '../comments';
 import { AssistantMessage, type QuestionFormOpenRequest } from './AssistantMessage';
+import { CollapsibleErrorText } from './CollapsibleErrorText';
 import { amrRechargeUrlForProfile, resolveRunFailureUi } from '../runtime/amr-guidance';
 import { RESUME_CONTINUE_PROMPT } from '../runtime/resume';
 import {
@@ -1771,7 +1772,7 @@ export function ChatPane({
               />
               {displayError ? (
                 <div className="msg error">
-                  <span className="chat-error-text">{displayError}</span>
+                  <CollapsibleErrorText className="chat-error-text" text={displayError} />
                   {errorDiagnosticText || showErrorActions || (retryAssistant && onRetry && runFailureUi) ? (
                     <div className="chat-error-actions">
                       {showByokRecoveryCta ? (
