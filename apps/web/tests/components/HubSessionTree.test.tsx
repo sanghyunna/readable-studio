@@ -113,6 +113,23 @@ describe('HubSessionTree', () => {
     expect(screen.getByTestId('hub-project-flyout').querySelector('.hub-menu__check')).toBeNull();
   });
 
+  it('exposes full project and session names through the portal tooltip contract', () => {
+    // Given: the tree contains names that may exceed the rail width.
+    render(<HubSessionTree projects={[MANY]} currentSessionId={null} onOpenSession={vi.fn()} />);
+
+    // When: the project and nested session rows render.
+    const projectRow = screen.getByTestId('hub-project-p1');
+    const sessionRow = screen.getByTestId('hub-session-s0');
+
+    // Then: TooltipLayer can reveal the full names without native title popups.
+    expect(projectRow.classList.contains('readable-tooltip')).toBe(true);
+    expect(projectRow.getAttribute('data-tooltip')).toBe(MANY.name);
+    expect(projectRow.hasAttribute('title')).toBe(false);
+    expect(sessionRow.classList.contains('readable-tooltip')).toBe(true);
+    expect(sessionRow.getAttribute('data-tooltip')).toBe(MANY.sessions[0]?.title);
+    expect(sessionRow.hasAttribute('title')).toBe(false);
+  });
+
   it('opens a session on click without an intermediate view', () => {
     const onOpenSession = vi.fn();
     render(<HubSessionTree projects={[MANY]} currentSessionId={null} onOpenSession={onOpenSession} />);

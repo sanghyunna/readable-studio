@@ -677,7 +677,7 @@ export function HubSessionTree({
                   ? { 'aria-haspopup': 'menu' as const, 'aria-expanded': flyout?.projectId === entry.project.id }
                   : { 'aria-expanded': entry.open })}
                 {...(railCollapsed ? { 'aria-label': entry.project.name } : {})}
-                title={entry.project.name}
+                data-tooltip={entry.project.name}
                 data-initial={initialGlyph(entry.project.name)}
                 data-current={hasCurrent ? 'true' : 'false'}
                 onMouseEnter={
@@ -702,7 +702,7 @@ export function HubSessionTree({
                 data-row-key={projectKey}
                 data-project-id={entry.project.id}
                 data-state={rollup}
-                className={`hub-row hub-row--project${
+                className={`hub-row hub-row--project readable-tooltip${
                   menu?.rowKey === projectKey ? ' is-menu-open' : ''
                 }`}
                 onFocus={() => syncCursorToFocus(projectKey)}
@@ -834,7 +834,8 @@ export function HubSessionTree({
                       data-row-key={sessionKey}
                       data-session-id={session.id}
                       data-state={session.state}
-                      className={`hub-row hub-row--session${
+                      data-tooltip={session.title}
+                      className={`hub-row hub-row--session readable-tooltip${
                         session.id === currentSessionId ? ' is-current' : ''
                       }${menu?.rowKey === sessionKey ? ' is-menu-open' : ''}`}
                       onFocus={() => syncCursorToFocus(sessionKey)}

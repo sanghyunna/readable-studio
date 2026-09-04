@@ -33,7 +33,7 @@ export function HubOpenWork({ items, currentSessionId, onOpen, onClose }: Props)
       {items.map((item) => (
         <div
           key={item.sessionId}
-          className={`hub-row hub-row--open${
+          className={`hub-row hub-row--open readable-tooltip${
             item.sessionId === currentSessionId ? ' is-current' : ''
           }`}
           role="button"
@@ -43,7 +43,7 @@ export function HubOpenWork({ items, currentSessionId, onOpen, onClose }: Props)
           // The collapsed rail hides the title, so the row's name has to come
           // from an attribute rather than from its (display:none) contents.
           aria-label={`${item.projectName} · ${item.title}`}
-          title={`${item.projectName} · ${item.title}`}
+          data-tooltip={`${item.projectName} · ${item.title}`}
           onClick={() => onOpen(item)}
           onKeyDown={(event) => {
             if (event.key !== 'Enter' && event.key !== ' ') return;
