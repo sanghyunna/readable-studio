@@ -260,6 +260,16 @@ afterEach(() => {
 });
 
 describe('loadConfig', () => {
+  it('resolves a fresh config to the light theme', () => {
+    expect(loadConfig().theme).toBe('light');
+  });
+
+  it('preserves an explicitly persisted system theme', () => {
+    store.set('readable-studio:config', JSON.stringify({ theme: 'system' }));
+
+    expect(loadConfig().theme).toBe('system');
+  });
+
   it('migrates legacy OpenAI-compatible API configs to an explicit apiProtocol', () => {
     const legacyConfig: Partial<AppConfig> = {
       mode: 'api',
@@ -477,7 +487,7 @@ describe('loadConfig', () => {
 
     store.set('readable-studio:config', JSON.stringify({ theme: 'neon' }));
 
-    expect(loadConfig().theme).toBe('system');
+    expect(loadConfig().theme).toBe('light');
   });
 
   it('falls back to the default accent color for malformed saved colors', () => {
@@ -510,7 +520,8 @@ describe('loadConfig', () => {
     expect(loadConfig()).toEqual(DEFAULT_CONFIG);
   });
 
-  it('sets an explicit apiProtocol for new default configs', () => {
+  it('sets explicit defaults for new configs', () => {
+    expect(DEFAULT_CONFIG.theme).toBe('light');
     expect(DEFAULT_CONFIG.apiProtocol).toBe('anthropic');
     expect(DEFAULT_CONFIG.configMigrationVersion).toBe(1);
     expect(DEFAULT_CONFIG.accentColor).toBe('#c96442');

@@ -531,7 +531,7 @@ function AppInner() {
   // the old theme. Safe here because the component tree is ssr:false.
   useLayoutEffect(() => {
     applyAppearanceToDocument({
-      theme: config.theme ?? 'system',
+      theme: config.theme,
       accentColorMode: config.accentColorMode,
       accentColor: config.accentColor,
     });

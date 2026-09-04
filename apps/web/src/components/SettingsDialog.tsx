@@ -139,7 +139,7 @@ import {
   requestNotificationPermission,
   showCompletionNotification,
 } from '../utils/notifications';
-import { THEME_OPTIONS } from '../state/themes';
+import { DEFAULT_THEME, THEME_OPTIONS } from '../state/themes';
 
 export type SettingsSection =
   | 'execution'
@@ -832,7 +832,7 @@ export function SettingsDialog({
   );
   const previousInitialRef = useRef(initial);
   const lastSavedAppearanceRef = useRef({
-    theme: initial.theme ?? 'system',
+    theme: initial.theme ?? DEFAULT_THEME,
     accentColorMode: initial.accentColorMode ?? 'theme',
     accentColor: resolveAccentColor(initial.accentColor),
   });
@@ -845,7 +845,7 @@ export function SettingsDialog({
 
   useEffect(() => {
     lastSavedAppearanceRef.current = {
-      theme: initial.theme ?? 'system',
+      theme: initial.theme ?? DEFAULT_THEME,
       accentColorMode: initial.accentColorMode ?? 'theme',
       accentColor: resolveAccentColor(initial.accentColor),
     };
@@ -2029,7 +2029,7 @@ export function SettingsDialog({
           await onPersist(snapshot);
           autosaveLastSavedRef.current = snapshot;
           lastSavedAppearanceRef.current = {
-            theme: snapshot.theme ?? 'system',
+            theme: snapshot.theme ?? DEFAULT_THEME,
             accentColorMode: snapshot.accentColorMode ?? 'theme',
             accentColor: resolveAccentColor(snapshot.accentColor),
           };
@@ -4766,7 +4766,7 @@ function AppearanceSection({
 }) {
   const { t } = useI18n();
   const analytics = useAnalytics();
-  const current = cfg.theme ?? 'system';
+  const current = cfg.theme ?? DEFAULT_THEME;
   const accentColorMode = cfg.accentColorMode ?? 'theme';
   const currentAccent = normalizeAccentColor(cfg.accentColor) ?? DEFAULT_ACCENT_COLOR;
   const accentLabel = t('pet.fieldAccent');

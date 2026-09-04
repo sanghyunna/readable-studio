@@ -12,7 +12,7 @@ import {
   DEFAULT_ACCENT_COLOR,
   normalizeAccentColor,
 } from './appearance';
-import { resolveThemeForStorage } from './themes';
+import { DEFAULT_THEME, resolveThemeForStorage } from './themes';
 import {
   DEFAULT_FAILURE_SOUND_ID,
   DEFAULT_SUCCESS_SOUND_ID,
@@ -63,7 +63,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   skillId: null,
   designSystemId: null,
   onboardingCompleted: false,
-  theme: 'system',
+  theme: DEFAULT_THEME,
   accentColorMode: 'theme',
   accentColor: DEFAULT_ACCENT_COLOR,
   agentModels: {},

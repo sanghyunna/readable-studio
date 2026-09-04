@@ -31,9 +31,20 @@ function containsElementType(node: ReactNode, type: unknown): boolean {
 
 describe('RootLayout theme init script', () => {
   afterEach(() => {
+    vi.unstubAllGlobals();
     localStorage.clear();
     document.documentElement.removeAttribute('data-theme');
     document.documentElement.removeAttribute('data-theme-scheme');
+  });
+
+  it('prehydrates light before paint when no theme is persisted', () => {
+    const script = findThemeInitScript(RootLayout({ children: null }));
+    expect(script).toBeTruthy();
+
+    new Function(script ?? '')();
+
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+    expect(document.documentElement.getAttribute('data-theme-scheme')).toBe('light');
   });
 
   it.each(EXPLICIT_THEME_OPTIONS)(

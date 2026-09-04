@@ -19,7 +19,7 @@ import {
 } from '../analytics/events';
 import type { AppConfig, AppTheme } from '../types';
 import { Icon } from './Icon';
-import { THEME_OPTIONS } from '../state/themes';
+import { DEFAULT_THEME, THEME_OPTIONS } from '../state/themes';
 
 export type EntrySettingsSection =
   | 'execution'
@@ -78,7 +78,7 @@ export function EntrySettingsMenu({
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const langListRef = useRef<HTMLDivElement | null>(null);
-  const activeTheme = config.theme ?? 'system';
+  const activeTheme = config.theme ?? DEFAULT_THEME;
 
   useEffect(() => {
     if (!open) setLangOpen(false);

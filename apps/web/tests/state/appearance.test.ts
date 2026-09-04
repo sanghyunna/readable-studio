@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_ACCENT_COLOR,
   applyAppearanceToDocument,
   normalizeAccentColor,
   resolveAccentColor,
 } from '../../src/state/appearance';
+import { resolveDocumentThemeScheme } from '../../src/state/themes';
 
 const ACCENT_VARS = [
   '--accent',
@@ -37,6 +38,8 @@ describe('resolveAccentColor', () => {
 
 describe('applyAppearanceToDocument', () => {
   afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     document.documentElement.removeAttribute('data-theme');
     document.documentElement.removeAttribute('data-theme-scheme');
     for (const name of ACCENT_VARS) {
@@ -76,14 +79,25 @@ describe('applyAppearanceToDocument', () => {
     document.documentElement.style.removeProperty('--bg-app');
   });
 
-  it('clears explicit theme attributes for system mode', () => {
+  it('preserves system mode and resolves it through the OS color scheme', () => {
     document.documentElement.setAttribute('data-theme', 'dark');
     document.documentElement.setAttribute('data-theme-scheme', 'dark');
+    vi.spyOn(window, 'matchMedia').mockImplementation((media) => ({
+      matches: true,
+      media,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
 
     applyAppearanceToDocument({ theme: 'system', accentColorMode: 'theme' });
 
     expect(document.documentElement.hasAttribute('data-theme')).toBe(false);
     expect(document.documentElement.hasAttribute('data-theme-scheme')).toBe(false);
+    expect(resolveDocumentThemeScheme()).toBe('dark');
   });
 
   it('clears inline accent variables in theme accent mode', () => {

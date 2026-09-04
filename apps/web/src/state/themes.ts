@@ -16,6 +16,8 @@ export type ThemeLabelKey =
   | 'settings.themeSolarizedDark'
   | 'settings.themeOneDark';
 
+export const DEFAULT_THEME: AppTheme = 'light';
+
 export interface ThemeOption {
   id: AppTheme;
   labelKey: ThemeLabelKey;
@@ -52,7 +54,7 @@ export function isAppTheme(value: unknown): value is AppTheme {
 }
 
 export function resolveThemeForStorage(value: unknown): AppTheme {
-  return isAppTheme(value) ? value : 'system';
+  return isAppTheme(value) ? value : DEFAULT_THEME;
 }
 
 export function explicitThemeScheme(theme: AppTheme | undefined): ThemeScheme | null {
@@ -65,7 +67,7 @@ export function resolveDocumentThemeScheme(): ThemeScheme {
   const explicit = document.documentElement.getAttribute('data-theme-scheme');
   if (explicit === 'dark' || explicit === 'light') return explicit;
   const theme = document.documentElement.getAttribute('data-theme');
-  const scheme = explicitThemeScheme(resolveThemeForStorage(theme));
+  const scheme = theme === null ? null : explicitThemeScheme(resolveThemeForStorage(theme));
   if (scheme) return scheme;
   return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }

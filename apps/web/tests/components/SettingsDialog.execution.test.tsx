@@ -2521,7 +2521,18 @@ describe('SettingsDialog appearance interactions', () => {
     document.documentElement.style.removeProperty('--accent-hover');
   });
 
-  it('treats System as the selected appearance mode when theme is unset or system', () => {
+  it('treats Light as the selected appearance mode when theme is unset', () => {
+    renderSettingsDialog(
+      { theme: undefined },
+      { initialSection: 'appearance' },
+    );
+
+    expect(screen.getByRole('radio', { name: 'System' }).getAttribute('aria-checked')).toBe('false');
+    expect(screen.getByRole('radio', { name: 'Light' }).getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByRole('radio', { name: 'Dark' }).getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('preserves System as the selected appearance mode when explicitly configured', () => {
     renderSettingsDialog(
       { theme: 'system' },
       { initialSection: 'appearance' },
@@ -2529,7 +2540,6 @@ describe('SettingsDialog appearance interactions', () => {
 
     expect(screen.getByRole('radio', { name: 'System' }).getAttribute('aria-checked')).toBe('true');
     expect(screen.getByRole('radio', { name: 'Light' }).getAttribute('aria-checked')).toBe('false');
-    expect(screen.getByRole('radio', { name: 'Dark' }).getAttribute('aria-checked')).toBe('false');
   });
 
   it('uses the selected theme accent by default', () => {
