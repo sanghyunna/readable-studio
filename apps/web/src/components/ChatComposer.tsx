@@ -210,6 +210,13 @@ interface Props {
   // ChatPane). Pass `null` (or omit) to render the full rail.
   pinnedPluginId?: string | null;
   footerAccessory?: ReactNode;
+  // Agent + model execution controls for THIS project's chat, rendered as the
+  // last thing before Send. Authored by ChatPane from the same
+  // `InlineModelSwitcher` the Hub composer footer mounts (variant `agent` then
+  // variant `model`), and handed down as an opaque node so the composer never
+  // re-derives config/agents or forks model selection. Omitted on surfaces
+  // that have no execution wiring (tests, screenshot harnesses).
+  executionSwitcher?: ReactNode;
   // Slot rendered in the composer's bottom toolbar, immediately right of the
   // "+" menu. ProjectView can use this for compact project-specific controls.
   leadingAccessory?: ReactNode;
@@ -326,6 +333,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       onProjectSkillChange,
       pinnedPluginId = null,
       footerAccessory,
+      executionSwitcher,
       leadingAccessory,
       designSystemPicker,
       currentDesignSystemId = null,
@@ -2168,6 +2176,20 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
             {leadingAccessory}
             <span className="composer-spacer" />
             {footerAccessory}
+            {/* Agent button, then model button to its right, then Send — the
+                same left-to-right order as the Hub composer footer. Two mounts
+                of one switcher, so switching either really mutates the shared
+                app config that this project's runs read. The session-mode
+                toggle keeps its place after the pair; it is a different
+                concern (how the turn runs, not what runs it). */}
+            {executionSwitcher ? (
+              <div
+                className="composer-execution-switcher"
+                data-testid="composer-execution-switcher"
+              >
+                {executionSwitcher}
+              </div>
+            ) : null}
             <SessionModeToggle
               mode={sessionMode}
               onChange={(next) => {

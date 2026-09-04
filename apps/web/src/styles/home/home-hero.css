@@ -391,21 +391,10 @@
   z-index: 1700;
   overflow: visible;
 }
-/* The mode toggle's description card (chat.css) anchors upward and is only
-   shown on the home hero — it is `display:none` inside the chat composer.
-   The home-hero toggle sits well down the composer, so the card grows up
-   toward the page header; at its default 360px it crowds (and on smaller
-   windows clips) the top chrome. Cap it shorter here so it always clears the
-   header, and keep the inner scroll for the overflow. */
-.session-mode-toggle__popover--home-hero .session-mode-toggle__popover-card {
-  max-height: min(300px, calc(100vh - 120px));
-}
-/* The popover is a body-level fixed layer whose left/top are JS-computed, so
-   only the internal order is styled here: the menu keeps its edge against the
-   trigger and the description card grows inward. */
-.session-mode-toggle__popover--home-hero {
-  flex-direction: row-reverse;
-}
+/* The session-mode toggle no longer mounts in the home hero — mode is a
+   creation-time choice and lives in the New Project flow — so the
+   `--home-hero` popover rules that used to sit here are gone. The toggle's
+   remaining home is the project chat composer, styled in chat.css. */
 .home-hero__input-card--compact-authoring {
   max-width: 640px;
   padding-block: 12px 10px;
@@ -1042,22 +1031,30 @@
   font-size: 12px;
   color: var(--text);
 }
-.home-hero__foot-right .session-mode-toggle {
-  height: 32px;
-}
-.home-hero__foot-right .session-mode-toggle__trigger {
-  height: 32px;
-  max-width: 120px;
-  padding: 0 12px;
+
+/* Two separate triggers live in this slot: the agent button, then the model
+   button to its right, then Send (which is a sibling of the slot). They are
+   two mounts of the same switcher component, so the shared chip rules above
+   still describe both; only their footprints differ. */
+.home-hero__execution-switcher--agent-model {
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
-  border-radius: var(--radius-pill);
-  font-size: 12px;
 }
-.home-hero__foot-right .session-mode-toggle__label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+
+/* Agent: icon only. The full "mode · agent · model" string stays in
+   aria-label/title, so nothing is lost for assistive tech or hover. */
+.home-hero__execution-switcher--agent-model .inline-switcher__chip--agent {
+  width: 32px;
+  min-width: 32px;
+  padding: 0;
+  justify-content: center;
+  gap: 0;
+}
+
+/* Model: the model name is the label. */
+.home-hero__execution-switcher--agent-model .inline-switcher__chip--model {
+  padding: 0 12px;
 }
 /* Body-level layer for the execution switcher's panel.
 

@@ -23,7 +23,6 @@ import type {
   RefObject,
 } from 'react';
 import type {
-  ChatSessionMode,
   DesignSystemSummary,
   InputFieldSpec,
   InstalledPluginRecord,
@@ -35,11 +34,7 @@ import { buildDesignSystemPalettes, pluginSwatches } from './design-system-swatc
 import type { SkillSummary } from '../types';
 import { Icon, type IconName } from './Icon';
 import { useAnalytics } from '../analytics/provider';
-import {
-  trackComposerSessionModeClick,
-  trackHomeChatComposerClick,
-} from '../analytics/events';
-import { sessionModeToTracking } from '@readable-studio/contracts/analytics';
+import { trackHomeChatComposerClick } from '../analytics/events';
 import {
   chipsForGroup,
   type ChipGroup,
@@ -75,7 +70,6 @@ import { sortByVisualAppeal } from './plugins-home/visualScore';
 import { applyFacetSelection } from './plugins-home/facets';
 import { inferPluginPreview } from './plugins-home/preview';
 import { pluginSubfacetLabel } from './plugins-home/subfacetLabel';
-import { SessionModeToggle } from './SessionModeToggle';
 import { ComposerPlusMenu } from './ComposerPlusMenu';
 import {
   LexicalComposerInput,
@@ -125,8 +119,6 @@ interface Props {
    *  Template tab (reachable from the hub command palette, `From template`),
    *  and a chevron pill that opened a full modal read as a dropdown. */
   onOpenTemplate?: () => void;
-  sessionMode?: ChatSessionMode;
-  onSessionModeChange?: (mode: ChatSessionMode) => void;
   activePluginTitle: string | null;
   // True when the active plugin chip shows a user-picked plugin (Community card
   // or example-prompt preset) rather than a task-type chip's default plugin —
@@ -248,8 +240,6 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     onSubmit,
     onContinueWithoutPrompt = () => undefined,
     firstRunGuide,
-    sessionMode = 'design',
-    onSessionModeChange,
     activePluginTitle,
     activePluginIsExplicit = false,
     activePluginRecord = null,
@@ -1475,28 +1465,11 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
             ) : null}
           </div>
           <div className="home-hero__foot-right">
-            <SessionModeToggle
-              mode={sessionMode}
-              onChange={(next) => {
-                if (next !== sessionMode) {
-                  trackComposerSessionModeClick(analytics.track, {
-                    page_name: 'home',
-                    area: 'chat_composer',
-                    element: 'session_mode_toggle',
-                    mode_before: sessionModeToTracking(sessionMode),
-                    mode_after: sessionModeToTracking(next),
-                  });
-                }
-                onSessionModeChange?.(next);
-              }}
-              disabled={interactionLocked || Boolean(submitDisabled)}
-            />
-            {/* Agent + model live here as one mount point because the switcher
-                is owned by EntryShell/InlineModelSwitcher and reaches this
-                component as an opaque node. `--agent-model` reshapes it into
-                the ordered pair the footer contract requires: agent icon then
-                model name, with the chevron suppressed so the control never
-                reads as a dropdown. */}
+            {/* Agent button then model button (in that DOM order), then Send.
+                Both are authored by EntryShell/InlineModelSwitcher and arrive
+                as an opaque node; this slot only lays them out. Session mode
+                is NOT here — it is a creation-time choice and lives in the
+                New Project flow. */}
             {executionSwitcher ? (
               <div
                 className="home-hero__execution-switcher home-hero__execution-switcher--agent-model"

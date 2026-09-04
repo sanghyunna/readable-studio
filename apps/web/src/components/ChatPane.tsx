@@ -9,9 +9,11 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type Dispatch,
   type DragEvent as ReactDragEvent,
   type MutableRefObject,
   type ReactNode,
+  type SetStateAction,
 } from 'react';
 import { createPortal } from 'react-dom';
 import { useAnalytics } from '../analytics/provider';
@@ -36,7 +38,7 @@ import {
   isDesignSystemWorkspacePrompt,
 } from '../design-system-auto-prompt';
 import { isTodoWriteToolName, latestTodoWriteInputForPinnedCard } from '../runtime/todos';
-import type { AgentRollbackRequestEvent, AppConfig, ChatAttachment, ChatCommentAttachment, ChatMessage, Conversation, DesignSystemSummary, PreviewComment, Project, ProjectFile, ProjectMetadata, SkillSummary } from '../types';
+import type { AgentInfo, AgentRollbackRequestEvent, ApiProtocol, AppConfig, ChatAttachment, ChatCommentAttachment, ChatMessage, Conversation, DesignSystemSummary, PreviewComment, Project, ProjectFile, ProjectMetadata, SkillSummary } from '../types';
 import { exactDateTime, messageTime, shortTime } from '../utils/chatTime';
 import { commentTargetDisplayName, commentsToAttachments, simplePositionLabel } from '../comments';
 import { AssistantMessage, type QuestionFormOpenRequest } from './AssistantMessage';
@@ -51,6 +53,8 @@ import {
 import { listDesignArtifactCandidates } from './design-files/designArtifacts';
 import type { PluginFolderAgentAction } from './design-files/pluginFolderActions';
 import { Icon, type IconName } from './Icon';
+import { InlineModelSwitcher } from './InlineModelSwitcher';
+import type { ProviderModelsCache } from './providerModelsCache';
 import { repoConnectCopy } from './design-system-github-evidence';
 import { isRenderableSketchJson, SketchPreview } from './SketchPreview';
 import type { SettingsSection } from './SettingsDialog';
@@ -453,6 +457,30 @@ interface Props {
   projectHeader?: ReactNode;
   designSystemPicker?: ReactNode;
   config?: AppConfig;
+  /**
+   * Execution wiring for the composer's agent + model buttons.
+   *
+   * The workspace composer shows the SAME pair the Hub composer footer does —
+   * an agent button, then a model button to its right — and both are mounts of
+   * the one `InlineModelSwitcher`, so agent selection, model selection, the AMR
+   * login dance and the provider-models fetch each still exist exactly once.
+   * The callbacks are the app-level config mutators (the same ones the entry
+   * top bar uses), so a switch here really lands in the persisted config the
+   * project's next run reads. All optional: surfaces without execution wiring
+   * (tests, screenshot harnesses) simply render no pair.
+   */
+  agents?: AgentInfo[];
+  daemonLive?: boolean;
+  providerModelsCache?: ProviderModelsCache;
+  onProviderModelsCacheChange?: Dispatch<SetStateAction<ProviderModelsCache>>;
+  onModeChange?: (mode: AppConfig['mode']) => void;
+  onAgentChange?: (id: string) => void;
+  onAgentModelChange?: (
+    id: string,
+    choice: { model?: string; reasoning?: string },
+  ) => void;
+  onApiProtocolChange?: (protocol: ApiProtocol) => void;
+  onApiModelChange?: (model: string) => void;
 }
 
 const AMR_PROFILE_ENV_KEY = 'READABLE_AMR_PROFILE';
@@ -586,6 +614,15 @@ export function ChatPane({
   projectHeader,
   designSystemPicker,
   config,
+  agents,
+  daemonLive = false,
+  providerModelsCache,
+  onProviderModelsCacheChange,
+  onModeChange,
+  onAgentChange,
+  onAgentModelChange,
+  onApiProtocolChange,
+  onApiModelChange,
 }: Props) {
   const t = useT();
   const analytics = useAnalytics();
@@ -1418,6 +1455,48 @@ export function ChatPane({
     };
   }, [composerPortalRect, composerPortalTarget, tab]);
 
+  // Agent + model buttons for the workspace composer. Built here (rather than
+  // inside ChatComposer) because ChatPane is where the execution wiring lands,
+  // and mounted as two variants of the ONE InlineModelSwitcher so nothing about
+  // agent/model selection is forked. Rendered only when the surface actually
+  // supplied the mutators — a decorative pair that cannot change anything would
+  // be worse than none.
+  //
+  // The gate requires only what CLI-mode switching genuinely needs. The BYOK
+  // callbacks are accepted but not required: the switcher optional-calls every
+  // callback, so a surface that wires CLI selection gets a working pair, and a
+  // BYOK model pick there is inert rather than crashing. That keeps the pair
+  // from being all-or-nothing on props one surface happens not to thread yet.
+  const executionSwitcher =
+    config &&
+    agents &&
+    onModeChange &&
+    onAgentChange &&
+    onAgentModelChange &&
+    onOpenSettings ? (
+      (() => {
+        const switcherProps = {
+          config,
+          agents,
+          providerModelsCache,
+          onProviderModelsCacheChange,
+          daemonLive,
+          onModeChange,
+          onAgentChange,
+          onAgentModelChange,
+          onApiProtocolChange: onApiProtocolChange ?? (() => {}),
+          onApiModelChange: onApiModelChange ?? (() => {}),
+          onOpenSettings,
+        } as const;
+        return (
+          <>
+            <InlineModelSwitcher {...switcherProps} variant="agent" />
+            <InlineModelSwitcher {...switcherProps} variant="model" />
+          </>
+        );
+      })()
+    ) : null;
+
   const composerNode = (
     <ChatComposer
       ref={composerRef}
@@ -1476,6 +1555,7 @@ export function ChatPane({
       onProjectSkillChange={onProjectSkillChange}
       pinnedPluginId={activePluginSnapshot?.pluginId ?? null}
       footerAccessory={composerFooterAccessory}
+      {...(executionSwitcher ? { executionSwitcher } : {})}
       leadingAccessory={composerLeadingAccessory}
       currentDesignSystemId={currentDesignSystemId}
       onActiveDesignSystemChange={onActiveDesignSystemChange}

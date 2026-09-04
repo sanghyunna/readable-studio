@@ -78,9 +78,44 @@ describe('Hub composer footer: agent + model slot', () => {
 
     await screen.findByTestId('home-hero-input');
     expect(screen.queryByTestId('home-hero-template-control')).toBeNull();
-    // Context control and the mode toggle are untouched capability.
+    // Context control is untouched capability.
     expect(screen.getByTestId('home-hero-context-control')).toBeTruthy();
-    expect(screen.getByTestId('session-mode-trigger')).toBeTruthy();
+  });
+
+  it('has no session-mode chip in the composer footer', async () => {
+    renderHub(
+      <>
+        <button type="button" data-testid="stub-agent">agent</button>
+        <button type="button" data-testid="stub-model">model</button>
+      </>,
+    );
+
+    await screen.findByTestId('home-hero-input');
+    // Mode is a creation-time choice now; it lives in the New Project flow.
+    expect(screen.queryByTestId('session-mode-trigger')).toBeNull();
+  });
+
+  it('renders agent then model then send, as three distinct controls', async () => {
+    renderHub(
+      <>
+        <button type="button" data-testid="stub-agent">agent</button>
+        <button type="button" data-testid="stub-model">model</button>
+      </>,
+    );
+
+    await screen.findByTestId('home-hero-input');
+    const agent = screen.getByTestId('stub-agent');
+    const model = screen.getByTestId('stub-model');
+    const send = screen.getByTestId('home-hero-submit');
+
+    // Three separate elements, none nested inside another.
+    expect(agent).not.toBe(model);
+    expect(agent.contains(model)).toBe(false);
+    // Left-to-right: agent -> model -> send.
+    expect(agent.compareDocumentPosition(model) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy();
+    expect(model.compareDocumentPosition(send) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy();
   });
 
   it('omits the subtitle node entirely on the hub surface', async () => {

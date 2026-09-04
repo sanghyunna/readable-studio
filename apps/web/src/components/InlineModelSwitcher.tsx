@@ -62,11 +62,24 @@ import {
   type ProviderModelsCache,
 } from './providerModelsCache';
 
+/**
+ * Which concern the mount exposes.
+ *
+ * `combined` is the historical top-bar chip (mode + agent + model in one
+ * popover). The Hub composer footer instead mounts the SAME component twice —
+ * once as `agent`, once as `model` — so each button opens only its own
+ * concern. Splitting by variant (rather than forking a second component) keeps
+ * exactly one implementation of agent selection, model selection, the AMR
+ * login dance and the provider-models fetch.
+ */
+export type InlineSwitcherVariant = 'combined' | 'agent' | 'model';
+
 interface Props {
   config: AppConfig;
   agents: AgentInfo[];
   providerModelsCache?: ProviderModelsCache;
   compact?: boolean;
+  variant?: InlineSwitcherVariant;
   daemonLive: boolean;
   onModeChange: (mode: ExecMode) => void;
   onAgentChange: (id: string) => void;
@@ -200,6 +213,7 @@ export function InlineModelSwitcher({
   agents,
   providerModelsCache,
   compact = false,
+  variant = 'combined',
   daemonLive,
   onModeChange,
   onAgentChange,
@@ -689,59 +703,96 @@ export function InlineModelSwitcher({
     }
   }, [config.agentId, config.mode, open]);
 
+  const isAgentVariant = variant === 'agent';
+  const isModelVariant = variant === 'model';
+  const splitAgentLabel = `${t('inlineSwitcher.agentLabel')}: ${chipPrimary}`;
+  const splitModelLabel = `${t('inlineSwitcher.modelLabel')}: ${chipModel}`;
+  const triggerAccessibleName = isAgentVariant
+    ? splitAgentLabel
+    : isModelVariant
+      ? splitModelLabel
+      : `${chipMode} · ${chipPrimary} · ${chipModel}`;
+
   return (
     <div
-      className={`inline-switcher${compact ? ' inline-switcher--compact' : ''}`}
+      className={
+        `inline-switcher${compact ? ' inline-switcher--compact' : ''}` +
+        (variant === 'combined' ? '' : ` inline-switcher--${variant}`)
+      }
       ref={wrapRef}
-      data-testid="inline-model-switcher"
+      data-testid={
+        variant === 'combined'
+          ? 'inline-model-switcher'
+          : `inline-model-switcher-${variant}`
+      }
     >
       <button
         ref={chipRef}
         type="button"
         className={
           'inline-switcher__chip' +
+          (variant === 'combined' ? '' : ` inline-switcher__chip--${variant}`) +
           (showAmrReminder ? ' has-amr-reminder' : '')
         }
-        data-testid="inline-model-switcher-chip"
+        data-testid={
+          variant === 'combined'
+            ? 'inline-model-switcher-chip'
+            : `inline-model-switcher-${variant}-trigger`
+        }
         onClick={handleChipClick}
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label={`${chipMode} · ${chipPrimary} · ${chipModel}`}
-        title={`${chipMode} · ${chipPrimary} · ${chipModel}`}
-        data-tooltip={`${chipMode} · ${chipPrimary} · ${chipModel}`}
+        aria-label={triggerAccessibleName}
+        title={triggerAccessibleName}
+        data-tooltip={triggerAccessibleName}
       >
-        {showAmrReminder ? (
+        {showAmrReminder && !isModelVariant ? (
           <span
             className="inline-switcher__amr-reminder-dot inline-switcher__amr-reminder-dot--chip"
             data-testid="inline-model-switcher-amr-reminder"
             aria-hidden="true"
           />
         ) : null}
-        <span className="inline-switcher__chip-icon" aria-hidden="true">
-          {config.mode === 'daemon' && currentAgent ? (
-            <AgentIcon id={currentAgent.id} size={18} />
-          ) : (
-            <span className="inline-switcher__byok-glyph">
-              <Icon name="link" size={12} />
-            </span>
-          )}
-        </span>
-        <span className="inline-switcher__chip-text">
-          <span className="inline-switcher__chip-mode">{chipMode}</span>
-          <span className="inline-switcher__chip-sep" aria-hidden="true">
-            ·
+        {isModelVariant ? null : (
+          <span className="inline-switcher__chip-icon" aria-hidden="true">
+            {config.mode === 'daemon' && currentAgent ? (
+              <AgentIcon id={currentAgent.id} size={18} />
+            ) : (
+              <span className="inline-switcher__byok-glyph">
+                <Icon name="link" size={12} />
+              </span>
+            )}
           </span>
-          <span className="inline-switcher__chip-primary">{chipPrimary}</span>
-          <span className="inline-switcher__chip-sep" aria-hidden="true">
-            ·
+        )}
+        {/* Split mounts carry a single honest label each: the agent button is
+            the agent icon alone, the model button the model name alone. No
+            chevron on either — they open a popover, not an inline dropdown. */}
+        {isAgentVariant ? null : (
+          <span className="inline-switcher__chip-text">
+            {isModelVariant ? (
+              <span className="inline-switcher__chip-model">{chipModel}</span>
+            ) : (
+              <>
+                <span className="inline-switcher__chip-mode">{chipMode}</span>
+                <span className="inline-switcher__chip-sep" aria-hidden="true">
+                  ·
+                </span>
+                <span className="inline-switcher__chip-primary">{chipPrimary}</span>
+                <span className="inline-switcher__chip-sep" aria-hidden="true">
+                  ·
+                </span>
+                <span className="inline-switcher__chip-model">{chipModel}</span>
+              </>
+            )}
           </span>
-          <span className="inline-switcher__chip-model">{chipModel}</span>
-        </span>
-        <Icon
-          name="chevron-down"
-          size={12}
-          className="inline-switcher__chip-chevron"
-        />
+        )}
+        {variant === 'combined' ? (
+          <Icon
+            name="chevron-down"
+            size={12}
+            className="inline-switcher__chip-chevron"
+          />
+        ) : null}
       </button>
 
       {open && typeof document !== 'undefined' ? createPortal(
@@ -752,7 +803,11 @@ export function InlineModelSwitcher({
             (surface ? ` inline-switcher__popover--${surface}` : '')
           }
           role="menu"
-          data-testid="inline-model-switcher-popover"
+          data-testid={
+            variant === 'combined'
+              ? 'inline-model-switcher-popover'
+              : `inline-model-switcher-${variant}-popover`
+          }
           style={
             popoverPos === null
               ? undefined
@@ -764,6 +819,7 @@ export function InlineModelSwitcher({
                 } satisfies CSSProperties)
           }
         >
+          {isModelVariant ? null : (
           <div className="inline-switcher__row">
             <span className="inline-switcher__label">
               {t('inlineSwitcher.modeLabel')}
@@ -826,9 +882,11 @@ export function InlineModelSwitcher({
               </button>
             </div>
           </div>
+          )}
 
           {config.mode === 'daemon' ? (
             <>
+              {isModelVariant ? null : (
               <div className="inline-switcher__row">
                 <span className="inline-switcher__label">
                   {t('inlineSwitcher.agentLabel')}
@@ -930,8 +988,10 @@ export function InlineModelSwitcher({
                   </div>
                 )}
               </div>
+              )}
 
-              {currentAgent &&
+              {!isAgentVariant &&
+              currentAgent &&
               currentAgent.models &&
               currentAgent.models.length > 0 ? (
                 <div className="inline-switcher__row">
@@ -973,10 +1033,25 @@ export function InlineModelSwitcher({
                     }
                   />
                 </div>
+              ) : isModelVariant ? (
+                // The model button must never open an empty panel: with no
+                // agent picked (or an agent that exposes no models) it says so
+                // and points at the agent/settings path instead.
+                <div className="inline-switcher__row">
+                  <span className="inline-switcher__label">
+                    {t('inlineSwitcher.modelLabel')}
+                  </span>
+                  <span className="inline-switcher__hint">
+                    {currentAgent
+                      ? t('inlineSwitcher.openSettingsForModel')
+                      : t('inlineSwitcher.noAgentsDetected')}
+                  </span>
+                </div>
               ) : null}
             </>
           ) : (
             <>
+              {isModelVariant ? null : (
               <div className="inline-switcher__row">
                 <span className="inline-switcher__label">
                   {t('inlineSwitcher.providerLabel')}
@@ -1015,7 +1090,9 @@ export function InlineModelSwitcher({
                   })}
                 </div>
               </div>
+              )}
 
+              {isAgentVariant ? null : (
               <div className="inline-switcher__row">
                 <span className="inline-switcher__label">
                   {t('inlineSwitcher.modelLabel')}
@@ -1059,6 +1136,7 @@ export function InlineModelSwitcher({
                   </span>
                 )}
               </div>
+              )}
 
               {!config.apiKey ? (
                 <div className="inline-switcher__warn" role="status">

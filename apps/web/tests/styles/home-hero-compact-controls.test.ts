@@ -47,20 +47,31 @@ describe('HomeHero compact composer controls', () => {
     expect(ruleValue(results, 'overflow-y')).toBe('auto');
   });
 
-  it('keeps the session mode and execution buttons compact in the hero', () => {
-    const modeTrigger = cssDeclarations(
-      '.home-hero__foot-right .session-mode-toggle__trigger',
-    );
+  it('keeps the execution buttons compact in the hero', () => {
     const switcherChip = cssDeclarations(
       '.home-hero__execution-switcher .inline-switcher__chip',
     );
 
-    // The footer buttons were unified to a single 32px pill height; the
-    // session-mode trigger matches the other footer controls.
-    expect(ruleValue(modeTrigger, 'height')).toBe('32px');
-    expect(ruleValue(modeTrigger, 'max-width')).toBe('120px');
     expect(ruleValue(switcherChip, 'height')).toBe('30px');
     expect(ruleValue(switcherChip, 'max-width')).toBe('48px');
+  });
+
+  it('no longer styles a session-mode trigger in the composer footer', () => {
+    // The mode chip moved to the New Project flow, so the footer stylesheet
+    // must not keep dead rules that would resurrect it visually.
+    expect(homeHeroCss).not.toContain('.home-hero__foot-right .session-mode-toggle');
+  });
+
+  it('lays the split agent + model buttons out as a row', () => {
+    const slot = cssDeclarations('.home-hero__execution-switcher--agent-model');
+    const agent = cssDeclarations(
+      '.home-hero__execution-switcher--agent-model .inline-switcher__chip--agent',
+    );
+
+    expect(ruleValue(slot, 'display')).toBe('inline-flex');
+    expect(ruleValue(slot, 'gap')).toBe('6px');
+    // Agent is the icon-only button; the model button carries the name.
+    expect(ruleValue(agent, 'width')).toBe('32px');
   });
 
   it('prevents the compact execution switcher from expanding on narrow screens', () => {

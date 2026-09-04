@@ -966,6 +966,11 @@
    every other composer's collapse behavior — untouched. */
 @container (max-width: 430px) {
   .composer-row .inline-switcher__chip { padding: 0 7px 0 5px; gap: 5px; }
+  /* Narrow chat: the model name is the first thing to give up room, but the
+     control stays reachable (its popover is the only in-composer model path). */
+  .composer-execution-switcher .inline-switcher__chip--model .inline-switcher__chip-text {
+    max-width: 72px;
+  }
   /* Hide ONLY the trigger's label — the popover options share this class
      and must keep their labels ("Ask" / "Design") visible. */
   .composer-row .session-mode-toggle__trigger .session-mode-toggle__label { display: none; }
@@ -1296,6 +1301,81 @@
   height: 28px;
   border-radius: var(--radius-sm);
   box-sizing: border-box;
+}
+
+/* --- Composer footer: agent + model execution pair ------------------------
+   Same two controls (and the same component) the Hub composer footer mounts:
+   agent button first, model button to its right, Send last. The Hub sizes them
+   to its own 32px footer; this row is a 28px system, so the pair is re-sized
+   here rather than inheriting the Hub's footprint.
+
+   Presentation follows the current design language: no 1px dividers or
+   outlines on the controls, translucent glass with an inset highlight instead.
+   `.app` raises specificity above the base `.inline-switcher__chip` rules in
+   entry-layout.css, which carry a border and the 32px height. */
+.composer-execution-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.app .composer-row .composer-execution-switcher .inline-switcher__chip {
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--hub-control-surface);
+  box-shadow: inset 0 1px 0 var(--hub-control-highlight);
+  color: var(--text);
+  box-sizing: border-box;
+}
+.app .composer-row .composer-execution-switcher .inline-switcher__chip:hover {
+  background: var(--hub-control-surface-hover);
+  border-color: transparent;
+  box-shadow: var(--hub-control-shadow-hover);
+}
+.app .composer-row .composer-execution-switcher .inline-switcher__chip[aria-expanded='true'] {
+  background: var(--hub-control-surface-hover);
+  border-color: transparent;
+  box-shadow: var(--hub-control-shadow-hover);
+}
+.app .composer-row .composer-execution-switcher .inline-switcher__chip:focus-visible {
+  outline: 2px solid var(--hub-accent);
+  outline-offset: 2px;
+}
+/* Agent: the icon is the whole control. The full "mode · agent · model" string
+   survives in aria-label/title, so nothing is lost for assistive tech. */
+.app .composer-row .composer-execution-switcher .inline-switcher__chip--agent {
+  width: 28px;
+  min-width: 28px;
+  padding: 0;
+  gap: 0;
+  justify-content: center;
+}
+/* Model: the model name is the label. */
+.app .composer-row .composer-execution-switcher .inline-switcher__chip--model {
+  padding: 0 9px;
+  gap: 0;
+}
+.composer-execution-switcher .inline-switcher__chip--model .inline-switcher__chip-text {
+  min-width: 0;
+  max-width: 132px;
+}
+.composer-execution-switcher .inline-switcher__chip-model {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+@media (prefers-reduced-transparency: reduce) {
+  .app .composer-row .composer-execution-switcher .inline-switcher__chip {
+    background: var(--bg-elevated);
+  }
+  .app .composer-row .composer-execution-switcher .inline-switcher__chip:hover,
+  .app .composer-row .composer-execution-switcher .inline-switcher__chip[aria-expanded='true'] {
+    background: var(--bg-subtle);
+  }
 }
 .app .composer-row .session-mode-toggle__trigger {
   box-shadow: none;
