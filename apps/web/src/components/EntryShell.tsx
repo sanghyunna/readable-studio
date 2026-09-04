@@ -182,6 +182,7 @@ interface Props {
   providerModelsCache?: ProviderModelsCache;
   onProviderModelsCacheChange?: Dispatch<SetStateAction<ProviderModelsCache>>;
   agents: AgentInfo[];
+  agentsLoading?: boolean;
   daemonLive: boolean;
   onModeChange: (mode: ExecMode) => void;
   onAgentChange: (id: string) => void;
@@ -293,6 +294,7 @@ export function EntryShell({
   providerModelsCache: sharedProviderModelsCache,
   onProviderModelsCacheChange,
   agents,
+  agentsLoading = false,
   daemonLive,
   onModeChange,
   onAgentChange,
@@ -514,6 +516,7 @@ export function EntryShell({
   const switcherProps = {
     config,
     agents,
+    agentsLoading,
     providerModelsCache: activeProviderModelsCache,
     onProviderModelsCacheChange: activeSetProviderModelsCache,
     daemonLive,

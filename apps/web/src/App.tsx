@@ -331,6 +331,11 @@ function AppInner() {
   const amrModelsRef = useRef<AmrModelsResponse | null>(null);
   const amrPollGenerationRef = useRef(0);
   const agentStreamRequestSeqRef = useRef(0);
+  const startupAgentStreamRef = useRef<{
+    controller: AbortController;
+    cancelled: boolean;
+  } | null>(null);
+  const startupAgentCleanupTimerRef = useRef<number | null>(null);
   const [amrPollRestartToken, setAmrPollRestartToken] = useState(0);
   const [providerModelsCache, setProviderModelsCache] = useState<
     Record<string, ProviderModelOption[]>
@@ -657,9 +662,85 @@ function AppInner() {
     restartAmrPolling();
   }, [restartAmrPolling]);
 
+  // Start probing in a layout effect so the request is issued during the
+  // hidden pre-paint mount behind the desktop splash. Keeping this independent
+  // of the health check is essential: awaiting /api/health here used to
+  // serialize detection until after React had painted the empty control.
+  useLayoutEffect(() => {
+    if (startupAgentCleanupTimerRef.current !== null) {
+      window.clearTimeout(startupAgentCleanupTimerRef.current);
+      startupAgentCleanupTimerRef.current = null;
+    }
+
+    const scheduleAbort = (request: {
+      controller: AbortController;
+      cancelled: boolean;
+    }) => {
+      startupAgentCleanupTimerRef.current = window.setTimeout(() => {
+        request.cancelled = true;
+        request.controller.abort();
+        if (startupAgentStreamRef.current === request) {
+          startupAgentStreamRef.current = null;
+        }
+      }, 0);
+    };
+
+    const existingRequest = startupAgentStreamRef.current;
+    if (existingRequest) return () => scheduleAbort(existingRequest);
+
+    const request = {
+      controller: new AbortController(),
+      cancelled: false,
+    };
+    startupAgentStreamRef.current = request;
+    const agentRequestId = beginAgentStreamRequest();
+
+    void fetchAgentsStream({
+      signal: request.controller.signal,
+      onAgent: (agent) => {
+        if (request.cancelled || !isCurrentAgentStreamRequest(agentRequestId)) return;
+        setAgents((current) =>
+          mergeAmrModelsIntoAgents(
+            upsertAgent(current, agent),
+            amrModelsRef.current,
+          ),
+        );
+      },
+    })
+      .then((list) => {
+        if (request.cancelled || !isCurrentAgentStreamRequest(agentRequestId)) return;
+        setAgents(
+          mergeAmrModelsIntoAgents(
+            orderAgentsByRegistry(list),
+            amrModelsRef.current,
+          ),
+        );
+      })
+      .catch((err) => {
+        if (
+          request.cancelled ||
+          isAbortError(err) ||
+          !isCurrentAgentStreamRequest(agentRequestId)
+        ) {
+          return;
+        }
+        setAgents([]);
+      })
+      .finally(() => {
+        if (request.cancelled || !isCurrentAgentStreamRequest(agentRequestId)) return;
+        setAgentsLoading(false);
+      });
+
+    return () => {
+      // Strict Mode immediately cleans up and remounts layout effects in dev.
+      // One task of grace preserves this probe across that synthetic cycle;
+      // a real unmount still aborts before later work can consume its result.
+      scheduleAbort(request);
+    };
+  }, [beginAgentStreamRequest, isCurrentAgentStreamRequest]);
+
   useEffect(() => {
     let cancelled = false;
-    const agentStreamAbort = new AbortController();
     const deferredAbort = new AbortController();
     let cancelDeferredStartup: () => void = () => undefined;
     (async () => {
@@ -723,43 +804,6 @@ function AppInner() {
         if (cancelled) return;
         setStartupDeferredReady(true);
 
-        const agentRequestId = beginAgentStreamRequest();
-        void fetchAgentsStream({
-          signal: agentStreamAbort.signal,
-          onAgent: (agent) => {
-            if (cancelled || !isCurrentAgentStreamRequest(agentRequestId)) return;
-            setAgents((current) =>
-              mergeAmrModelsIntoAgents(
-                upsertAgent(current, agent),
-                amrModelsRef.current,
-              ),
-            );
-          },
-        })
-          .then((list) => {
-            if (cancelled || !isCurrentAgentStreamRequest(agentRequestId)) return;
-            setAgents(
-              mergeAmrModelsIntoAgents(
-                orderAgentsByRegistry(list),
-                amrModelsRef.current,
-              ),
-            );
-          })
-          .catch((err) => {
-            if (
-              cancelled ||
-              isAbortError(err) ||
-              !isCurrentAgentStreamRequest(agentRequestId)
-            ) {
-              return;
-            }
-            setAgents([]);
-          })
-          .finally(() => {
-            if (cancelled || !isCurrentAgentStreamRequest(agentRequestId)) return;
-            setAgentsLoading(false);
-          });
-
         void fetchDesignTemplates({ signal: deferredAbort.signal }).then((list) => {
           if (cancelled) return;
           setDesignTemplates(list);
@@ -781,33 +825,23 @@ function AppInner() {
     return () => {
       cancelled = true;
       cancelDeferredStartup();
-      agentStreamAbort.abort();
       deferredAbort.abort();
     };
   }, [
-    beginAgentStreamRequest,
     beginProjectListRequest,
-    isCurrentAgentStreamRequest,
     reconcileFetchedProjects,
     t,
   ]);
 
   // Auto-pick the first available agent once both the daemon-stored config
-  // and the agents listing have landed. Splitting this out of bootstrap
-  // avoids racing the local-config initial value against a slow agents
-  // probe — by the time this runs, daemonConfig has already overlaid the
-  // user's previous choice, so we only fill an empty slot.
-  //
-  // Gated on onboardingCompleted so a brand-new install's slot stays empty
-  // until the user has finished initial setup (the flag flips when Settings
-  // is closed): snapping the slot to the registry-first *detected* agent
-  // while AMR (vela) detection is still settling would persist a choice the
-  // user never made and clobber an AMR selection on the next launch. For
-  // returning users the flag is already set, so this only backfills an
-  // empty slot.
+  // and the complete agents listing have landed. Splitting this out of
+  // bootstrap avoids racing the local-config initial value against a slow
+  // agents probe — by the time this runs, daemonConfig has already overlaid
+  // the user's previous choice, so onboarding and returning users alike only
+  // get a default when the slot is genuinely empty. The functional updater
+  // repeats that guard to preserve an AMR/user choice made between renders.
   useEffect(() => {
     if (!daemonConfigLoaded || agentsLoading) return;
-    if (config.onboardingCompleted !== true) return;
     if (config.agentId) return;
     const firstAvailable = agents.find((a) => a.available);
     if (!firstAvailable) return;
@@ -818,13 +852,7 @@ function AppInner() {
       void syncConfigToDaemon(next);
       return next;
     });
-  }, [
-    daemonConfigLoaded,
-    agentsLoading,
-    agents,
-    config.agentId,
-    config.onboardingCompleted,
-  ]);
+  }, [daemonConfigLoaded, agentsLoading, agents, config.agentId]);
 
   // Auto-pick the default design system the same way — only after daemon
   // config has merged so we never overwrite a daemon-stored selection.
@@ -1811,6 +1839,18 @@ function AppInner() {
     || route.kind === 'design-system-create'
     || route.kind === 'design-system-detail';
 
+  // Once streaming has found an available agent, keep the entry control
+  // populated while the rest of the probe finishes. This render-only fallback
+  // is registry-ordered but is not persisted; final auto-selection still waits
+  // for the complete list and the daemon config, preserving stored/AMR picks.
+  const firstDetectedAgentId = orderAgentsByRegistry(agents).find(
+    (agent) => agent.available,
+  )?.id;
+  const entryConfig =
+    config.agentId || !firstDetectedAgentId
+      ? config
+      : { ...config, agentId: firstDetectedAgentId };
+
   let appMain: ReactNode;
   if (route.kind === 'marketplace') {
     appMain = <MarketplaceView />;
@@ -1902,7 +1942,8 @@ function AppInner() {
         onDeleteTemplate={handleDeleteTemplate}
         defaultDesignSystemId={config.designSystemId}
         agents={agents}
-        config={config}
+        agentsLoading={agentsLoading}
+        config={entryConfig}
         providerModelsCache={providerModelsCache}
         onProviderModelsCacheChange={setProviderModelsCache}
         integrationInitialTab={integrationInitialTab}
@@ -2029,10 +2070,8 @@ function AppInner() {
           onClose={() => {
             // Closing the dialog is the canonical "I'm done" gesture
             // now that there is no global Save button. We mark
-            // onboardingCompleted on close so the first-run agent
-            // auto-pick backfill (gated on that flag) can proceed,
-            // regardless of whether the user changed anything during
-            // the session.
+            // onboardingCompleted on close regardless of whether the user
+            // changed anything during the session.
             const next = resolveSettingsCloseConfig(config, latestPersistedConfigRef.current);
             if (!next.onboardingCompleted || !config.onboardingCompleted) {
               latestPersistedConfigRef.current = next;

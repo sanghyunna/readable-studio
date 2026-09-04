@@ -206,21 +206,24 @@ describe('observability/white-screen', () => {
     expect(screen.getByRole('button', { name: 'New project' })).toBeTruthy();
     expect(document.documentElement.getAttribute('data-readable-app-mounted')).toBe('1');
     expect(screen.getByTestId('selected-agent').textContent).toBe('codex');
-    expect(fetchAgentsStream).not.toHaveBeenCalled();
+    // Agent detection deliberately starts during the pre-paint layout pass so
+    // it overlaps the splash. The white-screen guarantee is that Home commits
+    // synchronously while the genuinely deferred registries remain untouched.
+    expect(fetchAgentsStream).toHaveBeenCalledTimes(1);
     expect(fetchDesignTemplates).not.toHaveBeenCalled();
     expect(fetchAppVersionInfo).not.toHaveBeenCalled();
   });
 
-  it('starts agent detection when the agent settings section opens', async () => {
+  it('keeps startup agent detection in flight and refreshes it from settings', async () => {
     render(createElement(App));
 
     await Promise.resolve();
     await Promise.resolve();
-    expect(fetchAgentsStream).not.toHaveBeenCalled();
+    expect(fetchAgentsStream).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole('button', { name: 'Open agent settings' }));
 
-    expect(fetchAgentsStream).toHaveBeenCalledTimes(1);
+    expect(fetchAgentsStream).toHaveBeenCalledTimes(2);
   });
 
   it('runs the detector and reports client_white_screen (no network) when only the dynamic-import loading shell is in the DOM after the timeout', () => {

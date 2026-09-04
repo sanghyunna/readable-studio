@@ -42,6 +42,7 @@ interface Props {
   onDeleteTemplate: (id: string) => Promise<boolean>;
   defaultDesignSystemId: string | null;
   agents: AgentInfo[];
+  agentsLoading?: boolean;
   // Execution / model-switching context forwarded to the EntryShell so the
   // sticky top-bar can expose the active CLI/BYOK + model and persist
   // changes through the same channels as the project view.
@@ -111,6 +112,7 @@ export function EntryView({
   onDeleteTemplate,
   defaultDesignSystemId,
   agents,
+  agentsLoading = false,
   config,
   providerModelsCache,
   onProviderModelsCacheChange,
@@ -164,6 +166,7 @@ export function EntryView({
       providerModelsCache={providerModelsCache}
       onProviderModelsCacheChange={onProviderModelsCacheChange}
       agents={agents}
+      agentsLoading={agentsLoading}
       daemonLive={daemonLive}
       onModeChange={onModeChange}
       onAgentChange={onAgentChange}

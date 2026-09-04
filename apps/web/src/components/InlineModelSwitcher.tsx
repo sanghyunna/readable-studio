@@ -77,6 +77,7 @@ export type InlineSwitcherVariant = 'combined' | 'agent' | 'model';
 interface Props {
   config: AppConfig;
   agents: AgentInfo[];
+  agentsLoading?: boolean;
   providerModelsCache?: ProviderModelsCache;
   compact?: boolean;
   variant?: InlineSwitcherVariant;
@@ -211,6 +212,7 @@ function displayAgentChipName(agent: Pick<AgentInfo, 'id' | 'name'>): string {
 export function InlineModelSwitcher({
   config,
   agents,
+  agentsLoading = false,
   providerModelsCache,
   compact = false,
   variant = 'combined',
@@ -669,7 +671,9 @@ export function InlineModelSwitcher({
     config.mode === 'daemon'
       ? currentAgent
         ? displayAgentChipName(currentAgent)
-        : t('inlineSwitcher.noAgent')
+        : agentsLoading
+          ? t('inlineSwitcher.detectingAgent')
+          : t('inlineSwitcher.noAgent')
       : apiProtocolLabel(apiProtocol);
   const chipModel =
     config.mode === 'daemon'
@@ -759,7 +763,10 @@ export function InlineModelSwitcher({
               <AgentIcon id={currentAgent.id} size={18} />
             ) : (
               <span className="inline-switcher__byok-glyph">
-                <Icon name="link" size={12} />
+                <Icon
+                  name={config.mode === 'daemon' && agentsLoading ? 'spinner' : 'link'}
+                  size={12}
+                />
               </span>
             )}
           </span>

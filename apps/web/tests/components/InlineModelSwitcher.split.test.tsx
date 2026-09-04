@@ -55,12 +55,16 @@ const claudeAgent: AgentInfo = {
   models: [{ id: 'default', label: 'Default' }],
 };
 
-function renderSplit(overrides: Partial<AppConfig> = {}) {
+function renderSplit(
+  overrides: Partial<AppConfig> = {},
+  options: { agents?: AgentInfo[]; agentsLoading?: boolean } = {},
+) {
   const onAgentChange = vi.fn();
   const onAgentModelChange = vi.fn();
   const props = {
     config: { ...baseConfig, ...overrides },
-    agents: [codexAgent, claudeAgent],
+    agents: options.agents ?? [codexAgent, claudeAgent],
+    agentsLoading: options.agentsLoading ?? false,
     daemonLive: true,
     onModeChange: vi.fn(),
     onAgentChange,
@@ -93,6 +97,18 @@ describe('InlineModelSwitcher split variants', () => {
     // The model button is labelled with the model, the agent button with the agent.
     expect(model.textContent).toContain('GPT-5');
     expect(agent.getAttribute('aria-label')).toContain('Codex CLI');
+  });
+
+  it('renders a neutral detecting state instead of no-agent while probing', () => {
+    renderSplit(
+      { agentId: null, agentModels: {} },
+      { agents: [], agentsLoading: true },
+    );
+
+    const agent = screen.getByTestId('inline-model-switcher-agent-trigger');
+    expect(agent.getAttribute('aria-label')).toContain('detecting');
+    expect(agent.getAttribute('aria-label')).not.toContain('no agent');
+    expect(agent.querySelector('svg')).not.toBeNull();
   });
 
   it('neither trigger shows a chevron that would imply an inline dropdown', () => {
