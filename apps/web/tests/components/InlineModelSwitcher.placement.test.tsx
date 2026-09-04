@@ -13,11 +13,12 @@
 
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { InlineModelSwitcher } from '../../src/components/InlineModelSwitcher';
 import {
-  InlineModelSwitcher,
+  placePopover,
   popoverHorizontalOffset,
   popoverVerticalOffset,
-} from '../../src/components/InlineModelSwitcher';
+} from '../../src/components/popoverPlacement';
 import type { AgentInfo, AppConfig } from '../../src/types';
 
 const POPOVER_WIDTH = 320;
@@ -192,7 +193,14 @@ describe('InlineModelSwitcher popover placement', () => {
     fireEvent.click(screen.getByTestId('inline-model-switcher-chip'));
 
     const left = popoverLeft();
+    const expected = placePopover(
+      HUB_FOOTER_ANCHOR,
+      { width: POPOVER_WIDTH, height: POPOVER_HEIGHT },
+      { width: 1400, height: VIEWPORT_HEIGHT },
+    );
 
+    expect(left).toBe(expected.left);
+    expect(popoverTop()).toBe(expected.top);
     expect(left + POPOVER_WIDTH).toBeLessThanOrEqual(1400);
     expect(left).toBeGreaterThanOrEqual(0);
     expect(screen.getByTestId('inline-model-switcher-popover').style.right).toBe('auto');

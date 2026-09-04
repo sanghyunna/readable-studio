@@ -1593,9 +1593,6 @@
     display: grid;
     width: min(292px, calc(100vw - 24px));
   }
-  .session-mode-toggle__popover.is-flipped {
-    justify-items: end;
-  }
   .session-mode-toggle__menu,
   .session-mode-toggle__popover-card {
     width: 100%;

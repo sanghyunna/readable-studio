@@ -56,6 +56,8 @@ import {
 } from './amrLoginPolling';
 import { normalizeAgentModelChoice } from './agentModelSelection';
 import { SearchableModelSelect } from './modelOptions';
+import { dedupeAgentModels } from './modelCatalog';
+import { placePopover } from './popoverPlacement';
 import {
   mergeProviderModelOptions,
   providerModelsCacheKey,
@@ -139,67 +141,6 @@ function markAmrReminderSeen(): void {
   }
   amrReminderSeenFallback = true;
 }
-
-// Edge-collision placement for the popover.
-//
-// The panel is absolutely positioned against the chip, and the chip is mounted
-// in two very different places: the entry top bar (top-right of the viewport)
-// and the Hub composer footer (bottom-right of a centered card). A fixed
-// `right: 0` / `left: 0` edge cannot be correct for both — anchored left at a
-// bottom-right anchor the 320px panel runs past the right viewport edge, and
-// anchored right at a left-hand anchor it would run past the left one. So the
-// side is chosen from the measured anchor rather than from the call site, and
-// the offset is clamped so both edges stay inside the viewport gutter.
-const POPOVER_VIEWPORT_MARGIN = 12;
-// Gap between the chip and the panel, matching the in-flow `top: calc(100% + 8px)`
-// the panel used before it became a body-level layer.
-const POPOVER_ANCHOR_GAP = 8;
-
-export function popoverHorizontalOffset(
-  anchorLeft: number,
-  anchorWidth: number,
-  popoverWidth: number,
-  viewportWidth: number,
-  margin = POPOVER_VIEWPORT_MARGIN,
-): number {
-  // Ideal left edge: align the panel's right edge with the anchor's right edge
-  // (the established look for a right-hand control), then pull it back inside
-  // the viewport if that overflows either side.
-  const preferredLeft = anchorLeft + anchorWidth - popoverWidth;
-  const maxLeft = Math.max(margin, viewportWidth - popoverWidth - margin);
-  const clampedLeft = Math.min(Math.max(preferredLeft, margin), maxLeft);
-  // Returned relative to the anchor so the same maths describes both the
-  // in-flow and the portaled placement.
-  return clampedLeft - anchorLeft;
-}
-
-/**
- * Vertical placement for the body-level panel.
- *
- * The chip sits at the top of the viewport in the entry top bar and at the
- * bottom of a centered card in the Hub composer footer, so a single downward
- * offset cannot serve both: below the footer anchor the panel would run off the
- * bottom edge. Open downward when there is room, otherwise flip above the
- * anchor, and clamp to the same gutter used horizontally.
- */
-export function popoverVerticalOffset(
-  anchorTop: number,
-  anchorHeight: number,
-  popoverHeight: number,
-  viewportHeight: number,
-  margin = POPOVER_VIEWPORT_MARGIN,
-  gap = POPOVER_ANCHOR_GAP,
-): number {
-  const below = anchorTop + anchorHeight + gap;
-  const above = anchorTop - gap - popoverHeight;
-  const preferredTop =
-    below + popoverHeight <= viewportHeight - margin || above < margin
-      ? below
-      : above;
-  const maxTop = Math.max(margin, viewportHeight - popoverHeight - margin);
-  return Math.min(Math.max(preferredTop, margin), maxTop);
-}
-
 
 function displayAgentName(agent: Pick<AgentInfo, 'id' | 'name'>): string {
   return agent.id === 'amr' ? 'Readable Studio AMR' : agent.name;
@@ -393,22 +334,13 @@ export function InlineModelSwitcher({
         window.innerWidth || document.documentElement.clientWidth;
       const viewportHeight =
         window.innerHeight || document.documentElement.clientHeight;
-      setPopoverPos({
-        left:
-          anchorBox.left +
-          popoverHorizontalOffset(
-            anchorBox.left,
-            anchorBox.width,
-            width,
-            viewportWidth,
-          ),
-        top: popoverVerticalOffset(
-          anchorBox.top,
-          anchorBox.height,
-          popover.offsetHeight,
-          viewportHeight,
+      setPopoverPos(
+        placePopover(
+          anchorBox,
+          { width, height: popover.offsetHeight },
+          { width: viewportWidth, height: viewportHeight },
         ),
-      });
+      );
     };
     place();
     window.addEventListener('resize', place);

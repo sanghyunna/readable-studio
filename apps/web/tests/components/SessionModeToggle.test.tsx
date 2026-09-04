@@ -10,6 +10,14 @@ import { ko } from '../../src/i18n/locales/ko';
 
 afterEach(() => cleanup());
 
+function menuOption(name: string): HTMLElement {
+  const option = screen
+    .getAllByRole('menuitemradio', { hidden: true })
+    .find((item) => item.getAttribute('aria-label') === name);
+  if (!option) throw new Error(`Missing mode option: ${name}`);
+  return option;
+}
+
 describe('SessionModeToggle', () => {
   it('shows only the active mode until the menu is opened', () => {
     render(<SessionModeToggle mode="design" onChange={vi.fn()} />);
@@ -19,12 +27,8 @@ describe('SessionModeToggle', () => {
 
     fireEvent.click(screen.getByTestId('session-mode-trigger'));
 
-    expect(screen.getByRole('menuitemradio', { name: en['chat.mode.design.title'] }).getAttribute('aria-checked')).toBe(
-      'true',
-    );
-    expect(screen.getByRole('menuitemradio', { name: en['chat.mode.chat.title'] }).getAttribute('aria-checked')).toBe(
-      'false',
-    );
+    expect(menuOption(en['chat.mode.design.title']).getAttribute('aria-checked')).toBe('true');
+    expect(menuOption(en['chat.mode.chat.title']).getAttribute('aria-checked')).toBe('false');
   });
 
   it('switches mode from the menu', () => {
@@ -32,7 +36,7 @@ describe('SessionModeToggle', () => {
     render(<SessionModeToggle mode="design" onChange={onChange} />);
 
     fireEvent.click(screen.getByTestId('session-mode-trigger'));
-    fireEvent.click(screen.getByRole('menuitemradio', { name: en['chat.mode.chat.title'] }));
+    fireEvent.click(menuOption(en['chat.mode.chat.title']));
 
     expect(onChange).toHaveBeenCalledWith('chat');
     expect(screen.queryByRole('menu')).toBeNull();
@@ -51,14 +55,14 @@ describe('SessionModeToggle', () => {
     expect(screen.queryByRole('tooltip')).toBeNull();
 
     fireEvent.click(trigger);
-    expect(screen.getByRole('tooltip').textContent).toContain(ko['chat.mode.chat.title']);
-    expect(screen.getByRole('tooltip').textContent).toContain(ko['chat.mode.chat.summary']);
+    expect(screen.getByRole('tooltip', { hidden: true }).textContent).toContain(ko['chat.mode.chat.title']);
+    expect(screen.getByRole('tooltip', { hidden: true }).textContent).toContain(ko['chat.mode.chat.summary']);
 
-    const designOption = screen.getByRole('menuitemradio', { name: ko['chat.mode.design.title'] });
+    const designOption = menuOption(ko['chat.mode.design.title']);
     fireEvent.pointerEnter(designOption);
 
-    const menu = screen.getByRole('menu');
-    const card = screen.getByRole('tooltip');
+    const menu = screen.getByRole('menu', { hidden: true });
+    const card = screen.getByRole('tooltip', { hidden: true });
     expect(menu.textContent).not.toContain(ko['chat.mode.design.summary']);
     expect(card.textContent).toContain(ko['chat.mode.design.summary']);
     expect(card.textContent).toContain(ko['chat.mode.design.solves']);

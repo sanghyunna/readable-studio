@@ -3,41 +3,15 @@ import { createPortal } from 'react-dom';
 import type { ChatSessionMode } from '@readable-studio/contracts';
 import { useT } from '../i18n';
 import { Icon, type IconName } from './Icon';
+import { placePopover } from './popoverPlacement';
 
-// Gap between the trigger and the popover, and the minimum breathing room kept
-// against every viewport edge when the computed rect is clamped.
-const POPOVER_GAP = 6;
-const VIEWPORT_MARGIN = 16;
-// Conservative popover box used only for clamping. Over-estimating just nudges
-// the popover further inside the viewport, which is always safe.
-const POPOVER_WIDTH = 500;
-const POPOVER_HEIGHT = 380;
 // The popover is a body-level fixed layer, so the pointer physically leaves the
 // toggle's box while travelling toward it. Defer the preview reset long enough
 // to cross that gap; entering the popover cancels the pending reset. Mirrors
 // FLYOUT_CLOSE_DELAY_MS in NextStepActions.tsx.
 const PREVIEW_CLOSE_DELAY_MS = 240;
 
-type PopoverRect = { left: number; top: number; flipped: boolean };
-
-// Place the popover above its trigger, flipping to right-anchored when the
-// natural left-anchored box would overflow, then clamp both axes so the layer
-// can never be positioned off-screen.
-function placeAbove(anchor: DOMRect): PopoverRect {
-  const viewportWidth = window.innerWidth;
-  const viewportHeight = window.innerHeight;
-  const width = Math.min(POPOVER_WIDTH, viewportWidth - VIEWPORT_MARGIN * 2);
-  const flipped = anchor.left + width > viewportWidth - VIEWPORT_MARGIN;
-  const rawLeft = flipped ? anchor.right - width : anchor.left;
-  const maxLeft = Math.max(VIEWPORT_MARGIN, viewportWidth - width - VIEWPORT_MARGIN);
-  const rawTop = anchor.top - POPOVER_GAP - POPOVER_HEIGHT;
-  const maxTop = Math.max(VIEWPORT_MARGIN, viewportHeight - VIEWPORT_MARGIN - POPOVER_HEIGHT);
-  return {
-    left: Math.min(Math.max(VIEWPORT_MARGIN, rawLeft), maxLeft),
-    top: Math.min(Math.max(VIEWPORT_MARGIN, rawTop), maxTop),
-    flipped,
-  };
-}
+type PopoverRect = { left: number; top: number };
 
 // The popover used to be a DOM descendant of its anchor, so context rules like
 // `.composer .session-mode-toggle__popover-card` and the home-hero card cap
@@ -214,11 +188,29 @@ export function SessionModeToggle({
     setPreviewMode(null);
   }, [cancelPreviewClose]);
 
+  // Placement is measured, never assumed. The panel's height varies by surface
+  // (the composer hides the description card, leaving a ~70px menu where the
+  // old hardcoded 380px estimate placed it hundreds of pixels above the
+  // trigger), so the real rendered box is what gets clamped.
   useLayoutEffect(() => {
     if (!open) return;
     const updatePosition = () => {
-      const anchor = (triggerRef.current ?? rootRef.current)?.getBoundingClientRect();
-      if (anchor) setRect(placeAbove(anchor));
+      const anchorNode = triggerRef.current ?? rootRef.current;
+      const popover = popoverRef.current;
+      if (!anchorNode || !popover) return;
+      const anchor = anchorNode.getBoundingClientRect();
+      const width = popover.offsetWidth;
+      const height = popover.offsetHeight;
+      // Pre-paint the panel has no box; placing against 0x0 would anchor it to
+      // the viewport gutter. Wait for the next frame's measurement instead.
+      if (width === 0 || height === 0) return;
+      setRect(
+        placePopover(
+          { left: anchor.left, top: anchor.top, width: anchor.width, height: anchor.height },
+          { width, height },
+          { width: window.innerWidth, height: window.innerHeight },
+        ),
+      );
     };
     updatePosition();
     window.addEventListener('resize', updatePosition);
@@ -238,7 +230,10 @@ export function SessionModeToggle({
       closeMenu();
     };
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') closeMenu();
+      if (event.key !== 'Escape') return;
+      closeMenu();
+      // Focus returns to the trigger so the menu is not a keyboard dead end.
+      triggerRef.current?.focus();
     };
 
     document.addEventListener('pointerdown', handlePointerDown);
@@ -280,7 +275,9 @@ export function SessionModeToggle({
           }
           const trigger = event.currentTarget;
           setSurface(resolveSurface(trigger));
-          setRect(placeAbove(trigger.getBoundingClientRect()));
+          // Rect is computed by the layout effect once the panel has a real
+          // measured box; until then it renders hidden rather than misplaced.
+          setRect(null);
           setOpen(true);
           setPreviewMode(mode);
         }}
@@ -289,19 +286,49 @@ export function SessionModeToggle({
         <span className="session-mode-toggle__label">{triggerLabel ?? active.label}</span>
         <Icon name="chevron-down" size={12} />
       </button>
-      {open && rect && typeof document !== 'undefined' ? createPortal(
+      {open && typeof document !== 'undefined' ? createPortal(
         <div
           ref={popoverRef}
-          className={`session-mode-toggle__popover${rect.flipped ? ' is-flipped' : ''}${
+          className={`session-mode-toggle__popover${
             surface ? ` session-mode-toggle__popover--${surface}` : ''
           }`}
-          style={{ left: `${rect.left}px`, top: `${rect.top}px` }}
+          data-testid="session-mode-popover"
+          style={
+            rect
+              ? { left: `${rect.left}px`, top: `${rect.top}px` }
+              : // Measured on the next layout pass. Kept out of the paint and
+                // out of the hit-testing surface meanwhile, so no frame ever
+                // shows the panel at the wrong place.
+                { left: '0px', top: '0px', visibility: 'hidden', pointerEvents: 'none' }
+          }
           onPointerEnter={cancelPreviewClose}
           onPointerLeave={() => {
             if (!open) schedulePreviewClose();
           }}
         >
-          <div className="session-mode-toggle__menu" role="menu">
+          <div
+            className="session-mode-toggle__menu"
+            role="menu"
+            onKeyDown={(event) => {
+              if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+              event.preventDefault();
+              const items = Array.from(
+                event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                  '.session-mode-toggle__option',
+                ),
+              );
+              if (items.length === 0) return;
+              const current = items.indexOf(
+                document.activeElement as HTMLButtonElement,
+              );
+              const delta = event.key === 'ArrowDown' ? 1 : -1;
+              const next =
+                current === -1
+                  ? 0
+                  : (current + delta + items.length) % items.length;
+              items[next]?.focus();
+            }}
+          >
             <div className="session-mode-toggle__options">
               {modes.map((item) => {
                 const itemActive = item.mode === mode;
