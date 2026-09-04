@@ -435,6 +435,11 @@ export function HomeView({
     [mcpServers],
   );
 
+  // Threaded into HomeHero on BOTH surfaces. The hub hides the design-system
+  // footer control (HomeHero filters the `designSystem` field out there) but
+  // still needs the catalogue: design-system plugins in the @-mention picker
+  // render their real palette beside the name. Only the selection callbacks
+  // stay hub-exempt.
   const designSystemPickerSystems = useMemo(
     () => selectableHomeDesignSystems(designSystems, defaultDesignSystemId),
     [defaultDesignSystemId, designSystems],
@@ -1472,10 +1477,10 @@ export function HomeView({
         onPluginInputValuesChange={updateActiveInputs}
         inlineEditableInputNames={active?.editableInputNames ?? []}
         footerInputNames={visiblePluginInputNames(active)}
+        designSystems={designSystemPickerSystems}
         {...(surface === 'hub'
           ? {}
           : {
-              designSystems: designSystemPickerSystems,
               designSystemId,
               onDesignSystemIdChange: updateDesignSystemId,
             })}

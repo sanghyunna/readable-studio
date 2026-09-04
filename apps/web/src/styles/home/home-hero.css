@@ -908,6 +908,33 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Design-system identity preview. The fills are CONTENT colors (each design
+   system's own palette, same as the Library and switch-picker swatches); the
+   frame around them stays on product tokens. A segmented pill instead of
+   separate chips so a 4-color palette reads as one identity mark and the row
+   height never grows past the two-line text block. */
+.home-hero__plugin-option-swatches {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: stretch;
+  block-size: 16px;
+  inline-size: 44px;
+  border-radius: var(--radius-xs);
+  overflow: hidden;
+  /* Tonal seat rather than an outline: keeps a white-canvas system (Apple,
+     Airtable) legible against the panel without a hard border. */
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-muted) 22%, transparent);
+}
+.home-hero__plugin-option-swatch {
+  flex: 1 1 0;
+  min-inline-size: 0;
+}
+/* The daemon emits the palette canvas-first (background, surface, ink,
+   accent), so the brand's chromatic signal is the LAST entry. Weight it so a
+   44px pill still reads as "Airtable blue" rather than four grey bands. */
+.home-hero__plugin-option-swatch:last-child {
+  flex-grow: 1.8;
+}
 .home-hero__plugin-option-meta {
   flex: 0 0 auto;
   color: var(--text-faint);

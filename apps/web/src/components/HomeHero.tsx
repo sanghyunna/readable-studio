@@ -31,6 +31,7 @@ import type {
 } from '@readable-studio/contracts';
 import { Button } from '@readable-studio/components';
 import { DesignSystemPicker } from './DesignSystemPicker';
+import { buildDesignSystemPalettes, pluginSwatches } from './design-system-swatch-map';
 import type { SkillSummary } from '../types';
 import { Icon, type IconName } from './Icon';
 import { useAnalytics } from '../analytics/provider';
@@ -205,6 +206,12 @@ interface HomeMentionOption {
   description: string;
   meta: string;
   pluginRecord?: InstalledPluginRecord;
+  /**
+   * Design-system identity colors for the row's palette preview. Absent for
+   * every non-design-system row and for systems with no usable palette, which
+   * keeps the name-only layout as the graceful fallback.
+   */
+  swatches?: readonly string[];
   disabled?: boolean;
   onPick: () => void;
 }
@@ -354,6 +361,12 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
         : [],
     [locale, mentionActive, mentionQuery, pluginOptions],
   );
+  // Design-system plugins list as bare brand names in the @-mention picker, so
+  // each row carries its system's real palette as a small identity preview.
+  const designSystemPalettes = useMemo(
+    () => buildDesignSystemPalettes(designSystems),
+    [designSystems],
+  );
   const skillMatches = useMemo(
     () =>
       mentionActive
@@ -403,16 +416,20 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
       ? {
           id: 'plugins',
           label: t('entry.navPlugins'),
-          options: pluginMatches.map((plugin) => ({
-            id: `plugin-${plugin.id}`,
-            icon: 'sparkles',
-            title: localizePluginTitle(locale, plugin),
-            description: localizePluginDescription(locale, plugin) || plugin.id,
-            meta: pendingPluginId === plugin.id ? t('homeHero.applying') : getPluginSourceLabel(plugin),
-            pluginRecord: plugin,
-            disabled: pendingPluginId !== null,
-            onPick: () => pickPlugin(plugin),
-          })),
+          options: pluginMatches.map((plugin) => {
+            const swatches = pluginSwatches(plugin, designSystemPalettes);
+            return {
+              id: `plugin-${plugin.id}`,
+              icon: 'sparkles' as IconName,
+              title: localizePluginTitle(locale, plugin),
+              description: localizePluginDescription(locale, plugin) || plugin.id,
+              meta: pendingPluginId === plugin.id ? t('homeHero.applying') : getPluginSourceLabel(plugin),
+              pluginRecord: plugin,
+              ...(swatches ? { swatches } : {}),
+              disabled: pendingPluginId !== null,
+              onPick: () => pickPlugin(plugin),
+            };
+          }),
         }
       : null,
     showSkills
@@ -1282,6 +1299,24 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
                           <span>{item.title}</span>
                           <span>{item.description}</span>
                         </span>
+                        {item.swatches ? (
+                          // Supplementary only — the name above already
+                          // identifies the row, so the cluster stays out of the
+                          // accessibility tree instead of reading hex codes.
+                          <span
+                            className="home-hero__plugin-option-swatches"
+                            data-testid={`home-hero-option-swatches-${item.id}`}
+                            aria-hidden
+                          >
+                            {item.swatches.map((color, colorIndex) => (
+                              <span
+                                key={`${item.id}-sw-${colorIndex}`}
+                                className="home-hero__plugin-option-swatch"
+                                style={{ background: color }}
+                              />
+                            ))}
+                          </span>
+                        ) : null}
                         <span className="home-hero__plugin-option-meta">
                           {item.meta}
                         </span>
