@@ -171,7 +171,12 @@ import { DesignSystemPicker } from './DesignSystemPicker';
 import { PluginDetailsModal } from './PluginDetailsModal';
 import { DesignSystemPreviewModal } from './DesignSystemPreviewModal';
 import { ChatPane } from './ChatPane';
-import { ASSISTANT_ROLLBACK_EVENT, type QuestionFormOpenRequest } from './AssistantMessage';
+import { BriefCard } from './BriefCard';
+import {
+  ASSISTANT_ROLLBACK_EVENT,
+  filterRenderableProducedFiles,
+  type QuestionFormOpenRequest,
+} from './AssistantMessage';
 import { RollbackModal } from './RollbackModal';
 import type { ChatSendMeta } from './ChatComposer';
 import {
@@ -692,6 +697,106 @@ export function buildQuestionFormKey(
 
 const BRIEF_RECEIPT_OPEN_RE = /<brief-receipt\b[^>]*>/i;
 const BRIEF_RECEIPT_CLOSE_RE = /<\/brief-receipt\s*>/i;
+const BRIEF_RECEIPT_OPEN_PREFIX = '<brief-receipt';
+const BRIEF_RECEIPT_CLOSE_PREFIX = '</brief-receipt';
+
+/**
+ * Remove host-consumed receipt markup from assistant prose. A complete block is
+ * hidden whether its JSON is valid or malformed; an unterminated or partially
+ * streamed tag is hidden from its first byte so raw protocol never flashes.
+ */
+export function stripBriefReceiptsForDisplay(input: string): string {
+  let cursor = 0;
+  let visible = '';
+  while (cursor < input.length) {
+    const remainder = input.slice(cursor);
+    const open = BRIEF_RECEIPT_OPEN_RE.exec(remainder);
+    if (!open) {
+      visible += remainder;
+      break;
+    }
+    const openStart = cursor + open.index;
+    visible += input.slice(cursor, openStart);
+    const bodyStart = openStart + open[0].length;
+    const close = BRIEF_RECEIPT_CLOSE_RE.exec(input.slice(bodyStart));
+    if (!close) return stripTrailingBriefReceiptPrefix(visible);
+    cursor = bodyStart + close.index + close[0].length;
+  }
+  return stripTrailingBriefReceiptPrefix(
+    visible.replace(/<\/brief-receipt\s*>/gi, ''),
+  );
+}
+
+function stripTrailingBriefReceiptPrefix(input: string): string {
+  const tagStart = input.lastIndexOf('<');
+  if (tagStart < 0) return input;
+  const tail = input.slice(tagStart).toLowerCase();
+  if (
+    BRIEF_RECEIPT_OPEN_PREFIX.startsWith(tail)
+    || BRIEF_RECEIPT_CLOSE_PREFIX.startsWith(tail)
+    || tail.startsWith(BRIEF_RECEIPT_OPEN_PREFIX)
+    || tail.startsWith(BRIEF_RECEIPT_CLOSE_PREFIX)
+  ) {
+    return input.slice(0, tagStart);
+  }
+  return input;
+}
+
+/** Preserve raw persisted messages while giving every chat surface safe prose. */
+export function briefReceiptMessageForDisplay(message: ChatMessage): ChatMessage {
+  if (message.role !== 'assistant') return message;
+  const content = stripBriefReceiptsForDisplay(message.content ?? '');
+  const events = message.events;
+  if (!events?.some(event => event.kind === 'text')) {
+    return content === message.content ? message : { ...message, content };
+  }
+  const nextEvents: AgentEvent[] = [];
+  for (let index = 0; index < events.length;) {
+    const event = events[index]!;
+    if (event.kind !== 'text') {
+      nextEvents.push(event);
+      index += 1;
+      continue;
+    }
+    let end = index;
+    let raw = '';
+    while (end < events.length && events[end]?.kind === 'text') {
+      raw += (events[end] as Extract<AgentEvent, { kind: 'text' }>).text;
+      end += 1;
+    }
+    nextEvents.push({ ...event, text: stripBriefReceiptsForDisplay(raw) });
+    index = end;
+  }
+  const changed = content !== message.content || nextEvents.length !== events.length
+    || nextEvents.some((event, index) => event !== events[index]);
+  return changed ? { ...message, content, events: nextEvents } : message;
+}
+
+/** Normalize persisted message fields before either workspace chat surface sees them. */
+export function projectMessageForDisplay(
+  message: ChatMessage,
+  projectFiles: readonly ProjectFile[] = [],
+): ChatMessage {
+  const receiptSafeMessage = briefReceiptMessageForDisplay(message);
+  if (message.producedFiles === undefined) return receiptSafeMessage;
+  const rawProducedFiles: unknown = message.producedFiles;
+  if (!Array.isArray(rawProducedFiles)) {
+    return { ...receiptSafeMessage, producedFiles: [] };
+  }
+  // Legacy/manual seed data sometimes persisted just a filename. Restore the
+  // full contract from the authoritative project file list when possible;
+  // unknown entries are dropped rather than handed to renderers.
+  const producedFiles = rawProducedFiles.flatMap((entry): ProjectFile[] => {
+    if (typeof entry === 'string') {
+      const resolved = projectFiles.find(file => file.name === entry);
+      return resolved ? [resolved] : [];
+    }
+    return filterRenderableProducedFiles([entry]);
+  });
+  const unchanged = producedFiles.length === rawProducedFiles.length
+    && producedFiles.every((file, index) => file === rawProducedFiles[index]);
+  return unchanged ? receiptSafeMessage : { ...receiptSafeMessage, producedFiles };
+}
 
 /** Parse a complete receipt or the valid JSON prefix available while streaming. */
 export function parseBriefReceipt(input: string): BriefAssumption[] | null {
@@ -915,6 +1020,10 @@ export function ProjectView({
   // to the Design Files panel so the file list shows a loading state instead
   // of silently sitting on the old tree for the few seconds the scan takes.
   const [projectFiles, setProjectFiles] = useState<ProjectFile[]>([]);
+  const displayMessages = useMemo(
+    () => messages.map(message => projectMessageForDisplay(message, projectFiles)),
+    [messages, projectFiles],
+  );
   const projectFilesRef = useRef<ProjectFile[]>([]);
   const [workspaceFocused, setWorkspaceFocused] = useState(false);
   const [commentInspectorActive, setCommentInspectorActive] = useState(false);
@@ -5480,7 +5589,7 @@ export function ProjectView({
               // The conversation id is part of the key so switching conversations
               // resets internal scroll/draft state inside ChatPane and ChatComposer.
               key={`${project.id}:${activeConversationId ?? 'conversation-unavailable'}:${chatSeed?.id ?? 'ready'}`}
-              messages={messages}
+              messages={displayMessages}
               streaming={currentConversationStreaming}
               liveToolInput={liveToolInput}
               loading={currentConversationLoading}
@@ -5584,7 +5693,7 @@ export function ProjectView({
               backLabel={t('project.backToProjects')}
               composerFooterAccessory={executionControls}
               projectHeader={(
-                <span className="chat-project-title-line">
+                <div className="chat-project-title-line">
                   <span
                     className="title editable"
                     data-testid="project-title"
@@ -5606,7 +5715,17 @@ export function ProjectView({
                   {projectMeta !== t('project.metaFreeform') ? (
                     <span className="meta" data-testid="project-meta">{projectMeta}</span>
                   ) : null}
-                </span>
+                  {projectBrief ? (
+                    <BriefCard
+                      brief={projectBrief}
+                      prominent={currentConversationStreaming && receiptAssumptions !== null}
+                      onChange={handleBriefChange}
+                      onSteer={(payload) => {
+                        void handleSend(payload, [], []);
+                      }}
+                    />
+                  ) : null}
+                </div>
               )}
               designSystemPicker={(
                 <DesignSystemPicker
@@ -5706,7 +5825,7 @@ export function ProjectView({
           activeConversationChat={activeConversationChatState}
           onActiveContextChange={handleActiveWorkspaceContextChange}
           onWorkspaceContextsChange={handleWorkspaceContextsChange}
-          messages={messages}
+          messages={displayMessages}
           artifactHtml={artifact?.html}
           conversationError={error}
           onRetry={handleRetry}
@@ -5732,11 +5851,6 @@ export function ProjectView({
               }}
             />
           )}
-          brief={projectBrief}
-          onBriefChange={handleBriefChange}
-          onBriefSteer={(payload) => {
-            void handleSend(payload, [], []);
-          }}
           questionForm={displayedQuestionForm}
           questionFormPreview={displayedQuestionFormPreview}
           questionFormKey={displayedQuestionFormKey}

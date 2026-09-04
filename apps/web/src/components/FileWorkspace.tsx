@@ -73,8 +73,6 @@ import { TerminalViewer } from './workspace/TerminalViewer';
 import { MissingBrandFontsBanner } from './MissingBrandFontsBanner';
 import { PasteTextDialog } from './PasteTextDialog';
 import { QuestionsPanel } from './QuestionsPanel';
-import { BriefCard } from './BriefCard';
-import type { ProjectBrief } from './brief-state';
 import { consumeHubSessionSurface } from './hub/HubSessionTree';
 import { QuickSwitcher } from './QuickSwitcher';
 import { SketchEditor } from './SketchEditor';
@@ -196,11 +194,6 @@ interface Props {
   // row was removed; these moved here alongside the FileViewer present/Share
   // portal that targets the same actions container.
   headerActions?: ReactNode;
-  // Persistent assumption receipt. Unlike blocking questions, this remains
-  // visible across workspace tabs and survives reopening the project.
-  brief?: ProjectBrief | null;
-  onBriefChange?: (brief: ProjectBrief) => void | Promise<void>;
-  onBriefSteer?: (payload: string) => void;
   // Active discovery question form, surfaced in the right-hand Questions tab
   // instead of inline in the chat. Owned by ProjectView (derived from the
   // latest assistant message).
@@ -416,9 +409,6 @@ export function FileWorkspace({
   messages = [],
   conversationId,
   headerActions,
-  brief = null,
-  onBriefChange,
-  onBriefSteer,
   questionForm = null,
   questionFormPreview = null,
   questionFormKey = null,
@@ -2016,9 +2006,6 @@ export function FileWorkspace({
           role="alert"
           onDismiss={() => setLauncherToast(null)}
         />
-      ) : null}
-      {brief && onBriefChange && onBriefSteer ? (
-        <BriefCard brief={brief} onChange={onBriefChange} onSteer={onBriefSteer} />
       ) : null}
       <div className="ws-body">
         {/* Banner moved into DesignFilesPanel for the Design Files tab so

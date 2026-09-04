@@ -101,16 +101,12 @@ vi.mock('../../src/components/AvatarMenu', () => ({
 }));
 
 vi.mock('../../src/components/FileWorkspace', () => ({
-  FileWorkspace: ({ tabsState, onTabsStateChange, brief }: {
+  FileWorkspace: ({ tabsState, onTabsStateChange }: {
     tabsState: { tabs: string[]; active: string | null };
     onTabsStateChange: (state: { tabs: string[]; active: string | null }) => void;
-    brief?: { assumptions: Array<{ id: string; value: string | string[] }> } | null;
   }) => (
     <div data-testid="file-workspace">
       <output data-testid="workspace-active-tab">{tabsState.active ?? ''}</output>
-      <output data-testid="workspace-brief">
-        {brief?.assumptions.map((item) => `${item.id}:${String(item.value)}`).join('|') ?? ''}
-      </output>
       <button
         type="button"
         data-testid="close-all-tabs"
@@ -127,14 +123,16 @@ vi.mock('../../src/components/Loading', () => ({
 }));
 
 vi.mock('../../src/components/ChatPane', () => ({
-  ChatPane: ({ agents, daemonLive, onModeChange, onAgentChange, onAgentModelChange }: {
+  ChatPane: ({ agents, daemonLive, onModeChange, onAgentChange, onAgentModelChange, projectHeader }: {
     agents?: AgentInfo[];
     daemonLive?: boolean;
     onModeChange?: (mode: AppConfig['mode']) => void;
     onAgentChange?: (id: string) => void;
     onAgentModelChange?: (id: string, choice: { model?: string }) => void;
+    projectHeader?: ReactNode;
   }) => (
     <div data-testid="chat-pane">
+      {projectHeader}
       <output data-testid="execution-wiring">
         {agents && daemonLive && onModeChange && onAgentChange && onAgentModelChange ? 'wired' : 'missing'}
       </output>
@@ -237,7 +235,7 @@ describe('ProjectView tab URL hydration', () => {
     expect(onAgentModelChange).toHaveBeenCalledWith('claude', { model: 'opus' });
   });
 
-  it('hydrates the workspace Brief card from persisted project metadata on return', async () => {
+  it('hydrates the collapsed chat-header Brief from persisted project metadata on return', async () => {
     renderProjectView({
       project: {
         ...project,
@@ -261,7 +259,15 @@ describe('ProjectView tab URL hydration', () => {
       },
     });
 
-    expect((await screen.findByTestId('workspace-brief')).textContent).toContain('audience:security leaders');
+    // This file intentionally mocks translations as their keys. Assert the
+    // resulting accessible name exactly enough to prove metadata hydration:
+    // the audience field key, persisted value, and assumption count all come
+    // from project.metadata.brief rather than placeholder Brief chrome.
+    const briefTrigger = await screen.findByRole('button', {
+      name: /brief\.triggerbrief\.field\.audiencesecurity leaders1/,
+    });
+    expect(briefTrigger.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByTestId('brief-card-panel')).toBeNull();
   });
 
   it('syncs a persisted active tab to the URL before the file list has hydrated', async () => {

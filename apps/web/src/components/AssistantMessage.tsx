@@ -339,7 +339,10 @@ function AssistantMessageImpl({
     );
   }, [events, liveCodeBlocks, showConversationTodoCard, conversationTodoInput]);
   const fileOps = useMemo(() => deriveFileOps(events), [events]);
-  const produced = message.producedFiles ?? [];
+  // Persisted messages are an external boundary. Older/manual fixtures may
+  // contain compact filename strings instead of ProjectFile objects; never let
+  // one malformed entry reach URL generation or hide the rest of the message.
+  const produced = filterRenderableProducedFiles(message.producedFiles);
   const displayedProduced = useMemo(
     () =>
       produced.length > 0
@@ -1042,6 +1045,28 @@ function UnfinishedTodosPanel({
       ) : null}
     </div>
   );
+}
+
+export function filterRenderableProducedFiles(files: unknown): ProjectFile[] {
+  if (!Array.isArray(files)) return [];
+  return files.filter((file): file is ProjectFile => {
+    if (!file || typeof file !== "object") return false;
+    const candidate = file as {
+      name?: unknown;
+      size?: unknown;
+      mtime?: unknown;
+      kind?: unknown;
+      mime?: unknown;
+    };
+    return typeof candidate.name === "string"
+      && candidate.name.trim().length > 0
+      && typeof candidate.size === "number"
+      && Number.isFinite(candidate.size)
+      && typeof candidate.mtime === "number"
+      && Number.isFinite(candidate.mtime)
+      && typeof candidate.kind === "string"
+      && typeof candidate.mime === "string";
+  });
 }
 
 function ProducedFiles({

@@ -74,7 +74,10 @@ function fieldsForKind(kind: ProjectKind): {
 /**
  * Build the brief assumptions for the settings the modal used to freeze.
  * `metadata` wins over the default when the caller (an Advanced-disclosure
- * create, or an import) already made an explicit choice.
+ * create, or an import) already made an explicit choice. These human-readable
+ * labels are compatibility fallbacks for direct consumers; the merge boundary
+ * stores known fields by stable id and BriefCard resolves presentation from the
+ * active locale, so no locale is baked into newly persisted project state.
  */
 export function creationBriefAssumptions(
   kind: ProjectKind,

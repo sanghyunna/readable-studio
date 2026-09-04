@@ -447,6 +447,25 @@ describe('AssistantMessage question forms', () => {
 });
 
 describe('AssistantMessage recovered produced files', () => {
+  it('skips a malformed persisted produced-file entry without crashing the message', () => {
+    const malformedProducedFiles: unknown[] = ['index.html'];
+    expect((malformedProducedFiles[0] as { name?: unknown }).name).toBeUndefined();
+
+    render(
+      <AssistantMessage
+        message={baseMessage({
+          producedFiles: malformedProducedFiles as ProjectFile[],
+        })}
+        streaming={false}
+        projectId="proj-1"
+      />,
+    );
+
+    expect(screen.getByText('Done.')).toBeTruthy();
+    expect(screen.queryByText('index.html')).toBeNull();
+    expect(screen.queryByText('Files from this turn')).toBeNull();
+  });
+
   it('shows files modified during a sparse completed assistant turn', () => {
     render(
       <AssistantMessage

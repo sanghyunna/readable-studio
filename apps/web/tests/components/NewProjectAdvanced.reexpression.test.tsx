@@ -7,7 +7,7 @@
 //   3. a settings value that used to be frozen at create time is now editable
 //      after creation through a Brief chip.
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@readable-studio/host', () => ({
@@ -181,11 +181,25 @@ describe('post-creation chip edits change values that used to be frozen', () => 
       brief = next;
     });
 
-    render(<BriefCard brief={brief} onChange={onChange} onSteer={onSteer} />);
+    render(<BriefCard brief={brief} prominent onChange={onChange} onSteer={onSteer} />);
 
-    fireEvent.click(screen.getByRole('listitem', { name: /Fidelity/i }));
-    fireEvent.click(await screen.findByRole('radio', { name: 'Wireframe' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Apply correction' }));
+    // The panel is intentionally body-portaled so the chat header cannot clip it.
+    // jsdom has no layout box, so measurement correctly keeps the layer hidden;
+    // query that exact layer with hidden roles rather than assuming an in-flow,
+    // accessibility-visible panel.
+    const panel = screen.getByTestId('brief-card-panel');
+    expect(panel.parentElement).toBe(document.body);
+    expect(panel.style.visibility).toBe('hidden');
+
+    // Model the browser's completed measurement pass. Testing Library correctly
+    // suppresses accessible names beneath visibility:hidden, while a browser
+    // gives this layer a non-zero box and BriefCard then reveals it.
+    panel.style.visibility = 'visible';
+    panel.style.pointerEvents = 'auto';
+
+    fireEvent.click(within(panel).getByRole('listitem', { name: /Fidelity/i }));
+    fireEvent.click(within(panel).getByRole('radio', { name: 'Wireframe' }));
+    fireEvent.click(within(panel).getByRole('button', { name: 'Apply correction' }));
 
     await waitFor(() => expect(onChange).toHaveBeenCalled());
 
