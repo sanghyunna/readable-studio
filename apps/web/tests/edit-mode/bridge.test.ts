@@ -1634,6 +1634,36 @@ describe('manual edit bridge target normalization', () => {
     dom.window.close();
   });
 
+  it('treats the canonical deck letterbox as page chrome while keeping slide content selectable', () => {
+    const posts: Array<{ type?: string; target?: { id?: string } }> = [];
+    const dom = new JSDOM(
+      `<div class="deck-shell" data-readable-source-path="path-0">
+        <div id="deck-stage" data-readable-source-path="path-0-0">
+          <section class="slide active" data-readable-id="slide-1"><h1 data-readable-id="title">Title</h1></section>
+        </div>
+      </div>${buildManualEditBridge(true)}`,
+      { runScripts: 'dangerously', url: 'http://localhost' },
+    );
+    dom.window.parent.postMessage = ((message: unknown) => {
+      posts.push(message as { type?: string; target?: { id?: string } });
+    }) as typeof dom.window.parent.postMessage;
+
+    const shell = dom.window.document.querySelector('.deck-shell') as HTMLElement;
+    shell.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+    expect(posts.at(-1)).toMatchObject({ type: 'readable-edit-background' });
+    expect(shell.hasAttribute('data-readable-edit-selected')).toBe(false);
+    expect(dom.window.document.getElementById('deck-stage')?.hasAttribute('data-readable-edit-selected')).toBe(false);
+
+    const title = dom.window.document.querySelector('[data-readable-id="title"]') as HTMLElement;
+    title.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+    expect(posts).toContainEqual(expect.objectContaining({
+      type: 'readable-edit-select',
+      target: expect.objectContaining({ id: 'title' }),
+    }));
+
+    dom.window.close();
+  });
+
   it('blocks clicks on unmapped elements while edit mode is enabled', () => {
     const dom = new JSDOM(
       `<main><button id="cta">Launch</button></main>${buildManualEditBridge(true)}`,

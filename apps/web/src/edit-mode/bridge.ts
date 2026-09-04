@@ -140,8 +140,19 @@ export function buildManualEditBridge(enabled: boolean): string {
     if (generated) el.setAttribute('data-readable-runtime-id', generated);
     return generated || 'unknown';
   }
+  function isCanonicalDeckScaffold(el){
+    // The canonical deck shell and fixed-size stage are viewport machinery, not
+    // document content. Selecting the shell from the black letterbox creates a
+    // viewport-sized host resize frame whose handles overflow the scrollport;
+    // classic scrollbars then resize the iframe and retrigger the deck's fit()
+    // loop. Slides and everything authored inside them remain normal targets.
+    var stage = document.getElementById('deck-stage');
+    if (!stage || !el) return false;
+    if (el === stage) return true;
+    return !!(el.classList && el.classList.contains('deck-shell') && el.contains(stage));
+  }
   function isSourceMappable(el){
-    return !!(el && !isTransient(el) && el.hasAttribute && (el.hasAttribute('data-readable-id') || el.hasAttribute(sourcePathAttr)));
+    return !!(el && !isTransient(el) && !isCanonicalDeckScaffold(el) && el.hasAttribute && (el.hasAttribute('data-readable-id') || el.hasAttribute(sourcePathAttr)));
   }
   function isSemanticVisualRoot(el){
     if (!el || !el.tagName || el.tagName.toLowerCase() !== 'svg') return false;

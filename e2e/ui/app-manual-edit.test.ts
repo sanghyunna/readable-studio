@@ -1590,6 +1590,65 @@ test('[P0] manual edit mode keeps deck navigation available for deck-shaped HTML
 });
 
 
+test('[P1] canonical deck backdrop does not create a scrollbar layout feedback loop', async ({ page }) => {
+  await routeMockAgents(page);
+  const projectId = await createEmptyProject(page, 'Deck backdrop stability');
+  const deckHtml = readFileSync(new URL('../../templates/deck-framework.html', import.meta.url), 'utf8')
+    .replace('<!-- SLOT: slide 1 content -->', '<h1 data-readable-id="deck-title">Stable slide</h1>');
+  const seedResp = await page.request.post(`/api/projects/${projectId}/files`, {
+    data: {
+      name: 'backdrop-stability.html',
+      content: deckHtml,
+      artifactManifest: {
+        schema: 'readable-studio.artifact-manifest.v1',
+        kind: 'deck',
+        title: 'Deck backdrop stability',
+        entry: 'backdrop-stability.html',
+        renderer: 'deck-html',
+        exports: ['html', 'pptx'],
+      },
+    },
+    timeout: 15_000,
+  });
+  expect(seedResp.ok()).toBeTruthy();
+  await page.goto(`/projects/${projectId}/files/backdrop-stability.html`);
+  await openDesignFile(page, 'backdrop-stability.html');
+
+  const preview = artifactPreview(page);
+  const frame = artifactPreviewFrame(page);
+  await expect(frame.getByText('Stable slide')).toBeVisible();
+  await page.getByTestId('manual-edit-mode-toggle').click();
+  await expect(frame.locator('html[data-readable-edit-mode]')).toHaveCount(1);
+
+  const previewBox = await preview.boundingBox();
+  if (!previewBox) throw new Error('deck preview geometry is unavailable');
+  // The framework reserves 16px of black letterbox around its fitted stage.
+  await page.mouse.click(previewBox.x + 4, previewBox.y + 4);
+  await expect(frame.locator('.deck-shell[data-readable-edit-selected], #deck-stage[data-readable-edit-selected]')).toHaveCount(0);
+
+  const samples = await page.locator('.viewer-body').evaluate(async (scrollport) => {
+    const output: Array<{ clientWidth: number; clientHeight: number; scrollWidth: number; scrollHeight: number }> = [];
+    for (let frameIndex = 0; frameIndex < 24; frameIndex += 1) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      output.push({
+        clientWidth: scrollport.clientWidth,
+        clientHeight: scrollport.clientHeight,
+        scrollWidth: scrollport.scrollWidth,
+        scrollHeight: scrollport.scrollHeight,
+      });
+    }
+    return output;
+  });
+  expect(new Set(samples.map(({ clientWidth, clientHeight }) => `${clientWidth}x${clientHeight}`)).size).toBe(1);
+  expect(samples.every(({ clientWidth, clientHeight, scrollWidth, scrollHeight }) => (
+    scrollWidth <= clientWidth && scrollHeight <= clientHeight
+  ))).toBe(true);
+
+  // Real content inside the slide remains selectable after backdrop exclusion.
+  await frame.locator('[data-readable-id="deck-title"]').click();
+  await expect(frame.locator('[data-readable-id="deck-title"][data-readable-edit-selected]')).toHaveCount(1);
+});
+
 test('[P0] simple deck keeps the active slide stable across preview mode switches', async ({ page }) => {
   await routeMockAgents(page);
   const projectId = await createEmptyProject(page, 'Simple deck navigation state');
