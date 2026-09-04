@@ -359,6 +359,12 @@ export interface ComposeInput {
   // standard multi-turn assistant unless the user explicitly asks to build.
   sessionMode?: ChatSessionMode | undefined;
   agentRollbackEnabled?: boolean | undefined;
+  /** User-overridable static prompt bodies, resolved from the daemon data directory. */
+  editablePromptBodies?: {
+    'designer-charter': string;
+    'discovery-workflow': string;
+    'deck-framework': string;
+  } | undefined;
 }
 
 export function composeSystemPrompt({
@@ -392,6 +398,7 @@ export function composeSystemPrompt({
   userInstructions,
   projectInstructions,
   agentRollbackEnabled,
+  editablePromptBodies,
 }: ComposeInput): string {
   // Injection resistance goes FIRST — before everything else — so no later
   // section (skill body, user instructions, project instructions, tool result)
@@ -446,11 +453,11 @@ export function composeSystemPrompt({
   parts.push(renderReadabilityPrompt(locale));
   parts.push('\n\n---\n\n');
 
-  parts.push(DISCOVERY_AND_PHILOSOPHY, '\n\n---\n\n');
+  parts.push(editablePromptBodies?.['discovery-workflow'] ?? DISCOVERY_AND_PHILOSOPHY, '\n\n---\n\n');
 
   parts.push(
     '# Identity and workflow charter (background)\n\n',
-    BASE_SYSTEM_PROMPT,
+    editablePromptBodies?.['designer-charter'] ?? BASE_SYSTEM_PROMPT,
   );
 
   if (memoryBody && memoryBody.trim().length > 0) {
@@ -581,12 +588,13 @@ export function composeSystemPrompt({
   // skeleton would conflict. The skill-seed path takes over via
   // `derivePreflight` above, so we only fire the generic skeleton when no
   // skill seed is on offer.
+  const deckFrameworkDirective = editablePromptBodies?.['deck-framework'] ?? DECK_FRAMEWORK_DIRECTIVE;
   const isDeckProject = resolvedExclusiveSurface === 'deck';
   const isFreeformProject = activeSkillModes.size === 0 && (!metadata || metadata.kind === 'other');
   const hasSkillSeed =
     !!skillBody && /assets\/template\.html/.test(skillBody);
   if (isDeckProject && !hasSkillSeed) {
-    parts.push(`\n\n---\n\n${DECK_FRAMEWORK_DIRECTIVE}`);
+    parts.push(`\n\n---\n\n${deckFrameworkDirective}`);
   } else if (isFreeformProject && !hasSkillSeed) {
     // Freeform / kind=other projects skip the kind picker entirely and
     // land here. If the user's brief is a deck/keynote/slides ("讲解",
@@ -598,7 +606,7 @@ export function composeSystemPrompt({
     // adopts it when the brief actually is a deck — otherwise the
     // directive is read as background reference and ignored.
     parts.push(
-      `\n\n---\n\n## If this brief is a slide deck / keynote / presentation\n\nThe user did not pre-select a "Slide deck" surface, but their request may still call for one. **If — and only if — the brief reads as slides, keynote, presentation, deck, PPT, or 讲解, follow the framework below.** Otherwise ignore everything in this section and continue with the freeform output you would have written anyway.\n\n${DECK_FRAMEWORK_DIRECTIVE}`,
+      `\n\n---\n\n## If this brief is a slide deck / keynote / presentation\n\nThe user did not pre-select a "Slide deck" surface, but their request may still call for one. **If — and only if — the brief reads as slides, keynote, presentation, deck, PPT, or 讲解, follow the framework below.** Otherwise ignore everything in this section and continue with the freeform output you would have written anyway.\n\n${deckFrameworkDirective}`,
     );
   }
 

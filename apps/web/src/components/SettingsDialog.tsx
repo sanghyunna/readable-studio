@@ -2,6 +2,13 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { CSSProperties, Dispatch, KeyboardEvent as ReactKeyboardEvent, SetStateAction } from 'react';
 import { Button, Switch, ToggleCard } from '@readable-studio/components';
 import { validateBaseUrl } from '@readable-studio/contracts/api/connectionTest';
+import type {
+  EditableSystemPrompt,
+  SystemPromptResponse,
+  SystemPromptValidationError,
+  SystemPromptsResponse,
+  UpdateSystemPromptRequest,
+} from '@readable-studio/contracts';
 import {
   agentIdToTracking,
   byokProtocolToTracking,
@@ -151,6 +158,8 @@ export type SettingsSection =
   | 'appearance'
   | 'critiqueTheater'
   | 'notifications'
+  | 'systemPrompts'
+  | 'featureFlags'
   | 'pet'
   | 'skills'
   | 'designSystems'
@@ -2438,6 +2447,14 @@ export function SettingsDialog({
       subtitle: t('settings.codeAgentsSubtitle'),
     },
     memory: { title: t('settings.memory'), subtitle: t('settings.memoryHint') },
+    systemPrompts: {
+      title: t('systemPrompts.title'),
+      subtitle: t('systemPrompts.navHint'),
+    },
+    featureFlags: {
+      title: t('settings.featureFlagsTitle'),
+      subtitle: t('settings.featureFlagsHint'),
+    },
     // 'library' is opened via EntryShell route — SettingsDialog doesn't
     // render it but SettingsSection must accept the token (see type def).
     library: { title: '', subtitle: '' },
@@ -2796,6 +2813,28 @@ export function SettingsDialog({
               <span>
                 <strong>{t('settings.memory')}</strong>
                 <small>{t('settings.memoryHint')}</small>
+              </span>
+            </button>
+            <button
+              type="button"
+              className={`settings-nav-item${activeSection === 'systemPrompts' ? ' active' : ''}`}
+              onClick={() => setActiveSection('systemPrompts')}
+            >
+              <Icon name="file-code" size={18} />
+              <span>
+                <strong>{t('systemPrompts.nav')}</strong>
+                <small>{t('systemPrompts.navHint')}</small>
+              </span>
+            </button>
+            <button
+              type="button"
+              className={`settings-nav-item${activeSection === 'featureFlags' ? ' active' : ''}`}
+              onClick={() => setActiveSection('featureFlags')}
+            >
+              <Icon name="sliders" size={18} />
+              <span>
+                <strong>{t('settings.featureFlags')}</strong>
+                <small>{t('settings.featureFlagsHint')}</small>
               </span>
             </button>
             <button
@@ -4040,6 +4079,12 @@ export function SettingsDialog({
             </section>
           ) : null}
 
+          {activeSection === 'systemPrompts' ? <SystemPromptsSection /> : null}
+
+          {activeSection === 'featureFlags' ? (
+            <FeatureFlagsSection cfg={cfg} setCfg={setCfg} />
+          ) : null}
+
           {activeSection === 'memory' ? (
             <MemorySection
               chatAgentId={cfg.mode === 'daemon' ? cfg.agentId ?? null : null}
@@ -5001,6 +5046,374 @@ function soundIdToTracking(
     default:
       return undefined;
   }
+}
+
+// Counts a literal `{{SLOT}}` occurrence. The API is the authority on
+// validity; this only powers the pre-save warning so the user is told a
+// required slot is gone *before* they hit Save.
+function countPlaceholder(content: string, placeholder: string): number {
+  if (!placeholder) return 0;
+  let count = 0;
+  let index = content.indexOf(placeholder);
+  while (index !== -1) {
+    count += 1;
+    index = content.indexOf(placeholder, index + placeholder.length);
+  }
+  return count;
+}
+
+type PromptStatus =
+  | { kind: 'idle' }
+  | { kind: 'saving' }
+  | { kind: 'resetting' }
+  | { kind: 'saved' }
+  | { kind: 'reset' }
+  | { kind: 'error'; message: string };
+
+function SystemPromptCard({
+  prompt,
+  onPromptChange,
+}: {
+  prompt: EditableSystemPrompt;
+  onPromptChange: (next: EditableSystemPrompt) => void;
+}) {
+  const { t } = useI18n();
+  const [draft, setDraft] = useState(prompt.content);
+  const [status, setStatus] = useState<PromptStatus>({ kind: 'idle' });
+
+  // The server response is the source of truth after every save/reset, so
+  // rebase the draft whenever the persisted content changes underneath.
+  useEffect(() => {
+    setDraft(prompt.content);
+  }, [prompt.content]);
+
+  const placeholderStates = useMemo(
+    () =>
+      prompt.requiredPlaceholders.map((placeholder) => {
+        const count = countPlaceholder(draft, placeholder);
+        return {
+          placeholder,
+          count,
+          status: count === 0 ? 'missing' : count > 1 ? 'duplicate' : 'ok',
+        } as const;
+      }),
+    [draft, prompt.requiredPlaceholders],
+  );
+  const hasPlaceholderProblem = placeholderStates.some((entry) => entry.status !== 'ok');
+  const dirty = draft !== prompt.content;
+  const busy = status.kind === 'saving' || status.kind === 'resetting';
+
+  async function readValidationMessage(response: Response): Promise<string> {
+    // Translate the 400 contract into plain language that names the slot,
+    // instead of surfacing the raw payload.
+    try {
+      const body = (await response.json()) as Partial<SystemPromptValidationError>;
+      const missing = body?.error?.missingPlaceholders ?? [];
+      const duplicated = body?.error?.duplicatePlaceholders ?? [];
+      if (missing.length > 0) {
+        return t('systemPrompts.validationMissing', { names: missing.join(', ') });
+      }
+      if (duplicated.length > 0) {
+        return t('systemPrompts.validationDuplicate', { names: duplicated.join(', ') });
+      }
+    } catch {
+      // Fall through to the generic failure copy below.
+    }
+    return t('systemPrompts.saveFailed');
+  }
+
+  async function handleSave(): Promise<void> {
+    setStatus({ kind: 'saving' });
+    try {
+      const response = await fetch(
+        `/api/system-prompts/${encodeURIComponent(prompt.id)}`,
+        {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ content: draft } satisfies UpdateSystemPromptRequest),
+        },
+      );
+      if (response.status === 400) {
+        setStatus({ kind: 'error', message: await readValidationMessage(response) });
+        return;
+      }
+      if (!response.ok) {
+        setStatus({ kind: 'error', message: t('systemPrompts.saveFailed') });
+        return;
+      }
+      const body = (await response.json()) as SystemPromptResponse;
+      onPromptChange(body.prompt);
+      setStatus({ kind: 'saved' });
+    } catch {
+      setStatus({ kind: 'error', message: t('systemPrompts.saveFailed') });
+    }
+  }
+
+  async function handleReset(): Promise<void> {
+    setStatus({ kind: 'resetting' });
+    try {
+      const response = await fetch(
+        `/api/system-prompts/${encodeURIComponent(prompt.id)}`,
+        { method: 'DELETE' },
+      );
+      if (!response.ok) {
+        setStatus({ kind: 'error', message: t('systemPrompts.resetFailed') });
+        return;
+      }
+      const body = (await response.json()) as SystemPromptResponse;
+      onPromptChange(body.prompt);
+      setStatus({ kind: 'reset' });
+    } catch {
+      setStatus({ kind: 'error', message: t('systemPrompts.resetFailed') });
+    }
+  }
+
+  const statusMessage =
+    status.kind === 'error'
+      ? { tone: 'error' as const, text: status.message }
+      : status.kind === 'saving'
+        ? { tone: 'muted' as const, text: t('systemPrompts.saving') }
+        : status.kind === 'resetting'
+          ? { tone: 'muted' as const, text: t('systemPrompts.resetting') }
+          : status.kind === 'saved'
+            ? { tone: 'success' as const, text: t('systemPrompts.saved') }
+            : status.kind === 'reset'
+              ? { tone: 'success' as const, text: t('systemPrompts.resetDone') }
+              : hasPlaceholderProblem
+                ? { tone: 'error' as const, text: t('systemPrompts.blockedBeforeSave') }
+                : dirty
+                  ? { tone: 'muted' as const, text: t('systemPrompts.unsaved') }
+                  : null;
+
+  const editorId = `system-prompt-editor-${prompt.id}`;
+
+  return (
+    <article className={styles.promptCard} data-prompt-id={prompt.id}>
+      <div className={styles.promptHead}>
+        <div className={styles.promptHeadText}>
+          <span className={styles.promptName}>{prompt.label}</span>
+          <p className={styles.promptDescription}>{prompt.description}</p>
+        </div>
+        <span className={styles.promptBadge} data-overridden={prompt.overridden}>
+          {prompt.overridden
+            ? t('systemPrompts.overridden')
+            : t('systemPrompts.usingDefault')}
+        </span>
+      </div>
+
+      {prompt.requiredPlaceholders.length > 0 ? (
+        <div className={styles.placeholderPanel}>
+          <span className={styles.placeholderTitle}>
+            {t('systemPrompts.requiredPlaceholders')}
+          </span>
+          <ul className={styles.placeholderList}>
+            {placeholderStates.map((entry) => (
+              <li
+                key={entry.placeholder}
+                className={styles.placeholderItem}
+                data-status={entry.status}
+              >
+                <span className={styles.placeholderDot} aria-hidden="true" />
+                <span>
+                  {entry.status === 'missing'
+                    ? t('systemPrompts.placeholderMissing', { name: entry.placeholder })
+                    : entry.status === 'duplicate'
+                      ? t('systemPrompts.placeholderDuplicated', {
+                          name: entry.placeholder,
+                          count: entry.count,
+                        })
+                      : t('systemPrompts.placeholderPresent', { name: entry.placeholder })}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <small className="hint">{t('systemPrompts.requiredPlaceholdersHint')}</small>
+        </div>
+      ) : null}
+
+      <label className="sr-only" htmlFor={editorId}>
+        {t('systemPrompts.editorLabel')}
+      </label>
+      <textarea
+        id={editorId}
+        className={styles.promptEditor}
+        aria-label={`${prompt.label} — ${t('systemPrompts.editorLabel')}`}
+        aria-invalid={hasPlaceholderProblem || undefined}
+        data-invalid={hasPlaceholderProblem}
+        spellCheck={false}
+        value={draft}
+        onChange={(event) => {
+          setDraft(event.target.value);
+          setStatus({ kind: 'idle' });
+        }}
+      />
+
+      <div className={styles.promptFooter}>
+        {statusMessage ? (
+          <p className={styles.promptStatus} data-tone={statusMessage.tone} role="status">
+            {statusMessage.text}
+          </p>
+        ) : (
+          <span className={styles.promptStatus} />
+        )}
+        <Button
+          variant="ghost"
+          disabled={busy || !prompt.overridden}
+          onClick={() => {
+            void handleReset();
+          }}
+        >
+          {t('systemPrompts.reset')}
+        </Button>
+        <Button
+          variant="primary"
+          disabled={busy || !dirty || hasPlaceholderProblem}
+          onClick={() => {
+            void handleSave();
+          }}
+        >
+          {t('systemPrompts.save')}
+        </Button>
+      </div>
+    </article>
+  );
+}
+
+function SystemPromptsSection() {
+  const { t } = useI18n();
+  const [prompts, setPrompts] = useState<EditableSystemPrompt[] | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [reloadToken, setReloadToken] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadFailed(false);
+    setPrompts(null);
+    void (async () => {
+      try {
+        const response = await fetch('/api/system-prompts');
+        if (!response.ok) throw new Error(`status ${response.status}`);
+        const body = (await response.json()) as SystemPromptsResponse;
+        if (cancelled) return;
+        setPrompts(body.prompts ?? []);
+      } catch {
+        if (cancelled) return;
+        setLoadFailed(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadToken]);
+
+  return (
+    <section className="settings-section">
+      <div className="section-head">
+        <div>
+          <h3>{t('systemPrompts.title')}</h3>
+          <p className="hint">{t('systemPrompts.description')}</p>
+        </div>
+      </div>
+
+      {loadFailed ? (
+        <div className="field">
+          <p className="hint" role="status">
+            {t('systemPrompts.loadError')}
+          </p>
+          <Button variant="ghost" onClick={() => setReloadToken((value) => value + 1)}>
+            {t('systemPrompts.retry')}
+          </Button>
+        </div>
+      ) : prompts === null ? (
+        <p className="hint" role="status">
+          {t('systemPrompts.loading')}
+        </p>
+      ) : prompts.length === 0 ? (
+        <p className="hint">{t('systemPrompts.empty')}</p>
+      ) : (
+        <div className={styles.promptList}>
+          {prompts.map((prompt) => (
+            <SystemPromptCard
+              key={prompt.id}
+              prompt={prompt}
+              onPromptChange={(next) =>
+                setPrompts((current) =>
+                  (current ?? []).map((entry) => (entry.id === next.id ? next : entry)),
+                )
+              }
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function FeatureFlagsSection({
+  cfg,
+  setCfg,
+}: {
+  cfg: AppConfig;
+  setCfg: Dispatch<SetStateAction<AppConfig>>;
+}) {
+  const { t } = useI18n();
+  // An absent stored value reads as OFF — same rule the config loader applies.
+  const flags = {
+    previewScreenshot: cfg.featureFlags?.previewScreenshot === true,
+    previewViewportSelector: cfg.featureFlags?.previewViewportSelector === true,
+  };
+
+  function setFlag(key: keyof typeof flags, next: boolean): void {
+    setCfg((current) => ({
+      ...current,
+      featureFlags: {
+        previewScreenshot: current.featureFlags?.previewScreenshot === true,
+        previewViewportSelector: current.featureFlags?.previewViewportSelector === true,
+        [key]: next,
+      },
+    }));
+  }
+
+  const rows = [
+    {
+      key: 'previewScreenshot' as const,
+      label: t('settings.featureFlagScreenshot'),
+      hint: t('settings.featureFlagScreenshotHint'),
+    },
+    {
+      key: 'previewViewportSelector' as const,
+      label: t('settings.featureFlagViewportSelector'),
+      hint: t('settings.featureFlagViewportSelectorHint'),
+    },
+  ];
+
+  return (
+    <section className="settings-section">
+      <div className="section-head">
+        <div>
+          <h3>{t('settings.featureFlagsTitle')}</h3>
+          <p className="hint">{t('settings.featureFlagsDescription')}</p>
+        </div>
+      </div>
+      <div className={styles.flagList}>
+        {rows.map((row) => (
+          <div key={row.key} className={styles.flagRow} data-flag={row.key}>
+            <div className={styles.flagText}>
+              <span className={styles.flagName} id={`feature-flag-${row.key}-label`}>
+                {row.label}
+              </span>
+              <p className={styles.flagHint}>{row.hint}</p>
+            </div>
+            <Switch
+              checked={flags[row.key]}
+              aria-labelledby={`feature-flag-${row.key}-label`}
+              onCheckedChange={(next: boolean) => setFlag(row.key, next)}
+            />
+          </div>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 function NotificationsSection({

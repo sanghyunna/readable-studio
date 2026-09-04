@@ -184,3 +184,258 @@
   background: var(--bg-panel);
   color: var(--accent-strong);
 }
+
+/* ---- System prompts + workspace feature flags -------------------------
+   Hub design language: borderless translucent surfaces, soft shadow +
+   inset highlight instead of 1px dividers, solid primary actions. */
+
+.promptList,
+.flagList {
+  display: grid;
+  gap: 12px;
+}
+
+.promptCard,
+.flagRow {
+  min-inline-size: 0;
+  padding: 14px;
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--bg-elevated) 82%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+  backdrop-filter: blur(18px) saturate(1.3);
+  box-shadow:
+    var(--shadow-sm),
+    inset 0 1px 0 color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+.promptCard {
+  display: grid;
+  gap: 10px;
+}
+
+.promptHead {
+  min-inline-size: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.promptHeadText {
+  min-inline-size: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.promptName {
+  min-inline-size: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text-strong);
+  overflow-wrap: anywhere;
+}
+
+.promptDescription {
+  min-inline-size: 0;
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.promptBadge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.promptBadge[data-overridden='true'] {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent-strong);
+}
+
+.promptEditor {
+  inline-size: 100%;
+  min-inline-size: 0;
+  min-block-size: 180px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg-subtle) 88%, transparent);
+  box-shadow: inset 0 1px 2px color-mix(in srgb, var(--shadow-color) 12%, transparent);
+  color: var(--text);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.promptEditor:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 62%, transparent);
+  outline-offset: 1px;
+}
+
+.promptEditor[data-invalid='true'] {
+  box-shadow:
+    inset 0 1px 2px color-mix(in srgb, var(--shadow-color) 12%, transparent),
+    inset 0 0 0 2px color-mix(in srgb, var(--danger) 52%, transparent);
+}
+
+.placeholderPanel {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg-subtle) 70%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.placeholderTitle {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.placeholderList {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.placeholderItem {
+  min-inline-size: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.placeholderItem[data-status='missing'],
+.placeholderItem[data-status='duplicate'] {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.placeholderDot {
+  flex: none;
+  inline-size: 7px;
+  block-size: 7px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--accent) 72%, transparent);
+}
+
+.placeholderItem[data-status='missing'] .placeholderDot,
+.placeholderItem[data-status='duplicate'] .placeholderDot {
+  background: var(--danger);
+}
+
+.promptFooter {
+  min-inline-size: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.promptStatus {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.promptStatus[data-tone='error'] {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.promptStatus[data-tone='success'] {
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+
+.flagRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.flagText {
+  flex: 1 1 220px;
+  min-inline-size: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.flagName {
+  min-inline-size: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text-strong);
+}
+
+.flagHint {
+  min-inline-size: 0;
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .promptCard,
+  .flagRow {
+    background: var(--bg-elevated);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .promptEditor,
+  .placeholderPanel {
+    background: var(--bg-subtle);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .promptCard,
+  .flagRow,
+  .promptEditor {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .promptCard,
+  .flagRow,
+  .placeholderPanel,
+  .promptEditor {
+    border: 1px solid CanvasText;
+  }
+}

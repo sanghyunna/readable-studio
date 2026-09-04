@@ -56,6 +56,11 @@ export interface Dict {
   'common.weeksShort': string;
   'common.untitled': string;
 
+  // Desktop window chrome
+  'window.minimize': string;
+  'window.maximize': string;
+  'window.restore': string;
+
   // Plugin registry / details
   'plugins.availableDetails.provenance': string;
   'plugins.availableDetails.provenanceLine': string;
@@ -733,6 +738,46 @@ export interface Dict {
   'settings.mcpCapabilityPull': string;
   'settings.mcpCapabilityDefault': string;
   'settings.mcpRunningNote': string;
+
+  // System prompts (settings → editable product prompt templates)
+  'systemPrompts.nav': string;
+  'systemPrompts.navHint': string;
+  'systemPrompts.title': string;
+  'systemPrompts.description': string;
+  'systemPrompts.loading': string;
+  'systemPrompts.loadError': string;
+  'systemPrompts.retry': string;
+  'systemPrompts.empty': string;
+  'systemPrompts.overridden': string;
+  'systemPrompts.usingDefault': string;
+  'systemPrompts.editorLabel': string;
+  'systemPrompts.requiredPlaceholders': string;
+  'systemPrompts.requiredPlaceholdersHint': string;
+  'systemPrompts.placeholderPresent': string;
+  'systemPrompts.placeholderMissing': string;
+  'systemPrompts.placeholderDuplicated': string;
+  'systemPrompts.blockedBeforeSave': string;
+  'systemPrompts.save': string;
+  'systemPrompts.saving': string;
+  'systemPrompts.saved': string;
+  'systemPrompts.reset': string;
+  'systemPrompts.resetting': string;
+  'systemPrompts.resetDone': string;
+  'systemPrompts.unsaved': string;
+  'systemPrompts.validationMissing': string;
+  'systemPrompts.validationDuplicate': string;
+  'systemPrompts.saveFailed': string;
+  'systemPrompts.resetFailed': string;
+
+  // Workspace feature flags (settings → optional viewer capabilities)
+  'settings.featureFlags': string;
+  'settings.featureFlagsHint': string;
+  'settings.featureFlagsTitle': string;
+  'settings.featureFlagsDescription': string;
+  'settings.featureFlagScreenshot': string;
+  'settings.featureFlagScreenshotHint': string;
+  'settings.featureFlagViewportSelector': string;
+  'settings.featureFlagViewportSelectorHint': string;
 
   // Notifications (settings + system notifications)
   'settings.notifications': string;
@@ -1474,11 +1519,6 @@ export interface Dict {
   'mcpClient.notForwardedToLabel': string;
   'mcpClient.forwardedAcpNote': string;
   'mcpClient.notForwardedNote': string;
-  // Bottom-of-rail help menu
-  'entry.helpAria': string;
-  'entry.helpMenuAria': string;
-  'entry.helpGetHelp': string;
-  'entry.helpSubmitFeature': string;
   // GitHub star pill in the top bar
 
 
@@ -1493,6 +1533,9 @@ export interface Dict {
   'newproj.titleMedia': string;
   'newproj.titleOther': string;
   'newproj.namePlaceholder': string;
+  'newproj.modeLabel': string;
+  'newproj.modeDesignHint': string;
+  'newproj.modeChatHint': string;
   'newproj.fidelityLabel': string;
   'newproj.fidelityWireframe': string;
   'newproj.fidelityHigh': string;
@@ -1536,6 +1579,10 @@ export interface Dict {
   'newproj.importClaudeZipTitle': string;
   'newproj.importingClaudeZip': string;
   'newproj.privacyFooter': string;
+  'newprojAdvanced.toggle': string;
+  'newprojAdvanced.toggleHint': string;
+  'newprojAdvanced.creating': string;
+  'newprojAdvanced.createError': string;
   'newproj.designSystem': string;
   'newproj.dsNoneFreeform': string;
   'newproj.dsNoneSubtitleEmpty': string;

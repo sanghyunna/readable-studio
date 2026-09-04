@@ -248,6 +248,16 @@ export interface NotificationsConfig {
   desktopEnabled: boolean;
 }
 
+// Opt-in switches for workspace capabilities that ship hidden. Every flag is
+// OFF unless the stored config says otherwise, so an absent field (older
+// configs, fresh installs) resolves to the hidden state.
+export interface FeatureFlagsConfig {
+  // Reveals the preview screenshot / copy-image action in the file viewer.
+  previewScreenshot: boolean;
+  // Reveals the desktop / tablet / mobile viewport selector in the file viewer.
+  previewViewportSelector: boolean;
+}
+
 export interface PetConfig {
   // True once the user has explicitly picked a pet (built-in or custom).
   // Until then, the entry view shows an "adopt" callout to drive discovery.
@@ -302,6 +312,9 @@ export interface AppConfig {
   // configs that pre-date the feature land at `undefined`, which the loader
   // normalizes to a safe default (everything off).
   notifications?: NotificationsConfig;
+  // Optional opt-in capability switches. Configs that pre-date the feature
+  // land at `undefined`, which the loader normalizes to all-off.
+  featureFlags?: FeatureFlagsConfig;
   // IDs of skills/design-systems the user has explicitly disabled.
   disabledSkills?: string[];
   disabledDesignSystems?: string[];

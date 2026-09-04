@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { Button, Input, Select, VisuallyHidden } from '@readable-studio/components';
 import { APP_CHROME_FILE_ACTIONS_ID, APP_CHROME_FILE_ACTIONS_SELECTOR } from './AppChromeHeader';
@@ -1008,6 +1008,79 @@ async function requestPreviewSnapshotWithRetry(iframe: HTMLIFrameElement): Promi
     await waitForAnimationFrame();
   }
   return null;
+}
+
+// --- Feature-flag gating -------------------------------------------------
+//
+// `previewScreenshot` and `previewViewportSelector` both ship OFF. The
+// implementations below are kept intact; only the entry points are gated, so
+// flipping a switch in Settings -> Workspace features restores the capability
+// without a restart.
+//
+// FileViewer receives no config prop (ProjectView/FileWorkspace do not thread
+// one through), so the flags are read straight from the same
+// `readable-studio:config` localStorage blob `loadConfig()`/`saveConfig()`
+// round-trip. This mirrors the `useCritiqueTheaterEnabled` precedent.
+//
+// Absence or a non-boolean stored value resolves to OFF (`=== true`), matching
+// `normalizeFeatureFlags()`: a corrupted payload can never reveal a hidden
+// capability.
+const FEATURE_FLAG_STORAGE_KEY = 'readable-studio:config';
+const FEATURE_FLAG_EVENTS = [
+  'storage',
+  // Dispatched when an external surface (desktop host) replaces app config.
+  'readable-studio:app-config-changed',
+  // Re-read when the window regains focus: closing the Settings modal or
+  // tabbing back is enough to pick up a toggle made elsewhere.
+  'focus',
+] as const;
+
+export type PreviewFeatureFlagKey = 'previewScreenshot' | 'previewViewportSelector';
+
+function readPreviewFeatureFlag(key: PreviewFeatureFlagKey): boolean {
+  if (typeof window === 'undefined') return false;
+  let raw: string | null;
+  try {
+    raw = window.localStorage.getItem(FEATURE_FLAG_STORAGE_KEY);
+  } catch {
+    return false;
+  }
+  if (!raw) return false;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return false;
+    const flags = (parsed as { featureFlags?: unknown }).featureFlags;
+    if (!flags || typeof flags !== 'object') return false;
+    return (flags as Record<string, unknown>)[key] === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Live read of a preview capability flag.
+ *
+ * `useSyncExternalStore` re-reads the snapshot on every render, so a toggle
+ * committed by the Settings autosave is picked up by the next render of this
+ * subtree even while the modal is still open. The subscription additionally
+ * forces a re-read on cross-tab `storage` writes, the app-config-changed
+ * event and window focus so an otherwise idle viewer still updates.
+ */
+function usePreviewFeatureFlag(key: PreviewFeatureFlagKey): boolean {
+  const subscribe = useCallback((onStoreChange: () => void) => {
+    if (typeof window === 'undefined') return () => undefined;
+    for (const eventName of FEATURE_FLAG_EVENTS) {
+      window.addEventListener(eventName, onStoreChange);
+    }
+    return () => {
+      for (const eventName of FEATURE_FLAG_EVENTS) {
+        window.removeEventListener(eventName, onStoreChange);
+      }
+    };
+  }, []);
+  const getSnapshot = useCallback(() => readPreviewFeatureFlag(key), [key]);
+  // Server render has no localStorage; the flag is OFF, which is the default.
+  return useSyncExternalStore(subscribe, getSnapshot, () => false);
 }
 
 function previewViewportStateKey(projectId: string, file: Pick<ProjectFile, 'name' | 'path'>): string {
@@ -3553,14 +3626,23 @@ function HtmlViewer({
   const [source, setSource] = useState<string | null>(liveHtml ?? null);
   const [inlinedSource, setInlinedSource] = useState<string | null>(null);
   const [zoom, setZoom] = useState(100);
+  const screenshotEnabled = usePreviewFeatureFlag('previewScreenshot');
+  const viewportSelectorEnabled = usePreviewFeatureFlag('previewViewportSelector');
   const fileViewportKey = previewViewportStateKey(projectId, file);
-  const [previewViewport, setPreviewViewportState] = useState<PreviewViewportId>(
+  const [selectedPreviewViewport, setPreviewViewportState] = useState<PreviewViewportId>(
     () => htmlPreviewViewportState.get(fileViewportKey) ?? 'desktop',
   );
   const setPreviewViewport = useCallback((viewport: PreviewViewportId) => {
     setPreviewViewportCached(fileViewportKey, viewport);
     setPreviewViewportState(viewport);
   }, [fileViewportKey]);
+  // With the selector hidden the preview must not stay stuck on whatever the
+  // user last picked, so every layout consumer reads the desktop (full-width)
+  // default instead. The selection itself is preserved in state and in the
+  // module cache, so flipping the switch back on restores it immediately.
+  const previewViewport: PreviewViewportId = viewportSelectorEnabled
+    ? selectedPreviewViewport
+    : 'desktop';
   const [zoomMenuOpen, setZoomMenuOpen] = useState(false);
   const zoomMenuRef = useRef<HTMLDivElement | null>(null);
   const [presentMenuOpen, setPresentMenuOpen] = useState(false);
@@ -7224,6 +7306,7 @@ function HtmlViewer({
     setDeployError(null);
     setDeployActionToast(null);
     setCopiedDeployLink(null);
+    if (deploying) return;
     setDeployPhase('idle');
     await loadDeployProvider(nextProviderId, { fallbackToExisting: true });
   }
@@ -7910,6 +7993,17 @@ function HtmlViewer({
   ]);
 
   const handleCopyScreenshot = useCallback(async () => {
+    // Capability guard, not just a hidden button. Any entry point that reaches
+    // this handler while the flag is OFF is a no-op, so the feature cannot be
+    // reachable while Settings says it is hidden — keyboard shortcut,
+    // context-menu item, command-palette entry, toolbar overflow or an
+    // imperative caller alike.
+    //
+    // Read at invocation time rather than from the render closure: a handler
+    // captured before the flag flipped (a shortcut registration, a menu item
+    // holding a stale reference) would otherwise still see the old value and
+    // run the capability after the user hid it.
+    if (!readPreviewFeatureFlag('previewScreenshot')) return;
     if (screenshotInFlightRef.current) return;
     screenshotInFlightRef.current = true;
     setExportToast({ message: t('fileViewer.screenshotCopying'), tone: 'loading' });
@@ -8748,11 +8842,11 @@ function HtmlViewer({
               </button>
             ))}
           </div>
-          {showPreviewToolbarControls ? (
+          {showPreviewToolbarControls && viewportSelectorEnabled ? (
             <>
               <span className="viewer-divider" aria-hidden />
               <PreviewViewportControls
-                viewport={previewViewport}
+                viewport={selectedPreviewViewport}
                 onViewport={setPreviewViewport}
                 t={t}
               />
@@ -8811,7 +8905,7 @@ function HtmlViewer({
               aria-label={t('fileViewer.sendToLlm')}
             >
               <span className="viewer-tool-group-label">{t('fileViewer.sendToLlm')}</span>
-              {mode === 'preview' ? (
+              {mode === 'preview' && screenshotEnabled ? (
                 <button
                   type="button"
                   className="viewer-action viewer-action-icon readable-tooltip"
@@ -9216,28 +9310,32 @@ function HtmlViewer({
                       <div className="share-menu-section-label" role="presentation">
                         {t('fileViewer.shareMenuPublishOnline')}
                       </div>
-                      {DEPLOY_PROVIDER_OPTIONS.map((option) => (
-                        <button
-                          key={option.id}
-                          type="button"
-                          className="share-menu-item"
-                          role="menuitem"
-                          onClick={() => {
-                            const format =
-                              option.id === 'cloudflare-pages'
-                                ? 'cloudflare_pages'
-                                : option.id === 'vercel-self'
-                                  ? 'vercel'
-                                  : 'vercel';
-                            fireShareExport(format, () => openDeployModal(option.id));
-                          }}
-                        >
-                          <span className="share-menu-icon">
-                            <RemixIcon name={deployActionIconFor(option.id)} size={15} />
-                          </span>
-                          <span>{deployActionLabelFor(option.id)}</span>
-                        </button>
-                      ))}
+                      {DEPLOY_PROVIDER_OPTIONS.map((option) => {
+                        const isActiveDeploy = deploying && option.id === deployProviderId;
+                        return (
+                          <button
+                            key={option.id}
+                            type="button"
+                            className="share-menu-item"
+                            role="menuitem"
+                            disabled={deploying && !isActiveDeploy}
+                            onClick={() => {
+                              const format =
+                                option.id === 'cloudflare-pages'
+                                  ? 'cloudflare_pages'
+                                  : option.id === 'vercel-self'
+                                    ? 'vercel'
+                                    : 'vercel';
+                              fireShareExport(format, () => openDeployModal(option.id));
+                            }}
+                          >
+                            <span className="share-menu-icon">
+                              <RemixIcon name={deployActionIconFor(option.id)} size={15} />
+                            </span>
+                            <span>{isActiveDeploy ? deployButtonLabel : deployActionLabelFor(option.id)}</span>
+                          </button>
+                        );
+                      })}
                       <div className="share-menu-divider" />
                       <div className="share-menu-section-label" role="presentation">
                         {t('socialShare.projectSection')}
@@ -10268,6 +10366,14 @@ function HtmlViewer({
           </div>
         </div>,
         document.body,
+      ) : null}
+      {deploying && !deployModalOpen ? (
+        <Toast
+          message={deployButtonLabel}
+          tone="loading"
+          placement="top"
+          ttlMs={0}
+        />
       ) : null}
       {deploySavedToast ? (
         <Toast

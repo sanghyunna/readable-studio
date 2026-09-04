@@ -4,6 +4,7 @@ import { isOpenAICompatible } from '../providers/openai-compatible';
 import type {
   ApiProtocol,
   AppConfig,
+  FeatureFlagsConfig,
   NotificationsConfig,
   PetConfig,
 } from '../types';
@@ -32,6 +33,15 @@ export const DEFAULT_NOTIFICATIONS: NotificationsConfig = {
   successSoundId: DEFAULT_SUCCESS_SOUND_ID,
   failureSoundId: DEFAULT_FAILURE_SOUND_ID,
   desktopEnabled: false,
+};
+
+// Capability switches ship hidden. Both flags are false so a first-run user
+// never sees the screenshot action or the viewport selector until they opt in
+// from Settings → Workspace features; an absent stored value normalizes here
+// and therefore also reads as OFF.
+export const DEFAULT_FEATURE_FLAGS: FeatureFlagsConfig = {
+  previewScreenshot: false,
+  previewViewportSelector: false,
 };
 
 export const DEFAULT_PET: PetConfig = {
@@ -70,6 +80,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   agentCliEnv: {},
   pet: DEFAULT_PET,
   notifications: DEFAULT_NOTIFICATIONS,
+  featureFlags: DEFAULT_FEATURE_FLAGS,
   projectLocations: [],
   defaultProjectLocationId: READABLE_STUDIO_PROJECT_LOCATION_ID,
   // The daemon registry owns the enabled-agent default. Fresh hydration fills
@@ -324,6 +335,18 @@ function normalizeNotifications(
   return { ...DEFAULT_NOTIFICATIONS, ...(input ?? {}) };
 }
 
+// Absent or non-boolean stored values resolve to OFF rather than inheriting a
+// truthy coercion, so a corrupted payload cannot silently reveal a hidden
+// capability.
+function normalizeFeatureFlags(
+  input: Partial<FeatureFlagsConfig> | undefined,
+): FeatureFlagsConfig {
+  return {
+    previewScreenshot: input?.previewScreenshot === true,
+    previewViewportSelector: input?.previewViewportSelector === true,
+  };
+}
+
 function inferApiProtocol(model: string, baseUrl: string): ApiProtocol {
   try {
     const normalized = (baseUrl || '').toLowerCase();
@@ -356,6 +379,7 @@ export function loadConfig(): AppConfig {
         ...DEFAULT_CONFIG,
         pet: normalizePet(DEFAULT_PET),
         notifications: normalizeNotifications(DEFAULT_NOTIFICATIONS),
+        featureFlags: normalizeFeatureFlags(DEFAULT_FEATURE_FLAGS),
       };
     }
     const parsed = JSON.parse(raw) as Partial<AppConfig>;
@@ -389,6 +413,7 @@ export function loadConfig(): AppConfig {
       accentColor: parsedAccentColor ?? DEFAULT_CONFIG.accentColor,
       pet: normalizePet(parsed.pet),
       notifications: normalizeNotifications(parsed.notifications),
+      featureFlags: normalizeFeatureFlags(parsed.featureFlags),
     };
 
     if (parsed.configMigrationVersion !== CONFIG_MIGRATION_VERSION) {
@@ -433,6 +458,7 @@ export function loadConfig(): AppConfig {
       ...DEFAULT_CONFIG,
       pet: normalizePet(DEFAULT_PET),
       notifications: normalizeNotifications(DEFAULT_NOTIFICATIONS),
+      featureFlags: normalizeFeatureFlags(DEFAULT_FEATURE_FLAGS),
     };
   }
 }

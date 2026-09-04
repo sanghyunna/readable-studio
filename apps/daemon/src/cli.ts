@@ -136,6 +136,8 @@ const CONFIG_STRING_FLAGS = new Set(['daemon-url', 'value', 'value-json']);
 const CONFIG_BOOLEAN_FLAGS = new Set(['help', 'h', 'json']);
 const AGENT_STRING_FLAGS = new Set(['daemon-url']);
 const AGENT_BOOLEAN_FLAGS = new Set(['help', 'h', 'json']);
+const SYSTEM_PROMPTS_STRING_FLAGS = new Set(['daemon-url', 'prompt-file']);
+const SYSTEM_PROMPTS_BOOLEAN_FLAGS = new Set(['help', 'h', 'json']);
 const PROJECT_STRING_FLAGS = new Set([
   'daemon-url', 'name', 'skill', 'design-system', 'plugin', 'metadata-json',
   'pending-prompt', 'project', 'conversation', 'message', 'prompt',
@@ -276,6 +278,7 @@ const SUBCOMMAND_MAP = {
   version: runVersion,
   doctor: runDoctor,
   config: runConfig,
+  'system-prompts': runSystemPrompts,
   agent: runAgent,
   provider: runProvider,
 };
@@ -369,6 +372,9 @@ function printRootHelp() {
 
   readable memory tree <list|view|edit|move> [args]
       Inspect and edit the memory tree that is injected into agent prompts.
+
+  readable system-prompts <list|get|set|reset> [args]
+      Inspect or override the editable product system-prompt templates.
 
   readable share <readable-studio|url> [options]
       Build localized social-share targets for the Readable Studio repo or a
@@ -7446,6 +7452,114 @@ Common options:
       console.error(`unknown subcommand: readable config ${sub}`);
       process.exit(2);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Subcommand: readable system-prompts …
+// ---------------------------------------------------------------------------
+
+async function runSystemPrompts(args) {
+  if (args.length === 0 || args[0] === 'help' || args.includes('--help') || args.includes('-h')) {
+    console.log(`Usage:
+  readable system-prompts list [--json]
+  readable system-prompts get <id> [--json]
+  readable system-prompts set <id> --prompt-file <path|-> [--json]
+  readable system-prompts reset <id> [--json]
+
+Editable ids: designer-charter, discovery-workflow, deck-framework.
+Use --prompt-file - to read the replacement template from stdin.`);
+    process.exitCode = args.length === 0 ? 2 : 0;
+    return;
+  }
+
+  let flags;
+  try {
+    flags = parseFlags(args.slice(1), {
+      string: SYSTEM_PROMPTS_STRING_FLAGS,
+      boolean: SYSTEM_PROMPTS_BOOLEAN_FLAGS,
+    });
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 2;
+    return;
+  }
+  const sub = args[0];
+  const ids = positionalArgs(args.slice(1), SYSTEM_PROMPTS_STRING_FLAGS);
+  const id = ids[0];
+  const base = await cliDaemonBaseUrl(flags);
+  const request = async (url, init) => {
+    let response;
+    try {
+      response = await fetch(url, init);
+    } catch (error) {
+      surfaceFetchError(error, base);
+      process.exitCode = 64;
+      return null;
+    }
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const detail = payload?.error ?? {};
+      const message = typeof detail === 'string' ? detail : detail.message;
+      if (flags.json) process.stdout.write(JSON.stringify(payload, null, 2) + '\n');
+      else console.error(message ?? `HTTP ${response.status}`);
+      process.exitCode = response.status === 400 || response.status === 404 ? 2 : 1;
+      return null;
+    }
+    return payload;
+  };
+  const printPrompt = (prompt) => {
+    if (flags.json) process.stdout.write(JSON.stringify({ prompt }, null, 2) + '\n');
+    else process.stdout.write(prompt.content + (prompt.content.endsWith('\n') ? '' : '\n'));
+  };
+
+  if (sub === 'list') {
+    const payload = await request(`${base}/api/system-prompts`);
+    if (!payload) return;
+    if (flags.json) process.stdout.write(JSON.stringify(payload, null, 2) + '\n');
+    else for (const prompt of payload.prompts ?? []) console.log(`${prompt.id}\t${prompt.overridden ? 'overridden' : 'default'}\t${prompt.label}`);
+    return;
+  }
+  if (!id) {
+    console.error(`Usage: readable system-prompts ${sub} <id>${sub === 'set' ? ' --prompt-file <path|->' : ''}`);
+    process.exitCode = 2;
+    return;
+  }
+  const encodedId = encodeURIComponent(id);
+  if (sub === 'get') {
+    const payload = await request(`${base}/api/system-prompts/${encodedId}`);
+    if (payload) printPrompt(payload.prompt);
+    return;
+  }
+  if (sub === 'set') {
+    const promptFile = flags['prompt-file'];
+    if (typeof promptFile !== 'string' || promptFile.length === 0) {
+      console.error('readable system-prompts set requires --prompt-file <path|->');
+      process.exitCode = 2;
+      return;
+    }
+    let content;
+    try {
+      content = promptFile === '-' ? readFileSync(0, 'utf8') : readFileSync(promptFile, 'utf8');
+    } catch (error) {
+      console.error(`failed to read prompt file: ${error.message}`);
+      process.exitCode = 2;
+      return;
+    }
+    const payload = await request(`${base}/api/system-prompts/${encodedId}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ content }),
+    });
+    if (payload) printPrompt(payload.prompt);
+    return;
+  }
+  if (sub === 'reset') {
+    const payload = await request(`${base}/api/system-prompts/${encodedId}`, { method: 'DELETE' });
+    if (payload) printPrompt(payload.prompt);
+    return;
+  }
+  console.error(`unknown subcommand: readable system-prompts ${sub}`);
+  process.exitCode = 2;
 }
 
 // ---------------------------------------------------------------------------

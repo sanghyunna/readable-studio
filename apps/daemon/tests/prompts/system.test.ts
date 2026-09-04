@@ -46,41 +46,23 @@ describe('composeSystemPrompt', () => {
     expect(prompt).toContain('Keep machine-readable ids and object option `value` fields exact and unlocalized');
   });
 
-  it('preserves canonical default task-type options under locale overrides', () => {
+  it('keeps the non-blocking receipt arc under zh-CN locale overrides', () => {
     const prompt = composeSystemPrompt({ locale: 'zh-CN' });
 
-    expect(prompt).toContain(
-      'keep the `taskType` option labels as the canonical routing choices',
-    );
-    for (const option of [
-      'Prototype',
-      'Slide deck',
-      'Other',
-    ]) {
-      expect(prompt).toContain(`"${option}"`);
-    }
-    expect(prompt).not.toContain('option labels as `原型`');
-    expect(prompt).not.toContain('`实时作品`');
+    expect(prompt).toContain('# UI locale override');
+    expect(prompt).toContain('`zh-CN` (Simplified Chinese)');
+    expect(prompt).toContain('turn 1 declares an assumption receipt and starts work');
+    expect(prompt).toContain('Match the user\'s chat language');
+    expect(prompt).not.toContain('<question-form id="task-type"');
   });
 
-  it('preserves canonical default task-type options for zh-TW locale overrides', () => {
+  it('keeps the non-blocking receipt arc under zh-TW locale overrides', () => {
     const prompt = composeSystemPrompt({ locale: 'zh-TW' });
 
     expect(prompt).toContain('# UI locale override');
     expect(prompt).toContain('`zh-TW` (Traditional Chinese)');
-    expect(prompt).toContain(
-      'keep the `taskType` option labels as the canonical routing choices',
-    );
-    for (const option of [
-      'Prototype',
-      'Slide deck',
-      'Other',
-    ]) {
-      expect(prompt).toContain(`"${option}"`);
-    }
-    expect(prompt).not.toContain('快速简报 — 30 秒');
-    expect(prompt).not.toContain('option labels as `原型`');
-    expect(prompt).not.toContain('`实时作品`');
+    expect(prompt).toContain('turn 1 declares an assumption receipt and starts work');
+    expect(prompt).not.toContain('<question-form id="task-type"');
   });
 
   it('treats an active design system as the visual direction', () => {
@@ -107,24 +89,14 @@ describe('composeSystemPrompt', () => {
     );
   });
 
-  it('uses stable brand option values for discovery-form branching', () => {
+  it('uses stable brand values while reserving forms for a missing source', () => {
     const prompt = composeSystemPrompt({});
-    expect(prompt).toContain('{ "label": "Pick a direction for me", "value": "pick_direction" }');
-    expect(prompt).toContain('{ "label": "I have a brand spec — I\'ll share it", "value": "brand_spec" }');
-    expect(prompt).toContain('{ "label": "Match a reference site / screenshot — I\'ll attach it", "value": "reference_match" }');
-    expect(prompt).toContain('When the answer line includes `[value: ...]`, use that stable value instead of the visible label.');
-    expect(prompt).toContain('If you keep the `brand` question, its `id` must stay `"brand"`.');
-    expect(prompt).toContain('you may drop the `brand` question as already answered, but you must still treat that provided source as Branch A below');
-    expect(prompt).toContain('When skipping the form, do not skip brand-source handling');
-    expect(prompt).toContain('If the current message, attachments, prior brief, or URL already contains an actual brand spec / brand guide / reference site / screenshot source, use Branch A.');
-    expect(prompt).toContain('### Branch A — user provided a brand/reference source, or `brand` value is `"brand_spec"` / `"reference_match"`');
-    expect(prompt).toContain('ask them to paste/upload the brand spec or reference and stop');
-    expect(prompt).toContain('Do not guess a brand domain or invent tokens');
-    expect(prompt).toContain('An active design system does not suppress Branch A when the user provides a brand/reference source');
-    expect(prompt).toContain('### Branch B — no user-provided brand/reference source and no Branch A brand value');
-    expect(prompt).toContain('active-design-system cases where the user did not provide a new brand/reference source');
-    expect(prompt).toContain('Provided brand/reference source → run brand-spec extraction');
-    expect(prompt).toContain('`brand_spec` / `reference_match` without a provided source → ask for the source and stop; do not guess brand tokens.');
+    expect(prompt).toContain('"value": "pick_direction"');
+    expect(prompt).toContain('`brand_spec` or `reference_match`');
+    expect(prompt).toContain('<question-form id="brand-source"');
+    expect(prompt).toContain('Do not guess a domain or invent tokens');
+    expect(prompt).toContain('### Branch B — no user-provided brand/reference source');
+    expect(prompt).toContain('Do not ask the user to choose before showing work');
   });
 
   it('advertises only files_only agent rollback', () => {
