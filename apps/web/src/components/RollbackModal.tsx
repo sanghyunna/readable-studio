@@ -71,6 +71,11 @@ export function RollbackModal({
   const [diffLoading, setDiffLoading] = useState(false);
   const [diffFailed, setDiffFailed] = useState(false);
   const [conflictPolicy, setConflictPolicy] = useState<RollbackConflictPolicy>('fail');
+  // Per-path resolution. The wire protocol still carries one policy for the
+  // whole restore, so a single kept path means keep_current for the request;
+  // the rows are how the user reasons about it, not a new server capability.
+  const [keptPaths, setKeptPaths] = useState<Set<string>>(() => new Set());
+  const [policyTouched, setPolicyTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rollbackConflicts, setRollbackConflicts] = useState<ProjectCheckpointConflict[]>([]);
@@ -107,6 +112,8 @@ export function RollbackModal({
     setDiffLoading(true);
     setDiffFailed(false);
     setRollbackConflicts([]);
+    setKeptPaths(new Set());
+    setPolicyTouched(false);
     void fetchProjectCheckpointDiff(projectId, selectedCheckpointId)
       .then((next) => {
         if (cancelled) return;
@@ -178,6 +185,31 @@ export function RollbackModal({
       setConflictPolicy('overwrite');
     }
   }, [isAgentRequest, hasFileConflicts, conflictPolicy]);
+
+  const conflictPaths = useMemo(
+    () => Array.from(new Set(conflicts.map((conflict) => conflict.path))),
+    [conflicts],
+  );
+  const policyDisabled = readOnly || submitting || restoreMode === 'chat_only';
+
+  function applyPolicy(next: RollbackConflictPolicy, paths: Set<string>) {
+    setPolicyTouched(true);
+    setKeptPaths(paths);
+    setConflictPolicy(next);
+  }
+
+  /** Flip one path between "keep mine" and "take the checkpoint's". */
+  function togglePath(path: string, keep: boolean) {
+    const next = new Set(keptPaths);
+    if (keep) next.add(path);
+    else next.delete(path);
+    applyPolicy(next.size > 0 ? 'keep_current' : 'overwrite', next);
+  }
+
+  /** Bulk-set every conflicted path to one side in a single gesture. */
+  function setAllPaths(keep: boolean) {
+    applyPolicy(keep ? 'keep_current' : 'overwrite', keep ? new Set(conflictPaths) : new Set());
+  }
 
   const targetTime = formatMessageTime(targetMessage);
   const targetAgent = targetMessage.agentName ?? targetMessage.agentId ?? t('assistant.role');
@@ -347,41 +379,69 @@ export function RollbackModal({
           </div>
 
           {conflictCount > 0 ? (
-            <div className={styles.conflicts}>
+            <div className={styles.conflicts} role="group" aria-label={t('rollback.conflictPolicyLabel')}>
               <div className={styles.conflictHead}>
                 <strong>{t('rollback.conflictsTitle')}</strong>
-                <select
-                  value={
-                    isAgentRequest
-                      ? conflictPolicy
-                      : conflictPolicy === 'fail'
-                        ? 'overwrite'
-                        : conflictPolicy
-                  }
-                  onChange={(event) => setConflictPolicy(event.currentTarget.value as RollbackConflictPolicy)}
-                  disabled={readOnly || submitting || restoreMode === 'chat_only'}
-                  aria-label={t('rollback.conflictPolicyLabel')}
-                >
-                  {isAgentRequest ? (
-                    <option value="fail" disabled>{t('rollback.conflictPolicyFail')}</option>
-                  ) : null}
-                  <option value="overwrite">{t('rollback.conflictPolicyOverwrite')}</option>
-                  <option value="keep_current">{t('rollback.conflictPolicyKeepCurrent')}</option>
-                </select>
+                <div className={styles.bulk}>
+                  <button
+                    type="button"
+                    className={styles.bulkButton}
+                    aria-pressed={policyTouched && conflictPolicy === 'keep_current' && keptPaths.size === conflictPaths.length}
+                    disabled={policyDisabled}
+                    onClick={() => setAllPaths(true)}
+                  >
+                    {t('common.all')}: {t('rollback.conflictPolicyKeepCurrent')}
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.bulkButton}
+                    aria-pressed={policyTouched && conflictPolicy === 'overwrite'}
+                    disabled={policyDisabled}
+                    onClick={() => setAllPaths(false)}
+                  >
+                    {t('common.all')}: {t('rollback.conflictPolicyOverwrite')}
+                  </button>
+                </div>
               </div>
+              {isAgentRequest && conflictPolicy === 'fail' ? (
+                <p className={styles.conflictWarning}>{t('rollback.conflictPolicyFail')}</p>
+              ) : null}
               {hasFileConflicts ? (
                 <p className={styles.conflictWarning} role="alert">
                   {t('rollback.conflictDataLossWarning')}
                 </p>
               ) : null}
               {conflicts.length > 0 ? (
-                <ul>
-                  {conflicts.slice(0, 24).map((conflict) => (
-                    <li key={`${conflict.path}:${conflict.reason ?? ''}`}>
-                      <code>{conflict.path}</code>
-                      {conflict.reason ? <span>{conflict.reason}</span> : null}
-                    </li>
-                  ))}
+                <ul className={styles.conflictRows}>
+                  {conflicts.slice(0, 24).map((conflict) => {
+                    const keep = keptPaths.has(conflict.path);
+                    return (
+                      <li key={`${conflict.path}:${conflict.reason ?? ''}`} className={styles.conflictRow}>
+                        <span className={styles.conflictPath}>
+                          <code>{conflict.path}</code>
+                          {conflict.reason ? <span>{conflict.reason}</span> : null}
+                        </span>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={keep}
+                          className={styles.switch}
+                          disabled={policyDisabled}
+                          aria-label={conflict.path}
+                          onClick={() => togglePath(conflict.path, !keep)}
+                        >
+                          <span className={styles.switchTrack} aria-hidden="true">
+                            <span className={styles.switchThumb} />
+                          </span>
+                          <span className={styles.switchLabel}>
+                            {keep
+                              ? t('rollback.conflictPolicyKeepCurrent')
+                              : t('rollback.conflictPolicyOverwrite')}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
                 </ul>
               ) : null}
             </div>

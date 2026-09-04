@@ -296,10 +296,8 @@ describe('RollbackModal', () => {
     await waitFor(() => expect(confirmButton.disabled).toBe(false));
     expect(screen.getByText(/discard your manual edits/i)).toBeTruthy();
 
-    // The user can opt to keep their edits instead of overwriting.
-    fireEvent.change(screen.getByRole('combobox', { name: 'Conflict policy' }), {
-      target: { value: 'keep_current' },
-    });
+    // The user can opt to keep their edits instead of overwriting, per file.
+    fireEvent.click(screen.getByRole('switch', { name: 'index.html' }));
     expect(confirmButton.disabled).toBe(false);
     fireEvent.click(confirmButton);
 
@@ -581,12 +579,13 @@ describe('RollbackModal', () => {
       />,
     );
 
-    const conflictPolicy = await screen.findByRole('combobox', { name: 'Conflict policy' }) as HTMLSelectElement;
+    const row = await screen.findByRole('switch', { name: 'index.html' });
     const confirmButton = screen.getByRole('button', { name: 'Restore files' }) as HTMLButtonElement;
-    expect(conflictPolicy.value).toBe('fail');
+    // No resolution chosen yet: the agent request stays blocked.
+    expect(row.getAttribute('aria-checked')).toBe('false');
     expect(confirmButton.disabled).toBe(true);
 
-    fireEvent.change(conflictPolicy, { target: { value: 'overwrite' } });
+    fireEvent.click(screen.getByRole('button', { name: /^All: Discard my edits/ }));
     await waitFor(() => expect(confirmButton.disabled).toBe(false));
     fireEvent.click(confirmButton);
 
@@ -658,8 +657,7 @@ describe('RollbackModal', () => {
     fireEvent.click(confirm);
     expect(await screen.findByText('Rollback conflicts with current files.')).toBeTruthy();
 
-    const policy = screen.getByRole('combobox', { name: 'Conflict policy' });
-    fireEvent.change(policy, { target: { value: 'overwrite' } });
+    fireEvent.click(screen.getByRole('button', { name: /^All: Discard my edits/ }));
     await waitFor(() => expect(confirm.disabled).toBe(false));
     fireEvent.click(confirm);
 
@@ -766,5 +764,184 @@ describe('RollbackModal', () => {
     await waitFor(() => expect(projectStateMocks.fetchProjectCheckpointDiff).toHaveBeenCalledTimes(2));
     expect(await screen.findByText('new.html')).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+describe('RollbackModal per-file conflict resolution', () => {
+  const checkpoint: ProjectCheckpointSummary = {
+    id: 'checkpoint-rows',
+    projectId: 'proj-1',
+    kind: 'after_message',
+    messageId: 'msg-1',
+    runId: 'run-1',
+    conversationId: 'conv-1',
+    createdAt: 1_700_000_006_000,
+    rootPathHash: 'root-hash',
+    fileCount: 2,
+    totalBytes: 200,
+    manifestHash: 'manifest-hash',
+    restoreModes: ['files_only', 'chat_only', 'files_and_chat'],
+  };
+  const diff: ProjectCheckpointDiffResponse = {
+    checkpoint,
+    files: [
+      { path: 'index.html', status: 'modified' },
+      { path: 'styles.css', status: 'modified' },
+    ],
+    conflicts: [
+      { path: 'index.html', reason: 'current_changed_since_checkpoint' },
+      { path: 'styles.css', reason: 'current_changed_since_checkpoint' },
+    ],
+  };
+  const rollbackResponse: RollbackResponse = {
+    projectId: 'proj-1',
+    conversationId: 'conv-1',
+    mode: 'files_and_chat',
+    targetMessageId: 'msg-1',
+    restoredCheckpointId: checkpoint.id,
+    safetyCheckpointId: 'safety-1',
+    deletedMessageIds: [],
+    clearedAgentSessions: true,
+    fileChanges: { added: 0, modified: 2, deleted: 0, unchanged: 0 },
+    conflicts: [],
+    actor: 'user',
+  };
+
+  function renderModal(props: Partial<Parameters<typeof RollbackModal>[0]> = {}) {
+    projectStateMocks.listProjectCheckpoints.mockResolvedValue([checkpoint]);
+    projectStateMocks.fetchProjectCheckpointDiff.mockResolvedValue(diff);
+    projectStateMocks.rollbackConversation.mockResolvedValue(rollbackResponse);
+    return render(
+      <RollbackModal
+        projectId="proj-1"
+        conversationId="conv-1"
+        targetMessage={baseMessage()}
+        onClose={vi.fn()}
+        onSuccess={vi.fn()}
+        {...props}
+      />,
+    );
+  }
+
+  it('uses switches, never checkboxes or a policy select', async () => {
+    renderModal();
+
+    await screen.findByText('File conflicts');
+    expect(screen.queryByRole('combobox', { name: 'Conflict policy' })).toBeNull();
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0);
+    expect(screen.getAllByRole('switch')).toHaveLength(2);
+  });
+
+  it('is non-vacuous: an untouched row sends overwrite, a flipped row sends keep_current', async () => {
+    renderModal();
+
+    const confirm = await screen.findByRole('button', { name: 'Restore files and chat' }) as HTMLButtonElement;
+    await waitFor(() => expect(confirm.disabled).toBe(false));
+
+    // Control case — no row flipped, so the manual default overwrite is sent.
+    fireEvent.click(confirm);
+    await waitFor(() => {
+      expect(projectStateMocks.rollbackConversation).toHaveBeenLastCalledWith(
+        'proj-1',
+        'conv-1',
+        expect.objectContaining({ conflictPolicy: 'overwrite' }),
+      );
+    });
+
+    // Treatment case — flipping a single row changes the request.
+    fireEvent.click(screen.getByRole('switch', { name: 'styles.css' }));
+    expect(screen.getByRole('switch', { name: 'styles.css' }).getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByRole('switch', { name: 'index.html' }).getAttribute('aria-checked')).toBe('false');
+    fireEvent.click(confirm);
+    await waitFor(() => {
+      expect(projectStateMocks.rollbackConversation).toHaveBeenLastCalledWith(
+        'proj-1',
+        'conv-1',
+        expect.objectContaining({ conflictPolicy: 'keep_current' }),
+      );
+    });
+  });
+
+  it('bulk-sets every row in both directions', async () => {
+    renderModal();
+
+    const keepAll = await screen.findByRole('button', { name: /^All: Keep my edits/ });
+    const overwriteAll = screen.getByRole('button', { name: /^All: Discard my edits/ });
+
+    fireEvent.click(keepAll);
+    expect(
+      screen.getAllByRole('switch').map((node) => node.getAttribute('aria-checked')),
+    ).toEqual(['true', 'true']);
+    expect(keepAll.getAttribute('aria-pressed')).toBe('true');
+
+    fireEvent.click(overwriteAll);
+    expect(
+      screen.getAllByRole('switch').map((node) => node.getAttribute('aria-checked')),
+    ).toEqual(['false', 'false']);
+    expect(overwriteAll.getAttribute('aria-pressed')).toBe('true');
+
+    const confirm = screen.getByRole('button', { name: 'Restore files and chat' }) as HTMLButtonElement;
+    await waitFor(() => expect(confirm.disabled).toBe(false));
+    fireEvent.click(confirm);
+    await waitFor(() => {
+      expect(projectStateMocks.rollbackConversation).toHaveBeenLastCalledWith(
+        'proj-1',
+        'conv-1',
+        expect.objectContaining({ conflictPolicy: 'overwrite' }),
+      );
+    });
+  });
+
+  it('keeps all three restore modes selectable and sends each one', async () => {
+    renderModal();
+
+    await screen.findByText('File conflicts');
+    const confirm = screen.getByRole('button', { name: 'Restore files and chat' }) as HTMLButtonElement;
+    await waitFor(() => expect(confirm.disabled).toBe(false));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Files only' }));
+    const filesConfirm = screen.getByRole('button', { name: 'Restore files' }) as HTMLButtonElement;
+    await waitFor(() => expect(filesConfirm.disabled).toBe(false));
+    fireEvent.click(filesConfirm);
+    await waitFor(() => {
+      expect(projectStateMocks.rollbackConversation).toHaveBeenLastCalledWith(
+        'proj-1',
+        'conv-1',
+        expect.objectContaining({ mode: 'files_only' }),
+      );
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Chat only' }));
+    const chatConfirm = screen.getByRole('button', { name: 'Restore chat' }) as HTMLButtonElement;
+    await waitFor(() => expect(chatConfirm.disabled).toBe(false));
+    fireEvent.click(chatConfirm);
+    await waitFor(() => {
+      expect(projectStateMocks.rollbackConversation).toHaveBeenLastCalledWith(
+        'proj-1',
+        'conv-1',
+        expect.objectContaining({ mode: 'chat_only' }),
+      );
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Files and chat' }));
+    const bothConfirm = screen.getByRole('button', { name: 'Restore files and chat' }) as HTMLButtonElement;
+    await waitFor(() => expect(bothConfirm.disabled).toBe(false));
+    fireEvent.click(bothConfirm);
+    await waitFor(() => {
+      expect(projectStateMocks.rollbackConversation).toHaveBeenLastCalledWith(
+        'proj-1',
+        'conv-1',
+        expect.objectContaining({ mode: 'files_and_chat' }),
+      );
+    });
+  });
+
+  it('locks the conflict rows in the readOnly preview', async () => {
+    renderModal({ readOnly: true, initialMode: 'files_only', initialCheckpointId: checkpoint.id });
+
+    const switches = await screen.findAllByRole('switch');
+    expect(switches).toHaveLength(2);
+    for (const node of switches) expect((node as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: 'Restore files' })).toBeNull();
   });
 });

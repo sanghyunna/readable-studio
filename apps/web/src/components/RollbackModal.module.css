@@ -295,15 +295,142 @@
   font-size: 12px;
 }
 
-.conflictHead select {
-  min-width: 160px;
-  border: 1px solid var(--border);
+/* Bulk-set: two solid toggle buttons instead of a two-option <select>. Both
+   sides of a destructive choice are visible at rest. */
+.bulk {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.bulkButton {
+  min-height: 28px;
+  padding: 5px 10px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  box-shadow: inset 0 1px 0 var(--hub-pearl-highlight);
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  transition: background var(--dur-quick) var(--ease-out), color var(--dur-quick) var(--ease-out);
+}
+
+.bulkButton:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-strong);
+}
+
+.bulkButton:focus-visible {
+  outline: 2px solid var(--hub-accent);
+  outline-offset: 2px;
+}
+
+.bulkButton[aria-pressed='true'] {
+  background: var(--hub-accent);
+  box-shadow: var(--shadow-xs);
+  color: var(--hub-accent-fg);
+}
+
+.bulkButton:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+/* One row per conflicted path: the path on the left, its resolution as a
+   switch on the right. Rows are separated by fill, not by a 1px rule. */
+.conflictRows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.conflictRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 0;
   border-radius: var(--radius-sm);
   background: var(--bg-panel);
-  color: var(--text);
+  box-shadow: inset 0 1px 0 var(--hub-pearl-highlight);
+}
+
+.conflictPath {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
   font: inherit;
-  font-size: 12px;
-  padding: 6px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: start;
+}
+
+.switch:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-strong);
+}
+
+.switch:focus-visible {
+  outline: 2px solid var(--hub-accent);
+  outline-offset: 2px;
+}
+
+.switch:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.switchTrack {
+  position: relative;
+  display: inline-block;
+  width: 32px;
+  height: 18px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--red) 42%, var(--bg-subtle));
+  box-shadow: inset 0 1px 2px var(--hub-pearl-elevation);
+  transition: background var(--dur-quick) var(--ease-out);
+}
+
+.switchThumb {
+  position: absolute;
+  inset-block-start: 2px;
+  inset-inline-start: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-pill);
+  background: var(--hub-accent-fg);
+  box-shadow: var(--shadow-xs);
+  transition: transform var(--dur-quick) var(--ease-out);
+}
+
+.switch[aria-checked='true'] .switchTrack {
+  background: var(--hub-accent);
+}
+
+.switch[aria-checked='true'] .switchThumb {
+  transform: translateX(14px);
+}
+
+.switchLabel {
+  min-width: 0;
 }
 
 .conflictWarning {
@@ -353,7 +480,25 @@
     flex-direction: column;
   }
 
-  .conflictHead select {
-    width: 100%;
+  .conflictRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Translucency is decoration here, never the only signal: the pearl highlight
+   collapses to a flat elevated fill. */
+@media (prefers-reduced-transparency: reduce) {
+  .conflictRow,
+  .bulkButton {
+    background: var(--bg-elevated);
+    box-shadow: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bulkButton,
+  .switchTrack,
+  .switchThumb {
+    transition: none;
   }
 }
