@@ -25,6 +25,7 @@ import { buildPetTaskCenter } from './components/pet/taskCenter';
 import { migrateCustomPetAtlas } from './components/pet/pets';
 import { TooltipLayer } from './components/TooltipLayer';
 import { openWorkspaceTab, WorkspaceTabsBar } from './components/WorkspaceTabsBar';
+import workspaceTransition from './components/WorkspaceTransition.module.css';
 import {
   IframeKeepAliveProvider,
   useIframeKeepAlivePool,
@@ -1744,6 +1745,44 @@ function AppInner() {
   // /marketplace and /marketplace/:id routes render outside the
   // EntryView / ProjectView split so the discovery surface stays
   // independent of any active project.
+  // Hub <-> workspace transition. The incoming surface animates in, driven
+  // purely by the route/activeProject state that already decides which view
+  // renders — no parallel state machine, no animation store.
+  //
+  // `surfaceId` is the identity of the mounted surface: swapping between the
+  // Hub and a project (or between projects) changes it, while route detail
+  // changes inside one surface (file name, conversation id, Hub tab) do not,
+  // so the animation never re-fires on in-place navigation.
+  const surfaceId =
+    route.kind === 'marketplace' || route.kind === 'marketplace-detail'
+      ? 'marketplace'
+      : route.kind === 'design-system-create' || route.kind === 'design-system-detail'
+        ? 'design-system'
+        : activeProject
+          ? `project:${activeProject.id}`
+          : 'hub';
+  // First paint of the session must not animate (the app shell already fades
+  // in); afterwards the direction is derived from the surface we came from.
+  // This is React's "adjust state during render" pattern rather than an
+  // effect: the direction must be known on the same commit that mounts the
+  // incoming surface, otherwise the element paints once un-animated and the
+  // animation restarts a frame later. `previousSurfaceId` is only ever read
+  // through the comparison below, so the render stays deterministic under
+  // StrictMode double-invocation.
+  const [seenSurface, setSeenSurface] = useState<{ id: string; from: string | null }>(
+    () => ({ id: surfaceId, from: null }),
+  );
+  if (seenSurface.id !== surfaceId) {
+    setSeenSurface({ id: surfaceId, from: seenSurface.id });
+  }
+  const previousSurfaceId = seenSurface.id === surfaceId ? seenSurface.from : seenSurface.id;
+  const surfaceTransition =
+    previousSurfaceId === null || previousSurfaceId === surfaceId
+      ? 'none'
+      : surfaceId === 'hub'
+        ? 'hub'
+        : 'workspace';
+
   let appMain: ReactNode;
   if (route.kind === 'marketplace') {
     appMain = <MarketplaceView />;
@@ -1878,7 +1917,21 @@ function AppInner() {
           projects={projects}
         />
         <div className="workspace-shell__body">
-          {appMain}
+          {/*
+            Keyed on the surface identity so React mounts a fresh element per
+            swap and the one-shot CSS entrance replays. There is no exit phase
+            and no overlay, so returning to the Hub cannot strand animation
+            state. The element is interactive from its first frame — the
+            animation only touches opacity/transform.
+          */}
+          <div
+            key={surfaceId}
+            className={workspaceTransition.surface}
+            data-transition={surfaceTransition}
+            data-surface={surfaceId}
+          >
+            {appMain}
+          </div>
         </div>
       </div>
       {clientType === 'desktop' ? null : (

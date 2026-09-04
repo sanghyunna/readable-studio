@@ -1,0 +1,142 @@
+/*
+ * Hub -> workspace surface transition.
+ *
+ * App.tsx swaps a single child inside `.workspace-shell__body` when the route
+ * state moves between the Hub (EntryView) and a project workspace
+ * (ProjectView). That swap used to be an instant hard cut. This stylesheet
+ * gives the incoming surface a short, directional entrance so the change reads
+ * as spatial rather than as a frame drop.
+ *
+ * Design rules honored here:
+ * - One-shot CSS `animation` on the *incoming* element only. There is no exit
+ *   phase, no overlay and no wrapper that outlives the swap, so the Hub stays
+ *   re-enterable and nothing can get stuck mid-animation.
+ * - `animation` never touches layout: only `opacity`, `transform` and
+ *   `filter`. The destination content is laid out at its final geometry from
+ *   the first frame, so there is no layout shift and no reflow-driven jank.
+ * - The element is mounted, painted and interactive immediately; the animation
+ *   is presentational only and does not gate input, focus or data loading.
+ *   `pointer-events` is deliberately never disabled.
+ * - Durations/easing come from the product tokens (`--dur-enter`, `--ease-out`)
+ *   in styles/tokens.css. No bounce, no spring, no full-screen wipe.
+ */
+
+.surface {
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  /* Own stacking/paint context so the transform does not promote or clip
+     descendant overlays into a new containing block beyond this subtree. */
+  isolation: isolate;
+}
+
+.surface > :global(.app),
+.surface > :global(.entry-shell) {
+  height: 100%;
+  min-height: 0;
+}
+
+/*
+ * The header-less Hub layout rules (hide the tabs chrome row, collapse the
+ * shell to a single grid row) are NOT restated here. They live once in
+ * styles/home/entry-layout.css and are written as a descendant match, so they
+ * keep matching through this wrapper. Re-stating them at this depth would be a
+ * second source of truth that silently drifts.
+ */
+
+/*
+ * Entering the workspace: content arrives from slightly below/behind, settling
+ * forward. 280ms sits inside the 200-320ms band; --dur-enter (200ms) is the
+ * token floor for the opacity leg so the surface is legible early.
+ */
+@keyframes workspaceEnter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0) scale(0.988);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+/*
+ * Returning to the Hub: the inverse direction, so back reads as receding
+ * rather than as a second forward push.
+ */
+@keyframes hubEnter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -8px, 0) scale(1.008);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+.surface[data-transition='workspace'] {
+  animation: workspaceEnter 280ms var(--ease-out) both;
+}
+
+.surface[data-transition='hub'] {
+  animation: hubEnter 260ms var(--ease-out) both;
+}
+
+/*
+ * First paint of the session must not animate: the app shell already fades in
+ * (styles/entrance.css `.app, .entry-shell`), and re-animating here would read
+ * as a double entrance.
+ */
+.surface[data-transition='none'] {
+  animation: none;
+}
+
+/*
+ * Reduced motion: no movement at all. The swap becomes an instant cut; the
+ * surface is still fully opaque and interactive on the first frame.
+ * `animation: none` (rather than a 0.01ms duration) means `both` fill can
+ * never leave a transformed or transparent frame behind.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .surface,
+  .surface[data-transition='workspace'],
+  .surface[data-transition='hub'] {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/*
+ * Reduced transparency: keep the movement, drop the opacity ramp so the
+ * incoming surface is never rendered semi-transparent over the shell
+ * background.
+ */
+@media (prefers-reduced-transparency: reduce) {
+  @keyframes workspaceEnterOpaque {
+    from {
+      transform: translate3d(0, 10px, 0) scale(0.988);
+    }
+    to {
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+  }
+
+  @keyframes hubEnterOpaque {
+    from {
+      transform: translate3d(0, -8px, 0) scale(1.008);
+    }
+    to {
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+  }
+
+  .surface[data-transition='workspace'] {
+    animation: workspaceEnterOpaque 280ms var(--ease-out) both;
+  }
+
+  .surface[data-transition='hub'] {
+    animation: hubEnterOpaque 260ms var(--ease-out) both;
+  }
+}

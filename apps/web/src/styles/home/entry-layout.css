@@ -7,11 +7,20 @@
 
 /* Header-less shell variant. The rail's logo replaces the chrome
    brand and a floating top-right control replaces the chrome
-   actions, so the entry view does not render `AppChromeHeader`. */
-.workspace-shell:has(> .workspace-shell__body > .entry-shell--no-header) {
+   actions, so the entry view does not render `AppChromeHeader`.
+
+   The body's child is not always the surface root: App.tsx mounts a keyed
+   transition wrapper (`WorkspaceTransition.module.css` `.surface`) between
+   `.workspace-shell__body` and the view root so the Hub <-> workspace swap can
+   animate. A direct-child `:has()` therefore stops matching the moment that
+   wrapper exists, which re-shows the tabs chrome row and shifts the Hub grid.
+   The condition is matched as a descendant so it holds at either depth and
+   there is exactly one place stating it. `.workspace-shell__body` is the only
+   surface host in the shell, so the looser match cannot select anything else. */
+.workspace-shell:has(> .workspace-shell__body .entry-shell--no-header) {
   grid-template-rows: minmax(0, 1fr);
 }
-.workspace-shell:has(> .workspace-shell__body > .entry-shell--no-header)
+.workspace-shell:has(> .workspace-shell__body .entry-shell--no-header)
   > .workspace-tabs-chrome {
   display: none;
 }
