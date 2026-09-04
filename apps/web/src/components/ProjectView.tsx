@@ -23,6 +23,14 @@ import {
   type QuestionForm,
 } from '../artifacts/question-form';
 import { parseSubmittedAnswers } from './QuestionForm';
+import {
+  mergeBriefAssumptions,
+  persistProjectBrief,
+  readProjectBrief,
+  type BriefAssumption,
+  type ProjectBrief,
+} from './brief-state';
+import { parsePartialJson } from '../runtime/partial-json';
 import { useI18n } from '../i18n';
 import { streamMessage } from '../providers/anthropic';
 import {
@@ -682,6 +690,46 @@ export function buildQuestionFormKey(
     : null;
 }
 
+const BRIEF_RECEIPT_OPEN_RE = /<brief-receipt\b[^>]*>/i;
+const BRIEF_RECEIPT_CLOSE_RE = /<\/brief-receipt\s*>/i;
+
+/** Parse a complete receipt or the valid JSON prefix available while streaming. */
+export function parseBriefReceipt(input: string): BriefAssumption[] | null {
+  const open = BRIEF_RECEIPT_OPEN_RE.exec(input);
+  if (!open) return null;
+  const bodyStart = open.index + open[0].length;
+  const remainder = input.slice(bodyStart);
+  const close = BRIEF_RECEIPT_CLOSE_RE.exec(remainder);
+  const body = close ? remainder.slice(0, close.index) : remainder;
+  const parsed = parsePartialJson(body);
+  if (!parsed || typeof parsed !== 'object') return null;
+  const assumptions = (parsed as { assumptions?: unknown }).assumptions;
+  if (!Array.isArray(assumptions)) return null;
+  const valid = assumptions.filter(isBriefAssumption);
+  return valid.length > 0 ? valid : null;
+}
+
+function isBriefAssumption(value: unknown): value is BriefAssumption {
+  if (!value || typeof value !== 'object') return false;
+  const item = value as Record<string, unknown>;
+  return (
+    typeof item.id === 'string'
+    && item.id.trim().length > 0
+    && typeof item.label === 'string'
+    && item.label.trim().length > 0
+    && (
+      typeof item.value === 'string'
+      || (Array.isArray(item.value) && item.value.every(entry => typeof entry === 'string'))
+    )
+    && (item.displayValue === undefined || typeof item.displayValue === 'string')
+    && (item.provenance === 'stated' || item.provenance === 'inferred' || item.provenance === 'default')
+  );
+}
+
+function briefAssumptionsEqual(a: ProjectBrief | null, b: ProjectBrief): boolean {
+  return JSON.stringify(a?.assumptions ?? null) === JSON.stringify(b.assumptions);
+}
+
 type ProjectSplitStyle = CSSProperties & {
   '--project-chat-panel-width': string;
   '--project-workspace-panel-track': string;
@@ -1076,6 +1124,38 @@ export function ProjectView({
     () => findFirstQuestionForm(lastAssistantContent)?.form ?? null,
     [lastAssistantContent],
   );
+  const receiptAssumptions = useMemo(
+    () => parseBriefReceipt(lastAssistantContent),
+    [lastAssistantContent],
+  );
+  const metadataBrief = useMemo(() => readProjectBrief(project.metadata), [project.metadata]);
+  const briefProjectIdRef = useRef(project.id);
+  const [projectBrief, setProjectBrief] = useState<ProjectBrief | null>(() => metadataBrief);
+  if (briefProjectIdRef.current !== project.id) {
+    briefProjectIdRef.current = project.id;
+    setProjectBrief(metadataBrief);
+  }
+  useEffect(() => {
+    if (!receiptAssumptions) return;
+    // Persisted state is authoritative when reopening historical chat. A receipt
+    // from an active run is newer and may intentionally revise those assumptions.
+    if (metadataBrief && !currentConversationStreaming) return;
+    const next = mergeBriefAssumptions(projectBrief ?? metadataBrief, receiptAssumptions);
+    if (briefAssumptionsEqual(projectBrief ?? metadataBrief, next)) return;
+    setProjectBrief(next);
+    void persistProjectBrief(project.id, project.metadata ?? { kind: 'prototype' }, next);
+  }, [
+    currentConversationStreaming,
+    metadataBrief,
+    project.id,
+    project.metadata,
+    projectBrief,
+    receiptAssumptions,
+  ]);
+  const handleBriefChange = useCallback(async (next: ProjectBrief): Promise<void> => {
+    setProjectBrief(next);
+    await persistProjectBrief(project.id, project.metadata ?? { kind: 'prototype' }, next);
+  }, [project.id, project.metadata]);
   const questionFormSubmittedAnswers = useMemo(() => {
     if (!questionForm) return undefined;
     for (let i = lastAssistantIndex + 1; i < messages.length; i++) {
@@ -5455,6 +5535,11 @@ export function ProjectView({
               onSelectConversation={handleSelectConversation}
               onDeleteConversation={handleDeleteConversation}
               config={config}
+              agents={agents}
+              daemonLive={daemonLive}
+              onModeChange={onModeChange}
+              onAgentChange={onAgentChange}
+              onAgentModelChange={onAgentModelChange}
               onOpenSettings={onOpenSettings}
               showByokRecoveryAction={
                 config.mode === 'api' &&
@@ -5647,6 +5732,11 @@ export function ProjectView({
               }}
             />
           )}
+          brief={projectBrief}
+          onBriefChange={handleBriefChange}
+          onBriefSteer={(payload) => {
+            void handleSend(payload, [], []);
+          }}
           questionForm={displayedQuestionForm}
           questionFormPreview={displayedQuestionFormPreview}
           questionFormKey={displayedQuestionFormKey}

@@ -206,6 +206,7 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
               {q.type === 'select' && q.options ? (
                 <select
                   className="qf-select"
+                  aria-label={q.label}
                   value={typeof value === 'string' ? value : ''}
                   disabled={locked}
                   onChange={(e) => update(q.id, e.target.value)}
@@ -224,6 +225,7 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
                 <input
                   type="text"
                   className="qf-input"
+                  aria-label={q.label}
                   value={typeof value === 'string' ? value : ''}
                   placeholder={q.placeholder}
                   disabled={locked}
@@ -233,6 +235,7 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
               {q.type === 'textarea' ? (
                 <textarea
                   className="qf-textarea"
+                  aria-label={q.label}
                   value={typeof value === 'string' ? value : ''}
                   placeholder={q.placeholder}
                   disabled={locked}

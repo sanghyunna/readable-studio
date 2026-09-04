@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildQuestionFormKey,
   mergeServerMessagesIntoConversation,
+  parseBriefReceipt,
 } from '../../src/components/ProjectView';
 import type { ChatMessage, ProjectFile } from '../../src/types';
 
@@ -32,6 +33,30 @@ describe('buildQuestionFormKey', () => {
     expect(buildQuestionFormKey(null, 'msg-1', true)).toBeNull();
     expect(buildQuestionFormKey('conv-1', null, true)).toBeNull();
     expect(buildQuestionFormKey('conv-1', 'msg-1', false)).toBeNull();
+  });
+});
+
+describe('parseBriefReceipt', () => {
+  it('parses a complete receipt with all provenance values', () => {
+    expect(parseBriefReceipt(`Working on it.\n<brief-receipt>{"assumptions":[
+      {"id":"audience","label":"Audience","value":"buyers","provenance":"stated"},
+      {"id":"tone","label":"Tone","value":["Modern minimal"],"provenance":"inferred"},
+      {"id":"scale","label":"Scale","value":"8 slides","provenance":"default"}
+    ]}</brief-receipt>`)).toEqual([
+      { id: 'audience', label: 'Audience', value: 'buyers', provenance: 'stated' },
+      { id: 'tone', label: 'Tone', value: ['Modern minimal'], provenance: 'inferred' },
+      { id: 'scale', label: 'Scale', value: '8 slides', provenance: 'default' },
+    ]);
+  });
+
+  it('returns the valid assumptions available from a streaming JSON prefix', () => {
+    expect(parseBriefReceipt('<brief-receipt>{"assumptions":[{"id":"audience","label":"Audience","value":"buyers","provenance":"inferred"},'))
+      .toEqual([{ id: 'audience', label: 'Audience', value: 'buyers', provenance: 'inferred' }]);
+  });
+
+  it('rejects malformed assumptions instead of persisting arbitrary metadata', () => {
+    expect(parseBriefReceipt('<brief-receipt>{"assumptions":[{"id":"tone","label":"Tone","value":4,"provenance":"guessed"}]}</brief-receipt>'))
+      .toBeNull();
   });
 });
 
