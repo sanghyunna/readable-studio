@@ -2,7 +2,10 @@ import { test } from 'vitest';
 import {
   AGENT_DEFS, assert, chmodSync, codex, cursorAgent, detectAgents, grokBuild, join, mkdtempSync, rmSync, tmpdir, withEnvSnapshot, withPlatform, writeFileSync,
 } from './helpers/test-helpers.js';
-import { codexNeedsDangerFullAccessSandbox } from '../../src/runtimes/defs/codex.js';
+import {
+  codexNeedsDangerFullAccessSandbox,
+  parseCodexModelCatalog,
+} from '../../src/runtimes/defs/codex.js';
 import { readLocalAgentProfileDefs } from '../../src/runtimes/registry.js';
 
 function writeFakeCodexBin(dir: string, script: string): string {
@@ -323,16 +326,13 @@ test('codex args keep plugins enabled when READABLE_CODEX_DISABLE_PLUGINS is not
 test('codex model picker includes current OpenAI choices in priority order', async () => {
   const expectedModels = [
     'default',
+    'gpt-5.6-sol',
+    'gpt-5.6-terra',
+    'gpt-5.6-luna',
     'gpt-5.5',
     'gpt-5.4',
     'gpt-5.4-mini',
-    'gpt-5.3-codex',
-    'gpt-5.1',
-    'gpt-5.1-codex-mini',
-    'gpt-5-codex',
-    'gpt-5',
-    'o3',
-    'o4-mini',
+    'gpt-5.3-codex-spark',
   ];
 
   assert.deepEqual(codex.fallbackModels.map((m) => m.id), expectedModels);
@@ -360,7 +360,7 @@ test('codex model picker includes current OpenAI choices in priority order', asy
 
   const dir = mkdtempSync(join(tmpdir(), 'readable-agents-codex-models-'));
   try {
-    await withEnvSnapshot(['PATH', 'READABLE_AGENT_HOME', 'CODEX_BIN'], async () => {
+    await withEnvSnapshot(['PATH', 'READABLE_AGENT_HOME', 'CODEX_BIN', 'CODEX_HOME'], async () => {
       writeFakeCodexBin(dir, `
 const args = process.argv.slice(2);
 if (args[0] === '--version') {
@@ -371,14 +371,16 @@ process.exit(0);
 `);
       process.env.READABLE_AGENT_HOME = dir;
       process.env.PATH = dir;
+      process.env.CODEX_HOME = dir;
       delete process.env.CODEX_BIN;
 
-      const agents = await detectAgents();
+      const agents = await detectAgents({ codex: { CODEX_HOME: dir } });
       const detected = agents.find((agent) => agent.id === 'codex');
 
       assert.ok(detected);
       assert.equal(detected.available, true);
       assert.equal(detected.version, 'codex 1.0.0');
+      assert.equal(detected.modelsSource, 'fallback');
       assert.deepEqual(detected.models.map((m: { id: string }) => m.id), expectedModels);
     });
   } finally {
@@ -386,64 +388,52 @@ process.exit(0);
   }
 });
 
-test('codex parses live model catalog from debug models JSON', () => {
-  assert.ok(codex.listModels, 'codex must define live model discovery');
-  const parsed = codex.listModels.parse(JSON.stringify({
+test('codex parses the CLI-owned cache and app-server model/list shapes', () => {
+  const cacheParsed = parseCodexModelCatalog(JSON.stringify({
     models: [
-      {
-        slug: 'gpt-6-codex',
-        display_name: 'GPT-6 Codex',
-        visibility: 'list',
-      },
-      {
-        slug: 'gpt-6-codex-mini',
-        display_name: 'GPT-6 Codex Mini',
-        visibility: 'list',
-      },
-      {
-        slug: 'gpt-hidden-internal',
-        display_name: 'Hidden internal',
-        visibility: 'hidden',
-      },
+      { slug: 'gpt-5.3-codex-spark', display_name: 'GPT-5.3-Codex-Spark', visibility: 'list' },
+      { slug: 'gpt-hidden-internal', display_name: 'Hidden internal', visibility: 'hide' },
+    ],
+  }));
+  const appServerParsed = parseCodexModelCatalog(JSON.stringify({
+    data: [
+      { id: 'gpt-5.6-sol', displayName: 'GPT-5.6-Sol', hidden: false },
+      { id: 'gpt-hidden-internal', displayName: 'Hidden internal', hidden: true },
     ],
   }));
 
-  assert.deepEqual(parsed, [
+  assert.deepEqual(cacheParsed, [
     { id: 'default', label: 'Default (CLI config)' },
-    { id: 'gpt-6-codex', label: 'GPT-6 Codex' },
-    { id: 'gpt-6-codex-mini', label: 'GPT-6 Codex Mini' },
+    { id: 'gpt-5.3-codex-spark', label: 'GPT-5.3-Codex-Spark' },
+  ]);
+  assert.deepEqual(appServerParsed, [
+    { id: 'default', label: 'Default (CLI config)' },
+    { id: 'gpt-5.6-sol', label: 'GPT-5.6-Sol' },
   ]);
 });
 
-test('codex detection surfaces live debug models separately from fallback models', async () => {
+test('codex detection surfaces the CLI-owned model cache as live discovery', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'readable-agents-codex-live-models-'));
   try {
-    await withEnvSnapshot(['PATH', 'READABLE_AGENT_HOME', 'CODEX_BIN'], async () => {
+    await withEnvSnapshot(['PATH', 'READABLE_AGENT_HOME', 'CODEX_BIN', 'CODEX_HOME'], async () => {
       writeFakeCodexBin(dir, `
-const args = process.argv.slice(2);
-if (args[0] === '--version') {
+if (process.argv[2] === '--version') {
   console.log('codex-cli 9.9.9');
-  process.exit(0);
-}
-if (args[0] === 'debug' && args[1] === 'models') {
-  console.log(JSON.stringify({
-    models: [
-      {
-        slug: 'gpt-6-codex',
-        display_name: 'GPT-6 Codex',
-        visibility: 'list',
-      },
-    ],
-  }));
   process.exit(0);
 }
 process.exit(2);
 `);
+      writeFileSync(join(dir, 'models_cache.json'), JSON.stringify({
+        models: [
+          { slug: 'gpt-5.3-codex-spark', display_name: 'GPT-5.3-Codex-Spark', visibility: 'list' },
+        ],
+      }));
       process.env.READABLE_AGENT_HOME = dir;
       process.env.PATH = dir;
+      process.env.CODEX_HOME = dir;
       delete process.env.CODEX_BIN;
 
-      const agents = await detectAgents();
+      const agents = await detectAgents({ codex: { CODEX_HOME: dir } });
       const detected = agents.find((agent) => agent.id === 'codex');
 
       assert.ok(detected);
@@ -451,7 +441,7 @@ process.exit(2);
       assert.equal(detected.modelsSource, 'live');
       assert.deepEqual(detected.models.map((m: { id: string }) => m.id), [
         'default',
-        'gpt-6-codex',
+        'gpt-5.3-codex-spark',
       ]);
     });
   } finally {
@@ -459,11 +449,10 @@ process.exit(2);
   }
 });
 
-test('codex picker includes gpt-5.1 model family', () => {
+test('codex fallback keeps the verified Spark model when discovery is unavailable', () => {
   const pickerModels = new Set(codex.fallbackModels.map((model) => model.id));
 
-  assert.equal(pickerModels.has('gpt-5.1'), true);
-  assert.equal(pickerModels.has('gpt-5.1-codex-mini'), true);
+  assert.equal(pickerModels.has('gpt-5.3-codex-spark'), true);
 });
 
 test('cursor-agent parses live model ids separately from display labels', () => {

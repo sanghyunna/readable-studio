@@ -5,6 +5,10 @@ import type { RuntimeAgentDef } from '../types.js';
 
 const CLAUDE_FALLBACK_MODELS = [
   DEFAULT_MODEL_OPTION,
+  // Claude Code 2.1.258 `--help` documents both the alias and full id.
+  // Verified 2026-09-04; Claude Code does not expose a list-models command.
+  { id: 'fable', label: 'Fable (alias)' },
+  { id: 'claude-fable-5', label: 'claude-fable-5' },
   { id: 'sonnet', label: 'Sonnet (alias)' },
   { id: 'opus', label: 'Opus (alias)' },
   { id: 'haiku', label: 'Haiku (alias)' },

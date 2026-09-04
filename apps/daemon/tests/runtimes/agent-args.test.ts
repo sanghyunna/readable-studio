@@ -274,6 +274,13 @@ test('gemini args avoid version-fragile trust flags', () => {
   assert.deepEqual(gemini.env, { GEMINI_CLI_TRUST_WORKSPACE: 'true' });
 });
 
+test('claude fallback includes the documented Fable alias and full model id', () => {
+  const models = new Set(claude.fallbackModels.map((model) => model.id));
+
+  assert.equal(models.has('fable'), true);
+  assert.equal(models.has('claude-fable-5'), true);
+});
+
 test('gemini args preserve custom model selection', () => {
   const args = gemini.buildArgs('', [], [], { model: 'gemini-2.5-pro' });
 
@@ -286,19 +293,28 @@ test('gemini args preserve custom model selection', () => {
   ]);
 });
 
-test('gemini picker exposes the Gemini 3 previews and 2.5 family in priority order', () => {
-  // Pin the picker contents and ordering so the Settings UI cannot be
-  // silently reshaped by a future edit to AGENT_DEFS. Gemini also accepts
-  // arbitrary custom ids, which makes it especially easy for a regression
-  // here to slip through manual QA. Issue #981.
+test('gemini picker exposes current Gemini 3 and 2.5 endpoint ids in priority order', () => {
+  // Pin the vendor-documented text models and ensure the shut-down Gemini 3
+  // Pro preview cannot silently return to the picker. Gemini also accepts
+  // arbitrary custom ids, which makes stale fallback regressions easy to miss.
   assert.deepEqual(gemini.fallbackModels.map((m) => m.id), [
     'default',
-    'gemini-3-pro-preview',
+    'gemini-3.1-pro-preview',
+    'gemini-3.8-flash',
+    'gemini-3.7-flash',
+    'gemini-3.6-flash',
+    'gemini-3.5-flash',
+    'gemini-3.5-flash-lite',
+    'gemini-3.1-flash-lite',
     'gemini-3-flash-preview',
     'gemini-2.5-pro',
     'gemini-2.5-flash',
     'gemini-2.5-flash-lite',
   ]);
+  assert.equal(
+    gemini.fallbackModels.some((model) => model.id === 'gemini-3-pro-preview'),
+    false,
+  );
 });
 
 test('qoder entry uses qodercli with stream-json stdin delivery and tier model hints', () => {

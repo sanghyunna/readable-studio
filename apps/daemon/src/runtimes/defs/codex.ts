@@ -1,8 +1,11 @@
+import { readFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { DEFAULT_MODEL_OPTION, clampCodexReasoning } from './shared.js';
 import type { RuntimeModelOption } from '../types.js';
 import type { RuntimeAgentDef } from '../types.js';
 
-export function parseCodexDebugModels(stdout: string): RuntimeModelOption[] | null {
+export function parseCodexModelCatalog(stdout: string): RuntimeModelOption[] | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(String(stdout || ''));
@@ -10,7 +13,8 @@ export function parseCodexDebugModels(stdout: string): RuntimeModelOption[] | nu
     return null;
   }
   if (!parsed || typeof parsed !== 'object') return null;
-  const models = (parsed as { models?: unknown }).models;
+  const catalog = parsed as { models?: unknown; data?: unknown };
+  const models = Array.isArray(catalog.models) ? catalog.models : catalog.data;
   if (!Array.isArray(models)) return null;
 
   const out = [DEFAULT_MODEL_OPTION];
@@ -21,10 +25,16 @@ export function parseCodexDebugModels(stdout: string): RuntimeModelOption[] | nu
       slug?: unknown;
       id?: unknown;
       display_name?: unknown;
+      displayName?: unknown;
       name?: unknown;
       visibility?: unknown;
+      hidden?: unknown;
     };
-    if (entry.visibility === 'hidden') continue;
+    if (
+      entry.hidden === true ||
+      entry.visibility === 'hidden' ||
+      entry.visibility === 'hide'
+    ) continue;
     const id =
       typeof entry.slug === 'string'
         ? entry.slug.trim()
@@ -36,12 +46,27 @@ export function parseCodexDebugModels(stdout: string): RuntimeModelOption[] | nu
     const label =
       typeof entry.display_name === 'string' && entry.display_name.trim()
         ? entry.display_name.trim()
-        : typeof entry.name === 'string' && entry.name.trim()
-          ? entry.name.trim()
-          : id;
+        : typeof entry.displayName === 'string' && entry.displayName.trim()
+          ? entry.displayName.trim()
+          : typeof entry.name === 'string' && entry.name.trim()
+            ? entry.name.trim()
+            : id;
     out.push({ id, label });
   }
   return out.length > 1 ? out : null;
+}
+
+async function loadCodexModelCache(
+  env: NodeJS.ProcessEnv,
+): Promise<RuntimeModelOption[] | null> {
+  const codexHome = env.CODEX_HOME?.trim() || path.join(os.homedir(), '.codex');
+  try {
+    return parseCodexModelCatalog(
+      await readFile(path.join(codexHome, 'models_cache.json'), 'utf8'),
+    );
+  } catch {
+    return null;
+  }
 }
 
 export function codexNeedsDangerFullAccessSandbox(
@@ -63,25 +88,22 @@ export const codexAgentDef = {
     name: 'Codex CLI',
     bin: 'codex',
     versionArgs: ['--version'],
-    // Codex exposes its installed model catalog through `debug models` on
-    // recent CLIs. Older builds fall back to these static hints.
-    listModels: {
-      args: ['debug', 'models'],
-      parse: parseCodexDebugModels,
-      timeoutMs: 5000,
-    },
+    // Codex app-server's authoritative `model/list` catalogue is persisted at
+    // `$CODEX_HOME/models_cache.json`. Reading that CLI-owned cache avoids a
+    // second long-lived app-server process during detection and tracks account-
+    // specific additions/removals. If the cache is absent or malformed, use
+    // the dated fallback snapshot below (verified against Codex CLI 0.146.0 on
+    // 2026-09-04).
+    fetchModels: async (_resolvedBin, env) => loadCodexModelCache(env),
     fallbackModels: [
       DEFAULT_MODEL_OPTION,
-      { id: 'gpt-5.5', label: 'gpt-5.5' },
-      { id: 'gpt-5.4', label: 'gpt-5.4' },
-      { id: 'gpt-5.4-mini', label: 'gpt-5.4-mini' },
-      { id: 'gpt-5.3-codex', label: 'gpt-5.3-codex' },
-      { id: 'gpt-5.1', label: 'gpt-5.1' },
-      { id: 'gpt-5.1-codex-mini', label: 'gpt-5.1-codex-mini' },
-      { id: 'gpt-5-codex', label: 'gpt-5-codex' },
-      { id: 'gpt-5', label: 'gpt-5' },
-      { id: 'o3', label: 'o3' },
-      { id: 'o4-mini', label: 'o4-mini' },
+      { id: 'gpt-5.6-sol', label: 'GPT-5.6-Sol' },
+      { id: 'gpt-5.6-terra', label: 'GPT-5.6-Terra' },
+      { id: 'gpt-5.6-luna', label: 'GPT-5.6-Luna' },
+      { id: 'gpt-5.5', label: 'GPT-5.5' },
+      { id: 'gpt-5.4', label: 'GPT-5.4' },
+      { id: 'gpt-5.4-mini', label: 'GPT-5.4-Mini' },
+      { id: 'gpt-5.3-codex-spark', label: 'GPT-5.3-Codex-Spark' },
     ],
     reasoningOptions: [
       { id: 'default', label: 'Default' },

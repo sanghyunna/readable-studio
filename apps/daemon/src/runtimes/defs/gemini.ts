@@ -8,9 +8,17 @@ export const geminiAgentDef = {
     versionArgs: ['--version'],
     fallbackModels: [
       DEFAULT_MODEL_OPTION,
-      // Gemini 3 (May 2026): top-tier reasoning + fast frontier-class.
-      // Both currently ship as previews via the Gemini CLI. Issue #981.
-      { id: 'gemini-3-pro-preview', label: 'gemini-3-pro-preview' },
+      // Google Gemini API "All Gemini 3 models", retrieved 2026-09-04.
+      // Gemini CLI accepts these endpoint ids through `--model`; it does not
+      // expose an account-bound model-list command. Do not restore
+      // gemini-3-pro-preview: Google's shutdown table marks it shut down.
+      { id: 'gemini-3.1-pro-preview', label: 'gemini-3.1-pro-preview' },
+      { id: 'gemini-3.8-flash', label: 'gemini-3.8-flash' },
+      { id: 'gemini-3.7-flash', label: 'gemini-3.7-flash' },
+      { id: 'gemini-3.6-flash', label: 'gemini-3.6-flash' },
+      { id: 'gemini-3.5-flash', label: 'gemini-3.5-flash' },
+      { id: 'gemini-3.5-flash-lite', label: 'gemini-3.5-flash-lite' },
+      { id: 'gemini-3.1-flash-lite', label: 'gemini-3.1-flash-lite' },
       { id: 'gemini-3-flash-preview', label: 'gemini-3-flash-preview' },
       { id: 'gemini-2.5-pro', label: 'gemini-2.5-pro' },
       { id: 'gemini-2.5-flash', label: 'gemini-2.5-flash' },
