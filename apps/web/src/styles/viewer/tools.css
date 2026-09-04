@@ -20,7 +20,7 @@
   justify-content: center;
   border-radius: var(--radius);
   padding: 0;
-  border: 1px solid var(--border-soft);
+  border: 0;
   background: var(--bg-panel);
   color: var(--text-muted);
   flex-shrink: 0;
@@ -115,7 +115,7 @@
 .plugin-action-panel {
   margin-top: 4px;
   padding: 12px 14px;
-  border: 1px solid var(--accent-soft);
+  border: 0;
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--accent) 5%, var(--bg-panel));
   box-shadow: var(--shadow-xs);
@@ -159,11 +159,11 @@
   gap: 8px;
   min-width: 0;
   padding-top: 8px;
-  border-top: 1px solid var(--border-soft);
+  border-top: 0;
 }
 .plugin-action-panel__list .plugin-action-card:first-child {
   padding-top: 0;
-  border-top: none;
+  border-top: 0;
 }
 .plugin-action-card__main {
   display: flex;
@@ -196,7 +196,7 @@
   padding: 1px 6px;
   border-radius: var(--radius-xs);
   background: var(--bg-panel);
-  border: 1px solid var(--border-soft);
+  border: 0;
   color: var(--text);
   font-family: var(--mono);
   font-size: 11px;
@@ -217,7 +217,7 @@
   min-height: 28px;
   max-width: 100%;
   padding: 5px 10px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius);
   background: var(--bg-panel);
   color: var(--text);
@@ -226,7 +226,6 @@
   cursor: pointer;
 }
 .plugin-action-button:hover:not(:disabled) {
-  border-color: var(--accent);
   color: var(--accent);
 }
 .plugin-action-button:disabled {
@@ -234,7 +233,6 @@
   cursor: default;
 }
 .plugin-action-button--primary {
-  border-color: var(--accent);
   background: var(--accent);
   color: var(--white);
 }
@@ -246,7 +244,7 @@
   padding: 6px 8px;
   border-radius: var(--radius-sm);
   background: var(--bg-panel);
-  border: 1px solid var(--border-soft);
+  border: 0;
   color: var(--text-muted);
   font-size: 11.5px;
   line-height: 1.35;
@@ -264,13 +262,12 @@
 .file-ops {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius);
   background: var(--bg-panel);
   overflow: hidden;
 }
 .file-ops.is-streaming {
-  border-style: dashed;
   background: var(--bg-subtle);
 }
 .file-ops-toggle {
@@ -313,11 +310,10 @@
   padding: 1px 6px;
   border-radius: var(--radius);
   background: var(--bg-subtle);
-  border: 1px solid var(--border);
+  border: 0;
 }
 .file-ops.is-streaming .file-ops-count {
   color: var(--accent);
-  border-color: color-mix(in oklab, var(--accent) 30%, var(--border));
 }
 .file-ops-chev { display: inline-flex; color: var(--text-muted); }
 .file-ops-list {
@@ -327,7 +323,7 @@
   display: flex;
   flex-direction: column;
   gap: 3px;
-  border-top: 1px solid var(--border-soft, var(--border));
+  border-top: 0;
 }
 .file-ops-row {
   display: flex;
@@ -355,7 +351,7 @@
   font-weight: 700;
   font-family: var(--mono);
   letter-spacing: 0;
-  border: 1px solid var(--border);
+  border: 0;
   background: var(--bg-subtle);
   color: var(--text-muted);
 }
@@ -367,16 +363,13 @@
 }
 .file-ops-badge--read {
   color: color-mix(in oklab, var(--accent) 80%, var(--text));
-  border-color: color-mix(in oklab, var(--accent) 30%, var(--border));
 }
 .file-ops-badge--write {
   color: var(--green);
-  border-color: color-mix(in oklab, var(--green) 35%, var(--border));
   background: color-mix(in oklab, var(--green) 8%, var(--bg-subtle));
 }
 .file-ops-badge--edit {
   color: var(--warning);
-  border-color: color-mix(in oklab, var(--warning) 35%, var(--border));
   background: color-mix(in oklab, var(--warning) 8%, var(--bg-subtle));
 }
 .file-ops-row-path {
@@ -417,14 +410,13 @@
   font-size: 11px;
   padding: 3px 9px;
   background: transparent;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius-sm);
   color: var(--text);
   cursor: pointer;
   flex-shrink: 0;
 }
 .file-ops-row-open:hover {
-  border-color: var(--accent);
   color: var(--accent);
 }
 
@@ -526,7 +518,7 @@
   min-width: 168px;
   padding: 4px;
   background: var(--bg-panel);
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius);
   box-shadow: var(--shadow-md);
   display: flex;
@@ -623,7 +615,7 @@
   min-width: 300px;
   padding: 4px;
   background: var(--bg-panel);
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius);
   box-shadow: var(--shadow-md);
   display: flex;
@@ -680,7 +672,7 @@
   flex-direction: column;
   gap: 3px;
   padding: 10px 10px 9px;
-  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border: 0;
   border-radius: var(--radius);
   background: var(--bg-subtle);
 }
@@ -712,7 +704,7 @@
   gap: 4px;
 }
 .template-share-section + .template-share-section {
-  border-top: 1px solid var(--border);
+  border-top: 0;
   margin-top: 2px;
   padding-top: 6px;
 }
@@ -736,7 +728,7 @@
   gap: 8px;
   min-height: 36px;
   padding: 7px 9px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius);
   background: var(--bg-panel);
   color: var(--text);
@@ -748,7 +740,6 @@
 .template-share-platform:hover:not(:disabled):not([aria-disabled='true']),
 .template-share-platform:focus-visible {
   background: var(--bg-subtle);
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
   outline: none;
 }
 .template-share-platform:disabled,
@@ -814,7 +805,7 @@
   justify-content: center;
   min-height: 36px;
   padding: 0 14px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius);
   background: var(--bg-panel);
   color: var(--text);
@@ -895,7 +886,7 @@
   width: 100%;
   gap: 2px;
   padding: 2px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius);
   background: var(--bg-subtle);
 }
@@ -955,7 +946,7 @@
 }
 .image-export-modal .modal-foot {
   padding: 14px 24px 20px;
-  border-top: 1px solid var(--border);
+  border-top: 0;
 }
 /* Add a few extra pixels above the deploy dialog's primary action so
    it does not crowd the divider. The shared .modal-foot uses 12px
@@ -1101,7 +1092,7 @@
   border-radius: var(--radius-pill);
   color: var(--green);
   background: color-mix(in srgb, var(--green) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--green) 28%, var(--border));
+  border: 0;
   font-variant-numeric: tabular-nums;
 }
 /*
@@ -1116,4 +1107,300 @@
   background: var(--bg-subtle);
   border-color: var(--border);
   font-weight: 500;
+}
+
+/* ── Glass layer ────────────────────────────────────────────────────────────
+   Workspace material unification. This file carried 22 hard 1px-solid rules
+   and zero depth declarations, so every tool surface read as a boxed card from
+   the pre-hub generation. The recipes below are lifted verbatim from
+   `home/hub.css`: floating panes take the strong glass fill + blur + pearl
+   inset + tinted shadow, cards on an opaque host take the tonal
+   `--hub-control-surface` island treatment, and structural dividers become a
+   pearl light ray rather than a dark rule.
+
+   Geometry is untouched. Only material and radii change; every declaration is
+   an override of paint, never of box metrics.
+
+   Prefix-first order on backdrop-filter is load-bearing: Lightning CSS drops
+   the unprefixed declaration when it is authored second. */
+
+/* Tier 1 — floating panes over the stage. These sit above real content, so
+   there is saturated material behind them for the blur to sample and the
+   glass actually reads as glass. */
+.present-menu,
+.share-menu-popover {
+  border-radius: var(--radius-lg);
+  background: var(--hub-glass-fill-strong);
+  -webkit-backdrop-filter: var(--hub-glass-blur);
+  backdrop-filter: var(--hub-glass-blur);
+  box-shadow:
+    inset 0 1px 0 var(--hub-pearl-highlight),
+    var(--hub-glass-shadow-lg);
+}
+
+/* Menu rows lift into a control island on hover rather than a grey fill. */
+.present-menu button:hover,
+.share-menu-item:hover:not(:disabled) {
+  background: var(--hub-control-surface-hover);
+  box-shadow: inset 0 1px 0 var(--hub-pearl-highlight);
+}
+
+/* Separators inside glass are light rays, not dark rules — otherwise the pane
+   stops reading as one continuous sheet. */
+.share-menu-divider {
+  background: var(--hub-pearl-highlight);
+}
+
+.template-share-section + .template-share-section {
+  border-top: 0;
+  box-shadow: inset 0 1px 0 var(--hub-pearl-highlight);
+}
+
+/* The summary block inside the share popover is a recessed sub-surface on the
+   same sheet, so it takes the control fill instead of a second bordered card
+   stacked on the pane. */
+.template-share-summary {
+  background: var(--hub-control-surface);
+  box-shadow: inset 0 1px 0 var(--hub-control-highlight);
+}
+
+/* Platform targets are controls: translucent pill, pearl inset, no outline.
+   Hover lifts them with the hub's control shadow. */
+.template-share-platform {
+  background: var(--hub-control-surface);
+  box-shadow: inset 0 1px 0 var(--hub-control-highlight);
+}
+
+.template-share-platform:hover:not(:disabled):not([aria-disabled='true']),
+.template-share-platform:focus-visible {
+  background: var(--hub-control-surface-hover);
+  box-shadow: var(--hub-control-shadow-hover);
+}
+
+/* Tier 2 — cards inside the chat/tool stream. The stream host is an opaque
+   neutral, so a blur here would sample flat grey and read as clay (hub-dna
+   rule 10). These take the tonal control fill and a pearl inset instead: real
+   separation, no translucency over an unsaturated backdrop. */
+.op-status,
+.file-ops,
+.file-ops-count,
+.file-ops-badge,
+.file-ops-row-open,
+.plugin-action-card__path,
+.plugin-action-card__notice,
+.plugin-action-button,
+.button-like {
+  background: var(--hub-control-surface);
+  box-shadow: inset 0 1px 0 var(--hub-control-highlight);
+}
+
+/* The streaming state used a dashed outline to say "in flight". Dashes are a
+   border idiom; the accent-tinted fill carries the same state without one. */
+.file-ops.is-streaming {
+  background: var(--hub-accent-fill);
+  box-shadow: inset 0 1px 0 var(--hub-pearl-highlight);
+}
+
+.file-ops.is-streaming .file-ops-count {
+  color: var(--hub-accent);
+  box-shadow: inset 0 1px 0 var(--hub-pearl-highlight);
+}
+
+/* Kind badges keep their semantic ink but trade the coloured outline for a
+   tonal fill of the same hue — colour still classifies the row, no hairline. */
+.file-ops-badge--read {
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+}
+
+.file-ops-badge--write {
+  background: color-mix(in oklab, var(--green) 14%, transparent);
+}
+
+.file-ops-badge--edit {
+  background: color-mix(in oklab, var(--warning) 14%, transparent);
+}
+
+.file-ops-list {
+  border-top: 0;
+  box-shadow: inset 0 1px 0 var(--hub-pearl-highlight);
+}
+
+.file-ops-toggle:hover,
+.file-ops-row:hover {
+  background: var(--hub-control-surface-hover);
+}
+
+.file-ops-row-open:hover {
+  background: var(--hub-control-surface-hover);
+  box-shadow: var(--hub-control-shadow-hover);
+}
+
+/* The plugin action panel is the accent-owned card in the stream: its tonal
+   accent fill is the separation, so the accent-soft outline is redundant. */
+.plugin-action-panel {
+  border-radius: var(--radius-lg);
+  background: var(--hub-accent-fill);
+  box-shadow:
+    inset 0 1px 0 var(--hub-pearl-highlight),
+    0 1px 2px var(--hub-pearl-elevation);
+}
+
+.plugin-action-card {
+  border-top: 0;
+  box-shadow: inset 0 1px 0 var(--hub-pearl-highlight);
+}
+
+.plugin-action-panel__list .plugin-action-card:first-child {
+  box-shadow: none;
+}
+
+.plugin-action-button:hover:not(:disabled) {
+  background: var(--hub-control-surface-hover);
+  box-shadow: var(--hub-control-shadow-hover);
+}
+
+/* Primary actions stay SOLID so they keep their prominence against the glass —
+   the hub does the same with `.hub__new-project`. */
+.plugin-action-button--primary {
+  background: var(--accent);
+  color: var(--white);
+  box-shadow:
+    0 1px 2px var(--hub-ready-shadow),
+    inset 0 1px 0 var(--hub-ready-highlight);
+}
+
+.plugin-action-button--primary:hover:not(:disabled) {
+  background: var(--accent);
+  box-shadow:
+    0 2px 8px var(--hub-ready-shadow),
+    inset 0 1px 0 var(--hub-ready-highlight);
+}
+
+/* Segmented control: the track is a recessed island, the active segment is
+   the raised chip. Neither needs an outline to be legible. */
+.image-export-format-options {
+  background: var(--hub-control-surface);
+  box-shadow: inset 0 1px 2px var(--hub-pearl-elevation);
+}
+
+.image-export-format-option:hover {
+  background: var(--hub-control-surface);
+}
+
+.image-export-format-option.active {
+  background: var(--hub-control-surface-hover);
+  box-shadow: var(--hub-control-shadow-hover);
+}
+
+/* Modal footers separate with a light ray like every other pane in the app. */
+.image-export-modal .modal-foot {
+  border-top: 0;
+  box-shadow: inset 0 1px 0 var(--hub-pearl-highlight);
+}
+
+/* The success pill keeps its semantic green ink; the outline becomes a tonal
+   fill of the same hue. */
+.field-status-badge {
+  background: color-mix(in srgb, var(--green) 12%, transparent);
+  box-shadow: inset 0 1px 0 var(--hub-control-highlight);
+}
+
+.field-status-badge--inline {
+  background: var(--hub-control-surface);
+}
+
+/* Sharp corners from the previous generation: the notice and path chips are
+   surfaces, so they take the control radius rather than a 2-3px hairline
+   rounding. Geometry-neutral — radius is the only property touched. */
+.op-path,
+.plugin-action-card__path,
+.plugin-action-card__notice,
+.file-ops-badge {
+  border-radius: var(--radius-sm);
+}
+
+/* Deliberately kept as real borders (they carry meaning, not structure):
+   - `.composer.drag-active` outline — a live drop-target affordance.
+   - `.image-export-format-option:has(:focus-visible)` outline — focus ring.
+   - `.todo-in_progress` / `.todo-stopped` border-color — state semantics on an
+     otherwise identical row; the tonal fill alone is too weak to distinguish
+     three concurrent states in a dense list.
+   - `.template-share-platform__mark`, `.op-bash .op-command` — solid plates,
+     never bordered to begin with. */
+
+/* Reduced transparency: every translucent surface falls back to an opaque
+   panel with one faint hairline ring, matching hub.css. */
+@media (prefers-reduced-transparency: reduce) {
+  .present-menu,
+  .share-menu-popover {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--bg-panel);
+    box-shadow:
+      0 1px 2px var(--hub-pearl-elevation),
+      0 0 0 1px var(--border);
+  }
+
+  .op-status,
+  .file-ops,
+  .file-ops-count,
+  .file-ops-badge,
+  .file-ops-row-open,
+  .template-share-summary,
+  .template-share-platform,
+  .plugin-action-card__path,
+  .plugin-action-card__notice,
+  .plugin-action-button,
+  .button-like,
+  .image-export-format-options {
+    background: var(--bg-subtle);
+    box-shadow: 0 0 0 1px var(--border);
+  }
+
+  .plugin-action-panel {
+    background: var(--bg-panel);
+    box-shadow: 0 0 0 1px var(--border);
+  }
+
+  .image-export-format-option.active {
+    background: var(--bg-panel);
+    box-shadow: 0 0 0 1px var(--border-strong);
+  }
+
+  .share-menu-divider,
+  .file-ops-list,
+  .plugin-action-card,
+  .template-share-section + .template-share-section,
+  .image-export-modal .modal-foot {
+    box-shadow: inset 0 1px 0 var(--border);
+  }
+
+  .share-menu-divider {
+    background: var(--border);
+  }
+
+  .present-menu button:hover,
+  .share-menu-item:hover:not(:disabled),
+  .file-ops-toggle:hover,
+  .file-ops-row:hover,
+  .file-ops-row-open:hover,
+  .plugin-action-button:hover:not(:disabled),
+  .template-share-platform:hover:not(:disabled):not([aria-disabled='true']) {
+    background: var(--bg-muted);
+    box-shadow: 0 0 0 1px var(--border-strong);
+  }
+}
+
+/* Reduced motion: the material layer adds hover elevation transitions to
+   controls that previously had none, so they collapse here. */
+@media (prefers-reduced-motion: reduce) {
+  .template-share-platform,
+  .plugin-action-button,
+  .file-ops-row-open,
+  .image-export-format-option,
+  .file-ops-toggle,
+  .file-ops-row {
+    transition-duration: 1ms !important;
+    transition-delay: 0ms !important;
+  }
 }

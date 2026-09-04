@@ -52,18 +52,37 @@ function ruleValue(block: string, property: string): string {
   return match[1]!.trim();
 }
 
+/**
+ * Returns the bodies of EVERY `@media <query>` block, concatenated.
+ *
+ * A single-match lookup is wrong here: the frameless-window restructure added a
+ * second `prefers-reduced-transparency` block for `.app-window-chrome` ahead of
+ * the split-region one, so `indexOf` started resolving to the chrome fallback
+ * and the pane fallback below it became invisible to this contract. Collecting
+ * all blocks widens what the assertions can see rather than narrowing it.
+ */
 function mediaBlock(css: string, query: string): string {
   const source = stripComments(css);
-  const start = source.indexOf(`@media ${query}`);
-  if (start < 0) throw new Error(`Missing media query ${query}`);
-  const open = source.indexOf('{', start);
-  let depth = 1;
-  for (let index = open + 1; index < source.length; index += 1) {
-    if (source[index] === '{') depth += 1;
-    if (source[index] === '}') depth -= 1;
-    if (depth === 0) return source.slice(open + 1, index);
+  const needle = `@media ${query}`;
+  const bodies: string[] = [];
+  let cursor = 0;
+  while (cursor < source.length) {
+    const start = source.indexOf(needle, cursor);
+    if (start < 0) break;
+    const open = source.indexOf('{', start);
+    if (open < 0) throw new Error(`Unclosed media query ${query}`);
+    let depth = 1;
+    let index = open + 1;
+    for (; index < source.length && depth > 0; index += 1) {
+      if (source[index] === '{') depth += 1;
+      if (source[index] === '}') depth -= 1;
+    }
+    if (depth !== 0) throw new Error(`Unclosed media query ${query}`);
+    bodies.push(source.slice(open + 1, index - 1));
+    cursor = index;
   }
-  throw new Error(`Unclosed media query ${query}`);
+  if (bodies.length === 0) throw new Error(`Missing media query ${query}`);
+  return bodies.join('\n');
 }
 
 /** The workspace split region: from `.split` to the end of the resize handle rules. */

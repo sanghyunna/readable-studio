@@ -25,6 +25,10 @@
 }
 
 /* -------- Mention popover (FLOATING — no order/flex/margin) --------- */
+/* Tier 1 glass slab. This popover floats over the composer and the chat
+   stream - there is REAL content behind it - so the blur has something to
+   refract and reads as material rather than clay. Borderless: separation
+   comes from the pearl inset highlight over the tinted drop shadow. */
 .mention-popover {
   display: flex;
   flex-direction: column;
@@ -32,12 +36,17 @@
   max-width: 100%;
   height: var(--cfl-max-h, 460px);
   max-height: var(--cfl-max-h, 460px);
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
+  background: var(--hub-glass-fill-strong);
+  -webkit-backdrop-filter: var(--hub-glass-blur);
+  backdrop-filter: var(--hub-glass-blur);
+  border: 0;
   border-radius: var(--radius);
-  box-shadow: var(--shadow-lg);
+  box-shadow:
+    inset 0 1px 0 var(--hub-pearl-highlight),
+    var(--hub-glass-shadow-lg);
   overflow: hidden;
 }
+/* Header band inside the popover: no divider rule, just a pearl light ray. */
 .mention-tabs {
   flex: 0 0 auto;
   display: flex;
@@ -47,8 +56,9 @@
   gap: 4px;
   min-height: 0;
   padding: 6px;
-  background: var(--bg-subtle);
-  border-bottom: 1px solid var(--border-soft);
+  background: transparent;
+  border-bottom: 0;
+  box-shadow: inset 0 -1px 0 var(--hub-pearl-highlight);
   overflow: hidden;
 }
 .mention-tab {
@@ -59,6 +69,8 @@
   min-inline-size: max-content;
   min-height: 26px;
   padding: 3px 9px;
+  /* Reserved geometry: `transparent` keeps the 1px box so the pill does not
+     jump a pixel when the active state lands. Not a visible border. */
   border: 1px solid transparent;
   border-radius: var(--radius-pill);
   background: transparent;
@@ -73,12 +85,16 @@
     background-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
     color 140ms cubic-bezier(0.23, 1, 0.32, 1);
 }
-.mention-tab:hover { color: var(--text); background: var(--bg-panel); }
+.mention-tab:hover { color: var(--text); background: var(--hub-control-surface); }
+/* Tonal, not bordered: the active pill lifts off the header band with a
+   control surface plus its own top highlight. */
 .mention-tab.active {
-  background: var(--bg-panel);
+  background: var(--hub-control-surface-hover);
   color: var(--text-strong);
-  border-color: var(--border);
-  box-shadow: var(--shadow-xs);
+  border-color: transparent;
+  box-shadow:
+    inset 0 1px 0 var(--hub-control-highlight),
+    var(--hub-control-shadow);
 }
 .mention-results {
   flex: 1 1 auto;
@@ -101,6 +117,8 @@
   align-items: center;
   width: 100%;
   background: transparent;
+  /* Reserved geometry only - the selected state below fills it rather than
+     drawing a rule, so the row never shifts by a pixel. */
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   padding: 7px 8px;
@@ -112,12 +130,15 @@
   cursor: pointer;
   transition: background-color 120ms cubic-bezier(0.23, 1, 0.32, 1);
 }
-.mention-item:hover { background: var(--bg-subtle); }
+.mention-item:hover { background: var(--hub-control-surface); }
+/* Keyboard selection in a dense multi-state list: the accent rail is the
+   state signal and stays - it is meaning, not decoration. The perimeter
+   rule is dropped in favour of the tonal accent fill. */
 .mention-item[aria-selected='true'],
 .mention-item.is-active {
-  background: var(--accent-tint);
-  border-color: var(--accent-soft);
-  box-shadow: inset 2px 0 0 0 var(--accent);
+  background: var(--hub-accent-fill);
+  border-color: transparent;
+  box-shadow: inset 2px 0 0 0 var(--hub-accent);
 }
 .mention-section-label {
   font-size: 10px;
@@ -1108,5 +1129,53 @@
   flex-direction: column;
   gap: 8px;
   padding-bottom: 8px;
-  border-bottom: 1px solid var(--border-soft);
+  /* Pearl light ray instead of a grey rule - same separation, no hairline. */
+  border-bottom: 0;
+  box-shadow: inset 0 -1px 0 var(--hub-pearl-highlight);
+}
+
+/* -------- Reduced transparency ------------------------------------- */
+/* Every translucent surface in this file collapses to an opaque fill plus a
+   hairline ring, restating the hierarchy the blur was carrying (hub-dna 9).
+   Geometry is untouched: only material changes. */
+@media (prefers-reduced-transparency: reduce) {
+  .mention-popover {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--bg-panel);
+    box-shadow:
+      0 1px 2px var(--hub-pearl-elevation),
+      0 0 0 1px var(--border);
+  }
+  .mention-tabs {
+    background: var(--bg-subtle);
+    box-shadow: inset 0 -1px 0 var(--border-soft);
+  }
+  .mention-tab.active {
+    background: var(--bg-panel);
+    box-shadow: 0 0 0 1px var(--border);
+  }
+  .mention-item:hover { background: var(--bg-subtle); }
+  .mention-item[aria-selected='true'],
+  .mention-item.is-active {
+    background: var(--accent-tint);
+    box-shadow: inset 2px 0 0 0 var(--accent);
+  }
+  .modal-backdrop {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: color-mix(in srgb, var(--text-strong) 62%, transparent);
+  }
+  .settings-close,
+  .settings-autosave {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--bg-panel);
+  }
+  .settings-autosave.is-idle {
+    background: transparent;
+  }
+  .composer-shell .plugins-section__active {
+    box-shadow: inset 0 -1px 0 var(--border-soft);
+  }
 }

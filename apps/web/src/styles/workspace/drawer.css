@@ -89,7 +89,10 @@
 .design-card {
   position: relative;
   background: var(--bg-panel);
-  border: 1px solid var(--border);
+  border: 0;
+  box-shadow:
+    inset 0 1px 0 var(--hub-pearl-highlight),
+    0 1px 2px var(--hub-pearl-elevation);
   border-radius: var(--radius);
   padding: 0;
   cursor: pointer;
@@ -103,7 +106,12 @@
   border-color: color-mix(in srgb, var(--red) 62%, var(--border));
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--red) 42%, transparent);
 }
-.design-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-sm); transform: translateY(-1px); }
+.design-card:hover {
+  box-shadow:
+    inset 0 1px 0 var(--hub-pearl-highlight),
+    var(--shadow-sm);
+  transform: translateY(-1px);
+}
 .design-card.is-design-system-project:hover {
   border-color: var(--red);
   box-shadow:
@@ -150,7 +158,8 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  border-top: 1px solid var(--border-soft);
+  border-top: 0;
+  box-shadow: inset 0 1px 0 var(--hub-pearl-highlight);
   background: var(--bg-panel);
 }
 .design-card-name {
@@ -248,8 +257,9 @@
   height: 26px;
   padding: 0;
   border-radius: var(--radius-sm);
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
+  background: var(--hub-control-surface);
+  border: 0;
+  box-shadow: inset 0 1px 0 var(--hub-control-highlight);
   color: var(--text-muted);
   display: inline-flex;
   align-items: center;
@@ -273,10 +283,14 @@
 .design-card-menu {
   position: fixed;
   min-width: 144px;
-  background: var(--bg-panel);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  box-shadow: 0 6px 20px color-mix(in srgb, var(--black) 12%, transparent);
+  background: var(--hub-glass-fill-strong);
+  border: 0;
+  border-radius: var(--radius-lg);
+  -webkit-backdrop-filter: var(--hub-glass-blur);
+  backdrop-filter: var(--hub-glass-blur);
+  box-shadow:
+    inset 0 1px 0 var(--hub-pearl-highlight),
+    var(--hub-glass-shadow-lg);
   padding: 4px;
   display: flex;
   flex-direction: column;
@@ -341,22 +355,29 @@
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius-pill);
-  background: var(--bg-panel);
+  background: var(--hub-control-surface);
+  box-shadow: inset 0 1px 0 var(--hub-control-highlight);
   color: var(--text-strong);
   font-size: 12.5px;
   cursor: pointer;
 }
-.designs-select-toggle:hover { border-color: var(--border-strong); }
+.designs-select-toggle:hover {
+  background: var(--hub-control-surface-hover);
+  box-shadow: var(--hub-control-shadow-hover);
+}
 .designs-select-bar {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   padding: 4px 6px 4px 12px;
-  border: 1px solid var(--border-strong);
+  border: 0;
   border-radius: var(--radius-pill);
-  background: var(--bg-panel);
+  background: var(--hub-control-surface-hover);
+  box-shadow:
+    inset 0 1px 0 var(--hub-control-highlight),
+    0 1px 2px var(--hub-pearl-elevation);
 }
 .designs-select-count {
   font-size: 12.5px;
@@ -375,13 +396,18 @@
 .designs-select-cancel {
   padding: 5px 10px;
   border-radius: var(--radius-pill);
-  border: 1px solid var(--border);
-  background: transparent;
+  border: 0;
+  background: var(--hub-control-surface);
+  box-shadow: inset 0 1px 0 var(--hub-control-highlight);
   color: var(--text-muted);
   font-size: 12px;
   cursor: pointer;
 }
-.designs-select-cancel:hover { color: var(--text-strong); border-color: var(--border-strong); }
+.designs-select-cancel:hover {
+  color: var(--text-strong);
+  background: var(--hub-control-surface-hover);
+  box-shadow: var(--hub-control-shadow-hover);
+}
 /* Larger comfortable touch target on coarse pointers (tablets/touch laptops).
    On touch the hover reveal never fires, so keep the close button visible. */
 @media (hover: none) {
@@ -521,8 +547,9 @@
   min-width: 0;
 }
 .design-kanban-count {
-  background: var(--bg-panel);
-  border: 1px solid var(--border-soft);
+  background: var(--hub-control-surface);
+  border: 0;
+  box-shadow: inset 0 1px 0 var(--hub-control-highlight);
   color: var(--text-muted);
   font-size: 11px;
   padding: 2px 8px;
@@ -549,7 +576,7 @@
 .design-kanban-card {
   position: relative;
   background: var(--bg-panel);
-  border: 1px solid var(--border-soft);
+  border: 0;
   border-radius: var(--radius);
   padding: 12px 14px;
   display: flex;
@@ -566,8 +593,9 @@
     var(--shadow-xs);
 }
 .design-kanban-card:hover {
-  border-color: var(--border-strong);
-  box-shadow: var(--shadow-sm);
+  box-shadow:
+    inset 0 1px 0 var(--hub-pearl-highlight),
+    var(--shadow-sm);
   transform: translateY(-1px);
 }
 .design-kanban-card.is-design-system-project:hover {
@@ -653,7 +681,8 @@
 .example-preview {
   position: relative;
   background: var(--bg-subtle);
-  border: 1px solid var(--border);
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--hub-pearl-highlight);
   border-radius: var(--radius);
   height: 320px;
   overflow: hidden;
@@ -698,24 +727,29 @@
   display: flex;
   flex-direction: column;
   background: var(--bg-panel);
-  border: 1px solid var(--border);
+  border: 0;
+  box-shadow:
+    inset 0 1px 0 var(--hub-pearl-highlight),
+    0 1px 2px var(--hub-pearl-elevation);
   border-radius: var(--radius-lg);
   overflow: hidden;
   cursor: pointer;
   transition: border-color 0.15s var(--ease-out), transform 0.15s var(--ease-out), box-shadow 0.15s var(--ease-out);
 }
 .ds-card:hover {
-  border-color: var(--border-strong);
   transform: translateY(-1px);
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--black) 6%, transparent);
+  box-shadow:
+    inset 0 1px 0 var(--hub-pearl-highlight),
+    var(--hub-glass-shadow);
 }
 .ds-card:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 .ds-card.active {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-tint);
+  box-shadow:
+    inset 0 1px 0 var(--hub-pearl-highlight),
+    0 0 0 2px var(--accent);
 }
 .ds-card-thumb {
   position: relative;
@@ -723,7 +757,8 @@
   aspect-ratio: 4 / 3;
   background: var(--bg-subtle);
   overflow: hidden;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 0;
+  box-shadow: inset 0 -1px 0 var(--hub-pearl-highlight);
 }
 .ds-card-thumb iframe {
   width: 200%;
@@ -831,7 +866,8 @@
   display: inline-flex;
   align-items: center;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--hub-pearl-highlight);
   overflow: hidden;
   flex-shrink: 0;
   height: 18px;
@@ -855,12 +891,19 @@
   gap: 12px;
   padding: 14px 16px;
   background: var(--bg-panel);
-  border: 1px solid var(--border);
+  border: 0;
+  box-shadow: inset 0 1px 0 var(--hub-pearl-highlight);
   border-radius: var(--radius-sm);
   cursor: pointer;
 }
-.ds-row:hover { border-color: var(--border-strong); }
-.ds-row.active { background: var(--accent-tint); border-color: var(--accent); }
+.ds-row:hover {
+  background: var(--hub-control-surface-hover);
+  box-shadow: var(--hub-control-shadow-hover);
+}
+.ds-row.active {
+  background: var(--accent-tint);
+  box-shadow: inset 4px 0 0 var(--accent);
+}
 .ds-row-body { flex: 1; min-width: 0; }
 .ds-row-title {
   font-weight: 500;
@@ -884,7 +927,8 @@
   align-items: center;
   gap: 0;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--hub-pearl-highlight);
   overflow: hidden;
   flex-shrink: 0;
   height: 24px;
@@ -926,7 +970,8 @@
   align-items: center;
   gap: 8px;
   padding: 0 10px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 0;
+  box-shadow: inset 0 -1px 0 var(--hub-pearl-highlight);
   background: var(--bg-panel);
   height: 38px;
   position: sticky;
@@ -983,7 +1028,8 @@
 .ws-tabs-file-actions:not(:empty) + .ws-tabs-project-actions {
   margin-inline-start: 2px;
   padding-inline-start: 8px;
-  border-inline-start: 1px solid var(--border);
+  border-inline-start: 0;
+  box-shadow: inset 1px 0 0 var(--hub-pearl-highlight);
 }
 /* The Design Files row is 38px tall, so shrink the action cluster's buttons
    (present / share / avatar) to sit comfortably within it without touching
@@ -1208,18 +1254,19 @@
   gap: 6px;
   height: 28px;
   padding: 0 10px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius-sm);
-  background: var(--bg);
+  background: var(--hub-control-surface);
+  box-shadow: inset 0 1px 0 var(--hub-control-highlight);
   color: var(--text-muted);
   font-size: 12px;
   white-space: nowrap;
   flex-shrink: 0;
 }
 .ws-focus-toggle:hover {
-  background: var(--bg-subtle);
+  background: var(--hub-control-surface-hover);
+  box-shadow: var(--hub-control-shadow-hover);
   color: var(--text);
-  border-color: var(--border-strong);
 }
 .ws-focus-toggle:focus-visible {
   outline: 2px solid var(--accent);
@@ -1310,4 +1357,108 @@
 
 .designs-empty-cta:active {
   transform: scale(0.98);
+}
+
+/* -------- Workspace material unification ------------------------------
+   Cards, control pills and the tab shell were converted from 1px outlines to
+   the hub's separation vocabulary in place. This block supplies the two
+   fallbacks those surfaces owe, matching how `home/hub.css` declares them.
+
+   Deliberately kept as real 1px borders:
+   - `.design-card-thumb::before` / `::after` — the stacked-page illusion; the
+     lines ARE the drawing.
+   - `.project-thumb-glyph` — a glyph plate over arbitrary artwork.
+   - `.design-kanban-card.is-design-system-project` — a state ring that must
+     survive on a card whose rest state is now borderless.
+   - `.ws-tab-add` / `.ws-tab-action` `border: 1px solid transparent` —
+     reserved geometry for hover rings, not visible chrome.
+   - `.ds-card-swatches > span + span`, `.ds-row-swatch + .ds-row-swatch` —
+     hairlines between adjacent palette colours; a fill cannot separate two
+     arbitrary swatches. */
+
+@media (prefers-reduced-transparency: reduce) {
+  .design-card-menu {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--bg-panel);
+    box-shadow:
+      0 1px 2px var(--hub-pearl-elevation),
+      0 0 0 1px var(--border);
+  }
+
+  .design-card,
+  .design-kanban-card,
+  .ds-card,
+  .ds-row {
+    box-shadow:
+      0 1px 2px var(--hub-pearl-elevation),
+      0 0 0 1px var(--border);
+  }
+
+  .design-card:hover,
+  .design-kanban-card:hover,
+  .ds-card:hover {
+    box-shadow:
+      var(--shadow-sm),
+      0 0 0 1px var(--border-strong);
+  }
+
+  .design-card-more,
+  .design-kanban-count,
+  .designs-select-toggle,
+  .designs-select-bar,
+  .designs-select-cancel,
+  .ws-focus-toggle {
+    background: var(--bg-panel);
+    box-shadow: 0 0 0 1px var(--border);
+  }
+
+  .designs-select-toggle:hover,
+  .designs-select-cancel:hover,
+  .ws-focus-toggle:hover,
+  .ds-row:hover {
+    background: var(--bg-subtle);
+    box-shadow: 0 0 0 1px var(--border-strong);
+  }
+
+  .ds-card.active {
+    box-shadow: 0 0 0 2px var(--accent);
+  }
+
+  .ds-row.active {
+    box-shadow: inset 4px 0 0 var(--accent);
+  }
+
+  /* Light rays harden back into hairlines. */
+  .design-card-meta-block,
+  .ws-tabs-shell,
+  .ds-card-thumb {
+    box-shadow: inset 0 1px 0 var(--border);
+  }
+
+  .ws-tabs-shell,
+  .ds-card-thumb {
+    box-shadow: inset 0 -1px 0 var(--border);
+  }
+
+  .ws-tabs-file-actions:not(:empty) + .ws-tabs-project-actions {
+    box-shadow: inset 1px 0 0 var(--border);
+  }
+
+  .example-preview,
+  .ds-card-swatches,
+  .ds-row-swatches {
+    box-shadow: inset 0 0 0 1px var(--border);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Controls that gained a hover-elevation transition with the material. */
+  .designs-select-toggle,
+  .designs-select-cancel,
+  .ws-focus-toggle,
+  .ds-row {
+    transition-duration: 1ms !important;
+    transition-delay: 0ms !important;
+  }
 }

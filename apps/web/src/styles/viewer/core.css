@@ -244,7 +244,7 @@
   align-items: center;
   gap: 7px;
   padding: 7px 12px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius);
   background: var(--bg-subtle);
   color: var(--text);
@@ -256,7 +256,6 @@
 }
 .viewer-module-pointer__link:hover {
   background: var(--bg-muted);
-  border-color: var(--border-strong);
 }
 .viewer-module-pointer__link:disabled {
   cursor: default;
@@ -289,12 +288,11 @@
 }
 .viewer-action.primary {
   background: var(--accent);
-  border: 1px solid var(--accent);
+  border: 0;
   color: var(--white);
 }
 .viewer-action.primary:hover:not(:disabled) {
   background: var(--accent-hover);
-  border-color: var(--accent-hover);
   color: var(--white);
 }
 /* Primary actions support a subtle in-flight affordance via data-running. Keeps
@@ -372,7 +370,7 @@
   flex-direction: column;
   gap: 2px;
   background: var(--bg-panel);
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius-md, 10px);
   box-shadow: var(--shadow-md, 0 8px 24px color-mix(in srgb, var(--black) 12%, transparent));
 }
@@ -493,8 +491,8 @@
   display: flex;
   flex-direction: column;
   padding: 5px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border: 0;
+  border-radius: var(--radius-lg);
   background: var(--bg-panel);
   box-shadow: var(--shadow-md);
   overflow: hidden;
@@ -544,7 +542,7 @@
   color: var(--text-muted);
   text-decoration: none;
   padding: 4px 10px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius-sm);
   display: inline-flex;
   align-items: center;
@@ -623,8 +621,8 @@
   width: max-content;
   min-width: 144px;
   padding: 4px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border: 0;
+  border-radius: var(--radius-lg);
   background: var(--bg-panel);
   box-shadow: var(--shadow-lg);
   overflow: hidden;
@@ -886,8 +884,8 @@
   max-height: calc(100% - 28px);
   overflow: auto;
   padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border: 0;
+  border-radius: var(--radius-lg);
   background: var(--bg-panel);
   box-shadow: var(--shadow-lg);
 }
@@ -897,7 +895,8 @@
 .comment-popover-section + .comment-popover-section {
   margin-top: 10px;
   padding-top: 10px;
-  border-top: 1px solid var(--border-soft);
+  border-top: 0;
+  box-shadow: inset 0 1px 0 var(--hub-pearl-highlight);
 }
 .comment-popover-section-params {
   display: grid;
@@ -935,8 +934,9 @@
   flex: 0 0 auto;
   width: 14px;
   height: 14px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius-xs);
+  box-shadow: inset 0 0 0 1px var(--hub-pearl-highlight);
 }
 .comment-popover-head {
   display: flex;
@@ -973,9 +973,10 @@
   gap: 6px;
   margin-bottom: 8px;
   padding: 8px;
-  border: 1px solid var(--border-soft);
+  border: 0;
   border-radius: var(--radius-sm);
-  background: var(--bg-subtle);
+  background: var(--hub-control-surface);
+  box-shadow: inset 0 1px 0 var(--hub-control-highlight);
 }
 .board-pod-summary strong {
   font-size: 12px;
@@ -992,9 +993,10 @@
   align-items: center;
   gap: 4px;
   padding: 3px 7px;
-  border: 1px solid var(--border-soft);
+  border: 0;
   border-radius: var(--radius-pill);
-  background: var(--bg-panel);
+  background: var(--hub-control-surface);
+  box-shadow: inset 0 1px 0 var(--hub-control-highlight);
   color: var(--text-muted);
   font-size: 11px;
 }
@@ -1032,9 +1034,10 @@
   justify-content: space-between;
   gap: 10px;
   padding: 8px 9px;
-  border: 1px solid var(--border-soft);
+  border: 0;
   border-radius: var(--radius-sm);
-  background: var(--bg-subtle);
+  background: var(--hub-control-surface);
+  box-shadow: inset 0 1px 0 var(--hub-control-highlight);
   font-size: 12px;
 }
 .board-note-item span {
@@ -1102,10 +1105,11 @@
   width: 48px;
   height: 48px;
   padding: 0;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius);
   overflow: hidden;
   background: var(--bg-subtle);
+  box-shadow: inset 0 0 0 1px var(--hub-pearl-highlight);
   cursor: zoom-in;
 }
 .comment-popover-image-thumb img {
@@ -1185,9 +1189,11 @@
   height: 100%;
   max-width: 100%;
   background: var(--bg-panel, var(--white));
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius-lg);
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--black) 8%, transparent);
+  box-shadow:
+    inset 0 1px 0 var(--hub-pearl-highlight),
+    var(--hub-glass-shadow);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1201,7 +1207,8 @@
   justify-content: space-between;
   gap: 10px;
   padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 0;
+  box-shadow: inset 0 -1px 0 var(--hub-pearl-highlight);
   background: var(--bg-panel, var(--white));
 }
 .comment-side-title {
@@ -1270,16 +1277,17 @@
   align-items: center;
   gap: 10px;
   padding: 12px 0;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius-lg);
   background: var(--bg-panel, var(--white));
   color: var(--text-muted);
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--black) 8%, transparent);
+  box-shadow:
+    inset 0 1px 0 var(--hub-pearl-highlight),
+    var(--hub-glass-shadow);
   cursor: pointer;
 }
 .comment-side-rail:hover {
   color: var(--text);
-  border-color: var(--border-strong);
   background: var(--bg-subtle);
 }
 .comment-side-rail span {
@@ -1456,10 +1464,11 @@
   display: block;
   width: 56px;
   height: 56px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius);
   overflow: hidden;
   background: var(--bg-subtle);
+  box-shadow: inset 0 0 0 1px var(--hub-pearl-highlight);
 }
 .comment-side-attachment img {
   width: 100%;
@@ -1472,7 +1481,8 @@
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  border-top: 1px solid var(--border);
+  border-top: 0;
+  box-shadow: inset 0 1px 0 var(--hub-pearl-highlight);
   background: var(--comment-accent-surface);
 }
 .comment-side-selectcount {
@@ -1498,7 +1508,10 @@
   gap: 4px;
   background: var(--comment-accent);
   color: var(--white);
-  border: 1px solid var(--comment-accent);
+  border: 0;
+  box-shadow:
+    0 1px 2px var(--hub-ready-shadow),
+    inset 0 1px 0 var(--hub-ready-highlight);
   border-radius: var(--radius-sm);
   padding: 5px 10px;
   font-size: 12px;
@@ -1516,7 +1529,8 @@
 }
 .comment-side-new-comment {
   flex: 0 0 auto;
-  border-top: 1px solid var(--border);
+  border-top: 0;
+  box-shadow: inset 0 1px 0 var(--hub-pearl-highlight);
   padding: 10px 12px;
   background: var(--bg-panel, var(--white));
 }
@@ -1573,11 +1587,13 @@
   gap: 10px;
   min-height: 48px;
   padding: 0 12px 0 16px;
-  border: 1px solid color-mix(in srgb, var(--blue) 50%, transparent);
-  border-radius: 16px;
+  border: 0;
+  border-radius: var(--radius-pill);
   background: var(--blue-bg);
   color: var(--blue);
-  box-shadow: 0 12px 32px color-mix(in srgb, var(--shadow-color) 28%, transparent);
+  box-shadow:
+    inset 0 1px 0 var(--hub-pearl-highlight),
+    var(--hub-glass-shadow-lg);
   font-size: 15px;
   font-weight: 650;
   white-space: nowrap;
@@ -1618,10 +1634,14 @@
   flex-direction: column;
   gap: 14px;
   padding: 12px 14px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-panel);
-  box-shadow: var(--shadow-lg);
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: var(--hub-glass-fill-strong);
+  -webkit-backdrop-filter: var(--hub-glass-blur);
+  backdrop-filter: var(--hub-glass-blur);
+  box-shadow:
+    inset 0 1px 0 var(--hub-pearl-highlight),
+    var(--hub-glass-shadow-lg);
   font-size: 12px;
 }
 .inspect-panel-head {
@@ -1668,9 +1688,10 @@
   gap: 8px;
   padding: 10px;
   color: var(--text);
-  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  border: 0;
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--accent) 8%, var(--bg-panel));
+  background: var(--hub-accent-fill);
+  box-shadow: inset 0 1px 0 var(--hub-pearl-highlight);
   font-size: 11px;
   line-height: 1.4;
 }
@@ -1681,7 +1702,8 @@
   width: 16px;
   height: 16px;
   color: var(--accent);
-  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border: 0;
+  background: var(--hub-accent-fill);
   border-radius: var(--radius-pill);
   font-size: 10px;
   font-weight: 700;
@@ -1695,7 +1717,7 @@
 }
 .inspect-ancestor-notice-text code {
   padding: 1px 3px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   background: color-mix(in srgb, var(--text) 8%, transparent);
   font-family: var(--font-mono);
   font-size: 10px;
@@ -1741,17 +1763,21 @@ button.ghost.mcp-copy-btn:hover:not(:disabled) {
   width: 28px;
   height: 22px;
   padding: 0;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius-xs);
   background: transparent;
+  box-shadow: inset 0 1px 2px var(--hub-pearl-elevation);
 }
 .inspect-row input[type='text'],
 .inspect-row select {
   min-width: 0;
   padding: 3px 26px 3px 6px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius-xs);
   background-color: var(--bg);
+  box-shadow:
+    inset 0 1px 2px var(--hub-pearl-elevation),
+    inset 0 -1px 0 var(--hub-control-highlight);
   font-size: 11px;
   font-family: inherit;
 }
@@ -1808,7 +1834,7 @@ button.ghost.mcp-copy-btn:hover:not(:disabled) {
 
 .inspect-empty-hint code {
   padding: 1px 5px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   background: var(--bg);
   font-size: 11px;
 }
@@ -1845,13 +1871,14 @@ button.ghost.mcp-copy-btn:hover:not(:disabled) {
   display: grid;
   gap: 5px;
   padding: 9px 10px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius);
   background: var(--bg-panel);
-  box-shadow: var(--shadow-xs);
+  box-shadow:
+    inset 0 1px 0 var(--hub-pearl-highlight),
+    0 1px 2px var(--hub-pearl-elevation);
 }
 .comment-card.attached {
-  border-color: var(--accent-soft);
   background: var(--accent-tint);
 }
 .comment-card-top {
@@ -1886,14 +1913,16 @@ button.ghost.mcp-copy-btn:hover:not(:disabled) {
 .comment-card-action {
   flex: 0 0 auto;
   padding: 3px 8px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius-pill);
-  background: var(--bg);
+  background: var(--hub-control-surface);
+  box-shadow: inset 0 1px 0 var(--hub-control-highlight);
   color: var(--text-muted);
   font-size: 11.5px;
 }
 .comment-card-action:hover {
-  border-color: var(--accent-soft);
+  background: var(--hub-control-surface-hover);
+  box-shadow: var(--hub-control-shadow-hover);
   color: var(--accent-strong);
 }
 .comment-card-action.danger {
@@ -1949,4 +1978,104 @@ button.ghost.mcp-copy-btn:hover:not(:disabled) {
   color: var(--text);
   background: var(--bg-panel);
   min-height: 100%;
+}
+
+/* -------- Workspace material unification ------------------------------
+   Everything below extends the toolbar's hub-dna material to the rest of the
+   viewer chrome. The bordered surfaces above were converted in place; this
+   block supplies the two fallbacks every translucent or newly-animated
+   surface owes, exactly as `home/hub.css` declares them.
+
+   Deliberately kept as real 1px borders (they carry meaning, not structure):
+   - `.viewer-toggle .switch` — the track IS the border; a 16px pill has no
+     interior to carry a fill-based edge.
+   - `.comment-preview-layer-with-side-dock .comment-preview-canvas` — the
+     paper edge of the artifact against an arbitrary document.
+   - `.comment-popover-image-remove` — an 18px badge over user imagery, where
+     no fill can be trusted to contrast.
+   - `button.ghost.mcp-copy-btn` — pinned over a dark syntax-highlighted <pre>
+     (issue #742); the outline is the only thing that keeps it visible.
+   - `.comment-target-overlay` — the selection marker itself.
+   - `.inspect-panel-error` — an error state.
+   - `border: 1px solid transparent` placeholders — reserved geometry for
+     hover/active state rings, not visible chrome. */
+
+@media (prefers-reduced-transparency: reduce) {
+  /* The inspect panel is the only new blurred surface here; the rest are
+     tonal, so they only need their translucent fills made opaque. */
+  .inspect-panel {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--bg-panel);
+    box-shadow:
+      0 1px 2px var(--hub-pearl-elevation),
+      0 0 0 1px var(--border);
+  }
+
+  .comment-side-panel,
+  .comment-side-rail,
+  .comment-card {
+    box-shadow:
+      0 1px 2px var(--hub-pearl-elevation),
+      0 0 0 1px var(--border);
+  }
+
+  .board-pod-summary,
+  .board-pod-chip,
+  .board-note-item,
+  .comment-card-action {
+    background: var(--bg-subtle);
+    box-shadow: 0 0 0 1px var(--border);
+  }
+
+  .comment-card-action:hover {
+    background: var(--bg-muted);
+    box-shadow: 0 0 0 1px var(--border-strong);
+  }
+
+  .inspect-ancestor-notice,
+  .inspect-ancestor-notice-icon {
+    background: var(--accent-tint);
+    box-shadow: 0 0 0 1px var(--border);
+  }
+
+  .inspect-row input[type='color'],
+  .inspect-row input[type='text'],
+  .inspect-row select {
+    box-shadow: 0 0 0 1px var(--border);
+  }
+
+  .comment-popover-image-thumb,
+  .comment-side-attachment {
+    box-shadow: inset 0 0 0 1px var(--border);
+  }
+
+  .screenshot-toast {
+    box-shadow:
+      0 1px 2px var(--hub-pearl-elevation),
+      0 0 0 1px var(--border);
+  }
+
+  /* Light rays harden back into hairlines so the panes keep their internal
+     structure without any translucency to carry it. */
+  .comment-popover-section + .comment-popover-section,
+  .comment-side-selectbar,
+  .comment-side-new-comment {
+    box-shadow: inset 0 1px 0 var(--border);
+  }
+
+  .comment-side-header {
+    box-shadow: inset 0 -1px 0 var(--border);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The material layer gives these controls hover elevation they did not have
+     before, so the transition into it collapses here. */
+  .comment-card-action,
+  .comment-side-rail,
+  .viewer-module-pointer__link {
+    transition-duration: 1ms !important;
+    transition-delay: 0ms !important;
+  }
 }
