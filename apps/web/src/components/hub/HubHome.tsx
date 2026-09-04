@@ -4,7 +4,15 @@
 // start surface: a live-work strip when something is running, the composer,
 // and the New Project modal launcher. Past work is never dumped into the center canvas.
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 
 import { useT } from '../../i18n';
 import { RUNS_CHANGED_EVENT } from '../../providers/daemon';
@@ -126,6 +134,14 @@ interface Props {
   currentSessionId?: string | null;
   /** Brand click returns to the hub itself; entry chrome owns the target. */
   onGoHome?: () => void;
+  /**
+   * The agent + model control for the composer footer, mounted as an opaque
+   * node. EntryShell owns the real InlineModelSwitcher (config, agents,
+   * daemon state and every persistence callback); the hub only forwards the
+   * SAME node down to HomeView, so the live callbacks stay real without
+   * threading a dozen execution inputs through this component.
+   */
+  executionSwitcher?: ReactNode;
 }
 
 export function HubHome({
@@ -154,6 +170,7 @@ export function HubHome({
   onGoHome,
   designSystems = EMPTY_DESIGN_SYSTEMS,
   defaultDesignSystemId = null,
+  executionSwitcher,
 }: Props) {
   const t = useT();
   const [sessionsByProject, setSessionsByProject] = useState<
@@ -899,6 +916,7 @@ export function HubHome({
             skills={skills}
             skillsLoading={skillsLoading}
             commandChip={commandChip}
+            executionSwitcher={executionSwitcher}
           />
 
           {projects.length === 0 && !projectsLoading ? (

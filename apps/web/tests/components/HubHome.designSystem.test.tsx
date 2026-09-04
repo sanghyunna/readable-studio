@@ -82,17 +82,19 @@ describe('hub composer design system', () => {
     );
     await screen.findByTestId('home-hero-input');
     const controls = screen.getByTestId('home-hero-footer-options').querySelectorAll('button');
+    // The template control was removed from the composer footer: it duplicated
+    // the New Project modal's Template tab, which stays reachable from the hub
+    // command palette. Context is the only remaining footer-options button.
     expect(Array.from(controls, (control) => control.dataset.testid)).toEqual([
       'home-hero-context-control',
-      'home-hero-template-control',
     ]);
     expect(screen.getByRole('button', { name: 'Design mode' })).toBeTruthy();
 
     fireEvent.click(screen.getByTestId('home-hero-context-control'));
     expect(await screen.findByTestId('home-hero-plugin-picker')).toBeTruthy();
 
-    fireEvent.click(screen.getByTestId('home-hero-template-control'));
-    expect(onOpenNewProject).toHaveBeenCalledWith('template');
+    expect(screen.queryByTestId('home-hero-template-control')).toBeNull();
+    expect(onOpenNewProject).not.toHaveBeenCalledWith('template');
     expect(screen.queryByTestId('hub-design-system')).toBeNull();
     expect(screen.queryAllByTestId('home-hero-footer-option-designSystem')).toHaveLength(0);
   });

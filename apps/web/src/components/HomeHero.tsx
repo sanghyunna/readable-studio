@@ -119,6 +119,10 @@ interface Props {
   onPromptChange: (value: string) => void;
   onSubmit: HomeHeroSubmitHandler;
   onContinueWithoutPrompt?: () => void;
+  /** Retained for the caller's prop contract only. The composer footer no
+   *  longer renders a template control: it duplicated the New Project modal's
+   *  Template tab (reachable from the hub command palette, `From template`),
+   *  and a chevron pill that opened a full modal read as a dropdown. */
   onOpenTemplate?: () => void;
   sessionMode?: ChatSessionMode;
   onSessionModeChange?: (mode: ChatSessionMode) => void;
@@ -236,7 +240,6 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     onPromptChange,
     onSubmit,
     onContinueWithoutPrompt = () => undefined,
-    onOpenTemplate = () => undefined,
     firstRunGuide,
     sessionMode = 'design',
     onSessionModeChange,
@@ -945,9 +948,13 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
       <h1 className="home-hero__title">
         {t(surface === 'hub' ? 'hub.startTitle' : 'homeHero.title')}
       </h1>
-      <p className="home-hero__subtitle">
-        {t(surface === 'hub' ? 'hub.startSubtitle' : 'homeHero.subtitlePrefix')}
-      </p>
+      {/* The hub start screen is deliberately title-only: the subtitle restated
+          what the composer placeholder already says. The element is omitted
+          rather than emptied so no orphaned box or margin survives; the hub
+          title rule owns the full gap down to the composer. */}
+      {surface === 'hub' ? null : (
+        <p className="home-hero__subtitle">{t('homeHero.subtitlePrefix')}</p>
+      )}
 
       <div
         className={`home-hero__input-card${
@@ -1411,20 +1418,6 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
                     <span>{t('hub.context')}</span>
                   </button>
                 ) : null}
-                {surface === 'hub' ? (
-                  <button
-                    type="button"
-                    className="home-hero__hub-control"
-                    data-testid="home-hero-template-control"
-                    disabled={interactionLocked}
-                    aria-disabled={interactionLocked}
-                    onClick={onOpenTemplate}
-                  >
-                    <Icon name="layout" size={14} />
-                    <span>{t('hub.noTemplate')}</span>
-                    <Icon name="chevron-down" size={12} />
-                  </button>
-                ) : null}
                 {footerInputFields.map((field) => (
                   <FooterInputOption
                     key={field.name}
@@ -1463,8 +1456,17 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
               }}
               disabled={interactionLocked || Boolean(submitDisabled)}
             />
+            {/* Agent + model live here as one mount point because the switcher
+                is owned by EntryShell/InlineModelSwitcher and reaches this
+                component as an opaque node. `--agent-model` reshapes it into
+                the ordered pair the footer contract requires: agent icon then
+                model name, with the chevron suppressed so the control never
+                reads as a dropdown. */}
             {executionSwitcher ? (
-              <div className="home-hero__execution-switcher">
+              <div
+                className="home-hero__execution-switcher home-hero__execution-switcher--agent-model"
+                data-testid="home-hero-agent-model"
+              >
                 {executionSwitcher}
               </div>
             ) : null}

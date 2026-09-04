@@ -829,10 +829,8 @@ export interface Dict {
   'hub.results': string;
   'hub.searchPlaceholder': string;
   'hub.startTitle': string;
-  'hub.startSubtitle': string;
   'hub.composerPlaceholder': string;
   'hub.context': string;
-  'hub.noTemplate': string;
   'hub.send': string;
   'hub.shortPromptError': string;
   'hub.liveRunning': string;

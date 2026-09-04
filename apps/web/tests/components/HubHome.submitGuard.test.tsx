@@ -59,7 +59,8 @@ describe('hub composer submit guard', () => {
     await waitFor(() => expect(send.disabled).toBe(true));
     expect(screen.queryAllByTestId('home-hero-footer-option-designSystem')).toHaveLength(0);
     expect(screen.getByTestId('home-hero-context-control')).toBeTruthy();
-    expect(screen.getByTestId('home-hero-template-control')).toBeTruthy();
+    // Template control is gone from the footer; the New Project modal owns it.
+    expect(screen.queryByTestId('home-hero-template-control')).toBeNull();
 
     release?.();
     await waitFor(() => expect(send.disabled).toBe(false));

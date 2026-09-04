@@ -624,6 +624,10 @@ export function EntryShell({
                 onDeleteProject={(projectId) => { void onDeleteProject(projectId); }}
                 onNavigateDestination={changeView}
                 onGoHome={() => changeView('home')}
+                /* The SAME node the top bar mounts: passing the instance keeps
+                   the hub composer's agent/model control wired to the real
+                   config + persistence callbacks instead of a second copy. */
+                executionSwitcher={executionSwitcher}
               />
             </div>
             <div data-testid="entry-view-projects" data-active={view === 'projects' ? 'true' : 'false'} {...inactiveViewProps(view === 'projects')}>

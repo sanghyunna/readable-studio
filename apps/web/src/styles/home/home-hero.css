@@ -951,6 +951,67 @@
   gap: 4px;
   border-radius: var(--radius-sm);
 }
+
+/* Composer footer: agent icon -> model name -> send.
+
+   The switcher node is authored elsewhere (InlineModelSwitcher) and arrives
+   opaque, so the footer contract is expressed here by re-laying-out its parts
+   rather than by rebuilding the control. Two rules matter:
+
+   1. The chevron is removed, not merely hidden by opacity. A chevron promises
+      an inline dropdown; this trigger opens a full popover, so keeping the
+      glyph would be a false affordance.
+   2. The agent icon becomes the leading element and the MODEL NAME the only
+      visible text. The redundant "Local CLI · Claude" prefix segments are
+      dropped from view; the full triple stays in aria-label/title on the
+      trigger, so assistive tech and hover still get the complete context. */
+.home-hero__execution-switcher--agent-model .inline-switcher,
+.home-hero__execution-switcher--agent-model .inline-switcher__chip {
+  max-width: none;
+}
+
+.home-hero__execution-switcher--agent-model .inline-switcher__chip {
+  height: 32px;
+  padding: 0 10px 0 6px;
+  gap: 7px;
+  border-radius: var(--radius-pill);
+}
+
+/* Agent icon: a round glass token that reads as a picker, not a dropdown. */
+.home-hero__execution-switcher--agent-model .inline-switcher__chip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+
+/* Model name is the label. Mode + provider segments and their separators are
+   removed from the visual line; the accessible name keeps all three. */
+.home-hero__execution-switcher--agent-model .inline-switcher__chip-mode,
+.home-hero__execution-switcher--agent-model .inline-switcher__chip-primary,
+.home-hero__execution-switcher--agent-model .inline-switcher__chip-sep,
+.home-hero__execution-switcher--agent-model .inline-switcher__chip-chevron {
+  display: none;
+}
+
+.home-hero__execution-switcher--agent-model .inline-switcher__chip-text {
+  min-width: 0;
+  max-width: 168px;
+}
+
+.home-hero__execution-switcher--agent-model .inline-switcher__chip-model {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text);
+}
 .home-hero__foot-right .session-mode-toggle {
   height: 32px;
 }
@@ -2321,8 +2382,12 @@
   display: none;
 }
 
+/* Title-only hero: the hub subtitle is not rendered, so the title carries the
+   entire gap down to the composer. 26px is the spacing the subtitle used to
+   own, kept verbatim so the composer sits exactly where it did instead of
+   sliding up into the hole the removed paragraph left. */
 .home-view--hub .home-hero__title {
-  margin: 0 0 10px;
+  margin: 0 0 26px;
   font-family: var(--font-display);
   font-size: clamp(30px, 2.6vw, 44px);
   font-weight: 640;
@@ -2331,13 +2396,19 @@
   text-align: left;
 }
 
-.home-view--hub .home-hero__subtitle {
-  max-width: 46em;
-  margin: 0 0 26px;
-  font-size: 14.5px;
-  line-height: 1.7;
-  text-align: left;
-  word-break: keep-all;
+/* Short-viewport parity. hub.css tightens the hub hero at this breakpoint by
+   splitting the gap across the title (8px) and the subtitle (8px). With the
+   subtitle no longer rendered only the title's 8px would survive, halving the
+   gap, so the title absorbs the pair's full 16px here too.
+
+   hub.css is imported after this file, so its equal-specificity
+   `.home-view--hub .home-hero__title` rule would otherwise win on source
+   order. Repeating the class raises specificity just enough to win here
+   without resorting to !important. */
+@media (max-height: 760px) and (min-width: 901px) {
+  .home-view--hub .home-hero__title.home-hero__title {
+    margin-bottom: 16px;
+  }
 }
 
 .home-view--hub .home-hero__type-tabs,
@@ -2540,6 +2611,39 @@
   opacity: 0.8;
 }
 
+/* Agent/model trigger wears the same borderless glass pill as every other
+   composer control — no dark outline, no second nested fill. */
+.home-view--hub .home-hero__execution-switcher--agent-model .inline-switcher__chip {
+  border: 1px solid var(--hub-control-border);
+  background: var(--hub-control-surface);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  backdrop-filter: blur(10px) saturate(150%);
+  box-shadow: var(--hub-control-shadow);
+}
+
+.home-view--hub
+  .home-hero__execution-switcher--agent-model
+  .inline-switcher__chip:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--hub-control-surface-hover);
+  box-shadow: var(--hub-control-shadow-hover);
+}
+
+/* Reduced transparency: swap the translucent glass for an opaque surface and
+   drop the blur, keeping the same geometry and token palette. */
+@media (prefers-reduced-transparency: reduce) {
+  .home-view--hub .home-hero__footer-option,
+  .home-view--hub .home-hero__hub-control,
+  .home-view--hub .home-hero__active-type-chip,
+  .home-view--hub .home-hero__subtype-chip,
+  .home-view--hub .home-hero__rail-chip,
+  .home-view--hub .home-hero__execution-switcher--agent-model .inline-switcher__chip {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--bg-elevated);
+  }
+}
+
 .home-view--hub .home-hero__submit {
   margin-inline-start: auto;
   width: 34px;
@@ -2639,6 +2743,16 @@
   .home-hero__execution-switcher .inline-switcher__chip {
     width: auto;
     max-width: 48px;
+  }
+  /* The agent/model control keeps its name visible on narrow viewports; only
+     the text budget shrinks, so the model never collapses to an icon-only
+     stub the user cannot read. */
+  .home-hero__execution-switcher--agent-model .inline-switcher,
+  .home-hero__execution-switcher--agent-model .inline-switcher__chip {
+    max-width: none;
+  }
+  .home-hero__execution-switcher--agent-model .inline-switcher__chip-text {
+    max-width: 104px;
   }
 }
 
