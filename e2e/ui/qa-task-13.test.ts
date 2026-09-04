@@ -257,17 +257,24 @@ test('canonical start proves R1-R11 and R14 from rendered paint and geometry', a
   const visibleDuplicateBrands = await page.locator('.home-view--hub .home-hero__brand:visible').count();
   const visibleBrandMarks = await page.locator('[data-testid="hub-brand"] img.hub__brand-mark:visible').count();
 
-  const chips = page.locator('[data-testid="hub-composer"] .home-hero__footer-options button'); await expect(chips).toHaveCount(3);
-  await expect(page.getByTestId('home-hero-footer-option-designSystem')).toBeVisible();
-  await page.getByTestId('home-hero-footer-option-designSystem').click();
-  await expect(page.getByRole('option', { name: /없음|none/i })).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(page.locator('.hub__stage > [data-testid="home-hero-footer-option-designSystem"]')).toHaveCount(0);
+  const footerButtons = page.locator('[data-testid="hub-composer"] .home-hero__footer-options button'); await expect(footerButtons).toHaveCount(1);
+  const contextControl = page.getByTestId('home-hero-context-control'); await expect(contextControl).toBeVisible();
+  const modeTrigger = page.getByTestId('session-mode-trigger'); await expect(modeTrigger).toBeVisible(); await expect(modeTrigger).toBeEnabled();
+  await modeTrigger.click(); await expect(page.getByRole('menuitemradio')).toHaveCount(2); await page.keyboard.press('Escape');
+  const agentModel = page.getByTestId('home-hero-agent-model'); await expect(agentModel).toBeVisible();
+  const agentModelChip = agentModel.getByTestId('inline-model-switcher-chip'); await expect(agentModelChip).toBeEnabled();
+  await agentModelChip.click(); await expect(page.getByTestId('inline-model-switcher-popover')).toBeVisible(); await page.keyboard.press('Escape');
+  await page.keyboard.press('Control+k');
+  await expect(page.getByTestId('hub-command-palette')).toBeVisible();
+  await page.getByTestId('hub-palette-item-command-create-template').click();
+  const newProjectModal = page.getByTestId('new-project-modal'); await expect(newProjectModal).toBeVisible();
+  await expect(newProjectModal.getByTestId('new-project-tab-template')).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('Escape'); await expect(newProjectModal).toHaveCount(0);
   const accentControlLocators = [
     page.getByTestId('home-hero-plus-trigger').locator('svg'),
-    page.getByTestId('home-hero-context-control').locator('svg').first(),
-    page.getByTestId('home-hero-footer-option-designSystem').locator('svg').first(),
-    page.getByTestId('home-hero-template-control').locator('svg').first(),
+    contextControl.locator('svg').first(),
+    modeTrigger.locator('svg').first(),
+    agentModel.locator('svg').first(),
   ] as const;
   const accentMeasurements = await Promise.all(accentControlLocators.map((locator) => compositeContrast(locator)));
   const accentColorKeys = accentMeasurements.map((measurement) => measurement.foreground.slice(0, 3).join(','));
@@ -323,7 +330,7 @@ test('canonical start proves R1-R11 and R14 from rendered paint and geometry', a
     ['R8', composerAndSendPainted, `composer=${JSON.stringify(composerBounds)}; background=${composerBackground}; send=${JSON.stringify(sendBounds)}; contained=${sendContained}; sendVisible=${sendVisible}; actionVisible=${sendActionVisible}`, 'finite painted composer bounds contain a visible send action'],
     ['R10', await brandHome.evaluate((node) => getComputedStyle(node).opacity) === '1', 'restOpacity=0; hover/focusOpacity=1', 'brand Home label responds to pointer and keyboard'],
     ['R11', liveLift >= 0.75 && liveLift <= 1.25 && arrowShift >= 1.75 && arrowShift <= 2.25 && liveAfter.shadow !== liveBefore.shadow && liveBefore.shadow.includes('0px 2px 10px') && liveAfter.shadow.includes('0px 6px 18px'), `liveLift=${liveLift.toFixed(2)}px; arrowShift=${arrowShift.toFixed(2)}px; restShadow=${liveBefore.shadow}; hoverShadow=${liveAfter.shadow}`, 'settled live strip lifts 1px, arrow advances 2px, and hover material strengthens'],
-    ['R14', await chips.count() === 3, `composerChips=${await chips.count()}`, 'composer-only controls with zero plugins'],
+    ['R14', await footerButtons.count() === 1 && await modeTrigger.isVisible() && await agentModel.isVisible(), `footerButtons=${await footerButtons.count()}; modeVisible=${await modeTrigger.isVisible()}; agentModelVisible=${await agentModel.isVisible()}`, 'context, mode, and agent-model controls remain available with zero plugins'],
   ] as const) recordRegion({ region, state: 'start', pass, anchor, observation });
   // Project creation supplies one baseline conversation before this fixture's
   // 11 ordered sessions. HubSessionTree caps the resulting 12 at
@@ -540,7 +547,7 @@ test('collapsed, narrow, reduced preferences and both-theme contrast are measura
   await expect.poll(async () => (await geometry(stageLocator)).left - (await geometry(hub)).left).toBeCloseTo(292, 0);
   await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; });
   await page.locator('body').evaluate((node) => Promise.allSettled(node.getAnimations({ subtree: true }).map((animation) => animation.finished)));
-  const bodyText = ['.home-hero__subtitle', '.hub-row__title', '.hub__hint', '.hub-row__state', '.home-hero__footer-options button'];
+  const bodyText = ['.home-hero__title', '.hub-row__title', '.hub__hint', '.hub-row__state', '.home-hero__footer-options button'];
   const darkMeasurements = await Promise.all(bodyText.map((selector) => compositeContrast(page.locator(selector).first())));
   const darkContrast = Math.min(...darkMeasurements.map((measurement) => measurement.ratio));
   const darkAccent = await page.getByTestId('home-hero-submit').evaluate((node) => getComputedStyle(node).color);

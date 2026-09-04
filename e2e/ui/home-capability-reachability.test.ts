@@ -36,7 +36,7 @@ export const CONTROLS = [
   { id: 'audit-A-17', label: 'Active plugin chip clear', i18nKey: 'homeHero.clearActivePlugin', howToReach: 'Pick the seeded plugin and clear its active chip.', expect: 'present' },
   { id: 'audit-A-18', label: 'Active skill chip clear', i18nKey: 'homeHero.clearActiveSkill', howToReach: 'Pick the seeded skill and clear its active chip.', expect: 'present' },
   { id: 'audit-A-19', label: 'Context plugin/MCP chip remove', i18nKey: 'common.close', howToReach: 'Pick a context item and remove its chip.', expect: 'present' },
-  { id: 'audit-A-20', label: 'Footer design-system picker', i18nKey: 'homeHero.footer.designSystem', howToReach: 'Change the home design-system selection.', expect: 'present' },
+  { id: 'audit-A-20', label: 'New Project design-system picker', i18nKey: 'newproj.designSystem', howToReach: 'Open New project, choose a design system, and create with that selection.', expect: 'present' },
   { id: 'audit-A-21', label: 'Footer speaker-notes toggle', i18nKey: 'homeHero.footer.speakerNotes', howToReach: 'Choose Deck and change speaker notes.', expect: 'present' },
   { id: 'audit-A-22', label: 'Footer fidelity select', i18nKey: 'newproj.fidelityLabel', howToReach: 'Choose Prototype and change fidelity.', expect: 'present' },
   { id: 'audit-A-23', label: 'Footer model select', i18nKey: 'newproj.modelLabel', howToReach: 'Choose a creation type and change model.', expect: 'present' },
@@ -97,7 +97,7 @@ export const CONTROLS = [
   { id: 'regression-31', label: 'Static prompt-example cards that seed/focus the composer', i18nKey: null, howToReach: 'Activate an example and observe composer output and focus.', expect: 'present' },
   { id: 'regression-32', label: 'Start a project without a prompt', i18nKey: 'homeHero.continueWithoutPrompt', howToReach: 'Activate Continue without a prompt and observe creation.', expect: 'present' },
   { id: 'regression-33', label: 'Continue/start while a plugin is still applying, with required-input validation and visible errors', i18nKey: null, howToReach: 'Activate a required-input plugin and observe validation.', expect: 'present' },
-  { id: 'regression-34', label: 'Dynamic plugin input controls', i18nKey: 'homeHero.footer.designSystem', howToReach: 'Activate a seeded plugin and change a dynamic input.', expect: 'present' },
+  { id: 'regression-34', label: 'Dynamic plugin input controls', i18nKey: null, howToReach: 'Activate a seeded plugin, change its Topic input, and verify submission routing.', expect: 'present' },
   { id: 'regression-35', label: 'Rich Lexical composer with atomic mention pills and entity deletion semantics', i18nKey: null, howToReach: 'Insert a mention and delete it as an atomic entity.', expect: 'present' },
   { id: 'regression-36', label: 'Visible error alert for apply/submit failures', i18nKey: null, howToReach: 'Cause an apply failure and observe the home alert.', expect: 'present' },
   { id: 'regression-37', label: 'Recent-project thumbnail cards, status and recency', i18nKey: null, howToReach: 'Inspect and activate the seeded recent-project card.', expect: 'present' },
@@ -207,6 +207,12 @@ const HOME_PLUGINS = [{
   manifest: { name: 'required-input-plugin', title: 'Required Brief', version: '0.1.0', description: 'Requires a brief.', tags: ['dashboard'],
     readable: { kind: 'scenario', taskKind: 'new-generation', mode: 'prototype', useCase: { query: 'Build for {{brief}}.' },
       inputs: [{ name: 'brief', type: 'string', required: true, label: 'Audience brief' }] } },
+}, {
+  id: 'design-system-airbnb', title: 'Airbnb', version: '0.1.0', trust: 'bundled', sourceKind: 'bundled', source: '/tmp/design-system-airbnb', fsPath: '/tmp/design-system-airbnb',
+  capabilitiesGranted: ['prompt:inject'], installedAt: 0, updatedAt: 0,
+  manifest: { name: 'design-system-airbnb', title: 'Airbnb', version: '0.1.0', description: 'Airbnb design system.',
+    readable: { kind: 'scenario', taskKind: 'new-generation', mode: 'design-system', useCase: { query: 'Use the Airbnb design system.' },
+      context: { designSystem: { ref: 'airbnb', primary: true } } } },
 }];
 
 const PROJECTS = [
@@ -282,6 +288,14 @@ async function visible(locator: Locator, id: string) {
   await expect(locator, `[${id}] control must be visible on the real home surface`).toBeVisible({ timeout: 2_000 });
 }
 
+async function writeEvidence(page: Page, name: string, details: unknown) {
+  const evidenceDir = process.env.READABLE_F1_EVIDENCE_DIR;
+  if (!evidenceDir) return;
+  await mkdir(evidenceDir, { recursive: true });
+  await writeFile(`${evidenceDir}/${name}.json`, `${JSON.stringify(details, null, 2)}\n`, 'utf8');
+  await page.screenshot({ path: `${evidenceDir}/${name}.png` });
+}
+
 async function chooseType(page: Page, id: 'prototype' | 'deck' | 'report') {
   await page.getByTestId('hub-open-palette').click();
   const input = page.getByTestId('hub-palette-input');
@@ -296,7 +310,12 @@ async function activatePlugin(page: Page, pluginId: string, title: RegExp, id: s
   await openMention(page, '@local');
   const option = page.getByRole('option', { name: title });
   await visible(option, id); await option.hover();
-  await page.getByTestId('home-hero-plugin-hover-card').getByRole('button').click();
+  const details = page.getByTestId('home-hero-plugin-hover-card').getByRole('button');
+  await visible(details, id);
+  // Moving the pointer from the option to this transient hover card can dismiss
+  // and remount it mid-click under load. Dispatch the button's click directly;
+  // this helper is validating the plugin activation/submission path, not hover geometry.
+  await details.dispatchEvent('click');
   await page.getByTestId(`plugin-details-use-${pluginId}`).click();
   await visible(page.getByTestId('home-hero-active-plugin'), id);
 }
@@ -476,7 +495,36 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
   const id = control.id;
   switch (kind) {
     case 'composer': { const input = composer(page); await visible(input, id); await input.fill('operable composer'); await expect(input).toContainText('operable composer').catch(async () => expect(input).toHaveValue('operable composer')); return; }
-    case 'design-system': { const picker = page.getByTestId('hub-design-system').or(page.getByTestId('home-hero-footer-option-designSystem')).first(); await visible(picker, id); if (await picker.evaluate(el => el.tagName === 'SELECT')) { await picker.selectOption('airbnb'); await expect(picker).toHaveValue('airbnb'); } else { await picker.click(); await expect(picker).toHaveAttribute('aria-expanded', 'true'); } return; }
+    case 'design-system': {
+      // A design-system @mention is context-only: selecting it inserts a pill,
+      // but the New Project form still shows the configured Agentic default.
+      await openMention(page, '@Airbnb');
+      const mention = page.getByRole('option', { name: /Airbnb/i });
+      await visible(mention, id);
+      await mention.click();
+      await expect(composer(page)).toContainText('Airbnb');
+
+      await openNewProjectModal(page, id);
+      const modal = page.getByTestId('new-project-modal');
+      const picker = modal.getByTestId('design-system-trigger');
+      await visible(picker, id);
+      await expect(picker).toContainText('Agentic');
+      await picker.click();
+      const airbnb = modal.getByRole('option', { name: /Airbnb/i });
+      await visible(airbnb, id);
+      await airbnb.click();
+      await expect(picker).toContainText('Airbnb');
+      await expect(picker).toHaveAttribute('aria-expanded', 'false');
+      await writeEvidence(page, 'design-system-new-project-path', {
+        mentionResult: 'Airbnb mention inserted without changing the New Project default',
+        selectedDesignSystem: (await picker.innerText()).trim(),
+        path: ['+ New project', 'Design system', 'Airbnb', 'Create project'],
+      });
+      const request = page.waitForRequest(candidate => candidate.method() === 'POST' && new URL(candidate.url()).pathname === '/api/projects');
+      await modal.getByTestId('create-project').click();
+      expect((await request).postDataJSON()).toMatchObject({ designSystemId: 'airbnb' });
+      return;
+    }
     case 'submit': { const input = composer(page); await visible(input, id); await input.fill('reachability submit'); const button = page.getByTestId('hub-send').or(page.getByTestId('home-hero-submit')).first(); await expect(button).toBeEnabled(); const request = page.waitForRequest(r => r.method() === 'POST' && new URL(r.url()).pathname === '/api/projects'); await button.click(); await request; return; }
     case 'file-input': await stageFile(page); return;
     case 'file-remove': await stageFile(page); { const remove = page.getByRole('button', { name: /Remove reachability\.txt/i }); await visible(remove, id); await remove.click(); await expect(page.getByTestId('home-hero-staged-files')).toHaveCount(0); } return;
@@ -492,7 +540,11 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
     case 'mention-all': case 'mention-files': case 'mention-plugins': case 'mention-skills': case 'mention-mcp': { await openMention(page); const names = { 'mention-all': /^All$/i, 'mention-files': /Files/i, 'mention-plugins': /Plugins/i, 'mention-skills': /Skills/i, 'mention-mcp': /^MCP$/i } as const; const tab = page.getByRole('tab', { name: names[kind] }); await visible(tab, id); await tab.click(); await expect(tab).toHaveAttribute('aria-selected', 'true'); return; }
     case 'mention-option': case 'mention-keyboard': await openMention(page, '@local'); { const option = page.getByRole('option', { name: /Localized Plugin/i }); await visible(option, id); if (kind === 'mention-keyboard') { await page.getByTestId('home-hero-input').press('ArrowDown'); await page.getByTestId('home-hero-input').press('Enter'); } else await option.click(); await expect(page.getByTestId('home-hero-plugin-picker')).toHaveCount(0); } return;
     case 'plugin-details': { await openMention(page, '@local'); const option = page.getByRole('option', { name: /Localized Plugin/i }); await option.hover(); const details = page.getByTestId('home-hero-plugin-hover-card').getByRole('button'); await visible(details, id); await details.click(); const dialog = page.getByRole('dialog', { name: /Localized Plugin/i }); await visible(dialog, id); await page.keyboard.press('Escape'); await expect(dialog).toHaveCount(0); return; }
-    case 'plugin-clear': case 'plugin-route': { await activatePlugin(page, 'localized-plugin', /Localized Plugin/i, id); const chip = page.getByTestId('home-hero-active-plugin'); if (kind === 'plugin-clear') { await chip.getByRole('button', { name: /Clear active plugin/i }).click(); await expect(chip).toHaveCount(0); } else { const topic = page.getByTestId('home-hero-footer-option-topic'); await topic.fill('routing observables'); await composer(page).pressSequentially(' plugin route'); const applyResponse = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/plugins/localized-plugin/apply'); const creationRequest = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/api/projects'); await page.getByTestId('home-hero-submit').click(); const applied = await (await applyResponse).json(); expect(applied).toMatchObject({ appliedPlugin: { snapshotId: 'snap-localized-plugin', pluginId: 'localized-plugin', inputs: { topic: 'routing observables' }, resolvedContext: { items: [expect.objectContaining({ id: 'fixture-context' })] } } }); expect((await creationRequest).postDataJSON()).toMatchObject({ pluginId: 'localized-plugin', appliedPluginSnapshotId: 'snap-localized-plugin', pluginInputs: { topic: 'routing observables' } }); } return; }
+    case 'plugin-clear': case 'plugin-route': { await activatePlugin(page, 'localized-plugin', /Localized Plugin/i, id); const chip = page.getByTestId('home-hero-active-plugin'); if (kind === 'plugin-clear') { await chip.getByRole('button', { name: /Clear active plugin/i }).click(); await expect(chip).toHaveCount(0); } else { const topic = page.getByTestId('home-hero-footer-option-topic'); await topic.fill('routing observables'); await composer(page).pressSequentially(' plugin route'); const [applyRequest, creationRequest] = await Promise.all([
+      page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/api/plugins/localized-plugin/apply'),
+      page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/api/projects'),
+      page.getByTestId('home-hero-submit').click(),
+    ]); expect(applyRequest.postDataJSON()).toMatchObject({ inputs: { topic: 'routing observables' } }); expect(creationRequest.postDataJSON()).toMatchObject({ pluginId: 'localized-plugin', appliedPluginSnapshotId: 'snap-localized-plugin', pluginInputs: { topic: 'routing observables' } }); } return; }
     case 'skill-clear': case 'skill-route': { await openMention(page); const tab = page.getByRole('tab', { name: /Skills/i }); await tab.click(); const option = page.getByRole('option', { name: /QA Skill/i }); await option.click(); const chip = page.getByTestId('home-hero-active-skill'); await visible(chip, id); if (kind === 'skill-clear') { await chip.getByRole('button').click(); await expect(chip).toHaveCount(0); } else { await composer(page).fill('skill routed creation'); const payload = await captureCreation(page); expect(payload).toMatchObject({ skillId: 'qa-skill', pendingPrompt: 'skill routed creation' }); expect(payload).not.toHaveProperty('pluginId'); } return; }
     case 'context-clear': { await openMention(page, '@local'); const option = page.getByRole('option', { name: /Localized Plugin/i }); await option.hover(); const details = page.getByTestId('home-hero-plugin-hover-card').getByRole('button'); await visible(details, id); await details.click(); await page.getByTestId('plugin-details-use-localized-plugin').click(); const chip = page.getByTestId('home-hero-active-plugin'); await visible(chip, id); const clear = chip.getByRole('button', { name: /Clear active plugin/i }); await visible(clear, id); await clear.click(); await expect(chip).toHaveCount(0); return; }
     case 'mode': case 'mode-route': { const toggle = page.getByTestId('session-mode-trigger'); await visible(toggle, id); await toggle.click(); const ask = page.getByRole('menuitemradio', { name: /Ask mode/i }); await ask.click(); if (kind === 'mode-route') { await composer(page).fill('mode routed creation'); expect(await captureCreation(page)).toMatchObject({ conversationMode: 'chat', pendingPrompt: 'mode routed creation' }); } else { await toggle.click(); await expect(page.getByRole('menuitemradio', { name: /Ask mode/i })).toHaveAttribute('aria-checked', 'true'); } return; }
@@ -522,7 +574,7 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
     }, kind === 'drop-file' ? 'drop' : 'paste'); await visible(page.getByTestId('home-hero-staged-files'), id); return; }
     case 'attachment-only': await stageFile(page); { const submit = page.getByTestId('home-hero-submit'); await expect(submit).toBeEnabled(); const req = page.waitForRequest(r => r.method() === 'POST' && new URL(r.url()).pathname === '/api/projects'); await submit.click(); await req; } return;
     case 'plugin-validation': { await chooseType(page, 'prototype'); const preset = page.locator('[data-testid="home-hero-plugin-preset"][data-plugin-id="required-input-plugin"]'); await visible(preset, id); await preset.click(); const replacement = page.getByRole('dialog', { name: /Replace current prompt/i }); if (await replacement.isVisible()) await replacement.getByRole('button', { name: /Replace/i }).click(); const brief = page.getByTestId('home-hero-footer-option-brief'); await visible(brief, id); await expect(brief).toHaveValue(''); const posts: string[] = []; page.on('request', request => { if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/projects') posts.push(request.url()); }); await composer(page).press('Control+Enter'); const alert = page.getByTestId('home-hero-error'); await visible(alert, id); await expect(alert).toContainText('Audience brief'); await expect(page.getByTestId('home-hero-submit')).toBeDisabled(); expect(posts).toEqual([]); return; }
-    case 'dynamic-input': { await activateReportPreset(page, id); const input = page.getByTestId('home-hero-footer-option-designSystem'); await visible(input, id); await expect(input).toBeEnabled(); await input.click(); await expect(page.getByRole('option', { name: 'Airbnb', exact: true })).toBeVisible(); const airbnb = page.getByTestId('project-ds-picker-option-airbnb'); await expect(airbnb).toHaveCount(1); await expect(airbnb).toBeEnabled(); await airbnb.click(); await expect(input).toContainText('Airbnb'); await input.click(); await expect(page.getByTestId('project-ds-picker-option-airbnb')).toHaveAttribute('aria-selected', 'true'); await input.click(); const applyRequest = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/api/plugins/example-report/apply'); const creationRequest = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/api/projects'); await page.getByTestId('home-hero-submit').click(); expect((await applyRequest).postDataJSON()).toMatchObject({ inputs: { designSystem: 'Airbnb' } }); expect((await creationRequest).postDataJSON()).toMatchObject({ pluginId: 'example-report', pluginInputs: { designSystem: 'Airbnb' } }); return; }
+    case 'dynamic-input': { await activatePlugin(page, 'localized-plugin', /Localized Plugin/i, id); const input = page.getByTestId('home-hero-footer-option-topic'); await visible(input, id); await expect(input).toBeEnabled(); await input.fill('routing observables'); await expect(input).toHaveValue('routing observables'); const applyRequest = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/api/plugins/localized-plugin/apply'); const creationRequest = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/api/projects'); await page.getByTestId('home-hero-submit').click(); expect((await applyRequest).postDataJSON()).toMatchObject({ inputs: { topic: 'routing observables' } }); expect((await creationRequest).postDataJSON()).toMatchObject({ pluginId: 'localized-plugin', pluginInputs: { topic: 'routing observables' } }); return; }
     case 'rich-mention': await openMention(page, '@local'); await page.getByRole('option', { name: /Localized Plugin/i }).click(); { const input = page.getByTestId('home-hero-input'); await expect(input).toHaveText(/Localized Plugin/); await input.press('Backspace'); await expect(input).not.toHaveText(/Localized Plugin/); } return;
     case 'visible-error': { await page.route('**/api/plugins/localized-plugin/apply', async route => route.fulfill({ status: 500, json: { error: 'forced reachability failure' } })); await chooseType(page, 'prototype'); const presets = page.getByTestId('home-hero-plugin-presets'); await visible(presets, id); await presets.locator('[data-testid="home-hero-plugin-preset"]').first().click(); await visible(page.getByRole('alert'), id); return; }
     case 'rail-toggle': { const toggle = page.getByTestId('hub-rail-toggle'); await visible(toggle, id); const before = await page.locator('.hub').getAttribute('data-rail-collapsed'); await toggle.click(); await expect(page.locator('.hub')).not.toHaveAttribute('data-rail-collapsed', before ?? ''); return; }
@@ -537,7 +589,7 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
     case 'c-running': { const strip = page.getByTestId('hub-live-strip'); await visible(strip, id); await strip.click(); await expect(page).toHaveURL(/\/projects\/qa-running\/conversations\/qa-session-1$/); return; }
     case 'c-filter': { const filter = page.getByTestId('hub-filter-running'); await visible(filter, id); await expect(filter.locator('.hub-tree__count')).toHaveText('1'); await filter.click(); await expect(filter).toHaveAttribute('aria-pressed', 'true'); await expect(page.getByTestId('hub-project-qa-attention')).toHaveCount(0); return; }
     case 'c-empty': { await page.getByTestId('hub-search').fill('no deterministic match'); await page.getByTestId('hub-filter-running').click(); const empty = page.getByTestId('hub-tree-empty'); await visible(empty, id); await empty.getByRole('button').click(); await expect(page.getByTestId('hub-filter-all')).toHaveAttribute('aria-pressed', 'true'); return; }
-    case 'c-sort': { const body = page.locator('.hub-tree__body'); await expect(body.getByRole('treeitem', { level: 1 }).first()).toContainText('Zulu'); await page.getByTestId('hub-sort').click(); const menu = page.getByTestId('hub-sort-menu'); await visible(menu, id); await menu.getByRole('menuitem', { name: /Name/i }).click(); await expect(body.getByRole('treeitem', { level: 1 }).first()).toContainText('Alpha'); return; }
+    case 'c-sort': { const body = page.locator('.hub-tree__body'); await expect(body.getByRole('treeitem', { level: 1 }).first()).toContainText('Zulu'); await page.getByTestId('hub-sort').click(); const menu = page.getByTestId('hub-sort-menu'); await visible(menu, id); const nameItem = page.getByTestId('hub-sort-menu-name'); await visible(nameItem, id); await expect(nameItem).toHaveRole('menuitemradio'); const geometry = await nameItem.evaluate((element) => { const rect = element.getBoundingClientRect(); const style = getComputedStyle(element); return { role: element.getAttribute('role'), accessibleText: element.textContent?.trim(), rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }, display: style.display, visibility: style.visibility, overflow: style.overflow }; }); await writeEvidence(page, 'sort-menu-diagnosis', geometry); await nameItem.click(); await expect(body.getByRole('treeitem', { level: 1 }).first()).toContainText('Alpha'); return; }
     case 'c-keyboard': { const first = page.getByTestId('hub-project-qa-running'); await visible(first, id); await first.focus(); await first.press('ArrowDown'); await expect(page.getByTestId('hub-session-qa-session-1')).toBeFocused(); await page.keyboard.press('Home'); await expect(first).toBeFocused(); return; }
     case 'c-claude': { await openNewProjectModal(page, id); const button = page.getByTestId('new-project-modal').getByRole('button', { name: /Import Claude Design ZIP/i }); await visible(button, id); const chooser = page.waitForEvent('filechooser'); await button.click(); await chooser; return; }
     // The rail is glass now, not a painted gradient: assert the material that

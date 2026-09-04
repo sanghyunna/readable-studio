@@ -3,8 +3,8 @@
 // The regression under test: `EntryShell` suppresses the legacy icon rail on
 // the home route, which left every entry destination unreachable from the
 // start surface (defects #37-#46, #73-#75). The restoration follows the
-// approved mockup — a rail-footer "library" menu plus a workspace row, and a
-// topbar carrying the local-run chip, help and the avatar — rather than
+// approved mockup — a rail-footer "library" menu plus a presentational user
+// row, and a topbar carrying the run-status icon, help and the avatar — rather than
 // reinstating the old always-visible rail.
 //
 // Two things this file deliberately does NOT do:
@@ -55,9 +55,7 @@ const DESTINATIONS: Destination[] = [
   {
     id: 'projects',
     pathname: '/projects',
-    reach: async (page) => {
-      await page.getByTestId('hub-view-all-projects').click();
-    },
+    reach: (page) => viaLibrary(page, 'hub-library-projects'),
     mount: (page) =>
       page.locator('[data-testid="entry-view-projects"] .entry-section__title'),
   },
@@ -264,10 +262,11 @@ test('[P0] a project with zero sessions opens from the tree', async ({ page }) =
 test('[P0] home renders the mockup rail footer and topbar chrome', async ({ page }) => {
   await gotoHome(page);
 
-  // Rail footer: library menu + workspace row.
+  // Rail footer: library menu + presentational identity row.
   const footer = page.getByTestId('hub-rail-footer');
   await expect(footer).toBeVisible();
-  await expect(page.getByTestId('hub-workspace-row')).toBeVisible();
+  const profile = page.getByTestId('hub-workspace-row');
+  await expect(profile).toBeVisible();
   await expect(page.getByTestId('hub-footer-settings')).toBeVisible();
 
   await page.getByTestId('hub-library').click();
@@ -276,24 +275,44 @@ test('[P0] home renders the mockup rail footer and topbar chrome', async ({ page
   for (const id of ['tasks', 'design-systems', 'plugins', 'integrations']) {
     await expect(page.getByTestId(`hub-library-${id}`)).toBeVisible();
   }
+  await expect(page.getByTestId('hub-workspace-folder')).toBeVisible();
   await page.screenshot({ path: `${EVIDENCE_DIR}/rail-footer-library-menu.png` });
   await page.keyboard.press('Escape');
   await expect(libraryMenu).toBeHidden();
   await expect(page.getByTestId('hub-library')).toBeFocused();
 
-  // The workspace row is a menu, not decoration.
-  await page.getByTestId('hub-workspace-row').click();
-  await expect(page.getByTestId('hub-workspace-menu')).toBeVisible();
-  await expect(page.getByTestId('hub-workspace-settings')).toBeVisible();
-  await expect(page.getByTestId('hub-workspace-folder')).toBeVisible();
-  await page.screenshot({ path: `${EVIDENCE_DIR}/rail-footer-workspace-menu.png` });
-  await page.keyboard.press('Escape');
-  await expect(page.getByTestId('hub-workspace-menu')).toBeHidden();
+  // Identity is informative, not a disguised control: it has no interactive
+  // semantics and clicking it cannot resurrect the deleted profile menu.
+  await expect(profile).toHaveJSProperty('tagName', 'DIV');
+  await expect(profile).not.toHaveAttribute('role');
+  await expect(profile).not.toHaveAttribute('aria-haspopup');
+  await expect(profile).not.toHaveAttribute('aria-expanded');
+  await expect(profile).not.toHaveAttribute('aria-controls');
+  await expect(profile).not.toHaveAttribute('tabindex');
+  await profile.click();
+  await expect(page.getByTestId('hub-workspace-menu')).toHaveCount(0);
+  await expect(page.getByRole('menu')).toHaveCount(0);
 
-  // Topbar: local-run status chip, help, avatar.
-  const runChip = page.getByTestId('entry-run-status');
-  await expect(runChip).toBeVisible();
-  await expect(runChip).toHaveAttribute('data-live', /true|false/);
+  // The workspace-folder action moved into Library and still reaches the
+  // project-locations settings section, rather than merely closing its menu.
+  await page.getByTestId('hub-library').click();
+  await expect(libraryMenu).toBeVisible();
+  await page.getByTestId('hub-workspace-folder').click();
+  const settingsDialog = page.getByRole('dialog', { name: /.+/ });
+  await expect(settingsDialog).toBeVisible();
+  await expect(settingsDialog.locator('.project-locations-section')).toBeVisible();
+  await page.screenshot({ path: `${EVIDENCE_DIR}/workspace-folder-settings.png` });
+  await settingsDialog.locator('.settings-close').click();
+  await expect(settingsDialog).toBeHidden();
+
+  // Topbar: icon-form run status, help, avatar.
+  const runIcon = page.getByTestId('entry-run-status');
+  await expect(runIcon).toBeVisible();
+  await expect(runIcon).toHaveClass(/(?:^|\s)entry-run-icon(?:\s|$)/);
+  await expect(runIcon).toHaveAttribute('data-live', /true|false/);
+  await expect(runIcon).toHaveAttribute('aria-label', /.+/);
+  await expect(runIcon).toHaveAttribute('data-tooltip', /.+/);
+  await expect(runIcon.locator('.entry-run-icon__dot')).toBeVisible();
   await expect(topbar(page).getByTestId('entry-help-trigger')).toBeVisible();
   await expect(topbar(page).getByTestId('entry-settings-menu-trigger')).toBeVisible();
 
