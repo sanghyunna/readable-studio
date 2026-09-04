@@ -71,6 +71,21 @@ interface FlatRow {
 interface MenuState {
   rowKey: string;
   anchor: HTMLElement;
+  /** Set when the menu was opened from a right-click, so it hangs off the pointer. */
+  point?: { x: number; y: number };
+}
+
+/**
+ * A queued destructive action. Delete is confirmed through the same
+ * `modal-confirm` alertdialog the projects grid already uses, so the rail
+ * cannot become the one place a project vanishes on a single click.
+ */
+interface ConfirmState {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  rowKey: string;
+  onConfirm: () => void;
 }
 
 // Hovering must not fire a flyout the pointer only crossed on its way
@@ -78,6 +93,41 @@ interface MenuState {
 const FLYOUT_HOVER_DELAY_MS = 180;
 const COMPACT_SESSION_QUERY = '(max-height: 760px) and (max-width: 900px)';
 const COMPACT_SESSION_PAGE = 4;
+
+export const HUB_SESSION_SURFACE_REQUEST_KEY = 'readable-studio:session-surface-request';
+
+export type HubSessionSurfaceRequest =
+  | { projectId: string; kind: 'terminal' }
+  | { projectId: string; kind: 'side-chat'; conversationId: string };
+
+export function queueHubSessionSurface(request: HubSessionSurfaceRequest): void {
+  window.sessionStorage.setItem(HUB_SESSION_SURFACE_REQUEST_KEY, JSON.stringify(request));
+}
+
+export function consumeHubSessionSurface(projectId: string): HubSessionSurfaceRequest | null {
+  const raw = window.sessionStorage.getItem(HUB_SESSION_SURFACE_REQUEST_KEY);
+  if (!raw) return null;
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    window.sessionStorage.removeItem(HUB_SESSION_SURFACE_REQUEST_KEY);
+    return null;
+  }
+  if (!value || typeof value !== 'object') return null;
+  const candidate = value as Record<string, unknown>;
+  if (candidate.projectId !== projectId) return null;
+  if (candidate.kind === 'terminal') {
+    window.sessionStorage.removeItem(HUB_SESSION_SURFACE_REQUEST_KEY);
+    return { projectId, kind: 'terminal' };
+  }
+  if (candidate.kind === 'side-chat' && typeof candidate.conversationId === 'string') {
+    window.sessionStorage.removeItem(HUB_SESSION_SURFACE_REQUEST_KEY);
+    return { projectId, kind: 'side-chat', conversationId: candidate.conversationId };
+  }
+  window.sessionStorage.removeItem(HUB_SESSION_SURFACE_REQUEST_KEY);
+  return null;
+}
 
 type StateLabelKey = 'hub.stateRunning' | 'hub.stateAwaiting' | 'hub.stateFailed';
 
@@ -121,6 +171,7 @@ export function HubSessionTree({
   );
   // Rename happens in place: a modal for one field is heavier than the edit.
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<ConfirmState | null>(null);
   const typeAheadRef = useRef('');
   const typeAheadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // A row activated out of existence (the overflow row) hands focus to a row
@@ -215,11 +266,42 @@ export function HubSessionTree({
     if (menu && !rows.some((row) => row.key === menu.rowKey)) setMenu(null);
     if (renaming && !rows.some((row) => row.key === renaming)) setRenaming(null);
     if (flyout && !rows.some((row) => row.key === `p:${flyout.projectId}`)) setFlyout(null);
-  }, [rows, menu, renaming, flyout]);
+    // A confirmation whose subject is already gone would delete nothing and
+    // strand focus on a detached row.
+    if (confirming && !rows.some((row) => row.key === confirming.rowKey)) setConfirming(null);
+  }, [rows, menu, renaming, flyout, confirming]);
 
   useEffect(() => () => {
     if (typeAheadTimerRef.current) clearTimeout(typeAheadTimerRef.current);
   }, []);
+
+  // One destructive path for the whole tree: the row menu, the context menu and
+  // the Delete key all queue the same confirmation instead of each growing its
+  // own idea of what "safe" means.
+  const confirmDeleteProject = useCallback(
+    (project: HubProjectNode) => {
+      if (!onDeleteProject) return;
+      setConfirming({
+        title: t('designs.deleteTitle'),
+        message: t('designs.deleteConfirm', { name: project.name }),
+        confirmLabel: t('designs.menuDelete'),
+        rowKey: `p:${project.id}`,
+        onConfirm: () => onDeleteProject(project),
+      });
+    },
+    [onDeleteProject, t],
+  );
+
+  // Sessions are NOT confirmed here on purpose: the hub already deletes a
+  // session optimistically behind an undoable toast, and stacking a modal on
+  // top of an undo would be friction without added safety. Projects have no
+  // undo, so they get the dialog.
+  const deleteSession = useCallback(
+    (session: HubSessionNode) => {
+      onDeleteSession?.(session);
+    },
+    [onDeleteSession],
+  );
 
   const focusRow = useCallback(
     (index: number) => {
@@ -292,10 +374,26 @@ export function HubSessionTree({
         case 'Delete':
           if (row.kind === 'more') break;
           event.preventDefault();
-          if (row.kind === 'project') onDeleteProject?.(row.project);
-          else if (row.session) onDeleteSession?.(row.session);
-          focusRow(Math.min(index + 1, rows.length - 1));
+          if (row.kind === 'project') {
+            confirmDeleteProject(row.project);
+          } else if (row.session) {
+            deleteSession(row.session);
+            focusRow(Math.min(index + 1, rows.length - 1));
+          }
           break;
+        case 'F10':
+        case 'ContextMenu': {
+          // The keyboard route into the context menu: Shift+F10 and the menu
+          // key are what the platform already trains people to press, so a
+          // right-click-only feature does not lock out keyboard users.
+          if (row.kind === 'more') break;
+          if (event.key === 'F10' && !event.shiftKey) break;
+          event.preventDefault();
+          const anchor = rowRefs.current.get(row.key);
+          if (!anchor) break;
+          setMenu({ rowKey: row.key, anchor });
+          break;
+        }
         case 'ArrowDown':
           event.preventDefault();
           focusRow(Math.min(index + 1, rows.length - 1));
@@ -379,9 +477,23 @@ export function HubSessionTree({
       onPeekSession,
       onRenameProject,
       onRenameSession,
-      onDeleteProject,
-      onDeleteSession,
+      confirmDeleteProject,
+      deleteSession,
     ],
+  );
+
+  // Right-click must open the menu at the pointer WITHOUT running the row's
+  // normal activation - a context menu that also navigated away would be
+  // useless.
+  const openContextMenu = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>, rowKey: string, index: number) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const anchor = rowRefs.current.get(rowKey) ?? (event.currentTarget as HTMLElement);
+      if (index >= 0) setCursor(index);
+      setMenu({ rowKey, anchor, point: { x: event.clientX, y: event.clientY } });
+    },
+    [],
   );
 
   // Counts are per-project so a project awaiting input is counted once, even
@@ -429,6 +541,15 @@ export function HubSessionTree({
     if (!menuRow) return [];
     if (menuRow.kind === 'project') {
       const items: HubMenuItem[] = [];
+      if (onOpenProject) {
+        items.push({
+          kind: 'action',
+          id: 'open',
+          label: t('quickSwitcher.open'),
+          icon: 'folder',
+          onSelect: () => onOpenProject(menuRow.project),
+        });
+      }
       if (onRenameProject) {
         items.push({
           kind: 'action',
@@ -453,8 +574,9 @@ export function HubSessionTree({
           id: 'delete',
           label: t('common.delete'),
           icon: 'trash',
+          shortcut: 'Del',
           danger: true,
-          onSelect: () => onDeleteProject(menuRow.project),
+          onSelect: () => confirmDeleteProject(menuRow.project),
         });
       }
       return items;
@@ -462,6 +584,13 @@ export function HubSessionTree({
     const session = menuRow.session;
     if (!session) return [];
     const items: HubMenuItem[] = [];
+    items.push({
+      kind: 'action',
+      id: 'open',
+      label: t('hub.inspectorOpen'),
+      icon: 'file',
+      onSelect: () => onOpenSession(session),
+    });
     if (onRenameSession) {
       items.push({
         kind: 'action',
@@ -487,19 +616,24 @@ export function HubSessionTree({
         id: 'delete',
         label: t('common.delete'),
         icon: 'trash',
+        shortcut: 'Del',
         danger: true,
-        onSelect: () => onDeleteSession(session),
+        onSelect: () => deleteSession(session),
       });
     }
     return items;
   }, [
     menuRow,
+    onOpenProject,
+    onOpenSession,
     onRenameProject,
     onNewSession,
     onDeleteProject,
     onRenameSession,
     onPeekSession,
     onDeleteSession,
+    confirmDeleteProject,
+    deleteSession,
     t,
   ]);
 
@@ -712,6 +846,7 @@ export function HubSessionTree({
                   if (row) activate(row);
                 }}
                 onKeyDown={(event) => onKeyDown(event, projectIndex)}
+                onContextMenu={(event) => openContextMenu(event, projectKey, projectIndex)}
               >
                 <span className="hub-row__chevron" aria-hidden="true" data-open={entry.open} />
                 {projectRenaming && onRenameProject ? (
@@ -780,6 +915,46 @@ export function HubSessionTree({
                 data-open={entry.open && !railCollapsed}
                 hidden={!entry.open || railCollapsed}
               >
+                <div className="hub-tree__surface-actions" role="presentation">
+                  {onOpenProject ? (
+                    <button
+                      type="button"
+                      className="hub-row hub-row--session hub-row--surface"
+                      data-testid={`hub-new-terminal-${entry.project.id}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        queueHubSessionSurface({ projectId: entry.project.id, kind: 'terminal' });
+                        onOpenProject(entry.project);
+                      }}
+                    >
+                      <Icon name="terminal" size={13} />
+                      <span className="hub-row__title">{t('workspace.newTerminal')}</span>
+                      <Icon name="plus" size={12} />
+                    </button>
+                  ) : null}
+                  {entry.sessions[0] ? (
+                    <button
+                      type="button"
+                      className="hub-row hub-row--session hub-row--surface"
+                      data-testid={`hub-open-side-chat-${entry.sessions[0].id}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        const session = entry.sessions[0];
+                        if (!session) return;
+                        queueHubSessionSurface({
+                          projectId: entry.project.id,
+                          kind: 'side-chat',
+                          conversationId: session.id,
+                        });
+                        onOpenSession(session);
+                      }}
+                    >
+                      <Icon name="comment" size={13} />
+                      <span className="hub-row__title">{t('workspace.sideChatDefaultTitle')}</span>
+                      <span className="hub-row__meta">{entry.sessions[0].title}</span>
+                    </button>
+                  ) : null}
+                </div>
                 {sessionsStatus === 'loading' ? (
                   <p
                     role="presentation"
@@ -847,6 +1022,7 @@ export function HubSessionTree({
                         onOpenSession(session);
                       }}
                       onKeyDown={(event) => onKeyDown(event, sessionIndex)}
+                      onContextMenu={(event) => openContextMenu(event, sessionKey, sessionIndex)}
                     >
                       {sessionRenaming && onRenameSession ? (
                         renameField(sessionKey, session.title, (next) =>
@@ -945,10 +1121,65 @@ export function HubSessionTree({
           title={menuRow.kind === 'project' ? menuRow.project.name : (menuRow.session?.title ?? '')}
           items={menuItems}
           anchor={menu.anchor}
+          point={menu.point ?? null}
           returnFocusTo={rowRefs.current.get(menu.rowKey) ?? menu.anchor}
           testId="hub-row-menu"
           onClose={() => setMenu(null)}
         />
+      ) : null}
+
+      {confirming ? (
+        <div
+          className="modal-backdrop"
+          data-testid="hub-delete-confirm-backdrop"
+          onClick={() => {
+            setConfirming(null);
+            rowRefs.current.get(confirming.rowKey)?.focus();
+          }}
+        >
+          <div
+            className="modal modal-confirm"
+            role="alertdialog"
+            aria-modal="true"
+            data-testid="hub-delete-confirm"
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              event.stopPropagation();
+              if (event.key !== 'Escape') return;
+              event.preventDefault();
+              setConfirming(null);
+              rowRefs.current.get(confirming.rowKey)?.focus();
+            }}
+          >
+            <h2>{confirming.title}</h2>
+            <p className="modal-confirm-message">{confirming.message}</p>
+            <div className="row">
+              <button
+                type="button"
+                data-testid="hub-delete-cancel"
+                onClick={() => {
+                  setConfirming(null);
+                  rowRefs.current.get(confirming.rowKey)?.focus();
+                }}
+              >
+                {t('designs.renameCancel')}
+              </button>
+              <button
+                type="button"
+                className="primary danger"
+                data-testid="hub-delete-confirm-cta"
+                autoFocus
+                onClick={() => {
+                  const run = confirming.onConfirm;
+                  setConfirming(null);
+                  run();
+                }}
+              >
+                {confirming.confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
 
       {flyout && flyoutProject && flyoutItems.length > 0 ? (

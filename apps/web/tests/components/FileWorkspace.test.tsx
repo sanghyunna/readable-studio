@@ -20,6 +20,7 @@ import {
   fetchProjectFolders,
 } from '../../src/providers/registry';
 import type { ChatMessage, ProjectFile, ProjectFolder } from '../../src/types';
+import type { ProjectBrief } from '../../src/components/brief-state';
 
 vi.mock('../../src/providers/registry', async () => {
   const actual = await vi.importActual<typeof import('../../src/providers/registry')>(
@@ -249,6 +250,82 @@ function unreadableDropDataTransfer(fallbackFiles: File[] = []) {
     ],
   };
 }
+
+describe('FileWorkspace brief integration', () => {
+  const brief: ProjectBrief = {
+    updatedAt: 1,
+    assumptions: [
+      { id: 'audience', label: 'Audience', value: 'dev-tools buyers', provenance: 'inferred' },
+      { id: 'scale', label: 'Scale', value: '8 slides', provenance: 'default' },
+      { id: 'brand', label: 'Brand', value: 'Acme', provenance: 'stated' },
+    ],
+  };
+
+  it('keeps the persisted brief visible and sends a chip correction through the host callback', () => {
+    const onBriefChange = vi.fn();
+    const onBriefSteer = vi.fn();
+    render(
+      <FileWorkspace
+        projectId="returning-project"
+        projectKind="slide_deck"
+        files={[]}
+        onRefreshFiles={vi.fn()}
+        isDeck
+        tabsState={{ tabs: [], active: null }}
+        onTabsStateChange={vi.fn()}
+        brief={brief}
+        onBriefChange={onBriefChange}
+        onBriefSteer={onBriefSteer}
+      />,
+    );
+
+    expect(screen.getByTestId('brief-card')).toBeTruthy();
+    expect(screen.getByRole('listitem', { name: 'Scale: 8 slides (default)' })).toBeTruthy();
+    expect(screen.getByRole('listitem', { name: 'Brand: Acme (stated)' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('listitem', { name: 'Audience: dev-tools buyers (inferred)' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Who is this for?' }), {
+      target: { value: 'security leaders' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply correction' }));
+
+    expect(onBriefSteer).toHaveBeenCalledOnce();
+    expect(onBriefSteer).toHaveBeenCalledWith(
+      '[brief correction — audience]\n- Who is this for?: security leaders',
+    );
+    expect(onBriefChange.mock.calls[0]?.[0].assumptions[0]).toMatchObject({
+      value: 'security leaders',
+      provenance: 'stated',
+    });
+  });
+
+  it('retains the blocking Questions tab beside the persistent brief', () => {
+    render(
+      <FileWorkspace
+        projectId="project-with-blocker"
+        projectKind="prototype"
+        files={[]}
+        onRefreshFiles={vi.fn()}
+        isDeck={false}
+        tabsState={{ tabs: [], active: null }}
+        onTabsStateChange={vi.fn()}
+        brief={brief}
+        onBriefChange={vi.fn()}
+        onBriefSteer={vi.fn()}
+        questionForm={{
+          id: 'brand-source',
+          title: 'Add the brand source',
+          questions: [{ id: 'source', label: 'Brand URL', type: 'text', required: true }],
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId('brief-card')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('questions-tab'));
+    expect(screen.getByText('Add the brand source')).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: 'Brand URL' })).toBeTruthy();
+  });
+});
 
 describe('FileWorkspace upload input', () => {
   it('keeps the Design Files picker aligned with drag-and-drop file support', () => {

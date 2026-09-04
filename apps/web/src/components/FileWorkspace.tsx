@@ -73,6 +73,9 @@ import { TerminalViewer } from './workspace/TerminalViewer';
 import { MissingBrandFontsBanner } from './MissingBrandFontsBanner';
 import { PasteTextDialog } from './PasteTextDialog';
 import { QuestionsPanel } from './QuestionsPanel';
+import { BriefCard } from './BriefCard';
+import type { ProjectBrief } from './brief-state';
+import { consumeHubSessionSurface } from './hub/HubSessionTree';
 import { QuickSwitcher } from './QuickSwitcher';
 import { SketchEditor } from './SketchEditor';
 import {
@@ -193,6 +196,11 @@ interface Props {
   // row was removed; these moved here alongside the FileViewer present/Share
   // portal that targets the same actions container.
   headerActions?: ReactNode;
+  // Persistent assumption receipt. Unlike blocking questions, this remains
+  // visible across workspace tabs and survives reopening the project.
+  brief?: ProjectBrief | null;
+  onBriefChange?: (brief: ProjectBrief) => void | Promise<void>;
+  onBriefSteer?: (payload: string) => void;
   // Active discovery question form, surfaced in the right-hand Questions tab
   // instead of inline in the chat. Owned by ProjectView (derived from the
   // latest assistant message).
@@ -408,6 +416,9 @@ export function FileWorkspace({
   messages = [],
   conversationId,
   headerActions,
+  brief = null,
+  onBriefChange,
+  onBriefSteer,
   questionForm = null,
   questionFormPreview = null,
   questionFormKey = null,
@@ -564,6 +575,33 @@ export function FileWorkspace({
     browserTabSequenceRef.current = 0;
     setLauncherOpen(false);
   }, [projectId]);
+
+  // The Hub session tree is a separate route, so its panel actions leave a
+  // project-scoped handoff for this workspace to consume after navigation.
+  // Wait for ProjectView's async tab hydration before applying it; otherwise
+  // that hydration can overwrite the newly opened surface a frame later.
+  const initialHandoffTabsStateRef = useRef(tabsState);
+  const pendingHubSurfaceRef = useRef<ReturnType<typeof consumeHubSessionSurface>>(null);
+  useEffect(() => {
+    pendingHubSurfaceRef.current ??= consumeHubSessionSurface(projectId);
+    if (tabsState === initialHandoffTabsStateRef.current) return;
+    const request = pendingHubSurfaceRef.current;
+    if (!request) return;
+    pendingHubSurfaceRef.current = null;
+    if (request.kind === 'side-chat') {
+      openFile(`chat:${request.conversationId}`);
+      return;
+    }
+    void createTerminal(projectId).then((terminal) => {
+      if (!terminal) {
+        setLauncherToast(t('workspace.terminalStartFailed'));
+        return;
+      }
+      openFile(`terminal:${terminal.id}`);
+    });
+    // This handoff is intentionally consumed once after project hydration.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, tabsState]);
 
   useEffect(() => {
     const nextBrowserTabs = browserTabsFromState(tabsState.browserTabs);
@@ -1978,6 +2016,9 @@ export function FileWorkspace({
           role="alert"
           onDismiss={() => setLauncherToast(null)}
         />
+      ) : null}
+      {brief && onBriefChange && onBriefSteer ? (
+        <BriefCard brief={brief} onChange={onBriefChange} onSteer={onBriefSteer} />
       ) : null}
       <div className="ws-body">
         {/* Banner moved into DesignFilesPanel for the Design Files tab so

@@ -61,6 +61,12 @@ interface Props {
   items: readonly HubMenuItem[];
   anchor: HTMLElement | null;
   /**
+   * Pointer position for a context menu. When present the menu opens AT the
+   * pointer instead of under the anchor rect; the anchor is still needed for
+   * focus return and for click-outside ownership.
+   */
+  point?: { x: number; y: number } | null;
+  /**
    * Where focus goes when the menu closes. Defaults to the anchor; row menus
    * pass the row so focus lands on the treeitem, not on a hover-only button.
    */
@@ -69,7 +75,7 @@ interface Props {
   testId?: string;
 }
 
-export function HubMenu({ title, items, anchor, returnFocusTo, onClose, testId }: Props) {
+export function HubMenu({ title, items, anchor, point = null, returnFocusTo, onClose, testId }: Props) {
   const menuRef = useRef<HTMLDivElement | null>(null);
   const typeAheadRef = useRef('');
   const typeAheadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -94,12 +100,17 @@ export function HubMenu({ title, items, anchor, returnFocusTo, onClose, testId }
       const box = anchor.getBoundingClientRect();
       const height = menuRef.current?.offsetHeight ?? 0;
       const maxLeft = Math.max(MENU_MARGIN, window.innerWidth - MENU_WIDTH - MENU_MARGIN);
-      const below = box.bottom + MENU_GAP;
+      // A context menu hangs off the pointer, so its "anchor rect" is the
+      // pointer itself - the same clamp then keeps it inside the viewport.
+      const left = point ? point.x : box.left;
+      const openBelowFrom = point ? point.y : box.bottom;
+      const openAboveFrom = point ? point.y : box.top;
+      const below = openBelowFrom + MENU_GAP;
       const top =
         below + height > window.innerHeight - MENU_MARGIN
-          ? Math.max(MENU_MARGIN, box.top - height - MENU_GAP)
+          ? Math.max(MENU_MARGIN, openAboveFrom - height - MENU_GAP)
           : below;
-      setRect({ left: Math.min(Math.max(MENU_MARGIN, box.left), maxLeft), top });
+      setRect({ left: Math.min(Math.max(MENU_MARGIN, left), maxLeft), top });
     };
     place();
     window.addEventListener('resize', place);
@@ -108,7 +119,7 @@ export function HubMenu({ title, items, anchor, returnFocusTo, onClose, testId }
       window.removeEventListener('resize', place);
       window.removeEventListener('scroll', place, true);
     };
-  }, [anchor, items.length]);
+  }, [anchor, items.length, point]);
 
   // Focus the first item once the menu has a position, so the browser does not
   // scroll to a menu still parked at the origin. Tracked as a boolean so that

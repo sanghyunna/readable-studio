@@ -57,6 +57,10 @@ describe('HubSessionTree row actions', () => {
     expect(screen.getByTestId('hub-row-menu-new-session')).toBeTruthy();
 
     fireEvent.click(screen.getByTestId('hub-row-menu-delete'));
+    // Delete is destructive, so the menu queues the shared confirmation instead
+    // of firing straight through.
+    expect(props.onDeleteProject).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('hub-delete-confirm-cta'));
     expect(props.onDeleteProject).toHaveBeenCalledTimes(1);
     expect(props.onDeleteProject).toHaveBeenCalledWith(expect.objectContaining({ id: 'p2' }));
   });
@@ -74,7 +78,10 @@ describe('HubSessionTree row actions', () => {
     expect(screen.getByTestId('hub-row-menu-rename')).toBeTruthy();
     expect(screen.getByTestId('hub-row-menu-info')).toBeTruthy();
 
+    // A session delete is already undoable upstream, so it is not gated behind
+    // the project confirmation dialog.
     fireEvent.click(screen.getByTestId('hub-row-menu-delete'));
+    expect(screen.queryByTestId('hub-delete-confirm')).toBeNull();
     expect(props.onDeleteSession).toHaveBeenCalledWith(expect.objectContaining({ id: 's2' }));
     expect(props.onDeleteProject).not.toHaveBeenCalled();
   });
