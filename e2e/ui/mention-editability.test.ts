@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,17 +6,20 @@ import type { Page } from '@playwright/test';
 import { applyStandardMocks } from '@/playwright/mock-factory';
 
 const EVIDENCE_DIR = fileURLToPath(
-  new URL('../../.omo/evidence/mention-caret-spacing/', import.meta.url),
+  new URL('../../.omo/evidence/mention-caret-2/', import.meta.url),
 );
-const EDITOR = '[data-testid="chat-composer-input"]';
-const PILL = '.composer-inline-mention--file';
-const MENTION = '@reference.txt';
+const EDITOR = '[data-testid="home-hero-input"]';
+const PILL = '.composer-inline-mention--plugin';
 const SUFFIX = ' 후속입력';
 
 type SelectionTrace = {
   readonly anchor: string | null;
   readonly offset: number | null;
   readonly inPill: boolean;
+  readonly lexicalAnchorType: string | null;
+  readonly lexicalAnchorNodeType: string | null;
+  readonly lexicalOffset: number | null;
+  readonly lexicalInsideMention: boolean;
 };
 
 async function readSelection(page: Page): Promise<SelectionTrace> {
@@ -27,6 +29,19 @@ async function readSelection(page: Page): Promise<SelectionTrace> {
     const pill = anchor instanceof Element
       ? anchor.closest('.composer-inline-mention')
       : anchor?.parentElement?.closest('.composer-inline-mention');
+    const root = document.querySelector<HTMLElement>('[data-testid="home-hero-input"]');
+    const editor = (root as (HTMLElement & { __lexicalEditor?: {
+      _editorState?: { _selection?: { anchor?: { key?: string; type?: string; offset?: number } }; _nodeMap?: Map<string, { __type?: string; __parent?: string }> };
+    } }) | null)?.__lexicalEditor;
+    const lexicalSelection = editor?._editorState?._selection;
+    const anchorKey = lexicalSelection?.anchor?.key;
+    const nodeMap = editor?._editorState?._nodeMap;
+    let node = anchorKey ? nodeMap?.get(anchorKey) : undefined;
+    let lexicalInsideMention = false;
+    while (node) {
+      if (node.__type === 'composer-mention') lexicalInsideMention = true;
+      node = node.__parent ? nodeMap?.get(node.__parent) : undefined;
+    }
     return {
       anchor: anchor?.nodeType === Node.TEXT_NODE
         ? `#text:${anchor.textContent ?? ''}`
@@ -35,6 +50,10 @@ async function readSelection(page: Page): Promise<SelectionTrace> {
           : null,
       offset: selection?.anchorOffset ?? null,
       inPill: pill !== null,
+      lexicalAnchorType: lexicalSelection?.anchor?.type ?? null,
+      lexicalAnchorNodeType: anchorKey ? nodeMap?.get(anchorKey)?.__type ?? null : null,
+      lexicalOffset: lexicalSelection?.anchor?.offset ?? null,
+      lexicalInsideMention,
     };
   });
 }
@@ -43,32 +62,10 @@ test.beforeEach(async ({ page }) => {
   await applyStandardMocks(page);
 });
 
-async function openProjectChatWithFile(page: Page): Promise<void> {
-  const response = await page.request.post('/api/projects', {
-    data: {
-      id: randomUUID(),
-      name: 'Mention editability regression',
-      skillId: null,
-      designSystemId: null,
-      metadata: { kind: 'prototype', nameSource: 'user' },
-    },
-  });
-  expect(response.ok()).toBeTruthy();
-  const body = (await response.json()) as {
-    readonly project: { readonly id: string };
-    readonly conversationId: string;
-  };
-  const fileResponse = await page.request.post(`/api/projects/${body.project.id}/files`, {
-    data: { name: 'reference.txt', content: 'Mention regression fixture.\n' },
-  });
-  expect(fileResponse.ok()).toBeTruthy();
-  await page.goto(`/projects/${body.project.id}/conversations/${body.conversationId}`);
-  await expect(page.locator(EDITOR)).toBeVisible();
-}
-
-test('context mention keeps Chromium editing live and remains atomically deletable', async ({ page }) => {
+test('Hub context mention keeps the caret outside and remains atomically deletable', async ({ page }) => {
   mkdirSync(EVIDENCE_DIR, { recursive: true });
-  await openProjectChatWithFile(page);
+  await page.goto('/');
+  await expect(page.locator(EDITOR)).toBeVisible();
 
   const editor = page.locator(EDITOR);
   await editor.evaluate((element) => {
@@ -86,15 +83,31 @@ test('context mention keeps Chromium editing live and remains atomically deletab
   });
 
   await editor.click();
-  await editor.pressSequentially('@ref');
+  await page.getByTestId('home-hero-context-control').click();
   const option = page
-    .getByTestId('mention-popover')
+    .getByTestId('home-hero-plugin-picker')
     .getByRole('option')
-    .filter({ hasText: 'reference.txt' })
     .first();
   await expect(option).toBeVisible();
   await option.click();
   await expect(page.locator(PILL)).toHaveCount(1);
+  const mentionText = await page.locator(PILL).textContent();
+  if (!mentionText) throw new Error('Mention pill has no text');
+
+  const inserted = await readSelection(page);
+  expect(inserted.inPill).toBe(false);
+  expect(inserted.lexicalInsideMention).toBe(false);
+  expect(inserted.lexicalAnchorNodeType).not.toBe('composer-mention');
+  await page.screenshot({ path: join(EVIDENCE_DIR, 'after-light.png') });
+  await page.evaluate(() => {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    document.documentElement.setAttribute('data-theme-scheme', 'dark');
+  });
+  await page.screenshot({ path: join(EVIDENCE_DIR, 'after-dark.png') });
+  await page.evaluate(() => {
+    document.documentElement.setAttribute('data-theme', 'light');
+    document.documentElement.setAttribute('data-theme-scheme', 'light');
+  });
 
   await editor.evaluate((element) => {
     element.setAttribute('data-keydown-count', '0');
@@ -107,14 +120,32 @@ test('context mention keeps Chromium editing live and remains atomically deletab
   await page.mouse.click(box.x + box.width * 0.75, box.y + box.height / 2);
   const click = await readSelection(page);
   expect(click.inPill).toBe(false);
-  await page.screenshot({ path: join(EVIDENCE_DIR, 'pill-caret-after.png') });
+  expect(click.lexicalInsideMention).toBe(false);
 
   await editor.press('ArrowLeft');
   const arrowLeft = await readSelection(page);
   expect(arrowLeft.inPill).toBe(false);
+  expect(arrowLeft.lexicalInsideMention).toBe(false);
   await editor.press('ArrowRight');
   const arrowRight = await readSelection(page);
   expect(arrowRight.inPill).toBe(false);
+  expect(arrowRight.lexicalInsideMention).toBe(false);
+
+  await editor.press('Home');
+  const home = await readSelection(page);
+  expect(home.inPill).toBe(false);
+  expect(home.lexicalInsideMention).toBe(false);
+  await editor.press('End');
+  const end = await readSelection(page);
+  expect(end.inPill).toBe(false);
+  expect(end.lexicalInsideMention).toBe(false);
+
+  const editorBox = await editor.boundingBox();
+  if (!editorBox) throw new Error('Composer has no browser geometry');
+  await page.mouse.click(editorBox.x + editorBox.width - 4, box.y + box.height / 2);
+  const beyondEnd = await readSelection(page);
+  expect(beyondEnd.inPill).toBe(false);
+  expect(beyondEnd.lexicalInsideMention).toBe(false);
 
   await editor.pressSequentially(SUFFIX);
   const typed = await readSelection(page);
@@ -148,10 +179,9 @@ test('context mention keeps Chromium editing live and remains atomically deletab
   expect(trace.beforeinputCount).toBeGreaterThan(0);
   expect(trace.mentionMarginInlineStart).toBe('4px');
   expect(trace.mentionMarginInlineEnd).toBe('4px');
-  await expect(editor).toHaveText(`${MENTION}${SUFFIX}`);
-  await expect(
-    editor.locator('[data-lexical-text="true"][contenteditable="false"]'),
-  ).toHaveCount(0);
+  await expect(editor).toHaveText(`${mentionText}${SUFFIX}`);
+  await expect(editor.locator('[data-lexical-decorator="true"]')).toHaveCount(1);
+  await expect(page.locator(PILL)).toHaveAttribute('contenteditable', 'false');
 
   await editor.evaluate((element, suffix) => {
     const textNode = Array.from(element.querySelectorAll('[data-lexical-text="true"]'))
@@ -165,7 +195,7 @@ test('context mention keeps Chromium editing live and remains atomically deletab
     selection?.addRange(range);
   }, SUFFIX);
   await editor.press('Backspace');
-  await expect(editor).toHaveText(MENTION);
+  await expect(editor).toHaveText(mentionText);
   await expect(page.locator(PILL)).toHaveCount(1);
   const backspaceBoundary = await readSelection(page);
 
@@ -174,9 +204,13 @@ test('context mention keeps Chromium editing live and remains atomically deletab
   await expect(editor).toBeEmpty();
   const backspace = await readSelection(page);
   const interactionTrace = {
+    inserted,
     click,
     arrowLeft,
     arrowRight,
+    home,
+    end,
+    beyondEnd,
     typed,
     backspaceBoundary,
     backspace,

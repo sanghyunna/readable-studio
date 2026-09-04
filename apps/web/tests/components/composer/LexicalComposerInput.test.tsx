@@ -146,7 +146,11 @@ describe('LexicalComposerInput', () => {
         updateFn();
         const selection = $getSelection();
         if (!$isRangeSelection(selection) || !findMention($getRoot().getFirstChild())) return;
-        selectionWasInsideMention = $isMentionNode(selection.anchor.getNode());
+        let anchor: LexicalNode | null = selection.anchor.getNode();
+        while (anchor) {
+          if ($isMentionNode(anchor)) selectionWasInsideMention = true;
+          anchor = anchor.getParent();
+        }
         selection.insertText(' follow-up');
       }, options);
     });
@@ -162,6 +166,42 @@ describe('LexicalComposerInput', () => {
     expect(selectionWasInsideMention).toBe(false);
     expect(ref.current?.getText()).toBe('@Deck Builder follow-up');
     expect(document.activeElement).toBe(host);
+  });
+
+  it('keeps sequential start/end mentions on outside boundaries and deletes each atomically', async () => {
+    const { ref, getByTestId } = setup();
+    const host = getByTestId('chat-composer-input');
+    await waitFor(() => expect(ref.current).not.toBeNull());
+    act(() => {
+      ref.current?.insertMention({
+        token: '@Deck Builder',
+        entity: { id: 'deck-builder', kind: 'skill', label: 'Deck Builder' },
+      });
+      ref.current?.insertMention({
+        token: '@designs/landing.html',
+        entity: {
+          id: 'designs/landing.html', kind: 'file', label: 'designs/landing.html',
+        },
+      });
+    });
+    await waitFor(() =>
+      expect(host.querySelectorAll('.composer-inline-mention')).toHaveLength(2),
+    );
+    const editor = liveEditor(host);
+    expect(selectionAnchor(editor)).toMatchObject({
+      nodeType: 'paragraph', offset: 2, insideMention: false,
+    });
+
+    for (const remaining of [1, 0]) {
+      const backspace = keyEvent('Backspace');
+      act(() => editor.dispatchCommand(KEY_BACKSPACE_COMMAND, backspace));
+      expect(backspace.preventDefault).toHaveBeenCalledTimes(1);
+      await waitFor(() =>
+        expect(host.querySelectorAll('.composer-inline-mention')).toHaveLength(remaining),
+      );
+      expect(selectionAnchor(editor).insideMention).toBe(false);
+    }
+    expect(ref.current?.getText()).toBe('');
   });
 
   it('clear() empties the editor', async () => {
@@ -200,17 +240,28 @@ describe('LexicalComposerInput', () => {
   }
 
   function selectionAnchor(editor: LexicalEditor): {
+    nodeType: string;
     text: string;
     offset: number;
+    insideMention: boolean;
   } {
-    let snapshot = { text: '', offset: -1 };
+    let snapshot = { nodeType: '', text: '', offset: -1, insideMention: false };
     editor.getEditorState().read(() => {
       const selection = $getSelection();
       expect($isRangeSelection(selection)).toBe(true);
       if (!$isRangeSelection(selection)) return;
+      const node = selection.anchor.getNode();
+      let ancestor: LexicalNode | null = node;
+      let insideMention = false;
+      while (ancestor) {
+        if ($isMentionNode(ancestor)) insideMention = true;
+        ancestor = ancestor.getParent();
+      }
       snapshot = {
-        text: selection.anchor.getNode().getTextContent(),
+        nodeType: node.getType(),
+        text: node.getTextContent(),
         offset: selection.anchor.offset,
+        insideMention,
       };
     });
     return snapshot;
@@ -307,22 +358,17 @@ describe('LexicalComposerInput', () => {
     vi.spyOn(pill, 'getBoundingClientRect').mockReturnValue(
       new DOMRect(100, 20, 200, 19),
     );
-    act(() => {
-      editor.update(
-        () => {
-          const mention = findMention($getRoot().getFirstChild());
-          if ($isTextNode(mention)) mention.select(5, 5);
-        },
-        { discrete: true },
-      );
-    });
     fireEvent.mouseDown(pill, { clientX: 125 });
 
     editor.getEditorState().read(() => {
       const selection = $getSelection();
       expect($isRangeSelection(selection)).toBe(true);
       if (!$isRangeSelection(selection)) return;
-      expect($isMentionNode(selection.anchor.getNode())).toBe(false);
+      let anchor: LexicalNode | null = selection.anchor.getNode();
+      while (anchor) {
+        expect($isMentionNode(anchor)).toBe(false);
+        anchor = anchor.getParent();
+      }
     });
   });
 
@@ -340,9 +386,10 @@ describe('LexicalComposerInput', () => {
       editor.update(
         () => {
           const mention = findMention($getRoot().getFirstChild());
-          if ($isTextNode(mention)) {
-            const offset = mention.getTextContentSize();
-            mention.select(offset, offset);
+          const parent = mention?.getParent();
+          if (mention && parent) {
+            const offset = mention.getIndexWithinParent() + 1;
+            parent.select(offset, offset);
           }
         },
         { discrete: true },
@@ -354,7 +401,9 @@ describe('LexicalComposerInput', () => {
     });
     expect(left.preventDefault).toHaveBeenCalledTimes(1);
     await waitFor(() =>
-      expect(selectionAnchor(editor)).toEqual({ text: 'Use ', offset: 4 }),
+      expect(selectionAnchor(editor)).toMatchObject({
+        nodeType: 'paragraph', offset: 1, insideMention: false,
+      }),
     );
 
     const right = keyEvent('ArrowRight');
@@ -363,10 +412,8 @@ describe('LexicalComposerInput', () => {
     });
     expect(right.preventDefault).toHaveBeenCalledTimes(1);
     await waitFor(() => {
-      const afterChip = selectionAnchor(editor);
-      expect(afterChip).toEqual({
-        text: '@designs/landing.html',
-        offset: '@designs/landing.html'.length,
+      expect(selectionAnchor(editor)).toMatchObject({
+        nodeType: 'text', text: ' now', offset: 0, insideMention: false,
       });
     });
 
@@ -376,7 +423,9 @@ describe('LexicalComposerInput', () => {
     });
     expect(leftAgain.preventDefault).toHaveBeenCalledTimes(1);
     await waitFor(() =>
-      expect(selectionAnchor(editor)).toEqual({ text: 'Use ', offset: 4 }),
+      expect(selectionAnchor(editor)).toMatchObject({
+        nodeType: 'paragraph', offset: 1, insideMention: false,
+      }),
     );
   });
 

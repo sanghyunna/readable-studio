@@ -115,7 +115,7 @@ describe('serializeComposer / setComposerFromText round-trip', () => {
 });
 
 describe('MentionNode atomic behaviour', () => {
-  it('reports token text as its node text content and stays token mode', () => {
+  it('reports token text while remaining an inline atomic decorator', () => {
     const editor = makeEditor();
     setComposerFromText(editor, '@designs/landing.html', [FILE_ENTITY]);
     editor.getEditorState().read(() => {
@@ -127,7 +127,8 @@ describe('MentionNode atomic behaviour', () => {
       expect(mention).toBeInstanceOf(MentionNode);
       expect((mention as MentionNode).getTextContent()).toBe('@designs/landing.html');
       expect((mention as MentionNode).getToken()).toBe('@designs/landing.html');
-      expect((mention as MentionNode).getMode()).toBe('token');
+      expect((mention as MentionNode).isInline()).toBe(true);
+      expect((mention as MentionNode).isIsolated()).toBe(true);
     });
   });
 });

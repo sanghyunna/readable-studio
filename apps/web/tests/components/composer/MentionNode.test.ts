@@ -40,7 +40,11 @@ describe('MentionNode', () => {
         expect(node.getToken()).toBe('@Deck Builder');
         expect($isMentionNode(node)).toBe(true);
         expect(node.isToken()).toBe(true);
-        expect(node.getMode()).toBe('token');
+        expect(node.isInline()).toBe(true);
+        expect(node.isKeyboardSelectable()).toBe(true);
+        expect(node.isIsolated()).toBe(true);
+        expect(node.canInsertTextBefore()).toBe(false);
+        expect(node.canInsertTextAfter()).toBe(false);
       },
       { discrete: true },
     );
@@ -89,13 +93,7 @@ describe('MentionNode', () => {
     );
   });
 
-  it('survives cloning an existing node without recursing (token-mode regression)', () => {
-    // Regression: the constructor used to call `this.setMode('token')`, which
-    // recurses setMode → getWritable → clone() → new MentionNode → setMode …
-    // whenever Lexical clones an EXISTING mention node. That happens on every
-    // mention delete / range-select, so the editor crashed with a
-    // "Maximum call stack size exceeded" RangeError. Token mode now lives in
-    // $createMentionNode and clones inherit it via TextNode.afterCloneFrom.
+  it('survives cloning an existing decorator node', () => {
     const editor = makeEditor();
     let key = '';
     editor.update(
@@ -130,12 +128,11 @@ describe('MentionNode', () => {
     editor.getEditorState().read(() => {
       const node = $getNodeByKey(key);
       expect($isMentionNode(node)).toBe(true);
-      // Narrow via the type guard so `getMode` (a TextNode method) is in scope.
-      expect($isMentionNode(node) ? node.getMode() : null).toBe('token');
+      expect($isMentionNode(node) ? node.isInline() : null).toBe(true);
     });
   });
 
-  it('renders a kind-scoped pill span in the DOM when mounted in an editor', () => {
+  it('renders a decorator-backed kind-scoped pill span in the DOM when mounted in an editor', async () => {
     // `createDOM` requires the reconciler's active-editor DOM context, so drive
     // it through a real mounted editor + root element rather than calling
     // createDOM() in isolation. The reconciler renders the MentionNode's span
@@ -160,15 +157,13 @@ describe('MentionNode', () => {
       },
       { discrete: true },
     );
+    await Promise.resolve();
     const pill = root.querySelector('.composer-inline-mention');
     expect(pill).not.toBeNull();
     expect(pill?.className).toContain('composer-inline-mention--plugin');
     expect(pill?.getAttribute('data-mention-id')).toBe('p1');
     expect(pill?.getAttribute('data-mention-kind')).toBe('plugin');
-    expect(
-      root.querySelector('[data-lexical-text="true"][contenteditable="false"]'),
-    ).toBeNull();
-    expect(pill?.textContent).toBe('@Deck');
+    expect(pill?.getAttribute('data-lexical-decorator')).toBe('true');
     editor.setRootElement(null);
     root.remove();
   });

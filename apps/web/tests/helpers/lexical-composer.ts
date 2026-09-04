@@ -18,6 +18,7 @@ import {
   KEY_ENTER_COMMAND,
   type LexicalEditor,
 } from 'lexical';
+import { serializeComposer } from '../../src/components/composer/serialize';
 
 // jsdom cannot drive Lexical's `beforeinput`/DOM-mutation pipeline (it has no
 // real editing engine), so synthetic fireEvent.change/input on the
@@ -94,23 +95,13 @@ export function typeInComposer(value: string, caret?: number): void {
   });
 }
 
-// Read the editor's serialized plain text. Walks paragraph children turning
-// `<br>` into `\n` (jsdom's `.textContent` silently drops `<br>`), so newline
-// assertions match the composer's wire format.
+// Read the editor's serialized plain text through the same node-aware path as
+// the composer. The DOM reconciler adds a trailing `<br>` after an inline
+// DecoratorNode so the browser can place a caret at the paragraph boundary;
+// that caret aid is not a LineBreakNode and must not leak into wire text.
 export function composerText(): string {
-  const input = screen.getByTestId('chat-composer-input');
-  const paragraphs = input.querySelectorAll('p');
-  if (paragraphs.length === 0) return input.textContent ?? '';
-  const lines: string[] = [];
-  paragraphs.forEach((p) => {
-    let line = '';
-    p.childNodes.forEach((node) => {
-      if (node.nodeName === 'BR') line += '\n';
-      else line += node.textContent ?? '';
-    });
-    lines.push(line);
-  });
-  return lines.join('\n');
+  const editor = getComposerEditor();
+  return serializeComposer(editor.getEditorState()).text;
 }
 
 // Type `value` and wait for the editor's OnChange update listener to flush its
