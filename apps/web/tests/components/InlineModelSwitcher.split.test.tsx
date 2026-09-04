@@ -147,8 +147,7 @@ describe('InlineModelSwitcher split variants', () => {
       within(popover).queryByTestId('inline-model-switcher-mode-daemon'),
     ).toBeNull();
 
-    fireEvent.click(within(popover).getByTestId('inline-model-switcher-agent-model'));
-    fireEvent.click(screen.getByRole('option', { name: /GPT-5 mini/i }));
+    fireEvent.click(within(popover).getByRole('option', { name: /GPT-5 mini/i }));
     expect(onAgentModelChange).toHaveBeenCalledWith('codex', { model: 'gpt-5-mini' });
   });
 

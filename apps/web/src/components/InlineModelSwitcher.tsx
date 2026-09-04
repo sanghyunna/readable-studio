@@ -471,8 +471,18 @@ export function InlineModelSwitcher({
     onAgentModelChange,
   ]);
 
+  // One coherent, correctly-named set: alias/id pairs the daemon reports
+  // separately (`sonnet` + `claude-sonnet-4-5`) collapse into a single honest
+  // entry that still executes the canonical id. Nothing is invented or dropped.
+  const agentModelChoices = useMemo(
+    () => dedupeAgentModels(currentAgent?.models ?? []),
+    [currentAgent],
+  );
+
   const currentModelLabel =
-    currentAgent?.models?.find((m) => m.id === currentModelId)?.label ?? null;
+    agentModelChoices.find((m) => m.id === currentModelId)?.label ??
+    currentAgent?.models?.find((m) => m.id === currentModelId)?.label ??
+    null;
   const amrLoggedIn = amrStatus?.loggedIn === true;
   const amrActionLabel = amrLoginPending
     ? t('settings.amrSigningIn')
@@ -929,7 +939,60 @@ export function InlineModelSwitcher({
               </div>
               )}
 
-              {!isAgentVariant &&
+              {isModelVariant &&
+              currentAgent &&
+              agentModelChoices.length > 0 ? (
+                // DEFECT: clicking the model button used to open a panel that
+                // merely CONTAINED another control the user then had to
+                // operate. The model button now opens the list of models
+                // itself — one click to open, one click to pick.
+                <div
+                  className="inline-switcher__model-list"
+                  role="listbox"
+                  aria-label={t('inlineSwitcher.modelLabel')}
+                  data-testid="inline-model-switcher-model-list"
+                >
+                  {agentModelChoices.map((model) => {
+                    const selected = model.id === currentModelId;
+                    return (
+                      <button
+                        key={model.id}
+                        type="button"
+                        role="option"
+                        aria-selected={selected}
+                        className={
+                          'inline-switcher__model-option' +
+                          (selected ? ' is-active' : '')
+                        }
+                        data-testid={`inline-model-switcher-model-option-${model.id}`}
+                        onClick={() => {
+                          trackExecutionSettingsPopoverClick(analytics.track, {
+                            page_name: 'home',
+                            area: 'execution_settings_popover',
+                            element: 'model_dropdown',
+                            execution_mode: 'local_cli',
+                            model_id: modelIdForTracking(model.id),
+                          });
+                          onAgentModelChange?.(currentAgent.id, {
+                            model: model.id,
+                          });
+                          setOpen(false);
+                        }}
+                      >
+                        <span className="inline-switcher__model-option-label">
+                          {model.label}
+                        </span>
+                        <span
+                          className="inline-switcher__model-option-check"
+                          aria-hidden="true"
+                        >
+                          {selected ? <Icon name="check" size={13} /> : null}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : !isAgentVariant &&
               currentAgent &&
               currentAgent.models &&
               currentAgent.models.length > 0 ? (
@@ -944,7 +1007,7 @@ export function InlineModelSwitcher({
                     popoverTestId="inline-model-switcher-agent-model-popover"
                     searchPlaceholder={t('designs.searchPlaceholder')}
                     aria-label={t('inlineSwitcher.modelLabel')}
-                    models={currentAgent.models}
+                    models={agentModelChoices}
                     value={currentModelId ?? ''}
                     onChange={(nextValue) => {
                       trackExecutionSettingsPopoverClick(analytics.track, {
@@ -961,7 +1024,7 @@ export function InlineModelSwitcher({
                     additionalOptions={
                       currentAgent.id !== 'amr' &&
                       currentModelId &&
-                      !currentAgent.models.some((m) => m.id === currentModelId)
+                      !agentModelChoices.some((m) => m.id === currentModelId)
                         ? [
                             {
                               value: currentModelId,

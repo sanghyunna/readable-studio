@@ -166,7 +166,10 @@ describe('workspace chat composer: agent + model execution pair', () => {
     fireEvent.click(screen.getByTestId('inline-model-switcher-model-trigger'));
 
     const popover = screen.getByTestId('inline-model-switcher-model-popover');
-    expect(within(popover).getByTestId('inline-model-switcher-agent-model')).toBeTruthy();
+    // The model button opens the model LIST directly — not a panel containing
+    // another control the user must then operate.
+    expect(within(popover).getByTestId('inline-model-switcher-model-list')).toBeTruthy();
+    expect(within(popover).queryByTestId('inline-model-switcher-agent-model')).toBeNull();
     // No agent grid and no mode segmented control on the model button.
     expect(screen.queryByTestId('inline-model-switcher-agent-claude')).toBeNull();
     expect(screen.queryByTestId('inline-model-switcher-mode-daemon')).toBeNull();
@@ -179,8 +182,8 @@ describe('workspace chat composer: agent + model execution pair', () => {
     // is under test, so ignore anything recorded before the click.
     onAgentModelChange.mockClear();
 
+    // One click to open, one click to pick.
     fireEvent.click(screen.getByTestId('inline-model-switcher-model-trigger'));
-    fireEvent.click(screen.getByTestId('inline-model-switcher-agent-model'));
     fireEvent.click(screen.getByText('Opus 4.1'));
 
     expect(onAgentModelChange).toHaveBeenCalledWith(
@@ -225,7 +228,6 @@ describe('workspace chat composer: agent + model execution pair', () => {
 
     expect(screen.getByTestId('inline-model-switcher-agent-trigger')).toBeTruthy();
     fireEvent.click(screen.getByTestId('inline-model-switcher-model-trigger'));
-    fireEvent.click(screen.getByTestId('inline-model-switcher-agent-model'));
     fireEvent.click(screen.getByText('Opus 4.1'));
 
     expect(onAgentModelChange).toHaveBeenCalledWith(

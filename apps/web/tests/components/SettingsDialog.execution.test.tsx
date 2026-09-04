@@ -134,6 +134,18 @@ const amrAgent: AgentInfo = {
   supportsCustomModel: false,
 };
 
+const CLAUDE_RAW_MODELS = [
+  { id: 'default', label: 'Default (CLI config)' },
+  { id: 'fable', label: 'Fable (alias)' },
+  { id: 'claude-fable-5', label: 'claude-fable-5' },
+  { id: 'sonnet', label: 'Sonnet (alias)' },
+  { id: 'opus', label: 'Opus (alias)' },
+  { id: 'haiku', label: 'Haiku (alias)' },
+  { id: 'claude-opus-4-5', label: 'claude-opus-4-5' },
+  { id: 'claude-sonnet-4-5', label: 'claude-sonnet-4-5' },
+  { id: 'claude-haiku-4-5', label: 'claude-haiku-4-5' },
+];
+
 type OnRefreshAgents = (
   options?: AgentRefreshOptions,
 ) => void | AgentInfo[] | Promise<void | AgentInfo[]>;
@@ -1845,6 +1857,54 @@ describe('SettingsDialog execution settings Local CLI interactions', () => {
     expect(
       within(modelPopover).getAllByRole('option').map((option) => option.textContent?.trim()),
     ).toEqual(['gpt-4.1-mini', 'gpt-5.5', 'Custom (type below)…']);
+  });
+
+  it('deduplicates Claude aliases in the Settings picker and selects the canonical model', () => {
+    for (const family of ['sonnet', 'opus', 'haiku']) {
+      expect(
+        CLAUDE_RAW_MODELS.filter((model) =>
+          model.id.toLowerCase().split(/[-_/]/).includes(family),
+        ),
+      ).toHaveLength(2);
+    }
+
+    renderSettingsDialog(
+      {
+        mode: 'daemon',
+        agentId: 'claude',
+        agentModels: { claude: { model: 'claude-sonnet-4-5' } },
+      },
+      {
+        agents: [
+          {
+            id: 'claude',
+            name: 'Claude Code',
+            bin: 'claude',
+            available: true,
+            version: '1.2.3',
+            modelsSource: 'fallback',
+            models: CLAUDE_RAW_MODELS,
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('tab', { name: /Local CLI/i }));
+    const modelPicker = screen.getByRole('combobox', {
+      name: en['settings.modelPicker'],
+    });
+    expect(modelPicker.textContent).toBe('Sonnet');
+    fireEvent.click(modelPicker);
+
+    const modelPopover = screen.getByTestId('settings-agent-model-popover-claude');
+    for (const family of ['Sonnet', 'Opus', 'Haiku']) {
+      expect(within(modelPopover).getAllByRole('option', { name: family })).toHaveLength(1);
+    }
+    expect(
+      within(modelPopover)
+        .getByRole('option', { name: 'Sonnet' })
+        .getAttribute('aria-selected'),
+    ).toBe('true');
   });
 
   it('labels live CLI model metadata in the model picker', () => {

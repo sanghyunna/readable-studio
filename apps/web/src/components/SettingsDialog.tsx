@@ -51,6 +51,7 @@ import {
   CUSTOM_MODEL_SENTINEL,
   SearchableModelSelect,
 } from './modelOptions';
+import { dedupeAgentModels } from './modelCatalog';
 import {
   DEFAULT_CONFIG,
   DEFAULT_NOTIFICATIONS,
@@ -2480,18 +2481,19 @@ export function SettingsDialog({
     return label || id;
   };
   const agentModelSummary = (agent: AgentInfo) => {
-    if (!Array.isArray(agent.models) || agent.models.length === 0) return null;
+    const models = dedupeAgentModels(agent.models ?? []);
+    if (models.length === 0) return null;
     const choice = cfg.agentModels?.[agent.id] ?? {};
-    const modelValue = choice.model ?? agent.models[0]?.id ?? '';
+    const modelValue = choice.model ?? models[0]?.id ?? '';
     if (!modelValue) return t('settings.modelCustom');
     return agentModelOptionLabel(
-      agent.models.find((m) => m.id === modelValue),
+      models.find((m) => m.id === modelValue),
       modelValue,
     );
   };
   const renderAgentModelConfig = (selected: AgentInfo) => {
-    const hasModels =
-      Array.isArray(selected.models) && selected.models.length > 0;
+    const models = dedupeAgentModels(selected.models ?? []);
+    const hasModels = models.length > 0;
     const hasReasoning =
       Array.isArray(selected.reasoningOptions) &&
       selected.reasoningOptions.length > 0;
@@ -2532,7 +2534,7 @@ export function SettingsDialog({
     }
     if (!hasModels && !hasReasoning) return null;
     const choice = cfg.agentModels?.[selected.id] ?? {};
-    const knownModelIds = selected.models?.map((m) => m.id) ?? [];
+    const knownModelIds = models.map((model) => model.id);
     // Adapters opt out via `supportsCustomModel: false` on their
     // RuntimeAgentDef when their CLI has no `--model` flag (Antigravity,
     // upstream issue #35) or when free-text ids silently fail at spawn
@@ -2561,8 +2563,8 @@ export function SettingsDialog({
       selected.id === 'amr' &&
       configuredModel &&
       !knownModelIds.includes(configuredModel)
-        ? selected.models?.[0]?.id ?? ''
-        : configuredModel ?? selected.models?.[0]?.id ?? '';
+        ? models[0]?.id ?? ''
+        : configuredModel ?? models[0]?.id ?? '';
     const reasoningValue =
       choice.reasoning ??
       selected.reasoningOptions?.[0]?.id ?? '';
@@ -2612,7 +2614,7 @@ export function SettingsDialog({
                   popoverTestId={`settings-agent-model-popover-${selected.id}`}
                   minSearchableOptions={5}
                   popoverMinWidth={340}
-                  models={selected.models!}
+                  models={models}
                   onChange={(nextValue) => {
                     if (nextValue === CUSTOM_MODEL_SENTINEL) {
                       setAgentCustomModelIds((prev) => {
@@ -3474,10 +3476,10 @@ export function SettingsDialog({
                   (a) => a.id === cfg.agentId && a.available,
                 );
                 if (!selected) return null;
-                const hasModels =
-                  Array.isArray(selected.models) && selected.models.length > 0;
+                const models = dedupeAgentModels(selected.models ?? []);
+                const hasModels = models.length > 0;
                 const choice = cfg.agentModels?.[selected.id] ?? {};
-                const knownModelIds = selected.models?.map((m) => m.id) ?? [];
+                const knownModelIds = models.map((model) => model.id);
                 const configuredModel =
                   typeof choice.model === 'string' && choice.model
                     ? choice.model
@@ -3486,8 +3488,8 @@ export function SettingsDialog({
                   selected.id === 'amr' &&
                   configuredModel &&
                   !knownModelIds.includes(configuredModel)
-                    ? selected.models?.[0]?.id ?? ''
-                    : configuredModel ?? selected.models?.[0]?.id ?? '';
+                    ? models[0]?.id ?? ''
+                    : configuredModel ?? models[0]?.id ?? '';
                 return (
                   <details className="agent-cli-env settings-memory-advanced">
                     <summary className="agent-cli-env-summary">
@@ -3505,7 +3507,7 @@ export function SettingsDialog({
                         chatModel={modelValue}
                         cliAgentId={selected.id}
                         cliModelOptions={
-                          hasModels ? selected.models!.map((m) => m.id) : []
+                          hasModels ? models.map((model) => model.id) : []
                         }
                       />
                     </div>

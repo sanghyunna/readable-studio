@@ -2175,7 +2175,17 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
             ) : null}
             {leadingAccessory}
             <span className="composer-spacer" />
-            {footerAccessory}
+            {/* The legacy footer accessory (ProjectView's AvatarMenu) is ALSO an
+                agent picker. When the execution switcher is mounted the footer
+                would render two agent controls side by side — the defect the
+                user reported ("에이전트 선택 창이 두개야?"). The switcher pair is
+                the newer, single source of agent + model selection, so the
+                legacy accessory yields to it. Nothing is lost: agent selection
+                and model selection live in the switcher pair below, and the
+                accessory's remaining routes (full settings, agent refresh) are
+                reachable from the switcher popover's "open full settings" row.
+                Surfaces with no execution wiring still render the accessory. */}
+            {executionSwitcher ? null : footerAccessory}
             {/* Agent button, then model button to its right, then Send — the
                 same left-to-right order as the Hub composer footer. Two mounts
                 of one switcher, so switching either really mutates the shared

@@ -1342,14 +1342,40 @@
   outline: 2px solid var(--hub-accent);
   outline-offset: 2px;
 }
-/* Agent: the icon is the whole control. The full "mode · agent · model" string
-   survives in aria-label/title, so nothing is lost for assistive tech. */
+/* Agent: the icon is the whole control, and it is DIRECTLY clickable — no pill,
+   no chip boundary. The user asked for the icon itself to be the target
+   ("pill의 시각적 경계 없이"), so the agent button drops the shared control
+   surface, border and inset highlight the model button keeps, and renders the
+   bare icon centred in a square hit target. The full "mode · agent · model"
+   string survives in aria-label/title, so nothing is lost for assistive tech. */
 .app .composer-row .composer-execution-switcher .inline-switcher__chip--agent {
   width: 28px;
   min-width: 28px;
   padding: 0;
   gap: 0;
+  /* Centres the icon on BOTH axes inside the 28px target — the reported
+     mis-centring came from inheriting the chip's text-row alignment. */
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+/* Hover/open feedback without reintroducing a boundary: the icon brightens and
+   sits on a soft translucent halo rather than a bordered capsule. */
+.app .composer-row .composer-execution-switcher .inline-switcher__chip--agent:hover,
+.app .composer-row .composer-execution-switcher .inline-switcher__chip--agent[aria-expanded='true'] {
+  border: 0;
+  background: var(--hub-control-surface-hover);
+  box-shadow: none;
+}
+/* The icon must fill and centre within the button's content box. */
+.app .composer-row .composer-execution-switcher .inline-switcher__chip--agent .inline-switcher__chip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
 }
 /* Model: the model name is the label. */
 .app .composer-row .composer-execution-switcher .inline-switcher__chip--model {
@@ -1369,13 +1395,111 @@
   font-size: 12px;
 }
 @media (prefers-reduced-transparency: reduce) {
-  .app .composer-row .composer-execution-switcher .inline-switcher__chip {
+  /* The agent control stays borderless/background-free even here — an opaque
+     fill would be exactly the pill boundary the user asked us to remove. */
+  .app .composer-row .composer-execution-switcher .inline-switcher__chip:not(.inline-switcher__chip--agent) {
     background: var(--bg-elevated);
   }
-  .app .composer-row .composer-execution-switcher .inline-switcher__chip:hover,
-  .app .composer-row .composer-execution-switcher .inline-switcher__chip[aria-expanded='true'] {
+  .app .composer-row .composer-execution-switcher .inline-switcher__chip:not(.inline-switcher__chip--agent):hover,
+  .app .composer-row .composer-execution-switcher .inline-switcher__chip:not(.inline-switcher__chip--agent)[aria-expanded='true'] {
     background: var(--bg-subtle);
   }
+  .app .composer-row .composer-execution-switcher .inline-switcher__chip--agent:hover,
+  .app .composer-row .composer-execution-switcher .inline-switcher__chip--agent[aria-expanded='true'] {
+    background: var(--bg-subtle);
+  }
+}
+
+/* ChatPane portals the composer to body, outside `.app`. Mirror the bare
+   agent-target rules at the real portal boundary so the workspace control does
+   not fall back to the generic filled 36x32 chip. */
+.chat-composer-fixed-layer .composer-row .composer-execution-switcher .inline-switcher__chip--agent {
+  display: inline-flex;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+.chat-composer-fixed-layer .composer-row .composer-execution-switcher .inline-switcher__chip--agent:hover,
+.chat-composer-fixed-layer .composer-row .composer-execution-switcher .inline-switcher__chip--agent[aria-expanded='true'] {
+  border: 0;
+  background: var(--hub-control-surface-hover);
+  box-shadow: none;
+}
+.chat-composer-fixed-layer .composer-row .composer-execution-switcher .inline-switcher__chip--agent .inline-switcher__chip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+}
+
+/* --- Model button: direct, single-click model selection -------------------
+   The model button opens THIS list, not a panel wrapping another control.
+   Hub design language: borderless rows, translucent hover, tokens only. */
+.inline-switcher__model-list {
+  display: grid;
+  gap: 2px;
+  max-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.inline-switcher__model-option {
+  display: flex;
+  width: 100%;
+  min-height: 30px;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.inline-switcher__model-option:hover {
+  background: var(--bg-subtle);
+  color: var(--text-strong);
+}
+.inline-switcher__model-option.is-active {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--text-strong);
+}
+.inline-switcher__model-option:focus-visible {
+  outline: 2px solid var(--hub-accent);
+  outline-offset: -2px;
+}
+.inline-switcher__model-option-label {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inline-switcher__model-option-check {
+  display: inline-flex;
+  width: 13px;
+  flex: 0 0 13px;
+  align-items: center;
+  justify-content: center;
+}
+
+/* --- Model dropdown stacking -------------------------------------------
+   DEFECT: the model list rendered UNDERNEATH the switcher popover that spawned
+   it. Both are body-portaled fixed layers, so this is purely a stacking-value
+   bug: `.inline-switcher__popover--layer` is z-index 1700 (home-hero.css) while
+   `.model-select-searchable__popover` was 1401 (entry-layout.css). The list is
+   opened FROM that panel, so it must always sit above it. */
+.model-select-searchable__popover {
+  z-index: 1750;
 }
 .app .composer-row .session-mode-toggle__trigger {
   box-shadow: none;
