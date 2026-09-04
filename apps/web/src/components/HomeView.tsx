@@ -42,10 +42,12 @@ import {
   localizeSkillName,
   localizeSkillPrompt,
 } from '../i18n/content';
+import type { ReadableStudioHostProjectImportSuccess } from '@readable-studio/host';
 import type {
   DesignSystemSummary,
   Project,
   ProjectMetadata,
+  ProjectTemplate,
   SkillSummary,
 } from '../types';
 import { inlineMentionToken, mentionTokenPresent } from '../utils/inlineMentions';
@@ -54,6 +56,18 @@ import { missingRequiredInputs, pluginInputsAreValid } from '../utils/pluginRequ
 import { HomeHero, type ExamplePromptInfo, type HomeHeroHandle } from './HomeHero';
 import { stageFiles as buildStagedFiles, type StagedFileItem } from './composer/stagedFiles';
 import { findChip, HOME_HERO_CHIPS, type HomeHeroChip } from './home-hero/chips';
+import { creationBriefAssumptions } from './home-hero/creation-brief';
+import {
+  mergeBriefAssumptions,
+  readProjectBrief,
+  type BriefProjectMetadata,
+} from './brief-state';
+import { NewProjectAdvanced } from './NewProjectAdvanced';
+import type {
+  CreateInput,
+  CreateTab,
+  ImportClaudeDesignOutcome,
+} from './NewProjectPanel';
 import {
   buildPluginAuthoringInputs,
   buildPluginAuthoringPromptForInputs,
@@ -178,6 +192,23 @@ interface Props {
   // HomeView itself never imports them; EntryShell threads them
   // through so the dispatcher can stay declarative.
   onOpenNewProject?: (tab: 'template') => void;
+  // Advanced / Import disclosure on the Hub project panel. Creation itself is a
+  // composer send; these props only power the genuinely pre-creation controls
+  // (working folder, template picker, imports). When the host does not supply
+  // `onCreateProject` the disclosure is not rendered and the template chip
+  // falls back to `onOpenNewProject`.
+  onCreateProject?: (
+    input: CreateInput & { requestId?: string },
+  ) => Promise<boolean> | boolean | void;
+  templates?: ProjectTemplate[];
+  onDeleteTemplate?: (id: string) => Promise<boolean>;
+  onImportClaudeDesign?: (
+    file: File,
+  ) => Promise<ImportClaudeDesignOutcome | void> | ImportClaudeDesignOutcome | void;
+  onImportFolder?: (baseDir: string) => Promise<void> | void;
+  onImportFolderResponse?: (
+    response: ReadableStudioHostProjectImportSuccess,
+  ) => Promise<void> | void;
   promptHandoff?: HomePromptHandoff | null;
   skills?: SkillSummary[];
   skillsLoading?: boolean;
@@ -188,6 +219,7 @@ interface Props {
 
 const EMPTY_DESIGN_SYSTEMS: DesignSystemSummary[] = [];
 const EMPTY_SKILLS: SkillSummary[] = [];
+const EMPTY_TEMPLATES: ProjectTemplate[] = [];
 
 export function HomeView({
   isActive = true,
@@ -203,6 +235,12 @@ export function HomeView({
   onBrowseRegistry,
   onOpenMcp,
   onOpenNewProject,
+  onCreateProject,
+  templates = EMPTY_TEMPLATES,
+  onDeleteTemplate,
+  onImportClaudeDesign,
+  onImportFolder,
+  onImportFolderResponse,
   promptHandoff,
   skills = EMPTY_SKILLS,
   skillsLoading = false,
@@ -234,7 +272,10 @@ export function HomeView({
   const [fallbackProjectMetadata, setFallbackProjectMetadata] =
     useState<ProjectMetadata | null>(null);
   const [active, setActive] = useState<ActivePlugin | null>(null);
-  const [sessionMode, setSessionMode] = useState<ChatSessionMode>('design');
+  // The Hub composer always starts a design-mode project: mode is a
+  // creation-time choice and now lives in the New Project flow, so the
+  // composer no longer carries a mode toggle.
+  const sessionMode: ChatSessionMode = 'design';
   const [designSystemId, setDesignSystemId] = useState<string | null>(defaultDesignSystemId);
   const [activeSkill, setActiveSkill] = useState<SkillSummary | null>(null);
   const [selectedPluginContexts, setSelectedPluginContexts] = useState<SelectedPluginContext[]>([]);
@@ -254,6 +295,11 @@ export function HomeView({
   }, []);
   const [error, setError] = useState<string | null>(null);
   const [detailsRecord, setDetailsRecord] = useState<InstalledPluginRecord | null>(null);
+  // Deep-links the Advanced / Import disclosure open on a given tab (the
+  // template chip). Cleared once the disclosure has consumed it so a later
+  // manual collapse is not immediately re-opened.
+  const [advancedRequestedTab, setAdvancedRequestedTab] = useState<CreateTab | null>(null);
+  const clearAdvancedRequestedTab = useCallback(() => setAdvancedRequestedTab(null), []);
   const [pendingReplacement, setPendingReplacement] = useState<PendingReplacement | null>(null);
   // Surface_view fires when the replacement modal becomes visible. Tied
   // to the {before, after} pair so reopening with the same pair after a
@@ -1185,6 +1231,14 @@ export function HomeView({
         return;
       }
       case 'open-template-picker': {
+        // The template picker seeds the initial file set, so it stays
+        // pre-creation. It now lives in the Advanced / Import disclosure below
+        // the composer rather than behind a modal gate; hosts that have not
+        // adopted the disclosure still fall back to the modal.
+        if (onCreateProject) {
+          setAdvancedRequestedTab('template');
+          return;
+        }
         if (!onOpenNewProject) {
           setError('Template picker is not available in this shell.');
           return;
@@ -1446,10 +1500,6 @@ export function HomeView({
           void continueWithoutPrompt();
         }}
         onOpenTemplate={() => onOpenNewProject?.('template')}
-        sessionMode={sessionMode}
-        onSessionModeChange={(nextMode) => {
-          if (!rejectDraftMutationDuringSubmit()) setSessionMode(nextMode);
-        }}
         activePluginTitle={activeBadgeTitle}
         activePluginIsExplicit={activePluginIsExplicit}
         activePluginRecord={active?.record ?? null}
@@ -1516,6 +1566,22 @@ export function HomeView({
         onExamplePromptStatusChange={handleExamplePromptStatusChange}
         executionSwitcher={executionSwitcher}
       />
+
+      {onCreateProject ? (
+        <NewProjectAdvanced
+          skills={skills}
+          designSystems={designSystems}
+          defaultDesignSystemId={defaultDesignSystemId}
+          templates={templates}
+          {...(onDeleteTemplate ? { onDeleteTemplate } : {})}
+          onCreate={onCreateProject}
+          {...(onImportClaudeDesign ? { onImportClaudeDesign } : {})}
+          {...(onImportFolder ? { onImportFolder } : {})}
+          {...(onImportFolderResponse ? { onImportFolderResponse } : {})}
+          requestedTab={advancedRequestedTab}
+          onRequestedTabHandled={clearAdvancedRequestedTab}
+        />
+      ) : null}
 
       {surface === 'hub' ? null : <RecentProjectsStrip
         projects={projects}
@@ -1765,7 +1831,18 @@ function homeCreateProjectMetadata(
     ...(existing ?? {}),
     kind,
   };
-  return next;
+  // Creation is a composer send, so the settings the New project modal used to
+  // freeze into metadata are seeded as *brief assumptions* carrying their
+  // default. The Brief card renders them as correctable chips, which is how
+  // they become editable after creation for the first time.
+  const assumptions = creationBriefAssumptions(kind, next);
+  if (assumptions.length === 0) return next;
+  const existingBrief = readProjectBrief(next);
+  const seeded: BriefProjectMetadata = {
+    ...next,
+    brief: mergeBriefAssumptions(existingBrief, assumptions, Date.now()),
+  };
+  return seeded;
 }
 
 // Selectable design systems for the home composer, sorted to match the picker:

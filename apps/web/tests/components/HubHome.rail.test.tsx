@@ -325,6 +325,9 @@ describe('HubHome rail', () => {
 
     fireEvent.click(screen.getByTestId('hub-menu-project-p2'));
     fireEvent.click(screen.getByTestId('hub-row-menu-delete'));
+    // A project delete is unrecoverable, so it is confirmed first.
+    expect(onDeleteProject).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('hub-delete-confirm-cta'));
     expect(onDeleteProject).toHaveBeenCalledWith('p2');
 
     fireEvent.click(screen.getByTestId('hub-menu-project-p1'));

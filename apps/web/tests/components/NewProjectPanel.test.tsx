@@ -113,6 +113,8 @@ describe('NewProjectPanel design system defaults', () => {
 
   it('shows the configured default design system as the active project selection', () => {
     const markup = renderToStaticMarkup(
+      // The picker is opt-in now (HomeHero owns it on the canonical creation
+      // path); the Advanced / Import disclosure renders it with this prop.
       <NewProjectPanel
         skills={skills}
         designSystems={designSystems}
@@ -120,6 +122,7 @@ describe('NewProjectPanel design system defaults', () => {
         templates={[]}
         onDeleteTemplate={vi.fn()}
         onCreate={vi.fn()}
+        showDesignSystem
       />,
     );
 
@@ -186,6 +189,7 @@ describe('NewProjectPanel design system defaults', () => {
         templates={[]}
         onDeleteTemplate={vi.fn()}
         onCreate={onCreate}
+        showDesignSystem
       />,
     );
 

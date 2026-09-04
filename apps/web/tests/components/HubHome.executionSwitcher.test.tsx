@@ -177,13 +177,19 @@ describe('hub composer execution switcher', () => {
     expect(screen.queryByTestId('home-hero-agent-model')).toBeNull();
   });
 
-  it("EntryShell forwards its own switcher instance to the hub", () => {
+  it('EntryShell drives every switcher mount from one set of callbacks', () => {
     // jsdom's `import.meta.url` is not a file URL, so resolve from the vitest
     // root (apps/web) instead.
     const source = readFileSync(resolve('src/components/EntryShell.tsx'), 'utf8');
-    // Exactly one switcher is constructed in EntryShell...
-    expect(source.match(/<InlineModelSwitcher\b/g)?.length ?? 0).toBe(1);
-    // ...and that same node is handed to the hub.
-    expect(source).toContain('executionSwitcher={executionSwitcher}');
+    // Three mounts: the combined top-bar chip plus the composer's agent and
+    // model buttons — all fed by the SAME props object, so agent selection,
+    // model selection and the provider-models fetch are not forked.
+    expect(source.match(/<InlineModelSwitcher\b/g)?.length ?? 0).toBe(3);
+    expect(source.match(/\{\.\.\.switcherProps\}/g)?.length ?? 0).toBe(3);
+    expect(source).toContain('variant="agent"');
+    expect(source).toContain('variant="model"');
+    // The hub composer gets the split pair; the top bar keeps the combined chip.
+    expect(source).toContain('executionSwitcher={composerAgentModelControls}');
+    expect(source).toContain('{executionSwitcher}');
   });
 });

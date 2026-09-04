@@ -14,6 +14,8 @@ import {
   type ReactNode,
 } from 'react';
 
+import type { ReadableStudioHostProjectImportSuccess } from '@readable-studio/host';
+
 import { useT } from '../../i18n';
 import { RUNS_CHANGED_EVENT } from '../../providers/daemon';
 import {
@@ -22,9 +24,15 @@ import {
   patchConversation,
   readConversations,
 } from '../../state/projects';
-import type { DesignSystemSummary, Project, SkillSummary } from '../../types';
+import type {
+  DesignSystemSummary,
+  Project,
+  ProjectTemplate,
+  SkillSummary,
+} from '../../types';
 import { HomeView } from '../HomeView';
 import { Icon } from '../Icon';
+import type { CreateInput, ImportClaudeDesignOutcome } from '../NewProjectPanel';
 import type { PluginLoopSubmit } from '../PluginLoopHome';
 import { Toast } from '../Toast';
 import { HubCommandPalette, type HubPaletteEntry } from './HubCommandPalette';
@@ -114,6 +122,27 @@ interface Props {
   onBrowseRegistry?: () => void;
   onOpenMcp?: () => void;
   onOpenNewProject?: (tab: 'template') => void;
+  /**
+   * Project creation as the entry shell already owns it. Threading the SAME
+   * handler (never a second creation path) is what mounts the Advanced /
+   * Import disclosure on the project panel: HomeView renders it only when a
+   * host supplies a real creator, so without this prop the disclosure — the
+   * working-folder picker, ZIP / folder imports and the template picker — is
+   * unreachable on the hub.
+   */
+  onCreateProject?: (
+    input: CreateInput & { requestId?: string },
+  ) => Promise<boolean> | boolean | void;
+  /** Template picker source for the disclosure; same list the modal renders. */
+  templates?: ProjectTemplate[];
+  onDeleteTemplate?: (id: string) => Promise<boolean>;
+  onImportClaudeDesign?: (
+    file: File,
+  ) => Promise<ImportClaudeDesignOutcome | void> | ImportClaudeDesignOutcome | void;
+  onImportFolder?: (baseDir: string) => Promise<void> | void;
+  onImportFolderResponse?: (
+    response: ReadableStudioHostProjectImportSuccess,
+  ) => Promise<void> | void;
   skills?: SkillSummary[];
   skillsLoading?: boolean;
   /** Navigate to one of the entry destinations (rail footer library menu). */
@@ -160,6 +189,12 @@ export function HubHome({
   onBrowseRegistry,
   onOpenMcp,
   onOpenNewProject,
+  onCreateProject,
+  templates,
+  onDeleteTemplate,
+  onImportClaudeDesign,
+  onImportFolder,
+  onImportFolderResponse,
   skills,
   skillsLoading,
   onNewProject,
@@ -913,6 +948,12 @@ export function HubHome({
             onBrowseRegistry={onBrowseRegistry}
             onOpenMcp={onOpenMcp}
             onOpenNewProject={onOpenNewProject}
+            onCreateProject={onCreateProject}
+            templates={templates}
+            onDeleteTemplate={onDeleteTemplate}
+            onImportClaudeDesign={onImportClaudeDesign}
+            onImportFolder={onImportFolder}
+            onImportFolderResponse={onImportFolderResponse}
             skills={skills}
             skillsLoading={skillsLoading}
             commandChip={commandChip}

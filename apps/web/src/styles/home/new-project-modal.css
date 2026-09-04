@@ -102,3 +102,155 @@
   background: color-mix(in oklab, var(--danger) 10%, var(--bg-panel));
   color: var(--danger);
 }
+
+/* -------- Session mode cards (New project) --------------------------
+   Mode is a creation-time choice, so it lives here rather than in the
+   composer. The control reuses the panel's selectable-card language
+   (`.fidelity-card`) as a real radio group — no checkbox, no chevron that
+   would imply a further modal — and only adds the head/hint layout the
+   fidelity cards do not have. Every value is a theme token, so light and
+   dark both come from the palette rather than a local colour. */
+.newproj-mode-card {
+  gap: 6px;
+  padding: 9px 10px 10px;
+  text-align: left;
+}
+.newproj-mode-card__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+}
+.newproj-mode-card__label {
+  text-align: left;
+}
+.newproj-mode-card__hint {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+.newproj-mode-card.active .newproj-mode-card__head {
+  color: var(--selected);
+}
+
+/* ============================================================
+   Advanced / Import disclosure — the Hub project panel's home for
+   the genuinely pre-creation controls (working folder, imports,
+   template picker). Creation itself is a composer send, so this is
+   a quiet disclosure, never a gate on the main path.
+
+   Hub design language: borderless, translucent glass, an inset top
+   highlight and a soft shadow instead of a 1px divider. Tokens only.
+   ============================================================ */
+.newproj-advanced {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+  width: 100%;
+  min-width: 0;
+}
+
+.newproj-advanced__toggle {
+  appearance: none;
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2, 8px);
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--font-size-sm, 13px);
+  text-align: left;
+  transition:
+    background var(--dur-quick) var(--ease-out),
+    color var(--dur-quick) var(--ease-out);
+}
+
+.newproj-advanced__toggle:hover {
+  color: var(--text-strong);
+  background: var(--hub-glass-fill);
+  box-shadow: inset 0 1px 0 var(--hub-pearl-highlight);
+}
+
+.newproj-advanced__toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.newproj-advanced__label {
+  font-weight: 600;
+  color: inherit;
+}
+
+.newproj-advanced__hint {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs, 12px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.newproj-advanced__chevron {
+  align-self: center;
+  color: var(--text-muted);
+  transition: transform var(--dur-quick) var(--ease-out);
+}
+
+.newproj-advanced__toggle[aria-expanded='true'] .newproj-advanced__chevron {
+  transform: rotate(180deg);
+}
+
+.newproj-advanced__body {
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: var(--hub-glass-fill);
+  box-shadow:
+    inset 0 1px 0 var(--hub-pearl-highlight),
+    var(--hub-glass-shadow);
+  -webkit-backdrop-filter: var(--hub-glass-blur);
+  backdrop-filter: var(--hub-glass-blur);
+  overflow: hidden;
+  min-width: 0;
+}
+
+/* The panel supplies its own padding; inside the disclosure it must not also
+   paint an opaque card, or the glass surface reads as a stacked box. */
+.newproj-advanced__body .newproj {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.newproj-advanced__status {
+  padding: 10px 18px 14px;
+  font-size: var(--font-size-sm, 13px);
+  color: var(--text-muted);
+}
+
+.newproj-advanced__status.error {
+  color: var(--danger, var(--text-strong));
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .newproj-advanced__body {
+    background: var(--bg-elevated);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .newproj-advanced__toggle:hover {
+    background: var(--bg-elevated);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .newproj-advanced__toggle,
+  .newproj-advanced__chevron {
+    transition: none;
+  }
+}

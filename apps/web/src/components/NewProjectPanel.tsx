@@ -15,6 +15,7 @@ import type {
   TrackingDesignSystemStatusValue,
 } from '@readable-studio/contracts/analytics';
 
+import type { ChatSessionMode } from '@readable-studio/contracts';
 import { useT } from '../i18n';
 import type { Dict } from '../i18n/types';
 import { openFolderDialog } from '../providers/registry';
@@ -82,6 +83,10 @@ export interface CreateInput {
   designSystemId: string | null;
   metadata: ProjectMetadata;
   userWorkingDirToken?: string;
+  /** Session mode the project's first conversation starts in. Chosen here
+   *  because it is a creation-time decision; the composer no longer carries a
+   *  mode toggle. */
+  conversationMode?: ChatSessionMode;
 }
 
 export type ImportClaudeDesignOutcome =
@@ -109,6 +114,9 @@ interface Props {
   onImportFolderResponse?: (response: ReadableStudioHostProjectImportSuccess) => Promise<void> | void;
   loading?: boolean;
   initialTab?: CreateTab;
+  /** Renders the design-system picker. Off by default: HomeHero owns it on the
+   *  canonical creation path, and two pickers for one value can disagree. */
+  showDesignSystem?: boolean;
 }
 
 const TAB_LABEL_KEYS: Record<CreateTab, keyof Dict> = {
@@ -202,6 +210,7 @@ export function NewProjectPanel({
   onImportFolderResponse,
   loading = false,
   initialTab = 'prototype',
+  showDesignSystem = false,
 }: Props) {
   const t = useT();
   const analytics = useAnalytics();
@@ -256,6 +265,10 @@ export function NewProjectPanel({
   const [speakerNotes, setSpeakerNotes] = useState(false);
   const [animations, setAnimations] = useState(false);
   const [templateId, setTemplateId] = useState<string | null>(null);
+  // Ask vs Design for the project's first conversation. Design is the default
+  // because the panel's whole vocabulary (fidelity, platforms, templates) is
+  // about producing an artifact.
+  const [conversationMode, setConversationMode] = useState<ChatSessionMode>('design');
 
   // Keep this list explicit so future tabs declare whether they use design systems.
   const tabSupportsDesignSystem =
@@ -264,8 +277,12 @@ export function NewProjectPanel({
     tab === 'template' ||
     tab === 'other';
   const tabDefaultSkillForcesNoDs = false;
-  const showDesignSystemPicker =
-    tabSupportsDesignSystem && !tabDefaultSkillForcesNoDs;
+  // Rendering the picker is opt-in: the hero is the canonical creation surface
+  // and already carries a design-system control, so only hosts that own the
+  // full stack (the Advanced / Import disclosure) show a second one. Selection
+  // state is maintained either way, so a create still carries the default.
+  const tabCarriesDesignSystem = tabSupportsDesignSystem && !tabDefaultSkillForcesNoDs;
+  const showDesignSystemPicker = showDesignSystem && tabCarriesDesignSystem;
 
   useEffect(() => {
     if (dsSelectionTouched) return;
@@ -444,7 +461,10 @@ export function NewProjectPanel({
   function handleCreate() {
     if (!canCreate) return;
     const { primary: primaryDs, inspirations } =
-      buildDesignSystemCreateSelection(showDesignSystemPicker, selectedDsIds);
+      // Keyed off tab support, not picker visibility: hiding the duplicate
+      // picker must not silently drop the user's default design system from
+      // the created project.
+      buildDesignSystemCreateSelection(tabCarriesDesignSystem, selectedDsIds);
     const trimmedName = name.trim();
     const metadata = buildMetadata({
       tab,
@@ -485,6 +505,7 @@ export function NewProjectPanel({
         ...(workingDir ? { userWorkingDir: workingDir } : {}),
       },
       ...(workingDirToken ? { userWorkingDirToken: workingDirToken } : {}),
+      conversationMode,
       requestId,
     });
   }
@@ -617,6 +638,11 @@ export function NewProjectPanel({
           ) : null}
         </div>
 
+        {/* HomeHero owns the design system on the canonical creation path, so
+            the modal's duplicate copy is gone from the main flow. The Advanced
+            disclosure opts back in (`showDesignSystem`) because it deliberately
+            carries the FULL stack for power users who configure everything on
+            one screen — including multi-select and "None — freeform". */}
         {showDesignSystemPicker ? (
           <DesignSystemPicker
             designSystems={designSystems}
@@ -644,6 +670,8 @@ export function NewProjectPanel({
             onIncludeOsWidgets={setIncludeOsWidgets}
           />
         ) : null}
+
+        <SessionModePicker value={conversationMode} onChange={setConversationMode} />
 
         {tab === 'prototype' ? (
           <FidelityPicker value={fidelity} onChange={setFidelity} />
@@ -947,6 +975,67 @@ function CompactToggle({
       <span className="compact-toggle-label">{label}</span>
       <span className="compact-toggle-switch" aria-hidden />
     </button>
+  );
+}
+
+// Creation-time session mode. Rendered as the same selectable-card language the
+// panel already uses for fidelity — a radio group, never a checkbox, and never
+// a chevron that opens a further modal.
+function SessionModePicker({
+  value,
+  onChange,
+}: {
+  value: ChatSessionMode;
+  onChange: (v: ChatSessionMode) => void;
+}) {
+  const t = useT();
+  const options: Array<{
+    mode: ChatSessionMode;
+    icon: 'sparkles' | 'comment';
+    label: string;
+    hint: string;
+  }> = [
+    {
+      mode: 'design',
+      icon: 'sparkles',
+      label: t('chat.mode.design.label'),
+      hint: t('newproj.modeDesignHint'),
+    },
+    {
+      mode: 'chat',
+      icon: 'comment',
+      label: t('chat.mode.chat.label'),
+      hint: t('newproj.modeChatHint'),
+    },
+  ];
+  return (
+    <div className="newproj-section" data-testid="newproj-mode-picker">
+      <label className="newproj-label">{t('newproj.modeLabel')}</label>
+      <div className="fidelity-grid" role="radiogroup" aria-label={t('newproj.modeLabel')}>
+        {options.map((option) => {
+          const active = value === option.mode;
+          return (
+            <button
+              key={option.mode}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              className={`fidelity-card newproj-mode-card${active ? ' active' : ''}`}
+              data-testid={`newproj-mode-${option.mode}`}
+              onClick={() => onChange(option.mode)}
+            >
+              <span className="newproj-mode-card__head">
+                <Icon name={option.icon} size={13} />
+                <span className="fidelity-label newproj-mode-card__label">
+                  {option.label}
+                </span>
+              </span>
+              <span className="newproj-mode-card__hint">{option.hint}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
