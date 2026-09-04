@@ -190,6 +190,29 @@
   --dur-quick: 120ms;
   --dur-enter: 200ms;
   --dur-exit: 140ms;
+  /* Exit for LARGE surfaces (several hundred px of travel). Neither duration
+     NOR curve carries over from the short-travel steps above, and the curve is
+     the dominant term - a browser measurement of the ~906px Advanced collapse
+     at 190ms/--ease-out sampled 906.53 -> 98.30 -> 4.38 -> 0 and put ONE frame
+     between 10% and 90% height. --ease-out is an ease-out-quint: it reaches 99%
+     of its travel by 17% of its duration, so over 906px the first two frames
+     eat ~890px no matter how long the duration is. Stretching the duration
+     alone just adds frames to an already-empty tail.
+
+     --ease-large-exit is an ease-out-quad: still decelerating, still no
+     `ease-in`, but the travel is spread across the whole duration instead of
+     dumped in frame one. Paired with 420ms it puts 16 frames in the 10-90%
+     band at 60fps, and still 4 at the ~15fps this panel actually paints at
+     (relayout of the full creation stack plus backdrop-filter is expensive).
+
+     420ms is deliberately LONGER than --dur-enter, breaking the product's
+     enter-gentle / exit-decisive asymmetry for this one class of surface. The
+     asymmetry exists to make exits feel responsive; at this distance the
+     shorter value did not read as decisive, it read as no animation at all,
+     which is the exact defect the user reported. A visible collapse is worth
+     more than the symmetry rule. Short exits keep --dur-exit / --ease-out. */
+  --dur-exit-large: 420ms;
+  --ease-large-exit: cubic-bezier(0.5, 1, 0.89, 1);
 
   /* "Active option" indicator color, intentionally separate from --accent
      (brand orange used by primary CTAs like Create / Save). Use --selected

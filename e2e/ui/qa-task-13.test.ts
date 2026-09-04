@@ -337,7 +337,32 @@ test('canonical start proves R1-R11 and R14 from rendered paint and geometry', a
   await chatMode.click(); await expect(chatMode).toHaveAttribute('aria-checked', 'true'); await expect(designMode).toHaveAttribute('aria-checked', 'false');
   const relocatedModeAvailable = await modePicker.isVisible() && await chatMode.getAttribute('aria-checked') === 'true';
   await designMode.click(); await expect(designMode).toHaveAttribute('aria-checked', 'true'); await expect(chatMode).toHaveAttribute('aria-checked', 'false');
-  await advancedToggle.click(); await expect(advancedToggle).toHaveAttribute('aria-expanded', 'false'); await expect(newProjectPanel).toHaveCount(0);
+  const advancedReveal = advanced.getByTestId('new-project-advanced-reveal');
+  const accessibleAdvancedTabs = advancedReveal.getByRole('tab');
+  expect(await accessibleAdvancedTabs.count()).toBeGreaterThan(0);
+  await expect(advancedReveal).not.toHaveAttribute('inert', '');
+  await advancedToggle.focus(); await page.keyboard.press('Tab');
+  expect(await advancedReveal.evaluate((node) => node.contains(document.activeElement))).toBe(true);
+
+  await advancedToggle.click(); await expect(advancedToggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(advancedReveal).toHaveAttribute('data-state', 'closed');
+  await expect(advancedReveal).toHaveAttribute('aria-hidden', 'true');
+  await expect(advancedReveal).toHaveAttribute('inert', '');
+  await expect(accessibleAdvancedTabs).toHaveCount(0);
+  await expect(newProjectPanel).toHaveCount(1);
+  await advancedToggle.focus(); await page.keyboard.press('Tab');
+  expect(await advancedReveal.evaluate((node) => node.contains(document.activeElement))).toBe(false);
+
+  // Reopening restores both the accessibility tree and sequential focus before
+  // the final close leaves the canonical start surface in its expected state.
+  await advancedToggle.click(); await expect(advancedToggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(advancedReveal).not.toHaveAttribute('aria-hidden', 'true');
+  await expect(advancedReveal).not.toHaveAttribute('inert', '');
+  expect(await accessibleAdvancedTabs.count()).toBeGreaterThan(0);
+  await advancedToggle.focus(); await page.keyboard.press('Tab');
+  expect(await advancedReveal.evaluate((node) => node.contains(document.activeElement))).toBe(true);
+  await advancedToggle.click(); await expect(advancedToggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(advancedReveal).toHaveAttribute('inert', '');
   await expect(page.getByTestId('hub-live-time')).toBeVisible(); await expect(page.getByTestId('hub-live-strip').locator('svg')).toBeVisible();
   const brandHome = page.locator('.hub__brand-home'); await expect(brandHome).toHaveCSS('opacity', '0');
   await page.getByTestId('hub-brand').hover(); await expect(brandHome).toHaveCSS('opacity', '1');

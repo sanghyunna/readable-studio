@@ -219,6 +219,9 @@ describe('relocated pre-creation controls stay reachable', () => {
     renderAdvanced();
 
     expect(screen.getByTestId('new-project-advanced-toggle').getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByTestId('new-project-advanced-reveal').getAttribute('data-state')).toBe(
+      'closed',
+    );
     expect(screen.queryByTestId('new-project-advanced-body')).toBeNull();
     // Nothing on the main path renders a create form.
     expect(screen.queryByTestId('create-project')).toBeNull();
@@ -307,9 +310,16 @@ describe('relocated pre-creation controls stay reachable', () => {
     fireEvent.click(screen.getByTestId('create-project'));
 
     await waitFor(() => expect(onCreate).toHaveBeenCalledTimes(1));
+    // The region stays mounted so the collapse can animate; "collapsed" is the
+    // reveal's state plus aria-hidden, not a removed node.
     await waitFor(() => {
-      expect(screen.queryByTestId('new-project-advanced-body')).toBeNull();
+      expect(screen.getByTestId('new-project-advanced-reveal').getAttribute('data-state')).toBe(
+        'closed',
+      );
     });
+    expect(screen.getByTestId('new-project-advanced-toggle').getAttribute('aria-expanded')).toBe(
+      'false',
+    );
   });
 
   it('surfaces a create failure without collapsing the disclosure', async () => {
@@ -322,5 +332,97 @@ describe('relocated pre-creation controls stay reachable', () => {
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain('Could not create project');
     expect(screen.getByTestId('new-project-advanced-body')).toBeTruthy();
+    expect(screen.getByTestId('new-project-advanced-reveal').getAttribute('data-state')).toBe(
+      'open',
+    );
+  });
+});
+
+// The user's complaint, pinned: the disclosure was triggered by what read as
+// plain text and it appeared instantly with no motion at all.
+describe('the disclosure is triggered by a real, animated control', () => {
+  it('exposes a button with a full ARIA disclosure contract', () => {
+    renderAdvanced();
+
+    const toggle = screen.getByTestId('new-project-advanced-toggle');
+    expect(toggle.tagName).toBe('BUTTON');
+    expect(toggle.getAttribute('type')).toBe('button');
+    // Accessible name comes from real text, not an icon alone.
+    expect(screen.getByRole('button', { name: /Advanced \/ Import/ })).toBe(toggle);
+
+    // aria-controls must point at the region in BOTH states, otherwise the
+    // relationship only exists once the panel is already open.
+    const controls = toggle.getAttribute('aria-controls');
+    expect(controls).toBeTruthy();
+    expect(document.getElementById(controls!)).toBe(
+      screen.getByTestId('new-project-advanced-reveal'),
+    );
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(toggle.getAttribute('aria-controls')).toBe(controls);
+  });
+
+  it('keeps the collapsed region out of the accessibility tree and the tab order', () => {
+    renderAdvanced();
+    const toggle = screen.getByTestId('new-project-advanced-toggle');
+    const reveal = screen.getByTestId('new-project-advanced-reveal');
+
+    // Collapsed but mounted is a focus trap unless it is inert: the panel is
+    // full of real inputs that must not be tabbable behind a closed disclosure.
+    expect(reveal.getAttribute('aria-hidden')).toBe('true');
+    expect(reveal.getAttribute('inert')).toBe('');
+    expect(reveal.inert).toBe(true);
+
+    // Open, use it, close again — the guard has to come back, not just hold on
+    // the initial render where nothing is mounted inside yet.
+    fireEvent.click(toggle);
+    expect(reveal.getAttribute('aria-hidden')).toBeNull();
+    expect(reveal.hasAttribute('inert')).toBe(false);
+    expect(reveal.inert).toBe(false);
+    expect(screen.getByTestId('new-project-advanced-body')).toBeTruthy();
+
+    fireEvent.click(toggle);
+    expect(reveal.getAttribute('aria-hidden')).toBe('true');
+    expect(reveal.getAttribute('inert')).toBe('');
+    expect(reveal.inert).toBe(true);
+    // The inputs are still in the DOM (so the collapse can animate), which is
+    // precisely why the inert guard above is load-bearing.
+    expect(screen.getByTestId('new-project-name')).toBeTruthy();
+  });
+
+  it('drives the animation state machine on toggle rather than swapping the node', () => {
+    renderAdvanced();
+    const toggle = screen.getByTestId('new-project-advanced-toggle');
+    const reveal = screen.getByTestId('new-project-advanced-reveal');
+
+    fireEvent.click(toggle);
+    expect(reveal.getAttribute('data-state')).toBe('open');
+
+    fireEvent.click(toggle);
+    // Same element instance: an unmount here is what killed the exit motion.
+    expect(screen.getByTestId('new-project-advanced-reveal')).toBe(reveal);
+    expect(reveal.getAttribute('data-state')).toBe('closed');
+    // Content survives the collapse so it can animate out.
+    expect(screen.getByTestId('new-project-advanced-body')).toBeTruthy();
+  });
+
+  it('carries all four pre-creation controls when open', () => {
+    renderAdvanced({
+      onImportClaudeDesign: vi.fn(),
+      onImportFolderResponse: vi.fn(),
+    });
+
+    fireEvent.click(screen.getByTestId('new-project-advanced-toggle'));
+    const body = screen.getByTestId('new-project-advanced-body');
+
+    expect(body.querySelector('.newproj-working-dir')).toBeTruthy();
+    expect(screen.getByTestId('new-project-import-claude-zip')).toBeTruthy();
+    expect(screen.getByTestId('new-project-import-folder')).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'From template' })).toBeTruthy();
+    // Opt-in design-system picker stays inside, and no checkbox was introduced.
+    expect(screen.getByTestId('design-system-trigger')).toBeTruthy();
+    expect(document.querySelectorAll('input[type="checkbox"]').length).toBe(0);
   });
 });

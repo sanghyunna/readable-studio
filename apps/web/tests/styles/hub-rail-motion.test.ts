@@ -5,9 +5,9 @@ const hubCss = readFileSync(new URL('../../src/styles/home/hub.css', import.meta
 
 function ruleBody(selector: string, source = hubCss): string {
   const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const match = new RegExp(`${escapedSelector}\\s*\\{([^}]+)\\}`).exec(source);
+  const match = new RegExp(`(^|\\n)${escapedSelector}\\s*\\{([^}]+)\\}`).exec(source);
   if (!match?.[1]) throw new Error(`Missing CSS rule: ${selector}`);
-  return match[1];
+  return match[2] ?? '';
 }
 
 describe('Hub rail motion contract', () => {
@@ -25,6 +25,16 @@ describe('Hub rail motion contract', () => {
 
     expect(collapsed).toMatch(/transition-duration:\s*var\(--dur-exit\)\s*;/);
     expect(collapsed).not.toMatch(/transition-delay\s*:/);
+  });
+
+  it('uses product motion tokens while preserving a duration with no exact token', () => {
+    const chevron = ruleBody('.hub-row__chevron');
+    const search = ruleBody('.hub--rail-collapsed .hub__search');
+
+    expect(chevron).toMatch(
+      /transition:\s*transform\s+var\(--dur-enter\)\s+var\(--ease-out\)\s*;/,
+    );
+    expect(search).toMatch(/transition:\s*width\s+160ms\s+var\(--ease-out\)\s*;/);
   });
 
   it('reduces the root grid transition to at most one millisecond', () => {
