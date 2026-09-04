@@ -379,11 +379,14 @@
   margin-top: 0;
   transition: border-color 120ms var(--ease-out), box-shadow 120ms var(--ease-out);
 }
-/* The session-mode popover is no longer listed here: it is portaled to <body>
-   as a fixed layer, so it needs neither the raised card z-index nor the
-   un-clipping — and un-clipping on `:has()` is what caused the open/close
-   flicker loop. */
-.home-hero__input-card:has(.inline-switcher__popover),
+/* Neither the session-mode popover nor the execution switcher's panel is
+   listed here any more: both are portaled to <body> as fixed layers, so they
+   need neither the raised card z-index nor the un-clipping. Un-clipping on
+   `:has()` could not have worked for the switcher anyway — in the Hub the card
+   is `overflow: hidden` AND `backdrop-filter`ed, and a backdrop filter makes
+   the card a containing block that clips its descendants regardless of the
+   overflow value, while dropping the clip would leak the glass card's rounded
+   corners and its inner prompt scroll. */
 .home-hero__input-card:has(.home-hero__plugin-picker) {
   z-index: 1700;
   overflow: visible;
@@ -1029,13 +1032,45 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.home-hero__execution-switcher .inline-switcher__popover {
-  right: auto;
+/* Body-level layer for the execution switcher's panel.
+
+   It is portaled to <body> so it can escape the Hub composer card, whose
+   `overflow: hidden` + `backdrop-filter` clipped it away entirely: the panel
+   measured as visible and correctly placed, yet `elementFromPoint` at its
+   centre returned the page behind it. Fixed positioning also keeps the
+   JS-measured left/top in viewport space, which is the space the clamping
+   already computes in. */
+.inline-switcher__popover--layer {
+  position: fixed;
+  top: 0;
   left: 0;
-  z-index: 1503;
+  right: auto;
+  bottom: auto;
+  box-shadow: var(--shadow-lg);
+  z-index: 1700;
 }
-.home-hero__execution-switcher .inline-switcher__agent-grid {
+/* The panel used to inherit these from its ancestry inside the composer
+   footer; portaled out, the host surface is mirrored onto the node instead. */
+.inline-switcher__popover--home-hero .inline-switcher__agent-grid {
   grid-template-columns: 1fr;
+}
+/* Placement is measured, so the layer must not animate its box — a transition
+   on offsets would lag the anchor during resize/scroll re-placement. Only the
+   entrance fade is animated, and it is dropped for reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .inline-switcher__popover--layer {
+    animation: home-hero-switcher-layer-in 120ms var(--ease-out) both;
+  }
+}
+@keyframes home-hero-switcher-layer-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 .home-hero__tool {
   appearance: none;

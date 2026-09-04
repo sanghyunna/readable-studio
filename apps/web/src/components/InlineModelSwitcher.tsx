@@ -11,12 +11,15 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type Dispatch,
   type SetStateAction,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { useT } from '../i18n';
 import {
   agentIdToTracking,
@@ -123,6 +126,67 @@ function markAmrReminderSeen(): void {
   amrReminderSeenFallback = true;
 }
 
+// Edge-collision placement for the popover.
+//
+// The panel is absolutely positioned against the chip, and the chip is mounted
+// in two very different places: the entry top bar (top-right of the viewport)
+// and the Hub composer footer (bottom-right of a centered card). A fixed
+// `right: 0` / `left: 0` edge cannot be correct for both — anchored left at a
+// bottom-right anchor the 320px panel runs past the right viewport edge, and
+// anchored right at a left-hand anchor it would run past the left one. So the
+// side is chosen from the measured anchor rather than from the call site, and
+// the offset is clamped so both edges stay inside the viewport gutter.
+const POPOVER_VIEWPORT_MARGIN = 12;
+// Gap between the chip and the panel, matching the in-flow `top: calc(100% + 8px)`
+// the panel used before it became a body-level layer.
+const POPOVER_ANCHOR_GAP = 8;
+
+export function popoverHorizontalOffset(
+  anchorLeft: number,
+  anchorWidth: number,
+  popoverWidth: number,
+  viewportWidth: number,
+  margin = POPOVER_VIEWPORT_MARGIN,
+): number {
+  // Ideal left edge: align the panel's right edge with the anchor's right edge
+  // (the established look for a right-hand control), then pull it back inside
+  // the viewport if that overflows either side.
+  const preferredLeft = anchorLeft + anchorWidth - popoverWidth;
+  const maxLeft = Math.max(margin, viewportWidth - popoverWidth - margin);
+  const clampedLeft = Math.min(Math.max(preferredLeft, margin), maxLeft);
+  // Returned relative to the anchor so the same maths describes both the
+  // in-flow and the portaled placement.
+  return clampedLeft - anchorLeft;
+}
+
+/**
+ * Vertical placement for the body-level panel.
+ *
+ * The chip sits at the top of the viewport in the entry top bar and at the
+ * bottom of a centered card in the Hub composer footer, so a single downward
+ * offset cannot serve both: below the footer anchor the panel would run off the
+ * bottom edge. Open downward when there is room, otherwise flip above the
+ * anchor, and clamp to the same gutter used horizontally.
+ */
+export function popoverVerticalOffset(
+  anchorTop: number,
+  anchorHeight: number,
+  popoverHeight: number,
+  viewportHeight: number,
+  margin = POPOVER_VIEWPORT_MARGIN,
+  gap = POPOVER_ANCHOR_GAP,
+): number {
+  const below = anchorTop + anchorHeight + gap;
+  const above = anchorTop - gap - popoverHeight;
+  const preferredTop =
+    below + popoverHeight <= viewportHeight - margin || above < margin
+      ? below
+      : above;
+  const maxTop = Math.max(margin, viewportHeight - popoverHeight - margin);
+  return Math.min(Math.max(preferredTop, margin), maxTop);
+}
+
+
 function displayAgentName(agent: Pick<AgentInfo, 'id' | 'name'>): string {
   return agent.id === 'amr' ? 'Readable Studio AMR' : agent.name;
 }
@@ -149,6 +213,16 @@ export function InlineModelSwitcher({
   const analytics = useAnalytics();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+  const chipRef = useRef<HTMLButtonElement | null>(null);
+  const [popoverPos, setPopoverPos] = useState<
+    { left: number; top: number } | null
+  >(null);
+  // The panel is portaled out of the anchor, so context rules that used to
+  // match by ancestry (`.home-hero__execution-switcher .inline-switcher__popover`)
+  // no longer apply. The host surface is resolved at open time and mirrored
+  // onto the portaled node, the same way SessionModeToggle does it.
+  const [surface, setSurface] = useState<'home-hero' | null>(null);
   const providerModelsFetchingRef = useRef<Set<string>>(new Set());
   const [amrStatus, setAmrStatus] = useState<VelaLoginStatus | null>(null);
   const [amrLoginPending, setAmrLoginPending] = useState(false);
@@ -285,6 +359,50 @@ export function InlineModelSwitcher({
     ],
   );
 
+  // Keep the panel inside the viewport from every mount point, and follow the
+  // anchor when the window resizes or an ancestor scrolls.
+  useLayoutEffect(() => {
+    if (!open) {
+      setPopoverPos(null);
+      return undefined;
+    }
+    const place = () => {
+      const anchor = wrapRef.current;
+      const popover = popoverRef.current;
+      if (!anchor || !popover) return;
+      const anchorBox = anchor.getBoundingClientRect();
+      const width = popover.offsetWidth;
+      if (width === 0) return;
+      const viewportWidth =
+        window.innerWidth || document.documentElement.clientWidth;
+      const viewportHeight =
+        window.innerHeight || document.documentElement.clientHeight;
+      setPopoverPos({
+        left:
+          anchorBox.left +
+          popoverHorizontalOffset(
+            anchorBox.left,
+            anchorBox.width,
+            width,
+            viewportWidth,
+          ),
+        top: popoverVerticalOffset(
+          anchorBox.top,
+          anchorBox.height,
+          popover.offsetHeight,
+          viewportHeight,
+        ),
+      });
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [open]);
+
   useEffect(() => {
     if (!open) return;
     const onClick = (e: MouseEvent) => {
@@ -296,16 +414,23 @@ export function InlineModelSwitcher({
       // `wrapRef`. Without this guard the mousedown would close the whole
       // switcher panel before the option's click fires, unmounting the picker
       // and dropping the selection — the model would never change.
+      // The panel itself is portaled to <body> (it must escape the Hub
+      // composer card's `overflow: hidden` + backdrop-filter clip), so a click
+      // inside it also lands outside `wrapRef`.
       if (
         target instanceof Element &&
-        target.closest('.model-select-searchable__popover')
+        (target.closest('.model-select-searchable__popover') ||
+          target.closest('.inline-switcher__popover'))
       ) {
         return;
       }
       setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key !== 'Escape') return;
+      setOpen(false);
+      // Focus returns to the trigger so the panel is not a keyboard dead end.
+      chipRef.current?.focus();
     };
     document.addEventListener('mousedown', onClick);
     document.addEventListener('keydown', onKey);
@@ -541,6 +666,13 @@ export function InlineModelSwitcher({
 
   const handleChipClick = useCallback(() => {
     const nextOpen = !open;
+    if (nextOpen) {
+      setSurface(
+        wrapRef.current?.closest('.home-hero__execution-switcher')
+          ? 'home-hero'
+          : null,
+      );
+    }
     if (nextOpen && showAmrReminder) {
       setShowAmrReminderInPopover(true);
       setAmrReminderSeen(true);
@@ -564,6 +696,7 @@ export function InlineModelSwitcher({
       data-testid="inline-model-switcher"
     >
       <button
+        ref={chipRef}
         type="button"
         className={
           'inline-switcher__chip' +
@@ -611,11 +744,25 @@ export function InlineModelSwitcher({
         />
       </button>
 
-      {open ? (
+      {open && typeof document !== 'undefined' ? createPortal(
         <div
-          className="inline-switcher__popover"
+          ref={popoverRef}
+          className={
+            'inline-switcher__popover inline-switcher__popover--layer' +
+            (surface ? ` inline-switcher__popover--${surface}` : '')
+          }
           role="menu"
           data-testid="inline-model-switcher-popover"
+          style={
+            popoverPos === null
+              ? undefined
+              : ({
+                  left: `${popoverPos.left}px`,
+                  top: `${popoverPos.top}px`,
+                  right: 'auto',
+                  bottom: 'auto',
+                } satisfies CSSProperties)
+          }
         >
           <div className="inline-switcher__row">
             <span className="inline-switcher__label">
@@ -938,7 +1085,8 @@ export function InlineModelSwitcher({
             <Icon name="settings" size={13} />
             <span>{t('inlineSwitcher.openFullSettings')}</span>
           </button>
-        </div>
+        </div>,
+        document.body,
       ) : null}
     </div>
   );
