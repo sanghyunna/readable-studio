@@ -229,7 +229,7 @@
    requested) and sits above siblings via z-index. We deliberately
    block tooltips while the help popover is open so the floating
    menu does not collide with the tooltip bubble. */
-.entry-nav-rail [data-tooltip] {
+.entry-nav-rail [data-tooltip]:not(.entry-nav-rail__collapse) {
   position: relative;
 }
 .entry-nav-rail [data-tooltip]:not(.readable-tooltip)::after {
