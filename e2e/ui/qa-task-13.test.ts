@@ -136,7 +136,7 @@ async function geometry(locator: Locator) {
   return locator.evaluate((node) => {
     const box = node.getBoundingClientRect(); const style = getComputedStyle(node);
     return { left: box.left, top: box.top, right: box.right, bottom: box.bottom, width: box.width, height: box.height,
-      radius: style.borderRadius, background: style.backgroundImage, border: style.borderColor,
+      computedWidth: Number.parseFloat(style.width), radius: style.borderRadius, background: style.backgroundImage, border: style.borderColor,
       shadow: style.boxShadow, backdrop: style.backdropFilter, transform: style.transform };
   });
 }
@@ -596,11 +596,11 @@ test('collapsed, narrow, reduced preferences and both-theme contrast are measura
   const brandTransition = await screenshotMotion(page, 'brand-hover', page.getByTestId('hub-brand'), () => page.getByTestId('hub-brand').hover());
   expect(brandTransition.propertyName).toBe('opacity');
   expect(brandTransition.target).toBe('span.hub__brand-home');
-  await toggle.click(); await expect.poll(async () => (await geometry(stageLocator)).left - (await geometry(hub)).left).toBeCloseTo(78, 0); const collapsed = await geometry(rail); const collapsedTrack = (await geometry(stageLocator)).left - (await geometry(hub)).left;
-  expect(collapsed.left).toBeCloseTo(10, 0); expect(collapsed.width).toBeCloseTo(60, 0); expect(collapsed.radius).toBe('12px'); await captureCanonical(page, 'collapsed');
-  await page.setViewportSize({ width: 880, height: 700 }); await expect.poll(async () => (await geometry(stageLocator)).left - (await geometry(hub)).left).toBeCloseTo(78, 0); const narrow = await geometry(rail); const narrowTrack = (await geometry(stageLocator)).left - (await geometry(hub)).left; await captureCanonical(page, 'narrow');
-  expect(narrow.left).toBeCloseTo(8, 0); expect(narrow.width).toBeCloseTo(62, 0);
-  recordRegion({ region: 'R2', state: 'collapsed+narrow', pass: collapsedTrack === 78 && narrowTrack === 78 && collapsed.width === 60 && narrow.left === 8 && narrow.width === 62, anchor: `collapsedTrack=${collapsedTrack}; collapsedCard=${collapsed.width}; narrowTrack=${narrowTrack}; narrowLeft=${narrow.left}; narrowCard=${narrow.width}; radius=${narrow.radius}`, observation: '78px track with responsive inset card' });
+  await toggle.click(); await expect.poll(async () => (await geometry(stageLocator)).left - (await geometry(hub)).left).toBeCloseTo(44, 0); const collapsed = await geometry(rail); const collapsedTrack = (await geometry(stageLocator)).left - (await geometry(hub)).left;
+  expect(collapsed.left).toBeCloseTo(0, 0); expect(collapsed.width).toBeCloseTo(44, 0); expect(collapsed.computedWidth).toBeCloseTo(44, 0); expect(collapsed.radius).toBe('0px'); await captureCanonical(page, 'collapsed');
+  await page.setViewportSize({ width: 880, height: 700 }); await expect.poll(async () => (await geometry(stageLocator)).left - (await geometry(hub)).left).toBeCloseTo(44, 0); const narrow = await geometry(rail); const narrowTrack = (await geometry(stageLocator)).left - (await geometry(hub)).left; await captureCanonical(page, 'narrow');
+  expect(narrow.width).toBeCloseTo(44, 0); expect(narrow.computedWidth).toBeCloseTo(44, 0);
+  recordRegion({ region: 'R2', state: 'collapsed+narrow', pass: collapsedTrack === 44 && narrowTrack === 44 && collapsed.left === 0 && collapsed.width === 44 && collapsed.computedWidth === 44 && narrow.width === 44 && narrow.computedWidth === 44, anchor: `collapsedTrack=${collapsedTrack}; collapsedCard=${collapsed.width}/${collapsed.computedWidth} computed; narrowTrack=${narrowTrack}; narrowLeft=${narrow.left}; narrowCard=${narrow.width}/${narrow.computedWidth} computed; radius=${narrow.radius}`, observation: '44px always-visible strip at desktop and narrow widths' });
 
   await page.setViewportSize({ width: 1440, height: 900 }); await toggle.click();
   await expect.poll(async () => (await geometry(stageLocator)).left - (await geometry(hub)).left).toBeCloseTo(292, 0);

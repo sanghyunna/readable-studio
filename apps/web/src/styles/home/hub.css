@@ -6,9 +6,10 @@
  */
 
 .hub {
-  /* One width for the collapsed rail so the grid, the narrow breakpoint and
-     the measurement in QA all read the same number. */
-  --hub-rail-collapsed: 78px;
+  /* The two project-rail surfaces share one collapsed width: 44px. The Hub
+     removes its expanded-panel gutters in this state so the visible nav box,
+     not merely its grid track, resolves to that exact width. */
+  --hub-rail-collapsed: 44px;
   /* The collapsed search glyph. A mask source, so it is a shape and not a
      colour - the paint comes from a theme token at the use site. */
   --hub-search-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E");
@@ -34,6 +35,12 @@
 .hub__nav-list {
   min-inline-size: 0;
   min-height: 0;
+  /* Extend the scrollport upward around the elevated filter controls while
+     cancelling that space in layout. This preserves the pill baseline and
+     available tree height, but puts the complete hover shadow inside its
+     actual clipping ancestor in both themes. */
+  margin-block-start: -18px;
+  padding-block-start: 18px;
   overflow-x: clip;
   overflow-y: auto;
 }
@@ -357,6 +364,9 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 4px;
+  /* Shadow clearance belongs to the clipping scrollport above, not to this
+     row: padding plus a negative row margin moved the shadow outside the
+     clipper and recreated the defect. Keep the original control rhythm here. */
   padding: 0 12px 4px;
 }
 
@@ -1419,12 +1429,14 @@
 }
 
 .hub--rail-collapsed .hub__nav {
-  margin-right: 8px;
+  width: var(--hub-rail-collapsed);
+  margin: 0;
+  border-radius: 0;
 }
 
 .hub--rail-collapsed .hub__nav-head,
 .hub--rail-collapsed .hub__nav-actions {
-  padding-inline: 10px;
+  padding-inline: 4px;
 }
 
 .hub--rail-collapsed .hub__nav-head {
@@ -1468,7 +1480,7 @@
 .hub--rail-collapsed .hub__search {
   padding-inline: 0;
   text-align: center;
-  transition: width 160ms ease;
+  transition: width 160ms var(--ease-out);
 }
 
 .hub--rail-collapsed .hub__search::placeholder {
@@ -1517,7 +1529,7 @@
 
 .hub--rail-collapsed .hub-tree__body,
 .hub--rail-collapsed .hub-open {
-  padding-inline: 8px;
+  padding-inline: 4px;
 }
 
 /* The open-work group keeps a rule under it so its glyphs read as a distinct
@@ -1611,7 +1623,7 @@
    a full-width glyph stack: library, settings, then the workspace avatar. */
 .hub--rail-collapsed .hub__foot {
   gap: 2px;
-  padding-inline: 10px;
+  padding-inline: 4px;
 }
 
 .hub--rail-collapsed .hub__dest-row {

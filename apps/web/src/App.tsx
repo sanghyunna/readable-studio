@@ -27,7 +27,6 @@ import { TooltipLayer } from './components/TooltipLayer';
 import { openWorkspaceTab } from './components/WorkspaceTabsBar';
 import { WindowControls } from './components/WindowControls';
 import { EntryNavRail } from './components/EntryNavRail';
-import { Icon } from './components/Icon';
 import workspaceTransition from './components/WorkspaceTransition.module.css';
 import {
   IframeKeepAliveProvider,
@@ -1991,18 +1990,14 @@ function AppInner() {
                     }}
                     open={workspaceRailOpen}
                     onClose={() => setWorkspaceRailOpen(false)}
+                    onOpen={() => setWorkspaceRailOpen(true)}
                   />
+                  {/* The floating `workspace-rail-toggle` that used to sit here
+                      is gone: it was the button-only state the user rejected,
+                      and it overlapped the window-chrome band. Expand/collapse
+                      now lives in the rail strip itself
+                      (`entry-nav-collapse`), which is always on screen. */}
                   <div className="entry-main entry-main--workspace">
-                    <button
-                      type="button"
-                      className="entry-rail-toggle entry-rail-toggle--workspace"
-                      onClick={() => setWorkspaceRailOpen((prev) => !prev)}
-                      aria-label={t('entry.navExpand')}
-                      aria-expanded={workspaceRailOpen}
-                      data-testid="workspace-rail-toggle"
-                    >
-                      <Icon name="panel-left" size={18} />
-                    </button>
                     {appMain}
                   </div>
                 </div>

@@ -271,6 +271,24 @@ export function HubHome({
     });
   }, [t]);
 
+  // Clicking search while the rail is COLLAPSED used to leave the rail folded,
+  // so the text box stayed clipped to the glyph width and the user could not
+  // see what they were typing. Searching is an explicit request to use the
+  // rail, so it expands it and keeps focus in the field.
+  //
+  // `narrow` is the viewport-forced collapse; it is not a user preference and
+  // cannot be overridden here, so the field is left alone in that case.
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  const expandRailForSearch = useCallback(() => {
+    if (narrow || !railCollapsedPreference) return;
+    setRailCollapsedPreference(false);
+    window.localStorage.setItem(RAIL_COLLAPSED_STORAGE_KEY, 'false');
+    setAnnouncement(t('entry.navExpand'));
+    // The width transition runs on the next frame; re-assert focus after it is
+    // scheduled so the caret lands in the now-full-width field.
+    requestAnimationFrame(() => searchRef.current?.focus());
+  }, [narrow, railCollapsedPreference, t]);
+
   useEffect(() => {
     // Ctrl/Cmd+B is a global binding, but it must not steal the character from
     // someone typing into the composer or a rename field, and it is inert while
@@ -849,6 +867,7 @@ export function HubHome({
           </button>
           <div className="hub__search-wrap">
             <input
+              ref={searchRef}
               type="search"
               className="hub__search"
               data-testid="hub-search"
@@ -856,8 +875,10 @@ export function HubHome({
               aria-label={t('hub.searchPlaceholder')}
               placeholder={t('hub.searchPlaceholder')}
               onChange={(event) => setQuery(event.target.value)}
+              onMouseDown={expandRailForSearch}
+              onFocus={expandRailForSearch}
             />
-            <button type="button" className="hub__search-shortcut" data-testid="hub-open-palette" aria-label="Open command palette" onClick={openPalette}>
+            <button type="button" className="hub__search-shortcut" data-testid="hub-open-palette" aria-label={t('hub.paletteOpen')} onClick={openPalette}>
               <kbd className="hub-kbd">Ctrl K</kbd>
             </button>
           </div>

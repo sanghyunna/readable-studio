@@ -49,7 +49,7 @@ describe('workspace tabs chrome styles', () => {
     expect(ruleValue(entryMain, 'overflow-x')).toBe('hidden');
   });
 
-  it('lets the shell grid own the legacy rail width on narrow home and non-home views', () => {
+  it('lets the shell grid own the two-state rail width on narrow home and non-home views', () => {
     const shell = cssDeclarations(entryLayoutCss, '.entry-shell--no-header .entry');
     const openShell = cssDeclarations(entryLayoutCss, '.entry-shell--no-header .entry.entry--rail-open');
     const narrowCss = mediaBlock(entryLayoutCss, '(max-width: 900px)');
@@ -60,12 +60,14 @@ describe('workspace tabs chrome styles', () => {
     );
     const rail = cssDeclarations(entryLayoutCss, '.entry-nav-rail');
 
-    expect(ruleValue(shell, 'grid-template-columns')).toContain('0 minmax(0, 1fr)');
+    expect(ruleValue(shell, 'grid-template-columns')).toContain(
+      'var(--entry-rail-strip-width, 44px) minmax(0, 1fr)',
+    );
     expect(ruleValue(openShell, 'grid-template-columns')).toContain(
       'var(--entry-rail-width, 56px) minmax(0, 1fr)',
     );
     expect(ruleValue(narrowShell, 'grid-template-columns')).toBe(
-      '0 minmax(0, 1fr) !important',
+      'var(--entry-rail-strip-width, 44px) minmax(0, 1fr) !important',
     );
     expect(ruleValue(narrowOpenShell, 'grid-template-columns')).toBe(
       'var(--entry-rail-width, 56px) minmax(0, 1fr) !important',

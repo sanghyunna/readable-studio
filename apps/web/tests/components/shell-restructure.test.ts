@@ -114,7 +114,11 @@ describe('4. unified shell', () => {
   it('mounts the collapsible left panel on the workspace, collapsed by default', () => {
     expect(appSource).toContain('<EntryNavRail');
     expect(appSource).toContain('workspace-rail-host');
-    expect(appSource).toContain('workspace-rail-toggle');
+    // The rail itself owns the always-visible expand/collapse control; the
+    // rejected floating workspace toggle must not return.
+    expect(entryNavRailSource).toContain('data-testid="entry-nav-collapse"');
+    expect(entryNavRailSource).toContain("data-rail-state={open ? 'expanded' : 'collapsed'}");
+    expect(appSource).not.toMatch(/data-testid=["']workspace-rail-toggle["']/);
     // Collapsed on a cold start.
     expect(appSource).toMatch(/useState<boolean>\(false\)/);
     // Shares the hub's persisted key so the two surfaces agree.

@@ -33,15 +33,53 @@
 .entry-shell--no-header {
   grid-template-rows: 1fr;
   --entry-rail-width: 56px;
+  /* HARD PRODUCT RULE: the project rail has exactly TWO states - a thin
+     collapsed STRIP that is always on screen, or the fully expanded panel.
+     The "gone, only a button remains" state is not a state. This strip width
+     is what makes the collapsed state visible instead of zero-width. */
+  --entry-rail-strip-width: 44px;
 }
 
-/* Entry view collapses the rail by default (Manus-style): the grid's first
-   column animates between 0 and the rail width. Collapsed = clean full-width
-   entry for new users; expanded = the rail docks and pushes the main content
-   to the right (it stays docked until the user collapses it again). */
+/* Collapsed no longer means ABSENT. The first track animates between the thin
+   strip and the full rail width - it is never 0, so the rail cannot vanish and
+   leave a bare button behind (the state the user rejected outright). */
 .entry-shell--no-header .entry {
+  grid-template-columns: var(--entry-rail-strip-width, 44px) minmax(0, 1fr);
+  /* Collapse/expand animates the TRACK WIDTH between two visible widths - the
+     thin strip and the docked panel - so there is never a fade to nothing.
+     Uses the product's shared enter duration and easing (the same pair the
+     Hub rail and the surface transition use); no new curve, no overshoot.
+     Width only: `pointer-events` is never disabled, so the rail's contents
+     stay clickable and focusable for every frame of the animation. */
+  transition: grid-template-columns var(--dur-enter) var(--ease-out);
+}
+.entry-shell--no-header .entry.entry--rail-open {
+  /* Collapsing is the exit direction and reads better slightly quicker, matching
+     `.hub--rail-collapsed`'s use of the exit duration. */
+  transition-duration: var(--dur-exit);
+}
+
+/* Reduced motion gets an INSTANT state change, not a slow one. The state itself
+   is unaffected - only the interpolation is removed - so collapse/expand and
+   the search-click expansion behave identically, just without movement. */
+@media (prefers-reduced-motion: reduce) {
+  .entry-shell--no-header .entry,
+  .entry-shell--no-header .entry.entry--rail-open {
+    transition: none;
+  }
+}
+
+/* EXCEPTION - not a hidden-rail state. On the `home` route the HUB renders its
+   own project rail (`.hub__nav`), which honours the same two-state contract and
+   is always visible. Rendering this strip as well would put TWO rails side by
+   side, so the entry strip yields to the Hub's rail on that route only. The
+   user still always sees a project rail; it is simply the Hub's. */
+.entry-shell--no-header .entry:has(.entry-main__inner--home) {
   grid-template-columns: 0 minmax(0, 1fr);
-  transition: grid-template-columns 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.entry-shell--no-header .entry:has(.entry-main__inner--home) .entry-nav-rail {
+  overflow: hidden;
+  pointer-events: none;
 }
 .entry-shell--no-header .entry.entry--rail-open {
   grid-template-columns: var(--entry-rail-width, 56px) minmax(0, 1fr);
@@ -67,21 +105,18 @@
   gap: 8px;
   position: relative;
   z-index: 30;
-  /* Visibility is driven purely by the grid track width (0 collapsed) plus
-     the overflow clip below — no opacity fade, which previously crossed with
-     the topbar toggle's fade-out and caused a flash on expand. */
-  pointer-events: none;
-}
-.entry-nav-rail.is-open {
+  /* The collapsed strip is a REAL control surface, so the rail is interactive
+     in both states. It used to be `pointer-events: none` because collapsed
+     meant a 0-wide, invisible track; that state no longer exists. */
   pointer-events: auto;
 }
-/* While collapsed (the grid track is 0) clip the rail's 56px of content so
-   nothing bleeds over the full-width entry. Expanded, descendants may escape
-   horizontally so hover tooltips and the help popover render to the right. */
+/* Collapsed the strip is fully visible and its contents already fit the track,
+   so nothing needs clipping - and clipping here would swallow the hover
+   tooltips, which render OUTSIDE the rail at `left: calc(100% + 10px)`. That
+   is precisely how the tooltip ended up colliding with rail content before.
+   Vertical overflow still scrolls if the destination list outgrows the strip. */
 .entry:not(.entry--rail-open) .entry-nav-rail {
-  overflow: hidden;
-  /* Drop the right border too, otherwise a 1px seam shows on the
-     zero-width collapsed track. */
+  overflow: visible;
   border-right: 0;
 }
 .entry--rail-open .entry-nav-rail {
@@ -133,12 +168,12 @@
     pointer-events: auto;
   }
 }
-/* When the rail is collapsed the brand element still sits at the top-left
-   under the cursor; force the absolutely-positioned collapse button inert so
-   it can't swallow clicks meant for the topbar toggle stacked beneath it. */
+/* Collapsed, the strip's own control EXPANDS the rail rather than collapsing
+   it, so it is visible and clickable right where the panel it controls lives -
+   no longer a floating button jammed into the window-chrome band. */
 .entry:not(.entry--rail-open) .entry-nav-rail__collapse {
-  opacity: 0;
-  pointer-events: none;
+  opacity: 1;
+  pointer-events: auto;
 }
 .entry-nav-rail__collapse:hover {
   background: var(--bg-hover, color-mix(in srgb, var(--black) 5%, transparent));
@@ -183,10 +218,40 @@
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
-/* Hide the topbar toggle the instant the rail docks — a fade here would
-   cross with the rail's logo sliding in and read as a flash. */
+/* DEFECT 1: this toggle used to float in the top-left, overlapping the frameless
+   window-chrome band, with its tooltip spilling across the rail. The rail now
+   carries its own expand/collapse control inside the strip - which is where a
+   sidebar toggle belongs, next to the panel it controls - so this duplicate is
+   retired in BOTH states rather than merely repositioned.
+
+   Capability is preserved, not removed: expand/collapse lives on
+   `.entry-nav-rail__collapse` in the strip's brand slot, visible at rest. */
+.entry-rail-toggle,
 .entry--rail-open .entry-rail-toggle {
   display: none;
+}
+
+/* ---- Collapsed strip presentation ----
+   The strip is narrower than the docked rail, so its contents center on the
+   thinner track instead of overflowing it and getting clipped. */
+.entry:not(.entry--rail-open) .entry-nav-rail__group,
+.entry:not(.entry--rail-open) .entry-nav-rail__footer {
+  gap: 4px;
+}
+.entry:not(.entry--rail-open) .entry-nav-rail__brand,
+.entry:not(.entry--rail-open) .entry-nav-rail__btn {
+  width: 32px;
+  height: 32px;
+}
+.entry:not(.entry--rail-open) .entry-nav-rail__logo {
+  width: 32px;
+  height: 32px;
+}
+/* The strip is the collapsed state's only affordance, so its expand control is
+   always on screen - never hover-revealed. */
+.entry:not(.entry--rail-open) .entry-nav-rail .entry-nav-rail__collapse {
+  width: 28px;
+  height: 28px;
 }
 .entry-nav-rail::after {
   content: '';
@@ -229,6 +294,20 @@
    requested) and sits above siblings via z-index. We deliberately
    block tooltips while the help popover is open so the floating
    menu does not collide with the tooltip bubble. */
+/* HIT-TEST DEFECT: this anchor rule and `.entry-nav-rail .entry-nav-rail__collapse`
+   (which sets `position: absolute` to centre the expand control in the brand
+   slot) have the SAME specificity (0,2,0). Being written later, this rule won,
+   forcing the collapse button back into flow while it kept its `top/left: 50%`
+   and `translate(-50%, -50%)`. The control then resolved those offsets against
+   its own box instead of the brand slot and dropped ~7px below it - landing
+   fully on top of the New project button, whose 32x32 hit area then swallowed
+   every real pointer press at the expand control's centre (784px^2 of overlap,
+   100% of the control). Keyboard still worked, which is exactly why a
+   presence check and a DOM-driven click both missed it.
+
+   The anchor only exists to give the `::after` bubble a containing block, and
+   an absolutely positioned element is already one - so controls that declare
+   their own positioning are excluded rather than overridden. */
 .entry-nav-rail [data-tooltip]:not(.entry-nav-rail__collapse) {
   position: relative;
 }
@@ -1807,7 +1886,7 @@
   /* Legacy workspace CSS applies a global narrow `.entry` !important rule;
      reassert this shell's collapsed/open tracks without crossing that boundary. */
   .entry-shell--no-header .entry {
-    grid-template-columns: 0 minmax(0, 1fr) !important;
+    grid-template-columns: var(--entry-rail-strip-width, 44px) minmax(0, 1fr) !important;
   }
   .entry-shell--no-header .entry.entry--rail-open {
     grid-template-columns: var(--entry-rail-width, 56px) minmax(0, 1fr) !important;

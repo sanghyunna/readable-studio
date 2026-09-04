@@ -24,10 +24,14 @@ interface Props {
   view: EntryView;
   onViewChange: (view: EntryView) => void;
   onNewProject: () => void;
-  /** When false the rail is collapsed (hidden off-canvas) on the entry view. */
+  /** When false the rail renders as the thin, always-visible collapsed strip. */
   open: boolean;
-  /** Collapse the rail — called after a destination is chosen or the user dismisses it. */
+  /** Collapse the rail - called after a destination is chosen or the user dismisses it. */
   onClose: () => void;
+  /** Expand the collapsed strip. The strip is a real control surface, so it
+   *  carries its own expand affordance instead of relying on a floating
+   *  button parked outside the panel. */
+  onOpen?: () => void;
 }
 
 interface NavButtonProps {
@@ -55,7 +59,7 @@ function NavButton({ active, ariaLabel, tooltip, onClick, testId, children }: Na
   );
 }
 
-export function EntryNavRail({ view, onViewChange, onNewProject, open, onClose }: Props) {
+export function EntryNavRail({ view, onViewChange, onNewProject, open, onClose, onOpen }: Props) {
   const t = useT();
   const brandLabel = t('app.brand');
   const homeLabel = t('entry.navHome');
@@ -67,29 +71,23 @@ export function EntryNavRail({ view, onViewChange, onNewProject, open, onClose }
     onViewChange(next);
   };
 
-  // While collapsed the rail is visually hidden but its logo + nav buttons
-  // stay mounted. Mark the whole rail `inert` so those controls leave the
-  // keyboard tab order and pointer flow entirely — otherwise a fresh Tab on
-  // the home screen would land on invisible rail controls before the visible
-  // toggle/hero. `inert` is set imperatively to stay compatible across React
-  // versions whose JSX types don't yet declare the attribute.
+  // The collapsed state is a VISIBLE strip, not an off-canvas panel, so the
+  // rail must never be `inert` or `aria-hidden`: its controls stay reachable by
+  // pointer and keyboard in both states. The previous code marked the whole
+  // rail inert while collapsed, which is only correct for a rail that is
+  // genuinely gone - the state this product forbids.
   const railRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
-    const node = railRef.current;
-    if (!node) return;
-    if (open) {
-      node.removeAttribute('inert');
-    } else {
-      node.setAttribute('inert', '');
-    }
+    railRef.current?.removeAttribute('inert');
   }, [open]);
 
   return (
     <nav
       ref={railRef}
       className={`entry-nav-rail${open ? ' is-open' : ''}`}
-      aria-label="Primary"
-      aria-hidden={open ? undefined : true}
+      aria-label={t('entry.navPrimary')}
+      data-rail-state={open ? 'expanded' : 'collapsed'}
+      data-testid="entry-nav-rail"
     >
       <div className="entry-nav-rail__group">
         <div className="entry-nav-rail__brand">
@@ -107,12 +105,18 @@ export function EntryNavRail({ view, onViewChange, onNewProject, open, onClose }
               draggable={false}
             />
           </button>
+          {/* One control, both directions: collapsed it expands, expanded it
+              collapses. It lives in the rail's own brand slot, so the toggle
+              sits with the panel it controls instead of floating over the
+              window-chrome band. */}
           <button
             type="button"
-            className="entry-nav-rail__collapse"
-            onClick={onClose}
-            aria-label={t('entry.navCollapse')}
-            title={t('entry.navCollapse')}
+            className="entry-nav-rail__collapse readable-tooltip"
+            onClick={open ? onClose : onOpen ?? onClose}
+            aria-label={t(open ? 'entry.navCollapse' : 'entry.navExpand')}
+            data-tooltip={t(open ? 'entry.navCollapse' : 'entry.navExpand')}
+            data-tooltip-placement="right"
+            aria-expanded={open}
             data-testid="entry-nav-collapse"
           >
             <Icon name="panel-left" size={20} />

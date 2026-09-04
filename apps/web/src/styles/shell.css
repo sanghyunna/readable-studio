@@ -197,22 +197,15 @@
   height: 100%;
   overflow: hidden;
 }
-.entry-shell--workspace .entry-main--workspace > *:not(.entry-rail-toggle) {
+.entry-shell--workspace .entry-main--workspace > * {
   height: 100%;
   min-height: 0;
 }
-/* Floats over the workspace surface rather than reserving a chrome row, so the
-   workspace keeps its full height and nothing below it shifts. */
-.entry-rail-toggle--workspace {
-  position: absolute;
-  top: var(--space-2, 8px);
-  inset-inline-start: var(--space-2, 8px);
-  z-index: 40;
-  -webkit-app-region: no-drag;
-}
-.entry--rail-open .entry-rail-toggle--workspace {
-  display: none;
-}
+/* The floating `.entry-rail-toggle--workspace` button is gone. It produced the
+   exact state the user rejected: the rail fully hidden with only a button left,
+   the button itself jammed into the top-left over the window-chrome band. The
+   workspace now shows the same two-state rail as every other surface, and
+   expand/collapse lives inside the rail strip. */
 
 .iframe-keep-alive-pool {
   display: none;

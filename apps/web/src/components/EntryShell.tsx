@@ -54,7 +54,6 @@ import {
   type HomePromptHandoff,
 } from './home-hero/plugin-authoring';
 import type { PluginUseAction } from './plugins-home/useActions';
-import { Icon } from './Icon';
 import { IntegrationsView, type IntegrationTab } from './IntegrationsView';
 import { InlineModelSwitcher } from './InlineModelSwitcher';
 import type { EntrySettingsSection } from './EntrySettingsMenu';
@@ -551,21 +550,15 @@ export function EntryShell({
           onNewProject={() => openNewProject()}
           open={railOpen && view !== 'home'}
           onClose={() => setRailOpen(false)}
+          onOpen={() => setRailOpen(true)}
         />
         <main className="entry-main entry-main--scroll" ref={entryMainScrollRef}>
           <div className="entry-main__topbar">
-            {view === 'home' ? null : (
-              <button
-                type="button"
-                className="entry-rail-toggle"
-                onClick={() => setRailOpen((prev) => !prev)}
-                aria-label={t('entry.navExpand')}
-                aria-expanded={railOpen}
-                data-testid="entry-rail-toggle"
-              >
-                <Icon name="panel-left" size={20} />
-              </button>
-            )}
+            {/* The topbar rail toggle was removed: it duplicated the rail's own
+                collapse control and, once the traffic lights moved right, it
+                was the control crammed against the chrome band. Expand /
+                collapse now lives in the rail strip (`entry-nav-collapse`),
+                which is always visible. */}
             <div className="entry-main__topbar-chips entry-main__topbar-chips--icon-only">
               {executionSwitcher}
             </div>
