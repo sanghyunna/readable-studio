@@ -24,7 +24,10 @@ import { PetOverlay, type PetTaskCenter } from './components/pet/PetOverlay';
 import { buildPetTaskCenter } from './components/pet/taskCenter';
 import { migrateCustomPetAtlas } from './components/pet/pets';
 import { TooltipLayer } from './components/TooltipLayer';
-import { openWorkspaceTab, WorkspaceTabsBar } from './components/WorkspaceTabsBar';
+import { openWorkspaceTab } from './components/WorkspaceTabsBar';
+import { WindowControls } from './components/WindowControls';
+import { EntryNavRail } from './components/EntryNavRail';
+import { Icon } from './components/Icon';
 import workspaceTransition from './components/WorkspaceTransition.module.css';
 import {
   IframeKeepAliveProvider,
@@ -294,6 +297,21 @@ function AppInner() {
       document.documentElement.setAttribute('data-readable-app-mounted', '1');
     }
   }, []);
+  // Shared with the hub's left panel (`EntryShell`) through the same
+  // localStorage key, so expanding the panel on one surface is remembered on
+  // the other. The workspace still opens collapsed on a cold start because the
+  // stored default is `false`.
+  const [workspaceRailOpen, setWorkspaceRailOpen] = useState<boolean>(false);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        'readable.entry.railOpen',
+        workspaceRailOpen ? 'true' : 'false',
+      );
+    } catch {
+      /* ignore quota / disabled storage */
+    }
+  }, [workspaceRailOpen]);
   const [config, setConfig] = useState<AppConfig>(() => loadConfig());
   const configRef = useRef(config);
   configRef.current = config;
@@ -1783,6 +1801,17 @@ function AppInner() {
         ? 'hub'
         : 'workspace';
 
+  // The hub's collapsible left panel now exists on the workspace too, so the
+  // two surfaces share one navigation model. It starts collapsed there (the
+  // workspace is a focus surface) and expands via the panel toggle, using the
+  // same persisted `readable.entry.railOpen` key as the hub.
+  const isEntrySurface =
+    route.kind === 'home'
+    || route.kind === 'marketplace'
+    || route.kind === 'marketplace-detail'
+    || route.kind === 'design-system-create'
+    || route.kind === 'design-system-detail';
+
   let appMain: ReactNode;
   if (route.kind === 'marketplace') {
     appMain = <MarketplaceView />;
@@ -1912,10 +1941,18 @@ function AppInner() {
         className={`workspace-shell workspace-shell--${clientType}`}
         data-client-type={clientType}
       >
-        <WorkspaceTabsBar
-          route={route}
-          projects={projects}
-        />
+        {/* The window has no native title bar (the desktop main window is
+            frameless), so this strip is the app's own chrome: a drag region
+            plus the traffic lights. The workspace tab strip that used to live
+            here is gone — every destination it exposed is reachable from the
+            left panel, which is now mounted on the workspace too. */}
+        <header
+          className="app-chrome-header app-window-chrome"
+          data-testid="app-window-chrome"
+        >
+          <WindowControls />
+          <div className="app-window-chrome__drag app-chrome-drag" aria-hidden="true" />
+        </header>
         <div className="workspace-shell__body">
           {/*
             Keyed on the surface identity so React mounts a fresh element per
@@ -1930,7 +1967,43 @@ function AppInner() {
             data-transition={surfaceTransition}
             data-surface={surfaceId}
           >
-            {appMain}
+            {isEntrySurface ? (
+              appMain
+            ) : (
+              <div className="entry-shell entry-shell--no-header entry-shell--workspace">
+                <div
+                  className={`entry${workspaceRailOpen ? ' entry--rail-open' : ''}`}
+                  data-testid="workspace-rail-host"
+                >
+                  <EntryNavRail
+                    view="home"
+                    onViewChange={(next) => {
+                      setWorkspaceRailOpen(false);
+                      navigate({ kind: 'home', view: next });
+                    }}
+                    onNewProject={() => {
+                      setWorkspaceRailOpen(false);
+                      navigate({ kind: 'home', view: 'home' });
+                    }}
+                    open={workspaceRailOpen}
+                    onClose={() => setWorkspaceRailOpen(false)}
+                  />
+                  <div className="entry-main entry-main--workspace">
+                    <button
+                      type="button"
+                      className="entry-rail-toggle entry-rail-toggle--workspace"
+                      onClick={() => setWorkspaceRailOpen((prev) => !prev)}
+                      aria-label={t('entry.navExpand')}
+                      aria-expanded={workspaceRailOpen}
+                      data-testid="workspace-rail-toggle"
+                    >
+                      <Icon name="panel-left" size={18} />
+                    </button>
+                    {appMain}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

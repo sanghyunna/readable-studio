@@ -45,7 +45,6 @@ import { CenteredLoader } from './Loading';
 import { DesignsTab } from './DesignsTab';
 import { DesignSystemPreviewModal } from './DesignSystemPreviewModal';
 import { DesignSystemsTab } from './DesignSystemsTab';
-import { EntryHelpMenu } from './EntryHelpMenu';
 import { EntryNavRail, type EntryView as EntryViewKind } from './EntryNavRail';
 import { HubHome } from './hub/HubHome';
 import { openProjectRoute, openSessionRoute } from './hub/openSessionRoute';
@@ -58,10 +57,7 @@ import type { PluginUseAction } from './plugins-home/useActions';
 import { Icon } from './Icon';
 import { IntegrationsView, type IntegrationTab } from './IntegrationsView';
 import { InlineModelSwitcher } from './InlineModelSwitcher';
-import {
-  EntrySettingsMenu,
-  type EntrySettingsSection,
-} from './EntrySettingsMenu';
+import type { EntrySettingsSection } from './EntrySettingsMenu';
 import { NewProjectModal } from './NewProjectModal';
 import { PluginsView } from './PluginsView';
 import type { CreateInput, CreateTab, ImportClaudeDesignOutcome } from './NewProjectPanel';
@@ -436,7 +432,13 @@ export function EntryShell({
     // is intentionally explicit so future kind-specific scenarios
     // (e.g. a deck- or image-specialized pipeline) can take over a
     // single row without touching the form.
-    const pluginId = defaultPluginIdForMetadata(input.metadata);
+    // Ask/chat projects are not artifact pipelines, so they are not bound to a
+    // scenario plugin — the same rule the Hub composer applied when the mode
+    // toggle still lived there.
+    const pluginId =
+      input.conversationMode === 'chat'
+        ? null
+        : defaultPluginIdForMetadata(input.metadata);
     const pluginInputs = defaultPluginInputsForCreate(input, pluginId);
     return onCreateProject({
       ...input,
@@ -509,37 +511,33 @@ export function EntryShell({
     });
   }
 
-  const avatarMenu = (
-    <EntrySettingsMenu
-      config={config}
-      onThemeChange={onThemeChange}
-      onOpenSettings={onOpenSettings}
-      username={username}
-      onTrackTriggerClick={() => {
-        trackHomeToolbarClick(analytics.track, {
-          page_name: 'home',
-          area: 'toolbar',
-          element: 'settings',
-        });
-      }}
-    />
-  );
 
+  const switcherProps = {
+    config,
+    agents,
+    providerModelsCache: activeProviderModelsCache,
+    onProviderModelsCacheChange: activeSetProviderModelsCache,
+    daemonLive,
+    onModeChange,
+    onAgentChange,
+    onAgentModelChange,
+    onApiProtocolChange,
+    onApiModelChange,
+    onOpenSettings,
+  } as const;
 
-  const executionSwitcher = (
-    <InlineModelSwitcher
-      config={config}
-      agents={agents}
-      providerModelsCache={activeProviderModelsCache}
-      onProviderModelsCacheChange={activeSetProviderModelsCache}
-      daemonLive={daemonLive}
-      onModeChange={onModeChange}
-      onAgentChange={onAgentChange}
-      onAgentModelChange={onAgentModelChange}
-      onApiProtocolChange={onApiProtocolChange}
-      onApiModelChange={onApiModelChange}
-      onOpenSettings={onOpenSettings}
-    />
+  // Top bar keeps the combined chip (mode · agent · model in one popover).
+  const executionSwitcher = <InlineModelSwitcher {...switcherProps} />;
+
+  // Hub composer footer: two separate buttons — agent, then model to its
+  // right — each opening only its own concern. Both are the same component in
+  // a different variant, so agent selection, model selection and the
+  // provider-models fetch each exist exactly once.
+  const composerAgentModelControls = (
+    <>
+      <InlineModelSwitcher {...switcherProps} variant="agent" />
+      <InlineModelSwitcher {...switcherProps} variant="model" />
+    </>
   );
 
   return (
@@ -571,30 +569,14 @@ export function EntryShell({
             <div className="entry-main__topbar-chips entry-main__topbar-chips--icon-only">
               {executionSwitcher}
             </div>
-            {view === 'home' ? (
-              <>
-                {/* Mockup topbar (`index.html:791`): local-run status, help,
-                    then the account menu. The status chip presents as a
-                    settings icon because its only action was ever opening the
-                    execution settings surface; the daemon live/offline signal
-                    survives as the status dot on the icon plus the accessible
-                    name and tooltip, which still use the run-state strings. */}
-                <button
-                  type="button"
-                  className={`entry-run-icon${daemonLive ? ' is-live' : ''}`}
-                  data-testid="entry-run-status"
-                  data-live={daemonLive ? 'true' : 'false'}
-                  aria-label={`${t('avatar.settings')} — ${daemonLive ? t('hub.localRunning') : t('hub.localOffline')}`}
-                  data-tooltip={daemonLive ? t('hub.localRunning') : t('hub.localOffline')}
-                  onClick={() => onOpenSettings('execution')}
-                >
-                  <Icon name="settings" size={17} strokeWidth={1.6} />
-                  <span className="entry-run-icon__dot" aria-hidden="true" />
-                </button>
-                <EntryHelpMenu />
-              </>
-            ) : null}
-            {avatarMenu}
+            {/* The top-right trio (execution-settings gear with the daemon
+                status dot, help launcher, account avatar) was removed at the
+                user's request. Settings stays reachable from the hub rail
+                footer gear (`hub-footer-settings`) and from the hub's
+                "workspace folder" / library rows; theme and language moved into
+                the full Settings dialog's Appearance and Language sections; the
+                daemon live/offline signal keeps its dedicated hub status chip
+                (`hub__status`). The help menu is gone entirely. */}
           </div>
           <div
             className={`entry-main__inner${
@@ -624,6 +606,15 @@ export function EntryShell({
                 onBrowseRegistry={() => changeView('plugins')}
                 onOpenMcp={() => openIntegrationTab('mcp')}
                 onOpenNewProject={(tab) => openNewProject(tab)}
+                /* The hub's Advanced / Import disclosure is the new home of the
+                   genuinely pre-creation controls. It runs through the SAME
+                   handleCreate the modal uses — no second creation path. */
+                onCreateProject={handleCreate}
+                templates={templates}
+                {...(onDeleteTemplate ? { onDeleteTemplate } : {})}
+                onImportClaudeDesign={onImportClaudeDesign}
+                {...(onImportFolder ? { onImportFolder } : {})}
+                {...(onImportFolderResponse ? { onImportFolderResponse } : {})}
                 skills={skills}
                 skillsLoading={skillsLoading}
                 onNewProject={() => openNewProject()}
@@ -631,10 +622,10 @@ export function EntryShell({
                 onDeleteProject={(projectId) => { void onDeleteProject(projectId); }}
                 onNavigateDestination={changeView}
                 onGoHome={() => changeView('home')}
-                /* The SAME node the top bar mounts: passing the instance keeps
-                   the hub composer's agent/model control wired to the real
-                   config + persistence callbacks instead of a second copy. */
-                executionSwitcher={executionSwitcher}
+                /* Same component, same callbacks as the top bar — mounted as
+                   the split agent + model pair the composer footer contract
+                   requires. */
+                executionSwitcher={composerAgentModelControls}
               />
             </div>
             <div data-testid="entry-view-projects" data-active={view === 'projects' ? 'true' : 'false'} {...inactiveViewProps(view === 'projects')}>

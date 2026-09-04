@@ -18,6 +18,10 @@
 
 .workspace-shell {
   --workspace-tabs-chrome-height: 38px;
+  /* One number for the frameless title strip: the grid track that reserves it,
+     the header's own box and anything that has to clear it all read this, so
+     the band cannot silently grow past the row it was given. */
+  --app-window-chrome-height: 36px;
   width: 100%;
   max-width: 100%;
   height: 100vh;
@@ -25,7 +29,7 @@
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: 36px minmax(0, 1fr);
+  grid-template-rows: var(--app-window-chrome-height) minmax(0, 1fr);
   background: var(--bg-app);
   overflow: hidden;
 }
@@ -38,6 +42,160 @@
 .workspace-shell__body > .entry-shell {
   height: 100%;
   min-height: 0;
+}
+
+/* -------- App window chrome (frameless window) ----------------------- */
+/* The desktop window has no native title bar, so this strip IS the title bar:
+   a full-width drag region carrying the app's own traffic lights. Borderless
+   per the Hub language - the separation comes from an inset highlight, not a
+   1px divider. */
+.app-window-chrome {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+  min-width: 0;
+  padding-inline: var(--space-3, 12px);
+  background: color-mix(in srgb, var(--bg-panel) 78%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  backdrop-filter: blur(18px) saturate(140%);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--white) 24%, transparent);
+  border: 0;
+  user-select: none;
+  -webkit-app-region: drag;
+  position: relative;
+  z-index: 120;
+}
+/* `.app-chrome-header` is the taller project chrome (48px `min-height`) and it
+   is declared later in this file, so on the shared element it won the cascade
+   at equal specificity: the strip rendered 48px instead of 36px, overflowed its
+   grid row and painted its drag filler across the top 12px of the surface
+   below, swallowing clicks on controls pinned up there. Override on the
+   compound selector - the same shape `.workspace-tabs-chrome.app-chrome-header`
+   already uses - so the band cannot be re-inflated by source order. */
+.app-chrome-header.app-window-chrome {
+  height: var(--app-window-chrome-height, 36px);
+  min-height: var(--app-window-chrome-height, 36px);
+}
+
+/* The drag filler takes the remaining width so the whole strip - not just the
+   gap beside the lights - drags, snaps and double-click-maximizes the window. */
+.app-window-chrome__drag {
+  flex: 1 1 auto;
+  align-self: stretch;
+  min-width: 0;
+  -webkit-app-region: drag;
+}
+
+.window-controls {
+  /* The traffic-light hues are a platform idiom, not theme colour, and the
+     design tokens for them already exist (`--window-minimize` / `--window-zoom`
+     / `--window-close` in tokens.css). The glyph ink rides on the app's own
+     ink token so it stays legible on all three. */
+  --window-control-glyph: var(--black);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+  flex: 0 0 auto;
+  -webkit-app-region: no-drag;
+}
+.window-controls__light {
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  /* Idle state is the neutral "unfocused" dot; the hue appears on hover/focus
+     of the group, matching the macOS idiom. */
+  background: color-mix(in srgb, var(--text-muted) 34%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 10%, transparent);
+  transition:
+    background var(--dur-fast, 120ms) var(--ease-out),
+    box-shadow var(--dur-fast, 120ms) var(--ease-out);
+}
+.window-controls:hover .window-controls__light--minimize,
+.window-controls__light--minimize:focus-visible {
+  background: var(--window-minimize);
+}
+.window-controls:hover .window-controls__light--maximize,
+.window-controls__light--maximize:focus-visible {
+  background: var(--window-zoom);
+}
+.window-controls:hover .window-controls__light--close,
+.window-controls__light--close:focus-visible {
+  background: var(--window-close);
+}
+.window-controls__light:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.window-controls__glyph {
+  display: inline-flex;
+  opacity: 0;
+  transition: opacity var(--dur-fast, 120ms) var(--ease-out);
+}
+.window-controls:hover .window-controls__glyph,
+.window-controls__light:focus-visible .window-controls__glyph {
+  opacity: 0.62;
+}
+.window-controls__glyph svg {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: var(--window-control-glyph);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+@media (prefers-reduced-motion: reduce) {
+  .window-controls__light,
+  .window-controls__glyph {
+    transition: none;
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .app-window-chrome {
+    background: var(--bg-panel);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* -------- Workspace left panel -------------------------------------- */
+/* The hub's collapsible panel is mounted on the workspace too, so both
+   surfaces share one navigation model. It starts collapsed (the grid track is
+   0-wide) and the toggle expands it in place. */
+.entry-shell--workspace,
+.entry-shell--workspace > .entry {
+  height: 100%;
+  min-height: 0;
+}
+.entry-shell--workspace .entry-main--workspace {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+.entry-shell--workspace .entry-main--workspace > *:not(.entry-rail-toggle) {
+  height: 100%;
+  min-height: 0;
+}
+/* Floats over the workspace surface rather than reserving a chrome row, so the
+   workspace keeps its full height and nothing below it shifts. */
+.entry-rail-toggle--workspace {
+  position: absolute;
+  top: var(--space-2, 8px);
+  inset-inline-start: var(--space-2, 8px);
+  z-index: 40;
+  -webkit-app-region: no-drag;
+}
+.entry--rail-open .entry-rail-toggle--workspace {
+  display: none;
 }
 
 .iframe-keep-alive-pool {

@@ -663,13 +663,19 @@ export async function mintHomeWorkingDirToken(
   return { baseDir, ok: true, token: mint(deps.desktopAuthSecret, baseDir) };
 }
 
+// The app draws its own chrome (traffic lights in `.app-chrome-header`), so the
+// OS title bar is removed on every platform. macOS keeps `hiddenInset` so the
+// system traffic lights stay available there; Windows/Linux go fully frameless
+// and rely on the renderer's traffic-light row. Frameless windows keep native
+// resize edges, Aero snap and double-click-to-maximize as long as the drag
+// region is a `-webkit-app-region: drag` element, which the chrome header is.
 const MAC_WINDOW_CHROME =
   process.platform === "darwin"
     ? ({
         titleBarStyle: "hiddenInset" as const,
         trafficLightPosition: { x: 12, y: 10 },
       })
-    : {};
+    : ({ frame: false as const });
 
 const MAC_WINDOW_CHROME_CSS = `
   .app-chrome-header {
@@ -697,6 +703,13 @@ const MAC_WINDOW_CHROME_CSS = `
   }
   .app-chrome-drag {
     -webkit-app-region: drag;
+  }
+  .app-window-chrome {
+    -webkit-app-region: drag;
+  }
+  .window-controls,
+  .window-controls * {
+    -webkit-app-region: no-drag;
   }
   .modal-backdrop,
   .modal-backdrop *,
@@ -1631,6 +1644,40 @@ export async function createDesktopRuntime(options: DesktopRuntimeOptions): Prom
 
   window.on("focus", () => showWindowButtons(window));
   window.on("blur", () => showWindowButtons(window));
+
+  // Renderer-drawn traffic lights. The window is frameless, so minimize /
+  // maximize / close have to round-trip through IPC. `window:state` lets the
+  // renderer render the correct maximize/restore affordance, and the
+  // maximize/unmaximize events push state changes that originate outside the
+  // renderer (Aero snap, double-click on the drag strip, keyboard shortcuts).
+  const emitWindowState = (): void => {
+    if (window.isDestroyed() || window.webContents.isDestroyed()) return;
+    window.webContents.send("window:state", { maximized: window.isMaximized() });
+  };
+  window.on("maximize", emitWindowState);
+  window.on("unmaximize", emitWindowState);
+  window.on("enter-full-screen", emitWindowState);
+  window.on("leave-full-screen", emitWindowState);
+  ipcMain.handle("window:minimize", (event) => {
+    requireMainWindowSender(event);
+    window.minimize();
+    return { ok: true } as const;
+  });
+  ipcMain.handle("window:toggle-maximize", (event) => {
+    requireMainWindowSender(event);
+    if (window.isMaximized()) window.unmaximize();
+    else window.maximize();
+    return { maximized: window.isMaximized(), ok: true } as const;
+  });
+  ipcMain.handle("window:close", (event) => {
+    requireMainWindowSender(event);
+    window.close();
+    return { ok: true } as const;
+  });
+  ipcMain.handle("window:get-state", (event) => {
+    requireMainWindowSender(event);
+    return { maximized: window.isMaximized() };
+  });
 
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (isAllowedChildWindowUrl(url)) return { action: "allow" };

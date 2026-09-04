@@ -270,7 +270,30 @@ const hostBridge = {
 
 contextBridge.exposeInMainWorld(READABLE_STUDIO_HOST_GLOBAL, hostBridge);
 
+// Renderer-drawn window chrome. The main window is frameless, so the
+// traffic-light row in the web app drives the real Electron window through
+// these channels. `onStateChange` mirrors state changes that do not originate
+// from the buttons (Aero snap, double-click on the drag strip, OS shortcuts).
+const windowControls = {
+  close: (): Promise<void> => ipcRenderer.invoke('window:close') as Promise<void>,
+  getState: (): Promise<{ maximized: boolean }> =>
+    ipcRenderer.invoke('window:get-state') as Promise<{ maximized: boolean }>,
+  minimize: (): Promise<void> => ipcRenderer.invoke('window:minimize') as Promise<void>,
+  onStateChange: (listener: (state: { maximized: boolean }) => void): (() => void) => {
+    const handler = (_event: unknown, state: { maximized: boolean }): void => {
+      listener({ maximized: Boolean(state?.maximized) });
+    };
+    ipcRenderer.on('window:state', handler);
+    return () => {
+      ipcRenderer.removeListener('window:state', handler);
+    };
+  },
+  toggleMaximize: (): Promise<{ maximized: boolean }> =>
+    ipcRenderer.invoke('window:toggle-maximize') as Promise<{ maximized: boolean }>,
+};
+
 contextBridge.exposeInMainWorld('readableStudioDesktop', {
   exportDiagnostics: (): Promise<DesktopDiagnosticsExportResult> =>
     ipcRenderer.invoke(DESKTOP_DIAGNOSTICS_IPC_CHANNEL) as Promise<DesktopDiagnosticsExportResult>,
+  window: windowControls,
 });

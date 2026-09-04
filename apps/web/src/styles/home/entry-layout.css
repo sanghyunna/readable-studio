@@ -17,8 +17,14 @@
    The condition is matched as a descendant so it holds at either depth and
    there is exactly one place stating it. `.workspace-shell__body` is the only
    surface host in the shell, so the looser match cannot select anything else. */
+/* This drops the TABS chrome row (hidden outright just below), but the shell's
+   first row also carries the frameless window's title strip, which every
+   surface keeps. Collapsing to a single track placed that strip and the body in
+   the same cell: the body started at y=0 underneath a drag region painted at
+   z-index 120, so the sticky topbar pinned itself under the drag surface and
+   handed it every click. Keep reserving the band and only give the rest away. */
 .workspace-shell:has(> .workspace-shell__body .entry-shell--no-header) {
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-rows: var(--app-window-chrome-height, 36px) minmax(0, 1fr);
 }
 .workspace-shell:has(> .workspace-shell__body .entry-shell--no-header)
   > .workspace-tabs-chrome {

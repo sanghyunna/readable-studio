@@ -141,8 +141,13 @@
 /* The rail owns its own collapse control: the entry topbar is not rendered on
    the home route, so a toggle placed there would be unreachable here. */
 .hub__rail-toggle {
+  /* Viewport-pinned, so it must clear the frameless window's title strip on its
+     own: that band is a drag region painted above this control, and anchoring
+     at a bare 7px put the button inside it, where the drag filler swallowed
+     every click. Offset by the chrome height so the toggle sits in the Hub's
+     own surface, and keep reading the shared token so the two cannot drift. */
   position: fixed;
-  inset-block-start: 7px;
+  inset-block-start: calc(var(--app-window-chrome-height, 36px) + 7px);
   inset-inline-start: 10px;
   z-index: 20;
   display: inline-flex;
@@ -479,7 +484,11 @@
   user-select: none;
 }
 
-.hub-row:hover {
+.hub-row:hover,
+/* A right-click menu leaves the pointer over the MENU, not the row, so the row
+   it acts on has to keep showing the same hover treatment for as long as the
+   menu is open - otherwise nothing on screen says which project is targeted. */
+.hub-row.is-menu-open {
   background: var(--bg-hover);
 }
 
@@ -679,6 +688,32 @@
 .hub-row--session {
   padding-left: 22px;
   min-height: 32px;
+}
+
+.hub-tree__surface-actions {
+  display: grid;
+  gap: 2px;
+  padding-block: 3px;
+}
+
+.hub-row--surface {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  box-shadow: inset 0 1px color-mix(in srgb, var(--bg-elevated) 38%, transparent);
+  font: inherit;
+}
+
+.hub-row--surface > svg {
+  flex: none;
+  color: var(--text-soft);
+}
+
+.hub-row--surface .hub-row__meta {
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .hub-row--session .hub-row__title {
@@ -1872,6 +1907,7 @@
 
 /* Rows and destinations are already borderless; hover lifts them into glass. */
 .hub-row:hover,
+.hub-row.is-menu-open,
 .hub__dest:hover,
 .hub__dest-more:hover,
 .hub__user-row:hover,
@@ -1955,6 +1991,7 @@
   .hub__live,
   .hub-palette__scrim,
   .hub-row:hover,
+  .hub-row.is-menu-open,
   .hub__dest:hover,
   .hub__dest-more:hover,
   .hub__view-all:hover,
