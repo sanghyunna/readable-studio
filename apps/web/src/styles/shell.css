@@ -95,6 +95,10 @@
   display: flex;
   align-items: center;
   gap: var(--space-2, 8px);
+  /* Pinned to the END of the strip: the row renders after the drag filler, so
+     the lights sit in the top-RIGHT corner. `margin-inline-start: auto` keeps
+     them there even if another element is ever added to the band. */
+  margin-inline-start: auto;
   flex: 0 0 auto;
   -webkit-app-region: no-drag;
 }
@@ -109,38 +113,50 @@
   justify-content: center;
   cursor: pointer;
   -webkit-app-region: no-drag;
-  /* Idle state is the neutral "unfocused" dot; the hue appears on hover/focus
-     of the group, matching the macOS idiom. */
-  background: color-mix(in srgb, var(--text-muted) 34%, transparent);
+  /* The user asked for the traffic-light idiom to stay, but the controls must
+     read as controls AT REST - so the hue is always on, not revealed on hover.
+     Hover/focus deepens the same token rather than introducing it. */
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 10%, transparent);
   transition:
     background var(--dur-fast, 120ms) var(--ease-out),
     box-shadow var(--dur-fast, 120ms) var(--ease-out);
 }
+.window-controls__light--minimize {
+  background: var(--window-minimize);
+}
+.window-controls__light--maximize {
+  background: var(--window-zoom);
+}
+.window-controls__light--close {
+  background: var(--window-close);
+}
 .window-controls:hover .window-controls__light--minimize,
 .window-controls__light--minimize:focus-visible {
-  background: var(--window-minimize);
+  background: color-mix(in srgb, var(--window-minimize) 86%, var(--black));
 }
 .window-controls:hover .window-controls__light--maximize,
 .window-controls__light--maximize:focus-visible {
-  background: var(--window-zoom);
+  background: color-mix(in srgb, var(--window-zoom) 86%, var(--black));
 }
 .window-controls:hover .window-controls__light--close,
 .window-controls__light--close:focus-visible {
-  background: var(--window-close);
+  background: color-mix(in srgb, var(--window-close) 86%, var(--black));
 }
 .window-controls__light:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+/* The reported defect: the glyphs were `opacity: 0` until hover, so at rest the
+   row was three anonymous dots and the user could not tell minimize from close.
+   They are legible by default now; hover only firms them up. */
 .window-controls__glyph {
   display: inline-flex;
-  opacity: 0;
+  opacity: 0.82;
   transition: opacity var(--dur-fast, 120ms) var(--ease-out);
 }
 .window-controls:hover .window-controls__glyph,
 .window-controls__light:focus-visible .window-controls__glyph {
-  opacity: 0.62;
+  opacity: 1;
 }
 .window-controls__glyph svg {
   width: 10px;

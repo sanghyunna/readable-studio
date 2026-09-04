@@ -1950,8 +1950,12 @@ function AppInner() {
           className="app-chrome-header app-window-chrome"
           data-testid="app-window-chrome"
         >
-          <WindowControls />
+          {/* Drag filler FIRST so the traffic lights land in the top-RIGHT
+              corner (the placement the user asked for) instead of the macOS
+              top-left. The strip is still a full-width drag region; only the
+              controls opt out via `no-drag`. */}
           <div className="app-window-chrome__drag app-chrome-drag" aria-hidden="true" />
+          <WindowControls />
         </header>
         <div className="workspace-shell__body">
           {/*
