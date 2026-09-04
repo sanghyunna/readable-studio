@@ -11,16 +11,16 @@ const mainRepo = resolve(helperDir, '../..');
 export const evidenceDir =
   process.env.READABLE_TASK13_EVIDENCE_DIR ?? resolve(mainRepo, '.omo/evidence/task-13');
 
-const referenceDir = resolve(mainRepo, '.tmp/design/main-hub/shots');
+const referenceDir = resolve(mainRepo, 'assets/e2e/qa-task-13');
 
 export const references = {
-  start: 'r1-start.png',
-  filtered: 'f2-empty-cleared.png',
-  busy: 'h3-busy.png',
-  error: 'h2-error.png',
-  collapsed: 'g1-collapsed.png',
-  narrow: 'f3-narrow.png',
-  palette: 'final-3-palette.png',
+  start: 'start.png',
+  filtered: 'filtered.png',
+  busy: 'busy.png',
+  error: 'error.png',
+  collapsed: 'collapsed.png',
+  narrow: 'narrow.png',
+  palette: 'palette.png',
 } as const;
 
 export type CanonicalState = keyof typeof references;

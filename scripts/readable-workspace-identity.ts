@@ -110,8 +110,12 @@ export function scanWorkspaceIdentitySources(sources: ReadonlyMap<string, string
 }
 
 async function trackedSources(root: string): Promise<Map<string, string>> {
-  const { stdout } = await execFileAsync("git", ["ls-files", "-z"], { cwd: root, encoding: "buffer", maxBuffer: 32 * 1024 * 1024 });
-  const repositoryPaths = stdout.toString("utf8").split("\0").filter(Boolean);
+  const [{ stdout }, { stdout: deletedStdout }] = await Promise.all([
+    execFileAsync("git", ["ls-files", "-z"], { cwd: root, encoding: "buffer", maxBuffer: 32 * 1024 * 1024 }),
+    execFileAsync("git", ["ls-files", "-z", "--deleted"], { cwd: root, encoding: "buffer", maxBuffer: 32 * 1024 * 1024 }),
+  ]);
+  const deletedPaths = new Set(deletedStdout.toString("utf8").split("\0").filter(Boolean));
+  const repositoryPaths = stdout.toString("utf8").split("\0").filter((repositoryPath) => repositoryPath && !deletedPaths.has(repositoryPath));
   const sources = new Map<string, string>();
   await Promise.all(repositoryPaths.map(async (repositoryPath) => {
     const contents = await readFile(path.join(root, repositoryPath));

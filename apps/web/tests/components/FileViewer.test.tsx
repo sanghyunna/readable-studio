@@ -58,7 +58,30 @@ afterEach(() => {
   vi.unstubAllGlobals();
   Reflect.deleteProperty(navigator, 'clipboard');
   Reflect.deleteProperty(document, 'execCommand');
+  // Preview capability flags live in this blob; never leak an opt-in across
+  // cases (default for every test is both flags OFF).
+  window.localStorage.removeItem('readable-studio:config');
 });
+
+/**
+ * Opt this test's viewer into a preview capability. Both `previewScreenshot`
+ * and `previewViewportSelector` default to OFF, and FileViewer reads them
+ * straight from the `readable-studio:config` localStorage blob.
+ */
+function enablePreviewFeatureFlags(
+  flags: Partial<{ previewScreenshot: boolean; previewViewportSelector: boolean }>,
+): void {
+  window.localStorage.setItem(
+    'readable-studio:config',
+    JSON.stringify({
+      featureFlags: {
+        previewScreenshot: false,
+        previewViewportSelector: false,
+        ...flags,
+      },
+    }),
+  );
+}
 
 function baseFile(overrides: Partial<ProjectFile>): ProjectFile {
   return {
@@ -1485,6 +1508,11 @@ describe('FileViewer SVG artifacts', () => {
   });
 
   it('hides preview-only toolbar controls when switching an HTML deck to source view', async () => {
+    // This case is about MODE-driven hiding, not capability gating. The
+    // viewport selector ships behind `previewViewportSelector` (default OFF),
+    // so opt in explicitly to keep asserting the preview/source behaviour.
+    // See FileViewer.feature-gating.test.tsx for the gate itself.
+    enablePreviewFeatureFlags({ previewViewportSelector: true });
     const file = baseFile({
       name: 'deck.html',
       path: 'deck.html',
@@ -1632,6 +1660,86 @@ describe('FileViewer SVG artifacts', () => {
     expect(await openDeployModal()).toBeTruthy();
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('reports an in-flight deploy outside the modal and lets the user reopen it', async () => {
+    const file = baseFile({
+      name: 'index.html',
+      path: 'index.html',
+      mime: 'text/html',
+      kind: 'html',
+      artifactManifest: {
+        schema: 'readable-studio.artifact-manifest.v1',
+        kind: 'html',
+        title: 'Page',
+        entry: 'index.html',
+        renderer: 'html',
+        exports: ['html'],
+      },
+    });
+    const pendingDeploy = deferredResponse();
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
+      const method = init?.method || (input instanceof Request ? input.method : 'GET');
+      if (url === '/api/projects/project-1/deployments') {
+        return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
+      }
+      if (url === '/api/deploy/config?providerId=vercel-self') {
+        return new Response(JSON.stringify({
+          providerId: 'vercel-self',
+          configured: true,
+          tokenMask: 'saved-vercel-token',
+          teamId: '',
+          teamSlug: '',
+          target: 'preview',
+        }), { status: 200 });
+      }
+      if (url === '/api/projects/project-1/deploy' && method === 'POST') {
+        return pendingDeploy.promise;
+      }
+      return new Response(JSON.stringify({}), { status: 404 });
+    }));
+
+    render(
+      <FileViewer projectId="project-1" projectKind="prototype" file={file}
+        liveHtml="<html><body><h1>Hello</h1></body></html>"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /share/i }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /Deploy to Vercel/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /^Deploy$/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Cancel$/ }));
+
+    const deployStatus = await screen.findByRole('status');
+    expect(deployStatus.textContent).toContain('Preparing public link');
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /share/i }));
+    const activeDeployItem = screen.getByRole('menuitem', { name: /Preparing public link/i });
+    const otherDeployItem = screen.getByRole('menuitem', { name: /Deploy to Cloudflare Pages/i }) as HTMLButtonElement;
+    expect(otherDeployItem.disabled).toBe(true);
+    fireEvent.click(activeDeployItem);
+
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    expect((screen.getByRole('button', { name: /Preparing public link/i }) as HTMLButtonElement).disabled).toBe(true);
+
+    await act(async () => {
+      pendingDeploy.resolve(new Response(JSON.stringify({
+        id: 'vercel-deploy',
+        projectId: 'project-1',
+        fileName: 'index.html',
+        providerId: 'vercel-self',
+        url: 'https://deployed.example',
+        deploymentCount: 1,
+        target: 'preview',
+        status: 'ready',
+        createdAt: 1,
+        updatedAt: 2,
+      }), { status: 200 }));
+    });
+
+    expect(await screen.findByText('Deployment uploaded successfully')).toBeTruthy();
   });
 
   it('nudges the export button once when an artifact becomes exportable', async () => {
@@ -2826,6 +2934,9 @@ describe('FileViewer tweaks toolbar', () => {
   }
 
   it('groups preview tools by LLM handoff and direct editing in source order', () => {
+    // Screenshot is gated behind `previewScreenshot` (default OFF); this case
+    // asserts the rail's full composition, so opt in.
+    enablePreviewFeatureFlags({ previewScreenshot: true });
     render(
       <FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()}
         liveHtml='<html><body><main data-readable-id="hero">Hero</main></body></html>'
@@ -2849,7 +2960,7 @@ describe('FileViewer tweaks toolbar', () => {
     expect(within(llmGroup).getAllByRole('button').map((button) => button.getAttribute('aria-label'))).toEqual([
       'Screenshot',
       'Comment on element',
-      'Mark',
+      'Select range',
     ]);
     expect(within(directGroup).getAllByRole('button').map((button) => button.getAttribute('aria-label'))).toEqual([
       'Edit',
@@ -2879,6 +2990,10 @@ describe('FileViewer tweaks toolbar', () => {
   });
 
   it('renders Annotation, Edit, and Draw as the primary preview tools', async () => {
+    // Screenshot-to-clipboard ships behind `previewScreenshot` (default OFF);
+    // opt in so this case keeps covering the preview tool rail composition.
+    // See FileViewer.feature-gating.test.tsx for the gate itself.
+    enablePreviewFeatureFlags({ previewScreenshot: true });
     render(
       <FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()}
         liveHtml='<html><body><main data-readable-id="hero">Hero</main></body></html>'
@@ -2892,7 +3007,7 @@ describe('FileViewer tweaks toolbar', () => {
     expect(screen.queryByRole('menuitem', { name: 'Pick element' })).toBeNull();
     expect(screen.queryByRole('menuitem', { name: 'Region' })).toBeNull();
     expect(screen.getByTestId('draw-overlay-toggle')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Mark' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Select range' })).toBeTruthy();
     // Screenshot-to-clipboard is a primary preview tool: present in preview mode.
     expect(screen.getByTestId('screenshot-copy-button')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Screenshot' })).toBeTruthy();
@@ -2912,6 +3027,9 @@ describe('FileViewer tweaks toolbar', () => {
   });
 
   it('keeps preview viewport selection scoped to each HTML file', async () => {
+    // Per-file viewport scoping is only observable through the selector, which
+    // is gated behind `previewViewportSelector` (default OFF).
+    enablePreviewFeatureFlags({ previewViewportSelector: true });
     const firstFile = htmlPreviewFile({ name: 'first.html', path: 'first.html' });
     const secondFile = htmlPreviewFile({ name: 'second.html', path: 'second.html' });
     const { rerender } = render(
@@ -3307,6 +3425,8 @@ describe('FileViewer tweaks toolbar', () => {
   });
 
   it('keeps non-docked tablet comment-tool previews fitted to the padded canvas', async () => {
+    // Reaching the tablet viewport requires the gated selector.
+    enablePreviewFeatureFlags({ previewViewportSelector: true });
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
       .mockImplementation(function getBoundingClientRectMock(this: HTMLElement) {
         if (this.classList.contains('viewer-body')) return testRect(0, 0, 900, 700);
@@ -4706,11 +4826,9 @@ describe('FileViewer tweaks toolbar', () => {
 
     render(<Harness />);
     fireEvent.click(screen.getByTestId('comment-panel-toggle'));
-    const selectButtons = screen.getAllByRole('button', { name: /select/i });
-    const firstSelectButton = selectButtons[0];
-    expect(firstSelectButton).toBeTruthy();
-    if (!firstSelectButton) return;
-    fireEvent.click(firstSelectButton);
+    const firstComment = screen.getByText('First').closest('.comment-side-item');
+    if (!(firstComment instanceof HTMLElement)) throw new Error('Expected the first comment item');
+    fireEvent.click(within(firstComment).getByRole('button', { name: /^Select$/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
 
     // Per #3081, Clear deselects rather than batch-deleting: the comments stay

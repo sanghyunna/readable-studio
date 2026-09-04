@@ -13,7 +13,17 @@ const PROJECT_NAMES = ['분기 보고서', '온보딩 덱', '가격 페이지', 
 const ONBOARDING_SELECTORS = ['.onboarding-view', '.entry-onboarding-modal', '.entry-shell--onboarding'] as const;
 
 interface SeededProject { readonly id: string; readonly sessions: readonly { id: string; title: string }[] }
-declare global { interface Window { __task13TransparencyReady?: Promise<void> } }
+interface MotionTransitionEvidence {
+  readonly propertyName: string;
+  readonly transitionDuration: string;
+  readonly target: string;
+}
+declare global {
+  interface Window {
+    __task13TransparencyReady?: Promise<void>;
+    __task13MotionStarted?: Promise<MotionTransitionEvidence>;
+  }
+}
 let projects: SeededProject[] = [];
 
 test.use({ locale: 'ko-KR', deviceScaleFactor: 2, colorScheme: 'light' });
@@ -187,18 +197,49 @@ async function compositeContrast(locator: Locator): Promise<{
   });
 }
 
-async function screenshotMotion(page: Page, slug: string, locator: Locator, action: () => Promise<void>): Promise<void> {
+async function screenshotMotion(
+  page: Page,
+  slug: string,
+  locator: Locator,
+  action: () => Promise<void>,
+): Promise<MotionTransitionEvidence> {
   await locator.screenshot({ path: `${evidenceDir}/13-${slug}-rest.png`, animations: 'allow' });
+  await locator.evaluate((node) => {
+    window.__task13MotionStarted = new Promise((resolveTransition, rejectTransition) => {
+      const timeout = window.setTimeout(
+        () => rejectTransition(new Error('No descendant transitionrun event within 2000ms')),
+        2_000,
+      );
+      const onTransitionRun = (event: Event) => {
+        if (!(event instanceof TransitionEvent) || !(event.target instanceof Element) || !node.contains(event.target)) return;
+        window.clearTimeout(timeout);
+        node.removeEventListener('transitionrun', onTransitionRun, true);
+        resolveTransition({
+          propertyName: event.propertyName,
+          transitionDuration: getComputedStyle(event.target).transitionDuration,
+          target: event.target instanceof HTMLElement
+            ? `${event.target.tagName.toLowerCase()}.${Array.from(event.target.classList).join('.')}`
+            : event.target.tagName.toLowerCase(),
+        });
+      };
+      node.addEventListener('transitionrun', onTransitionRun, true);
+    });
+  });
   await action();
-  const running = await locator.evaluate((node) =>
-    node.getAnimations({ subtree: true }).filter((animation) => animation.playState === 'running').length,
-  );
-  expect(running, `${slug} must have a meaningful transition`).toBeGreaterThan(0);
+  const transition = await page.evaluate(async () => {
+    if (!window.__task13MotionStarted) throw new Error('Motion observer was not initialized');
+    return window.__task13MotionStarted;
+  });
+  expect(
+    maxCssTimeMilliseconds([transition.transitionDuration]),
+    `${slug} transition ${transition.propertyName} on ${transition.target} must have a meaningful duration`,
+  ).toBeGreaterThan(1);
   await locator.screenshot({ path: `${evidenceDir}/13-${slug}-mid.png`, animations: 'allow' });
   await locator.evaluate((node) =>
     Promise.allSettled(node.getAnimations({ subtree: true }).map((animation) => animation.finished)),
   );
   await locator.screenshot({ path: `${evidenceDir}/13-${slug}-settled.png`, animations: 'allow' });
+  return transition;
 }
 
 test.beforeAll(async ({ request }) => {
@@ -259,22 +300,21 @@ test('canonical start proves R1-R11 and R14 from rendered paint and geometry', a
 
   const footerButtons = page.locator('[data-testid="hub-composer"] .home-hero__footer-options button'); await expect(footerButtons).toHaveCount(1);
   const contextControl = page.getByTestId('home-hero-context-control'); await expect(contextControl).toBeVisible();
-  const modeTrigger = page.getByTestId('session-mode-trigger'); await expect(modeTrigger).toBeVisible(); await expect(modeTrigger).toBeEnabled();
-  await modeTrigger.click(); await expect(page.getByRole('menuitemradio')).toHaveCount(2); await page.keyboard.press('Escape');
+  const modeTrigger = page.getByTestId('session-mode-trigger'); await expect(modeTrigger).toHaveCount(0);
   const agentModel = page.getByTestId('home-hero-agent-model'); await expect(agentModel).toBeVisible();
-  const agentModelChip = agentModel.getByTestId('inline-model-switcher-chip'); await expect(agentModelChip).toBeEnabled();
-  await agentModelChip.click(); await expect(page.getByTestId('inline-model-switcher-popover')).toBeVisible(); await page.keyboard.press('Escape');
-  await page.keyboard.press('Control+k');
-  await expect(page.getByTestId('hub-command-palette')).toBeVisible();
-  await page.getByTestId('hub-palette-item-command-create-template').click();
-  const newProjectModal = page.getByTestId('new-project-modal'); await expect(newProjectModal).toBeVisible();
-  await expect(newProjectModal.getByTestId('new-project-tab-template')).toHaveAttribute('aria-selected', 'true');
-  await page.keyboard.press('Escape'); await expect(newProjectModal).toHaveCount(0);
+  await expect(agentModel.getByTestId('inline-model-switcher-chip')).toHaveCount(0);
+  const agentTrigger = agentModel.getByTestId('inline-model-switcher-agent-trigger');
+  const modelTrigger = agentModel.getByTestId('inline-model-switcher-model-trigger');
+  await expect(agentTrigger).toBeEnabled(); await expect(modelTrigger).toBeEnabled();
+  expect(await agentModel.locator('button').evaluateAll((buttons) => buttons.map((button) => button.dataset.testid))).toEqual([
+    'inline-model-switcher-agent-trigger',
+    'inline-model-switcher-model-trigger',
+  ]);
+  const agentModelAvailable = await agentModel.isVisible() && await agentTrigger.isEnabled() && await modelTrigger.isEnabled();
   const accentControlLocators = [
     page.getByTestId('home-hero-plus-trigger').locator('svg'),
     contextControl.locator('svg').first(),
-    modeTrigger.locator('svg').first(),
-    agentModel.locator('svg').first(),
+    agentTrigger.locator('svg').first(),
   ] as const;
   const accentMeasurements = await Promise.all(accentControlLocators.map((locator) => compositeContrast(locator)));
   const accentColorKeys = accentMeasurements.map((measurement) => measurement.foreground.slice(0, 3).join(','));
@@ -283,10 +323,26 @@ test('canonical start proves R1-R11 and R14 from rendered paint and geometry', a
     && accentMeasurements.every((measurement) => measurement.foreground[2] > measurement.foreground[0]
       && measurement.foreground[2] > measurement.foreground[1])
     && minimumAccentContrast >= 3;
+  await agentTrigger.click(); await expect(page.locator('body > [data-testid="inline-model-switcher-agent-popover"]')).toBeVisible(); await page.keyboard.press('Escape');
+  await page.keyboard.press('Control+k');
+  await expect(page.getByTestId('hub-command-palette')).toBeVisible();
+  await page.getByTestId('hub-palette-item-command-create-template').click();
+  const advanced = page.getByTestId('new-project-advanced'); await expect(advanced).toHaveCount(1);
+  const advancedToggle = advanced.getByTestId('new-project-advanced-toggle'); await expect(advancedToggle).toHaveAttribute('aria-expanded', 'true');
+  const newProjectPanel = advanced.getByTestId('new-project-advanced-body'); await expect(newProjectPanel).toBeVisible();
+  await expect(newProjectPanel.getByTestId('new-project-tab-template')).toHaveAttribute('aria-selected', 'true');
+  const modePicker = newProjectPanel.getByTestId('newproj-mode-picker'); await expect(modePicker).toBeVisible();
+  const designMode = modePicker.getByTestId('newproj-mode-design'); const chatMode = modePicker.getByTestId('newproj-mode-chat');
+  await expect(designMode).toHaveAttribute('aria-checked', 'true'); await expect(chatMode).toHaveAttribute('aria-checked', 'false');
+  await chatMode.click(); await expect(chatMode).toHaveAttribute('aria-checked', 'true'); await expect(designMode).toHaveAttribute('aria-checked', 'false');
+  const relocatedModeAvailable = await modePicker.isVisible() && await chatMode.getAttribute('aria-checked') === 'true';
+  await designMode.click(); await expect(designMode).toHaveAttribute('aria-checked', 'true'); await expect(chatMode).toHaveAttribute('aria-checked', 'false');
+  await advancedToggle.click(); await expect(advancedToggle).toHaveAttribute('aria-expanded', 'false'); await expect(newProjectPanel).toHaveCount(0);
   await expect(page.getByTestId('hub-live-time')).toBeVisible(); await expect(page.getByTestId('hub-live-strip').locator('svg')).toBeVisible();
   const brandHome = page.locator('.hub__brand-home'); await expect(brandHome).toHaveCSS('opacity', '0');
   await page.getByTestId('hub-brand').hover(); await expect(brandHome).toHaveCSS('opacity', '1');
-  await page.mouse.move(900, 700); await page.getByTestId('hub-brand').focus(); await expect(brandHome).toHaveCSS('opacity', '1');
+  await page.mouse.move(900, 700); await page.getByTestId('hub-rail-toggle').focus(); await page.keyboard.press('Tab');
+  await expect(page.getByTestId('hub-brand')).toBeFocused(); await expect(brandHome).toHaveCSS('opacity', '1');
   const live = page.getByTestId('hub-live-strip'); const arrow = live.locator('.hub__live-arrow');
   const liveBefore = await geometry(live); const arrowBefore = await geometry(arrow); await live.hover();
   await live.evaluate((node) =>
@@ -330,7 +386,8 @@ test('canonical start proves R1-R11 and R14 from rendered paint and geometry', a
     ['R8', composerAndSendPainted, `composer=${JSON.stringify(composerBounds)}; background=${composerBackground}; send=${JSON.stringify(sendBounds)}; contained=${sendContained}; sendVisible=${sendVisible}; actionVisible=${sendActionVisible}`, 'finite painted composer bounds contain a visible send action'],
     ['R10', await brandHome.evaluate((node) => getComputedStyle(node).opacity) === '1', 'restOpacity=0; hover/focusOpacity=1', 'brand Home label responds to pointer and keyboard'],
     ['R11', liveLift >= 0.75 && liveLift <= 1.25 && arrowShift >= 1.75 && arrowShift <= 2.25 && liveAfter.shadow !== liveBefore.shadow && liveBefore.shadow.includes('0px 2px 10px') && liveAfter.shadow.includes('0px 6px 18px'), `liveLift=${liveLift.toFixed(2)}px; arrowShift=${arrowShift.toFixed(2)}px; restShadow=${liveBefore.shadow}; hoverShadow=${liveAfter.shadow}`, 'settled live strip lifts 1px, arrow advances 2px, and hover material strengthens'],
-    ['R14', await footerButtons.count() === 1 && await modeTrigger.isVisible() && await agentModel.isVisible(), `footerButtons=${await footerButtons.count()}; modeVisible=${await modeTrigger.isVisible()}; agentModelVisible=${await agentModel.isVisible()}`, 'context, mode, and agent-model controls remain available with zero plugins'],
+    ['R14', await footerButtons.count() === 1 && await modeTrigger.count() === 0 && relocatedModeAvailable && agentModelAvailable, `footerButtons=${await footerButtons.count()}; hubModeCount=${await modeTrigger.count()}; relocatedModeAvailable=${relocatedModeAvailable}; agentModelAvailable=${agentModelAvailable}`, 'Hub omits the mode chip while New Project exposes both creation-mode cards alongside context and agent-model controls'],
+
   ] as const) recordRegion({ region, state: 'start', pass, anchor, observation });
   // Project creation supplies one baseline conversation before this fixture's
   // 11 ordered sessions. HubSessionTree caps the resulting 12 at
@@ -536,7 +593,9 @@ test('filtered, busy, error, tooltip, toast/undo and palette are behavioral stat
 
 test('collapsed, narrow, reduced preferences and both-theme contrast are measurable', async ({ page, request, browserName }) => {
   await openHub(page, request); const hub = page.locator('.hub'); const stageLocator = page.locator('.hub__stage'); const rail = page.getByTestId('hub-nav'); const toggle = page.getByTestId('hub-rail-toggle');
-  await screenshotMotion(page, 'brand-hover', page.getByTestId('hub-brand'), () => page.getByTestId('hub-brand').hover());
+  const brandTransition = await screenshotMotion(page, 'brand-hover', page.getByTestId('hub-brand'), () => page.getByTestId('hub-brand').hover());
+  expect(brandTransition.propertyName).toBe('opacity');
+  expect(brandTransition.target).toBe('span.hub__brand-home');
   await toggle.click(); await expect.poll(async () => (await geometry(stageLocator)).left - (await geometry(hub)).left).toBeCloseTo(78, 0); const collapsed = await geometry(rail); const collapsedTrack = (await geometry(stageLocator)).left - (await geometry(hub)).left;
   expect(collapsed.left).toBeCloseTo(10, 0); expect(collapsed.width).toBeCloseTo(60, 0); expect(collapsed.radius).toBe('12px'); await captureCanonical(page, 'collapsed');
   await page.setViewportSize({ width: 880, height: 700 }); await expect.poll(async () => (await geometry(stageLocator)).left - (await geometry(hub)).left).toBeCloseTo(78, 0); const narrow = await geometry(rail); const narrowTrack = (await geometry(stageLocator)).left - (await geometry(hub)).left; await captureCanonical(page, 'narrow');

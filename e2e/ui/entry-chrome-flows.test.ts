@@ -2,7 +2,6 @@ import { expect, test } from '@playwright/test';
 import type { Page, Request } from '@playwright/test';
 import { applyStandardMocks, fulfillAgentsRoute, STORAGE_KEY } from '@/playwright/mock-factory';
 
-const LOCAL_CLI_LABEL = /Local CLI|本机 CLI|本地 CLI/i;
 const DESIGN_SYSTEMS = [
   { id: 'agentic', title: 'Agentic', category: 'Productivity & SaaS', summary: 'Conversational AI-first interface.', surface: 'web', swatches: ['#ff5a1f', '#111827'] },
   { id: 'airbnb', title: 'Airbnb', category: 'E-Commerce & Retail', summary: 'Travel marketplace.', surface: 'web', swatches: ['#a3165b', '#ff385c'] },
@@ -12,8 +11,12 @@ test.beforeEach(async ({ page }) => {
   await applyStandardMocks(page);
 });
 
-function heroSwitcher(page: Page) {
-  return page.getByTestId('home-hero-agent-model').getByTestId('inline-model-switcher-chip');
+function heroAgentSwitcher(page: Page) {
+  return page.getByTestId('home-hero-agent-model').getByTestId('inline-model-switcher-agent-trigger');
+}
+
+function heroModelSwitcher(page: Page) {
+  return page.getByTestId('home-hero-agent-model').getByTestId('inline-model-switcher-model-trigger');
 }
 
 function topbarSwitcher(page: Page) {
@@ -50,12 +53,26 @@ test('[P0] @critical entry chrome exposes the Hub composer, navigation, and sett
   await expect(page.getByTestId('hub-search')).toBeVisible();
   await expect(page.getByTestId('hub-open-palette')).toBeVisible();
   await expect(page.getByTestId('home-hero-plus-trigger')).toBeVisible();
-  await expect(page.getByTestId('session-mode-trigger')).toBeVisible();
-  await expect(page.getByTestId('home-hero-agent-model')).toBeVisible();
+  await expect(page.getByTestId('home-hero-agent-model').getByTestId('session-mode-trigger')).toHaveCount(0);
+  await expect(heroAgentSwitcher(page)).toBeVisible();
+  await expect(heroModelSwitcher(page)).toBeVisible();
   await expect(page.getByTestId('home-hero-submit')).toBeDisabled();
-  await expect(page.getByTestId('entry-run-status')).toHaveAttribute('data-live', /^(true|false)$/);
-  await page.getByTestId('entry-settings-menu-trigger').click();
-  await page.getByTestId('entry-settings-open-details').click();
+
+  // Mode is a creation-time choice now. Pin both its removal from the Hub
+  // composer and its new, operable home so this cannot pass vacuously.
+  const advanced = page.getByTestId('new-project-advanced');
+  await expect(advanced).toHaveCount(1);
+  const advancedToggle = advanced.getByTestId('new-project-advanced-toggle');
+  await expect(advancedToggle).toHaveAttribute('aria-expanded', 'false');
+  await advancedToggle.click();
+  const modePicker = advanced.getByTestId('newproj-mode-picker');
+  await expect(modePicker).toBeVisible();
+  await expect(modePicker.getByTestId('newproj-mode-design')).toBeVisible();
+  await expect(modePicker.getByTestId('newproj-mode-chat')).toBeVisible();
+
+  const settings = page.getByTestId('hub-footer-settings');
+  await expect(settings).toBeVisible();
+  await settings.click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('heading', { name: 'Execution mode' })).toBeVisible();
 });
@@ -78,7 +95,10 @@ test('[P1] template creation remains reachable through the Hub command palette',
   const command = page.getByTestId('hub-palette-item-command-create-template');
   await expect(command).toBeVisible();
   await command.click();
-  await expect(page.getByTestId('new-project-modal')).toBeVisible();
+  const advanced = page.getByTestId('new-project-advanced');
+  await expect(advanced.getByTestId('new-project-advanced-toggle')).toHaveAttribute('aria-expanded', 'true');
+  await expect(advanced.getByTestId('new-project-advanced-body')).toBeVisible();
+  await expect(advanced.getByTestId('new-project-tab-template')).toHaveAttribute('aria-selected', 'true');
 });
 
 test('[P0] @critical Hub palette opens projects and Library reaches the projects index', async ({ page, request }) => {
@@ -141,10 +161,15 @@ test('[P0] @critical entry execution control opens the Local CLI and BYOK switch
   ]));
   await page.route('**/api/app-config', async (route) => route.request().method() === 'GET' ? route.fulfill({ json: { config: { mode: 'daemon', onboardingCompleted: true, agentId: 'codex', agentModels: { codex: { model: 'default' } }, privacyDecisionAt: 1, telemetry: { metrics: false, content: false, artifactManifest: false } } } }) : route.continue());
   await gotoEntryHome(page);
-  const control = heroSwitcher(page);
-  await expect(control).toHaveAccessibleName(new RegExp(`(?:${LOCAL_CLI_LABEL.source}).*Codex CLI.*default`, 'i'));
-  await control.click();
-  const popover = page.locator('body > [data-testid="inline-model-switcher-popover"]');
+  const agentControl = heroAgentSwitcher(page);
+  const modelControl = heroModelSwitcher(page);
+  await expect(agentControl).toHaveAccessibleName(/Agent: Codex CLI/i);
+  await expect(modelControl).toHaveAccessibleName(/Model: default/i);
+  await expect(page.getByTestId('home-hero-agent-model').getByTestId('inline-model-switcher-chip')).toHaveCount(0);
+  const order = await page.getByTestId('home-hero-agent-model').locator('button').evaluateAll((buttons) => buttons.map((button) => button.dataset.testid));
+  expect(order).toEqual(['inline-model-switcher-agent-trigger', 'inline-model-switcher-model-trigger']);
+  await agentControl.click();
+  const popover = page.locator('body > [data-testid="inline-model-switcher-agent-popover"]');
   await expect(popover).toBeVisible();
   await expect(page.getByTestId('inline-model-switcher-mode-daemon')).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByTestId('inline-model-switcher-mode-api')).toBeVisible();
@@ -156,11 +181,11 @@ test('[P0] @critical entry execution control opens the Local CLI and BYOK switch
 
 test('[P2] entry overlays close on outside click, Escape, and execution-settings open', async ({ page }) => {
   await gotoEntryHome(page);
-  const control = heroSwitcher(page);
-  const popover = page.getByTestId('inline-model-switcher-popover');
+  const control = heroAgentSwitcher(page);
+  const popover = page.getByTestId('inline-model-switcher-agent-popover');
   await control.click();
   await expect(popover).toBeVisible();
-  await page.getByTestId('entry-run-status').click();
+  await page.getByTestId('hub-footer-settings').click();
   await expect(popover).toHaveCount(0);
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.keyboard.press('Escape');

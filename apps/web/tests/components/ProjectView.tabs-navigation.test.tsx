@@ -101,12 +101,16 @@ vi.mock('../../src/components/AvatarMenu', () => ({
 }));
 
 vi.mock('../../src/components/FileWorkspace', () => ({
-  FileWorkspace: ({ tabsState, onTabsStateChange }: {
+  FileWorkspace: ({ tabsState, onTabsStateChange, brief }: {
     tabsState: { tabs: string[]; active: string | null };
     onTabsStateChange: (state: { tabs: string[]; active: string | null }) => void;
+    brief?: { assumptions: Array<{ id: string; value: string | string[] }> } | null;
   }) => (
     <div data-testid="file-workspace">
       <output data-testid="workspace-active-tab">{tabsState.active ?? ''}</output>
+      <output data-testid="workspace-brief">
+        {brief?.assumptions.map((item) => `${item.id}:${String(item.value)}`).join('|') ?? ''}
+      </output>
       <button
         type="button"
         data-testid="close-all-tabs"
@@ -123,7 +127,22 @@ vi.mock('../../src/components/Loading', () => ({
 }));
 
 vi.mock('../../src/components/ChatPane', () => ({
-  ChatPane: () => <div data-testid="chat-pane" />,
+  ChatPane: ({ agents, daemonLive, onModeChange, onAgentChange, onAgentModelChange }: {
+    agents?: AgentInfo[];
+    daemonLive?: boolean;
+    onModeChange?: (mode: AppConfig['mode']) => void;
+    onAgentChange?: (id: string) => void;
+    onAgentModelChange?: (id: string, choice: { model?: string }) => void;
+  }) => (
+    <div data-testid="chat-pane">
+      <output data-testid="execution-wiring">
+        {agents && daemonLive && onModeChange && onAgentChange && onAgentModelChange ? 'wired' : 'missing'}
+      </output>
+      <button type="button" onClick={() => onAgentModelChange?.('claude', { model: 'opus' })}>
+        choose opus
+      </button>
+    </div>
+  ),
 }));
 
 const mockedListConversations = vi.mocked(listConversations);
@@ -162,20 +181,24 @@ const conversation: Conversation = {
   updatedAt: 1,
 };
 
-function renderProjectView() {
+function renderProjectView(options: {
+  project?: Project;
+  agents?: AgentInfo[];
+  onAgentModelChange?: (id: string, choice: { model?: string; reasoning?: string }) => void;
+} = {}) {
   return render(
     <ProjectView
-      project={project}
+      project={options.project ?? project}
       routeFileName={null}
       config={config}
-      agents={[] as AgentInfo[]}
+      agents={options.agents ?? []}
       skills={[] as SkillSummary[]}
       designTemplates={[] as SkillSummary[]}
       designSystems={[] as DesignSystemSummary[]}
       daemonLive
       onModeChange={vi.fn()}
       onAgentChange={vi.fn()}
-      onAgentModelChange={vi.fn()}
+      onAgentModelChange={options.onAgentModelChange ?? vi.fn()}
       onRefreshAgents={vi.fn()}
       onOpenSettings={vi.fn()}
       onBack={vi.fn()}
@@ -200,6 +223,45 @@ describe('ProjectView tab URL hydration', () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+  });
+
+  it('threads live execution wiring into the workspace ChatPane and model picks reach the app callback', async () => {
+    const onAgentModelChange = vi.fn();
+    renderProjectView({
+      agents: [{ id: 'claude', name: 'Claude Code', bin: 'claude', available: true, models: [] }],
+      onAgentModelChange,
+    });
+
+    expect((await screen.findByTestId('execution-wiring')).textContent).toBe('wired');
+    fireEvent.click(screen.getByRole('button', { name: 'choose opus' }));
+    expect(onAgentModelChange).toHaveBeenCalledWith('claude', { model: 'opus' });
+  });
+
+  it('hydrates the workspace Brief card from persisted project metadata on return', async () => {
+    renderProjectView({
+      project: {
+        ...project,
+        metadata: {
+          kind: 'prototype',
+          brief: {
+            updatedAt: 10,
+            assumptions: [
+              { id: 'audience', label: 'Audience', value: 'security leaders', provenance: 'stated' },
+            ],
+          },
+        } as Project['metadata'] & { brief: {
+          updatedAt: number;
+          assumptions: Array<{
+            id: string;
+            label: string;
+            value: string;
+            provenance: 'stated';
+          }>;
+        } },
+      },
+    });
+
+    expect((await screen.findByTestId('workspace-brief')).textContent).toContain('audience:security leaders');
   });
 
   it('syncs a persisted active tab to the URL before the file list has hydrated', async () => {

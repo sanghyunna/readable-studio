@@ -54,9 +54,22 @@ if (auditIds.length !== 46) errors.push(`expected 46 audit-A controls, found ${a
 if (regressionIds.length !== 49) errors.push(`expected regressions 01-49, found ${regressionIds.length}`);
 if (reconciledIds.length !== 10) errors.push(`expected 10 section-C controls, found ${reconciledIds.length}`);
 
-const absentIds = matches(controlsSource, /\bid:\s*'([^']+)'[^\n]*expect:\s*'absent'/g);
-if (absentIds.length !== 1 || absentIds[0] !== 'regression-49') {
-  errors.push(`regression-49 must be the sole absent control; found: ${absentIds.join(', ') || '(none)'}`);
+// Absence is fail-closed: every intentionally removed surface needs an exact
+// inventory entry and a durable reason. Any other `expect: 'absent'` remains a
+// structural-guard failure rather than silently shrinking capability coverage.
+const INTENTIONALLY_ABSENT_CONTROLS = {
+  'regression-46': 'EntryHelpMenu was deliberately removed from the product; no Help trigger or menu should render.',
+  'regression-49': 'The retired first-run onboarding route must continue to resolve to Home without rendering onboarding.',
+} as const;
+const absentIds = matches(controlsSource, /\bid:\s*'([^']+)'[^\n]*expect:\s*'absent'/g).sort();
+const intentionallyAbsentIds = Object.keys(INTENTIONALLY_ABSENT_CONTROLS).sort();
+if (
+  absentIds.length !== intentionallyAbsentIds.length ||
+  absentIds.some((id, index) => id !== intentionallyAbsentIds[index])
+) {
+  errors.push(
+    `intentionally absent controls must be exactly ${intentionallyAbsentIds.join(', ')}; found: ${absentIds.join(', ') || '(none)'}`,
+  );
 }
 
 if (errors.length > 0) {

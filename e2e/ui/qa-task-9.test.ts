@@ -3,9 +3,9 @@
 // The regression under test: `EntryShell` suppresses the legacy icon rail on
 // the home route, which left every entry destination unreachable from the
 // start surface (defects #37-#46, #73-#75). The restoration follows the
-// approved mockup — a rail-footer "library" menu plus a presentational user
-// row, and a topbar carrying the run-status icon, help and the avatar — rather than
-// reinstating the old always-visible rail.
+// approved shell — a rail-footer "library" menu plus a presentational user
+// row, with settings on the footer gear and no obsolete top-right trio — rather
+// than reinstating the old always-visible rail.
 //
 // Two things this file deliberately does NOT do:
 //   * it does not mock `/api/projects`, because the zero-session case has to
@@ -84,16 +84,6 @@ const DESTINATIONS: Destination[] = [
     mount: (page) => page.getByTestId('integrations-tab-mcp').first(),
   },
 ];
-
-/**
- * The legacy icon rail still renders its own help launcher for the non-home
- * views it owns, but on home its grid track is 0-wide, clipped and
- * `pointer-events: none` — that unreachable copy is the defect, not the fix.
- * Every home assertion therefore addresses the topbar copy explicitly.
- */
-function topbar(page: Page): Locator {
-  return page.locator('.entry-main__topbar');
-}
 
 async function waitForLoadingToClear(page: Page): Promise<void> {
   await expect(page.locator('.readable-loading-shell')).toHaveCount(0, { timeout: 20_000 });
@@ -210,19 +200,10 @@ test('[P0] every entry destination is reachable from home in one interaction and
     expect(new URL(page.url()).pathname).toBe('/');
   }
 
-  // Help is the sixth destination. It is a topbar menu in the mockup rather
-  // than a route, so it is proven by the menu opening with its items.
-  const helpTrigger = topbar(page).getByTestId('entry-help-trigger');
-  await expect(helpTrigger).toBeVisible();
-  await helpTrigger.click();
-  const helpMenu = topbar(page).getByTestId('entry-help-menu');
-  await expect(helpMenu).toBeVisible();
-  await expect(helpMenu.getByTestId('entry-help-help')).toBeVisible();
-  await expect(helpMenu.getByTestId('entry-help-feature')).toBeVisible();
-  await page.screenshot({ path: `${EVIDENCE_DIR}/destination-help.png` });
-  await page.keyboard.press('Escape');
-  await expect(helpMenu).toBeHidden();
-  await expect(helpTrigger).toBeFocused();
+  // Help was intentionally retired rather than moved to another destination.
+  // Keep this regression check so stale launchers or popovers cannot return.
+  await expect(page.getByTestId('entry-help-trigger')).toHaveCount(0);
+  await expect(page.getByTestId('entry-help-menu')).toHaveCount(0);
 });
 
 test('[P0] a project with zero sessions opens from the tree', async ({ page }) => {
@@ -305,16 +286,15 @@ test('[P0] home renders the mockup rail footer and topbar chrome', async ({ page
   await settingsDialog.locator('.settings-close').click();
   await expect(settingsDialog).toBeHidden();
 
-  // Topbar: icon-form run status, help, avatar.
-  const runIcon = page.getByTestId('entry-run-status');
-  await expect(runIcon).toBeVisible();
-  await expect(runIcon).toHaveClass(/(?:^|\s)entry-run-icon(?:\s|$)/);
-  await expect(runIcon).toHaveAttribute('data-live', /true|false/);
-  await expect(runIcon).toHaveAttribute('aria-label', /.+/);
-  await expect(runIcon).toHaveAttribute('data-tooltip', /.+/);
-  await expect(runIcon.locator('.entry-run-icon__dot')).toBeVisible();
-  await expect(topbar(page).getByTestId('entry-help-trigger')).toBeVisible();
-  await expect(topbar(page).getByTestId('entry-settings-menu-trigger')).toBeVisible();
+  // The home composer retains its split execution controls, while the old
+  // top-right settings/status, help, and account controls are absent.
+  const topbar = page.locator('.entry-main__topbar');
+  await expect(topbar.getByTestId('inline-model-switcher-chip')).toBeHidden();
+  await expect(page.getByTestId('inline-model-switcher-agent-trigger')).toBeVisible();
+  await expect(page.getByTestId('inline-model-switcher-model-trigger')).toBeVisible();
+  await expect(topbar.getByTestId('entry-run-status')).toHaveCount(0);
+  await expect(topbar.getByTestId('entry-help-trigger')).toHaveCount(0);
+  await expect(topbar.getByTestId('entry-settings-menu-trigger')).toHaveCount(0);
 
   await page.screenshot({ path: `${EVIDENCE_DIR}/home-chrome.png`, fullPage: false });
   await page

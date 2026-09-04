@@ -2,7 +2,6 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 import { routeAgents } from '@/playwright/mock-factory';
-import { openNewProjectModal } from '@/playwright/new-project-modal';
 
 test.describe.configure({ timeout: 30_000 });
 
@@ -109,7 +108,7 @@ export const CONTROLS = [
   { id: 'regression-43', label: 'Home navigation destination: Plugins', i18nKey: 'entry.navPlugins', howToReach: 'Navigate from home to Plugins.', expect: 'present' },
   { id: 'regression-44', label: 'Home navigation destination: Design Systems', i18nKey: 'entry.navDesignSystems', howToReach: 'Navigate from home to Design Systems.', expect: 'present' },
   { id: 'regression-45', label: 'Home navigation destination: Integrations', i18nKey: 'entry.navIntegrations', howToReach: 'Navigate from home to Integrations.', expect: 'present' },
-  { id: 'regression-46', label: 'Home help menu', i18nKey: 'entry.help', howToReach: 'Open the help menu from home.', expect: 'present' },
+  { id: 'regression-46', label: 'Home help menu (intentionally removed)', i18nKey: 'entry.help', howToReach: 'Confirm the retired Help trigger and menu remain absent from home.', expect: 'absent' },
   { id: 'regression-47', label: 'First-run guided sheen from artifact tab to preset card', i18nKey: null, howToReach: 'Open a deterministic empty-project home and observe the guided sequence.', expect: 'present' },
   { id: 'regression-48', label: 'Import Folder starter performs a folder import', i18nKey: 'hub.importFolder', howToReach: 'Activate Import Folder and observe the folder-import API.', expect: 'present' },
   { id: 'regression-49', label: 'Home-level onboarding/welcome surface', i18nKey: 'settings.welcomeTitle', howToReach: 'Open first run with onboardingCompleted:false and verify onboarding does not render.', expect: 'absent' },
@@ -286,6 +285,21 @@ async function gotoHome(page: Page) {
 
 async function visible(locator: Locator, id: string) {
   await expect(locator, `[${id}] control must be visible on the real home surface`).toBeVisible({ timeout: 2_000 });
+}
+
+async function openAdvancedProjectPanel(page: Page, id: string) {
+  const advanced = page.getByTestId('new-project-advanced');
+  await expect(advanced, `[${id}] Advanced / Import must mount exactly once on the Hub`).toHaveCount(1);
+  const toggle = advanced.getByTestId('new-project-advanced-toggle');
+  await visible(toggle, id);
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(advanced.getByTestId('new-project-advanced-body')).toHaveCount(0);
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  const body = advanced.getByTestId('new-project-advanced-body');
+  await visible(body, id);
+  await visible(body.getByTestId('new-project-panel'), id);
+  return body;
 }
 
 async function writeEvidence(page: Page, name: string, details: unknown) {
@@ -504,13 +518,12 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
       await mention.click();
       await expect(composer(page)).toContainText('Airbnb');
 
-      await openNewProjectModal(page, id);
-      const modal = page.getByTestId('new-project-modal');
-      const picker = modal.getByTestId('design-system-trigger');
+      const panel = await openAdvancedProjectPanel(page, id);
+      const picker = panel.getByTestId('design-system-trigger');
       await visible(picker, id);
       await expect(picker).toContainText('Agentic');
       await picker.click();
-      const airbnb = modal.getByRole('option', { name: /Airbnb/i });
+      const airbnb = panel.getByRole('option', { name: /Airbnb/i });
       await visible(airbnb, id);
       await airbnb.click();
       await expect(picker).toContainText('Airbnb');
@@ -521,7 +534,7 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
         path: ['+ New project', 'Design system', 'Airbnb', 'Create project'],
       });
       const request = page.waitForRequest(candidate => candidate.method() === 'POST' && new URL(candidate.url()).pathname === '/api/projects');
-      await modal.getByTestId('create-project').click();
+      await panel.getByTestId('create-project').click();
       expect((await request).postDataJSON()).toMatchObject({ designSystemId: 'airbnb' });
       return;
     }
@@ -533,7 +546,31 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
     case 'plus-attach': await openPlus(page); { const attach = page.getByTestId('composer-plus-attach'); await visible(attach, id); const chooser = page.waitForEvent('filechooser'); await attach.click(); await chooser; } return;
     case 'plus-plugins': await openPlus(page); { const row = page.getByRole('menuitem', { name: /Plugins/i }).first(); await visible(row, id); await row.hover(); await visible(page.getByRole('menuitem', { name: /Localized Plugin/i }), id); } return;
     case 'plus-plugin-pick': await openPlus(page); { await page.getByRole('menuitem', { name: /Plugins/i }).first().hover(); const search = page.getByRole('textbox', { name: /Plugins/i }); await search.fill('Localized'); const option = page.getByRole('menuitem', { name: /Localized Plugin/i }); await option.hover(); await visible(page.locator('.plus-menu__preview[data-plugin-id="localized-plugin"]'), id); await option.click(); await expect(composer(page)).toContainText(/Localized Plugin/i); } return;
-    case 'plus-add-plugin': await openPlus(page); { const row = page.getByRole('menuitem', { name: /Plugins/i }).first(); await visible(row, id); await row.hover(); const add = page.getByRole('menuitem', { name: /Add plugin/i }); await visible(add, id); await add.click(); await expect(page).toHaveURL(/\/plugins$/); } return;
+    case 'plus-add-plugin': await openPlus(page); {
+      // The plus popup is portaled to document.body, and its plugin flyout only
+      // exists after the parent row is open. Click and await that exact state so
+      // the action locator cannot outlive a hover-driven flyout remount.
+      const popup = page.locator('body > .plus-menu__popup');
+      await visible(popup, id);
+      const row = popup.getByRole('menuitem', { name: /Plugins/i });
+      await visible(row, id);
+      await row.click();
+      await expect(row).toHaveAttribute('aria-expanded', 'true');
+      const flyout = popup.locator('.plus-menu__flyout--plugins');
+      await visible(flyout, id);
+      const add = flyout.getByRole('menuitem', { name: /Add plugin/i });
+      await visible(add, id);
+      if (id === 'regression-14') {
+        await writeEvidence(page, 'regression-14-menu-state', {
+          popupParent: await popup.evaluate(element => element.parentElement?.tagName),
+          pluginRowExpanded: await row.getAttribute('aria-expanded'),
+          flyoutRole: await flyout.getAttribute('role'),
+          addPluginText: (await add.innerText()).trim(),
+        });
+      }
+      await add.click();
+      await expect(page).toHaveURL(/\/plugins$/);
+    } return;
     case 'plus-mcp': await openPlus(page); { const row = page.getByRole('menuitem', { name: /^MCP$/i }); await visible(row, id); await row.hover(); await visible(page.getByRole('menuitem', { name: /QA MCP/i }), id); } return;
     case 'plus-mcp-pick': await openPlus(page); { await page.getByRole('menuitem', { name: /^MCP$/i }).hover(); await page.getByRole('textbox', { name: /^MCP$/i }).fill('QA'); const option = page.getByRole('menuitem', { name: /QA MCP/i }); await visible(option, id); await option.click(); await expect(composer(page)).toContainText(/QA MCP/i); } return;
     case 'plus-add-mcp': await openPlus(page); { const row = page.getByRole('menuitem', { name: /^MCP$/i }); await visible(row, id); await row.hover(); const add = page.getByRole('menuitem', { name: /Add MCP/i }); await visible(add, id); await add.click(); await expect(page).toHaveURL(/\/integrations$/); } return;
@@ -547,11 +584,14 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
     ]); expect(applyRequest.postDataJSON()).toMatchObject({ inputs: { topic: 'routing observables' } }); expect(creationRequest.postDataJSON()).toMatchObject({ pluginId: 'localized-plugin', appliedPluginSnapshotId: 'snap-localized-plugin', pluginInputs: { topic: 'routing observables' } }); } return; }
     case 'skill-clear': case 'skill-route': { await openMention(page); const tab = page.getByRole('tab', { name: /Skills/i }); await tab.click(); const option = page.getByRole('option', { name: /QA Skill/i }); await option.click(); const chip = page.getByTestId('home-hero-active-skill'); await visible(chip, id); if (kind === 'skill-clear') { await chip.getByRole('button').click(); await expect(chip).toHaveCount(0); } else { await composer(page).fill('skill routed creation'); const payload = await captureCreation(page); expect(payload).toMatchObject({ skillId: 'qa-skill', pendingPrompt: 'skill routed creation' }); expect(payload).not.toHaveProperty('pluginId'); } return; }
     case 'context-clear': { await openMention(page, '@local'); const option = page.getByRole('option', { name: /Localized Plugin/i }); await option.hover(); const details = page.getByTestId('home-hero-plugin-hover-card').getByRole('button'); await visible(details, id); await details.click(); await page.getByTestId('plugin-details-use-localized-plugin').click(); const chip = page.getByTestId('home-hero-active-plugin'); await visible(chip, id); const clear = chip.getByRole('button', { name: /Clear active plugin/i }); await visible(clear, id); await clear.click(); await expect(chip).toHaveCount(0); return; }
-    case 'mode': case 'mode-route': { const toggle = page.getByTestId('session-mode-trigger'); await visible(toggle, id); await toggle.click(); const ask = page.getByRole('menuitemradio', { name: /Ask mode/i }); await ask.click(); if (kind === 'mode-route') { await composer(page).fill('mode routed creation'); expect(await captureCreation(page)).toMatchObject({ conversationMode: 'chat', pendingPrompt: 'mode routed creation' }); } else { await toggle.click(); await expect(page.getByRole('menuitemradio', { name: /Ask mode/i })).toHaveAttribute('aria-checked', 'true'); } return; }
+    // Session mode is a creation-time choice, so it lives in the New Project
+    // flow rather than the Hub composer footer. The capability being pinned is
+    // unchanged: picking Ask must reach POST /api/projects as chat mode.
+    case 'mode': case 'mode-route': { await expect(page.getByTestId('home-hero-agent-model').getByTestId('session-mode-trigger')).toHaveCount(0); const panel = await openAdvancedProjectPanel(page, id); const picker = panel.getByTestId('newproj-mode-picker'); await visible(picker, id); const ask = panel.getByTestId('newproj-mode-chat'); await visible(ask, id); await ask.click(); await expect(ask).toHaveAttribute('aria-checked', 'true'); await expect(panel.getByTestId('newproj-mode-design')).toHaveAttribute('aria-checked', 'false'); if (kind === 'mode-route') { await panel.getByTestId('new-project-name').fill('mode routed creation'); const request = page.waitForRequest(candidate => candidate.method() === 'POST' && new URL(candidate.url()).pathname === '/api/projects'); await panel.getByTestId('create-project').click(); expect((await request).postDataJSON()).toMatchObject({ conversationMode: 'chat', name: 'mode routed creation' }); } return; }
     case 'continue': { await page.getByTestId('hub-open-palette').click(); const input = page.getByTestId('hub-palette-input'); await input.fill('Continue without'); const command = page.getByTestId('hub-palette-item-command-create-continue'); await visible(command, id); const req = page.waitForRequest(r => r.method() === 'POST' && new URL(r.url()).pathname === '/api/projects'); await command.click(); await req; return; }
     case 'prototype': case 'deck': case 'report': await chooseType(page, kind); return;
     case 'more': { await page.getByTestId('hub-open-palette').click(); await visible(page.getByTestId('hub-command-palette'), id); await visible(page.getByTestId('hub-palette-item-command-create-create-plugin'), id); return; }
-    case 'create-plugin': case 'figma': case 'template': { await page.getByTestId('hub-open-palette').click(); const input = page.getByTestId('hub-palette-input'); const label = kind === 'create-plugin' ? 'Create plugin' : kind === 'figma' ? 'From Figma' : 'From template'; await input.fill(label); const command = page.getByTestId(`hub-palette-item-command-create-${kind}`); await visible(command, id); await command.click(); if (kind === 'template') await visible(page.getByTestId('new-project-modal'), id); else if (kind === 'create-plugin') await expect(composer(page)).toContainText(/plugin/i); else await visible(page.getByRole('alert'), id); return; }
+    case 'create-plugin': case 'figma': case 'template': { await page.getByTestId('hub-open-palette').click(); const input = page.getByTestId('hub-palette-input'); const label = kind === 'create-plugin' ? 'Create plugin' : kind === 'figma' ? 'From Figma' : 'From template'; await input.fill(label); const command = page.getByTestId(`hub-palette-item-command-create-${kind}`); await visible(command, id); await command.click(); if (kind === 'template') { const advanced = page.getByTestId('new-project-advanced'); await expect(advanced).toHaveCount(1); await expect(advanced.getByTestId('new-project-advanced-toggle')).toHaveAttribute('aria-expanded', 'true'); const panel = advanced.getByTestId('new-project-advanced-body'); await visible(panel, id); await expect(panel.getByTestId('new-project-tab-template')).toHaveAttribute('aria-selected', 'true'); } else if (kind === 'create-plugin') await expect(composer(page)).toContainText(/plugin/i); else await visible(page.getByRole('alert'), id); return; }
     case 'subtype-all': await operateSubtypes(page, true, id); return;
     case 'subtype-category': await operateSubtypes(page, false, id); return;
     case 'type-clear': await chooseType(page, 'prototype'); { const chip = page.getByTestId('home-hero-active-type-chip'); await visible(chip, id); await chip.click(); await expect(chip).toHaveCount(0); } return;
@@ -579,9 +619,9 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
     case 'visible-error': { await page.route('**/api/plugins/localized-plugin/apply', async route => route.fulfill({ status: 500, json: { error: 'forced reachability failure' } })); await chooseType(page, 'prototype'); const presets = page.getByTestId('home-hero-plugin-presets'); await visible(presets, id); await presets.locator('[data-testid="home-hero-plugin-preset"]').first().click(); await visible(page.getByRole('alert'), id); return; }
     case 'rail-toggle': { const toggle = page.getByTestId('hub-rail-toggle'); await visible(toggle, id); const before = await page.locator('.hub').getAttribute('data-rail-collapsed'); await toggle.click(); await expect(page.locator('.hub')).not.toHaveAttribute('data-rail-collapsed', before ?? ''); return; }
     case 'nav-projects': case 'nav-tasks': case 'nav-plugins': case 'nav-design-systems': case 'nav-integrations': { const suffix = kind.replace('nav-', ''); const routeSuffix = suffix === 'tasks' ? 'automations' : suffix; const library = page.getByTestId('hub-library'); await visible(library, id); await library.click(); const nav = page.getByTestId(`hub-library-${suffix}`); await visible(nav, id); await nav.click(); await expect(page).toHaveURL(new RegExp(`/${routeSuffix}$`)); return; }
-    case 'help': { const help = page.getByRole('button', { name: /Help/i }).first(); await visible(help, id); await help.click(); await expect(help).toHaveAttribute('aria-expanded', 'true'); return; }
+    case 'help': { expect(control.expect).toBe('absent'); await expect(page.getByTestId('entry-help-trigger')).toHaveCount(0); await expect(page.getByTestId('entry-help-menu')).toHaveCount(0); await expect(page.getByRole('button', { name: /Help/i })).toHaveCount(0); return; }
     case 'first-run-guide': { await page.evaluate(() => window.localStorage.removeItem('readable-studio:home-guide-stage')); await page.route('**/api/projects', async route => { if (route.request().method() === 'GET') await route.fulfill({ json: { projects: [] } }); else await route.fulfill({ json: { project: PROJECTS[0], conversationId: 'created-session' } }); }); await page.reload({ waitUntil: 'domcontentloaded' }); await visible(page.getByTestId('entry-view-home'), id); await expect(page.locator('.home-hero__guide-sheen, [data-guide-active="true"]').first()).toBeVisible({ timeout: 2_000 }); return; }
-    case 'import-folder': { await openNewProjectModal(page, id); const button = page.getByTestId('new-project-modal').getByRole('button', { name: /Open folder/i }); await visible(button, id); const response = page.waitForResponse(r => new URL(r.url()).pathname === '/api/dialog/open-folder' && r.status() === 200); await Promise.all([response, button.click()]); return; }
+    case 'import-folder': { const panel = await openAdvancedProjectPanel(page, id); const button = panel.getByRole('button', { name: /Open folder/i }); await visible(button, id); const response = page.waitForResponse(r => new URL(r.url()).pathname === '/api/dialog/open-folder' && r.status() === 200); await Promise.all([response, button.click()]); return; }
     case 'onboarding-absent': { await page.addInitScript(({ key, value }) => window.localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: { ...HOME_CONFIG, onboardingCompleted: false } }); await page.route('**/api/app-config', async route => route.fulfill({ json: { config: { ...HOME_CONFIG, onboardingCompleted: false } } })); await page.goto('/onboarding', { waitUntil: 'domcontentloaded' }); await expect(page.locator('.onboarding-view'), `[${id}] onboarding must not render`).toHaveCount(0); await visible(page.getByTestId('entry-view-home'), id); return; }
     case 'c-hierarchy': { const project = page.getByTestId('hub-project-qa-running'); await visible(project, id); await expect(project).toHaveAttribute('aria-expanded', 'true'); await project.evaluate(element => (element as HTMLElement).click()); await expect(project).toHaveAttribute('aria-expanded', 'false'); await project.evaluate(element => (element as HTMLElement).click()); await expect(project).toHaveAttribute('aria-expanded', 'true'); return; }
     case 'c-status': { await visible(page.getByTestId('hub-session-qa-session-1'), id); await expect(page.getByTestId('hub-session-qa-session-1')).toHaveAttribute('data-state', 'running'); await expect(page.getByTestId('hub-session-qa-session-2')).toHaveAttribute('data-state', 'failed'); await expect(page.getByTestId('hub-project-qa-attention')).toHaveAttribute('data-state', 'awaiting'); return; }
@@ -591,7 +631,7 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
     case 'c-empty': { await page.getByTestId('hub-search').fill('no deterministic match'); await page.getByTestId('hub-filter-running').click(); const empty = page.getByTestId('hub-tree-empty'); await visible(empty, id); await empty.getByRole('button').click(); await expect(page.getByTestId('hub-filter-all')).toHaveAttribute('aria-pressed', 'true'); return; }
     case 'c-sort': { const body = page.locator('.hub-tree__body'); await expect(body.getByRole('treeitem', { level: 1 }).first()).toContainText('Zulu'); await page.getByTestId('hub-sort').click(); const menu = page.getByTestId('hub-sort-menu'); await visible(menu, id); const nameItem = page.getByTestId('hub-sort-menu-name'); await visible(nameItem, id); await expect(nameItem).toHaveRole('menuitemradio'); const geometry = await nameItem.evaluate((element) => { const rect = element.getBoundingClientRect(); const style = getComputedStyle(element); return { role: element.getAttribute('role'), accessibleText: element.textContent?.trim(), rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }, display: style.display, visibility: style.visibility, overflow: style.overflow }; }); await writeEvidence(page, 'sort-menu-diagnosis', geometry); await nameItem.click(); await expect(body.getByRole('treeitem', { level: 1 }).first()).toContainText('Alpha'); return; }
     case 'c-keyboard': { const first = page.getByTestId('hub-project-qa-running'); await visible(first, id); await first.focus(); await first.press('ArrowDown'); await expect(page.getByTestId('hub-session-qa-session-1')).toBeFocused(); await page.keyboard.press('Home'); await expect(first).toBeFocused(); return; }
-    case 'c-claude': { await openNewProjectModal(page, id); const button = page.getByTestId('new-project-modal').getByRole('button', { name: /Import Claude Design ZIP/i }); await visible(button, id); const chooser = page.waitForEvent('filechooser'); await button.click(); await chooser; return; }
+    case 'c-claude': { const panel = await openAdvancedProjectPanel(page, id); const button = panel.getByRole('button', { name: /Import Claude Design ZIP/i }); await visible(button, id); const chooser = page.waitForEvent('filechooser'); await button.click(); await chooser; return; }
     // The rail is glass now, not a painted gradient: assert the material that
     // actually makes it glass - a real backdrop blur over a translucent fill -
     // plus the rounded surface the mockup keeps.

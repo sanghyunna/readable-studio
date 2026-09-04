@@ -1,10 +1,9 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
-import { openSettingsDialog } from '../lib/playwright/amr.js';
 import { routeAgents } from '../lib/playwright/mock-factory.js';
 
 const STORAGE_KEY = 'readable-studio:config';
-const OPEN_SETTINGS_LABEL = /Open settings|打开设置|開啟設定|Account & settings/i;
+const SETTINGS_LABEL = /Settings|설정|设置|設定/i;
 const LOCAL_CLI_LABEL = /Local CLI|本机 CLI|本地 CLI/i;
 const MODEL_POPOVER_SELECTOR = '.model-select-searchable__popover';
 
@@ -21,11 +20,22 @@ async function gotoEntryHome(page: Page) {
   if (await privacyDialog.isVisible()) {
     await privacyDialog.getByRole('button', { name: /I get it|not now|got it|don't share/i }).click();
   }
-  await expect(page.getByRole('button', { name: OPEN_SETTINGS_LABEL })).toBeVisible();
+  await expect(page.getByTestId('hub-nav')).toBeVisible();
+  await expect(page.getByTestId('entry-settings-menu-trigger')).toHaveCount(0);
+  const settings = page.getByTestId('hub-footer-settings');
+  await expect(settings).toHaveCount(1);
+  await expect(settings).toBeVisible();
+  await expect(settings).toHaveAccessibleName(SETTINGS_LABEL);
 }
 
 async function openSettingsDialogFromEntry(page: Page) {
-  return openSettingsDialog(page);
+  const settings = page.getByTestId('hub-footer-settings');
+  await expect(settings).toHaveCount(1);
+  await settings.click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('heading', { name: 'Execution mode' })).toBeVisible();
+  return dialog;
 }
 
 async function openExecutionSettings(
@@ -473,8 +483,12 @@ test('[P0] @critical saving Local CLI updates the entry status pill with the sel
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
 
-  const executionPill = page.getByTestId('inline-model-switcher-chip');
-  await expect(executionPill).toContainText(LOCAL_CLI_LABEL);
-  await expect(executionPill).toContainText('Codex CLI');
-  await expect(executionPill).toContainText('default');
+  const composerControls = page.getByTestId('home-hero-agent-model');
+  const agentControl = composerControls.getByTestId('inline-model-switcher-agent-trigger');
+  const modelControl = composerControls.getByTestId('inline-model-switcher-model-trigger');
+  await expect(composerControls.getByTestId('inline-model-switcher-chip')).toHaveCount(0);
+  await expect(agentControl).toHaveAccessibleName(/Agent: Codex CLI/i);
+  await expect(modelControl).toHaveAccessibleName(/Model: default/i);
+  const order = await composerControls.locator('button').evaluateAll((buttons) => buttons.map((button) => button.dataset.testid));
+  expect(order).toEqual(['inline-model-switcher-agent-trigger', 'inline-model-switcher-model-trigger']);
 });
