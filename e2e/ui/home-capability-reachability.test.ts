@@ -547,25 +547,39 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
     case 'plus-plugins': await openPlus(page); { const row = page.getByRole('menuitem', { name: /Plugins/i }).first(); await visible(row, id); await row.hover(); await visible(page.getByRole('menuitem', { name: /Localized Plugin/i }), id); } return;
     case 'plus-plugin-pick': await openPlus(page); { await page.getByRole('menuitem', { name: /Plugins/i }).first().hover(); const search = page.getByRole('textbox', { name: /Plugins/i }); await search.fill('Localized'); const option = page.getByRole('menuitem', { name: /Localized Plugin/i }); await option.hover(); await visible(page.locator('.plus-menu__preview[data-plugin-id="localized-plugin"]'), id); await option.click(); await expect(composer(page)).toContainText(/Localized Plugin/i); } return;
     case 'plus-add-plugin': await openPlus(page); {
-      // The plus popup is portaled to document.body, and its plugin flyout only
-      // exists after the parent row is open. Click and await that exact state so
-      // the action locator cannot outlive a hover-driven flyout remount.
+      // The popup is portaled to document.body. Open its hover-driven submenu
+      // with hover rather than clicking the parent: a pointer click can first
+      // open on mouseenter and then toggle the freshly rendered row closed.
       const popup = page.locator('body > .plus-menu__popup');
       await visible(popup, id);
       const row = popup.getByRole('menuitem', { name: /Plugins/i });
       await visible(row, id);
-      await row.click();
+      await row.hover();
       await expect(row).toHaveAttribute('aria-expanded', 'true');
       const flyout = popup.locator('.plus-menu__flyout--plugins');
       await visible(flyout, id);
       const add = flyout.getByRole('menuitem', { name: /Add plugin/i });
       await visible(add, id);
+      // A trial click awaits the exact state the real pointer action requires:
+      // attached, stable, enabled, and receiving pointer events at its hit point.
+      await add.click({ trial: true });
       if (id === 'regression-14') {
         await writeEvidence(page, 'regression-14-menu-state', {
           popupParent: await popup.evaluate(element => element.parentElement?.tagName),
           pluginRowExpanded: await row.getAttribute('aria-expanded'),
           flyoutRole: await flyout.getAttribute('role'),
           addPluginText: (await add.innerText()).trim(),
+          hitTarget: await add.evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            const x = rect.left + rect.width / 2;
+            const y = rect.top + rect.height / 2;
+            const top = document.elementFromPoint(x, y);
+            return {
+              rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+              topAtCenter: top?.textContent?.trim() ?? null,
+              receivesEvents: top === element || (top != null && element.contains(top)),
+            };
+          }),
         });
       }
       await add.click();
@@ -620,7 +634,7 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
     case 'rail-toggle': { const toggle = page.getByTestId('hub-rail-toggle'); await visible(toggle, id); const before = await page.locator('.hub').getAttribute('data-rail-collapsed'); await toggle.click(); await expect(page.locator('.hub')).not.toHaveAttribute('data-rail-collapsed', before ?? ''); return; }
     case 'nav-projects': case 'nav-tasks': case 'nav-plugins': case 'nav-design-systems': case 'nav-integrations': { const suffix = kind.replace('nav-', ''); const routeSuffix = suffix === 'tasks' ? 'automations' : suffix; const library = page.getByTestId('hub-library'); await visible(library, id); await library.click(); const nav = page.getByTestId(`hub-library-${suffix}`); await visible(nav, id); await nav.click(); await expect(page).toHaveURL(new RegExp(`/${routeSuffix}$`)); return; }
     case 'help': { expect(control.expect).toBe('absent'); await expect(page.getByTestId('entry-help-trigger')).toHaveCount(0); await expect(page.getByTestId('entry-help-menu')).toHaveCount(0); await expect(page.getByRole('button', { name: /Help/i })).toHaveCount(0); return; }
-    case 'first-run-guide': { await page.evaluate(() => window.localStorage.removeItem('readable-studio:home-guide-stage')); await page.route('**/api/projects', async route => { if (route.request().method() === 'GET') await route.fulfill({ json: { projects: [] } }); else await route.fulfill({ json: { project: PROJECTS[0], conversationId: 'created-session' } }); }); await page.reload({ waitUntil: 'domcontentloaded' }); await visible(page.getByTestId('entry-view-home'), id); await expect(page.locator('.home-hero__guide-sheen, [data-guide-active="true"]').first()).toBeVisible({ timeout: 2_000 }); return; }
+    case 'first-run-guide': { await page.evaluate(() => window.localStorage.removeItem('readable-studio:home-first-run-guide')); await page.route('**/api/projects', async route => { if (route.request().method() === 'GET') await route.fulfill({ json: { projects: [] } }); else await route.fulfill({ json: { project: PROJECTS[0], conversationId: 'created-session' } }); }); await page.reload({ waitUntil: 'domcontentloaded' }); await visible(page.getByTestId('entry-view-home'), id); await expect(page.locator('.home-hero__guide-sheen, [data-guide-active="true"]').first()).toBeVisible({ timeout: 2_000 }); return; }
     case 'import-folder': { const panel = await openAdvancedProjectPanel(page, id); const button = panel.getByRole('button', { name: /Open folder/i }); await visible(button, id); const response = page.waitForResponse(r => new URL(r.url()).pathname === '/api/dialog/open-folder' && r.status() === 200); await Promise.all([response, button.click()]); return; }
     case 'onboarding-absent': { await page.addInitScript(({ key, value }) => window.localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: { ...HOME_CONFIG, onboardingCompleted: false } }); await page.route('**/api/app-config', async route => route.fulfill({ json: { config: { ...HOME_CONFIG, onboardingCompleted: false } } })); await page.goto('/onboarding', { waitUntil: 'domcontentloaded' }); await expect(page.locator('.onboarding-view'), `[${id}] onboarding must not render`).toHaveCount(0); await visible(page.getByTestId('entry-view-home'), id); return; }
     case 'c-hierarchy': { const project = page.getByTestId('hub-project-qa-running'); await visible(project, id); await expect(project).toHaveAttribute('aria-expanded', 'true'); await project.evaluate(element => (element as HTMLElement).click()); await expect(project).toHaveAttribute('aria-expanded', 'false'); await project.evaluate(element => (element as HTMLElement).click()); await expect(project).toHaveAttribute('aria-expanded', 'true'); return; }

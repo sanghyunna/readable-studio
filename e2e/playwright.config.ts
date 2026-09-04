@@ -51,7 +51,10 @@ export default defineConfig({
       `powershell -NoProfile -ExecutionPolicy Bypass -Command "$env:READABLE_DATA_DIR=${powerShellQuote(dataDir)}; ` +
       `pnpm --dir .. tools-dev run web --namespace ${powerShellQuote(namespace)} --daemon-port ${daemonPort} --web-port ${webPort}"`,
     url: baseURL,
-    reuseExistingServer: false,
+    // Default stays false so a normal run always owns its server. Set
+    // READABLE_E2E_REUSE_SERVER=1 to point the suite at a runtime that is
+    // already up, instead of booting a second one alongside it.
+    reuseExistingServer: process.env.READABLE_E2E_REUSE_SERVER === '1',
     timeout: 120_000,
   },
   projects: [

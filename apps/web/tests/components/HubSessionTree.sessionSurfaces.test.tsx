@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   consumeHubSessionSurface,
   HubSessionTree,
-  queueHubSessionSurface,
 } from '../../src/components/hub/HubSessionTree';
 import { FileWorkspace } from '../../src/components/FileWorkspace';
 import type { HubProjectNode } from '../../src/components/hub/types';
@@ -88,7 +87,22 @@ describe('Hub session surface handoff', () => {
     });
   });
 
-  it('opens tree handoffs in the established workspace hosts', async () => {
+  it.each([
+    {
+      kind: 'terminal',
+      actionTestId: 'hub-new-terminal-p1',
+      expectedTab: 'terminal:term-tree',
+    },
+    {
+      kind: 'side-chat',
+      actionTestId: 'hub-open-side-chat-c1',
+      expectedTab: 'chat:c1',
+    },
+  ] as const)('carries the real $kind click through navigation into FileWorkspace', async ({
+    kind,
+    actionTestId,
+    expectedTab,
+  }) => {
     vi.mocked(createTerminal).mockResolvedValue({
       id: 'term-tree',
       projectId: 'p1',
@@ -102,50 +116,48 @@ describe('Hub session surface handoff', () => {
       exitCode: null,
       signal: null,
     });
-    const terminalState = vi.fn();
-    queueHubSessionSurface({ projectId: 'p1', kind: 'terminal' });
-    const terminalView = render(
+    const onOpenProject = vi.fn();
+    const onOpenSession = vi.fn();
+    const tree = render(
+      <HubSessionTree
+        projects={[PROJECT]}
+        currentSessionId={null}
+        onOpenProject={onOpenProject}
+        onOpenSession={onOpenSession}
+        onNewSession={vi.fn()}
+      />,
+    );
+
+    // This callback is the production route boundary: click first, then unmount
+    // the hub as navigation does. Nothing consumes or reconstructs the handoff.
+    fireEvent.click(screen.getByTestId(actionTestId));
+    if (kind === 'terminal') {
+      expect(onOpenProject).toHaveBeenCalledWith(PROJECT);
+    } else {
+      expect(onOpenSession).toHaveBeenCalledWith(PROJECT.sessions[0]);
+    }
+    tree.unmount();
+
+    const onTabsStateChange = vi.fn();
+    const workspace = render(
       <FileWorkspace
         {...workspaceProps}
         tabsState={{ tabs: [], active: null }}
-        onTabsStateChange={terminalState}
+        onTabsStateChange={onTabsStateChange}
       />,
     );
-    terminalView.rerender(
+    workspace.rerender(
       <FileWorkspace
         {...workspaceProps}
         tabsState={{ tabs: [], active: null, hasSavedState: true }}
-        onTabsStateChange={terminalState}
+        onTabsStateChange={onTabsStateChange}
       />,
     );
-    await waitFor(() => {
-      expect(terminalState).toHaveBeenCalledWith({
-        tabs: ['terminal:term-tree'],
-        active: 'terminal:term-tree',
-      });
-    });
-    terminalView.unmount();
 
-    const sideChatState = vi.fn();
-    queueHubSessionSurface({ projectId: 'p1', kind: 'side-chat', conversationId: 'c2' });
-    const sideChatView = render(
-      <FileWorkspace
-        {...workspaceProps}
-        tabsState={{ tabs: ['terminal:term-tree'], active: 'terminal:term-tree' }}
-        onTabsStateChange={sideChatState}
-      />,
-    );
-    sideChatView.rerender(
-      <FileWorkspace
-        {...workspaceProps}
-        tabsState={{ tabs: ['terminal:term-tree'], active: 'terminal:term-tree', hasSavedState: true }}
-        onTabsStateChange={sideChatState}
-      />,
-    );
     await waitFor(() => {
-      expect(sideChatState).toHaveBeenCalledWith({
-        tabs: ['terminal:term-tree', 'chat:c2'],
-        active: 'chat:c2',
+      expect(onTabsStateChange).toHaveBeenCalledWith({
+        tabs: [expectedTab],
+        active: expectedTab,
       });
     });
   });
