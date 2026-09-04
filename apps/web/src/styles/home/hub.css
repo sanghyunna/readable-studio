@@ -327,8 +327,38 @@
   line-height: 1;
 }
 
-.hub__new-project:hover {
+/* The reported defect was a CASCADE loss, not a missing colour: `primitives.css`
+   declares `button:hover:not(:disabled) { background: var(--bg-subtle) }` at
+   specificity (0,2,1), which outranked the old `.hub__new-project:hover` at
+   (0,2,0). On hover the fill dropped to near-white while `color` stayed
+   `--hub-accent-fg` (white), measuring 1.09:1 in light and 1.13:1 in dark -
+   exactly the "barely legible" the user saw.
+
+   Every state now restates BOTH the background and its matching foreground
+   together, at a specificity that beats the primitive, so the ink can never
+   drift away from the fill it sits on. Tokens only - no new palette. */
+.hub__new-project,
+.hub__new-project:hover,
+.hub__new-project:hover:not(:disabled),
+.hub__new-project:focus-visible,
+.hub__new-project:active {
+  color: var(--hub-accent-fg);
+}
+
+.hub__new-project:hover:not(:disabled) {
   background: color-mix(in srgb, var(--hub-accent) 86%, var(--text-strong));
+  border-color: transparent;
+}
+
+.hub__new-project:active:not(:disabled) {
+  background: color-mix(in srgb, var(--hub-accent) 74%, var(--text-strong));
+  border-color: transparent;
+}
+
+.hub__new-project:focus-visible {
+  background: var(--hub-accent);
+  outline: 2px solid var(--hub-accent);
+  outline-offset: 2px;
 }
 
 .hub__status {
