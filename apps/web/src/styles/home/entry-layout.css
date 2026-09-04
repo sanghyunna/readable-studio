@@ -529,23 +529,24 @@
 .entry-main__topbar:has(~ .entry-main__inner--home) .entry-main__topbar-chips {
   display: none;
 }
+/* Home topbar account control: an identity avatar. The initials it shows are
+   real content rendered by `EntrySettingsMenu` from the runtime Windows user
+   (`/api/runtime/user` -> `workspaceInitials`), never a literal in this file.
+   Call sites without a user boundary keep the gear glyph, so this block only
+   sizes and tints the pill. */
 .entry-main__topbar:has(~ .entry-main__inner--home) .settings-icon-btn {
   width: 28px;
   height: 28px;
   border-radius: var(--radius-pill);
   border: 1px solid var(--hub-pearl-highlight);
   background: var(--hub-accent);
-  color: transparent;
-  font-size: 0;
-}
-.entry-main__topbar:has(~ .entry-main__inner--home) .settings-icon-btn::before {
-  content: 'SH';
   color: var(--hub-accent-fg);
+}
+.settings-icon-btn__initials {
   font-size: 11px;
   font-weight: 650;
-}
-.entry-main__topbar:has(~ .entry-main__inner--home) .settings-icon-btn svg {
-  display: none;
+  letter-spacing: 0.02em;
+  line-height: 1;
 }
 .entry-main__topbar::before {
   content: '';
@@ -564,47 +565,114 @@
   gap: 8px;
 }
 
-/* Local-run status chip + help launcher — the approved hub topbar
+/* Local-run settings icon + help launcher — the approved hub topbar
    (`.tmp/design/main-hub/index.html:791`) states where the run happens and
-   keeps help one click away from the start surface. */
-.entry-run-chip {
+   keeps help one click away from the start surface. The control only ever
+   opened execution settings, so it presents as a gear; the daemon state stays
+   perceivable through the corner status dot (colour + tonal ring), the
+   tooltip, and the accessible name. */
+.entry-run-icon {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  height: 30px;
-  padding: 0 11px;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
   border: 1px solid var(--hub-control-border);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius);
   background: var(--hub-control-surface);
   -webkit-backdrop-filter: blur(10px) saturate(150%);
   backdrop-filter: blur(10px) saturate(150%);
   box-shadow: var(--hub-control-shadow);
   color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 550;
   cursor: pointer;
+  transition:
+    background 120ms var(--ease-out),
+    color 120ms var(--ease-out),
+    box-shadow 120ms var(--ease-out);
 }
 
-.entry-run-chip:hover {
+.entry-run-icon:hover {
   background: var(--hub-control-surface-hover);
   box-shadow: var(--hub-control-shadow-hover);
   color: var(--text);
 }
 
-.entry-main__topbar:has(~ .entry-main__inner--home) .entry-run-chip__dot {
-  display: none;
+.entry-run-icon:focus-visible {
+  outline: 2px solid var(--hub-accent);
+  outline-offset: 2px;
 }
 
-.entry-run-chip__dot {
+/* Live daemon reads as an accent-tinted gear on an accent-tinted fill, so the
+   running state is legible from tone alone and does not depend on the 6px dot.
+   `--hub-accent` (not `--hub-accent-ink`) because the ink token collapses
+   toward `--text-muted` under the dark recipe and loses the contrast. */
+.entry-run-icon.is-live {
+  color: var(--hub-accent);
+  background: var(--hub-accent-fill);
+  border-color: var(--hub-accent-line);
+}
+
+.entry-run-icon.is-live:hover {
+  background: color-mix(in srgb, var(--hub-accent) 16%, transparent);
+  color: var(--hub-accent);
+}
+
+.entry-run-icon__dot {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
   width: 6px;
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--text-faint);
+  box-shadow: 0 0 0 2px var(--bg-panel);
 }
 
-.entry-run-chip.is-live .entry-run-chip__dot {
+.entry-run-icon.is-live .entry-run-icon__dot {
   background: var(--selected);
 }
+
+/* Same downward tooltip material as the icon-only chip group next door. */
+.entry-run-icon::after {
+  content: attr(data-tooltip);
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(-4px);
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--bg-panel);
+  background: var(--text-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms var(--ease-out), transform 120ms var(--ease-out);
+  z-index: 60;
+}
+
+.entry-run-icon:hover::after,
+.entry-run-icon:focus-visible::after {
+  display: block;
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .entry-run-icon,
+  .entry-run-icon::after {
+    transition: none;
+  }
+}
+
+/* The opaque fallback for this control lives with the rest of the hub glass
+   fallbacks in `home/hub.css` (`prefers-reduced-transparency` block). */
 
 .entry-help-menu {
   position: relative;

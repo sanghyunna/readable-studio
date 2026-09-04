@@ -155,24 +155,22 @@ export function HubRailFooter({
   workspaceName = null,
 }: Props) {
   const t = useT();
-  const [openMenu, setOpenMenu] = useState<'library' | 'workspace' | null>(null);
+  const [openMenu, setOpenMenu] = useState<'library' | null>(null);
   const libraryRef = useRef<HTMLButtonElement | null>(null);
-  const workspaceRef = useRef<HTMLButtonElement | null>(null);
 
   const closeLibrary = useCallback((restoreFocus: boolean) => {
     setOpenMenu(null);
     if (restoreFocus) libraryRef.current?.focus();
   }, []);
-  const closeWorkspace = useCallback((restoreFocus: boolean) => {
-    setOpenMenu(null);
-    if (restoreFocus) workspaceRef.current?.focus();
-  }, []);
 
   // Projects remains reachable in the library menu without adding a separate
-  // row above the reference footer hierarchy.
+  // row above the reference footer hierarchy. The workspace folder joins the
+  // same menu: the user row is presentational now, and the library menu is the
+  // footer's only surface that already holds destination items, so this keeps
+  // the storage-roots settings section reachable in one click.
   const libraryItems = useMemo<MenuItem[]>(
-    () =>
-      (['projects', 'tasks', 'design-systems', 'plugins', 'integrations'] as const).map((destination) => ({
+    () => [
+      ...(['projects', 'tasks', 'design-systems', 'plugins', 'integrations'] as const).map((destination) => ({
         id: destination,
         icon: DESTINATION_ICON[destination],
         label: t(
@@ -189,31 +187,19 @@ export function HubRailFooter({
         testId: `hub-library-${destination}`,
         onSelect: () => onOpenDestination(destination),
       })),
-    [onOpenDestination, t],
-  );
-
-  const userLabel = username?.trim() || t('hub.localUserUnavailable');
-  const workspaceLabel = workspaceName?.trim() || t('hub.localWorkspace');
-
-  const workspaceItems = useMemo<MenuItem[]>(
-    () => [
-      {
-        id: 'settings',
-        icon: 'settings',
-        label: t('avatar.settings'),
-        testId: 'hub-workspace-settings',
-        onSelect: onOpenSettings,
-      },
       {
         id: 'workspace-folder',
-        icon: 'folder',
+        icon: 'folder' as IconName,
         label: t('hub.workspaceFolder'),
         testId: 'hub-workspace-folder',
         onSelect: onOpenWorkspaceFolder,
       },
     ],
-    [onOpenSettings, onOpenWorkspaceFolder, t],
+    [onOpenDestination, onOpenWorkspaceFolder, t],
   );
+
+  const userLabel = username?.trim() || t('hub.localUserUnavailable');
+  const workspaceLabel = workspaceName?.trim() || t('hub.localWorkspace');
 
   return (
     <div className="hub__foot" data-testid="hub-rail-footer">
@@ -249,36 +235,21 @@ export function HubRailFooter({
           title={t('avatar.settings')}
           onClick={onOpenSettings}
         >
-          <Icon name="settings" size={17} strokeWidth={1.6} />
+          <Icon name="settings" size={21} strokeWidth={1.7} />
         </button>
       </div>
-      <div className="hub__menu-anchor">
-        <button
-          ref={workspaceRef}
-          type="button"
-          className="hub__user-row"
-          data-testid="hub-workspace-row"
-          aria-haspopup="menu"
-          aria-expanded={openMenu === 'workspace'}
-          aria-controls={openMenu === 'workspace' ? 'hub-workspace' : undefined}
-          onClick={() => setOpenMenu((current) => (current === 'workspace' ? null : 'workspace'))}
-        >
-          <span className="hub__user-avatar" aria-hidden="true">
-            {workspaceInitials(userLabel)}
-          </span>
-          <span className="hub__user-meta">
-            <span className="hub__user-name">{userLabel}</span>
-            <span className="hub__user-sub">{workspaceLabel}</span>
-          </span>
-        </button>
-        <HubMenu
-          id="hub-workspace"
-          label={userLabel}
-          items={workspaceItems}
-          open={openMenu === 'workspace'}
-          onClose={closeWorkspace}
-          triggerRef={workspaceRef}
-        />
+      {/* Presentational identity only. The row used to open a menu holding
+          settings and the workspace folder; settings now lives on the footer
+          gear beside it and in the topbar, and the workspace folder moved into
+          the library menu, so nothing here is interactive. */}
+      <div className="hub__user-row" data-testid="hub-workspace-row">
+        <span className="hub__user-avatar" aria-hidden="true">
+          {workspaceInitials(userLabel)}
+        </span>
+        <span className="hub__user-meta">
+          <span className="hub__user-name">{userLabel}</span>
+          <span className="hub__user-sub">{workspaceLabel}</span>
+        </span>
       </div>
     </div>
   );

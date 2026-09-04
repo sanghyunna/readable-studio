@@ -19,6 +19,7 @@ import {
 } from '../analytics/events';
 import type { AppConfig, AppTheme } from '../types';
 import { Icon } from './Icon';
+import { workspaceInitials } from './hub/HubRailFooter';
 import { DEFAULT_THEME, THEME_OPTIONS } from '../state/themes';
 
 export type EntrySettingsSection =
@@ -46,6 +47,12 @@ interface Props {
   // The popover is mounted both on the home header and the in-project
   // artifact header; defaults to 'home' so existing call sites stay correct.
   trackingPageName?: 'home' | 'artifact';
+  // Real runtime user name (`/api/runtime/user` -> `os.userInfo().username`).
+  // When present the trigger presents as an identity avatar rendering that
+  // user's initials; identity must never be baked into a stylesheet. Call
+  // sites with no user boundary (the in-project artifact header) omit it and
+  // keep the gear.
+  username?: string | null;
 }
 
 function themeIndexForKey(currentIndex: number, key: string): number | null {
@@ -68,6 +75,7 @@ export function EntrySettingsMenu({
   onOpenSettings,
   onTrackTriggerClick,
   trackingPageName,
+  username,
 }: Props) {
   const pageName = trackingPageName ?? 'home';
   const analytics = useAnalytics();
@@ -79,6 +87,7 @@ export function EntrySettingsMenu({
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const langListRef = useRef<HTMLDivElement | null>(null);
   const activeTheme = config.theme ?? DEFAULT_THEME;
+  const initials = workspaceInitials(username ?? '');
 
   useEffect(() => {
     if (!open) setLangOpen(false);
@@ -142,7 +151,13 @@ export function EntrySettingsMenu({
         aria-expanded={open}
         data-testid="entry-settings-menu-trigger"
       >
-        <Icon name="settings" size={17} />
+        {initials ? (
+          <span className="settings-icon-btn__initials" aria-hidden="true">
+            {initials}
+          </span>
+        ) : (
+          <Icon name="settings" size={17} />
+        )}
       </button>
       {open ? (
         <div

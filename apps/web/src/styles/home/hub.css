@@ -825,14 +825,9 @@
   border-radius: 999px;
   background: var(--hub-accent);
   color: var(--hub-accent-fg);
-  font-size: 0;
+  font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0.01em;
-}
-
-.hub__user-avatar::before {
-  content: 'SH';
-  font-size: 10.5px;
 }
 
 .hub__user-meta {
@@ -1586,6 +1581,12 @@
   padding-inline: 0;
 }
 
+/* Collapsed the gear is a full-width row rather than a fixed square, so it
+   keeps the enlarged glyph without stretching past the stacked library row. */
+.hub--rail-collapsed .hub__dest {
+  height: 38px;
+}
+
 .hub--rail-collapsed .hub__dest-more span,
 .hub--rail-collapsed .hub__user-meta {
   position: absolute;
@@ -1830,6 +1831,16 @@
   box-shadow: inset 0 1px 0 var(--hub-control-highlight);
 }
 
+/* Unlike the raised rail controls, search is a recessed work surface. The
+   darker inner top edge and pearl lower edge keep its boundary visible at rest
+   in both schemes without changing the field geometry or focus ring. */
+.hub__search {
+  background: var(--hub-control-surface);
+  box-shadow:
+    inset 0 1px 2px var(--hub-pearl-elevation),
+    inset 0 -1px 0 var(--hub-control-highlight);
+}
+
 .hub-tree__filter:hover,
 .hub-tree__sort:hover {
   background: var(--hub-control-surface-hover);
@@ -1930,7 +1941,6 @@
   .hub-row:hover,
   .hub__dest:hover,
   .hub__dest-more:hover,
-  .hub__user-row:hover,
   .hub__view-all:hover,
   .hub__menu-item:hover,
   .hub-menu__item:hover {
@@ -1968,10 +1978,19 @@
     background: var(--hub-canvas);
   }
 
+  /* The opaque fallback still needs to read as an input at rest; retaining the
+     inset token pair preserves the recess after blur and transparency leave. */
+  .hub__search {
+    background: var(--bg-panel);
+    box-shadow:
+      inset 0 1px 2px var(--hub-pearl-elevation),
+      inset 0 -1px 0 var(--hub-control-highlight);
+  }
+
   .hub-kbd,
   .hub-tree__filter,
   .hub-tree__sort,
-  .entry-run-chip,
+  .entry-run-icon,
   /* Same single-surface rule as the glass path: the select trigger stays
      transparent so the opaque fallback does not paint a second filled box
      plus its own outline ring inside the wrapper's pill. */
@@ -1984,5 +2003,13 @@
     backdrop-filter: none;
     background: var(--bg-panel);
     box-shadow: 0 0 0 1px var(--border);
+  }
+
+  /* The opaque fallback must not erase the daemon-live tint: it is one of the
+     two channels (with the status dot) that keeps running vs offline
+     perceivable once the run chip's text label is gone. */
+  .entry-run-icon.is-live {
+    background: var(--hub-accent-fill);
+    box-shadow: 0 0 0 1px var(--hub-accent-line);
   }
 }

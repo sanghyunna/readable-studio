@@ -514,6 +514,7 @@ export function EntryShell({
       config={config}
       onThemeChange={onThemeChange}
       onOpenSettings={onOpenSettings}
+      username={username}
       onTrackTriggerClick={() => {
         trackHomeToolbarClick(analytics.track, {
           page_name: 'home',
@@ -573,16 +574,22 @@ export function EntryShell({
             {view === 'home' ? (
               <>
                 {/* Mockup topbar (`index.html:791`): local-run status, help,
-                    then the account menu. */}
+                    then the account menu. The status chip presents as a
+                    settings icon because its only action was ever opening the
+                    execution settings surface; the daemon live/offline signal
+                    survives as the status dot on the icon plus the accessible
+                    name and tooltip, which still use the run-state strings. */}
                 <button
                   type="button"
-                  className={`entry-run-chip${daemonLive ? ' is-live' : ''}`}
+                  className={`entry-run-icon${daemonLive ? ' is-live' : ''}`}
                   data-testid="entry-run-status"
                   data-live={daemonLive ? 'true' : 'false'}
+                  aria-label={`${t('avatar.settings')} — ${daemonLive ? t('hub.localRunning') : t('hub.localOffline')}`}
+                  data-tooltip={daemonLive ? t('hub.localRunning') : t('hub.localOffline')}
                   onClick={() => onOpenSettings('execution')}
                 >
-                  <span className="entry-run-chip__dot" aria-hidden="true" />
-                  <span>{daemonLive ? t('hub.localRunning') : t('hub.localOffline')}</span>
+                  <Icon name="settings" size={17} strokeWidth={1.6} />
+                  <span className="entry-run-icon__dot" aria-hidden="true" />
                 </button>
                 <EntryHelpMenu />
               </>
