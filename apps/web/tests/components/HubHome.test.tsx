@@ -12,7 +12,11 @@ vi.mock('../../src/state/projects', () => ({
   readConversations: readConversationsFromListMock(listConversations),
 }));
 
+import { EntryNavRail } from '../../src/components/EntryNavRail';
 import { HubHome } from '../../src/components/hub/HubHome';
+import { I18nProvider } from '../../src/i18n';
+import { en } from '../../src/i18n/locales/en';
+import { ko } from '../../src/i18n/locales/ko';
 import type { Project } from '../../src/types';
 import { setHomeHeroPrompt } from '../helpers/home-hero-lexical';
 
@@ -59,6 +63,51 @@ function renderHub(overrides: Partial<Parameters<typeof HubHome>[0]> = {}) {
 }
 
 describe('HubHome', () => {
+  it('localizes the entry rail and command palette surfaces in Korean', async () => {
+    listConversations.mockResolvedValue([]);
+    const { unmount } = render(
+      <I18nProvider initial="ko">
+        <EntryNavRail
+          view="home"
+          onViewChange={vi.fn()}
+          onNewProject={vi.fn()}
+          open
+          onClose={vi.fn()}
+        />
+      </I18nProvider>,
+    );
+    expect(screen.getByTestId('entry-nav-rail').getAttribute('aria-label')).toBe(
+      ko['entry.navPrimary'],
+    );
+    expect(ko['entry.navPrimary']).not.toBe(en['entry.navPrimary']);
+    expect(screen.queryByLabelText(en['entry.navPrimary'])).toBeNull();
+    unmount();
+
+    const { container } = render(
+      <I18nProvider initial="ko">
+        <HubHome
+          projects={PROJECTS}
+          projectsLoading={false}
+          onOpenSession={vi.fn()}
+          onSubmitPrompt={vi.fn()}
+          onNewProject={vi.fn()}
+        />
+      </I18nProvider>,
+    );
+    const opener = await screen.findByTestId('hub-open-palette');
+    expect(opener.getAttribute('aria-label')).toBe(ko['hub.paletteOpen']);
+    fireEvent.click(opener);
+    const palette = screen.getByRole('dialog', { name: ko['hub.paletteSearch'] });
+    const groups = Array.from(palette.querySelectorAll('.hub-palette__group')).map(
+      (node) => node.textContent,
+    );
+    expect(groups).toContain(ko['hub.paletteCreate']);
+    expect(groups).toContain(ko['hub.paletteNavigate']);
+    expect(container.textContent).not.toContain(en['hub.paletteCreate']);
+    expect(container.textContent).not.toContain(en['hub.paletteNavigate']);
+    expect(screen.queryByLabelText(en['hub.paletteOpen'])).toBeNull();
+  });
+
   it('renders the start surface instead of a wall of past projects', async () => {
     listConversations.mockResolvedValue([]);
     renderHub();

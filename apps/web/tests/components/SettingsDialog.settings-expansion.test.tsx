@@ -143,6 +143,28 @@ afterEach(() => {
 });
 
 describe('Settings → system prompts', () => {
+  it('renders API prompt labels and descriptions from stable ids in Korean', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      jsonResponse({ prompts: [deckPrompt(), discoveryPrompt()] }),
+    ) as unknown as typeof fetch;
+
+    renderSettings('systemPrompts', {}, 'ko');
+
+    await screen.findByText(ko['systemPrompts.deckFramework.label']);
+    const deck = promptCard('deck-framework');
+    expect(within(deck).getByText(ko['systemPrompts.deckFramework.description'])).toBeTruthy();
+    expect(within(deck).queryByText('Deck framework')).toBeNull();
+    expect(within(deck).queryByText('Drives deck generation.')).toBeNull();
+    expect(
+      within(deck).getByRole('textbox', {
+        name: `${ko['systemPrompts.deckFramework.label']} — ${ko['systemPrompts.editorLabel']}`,
+      }),
+    ).toBeTruthy();
+    expect(ko['systemPrompts.deckFramework.label']).not.toBe(
+      en['systemPrompts.deckFramework.label'],
+    );
+  });
+
   it('lists prompts and marks which ones carry an override', async () => {
     globalThis.fetch = vi.fn(async () =>
       jsonResponse({
@@ -155,7 +177,7 @@ describe('Settings → system prompts', () => {
 
     renderSettings('systemPrompts');
 
-    await screen.findByText('Deck framework');
+    await screen.findByText(en['systemPrompts.deckFramework.label']);
     expect(
       within(promptCard('deck-framework')).getByText(en['systemPrompts.overridden']),
     ).toBeTruthy();
@@ -176,7 +198,7 @@ describe('Settings → system prompts', () => {
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     renderSettings('systemPrompts');
-    await screen.findByText('Deck framework');
+    await screen.findByText(en['systemPrompts.deckFramework.label']);
 
     const card = promptCard('deck-framework');
     const editor = within(card).getByRole('textbox');
@@ -206,7 +228,7 @@ describe('Settings → system prompts', () => {
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     renderSettings('systemPrompts');
-    await screen.findByText('Deck framework');
+    await screen.findByText(en['systemPrompts.deckFramework.label']);
 
     const card = promptCard('deck-framework');
     fireEvent.click(within(card).getByRole('button', { name: en['systemPrompts.reset'] }));
@@ -229,7 +251,7 @@ describe('Settings → system prompts', () => {
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     renderSettings('systemPrompts');
-    await screen.findByText('Discovery workflow');
+    await screen.findByText(en['systemPrompts.discoveryWorkflow.label']);
 
     const card = promptCard('discovery-workflow');
     // The slot is called out as present before the user touches anything.
@@ -272,7 +294,7 @@ describe('Settings → system prompts', () => {
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     renderSettings('systemPrompts');
-    await screen.findByText('Discovery workflow');
+    await screen.findByText(en['systemPrompts.discoveryWorkflow.label']);
 
     const card = promptCard('discovery-workflow');
     // Keep the slot so the client-side guard allows the request through and the

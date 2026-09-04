@@ -540,7 +540,7 @@ export function HubHome({
     return [
       ...creationCommands.map(([chipId, title]) => ({
         id: `command-create-${chipId}`,
-        group: 'Create',
+        group: t('hub.paletteCreate'),
         title,
         kind: 'command' as const,
         activate: () => setCommandChip({ id: chipId, nonce: Date.now() }),
@@ -549,7 +549,7 @@ export function HubHome({
       ...sessionEntries,
       ...destinations.map(([destination, title]) => ({
         id: `destination-${destination}`,
-        group: 'Navigate',
+        group: t('hub.paletteNavigate'),
         title,
         kind: 'destination' as const,
         activate: () => onNavigateDestination?.(destination),

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useT } from '../../i18n';
 
 export interface HubPaletteEntry {
   id: string;
@@ -15,6 +16,7 @@ interface Props {
 }
 
 export function HubCommandPalette({ entries, onClose }: Props) {
+  const t = useT();
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -53,7 +55,7 @@ export function HubCommandPalette({ entries, onClose }: Props) {
         data-testid="hub-command-palette"
         role="dialog"
         aria-modal="true"
-        aria-label="Search projects, sessions, and destinations"
+        aria-label={t('hub.paletteSearch')}
         onKeyDown={(event) => {
           if (event.key === 'Escape') {
             event.preventDefault();
@@ -99,7 +101,7 @@ export function HubCommandPalette({ entries, onClose }: Props) {
             className="hub-palette__input"
             data-testid="hub-palette-input"
             value={query}
-            placeholder="Search projects, sessions, and destinations"
+            placeholder={t('hub.paletteSearch')}
             autoComplete="off"
             role="combobox"
             aria-expanded="true"
@@ -113,7 +115,7 @@ export function HubCommandPalette({ entries, onClose }: Props) {
           <kbd className="hub-kbd">Esc</kbd>
         </div>
         <div id="hub-palette-list" className="hub-palette__list" role="listbox">
-          {hits.length === 0 ? <p className="hub-palette__empty">No matching results</p> : null}
+          {hits.length === 0 ? <p className="hub-palette__empty">{t('hub.paletteNoResults')}</p> : null}
           {hits.map((entry, index) => {
             const previous = hits[index - 1];
             return (
@@ -142,9 +144,9 @@ export function HubCommandPalette({ entries, onClose }: Props) {
           })}
         </div>
         <div className="hub-palette__foot">
-          <span><kbd className="hub-kbd">↑↓</kbd> Move</span>
-          <span><kbd className="hub-kbd">Enter</kbd> Open</span>
-          <span><kbd className="hub-kbd">Esc</kbd> Close</span>
+          <span><kbd className="hub-kbd">↑↓</kbd> {t('hub.paletteMove')}</span>
+          <span><kbd className="hub-kbd">Enter</kbd> {t('hub.paletteActivate')}</span>
+          <span><kbd className="hub-kbd">Esc</kbd> {t('hub.paletteClose')}</span>
         </div>
       </div>
     </div>

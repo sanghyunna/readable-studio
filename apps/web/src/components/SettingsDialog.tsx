@@ -2772,7 +2772,7 @@ export function SettingsDialog({
         </header>
 
         <div className="modal-body">
-          <aside className="settings-sidebar" aria-label="Settings sections">
+          <aside className="settings-sidebar" aria-label={t('settings.sectionsAria')}>
             <button
               type="button"
               className={`settings-nav-item${activeSection === 'execution' ? ' active' : ''}`}
@@ -5064,6 +5064,24 @@ function countPlaceholder(content: string, placeholder: string): number {
   return count;
 }
 
+const SYSTEM_PROMPT_COPY_KEYS: Record<
+  EditableSystemPrompt['id'],
+  { label: keyof Dict; description: keyof Dict }
+> = {
+  'designer-charter': {
+    label: 'systemPrompts.designerCharter.label',
+    description: 'systemPrompts.designerCharter.description',
+  },
+  'discovery-workflow': {
+    label: 'systemPrompts.discoveryWorkflow.label',
+    description: 'systemPrompts.discoveryWorkflow.description',
+  },
+  'deck-framework': {
+    label: 'systemPrompts.deckFramework.label',
+    description: 'systemPrompts.deckFramework.description',
+  },
+};
+
 type PromptStatus =
   | { kind: 'idle' }
   | { kind: 'saving' }
@@ -5188,13 +5206,16 @@ function SystemPromptCard({
                   : null;
 
   const editorId = `system-prompt-editor-${prompt.id}`;
+  const copyKeys = SYSTEM_PROMPT_COPY_KEYS[prompt.id];
+  const displayLabel = t(copyKeys.label);
+  const displayDescription = t(copyKeys.description);
 
   return (
     <article className={styles.promptCard} data-prompt-id={prompt.id}>
       <div className={styles.promptHead}>
         <div className={styles.promptHeadText}>
-          <span className={styles.promptName}>{prompt.label}</span>
-          <p className={styles.promptDescription}>{prompt.description}</p>
+          <span className={styles.promptName}>{displayLabel}</span>
+          <p className={styles.promptDescription}>{displayDescription}</p>
         </div>
         <span className={styles.promptBadge} data-overridden={prompt.overridden}>
           {prompt.overridden
@@ -5239,7 +5260,7 @@ function SystemPromptCard({
       <textarea
         id={editorId}
         className={styles.promptEditor}
-        aria-label={`${prompt.label} — ${t('systemPrompts.editorLabel')}`}
+        aria-label={`${displayLabel} — ${t('systemPrompts.editorLabel')}`}
         aria-invalid={hasPlaceholderProblem || undefined}
         data-invalid={hasPlaceholderProblem}
         spellCheck={false}
