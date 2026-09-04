@@ -160,7 +160,6 @@ interface DetailProps {
   onInitialRevisionJobConsumed?: (jobId: string) => void;
 }
 
-type SetupStep = 'setup' | 'confirm';
 type ReviewTab = 'system' | 'files';
 
 interface ResolvedDesignSystemWorkspaceProject {
@@ -290,10 +289,10 @@ export function DesignSystemCreationFlow({
   onBeforeGenerate,
   onGenerateSettled,
 }: CreationProps) {
-  const [step, setStep] = useState<SetupStep>('setup');
   const [state, setState] = useState<SetupState>(EMPTY_SETUP);
   const [error, setError] = useState<string | null>(null);
   const [generationStarting, setGenerationStarting] = useState(false);
+  const [browserSourceStaging, setBrowserSourceStaging] = useState(false);
   const [sourceProcessingCount, setSourceProcessingCount] = useState(0);
   const embedded = chrome === 'embedded';
 
@@ -478,7 +477,6 @@ export function DesignSystemCreationFlow({
       });
       if (!created) {
         setError('Could not generate this design system.');
-        setStep('setup');
         emitCreateResult('failed', undefined, 'DS_DRAFT_CREATE_FAILED', undefined);
         onGenerateSettled?.(snapshot, {
           result: 'failed',
@@ -489,7 +487,6 @@ export function DesignSystemCreationFlow({
       const workspace = await ensureDesignSystemWorkspace(created.id);
       if (!workspace) {
         setError('Could not open the design system workspace.');
-        setStep('setup');
         emitCreateResult('failed', created.id, 'DS_WORKSPACE_OPEN_FAILED', undefined);
         onGenerateSettled?.(snapshot, {
           result: 'failed',
@@ -499,23 +496,37 @@ export function DesignSystemCreationFlow({
       }
       const project = workspace.project;
       const setupState = state;
-      onCreated(project.id, project);
+      const preparation = {
+        project,
+        state: setupState,
+        onProjectPrepared,
+        onSystemsRefresh,
+        analyticsTrack: analytics.track,
+        ingestEntryFrom,
+        designSystemId: created.id,
+      };
+      const hasBrowserOwnedSources =
+        setupState.codeFileObjects.length > 0
+        || setupState.figFileObjects.length > 0
+        || setupState.assetFileObjects.length > 0;
+      if (hasBrowserOwnedSources) {
+        // File objects only live in this document. Keep the flow mounted and
+        // make that interruption boundary explicit until every browser-owned
+        // source and the handoff manifest have reached the project.
+        setBrowserSourceStaging(true);
+        await prepareCreatedDesignSystemProject(preparation);
+        setBrowserSourceStaging(false);
+        onCreated(project.id, project);
+      } else {
+        onCreated(project.id, project);
+        scheduleAfterProjectHandoff(() => {
+          void prepareCreatedDesignSystemProject(preparation);
+        });
+      }
       emitCreateResult('success', created.id, undefined, project.id);
       onGenerateSettled?.(snapshot, { result: 'success' });
-      scheduleAfterProjectHandoff(() => {
-        void prepareCreatedDesignSystemProject({
-          project,
-          state: setupState,
-          onProjectPrepared,
-          onSystemsRefresh,
-          analyticsTrack: analytics.track,
-          ingestEntryFrom,
-          designSystemId: created.id,
-        });
-      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not prepare the design system project.');
-      setStep('setup');
       const errorCode = err instanceof Error
         ? `DS_GENERATE_THREW:${err.message.slice(0, 80)}`
         : 'DS_GENERATE_THREW';
@@ -524,31 +535,6 @@ export function DesignSystemCreationFlow({
     } finally {
       setGenerationStarting(false);
     }
-  }
-
-  if (step === 'confirm') {
-    return (
-      <div className="ds-setup-shell ds-setup-shell--center">
-        <div className="ds-setup-center-card">
-          <h1>It will take about 5 minutes to generate your design system.</h1>
-          <p>You can step away. Keep the tab open in the background.</p>
-          <div className="ds-setup-actions">
-            <Button variant="ghost" onClick={() => setStep('setup')}>
-              <Icon name="arrow-left" />
-              Back
-            </Button>
-            <Button
-              variant="primary"
-              disabled={generationStarting}
-              onClick={() => void generate()}
-            >
-              <Icon name="sparkles" />
-              {generationStarting ? 'Opening project...' : 'Generate'}
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
   }
 
   return (
@@ -583,23 +569,41 @@ export function DesignSystemCreationFlow({
           </span>
           <Button
             variant="primary"
-            disabled={!state.company.trim()}
+            disabled={!state.company.trim() || generationStarting}
             onClick={() => {
               emitCreateFormClick('continue_to_generation');
               if (!state.company.trim()) {
                 setError('Tell Readable Studio about the company or design system first.');
                 return;
               }
-              setStep('confirm');
+              void generate();
             }}
           >
-            Continue to generation
-            <Icon name="chevron-right" />
+            <Icon name="sparkles" />
+            {browserSourceStaging
+              ? 'Preparing source material...'
+              : generationStarting
+                ? 'Opening project...'
+                : 'Generate design system'}
           </Button>
         </header>
       )}
 
       <main className="ds-setup-form">
+        {browserSourceStaging ? (
+          <div
+            className="ds-source-staging-status"
+            role="status"
+            aria-live="polite"
+            data-testid="ds-source-staging-status"
+          >
+            <Spinner size={18} />
+            <span>
+              <strong>Preparing your source material...</strong>
+              <small>Keep this tab open. Closing it now stops files that have not finished copying.</small>
+            </span>
+          </div>
+        ) : null}
         <h1>Generate from your material</h1>
         <p>Start with a short description, then add any source files you already have.</p>
 
@@ -741,18 +745,22 @@ export function DesignSystemCreationFlow({
             </Button>
             <Button
               variant="primary"
-              disabled={!state.company.trim()}
+              disabled={!state.company.trim() || generationStarting}
               onClick={() => {
                 emitCreateFormClick('continue_to_generation');
                 if (!state.company.trim()) {
                   setError('Tell Readable Studio about the company or design system first.');
                   return;
                 }
-                setStep('confirm');
+                void generate();
               }}
             >
-              Generate
-              <Icon name="chevron-right" />
+              <Icon name="sparkles" />
+              {browserSourceStaging
+                ? 'Preparing source material...'
+                : generationStarting
+                  ? 'Opening project...'
+                  : 'Generate'}
             </Button>
           </div>
         ) : null}

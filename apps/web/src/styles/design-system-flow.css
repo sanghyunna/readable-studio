@@ -421,6 +421,44 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.ds-source-staging-status {
+  position: sticky;
+  top: 12px;
+  z-index: 4;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 22px;
+  padding: 13px 15px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-elevated) 84%, transparent);
+  color: var(--text);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--shadow-color) 10%, transparent), var(--shadow-xs);
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
+  backdrop-filter: blur(10px) saturate(140%);
+}
+.ds-source-staging-status > span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.ds-source-staging-status strong {
+  color: var(--text-strong);
+  font-size: 13px;
+  line-height: 1.35;
+}
+.ds-source-staging-status small {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+@media (prefers-reduced-transparency: reduce) {
+  .ds-source-staging-status {
+    background: var(--bg-elevated);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
 .ds-source-upload-loading {
   position: fixed;
   inset: 0;

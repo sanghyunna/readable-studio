@@ -88,7 +88,15 @@ describe('hub composer design system', () => {
     expect(Array.from(controls, (control) => control.dataset.testid)).toEqual([
       'home-hero-context-control',
     ]);
-    expect(screen.getByRole('button', { name: 'Design mode' })).toBeTruthy();
+    // The 디자인/질문 mode chip was deliberately removed from the HUB composer;
+    // mode selection now lives in the New Project flow as two selectable cards
+    // (`newproj-mode-design` / `newproj-mode-chat`), and `SessionModeToggle`
+    // remains only in the PROJECT chat composer. The hub must therefore render
+    // no mode affordance at all — neither the toggle nor either mode label.
+    expect(screen.queryByTestId('session-mode-trigger')).toBeNull();
+    for (const label of ['Design mode', 'Design', 'Chat', 'Ask']) {
+      expect(screen.queryByRole('button', { name: label })).toBeNull();
+    }
 
     fireEvent.click(screen.getByTestId('home-hero-context-control'));
     expect(await screen.findByTestId('home-hero-plugin-picker')).toBeTruthy();

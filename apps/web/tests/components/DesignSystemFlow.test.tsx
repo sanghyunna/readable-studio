@@ -146,8 +146,8 @@ beforeEach(() => {
   }));
 });
 
-function continueToGeneration() {
-  fireEvent.click(screen.getByRole('button', { name: /^(continue to generation|generate)$/i }));
+function startGeneration() {
+  fireEvent.click(screen.getByRole('button', { name: /^generate( design system)?$/i }));
 }
 
 describe('design system package audit helpers', () => {
@@ -298,8 +298,8 @@ describe('DesignSystemCreationFlow', () => {
         value: 'Acme: analytics workspace for operations teams',
       },
     });
-    continueToGeneration();
-    continueToGeneration();
+    expect(screen.queryByText(/keep the tab open/i)).toBeNull();
+    startGeneration();
 
     await waitFor(() => expect(screen.getByText('Opening project...')).toBeTruthy());
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith(project.id, project));
@@ -328,6 +328,92 @@ describe('DesignSystemCreationFlow', () => {
         pendingPrompt: 'Create this project as a design system.',
       }),
     ));
+  });
+
+  it('keeps an honest in-flow status visible until browser-owned source staging completes', async () => {
+    const system: DesignSystemDetail = {
+      id: 'user:staging-design-system',
+      title: 'Staging Design System',
+      category: 'Custom',
+      summary: 'A source-backed system.',
+      swatches: [],
+      surface: 'web',
+      body: '# Staging Design System\n',
+      source: 'user',
+      status: 'draft',
+      isEditable: true,
+      projectId: 'ds-staging-design-system',
+    };
+    const project: Project = {
+      id: 'ds-staging-design-system',
+      name: 'Staging Design System',
+      skillId: null,
+      designSystemId: system.id,
+      createdAt: 1,
+      updatedAt: 1,
+      metadata: {
+        kind: 'other',
+        importedFrom: 'design-system',
+        entryFile: 'DESIGN.md',
+        sourceFileName: system.id,
+      },
+    };
+    let finishUpload!: (file: ProjectFile) => void;
+    mocks.uploadProjectFile.mockReturnValueOnce(new Promise((resolve) => {
+      finishUpload = resolve;
+    }));
+    mocks.createDesignSystemDraft.mockResolvedValue(system);
+    mocks.ensureDesignSystemWorkspace.mockResolvedValue({ project, files: [] });
+    mocks.patchProject.mockResolvedValue({ ...project, pendingPrompt: 'Create this project as a design system.' });
+    const onCreated = vi.fn();
+
+    render(
+      <DesignSystemCreationFlow
+        onBack={() => {}}
+        onCreated={onCreated}
+      />,
+    );
+    const assetInput = screen
+      .getByText('Drag files here or browse')
+      .closest('label')
+      ?.querySelector('input') as HTMLInputElement | null;
+    const logoFile = new File(['<svg />'], 'logo.svg', { type: 'image/svg+xml' });
+
+    fireEvent.change(screen.getByPlaceholderText(/Mission Impastabowl/i), {
+      target: { value: 'Staging: source-backed product UI' },
+    });
+    fireEvent.change(assetInput!, { target: { files: [logoFile] } });
+    startGeneration();
+
+    const status = await screen.findByTestId('ds-source-staging-status');
+    expect(status.textContent).toContain('Preparing your source material...');
+    expect(status.textContent).toContain('Closing it now stops files that have not finished copying.');
+    expect(onCreated).not.toHaveBeenCalled();
+    expect(mocks.writeProjectTextFile).not.toHaveBeenCalledWith(
+      project.id,
+      'context/source-context.md',
+      expect.anything(),
+    );
+
+    finishUpload({
+      name: 'assets/logo.svg',
+      size: logoFile.size,
+      mtime: 1,
+      kind: 'code',
+      mime: logoFile.type,
+    });
+
+    await waitFor(() => expect(screen.queryByTestId('ds-source-staging-status')).toBeNull());
+    expect(mocks.writeProjectTextFile).toHaveBeenCalledWith(
+      project.id,
+      'context/source-context.md',
+      expect.stringContaining('assets/logo.svg'),
+    );
+    expect(mocks.patchProject).toHaveBeenCalledWith(
+      project.id,
+      expect.objectContaining({ pendingPrompt: expect.any(String) }),
+    );
+    expect(onCreated).toHaveBeenCalledWith(project.id, project);
   });
 
   it('creates a project-backed design system and hands the first task to the normal project chat', async () => {
@@ -378,8 +464,7 @@ describe('DesignSystemCreationFlow', () => {
         value: 'Acme: analytics workspace for operations teams',
       },
     });
-    continueToGeneration();
-    continueToGeneration();
+    startGeneration();
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith(project.id, project));
 
@@ -880,8 +965,7 @@ describe('DesignSystemCreationFlow', () => {
     expect(screen.getByText('1 local code files selected')).toBeTruthy();
     expect(screen.queryByTestId('ds-source-upload-loading')).toBeNull();
 
-    continueToGeneration();
-    continueToGeneration();
+    startGeneration();
 
     await waitFor(() => expect(mocks.uploadProjectFile).toHaveBeenCalled());
     expect(mocks.uploadProjectFile).toHaveBeenCalledWith(
@@ -1165,8 +1249,7 @@ describe('DesignSystemCreationFlow', () => {
 
     await waitFor(() => expect(screen.getByText('2 local code files selected')).toBeTruthy());
 
-    continueToGeneration();
-    continueToGeneration();
+    startGeneration();
 
     await waitFor(() => expect(mocks.uploadProjectFile).toHaveBeenCalledTimes(2));
     expect(mocks.uploadProjectFile).toHaveBeenCalledWith(
@@ -1238,8 +1321,7 @@ describe('DesignSystemCreationFlow', () => {
     fireEvent.change(figInput!, { target: { files: [figFile] } });
     expect(screen.getByText('product-design.fig')).toBeTruthy();
 
-    continueToGeneration();
-    continueToGeneration();
+    startGeneration();
 
     await waitFor(() => expect(mocks.writeProjectTextFile).toHaveBeenCalledWith(
       project.id,
@@ -1319,8 +1401,7 @@ describe('DesignSystemCreationFlow', () => {
     expect(screen.getByText('brand.woff2')).toBeTruthy();
     expect(screen.queryByTestId('ds-source-upload-loading')).toBeNull();
 
-    continueToGeneration();
-    continueToGeneration();
+    startGeneration();
 
     await waitFor(() => expect(mocks.uploadProjectFile).toHaveBeenCalledTimes(2));
     expect(mocks.uploadProjectFile).toHaveBeenCalledWith(project.id, logoFile, 'assets/logo.svg');
@@ -1381,8 +1462,7 @@ describe('DesignSystemCreationFlow', () => {
     fireEvent.change(screen.getByPlaceholderText(/Mission Impastabowl/i), {
       target: { value: 'https://github.com/cherryhq/cherry-studio' },
     });
-    continueToGeneration();
-    continueToGeneration();
+    startGeneration();
 
     await waitFor(() => expect(mocks.createDesignSystemDraft).toHaveBeenCalled());
 
