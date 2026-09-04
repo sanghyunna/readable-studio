@@ -15,6 +15,7 @@ import { HistoryPlugin } from '@lexical/react/LexicalHistoryPlugin';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import { mergeRegister } from '@lexical/utils';
 import {
+  $getNearestNodeFromDOMNode,
   $getRoot,
   $getSelection,
   $isRangeSelection,
@@ -225,7 +226,9 @@ function deleteActiveTrigger(sel: RangeSelection, re: RegExp): void {
   node.spliceText(start, tok.length, '', true);
 }
 
-function hasPlainNavigationIntent(event: KeyboardEvent): boolean {
+function hasPlainNavigationIntent(
+  event: Pick<KeyboardEvent, 'shiftKey' | 'altKey' | 'ctrlKey' | 'metaKey'>,
+): boolean {
   return !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey;
 }
 
@@ -458,7 +461,32 @@ function KeyboardPlugin({
 function MentionAtomicNavigationPlugin() {
   const [editor] = useLexicalComposerContext();
   useEffect(() => {
+    const onMouseDown = (event: MouseEvent): void => {
+      if (event.button !== 0 || !hasPlainNavigationIntent(event)) return;
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      const pill = (target instanceof Element ? target : target.parentElement)?.closest<HTMLElement>(
+        '.composer-inline-mention',
+      );
+      if (!pill) return;
+      const rect = pill.getBoundingClientRect();
+      event.preventDefault();
+      editor.update(() => {
+        const node = $getNearestNodeFromDOMNode(target);
+        if (!$isMentionNode(node)) return;
+        if (event.clientX > rect.left + rect.width / 2) {
+          selectAfterMention(node);
+        } else {
+          selectBeforeMention(node);
+        }
+      }, { discrete: true });
+    };
+    const unregisterRoot = editor.registerRootListener((root, previousRoot) => {
+      previousRoot?.removeEventListener('mousedown', onMouseDown, true);
+      root?.addEventListener('mousedown', onMouseDown, true);
+    });
     return mergeRegister(
+      unregisterRoot,
       editor.registerCommand(
         KEY_ARROW_LEFT_COMMAND,
         (event) => {

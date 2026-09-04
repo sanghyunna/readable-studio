@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import type { ComponentProps } from 'react';
-import { act, cleanup, render, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   $getRoot,
@@ -291,6 +291,39 @@ describe('LexicalComposerInput', () => {
     // No new onChange for a pure caret move, and the text round-trips unchanged.
     expect(onChange.mock.calls.length).toBe(callsAfterSeed);
     expect(ref.current?.getText()).toBe(before);
+  });
+
+  it('moves a pointer press on mention text outside the token', async () => {
+    const { getByTestId } = setup({
+      draft: 'Use @designs/landing.html now',
+    });
+    const host = getByTestId('chat-composer-input');
+    await waitFor(() =>
+      expect(host.querySelector('.composer-inline-mention')).not.toBeNull(),
+    );
+    const pill = host.querySelector<HTMLElement>('.composer-inline-mention');
+    if (!pill) throw new Error('Mention pill was not mounted');
+    const editor = liveEditor(host);
+    vi.spyOn(pill, 'getBoundingClientRect').mockReturnValue(
+      new DOMRect(100, 20, 200, 19),
+    );
+    act(() => {
+      editor.update(
+        () => {
+          const mention = findMention($getRoot().getFirstChild());
+          if ($isTextNode(mention)) mention.select(5, 5);
+        },
+        { discrete: true },
+      );
+    });
+    fireEvent.mouseDown(pill, { clientX: 125 });
+
+    editor.getEditorState().read(() => {
+      const selection = $getSelection();
+      expect($isRangeSelection(selection)).toBe(true);
+      if (!$isRangeSelection(selection)) return;
+      expect($isMentionNode(selection.anchor.getNode())).toBe(false);
+    });
   });
 
   it('skips the whole mention pill with one left or right arrow step', async () => {
