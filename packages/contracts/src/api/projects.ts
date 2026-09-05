@@ -2,6 +2,7 @@ import type { ChatMessage, ChatRunStatus, ChatSessionMode } from './chat.js';
 import type {
   ProjectContextMcpServerRef,
   ProjectContextPluginRef,
+  ProjectVisualReference,
 } from './context.js';
 
 export const READABLE_STUDIO_PROJECT_LOCATION_ID = 'readable-studio-default';
@@ -117,6 +118,10 @@ export interface ProjectMetadata {
   // context references; the explicit "Use plugin" snapshot, when present,
   // remains the primary executable plugin for the run.
   contextPlugins?: ProjectContextPluginRef[];
+  // Content-clean snapshots selected from example/scenario cards for visual
+  // inspiration. Unlike contextPlugins, these never carry source identity or
+  // executable plugin behavior.
+  visualReferences?: ProjectVisualReference[];
   contextMcpServers?: ProjectContextMcpServerRef[];
   // Stored on design-system projects so the review overview can remember
   // which generated sections were accepted or sent back for another pass.

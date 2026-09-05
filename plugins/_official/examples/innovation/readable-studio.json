@@ -116,6 +116,17 @@
       "prompt:inject",
       "fs:write",
       "network"
-    ]
+    ],
+    "visualReference": {
+      "characteristics": [
+        "a full-viewport opening centers an oversized display headline over edge-to-edge motion imagery",
+        "generous vertical section spacing alternates centered statements with asymmetric two-column media layouts",
+        "expressive serif display type is paired sparingly with restrained system sans-serif body text",
+        "near-black surfaces and low-contrast white text create a quiet monochrome hierarchy",
+        "capsule controls and rounded panels use translucent fills, inset highlights, and backdrop blur",
+        "motion imagery stays responsively cropped beneath gradients and bounded text overlays",
+        "scroll reveals combine soft upward movement with occasional opposing horizontal entrances"
+      ]
+    }
   }
 }

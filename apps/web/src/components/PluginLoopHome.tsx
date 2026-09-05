@@ -30,7 +30,7 @@ export interface PluginLoopSubmit {
   pluginTitle: string | null;
   taskKind: string | null;
   pluginInputs: Record<string, unknown>;
-  contextPlugins: Array<{ id: string; title: string; description?: string }>;
+  visualReferences: Array<{ characteristics: string[] }>;
   contextMcpServers: Array<{ id: string; label?: string; transport?: string; url?: string; command?: string }>;
   designSystemId: string | null;
   projectKind: ProjectKind;
@@ -136,7 +136,7 @@ export function PluginLoopHome({ onSubmit }: Props) {
       pluginTitle: active?.record.title ?? null,
       taskKind: active?.result.appliedPlugin?.taskKind ?? null,
       pluginInputs: active?.inputs ?? { prompt: trimmed },
-      contextPlugins: [],
+      visualReferences: [],
       contextMcpServers: [],
       designSystemId: null,
       projectKind: 'prototype',

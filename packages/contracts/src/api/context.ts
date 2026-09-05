@@ -31,6 +31,14 @@ export interface ProjectContextPluginRef {
   description?: string;
 }
 
+/**
+ * A replay-stable, content-clean design snapshot. Source plugin identity is
+ * deliberately absent so example subject matter cannot become prompt context.
+ */
+export interface ProjectVisualReference {
+  characteristics: string[];
+}
+
 export interface ProjectContextMcpServerRef {
   id: string;
   label?: string;

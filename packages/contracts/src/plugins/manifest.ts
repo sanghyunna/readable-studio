@@ -170,6 +170,12 @@ export const PluginManifestSchema = z.object({
     engineRequirements: z.object({
       readable: z.string().optional(),
     }).passthrough().optional(),
+    // Content-clean design data used only when this plugin is selected as an
+    // additive visual reference. It must describe presentation, never the
+    // example's brand, subject, copy, data, or assets.
+    visualReference: z.object({
+      characteristics: z.array(z.string().min(1)).min(1),
+    }).passthrough().optional(),
     preview: z.object({
       type:   z.string().optional(),
       entry:  z.string().optional(),

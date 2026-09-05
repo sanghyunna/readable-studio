@@ -38,6 +38,13 @@ function makePlugin(
       title,
       description: 'A plugin fixture',
       tags: ['fixture'],
+      readable: {
+        kind: 'scenario',
+        taskKind: 'new-generation',
+        visualReference: {
+          characteristics: ['layered editorial grid with restrained motion'],
+        },
+      },
     },
     fsPath: '/tmp',
     installedAt: 0,
@@ -195,6 +202,67 @@ describe('HomeHero plugin picker', () => {
     expect(onPickPlugin).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'sample-user-plugin' }),
       'Make @Sample User Plugin',
+    );
+  });
+
+  it('offers only converted visual references through typed @ and the plus menu', async () => {
+    const onPickPlugin = vi.fn();
+    const eligible = [
+      makePlugin('example-acreage-farming', 'Acreage Farming'),
+      makePlugin('example-innovation', 'Innovation'),
+      makePlugin('design-system-apple', 'Apple'),
+    ];
+    const missingContract = makePlugin('ordinary-plugin', 'Ordinary Plugin');
+    delete missingContract.manifest.readable;
+    const emptyContract = makePlugin('empty-contract', 'Empty Contract');
+    emptyContract.manifest.readable!.visualReference!.characteristics = ['   '];
+
+    render(
+      <HomeHero
+        prompt=""
+        onPromptChange={() => undefined}
+        onSubmit={() => undefined}
+        activePluginTitle={null}
+        activeChipId={null}
+        onClearActivePlugin={() => undefined}
+        pluginOptions={[...eligible, missingContract, emptyContract]}
+        pluginsLoading={false}
+        pendingPluginId={null}
+        pendingChipId={null}
+        onPickPlugin={onPickPlugin}
+        onPickChip={() => undefined}
+        contextItemCount={0}
+        error={null}
+      />,
+    );
+
+    setHomeHeroPrompt('@');
+    await settle();
+
+    const mentionPicker = screen.getByTestId('home-hero-plugin-picker');
+    expect(within(mentionPicker).getAllByRole('option')).toHaveLength(3);
+    for (const plugin of eligible) {
+      expect(within(mentionPicker).getByRole('option', { name: new RegExp(plugin.title, 'i') })).toBeTruthy();
+    }
+    expect(within(mentionPicker).queryByText('Ordinary Plugin')).toBeNull();
+    expect(within(mentionPicker).queryByText('Empty Contract')).toBeNull();
+    fireEvent.click(within(mentionPicker).getByRole('option', { name: /Apple/i }));
+    expect(onPickPlugin).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: 'design-system-apple' }),
+      expect.any(String),
+    );
+
+    fireEvent.click(screen.getByTestId('home-hero-plus-trigger'));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^Plugins/i }));
+    for (const plugin of eligible) {
+      expect(screen.getByRole('menuitem', { name: plugin.title })).toBeTruthy();
+    }
+    expect(screen.queryByRole('menuitem', { name: 'Ordinary Plugin' })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: 'Empty Contract' })).toBeNull();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Innovation' }));
+    expect(onPickPlugin).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: 'example-innovation' }),
+      expect.any(String),
     );
   });
 

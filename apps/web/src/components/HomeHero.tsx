@@ -79,6 +79,7 @@ import {
   type CaretRect,
 } from './composer/LexicalComposerInput';
 import type { StagedFileItem } from './composer/stagedFiles';
+import { pluginsWithVisualReferences } from '../utils/visualPluginContext';
 
 export interface HomeHeroSubmitHandler {
   (): void;
@@ -323,10 +324,10 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   const editorRef = useRef<LexicalComposerInputHandle | null>(null);
   const promptEditorRef = useRef<HTMLDivElement | null>(null);
   const mentionPickerRef = useRef<HTMLDivElement | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const contextControlRef = useRef<HTMLButtonElement | null>(null);
   const [contextControlAnchored, setContextControlAnchored] = useState(false);
   const [pickerPosition, setPickerPosition] = useState<{ left: number; top: number; width: number; placement: 'above' | 'below' } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const shortcutsMenuRef = useRef<HTMLDivElement>(null);
   const canSubmit = !interactionLocked && (submitReady ?? ((prompt.trim().length > 0 || stagedFiles.length > 0) && !submitDisabled));
   const previewHomeFile = useMemo(() => {
@@ -348,12 +349,17 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
         : [],
     [mentionActive, mentionQuery, stagedFiles],
   );
+  const visualReferencePluginOptions = useMemo(
+    () => pluginsWithVisualReferences(pluginOptions),
+    [pluginOptions],
+  );
   const pluginMatches = useMemo(
     () =>
       mentionActive
-        ? pluginOptions.filter((plugin) => pluginMatchesQuery(plugin, mentionQuery, locale))
+        ? visualReferencePluginOptions.filter((plugin) =>
+            pluginMatchesQuery(plugin, mentionQuery, locale))
         : [],
-    [locale, mentionActive, mentionQuery, pluginOptions],
+    [locale, mentionActive, mentionQuery, visualReferencePluginOptions],
   );
   // Design-system plugins list as bare brand names in the @-mention picker, so
   // each row carries its system's real palette as a small identity preview.
@@ -794,13 +800,13 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
       return;
     }
     setCaretRect(anchorRect);
+    if (nextMention?.q) setContextControlAnchored(false);
     if (nextMention) {
       setMentionTrigger((prev) => {
         if (!prev || prev.query !== nextMention.q) setSelectedIndex(0);
         return { query: nextMention.q };
       });
     } else {
-    if (nextMention?.q) setContextControlAnchored(false);
       setMentionTrigger(null);
       setMentionTab('all');
     }
@@ -808,22 +814,16 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
 
   function dismissMentionPicker() {
     setMentionTrigger(null);
+    setContextControlAnchored(false);
     setMentionTab('all');
     setHoveredPlugin(null);
     setSelectedIndex(0);
   }
 
   useEffect(() => {
-    setContextControlAnchored(false);
     if (!active) dismissMentionPicker();
   }, [active]);
 
-  // Routes popover navigation keys from the Lexical editor over the visible
-  // picker option union. Returns true when consumed so the editor can
-  // preventDefault.
-  function handlePopoverKey(
-    key: 'ArrowDown' | 'ArrowUp' | 'Tab' | 'Enter' | 'Escape',
-  ): boolean {
   useLayoutEffect(() => {
     if (!pickerOpen) return undefined;
     const place = () => {
@@ -847,6 +847,12 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     };
   }, [caretRect, contextControlAnchored, pickerOpen, visiblePickerOptions.length]);
 
+  // Routes popover navigation keys from the Lexical editor over the visible
+  // picker option union. Returns true when consumed so the editor can
+  // preventDefault.
+  function handlePopoverKey(
+    key: 'ArrowDown' | 'ArrowUp' | 'Tab' | 'Enter' | 'Escape',
+  ): boolean {
     if (!mentionActive) return false;
     if (key === 'Escape') {
       setMentionTrigger(null);
@@ -1414,7 +1420,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
                   element: 'plus_menu_open',
                 })
               }
-              plugins={pluginOptions}
+              plugins={visualReferencePluginOptions}
               onPickPlugin={(record) => {
                 trackHomeChatComposerClick(analytics.track, {
                   page_name: 'home',
@@ -1471,20 +1477,20 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
               <div className="home-hero__footer-options" data-testid="home-hero-footer-options">
                 {surface === 'hub' ? (
                   <button
+                    ref={contextControlRef}
                     type="button"
                     className="home-hero__hub-control"
                     data-testid="home-hero-context-control"
                     disabled={interactionLocked}
                     aria-disabled={interactionLocked}
                     onClick={() => {
-                    ref={contextControlRef}
+                      setContextControlAnchored(true);
                       editorRef.current?.focus();
                       editorRef.current?.insertText('@');
                     }}
                   >
                     <Icon name="at-sign" size={14} />
                     <span>{t('hub.context')}</span>
-                      setContextControlAnchored(true);
                   </button>
                 ) : null}
                 {footerInputFields.map((field) => (

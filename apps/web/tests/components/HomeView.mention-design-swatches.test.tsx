@@ -52,6 +52,9 @@ function designSystemPlugin(id: string, title: string, ref: string) {
         taskKind: 'new-generation',
         mode: 'design-system',
         useCase: { query: `Generate a landing page using the ${title} design system.` },
+        visualReference: {
+          characteristics: ['structured grid with restrained color accents'],
+        },
         context: { designSystem: { ref, primary: true } },
       },
     },

@@ -63,7 +63,11 @@ const MCP_SERVER: McpServerConfig = {
   command: 'npx',
 };
 
-function makePlugin(id: string, title: string): InstalledPluginRecord {
+function makePlugin(
+  id: string,
+  title: string,
+  visualCharacteristics = ['dark and light sections alternate with a fullscreen hero'],
+): InstalledPluginRecord {
   return {
     id,
     title,
@@ -84,6 +88,9 @@ function makePlugin(id: string, title: string): InstalledPluginRecord {
       readable: {
         kind: 'scenario',
         taskKind: 'new-generation',
+        visualReference: {
+          characteristics: visualCharacteristics,
+        },
         useCase: {
           query: `Hydrated query from ${title}`,
         },
@@ -161,8 +168,8 @@ describe('HomeView context picker', () => {
 
   it('adds multiple @ plugins as context without applying or hydrating their query', async () => {
     const plugins = [
-      makePlugin('chart-plugin', 'Chart Plugin'),
-      makePlugin('deck-plugin', 'Deck Plugin'),
+      makePlugin('example-acreage-farming', 'Acreage — Precision Farming'),
+      makePlugin('deck-plugin', 'Deck Plugin', ['animated statistics grid with a masked logo marquee']),
     ];
     const fetchMock = vi.fn<typeof fetch>(async (url) => {
       if (typeof url === 'string' && url === '/api/plugins') {
@@ -196,9 +203,9 @@ describe('HomeView context picker', () => {
     );
 
     await screen.findByTestId('home-hero-input');
-    setHomeHeroPrompt('Build @chart');
+    setHomeHeroPrompt('Build @acreage');
     await settle();
-    fireEvent.click(await screen.findByRole('option', { name: /chart plugin/i }));
+    fireEvent.click(await screen.findByRole('option', { name: /acreage/i }));
 
     // Picking inserts an atomic plugin mention pill (`@Chart Plugin`) and stages
     // the plugin as context in HomeView state. The
@@ -206,18 +213,18 @@ describe('HomeView context picker', () => {
     // (the duplicate top context-badge row was removed), so the submit payload
     // below is the authoritative check that the plugin was staged.
     await waitFor(() => {
-      expect(homeHeroPromptText().trim()).toBe('Build @Chart Plugin');
+      expect(homeHeroPromptText().trim()).toBe('Build @Acreage — Precision Farming');
     });
 
     // Re-seed the draft with a fresh `@deck` trigger appended after the first
     // mention (the old test did the equivalent full-value replace). Picking the
     // second plugin reconstructs both mention pills via the host's draft sync.
-    setHomeHeroPrompt('Build @Chart Plugin @deck');
+    setHomeHeroPrompt('Build @Acreage — Precision Farming @deck');
     await settle();
     fireEvent.click(await screen.findByRole('option', { name: /deck plugin/i }));
 
     await waitFor(() => {
-      expect(homeHeroPromptText().trim()).toBe('Build @Chart Plugin @Deck Plugin');
+      expect(homeHeroPromptText().trim()).toBe('Build @Acreage — Precision Farming @Deck Plugin');
     });
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/apply'))).toBe(false);
     expect(homeHeroPromptText()).not.toContain('Hydrated query');
@@ -225,13 +232,21 @@ describe('HomeView context picker', () => {
     fireEvent.click(screen.getByTestId('home-hero-submit'));
 
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
-      prompt: 'Build @Chart Plugin @Deck Plugin',
+      prompt: 'Build',
+      pluginInputs: { prompt: 'Build' },
       pluginId: DEFAULT_UNSELECTED_SCENARIO_PLUGIN_ID,
-      contextPlugins: [
-        expect.objectContaining({ id: 'chart-plugin', title: 'Chart Plugin' }),
-        expect.objectContaining({ id: 'deck-plugin', title: 'Deck Plugin' }),
+      visualReferences: [
+        { characteristics: ['dark and light sections alternate with a fullscreen hero'] },
+        { characteristics: ['animated statistics grid with a masked logo marquee'] },
       ],
     }));
+    const payload = onSubmit.mock.calls[0]?.[0];
+    expect(payload).not.toHaveProperty('contextPlugins');
+    const serialized = JSON.stringify(payload);
+    expect(serialized).toContain('fullscreen hero');
+    expect(serialized).toContain('statistics grid');
+    expect(serialized).not.toMatch(/Acreage|precision.farming|agriculture|agritech|acre|crop|field|soil|yield/i);
+    expect(serialized).not.toContain('example-acreage-farming');
   });
 
   it('binds a selected home skill to the created project payload', async () => {

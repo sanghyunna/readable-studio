@@ -1221,7 +1221,7 @@ export function HomeView({
 
   async function submit(autoSendFirstMessage = true): Promise<boolean> {
     const trimmed = prompt.trim();
-    const submittedPrompt = autoSendFirstMessage ? trimmed : '';
+    let submittedPrompt = autoSendFirstMessage ? trimmed : '';
     const submittedAttachments = stagedFiles.map((item) => item.file);
     if (autoSendFirstMessage && !trimmed && submittedAttachments.length === 0) return false;
     if (
@@ -1337,18 +1337,29 @@ export function HomeView({
     // forwarding it. Inline-backed contexts (inserted as `@mention` pills) are
     // only sent while their token survives in the prompt — the Lexical composer
     // lets users delete a mention pill (backspace, edit), and when they do that
-    // plugin/MCP should stop being sent. Context-only `Use`
-    // selections never carry a token, so they stay in the payload until the
-    // user explicitly clears them.
-    const contextPlugins = selectedPluginContexts
-      .filter((item) => !item.inlineBacked || mentionTokenPresent(submittedPrompt, item.record.title))
-      .map((item) => ({
-        id: item.record.id,
-        title: item.record.title,
-        ...(item.record.manifest?.description
-          ? { description: item.record.manifest.description }
-          : {}),
-      }));
+    // plugin/MCP should stop being sent. Context-only `Use` selections never
+    // carry a token, so they stay selected until explicitly removed.
+    //
+    // Plugin examples cross a stricter semantic boundary here: only their
+    // explicit content-clean visual contract is persisted. Source title, id,
+    // catalogue description, skill, example copy, and the visible mention token
+    // are intentionally absent from the model-facing request.
+    const selectedVisualContexts = selectedPluginContexts.filter(
+      (item) => !item.inlineBacked || mentionTokenPresent(submittedPrompt, item.record.title),
+    );
+    const visualContextsWithReferences = selectedVisualContexts.flatMap((item) => {
+      const reference = visualReferenceForPlugin(item.record);
+      return reference ? [{ item, reference }] : [];
+    });
+    const visualReferences = visualContextsWithReferences.map(({ reference }) => reference);
+    // Strip only mentions that produced an actual reference. The picker uses
+    // the same conversion to prevent no-op selections, while this condition
+    // ensures a stale or externally staged context can never erase user text.
+    submittedPrompt = visualContextsWithReferences.reduce(
+      (current, { item }) => removePluginMentionFromPrompt(current, item.record),
+      submittedPrompt,
+    );
+    if (!submittedActive) submittedPluginInputs = { prompt: submittedPrompt };
     const contextMcpServers = selectedMcpContexts
       .filter((item) => !item.inlineBacked || mentionTokenPresent(submittedPrompt, item.server.label || item.server.id))
       .map((item) => ({
@@ -1394,7 +1405,7 @@ export function HomeView({
         projectKind: submittedProjectKind,
         projectMetadata: submittedProjectMetadata,
         designSystemId: submittedDesignSystemId,
-        contextPlugins,
+        visualReferences,
         contextMcpServers,
         attachments: submittedAttachments,
         conversationMode: sessionMode,
@@ -1955,9 +1966,7 @@ function escapeRegExp(value: string): string {
 }
 
 function removePluginMentionFromPrompt(prompt: string, record: InstalledPluginRecord): string {
-  const token = inlineMentionToken(record.title);
-  return prompt
-    .replace(new RegExp(`(^|\\s)${escapeRegExp(token)}(?=\\s|$)`, 'g'), ' ')
+  return removeContextMentionsFromPrompt(prompt, [record.title])
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/\n[ \t]+/g, '\n')
     .trim();

@@ -76,6 +76,17 @@
     "platform": "desktop",
     "scenario": "design",
     "surface": "web",
+    "visualReference": {
+      "characteristics": [
+        "dark and light sections alternate to create strong pacing and contrast",
+        "a fullscreen hero uses edge-to-edge background video with a legibility gradient",
+        "an animated four-column statistics grid switches to a light surface",
+        "an infinite horizontal partner-mark marquee uses masked edges and pauses on hover",
+        "large image-backed cards use rounded corners, bottom-aligned overlays, and subtle hover lift",
+        "editorial accent serif is paired sparingly with a clean geometric sans-serif",
+        "scroll reveals use soft upward motion and staggered easing"
+      ]
+    },
     "preview": {
       "type": "html",
       "entry": "./example.html"

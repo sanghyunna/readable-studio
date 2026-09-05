@@ -508,6 +508,22 @@ function renderMetadataBlock(
     );
   }
 
+  if (Array.isArray(metadata.visualReferences) && metadata.visualReferences.length > 0) {
+    lines.push('');
+    lines.push('### Visual references');
+    lines.push(
+      'Apply only these presentation characteristics to the user’s subject. They are deliberately content-clean: do not infer or recreate any source example’s topic, brand, copy, data, or asset identities.',
+    );
+    metadata.visualReferences.forEach((reference, index) => {
+      const characteristics = Array.isArray(reference.characteristics)
+        ? reference.characteristics.filter((value) => typeof value === 'string' && value.trim().length > 0)
+        : [];
+      if (characteristics.length === 0) return;
+      lines.push(`- Visual reference ${index + 1}:`);
+      for (const characteristic of characteristics) lines.push(`  - ${characteristic.trim()}`);
+    });
+  }
+
   if (Array.isArray(metadata.contextPlugins) && metadata.contextPlugins.length > 0) {
     lines.push('');
     lines.push('### @ plugin context');

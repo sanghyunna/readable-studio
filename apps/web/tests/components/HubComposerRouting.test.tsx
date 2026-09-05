@@ -14,7 +14,7 @@ describe('hub composer submission boundary', () => {
       pluginTitle: null,
       taskKind: null,
       pluginInputs: { prompt: '' },
-      contextPlugins: [],
+      visualReferences: [],
       contextMcpServers: [],
       designSystemId: 'qa-design-system',
       projectKind: 'other',

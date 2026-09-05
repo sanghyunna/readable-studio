@@ -35,6 +35,31 @@ describe('composeSystemPrompt — activeStageBlocks splice (spec §23.4)', () =>
 });
 
 describe('composeSystemPrompt', () => {
+  it('keeps scenario visual references while excluding their source subject and identity', () => {
+    const prompt = composeSystemPrompt({
+      metadata: {
+        kind: 'prototype',
+        visualReferences: [{
+          characteristics: [
+            'dark and light sections alternate to create strong pacing and contrast',
+            'a fullscreen hero uses edge-to-edge background video with a legibility gradient',
+            'an infinite horizontal logo marquee uses masked edges and pauses on hover',
+            'large image-backed service cards use rounded corners and subtle hover lift',
+          ],
+        }],
+      },
+    });
+    const block = prompt.slice(prompt.indexOf('### Visual references'));
+
+    expect(block).toContain('Visual reference 1');
+    expect(block).toContain('dark and light sections alternate');
+    expect(block).toContain('fullscreen hero');
+    expect(block).toContain('logo marquee');
+    expect(block).toContain('image-backed service cards');
+    expect(block).not.toMatch(/Acreage|precision.farming|agriculture|agritech|acre|crop|field|soil|yield/i);
+    expect(block).not.toContain('example-acreage-farming');
+  });
+
   it('injects Chinese quick brief guidance when the UI locale is zh-CN', () => {
     const prompt = composeSystemPrompt({ locale: 'zh-CN' });
 

@@ -48,6 +48,19 @@
           "properties": { "readable": { "type": "string" } },
           "additionalProperties": true
         },
+        "visualReference": {
+          "type": "object",
+          "description": "Content-clean presentation characteristics for additive visual-reference selection. Must exclude the example's brand, subject, copy, data, and asset identities.",
+          "required": ["characteristics"],
+          "properties": {
+            "characteristics": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "type": "string", "minLength": 1 }
+            }
+          },
+          "additionalProperties": true
+        },
         "preview": {
           "type": "object",
           "properties": {

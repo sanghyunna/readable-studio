@@ -106,6 +106,17 @@
     "capabilities": [
       "prompt:inject",
       "fs:write"
-    ]
+    ],
+    "visualReference": {
+      "characteristics": [
+        "wide centered containers use large vertical chapter spacing and disciplined responsive gutters",
+        "pure white, near-white, and pale gray section bands create a restrained three-step surface rhythm",
+        "a system sans-serif family uses tightly tracked oversized display text and highly readable body measures",
+        "one cool action accent is reserved for sparse links and capsule calls to action",
+        "cards use medium rounded corners, hairline neutral borders, and low soft elevation",
+        "large focal imagery receives generous whitespace instead of decorative framing",
+        "brief decelerating transitions settle smoothly without bounce or ornamental motion"
+      ]
+    }
   }
 }

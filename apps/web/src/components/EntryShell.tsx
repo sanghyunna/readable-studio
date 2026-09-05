@@ -480,8 +480,8 @@ export function EntryShell({
           ? requestedKind
           : payload.projectMetadata?.kind ?? 'prototype',
       nameSource: 'prompt',
-      ...(payload.contextPlugins && payload.contextPlugins.length > 0
-        ? { contextPlugins: payload.contextPlugins }
+      ...(payload.visualReferences.length > 0
+        ? { visualReferences: payload.visualReferences }
         : {}),
       ...(payload.contextMcpServers && payload.contextMcpServers.length > 0
         ? { contextMcpServers: payload.contextMcpServers }
