@@ -26,12 +26,15 @@ vi.mock('../../src/components/EntryView', () => ({
     agents,
     config,
     onOpenSettings,
+    daemonLive,
   }: {
     agents: Array<{ id: string; models?: Array<{ id: string }> }>;
     config: AppConfig;
     onOpenSettings: () => void;
+    daemonLive: boolean;
   }) => (
     <>
+      <div data-testid="daemon-status">{daemonLive ? 'online' : 'offline'}</div>
       <div data-testid="amr-model">
         {agents.find((agent) => agent.id === 'amr')?.models?.[0]?.id ?? 'none'}
       </div>
@@ -72,7 +75,7 @@ vi.mock('../../src/components/SettingsDialog', () => ({
       configPath: string;
     } | null) => void;
   }) => (
-    <>
+    <div role="dialog" aria-label="Settings">
       <button
         onClick={() =>
           void onRefreshAgents({
@@ -94,7 +97,7 @@ vi.mock('../../src/components/SettingsDialog', () => ({
       >
         mark amr signed in
       </button>
-    </>
+    </div>
   ),
 }));
 
@@ -236,6 +239,23 @@ describe('App AMR polling', () => {
     cleanup();
     vi.unstubAllGlobals();
     vi.clearAllMocks();
+  });
+
+  it('opens Settings offline without starting another unavailable agent scan', async () => {
+    mockedDaemonIsLive.mockResolvedValue(false);
+    mockedFetchAgentsStream.mockReturnValue(new Promise(() => undefined));
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('daemon-status').textContent).toBe('offline');
+    });
+    expect(mockedFetchAgentsStream).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'open settings' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Settings' })).toBeTruthy();
+    expect(mockedFetchAgentsStream).toHaveBeenCalledTimes(1);
   });
 
   it('keeps polling AMR models until the remote catalog replaces the preset list', { timeout: 10_000 }, async () => {

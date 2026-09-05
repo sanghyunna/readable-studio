@@ -1641,10 +1641,14 @@ function AppInner() {
     setSettingsInitialSection(section);
     setSettingsHighlight(opts?.highlight ?? null);
     setSettingsOpen(true);
-    if (section === 'codeAgents' || section === 'execution') {
+    // Opening Settings is a local UI capability. When startup has already
+    // established that the daemon is offline, do not couple that capability
+    // to an agent request that cannot succeed; the dialog still renders its
+    // offline recovery state from the cached config.
+    if (daemonLive && (section === 'codeAgents' || section === 'execution')) {
       void refreshAgents();
     }
-  }, [refreshAgents]);
+  }, [daemonLive, refreshAgents]);
 
   // Entry point from the failed-run AMR nudge: open Settings on the execution
   // section and flag the AMR agent card for a one-shot scroll-into-view +
