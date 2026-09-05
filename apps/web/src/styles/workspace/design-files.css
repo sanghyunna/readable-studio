@@ -503,10 +503,22 @@
   font-size: 16px;
   border-radius: var(--radius-xs);
   opacity: 0;
+  pointer-events: none;
   transition: opacity 120ms var(--ease-out);
 }
-.df-row:hover .df-row-menu { opacity: 1; }
-.df-row-menu:focus { opacity: 1; }
+.df-row:hover .df-row-menu,
+.df-row.active .df-row-menu,
+.df-row-menu[aria-expanded="true"],
+.df-row-menu:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (hover: none) {
+  .df-row-menu {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
 .df-row-menu:hover { background: var(--border); color: var(--text); }
 .df-row-menu-placeholder {
   pointer-events: none;

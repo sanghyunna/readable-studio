@@ -231,6 +231,16 @@ describe('DesignFilesPanel selection', () => {
     expect(container.querySelector('[data-testid="design-files-batch-bar"]')).toBeNull();
   });
 
+  it('keeps the row menu visibly reachable while its popover is open', () => {
+    renderPanel(generateFiles(1));
+    const menu = screen.getByRole('button', { name: 'Row menu' });
+
+    expect(menu.getAttribute('aria-haspopup')).toBe('menu');
+    expect(menu.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(menu);
+    expect(menu.getAttribute('aria-expanded')).toBe('true');
+  });
+
   it('does not preview or open files from row controls', () => {
     const files = generateFiles(1);
     const { container, onOpenFile } = renderPanel(files);

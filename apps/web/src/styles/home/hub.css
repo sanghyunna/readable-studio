@@ -632,12 +632,14 @@
   color: var(--text-muted);
   cursor: pointer;
   opacity: 0;
+  pointer-events: none;
 }
 
 .hub-row:hover .hub-row__action,
 .hub-row:focus-within .hub-row__action,
 .hub-row.is-menu-open .hub-row__action {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .hub-row__action:hover {
@@ -649,11 +651,13 @@
   outline: 2px solid var(--hub-accent);
   outline-offset: -2px;
   opacity: 1;
+  pointer-events: auto;
 }
 
 @media (hover: none) {
   .hub-row__action {
     opacity: 1;
+    pointer-events: auto;
   }
 }
 

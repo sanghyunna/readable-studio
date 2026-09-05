@@ -10,7 +10,7 @@ const spring: Transition = {
 export const modalOverlay: Variants = {
   hidden: { opacity: 0 },
   visible: { opacity: 1, transition: { duration: 0.2 } },
-  exit: { opacity: 0, transition: { duration: 0.15 } },
+  exit: { opacity: 0, pointerEvents: 'none', transition: { duration: 0.15 } },
 };
 
 export const modalContent: Variants = {

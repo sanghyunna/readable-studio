@@ -285,7 +285,6 @@ export function DesignFilesPanel({
   const [draggingFiles, setDraggingFiles] = useState(false);
   const [dropReadError, setDropReadError] = useState<string | null>(null);
   const dragDepthRef = useRef(0);
-  const [hover, setHover] = useState<string | null>(null);
   const [menuPos, setMenuPos] = useState<{ name: string; top: number; left: number } | null>(null);
   const MENU_ESTIMATED_HEIGHT = 145;
   const MENU_SAFE_PADDING = 8;
@@ -564,16 +563,14 @@ export function DesignFilesPanel({
 
   function renderFileRow(f: ProjectFile, category: FileCategory) {
     const active = preview === f.name;
+    const menuOpen = menuPos?.name === f.name;
     const isSelected = selected.has(f.name);
-    const isHovered = hover === f.name;
     const renameState = renaming?.name === f.name ? renaming : null;
     return (
       <div
         key={f.name}
         data-testid={`design-file-row-${f.name}`}
         className={`df-row df-file-row ${active ? 'active' : ''} ${isSelected ? 'selected' : ''}`}
-        onMouseEnter={() => setHover(f.name)}
-        onMouseLeave={() => setHover((c) => (c === f.name ? null : c))}
       >
         <span
           className="df-row-icon df-row-openable"
@@ -662,8 +659,9 @@ export function DesignFilesPanel({
           type="button"
           data-testid={`design-file-menu-${f.name}`}
           className="df-row-menu"
-          style={isHovered || active ? { opacity: 1 } : undefined}
           aria-label={t('designFiles.rowMenu')}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
           onClick={(e) => {
             e.stopPropagation();
             openMenuFor(f.name, e.currentTarget);

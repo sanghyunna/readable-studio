@@ -43,3 +43,24 @@
   pointer-events: auto;
   -webkit-app-region: drag !important;
 }
+
+/* A centered or tall dialog can overlap the fixed top strip. Native app-region
+   arbitration is separate from DOM hit testing, so carve every modal child out
+   explicitly rather than relying on pseudo-element paint order. */
+:where(
+  .modal-backdrop,
+  .new-project-modal-backdrop,
+  .automation-modal-backdrop,
+  .use-everywhere-modal-backdrop,
+  .plugin-details-modal-backdrop,
+  .plugins-import-modal__backdrop,
+  .ds-modal-backdrop,
+  .prompt-template-modal-backdrop,
+  .prompt-template-lightbox-backdrop,
+  .home-hero-confirm__backdrop,
+  .project-ds-picker-fullscreen,
+  .staged-preview-modal,
+  .qs-overlay
+) * {
+  -webkit-app-region: no-drag !important;
+}

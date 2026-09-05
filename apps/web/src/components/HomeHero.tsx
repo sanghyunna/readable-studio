@@ -11,6 +11,7 @@ import {
   forwardRef,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -33,6 +34,7 @@ import { DesignSystemPicker } from './DesignSystemPicker';
 import { buildDesignSystemPalettes, pluginSwatches } from './design-system-swatch-map';
 import type { SkillSummary } from '../types';
 import { Icon, type IconName } from './Icon';
+import { placePopover } from './popoverPlacement';
 import { useAnalytics } from '../analytics/provider';
 import { trackHomeChatComposerClick } from '../analytics/events';
 import {
@@ -76,7 +78,6 @@ import {
   type LexicalComposerInputHandle,
   type CaretRect,
 } from './composer/LexicalComposerInput';
-import { CaretFloatingLayer } from './composer/CaretFloatingLayer';
 import type { StagedFileItem } from './composer/stagedFiles';
 
 export interface HomeHeroSubmitHandler {
@@ -323,6 +324,9 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   const promptEditorRef = useRef<HTMLDivElement | null>(null);
   const mentionPickerRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const contextControlRef = useRef<HTMLButtonElement | null>(null);
+  const [contextControlAnchored, setContextControlAnchored] = useState(false);
+  const [pickerPosition, setPickerPosition] = useState<{ left: number; top: number; width: number; placement: 'above' | 'below' } | null>(null);
   const shortcutsMenuRef = useRef<HTMLDivElement>(null);
   const canSubmit = !interactionLocked && (submitReady ?? ((prompt.trim().length > 0 || stagedFiles.length > 0) && !submitDisabled));
   const previewHomeFile = useMemo(() => {
@@ -796,6 +800,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
         return { query: nextMention.q };
       });
     } else {
+    if (nextMention?.q) setContextControlAnchored(false);
       setMentionTrigger(null);
       setMentionTab('all');
     }
@@ -809,6 +814,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   }
 
   useEffect(() => {
+    setContextControlAnchored(false);
     if (!active) dismissMentionPicker();
   }, [active]);
 
@@ -818,6 +824,29 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   function handlePopoverKey(
     key: 'ArrowDown' | 'ArrowUp' | 'Tab' | 'Enter' | 'Escape',
   ): boolean {
+  useLayoutEffect(() => {
+    if (!pickerOpen) return undefined;
+    const place = () => {
+      const panel = mentionPickerRef.current;
+      const control = contextControlAnchored ? contextControlRef.current : null;
+      if (!panel || (!control && !caretRect)) return;
+      const measured = { width: panel.offsetWidth || 420, height: panel.offsetHeight || 320 };
+      const source = control?.getBoundingClientRect();
+      const anchor = source
+        ? { left: source.left, top: source.top, width: measured.width, height: source.height }
+        : { left: caretRect!.left, top: caretRect!.top, width: measured.width, height: caretRect!.bottom - caretRect!.top };
+      const next = placePopover(anchor, measured, { width: window.innerWidth, height: window.innerHeight });
+      setPickerPosition({ ...next, width: measured.width, placement: next.top < anchor.top ? 'above' : 'below' });
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [caretRect, contextControlAnchored, pickerOpen, visiblePickerOptions.length]);
+
     if (!mentionActive) return false;
     if (key === 'Escape') {
       setMentionTrigger(null);
@@ -1214,7 +1243,18 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
             />
           </div>
         </div>
-        <CaretFloatingLayer caret={caretRect} open={pickerOpen}>
+        {pickerOpen && typeof document !== 'undefined' ? createPortal(
+          <div
+            className="caret-floating-layer"
+            data-placement={pickerPosition?.placement ?? 'above'}
+            style={pickerPosition ? {
+              position: 'fixed',
+              left: `${pickerPosition.left}px`,
+              top: `${pickerPosition.top}px`,
+              width: `${pickerPosition.width}px`,
+              ['--cfl-max-h' as string]: `${Math.min(460, window.innerHeight - 24)}px`,
+            } : { position: 'fixed', left: '-9999px', top: '0', width: '420px', visibility: 'hidden' }}
+          >
           <div
             ref={mentionPickerRef}
             id="home-hero-context-picker"
@@ -1347,7 +1387,9 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
               ) : null}
             </div>
           </div>
-        </CaretFloatingLayer>
+          </div>,
+          document.body,
+        ) : null}
         <div className="home-hero__input-foot">
           <input
             ref={fileInputRef}
@@ -1435,12 +1477,14 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
                     disabled={interactionLocked}
                     aria-disabled={interactionLocked}
                     onClick={() => {
+                    ref={contextControlRef}
                       editorRef.current?.focus();
                       editorRef.current?.insertText('@');
                     }}
                   >
                     <Icon name="at-sign" size={14} />
                     <span>{t('hub.context')}</span>
+                      setContextControlAnchored(true);
                   </button>
                 ) : null}
                 {footerInputFields.map((field) => (
