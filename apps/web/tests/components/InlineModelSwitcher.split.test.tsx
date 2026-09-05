@@ -111,13 +111,13 @@ describe('InlineModelSwitcher split variants', () => {
     expect(agent.querySelector('svg')).not.toBeNull();
   });
 
-  it('neither trigger shows a chevron that would imply an inline dropdown', () => {
+  it('shows an honest dropdown chevron only on the model-list trigger', () => {
     renderSplit();
 
-    for (const id of ['agent', 'model'] as const) {
-      const trigger = screen.getByTestId(`inline-model-switcher-${id}-trigger`);
-      expect(trigger.querySelector('.inline-switcher__chip-chevron')).toBeNull();
-    }
+    const agent = screen.getByTestId('inline-model-switcher-agent-trigger');
+    const model = screen.getByTestId('inline-model-switcher-model-trigger');
+    expect(agent.querySelector('.inline-switcher__chip-chevron')).toBeNull();
+    expect(model.querySelector('.inline-switcher__chip-chevron')).not.toBeNull();
   });
 
   it('agent button opens agent switching only', () => {

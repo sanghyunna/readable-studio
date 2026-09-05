@@ -44,12 +44,19 @@ describe('Hub composer footer: agent icon -> model name -> send', () => {
     expect(agentModel).toBeLessThan(submit);
   });
 
-  it('drops the chevron so the control never reads as an inline dropdown', () => {
-    const suppressed = cssDeclarations(
-      '.home-hero__execution-switcher--agent-model .inline-switcher__chip-chevron',
+  it('shows a chevron on the model dropdown, not on the pinned agent button', () => {
+    const modelChevron = cssDeclarations(
+      '.home-hero__execution-switcher--agent-model .inline-switcher__chip--model .inline-switcher__chip-chevron',
+    );
+    const agent = cssDeclarations(
+      '.home-hero__execution-switcher--agent-model .inline-switcher__chip--agent',
     );
 
-    expect(ruleValue(suppressed, 'display')).toBe('none');
+    expect(ruleValue(modelChevron, 'display')).toBe('block');
+    expect(ruleValue(modelChevron, 'flex')).toBe('0 0 auto');
+    // The icon-only agent target has no room for a trailing dropdown glyph.
+    expect(ruleValue(agent, 'width')).toBe('32px');
+    expect(ruleValue(agent, 'gap')).toBe('0');
   });
 
   it('shows the model name as the control label', () => {
@@ -71,14 +78,26 @@ describe('Hub composer footer: agent icon -> model name -> send', () => {
     expect(ruleValue(icon, 'border-radius')).toBe('var(--radius-pill)');
   });
 
-  it('wears the borderless hub glass pill, not a dark outline', () => {
-    const chip = cssDeclarations(
-      '.home-view--hub .home-hero__execution-switcher--agent-model .inline-switcher__chip',
+  it('keeps the agent pinned while the model renders as plain dropdown text', () => {
+    const slot = cssDeclarations('.home-hero__execution-switcher--agent-model');
+    const modelMount = cssDeclarations(
+      '.home-hero__execution-switcher--agent-model .inline-switcher--model',
+    );
+    const modelChip = cssDeclarations(
+      '.home-hero__execution-switcher--agent-model .inline-switcher__chip--model',
     );
 
-    expect(ruleValue(chip, 'background')).toBe('var(--hub-control-surface)');
-    expect(ruleValue(chip, 'border')).toBe('1px solid var(--hub-control-border)');
-    expect(ruleValue(chip, 'box-shadow')).toBe('var(--hub-control-shadow)');
+    // A fixed slot and model column prevent model-name length from shifting the
+    // leading agent target or the trailing Send button.
+    expect(ruleValue(slot, 'width')).toBe('228px');
+    expect(ruleValue(slot, 'min-width')).toBe('228px');
+    expect(ruleValue(modelMount, 'width')).toBe('190px');
+    expect(ruleValue(modelMount, 'min-width')).toBe('190px');
+    // The model affordance is intentionally text + chevron, not a nested pill.
+    expect(ruleValue(modelChip, 'border')).toBe('0');
+    expect(ruleValue(modelChip, 'border-radius')).toBe('0');
+    expect(ruleValue(modelChip, 'background')).toBe('transparent');
+    expect(ruleValue(modelChip, 'box-shadow')).toBe('none');
   });
 
   it('falls back to an opaque surface under reduced transparency', () => {

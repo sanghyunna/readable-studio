@@ -714,8 +714,8 @@ export function InlineModelSwitcher({
           </span>
         )}
         {/* Split mounts carry a single honest label each: the agent button is
-            the agent icon alone, the model button the model name alone. No
-            chevron on either — they open a popover, not an inline dropdown. */}
+            the agent icon alone; the model button is plain text followed by a
+            dropdown chevron because it opens the model list directly. */}
         {isAgentVariant ? null : (
           <span className="inline-switcher__chip-text">
             {isModelVariant ? (
@@ -735,7 +735,7 @@ export function InlineModelSwitcher({
             )}
           </span>
         )}
-        {variant === 'combined' ? (
+        {variant === 'combined' || isModelVariant ? (
           <Icon
             name="chevron-down"
             size={12}

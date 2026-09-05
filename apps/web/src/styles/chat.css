@@ -1317,7 +1317,8 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  min-width: 0;
+  width: 212px;
+  min-width: 212px;
 }
 .app .composer-row .composer-execution-switcher .inline-switcher__chip {
   height: 28px;
@@ -1377,14 +1378,33 @@
   justify-content: center;
   margin: 0;
 }
-/* Model: the model name is the label. */
-.app .composer-row .composer-execution-switcher .inline-switcher__chip--model {
-  padding: 0 9px;
-  gap: 0;
+/* Model: reserve one generous text column so changing names never moves the
+   agent target. This is plain text plus an honest dropdown chevron, not a
+   capsule; long catalogue names truncate inside the fixed column. */
+.composer-execution-switcher .inline-switcher--model {
+  width: 180px;
+  min-width: 180px;
+}
+.app .composer-row .composer-execution-switcher .inline-switcher__chip--model,
+.chat-composer-fixed-layer .composer-row .composer-execution-switcher .inline-switcher__chip--model {
+  width: 100%;
+  height: 28px;
+  padding: 0 2px 0 4px;
+  gap: 5px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  text-align: start;
 }
 .composer-execution-switcher .inline-switcher__chip--model .inline-switcher__chip-text {
+  flex: 1 1 auto;
   min-width: 0;
-  max-width: 132px;
+  max-width: none;
+}
+.composer-execution-switcher .inline-switcher__chip--model .inline-switcher__chip-chevron {
+  display: block;
+  flex: 0 0 auto;
 }
 .composer-execution-switcher .inline-switcher__chip-model {
   display: block;
@@ -1398,7 +1418,7 @@
   /* The agent control stays borderless/background-free even here — an opaque
      fill would be exactly the pill boundary the user asked us to remove. */
   .app .composer-row .composer-execution-switcher .inline-switcher__chip:not(.inline-switcher__chip--agent) {
-    background: var(--bg-elevated);
+    background: transparent;
   }
   .app .composer-row .composer-execution-switcher .inline-switcher__chip:not(.inline-switcher__chip--agent):hover,
   .app .composer-row .composer-execution-switcher .inline-switcher__chip:not(.inline-switcher__chip--agent)[aria-expanded='true'] {

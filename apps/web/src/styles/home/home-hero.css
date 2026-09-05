@@ -1012,8 +1012,7 @@
    removed from the visual line; the accessible name keeps all three. */
 .home-hero__execution-switcher--agent-model .inline-switcher__chip-mode,
 .home-hero__execution-switcher--agent-model .inline-switcher__chip-primary,
-.home-hero__execution-switcher--agent-model .inline-switcher__chip-sep,
-.home-hero__execution-switcher--agent-model .inline-switcher__chip-chevron {
+.home-hero__execution-switcher--agent-model .inline-switcher__chip-sep {
   display: none;
 }
 
@@ -1040,6 +1039,8 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  width: 228px;
+  min-width: 228px;
 }
 
 /* Agent: icon only. The full "mode · agent · model" string stays in
@@ -1052,9 +1053,30 @@
   gap: 0;
 }
 
-/* Model: the model name is the label. */
+/* Model: a generous, stable text column keeps the agent target pinned while
+   names change. It is intentionally not a pill: only text and the honest
+   dropdown chevron paint; unusually long catalogue names ellipsize. */
+.home-hero__execution-switcher--agent-model .inline-switcher--model {
+  width: 190px;
+  min-width: 190px;
+}
 .home-hero__execution-switcher--agent-model .inline-switcher__chip--model {
-  padding: 0 12px;
+  width: 100%;
+  padding: 0 2px 0 4px;
+  gap: 5px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  text-align: start;
+}
+.home-hero__execution-switcher--agent-model .inline-switcher__chip--model .inline-switcher__chip-text {
+  flex: 1 1 auto;
+  max-width: none;
+}
+.home-hero__execution-switcher--agent-model .inline-switcher__chip--model .inline-switcher__chip-chevron {
+  display: block;
+  flex: 0 0 auto;
 }
 /* Body-level layer for the execution switcher's panel.
 
@@ -2672,20 +2694,29 @@
 
 /* Agent/model trigger wears the same borderless glass pill as every other
    composer control — no dark outline, no second nested fill. */
-.home-view--hub .home-hero__execution-switcher--agent-model .inline-switcher__chip {
-  border: 1px solid var(--hub-control-border);
-  background: var(--hub-control-surface);
-  -webkit-backdrop-filter: blur(10px) saturate(150%);
-  backdrop-filter: blur(10px) saturate(150%);
-  box-shadow: var(--hub-control-shadow);
+.home-view--hub .home-hero__execution-switcher--agent-model .inline-switcher__chip--agent {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.home-view--hub .home-hero__execution-switcher--agent-model .inline-switcher__chip--model {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .home-view--hub
   .home-hero__execution-switcher--agent-model
-  .inline-switcher__chip:hover:not(:disabled) {
-  border-color: transparent;
+  .inline-switcher__chip--agent:hover:not(:disabled) {
   background: var(--hub-control-surface-hover);
-  box-shadow: var(--hub-control-shadow-hover);
+  box-shadow: none;
+}
+.home-view--hub
+  .home-hero__execution-switcher--agent-model
+  .inline-switcher__chip--model:hover:not(:disabled) {
+  background: transparent;
+  box-shadow: none;
+  color: var(--hub-accent);
 }
 
 /* Reduced transparency: swap the translucent glass for an opaque surface and
