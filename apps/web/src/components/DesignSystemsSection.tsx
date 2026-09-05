@@ -14,6 +14,7 @@ import { Icon } from './Icon';
 import { orderDesignSystemGroups } from './design-system-group-order';
 import { AnimatePresence } from 'motion/react';
 import { Switch, ToggleButton } from '@readable-studio/components';
+import { AnimatedCollapsible } from './AnimatedCollapsible';
 
 // Sibling Settings section that hosts the design-systems registry.
 // Lifted out of the previous LibrarySection so each surface (functional
@@ -309,7 +310,10 @@ export function DesignSystemsSection({
         </div>
       ) : null}
 
-      <div className={`accordion-collapsible library-add-panel${addOpen ? ' open' : ''}`}>
+      <AnimatedCollapsible
+        open={addOpen}
+        className="accordion-collapsible library-add-panel"
+      >
         <div className="accordion-collapsible-inner">
           <form className="library-install-form" onSubmit={handleLocalImport}>
             <div className="library-import-controls">
@@ -461,7 +465,7 @@ export function DesignSystemsSection({
             ) : null}
           </form>
         </div>
-      </div>
+      </AnimatedCollapsible>
 
       <div className="library-toolbar library-toolbar-row">
         <input

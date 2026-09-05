@@ -1005,10 +1005,18 @@
 .entry-settings-menu__select-list {
   display: grid;
   grid-template-rows: 0fr;
+  pointer-events: none;
   transition: grid-template-rows 200ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 .entry-settings-menu__select-list.is-open {
   grid-template-rows: 1fr;
+  pointer-events: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  .entry-settings-menu__select-list,
+  .entry-settings-menu__select-list.is-open {
+    transition: none;
+  }
 }
 .entry-settings-menu__select-list-inner {
   min-height: 0;
@@ -1896,6 +1904,13 @@
   .entry-shell--no-header .entry.entry--rail-open {
     grid-template-columns: var(--entry-rail-width, 56px) minmax(0, 1fr) !important;
   }
+  /* Home mounts ProjectRail inside HubHome rather than as an `.entry` grid
+     sibling. Keep its only child in the content track at this breakpoint;
+     otherwise the generic two-track rule above auto-places the main surface
+     into the empty 44px rail track and collapses the composer with it. */
+  .entry-shell--no-header .entry:has(.entry-main__inner--home) {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
   .entry-main__inner {
     padding: 24px 16px 56px;
   }
@@ -1904,13 +1919,6 @@
   }
   /* Collapse the three topbar chips into the settings dropdown.
      The chips' container disappears and the matching menu rows
-  /* Home mounts ProjectRail inside HubHome rather than as an `.entry` grid
-     sibling. Keep its only child in the content track at this breakpoint;
-     otherwise the generic two-track rule above auto-places the main surface
-     into the empty 44px rail track and collapses the composer with it. */
-  .entry-shell--no-header .entry:has(.entry-main__inner--home) {
-    grid-template-columns: minmax(0, 1fr) !important;
-  }
      inside `.avatar-popover` are unhidden so every action stays
      one click away from the lone settings cog. */
   .entry-main__topbar-chips {

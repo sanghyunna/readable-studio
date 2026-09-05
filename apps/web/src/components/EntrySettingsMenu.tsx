@@ -19,6 +19,7 @@ import {
 } from '../analytics/events';
 import type { AppConfig, AppTheme } from '../types';
 import { Icon } from './Icon';
+import { AnimatedCollapsible } from './AnimatedCollapsible';
 import { workspaceInitials } from './hub/HubRailFooter';
 import { DEFAULT_THEME, THEME_OPTIONS } from '../state/themes';
 
@@ -85,23 +86,12 @@ export function EntrySettingsMenu({
   const [langOpen, setLangOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const langListRef = useRef<HTMLDivElement | null>(null);
   const activeTheme = config.theme ?? DEFAULT_THEME;
   const initials = workspaceInitials(username ?? '');
 
   useEffect(() => {
     if (!open) setLangOpen(false);
   }, [open]);
-
-  // Keep the collapsed language list out of the a11y tree and tab order so the
-  // popover stays a single, consistent menu model even though the options stay
-  // mounted for the expand/collapse animation.
-  useEffect(() => {
-    const el = langListRef.current;
-    if (!el) return;
-    if (langOpen) el.removeAttribute('inert');
-    else el.setAttribute('inert', '');
-  }, [langOpen, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -189,11 +179,10 @@ export function EntrySettingsMenu({
                   className="entry-settings-menu__select-caret"
                 />
               </button>
-              <div
-                ref={langListRef}
-                className={`entry-settings-menu__select-list${
-                  langOpen ? ' is-open' : ''
-                }`}
+              <AnimatedCollapsible
+                open={langOpen}
+                openClassName="is-open"
+                className="entry-settings-menu__select-list"
               >
                 <div className="entry-settings-menu__select-list-inner">
                   <div
@@ -240,7 +229,7 @@ export function EntrySettingsMenu({
                     })}
                   </div>
                 </div>
-              </div>
+              </AnimatedCollapsible>
             </div>
           </section>
 

@@ -14,6 +14,7 @@ import { isTodoWriteToolName, parseTodoWriteInput } from '../runtime/todos';
 import { getToolRenderer, toRenderProps } from '../runtime/tool-renderers';
 import type { AgentEvent } from '../types';
 import { Icon } from './Icon';
+import { AnimatedCollapsible } from './AnimatedCollapsible';
 
 interface Props {
   use: Extract<AgentEvent, { kind: 'tool_use' }>;
@@ -274,7 +275,7 @@ export function TodoCard({ input, runStreaming, runSucceeded, onDismiss }: { inp
           </button>
         ) : null}
       </div>
-      <div className={`accordion-collapsible${expanded ? ' open' : ''}`}>
+      <AnimatedCollapsible open={expanded} className="accordion-collapsible">
         <div className="accordion-collapsible-inner">
           <ul className="todo-list">
             {todos.map((todo, i) => (
@@ -295,7 +296,7 @@ export function TodoCard({ input, runStreaming, runSucceeded, onDismiss }: { inp
             ))}
           </ul>
         </div>
-      </div>
+      </AnimatedCollapsible>
     </div>
   );
 }
@@ -330,14 +331,14 @@ function FileWriteCard({
           <Icon name={open ? "chevron-down" : "chevron-right"} size={11} />
         </span>
       </button>
-      <div className={`accordion-collapsible${open ? ' open' : ''}`}>
+      <AnimatedCollapsible open={open} className="accordion-collapsible">
         <div className="accordion-collapsible-inner">
           <div className="op-card-detail">
             <code className="op-path">{file}</code>
             <OpenInTabButton filePath={file} ctx={ctx} />
           </div>
         </div>
-      </div>
+      </AnimatedCollapsible>
       <FileErrorDetail result={result} />
     </div>
   );
@@ -380,14 +381,14 @@ function FileEditCard({
           <Icon name={open ? "chevron-down" : "chevron-right"} size={11} />
         </span>
       </button>
-      <div className={`accordion-collapsible${open ? ' open' : ''}`}>
+      <AnimatedCollapsible open={open} className="accordion-collapsible">
         <div className="accordion-collapsible-inner">
           <div className="op-card-detail">
             <code className="op-path">{file}</code>
             <OpenInTabButton filePath={file} ctx={ctx} />
           </div>
         </div>
-      </div>
+      </AnimatedCollapsible>
       <FileErrorDetail result={result} />
     </div>
   );
@@ -422,14 +423,14 @@ function FileReadCard({
           <Icon name={open ? "chevron-down" : "chevron-right"} size={11} />
         </span>
       </button>
-      <div className={`accordion-collapsible${open ? ' open' : ''}`}>
+      <AnimatedCollapsible open={open} className="accordion-collapsible">
         <div className="accordion-collapsible-inner">
           <div className="op-card-detail">
             <code className="op-path">{file}</code>
             <OpenInTabButton filePath={file} ctx={ctx} />
           </div>
         </div>
-      </div>
+      </AnimatedCollapsible>
       <FileErrorDetail result={result} />
     </div>
   );
@@ -452,7 +453,7 @@ function BashCard({ input, result, runStreaming, runSucceeded }: { input: unknow
           <Icon name={open ? "chevron-down" : "chevron-right"} size={11} />
         </span>
       </button>
-      <div className={`accordion-collapsible${open ? ' open' : ''}`}>
+      <AnimatedCollapsible open={open} className="accordion-collapsible">
         <div className="accordion-collapsible-inner">
           <div className="op-card-detail">
             <pre className="op-command">{truncate(command, 400)}</pre>
@@ -461,7 +462,7 @@ function BashCard({ input, result, runStreaming, runSucceeded }: { input: unknow
             ) : null}
           </div>
         </div>
-      </div>
+      </AnimatedCollapsible>
     </div>
   );
 }

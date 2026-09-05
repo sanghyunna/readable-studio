@@ -7,6 +7,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@readable-studio/components';
 import { useT } from '../i18n';
 import { RemixIcon } from './RemixIcon';
+import { AnimatedCollapsible } from './AnimatedCollapsible';
 import { useSystemFonts } from './useSystemFonts';
 import { systemFontOptions } from './font-options';
 import {
@@ -67,16 +68,15 @@ export function DisclosureSection({
         {summary ? <span className="cc-disclosure-summary">{summary}</span> : null}
         <RemixIcon name="arrow-down-s-line" size={16} />
       </Button>
-      <div
+      <AnimatedCollapsible
         id={contentId}
-        className={`accordion-collapsible${open ? ' open' : ''}`}
-        aria-hidden={!open}
-        inert={!open}
+        open={open}
+        className="accordion-collapsible"
       >
         <div className="accordion-collapsible-inner">
           <div className="cc-disclosure-body">{children}</div>
         </div>
-      </div>
+      </AnimatedCollapsible>
     </section>
   );
 }

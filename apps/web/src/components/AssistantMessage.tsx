@@ -23,6 +23,7 @@ import { Button } from "@readable-studio/components";
 import type { AgentRollbackRequestEvent } from "@readable-studio/contracts";
 import { Icon } from "./Icon";
 import { CollapsibleErrorText } from "./CollapsibleErrorText";
+import { AnimatedCollapsible } from "./AnimatedCollapsible";
 import { NextStepActions } from "./NextStepActions";
 import type { DesignToolboxActionId } from "../runtime/design-toolbox";
 import { copyToClipboard } from "../lib/copy-to-clipboard";
@@ -1619,11 +1620,11 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean 
           <Icon name={open ? "chevron-down" : "chevron-right"} size={11} />
         </span>
       </button>
-      <div className={`accordion-collapsible${open ? ' open' : ''}`}>
+      <AnimatedCollapsible open={open} className="accordion-collapsible">
         <div className="accordion-collapsible-inner">
           <div className="thinking-body">{renderMarkdown(text)}</div>
         </div>
-      </div>
+      </AnimatedCollapsible>
     </div>
   );
 }
@@ -1896,7 +1897,7 @@ function ToolGroupCard({
           <Icon name={open ? "chevron-down" : "chevron-right"} size={11} />
         </span>
       </button>
-      <div className={`accordion-collapsible${open ? ' open' : ''}`}>
+      <AnimatedCollapsible open={open} className="accordion-collapsible">
         <div className="accordion-collapsible-inner">
           <div className="action-card-body">
             {items.map((it, i) => (
@@ -1912,7 +1913,7 @@ function ToolGroupCard({
             ))}
           </div>
         </div>
-      </div>
+      </AnimatedCollapsible>
     </div>
   );
 }
