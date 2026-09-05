@@ -76,14 +76,19 @@ describe('Hub session surface handoff', () => {
     expect(screen.getByTestId('hub-new-session-p1')).toBeTruthy();
     fireEvent.click(screen.getByTestId('hub-new-terminal-p1'));
     expect(onOpenProject).toHaveBeenCalledWith(PROJECT);
-    expect(consumeHubSessionSurface('p1')).toEqual({ projectId: 'p1', kind: 'terminal' });
+    // The handoff is now an addressed, perishable envelope rather than a bare
+    // request: the deadline is what stops a collected request from being applied
+    // long after the navigation that queued it. See HubSessionTree.
+    expect(consumeHubSessionSurface('p1')).toEqual({
+      request: { projectId: 'p1', kind: 'terminal' },
+      expiresAt: expect.any(Number),
+    });
 
     fireEvent.click(screen.getByTestId('hub-open-side-chat-c1'));
     expect(onOpenSession).toHaveBeenCalledWith(PROJECT.sessions[0]);
     expect(consumeHubSessionSurface('p1')).toEqual({
-      projectId: 'p1',
-      kind: 'side-chat',
-      conversationId: 'c1',
+      request: { projectId: 'p1', kind: 'side-chat', conversationId: 'c1' },
+      expiresAt: expect.any(Number),
     });
   });
 

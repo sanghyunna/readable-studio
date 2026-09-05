@@ -94,38 +94,134 @@ const FLYOUT_HOVER_DELAY_MS = 180;
 const COMPACT_SESSION_QUERY = '(max-height: 760px) and (max-width: 900px)';
 const COMPACT_SESSION_PAGE = 4;
 
+/* ---------------------------------------------------------------------------
+ * Session-surface handoff: Hub session tree -> workspace.
+ *
+ * The Hub and the workspace are separate routes, so a session-tree action that
+ * must open a surface INSIDE the workspace has to survive one navigation. That
+ * handoff used to be a single GLOBAL sessionStorage key holding a bare request,
+ * and every property the message lacked turned into the same user-visible bug:
+ *
+ *   "워크스페이스 탭에 가끔 채팅 내용이 들어가는데, 거기 대체 그게 왜 들어가냐고."
+ *
+ *   - UNADDRESSED. One global key was offered to whichever project mounted
+ *     next. The reader compared ids and returned null on a mismatch WITHOUT
+ *     removing the entry, so a navigation that landed anywhere else left the
+ *     request ARMED indefinitely; a later ordinary visit to the original project
+ *     then opened a chat tab with no contemporaneous click. That is the 가끔.
+ *   - IMMORTAL. sessionStorage survives reloads, so an unconsumed request
+ *     outlived the navigation that created it without bound.
+ *   - SINGLE-SLOT. Queuing one request silently destroyed a pending other.
+ *
+ * A cross-route handoff is a one-shot addressed message with a deadline, so
+ * that is what it is now - rather than yet another guard bolted onto the
+ * reader, which is what let the previous protocol look correct:
+ *
+ *   1. ADDRESSED. The key is scoped to the destination project, so a workspace
+ *      can only ever read its OWN project's request. Delivery to the wrong
+ *      project is impossible by construction instead of resting on a runtime id
+ *      comparison a future reader can forget to write.
+ *   2. ONE-SHOT. Reading DRAINS the whole mailbox, not just the matching entry.
+ *      There is exactly one navigation in flight at a time, so the first
+ *      workspace to mount after the click resolves it - and a request that
+ *      reached the wrong project is thereby disarmed instead of lying in wait.
+ *   3. PERISHABLE. The envelope carries a producer-authored deadline. A handoff
+ *      is one route transition long; anything older is not this navigation and
+ *      is dropped when read and again when it would be applied.
+ *
+ * `FileWorkspace` is the only reader and honours the same deadline at apply
+ * time - see the handoff effect there. Both halves of the protocol are stated
+ * in these two places and nowhere else.
+ * ------------------------------------------------------------------------- */
+
 export const HUB_SESSION_SURFACE_REQUEST_KEY = 'readable-studio:session-surface-request';
+
+/**
+ * How long a queued request stays deliverable. This spans one route transition
+ * plus the workspace's tab hydration, so it is generous by an order of
+ * magnitude - it is a backstop against a request that is never collected, not a
+ * performance budget. What it must NOT span is the gap to a later, unrelated
+ * visit, which is exactly the window the old protocol left wide open.
+ */
+export const HUB_SESSION_SURFACE_TTL_MS = 30_000;
 
 export type HubSessionSurfaceRequest =
   | { projectId: string; kind: 'terminal' }
   | { projectId: string; kind: 'side-chat'; conversationId: string };
 
-export function queueHubSessionSurface(request: HubSessionSurfaceRequest): void {
-  window.sessionStorage.setItem(HUB_SESSION_SURFACE_REQUEST_KEY, JSON.stringify(request));
+/** A request plus the deadline its producer stamped on it. */
+export interface HubSessionSurfaceDelivery {
+  request: HubSessionSurfaceRequest;
+  /** Epoch ms after which this request is no longer this navigation's. */
+  expiresAt: number;
 }
 
-export function consumeHubSessionSurface(projectId: string): HubSessionSurfaceRequest | null {
-  const raw = window.sessionStorage.getItem(HUB_SESSION_SURFACE_REQUEST_KEY);
+/** The mailbox slot addressed to one project. */
+function hubSessionSurfaceKey(projectId: string): string {
+  return `${HUB_SESSION_SURFACE_REQUEST_KEY}:${projectId}`;
+}
+
+/** Every slot currently in the mailbox, including the legacy unaddressed one. */
+function hubSessionSurfaceKeys(): string[] {
+  const keys: string[] = [];
+  for (let index = 0; index < window.sessionStorage.length; index += 1) {
+    const key = window.sessionStorage.key(index);
+    if (key && key.startsWith(HUB_SESSION_SURFACE_REQUEST_KEY)) keys.push(key);
+  }
+  return keys;
+}
+
+export function queueHubSessionSurface(request: HubSessionSurfaceRequest): void {
+  const delivery: HubSessionSurfaceDelivery = {
+    request,
+    expiresAt: Date.now() + HUB_SESSION_SURFACE_TTL_MS,
+  };
+  window.sessionStorage.setItem(hubSessionSurfaceKey(request.projectId), JSON.stringify(delivery));
+}
+
+export function consumeHubSessionSurface(projectId: string): HubSessionSurfaceDelivery | null {
+  const raw = window.sessionStorage.getItem(hubSessionSurfaceKey(projectId));
+
+  // Draining happens FIRST and unconditionally, so every path below - match,
+  // mismatch, malformed, expired - leaves an empty mailbox. A request is spent
+  // by the attempt to collect it; nothing survives to fire at a later time.
+  // Slots addressed to other projects go too: the navigation they belonged to
+  // has resolved (here, evidently, rather than where it was aimed), and an
+  // upgrade from the pre-addressing build can leave the legacy key behind.
+  for (const key of hubSessionSurfaceKeys()) window.sessionStorage.removeItem(key);
+
   if (!raw) return null;
   let value: unknown;
   try {
     value = JSON.parse(raw);
   } catch {
-    window.sessionStorage.removeItem(HUB_SESSION_SURFACE_REQUEST_KEY);
     return null;
   }
   if (!value || typeof value !== 'object') return null;
-  const candidate = value as Record<string, unknown>;
-  if (candidate.projectId !== projectId) return null;
-  if (candidate.kind === 'terminal') {
-    window.sessionStorage.removeItem(HUB_SESSION_SURFACE_REQUEST_KEY);
-    return { projectId, kind: 'terminal' };
+  const envelope = value as Record<string, unknown>;
+
+  const expiresAt = envelope.expiresAt;
+  if (typeof expiresAt !== 'number' || !Number.isFinite(expiresAt)) return null;
+  if (Date.now() > expiresAt) return null;
+
+  const candidate = envelope.request;
+  if (!candidate || typeof candidate !== 'object') return null;
+  const record = candidate as Record<string, unknown>;
+
+  // The key already addresses this project; a payload that disagrees with its
+  // own envelope is corrupt (or hand-written) and is refused rather than
+  // re-pointed at whoever happened to open it.
+  if (record.projectId !== projectId) return null;
+
+  if (record.kind === 'terminal') {
+    return { request: { projectId, kind: 'terminal' }, expiresAt };
   }
-  if (candidate.kind === 'side-chat' && typeof candidate.conversationId === 'string') {
-    window.sessionStorage.removeItem(HUB_SESSION_SURFACE_REQUEST_KEY);
-    return { projectId, kind: 'side-chat', conversationId: candidate.conversationId };
+  if (record.kind === 'side-chat' && typeof record.conversationId === 'string') {
+    return {
+      request: { projectId, kind: 'side-chat', conversationId: record.conversationId },
+      expiresAt,
+    };
   }
-  window.sessionStorage.removeItem(HUB_SESSION_SURFACE_REQUEST_KEY);
   return null;
 }
 

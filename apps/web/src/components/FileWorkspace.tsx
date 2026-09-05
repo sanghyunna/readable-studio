@@ -571,13 +571,34 @@ export function FileWorkspace({
   // Wait for ProjectView's async tab hydration before applying it; otherwise
   // that hydration can overwrite the newly opened surface a frame later.
   const initialHandoffTabsStateRef = useRef(tabsState);
+  const handoffProjectRef = useRef<string | null>(null);
   const pendingHubSurfaceRef = useRef<ReturnType<typeof consumeHubSessionSurface>>(null);
   useEffect(() => {
-    pendingHubSurfaceRef.current ??= consumeHubSessionSurface(projectId);
+    // Collecting the handoff is bound to the PROJECT, not to whichever render
+    // happens to find the ref empty. This component is reused across projectId
+    // changes, and the pending request used to survive that change - so a
+    // request collected for one project could be applied inside the next one.
+    // Rebinding also re-establishes the hydration baseline, which otherwise
+    // stayed pinned to the first project's tab state and made the gate below
+    // pass instantly for every project after it.
+    if (handoffProjectRef.current !== projectId) {
+      handoffProjectRef.current = projectId;
+      initialHandoffTabsStateRef.current = tabsState;
+      pendingHubSurfaceRef.current = consumeHubSessionSurface(projectId);
+      return;
+    }
+    const pending = pendingHubSurfaceRef.current;
+    if (!pending) return;
     if (tabsState === initialHandoffTabsStateRef.current) return;
-    const request = pendingHubSurfaceRef.current;
-    if (!request) return;
     pendingHubSurfaceRef.current = null;
+    // The gate above is "tab state changed", which is NORMALLY ProjectView's
+    // hydration but is not proof of it - any later tab mutation satisfies it
+    // too, which is how a surface could appear long after the click that asked
+    // for it. The producer's deadline is what separates the two: a change that
+    // arrives after the navigation window is not this navigation's hydration,
+    // so the request is dropped instead of opening a surface out of nowhere.
+    if (Date.now() > pending.expiresAt) return;
+    const request = pending.request;
     if (request.kind === 'side-chat') {
       openFile(`chat:${request.conversationId}`);
       return;
