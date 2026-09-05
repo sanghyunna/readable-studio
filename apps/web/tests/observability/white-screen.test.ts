@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -29,12 +29,17 @@ vi.mock('../../src/router', () => ({
 }));
 
 vi.mock('../../src/components/EntryView', () => ({
-  EntryView: ({ config, onOpenSettings }: { config: AppConfig; onOpenSettings: (section: string) => void }) => createElement(
+  EntryView: ({ config, daemonLive, onOpenSettings }: {
+    config: AppConfig;
+    daemonLive: boolean;
+    onOpenSettings: (section: string) => void;
+  }) => createElement(
     'main',
     { 'data-testid': 'home-ready' },
     createElement('button', { type: 'button' }, 'New project'),
     createElement('button', { type: 'button', onClick: () => onOpenSettings('codeAgents') }, 'Open agent settings'),
     createElement('span', { 'data-testid': 'selected-agent' }, config.agentId ?? 'none'),
+    createElement('span', { 'data-testid': 'daemon-status' }, daemonLive ? 'online' : 'offline'),
   ),
 }));
 
@@ -215,11 +220,25 @@ describe('observability/white-screen', () => {
   });
 
   it('keeps startup agent detection in flight and refreshes it from settings', async () => {
+    let resolveHealth!: (alive: boolean) => void;
+    const health = new Promise<boolean>((resolve) => {
+      resolveHealth = resolve;
+    });
+    vi.mocked(daemonIsLive).mockReturnValue(health);
+
     render(createElement(App));
 
-    await Promise.resolve();
-    await Promise.resolve();
+    // The startup stream begins independently while daemon health is unknown.
     expect(fetchAgentsStream).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('daemon-status').textContent).toBe('offline');
+
+    // Opening Settings refreshes only after the specific online state commits;
+    // offline/unknown Settings must remain a cached-state-only operation.
+    await act(async () => {
+      resolveHealth(true);
+      await health;
+    });
+    expect(screen.getByTestId('daemon-status').textContent).toBe('online');
 
     fireEvent.click(screen.getByRole('button', { name: 'Open agent settings' }));
 

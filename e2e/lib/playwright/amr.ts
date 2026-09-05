@@ -33,7 +33,10 @@ export async function expectWorkspaceReady(page: Page) {
 export async function openSettingsDialog(page: Page) {
   await waitForLoadingToClear(page);
   await dismissPrivacyDialog(page);
-  const settingsTrigger = page.getByTestId('entry-settings-menu-trigger');
+  const settingsTrigger = page
+    .getByTestId('entry-settings-menu-trigger')
+    .or(page.getByTestId('hub-footer-settings'))
+    .first();
   if (await settingsTrigger.isVisible({ timeout: 1_000 }).catch(() => false)) {
     await settingsTrigger.click();
   } else {
