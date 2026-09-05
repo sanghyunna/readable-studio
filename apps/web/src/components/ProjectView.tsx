@@ -5715,16 +5715,6 @@ export function ProjectView({
                   {projectMeta !== t('project.metaFreeform') ? (
                     <span className="meta" data-testid="project-meta">{projectMeta}</span>
                   ) : null}
-                  {projectBrief ? (
-                    <BriefCard
-                      brief={projectBrief}
-                      prominent={currentConversationStreaming && receiptAssumptions !== null}
-                      onChange={handleBriefChange}
-                      onSteer={(payload) => {
-                        void handleSend(payload, [], []);
-                      }}
-                    />
-                  ) : null}
                 </div>
               )}
               designSystemPicker={(
@@ -5833,7 +5823,17 @@ export function ProjectView({
           onLaunchTerminalAuth={handleLaunchAntigravityOauth}
           conversationId={activeConversationId}
           headerActions={(
-            <EntrySettingsMenu
+            <div className="preview-brief-actions">
+              {projectBrief ? (
+                <BriefCard
+                  brief={projectBrief}
+                  onChange={handleBriefChange}
+                  onSteer={(payload) => {
+                    void handleSend(payload, [], []);
+                  }}
+                />
+              ) : null}
+              <EntrySettingsMenu
               config={config}
               onThemeChange={handleThemeChange}
               onOpenSettings={onOpenSettings}
@@ -5850,6 +5850,7 @@ export function ProjectView({
                 });
               }}
             />
+            </div>
           )}
           questionForm={displayedQuestionForm}
           questionFormPreview={displayedQuestionFormPreview}

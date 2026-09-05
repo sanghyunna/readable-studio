@@ -18,7 +18,6 @@ interface BriefCardProps {
   brief: ProjectBrief;
   onChange: (brief: ProjectBrief) => void | Promise<void>;
   onSteer: (payload: string) => void;
-  prominent?: boolean;
   onTrackEdit?: (event: { fieldId: string; provenance: BriefAssumption['provenance'] }) => void;
 }
 
@@ -26,18 +25,14 @@ const PROVENANCE_ORDER: BriefAssumption['provenance'][] = ['stated', 'inferred',
 
 type PanelRect = { left: number; top: number };
 
-export function BriefCard({ brief, onChange, onSteer, prominent = false, onTrackEdit }: BriefCardProps) {
+export function BriefCard({ brief, onChange, onSteer, onTrackEdit }: BriefCardProps) {
   const t = useT();
-  const [expanded, setExpanded] = useState(prominent);
+  const [expanded, setExpanded] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  // The Brief lives in the chat header, whose `.chat-project-header-title`
-  // wrapper carries `overflow: hidden` (it owns the title ellipsis) and whose
-  // sticky `.chat-project-header` is only 38px tall. An in-flow absolute panel
-  // was therefore clipped to nothing: measured at 385x341 with the wrapper's
-  // box ending 8px above the panel's top edge, so no pixel and no hit target
-  // survived. The panel is a body-level fixed layer placed from the trigger's
-  // measured rect, using the same shared maths as every other portaled popover
-  // here rather than a fourth positioning implementation.
+  // The compact trigger lives in the preview toolbar, but the editor panel is
+  // a body-level fixed layer: preview frames and toolbar chrome deliberately
+  // clip their contents. Shared measured placement keeps the variable-height
+  // panel anchored, viewport-clamped, and above those stacking contexts.
   const [rect, setRect] = useState<PanelRect | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
@@ -65,11 +60,6 @@ export function BriefCard({ brief, onChange, onSteer, prominent = false, onTrack
       case 'default': return t('brief.provenance.default');
     }
   };
-
-  useEffect(() => {
-    if (prominent) setExpanded(true);
-    else setExpanded(false);
-  }, [prominent]);
 
   const collapse = useCallback(() => {
     setExpanded(false);

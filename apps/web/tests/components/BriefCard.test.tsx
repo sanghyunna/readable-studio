@@ -26,13 +26,20 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+function expandBrief(): void {
+  const trigger = screen.getByTestId('brief-card').querySelector<HTMLButtonElement>('.brief-card__trigger');
+  if (!trigger) throw new Error('Brief trigger was not rendered');
+  fireEvent.click(trigger);
+}
+
 describe('BriefCard', () => {
   it('renders every card-owned label from the Korean dictionary without English fallbacks', () => {
     const { container } = render(
       <I18nProvider initial="ko">
-        <BriefCard brief={brief} prominent onChange={() => {}} onSteer={() => {}} />
+        <BriefCard brief={brief} onChange={() => {}} onSteer={() => {}} />
       </I18nProvider>,
     );
+    expandBrief();
 
     const visibleKeys = [
       'brief.trigger',
@@ -92,7 +99,8 @@ describe('BriefCard', () => {
   });
 
   it('renders stated, inferred, and default provenance on grouped assumption controls', () => {
-    render(<BriefCard brief={brief} prominent onChange={() => {}} onSteer={() => {}} />);
+    render(<BriefCard brief={brief} onChange={() => {}} onSteer={() => {}} />);
+    expandBrief();
     expect(screen.getByText('Stated by you')).toBeTruthy();
     expect(screen.getByText('Inferred')).toBeTruthy();
     expect(screen.getByText('Working defaults')).toBeTruthy();
@@ -106,7 +114,8 @@ describe('BriefCard', () => {
     const onChange = vi.fn();
     const onSteer = vi.fn();
     const onTrackEdit = vi.fn();
-    render(<BriefCard brief={brief} prominent onChange={onChange} onSteer={onSteer} onTrackEdit={onTrackEdit} />);
+    render(<BriefCard brief={brief} onChange={onChange} onSteer={onSteer} onTrackEdit={onTrackEdit} />);
+    expandBrief();
 
     fireEvent.click(screen.getByRole('listitem', { name: 'Audience: dev-tools buyers (Inferred)' }));
     const input = screen.getByRole('textbox', { name: 'Who is this for?' });
@@ -119,13 +128,9 @@ describe('BriefCard', () => {
     expect(onTrackEdit).toHaveBeenCalledOnce();
   });
 
-  it('recedes to a one-line trigger and can be summoned again', () => {
-    const { rerender } = render(
-      <BriefCard brief={brief} prominent onChange={() => {}} onSteer={() => {}} />,
-    );
-    expect(screen.getByText('Project brief')).toBeTruthy();
+  it('stays collapsed on arrival and can be summoned', () => {
+    render(<BriefCard brief={brief} onChange={() => {}} onSteer={() => {}} />);
 
-    rerender(<BriefCard brief={brief} prominent={false} onChange={() => {}} onSteer={() => {}} />);
     expect(screen.queryByText('Project brief')).toBeNull();
     expect(screen.getByRole('button', { name: /BriefBrandAcme3/ })).toBeTruthy();
 

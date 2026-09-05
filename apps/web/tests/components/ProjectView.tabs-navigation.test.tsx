@@ -101,11 +101,13 @@ vi.mock('../../src/components/AvatarMenu', () => ({
 }));
 
 vi.mock('../../src/components/FileWorkspace', () => ({
-  FileWorkspace: ({ tabsState, onTabsStateChange }: {
+  FileWorkspace: ({ tabsState, onTabsStateChange, headerActions }: {
     tabsState: { tabs: string[]; active: string | null };
     onTabsStateChange: (state: { tabs: string[]; active: string | null }) => void;
+    headerActions?: ReactNode;
   }) => (
     <div data-testid="file-workspace">
+      <div data-testid="preview-header-actions">{headerActions}</div>
       <output data-testid="workspace-active-tab">{tabsState.active ?? ''}</output>
       <button
         type="button"
@@ -235,7 +237,7 @@ describe('ProjectView tab URL hydration', () => {
     expect(onAgentModelChange).toHaveBeenCalledWith('claude', { model: 'opus' });
   });
 
-  it('hydrates the collapsed chat-header Brief from persisted project metadata on return', async () => {
+  it('hydrates the collapsed preview-header Brief from persisted project metadata on return', async () => {
     renderProjectView({
       project: {
         ...project,
@@ -259,13 +261,20 @@ describe('ProjectView tab URL hydration', () => {
       },
     });
 
-    // This file intentionally mocks translations as their keys. Assert the
-    // resulting accessible name exactly enough to prove metadata hydration:
-    // the audience field key, persisted value, and assumption count all come
-    // from project.metadata.brief rather than placeholder Brief chrome.
-    const briefTrigger = await screen.findByRole('button', {
-      name: /brief\.triggerbrief\.field\.audiencesecurity leaders1/,
-    });
+    // Brief now lives in FileWorkspace's preview-header actions. Assert the
+    // placement separately from its content so i18n wording changes cannot
+    // hide a metadata-hydration regression.
+    const previewActions = await screen.findByTestId('preview-header-actions');
+    const briefCard = await screen.findByTestId('brief-card');
+    const briefTrigger = screen.getByRole('button', { name: /brief\.trigger/ });
+    expect(previewActions.contains(briefCard)).toBe(true);
+    expect(briefCard.contains(briefTrigger)).toBe(true);
+
+    // This file intentionally renders translation keys. The field label,
+    // persisted value, and count must all come from project.metadata.brief.
+    expect(briefTrigger.textContent).toContain('brief.field.audience');
+    expect(briefTrigger.textContent).toContain('security leaders');
+    expect(briefTrigger.textContent).toContain('1');
     expect(briefTrigger.getAttribute('aria-expanded')).toBe('false');
     expect(screen.queryByTestId('brief-card-panel')).toBeNull();
   });

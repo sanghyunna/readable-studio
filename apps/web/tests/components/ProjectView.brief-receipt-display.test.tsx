@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -275,12 +275,12 @@ describe('brief receipt display boundary', () => {
     expect(assumptions).toHaveLength(2);
     render(
       <BriefCard
-        prominent
         brief={{ assumptions: assumptions!, updatedAt: 1 }}
         onChange={() => {}}
         onSteer={() => {}}
       />,
     );
+    fireEvent.click(screen.getByTestId('brief-card').querySelector<HTMLButtonElement>('.brief-card__trigger')!);
     const stated = screen.getAllByRole('listitem', { hidden: true })
       .find((item) => item.getAttribute('data-provenance') === 'stated');
     expect(stated?.textContent).toContain('Slide deck (논문 요약)');

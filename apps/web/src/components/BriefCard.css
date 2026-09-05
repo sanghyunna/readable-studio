@@ -4,6 +4,26 @@
   color: var(--text);
 }
 
+/* The Brief lives in the preview toolbar: discoverable for the project's full
+   life without reserving a permanent row above the artifact. While settled it
+   recedes to this compact toolbar action; while a receipt streams, the same
+   trigger opens the body-portaled editing panel over the preview. */
+.preview-brief-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.preview-brief-actions .brief-card__trigger {
+  min-height: 28px;
+  padding: 4px 8px;
+  background: var(--hub-control-surface);
+  box-shadow: inset 0 1px 0 var(--hub-control-highlight), var(--shadow-sm);
+}
+.preview-brief-actions .brief-card__summary {
+  display: none;
+}
+
 .brief-card__trigger {
   display: inline-flex;
   align-items: center;
@@ -89,10 +109,9 @@
   transform: rotate(180deg) translateY(1px);
 }
 
-/* Body-portaled layer: the chat header that hosts the trigger clips overflow
-   and is 38px tall, so an anchor-relative absolute panel was clipped to zero
-   painted pixels. Left/top come from measured placement in BriefCard.tsx; the
-   z-index matches the established portaled-popover layer (chat.css:1573). */
+/* Body-portaled layer: the preview viewport and toolbar both clip descendants,
+   so the editing panel escapes to body. Left/top come from measured placement
+   in BriefCard.tsx; the z-index matches the established popover layer. */
 .brief-card__panel {
   position: fixed;
   z-index: 1502;
