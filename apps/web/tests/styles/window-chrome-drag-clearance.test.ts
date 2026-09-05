@@ -14,9 +14,9 @@
  *     specificity source order wins, so its `min-height: 48px` beat the strip's
  *     `height: 36px`; the band overflowed its 36px grid row by 12px and covered
  *     the top of the surface below.
- *  2. `.hub__rail-toggle` is `position: fixed` against the VIEWPORT, so a bare
- *     `inset-block-start: 7px` parked it inside the title bar regardless of how
- *     tall that bar was.
+ *  2. The rail toggle used to float against the viewport, allowing its box to
+ *     enter the title bar. It is now an in-flow child of the rail header, which
+ *     itself lives in the shell body's second grid row.
  *
  * These are geometric facts, so the assertions are geometric: the real
  * stylesheets are loaded into jsdom and `getComputedStyle` resolves the actual
@@ -32,6 +32,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 // stylesheets are resolved from the package root instead.
 const styles = resolve(process.cwd(), 'src/styles');
 const shellCss = readFileSync(resolve(styles, 'shell.css'), 'utf8');
+const projectRailCss = readFileSync(resolve(styles, 'home/project-rail.css'), 'utf8');
 const hubCss = readFileSync(resolve(styles, 'home/hub.css'), 'utf8');
 const entryLayoutCss = readFileSync(resolve(styles, 'home/entry-layout.css'), 'utf8');
 
@@ -61,7 +62,15 @@ function readChromeHeightToken(): number | null {
   return declared ? Number.parseFloat(declared[1] as string) : null;
 }
 
+function reservedChromeTrack(element: HTMLElement): number {
+  const rows = getComputedStyle(element).gridTemplateRows;
+  const firstTrack = rows.match(/^var\(--app-window-chrome-height(?:,[^)]+)?\)/)?.[0] ?? '';
+  return px(firstTrack);
+}
+
+let shell: HTMLElement;
 let chrome: HTMLElement;
+let body: HTMLElement;
 let toggle: HTMLElement;
 
 beforeAll(() => {
@@ -69,7 +78,7 @@ beforeAll(() => {
   // The sheets that own this geometry, concatenated in their real @import order
   // so both the shell.css-internal source-order conflict and entry-layout.css's
   // later grid override are reproduced exactly as they reach the browser.
-  style.textContent = `${shellCss}\n${entryLayoutCss}\n${hubCss}`;
+  style.textContent = `${shellCss}\n${projectRailCss}\n${entryLayoutCss}\n${hubCss}`;
   document.head.append(style);
 
   document.body.innerHTML = `
@@ -80,13 +89,19 @@ beforeAll(() => {
       </header>
       <div class="workspace-shell__body">
         <div class="hub">
-          <button class="hub__rail-toggle" data-testid="hub-rail-toggle"></button>
+          <nav class="hub__nav" data-project-rail="hub" data-project-rail-state="expanded">
+            <div class="hub__nav-head">
+              <button class="hub__rail-toggle" data-project-rail-toggle data-testid="hub-rail-toggle"></button>
+            </div>
+          </nav>
         </div>
       </div>
     </div>
   `;
 
+  shell = document.querySelector('.workspace-shell') as HTMLElement;
   chrome = document.querySelector('.app-window-chrome') as HTMLElement;
+  body = document.querySelector('.workspace-shell__body') as HTMLElement;
   toggle = document.querySelector('.hub__rail-toggle') as HTMLElement;
 });
 
@@ -103,31 +118,38 @@ describe('frameless window chrome drag clearance', () => {
     expect(minHeight).toBeLessThanOrEqual(36);
   });
 
-  it('positions the Hub rail toggle clear of the drag band', () => {
+  it('keeps the Hub rail toggle in flow below the reserved drag-band row', () => {
     const bandBottom = Math.max(
       px(getComputedStyle(chrome).height),
       px(getComputedStyle(chrome).minHeight),
     );
-    const toggleTop = px(getComputedStyle(toggle).insetBlockStart || getComputedStyle(toggle).top);
+    const bodyTop = reservedChromeTrack(shell);
 
-    // `position: fixed` means this offset is measured from the viewport top, so
-    // it must clear the whole band - the toggle is not laid out after it.
-    expect(getComputedStyle(toggle).position).toBe('fixed');
-    expect(toggleTop).toBeGreaterThanOrEqual(bandBottom);
+    // Static positioning is the shared ProjectRail contract: because the rail
+    // is inside the shell body (the second grid child), its control cannot
+    // escape upward into the first-row drag surface via viewport offsets.
+    expect(getComputedStyle(toggle).position).toBe('static');
+    expect(shell.children[1]).toBe(body);
+    expect(body.contains(toggle)).toBe(true);
+    expect(bodyTop).toBeGreaterThanOrEqual(bandBottom);
   });
 
-  it('leaves no vertical overlap between the drag band and the rail toggle', () => {
-    // The invariant that actually decides whether the user can click the
-    // control. Stated as an overlap so it fails for EITHER cause: a band that
-    // grew downward, or a toggle that moved upward.
+  it('leaves no vertical overlap between the drag band and the in-flow rail toggle', () => {
+    // jsdom has no layout engine, so derive the body's real top boundary from
+    // the winning first grid track rather than reading a fabricated offset from
+    // a static element. This stays numeric and fails if the reserved row stops
+    // resolving, if the band outgrows it, or if the toggle becomes floating.
     const bandTop = 0;
     const bandBottom = Math.max(
       px(getComputedStyle(chrome).height),
       px(getComputedStyle(chrome).minHeight),
     );
-    const toggleTop = px(getComputedStyle(toggle).insetBlockStart || getComputedStyle(toggle).top);
+    const toggleTop = reservedChromeTrack(shell);
     const toggleBottom = toggleTop + px(getComputedStyle(toggle).height);
 
+    expect(Number.isFinite(toggleTop)).toBe(true);
+    expect(Number.isFinite(toggleBottom)).toBe(true);
+    expect(getComputedStyle(toggle).position).toBe('static');
     const overlap = Math.min(bandBottom, toggleBottom) - Math.max(bandTop, toggleTop);
     expect(overlap).toBeLessThanOrEqual(0);
   });
@@ -135,7 +157,6 @@ describe('frameless window chrome drag clearance', () => {
   it('reserves exactly the band height in the shell grid row', () => {
     // If the row and the band ever disagree, the strip either overflows onto the
     // surface below (the original bug) or leaves a dead gap. Both read the token.
-    const shell = document.querySelector('.workspace-shell') as HTMLElement;
     const rows = getComputedStyle(shell).gridTemplateRows;
     expect(rows).toContain('var(--app-window-chrome-height)');
     expect(readChromeHeightToken()).toBe(36);

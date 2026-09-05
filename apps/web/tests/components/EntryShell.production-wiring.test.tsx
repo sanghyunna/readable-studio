@@ -31,7 +31,6 @@ vi.mock('../../src/components/DesignSystemsTab', () => ({ DesignSystemsTab: () =
 vi.mock('../../src/components/IntegrationsView', () => ({ IntegrationsView: () => null }));
 vi.mock('../../src/components/PluginsView', () => ({ PluginsView: () => null }));
 vi.mock('../../src/components/TasksView', () => ({ TasksView: () => null }));
-vi.mock('../../src/components/NewProjectModal', () => ({ NewProjectModal: () => null }));
 
 import { EntryShell } from '../../src/components/EntryShell';
 import type { Project, SkillSummary } from '../../src/types';
@@ -98,6 +97,8 @@ function renderEntryShell() {
       onCreateProject={onCreateProject}
       onCreatePluginShareProject={vi.fn()}
       onImportClaudeDesign={vi.fn()}
+      onImportFolder={vi.fn()}
+      onImportFolderResponse={vi.fn()}
       onOpenProject={vi.fn()}
       onDeleteProject={vi.fn()}
       onRenameProject={vi.fn()}
@@ -124,12 +125,12 @@ afterEach(() => {
 });
 
 describe('EntryShell production hub wiring', () => {
-  it('forwards Advanced creation through handleCreate with normalized input', async () => {
+  it('forwards New Project modal creation through handleCreate with normalized input', async () => {
     const { onCreateProject } = renderEntryShell();
     await screen.findByTestId('home-hero-input');
 
-    fireEvent.click(screen.getByTestId('new-project-advanced-toggle'));
-    const body = await screen.findByTestId('new-project-advanced-body');
+    fireEvent.click(screen.getByTestId('hub-new-project'));
+    const body = await screen.findByTestId('new-project-modal');
     fireEvent.change(within(body).getByTestId('new-project-name'), {
       target: { value: '  Advanced wired project  ' },
     });
@@ -158,6 +159,47 @@ describe('EntryShell production hub wiring', () => {
         template: 'the bundled web prototype seed',
       },
     });
+  });
+
+  it('has no Advanced / Import disclosure on the Hub', async () => {
+    renderEntryShell();
+    await screen.findByTestId('home-hero-input');
+
+    expect(screen.queryByTestId('new-project-advanced')).toBeNull();
+    expect(screen.queryByTestId('new-project-advanced-toggle')).toBeNull();
+    expect(screen.queryByTestId('new-project-advanced-body')).toBeNull();
+    // The panel itself must not be mounted anywhere outside the modal.
+    expect(screen.queryByTestId('new-project-panel')).toBeNull();
+  });
+
+  it('keeps every relocated pre-creation control reachable in the New Project modal', async () => {
+    renderEntryShell();
+    await screen.findByTestId('home-hero-input');
+
+    fireEvent.click(screen.getByTestId('hub-new-project'));
+    const modal = await screen.findByTestId('new-project-modal');
+    const panel = within(modal).getByTestId('new-project-panel');
+
+    // 1. working-directory picker
+    const workingDir = panel.querySelector('button.newproj-working-dir');
+    expect(workingDir).not.toBeNull();
+    expect((workingDir as HTMLButtonElement).disabled).toBe(false);
+
+    // 2. Claude ZIP import (button + its file input)
+    const zip = within(panel).getByTestId('new-project-import-claude-zip') as HTMLButtonElement;
+    expect(zip.disabled).toBe(false);
+    const zipInput = within(panel).getByTestId('new-project-import-claude-zip-input');
+    expect(zipInput.getAttribute('type')).toBe('file');
+
+    // 3. open-folder import (host bridge is available in this render)
+    const openFolder = within(panel).getByTestId('new-project-import-folder') as HTMLButtonElement;
+    expect(openFolder.disabled).toBe(false);
+
+    // 4. template picker tab
+    const templateTab = within(panel).getByTestId('new-project-tab-template') as HTMLButtonElement;
+    expect(templateTab.disabled).toBe(false);
+    fireEvent.click(templateTab);
+    expect(templateTab.getAttribute('aria-selected')).toBe('true');
   });
 
   it('maps the hub workspace-folder item to Project Locations settings', async () => {

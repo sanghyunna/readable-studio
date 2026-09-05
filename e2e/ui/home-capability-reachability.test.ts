@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 import { routeAgents } from '@/playwright/mock-factory';
+import { openNewProjectModal } from '@/playwright/new-project-modal';
 
 test.describe.configure({ timeout: 30_000 });
 
@@ -193,6 +194,7 @@ const HOME_PLUGINS = [{
   source: '/tmp/localized-plugin', fsPath: '/tmp/localized-plugin', capabilitiesGranted: ['prompt:inject'], installedAt: 0, updatedAt: 0,
   manifest: { name: 'localized-plugin', title: 'Localized Plugin', version: '0.1.0', description: 'Deterministic home reachability plugin.',
     readable: { kind: 'scenario', taskKind: 'new-generation', useCase: { mode: 'prototype', featured: true, query: 'Make a {{topic}} brief.' },
+      visualReference: { characteristics: ['Layered editorial layout with restrained motion and clear visual hierarchy.'] },
       inputs: [{ name: 'topic', type: 'string', required: true, default: 'design systems', label: 'Topic' }] } },
 }, {
   id: 'deck-writer', title: 'Deck Writer', version: '0.1.0', trust: 'bundled', sourceKind: 'bundled', source: '/tmp/deck-writer', fsPath: '/tmp/deck-writer',
@@ -287,19 +289,19 @@ async function visible(locator: Locator, id: string) {
   await expect(locator, `[${id}] control must be visible on the real home surface`).toBeVisible({ timeout: 2_000 });
 }
 
-async function openAdvancedProjectPanel(page: Page, id: string) {
-  const advanced = page.getByTestId('new-project-advanced');
-  await expect(advanced, `[${id}] Advanced / Import must mount exactly once on the Hub`).toHaveCount(1);
-  const toggle = advanced.getByTestId('new-project-advanced-toggle');
-  await visible(toggle, id);
-  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  await expect(advanced.getByTestId('new-project-advanced-body')).toHaveCount(0);
-  await toggle.click();
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-  const body = advanced.getByTestId('new-project-advanced-body');
-  await visible(body, id);
-  await visible(body.getByTestId('new-project-panel'), id);
-  return body;
+// The Advanced / Import disclosure is gone; the pre-creation controls (working
+// folder, ZIP / folder import, template picker, design-system picker) ship
+// through the New Project modal, which runs the identical handleCreate.
+async function openProjectCreationPanel(page: Page, id: string) {
+  await expect(
+    page.getByTestId('new-project-advanced'),
+    `[${id}] the Advanced / Import disclosure must not exist`,
+  ).toHaveCount(0);
+  await openNewProjectModal(page, id);
+  const modal = page.getByTestId('new-project-modal');
+  const panel = modal.getByTestId('new-project-panel');
+  await visible(panel, id);
+  return panel;
 }
 
 async function writeEvidence(page: Page, name: string, details: unknown) {
@@ -510,15 +512,7 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
   switch (kind) {
     case 'composer': { const input = composer(page); await visible(input, id); await input.fill('operable composer'); await expect(input).toContainText('operable composer').catch(async () => expect(input).toHaveValue('operable composer')); return; }
     case 'design-system': {
-      // A design-system @mention is context-only: selecting it inserts a pill,
-      // but the New Project form still shows the configured Agentic default.
-      await openMention(page, '@Airbnb');
-      const mention = page.getByRole('option', { name: /Airbnb/i });
-      await visible(mention, id);
-      await mention.click();
-      await expect(composer(page)).toContainText('Airbnb');
-
-      const panel = await openAdvancedProjectPanel(page, id);
+      const panel = await openProjectCreationPanel(page, id);
       const picker = panel.getByTestId('design-system-trigger');
       await visible(picker, id);
       await expect(picker).toContainText('Agentic');
@@ -529,7 +523,6 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
       await expect(picker).toContainText('Airbnb');
       await expect(picker).toHaveAttribute('aria-expanded', 'false');
       await writeEvidence(page, 'design-system-new-project-path', {
-        mentionResult: 'Airbnb mention inserted without changing the New Project default',
         selectedDesignSystem: (await picker.innerText()).trim(),
         path: ['+ New project', 'Design system', 'Airbnb', 'Create project'],
       });
@@ -601,11 +594,11 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
     // Session mode is a creation-time choice, so it lives in the New Project
     // flow rather than the Hub composer footer. The capability being pinned is
     // unchanged: picking Ask must reach POST /api/projects as chat mode.
-    case 'mode': case 'mode-route': { await expect(page.getByTestId('home-hero-agent-model').getByTestId('session-mode-trigger')).toHaveCount(0); const panel = await openAdvancedProjectPanel(page, id); const picker = panel.getByTestId('newproj-mode-picker'); await visible(picker, id); const ask = panel.getByTestId('newproj-mode-chat'); await visible(ask, id); await ask.click(); await expect(ask).toHaveAttribute('aria-checked', 'true'); await expect(panel.getByTestId('newproj-mode-design')).toHaveAttribute('aria-checked', 'false'); if (kind === 'mode-route') { await panel.getByTestId('new-project-name').fill('mode routed creation'); const request = page.waitForRequest(candidate => candidate.method() === 'POST' && new URL(candidate.url()).pathname === '/api/projects'); await panel.getByTestId('create-project').click(); expect((await request).postDataJSON()).toMatchObject({ conversationMode: 'chat', name: 'mode routed creation' }); } return; }
+    case 'mode': case 'mode-route': { await expect(page.getByTestId('home-hero-agent-model').getByTestId('session-mode-trigger')).toHaveCount(0); const panel = await openProjectCreationPanel(page, id); const picker = panel.getByTestId('newproj-mode-picker'); await visible(picker, id); const ask = panel.getByTestId('newproj-mode-chat'); await visible(ask, id); await ask.click(); await expect(ask).toHaveAttribute('aria-checked', 'true'); await expect(panel.getByTestId('newproj-mode-design')).toHaveAttribute('aria-checked', 'false'); if (kind === 'mode-route') { await panel.getByTestId('new-project-name').fill('mode routed creation'); const request = page.waitForRequest(candidate => candidate.method() === 'POST' && new URL(candidate.url()).pathname === '/api/projects'); await panel.getByTestId('create-project').click(); expect((await request).postDataJSON()).toMatchObject({ conversationMode: 'chat', name: 'mode routed creation' }); } return; }
     case 'continue': { await page.getByTestId('hub-open-palette').click(); const input = page.getByTestId('hub-palette-input'); await input.fill('Continue without'); const command = page.getByTestId('hub-palette-item-command-create-continue'); await visible(command, id); const req = page.waitForRequest(r => r.method() === 'POST' && new URL(r.url()).pathname === '/api/projects'); await command.click(); await req; return; }
     case 'prototype': case 'deck': case 'report': await chooseType(page, kind); return;
     case 'more': { await page.getByTestId('hub-open-palette').click(); await visible(page.getByTestId('hub-command-palette'), id); await visible(page.getByTestId('hub-palette-item-command-create-create-plugin'), id); return; }
-    case 'create-plugin': case 'figma': case 'template': { await page.getByTestId('hub-open-palette').click(); const input = page.getByTestId('hub-palette-input'); const label = kind === 'create-plugin' ? 'Create plugin' : kind === 'figma' ? 'From Figma' : 'From template'; await input.fill(label); const command = page.getByTestId(`hub-palette-item-command-create-${kind}`); await visible(command, id); await command.click(); if (kind === 'template') { const advanced = page.getByTestId('new-project-advanced'); await expect(advanced).toHaveCount(1); await expect(advanced.getByTestId('new-project-advanced-toggle')).toHaveAttribute('aria-expanded', 'true'); const panel = advanced.getByTestId('new-project-advanced-body'); await visible(panel, id); await expect(panel.getByTestId('new-project-tab-template')).toHaveAttribute('aria-selected', 'true'); } else if (kind === 'create-plugin') await expect(composer(page)).toContainText(/plugin/i); else await visible(page.getByRole('alert'), id); return; }
+    case 'create-plugin': case 'figma': case 'template': { await page.getByTestId('hub-open-palette').click(); const input = page.getByTestId('hub-palette-input'); const label = kind === 'create-plugin' ? 'Create plugin' : kind === 'figma' ? 'From Figma' : 'From template'; await input.fill(label); const command = page.getByTestId(`hub-palette-item-command-create-${kind}`); await visible(command, id); await command.click(); if (kind === 'template') { await expect(page.getByTestId('new-project-advanced')).toHaveCount(0); const panel = page.getByTestId('new-project-modal').getByTestId('new-project-panel'); await visible(panel, id); await expect(panel.getByTestId('new-project-tab-template')).toHaveAttribute('aria-selected', 'true'); } else if (kind === 'create-plugin') await expect(composer(page)).toContainText(/plugin/i); else await visible(page.getByRole('alert'), id); return; }
     case 'subtype-all': await operateSubtypes(page, true, id); return;
     case 'subtype-category': await operateSubtypes(page, false, id); return;
     case 'type-clear': await chooseType(page, 'prototype'); { const chip = page.getByTestId('home-hero-active-type-chip'); await visible(chip, id); await chip.click(); await expect(chip).toHaveCount(0); } return;
@@ -635,7 +628,7 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
     case 'nav-projects': case 'nav-tasks': case 'nav-plugins': case 'nav-design-systems': case 'nav-integrations': { const suffix = kind.replace('nav-', ''); const routeSuffix = suffix === 'tasks' ? 'automations' : suffix; const library = page.getByTestId('hub-library'); await visible(library, id); await library.click(); const nav = page.getByTestId(`hub-library-${suffix}`); await visible(nav, id); await nav.click(); await expect(page).toHaveURL(new RegExp(`/${routeSuffix}$`)); return; }
     case 'help': { expect(control.expect).toBe('absent'); await expect(page.getByTestId('entry-help-trigger')).toHaveCount(0); await expect(page.getByTestId('entry-help-menu')).toHaveCount(0); await expect(page.getByRole('button', { name: /Help/i })).toHaveCount(0); return; }
     case 'first-run-guide': { await page.evaluate(() => window.localStorage.removeItem('readable-studio:home-first-run-guide')); await page.route('**/api/projects', async route => { if (route.request().method() === 'GET') await route.fulfill({ json: { projects: [] } }); else await route.fulfill({ json: { project: PROJECTS[0], conversationId: 'created-session' } }); }); await page.reload({ waitUntil: 'domcontentloaded' }); await visible(page.getByTestId('entry-view-home'), id); await expect(page.locator('.home-hero__guide-sheen, [data-guide-active="true"]').first()).toBeVisible({ timeout: 2_000 }); return; }
-    case 'import-folder': { const panel = await openAdvancedProjectPanel(page, id); const button = panel.getByRole('button', { name: /Open folder/i }); await visible(button, id); const response = page.waitForResponse(r => new URL(r.url()).pathname === '/api/dialog/open-folder' && r.status() === 200); await Promise.all([response, button.click()]); return; }
+    case 'import-folder': { const panel = await openProjectCreationPanel(page, id); const button = panel.getByRole('button', { name: /Open folder/i }); await visible(button, id); const response = page.waitForResponse(r => new URL(r.url()).pathname === '/api/dialog/open-folder' && r.status() === 200); await Promise.all([response, button.click()]); return; }
     case 'onboarding-absent': { await page.addInitScript(({ key, value }) => window.localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: { ...HOME_CONFIG, onboardingCompleted: false } }); await page.route('**/api/app-config', async route => route.fulfill({ json: { config: { ...HOME_CONFIG, onboardingCompleted: false } } })); await page.goto('/onboarding', { waitUntil: 'domcontentloaded' }); await expect(page.locator('.onboarding-view'), `[${id}] onboarding must not render`).toHaveCount(0); await visible(page.getByTestId('entry-view-home'), id); return; }
     case 'c-hierarchy': { const project = page.getByTestId('hub-project-qa-running'); await visible(project, id); await expect(project).toHaveAttribute('aria-expanded', 'true'); await project.evaluate(element => (element as HTMLElement).click()); await expect(project).toHaveAttribute('aria-expanded', 'false'); await project.evaluate(element => (element as HTMLElement).click()); await expect(project).toHaveAttribute('aria-expanded', 'true'); return; }
     case 'c-status': { await visible(page.getByTestId('hub-session-qa-session-1'), id); await expect(page.getByTestId('hub-session-qa-session-1')).toHaveAttribute('data-state', 'running'); await expect(page.getByTestId('hub-session-qa-session-2')).toHaveAttribute('data-state', 'failed'); await expect(page.getByTestId('hub-project-qa-attention')).toHaveAttribute('data-state', 'awaiting'); return; }
@@ -645,7 +638,7 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
     case 'c-empty': { await page.getByTestId('hub-search').fill('no deterministic match'); await page.getByTestId('hub-filter-running').click(); const empty = page.getByTestId('hub-tree-empty'); await visible(empty, id); await empty.getByRole('button').click(); await expect(page.getByTestId('hub-filter-all')).toHaveAttribute('aria-pressed', 'true'); return; }
     case 'c-sort': { const body = page.locator('.hub-tree__body'); await expect(body.getByRole('treeitem', { level: 1 }).first()).toContainText('Zulu'); await page.getByTestId('hub-sort').click(); const menu = page.getByTestId('hub-sort-menu'); await visible(menu, id); const nameItem = page.getByTestId('hub-sort-menu-name'); await visible(nameItem, id); await expect(nameItem).toHaveRole('menuitemradio'); const geometry = await nameItem.evaluate((element) => { const rect = element.getBoundingClientRect(); const style = getComputedStyle(element); return { role: element.getAttribute('role'), accessibleText: element.textContent?.trim(), rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }, display: style.display, visibility: style.visibility, overflow: style.overflow }; }); await writeEvidence(page, 'sort-menu-diagnosis', geometry); await nameItem.click(); await expect(body.getByRole('treeitem', { level: 1 }).first()).toContainText('Alpha'); return; }
     case 'c-keyboard': { const first = page.getByTestId('hub-project-qa-running'); await visible(first, id); await first.focus(); await first.press('ArrowDown'); await expect(page.getByTestId('hub-session-qa-session-1')).toBeFocused(); await page.keyboard.press('Home'); await expect(first).toBeFocused(); return; }
-    case 'c-claude': { const panel = await openAdvancedProjectPanel(page, id); const button = panel.getByRole('button', { name: /Import Claude Design ZIP/i }); await visible(button, id); const chooser = page.waitForEvent('filechooser'); await button.click(); await chooser; return; }
+    case 'c-claude': { const panel = await openProjectCreationPanel(page, id); const button = panel.getByRole('button', { name: /Import Claude Design ZIP/i }); await visible(button, id); const chooser = page.waitForEvent('filechooser'); await button.click(); await chooser; return; }
     // The rail is glass now, not a painted gradient: assert the material that
     // actually makes it glass - a real backdrop blur over a translucent fill -
     // plus the rounded surface the mockup keeps.

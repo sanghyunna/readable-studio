@@ -1652,10 +1652,6 @@ export interface Dict {
   'newproj.importClaudeZipTitle': string;
   'newproj.importingClaudeZip': string;
   'newproj.privacyFooter': string;
-  'newprojAdvanced.toggle': string;
-  'newprojAdvanced.toggleHint': string;
-  'newprojAdvanced.creating': string;
-  'newprojAdvanced.createError': string;
   'newproj.designSystem': string;
   'newproj.dsNoneFreeform': string;
   'newproj.dsNoneSubtitleEmpty': string;

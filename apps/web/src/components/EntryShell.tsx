@@ -547,14 +547,16 @@ export function EntryShell({
       <div className={`entry${railOpen && view !== 'home' ? ' entry--rail-open' : ''}`}>
         {/* The hub's left panel is the single navigation model on the home
             route; the legacy icon rail would duplicate brand/home/new-project. */}
-        <EntryNavRail
-          view={view}
-          onViewChange={changeView}
-          onNewProject={() => openNewProject()}
-          open={railOpen && view !== 'home'}
-          onClose={() => setRailOpen(false)}
-          onOpen={() => setRailOpen(true)}
-        />
+        {view === 'home' ? null : (
+          <EntryNavRail
+            view={view}
+            onViewChange={changeView}
+            onNewProject={() => openNewProject()}
+            open={railOpen}
+            onClose={() => setRailOpen(false)}
+            onOpen={() => setRailOpen(true)}
+          />
+        )}
         <main className="entry-main entry-main--scroll" ref={entryMainScrollRef}>
           <div className="entry-main__topbar">
             {/* The topbar rail toggle was removed: it duplicated the rail's own
@@ -602,15 +604,6 @@ export function EntryShell({
                 onBrowseRegistry={() => changeView('plugins')}
                 onOpenMcp={() => openIntegrationTab('mcp')}
                 onOpenNewProject={(tab) => openNewProject(tab)}
-                /* The hub's Advanced / Import disclosure is the new home of the
-                   genuinely pre-creation controls. It runs through the SAME
-                   handleCreate the modal uses — no second creation path. */
-                onCreateProject={handleCreate}
-                templates={templates}
-                {...(onDeleteTemplate ? { onDeleteTemplate } : {})}
-                onImportClaudeDesign={onImportClaudeDesign}
-                {...(onImportFolder ? { onImportFolder } : {})}
-                {...(onImportFolderResponse ? { onImportFolderResponse } : {})}
                 skills={skills}
                 skillsLoading={skillsLoading}
                 onNewProject={() => openNewProject()}

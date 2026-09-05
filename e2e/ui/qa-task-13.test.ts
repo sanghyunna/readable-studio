@@ -281,7 +281,7 @@ test('canonical start proves R1-R11 and R14 from rendered paint and geometry', a
     const style = getComputedStyle(node);
     return { text: node.textContent?.trim(), fontSize: style.fontSize, fontWeight: style.fontWeight, textAlign: style.textAlign, letterSpacing: style.letterSpacing };
   });
-  expect(hubBox.left).toBeCloseTo(0, 0); expect(railBox.left).toBeCloseTo(10, 0); expect(stageTrack).toBeCloseTo(292, 0); expect(railBox.width).toBeCloseTo(282, 0); expect(railBox.radius).toBe('12px');
+  expect(hubBox.left).toBeCloseTo(0, 0); expect(railBox.left).toBeCloseTo(10, 0); expect(stageTrack).toBeCloseTo(292, 0); expect(railBox.width).toBeCloseTo(282, 0); expect(railBox.radius).toBe('12px 12px 0px 0px');
   expect(railPaint.alpha).toBeGreaterThan(0); expect(railPaint.alpha).toBeLessThan(255); expect(washPaint.radialGradients).toBe(3);
   expect(railPaint.backdrop).toContain('blur(22px)'); expect(railPaint.backdrop).toContain('saturate(');
   expect(railBox.shadow).toContain('inset'); expect(washPaint.display).toBe('block'); expect(washPaint.pointer).toBe('none');
@@ -327,9 +327,9 @@ test('canonical start proves R1-R11 and R14 from rendered paint and geometry', a
   await page.keyboard.press('Control+k');
   await expect(page.getByTestId('hub-command-palette')).toBeVisible();
   await page.getByTestId('hub-palette-item-command-create-template').click();
-  const advanced = page.getByTestId('new-project-advanced'); await expect(advanced).toHaveCount(1);
-  const advancedToggle = advanced.getByTestId('new-project-advanced-toggle'); await expect(advancedToggle).toHaveAttribute('aria-expanded', 'true');
-  const newProjectPanel = advanced.getByTestId('new-project-advanced-body'); await expect(newProjectPanel).toBeVisible();
+  await expect(page.getByTestId('new-project-advanced'), 'the Advanced / Import disclosure must not exist').toHaveCount(0);
+  const newProjectModal = page.getByTestId('new-project-modal'); await expect(newProjectModal).toBeVisible();
+  const newProjectPanel = newProjectModal.getByTestId('new-project-panel'); await expect(newProjectPanel).toBeVisible();
   await expect(newProjectPanel.getByTestId('new-project-tab-template')).toHaveAttribute('aria-selected', 'true');
   const modePicker = newProjectPanel.getByTestId('newproj-mode-picker'); await expect(modePicker).toBeVisible();
   const designMode = modePicker.getByTestId('newproj-mode-design'); const chatMode = modePicker.getByTestId('newproj-mode-chat');
@@ -337,36 +337,13 @@ test('canonical start proves R1-R11 and R14 from rendered paint and geometry', a
   await chatMode.click(); await expect(chatMode).toHaveAttribute('aria-checked', 'true'); await expect(designMode).toHaveAttribute('aria-checked', 'false');
   const relocatedModeAvailable = await modePicker.isVisible() && await chatMode.getAttribute('aria-checked') === 'true';
   await designMode.click(); await expect(designMode).toHaveAttribute('aria-checked', 'true'); await expect(chatMode).toHaveAttribute('aria-checked', 'false');
-  const advancedReveal = advanced.getByTestId('new-project-advanced-reveal');
-  const accessibleAdvancedTabs = advancedReveal.getByRole('tab');
-  expect(await accessibleAdvancedTabs.count()).toBeGreaterThan(0);
-  await expect(advancedReveal).not.toHaveAttribute('inert', '');
-  await advancedToggle.focus(); await page.keyboard.press('Tab');
-  expect(await advancedReveal.evaluate((node) => node.contains(document.activeElement))).toBe(true);
-
-  await advancedToggle.click(); await expect(advancedToggle).toHaveAttribute('aria-expanded', 'false');
-  await expect(advancedReveal).toHaveAttribute('data-state', 'closed');
-  await expect(advancedReveal).toHaveAttribute('aria-hidden', 'true');
-  await expect(advancedReveal).toHaveAttribute('inert', '');
-  await expect(accessibleAdvancedTabs).toHaveCount(0);
-  await expect(newProjectPanel).toHaveCount(1);
-  await advancedToggle.focus(); await page.keyboard.press('Tab');
-  expect(await advancedReveal.evaluate((node) => node.contains(document.activeElement))).toBe(false);
-
-  // Reopening restores both the accessibility tree and sequential focus before
-  // the final close leaves the canonical start surface in its expected state.
-  await advancedToggle.click(); await expect(advancedToggle).toHaveAttribute('aria-expanded', 'true');
-  await expect(advancedReveal).not.toHaveAttribute('aria-hidden', 'true');
-  await expect(advancedReveal).not.toHaveAttribute('inert', '');
-  expect(await accessibleAdvancedTabs.count()).toBeGreaterThan(0);
-  await advancedToggle.focus(); await page.keyboard.press('Tab');
-  expect(await advancedReveal.evaluate((node) => node.contains(document.activeElement))).toBe(true);
-  await advancedToggle.click(); await expect(advancedToggle).toHaveAttribute('aria-expanded', 'false');
-  await expect(advancedReveal).toHaveAttribute('inert', '');
+  // Escape returns the canonical start surface to its expected state.
+  await page.keyboard.press('Escape');
+  await expect(newProjectModal).toHaveCount(0);
   await expect(page.getByTestId('hub-live-time')).toBeVisible(); await expect(page.getByTestId('hub-live-strip').locator('svg')).toBeVisible();
   const brandHome = page.locator('.hub__brand-home'); await expect(brandHome).toHaveCSS('opacity', '0');
   await page.getByTestId('hub-brand').hover(); await expect(brandHome).toHaveCSS('opacity', '1');
-  await page.mouse.move(900, 700); await page.getByTestId('hub-rail-toggle').focus(); await page.keyboard.press('Tab');
+  await page.mouse.move(900, 700); await page.getByTestId('hub-rail-toggle').focus(); await page.keyboard.press('Shift+Tab');
   await expect(page.getByTestId('hub-brand')).toBeFocused(); await expect(brandHome).toHaveCSS('opacity', '1');
   const live = page.getByTestId('hub-live-strip'); const arrow = live.locator('.hub__live-arrow');
   const liveBefore = await geometry(live); const arrowBefore = await geometry(arrow); await live.hover();
@@ -521,6 +498,7 @@ test('filtered, busy, error, tooltip, toast/undo and palette are behavioral stat
     }
   };
   page.on('request', observeTargetDelete);
+  await sessionRow.hover();
   await page.getByTestId(`hub-menu-session-${sessionId}`).click();
   await page.getByRole('menuitem', { name: /삭제|delete/i }).click();
   await expect(sessionRow).toHaveCount(0);

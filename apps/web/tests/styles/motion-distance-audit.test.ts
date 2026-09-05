@@ -18,9 +18,9 @@ const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf
 
 const tokens = read('../../src/styles/tokens.css');
 const hubCss = read('../../src/styles/home/hub.css');
+const projectRailCss = read('../../src/styles/home/project-rail.css');
 const entryCss = read('../../src/styles/home/entry-layout.css');
 const transitionCss = read('../../src/components/WorkspaceTransition.module.css');
-const modalCss = read('../../src/styles/home/new-project-modal.css');
 
 function tokenMs(name: string): number {
   const match = new RegExp(`--${name}:\\s*(\\d+)ms`).exec(tokens);
@@ -33,6 +33,29 @@ function ruleBody(selector: string, source: string): string {
   const match = new RegExp(`(^|\\n)${escaped}\\s*\\{([^}]*)\\}`).exec(source);
   if (!match) throw new Error(`Missing CSS rule: ${selector}`);
   return match[2] ?? '';
+}
+
+function customPropertyPx(
+  name: string,
+  sources: readonly string[],
+  resolving: readonly string[] = [],
+): number {
+  if (resolving.includes(name)) {
+    throw new Error(`Cyclic CSS custom-property alias: ${[...resolving, name].join(' -> ')}`);
+  }
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const declaration = sources
+    .map((source) => new RegExp(`${escaped}\\s*:\\s*([^;}]+)`).exec(source)?.[1]?.trim())
+    .find((value): value is string => value !== undefined);
+  if (!declaration) throw new Error(`Missing CSS custom property ${name}`);
+
+  const pixels = /^(\d+(?:\.\d+)?)px$/.exec(declaration);
+  if (pixels) return Number(pixels[1]);
+
+  const alias = /^var\((--[^),\s]+)\)$/.exec(declaration);
+  if (alias?.[1]) return customPropertyPx(alias[1], sources, [...resolving, name]);
+
+  throw new Error(`CSS custom property ${name} does not resolve to pixels: ${declaration}`);
 }
 
 // A collapse/expand only reads as motion if the browser gets enough frames to
@@ -48,27 +71,17 @@ function framesFor(durationMs: number): number {
 }
 
 describe('motion duration is proportionate to distance travelled', () => {
-  it('the Advanced disclosure collapse (~890px) no longer uses the short exit token', () => {
-    const collapsed = ruleBody('.newproj-advanced__reveal', modalCss);
-    expect(collapsed).toContain('var(--dur-exit-large)');
-
-    // ~890px is the measured content height of the expanded panel.
-    const duration = tokenMs('dur-exit-large');
-    expect(framesFor(duration)).toBeGreaterThanOrEqual(MIN_FRAMES_FOR_MOTION);
-
-    // The regression it replaced: --dur-exit was below the frame floor.
-    expect(framesFor(tokenMs('dur-exit'))).toBeLessThan(MIN_FRAMES_FOR_MOTION);
-  });
-
   it('the Hub rail collapse travels a short distance and is fine on --dur-exit', () => {
     // Expanded track: clamp(262px, ..., 292px). Collapsed: --hub-rail-collapsed.
     const hub = ruleBody('.hub', hubCss);
-    const collapsedWidth = /--hub-rail-collapsed:\s*(\d+)px/.exec(hubCss);
+    const collapsedWidth = customPropertyPx(
+      '--hub-rail-collapsed',
+      [hubCss, projectRailCss],
+    );
     const expandedMax = /grid-template-columns:\s*clamp\(\d+px,[^,]+,\s*(\d+)px\)/.exec(hub);
-    expect(collapsedWidth).not.toBeNull();
     expect(expandedMax).not.toBeNull();
 
-    const distance = Number(expandedMax![1]) - Number(collapsedWidth![1]);
+    const distance = Number(expandedMax![1]) - collapsedWidth;
     expect(distance).toBeLessThanOrEqual(260);
 
     // At <=260px the 140ms exit runs ~1.9px/ms - an order of magnitude calmer
@@ -110,15 +123,6 @@ describe('motion duration is proportionate to distance travelled', () => {
 });
 
 describe('reduced motion still snaps on every audited surface', () => {
-  it('the disclosure kills both reveal states', () => {
-    const reduced = /@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/.exec(modalCss);
-    expect(reduced).not.toBeNull();
-    const body = reduced![1] ?? '';
-    expect(body).toContain('.newproj-advanced__reveal');
-    expect(body).toContain('.newproj-advanced.is-open .newproj-advanced__reveal');
-    expect(body).toContain('transition: none');
-  });
-
   it('the longer exit token is not exempt from the global reduced-motion reset', () => {
     // entrance.css forces `transition-duration: 0.01ms !important`, which wins
     // over any component duration - including --dur-exit-large. Lengthening the

@@ -8,8 +8,9 @@
 // Language, appearance and other account-scoped controls live in the Settings
 // dialog, reachable from the hub rail footer gear.
 
-import { useEffect, useRef, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { Icon } from './Icon';
+import { ProjectRail } from './ProjectRail';
 import { useT } from '../i18n';
 
 export type EntryView =
@@ -71,57 +72,31 @@ export function EntryNavRail({ view, onViewChange, onNewProject, open, onClose, 
     onViewChange(next);
   };
 
-  // The collapsed state is a VISIBLE strip, not an off-canvas panel, so the
-  // rail must never be `inert` or `aria-hidden`: its controls stay reachable by
-  // pointer and keyboard in both states. The previous code marked the whole
-  // rail inert while collapsed, which is only correct for a rail that is
-  // genuinely gone - the state this product forbids.
-  const railRef = useRef<HTMLElement | null>(null);
-  useEffect(() => {
-    railRef.current?.removeAttribute('inert');
-  }, [open]);
-
   return (
-    <nav
-      ref={railRef}
+    <ProjectRail
+      surface="workspace"
+      expanded={open}
       className={`entry-nav-rail${open ? ' is-open' : ''}`}
-      aria-label={t('entry.navPrimary')}
-      data-rail-state={open ? 'expanded' : 'collapsed'}
-      data-testid="entry-nav-rail"
+      ariaLabel={t('entry.navPrimary')}
+      headClassName="entry-nav-rail__brand"
+      toggleClassName="entry-nav-rail__collapse"
+      toggleLabel={t(open ? 'entry.navCollapse' : 'entry.navExpand')}
+      toggleTestId="entry-nav-collapse"
+      testId="entry-nav-rail"
+      onToggle={open ? onClose : onOpen ?? onClose}
+      header={(
+        <button
+          type="button"
+          className="entry-nav-rail__logo"
+          onClick={() => selectView('home')}
+          aria-label={brandLabel}
+          data-testid="entry-nav-logo"
+        >
+          <img src="/app-icon.svg" alt="" className="entry-nav-rail__logo-img" draggable={false} />
+        </button>
+      )}
     >
       <div className="entry-nav-rail__group">
-        <div className="entry-nav-rail__brand">
-          <button
-            type="button"
-            className="entry-nav-rail__logo"
-            onClick={() => selectView('home')}
-            aria-label={brandLabel}
-            data-testid="entry-nav-logo"
-          >
-            <img
-              src="/app-icon.svg"
-              alt=""
-              className="entry-nav-rail__logo-img"
-              draggable={false}
-            />
-          </button>
-          {/* One control, both directions: collapsed it expands, expanded it
-              collapses. It lives in the rail's own brand slot, so the toggle
-              sits with the panel it controls instead of floating over the
-              window-chrome band. */}
-          <button
-            type="button"
-            className="entry-nav-rail__collapse readable-tooltip"
-            onClick={open ? onClose : onOpen ?? onClose}
-            aria-label={t(open ? 'entry.navCollapse' : 'entry.navExpand')}
-            data-tooltip={t(open ? 'entry.navCollapse' : 'entry.navExpand')}
-            data-tooltip-placement="right"
-            aria-expanded={open}
-            data-testid="entry-nav-collapse"
-          >
-            <Icon name="panel-left" size={20} />
-          </button>
-        </div>
         <div className="entry-nav-rail__logo-divider" role="separator" aria-hidden="true" />
         <NavButton
           ariaLabel={t('entry.navNewProject')}
@@ -186,6 +161,6 @@ export function EntryNavRail({ view, onViewChange, onNewProject, open, onClose, 
           <Icon name="link" size={18} />
         </NavButton>
       </div>
-    </nav>
+    </ProjectRail>
   );
 }

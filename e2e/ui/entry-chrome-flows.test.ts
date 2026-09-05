@@ -60,15 +60,16 @@ test('[P0] @critical entry chrome exposes the Hub composer, navigation, and sett
 
   // Mode is a creation-time choice now. Pin both its removal from the Hub
   // composer and its new, operable home so this cannot pass vacuously.
-  const advanced = page.getByTestId('new-project-advanced');
-  await expect(advanced).toHaveCount(1);
-  const advancedToggle = advanced.getByTestId('new-project-advanced-toggle');
-  await expect(advancedToggle).toHaveAttribute('aria-expanded', 'false');
-  await advancedToggle.click();
-  const modePicker = advanced.getByTestId('newproj-mode-picker');
+  await expect(page.getByTestId('new-project-advanced')).toHaveCount(0);
+  await page.getByTestId('hub-new-project').click();
+  const modal = page.getByTestId('new-project-modal');
+  await expect(modal).toBeVisible();
+  const modePicker = modal.getByTestId('newproj-mode-picker');
   await expect(modePicker).toBeVisible();
   await expect(modePicker.getByTestId('newproj-mode-design')).toBeVisible();
   await expect(modePicker.getByTestId('newproj-mode-chat')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(modal).toHaveCount(0);
 
   const settings = page.getByTestId('hub-footer-settings');
   await expect(settings).toBeVisible();
@@ -95,10 +96,10 @@ test('[P1] template creation remains reachable through the Hub command palette',
   const command = page.getByTestId('hub-palette-item-command-create-template');
   await expect(command).toBeVisible();
   await command.click();
-  const advanced = page.getByTestId('new-project-advanced');
-  await expect(advanced.getByTestId('new-project-advanced-toggle')).toHaveAttribute('aria-expanded', 'true');
-  await expect(advanced.getByTestId('new-project-advanced-body')).toBeVisible();
-  await expect(advanced.getByTestId('new-project-tab-template')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByTestId('new-project-advanced')).toHaveCount(0);
+  const templateModal = page.getByTestId('new-project-modal');
+  await expect(templateModal).toBeVisible();
+  await expect(templateModal.getByTestId('new-project-tab-template')).toHaveAttribute('aria-selected', 'true');
 });
 
 test('[P0] @critical Hub palette opens projects and Library reaches the projects index', async ({ page, request }) => {

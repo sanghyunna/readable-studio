@@ -157,6 +157,7 @@ function NewProjectModalBody({
             templates={templates}
             {...(onDeleteTemplate ? { onDeleteTemplate } : {})}
             loading={Boolean(loading) || creating}
+            showDesignSystem
             onCreate={(input) => {
               void handleCreate(input);
             }}

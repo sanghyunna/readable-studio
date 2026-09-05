@@ -69,17 +69,12 @@
   }
 }
 
-/* EXCEPTION - not a hidden-rail state. On the `home` route the HUB renders its
-   own project rail (`.hub__nav`), which honours the same two-state contract and
-   is always visible. Rendering this strip as well would put TWO rails side by
-   side, so the entry strip yields to the Hub's rail on that route only. The
-   user still always sees a project rail; it is simply the Hub's. */
+/* On Home, HubHome is the configured consumer of ProjectRail. EntryShell does
+   not mount a second rail there, so the main surface owns the sole grid track.
+   Keeping a synthetic zero-width first track would auto-place main into that
+   track: its overflow still paints, but its controls fail real hit-testing. */
 .entry-shell--no-header .entry:has(.entry-main__inner--home) {
-  grid-template-columns: 0 minmax(0, 1fr);
-}
-.entry-shell--no-header .entry:has(.entry-main__inner--home) .entry-nav-rail {
-  overflow: hidden;
-  pointer-events: none;
+  grid-template-columns: minmax(0, 1fr);
 }
 .entry-shell--no-header .entry.entry--rail-open {
   grid-template-columns: var(--entry-rail-width, 56px) minmax(0, 1fr);
@@ -125,17 +120,31 @@
 
 /* Brand slot — the logo, with a collapse button that fades in on hover so the
    docked rail can be dismissed Manus-style without a separate chrome control. */
+/* The brand slot is the head ROW: the logo and the rail's own collapse toggle
+   sit side by side in it. It was a fixed 36x36 box holding an absolutely
+   positioned toggle, which is what let the toggle drift off the row. */
 .entry-nav-rail__brand {
   position: relative;
-  width: 36px;
-  height: 36px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  min-height: 36px;
   flex-shrink: 0;
 }
+/* DEFECT: the toggle was absolutely positioned inside the brand slot, which is
+   how it ended up detached from the row it belongs to - and how its centre came
+   to sit under a neighbour's hit area, so real pointer presses were swallowed
+   while keyboard activation kept working.
+
+   It is now an in-flow child of the rail's head row, exactly like the Hub's.
+   Structure comes from the shared contract in `styles/home/project-rail.css`;
+   only the workspace's own sizing stays here. */
 .entry-nav-rail .entry-nav-rail__collapse {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  position: static;
+  transform: none;
   width: 30px;
   height: 30px;
   display: inline-flex;
@@ -146,34 +155,11 @@
   background: var(--bg-panel);
   color: var(--text);
   cursor: pointer;
-  opacity: 0;
-  pointer-events: none;
+  opacity: 1;
+  pointer-events: auto;
   transition:
-    opacity 140ms cubic-bezier(0.23, 1, 0.32, 1),
     background 140ms cubic-bezier(0.23, 1, 0.32, 1),
     color 140ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-.entry--rail-open .entry-nav-rail__brand:hover .entry-nav-rail__collapse,
-.entry--rail-open .entry-nav-rail__collapse:focus-visible {
-  opacity: 1;
-  pointer-events: auto;
-}
-/* Coarse-pointer / non-hover devices can't reveal the collapse button on
-   hover, and the topbar toggle is display:none once the rail docks — so the
-   rail would strand open. Keep the collapse control permanently visible and
-   tappable there so touch users can always fold the rail back. */
-@media (hover: none) {
-  .entry--rail-open .entry-nav-rail__collapse {
-    opacity: 1;
-    pointer-events: auto;
-  }
-}
-/* Collapsed, the strip's own control EXPANDS the rail rather than collapsing
-   it, so it is visible and clickable right where the panel it controls lives -
-   no longer a floating button jammed into the window-chrome band. */
-.entry:not(.entry--rail-open) .entry-nav-rail__collapse {
-  opacity: 1;
-  pointer-events: auto;
 }
 .entry-nav-rail__collapse:hover {
   background: var(--bg-hover, color-mix(in srgb, var(--black) 5%, transparent));
@@ -559,10 +545,22 @@
 }
 /* Home owns its complete fixed-sidenav shell. The hub grid must begin at the
    scroll body's inline origin so its own 10px/8px rail inset remains the only
-   inset. Non-home views retain the wrapper's 40px 32px 64px workspace bounds. */
+   inset. Non-home views retain the wrapper's 40px 32px 64px workspace bounds.
+
+   DEFECT: the rail stopped 42px short of the window bottom. The home surface is
+   a fixed, non-scrolling shell, so its two rows - the topbar strip and the hub -
+   are laid out as a column here and the hub row is the one that stretches. The
+   previous model had the child subtract a CONSTANT (`--entry-topbar-h`, 44px)
+   from 100%, but on home the topbar collapses to 12px because its chip group is
+   hidden - so 32px of the window's height was deducted for a strip that is not
+   there, and the hub (with the rail inside it) ended above the window bottom.
+   A stretch track measures the strip instead of assuming it, so the two cannot
+   drift again. */
 .entry-main--scroll:has(.entry-main__inner--home) {
   overflow: hidden;
   scrollbar-gutter: auto;
+  display: flex;
+  flex-direction: column;
   background:
     radial-gradient(1100px 640px at 10% -8%, var(--hub-canvas-blue) 0%, transparent 58%),
     radial-gradient(880px 560px at 92% -4%, var(--hub-canvas-pink) 0%, transparent 54%),
@@ -571,9 +569,16 @@
     var(--hub-canvas-base);
 }
 
+.entry-main--scroll:has(.entry-main__inner--home) > .entry-main__topbar {
+  flex: 0 0 auto;
+}
+
 .entry-main__inner.entry-main__inner--home {
   max-width: none;
-  height: calc(100% - var(--entry-topbar-h));
+  /* Fills whatever the topbar above did not take - no constant to go stale. */
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
   margin: 0;
   padding: 0;
   gap: 0;
@@ -1899,6 +1904,13 @@
   }
   /* Collapse the three topbar chips into the settings dropdown.
      The chips' container disappears and the matching menu rows
+  /* Home mounts ProjectRail inside HubHome rather than as an `.entry` grid
+     sibling. Keep its only child in the content track at this breakpoint;
+     otherwise the generic two-track rule above auto-places the main surface
+     into the empty 44px rail track and collapses the composer with it. */
+  .entry-shell--no-header .entry:has(.entry-main__inner--home) {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
      inside `.avatar-popover` are unhidden so every action stays
      one click away from the lone settings cog. */
   .entry-main__topbar-chips {

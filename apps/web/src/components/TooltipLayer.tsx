@@ -24,7 +24,10 @@ function isTooltipTarget(el: Element | null): el is HTMLElement {
   return el instanceof HTMLElement
     && el.classList.contains('readable-tooltip')
     && Boolean(el.dataset.tooltip?.trim())
-    && el.getAttribute('aria-expanded') !== 'true';
+    && (
+      el.getAttribute('aria-expanded') !== 'true'
+      || el.hasAttribute('data-tooltip-allow-expanded')
+    );
 }
 
 function readTooltipTarget(start: EventTarget | null): HTMLElement | null {
@@ -176,7 +179,10 @@ export function TooltipLayer() {
     setState((current) => {
       if (!current) return null;
       if (!document.contains(current.target)) return null;
-      if (current.target.getAttribute('aria-expanded') === 'true') return null;
+      if (
+        current.target.getAttribute('aria-expanded') === 'true'
+        && !current.target.hasAttribute('data-tooltip-allow-expanded')
+      ) return null;
       const node = tooltipRef.current;
       if (!node) return current;
       const placement = tooltipPlacement(current.target);

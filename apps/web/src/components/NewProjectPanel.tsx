@@ -114,8 +114,9 @@ interface Props {
   onImportFolderResponse?: (response: ReadableStudioHostProjectImportSuccess) => Promise<void> | void;
   loading?: boolean;
   initialTab?: CreateTab;
-  /** Renders the design-system picker. Off by default: HomeHero owns it on the
-   *  canonical creation path, and two pickers for one value can disagree. */
+  /** Renders the design-system picker for hosts that own the complete project
+   * creation form. Kept opt-in so embedded composer surfaces cannot introduce
+   * a second, conflicting selection control. */
   showDesignSystem?: boolean;
 }
 
@@ -277,10 +278,10 @@ export function NewProjectPanel({
     tab === 'template' ||
     tab === 'other';
   const tabDefaultSkillForcesNoDs = false;
-  // Rendering the picker is opt-in: the hero is the canonical creation surface
-  // and already carries a design-system control, so only hosts that own the
-  // full stack (the Advanced / Import disclosure) show a second one. Selection
-  // state is maintained either way, so a create still carries the default.
+  // Rendering the picker is opt-in so compact/embedded hosts cannot duplicate
+  // another selection control. The New Project modal owns the complete creation
+  // stack and opts in; selection state is maintained either way so legacy hosts
+  // still carry the configured default.
   const tabCarriesDesignSystem = tabSupportsDesignSystem && !tabDefaultSkillForcesNoDs;
   const showDesignSystemPicker = showDesignSystem && tabCarriesDesignSystem;
 
@@ -638,11 +639,9 @@ export function NewProjectPanel({
           ) : null}
         </div>
 
-        {/* HomeHero owns the design system on the canonical creation path, so
-            the modal's duplicate copy is gone from the main flow. The Advanced
-            disclosure opts back in (`showDesignSystem`) because it deliberately
-            carries the FULL stack for power users who configure everything on
-            one screen — including multi-select and "None — freeform". */}
+        {/* Full creation hosts opt in to this project-metadata control. A
+            design-system @mention in HomeHero only adds prompt context and is
+            not a substitute for choosing the project's designSystemId here. */}
         {showDesignSystemPicker ? (
           <DesignSystemPicker
             designSystems={designSystems}

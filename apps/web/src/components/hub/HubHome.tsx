@@ -14,7 +14,6 @@ import {
   type ReactNode,
 } from 'react';
 
-import type { ReadableStudioHostProjectImportSuccess } from '@readable-studio/host';
 
 import { useT } from '../../i18n';
 import { RUNS_CHANGED_EVENT } from '../../providers/daemon';
@@ -27,12 +26,11 @@ import {
 import type {
   DesignSystemSummary,
   Project,
-  ProjectTemplate,
   SkillSummary,
 } from '../../types';
 import { HomeView } from '../HomeView';
 import { Icon } from '../Icon';
-import type { CreateInput, ImportClaudeDesignOutcome } from '../NewProjectPanel';
+import { ProjectRail } from '../ProjectRail';
 import type { PluginLoopSubmit } from '../PluginLoopHome';
 import { Toast } from '../Toast';
 import { HubCommandPalette, type HubPaletteEntry } from './HubCommandPalette';
@@ -122,27 +120,6 @@ interface Props {
   onBrowseRegistry?: () => void;
   onOpenMcp?: () => void;
   onOpenNewProject?: (tab: 'template') => void;
-  /**
-   * Project creation as the entry shell already owns it. Threading the SAME
-   * handler (never a second creation path) is what mounts the Advanced /
-   * Import disclosure on the project panel: HomeView renders it only when a
-   * host supplies a real creator, so without this prop the disclosure — the
-   * working-folder picker, ZIP / folder imports and the template picker — is
-   * unreachable on the hub.
-   */
-  onCreateProject?: (
-    input: CreateInput & { requestId?: string },
-  ) => Promise<boolean> | boolean | void;
-  /** Template picker source for the disclosure; same list the modal renders. */
-  templates?: ProjectTemplate[];
-  onDeleteTemplate?: (id: string) => Promise<boolean>;
-  onImportClaudeDesign?: (
-    file: File,
-  ) => Promise<ImportClaudeDesignOutcome | void> | ImportClaudeDesignOutcome | void;
-  onImportFolder?: (baseDir: string) => Promise<void> | void;
-  onImportFolderResponse?: (
-    response: ReadableStudioHostProjectImportSuccess,
-  ) => Promise<void> | void;
   skills?: SkillSummary[];
   skillsLoading?: boolean;
   /** Navigate to one of the entry destinations (rail footer library menu). */
@@ -189,12 +166,6 @@ export function HubHome({
   onBrowseRegistry,
   onOpenMcp,
   onOpenNewProject,
-  onCreateProject,
-  templates,
-  onDeleteTemplate,
-  onImportClaudeDesign,
-  onImportFolder,
-  onImportFolderResponse,
   skills,
   skillsLoading,
   onNewProject,
@@ -819,23 +790,23 @@ export function HubHome({
           : ''}
       </div>
 
-      <button
-        type="button"
-        className="hub__rail-toggle readable-tooltip"
-        data-testid="hub-rail-toggle"
-        aria-pressed={railCollapsed}
-        aria-label={t(railCollapsed ? 'entry.navExpand' : 'entry.navCollapse')}
-        title={t(railCollapsed ? 'entry.navExpand' : 'entry.navCollapse')}
-        data-tooltip={t(railCollapsed ? 'entry.navExpand' : 'entry.navCollapse')}
-        data-tooltip-placement="bottom"
-        disabled={narrow}
-        onClick={toggleRail}
-      >
-        <Icon name="panel-left" size={18} strokeWidth={1.8} />
-      </button>
-
-      <nav className="hub__nav" aria-label={t('hub.treeLabel')} data-testid="hub-nav">
-        <div className="hub__nav-head">
+      <ProjectRail
+        surface="hub"
+        expanded={!railCollapsed}
+        className="hub__nav"
+        ariaLabel={t('hub.treeLabel')}
+        headClassName="hub__nav-head"
+        toggleClassName="hub__rail-toggle"
+        toggleLabel={t(railCollapsed ? 'entry.navExpand' : 'entry.navCollapse')}
+        toggleTestId="hub-rail-toggle"
+        testId="hub-nav"
+        onToggle={toggleRail}
+        toggleDisabled={narrow}
+        toggleAriaPressed={railCollapsed}
+        toggleIconSize={18}
+        toggleStrokeWidth={1.8}
+        tooltipPlacement="bottom"
+        header={(
           <button
             type="button"
             className="hub__brand"
@@ -843,19 +814,12 @@ export function HubHome({
             aria-label={t('entry.navHome')}
             onClick={() => onGoHome?.()}
           >
-            <img
-              className="hub__brand-mark"
-              src="/logo.svg"
-              alt=""
-              width={22}
-              height={22}
-              draggable={false}
-              aria-hidden="true"
-            />
+            <img className="hub__brand-mark" src="/logo.svg" alt="" width={22} height={22} draggable={false} aria-hidden="true" />
             <span className="hub__brand-name">{t('app.brand')}</span>
             <span className="hub__brand-home">{t('entry.navHome')}</span>
           </button>
-        </div>
+        )}
+      >
         <div className="hub__nav-actions">
           <button
             type="button"
@@ -929,7 +893,7 @@ export function HubHome({
             workspaceName={workspaceName}
           />
         ) : null}
-      </nav>
+      </ProjectRail>
 
       <div className="hub__stage">
         <div className="hub__start">
@@ -969,12 +933,6 @@ export function HubHome({
             onBrowseRegistry={onBrowseRegistry}
             onOpenMcp={onOpenMcp}
             onOpenNewProject={onOpenNewProject}
-            onCreateProject={onCreateProject}
-            templates={templates}
-            onDeleteTemplate={onDeleteTemplate}
-            onImportClaudeDesign={onImportClaudeDesign}
-            onImportFolder={onImportFolder}
-            onImportFolderResponse={onImportFolderResponse}
             skills={skills}
             skillsLoading={skillsLoading}
             commandChip={commandChip}

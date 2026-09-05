@@ -26,6 +26,7 @@ function readSource(relativePath: string): string {
 const appSource = readSource('apps/web/src/App.tsx');
 const entryShellSource = readSource('apps/web/src/components/EntryShell.tsx');
 const entryNavRailSource = readSource('apps/web/src/components/EntryNavRail.tsx');
+const projectRailSource = readSource('apps/web/src/components/ProjectRail.tsx');
 const runtimeSource = readSource('apps/desktop/src/main/runtime.ts');
 const preloadSource = readSource('apps/desktop/src/main/preload.cts');
 const shellCssSource = readSource('apps/web/src/styles/shell.css');
@@ -116,8 +117,9 @@ describe('4. unified shell', () => {
     expect(appSource).toContain('workspace-rail-host');
     // The rail itself owns the always-visible expand/collapse control; the
     // rejected floating workspace toggle must not return.
-    expect(entryNavRailSource).toContain('data-testid="entry-nav-collapse"');
-    expect(entryNavRailSource).toContain("data-rail-state={open ? 'expanded' : 'collapsed'}");
+    expect(entryNavRailSource).toContain('toggleTestId="entry-nav-collapse"');
+    expect(entryNavRailSource).toContain('<ProjectRail');
+    expect(projectRailSource).toContain('data-rail-state={state}');
     expect(appSource).not.toMatch(/data-testid=["']workspace-rail-toggle["']/);
     // Collapsed on a cold start.
     expect(appSource).toMatch(/useState<boolean>\(false\)/);

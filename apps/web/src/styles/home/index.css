@@ -6,6 +6,10 @@
    `index.css` changes — the new layout's footprint stays in one
    self-contained tree.
    ============================================================ */
+/* The shared project-rail contract must load BEFORE the two surface skins so
+   a surface can still override its own paint, but cannot silently re-fork the
+   structural rules (bottom anchoring, collapsed width, attached toggle). */
+@import './project-rail.css';
 @import './entry-layout.css';
 @import './home-hero.css';
 @import './plus-menu.css';

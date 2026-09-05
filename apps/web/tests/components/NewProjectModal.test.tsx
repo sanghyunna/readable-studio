@@ -87,6 +87,45 @@ describe('NewProjectModal layout', () => {
     expect(screen.getByTestId('create-project')).toBeTruthy();
   });
 
+  it('lets the user select a design system and routes it into project creation', async () => {
+    const onCreate = vi.fn().mockResolvedValue(true);
+
+    render(
+      <NewProjectModal
+        open
+        skills={skills}
+        designSystems={[
+          ...designSystems,
+          {
+            id: 'noir',
+            title: 'Editorial Noir',
+            summary: 'High-contrast editorial system.',
+            category: 'Editorial',
+            swatches: ['#111111', '#f7f0e8'],
+          },
+        ]}
+        defaultDesignSystemId="clay"
+        templates={[]}
+        onCreate={onCreate}
+        onClose={() => {}}
+      />,
+    );
+
+    const trigger = screen.getByTestId('design-system-trigger');
+    expect(trigger.textContent).toContain('Clay');
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole('option', { name: /Editorial Noir/i }));
+    expect(trigger.textContent).toContain('Editorial Noir');
+
+    fireEvent.click(screen.getByTestId('create-project'));
+
+    await waitFor(() => {
+      expect(onCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ designSystemId: 'noir' }),
+      );
+    });
+  });
+
   it('keeps the modal open with a waiting state until project creation finishes', async () => {
     let resolveCreate!: (value: boolean) => void;
     const onCreate = vi.fn(

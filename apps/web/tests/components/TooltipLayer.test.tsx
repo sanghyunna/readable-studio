@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { ProjectRail } from '../../src/components/ProjectRail';
 import { TooltipLayer } from '../../src/components/TooltipLayer';
 
 afterEach(() => {
@@ -12,6 +13,39 @@ afterEach(() => {
 });
 
 describe('TooltipLayer', () => {
+  it('marks every shared rail toggle as eligible while preserving expanded semantics', () => {
+    for (const [surface, expanded] of [
+      ['hub', false],
+      ['hub', true],
+      ['workspace', false],
+      ['workspace', true],
+    ] as const) {
+      const toggleTestId = `${surface}-${expanded ? 'expanded' : 'collapsed'}-toggle`;
+      const view = render(
+        <ProjectRail
+          surface={surface}
+          expanded={expanded}
+          ariaLabel={`${surface} rail`}
+          className="rail"
+          headClassName="rail-head"
+          toggleClassName="rail-toggle"
+          toggleLabel={expanded ? 'Collapse rail' : 'Expand rail'}
+          toggleTestId={toggleTestId}
+          testId={`${surface}-rail`}
+          onToggle={() => undefined}
+          header={<span>Brand</span>}
+        >
+          <span>Content</span>
+        </ProjectRail>,
+      );
+
+      const toggle = screen.getByTestId(toggleTestId);
+      expect(toggle.getAttribute('aria-expanded')).toBe(String(expanded));
+      expect(toggle.hasAttribute('data-tooltip-allow-expanded')).toBe(true);
+      view.unmount();
+    }
+  });
+
   it('shows a pointer tooltip after exactly 350ms while keyboard focus remains immediate', () => {
     vi.useFakeTimers();
     render(
@@ -66,7 +100,35 @@ describe('TooltipLayer', () => {
     expect(screen.queryByRole('tooltip')).toBeNull();
   });
 
-  it('dismisses a tooltip when the trigger expands under the pointer', async () => {
+  it('keeps tooltips available for an expanded trigger that explicitly opts in', () => {
+    vi.useFakeTimers();
+    render(
+      <>
+        <button
+          type="button"
+          className="readable-tooltip"
+          data-tooltip="Collapse rail"
+          data-tooltip-allow-expanded=""
+          aria-expanded="true"
+        >
+          Collapse rail
+        </button>
+        <TooltipLayer />
+      </>,
+    );
+
+    const button = screen.getByRole('button', { name: 'Collapse rail' });
+    fireEvent.pointerOver(button);
+    act(() => vi.advanceTimersByTime(350));
+    expect(screen.getByRole('tooltip').textContent).toBe('Collapse rail');
+
+    fireEvent.pointerOut(button);
+    fireEvent.keyDown(document, { key: 'Tab' });
+    fireEvent.focusIn(button);
+    expect(screen.getByRole('tooltip').textContent).toBe('Collapse rail');
+  });
+
+  it('dismisses a tooltip when a default popover trigger expands under the pointer', async () => {
     vi.useFakeTimers();
     function ExpandingTrigger() {
       const [open, setOpen] = useState(false);
