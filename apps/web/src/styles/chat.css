@@ -1316,9 +1316,11 @@
 .composer-execution-switcher {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  width: 212px;
-  min-width: 212px;
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  gap: 2px;
+  width: auto;
+  min-width: 0;
 }
 .app .composer-row .composer-execution-switcher .inline-switcher__chip {
   height: 28px;
@@ -1350,8 +1352,8 @@
    bare icon centred in a square hit target. The full "mode · agent · model"
    string survives in aria-label/title, so nothing is lost for assistive tech. */
 .app .composer-row .composer-execution-switcher .inline-switcher__chip--agent {
-  width: 28px;
-  min-width: 28px;
+  width: 24px;
+  min-width: 24px;
   padding: 0;
   gap: 0;
   /* Centres the icon on BOTH axes inside the 28px target — the reported
@@ -1378,12 +1380,15 @@
   justify-content: center;
   margin: 0;
 }
-/* Model: reserve one generous text column so changing names never moves the
-   agent target. This is plain text plus an honest dropdown chevron, not a
-   capsule; long catalogue names truncate inside the fixed column. */
+/* Model: intrinsic plain text plus chevron at rest. Opening reserves the
+   compact menu width to the right, moving the visible cluster left as one unit.
+   Its contents stay at that reservation's leading edge, so no void can open
+   between the agent icon and model label; flex shrinking cannot erase the same
+   motion from the body-portaled workspace composer. */
 .composer-execution-switcher .inline-switcher--model {
-  width: 180px;
-  min-width: 180px;
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
 }
 .app .composer-row .composer-execution-switcher .inline-switcher__chip--model,
 .chat-composer-fixed-layer .composer-row .composer-execution-switcher .inline-switcher__chip--model {
@@ -1398,12 +1403,25 @@
   text-align: start;
 }
 .composer-execution-switcher .inline-switcher__chip--model .inline-switcher__chip-text {
-  flex: 1 1 auto;
+  justify-content: flex-start;
+  interpolate-size: allow-keywords;
+  transition: width 160ms var(--ease-out);
+  flex: 0 0 auto;
   min-width: 0;
   max-width: none;
 }
 .composer-execution-switcher .inline-switcher__chip--model .inline-switcher__chip-chevron {
   display: block;
+.app .composer-row .composer-execution-switcher .inline-switcher__chip--model[aria-expanded='true'],
+.chat-composer-fixed-layer .composer-row .composer-execution-switcher .inline-switcher__chip--model[aria-expanded='true'] {
+  width: 168px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-execution-switcher .inline-switcher__chip--model {
+    transition: none;
+  }
+}
   flex: 0 0 auto;
 }
 .composer-execution-switcher .inline-switcher__chip-model {
@@ -1435,8 +1453,8 @@
    not fall back to the generic filled 36x32 chip. */
 .chat-composer-fixed-layer .composer-row .composer-execution-switcher .inline-switcher__chip--agent {
   display: inline-flex;
-  width: 28px;
-  min-width: 28px;
+  width: 24px;
+  min-width: 24px;
   height: 28px;
   padding: 0;
   align-items: center;

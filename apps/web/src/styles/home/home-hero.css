@@ -1037,42 +1037,60 @@
    still describe both; only their footprints differ. */
 .home-hero__execution-switcher--agent-model {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 6px;
-  width: 228px;
-  min-width: 228px;
+  justify-content: flex-end;
+  gap: 2px;
+  width: auto;
+  min-width: 0;
 }
 
 /* Agent: icon only. The full "mode · agent · model" string stays in
    aria-label/title, so nothing is lost for assistive tech or hover. */
 .home-hero__execution-switcher--agent-model .inline-switcher__chip--agent {
-  width: 32px;
-  min-width: 32px;
+  width: 24px;
+  min-width: 24px;
   padding: 0;
   justify-content: center;
   gap: 0;
 }
 
-/* Model: a generous, stable text column keeps the agent target pinned while
-   names change. It is intentionally not a pill: only text and the honest
-   dropdown chevron paint; unusually long catalogue names ellipsize. */
+/* Model: intrinsic text and chevron at rest, expanding to the compact menu
+   width while open. The transparent trailing reservation keeps the popover's
+   right edge anchored while the visible icon -> label -> chevron cluster stays
+   tight at the leading edge and travels left as one unit. Neither mount may
+   flex-shrink the reservation away. */
 .home-hero__execution-switcher--agent-model .inline-switcher--model {
-  width: 190px;
-  min-width: 190px;
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
 }
 .home-hero__execution-switcher--agent-model .inline-switcher__chip--model {
-  width: 100%;
-  padding: 0 2px 0 4px;
-  gap: 5px;
+  width: auto;
+  min-width: 0;
+  padding: 0;
+  gap: 3px;
   border: 0;
   border-radius: 0;
   background: transparent;
   box-shadow: none;
   text-align: start;
+  justify-content: flex-start;
+  interpolate-size: allow-keywords;
+  transition: width 160ms var(--ease-out);
 }
 .home-hero__execution-switcher--agent-model .inline-switcher__chip--model .inline-switcher__chip-text {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   max-width: none;
+}
+.home-hero__execution-switcher--agent-model .inline-switcher__chip--model[aria-expanded='true'] {
+  width: 168px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-hero__execution-switcher--agent-model .inline-switcher__chip--model {
+    transition: none;
+  }
 }
 .home-hero__execution-switcher--agent-model .inline-switcher__chip--model .inline-switcher__chip-chevron {
   display: block;
@@ -1105,6 +1123,39 @@
    entrance fade is animated, and it is dropped for reduced motion. */
 @media (prefers-reduced-motion: no-preference) {
   .inline-switcher__popover--layer {
+.inline-switcher__popover--model {
+  width: 168px;
+  padding: 8px;
+}
+.inline-switcher__model-warning-mark {
+  display: inline-flex;
+  margin-left: 3px;
+  color: var(--danger);
+  font-size: 8px;
+  font-weight: 800;
+  vertical-align: super;
+}
+.inline-switcher__model-toast {
+  position: fixed;
+  z-index: 1701;
+  width: max-content;
+  padding: 4px 7px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-md);
+  color: var(--danger);
+  font-size: 10px;
+  line-height: 1.2;
+  pointer-events: none;
+}
+.inline-switcher__chip--model.is-model-warning .inline-switcher__chip-model {
+  animation: inline-model-warning-shake 360ms var(--ease-out);
+}
+@keyframes inline-model-warning-shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-3px); }
+  40%, 80% { transform: translateX(3px); }
+}
     animation: home-hero-switcher-layer-in 120ms var(--ease-out) both;
   }
 }

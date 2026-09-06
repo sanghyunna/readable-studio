@@ -803,6 +803,7 @@ export function InlineModelSwitcher({
                 title={
                   !daemonLive
                     ? t('inlineSwitcher.daemonOffline')
+            (isModelVariant ? ' inline-switcher__popover--model' : '') +
                     : t('inlineSwitcher.useCli')
                 }
               >

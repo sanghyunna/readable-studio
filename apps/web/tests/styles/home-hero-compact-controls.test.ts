@@ -69,9 +69,10 @@ describe('HomeHero compact composer controls', () => {
     );
 
     expect(ruleValue(slot, 'display')).toBe('inline-flex');
-    expect(ruleValue(slot, 'gap')).toBe('6px');
-    // Agent is the icon-only button; the model button carries the name.
-    expect(ruleValue(agent, 'width')).toBe('32px');
+    // Agent icon, model name, and chevron read as one tight control cluster.
+    expect(ruleValue(slot, 'gap')).toBe('2px');
+    // Agent is the compact icon-only button; the model button carries the name.
+    expect(ruleValue(agent, 'width')).toBe('24px');
   });
 
   it('prevents the compact execution switcher from expanding on narrow screens', () => {

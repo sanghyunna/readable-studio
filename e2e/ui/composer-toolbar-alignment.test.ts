@@ -1,17 +1,15 @@
 // Composer footer toolbar alignment.
 //
-// The composer bottom row mixes controls authored in different components:
-// the + icon (.icon-btn), the agent avatar (.avatar-agent-trigger), the
-// session-mode "Design"/CLI toggle (.session-mode-toggle__trigger), and Send
-// (.composer-send). The composer mounts under `.chat-composer-fixed-layer` (a
-// body-level portal), so the `.app`-scoped "one control system" normalization
-// in chat.css never reached it and the controls drifted to 28/30/32px. Even
-// though the row centers them, the differing heights left the pills and Send
-// visibly misaligned against the left buttons.
+// The composer bottom row's execution cluster is agent icon, model name, then
+// Send. These controls are authored in different components and the composer
+// mounts under `.chat-composer-fixed-layer` (a body-level portal), so the
+// `.app`-scoped "one control system" normalization in chat.css once failed to
+// reach it. The resulting 28/30/32px controls looked visibly misaligned even
+// though the row centered them.
 //
-// This spec is the regression boundary: every interactive control in the
-// composer row must share one height and one vertical center so the toolbar
-// reads as a single row.
+// This spec is the regression boundary: the three execution controls must
+// share one height and one vertical center so the cluster reads as a single
+// row.
 
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
@@ -81,34 +79,40 @@ test('[P1] composer footer controls share one height and baseline', async ({ pag
     const row = document.querySelector('.composer-row');
     if (!row) return { error: 'no .composer-row' as const };
     const selectors = [
-      '.icon-btn',
-      '.avatar-agent-trigger',
-      '.session-mode-toggle__trigger',
-      '.composer-send',
+      '[data-testid="inline-model-switcher-agent-trigger"]',
+      '[data-testid="inline-model-switcher-model-trigger"]',
+      '[data-testid="chat-send"]',
     ];
-    const controls: Array<{ sel: string; height: number; center: number }> = [];
     for (const sel of selectors) {
-      const el = row.querySelector(sel);
-      if (!el) continue;
-      const r = el.getBoundingClientRect();
-      controls.push({ sel, height: r.height, center: r.top + r.height / 2 });
+      if (!row.querySelector(sel)) return { error: `missing intended footer control: ${sel}` as const };
     }
+    const controls = Array.from(row.querySelectorAll<HTMLElement>(selectors.join(','))).map((el) => {
+      const r = el.getBoundingClientRect();
+      return {
+        sel: `[data-testid="${el.dataset.testid ?? ''}"]`,
+        height: r.height,
+        center: r.top + r.height / 2,
+      };
+    });
     return { controls };
   });
 
   if ('error' in metrics) throw new Error(metrics.error);
   const { controls } = metrics;
 
-  // The toolbar should never collapse to a single control; if it does, the
-  // selectors below are stale and the height assertion is meaningless.
-  expect(controls.length).toBeGreaterThanOrEqual(4);
+  // Pin the shipped execution cluster, rather than a bare minimum count that
+  // can pass when obsolete controls happen to remain in the row.
+  expect(controls.map((control) => control.sel)).toEqual([
+    '[data-testid="inline-model-switcher-agent-trigger"]',
+    '[data-testid="inline-model-switcher-model-trigger"]',
+    '[data-testid="chat-send"]',
+  ]);
 
   const heights = controls.map((c) => c.height);
   const centers = controls.map((c) => c.center);
   const spread = (xs: number[]) => Math.max(...xs) - Math.min(...xs);
 
-  // One control system: identical heights. On main these drift (e.g. the +
-  // at 32px while Send sits at 30px) and this fails.
+  // One control system: identical heights. Any 28/30/32px drift fails here.
   expect(spread(heights), `control heights: ${JSON.stringify(controls)}`).toBeLessThanOrEqual(1);
   // ...and a shared vertical center so nothing rides high or low in the row.
   expect(spread(centers), `control centers: ${JSON.stringify(controls)}`).toBeLessThanOrEqual(1);

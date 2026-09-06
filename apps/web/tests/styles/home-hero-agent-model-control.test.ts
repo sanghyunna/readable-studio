@@ -55,7 +55,7 @@ describe('Hub composer footer: agent icon -> model name -> send', () => {
     expect(ruleValue(modelChevron, 'display')).toBe('block');
     expect(ruleValue(modelChevron, 'flex')).toBe('0 0 auto');
     // The icon-only agent target has no room for a trailing dropdown glyph.
-    expect(ruleValue(agent, 'width')).toBe('32px');
+    expect(ruleValue(agent, 'width')).toBe('24px');
     expect(ruleValue(agent, 'gap')).toBe('0');
   });
 
@@ -78,7 +78,7 @@ describe('Hub composer footer: agent icon -> model name -> send', () => {
     expect(ruleValue(icon, 'border-radius')).toBe('var(--radius-pill)');
   });
 
-  it('keeps the agent pinned while the model renders as plain dropdown text', () => {
+  it('keeps one intrinsic right-aligned cluster and widens the model leftward', () => {
     const slot = cssDeclarations('.home-hero__execution-switcher--agent-model');
     const modelMount = cssDeclarations(
       '.home-hero__execution-switcher--agent-model .inline-switcher--model',
@@ -86,13 +86,17 @@ describe('Hub composer footer: agent icon -> model name -> send', () => {
     const modelChip = cssDeclarations(
       '.home-hero__execution-switcher--agent-model .inline-switcher__chip--model',
     );
+    const openModelChip = cssDeclarations(
+      ".home-hero__execution-switcher--agent-model .inline-switcher__chip--model[aria-expanded='true']",
+    );
+    const modelPopover = cssDeclarations('.inline-switcher__popover--model');
 
-    // A fixed slot and model column prevent model-name length from shifting the
-    // leading agent target or the trailing Send button.
-    expect(ruleValue(slot, 'width')).toBe('228px');
-    expect(ruleValue(slot, 'min-width')).toBe('228px');
-    expect(ruleValue(modelMount, 'width')).toBe('190px');
-    expect(ruleValue(modelMount, 'min-width')).toBe('190px');
+    expect(ruleValue(slot, 'justify-content')).toBe('flex-end');
+    expect(ruleValue(slot, 'gap')).toBe('2px');
+    expect(ruleValue(slot, 'width')).toBe('auto');
+    expect(ruleValue(modelMount, 'width')).toBe('auto');
+    expect(ruleValue(openModelChip, 'width')).toBe('168px');
+    expect(ruleValue(modelPopover, 'width')).toBe('168px');
     // The model affordance is intentionally text + chevron, not a nested pill.
     expect(ruleValue(modelChip, 'border')).toBe('0');
     expect(ruleValue(modelChip, 'border-radius')).toBe('0');
