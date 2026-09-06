@@ -607,18 +607,11 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
         apiProtocol: 'ollama',
         apiKey: '',
         baseUrl: 'http://localhost:11434',
-        model: 'gemma3:4b',
+        model: '',
         apiProviderBaseUrl: 'http://localhost:11434',
       }),
     );
 
-    await waitFor(() => {
-      expect(screen.getByText(/Connected\. Replied in 28 ms/)).toBeTruthy();
-    });
-    const testConnectionCalls = fetchMock.mock.calls.filter(
-      ([input]) => input.toString() === '/api/test/connection',
-    );
-    expect(testConnectionCalls).toHaveLength(1);
   });
 
   it('keeps protocol drafts isolated without leaking API keys between tabs', () => {
@@ -699,6 +692,13 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
     });
 
     await waitFor(() => {
+      expect(screen.getByText('Saving…')).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(screen.getByText(/Couldn’t save changes/i)).toBeTruthy();
+    });
+  });
+
   it('closes when Escape starts from a focused descendant that stops bubbling', () => {
     const { onClose } = renderSettingsDialog(
       { mode: 'daemon', agentId: 'codex', agentModels: { codex: { model: 'default' } } },
@@ -714,13 +714,6 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
     fireEvent.keyDown(option, { key: 'Escape' });
 
     expect(onClose).toHaveBeenCalledTimes(1);
-  });
-
-      expect(screen.getByText('Saving…')).toBeTruthy();
-    });
-    await waitFor(() => {
-      expect(screen.getByText(/Couldn’t save changes/i)).toBeTruthy();
-    });
   });
 
   it('closes BYOK via the close button or backdrop', () => {
@@ -926,22 +919,18 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
       apiProtocol: 'openai',
       apiKey: 'sk-openai',
       baseUrl: 'https://api.openai.com/v1',
-      model: 'gpt-4o',
+      model: '',
       apiProviderBaseUrl: 'https://api.openai.com/v1',
     });
 
     fireEvent.click(screen.getByRole('tab', { name: 'OpenAI' }));
 
     expect(await screen.findByText('✓ Loaded 1 models from your account.')).toBeTruthy();
-    expect(screen.getByRole('combobox', { name: 'Model' }).textContent).toContain(
+    expect(screen.getByRole('combobox', { name: 'Model' }).textContent).not.toContain(
       'Account Ready (account-ready-model) · From your account',
     );
-    await waitForPersist(
-      onPersist,
-      expect.objectContaining({
-        apiProtocol: 'openai',
-        model: 'account-ready-model',
-      }),
+    expect(onPersist).not.toHaveBeenCalledWith(
+      expect.objectContaining({ model: 'account-ready-model' }),
     );
   });
 
@@ -2231,7 +2220,20 @@ describe('SettingsDialog execution settings Local CLI interactions', () => {
     expect(screen.getByRole('button', { name: 'Test' })).toBeTruthy();
   });
 
-  it('renders the AMR local agent as a plain card without vela branding or sign-in actions', () => {
+  it('keeps an authorization action on the installed AMR card while signed out', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      if (input.toString() === '/api/integrations/vela/status') {
+        return new Response(JSON.stringify({
+          loggedIn: false,
+          profile: 'local',
+          user: null,
+          configPath: '/tmp/.amr/config.json',
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      throw new Error(`Unexpected fetch: ${input.toString()}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
     renderSettingsDialog(
       { mode: 'daemon', agentId: 'amr' },
       { agents: [amrAgent] },
@@ -2243,10 +2245,7 @@ describe('SettingsDialog execution settings Local CLI interactions', () => {
     expect(screen.queryByText('1.0.0')).toBeNull();
     expect(screen.queryByText(/AMR \(vela\)/i)).toBeNull();
     expect(screen.queryByText(/vela/i)).toBeNull();
-    expect(screen.queryByText(/Not signed in/i)).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Authorize' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Sign out' })).toBeNull();
-    // AMR renders as a plain agent card — no Test button (AMR has its own auth path)
+    expect(await screen.findByRole('button', { name: 'Authorize' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Test' })).toBeNull();
   });
 

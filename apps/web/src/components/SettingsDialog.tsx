@@ -37,11 +37,15 @@ import type { Dict } from '../i18n/types';
 import { AgentIcon } from './AgentIcon';
 import { AgentDiagnosticRow } from './AgentDiagnosticRow';
 import {
+  AMR_LOGIN_POLL_INTERVAL_MS,
   AMR_LOGIN_STATUS_EVENT,
   amrLoginStatusEventReason,
+  notifyAmrLoginStatusChanged,
 } from './amrLoginPolling';
 import {
   fetchVelaLoginStatus,
+  startVelaLogin,
+  velaLogout,
   type VelaLoginStatus,
 } from '../providers/daemon';
 import { ExportDiagnosticsRow } from './ExportDiagnosticsButton';
@@ -51,11 +55,11 @@ import {
   CUSTOM_MODEL_SENTINEL,
   SearchableModelSelect,
 } from './modelOptions';
+import { effectiveAgentModelChoice } from './agentModelSelection';
 import { dedupeAgentModels } from './modelCatalog';
 import {
   DEFAULT_CONFIG,
   DEFAULT_NOTIFICATIONS,
-import { effectiveAgentModelChoice } from './agentModelSelection';
   KNOWN_PROVIDERS,
   syncConfigToDaemon,
 } from '../state/config';
@@ -139,11 +143,11 @@ import {
   resolveAccentColor,
 } from '../state/appearance';
 import { isAutosaveDraftOnlyChange } from '../state/settings-persistence';
+import { useEscapeDismiss } from '../hooks/useEscapeDismiss';
 import {
   FAILURE_SOUNDS,
   SUCCESS_SOUNDS,
   notificationPermission,
-import { useEscapeDismiss } from '../hooks/useEscapeDismiss';
   playSound,
   requestNotificationPermission,
   showCompletionNotification,
@@ -807,6 +811,101 @@ export function sanitizeSettingsSavePayload(
   };
 }
 
+function AmrAccountControl({
+  status,
+  onStatusChange,
+}: {
+  status: VelaLoginStatus | null;
+  onStatusChange: (status: VelaLoginStatus | null) => void;
+}) {
+  const { t } = useI18n();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const pollRef = useRef<number | null>(null);
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current === null) return;
+    window.clearInterval(pollRef.current);
+    pollRef.current = null;
+  }, []);
+
+  const refresh = useCallback(async () => {
+    const next = await fetchVelaLoginStatus();
+    if (!next) return null;
+    onStatusChange(next);
+    if (next.loggedIn) {
+      setPending(false);
+      setError(null);
+      stopPolling();
+      notifyAmrLoginStatusChanged();
+    }
+    return next;
+  }, [onStatusChange, stopPolling]);
+
+  useEffect(() => stopPolling, [stopPolling]);
+
+  const signIn = async () => {
+    setPending(true);
+    setError(null);
+    const result = await startVelaLogin();
+    if (!result.ok && !result.alreadyRunning) {
+      setPending(false);
+      setError(result.error || t('settings.amrLoginErrorCompact'));
+      return;
+    }
+    notifyAmrLoginStatusChanged('login-started');
+    if ((await refresh())?.loggedIn) return;
+    stopPolling();
+    pollRef.current = window.setInterval(() => {
+      void refresh();
+    }, AMR_LOGIN_POLL_INTERVAL_MS);
+  };
+
+  const signOut = async () => {
+    setPending(true);
+    setError(null);
+    const result = await velaLogout();
+    if (!result.ok) {
+      setPending(false);
+      setError(t('settings.amrLoginErrorCompact'));
+      return;
+    }
+    const next = await fetchVelaLoginStatus();
+    onStatusChange(next ?? (status ? { ...status, loggedIn: false, user: null } : null));
+    setPending(false);
+    notifyAmrLoginStatusChanged();
+  };
+
+  const loggedIn = status?.loggedIn === true;
+  return (
+    <div className="agent-card-amr-auth">
+      <div className={`amr-account-control${error ? ' amr-account-control--error' : ''}`}>
+        {loggedIn ? (
+          <button
+            type="button"
+            className="amr-account-control__action"
+            aria-label={t('settings.amrLogout')}
+            disabled={pending}
+            onClick={() => void signOut()}
+          >
+            {status?.user?.email || t('settings.amrSignedIn')}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="amr-account-control__action"
+            disabled={pending}
+            onClick={() => void signIn()}
+          >
+            {pending ? t('settings.amrSigningIn') : t('settings.amrAuthorize')}
+          </button>
+        )}
+        {error ? <span className="amr-account-control__error" role="alert">{error}</span> : null}
+      </div>
+    </div>
+  );
+}
+
 export function SettingsDialog({
   initial,
   agents,
@@ -917,9 +1016,7 @@ export function SettingsDialog({
   const [agentTestState, setAgentTestState] = useState<TestState>({
     status: 'idle',
   });
-  // AMR sign-in status is still observed (read-only) so the AMR agent's model
-  // picker can show its live-catalog loading state; the promotional sign-in
-  // card/pill that used to set it has been removed.
+  // AMR status drives both the account action and the live model-catalog state.
   const [amrCardStatus, setAmrCardStatus] = useState<VelaLoginStatus | null>(null);
   const [providerTestState, setProviderTestState] = useState<TestState>({
     status: 'idle',
@@ -2504,10 +2601,6 @@ export function SettingsDialog({
     // (AMR routes through ACP `session/set_model` and validates against
     // a live catalog). Undefined === allow, matching today's UX.
     const allowCustomModel = selected.supportsCustomModel !== false;
-    const configuredModel =
-      typeof choice.model === 'string' && choice.model
-        ? choice.model
-        : null;
     const setChoice = (
       next: { model?: string; reasoning?: string },
     ) => {
@@ -3179,7 +3272,12 @@ export function SettingsDialog({
                                       ) : null}
                                   </div>
                                 </button>
-                                {active && !isAmrAgent ? (
+                                {isAmrAgent ? (
+                                  <AmrAccountControl
+                                    status={amrCardStatus}
+                                    onStatusChange={setAmrCardStatus}
+                                  />
+                                ) : active ? (
                                   <button
                                     type="button"
                                     className={
@@ -3750,6 +3848,7 @@ export function SettingsDialog({
                   model: apiProtocol === 'azure'
                     ? t('settings.azureDeploymentModel')
                     : t('settings.model'),
+                  modelUnselected: t('inlineSwitcher.modelUnselected'),
                   required: t('settings.required'),
                   searchPlaceholder: t('designs.searchPlaceholder'),
                   suggestedModelsHint: t('settings.suggestedModelsHint'),
@@ -3841,7 +3940,6 @@ export function SettingsDialog({
                     onChange={(e) => updateApiConfig({ apiVersion: e.target.value.trim() })}
                   />
                 </label>
-                  modelUnselected: t('inlineSwitcher.modelUnselected'),
               ) : null}
             </section>
           )}
