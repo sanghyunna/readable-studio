@@ -2760,6 +2760,19 @@
   background: transparent;
   box-shadow: none;
 }
+
+/* When daemon discovery has not resolved the configured agent, this glyph
+   communicates that the agent picker needs attention. On the Hub it belongs
+   to the same accent system as the adjacent plus and context controls rather
+   than using the inverse tint intended for its blue gradient tile. */
+.home-view--hub
+  .home-hero__execution-switcher--agent-model
+  .inline-switcher__chip--agent
+  .inline-switcher__byok-glyph {
+  background: transparent;
+  color: var(--hub-accent);
+}
+
 .home-view--hub .home-hero__execution-switcher--agent-model .inline-switcher__chip--model {
   border: 0;
   background: transparent;
