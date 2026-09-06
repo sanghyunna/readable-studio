@@ -97,8 +97,8 @@ beforeAll(() => {
                 </div>
               </nav>
             </div>
-          </nav>
-        </div>
+          </div>
+        </main>
       </div>
     </div>
   `;
@@ -110,6 +110,41 @@ beforeAll(() => {
 });
 
 describe('frameless window chrome drag clearance', () => {
+  it('paints no titlebar band and exposes the continuous Home canvas behind it', () => {
+    const chromeStyle = getComputedStyle(chrome);
+    const homeScroll = document.querySelector('.entry-main--scroll') as HTMLElement;
+
+    // This computed assertion reproduces the real cascade: the later shared
+    // `.app-chrome-header { background: var(--bg) }` was the opaque white bar.
+    expect(chromeStyle.backgroundColor).toBe('rgba(0, 0, 0, 0)');
+    expect(chromeStyle.borderBottomWidth).toBe('0px');
+    expect(chromeStyle.boxShadow).toBe('none');
+
+    // One gradient recipe belongs to the shell containing BOTH grid rows. The
+    // body is paintless, so there is no seam or restarted gradient at y=36.
+    expect(entryLayoutCss).toMatch(
+      /\.workspace-shell:has\(> \.workspace-shell__body \.entry-main__inner--home\)\s*\{[^}]*background:\s*var\(--hub-canvas-background\)/s,
+    );
+    const recipesCss = readFileSync(resolve(styles, 'themes/recipes.css'), 'utf8');
+    expect(recipesCss).toMatch(
+      /--hub-canvas-background:\s*radial-gradient\(1100px 640px at 10% -8%[\s\S]*?var\(--hub-canvas-base\);/,
+    );
+    expect(getComputedStyle(homeScroll).backgroundColor).toBe('rgba(0, 0, 0, 0)');
+    expect(entryLayoutCss).toMatch(
+      /\.entry-main--scroll:has\(\.entry-main__inner--home\)\s*\{[^}]*background:\s*transparent/s,
+    );
+  });
+
+  it('keeps reduced transparency continuous rather than resurrecting a title strip', () => {
+    const reducedChrome = shellCss.match(
+      /@media \(prefers-reduced-transparency: reduce\)\s*\{[\s\S]*?\.app-chrome-header\.app-window-chrome\s*\{([^}]*)\}/,
+    )?.[1] ?? '';
+    expect(reducedChrome).toMatch(/background:\s*transparent/);
+    expect(hubCss).toMatch(
+      /@media \(prefers-reduced-transparency: reduce\)[\s\S]*?\.workspace-shell:has\(> \.workspace-shell__body \.entry-main__inner--home\),\s*\.hub\s*\{[^}]*background:\s*var\(--hub-canvas\)/,
+    );
+  });
+
   it('keeps the drag band pinned to the height its grid row reserves', () => {
     // `.app-chrome-header` also matches this element and declares `min-height:
     // 48px` further down the same file. If the override is ever removed or

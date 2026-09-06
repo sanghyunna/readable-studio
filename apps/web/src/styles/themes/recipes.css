@@ -38,6 +38,14 @@
   --hub-canvas-pink: color-mix(in srgb, var(--purple) 24%, var(--bg-app));
   --hub-canvas-cyan: color-mix(in srgb, var(--blue) 22%, var(--bg-panel));
   --hub-canvas-green: color-mix(in srgb, var(--green) 24%, var(--bg-app));
+  /* Exact approved shell/title gradient. Theme semantic colours resolve the
+     stops; the geometry is deliberately identical in light and dark. */
+  --hub-canvas-background:
+    radial-gradient(1100px 640px at 10% -8%, var(--hub-canvas-blue) 0%, transparent 58%),
+    radial-gradient(880px 560px at 92% -4%, var(--hub-canvas-pink) 0%, transparent 54%),
+    radial-gradient(760px 620px at 74% 108%, var(--hub-canvas-cyan) 0%, transparent 58%),
+    radial-gradient(620px 520px at 22% 96%, var(--hub-canvas-green) 0%, transparent 56%),
+    var(--hub-canvas-base);
   /* The glass tier separates from an opaque stage only by how much canvas it
      lets through. In light, `--bg-panel` and `--bg` are 3/255 apart, so a
      panel-dominant fill composites onto the stage value; the lower percentage

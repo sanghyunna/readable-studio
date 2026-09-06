@@ -54,6 +54,14 @@
   --hub-canvas-pink: #f9c9dc;
   --hub-canvas-cyan: #bfe6f7;
   --hub-canvas-green: #c8ead9;
+  /* One canvas recipe spans the frameless title row and Home body. Keeping the
+     geometry in a semantic token prevents either row from restarting it. */
+  --hub-canvas-background:
+    radial-gradient(1100px 640px at 10% -8%, var(--hub-canvas-blue) 0%, transparent 58%),
+    radial-gradient(880px 560px at 92% -4%, var(--hub-canvas-pink) 0%, transparent 54%),
+    radial-gradient(760px 620px at 74% 108%, var(--hub-canvas-cyan) 0%, transparent 58%),
+    radial-gradient(620px 520px at 22% 96%, var(--hub-canvas-green) 0%, transparent 56%),
+    var(--hub-canvas-base);
   /* Glass surface recipe shared by the rail, composer and floating panels. */
   --hub-glass-fill: rgba(255, 255, 255, 0.55);
   --hub-glass-fill-strong: rgba(255, 255, 255, 0.72);

@@ -2063,7 +2063,10 @@
   }
 
   /* Opaque and restrained: the tinted canvas collapses to a flat neutral and
-     the glass pills fall back to a solid fill with one faint outline. */
+     the glass pills fall back to a solid fill with one faint outline. The
+     shell owns this fallback too, keeping one continuous paint behind the
+     otherwise-transparent title row and Hub body. */
+  .workspace-shell:has(> .workspace-shell__body .entry-main__inner--home),
   .hub {
     background: var(--hub-canvas);
   }

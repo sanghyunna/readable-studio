@@ -216,6 +216,45 @@ test("theme recipe guard reports missing import, token, selector, and semantic s
   );
 });
 
+test("theme recipe guard accepts the registered canvas composition only with every semantic recipe source", () => {
+  const canvasSources = [
+    "--hub-canvas-blue",
+    "--hub-canvas-pink",
+    "--hub-canvas-cyan",
+    "--hub-canvas-green",
+    "--hub-canvas-base",
+  ];
+  const recipe = [
+    ":root,",
+    "[data-theme='light'],",
+    "[data-theme='dark'] {",
+    ...canvasSources.map((token) => `  ${token}: var(--bg-app);`),
+    `  --hub-canvas-background: ${canvasSources.map((token) => `var(${token})`).join(", ")};`,
+    "}",
+    "@media (prefers-color-scheme: light) { html:not([data-theme]) { color-scheme: light; } }",
+    "@media (prefers-color-scheme: dark) { html:not([data-theme]) { color-scheme: dark; } }",
+  ].join("\n");
+  const input = {
+    explicitThemeIds: ["light", "dark"],
+    indexSource: "@import './recipes.css';",
+    requiredTokens: new Set([...canvasSources, "--hub-canvas-background"]),
+  };
+
+  assert.deepEqual(
+    collectWebThemeRecipeViolationsFromSource({ ...input, recipeSource: recipe }),
+    [],
+  );
+  assert.deepEqual(
+    collectWebThemeRecipeViolationsFromSource({
+      ...input,
+      recipeSource: recipe.replace("var(--hub-canvas-base)", "currentColor"),
+    }),
+    [
+      "apps/web/src/styles/themes/recipes.css --hub-canvas-background must reference a semantic source token",
+    ],
+  );
+});
+
 test("theme parity requires the theme selector to match the file theme id", () => {
   const expected = new Set(["--accent", "--accent-contrast"]);
 

@@ -1365,6 +1365,7 @@ const requiredHubMaterialTokens = new Set([
   "--hub-canvas-pink",
   "--hub-canvas-cyan",
   "--hub-canvas-green",
+  "--hub-canvas-background",
   "--hub-glass-fill",
   "--hub-glass-fill-strong",
   "--hub-glass-blur",
@@ -1387,6 +1388,19 @@ const requiredHubMaterialTokens = new Set([
 ]);
 
 const semanticThemeSourcePattern = /var\(--(?:bg(?:-app|-panel|-elevated|-fill(?:-secondary|-tertiary)?)?|border(?:-strong|-soft)?|text(?:-strong|-muted|-soft|-faint)?|accent(?:-strong|-soft|-tint|-hover|-contrast)?|blue(?:-bg|-border)?|purple(?:-bg|-border)?|green(?:-bg|-border)?|shadow-(?:color|sm|md|lg))\)/;
+
+const composedHubRecipeSources = new Map<string, readonly string[]>([
+  [
+    "--hub-canvas-background",
+    [
+      "--hub-canvas-blue",
+      "--hub-canvas-pink",
+      "--hub-canvas-cyan",
+      "--hub-canvas-green",
+      "--hub-canvas-base",
+    ],
+  ],
+]);
 
 type WebThemeRecipeSources = {
   readonly explicitThemeIds: readonly string[];
@@ -1427,6 +1441,8 @@ export function collectWebThemeRecipeViolationsFromSource(input: WebThemeRecipeS
   for (const token of input.requiredTokens) {
     const value = cssCustomPropertyValue(input.recipeSource, token);
     if (value === undefined || value === "transparent" || token === "--hub-glass-blur" || token === "--hub-control-blur") continue;
+    const composedSources = composedHubRecipeSources.get(token);
+    if (composedSources?.every((source) => value.includes(`var(${source})`))) continue;
     if (!semanticThemeSourcePattern.test(value)) {
       violations.push(`apps/web/src/styles/themes/recipes.css ${token} must reference a semantic source token`);
     }

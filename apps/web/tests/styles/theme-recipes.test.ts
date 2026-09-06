@@ -29,6 +29,7 @@ const HUB_MATERIAL_TOKENS = [
   '--hub-canvas-pink',
   '--hub-canvas-cyan',
   '--hub-canvas-green',
+  '--hub-canvas-background',
   '--hub-glass-fill',
   '--hub-glass-fill-strong',
   '--hub-glass-blur',
@@ -77,6 +78,18 @@ describe('Screen Mode theme recipes', () => {
         token === '--hub-glass-blur' ||
         token === '--hub-control-blur'
       ) {
+        continue;
+      }
+      if (token === '--hub-canvas-background') {
+        for (const source of [
+          '--hub-canvas-blue',
+          '--hub-canvas-pink',
+          '--hub-canvas-cyan',
+          '--hub-canvas-green',
+          '--hub-canvas-base',
+        ]) {
+          expect(value, `${token} -> ${source}`).toContain(`var(${source})`);
+        }
         continue;
       }
       expect(value, token).toMatch(/var\(--(?:bg|bg-app|bg-panel|bg-elevated|bg-fill(?:-secondary|-tertiary)?|border|border-strong|border-soft|text|text-strong|text-muted|text-soft|text-faint|accent|accent-strong|accent-soft|accent-tint|accent-hover|accent-contrast|blue|blue-bg|blue-border|purple|purple-bg|purple-border|green|green-bg|green-border|shadow-color|shadow-(?:sm|md|lg))\)/);
