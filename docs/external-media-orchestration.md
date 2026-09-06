@@ -1,6 +1,11 @@
-# External Media Orchestration
+# External Media Orchestration (historical)
 
-This note describes how an external service can use Readable Studio as a creative
+> **Superseded by v0.2.0.** Readable Studio no longer provides built-in media
+> generation, `mediaExecution`, media generation routes/prompts, or a `readable media`
+> CLI command. The text below records a pre-removal integration design and must not be
+> treated as current product or API documentation.
+
+This note described how an external service could use Readable Studio as a creative
 runtime while keeping media provider governance outside Readable Studio.
 
 Readable Studio contributes project context, skills, design systems, previews,

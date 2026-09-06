@@ -114,7 +114,7 @@ Adding a capability is one three-step change, landed together: HTTP endpoint in
 surface in `apps/web/src/`, and a `readable <capability>` subcommand registered through
 `SUBCOMMAND_MAP` in `apps/daemon/src/cli.ts`. Both surfaces call the same `/api/*`
 endpoint. The CLI form supports `--json` and accepts `--prompt-file <path|->`. Reference
-shapes: `readable automation`, `plugin`, `ui`, `project`, `media`, `mcp`, `research`.
+shapes: `readable automation`, `plugin`, `ui`, `project`, `files`, `mcp`, `research`.
 
 The PR template's Surface area checklist must reflect both surfaces, or explain why one
 is genuinely not applicable. "I'll do the CLI later" is not a valid reason.

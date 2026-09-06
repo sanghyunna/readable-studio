@@ -210,12 +210,10 @@ agent identity, or feature flag.
 
 - Plugin block and per-stage atom blocks (active plugin + stage-bundled
   atom guidance).
-- Metadata block (project metadata, skill template, audio voice options).
+- Metadata block (project metadata and skill template).
 - Deck framework directive — pinned for deck projects without a skill seed,
   conditional variant for kind=other projects.
-- Media generation contract — for image/video/audio surfaces.
-- Codex imagegen override — gated on agent + metadata.
-- Critique theater addendum — gated on `cfg.enabled`, suppressed on media.
+- Critique theater addendum — gated on `cfg.enabled`.
 - Active-design visual-direction override — gated on the brand being bound.
 - Connected external MCP directive — gated on connected MCP servers.
 - Claude-only `AskUserQuestion` clarifying-questions block — gated on

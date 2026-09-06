@@ -57,7 +57,6 @@ observability boundary:
   `<dataDir>/projects/<projectId>`;
 - saved standalone HTML artifacts live under `<dataDir>/artifacts` and are
   served through the daemon's static `/artifacts/*` route;
-- media generation writes its output into the same project file directory;
 - `ProjectStorage`, `LocalProjectStorage`, and `S3ProjectStorage` already define
   a read/write/list/delete/stat adapter contract for S3-compatible stores, but
   the current project file and artifact routes still call the local filesystem
@@ -487,7 +486,7 @@ Data completeness:
 - Store durable object references, hashes, summaries, redaction state,
   truncation state, and parse/build status in Langfuse.
 - Wire user upload, project files, standalone artifact save, live artifact,
-  media generation, preview verification, and export/finalize flows through the
+  preview verification, and export/finalize flows through the
   registry instead of writing unindexed files only.
 - Reuse `ProjectStorage` as the backend adapter boundary: local remains the
   default, while S3-compatible storage is enabled by environment configuration

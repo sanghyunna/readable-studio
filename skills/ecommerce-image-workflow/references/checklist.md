@@ -1,6 +1,10 @@
 # Ecommerce Image Workflow Checklist
 
-Run this before handoff. P0 items must pass for the output to be usable.
+> **Historical checklist:** the workflow's required `readable media generate/wait`
+> dispatcher was removed in v0.2.0. Do not use this checklist to imply that the
+> workflow is currently executable.
+
+Run this before handoff only if a supported generation path is restored. P0 items must pass for the output to be usable.
 
 ## P0 - must pass
 
@@ -19,9 +23,8 @@ Run this before handoff. P0 items must pass for the output to be usable.
   workflow.
 - [ ] **Three-slot scope.** The set is limited to main, feature, and lifestyle
   unless the user explicitly requested fewer.
-- [ ] **Media dispatcher only.** Generation used
-  `"$READABLE_NODE_BIN" "$READABLE_BIN" media generate`; no provider API or custom model
-  command was called directly.
+- [ ] **Supported dispatcher exists.** Do not run the removed
+  `readable media generate/wait` commands.
 - [ ] **Reference image is passed to generation.** Each media command includes
   `--image <project-relative product reference image>` when the model supports
   reference images. If not supported, the workflow stops instead of pretending

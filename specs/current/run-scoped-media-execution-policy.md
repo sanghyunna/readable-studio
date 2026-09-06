@@ -1,4 +1,9 @@
-# Run-scoped media execution policy
+# Run-scoped media execution policy (historical)
+
+> **Superseded by v0.2.0.** The media generation engine, routes, prompts, controls,
+> settings, and `readable media generate/wait` commands were removed end-to-end.
+> This file preserves the earlier proposal for historical context; none of its
+> `mediaExecution`, media endpoint, or media CLI shapes describe the current product.
 
 ## Purpose
 

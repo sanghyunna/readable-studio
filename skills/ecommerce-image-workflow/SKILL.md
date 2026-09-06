@@ -2,10 +2,9 @@
 name: ecommerce-image-workflow
 en_name: "Ecommerce Image Workflow"
 description: |
-  Reference-product ecommerce image workflow for generating a compact set
-  of product-faithful main, feature, and lifestyle images from real product
-  reference photos. V1 requires uploaded product imagery and intentionally
-  defers brief-only concept generation and platform-specific batch exports.
+  Archived reference-product ecommerce image workflow. Its required Readable
+  Studio media dispatcher was removed in v0.2.0, so the workflow is retained
+  for reference but cannot currently generate its image set.
 triggers:
   - "ecommerce product images"
   - "product image set"
@@ -35,6 +34,11 @@ readable:
 ---
 
 # Ecommerce Image Workflow
+
+> **Unavailable since v0.2.0.** This workflow depends on the removed
+> `readable media generate/wait` dispatcher. Do not invoke it as a current
+> Readable Studio capability; the remaining instructions document the former
+> workflow contract only.
 
 Create a compact ecommerce image set from real product reference imagery.
 This V1 skill is intentionally narrow: it supports **reference-product mode
@@ -167,59 +171,13 @@ Then add slot-specific instructions:
   product.
 - Preserve product scale and structure.
 
-### Step 4 - Dispatch through the media contract
+### Step 4 - Generation unavailable
 
-Use the unified Readable Studio media dispatcher. Do not call provider APIs or
-custom model commands directly.
+Stop and tell the user that this workflow cannot execute because Readable
+Studio's built-in media dispatcher was removed in v0.2.0. Do not continue to
+the output-writing steps without generated files.
 
-For each slot, run the standard generate/wait loop:
-
-```bash
-# POSIX bash. Do not call provider APIs directly.
-out=$("$READABLE_NODE_BIN" "$READABLE_BIN" media generate \
-  --project "$READABLE_PROJECT_ID" \
-  --surface image \
-  --model "<imageModel from metadata>" \
-  --aspect "<slot aspect or imageAspect from metadata>" \
-  --image "<project-relative product reference image>" \
-  --output "<product-slug>-<slot>.png" \
-  --prompt "<full slot prompt>")
-ec=$?
-if [ "$ec" -ne 0 ]; then echo "$out" >&2; exit "$ec"; fi
-
-last=$(printf '%s\n' "$out" | tail -1)
-task_id=$(printf '%s\n' "$last" |
-  python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('taskId',''))" 2>/dev/null)
-since=$(printf '%s\n' "$last" |
-  python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('nextSince',0))" 2>/dev/null)
-since="${since:-0}"
-
-while [ -n "$task_id" ]; do
-  out=$("$READABLE_NODE_BIN" "$READABLE_BIN" media wait "$task_id" --since "$since")
-  ec=$?
-  last=$(printf '%s\n' "$out" | tail -1)
-  since=$(printf '%s\n' "$last" |
-    python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('nextSince',0))" 2>/dev/null)
-  since="${since:-0}"
-  if [ "$ec" -eq 0 ]; then
-    task_id=""
-  elif [ "$ec" -ne 2 ]; then
-    echo "$out" >&2
-    exit "$ec"
-  fi
-done
-
-printf '%s\n' "$last"
-```
-
-The final line must be JSON with `{"file": {"name": "...", ...}}`.
-Record each final returned filename in `image-manifest.json`.
-
-If the active image model or provider cannot use `--image`, stop and tell the
-user that this workflow needs a reference-capable image generation path for
-product fidelity.
-
-### Step 5 - Write `image-manifest.json`
+### Step 5 - Write `image-manifest.json` (historical output contract)
 
 After generation, create a project file named `image-manifest.json`:
 
@@ -291,7 +249,6 @@ Do not emit an `<artifact>` tag.
 - Preserve the product; do not redesign it.
 - Do not invent claims, certifications, measurements, ingredients, or
   performance data.
-- Use `"$READABLE_NODE_BIN" "$READABLE_BIN" media generate`; do not call provider APIs
-  directly.
-- Always create `image-manifest.json` after generation.
+- Do not run the removed `readable media generate/wait` commands.
+- The historical output steps apply only if this workflow is restored with a supported generation path.
 - Run `references/checklist.md` before handoff.

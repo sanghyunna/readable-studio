@@ -1,5 +1,11 @@
 # Plugin-driven flow plan
 
+> **Media-status note:** The image/video/audio generation portions of this plan were
+> superseded by the v0.2.0 end-to-end media removal. References below to media project
+> kinds, Home media chips, `readable-media-generation`, media atoms, and the
+> `media generate` CLI record the pre-removal implementation and are not current
+> capabilities. The non-media plugin-flow sections remain applicable.
+
 **Parent:** [`spec.md`](../../docs/spec.md) · **Siblings:** [`architecture-boundaries.md`](architecture-boundaries.md) · [`maintainability-roadmap.md`](maintainability-roadmap.md) · [`run.md`](run.md)
 
 ## Purpose
