@@ -78,6 +78,18 @@ import { localizePluginDescription } from './plugins-home/localization';
 import { RecentProjectsStrip } from './RecentProjectsStrip';
 import { AnimatePresence } from 'motion/react';
 
+export function focusComposerWhenUnowned(focus: () => void): void {
+  const ownerAtSchedule = document.activeElement;
+  requestAnimationFrame(() => {
+    const currentOwner = document.activeElement;
+    // Delayed focus is only a fallback for a composer action that left focus
+    // nowhere useful. A control focused after scheduling owns the interaction;
+    // stealing it here can redirect the second phase of browser/Playwright fill.
+    if (currentOwner !== ownerAtSchedule && currentOwner !== document.body) return;
+    focus();
+  });
+}
+
 export interface ActivePlugin {
   record: InstalledPluginRecord;
   // `result` is `null` during the optimistic window — set on chip
@@ -461,9 +473,7 @@ export function HomeView({
   );
 
   function focusPromptAtEnd() {
-    requestAnimationFrame(() => {
-      inputRef.current?.focusEnd();
-    });
+    focusComposerWhenUnowned(() => inputRef.current?.focusEnd());
   }
 
   function rejectDraftMutationDuringSubmit(): boolean {

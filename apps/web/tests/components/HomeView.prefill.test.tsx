@@ -3,7 +3,7 @@
 import { act, type ComponentProps } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { HomeView } from '../../src/components/HomeView';
+import { focusComposerWhenUnowned, HomeView } from '../../src/components/HomeView';
 import {
   createPluginAuthoringHandoff,
   createPluginUseHandoff,
@@ -93,6 +93,34 @@ const HIDDEN_DEFAULT_PLUGIN = {
 // the generic readable-new-generation router. Mirror that here so the
 // chip-applies test can find a matching plugin record and the apply
 // call resolves to the new id.
+const TOPIC_PLUGIN = {
+  ...DEFAULT_PLUGIN,
+  id: 'localized-plugin',
+  title: 'Localized Plugin',
+  source: '/tmp/localized-plugin',
+  fsPath: '/tmp/localized-plugin',
+  manifest: {
+    ...DEFAULT_PLUGIN.manifest,
+    name: 'localized-plugin',
+    title: 'Localized Plugin',
+    description: 'Deterministic input ownership fixture.',
+    readable: {
+      kind: 'scenario',
+      taskKind: 'new-generation',
+      useCase: { query: 'Make a {{topic}} brief.' },
+      inputs: [
+        {
+          name: 'topic',
+          type: 'string',
+          required: true,
+          default: 'design systems',
+          label: 'Topic',
+        },
+      ],
+    },
+  },
+};
+
 const WEB_PROTOTYPE_PLUGIN = {
   ...DEFAULT_PLUGIN,
   id: 'example-web-prototype',
@@ -270,6 +298,18 @@ const DEFAULT_APPLY_RESULT = {
   },
 };
 
+const TOPIC_APPLY_RESULT = {
+  ...AUTHORING_APPLY_RESULT,
+  query: TOPIC_PLUGIN.manifest.readable.useCase.query,
+  inputs: TOPIC_PLUGIN.manifest.readable.inputs,
+  appliedPlugin: {
+    ...AUTHORING_APPLY_RESULT.appliedPlugin,
+    snapshotId: 'snap-localized-plugin',
+    pluginId: 'localized-plugin',
+    inputs: { topic: 'design systems' },
+  },
+};
+
 const WEB_PROTOTYPE_APPLY_RESULT = {
   ...AUTHORING_APPLY_RESULT,
   query: WEB_PROTOTYPE_PLUGIN.manifest.readable.useCase.query,
@@ -357,6 +397,28 @@ describe('HomeView prompt handoff', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     cleanup();
+  });
+
+  it('cedes a queued composer focus to a control focused before the next frame', () => {
+    const requestAnimationFrameMock = vi.fn((_callback: FrameRequestCallback) => 1);
+    vi.stubGlobal('requestAnimationFrame', requestAnimationFrameMock);
+    const activationButton = document.createElement('button');
+    const pluginInput = document.createElement('input');
+    document.body.append(activationButton, pluginInput);
+    activationButton.focus();
+    const focusComposer = vi.fn();
+
+    focusComposerWhenUnowned(focusComposer);
+    pluginInput.focus();
+    expect(requestAnimationFrameMock).toHaveBeenCalledOnce();
+    const runFrame = requestAnimationFrameMock.mock.calls[0]?.[0];
+    if (!runFrame) throw new Error('requestAnimationFrame callback was not captured');
+    runFrame(window.performance.now());
+
+    expect(focusComposer).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(pluginInput);
+    activationButton.remove();
+    pluginInput.remove();
   });
 
   it('consumes a plugin authoring handoff once and focuses the textarea', async () => {
@@ -1178,6 +1240,85 @@ describe('HomeView prompt handoff', () => {
       '/api/plugins/example-web-prototype/apply',
       expect.anything(),
     ));
+  });
+
+  it('does not let queued composer focus steal an async plugin input edit', async () => {
+    let resolveApply: (response: Response) => void = () => undefined;
+    const applyResponse = new Promise<Response>((resolve) => {
+      resolveApply = resolve;
+    });
+    const pendingFrames: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      pendingFrames.push(callback);
+      return pendingFrames.length;
+    });
+    vi.stubGlobal('cancelAnimationFrame', () => undefined);
+    const fetchMock = vi.fn<typeof fetch>(async (url) => {
+      if (typeof url === 'string' && url === '/api/plugins') {
+        return new Response(JSON.stringify({ plugins: [TOPIC_PLUGIN] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (typeof url === 'string' && url.includes('/api/plugins/localized-plugin/apply')) {
+        return applyResponse;
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { rerender } = render(
+      <HomeView
+        surface="hub"
+        projects={[]}
+        onSubmit={() => undefined}
+        onOpenProject={() => undefined}
+        onViewAllProjects={() => undefined}
+      />,
+    );
+    await screen.findByTestId('home-hero-input');
+    rerender(
+      <HomeView
+        surface="hub"
+        projects={[]}
+        onSubmit={() => undefined}
+        onOpenProject={() => undefined}
+        onViewAllProjects={() => undefined}
+        promptHandoff={createPluginUseHandoff(30, 'localized-plugin', { action: 'use' })}
+      />,
+    );
+
+    const input = await screen.findByTestId('home-hero-footer-option-topic') as HTMLInputElement;
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      '/api/plugins/localized-plugin/apply',
+      expect.anything(),
+    ));
+
+    // Browser fill is two-phase: it focuses/selects the field, then inserts
+    // text. The activation frame runs in between under load, so it may only
+    // claim focus while no newer control owns it.
+    input.focus();
+    input.select();
+    const composerFocusSpy = vi.spyOn(screen.getByTestId('home-hero-input'), 'focus');
+    await act(async () => {
+      expect(pendingFrames.length).toBeGreaterThan(0);
+      for (const callback of pendingFrames.splice(0)) callback(window.performance.now());
+      await Promise.resolve();
+    });
+    expect(composerFocusSpy).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(input);
+    fireEvent.change(input, { target: { value: 'routing observables' } });
+
+    await act(async () => {
+      resolveApply(new Response(JSON.stringify(TOPIC_APPLY_RESULT), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }));
+      await applyResponse;
+    });
+    await waitFor(() => expect(input.value).toBe('routing observables'));
+    fireEvent.blur(input);
+    expect(input.value).toBe('routing observables');
   });
 
   it('keeps edited draft inputs over a stale reapply snapshot and excludes stripped inputs', async () => {
