@@ -70,7 +70,7 @@ async function gotoEntryHome(page: Page): Promise<void> {
 
 async function createBlankProject(page: Page): Promise<string> {
   await ensureRailOpen(page);
-  await page.getByTestId('entry-nav-new-project').click();
+  await page.getByTestId('hub-new-project').click();
   await expect(page.getByTestId('new-project-modal')).toBeVisible();
   await page.getByTestId('new-project-name').fill('folder-view-state-test');
   await page.getByTestId('create-project').click();
@@ -94,7 +94,7 @@ test('[P1] folder view survives navigating to a file tab and back', async ({ pag
   await page.reload();
   await waitForLoadingToClear(page);
   await page.getByTestId('design-files-tab').click();
-  await page.getByRole('button', { name: /^assets\b/i }).click();
+  await page.locator('.df-dir-row').getByRole('button', { name: /^assets\b/i }).click();
 
   const nestedFile = page.getByTestId('design-file-row-assets/reference.txt');
   await expect(nestedFile).toBeVisible();

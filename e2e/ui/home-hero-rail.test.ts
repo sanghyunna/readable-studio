@@ -5,7 +5,7 @@ import { routeAgents } from '@/playwright/mock-factory';
 test.describe.configure({ timeout: 30_000 });
 
 const STORAGE_KEY = 'readable-studio:config';
-const OPEN_SETTINGS_LABEL = /Open settings|打开设置|開啟設定/i;
+const SETTINGS_LABEL = /Settings|설정|设置|設定/i;
 
 const HOME_CONFIG = {
   mode: 'daemon',
@@ -141,7 +141,10 @@ async function gotoEntryHome(page: Page) {
   if (await privacyDialog.isVisible().catch(() => false)) {
     await privacyDialog.getByRole('button', { name: /I get it|not now|got it|don't share/i }).click();
   }
-  await expect(page.getByRole('button', { name: OPEN_SETTINGS_LABEL })).toBeVisible();
+  const settings = page.getByTestId('hub-footer-settings');
+  await expect(settings).toHaveCount(1);
+  await expect(settings).toBeVisible();
+  await expect(settings).toHaveAccessibleName(SETTINGS_LABEL);
 }
 
 test.beforeEach(async ({ page }) => {
@@ -150,14 +153,6 @@ test.beforeEach(async ({ page }) => {
     window.sessionStorage.clear();
     window.localStorage.setItem(key, JSON.stringify(value));
   }, { key: STORAGE_KEY, value: HOME_CONFIG });
-
-  await page.route('**/api/github/readable-studio', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ stargazers_count: 51600 }),
-    });
-  });
 
   await routeAgents(page, [
     {
@@ -224,51 +219,53 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test('[P2] home hero rail shows the current creation chips and More shortcuts', async ({ page }) => {
+test('[P2] Hub command palette exposes every creation shortcut from the retired hero rail', async ({ page }) => {
   await gotoEntryHome(page);
 
-  await expect(page.getByTestId('entry-star-badge')).toContainText('51.6K');
-  await expect(page.getByTestId('home-hero-type-tabs')).toBeVisible();
-  for (const id of ['prototype', 'deck']) {
-    await expect(page.getByTestId(`home-hero-rail-${id}`)).toBeVisible();
-  }
-  await expect(page.getByTestId('home-hero-shortcuts-trigger')).toBeVisible();
+  // The GitHub star-count badge was decorative entry chrome and was removed
+  // with the old rail. Creation capability moved to the Hub command palette.
+  await expect(page.getByTestId('entry-star-badge')).toHaveCount(0);
+  await expect(page.getByTestId('home-hero-type-tabs')).toHaveCount(1);
+  await expect(page.getByTestId('home-hero-type-tabs')).toBeHidden();
 
-  await page.getByTestId('home-hero-shortcuts-trigger').click();
-  const menu = page.getByTestId('home-hero-shortcuts-menu');
-  await expect(menu).toBeVisible();
-  for (const id of ['create-plugin', 'figma', 'template']) {
-    await expect(menu.getByTestId(`home-hero-rail-${id}`)).toBeVisible();
+  await page.getByTestId('hub-open-palette').click();
+  const palette = page.getByTestId('hub-command-palette');
+  await expect(palette).toBeVisible();
+  for (const id of ['prototype', 'deck', 'report', 'create-plugin', 'figma', 'template']) {
+    await expect(palette.getByTestId(`hub-palette-item-command-create-${id}`)).toBeVisible();
   }
 });
 
-test('[P1] home hero rail switches surviving creation modes without stale footer options', async ({ page }) => {
+test('[P1] Hub creation commands switch modes without stale footer options', async ({ page }) => {
   await gotoEntryHome(page);
 
-  await expect(page.getByTestId('home-hero-type-tabs')).toBeVisible();
   await expect(page.getByTestId('home-hero-footer-option-duration')).toHaveCount(0);
   await expect(page.getByTestId('home-hero-footer-option-audioType')).toHaveCount(0);
 
-  await expectChipSelection(page, 'prototype', 'Prototype');
-  await expect(page.getByTestId('home-hero-footer-option-designSystem')).toBeVisible();
+  await chooseCreationMode(page, 'prototype', 'Prototype');
+  await expect(page.getByTestId('home-hero-footer-option-designSystem')).toHaveCount(0);
+  await expect(page.getByTestId('home-hero-footer-option-fidelity')).toBeVisible();
+  await expect(page.getByTestId('home-hero-plugin-presets')).toBeVisible();
   await expect(page.getByTestId('home-hero-footer-option-duration')).toHaveCount(0);
   await expect(page.getByTestId('home-hero-footer-option-audioType')).toHaveCount(0);
   await clearActiveChip(page);
 
-  await expectChipSelection(page, 'deck', 'Slide deck');
-  await expect(page.getByTestId('home-hero-footer-option-designSystem')).toBeVisible();
+  await chooseCreationMode(page, 'deck', 'Slide deck');
+  await expect(page.getByTestId('home-hero-footer-option-designSystem')).toHaveCount(0);
+  await expect(page.getByTestId('home-hero-footer-option-speakerNotes')).toBeVisible();
+  await expect(page.getByTestId('home-hero-plugin-presets')).toBeVisible();
   await expect(page.getByTestId('home-hero-footer-option-duration')).toHaveCount(0);
   await expect(page.getByTestId('home-hero-footer-option-audioType')).toHaveCount(0);
   await clearActiveChip(page);
 });
 
-test('[P1] home hero example presets update the composer input for prototype', async ({ page }) => {
+test('[P1] Prototype command exposes presets that update the composer input', async ({ page }) => {
   await gotoEntryHome(page);
 
   const input = page.getByTestId('home-hero-input');
   await expect(input).toHaveText('');
 
-  await page.getByTestId('home-hero-rail-prototype').click();
+  await chooseCreationMode(page, 'prototype', 'Prototype');
   await expect(page.getByTestId('home-hero-plugin-presets')).toBeVisible();
   await page
     .locator('[data-testid="home-hero-plugin-preset"][data-plugin-id="example-web-prototype"]')
@@ -276,16 +273,15 @@ test('[P1] home hero example presets update the composer input for prototype', a
   await expect(input).toHaveText(
     'Build a high-fidelity web prototype for product evaluators using the active project design system from the bundled web prototype seed.',
   );
-
 });
 
-test('[P1] home hero deck example preset updates the composer input', async ({ page }) => {
+test('[P1] Slide deck command exposes presets that update the composer input', async ({ page }) => {
   await gotoEntryHome(page);
 
   const input = page.getByTestId('home-hero-input');
   await expect(input).toHaveText('');
 
-  await page.getByTestId('home-hero-rail-deck').click();
+  await chooseCreationMode(page, 'deck', 'Slide deck');
   await expect(page.getByTestId('home-hero-plugin-presets')).toBeVisible();
   await page
     .locator('[data-testid="home-hero-plugin-preset"][data-plugin-id="example-simple-deck"]')
@@ -295,30 +291,31 @@ test('[P1] home hero deck example preset updates the composer input', async ({ p
   );
 });
 
-test('[P2] clearing the active hero chip restores the rail and clears preset chrome', async ({ page }) => {
+test('[P2] clearing the active creation mode clears preset chrome and keeps commands reachable', async ({ page }) => {
   await gotoEntryHome(page);
 
-  await page.getByTestId('home-hero-rail-prototype').click();
-  await expect(page.getByTestId('home-hero-active-type-chip')).toBeVisible();
+  await chooseCreationMode(page, 'prototype', 'Prototype');
   await expect(page.getByTestId('home-hero-plugin-presets')).toBeVisible();
-  await expect(page.getByTestId('home-hero-footer-option-designSystem')).toBeVisible();
+  await expect(page.getByTestId('home-hero-footer-option-fidelity')).toBeVisible();
+  await expect(page.getByTestId('home-hero-footer-option-designSystem')).toHaveCount(0);
 
   await clearActiveChip(page);
 
   await expect(page.getByTestId('home-hero-plugin-presets')).toHaveCount(0);
   await expect(page.getByTestId('home-hero-footer-option-designSystem')).toHaveCount(0);
+  await expect(page.getByTestId('home-hero-footer-option-fidelity')).toHaveCount(0);
   await expect(page.getByTestId('home-hero-footer-option-ratio')).toHaveCount(0);
   await expect(page.getByTestId('home-hero-footer-option-duration')).toHaveCount(0);
-  await expect(page.getByTestId('home-hero-type-tabs')).toBeVisible();
+  await page.getByTestId('hub-open-palette').click();
+  await expect(page.getByTestId('hub-palette-item-command-create-prototype')).toBeVisible();
 });
 
-test('[P1] after clearing one mode, selecting another example updates the composer without leaking prior mode state', async ({ page }) => {
+test('[P1] switching commands after clearing does not leak the prior mode state', async ({ page }) => {
   await gotoEntryHome(page);
 
   const input = page.getByTestId('home-hero-input');
 
-  await page.getByTestId('home-hero-rail-prototype').click();
-  await expect(page.getByTestId('home-hero-plugin-presets')).toBeVisible();
+  await chooseCreationMode(page, 'prototype', 'Prototype');
   await page
     .locator('[data-testid="home-hero-plugin-preset"][data-plugin-id="example-web-prototype"]')
     .click();
@@ -327,17 +324,31 @@ test('[P1] after clearing one mode, selecting another example updates the compos
   );
 
   await clearActiveChip(page);
+  await chooseCreationMode(page, 'deck', 'Slide deck');
+  await page
+    .locator('[data-testid="home-hero-plugin-preset"][data-plugin-id="example-simple-deck"]')
+    .click();
+  const replacement = page.getByRole('dialog', { name: /Replace current prompt/i });
+  await expect(replacement).toBeVisible();
+  await replacement.getByRole('button', { name: 'Replace', exact: true }).click();
+  await expect(input).toHaveText(
+    'Create a pitch deck for decision makers about quarterly review with 10-15 pages. Speaker notes: include speaker notes. Use the active project design system.',
+  );
+  await expect(page.getByTestId('home-hero-active-type-chip')).toContainText('Slide deck');
 });
 
-async function expectChipSelection(page: Page, chipId: string, _label: string) {
-  const chip = page.getByTestId(`home-hero-rail-${chipId}`);
-  await expect(chip).toBeEnabled();
-  await chip.click();
-  await expect(page.getByTestId('home-hero-active-type-chip')).toBeVisible();
+async function chooseCreationMode(page: Page, chipId: 'prototype' | 'deck', label: string) {
+  await page.getByTestId('hub-open-palette').click();
+  const palette = page.getByTestId('hub-command-palette');
+  await expect(palette).toBeVisible();
+  const command = palette.getByTestId(`hub-palette-item-command-create-${chipId}`);
+  await expect(command).toContainText(label);
+  await command.click();
+  await expect(page.getByTestId('home-hero-active-type-chip')).toContainText(label);
 }
 
 async function clearActiveChip(page: Page) {
   await page.getByTestId('home-hero-active-type-chip').click();
   await expect(page.getByTestId('home-hero-active-type-chip')).toHaveCount(0);
-  await expect(page.getByTestId('home-hero-type-tabs')).toBeVisible();
+  await expect(page.getByTestId('hub-open-palette')).toBeVisible();
 }

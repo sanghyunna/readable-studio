@@ -1,11 +1,10 @@
 // Mid-chat design-system switcher (issue #498 v1).
 //
-// Verifies that the "Skills and design systems" entry in the chat
-// composer's Tools popover opens a picker, that picking a design
-// system PATCHes the project, and that the subsequent chat run
-// composes with the newly selected `designSystemId`. The legacy
-// "Coming soon" affordance on this entry was the user-visible
-// blocker for the feature; this spec is the regression boundary.
+// Verifies that the chat composer exposes separate Agent and Model
+// controls in the required order, that the project design-system picker
+// PATCHes the project, and that the subsequent chat run composes with the
+// newly selected `designSystemId`. This is the regression boundary for
+// switching a design system without leaving an active conversation.
 
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
@@ -121,21 +120,24 @@ test('[P1] chat composer switches the project design system mid-chat', async ({ 
     data: { designSystemId: null },
   });
 
-  await openImportTab(page);
+  await exerciseExecutionControls(page);
 
-  const dsEntry = page.getByTestId('composer-import-design-systems');
-  await expect(dsEntry).toBeEnabled();
-  await dsEntry.click();
+  const designSystemTrigger = page.getByTestId('project-ds-picker-trigger');
+  await expect(designSystemTrigger).toBeVisible();
+  await designSystemTrigger.click();
+  await expect(page.getByTestId('project-ds-picker-popover')).toBeVisible();
+  await page.getByTestId('project-ds-picker-search').fill('editorial');
 
-  await expect(page.getByTestId('composer-ds-picker')).toBeVisible();
-  await page
-    .getByTestId('composer-ds-picker-search')
-    .fill('editorial');
-  await page.getByTestId('composer-ds-picker-item-editorial').click();
+  const switchRequest = page.waitForRequest((request) => {
+    if (request.method() !== 'PATCH') return false;
+    if (new URL(request.url()).pathname !== `/api/projects/${initial.id}`) return false;
+    return request.postDataJSON().designSystemId === 'editorial';
+  });
+  await page.getByTestId('project-ds-picker-option-editorial').click();
+  await switchRequest;
 
-  // The composer closes the popover on a successful switch, so the
-  // picker disappears and the project mirrors the new DS.
-  await expect(page.getByTestId('composer-ds-picker')).toHaveCount(0);
+  await expect(page.getByTestId('project-ds-picker-popover')).toHaveCount(0);
+  await expect(designSystemTrigger).toContainText('Editorial');
 
   const after = await fetchCurrentProject(page);
   expect(after.designSystemId).toBe('editorial');
@@ -160,13 +162,30 @@ test('[P1] chat composer switches the project design system mid-chat', async ({ 
   expect(runRequestBodies[0]?.designSystemId).toBe('editorial');
 });
 
-async function openImportTab(page: Page) {
-  // The leading "tools" button in the composer host the import menu.
-  await page.getByLabel(/Open CLI and model settings/i).click();
-  const importTab = page.getByRole('tab', { name: /import/i });
-  if (await importTab.isVisible().catch(() => false)) {
-    await importTab.click();
-  }
+async function exerciseExecutionControls(page: Page): Promise<void> {
+  const controls = page.getByTestId('composer-execution-switcher');
+  const agentControl = controls.getByTestId('inline-model-switcher-agent-trigger');
+  const modelControl = controls.getByTestId('inline-model-switcher-model-trigger');
+
+  await expect(agentControl).toHaveAccessibleName(/Agent: Mock Agent/i);
+  await expect(modelControl).toHaveAccessibleName(/Model: Default/i);
+  const order = await controls.locator('button').evaluateAll((buttons) =>
+    buttons.map((button) => button.dataset.testid),
+  );
+  expect(order).toEqual([
+    'inline-model-switcher-agent-trigger',
+    'inline-model-switcher-model-trigger',
+  ]);
+
+  await agentControl.click();
+  await expect(page.getByTestId('inline-model-switcher-agent-popover')).toBeVisible();
+  await agentControl.click();
+  await expect(page.getByTestId('inline-model-switcher-agent-popover')).toHaveCount(0);
+
+  await modelControl.click();
+  await expect(page.getByTestId('inline-model-switcher-model-popover')).toBeVisible();
+  await modelControl.click();
+  await expect(page.getByTestId('inline-model-switcher-model-popover')).toHaveCount(0);
 }
 
 async function createProject(page: Page, projectName: string): Promise<void> {

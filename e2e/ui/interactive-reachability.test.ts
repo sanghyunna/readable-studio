@@ -164,6 +164,9 @@ for (const { theme, viewport } of SURFACE_MATRIX) {
     await page.setViewportSize(viewport);
     await applyStandardMocks(page);
     await seedTheme(page, theme);
+    const kanbanProjectId = `reachability-kanban-${theme}-${viewport.width}-${Date.now()}`;
+    const kanbanProjectName = `Reachability kanban card ${theme} ${viewport.width} ${kanbanProjectId}`;
+    await createProjectViaApi(page, kanbanProjectId, kanbanProjectName);
     await gotoEntryHome(page);
     await expect(page.getByTestId('hub-nav')).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
@@ -174,38 +177,6 @@ for (const { theme, viewport } of SURFACE_MATRIX) {
     const home = await expectPageInteractivesReachable(page, { phase: 'settled', testInfo });
     expect(home.audited, 'Home must expose controls or the discovery guard is vacuous').toBeGreaterThan(0);
 
-    await clearReachabilityHistory(page);
-    await page.getByTestId('hub-library').click();
-    await expect(page.getByTestId('hub-library-projects')).toBeVisible();
-    await expectPageInteractivesReachable(page, { phase: 'immediate', testInfo });
-    await page.keyboard.press('Escape');
-    await expect(page.getByTestId('hub-library-projects')).toBeHidden();
-    await auditTransition(page, testInfo);
-
-    await clearReachabilityHistory(page);
-    await page.getByTestId('hub-new-project').click();
-    const newProject = page.getByTestId('new-project-modal');
-    await expect(newProject).toBeVisible();
-    await expectPageInteractivesReachable(page, { phase: 'settled', testInfo });
-    await page.keyboard.press('Escape');
-    await expect(newProject).toHaveCount(0);
-    await auditTransition(page, testInfo);
-
-    // On the narrow case this also puts the Settings close chrome into the
-    // top drag-band geometry identified by the audit. DOM hit testing covers
-    // ordinary overlays; native Electron app-region behavior remains a
-    // separate packaged-app check.
-    await clearReachabilityHistory(page);
-    const settings = await openSettingsDialog(page);
-    await expectPageInteractivesReachable(page, { phase: 'settled', testInfo });
-    await page.keyboard.press('Escape');
-    await expect(settings).toHaveCount(0);
-    await auditTransition(page, testInfo);
-  });
-}
-    const kanbanProjectId = `reachability-kanban-${theme}-${viewport.width}-${Date.now()}`;
-    const kanbanProjectName = `Reachability kanban card ${theme} ${viewport.width} ${kanbanProjectId}`;
-    await createProjectViaApi(page, kanbanProjectId, kanbanProjectName);
     // The broad Home audit cannot discover hover-only row actions while they
     // correctly have pointer-events:none. Drive the real disclosure and
     // overflow path, then audit the portalled menu while it arbitrates input.
@@ -279,3 +250,32 @@ for (const { theme, viewport } of SURFACE_MATRIX) {
     await deleteDialog.getByRole('button', { name: /^cancel$/i }).click();
 
     await gotoEntryHome(page);
+    await clearReachabilityHistory(page);
+    await page.getByTestId('hub-library').click();
+    await expect(page.getByTestId('hub-library-projects')).toBeVisible();
+    await expectPageInteractivesReachable(page, { phase: 'immediate', testInfo });
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('hub-library-projects')).toBeHidden();
+    await auditTransition(page, testInfo);
+
+    await clearReachabilityHistory(page);
+    await page.getByTestId('hub-new-project').click();
+    const newProject = page.getByTestId('new-project-modal');
+    await expect(newProject).toBeVisible();
+    await expectPageInteractivesReachable(page, { phase: 'settled', testInfo });
+    await page.keyboard.press('Escape');
+    await expect(newProject).toHaveCount(0);
+    await auditTransition(page, testInfo);
+
+    // On the narrow case this also puts the Settings close chrome into the
+    // top drag-band geometry identified by the audit. DOM hit testing covers
+    // ordinary overlays; native Electron app-region behavior remains a
+    // separate packaged-app check.
+    await clearReachabilityHistory(page);
+    const settings = await openSettingsDialog(page);
+    await expectPageInteractivesReachable(page, { phase: 'settled', testInfo });
+    await page.keyboard.press('Escape');
+    await expect(settings).toHaveCount(0);
+    await auditTransition(page, testInfo);
+  });
+}

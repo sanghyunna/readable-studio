@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
-import { ensureRailOpen } from '@/playwright/rail';
 import type { Locator, Page, Request, Route } from '@playwright/test';
+import { openSettingsDialog } from '../lib/playwright/amr.js';
 import { routeAgents } from '../lib/playwright/mock-factory.js';
 
 const STORAGE_KEY = 'readable-studio:config';
@@ -129,6 +129,12 @@ test('[P1] new project tabs switch visible form sections and preserve drafts', a
 
   await page.goto('/');
   await openNewProjectPanel(page);
+  await expect(page.locator('.newproj-tabs').getByRole('tab')).toHaveText([
+    'Prototype',
+    'Slide deck',
+    'From template',
+    'Other',
+  ]);
   await expect(page.getByTestId('new-project-tab-prototype')).toHaveAttribute('aria-selected', 'true');
   await expect(page.locator('.newproj-title')).toContainText('New prototype');
   await expect(page.getByTestId('design-system-trigger')).toBeVisible();
@@ -146,16 +152,11 @@ test('[P1] new project tabs switch visible form sections and preserve drafts', a
   await expect(page.locator('.newproj-title')).toContainText('New prototype');
   await expect(page.getByTestId('new-project-name')).toHaveValue('Prototype draft survives');
 
-  // Playwright auto-scrolls the tab into view; the consolidated media flow
-  // keeps image/video/audio as inner segmented surfaces.
-  await page.getByTestId('new-project-tab-media').click();
-  await expect(page.getByTestId('new-project-tab-media')).toHaveAttribute('aria-selected', 'true');
-  await page.getByTestId('new-project-media-surface-image').click();
-  await expect(page.getByTestId('new-project-media-surface-image')).toHaveAttribute('aria-selected', 'true');
-  await expect(page.locator('.newproj-title')).toContainText('New image');
-  await expect(page.getByTestId('design-system-picker')).toHaveCount(0);
-  await expect(page.getByText('Model', { exact: true })).toBeVisible();
-  await expect(page.getByText('Aspect', { exact: true })).toBeVisible();
+  await page.getByTestId('new-project-tab-other').click();
+  await expect(page.getByTestId('new-project-tab-other')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.newproj-title')).toContainText('New project');
+  await expect(page.getByTestId('design-system-trigger')).toBeVisible();
+  await expect(page.getByText('Target platforms', { exact: true })).toBeVisible();
 });
 
 test('[P0] projects empty state create action opens the new project flow', async ({ page }) => {
@@ -180,7 +181,7 @@ test('[P0] projects empty state create action opens the new project flow', async
   await expect(page.locator('.newproj-title')).toContainText('New prototype');
 });
 
-test('[P1] new project dropdown popovers stay above later sections', async ({ page }) => {
+test('[P1] new project dropdown popovers use viewport-safe body portals', async ({ page }) => {
   await page.route('**/api/skills', async (route) => {
     await route.fulfill({ json: { skills: TAB_SKILLS } });
   });
@@ -202,17 +203,17 @@ test('[P1] new project dropdown popovers stay above later sections', async ({ pa
   await page.getByTestId('new-project-tab-prototype').click();
 
   await page.getByTestId('design-system-trigger').click();
-  const designSystemPopover = page.locator('[data-testid="design-system-picker"] .ds-picker-popover');
+  const designSystemPopover = page.getByTestId('design-system-picker-popover');
   await expect(designSystemPopover).toBeVisible();
-  await expectPopoverTopmostOver(designSystemPopover, '.platform-picker');
+  await expectViewportSafePortaledPopover(designSystemPopover);
 
   await page.getByTestId('design-system-trigger').click();
   await expect(designSystemPopover).toHaveCount(0);
 
   await page.locator('.platform-picker .ds-picker-trigger').click();
-  const platformPopover = page.locator('.platform-picker .ds-picker-popover');
+  const platformPopover = page.getByTestId('platform-picker-popover');
   await expect(platformPopover).toBeVisible();
-  await expectPopoverTopmostOver(platformPopover, '.surface-options');
+  await expectViewportSafePortaledPopover(platformPopover);
 });
 
 test('[P1] design system multi-select stores primary and inspiration metadata', async ({ page }) => {
@@ -287,32 +288,24 @@ test('[P1] design system picker searches and switches the single selected system
   expect(body.metadata?.inspirationDesignSystemIds).toBeUndefined();
 });
 
-test('[P2] project detail header keeps the title, design system picker, and settings control aligned on one row', async ({ page }) => {
+test('[P2] project detail chat header keeps navigation, title, and history aligned on one row', async ({ page }) => {
   await page.goto('/');
   await createProject(page, 'Header controls stay pinned');
   await expectWorkspaceReady(page);
   await page.setViewportSize({ width: 1365, height: 900 });
 
-  const title = page.getByTestId('project-title');
-  const dsTrigger = page.getByTestId('project-ds-picker-trigger');
-  const settingsButton = page.locator('.settings-icon-btn');
+  const header = page.locator('.chat-project-header');
+  const controls = [
+    header.getByRole('button', { name: /back to projects/i }),
+    header.getByTestId('project-title'),
+    header.getByTestId('conversation-history-trigger'),
+  ];
+  for (const control of controls) await expect(control).toBeVisible();
 
-  await expect(title).toBeVisible();
-  await expect(dsTrigger).toBeVisible();
-  await expect(settingsButton).toBeVisible();
-
-  const [titleBox, dsBox, settingsBox] = await Promise.all([
-    title.boundingBox(),
-    dsTrigger.boundingBox(),
-    settingsButton.boundingBox(),
-  ]);
-
-  expect(titleBox).toBeTruthy();
-  expect(dsBox).toBeTruthy();
-  expect(settingsBox).toBeTruthy();
-
-  const yValues = [titleBox!.y, dsBox!.y, settingsBox!.y];
-  expect(Math.max(...yValues) - Math.min(...yValues)).toBeLessThan(24);
+  const boxes = await Promise.all(controls.map((control) => control.boundingBox()));
+  expect(boxes.every(Boolean)).toBe(true);
+  const centerY = boxes.map((box) => box!.y + box!.height / 2);
+  expect(Math.max(...centerY) - Math.min(...centerY)).toBeLessThan(4);
 });
 
 test('[P1] project detail header design system picker switches the active project design system', async ({ page }) => {
@@ -388,6 +381,7 @@ test('[P0] @critical project detail header design system switch carries into the
   await editorialOption.click();
   await expect(trigger).toContainText(/Editorial Noir/i);
 
+  await selectComposerModel(page, 'gpt-5.5');
   const input = page.getByTestId('chat-composer-input');
   await input.fill('Use the active design system in this layout.');
   const sendButton = page.getByTestId('chat-send');
@@ -407,17 +401,10 @@ test('[P0] @critical project detail avatar menu lets the user switch Local CLI a
   await createProject(page, 'Header agent switch');
   await expectWorkspaceReady(page);
 
-  const { menu, claudeButton } = await openAvatarAgentMenu(page);
-  await expect(claudeButton).toBeVisible();
-  await claudeButton.click();
-
-  await expect(claudeButton).toHaveAttribute('aria-current', 'true');
-  const modelSelect = menu.locator('.avatar-model-section [role=\"combobox\"]').first();
-  await expect(modelSelect).toBeVisible();
-  await expect(modelSelect).toContainText(/default/i);
-  await modelSelect.click();
-  await page.getByRole('option', { name: /^Sonnet \(alias\)$/i }).click();
-  await expect(modelSelect).toContainText(/Sonnet/i);
+  await selectComposerAgent(page, 'claude');
+  await selectComposerModel(page, 'sonnet');
+  await expect(page.getByTestId('inline-model-switcher-agent-trigger')).toHaveAccessibleName(/Claude Code/i);
+  await expect(page.getByTestId('inline-model-switcher-model-trigger')).toContainText(/Sonnet/i);
 });
 
 test('[P0] project detail agent and model switches carry into the next daemon run request', async ({ page }) => {
@@ -444,12 +431,8 @@ test('[P0] project detail agent and model switches carry into the next daemon ru
   await createProject(page, 'Header agent switch run context');
   await expectWorkspaceReady(page);
 
-  const { menu, claudeButton } = await openAvatarAgentMenu(page);
-  await claudeButton.click();
-  const modelSelect = menu.locator('.avatar-model-section [role=\"combobox\"]').first();
-  await modelSelect.click();
-  await page.getByRole('option', { name: /^Sonnet \(alias\)$/i }).click();
-  await expect(modelSelect).toContainText(/Sonnet/i);
+  await selectComposerAgent(page, 'claude');
+  await selectComposerModel(page, 'sonnet');
 
   const input = page.getByTestId('chat-composer-input');
   await input.fill('Use the selected local agent for this run.');
@@ -513,6 +496,7 @@ test('[P0] clearing the project design system removes designSystemId from the ne
 
   expect(patchBodies.some((body) => Object.prototype.hasOwnProperty.call(body, 'designSystemId') && body.designSystemId === null)).toBe(true);
 
+  await selectComposerModel(page, 'gpt-5.5');
   const input = page.getByTestId('chat-composer-input');
   await input.fill('Generate this without an active design system.');
   await Promise.all([
@@ -547,32 +531,30 @@ test('[P1] project title rename persists after reload and ignores blank titles',
 });
 
 
-test('[P2] project header keeps the settings and avatar controls pinned on compact desktop widths', async ({ page }) => {
+test('[P2] project controls remain ordered and reachable on compact desktop widths', async ({ page }) => {
   await page.setViewportSize({ width: 1100, height: 900 });
   await page.goto('/');
   await createProject(page, 'Header controls stay pinned');
   await expectWorkspaceReady(page);
 
-  const avatarTrigger = page.locator('.avatar-agent-trigger');
-  await expect(page.getByTestId('project-title')).toBeVisible();
-  await expect(avatarTrigger).toBeVisible();
+  const settings = page.getByRole('button', { name: /open settings/i });
+  const agent = page.getByTestId('inline-model-switcher-agent-trigger');
+  const model = page.getByTestId('inline-model-switcher-model-trigger');
+  await expect(settings).toBeVisible();
+  await expect(agent).toBeVisible();
+  await expect(model).toBeVisible();
 
-  const layout = await page.evaluate(() => {
-    const root = document.documentElement;
-    const avatar = document.querySelector('.avatar-agent-trigger') as HTMLElement | null;
-    const title = document.querySelector('[data-testid="project-title"]') as HTMLElement | null;
-    const overflow = Math.max(0, root.scrollWidth - root.clientWidth);
-    return {
-      overflow,
-      avatarRight: avatar?.getBoundingClientRect().right ?? 0,
-      titleRight: title?.getBoundingClientRect().right ?? 0,
-      viewportWidth: window.innerWidth,
-    };
-  });
-
-  expect(layout.overflow).toBeLessThanOrEqual(2);
-  expect(layout.avatarRight).toBeGreaterThan(layout.titleRight);
-  expect(layout.avatarRight).toBeLessThanOrEqual(layout.viewportWidth - 8);
+  const [settingsBox, agentBox, modelBox] = await Promise.all([
+    settings.boundingBox(),
+    agent.boundingBox(),
+    model.boundingBox(),
+  ]);
+  expect(settingsBox).toBeTruthy();
+  expect(agentBox).toBeTruthy();
+  expect(modelBox).toBeTruthy();
+  expect(modelBox!.x).toBeGreaterThan(agentBox!.x);
+  expect(Math.max(settingsBox!.x + settingsBox!.width, modelBox!.x + modelBox!.width)).toBeLessThanOrEqual(1092);
+  expect(await page.evaluate(() => Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth))).toBeLessThanOrEqual(2);
 });
 
 test('[P1] canceling design file deletion keeps the file and open tab', async ({ page }) => {
@@ -622,7 +604,8 @@ test('[P1] project detail workspace keeps design file tabs and preview controls 
   await expect(
     artifactPreviewFrame(page).getByRole('heading', { name: 'Workspace Preview Structure' }),
   ).toBeVisible();
-  await expect(page.getByRole('button', { name: /Preview viewport/i })).toBeVisible();
+  await expect(page.getByRole('toolbar', { name: 'Preview tools' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^100%$/ })).toBeVisible();
 
   await viewModeTabs.getByRole('tab', { name: 'Code' }).click();
   const sourceViewer = page.locator('pre.viewer-source');
@@ -785,12 +768,10 @@ test('[P0] project detail share menu opens the current share page for uploaded h
 });
 
 test('[P0] @critical project detail share menu publish action opens the deploy flow for the selected provider', async ({ page }) => {
-  let deployConfigUrl: string | null = null;
   await page.route('**/api/projects/*/deployments', async (route) => {
     await route.fulfill({ json: { deployments: [] } });
   });
   await page.route('**/api/deploy/config?providerId=*', async (route) => {
-    deployConfigUrl = route.request().url();
     const url = new URL(route.request().url());
     await route.fulfill({
       json: {
@@ -810,6 +791,11 @@ test('[P0] @critical project detail share menu publish action opens the deploy f
   const uploadedName = await uploadTinyHtml(page, 'deploy-action.html', '<!doctype html><html><body><h1>Deploy action</h1></body></html>');
   await openUploadedHtmlArtifactPreview(page, uploadedName);
 
+  const deployConfigRequest = page.waitForRequest((request) => {
+    const url = new URL(request.url());
+    return url.pathname === '/api/deploy/config'
+      && url.searchParams.get('providerId') === 'vercel-self';
+  });
   await page.getByRole('button', { name: /^Share$/i }).click();
   await page.getByRole('menuitem', { name: /^Deploy to Vercel$/i }).click();
 
@@ -817,7 +803,7 @@ test('[P0] @critical project detail share menu publish action opens the deploy f
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole('heading', { name: /Deploy to Vercel/i })).toBeVisible();
   await expect(dialog.locator('select').first()).toHaveValue('vercel-self');
-  expect(deployConfigUrl).toContain('providerId=vercel-self');
+  expect(new URL((await deployConfigRequest).url()).searchParams.get('providerId')).toBe('vercel-self');
 });
 
 test('[P1] home design card deletion supports cancel and confirm flows', async ({ page }) => {
@@ -1316,91 +1302,64 @@ async function createProject(
 
 async function openNewProjectPanel(page: Page) {
   if (await page.getByTestId('new-project-panel').isVisible()) return;
-  await ensureRailOpen(page);
-  await page.getByTestId('entry-nav-new-project').click();
+  const hubNewProject = page.getByTestId('hub-new-project');
+  await expect(hubNewProject).toBeVisible();
+  await hubNewProject.click();
   await expect(page.getByTestId('new-project-modal')).toBeVisible();
   await expect(page.getByTestId('new-project-panel')).toBeVisible();
 }
 
-async function expectPopoverTopmostOver(popover: Locator, laterSectionSelector: string) {
-  const result = await popover.evaluate((popoverElement, selector) => {
-    const laterSection = document.querySelector(selector);
-    if (!(laterSection instanceof HTMLElement)) {
-      return { ok: false, reason: `missing ${selector}` };
-    }
-
-    const popoverRect = popoverElement.getBoundingClientRect();
-    const sectionRect = laterSection.getBoundingClientRect();
-    const left = Math.max(popoverRect.left, sectionRect.left);
-    const right = Math.min(popoverRect.right, sectionRect.right);
-    const top = Math.max(popoverRect.top, sectionRect.top);
-    const bottom = Math.min(popoverRect.bottom, sectionRect.bottom);
-    if (right <= left || bottom <= top) {
-      return { ok: false, reason: `no overlap with ${selector}` };
-    }
-
-    const x = left + (right - left) / 2;
-    const y = top + (bottom - top) / 2;
-    const topElement = document.elementFromPoint(x, y);
+async function expectViewportSafePortaledPopover(popover: Locator) {
+  const placement = await popover.evaluate((popoverElement) => {
+    const rect = popoverElement.getBoundingClientRect();
     return {
-      ok: topElement === popoverElement || popoverElement.contains(topElement),
-      reason: topElement instanceof HTMLElement ? topElement.className : String(topElement),
+      bodyPortaled: popoverElement.parentElement === document.body,
+      position: getComputedStyle(popoverElement).position,
+      width: rect.width,
+      height: rect.height,
+      insideViewport: rect.left >= 0 && rect.top >= 0
+        && rect.right <= window.innerWidth && rect.bottom <= window.innerHeight,
     };
-  }, laterSectionSelector);
+  });
 
-  expect(result, result.reason).toMatchObject({ ok: true });
+  expect(placement).toMatchObject({
+    bodyPortaled: true,
+    position: 'fixed',
+    insideViewport: true,
+  });
+  expect(placement.width).toBeGreaterThan(0);
+  expect(placement.height).toBeGreaterThan(0);
 }
 
 async function expectDesignsView(page: Page) {
   if (!/\/projects$/.test(new URL(page.url()).pathname)) {
-    await ensureRailOpen(page);
-    await page.getByTestId('entry-nav-projects').click();
+    await page.goto('/projects');
   }
   await expect(page).toHaveURL(/\/projects$/);
   await expect(page.locator('.design-grid, .design-kanban-board')).toBeVisible();
 }
 
 async function openEntrySettingsDialog(page: Page, sectionName?: RegExp | string): Promise<Locator> {
-  const settingsButton = page.getByRole('button', { name: /open settings/i });
-  await settingsButton.click();
-  let settingsDialog = page.getByRole('dialog');
-  if (!(await settingsDialog.isVisible().catch(() => false))) {
-    const settingsMenu = page.locator('.avatar-popover[role="menu"]');
-    await expect(settingsMenu).toBeVisible();
-    await settingsMenu.getByRole('button', { name: /^Settings$/i }).click();
-    settingsDialog = page.getByRole('dialog');
-  }
-  await expect(settingsDialog).toBeVisible();
+  const settingsDialog = await openSettingsDialog(page);
   if (sectionName) {
     await settingsDialog.getByRole('button', { name: sectionName }).click();
   }
   return settingsDialog;
 }
 
-async function openAvatarAgentMenu(page: Page): Promise<{
-  menu: Locator;
-  claudeButton: Locator;
-}> {
-  const trigger = page.locator('.avatar-menu .avatar-agent-trigger');
-  await trigger.click();
-  const menu = page.locator('.avatar-popover[role="dialog"]');
-  await expect(menu).toBeVisible();
+async function selectComposerAgent(page: Page, agentId: string) {
+  await page.getByTestId('inline-model-switcher-agent-trigger').click();
+  const option = page.getByTestId(`inline-model-switcher-agent-${agentId}`);
+  await expect(option).toBeVisible();
+  await option.click();
+}
 
-  const claudeButton = menu
-    .locator('[data-testid="avatar-agent-option-claude"], .avatar-item', {
-      hasText: /Claude Code/i,
-    })
-    .first();
-  if (!(await claudeButton.isVisible().catch(() => false))) {
-    const localCliOption = menu.getByRole('button', {
-      name: /Local CLI|本机 CLI|本地 CLI|Use local/i,
-    });
-    if (await localCliOption.isVisible().catch(() => false)) {
-      await localCliOption.click();
-    }
-  }
-  await expect(claudeButton).toBeVisible({ timeout: 20_000 });
-  return { menu, claudeButton };
+async function selectComposerModel(page: Page, modelId: string) {
+  await page.getByTestId('inline-model-switcher-model-trigger').click();
+  const option = page.getByTestId(`inline-model-switcher-model-option-${modelId}`);
+  await expect(option).toBeVisible();
+  await option.click();
+  await expect(page.getByTestId('inline-model-switcher-model-trigger')).not.toContainText(/None selected/i);
 }
 
 async function expectWorkspaceReady(page: Page) {

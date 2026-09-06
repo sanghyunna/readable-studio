@@ -17,7 +17,7 @@ import { openSettingsDialog as openEntrySettingsDialog } from '../lib/playwright
 import { routeAgents } from '../lib/playwright/mock-factory.js';
 
 const STORAGE_KEY = 'readable-studio:config';
-const OPEN_SETTINGS_LABEL = /Open settings|打开设置|開啟設定/i;
+const SETTINGS_LABEL = /Settings|설정|设置|設定/i;
 
 test.describe.configure({ timeout: 30_000 });
 
@@ -32,7 +32,10 @@ async function gotoEntryHome(page: Page) {
   if (await privacyDialog.isVisible().catch(() => false)) {
     await privacyDialog.getByRole('button', { name: /I get it|not now|got it|don't share/i }).click();
   }
-  await expect(page.getByRole('button', { name: OPEN_SETTINGS_LABEL })).toBeVisible();
+  const settings = page.getByTestId('hub-footer-settings');
+  await expect(settings).toHaveCount(1);
+  await expect(settings).toBeVisible();
+  await expect(settings).toHaveAccessibleName(SETTINGS_LABEL);
 }
 
 async function openSettingsDialog(page: Page) {

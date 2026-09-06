@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import type { Page, Request } from '@playwright/test';
 import { applyStandardMocks, fulfillAgentsRoute, STORAGE_KEY } from '@/playwright/mock-factory';
@@ -103,11 +104,21 @@ test('[P1] template creation remains reachable through the Hub command palette',
 });
 
 test('[P0] @critical Hub palette opens projects and Library reaches the projects index', async ({ page, request }) => {
-  const id = 'entry-chrome-current-project';
-  await request.delete(`/api/projects/${id}`).catch(() => undefined);
+  const id = `entry-chrome-current-project-${randomUUID()}`;
   const response = await request.post('/api/projects', { data: { id, name: 'Entry chrome project', skillId: null, designSystemId: null, metadata: { kind: 'prototype' } } });
   expect(response.ok(), await response.text()).toBeTruthy();
+
+  // Subscribe before navigation triggers the Hub read, then wait for both the
+  // exact response and its rendered row. The APIRequestContext POST does not
+  // synchronize React's independently fetched project snapshot.
+  const projectsLoaded = page.waitForResponse((candidate) =>
+    candidate.request().method() === 'GET'
+    && new URL(candidate.url()).pathname === '/api/projects'
+    && candidate.ok(),
+  );
   await gotoEntryHome(page);
+  await projectsLoaded;
+  await expect(page.getByTestId(`hub-project-${id}`)).toBeVisible();
   await page.getByTestId('hub-open-palette').click();
   await page.getByTestId('hub-palette-input').fill('Entry chrome project');
   await page.getByTestId(`hub-palette-item-project-${id}`).click();

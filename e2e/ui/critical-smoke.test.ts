@@ -31,10 +31,12 @@ test('[P0] @critical home loads with the primary entry controls', async ({ page 
 test('[P0] @critical settings dialog is reachable from home', async ({ page }) => {
   await gotoEntryHome(page);
 
-  // The home settings entry is a menu: open it, then the "Settings" item
-  // opens the full execution-mode dialog.
-  await page.getByTestId('entry-settings-menu-trigger').click();
-  await page.getByTestId('entry-settings-open-details').click();
+  // The Hub footer gear is Home's supported settings entry point and opens
+  // the full execution-mode dialog directly.
+  const settings = page.getByTestId('hub-footer-settings');
+  await expect(settings).toBeVisible();
+  await expect(settings).toBeEnabled();
+  await settings.click();
   const settingsDialog = page.getByRole('dialog');
   await expect(settingsDialog).toBeVisible();
   await expect(settingsDialog.getByRole('heading', { name: 'Execution mode' })).toBeVisible();

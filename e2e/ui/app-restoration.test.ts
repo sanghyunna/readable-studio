@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
-import { ensureRailOpen } from '@/playwright/rail';
 import { openNewProjectModal } from '@/playwright/new-project-modal';
+import { routeAgents } from '@/playwright/mock-factory';
 import type { Dialog, Locator, Page, Request, Response } from '@playwright/test';
 import { automatedUiScenarios } from '@/playwright/resources';
 import type { UiScenario } from '@/playwright/resources';
@@ -26,6 +26,17 @@ function stagedAttachmentName(page: Page, name: string): Locator {
 }
 
 test.beforeEach(async ({ page }) => {
+  await routeAgents(page, [
+    {
+      id: 'mock',
+      name: 'Mock Agent',
+      bin: 'mock-agent',
+      available: true,
+      version: 'test',
+      models: [{ id: 'default', label: 'Default' }],
+    },
+  ]);
+
   await page.addInitScript((key) => {
     window.localStorage.setItem(
       key,
@@ -263,7 +274,7 @@ test('[P0] switching between projects restores each project workspace to its las
   await page.getByRole('button', { name: /back to projects/i }).click();
   await expectProjectsView(page);
 
-  await homeDesignCard(page, alphaName).click();
+  await openExistingProjectWorkspace(page, alphaName);
   await expectWorkspaceReady(page);
   await expect(tabBySuffix(page, 'alpha-primary.png')).toHaveAttribute('aria-selected', 'true');
   await expect(tabBySuffix(page, 'alpha-secondary.png')).toHaveAttribute('aria-selected', 'false');
@@ -271,7 +282,7 @@ test('[P0] switching between projects restores each project workspace to its las
   await page.getByRole('button', { name: /back to projects/i }).click();
   await expectProjectsView(page);
 
-  await homeDesignCard(page, betaName).click();
+  await openExistingProjectWorkspace(page, betaName);
   await expectWorkspaceReady(page);
   await expect(tabBySuffix(page, 'beta-primary.png')).toHaveAttribute('aria-selected', 'true');
   await expect(tabBySuffix(page, 'beta-secondary.png')).toHaveAttribute('aria-selected', 'false');
@@ -2770,11 +2781,8 @@ async function createPrototypeProject(page: Page, projectName: string) {
 }
 
 async function expectProjectsView(page: Page) {
-  if (!(await page.locator('.tab-panel-toolbar').isVisible().catch(() => false))) {
-    await ensureRailOpen(page);
-    await page.getByTestId('entry-nav-projects').click();
-  }
-  await expect(page.locator('.tab-panel-toolbar')).toBeVisible();
+  await expect(page.getByTestId('hub-nav')).toBeVisible();
+  await expect(page.locator('[data-testid^="hub-project-"]').first()).toBeVisible();
 }
 
 async function waitForLoadingToClear(page: Page) {
@@ -3124,8 +3132,11 @@ async function runConversationDeleteRecoveryFlow(
   await expect(page.getByTestId('conversation-list').locator('.chat-conv-item')).toHaveCount(1);
 }
 
-function homeDesignCard(page: Page, name: string): Locator {
-  return page.locator('.design-card', {
-    has: page.locator('.design-card-name', { hasText: name }),
-  });
+async function openExistingProjectWorkspace(page: Page, name: string) {
+  const projectRow = page.locator('[data-testid^="hub-project-"]', { hasText: name });
+  await expect(projectRow).toBeVisible();
+  await projectRow.locator(':scope > .hub-row__title').hover();
+  await projectRow.locator('[data-testid^="hub-menu-project-"]').click();
+  await expect(page.getByTestId('hub-row-menu-open')).toBeVisible();
+  await page.getByTestId('hub-row-menu-open').click();
 }

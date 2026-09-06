@@ -1,5 +1,4 @@
 import { expect, test } from '@playwright/test';
-import { ensureRailOpen } from '@/playwright/rail';
 import type { Locator, Page, Response } from '@playwright/test';
 import { applyStandardMocks } from '@/playwright/mock-factory';
 import { openNewProjectModal } from '@/playwright/new-project-modal';
@@ -251,6 +250,10 @@ test('[P1] quick switcher only lists files from the active project after switchi
   await page.getByRole('button', { name: /back to projects/i }).click();
   await expectProjectsView(page);
 
+  // Project creation is a Home capability; the Projects destination keeps
+  // only hidden Hub chrome mounted. Return through the real route before
+  // invoking the shared modal helper instead of targeting that hidden copy.
+  await gotoEntryHome(page);
   await createProject(page, 'Quick switcher Project Beta');
   await expectWorkspaceReady(page);
   const betaProjectId = currentProjectId(page);
@@ -407,11 +410,12 @@ async function gotoEntryHome(page: Page) {
 }
 
 async function expectProjectsView(page: Page) {
-  if ((await page.locator('.tab-panel-toolbar').count()) === 0) {
-    await ensureRailOpen(page);
-    await page.getByTestId('entry-nav-projects').click();
+  if (!/\/projects$/.test(new URL(page.url()).pathname)) {
+    await page.getByTestId('hub-library').click();
+    await page.getByTestId('hub-library-projects').click();
   }
-  await expect(page.locator('.tab-panel-toolbar')).toBeVisible();
+  await expect(page).toHaveURL(/\/projects$/);
+  await expect(page.locator('.design-grid, .design-kanban-board')).toBeVisible();
 }
 
 async function expectWorkspaceReady(page: Page) {
