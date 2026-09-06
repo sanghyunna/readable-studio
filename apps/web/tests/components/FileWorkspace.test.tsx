@@ -848,6 +848,24 @@ describe('FileWorkspace launcher tab creation', () => {
     expect(screen.getByTestId('tab-launcher-search')).toBe(document.activeElement);
   });
 
+  it('names a file tab by its title without folding in the close control', () => {
+    render(
+      <FileWorkspace
+        projectId="project-1"
+        projectKind="prototype"
+        files={[workspaceFile('alpha-file.png')]}
+        onRefreshFiles={vi.fn()}
+        isDeck={false}
+        tabsState={{ tabs: ['alpha-file.png'], active: 'alpha-file.png' }}
+        onTabsStateChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('tab', { name: 'alpha-file.png' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Close tab' })).toBeTruthy();
+    expect(screen.queryByRole('tab', { name: /alpha-file\.png Close tab/i })).toBeNull();
+  });
+
   it('closes the active Design Files workspace tab with the browser close-tab shortcut', () => {
     const onTabsStateChange = vi.fn();
     render(

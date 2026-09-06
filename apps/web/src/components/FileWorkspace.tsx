@@ -3723,6 +3723,7 @@ function Tab({
         }
       }}
       role="tab"
+      aria-label={label}
       aria-selected={active}
       tabIndex={0}
       title={tabTitle}
