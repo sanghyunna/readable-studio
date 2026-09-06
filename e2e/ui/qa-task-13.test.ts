@@ -1,7 +1,7 @@
 import { expect, test, type APIRequestContext, type CDPSession, type Locator, type Page } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import { gotoEntryHome } from '../lib/playwright/amr.ts';
-import { captureCanonical, describeMotionOffenders, evidenceDir, flushReport, maxCssTimeMilliseconds, recordRegion, type MotionOffender } from '../lib/qa-task-13-helpers.ts';
+import { captureCanonical, describeMotionOffenders, evidenceDir, flushReport, maxCssTimeMilliseconds, recordRegion, resetReport, type MotionOffender } from '../lib/qa-task-13-helpers.ts';
 
 const HOME_CONFIG = {
   mode: 'daemon', apiKey: '', baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-5',
@@ -252,9 +252,8 @@ test.beforeAll(async ({ request }) => {
   await sequenceSessionsByRecency(request, primaryProject);
 });
 
-test.afterAll(() => flushReport());
-
 test('canonical start proves R1-R11 and R14 from rendered paint and geometry', async ({ page, request }) => {
+  resetReport();
   await openHub(page, request);
   const primaryProject = projects.at(0);
   if (!primaryProject) throw new RangeError('Task 13 QA requires a primary seeded project');
@@ -412,7 +411,7 @@ test('canonical start proves R1-R11 and R14 from rendered paint and geometry', a
   await captureCanonical(page, 'start');
 });
 
-test('filtered, busy, error, tooltip, toast/undo and palette are behavioral states', async ({ page, request }) => {
+test('filtered, busy, and error are behavioral states', async ({ page, request }) => {
   await openHub(page, request);
   const primaryProject = projects.at(0);
   if (!primaryProject) throw new RangeError('Task 13 QA requires a primary seeded project');
@@ -468,7 +467,8 @@ test('filtered, busy, error, tooltip, toast/undo and palette are behavioral stat
   await expect(modelOption).toBeVisible();
   await modelOption.click();
   const posted = page.waitForRequest((incoming) => incoming.method() === 'POST' && new URL(incoming.url()).pathname === '/api/projects');
-  await editor.fill('새로운 분기 보고서를 만들어 주세요'); await page.getByTestId('home-hero-submit').click(); await posted;
+  await page.getByTestId('home-hero-submit').click();
+  await posted;
   await expect(composer).toHaveAttribute('aria-busy', 'true'); await expect(editor).toHaveAttribute('contenteditable', 'false');
   const controls = composer.locator('.home-hero__footer-options button'); for (const control of await controls.all()) await expect(control).toHaveAttribute('aria-disabled', 'true');
   const busySpinner = page.getByTestId('home-hero-submit').locator('[data-spinner]');
@@ -482,12 +482,16 @@ test('filtered, busy, error, tooltip, toast/undo and palette are behavioral stat
   const busyStatePainted = busyAria === 'true' && editorEditable === 'false' && controlCount > 0
     && lockedControlCount === controlCount && submitDisabled && spinnerCount === 1 && spinnerVisible;
   if (!release) throw new Error('Busy-state request gate was not initialized');
+  const projectOpened = page.waitForURL(/\/projects\/[^/]+\/conversations\/[^/]+$/u);
   release();
+  await projectOpened;
   recordRegion({ region: 'R12', state: 'busy', pass: busyStatePainted, anchor: `ariaBusy=${busyAria}; contenteditable=${editorEditable}; lockedControls=${lockedControlCount}/${controlCount}; submitDisabled=${submitDisabled}; spinnerCount=${spinnerCount}; spinnerVisible=${spinnerVisible}`, observation: 'busy composer is read-only, locks every relevant control and send action, and paints one visible spinner' });
+});
 
-  await gotoEntryHome(page);
-  await expect(page.getByTestId('hub-nav')).toBeVisible();
-  await expect(page.getByTestId('hub-composer')).toBeVisible();
+test('tooltip, toast/undo, and palette are behavioral states', async ({ page, request }) => {
+  await openHub(page, request);
+  const primaryProject = projects.at(0);
+  if (!primaryProject) throw new RangeError('Task 13 QA requires a primary seeded project');
   const primaryProjectRow = page.getByTestId(`hub-project-${primaryProject.id}`);
   await expect(primaryProjectRow).toBeVisible();
   await expect(primaryProjectRow).toHaveAttribute('aria-expanded', 'false');
@@ -747,4 +751,6 @@ test('collapsed, narrow, reduced preferences and both-theme contrast are measura
       await motionSession.detach();
     }
   }
+
+  flushReport();
 });

@@ -1,4 +1,5 @@
-import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pixelmatch from 'pixelmatch';
@@ -71,8 +72,31 @@ const requiredRegions = [
 ] as const;
 const requiredRegionSet = new Set<string>(requiredRegions);
 const cssTimeNumber = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/iu;
-const regions: RegionEvidence[] = [];
-const diffs: DiffEvidence[] = [];
+const reportStateDir = resolve(evidenceDir, '.region-report-state');
+
+function persistReportRow(kind: 'region' | 'diff', row: RegionEvidence | DiffEvidence): void {
+  mkdirSync(reportStateDir, { recursive: true });
+  const id = `${kind}-${process.pid}-${randomUUID()}`;
+  const temporaryPath = resolve(reportStateDir, `${id}.tmp`);
+  writeFileSync(temporaryPath, JSON.stringify(row));
+  renameSync(temporaryPath, resolve(reportStateDir, `${id}.json`));
+}
+
+function readReportRows<T>(kind: 'region' | 'diff'): T[] {
+  try {
+    return readdirSync(reportStateDir)
+      .filter((name) => name.startsWith(`${kind}-`) && name.endsWith('.json'))
+      .map((name) => JSON.parse(readFileSync(resolve(reportStateDir, name), 'utf8')) as T);
+  } catch (error) {
+    const code = error instanceof Error && 'code' in error ? error.code : undefined;
+    if (code === 'ENOENT') return [];
+    throw error;
+  }
+}
+
+export function resetReport(): void {
+  rmSync(reportStateDir, { recursive: true, force: true });
+}
 
 export function describeMotionOffenders(offenders: readonly MotionOffender[]): string {
   return offenders.map((offender) =>
@@ -120,7 +144,7 @@ for (const reference of Object.values(references)) {
 }
 
 export function recordRegion(evidence: RegionEvidence): void {
-  regions.push(evidence);
+  persistReportRow('region', evidence);
 }
 
 export async function captureCanonical(page: Page, state: CanonicalState): Promise<DiffEvidence> {
@@ -157,16 +181,17 @@ export async function captureCanonical(page: Page, state: CanonicalState): Promi
   };
   writeFileSync(resolve(evidenceDir, `13-${state}-diff.png`), PNG.sync.write(output));
   writeFileSync(resolve(evidenceDir, `13-${state}-diff.json`), JSON.stringify(result, null, 2));
-  diffs.push(result);
+  persistReportRow('diff', result);
   return result;
 }
 
 export function flushReport(): void {
   mkdirSync(evidenceDir, { recursive: true });
-  const ordered = [...regions].sort((a, b) => {
+  const ordered = readReportRows<RegionEvidence>('region').sort((a, b) => {
     const byRegion = Number(a.region.slice(1)) - Number(b.region.slice(1));
     return byRegion || a.state.localeCompare(b.state);
   });
+  const diffs = readReportRows<DiffEvidence>('diff').sort((a, b) => a.state.localeCompare(b.state));
   const missing = requiredRegions.filter((region) => !ordered.some((row) => row.region === region));
   if (missing.length > 0) throw new Error(`region report incomplete: ${missing.join(', ')}`);
   const unexpected = ordered.filter((row) => !requiredRegionSet.has(row.region));
@@ -200,4 +225,11 @@ export function flushReport(): void {
     resolve(evidenceDir, 'region-report.json'),
     JSON.stringify({ regions: ordered, comparisons: diffs }, null, 2),
   );
+
+  const failed = ordered.filter((row) => !row.pass);
+  if (failed.length > 0) {
+    throw new Error(
+      `region report failed: ${failed.map((row) => `${row.region}/${row.state}`).join(', ')}`,
+    );
+  }
 }
