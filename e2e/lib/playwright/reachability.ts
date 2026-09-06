@@ -91,7 +91,11 @@ export async function installReachabilitySentinel(page: Page): Promise<void> {
     };
 
     const excludedBySemantics = (element: Element): boolean => {
-      if (element.matches(':disabled, [disabled], [aria-disabled="true"]')) return true;
+      const disabled = element.matches(':disabled, [disabled], [aria-disabled="true"]');
+      // Disabled controls are ordinarily intentional. An unanswered surface
+      // explicitly requiring interaction is different: disabling every route
+      // through it is a user deadlock and must be reported by this guard.
+      if (disabled && !element.closest('[data-reachability-required="true"]')) return true;
       if (element.closest('[inert], [hidden], [aria-hidden="true"]')) return true;
       const details = element.closest('details:not([open])');
       if (details) {
@@ -211,6 +215,18 @@ export async function installReachabilitySentinel(page: Page): Promise<void> {
           continue;
         }
         const centre = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+        if (candidate.matches(':disabled, [disabled], [aria-disabled="true"]')) {
+          failures.push({
+            control: controlName(candidate),
+            reason: 'is disabled inside a surface that requires user interaction',
+            rect,
+            centre,
+            coveringElement: null,
+            coveringStyle: null,
+            clippingAncestors,
+          });
+          continue;
+        }
         const directHit = document.elementFromPoint(centre.x, centre.y);
         const stack = document.elementsFromPoint(centre.x, centre.y);
         const hit = directHit && getComputedStyle(directHit).pointerEvents !== 'none'
