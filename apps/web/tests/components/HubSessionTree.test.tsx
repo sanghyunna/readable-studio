@@ -130,6 +130,46 @@ describe('HubSessionTree', () => {
     expect(sessionRow.hasAttribute('title')).toBe(false);
   });
 
+  it('opens a compact-default closed project on its first click without replacing the row', () => {
+    render(
+      <HubSessionTree
+        projects={[MANY, OTHER]}
+        compactByDefault
+        currentSessionId={null}
+        onOpenSession={vi.fn()}
+      />,
+    );
+    const row = screen.getByTestId('hub-project-p2');
+    expect(row.getAttribute('aria-expanded')).toBe('false');
+
+    fireEvent.click(row);
+
+    expect(screen.getByTestId('hub-project-p2')).toBe(row);
+    expect(row.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('expands an unloaded compact project instead of navigating from its disclosure row', () => {
+    const onOpenProject = vi.fn();
+    render(
+      <HubSessionTree
+        projects={[MANY, node({ id: 'loading', sessionsStatus: 'loading' })]}
+        compactByDefault
+        currentSessionId={null}
+        onOpenSession={vi.fn()}
+        onOpenProject={onOpenProject}
+      />,
+    );
+    const row = screen.getByTestId('hub-project-loading');
+    expect(row.getAttribute('aria-expanded')).toBe('false');
+
+    fireEvent.click(row);
+
+    expect(screen.getByTestId('hub-project-loading')).toBe(row);
+    expect(row.getAttribute('aria-expanded')).toBe('true');
+    expect(onOpenProject).not.toHaveBeenCalled();
+    expect(screen.getByTestId('hub-new-terminal-loading')).toBeTruthy();
+  });
+
   it('opens a session on click without an intermediate view', () => {
     const onOpenSession = vi.fn();
     render(<HubSessionTree projects={[MANY]} currentSessionId={null} onOpenSession={onOpenSession} />);

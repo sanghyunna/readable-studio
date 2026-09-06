@@ -65,6 +65,8 @@ interface FlatRow {
   key: string;
   kind: 'project' | 'session' | 'more';
   project: HubProjectNode;
+  /** The rendered project state, including compact-by-default policy. */
+  open?: boolean;
   session?: HubSessionNode;
 }
 
@@ -337,7 +339,12 @@ export function HubSessionTree({
   const rows = useMemo<FlatRow[]>(() => {
     const next: FlatRow[] = [];
     for (const entry of visible) {
-      next.push({ key: `p:${entry.project.id}`, kind: 'project', project: entry.project });
+      next.push({
+        key: `p:${entry.project.id}`,
+        kind: 'project',
+        project: entry.project,
+        open: entry.open,
+      });
       // Session rows are hidden in the collapsed rail, so leaving them in the
       // row model would send arrow-key focus to invisible rows.
       if (railCollapsed) continue;
@@ -436,13 +443,14 @@ export function HubSessionTree({
         if (firstHidden) pendingFocusRef.current = `s:${firstHidden}`;
         return;
       }
-      if (row.project.sessions.length === 0 && onOpenProject) {
-        onOpenProject(row.project);
-        return;
-      }
-      setCollapsed((prev) => ({ ...prev, [row.project.id]: !prev[row.project.id] }));
+      // The project row is the tree's disclosure control. Opening its workspace
+      // is a separate action inside the revealed group, so even a loading or
+      // genuinely empty project expands here instead of disappearing on route
+      // navigation. Toggle the state the user can actually see: compact mode
+      // closes non-leading projects without writing that default to `collapsed`.
+      setCollapsed((prev) => ({ ...prev, [row.project.id]: row.open === true }));
     },
-    [onOpenSession, onOpenProject, filter, railCollapsed, sessionPageSize],
+    [onOpenSession, filter, railCollapsed, sessionPageSize],
   );
 
   const onKeyDown = useCallback(
