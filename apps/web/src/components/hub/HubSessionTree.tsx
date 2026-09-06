@@ -150,7 +150,7 @@ export type HubSessionSurfaceRequest =
   | { projectId: string; kind: 'side-chat'; conversationId: string };
 
 /** A request plus the deadline its producer stamped on it. */
-export interface HubSessionSurfaceDelivery {
+interface HubSessionSurfaceDelivery {
   request: HubSessionSurfaceRequest;
   /** Epoch ms after which this request is no longer this navigation's. */
   expiresAt: number;

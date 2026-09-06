@@ -113,8 +113,8 @@ describe('NewProjectPanel design system defaults', () => {
 
   it('shows the configured default design system as the active project selection', () => {
     const markup = renderToStaticMarkup(
-      // The picker is opt-in now (HomeHero owns it on the canonical creation
-      // path); the Advanced / Import disclosure renders it with this prop.
+      // The picker is opt-in because the New Project modal enables it while
+      // direct panel consumers can keep their existing compact surface.
       <NewProjectPanel
         skills={skills}
         designSystems={designSystems}

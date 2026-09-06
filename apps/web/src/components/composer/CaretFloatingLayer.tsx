@@ -11,6 +11,11 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import type { CaretRect } from './LexicalComposerInput';
+import {
+  POPOVER_ANCHOR_GAP,
+  POPOVER_VIEWPORT_MARGIN,
+  placePopover,
+} from '../popoverPlacement';
 
 const GAP = 8; // gap between caret and popover edge
 const MARGIN = 8; // viewport edge margin
@@ -77,33 +82,79 @@ function computePopoverPos(
   return { left, top, width, maxHeight, placement };
 }
 
+function computeControlPopoverPos(
+  control: DOMRect,
+  size: { width: number; height: number } | null,
+): PopoverPos {
+  const viewport = { width: window.innerWidth, height: window.innerHeight };
+  const measured = size ?? { width: PREF_W, height: HARD_MAX_H };
+  const width = measured.width || PREF_W;
+  // Home's context control has always start-aligned its panel. Giving the
+  // shared end-alignment maths a synthetic anchor as wide as the measured
+  // panel preserves that behavior while keeping one placement implementation.
+  const anchor = {
+    left: control.left,
+    top: control.top,
+    width,
+    height: control.height,
+  };
+  const initialPlacement = placePopover(anchor, { width, height: measured.height }, viewport);
+  const placement = initialPlacement.top < control.top ? 'above' : 'below';
+  const availableHeight = placement === 'above'
+    ? control.top - POPOVER_ANCHOR_GAP - POPOVER_VIEWPORT_MARGIN
+    : viewport.height - control.bottom - POPOVER_ANCHOR_GAP - POPOVER_VIEWPORT_MARGIN;
+  const maxHeight = Math.max(120, Math.min(HARD_MAX_H, availableHeight));
+  const placed = placePopover(
+    anchor,
+    { width, height: Math.min(measured.height, maxHeight) },
+    viewport,
+  );
+  // Constraining the panel height can make the final placement fit on the
+  // opposite side from the full-height probe. The rendered direction must
+  // describe that final geometry, otherwise the enter animation travels from
+  // the wrong edge and consumers observe a stale data-placement value.
+  const finalPlacement = placed.top < control.top ? 'above' : 'below';
+
+  return { ...placed, width, maxHeight, placement: finalPlacement };
+}
+
 export function CaretFloatingLayer({
   caret,
   open,
   boundaryRef,
+  anchorRef,
   children,
 }: {
   caret: CaretRect | null;
   open: boolean;
   boundaryRef?: RefObject<HTMLElement | null>;
+  /** Optional control anchor. When present it takes precedence over the caret. */
+  anchorRef?: RefObject<HTMLElement | null>;
   children: ReactNode;
 }) {
   const layerRef = useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = useState<PopoverPos | null>(null);
 
   const reposition = useCallback(() => {
-    if (!caret) return;
+    const control = anchorRef?.current?.getBoundingClientRect() ?? null;
+    if (!control && !caret) return;
     const el = layerRef.current;
     const size = el ? { width: el.offsetWidth, height: el.scrollHeight } : null;
-    const boundary = boundaryRef?.current?.getBoundingClientRect() ?? null;
-    setPos(computePopoverPos(caret, size, boundary));
-  }, [boundaryRef, caret]);
+    if (control) {
+      setPos(computeControlPopoverPos(control, size));
+      return;
+    }
+    if (caret) {
+      const boundary = boundaryRef?.current?.getBoundingClientRect() ?? null;
+      setPos(computePopoverPos(caret, size, boundary));
+    }
+  }, [anchorRef, boundaryRef, caret]);
 
-  // Measured pass on open + every caret change. useLayoutEffect avoids a
+  // Measured pass on open + every anchor change. useLayoutEffect avoids a
   // wrong-coordinate flash before paint.
   useLayoutEffect(() => {
-    if (open && caret) reposition();
-  }, [open, caret, reposition]);
+    if (open && (caret || anchorRef?.current)) reposition();
+  }, [anchorRef, open, caret, reposition]);
 
   // Keep pinned while open. rAF-throttle scroll/resize. Reposition (not close)
   // so a small chat-log scroll doesn't feel broken; capture:true catches
@@ -127,7 +178,7 @@ export function CaretFloatingLayer({
     };
   }, [open, reposition]);
 
-  if (!open || !caret || typeof document === 'undefined') return null;
+  if (!open || (!caret && !anchorRef?.current) || typeof document === 'undefined') return null;
 
   return createPortal(
     <div
