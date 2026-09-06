@@ -29,6 +29,7 @@ import type {
   SkillSummary,
 } from '../../types';
 import { HomeView } from '../HomeView';
+import type { HomePromptHandoff } from '../home-hero/plugin-authoring';
 import { Icon } from '../Icon';
 import { ProjectRail } from '../ProjectRail';
 import type { PluginLoopSubmit } from '../PluginLoopHome';
@@ -61,6 +62,11 @@ const RAIL_COLLAPSED_STORAGE_KEY = 'readable-studio:hub-rail-collapsed';
 // The mockup's breakpoint. Below it the rail is ALWAYS the icon rail, so the
 // stored preference is irrelevant until the window widens again.
 const NARROW_RAIL_QUERY = '(max-width: 900px)';
+// The daemon serves conversation reads synchronously and Chromium limits
+// parallel HTTP/1 requests per origin. Launching one fetch per project lets a
+// large idle workspace fill both queues before the project with live work is
+// serviced. Keep the client wave bounded to the transport's useful parallelism.
+const SESSION_READ_CONCURRENCY = 6;
 
 function loadRailCollapsed(): boolean {
   if (typeof window === 'undefined') return false;
@@ -120,6 +126,8 @@ interface Props {
   onBrowseRegistry?: () => void;
   onOpenMcp?: () => void;
   onOpenNewProject?: (tab: 'template') => void;
+  /** Plugin/authoring selection handed back from a Library destination. */
+  promptHandoff?: HomePromptHandoff | null;
   skills?: SkillSummary[];
   skillsLoading?: boolean;
   /** Navigate to one of the entry destinations (rail footer library menu). */
@@ -166,6 +174,7 @@ export function HubHome({
   onBrowseRegistry,
   onOpenMcp,
   onOpenNewProject,
+  promptHandoff,
   skills,
   skillsLoading,
   onNewProject,
@@ -188,6 +197,10 @@ export function HubHome({
   // can discard a slower in-flight response for the SAME project without
   // touching any sibling's request.
   const generationsRef = useRef(new Map<string, number>());
+  // Superseded reads must release the browser's per-origin request slots, not
+  // merely have their eventual responses ignored. Only the bounded worker wave
+  // below may add controllers, so this map also represents every active read.
+  const sessionReadControllersRef = useRef(new Map<string, AbortController>());
   // Per-project in-flight guard for the new-session action: a double click
   // must not create two empty conversations.
   const creatingSessionRef = useRef(new Set<string>());
@@ -283,58 +296,76 @@ export function HubHome({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [narrow, toggleRail]);
   // Sessions are per-project on the daemon; there is no cross-project
-  // conversation endpoint. Fan out per project and commit each result as it
-  // lands so one slow or failing project cannot hide every other project's
-  // sessions, and refresh when runs change so states do not go stale.
-  const projectIds = useMemo(() => projects.map((p) => p.id).join('\u0000'), [projects]);
+  // conversation endpoint. Load urgent project states first, then drain the
+  // rest through a bounded pool. This preserves progressive rendering without
+  // allowing hundreds of idle projects to starve the live-work strip.
+  const prioritizedProjectIds = useMemo(() => {
+    const priority = (project: Project): number => {
+      const state = projectStateFromStatus(project.status?.value);
+      if (state === 'running') return 0;
+      if (state === 'awaiting') return 1;
+      if (state === 'failed') return 2;
+      return 3;
+    };
+    return projects
+      .map((project, index) => ({ project, index }))
+      .sort((left, right) => priority(left.project) - priority(right.project) || left.index - right.index)
+      .map(({ project }) => project.id);
+  }, [projects]);
+  const projectLoadKey = prioritizedProjectIds.join('\u0000');
 
-  const loadProject = useCallback((projectId: string) => {
+  const loadProject = useCallback(async (projectId: string): Promise<void> => {
     const generation = (generationsRef.current.get(projectId) ?? 0) + 1;
     generationsRef.current.set(projectId, generation);
-    void readConversations(projectId).then((result) => {
-      // A response from a superseded request for this project is dropped
-      // outright, so a slow first read can never overwrite a newer retry.
-      if (generationsRef.current.get(projectId) !== generation) return;
-      setSessionsByProject((prev) => {
-        const cached = prev[projectId];
-        if (result.ok) {
-          return {
-            ...prev,
-            [projectId]: {
-              status: 'ready',
-              sessions: result.conversations.map((conversation) => ({
-                id: conversation.id,
-                projectId,
-                title: conversation.title ?? untitledLabel.current,
-                updatedAt: conversation.updatedAt,
-                state: sessionStateFromRunStatus(conversation.latestRun?.status),
-                ...(conversation.messageCount === undefined
-                  ? {}
-                  : { messageCount: conversation.messageCount }),
-                ...(conversation.sessionMode === undefined
-                  ? {}
-                  : { sessionMode: conversation.sessionMode }),
-              })),
-            },
-          };
-        }
-        // A failed read keeps this project's last known rows and marks them
-        // stale; with nothing cached it says the sessions are unavailable
-        // rather than claiming there are none. Siblings are untouched.
-        const keptSessions = cached?.sessions ?? EMPTY_SESSIONS;
+    sessionReadControllersRef.current.get(projectId)?.abort();
+    const controller = new AbortController();
+    sessionReadControllersRef.current.set(projectId, controller);
+    const result = await readConversations(projectId, { signal: controller.signal });
+    // A response from a superseded request for this project is dropped
+    // outright, so a slow first read can never overwrite a newer retry.
+    if (generationsRef.current.get(projectId) !== generation) return;
+    if (sessionReadControllersRef.current.get(projectId) === controller) {
+      sessionReadControllersRef.current.delete(projectId);
+    }
+    setSessionsByProject((prev) => {
+      const cached = prev[projectId];
+      if (result.ok) {
         return {
           ...prev,
           [projectId]: {
-            status: keptSessions.length > 0 ? 'stale' : 'unavailable',
-            sessions: keptSessions,
+            status: 'ready',
+            sessions: result.conversations.map((conversation) => ({
+              id: conversation.id,
+              projectId,
+              title: conversation.title ?? untitledLabel.current,
+              updatedAt: conversation.updatedAt,
+              state: sessionStateFromRunStatus(conversation.latestRun?.status),
+              ...(conversation.messageCount === undefined
+                ? {}
+                : { messageCount: conversation.messageCount }),
+              ...(conversation.sessionMode === undefined
+                ? {}
+                : { sessionMode: conversation.sessionMode }),
+            })),
           },
         };
-      });
+      }
+      // A failed read keeps this project's last known rows and marks them
+      // stale; with nothing cached it says the sessions are unavailable
+      // rather than claiming there are none. Siblings are untouched.
+      const keptSessions = cached?.sessions ?? EMPTY_SESSIONS;
+      return {
+        ...prev,
+        [projectId]: {
+          status: keptSessions.length > 0 ? 'stale' : 'unavailable',
+          sessions: keptSessions,
+        },
+      };
     });
   }, []);
 
   useEffect(() => {
-    const ids = projectIds ? projectIds.split('\u0000') : [];
+    const ids = projectLoadKey ? projectLoadKey.split('\u0000') : [];
     if (ids.length === 0) {
       generationsRef.current.clear();
       setSessionsByProject({});
@@ -352,21 +383,43 @@ export function HubHome({
       return next;
     });
 
+    let wave = 0;
     const load = () => {
-      for (const id of ids) loadProject(id);
+      const currentWave = ++wave;
+      for (const [id, controller] of sessionReadControllersRef.current) {
+        generationsRef.current.set(id, (generationsRef.current.get(id) ?? 0) + 1);
+        controller.abort();
+      }
+      sessionReadControllersRef.current.clear();
+
+      let cursor = 0;
+      const worker = async () => {
+        while (currentWave === wave) {
+          const id = ids[cursor];
+          cursor += 1;
+          if (!id) return;
+          await loadProject(id);
+        }
+      };
+      for (let index = 0; index < Math.min(SESSION_READ_CONCURRENCY, ids.length); index += 1) {
+        void worker();
+      }
     };
 
     load();
     window.addEventListener(RUNS_CHANGED_EVENT, load);
     return () => {
       window.removeEventListener(RUNS_CHANGED_EVENT, load);
+      wave += 1;
       // Bump every generation so responses still in flight are ignored
       // instead of writing into an unmounted or re-keyed tree.
       for (const id of ids) {
         generationsRef.current.set(id, (generationsRef.current.get(id) ?? 0) + 1);
+        sessionReadControllersRef.current.get(id)?.abort();
+        sessionReadControllersRef.current.delete(id);
       }
     };
-  }, [projectIds, loadProject]);
+  }, [projectLoadKey, loadProject]);
 
   const allNodes = useMemo<HubProjectNode[]>(
     () =>
@@ -933,6 +986,7 @@ export function HubHome({
             onBrowseRegistry={onBrowseRegistry}
             onOpenMcp={onOpenMcp}
             onOpenNewProject={onOpenNewProject}
+            promptHandoff={promptHandoff}
             skills={skills}
             skillsLoading={skillsLoading}
             commandChip={commandChip}

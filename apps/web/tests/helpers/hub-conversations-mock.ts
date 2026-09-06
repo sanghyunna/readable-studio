@@ -8,14 +8,21 @@
 import type { ConversationsReadResult } from '../../src/state/projects';
 import type { Conversation } from '../../src/types';
 
-type ListConversationsMock = (projectId: string) => Promise<unknown> | unknown;
+type ConversationReadOptions = { signal?: AbortSignal };
+type ListConversationsMock = (
+  projectId: string,
+  options?: ConversationReadOptions,
+) => Promise<unknown> | unknown;
 
 export function readConversationsFromListMock(
   listConversations: ListConversationsMock,
-): (projectId: string) => Promise<ConversationsReadResult> {
-  return async (projectId: string): Promise<ConversationsReadResult> => {
+): (projectId: string, options?: ConversationReadOptions) => Promise<ConversationsReadResult> {
+  return async (
+    projectId: string,
+    options?: ConversationReadOptions,
+  ): Promise<ConversationsReadResult> => {
     try {
-      const conversations = (await listConversations(projectId)) as Conversation[] | undefined;
+      const conversations = (await listConversations(projectId, options)) as Conversation[] | undefined;
       return { ok: true, conversations: conversations ?? [] };
     } catch (err) {
       return {

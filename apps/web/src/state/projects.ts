@@ -328,11 +328,13 @@ function isRetryableStatus(status: number): boolean {
  */
 export async function readConversations(
   projectId: string,
+  options: { signal?: AbortSignal } = {},
 ): Promise<ConversationsReadResult> {
   let resp: Response;
   try {
     resp = await fetch(
       `/api/projects/${encodeURIComponent(projectId)}/conversations`,
+      { signal: options.signal },
     );
   } catch (err) {
     return {

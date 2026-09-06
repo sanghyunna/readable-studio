@@ -5,7 +5,34 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { readConversationsFromListMock } from '../helpers/hub-conversations-mock';
 
-const listConversations = vi.hoisted(() => vi.fn());
+const { designsTabRender, libraryPlugin, listConversations } = vi.hoisted(() => ({
+  designsTabRender: vi.fn(),
+  libraryPlugin: {
+    id: 'validated-library-plugin',
+    title: 'Validated Library Plugin',
+    version: '1.0.0',
+    trust: 'trusted',
+    sourceKind: 'local',
+    source: '/plugins/validated-library-plugin',
+    capabilitiesGranted: ['prompt:inject'],
+    fsPath: '/plugins/validated-library-plugin',
+    installedAt: 1,
+    updatedAt: 1,
+    manifest: {
+      name: 'validated-library-plugin',
+      title: 'Validated Library Plugin',
+      version: '1.0.0',
+      readable: {
+        kind: 'scenario',
+        taskKind: 'new-generation',
+        mode: 'prototype',
+        visualReference: { characteristics: ['Clear hierarchy and restrained motion.'] },
+        useCase: { query: 'Draft a {{topic}} prototype.' },
+      },
+    },
+  },
+  listConversations: vi.fn(),
+}));
 
 vi.mock('../../src/state/projects', async () => {
   const actual = await vi.importActual<typeof import('../../src/state/projects')>(
@@ -25,11 +52,28 @@ vi.mock('@readable-studio/host', () => ({
 vi.mock('../../src/hooks/useRuntimeUser', () => ({ useRuntimeUsername: () => 'winuser' }));
 vi.mock('../../src/components/InlineModelSwitcher', () => ({ InlineModelSwitcher: () => null }));
 vi.mock('../../src/components/EntryNavRail', () => ({ EntryNavRail: () => null }));
-vi.mock('../../src/components/DesignsTab', () => ({ DesignsTab: () => null }));
+vi.mock('../../src/components/DesignsTab', () => ({
+  DesignsTab: (props: { projects: Project[] }) => {
+    designsTabRender(props.projects.length);
+    return null;
+  },
+}));
 vi.mock('../../src/components/DesignSystemPreviewModal', () => ({ DesignSystemPreviewModal: () => null }));
 vi.mock('../../src/components/DesignSystemsTab', () => ({ DesignSystemsTab: () => null }));
 vi.mock('../../src/components/IntegrationsView', () => ({ IntegrationsView: () => null }));
-vi.mock('../../src/components/PluginsView', () => ({ PluginsView: () => null }));
+vi.mock('../../src/components/PluginsView', () => ({
+  PluginsView: ({ onUsePlugin }: {
+    onUsePlugin?: (record: typeof libraryPlugin, action: 'use-with-query') => void;
+  }) => (
+    <button
+      type="button"
+      data-testid="test-library-use-with-query"
+      onClick={() => onUsePlugin?.(libraryPlugin, 'use-with-query')}
+    >
+      Use validated plugin with query
+    </button>
+  ),
+}));
 vi.mock('../../src/components/TasksView', () => ({ TasksView: () => null }));
 
 import { EntryShell } from '../../src/components/EntryShell';
@@ -69,7 +113,7 @@ const skills: SkillSummary[] = [{
   aggregatesExamples: false,
 }];
 
-function renderEntryShell() {
+function renderEntryShell(projects: Project[] = [project]) {
   const onCreateProject = vi.fn(() => true);
   const onOpenSettings = vi.fn();
   render(
@@ -77,7 +121,7 @@ function renderEntryShell() {
       skills={skills}
       designTemplates={[]}
       designSystems={[]}
-      projects={[project]}
+      projects={projects}
       templates={[]}
       defaultDesignSystemId={null}
       config={{
@@ -121,10 +165,109 @@ afterEach(() => {
   listConversations.mockReset();
   globalThis.ResizeObserver = originalResizeObserver;
   Element.prototype.scrollIntoView = originalScrollIntoView;
+  vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
 
 describe('EntryShell production hub wiring', () => {
+  it('does not start the hidden project grid fan-out while loading live work at scale', async () => {
+    const projects = Array.from({ length: 543 }, (_, index): Project => ({
+      id: `idle-${index}`,
+      name: `Idle project ${index}`,
+      skillId: null,
+      designSystemId: null,
+      createdAt: index,
+      updatedAt: index,
+    }));
+    projects.push({
+      ...project,
+      id: 'live-project',
+      status: { value: 'running', updatedAt: 1 },
+    });
+    listConversations.mockImplementation(async (projectId: string) => projectId === 'live-project'
+      ? [{
+          id: 'live-session',
+          projectId,
+          title: 'Live session',
+          createdAt: 1,
+          updatedAt: 1,
+          latestRun: { status: 'running' },
+        }]
+      : []);
+
+    renderEntryShell(projects);
+
+    await screen.findByTestId('hub-live-time');
+    expect(projects).toHaveLength(544);
+    expect(designsTabRender).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('hub-library'));
+    fireEvent.click(await screen.findByTestId('hub-library-projects'));
+    await waitFor(() => expect(designsTabRender).toHaveBeenCalledWith(544));
+  });
+
+  it('forwards a validated Library plugin handoff into the Hub composer', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      const url = typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+      if (url === '/api/plugins') {
+        return new Response(JSON.stringify({ plugins: [libraryPlugin] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url.includes('/api/plugins/validated-library-plugin/apply')) {
+        return new Response(JSON.stringify({
+          ok: true,
+          query: 'Draft a topic prototype.',
+          contextItems: [],
+          inputs: [],
+          assets: [],
+          mcpServers: [],
+          projectMetadata: {},
+          trust: 'trusted',
+          capabilitiesGranted: ['prompt:inject'],
+          capabilitiesRequired: ['prompt:inject'],
+          appliedPlugin: {
+            snapshotId: 'validated-library-snapshot',
+            pluginId: libraryPlugin.id,
+            pluginVersion: libraryPlugin.version,
+            manifestSourceDigest: 'a'.repeat(64),
+            inputs: {},
+            resolvedContext: { items: [] },
+            capabilitiesGranted: ['prompt:inject'],
+            capabilitiesRequired: ['prompt:inject'],
+            assetsStaged: [],
+            taskKind: 'new-generation',
+            appliedAt: 1,
+            mcpServers: [],
+            status: 'fresh',
+          },
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderEntryShell();
+    await screen.findByTestId('home-hero-input');
+    fireEvent.click(screen.getByTestId('hub-library'));
+    fireEvent.click(await screen.findByTestId('hub-library-plugins'));
+    fireEvent.click(await screen.findByTestId('test-library-use-with-query'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('home-hero-active-plugin').textContent).toContain('Validated Library Plugin');
+      expect(screen.getByTestId('home-hero-input').textContent).toContain('Draft a topic prototype.');
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/plugins/validated-library-plugin/apply',
+      expect.anything(),
+    );
+  });
+
   it('forwards New Project modal creation through handleCreate with normalized input', async () => {
     const { onCreateProject } = renderEntryShell();
     await screen.findByTestId('home-hero-input');

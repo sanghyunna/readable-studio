@@ -621,7 +621,7 @@ export function EntryShell({
               />
             </div>
             <div data-testid="entry-view-projects" data-active={view === 'projects' ? 'true' : 'false'} {...inactiveViewProps(view === 'projects')}>
-              {projectsLoading || skillsLoading || designSystemsLoading ? (
+              {view !== 'projects' ? null : projectsLoading || skillsLoading || designSystemsLoading ? (
                 <CenteredLoader label={t('common.loading')} />
               ) : (
                 <div className="entry-section">
