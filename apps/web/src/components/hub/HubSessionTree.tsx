@@ -51,7 +51,7 @@ interface Props {
   onRetrySessions?: (project: HubProjectNode) => void;
   /** The project whose new-session request is currently in flight, if any. */
   pendingNewSessionProjectId?: string | null;
-  /** Opens a project with no sessions rather than leaving a dead row. */
+  /** Opens a project from an explicit workspace-surface action. */
   onOpenProject?: (project: HubProjectNode) => void;
   /** Open the inspector for a session without navigating to it. */
   onPeekSession?: (session: HubSessionNode) => void;

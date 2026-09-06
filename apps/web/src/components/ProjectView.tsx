@@ -1236,11 +1236,9 @@ export function ProjectView({
   const currentConversationQueueDisabled = currentConversationLoading
     || failedMessagesConversationId === activeConversationId;
 
-  // The discovery question form lives in the right-hand Questions tab. We
-  // derive it from the latest assistant message: if that message embeds a
-  // <question-form> block, the panel renders it. The form is interactive
-  // only while it's the most recent turn and the user hasn't answered yet
-  // (an answer arrives as a following "[form answers …]" user message).
+  // The discovery question form lives in the right-hand Questions tab. Keep
+  // the newest completed form available after its answer and follow-up turn so
+  // the panel can show the accepted answers in its locked state.
   const lastAssistantIndex = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
       if (messages[i]?.role === 'assistant') return i;
@@ -1255,11 +1253,11 @@ export function ProjectView({
     currentConversationStreaming && hasUnterminatedQuestionForm(lastAssistantContent);
   const questionFormOccurrence = useMemo(
     () => questionsGenerating ? null : findLatestQuestionFormOccurrence(messages),
+    [messages, questionsGenerating],
+  );
   const questionForm = questionFormOccurrence?.form ?? null;
   const questionFormAssistantIndex = questionFormOccurrence?.messageIndex ?? -1;
   const questionFormMessageId = questionFormOccurrence?.messageId ?? null;
-    [messages, questionsGenerating],
-  );
   const receiptAssumptions = useMemo(
     () => parseBriefReceipt(lastAssistantContent),
     [lastAssistantContent],
@@ -4811,7 +4809,7 @@ export function ProjectView({
         );
       });
     },
-    [project.id, activeConversationId, onProjectsRefresh],
+    [project.id, conversations, activeConversationId, onProjectsRefresh, openTabsState.active],
   );
 
   const handleRenameConversation = useCallback(

@@ -1341,10 +1341,17 @@ describe('FileWorkspace Questions tab', () => {
         active: 'root-design-reference.png',
       },
       onTabsStateChange: vi.fn(),
-      questionForm: discoveryForm,
-      focusQuestionsRequest: { nonce: 1 },
     };
     const { rerender } = render(<FileWorkspace {...baseProps} />);
+
+    rerender(
+      <FileWorkspace
+        {...baseProps}
+        questionForm={discoveryForm}
+        questionFormKey="conversation-1:assistant-form"
+        questionFormSubmittedAnswers={{ platform: 'Mobile' }}
+      />,
+    );
 
     await waitFor(() => {
       expect(
@@ -1352,31 +1359,6 @@ describe('FileWorkspace Questions tab', () => {
           .getAttribute('aria-selected'),
       ).toBe('true');
     });
-
-    rerender(
-      <FileWorkspace
-        {...baseProps}
-        questionFormSubmittedAnswers={{ platform: 'Mobile' }}
-      />,
-    );
-
-    await waitFor(() => {
-      expect(screen.queryByText('Quick brief')).toBeNull();
-    });
-    expect(screen.getByTestId('questions-tab')).toBeTruthy();
-
-    fireEvent.click(screen.getByTestId('questions-tab'));
-    expect(screen.getByText('Quick brief')).toBeTruthy();
-    expect(screen.getByText('Mobile')).toBeTruthy();
-  });
-});
-
-describe('projectSplitClassName', () => {
-  it('marks the project split as focused so the chat pane can collapse globally', () => {
-    expect(projectSplitClassName(false)).toBe('split');
-    expect(projectSplitClassName(true)).toBe('split split-focus');
-  });
-
   });
 
   it('selects a submitted Questions preview when persisted messages rehydrate', async () => {
@@ -1390,6 +1372,37 @@ describe('projectSplitClassName', () => {
       onTabsStateChange: vi.fn(),
     };
     const { rerender } = render(<FileWorkspace {...baseProps} />);
+
+    expect(screen.queryByTestId('questions-panel')).toBeNull();
+
+    // Model reload hydration: the workspace mounts with its persisted Design
+    // Files selection before the message request restores the answered form.
+    // No focus request is emitted for an answered form.
+    rerender(
+      <FileWorkspace
+        {...baseProps}
+        questionForm={discoveryForm}
+        questionFormKey="conversation-1:assistant-form"
+        questionFormSubmittedAnswers={{ platform: 'Mobile' }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('questions-panel')).toBeTruthy();
+    });
+    expect(screen.getByText('answered')).toBeTruthy();
+    expect(screen.getByText('Quick brief')).toBeTruthy();
+    expect(screen.getByText('Mobile')).toBeTruthy();
+    expect((screen.getByRole('radio', { name: 'Mobile' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe('projectSplitClassName', () => {
+  it('marks the project split as focused so the chat pane can collapse globally', () => {
+    expect(projectSplitClassName(false)).toBe('split');
+    expect(projectSplitClassName(true)).toBe('split split-focus');
+  });
+
   it('uses CSS variables for split widths so pointer resize can update layout without rerendering workspace content', () => {
     expect(projectSplitStyle(false, 512, 'minmax(420px, 1fr)')).toEqual({
       '--project-chat-panel-width': '512px',

@@ -505,7 +505,6 @@ function AppInner() {
       // down an interactive surface.
       const preserved = current.filter(
         (project) =>
-          pendingLocalProjectIds.has(project.id) &&
           !visibleFetchedIds.has(project.id) &&
           !activeDeletedProjectIds.has(project.id),
       );
@@ -1609,7 +1608,6 @@ function AppInner() {
   useEffect(() => {
     if (route.kind !== 'project') return;
     if (activeProject) return;
-    if (!projects.length && !daemonLive) return;
     if (projects.some((p) => p.id === route.projectId)) return;
     let cancelled = false;
     (async () => {
@@ -1623,9 +1621,9 @@ function AppInner() {
           }
           return curr.map((candidate) => (candidate.id === project.id ? project : candidate));
         });
-      if (projectsLoading) return;
         return;
       }
+      if (projectsLoading) return;
       const request = beginProjectListRequest();
       const list = await listProjects();
       if (cancelled) return;
@@ -1951,6 +1949,8 @@ function AppInner() {
         onProjectsRefresh={refreshProjects}
         onChangeDefaultDesignSystem={handleChangeDefaultDesignSystem}
         onDesignSystemsRefresh={refreshDesignSystems}
+      />
+    );
   } else if (route.kind === 'project') {
     // A valid project URL can arrive before the bootstrap project list (for
     // example immediately after an API-driven create). Do not mount EntryView
@@ -1965,8 +1965,6 @@ function AppInner() {
       >
         {t('entry.loadingWorkspace')}
       </div>
-    );
-      />
     );
   } else {
     appMain = (

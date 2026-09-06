@@ -520,6 +520,7 @@ describe('App project creation routing', () => {
       mockedSaveConfig.mock.calls.some(([saved]) => saved.agentId === 'codex'),
     ).toBe(false);
   });
+
   it('starts routed project hydration before daemon bootstrap completes', async () => {
     const daemonHealth = deferred<boolean>();
     mockedDaemonIsLive.mockReturnValue(daemonHealth.promise);
@@ -640,7 +641,6 @@ describe('App project creation routing', () => {
     expect(screen.getByTestId('project-title').textContent).toBe('Existing project');
     expect(window.location.pathname).toBe('/projects/project-existing');
   });
-
 
   it('keeps a newly created project open when the initial project list resolves stale', async () => {
     const bootstrapProjects = deferred<Project[]>();
