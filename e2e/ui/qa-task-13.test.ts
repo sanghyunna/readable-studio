@@ -491,10 +491,9 @@ test('filtered, busy, error, tooltip, toast/undo and palette are behavioral stat
   const primaryProjectRow = page.getByTestId(`hub-project-${primaryProject.id}`);
   await expect(primaryProjectRow).toBeVisible();
   await expect(primaryProjectRow).toHaveAttribute('aria-expanded', 'false');
-  // compactByDefault closes non-leading projects independently of the explicit
-  // collapsed map; the first activation materializes that state, the second opens it.
-  await primaryProjectRow.click();
-  await expect(primaryProjectRow).toHaveAttribute('aria-expanded', 'false');
+  // A compact-default closed project must open on its first real pointer
+  // activation; implicit default state and explicit toggled state are one
+  // interaction contract, not a hidden no-op click followed by a second click.
   await primaryProjectRow.click();
   await expect(primaryProjectRow).toHaveAttribute('aria-expanded', 'true');
   const hoverToggle = page.getByTestId('hub-rail-toggle'); const hoverStarted = Date.now(); await hoverToggle.hover(); const tooltip = page.locator('.readable-tooltip-layer, [role="tooltip"]'); await expect(tooltip).toBeVisible(); const hoverDelay = Date.now() - hoverStarted;
