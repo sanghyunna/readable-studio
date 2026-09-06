@@ -106,6 +106,30 @@ describe('LexicalComposerInput', () => {
     expect(ref.current?.getText()).toBe('hello @Deck Builder world');
   });
 
+  it('applies a controlled draft that arrives after the editor has mounted', async () => {
+    const { ref, rerender } = setup({ draft: '' });
+    await waitFor(() => expect(ref.current?.getText()).toBe(''));
+
+    await act(async () => {
+      await Promise.resolve();
+      rerender(
+        <LexicalComposerInput
+          ref={ref}
+          placeholder="Message"
+          draft="Draft a topic deck."
+          knownEntities={KNOWN}
+          onChange={() => undefined}
+          onTrigger={() => undefined}
+          onEnterSend={() => undefined}
+          onPopoverKey={() => false}
+          popoverOpen={false}
+        />,
+      );
+    });
+
+    await waitFor(() => expect(ref.current?.getText()).toBe('Draft a topic deck.'));
+  });
+
   it('insertMention adds an atomic pill carrying the real id', async () => {
     const { ref, getByTestId } = setup();
     await waitFor(() => expect(ref.current).not.toBeNull());

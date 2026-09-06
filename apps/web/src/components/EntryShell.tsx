@@ -606,6 +606,7 @@ export function EntryShell({
                 onBrowseRegistry={() => changeView('plugins')}
                 onOpenMcp={() => openIntegrationTab('mcp')}
                 onOpenNewProject={(tab) => openNewProject(tab)}
+                promptHandoff={homePromptHandoff}
                 skills={skills}
                 skillsLoading={skillsLoading}
                 onNewProject={() => openNewProject()}

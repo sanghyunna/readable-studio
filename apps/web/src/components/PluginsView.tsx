@@ -544,7 +544,7 @@ export function PluginsView({
           <PluginDetailsModal
             record={detailsRecord}
             onClose={() => setDetailsRecord(null)}
-            onUse={(record) => void handleUsePlugin(record, 'use')}
+            onUse={(record, action) => void handleUsePlugin(record, action)}
             isApplying={pendingApplyId === detailsRecord.id}
           />
         ) : null}

@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 
+import { useState } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InstalledPluginRecord, PluginSourceKind, TrustTier } from '@readable-studio/contracts';
+import { LexicalComposerInput } from '../../src/components/composer/LexicalComposerInput';
 import { PluginsView } from '../../src/components/PluginsView';
 import {
   addPluginMarketplace,
@@ -28,6 +30,7 @@ vi.mock('../../src/state/projects', () => ({
   installPluginSource: vi.fn(),
   listPluginMarketplaces: vi.fn(),
   listPlugins: vi.fn(),
+  resolvePluginQueryFallback: (query: unknown) => typeof query === 'string' ? query : '',
   refreshPluginMarketplace: vi.fn(),
   removePluginMarketplace: vi.fn(),
   setPluginMarketplaceTrust: vi.fn(),
@@ -362,6 +365,52 @@ describe('PluginsView', () => {
       id: 'query-plugin',
       title: 'Query Plugin',
     }), 'use-with-query');
+    expect(mockedApplyPlugin).not.toHaveBeenCalled();
+  });
+
+  it('preserves the detail modal query action through an async Lexical handoff', async () => {
+    const user = makePlugin('detail-query-plugin', 'github', 'restricted', 'Detail Query Plugin');
+    user.manifest.readable = {
+      ...user.manifest.readable,
+      useCase: { query: 'Draft a topic deck.' },
+    };
+    mockedListPlugins.mockResolvedValue([user]);
+    mockedListMarketplaces.mockResolvedValue([]);
+
+    function Harness() {
+      const [draft, setDraft] = useState('');
+      return (
+        <>
+          <PluginsView
+            onUsePlugin={(_record, action) => {
+              if (action !== 'use-with-query') return;
+              queueMicrotask(() => setDraft('Draft a topic deck.'));
+            }}
+          />
+          <LexicalComposerInput
+            placeholder="Message"
+            draft={draft}
+            knownEntities={[]}
+            onChange={() => undefined}
+            onTrigger={() => undefined}
+            onEnterSend={() => undefined}
+            onPopoverKey={() => false}
+            popoverOpen={false}
+            testId="async-query-composer"
+          />
+        </>
+      );
+    }
+
+    render(<Harness />);
+
+    fireEvent.click(await screen.findByTestId('plugins-home-details-detail-query-plugin'));
+    fireEvent.click(await screen.findByTestId('plugin-details-use-detail-query-plugin-menu'));
+    fireEvent.click(screen.getByTestId('plugin-details-use-with-query-detail-query-plugin'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('async-query-composer').textContent).toContain('Draft a topic deck.');
+    });
     expect(mockedApplyPlugin).not.toHaveBeenCalled();
   });
 
