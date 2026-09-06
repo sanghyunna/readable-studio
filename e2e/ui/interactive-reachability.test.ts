@@ -43,6 +43,122 @@ const SURFACE_MATRIX: readonly {
   { theme: 'dark', viewport: { width: 760, height: 720 } },
 ];
 
+test('[P0] reachability detector flags planted invisible and covered controls', async ({ page }) => {
+  // Keep this detector contract independent of product UI so unrelated layout
+  // changes cannot remove or accidentally repair either negative control.
+  await page.goto('about:blank');
+  await page.setContent(`
+    <style>
+      button { position: fixed; width: 120px; height: 40px; }
+      #negative-opacity-control { left: 40px; top: 40px; opacity: 0; }
+      #negative-covered-control { left: 40px; top: 120px; }
+      #negative-cover { position: fixed; left: 40px; top: 120px; z-index: 1; width: 120px; height: 40px; }
+    </style>
+    <button id="negative-opacity-control">Planted invisible control</button>
+    <button id="negative-covered-control">Planted covered control</button>
+    <div id="negative-cover">Pointer-blocking cover</div>
+  `);
+  await clearReachabilityHistory(page);
+
+  let auditError: unknown;
+  try {
+    await expectPageInteractivesReachable(page, { phase: 'immediate' });
+  } catch (error) {
+    auditError = error;
+  }
+
+  expect(auditError).toBeInstanceOf(Error);
+  if (!(auditError instanceof Error)) throw new Error('negative controls unexpectedly passed the reachability audit');
+  expect(auditError.message).toContain('Interactive reachability audit failed (2 failure(s), 2 controls audited)');
+  expect(auditError.message).toContain(
+    'button#negative-opacity-control "Planted invisible control": is semantically interactive with effective opacity 0 and retains a hit area',
+  );
+  expect(auditError.message).toContain(
+    'button#negative-covered-control "Planted covered control": centre hit test resolves outside the control',
+  );
+  expect(auditError.message).toContain('coveredBy=div#negative-cover');
+});
+
+test('[P0] required discovery choices are pointer-reachable and can advance the flow', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await applyStandardMocks(page);
+  await seedTheme(page, 'dark');
+  const projectId = `reachability-question-form-${Date.now()}`;
+  const { conversationId } = await createProjectViaApi(page, projectId, 'Required discovery reachability');
+  const now = Date.now();
+  const messages = [
+    { id: 'user', data: { role: 'user', content: '무언가 만들어줘', createdAt: now - 1_000 } },
+    {
+      id: 'assistant',
+      data: {
+        role: 'assistant',
+        runStatus: 'succeeded',
+        createdAt: now,
+        content: '<question-form id="task-type" title="작업 유형 선택">' + JSON.stringify({
+          description: '요청을 정확히 반영하려면 먼저 어떤 형태로 작업할지 고르겠습니다.',
+          questions: [{
+            id: 'taskType', label: '작업 유형', type: 'radio', required: true,
+            options: ['Prototype', 'Slide deck', 'Other'],
+          }],
+        }) + '</question-form>',
+      },
+    },
+  ] as const;
+  for (const message of messages) {
+    const response = await page.request.put(
+      `/api/projects/${projectId}/conversations/${conversationId}/messages/${message.id}-${projectId}`,
+      { data: message.data },
+    );
+    expect(response.ok(), await response.text()).toBeTruthy();
+  }
+
+  await page.route('**/api/runs', async (route) => {
+    await route.fulfill({ status: 202, contentType: 'application/json', body: '{"runId":"question-followup"}' });
+  });
+  await page.route('**/api/runs/question-followup/events', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'text/event-stream',
+      body: 'event: end\ndata: {"code":0,"status":"succeeded"}\n\n',
+    });
+  });
+  await gotoProject(page, projectId);
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  const form = page.locator('.question-form[data-reachability-required="true"]');
+  if (!await form.isVisible().catch(() => false)) {
+    await page.getByTestId('questions-banner').click();
+  }
+  await expect(form).toBeVisible();
+  const servedSignature = await page.evaluate(() => [...document.styleSheets].some((sheet) => {
+    try { return [...sheet.cssRules].some((rule) => rule.cssText.includes('.qf-chip')); }
+    catch { return false; }
+  }));
+  expect(servedSignature, 'served CSS must contain the question-choice signature').toBe(true);
+
+  await clearReachabilityHistory(page);
+  await expectPageInteractivesReachable(page, { phase: 'settled', testInfo });
+  for (const name of ['Prototype', 'Slide deck', 'Other']) {
+    const choice = form.getByRole('radio', { name });
+    await expect(choice).toBeEnabled();
+    const box = await choice.boundingBox();
+    expect(box, `${name} must have a painted hit area`).not.toBeNull();
+    if (!box) continue;
+    const hitBelongsToChoice = await page.evaluate(({ x, y, label }) => {
+      const hit = document.elementFromPoint(x, y);
+      const control = document.querySelector(`[aria-label="${label}"]`);
+      return Boolean(hit && control && (hit === control || control.contains(hit)));
+    }, { x: box.x + box.width / 2, y: box.y + box.height / 2, label: name });
+    expect(hitBelongsToChoice, `${name} centre must resolve to its own control`).toBe(true);
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await expect(choice).toHaveAttribute('aria-checked', 'true');
+  }
+  await expect(form.getByRole('radio', { name: 'Other' })).toHaveAttribute('aria-checked', 'true');
+  const continueButton = page.getByRole('button', { name: /Continue|계속/ });
+  await expect(continueButton).toBeEnabled();
+  await continueButton.click();
+  await expect(page.getByText('[form answers — task-type]', { exact: false })).toBeVisible();
+});
+
 for (const { theme, viewport } of SURFACE_MATRIX) {
   test(`[P0] discovered controls remain pointer-reachable on Home and overlays (${theme}, ${viewport.width}px)`, async ({ page }, testInfo) => {
     await page.setViewportSize(viewport);

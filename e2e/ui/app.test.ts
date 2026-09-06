@@ -879,8 +879,10 @@ async function runQuestionFormSubmitPersistenceFlow(
   const firstRunBody = (await firstRunRequestPromise).postDataJSON() as Record<string, unknown>;
   expectScenarioRunRequest(firstRunBody, entry);
 
-  const form = page.locator('.question-form').first();
+  const questionsPanel = page.getByTestId('questions-panel');
+  const form = questionsPanel.locator('.question-form').first();
   await expect(form).toBeVisible();
+  await expect(questionsPanel.getByRole('button', { name: 'Skip all' })).toBeVisible();
 
   const toneQuestion = form.locator('.qf-field', {
     has: page.getByText('Visual tone (pick up to two)'),
@@ -888,7 +890,7 @@ async function runQuestionFormSubmitPersistenceFlow(
   await toneQuestion.getByRole('button', { name: 'Editorial / magazine' }).click();
   await toneQuestion.getByRole('button', { name: 'Modern minimal' }).click();
 
-  await form.getByRole('button', { name: 'Send answers' }).click();
+  await questionsPanel.getByRole('button', { name: 'Continue' }).click();
 
   await expect(page.getByText('[form answers — discovery]', { exact: false })).toBeVisible();
   await expect(form.getByText('answered', { exact: true })).toBeVisible();
@@ -904,7 +906,8 @@ async function runQuestionFormSubmitPersistenceFlow(
   expect(formAnswerMessage).toBeTruthy();
 
   await page.reload();
-  const restoredForm = page.locator('.question-form').first();
+  const restoredQuestionsPanel = page.getByTestId('questions-panel');
+  const restoredForm = restoredQuestionsPanel.locator('.question-form').first();
   await expect(restoredForm).toBeVisible();
   await expect(restoredForm.getByText('answered', { exact: true })).toBeVisible();
   await expect(
@@ -912,7 +915,8 @@ async function runQuestionFormSubmitPersistenceFlow(
       .getByRole('button')
       .and(restoredForm.locator('[aria-pressed="true"]')),
   ).toHaveCount(2);
-  await expect(restoredForm.getByRole('button', { name: 'Send answers' })).toHaveCount(0);
+  await expect(restoredQuestionsPanel.getByRole('button', { name: 'Skip all' })).toHaveCount(0);
+  await expect(restoredQuestionsPanel.getByRole('button', { name: 'Continue' })).toBeDisabled();
 }
 
 async function runGenerationDoesNotCreateExtraFileFlow(
