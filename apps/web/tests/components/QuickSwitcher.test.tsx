@@ -128,6 +128,68 @@ describe('QuickSwitcher render', () => {
     expect(rowCount).toBe(3);
   });
 
+  it('renders each project file once when the same files are open as workspace tabs', () => {
+    const files = [
+      file({ name: 'a.png', kind: 'image', mime: 'image/png', mtime: 3 }),
+      file({ name: 'b.png', kind: 'image', mime: 'image/png', mtime: 2 }),
+      file({ name: 'c.png', kind: 'image', mime: 'image/png', mtime: 1 }),
+    ];
+    const markup = renderToStaticMarkup(
+      <QuickSwitcher
+        projectId="p1"
+        files={files}
+        workspaceContexts={[
+          { id: 'workspace:design-files', kind: 'design-files', label: 'Design Files', tabId: '__design_files__' },
+          ...files.map((entry) => ({
+            id: `file:${entry.name}`,
+            kind: 'file' as const,
+            label: entry.name,
+            tabId: entry.name,
+            path: entry.name,
+          })),
+        ]}
+        onOpenFile={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect((markup.match(/class="qs-row /g) ?? []).length).toBe(3);
+    for (const entry of files) {
+      expect(markup.match(new RegExp(`>${entry.name}<`, 'g'))).toHaveLength(1);
+    }
+  });
+
+  it('search returns the canonical file row instead of its open-tab representation', () => {
+    const onOpenFile = vi.fn();
+    const onOpenTab = vi.fn();
+    render(
+      <QuickSwitcher
+        projectId="p1"
+        files={[file({ name: 'beta-file.png', kind: 'image', mime: 'image/png' })]}
+        workspaceContexts={[
+          {
+            id: 'file:beta-file.png',
+            kind: 'file',
+            label: 'beta-file.png',
+            tabId: 'beta-file.png',
+            path: 'beta-file.png',
+          },
+        ]}
+        onOpenFile={onOpenFile}
+        onOpenTab={onOpenTab}
+        onClose={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'beta' } });
+    const options = screen.getAllByRole('option');
+    expect(options).toHaveLength(1);
+    expect(options[0]?.textContent).toContain('IMAGE');
+    fireEvent.click(options[0]!);
+    expect(onOpenFile).toHaveBeenCalledWith('beta-file.png');
+    expect(onOpenTab).not.toHaveBeenCalled();
+  });
+
   it('exposes the keyboard hints in the footer', () => {
     const markup = renderToStaticMarkup(
       <QuickSwitcher projectId="p1" files={[file({})]} onOpenFile={vi.fn()} onClose={vi.fn()} />,

@@ -46,7 +46,13 @@ export function QuickSwitcher({
 
   const matches = useMemo<QuickSwitcherResult[]>(() => {
     const q = query.trim().toLowerCase();
-    const searchableTabs = workspaceContexts.filter((item) => item.tabId);
+    const projectFileIdentities = new Set(
+      files.flatMap((file) => [file.name, file.path].filter((value): value is string => Boolean(value)))
+        .map(normalizeFileIdentity),
+    );
+    const searchableTabs = workspaceContexts.filter(
+      (item) => item.tabId && !workspaceContextRepresentsProjectFile(item, projectFileIdentities),
+    );
     if (q) {
       const tabResults: QuickSwitcherResult[] = searchableTabs
         .map((context) => ({ kind: 'tab' as const, context, score: scoreWorkspaceContextMatch(context, q) }))
@@ -77,9 +83,7 @@ export function QuickSwitcher({
       .sort((a, b) => b.mtime - a.mtime);
     const fileResults: QuickSwitcherResult[] = [...recentFiles, ...rest]
       .map((file) => ({ kind: 'file' as const, file, score: 0 }));
-    const tabResults: QuickSwitcherResult[] = searchableTabs
-      .map((context) => ({ kind: 'tab' as const, context, score: 0 }));
-    return [...tabResults, ...fileResults].slice(0, 50);
+    return fileResults.slice(0, 50);
   }, [files, query, projectId, workspaceContexts]);
 
   // Reset cursor when the result set changes shape.
@@ -244,6 +248,21 @@ export function scoreWorkspaceContextMatch(item: WorkspaceContextItem, q: string
   if (label.includes(q)) return 280;
   if (full.includes(q)) return 130;
   return 0;
+}
+
+function workspaceContextRepresentsProjectFile(
+  item: WorkspaceContextItem,
+  projectFileIdentities: ReadonlySet<string>,
+): boolean {
+  if (item.kind !== 'file') return false;
+  const candidates = [item.path, item.tabId, item.id.startsWith('file:') ? item.id.slice(5) : undefined];
+  return candidates.some(
+    (candidate) => candidate != null && projectFileIdentities.has(normalizeFileIdentity(candidate)),
+  );
+}
+
+function normalizeFileIdentity(value: string): string {
+  return value.replace(/\\/g, '/');
 }
 
 function baseName(name: string): string {
