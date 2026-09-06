@@ -17,12 +17,11 @@
    The condition is matched as a descendant so it holds at either depth and
    there is exactly one place stating it. `.workspace-shell__body` is the only
    surface host in the shell, so the looser match cannot select anything else. */
-/* This drops the TABS chrome row (hidden outright just below), but the shell's
-   first row also carries the frameless window's title strip, which every
-   surface keeps. Collapsing to a single track placed that strip and the body in
-   the same cell: the body started at y=0 underneath a drag region painted at
-   z-index 120, so the sticky topbar pinned itself under the drag surface and
-   handed it every click. Keep reserving the band and only give the rest away. */
+/* The body spans the title-strip row so the project rail's SURFACE begins at
+   the real window edge. Interactive rail content clears the drag strip inside
+   the rail; non-rail content clears it in its own surface rule. Reserving the
+   row outside the body shifted the complete rail down and produced the visible
+   gap reported in the collapsed state. */
 .workspace-shell:has(> .workspace-shell__body .entry-shell--no-header) {
   grid-template-rows: var(--app-window-chrome-height, 36px) minmax(0, 1fr);
 }
@@ -84,10 +83,8 @@
    track is 0-wide so the rail is clipped away, expanded it occupies the rail
    width. */
 .entry-nav-rail {
-  /* Fill the grid track (0 collapsed → rail width expanded) rather than a
-     fixed width, so a 0-wide track truly hides the rail instead of letting a
-     56px rail overflow it. The inner groups keep the icon column's width.
-     Border lives on the `::after` hairline below (from main), not on the box. */
+  /* Fill the animated grid track at every frame. The surface begins at y=0;
+     only its interactive content clears the frameless drag strip. */
   width: 100%;
   min-width: 0;
   border-right: 0;
@@ -516,6 +513,9 @@
   background: var(--bg);
   padding: 0;
   /* Used by descendants (e.g. the plugins-home Scenario row) to
+     pin themselves directly below the sticky topbar. Mirrors the
+     topbar's vertical footprint (12px top + 32px chip). */
+  --entry-topbar-h: 44px;
   /* Keep scroll-into-view operations in the actual content hit region. Without
      this, browser automation and keyboard focus can align a card beneath the
      sticky topbar even though the card is nominally inside the viewport. */
@@ -529,9 +529,6 @@
    deliberately paints behind the strip and clears its controls internally. */
 .entry-shell--no-header .entry-main--scroll:not(:has(.entry-main__inner--home)) {
   margin-block-start: var(--app-window-chrome-height, 36px);
-     pin themselves directly below the sticky topbar. Mirrors the
-     topbar's vertical footprint (12px top + 32px chip). */
-  --entry-topbar-h: 44px;
 }
 .entry-main__inner {
   width: 100%;

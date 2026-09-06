@@ -1123,16 +1123,6 @@
   box-shadow: var(--shadow-lg);
   z-index: 1700;
 }
-/* The panel used to inherit these from its ancestry inside the composer
-   footer; portaled out, the host surface is mirrored onto the node instead. */
-.inline-switcher__popover--home-hero .inline-switcher__agent-grid {
-  grid-template-columns: 1fr;
-}
-/* Placement is measured, so the layer must not animate its box — a transition
-   on offsets would lag the anchor during resize/scroll re-placement. Only the
-   entrance fade is animated, and it is dropped for reduced motion. */
-@media (prefers-reduced-motion: no-preference) {
-  .inline-switcher__popover--layer {
 .inline-switcher__popover--model {
   width: 168px;
   padding: 8px;
@@ -1166,6 +1156,16 @@
   20%, 60% { transform: translateX(-3px); }
   40%, 80% { transform: translateX(3px); }
 }
+/* The panel used to inherit these from its ancestry inside the composer
+   footer; portaled out, the host surface is mirrored onto the node instead. */
+.inline-switcher__popover--home-hero .inline-switcher__agent-grid {
+  grid-template-columns: 1fr;
+}
+/* Placement is measured, so the layer must not animate its box — a transition
+   on offsets would lag the anchor during resize/scroll re-placement. Only the
+   entrance fade is animated, and it is dropped for reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .inline-switcher__popover--layer {
     animation: home-hero-switcher-layer-in 120ms var(--ease-out) both;
   }
 }

@@ -174,9 +174,12 @@ describe('interactive reachability contracts', () => {
         node.type === 'atrule' && node.name === 'media' && node.params === '(max-width: 900px)',
     );
     expect(narrow, 'the test must exercise the narrow breakpoint that collapsed Home').toBeDefined();
+    if (!narrow) throw new Error('narrow Home breakpoint was not found');
+    const narrowNodes = narrow.nodes;
+    if (!narrowNodes) throw new Error('narrow Home breakpoint has no CSS rules');
 
     const tracks = new Map<string, Declaration>();
-    narrow!.walkRules((rule) => {
+    narrow.walkRules((rule) => {
       const declaration = rule.nodes.find(
         (node): node is Declaration => node.type === 'decl' && node.prop === 'grid-template-columns',
       );
@@ -194,18 +197,21 @@ describe('interactive reachability contracts', () => {
       value: 'var(--entry-rail-strip-width, 44px) minmax(0, 1fr)',
       important: true,
     });
-    expect(generic!.value).not.toBe('minmax(0, 1fr)');
+    expect(home).toMatchObject({ value: 'minmax(0, 1fr)', important: true });
+    if (!generic || !home) throw new Error('narrow Home track declarations were not found');
+    expect(generic.value).not.toBe('minmax(0, 1fr)');
 
     // Home owns a ProjectRail inside HubHome, so its `.entry` has one child and
     // must have one track. This later, equally-important rule is the effective
     // narrow declaration; the main/composer can consume the viewport instead
     // of being auto-placed into the synthetic 44px first track.
-    expect(home).toMatchObject({ value: 'minmax(0, 1fr)', important: true });
-    expect(narrow!.nodes.indexOf(home!.parent!)).toBeGreaterThan(
-      narrow!.nodes.indexOf(generic!.parent!),
+    const genericRule = generic.parent;
+    const homeRule = home.parent;
+    if (genericRule?.type !== 'rule' || homeRule?.type !== 'rule') {
+      throw new Error('narrow Home track declarations must belong to CSS rules');
+    }
+    expect(narrowNodes.indexOf(homeRule)).toBeGreaterThan(
+      narrowNodes.indexOf(genericRule),
     );
   });
 });
-    if (!narrow) throw new Error('narrow Home breakpoint was not found');
-    const narrowNodes = narrow.nodes;
-    if (!narrowNodes) throw new Error('narrow Home breakpoint has no CSS rules');

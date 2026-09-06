@@ -83,6 +83,7 @@
   inline-size: auto;
   block-size: 100%;
   margin-block-end: 0;
+  transition: margin-inline-start var(--dur-enter) var(--ease-out);
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   border-end-start-radius: 0;
   border-end-end-radius: 0;
@@ -628,6 +629,11 @@
   align-items: center;
   gap: 1px;
   flex: none;
+  /* Interaction-layer convention: wrappers around native controls remain in
+     normal hit testing. Visibility is owned by the buttons below; overlap with
+     body-portalled menus is resolved by the menu's higher stacking context.
+     Making this wrapper inert leaves the row as the initial pointer target and
+     can deadlock the hover state that opts its child button back in. */
 }
 
 .hub-row__action {
@@ -1242,7 +1248,10 @@
 
 .hub-menu {
   position: fixed;
-  z-index: 50;
+  /* HubMenu is portalled to body, outside `.hub__nav`'s z=60 stacking
+     context. Keep the entire menu above the rail so row/action layers cannot
+     win hit-testing over controls that the menu visibly paints. */
+  z-index: 70;
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -1478,8 +1487,11 @@
 }
 
 .hub--rail-collapsed .hub__nav {
-  width: var(--hub-rail-collapsed);
+  /* Auto stretch follows the interpolating grid track while this inset reaches
+     zero with the same exit timing. An explicit 44px width here made the
+     visible slab snap before its parent track finished. */
   margin: 0;
+  transition-duration: var(--dur-exit);
   border-radius: 0;
 }
 
@@ -1711,10 +1723,6 @@
 
   .hub__live {
     margin-bottom: 26px;
-  }
-
-  .hub__nav-head {
-    padding: 10px 12px 6px;
   }
 
   .hub__nav-actions {

@@ -1316,8 +1316,8 @@
    entry-layout.css, which carry a border and the 32px height. */
 .composer-execution-switcher {
   display: inline-flex;
-  align-items: center;
   flex: 0 0 auto;
+  align-items: center;
   justify-content: flex-end;
   gap: 2px;
   width: auto;
@@ -1393,26 +1393,25 @@
 }
 .app .composer-row .composer-execution-switcher .inline-switcher__chip--model,
 .chat-composer-fixed-layer .composer-row .composer-execution-switcher .inline-switcher__chip--model {
-  width: 100%;
+  width: auto;
+  min-width: 0;
   height: 28px;
-  padding: 0 2px 0 4px;
-  gap: 5px;
+  padding: 0;
+  gap: 3px;
   border: 0;
   border-radius: 0;
   background: transparent;
   box-shadow: none;
   text-align: start;
-}
-.composer-execution-switcher .inline-switcher__chip--model .inline-switcher__chip-text {
   justify-content: flex-start;
   interpolate-size: allow-keywords;
   transition: width 160ms var(--ease-out);
+}
+.composer-execution-switcher .inline-switcher__chip--model .inline-switcher__chip-text {
   flex: 0 0 auto;
   min-width: 0;
   max-width: none;
 }
-.composer-execution-switcher .inline-switcher__chip--model .inline-switcher__chip-chevron {
-  display: block;
 .app .composer-row .composer-execution-switcher .inline-switcher__chip--model[aria-expanded='true'],
 .chat-composer-fixed-layer .composer-row .composer-execution-switcher .inline-switcher__chip--model[aria-expanded='true'] {
   width: 168px;
@@ -1423,6 +1422,8 @@
     transition: none;
   }
 }
+.composer-execution-switcher .inline-switcher__chip--model .inline-switcher__chip-chevron {
+  display: block;
   flex: 0 0 auto;
 }
 .composer-execution-switcher .inline-switcher__chip-model {
