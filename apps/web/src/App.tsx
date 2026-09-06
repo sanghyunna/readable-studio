@@ -382,6 +382,12 @@ function AppInner() {
   // with a freshly picked first-available agent.
   const [daemonConfigLoaded, setDaemonConfigLoaded] = useState(false);
   const route = useRoute();
+  // ProjectView unmounts the entry shell, so remember the entry destination at
+  // the App boundary. The workspace back control can then return to the
+  // surface that opened the project (/projects, Home, etc.) instead of always
+  // discarding that route identity and landing on an unrelated empty Hub tab.
+  const lastEntryViewRef = useRef(route.kind === 'home' ? route.view : 'home');
+  if (route.kind === 'home') lastEntryViewRef.current = route.view;
   const analytics = useAnalytics();
 
   const beginAgentStreamRequest = useCallback(() => {
@@ -490,6 +496,13 @@ function AppInner() {
         ? new Set(visibleList.map((project) => project.id))
         : fetchedIds;
     setProjects((current) => {
+      // Project-list reads are refresh snapshots, not teardown instructions.
+      // A run-completion refresh can race the daemon's project index update,
+      // and dropping an omitted row here unmounts either the Hub target under
+      // the pointer or the routed ProjectView. Explicit local deletion is the
+      // only operation in this client that may remove an existing project;
+      // merge refresh results monotonically so transient omissions cannot tear
+      // down an interactive surface.
       const preserved = current.filter(
         (project) =>
           pendingLocalProjectIds.has(project.id) &&
@@ -1474,7 +1487,7 @@ function AppInner() {
   }, []);
 
   const handleBack = useCallback(() => {
-    navigate({ kind: 'home', view: 'home' });
+    navigate({ kind: 'home', view: lastEntryViewRef.current });
   }, []);
 
   const handleClearPendingPrompt = useCallback(() => {
@@ -1587,8 +1600,12 @@ function AppInner() {
       : null;
 
   // Deep-linked route to a project we don't have yet (e.g. after a refresh
-  // that finishes after the project list comes back). Fetch it in the
-  // background so the view can render rather than bouncing to home.
+  // that finishes after the project list comes back). Fetch the routed
+  // project immediately: waiting for the general daemon bootstrap puts this
+  // user-visible read behind every startup request and can leave a valid
+  // workspace URL displaying its loading shell indefinitely. Only the
+  // not-found fallback waits for bootstrap, so a temporarily unavailable
+  // daemon cannot bounce a valid deep link to Home.
   useEffect(() => {
     if (route.kind !== 'project') return;
     if (activeProject) return;
@@ -1606,6 +1623,7 @@ function AppInner() {
           }
           return curr.map((candidate) => (candidate.id === project.id ? project : candidate));
         });
+      if (projectsLoading) return;
         return;
       }
       const request = beginProjectListRequest();
@@ -1626,7 +1644,7 @@ function AppInner() {
     return () => {
       cancelled = true;
     };
-  }, [route, activeProject, projects, daemonLive, beginProjectListRequest, reconcileFetchedProjects]);
+  }, [route, activeProject, projects, projectsLoading, beginProjectListRequest, reconcileFetchedProjects]);
 
   const openSettings = useCallback((
     section: SettingsSection = 'execution',
@@ -1807,8 +1825,8 @@ function AppInner() {
       ? 'marketplace'
       : route.kind === 'design-system-create' || route.kind === 'design-system-detail'
         ? 'design-system'
-        : activeProject
-          ? `project:${activeProject.id}`
+        : route.kind === 'project'
+          ? `project:${route.projectId}`
           : 'hub';
   // First paint of the session must not animate (the app shell already fades
   // in); afterwards the direction is derived from the surface we came from.
@@ -1933,6 +1951,21 @@ function AppInner() {
         onProjectsRefresh={refreshProjects}
         onChangeDefaultDesignSystem={handleChangeDefaultDesignSystem}
         onDesignSystemsRefresh={refreshDesignSystems}
+  } else if (route.kind === 'project') {
+    // A valid project URL can arrive before the bootstrap project list (for
+    // example immediately after an API-driven create). Do not mount EntryView
+    // during that gap: its Hub starts per-project session reads and can occupy
+    // the same browser request pool as the detail fetch that resolves this
+    // route. Keep the destination surface mounted while the route hydrates.
+    appMain = (
+      <div
+        className="readable-loading-shell"
+        role="status"
+        data-testid="project-route-loading"
+      >
+        {t('entry.loadingWorkspace')}
+      </div>
+    );
       />
     );
   } else {

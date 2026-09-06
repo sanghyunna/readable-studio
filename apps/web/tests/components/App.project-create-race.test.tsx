@@ -521,6 +521,127 @@ describe('App project creation routing', () => {
       mockedSaveConfig.mock.calls.some(([saved]) => saved.agentId === 'codex'),
     ).toBe(false);
   });
+  it('starts routed project hydration before daemon bootstrap completes', async () => {
+    const daemonHealth = deferred<boolean>();
+    mockedDaemonIsLive.mockReturnValue(daemonHealth.promise);
+    mockedGetProject.mockResolvedValue(freshProject);
+    mockedListProjects.mockResolvedValue([]);
+    window.history.replaceState(
+      null,
+      '',
+      '/projects/project-new/conversations/conv-new',
+    );
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(mockedGetProject).toHaveBeenCalledWith('project-new');
+      expect(screen.getByTestId('project-view')).toBeTruthy();
+    });
+    expect(screen.queryByRole('button', { name: 'Create project' })).toBeNull();
+
+    await act(async () => {
+      daemonHealth.resolve(true);
+      await daemonHealth.promise;
+    });
+  });
+
+  it('keeps the Hub unmounted while a newly created project URL hydrates', async () => {
+    const bootstrapProjects = deferred<Project[]>();
+    const routedProject = deferred<Project | null>();
+    mockedListProjects.mockReturnValue(bootstrapProjects.promise);
+    mockedGetProject.mockReturnValue(routedProject.promise);
+    window.history.replaceState(
+      null,
+      '',
+      '/projects/project-new/conversations/conv-new',
+    );
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(mockedGetProject).toHaveBeenCalledWith('project-new');
+    });
+    expect(screen.queryByRole('button', { name: 'Create project' })).toBeNull();
+    expect(screen.getByTestId('project-route-loading')).toBeTruthy();
+    expect(document.querySelector('[data-surface="project:project-new"]')).toBeTruthy();
+    expect(document.querySelector('[data-surface="hub"]')).toBeNull();
+
+    await act(async () => {
+      routedProject.resolve(freshProject);
+      await routedProject.promise;
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('project-view')).toBeTruthy();
+    });
+    expect(screen.queryByRole('button', { name: 'Create project' })).toBeNull();
+    expect(window.location.pathname).toBe(
+      '/projects/project-new/conversations/conv-new',
+    );
+  });
+
+  it('returns from an opened project to the Projects surface', async () => {
+    window.history.replaceState(null, '', '/projects');
+    mockedListProjects.mockResolvedValue([existingProject]);
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Existing project' }));
+    await screen.findByTestId('project-view');
+    expect(window.location.pathname).toBe('/projects/project-existing');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back to projects' }));
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/projects');
+      expect(screen.getByTestId('entry-project-project-existing')).toBeTruthy();
+    });
+  });
+
+  it('restores Hub content when browser history returns from a project', async () => {
+    mockedListProjects.mockResolvedValue([existingProject]);
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Existing project' }));
+    await screen.findByTestId('project-view');
+
+    await act(async () => {
+      const popped = new Promise<void>((resolve) => {
+        window.addEventListener('popstate', () => resolve(), { once: true });
+      });
+      window.history.back();
+      await popped;
+    });
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/');
+      expect(screen.getByTestId('entry-home-surface')).toBeTruthy();
+      expect(screen.getByTestId('entry-project-project-existing')).toBeTruthy();
+    });
+  });
+
+  it('keeps an existing project surface mounted across a transient refresh omission', async () => {
+    const refreshProjects = deferred<Project[]>();
+    mockedListProjects
+      .mockResolvedValueOnce([existingProject])
+      .mockReturnValueOnce(refreshProjects.promise)
+      .mockResolvedValue([]);
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Existing project' }));
+    const projectView = await screen.findByTestId('project-view');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh projects' }));
+    await act(async () => {
+      refreshProjects.resolve([]);
+      await refreshProjects.promise;
+    });
+
+    expect(screen.getByTestId('project-view')).toBe(projectView);
+    expect(screen.getByTestId('project-title').textContent).toBe('Existing project');
+    expect(window.location.pathname).toBe('/projects/project-existing');
+  });
+
 
   it('keeps a newly created project open when the initial project list resolves stale', async () => {
     const bootstrapProjects = deferred<Project[]>();
