@@ -703,11 +703,13 @@
   margin-top: 4px;
   min-height: 20px;
   opacity: 0;
+  pointer-events: none;
   transition: opacity 140ms var(--ease-out);
 }
 .msg.user .user-text-wrap:hover .user-actions,
 .msg.user .user-text-wrap:focus-within .user-actions {
   opacity: 1;
+  pointer-events: auto;
 }
 .msg.user .user-actions-time {
   font-size: 11px;
