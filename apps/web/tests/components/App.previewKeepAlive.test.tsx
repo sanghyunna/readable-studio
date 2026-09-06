@@ -141,10 +141,6 @@ vi.mock('../../src/components/pet/pets', () => ({
   migrateCustomPetAtlas: vi.fn().mockResolvedValue(null),
 }));
 
-vi.mock('../../src/components/WorkspaceTabsBar', () => ({
-  WorkspaceTabsBar: () => null,
-}));
-
 vi.mock('../../src/components/MemoryToast', () => ({
   MemoryToast: () => null,
 }));

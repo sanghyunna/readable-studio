@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 // Opening a session from the hub must not create a second tab for a project
-// that already has one: WorkspaceTabsBar's route sync already reuses the
+// that already has one: the host workspace route sync already reuses the
 // existing project tab, so an unconditional append would double it.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';

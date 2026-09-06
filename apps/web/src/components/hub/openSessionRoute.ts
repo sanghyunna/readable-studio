@@ -1,11 +1,11 @@
 // Hub -> workspace handoff.
 //
 // Opening a session from the entry hub reuses the existing project route and
-// workspace-tab contract exactly: `navigate` drives the URL, and the tab bar
-// listens for `OPEN_WORKSPACE_TAB_EVENT`. Nothing about ProjectView changes.
+// host workspace-tab event contract: `navigate` drives the URL while an
+// embedding host may mirror the route into its own application-level tabs.
 
 import { navigate } from '../../router';
-import { openWorkspaceTab } from '../WorkspaceTabsBar';
+import { openWorkspaceTab } from '../workspaceTabEvents';
 
 function openProjectWorkspace(projectId: string, conversationId: string | null): void {
   const route = {

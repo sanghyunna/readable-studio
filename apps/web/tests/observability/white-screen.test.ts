@@ -47,8 +47,7 @@ vi.mock('../../src/components/ProjectView', () => ({
   ProjectView: () => createElement('main', null, 'Project view'),
 }));
 
-vi.mock('../../src/components/WorkspaceTabsBar', () => ({
-  WorkspaceTabsBar: () => null,
+vi.mock('../../src/components/workspaceTabEvents', () => ({
   openWorkspaceTab: () => {},
 }));
 

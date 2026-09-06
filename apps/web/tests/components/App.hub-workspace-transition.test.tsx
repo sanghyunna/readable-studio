@@ -89,13 +89,6 @@ vi.mock('../../src/components/pet/pets', () => ({
   migrateCustomPetAtlas: vi.fn().mockResolvedValue(null),
 }));
 
-vi.mock('../../src/components/WorkspaceTabsBar', async () => {
-  const actual = await vi.importActual<typeof import('../../src/components/WorkspaceTabsBar')>(
-    '../../src/components/WorkspaceTabsBar',
-  );
-  return { ...actual, WorkspaceTabsBar: () => null };
-});
-
 vi.mock('../../src/components/MemoryToast', () => ({
   MemoryToast: () => null,
 }));

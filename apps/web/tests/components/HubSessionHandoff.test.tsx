@@ -25,7 +25,7 @@ import { openProjectRoute, openSessionRoute } from '../../src/components/hub/ope
 import { HubHome } from '../../src/components/hub/HubHome';
 import type { Project } from '../../src/types';
 
-// WorkspaceTabsBar keeps this constant module-private; the hub must keep
+// workspaceTabEvents keeps this constant module-private; the hub must keep
 // speaking the same wire name.
 const OPEN_WORKSPACE_TAB_EVENT = 'readable-studio:workspace-tabs:open';
 

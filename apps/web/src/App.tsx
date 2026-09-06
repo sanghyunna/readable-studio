@@ -24,7 +24,7 @@ import { PetOverlay, type PetTaskCenter } from './components/pet/PetOverlay';
 import { buildPetTaskCenter } from './components/pet/taskCenter';
 import { migrateCustomPetAtlas } from './components/pet/pets';
 import { TooltipLayer } from './components/TooltipLayer';
-import { openWorkspaceTab } from './components/WorkspaceTabsBar';
+import { openWorkspaceTab } from './components/workspaceTabEvents';
 import { WindowControls } from './components/WindowControls';
 import { EntryNavRail } from './components/EntryNavRail';
 import workspaceTransition from './components/WorkspaceTransition.module.css';
