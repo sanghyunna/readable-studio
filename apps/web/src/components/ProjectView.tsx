@@ -4760,21 +4760,55 @@ export function ProjectView({
       // it here the `Needs input` badge survives the deletion until
       // the next manual reload.
       onProjectsRefresh();
-      setConversations((curr) => {
-        const next = curr.filter((c) => c.id !== id);
-        if (next.length === 0) {
-          // Re-seed so the project always has at least one conversation
-          // to write into.
-          void createConversation(project.id).then((fresh) => {
-            if (fresh) {
-              setConversations([fresh]);
-              setActiveConversationId(fresh.id);
-            }
-          });
-        } else if (id === activeConversationId) {
-          setActiveConversationId(next[0]!.id);
-        }
-        return next;
+      const remaining = conversations.filter((conversation) => conversation.id !== id);
+      setConversations((current) => current.filter((conversation) => conversation.id !== id));
+      if (id !== activeConversationId) return;
+
+      // A successful delete is authoritative, unlike a transiently incomplete
+      // refresh. Tear down the deleted surface before selecting a fallback so
+      // its messages cannot remain rendered while route synchronization settles.
+      setMessages([]);
+      setPreviewComments([]);
+      setAttachedComments([]);
+      setArtifact(null);
+      setStreaming(false);
+      streamingConversationIdRef.current = null;
+      setStreamingConversationId(null);
+      setMessagesConversationId(null);
+      setFailedMessagesConversationId(null);
+      setConversationLoadError(null);
+      messagesConversationIdRef.current = null;
+
+      const fallback = remaining[0];
+      if (fallback) {
+        setActiveConversationId(fallback.id);
+        navigate(
+          {
+            kind: 'project',
+            projectId: project.id,
+            conversationId: fallback.id,
+            fileName: openTabsState.active ?? null,
+          },
+          { replace: true },
+        );
+        return;
+      }
+
+      // Re-seed so the project always has at least one conversation to write into.
+      setActiveConversationId(null);
+      void createConversation(project.id).then((fresh) => {
+        if (!fresh) return;
+        setConversations([fresh]);
+        setActiveConversationId(fresh.id);
+        navigate(
+          {
+            kind: 'project',
+            projectId: project.id,
+            conversationId: fresh.id,
+            fileName: openTabsState.active ?? null,
+          },
+          { replace: true },
+        );
       });
     },
     [project.id, activeConversationId, onProjectsRefresh],

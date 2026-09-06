@@ -23,6 +23,7 @@ const patchConversation = vi.fn();
 const patchProject = vi.fn();
 const saveMessage = vi.fn();
 const saveTabs = vi.fn();
+const navigate = vi.fn();
 
 // Capture the props ChatPane receives so the test can drive
 // `onDeleteConversation` directly — ChatPane itself is mocked to a
@@ -33,6 +34,7 @@ const chatPaneProps: {
   onDeleteConversation?: (id: string) => Promise<void> | void;
   activeConversationId?: string | null;
   conversations?: Array<{ id: string; title?: string | null }>;
+  messages?: Array<{ id: string; content?: string }>;
 } = {};
 
 vi.mock('../../src/i18n', () => ({
@@ -69,7 +71,7 @@ vi.mock('../../src/providers/registry', () => ({
 }));
 
 vi.mock('../../src/router', () => ({
-  navigate: vi.fn(),
+  navigate: (...args: unknown[]) => navigate(...args),
 }));
 
 vi.mock('../../src/state/projects', () => ({
@@ -98,10 +100,12 @@ vi.mock('../../src/components/ChatPane', () => ({
     onDeleteConversation?: (id: string) => Promise<void> | void;
     activeConversationId?: string | null;
     conversations?: Array<{ id: string; title?: string | null }>;
+    messages?: Array<{ id: string; content?: string }>;
   }) => {
     chatPaneProps.onDeleteConversation = props.onDeleteConversation;
     chatPaneProps.activeConversationId = props.activeConversationId;
     chatPaneProps.conversations = props.conversations;
+    chatPaneProps.messages = props.messages;
     return null;
   },
 }));
@@ -114,11 +118,12 @@ vi.mock('../../src/components/Loading', () => ({
   CenteredLoader: () => null,
 }));
 
-function renderProjectView(onProjectsRefresh: () => void) {
+function renderProjectView(onProjectsRefresh: () => void, routeConversationId: string | null = null) {
   return render(
     <ProjectView
       project={{ id: 'project-1', name: 'Project', skillId: null, designSystemId: null } as never}
       routeFileName={null}
+      routeConversationId={routeConversationId}
       config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
       agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
       skills={[]}
@@ -150,6 +155,7 @@ describe('ProjectView conversation delete', () => {
     chatPaneProps.onDeleteConversation = undefined;
     chatPaneProps.activeConversationId = undefined;
     chatPaneProps.conversations = undefined;
+    chatPaneProps.messages = undefined;
   });
 
   // Issue #1202: the home `Needs input` badge is rendered from the
@@ -257,6 +263,49 @@ describe('ProjectView conversation delete', () => {
 
     await waitFor(() => expect(chatPaneProps.activeConversationId).toBe('conv-2'));
     expect(chatPaneProps.conversations?.map((conversation) => conversation.id)).toEqual(['conv-2']);
+  });
+
+  it('clears the deleted active conversation and renders the routed fallback messages', async () => {
+    listConversations.mockResolvedValue([
+      { id: 'conv-1', title: 'Conversation 1' },
+      { id: 'conv-2', title: 'Conversation 2' },
+    ]);
+    listMessages.mockImplementation((_projectId: string, conversationId: string) =>
+      Promise.resolve(conversationId === 'conv-1'
+        ? [{ id: 'deleted-message', role: 'user', content: 'Deleted conversation content' }]
+        : [{ id: 'fallback-message', role: 'user', content: 'Fallback conversation content' }]),
+    );
+    fetchPreviewComments.mockResolvedValue([]);
+    loadTabs.mockResolvedValue({ tabs: [], activeTabId: null });
+    fetchProjectFiles.mockResolvedValue([]);
+    fetchLiveArtifacts.mockResolvedValue([]);
+    fetchSkill.mockResolvedValue(null);
+    fetchDesignSystem.mockResolvedValue(null);
+    getTemplate.mockResolvedValue(null);
+    fetchChatRunStatus.mockResolvedValue(null);
+    listActiveChatRuns.mockResolvedValue([]);
+    reattachDaemonRun.mockResolvedValue(undefined);
+    deleteConversation.mockResolvedValue(true);
+
+    renderProjectView(vi.fn(), 'conv-1');
+
+    await waitFor(() => expect(chatPaneProps.messages?.[0]?.id).toBe('deleted-message'));
+    await act(async () => {
+      await chatPaneProps.onDeleteConversation!('conv-1');
+    });
+
+    expect(navigate).toHaveBeenCalledWith(
+      {
+        kind: 'project',
+        projectId: 'project-1',
+        conversationId: 'conv-2',
+        fileName: null,
+      },
+      { replace: true },
+    );
+    await waitFor(() => expect(chatPaneProps.activeConversationId).toBe('conv-2'));
+    await waitFor(() => expect(chatPaneProps.messages?.[0]?.id).toBe('fallback-message'));
+    expect(chatPaneProps.messages?.some((message) => message.id === 'deleted-message')).toBe(false);
   });
 
   it('re-seeds a fresh conversation when deleting the last remaining history item', async () => {
