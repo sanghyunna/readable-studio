@@ -90,6 +90,9 @@ const VISUAL_PLUGINS = [
     featured: true,
     tags: ['web', 'prototype'],
     query: 'Design a {{topic}} prototype.',
+    visualCharacteristics: [
+      'Polished product UI with clear hierarchy, restrained motion, and spacious card layouts.',
+    ],
   }),
   makeVisualPlugin({
     id: 'visual-deck-writer',
@@ -373,11 +376,13 @@ export async function waitForVisualReady(page: Page): Promise<void> {
 
 export async function waitForVisualProjects(page: Page, projects: readonly VisualProject[]): Promise<void> {
   if (projects.length === 0) {
-    await expect(page.getByTestId('recent-projects-strip')).toHaveCount(0);
+    await expect(page.getByTestId('hub-empty')).toBeVisible();
+    await expect(page.getByTestId('hub-group-count')).toHaveCount(0);
     return;
   }
 
-  await expect(page.getByText(projects[0]?.name ?? '')).toBeVisible();
+  await expect(page.getByTestId(`hub-project-${projects[0]?.id ?? ''}`)).toBeVisible();
+  await expect(page.getByTestId('hub-group-count')).toHaveText(String(projects.length));
 }
 
 export async function gotoVisualHome(page: Page): Promise<void> {
@@ -424,6 +429,7 @@ function makeVisualPlugin(input: {
   query?: string;
   previewEntry?: string;
   exampleOutput?: string;
+  visualCharacteristics?: string[];
 }) {
   return {
     id: input.id,
@@ -447,6 +453,9 @@ function makeVisualPlugin(input: {
         taskKind: input.taskKind,
         mode: input.mode,
         ...(input.featured ? { featured: true } : {}),
+        ...(input.visualCharacteristics
+          ? { visualReference: { characteristics: input.visualCharacteristics } }
+          : {}),
         ...(input.query || input.exampleOutput
           ? {
               useCase: {
