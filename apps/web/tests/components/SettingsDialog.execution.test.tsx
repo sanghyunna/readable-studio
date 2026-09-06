@@ -699,6 +699,23 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
     });
 
     await waitFor(() => {
+  it('closes when Escape starts from a focused descendant that stops bubbling', () => {
+    const { onClose } = renderSettingsDialog(
+      { mode: 'daemon', agentId: 'codex', agentModels: { codex: { model: 'default' } } },
+    );
+
+    const modelPicker = screen.getByRole('combobox', { name: 'Model' });
+    fireEvent.click(modelPicker);
+    const option = within(screen.getByTestId('settings-agent-model-popover-codex')).getByRole(
+      'option',
+      { name: 'Default' },
+    );
+    option.focus();
+    fireEvent.keyDown(option, { key: 'Escape' });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
       expect(screen.getByText('Saving…')).toBeTruthy();
     });
     await waitFor(() => {

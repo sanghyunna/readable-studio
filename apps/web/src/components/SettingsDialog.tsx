@@ -143,6 +143,7 @@ import {
   FAILURE_SOUNDS,
   SUCCESS_SOUNDS,
   notificationPermission,
+import { useEscapeDismiss } from '../hooks/useEscapeDismiss';
   playSound,
   requestNotificationPermission,
   showCompletionNotification,
@@ -2082,16 +2083,10 @@ export function SettingsDialog({
     };
   }, [onPersist]);
 
-  // Global Escape closes the dialog. With no footer button anymore the
-  // close affordances are: top-right X · backdrop click · Escape.
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key !== 'Escape') return;
-      onClose();
-    }
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  // With no footer button anymore the close affordances are: top-right X ·
+  // backdrop click · Escape. The shared overlay contract captures Escape so
+  // focused controls cannot strand the modal by stopping the bubbling event.
+  useEscapeDismiss(onClose);
 
   const protocolProviders = useMemo(
     () => KNOWN_PROVIDERS.filter((p) => p.protocol === apiProtocol),
