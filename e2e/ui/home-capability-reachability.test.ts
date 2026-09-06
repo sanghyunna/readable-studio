@@ -6,6 +6,9 @@ import { openNewProjectModal } from '@/playwright/new-project-modal';
 
 test.describe.configure({ timeout: 30_000 });
 
+const WEB_SERVER_UNAVAILABLE = /(?:net::ERR_CONNECTION_REFUSED|ECONNREFUSED)/;
+let infrastructureFailure: string | null = null;
+
 type ControlExpectation = 'present' | 'absent';
 type Control = {
   id: string;
@@ -280,7 +283,16 @@ async function seedHome(page: Page) {
 }
 
 async function gotoHome(page: Page) {
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  try {
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    if (!WEB_SERVER_UNAVAILABLE.test(detail)) throw error;
+    infrastructureFailure =
+      `Infrastructure failure: the Playwright web server died during the 105-control home capability contract (${detail.split('\n')[0]}).`;
+    test.skip(true, infrastructureFailure);
+    return;
+  }
   await expect(page.locator('.readable-loading-shell')).toHaveCount(0, { timeout: 15_000 });
   await expect(page.getByTestId('entry-view-home')).toBeVisible();
 }
@@ -517,7 +529,9 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
       await visible(picker, id);
       await expect(picker).toContainText('Agentic');
       await picker.click();
-      const airbnb = panel.getByRole('option', { name: /Airbnb/i });
+      const designSystemListbox = page.getByRole('listbox', { name: /Design system/i });
+      await visible(designSystemListbox, id);
+      const airbnb = designSystemListbox.getByRole('option', { name: /Airbnb/i });
       await visible(airbnb, id);
       await airbnb.click();
       await expect(picker).toContainText('Airbnb');
@@ -656,7 +670,18 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
   }
 }
 
-test.beforeEach(async ({ page }) => { await seedHome(page); await gotoHome(page); });
+test.beforeEach(async ({ page }) => {
+  if (infrastructureFailure !== null) {
+    test.skip(true, infrastructureFailure);
+    return;
+  }
+  await seedHome(page);
+  await gotoHome(page);
+});
+
+test.afterAll(() => {
+  if (infrastructureFailure !== null) throw new Error(infrastructureFailure);
+});
 
 for (const control of CONTROLS) {
   test(`[capability:${control.id}] ${control.label}`, async ({ page }) => {

@@ -1,4 +1,15 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+  type RefObject,
+} from 'react';
+import { createPortal } from 'react-dom';
 import { createTabToTracking } from '@readable-studio/contracts/analytics';
 import { isReadableStudioHostAvailable, pickHostWorkingDir } from '@readable-studio/host';
 import type { ReadableStudioHostProjectImportSuccess } from '@readable-studio/host';
@@ -30,6 +41,7 @@ import type {
 import { formatPickAndImportFailure } from '../utils/pickAndImportError';
 import { Icon } from './Icon';
 import { Skeleton } from './Loading';
+import { placePopover } from './popoverPlacement';
 import { Toast } from './Toast';
 import { useClaudeZipImport } from './useClaudeZipImport';
 import { useOpenFolderImport } from './useOpenFolderImport';
@@ -821,7 +833,9 @@ function PlatformPicker({
   useEffect(() => {
     if (!open) return;
     function onPointer(e: MouseEvent) {
-      if (wrapRef.current?.contains(e.target as Node)) return;
+      const target = e.target as Node;
+      if (wrapRef.current?.contains(target)) return;
+      if (target instanceof Element && target.closest('.newproj-picker-popover-layer')) return;
       setOpen(false);
     }
     function onKey(e: KeyboardEvent) {
@@ -874,12 +888,13 @@ function PlatformPicker({
         />
       </button>
       {open ? (
-        <div
-          className="ds-picker-popover"
+        <AnchoredPickerPopover
+          anchorRef={wrapRef}
+          testId="platform-picker-popover"
           id={listboxId}
           role="listbox"
-          aria-label="Target platforms"
-          aria-multiselectable="true"
+          ariaLabel="Target platforms"
+          ariaMultiselectable
         >
           <div className="ds-picker-list">
             {DESIGN_PLATFORMS.map((option) => {
@@ -907,7 +922,7 @@ function PlatformPicker({
               );
             })}
           </div>
-        </div>
+        </AnchoredPickerPopover>
       ) : null}
     </div>
   );
@@ -1391,7 +1406,9 @@ function DesignSystemPicker({
   useEffect(() => {
     if (!open) return;
     function onPointer(e: MouseEvent) {
-      if (wrapRef.current?.contains(e.target as Node)) return;
+      const target = e.target as Node;
+      if (wrapRef.current?.contains(target)) return;
+      if (target instanceof Element && target.closest('.newproj-picker-popover-layer')) return;
       setOpen(false);
     }
     function onKey(e: KeyboardEvent) {
@@ -1482,7 +1499,12 @@ function DesignSystemPicker({
         />
       </button>
       {open ? (
-        <div className="ds-picker-popover" role="listbox">
+        <AnchoredPickerPopover
+          anchorRef={wrapRef}
+          testId="design-system-picker-popover"
+          role="listbox"
+          ariaLabel={t('newproj.designSystem')}
+        >
           <div className="ds-picker-head">
             <input
               ref={searchRef}
@@ -1574,9 +1596,75 @@ function DesignSystemPicker({
               </button>
             </div>
           ) : null}
-        </div>
+        </AnchoredPickerPopover>
       ) : null}
     </div>
+  );
+}
+
+function AnchoredPickerPopover({
+  anchorRef,
+  testId,
+  id,
+  role,
+  ariaLabel,
+  ariaMultiselectable = false,
+  children,
+}: {
+  anchorRef: RefObject<HTMLDivElement | null>;
+  testId: string;
+  id?: string;
+  role: 'listbox';
+  ariaLabel: string;
+  ariaMultiselectable?: boolean;
+  children: ReactNode;
+}) {
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+  const [position, setPosition] = useState<{ left: number; top: number; width: number } | null>(null);
+
+  useLayoutEffect(() => {
+    const updatePosition = () => {
+      const anchor = anchorRef.current;
+      const popover = popoverRef.current;
+      if (!anchor || !popover) return;
+      const anchorBox = anchor.getBoundingClientRect();
+      const width = anchorBox.width;
+      const placement = placePopover(
+        anchorBox,
+        { width, height: popover.offsetHeight },
+        { width: window.innerWidth, height: window.innerHeight },
+      );
+      setPosition({ ...placement, width });
+    };
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [anchorRef]);
+
+  return createPortal(
+    <div
+      ref={popoverRef}
+      className="ds-picker-popover newproj-picker-popover-layer"
+      data-testid={testId}
+      id={id}
+      role={role}
+      aria-label={ariaLabel}
+      aria-multiselectable={ariaMultiselectable || undefined}
+      style={position === null
+        ? ({ visibility: 'hidden' } satisfies CSSProperties)
+        : ({
+            left: `${position.left}px`,
+            top: `${position.top}px`,
+            width: `${position.width}px`,
+          } satisfies CSSProperties)}
+    >
+      {children}
+    </div>,
+    document.body,
   );
 }
 
