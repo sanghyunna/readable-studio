@@ -88,10 +88,14 @@ beforeAll(() => {
         <div class="app-window-chrome__drag app-chrome-drag"></div>
       </header>
       <div class="workspace-shell__body">
-        <div class="hub">
-          <nav class="hub__nav" data-project-rail="hub" data-project-rail-state="expanded">
-            <div class="hub__nav-head">
-              <button class="hub__rail-toggle" data-project-rail-toggle data-testid="hub-rail-toggle"></button>
+        <main class="entry-main--scroll">
+          <div class="entry-main__inner entry-main__inner--home">
+            <div class="hub">
+              <nav class="hub__nav" data-project-rail="hub" data-project-rail-state="expanded">
+                <div class="hub__nav-head">
+                  <button class="hub__rail-toggle" data-project-rail-toggle data-testid="hub-rail-toggle"></button>
+                </div>
+              </nav>
             </div>
           </nav>
         </div>

@@ -1,6 +1,6 @@
 import { expect, test as base } from '@playwright/test';
 import type { Page, TestInfo } from '@playwright/test';
-import { gotoEntryHome, openSettingsDialog } from '@/playwright/amr';
+import { createProjectViaApi, gotoEntryHome, gotoProject, openSettingsDialog } from '@/playwright/amr';
 import { applyStandardMocks, STORAGE_KEY } from '@/playwright/mock-factory';
 import {
   clearReachabilityHistory,
@@ -87,3 +87,79 @@ for (const { theme, viewport } of SURFACE_MATRIX) {
     await auditTransition(page, testInfo);
   });
 }
+    const kanbanProjectId = `reachability-kanban-${theme}-${viewport.width}-${Date.now()}`;
+    const kanbanProjectName = `Reachability kanban card ${theme} ${viewport.width} ${kanbanProjectId}`;
+    await createProjectViaApi(page, kanbanProjectId, kanbanProjectName);
+    // The broad Home audit cannot discover hover-only row actions while they
+    // correctly have pointer-events:none. Drive the real disclosure and
+    // overflow path, then audit the portalled menu while it arbitrates input.
+    // This catches stacking contexts from the rail (including the row's action
+    // layer) covering an Open item that remains visibly painted above them.
+    const hubProject = page.getByTestId(`hub-project-${kanbanProjectId}`);
+    await expect(hubProject).toBeVisible();
+    const servedHubSignature = await page.evaluate(() => [...document.styleSheets].some((sheet) => {
+      try { return [...sheet.cssRules].some((rule) => rule.cssText.includes('.hub-row__actions')); }
+      catch { return false; }
+    }));
+    expect(servedHubSignature, 'cold served CSS must contain the hub action signature').toBe(true);
+    const projectMenuTrigger = page.getByTestId(`hub-menu-project-${kanbanProjectId}`);
+    const railCollapsed = await page.locator('.hub').getAttribute('data-rail-collapsed');
+    if (railCollapsed === 'true') {
+      await hubProject.hover();
+      const projectFlyout = page.getByTestId('hub-project-flyout');
+      await expect(projectFlyout).toBeVisible();
+      await clearReachabilityHistory(page);
+      const flyoutAudit = await expectPageInteractivesReachable(page, { phase: 'settled', testInfo });
+      expect(flyoutAudit.audited, 'Collapsed project flyout must expose controls or the guard is vacuous').toBeGreaterThan(0);
+      await page.getByTestId('hub-project-flyout-new-session').click();
+      await expect(page).toHaveURL(new RegExp(`/projects/${kanbanProjectId}`));
+    } else {
+      const title = hubProject.locator(':scope > .hub-row__title');
+      if (await hubProject.getAttribute('aria-expanded') !== 'true') await title.click();
+      await expect(hubProject).toHaveAttribute('aria-expanded', 'true');
+      await title.hover();
+      await projectMenuTrigger.click();
+      const projectMenu = page.getByTestId('hub-row-menu');
+      const projectOpen = page.getByTestId('hub-row-menu-open');
+      await expect(projectMenu).toBeVisible();
+      await expect(projectOpen).toBeVisible();
+      await clearReachabilityHistory(page);
+      const rowMenu = await expectPageInteractivesReachable(page, { phase: 'settled', testInfo });
+      expect(rowMenu.audited, 'Project row menu must expose controls or the guard is vacuous').toBeGreaterThan(0);
+      await projectOpen.click();
+      await expect(page).toHaveURL(new RegExp(`/projects/${kanbanProjectId}`));
+    }
+
+    // Project cards were previously outside discovery, so an opaque card title
+    // and the native drag chrome could both cover the kanban delete control
+    // while the broad guard remained green. Audit both the fresh board and the
+    // real return path: opening a far-right status card and coming back causes
+    // actionability/focus scrolling that a direct `/projects` visit never does.
+    // Do not pre-hover the close action: that was the old guard's blind spot,
+    // because it repaired the pointer-disabled state before auditing it.
+    await page.goto('/projects');
+    await expect(page.locator('.design-grid')).toBeVisible();
+    await page.getByTestId('designs-view-kanban').click();
+    const kanbanCard = page.locator('.design-kanban-card', { hasText: kanbanProjectName });
+    await expect(kanbanCard).toBeVisible();
+    await expect(kanbanCard.locator('.design-card-close')).toBeVisible();
+    await clearReachabilityHistory(page);
+    const projects = await expectPageInteractivesReachable(page, { phase: 'settled', testInfo });
+    expect(projects.audited, 'Projects must expose controls or the discovery guard is vacuous').toBeGreaterThan(0);
+
+    await kanbanCard.click();
+    await expect(page).toHaveURL(new RegExp(`/projects/${kanbanProjectId}`));
+    await page.getByRole('button', { name: /back to projects/i }).click();
+    await expect(page.locator('.design-kanban-board')).toBeVisible();
+    const returnedCard = page.locator('.design-kanban-card', { hasText: kanbanProjectName });
+    const returnedDelete = returnedCard.locator('.design-card-close');
+    await expect(returnedDelete).toBeVisible();
+    await clearReachabilityHistory(page);
+    const returnedProjects = await expectPageInteractivesReachable(page, { phase: 'settled', testInfo });
+    expect(returnedProjects.audited, 'Returned Projects must expose controls or the guard is vacuous').toBeGreaterThan(0);
+    await returnedDelete.click();
+    const deleteDialog = page.locator('.modal-confirm');
+    await expect(deleteDialog).toBeVisible();
+    await deleteDialog.getByRole('button', { name: /^cancel$/i }).click();
+
+    await gotoEntryHome(page);

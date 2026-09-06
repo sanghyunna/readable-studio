@@ -174,20 +174,17 @@ describe('project rail: one shared contract', () => {
     }
   });
 
-  it('animates collapse/expand and disables it under reduced motion', () => {
-    // Both directions animate, and both use the product's shared tokens rather
-    // than a per-surface curve.
-    expect(projectRailCss).toMatch(
-      /transition:\s*inline-size\s+var\(--dur-enter\)\s+var\(--ease-out\)/,
+  it('keeps the rail attached to each surface animation instead of snapping independently', () => {
+    // The layout track owns collapse/expand. The rail itself fills every
+    // intermediate width, rather than jumping from `auto` to a state-only 44px.
+    expect(projectRailCss).toMatch(/\[data-project-rail\]\s*\{[^}]*inline-size:\s*100%/s);
+    expect(projectRailCss).not.toMatch(/transition:\s*inline-size/);
+    expect(hubCss).toMatch(
+      /transition:\s*grid-template-columns\s+var\(--dur-enter\)\s+var\(--ease-out\)/,
     );
-    expect(projectRailCss).toMatch(/transition-duration:\s*var\(--dur-exit\)/);
-
-    const reduced = projectRailCss.slice(
-      projectRailCss.indexOf('@media (prefers-reduced-motion: reduce)'),
+    expect(entryLayoutCss).toMatch(
+      /transition:\s*grid-template-columns\s+var\(--dur-enter\)\s+var\(--ease-out\)/,
     );
-    expect(reduced).toContain('transition: none');
-    expect(reduced).toContain("[data-project-rail][data-project-rail-state='collapsed']");
-    expect(reduced).toContain("[data-project-rail][data-project-rail-state='expanded']");
   });
 
   it('never lets the collapsed rail become a zero-width third state', () => {
@@ -202,7 +199,10 @@ describe('project rail: one shared contract', () => {
     `);
     const computed = getComputedStyle(host.querySelector('[data-project-rail]') as HTMLElement);
 
-    expect(pixels(computed.inlineSize || computed.width)).toBe(pixels(SHARED_COLLAPSED ?? ''));
+    // The non-zero parent track supplies the 44px geometry. The rail fills it
+    // instead of carrying a second, state-only width that can snap separately.
+    expect(computed.inlineSize || computed.width).toBe('100%');
+    expect(pixels(computed.minInlineSize || computed.minWidth)).toBe(0);
     expect(computed.pointerEvents).toBe('auto');
     host.remove();
   });

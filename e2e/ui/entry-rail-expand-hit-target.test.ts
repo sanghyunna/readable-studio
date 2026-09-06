@@ -1,13 +1,11 @@
 // Regression: the collapsed project rail's expand control must be reachable by
 // a REAL POINTER, not merely present in the DOM.
 //
-// The shipped defect: `.entry-nav-rail [data-tooltip] { position: relative }`
-// and `.entry-nav-rail .entry-nav-rail__collapse { position: absolute }` have
-// identical specificity (0,2,0). The anchor rule is written later, so it won,
-// and the expand control fell out of the brand slot onto the "New project"
-// button - 784px^2 of overlap, i.e. 100% of the control. Keyboard activation
-// still worked, so the verification lane could keep going; a real mouse could
-// not expand the rail at all.
+// The shipped defect put a rail expand control onto the "New project" button
+// - 784px^2 of overlap, i.e. 100% of the control. Keyboard activation still
+// worked, so the verification lane could keep going; a real mouse could not
+// expand the rail at all. Home now owns the shared ProjectRail implementation,
+// so this regression boundary exercises that real Hub rail directly.
 //
 // This test therefore HIT-TESTS. `toBeVisible()`, a bounding-box assertion and
 // a DOM-driven `.click()` ALL pass on a fully covered element - only
@@ -17,7 +15,10 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { applyStandardMocks } from '@/playwright/mock-factory';
 
-const RAIL_OPEN_STORAGE_KEY = 'readable.entry.railOpen';
+const RAIL_COLLAPSED_STORAGE_KEY = 'readable-studio:hub-rail-collapsed';
+const RAIL_TEST_ID = 'hub-nav';
+const TOGGLE_TEST_ID = 'hub-rail-toggle';
+const NEW_PROJECT_TEST_ID = 'hub-new-project';
 
 type HitProbe = {
   centre: { x: number; y: number };
@@ -41,8 +42,8 @@ test.beforeEach(async ({ page }) => {
   // Start on the collapsed strip - the state whose expand affordance is the
   // only way back to the panel with a mouse.
   await page.addInitScript(
-    ({ key }: { key: string }) => window.localStorage.setItem(key, 'false'),
-    { key: RAIL_OPEN_STORAGE_KEY },
+    ({ key }: { key: string }) => window.localStorage.setItem(key, 'true'),
+    { key: RAIL_COLLAPSED_STORAGE_KEY },
   );
 });
 
@@ -61,14 +62,14 @@ async function seedTheme(page: Page, theme: 'light' | 'dark'): Promise<void> {
 }
 
 /** Wait until the rail's animated grid track has SETTLED. The track transitions
- *  between the home route's 0-wide column and the strip, and geometry sampled
+ *  between its collapsed strip and expanded panel, and geometry sampled
  *  mid-transition is meaningless. */
 async function settleRail(page: Page): Promise<void> {
   await page.waitForFunction(
-    () => {
-      const rail = document.querySelector('[data-testid="entry-nav-rail"]');
-      const collapse = document.querySelector('[data-testid="entry-nav-collapse"]');
-      const newProject = document.querySelector('[data-testid="entry-nav-new-project"]');
+    ({ railTestId, toggleTestId, newProjectTestId }) => {
+      const rail = document.querySelector(`[data-testid="${railTestId}"]`);
+      const collapse = document.querySelector(`[data-testid="${toggleTestId}"]`);
+      const newProject = document.querySelector(`[data-testid="${newProjectTestId}"]`);
       if (!rail || !collapse || !newProject) return false;
       const railBox = rail.getBoundingClientRect();
       const collapseBox = collapse.getBoundingClientRect();
@@ -84,18 +85,22 @@ async function settleRail(page: Page): Promise<void> {
       scope.__railKey = key;
       return (scope.__railHits ?? 0) >= 2;
     },
-    undefined,
+    {
+      railTestId: RAIL_TEST_ID,
+      toggleTestId: TOGGLE_TEST_ID,
+      newProjectTestId: NEW_PROJECT_TEST_ID,
+    },
     { timeout: 15_000, polling: 'raf' },
   );
 }
 
 async function readRailGeometry(page: Page): Promise<RailGeometry> {
-  return await page.evaluate(() => {
+  return await page.evaluate(({ toggleTestId, newProjectTestId }) => {
     const pick = (testId: string) =>
       document.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
 
-    const collapse = pick('entry-nav-collapse');
-    const newProject = pick('entry-nav-new-project');
+    const collapse = pick(toggleTestId);
+    const newProject = pick(newProjectTestId);
     if (!collapse || !newProject) throw new Error('rail controls missing from the collapsed strip');
 
     const rect = (el: HTMLElement) => {
@@ -134,11 +139,10 @@ async function readRailGeometry(page: Page): Promise<RailGeometry> {
       overlapArea: overlapWidth * overlapHeight,
       probes: { collapse: probe(collapse), newProject: probe(newProject) },
     };
-  });
+  }, { toggleTestId: TOGGLE_TEST_ID, newProjectTestId: NEW_PROJECT_TEST_ID });
 }
 
-/** Navigate off the home route: the Hub owns the rail there, every other entry
- *  destination renders `.entry-nav-rail`. */
+/** Open Home, whose Hub is now the configured consumer of ProjectRail. */
 async function gotoEntryRailSurface(page: Page): Promise<void> {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('.readable-loading-shell')).toHaveCount(0, { timeout: 15_000 });
@@ -146,17 +150,10 @@ async function gotoEntryRailSurface(page: Page): Promise<void> {
   if (await privacyDialog.isVisible().catch(() => false)) {
     await privacyDialog.getByRole('button', { name: /I get it|not now|got it|don't share/i }).click();
   }
-  await expect(page.getByTestId('hub-nav')).toBeVisible();
-
-  // Reach the projects destination via the rail's own button. This is a
-  // navigation step, not the behaviour under test - the hit testing all
-  // happens afterwards, on the surface that owns the entry rail.
-  await page.evaluate(() => {
-    document.querySelector<HTMLElement>('[data-testid="entry-nav-projects"]')?.click();
-  });
-  await expect(page.getByTestId('entry-view-home')).toHaveAttribute('data-active', 'false');
+  await expect(page.getByTestId('entry-view-home')).toHaveAttribute('data-active', 'true');
+  await expect(page.getByTestId(RAIL_TEST_ID)).toBeVisible();
   await settleRail(page);
-  await expect(page.getByTestId('entry-nav-rail')).toHaveAttribute('data-rail-state', 'collapsed');
+  await expect(page.getByTestId(RAIL_TEST_ID)).toHaveAttribute('data-rail-state', 'collapsed');
 }
 
 for (const theme of ['light', 'dark'] as const) {
@@ -194,7 +191,7 @@ for (const theme of ['light', 'dark'] as const) {
     // deliberately avoided here: it would scroll/retarget and could pass on a
     // covered control.
     await page.mouse.click(geometry.probes.collapse.centre.x, geometry.probes.collapse.centre.y);
-    await expect(page.getByTestId('entry-nav-rail')).toHaveAttribute('data-rail-state', 'expanded');
+    await expect(page.getByTestId(RAIL_TEST_ID)).toHaveAttribute('data-rail-state', 'expanded');
   });
 }
 
@@ -204,18 +201,18 @@ test('[P0] keyboard activation of the rail expand control still works', async ({
 
   // Keyboard was the fallback the verification lane was forced onto; it must
   // keep working alongside the restored pointer path.
-  await page.getByTestId('entry-nav-collapse').focus();
+  await page.getByTestId(TOGGLE_TEST_ID).focus();
   await page.keyboard.press('Enter');
-  await expect(page.getByTestId('entry-nav-rail')).toHaveAttribute('data-rail-state', 'expanded');
+  await expect(page.getByTestId(RAIL_TEST_ID)).toHaveAttribute('data-rail-state', 'expanded');
 });
 
 test('[P0] expanded rail keeps both controls independently hit-testable', async ({ page }) => {
   await seedTheme(page, 'light');
   await gotoEntryRailSurface(page);
 
-  await page.getByTestId('entry-nav-collapse').focus();
+  await page.getByTestId(TOGGLE_TEST_ID).focus();
   await page.keyboard.press('Enter');
-  await expect(page.getByTestId('entry-nav-rail')).toHaveAttribute('data-rail-state', 'expanded');
+  await expect(page.getByTestId(RAIL_TEST_ID)).toHaveAttribute('data-rail-state', 'expanded');
   await settleRail(page);
 
   const geometry = await readRailGeometry(page);
@@ -225,5 +222,5 @@ test('[P0] expanded rail keeps both controls independently hit-testable', async 
 
   // New project must remain independently clickable in the expanded panel.
   await page.mouse.click(geometry.probes.newProject.centre.x, geometry.probes.newProject.centre.y);
-  await expect(page.getByTestId('entry-nav-rail')).toHaveAttribute('data-rail-state', 'expanded');
+  await expect(page.getByTestId(RAIL_TEST_ID)).toHaveAttribute('data-rail-state', 'expanded');
 });

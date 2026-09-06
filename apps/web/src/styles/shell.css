@@ -34,6 +34,12 @@
   overflow: hidden;
 }
 .workspace-shell__body {
+  /* Share the full shell grid area with the overlay chrome. Both grid axes are
+     explicit so auto-placement cannot create a second implicit column beside
+     the chrome. The project rail surface begins at the physical window edge;
+     each content column clears the drag region internally. */
+  grid-column: 1;
+  grid-row: 1 / -1;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -50,6 +56,8 @@
    per the Hub language - the separation comes from an inset highlight, not a
    1px divider. */
 .app-window-chrome {
+  grid-column: 1;
+  grid-row: 1;
   display: flex;
   align-items: center;
   gap: var(--space-2, 8px);
@@ -201,6 +209,7 @@
   height: 100%;
   min-height: 0;
 }
+  padding-block-start: var(--app-window-chrome-height, 36px);
 /* The floating `.entry-rail-toggle--workspace` button is gone. It produced the
    exact state the user rejected: the rail fully hidden with only a button left,
    the button itself jammed into the top-left over the window-chrome band. The

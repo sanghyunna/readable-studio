@@ -27,6 +27,21 @@ describe('Hub rail motion contract', () => {
     expect(collapsed).not.toMatch(/transition-delay\s*:/);
   });
 
+  it('animates the expanded inset away while the rail stretches with its track', () => {
+    const rail = ruleBody('.hub__nav');
+    const collapsedRail = ruleBody('.hub--rail-collapsed .hub__nav');
+
+    // `100%` ignores a grid item's margin and made the 10px-inset rail occupy
+    // the complete 292px track. Auto stretch subtracts the live margin, giving
+    // 282px expanded and 44px collapsed without a state-only width snap.
+    expect(rail).toMatch(/inline-size:\s*auto\s*;/);
+    expect(rail).toMatch(
+      /transition:\s*margin-inline-start\s+var\(--dur-enter\)\s+var\(--ease-out\)\s*;/,
+    );
+    expect(collapsedRail).toMatch(/margin:\s*0\s*;/);
+    expect(collapsedRail).toMatch(/transition-duration:\s*var\(--dur-exit\)\s*;/);
+  });
+
   it('uses product motion tokens while preserving a duration with no exact token', () => {
     const chevron = ruleBody('.hub-row__chevron');
     const search = ruleBody('.hub--rail-collapsed .hub__search');

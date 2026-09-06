@@ -174,3 +174,6 @@ describe('interactive reachability contracts', () => {
     );
   });
 });
+    if (!narrow) throw new Error('narrow Home breakpoint was not found');
+    const narrowNodes = narrow.nodes;
+    if (!narrowNodes) throw new Error('narrow Home breakpoint has no CSS rules');

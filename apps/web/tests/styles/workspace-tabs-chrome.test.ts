@@ -39,14 +39,16 @@ function mediaBlock(css: string, query: string): string {
 }
 
 describe('workspace tabs chrome styles', () => {
-  it('lets the workspace shell inherit the viewport width without forcing horizontal page overflow', () => {
+  it('lets the workspace shell inherit the viewport width without a horizontal scroll container', () => {
     const shell = cssDeclarations(shellCss, '.workspace-shell');
     const entryMain = cssDeclarations(entryLayoutCss, '.entry-main--scroll');
 
     expect(ruleValue(shell, 'width')).toBe('100%');
     expect(ruleValue(shell, 'max-width')).toBe('100%');
     expect(shell).not.toContain('100vw');
-    expect(ruleValue(entryMain, 'overflow-x')).toBe('hidden');
+    // Unlike `hidden`, `clip` prevents overflow without creating a scroll container
+    // that can move content beneath the adjacent chrome.
+    expect(ruleValue(entryMain, 'overflow-x')).toBe('clip');
   });
 
   it('lets the shell grid own the two-state rail width on narrow home and non-home views', () => {

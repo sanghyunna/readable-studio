@@ -246,6 +246,14 @@
   opacity: 1;
   pointer-events: auto;
 }
+/* Kanban cards are compact enough that the action has a dedicated corner.
+   Keep it painted and hit-testable at rest: actionability checks happen before
+   a synthetic pointer moves, so a pointer-disabled hover gate makes the card
+   itself permanently intercept programmatic and assistive pointer activation. */
+.design-kanban-card .design-card-close {
+  opacity: 1;
+  pointer-events: auto;
+}
 .design-card-close:hover { color: var(--text-strong); border-color: var(--border-strong); }
 
 /* Overflow menu trigger and dropdown on project cards */
@@ -650,8 +658,11 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  /* Reserve room for the absolutely-positioned close button. */
+  /* Reserve room for the absolutely-positioned close button. This title is
+     display-only; the card owns navigation, so its box must never win a hit
+     test over that sibling action even when text ellipsis spans the row. */
   padding-right: 20px;
+  pointer-events: none;
 }
 .design-kanban-card-meta {
   font-size: 12px;

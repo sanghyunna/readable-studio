@@ -92,11 +92,11 @@
   min-width: 0;
   border-right: 0;
   background: var(--bg-panel);
-  padding: 8px 0 10px;
+  padding: calc(var(--app-window-chrome-height, 36px) + 8px) 0 10px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 8px;
   position: relative;
   z-index: 30;
@@ -125,13 +125,13 @@
    positioned toggle, which is what let the toggle drift off the row. */
 .entry-nav-rail__brand {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  grid-template-rows: 36px 30px;
+  place-items: center;
   gap: 4px;
   width: 100%;
-  min-height: 36px;
+  height: 70px;
+  min-height: 70px;
   flex-shrink: 0;
 }
 /* DEFECT: the toggle was absolutely positioned inside the brand slot, which is
@@ -218,27 +218,9 @@
 }
 
 /* ---- Collapsed strip presentation ----
-   The strip is narrower than the docked rail, so its contents center on the
-   thinner track instead of overflowing it and getting clipped. */
-.entry:not(.entry--rail-open) .entry-nav-rail__group,
-.entry:not(.entry--rail-open) .entry-nav-rail__footer {
-  gap: 4px;
-}
-.entry:not(.entry--rail-open) .entry-nav-rail__brand,
-.entry:not(.entry--rail-open) .entry-nav-rail__btn {
-  width: 32px;
-  height: 32px;
-}
-.entry:not(.entry--rail-open) .entry-nav-rail__logo {
-  width: 32px;
-  height: 32px;
-}
-/* The strip is the collapsed state's only affordance, so its expand control is
-   always on screen - never hover-revealed. */
-.entry:not(.entry--rail-open) .entry-nav-rail .entry-nav-rail__collapse {
-  width: 28px;
-  height: 28px;
-}
+   Controls retain their expanded row heights and gaps. Only the parent track
+   narrows, so every control keeps the same vertical centre and remains
+   recognisable as the same object while the strip changes width. */
 .entry-nav-rail::after {
   content: '';
   position: absolute;
@@ -525,11 +507,28 @@
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
-  overflow-x: hidden;
+  /* `hidden` made this an invisible horizontal scroll container. Pointer
+     actionability code could then scroll a far-right kanban action beneath the
+     neighbouring rail/logo even though users had no horizontal scrollbar.
+     Clip this axis instead; the kanban board owns its intentional x-scroll. */
+  overflow-x: clip;
   scrollbar-gutter: stable;
   background: var(--bg);
   padding: 0;
   /* Used by descendants (e.g. the plugins-home Scenario row) to
+  /* Keep scroll-into-view operations in the actual content hit region. Without
+     this, browser automation and keyboard focus can align a card beneath the
+     sticky topbar even though the card is nominally inside the viewport. */
+  scroll-padding-block-start: var(--entry-topbar-h);
+}
+/* The native drag chrome overlays the shell body. A scroll child's padding is
+   not a boundary: after scrolling, ordinary content can still move underneath
+   that padding and into the app-region. Start the viewport itself below the
+   drag strip so no project card or other interactive descendant can ever be
+   scrolled into native chrome. Home is excluded because its fixed Hub surface
+   deliberately paints behind the strip and clears its controls internally. */
+.entry-shell--no-header .entry-main--scroll:not(:has(.entry-main__inner--home)) {
+  margin-block-start: var(--app-window-chrome-height, 36px);
      pin themselves directly below the sticky topbar. Mirrors the
      topbar's vertical footprint (12px top + 32px chip). */
   --entry-topbar-h: 44px;
@@ -613,6 +612,9 @@
   padding: 12px 16px 0;
   background: var(--bg);
   isolation: isolate;
+  /* Only the painted controls are chrome. The flex container's otherwise-empty
+     full-width box must not consume clicks from content scrolled beneath it. */
+  pointer-events: none;
 }
 /* Home topbar: the approved mockup (`.tmp/design/main-hub/glass.html` .topbar)
    paints no strip at all - the tinted canvas runs unbroken behind it and only
@@ -620,6 +622,11 @@
    a fill here (opaque or gradient) is what produced the white horizontal band
    across the top of the hub. The `::before` bleed is suppressed with it. */
 .entry-main__topbar:has(~ .entry-main__inner--home) {
+  /* Home has no topbar controls. Keeping this empty strip in flow moved the
+     entire Hub rail down another 12px; overlay it instead so the Hub (and its
+     rail surface) occupies the full body while the app chrome remains above. */
+  position: absolute;
+  inset: 0 0 auto;
   background: transparent;
 }
 .entry-main__topbar:has(~ .entry-main__inner--home)::before {
@@ -662,6 +669,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  pointer-events: auto;
 }
 
 /* Local-run settings icon + help launcher — the approved hub topbar

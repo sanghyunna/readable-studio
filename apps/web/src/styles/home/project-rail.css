@@ -56,15 +56,19 @@
 }
 
 /* ---- Rule 2: the collapsed strip is VISIBLE and INTERACTIVE ----
-   Collapsing narrows the rail; it never removes it and never disables it.
-   Pointer events stay on for every frame, including mid-animation, so a
-   click during the transition still lands. */
-[data-project-rail][data-project-rail-state='collapsed'] {
-  inline-size: var(--project-rail-collapsed);
-  min-inline-size: var(--project-rail-collapsed);
+   The rail always fills the animated track owned by its surface. Giving the
+   rail itself `44px` only in the collapsed state made its used width jump from
+   `auto` to `44px` immediately while the track animated behind it: the exact
+   snap seen in the packaged app. A single `100%` width keeps the same element
+   attached to every intermediate track width. The track never reaches zero,
+   and pointer events stay on for every frame. */
+[data-project-rail] {
+  inline-size: 100%;
+  min-inline-size: 0;
   pointer-events: auto;
 }
 
+[data-project-rail][data-project-rail-state='collapsed'],
 [data-project-rail][data-project-rail-state='expanded'] {
   pointer-events: auto;
 }
@@ -127,21 +131,8 @@
 }
 
 /* ---- Rule 4: collapse/expand animates, and reduced motion disables it ----
-   The width animates between two VISIBLE widths, so there is never a fade to
-   nothing. Collapsing is the exit direction and reads better slightly
-   quicker. Both durations and the curve are the product's shared tokens. */
-[data-project-rail] {
-  transition: inline-size var(--dur-enter) var(--ease-out);
-}
-
-[data-project-rail][data-project-rail-state='collapsed'] {
-  transition-duration: var(--dur-exit);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  [data-project-rail],
-  [data-project-rail][data-project-rail-state='collapsed'],
-  [data-project-rail][data-project-rail-state='expanded'] {
-    transition: none;
-  }
-}
+   The surface layout tracks (`.hub` and `.entry`) own the transition because
+   they resize the rail AND the adjacent stage as one layout operation. The
+   rail remains the same 100%-wide grid item throughout; it is never swapped,
+   hidden, or independently snapped to an explicit width. Surface styles also
+   remove the track transition under reduced motion. */
