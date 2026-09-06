@@ -1369,6 +1369,8 @@ export const ko: Dict = {
   'inlineSwitcher.chipCli': '로컬 CLI',
   'inlineSwitcher.chipByok': 'BYOK',
   'inlineSwitcher.modelDefault': '기본값',
+  'inlineSwitcher.modelUnselected': '선택없음',
+  'inlineSwitcher.modelSelectionRequired': '모델을 선택해야합니다',
   'inlineSwitcher.noAgent': '에이전트 없음',
   'inlineSwitcher.detectingAgent': '감지 중…',
   'inlineSwitcher.modeLabel': '모드',

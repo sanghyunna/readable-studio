@@ -110,7 +110,7 @@ describe('hosted Pi server runtime seam', () => {
     const response = await fetch(`${started.url}/api/runs`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ agentId: 'pi', message: 'hosted boundary', ...project }),
+      body: JSON.stringify({ agentId: 'pi', model: 'anthropic/claude-sonnet-4-5', message: 'hosted boundary', ...project }),
     });
     assert.equal(response.status, 202);
     const { runId } = await response.json() as { runId: string };

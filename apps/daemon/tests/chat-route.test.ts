@@ -123,6 +123,7 @@ describe('/api/chat', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         agentId: 'claude',
+        model: 'sonnet',
         message: 'hello',
       }),
     });
@@ -151,6 +152,7 @@ process.exit(0);
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             agentId: 'opencode',
+            model: 'openai/gpt-5',
             conversationId,
             message: 'hello',
           }),
@@ -235,6 +237,7 @@ process.stdin.on('end', () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             agentId: 'opencode',
+            model: 'openai/gpt-5',
             projectId,
             conversationId,
             assistantMessageId,
@@ -276,6 +279,7 @@ process.exit(1);
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             agentId: 'opencode',
+            model: 'openai/gpt-5',
             conversationId,
             message: 'hello',
           }),
@@ -488,6 +492,7 @@ process.stdin.on('end', () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             agentId: 'opencode',
+            model: 'openai/gpt-5',
             projectId,
             conversationId,
             pluginId: 'readable-plugin-authoring',
@@ -552,6 +557,7 @@ process.stdin.on('end', () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             agentId: 'opencode',
+            model: 'openai/gpt-5',
             projectId,
             conversationId,
             pluginId: 'readable-plugin-authoring',
@@ -630,6 +636,7 @@ process.stdin.on('end', () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             agentId: 'opencode',
+            model: 'openai/gpt-5',
             projectId,
             conversationId,
             pluginId: 'readable-plugin-authoring',
@@ -694,6 +701,7 @@ process.stdin.on('end', () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             agentId: 'opencode',
+            model: 'openai/gpt-5',
             projectId,
             conversationId,
             pluginId: 'readable-plugin-authoring',
@@ -758,6 +766,7 @@ process.stdin.on('end', () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             agentId: 'opencode',
+            model: 'openai/gpt-5',
             projectId,
             conversationId,
             pluginId: 'readable-plugin-authoring',
@@ -820,6 +829,7 @@ process.stdin.on('end', () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             agentId: 'opencode',
+            model: 'openai/gpt-5',
             projectId,
             conversationId,
             pluginId: 'readable-plugin-authoring',
@@ -871,6 +881,7 @@ process.stdin.on('end', () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             agentId: 'opencode',
+            model: 'openai/gpt-5',
             message: 'hello',
           }),
         });
@@ -910,6 +921,7 @@ process.stdin.on('end', () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             agentId: 'opencode',
+            model: 'openai/gpt-5',
             message: 'build an faq page',
             skillIds: ['faq-page'],
           }),
@@ -972,6 +984,7 @@ process.stdin.on('end', () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             agentId: 'opencode',
+            model: 'openai/gpt-5',
             projectId,
             conversationId: createProjectBody.conversationId,
             assistantMessageId: `assistant-${randomUUID()}`,
@@ -1049,6 +1062,7 @@ process.stdin.on('end', () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             agentId: 'opencode',
+            model: 'openai/gpt-5',
             projectId,
             conversationId: createProjectBody.conversationId,
             assistantMessageId: `assistant-${randomUUID()}`,
@@ -1090,6 +1104,7 @@ process.stdin.on('end', () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             agentId: 'opencode',
+            model: 'openai/gpt-5',
             message: 'build an editorial brand deck',
             skillIds: ['readable-landing-deck'],
           }),
@@ -1161,6 +1176,7 @@ process.stdin.on('end', () => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               agentId: 'opencode',
+              model: 'openai/gpt-5',
               designSystemId: 'default',
               message: 'draft an opt-out skill artifact',
               skillIds: [skillId],
@@ -1247,6 +1263,7 @@ process.stdin.on('end', () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             agentId: 'opencode',
+            model: 'openai/gpt-5',
             projectId,
             message: 'build a plugin-backed faq page',
             appliedPluginSnapshotId: createProjectBody.appliedPluginSnapshotId,
@@ -1356,6 +1373,7 @@ process.stdin.on('end', () => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               agentId: 'opencode',
+              model: 'openai/gpt-5',
               projectId,
               message: 'use both plugin and user skill side files',
               appliedPluginSnapshotId: createProjectBody.appliedPluginSnapshotId,
@@ -1405,6 +1423,7 @@ process.stdin.on('end', () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             agentId: 'opencode',
+            model: 'openai/gpt-5',
             message: 'build the Readable Studio landing page',
             skillId: 'editorial-collage',
             skillIds: ['readable-landing'],
@@ -1443,6 +1462,7 @@ process.exit(1);
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             agentId: 'cursor-agent',
+            model: 'auto',
             message: 'hello',
           }),
         });
@@ -1488,6 +1508,7 @@ process.exit(1);
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             agentId: 'cursor-agent',
+            model: 'auto',
             message: 'hello',
           }),
         });
@@ -1533,6 +1554,7 @@ process.exit(1);
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             agentId: 'cursor-agent',
+            model: 'auto',
             message: 'hello',
           }),
         });
@@ -1583,6 +1605,7 @@ process.exit(1);
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             agentId: 'cursor-agent',
+            model: 'auto',
             message: 'hello',
           }),
         });
@@ -1639,6 +1662,7 @@ process.exit(1);
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               agentId: 'deepseek',
+              model: 'deepseek-v4-pro',
               message: 'hello',
             }),
           });
@@ -1697,6 +1721,7 @@ process.exit(0);
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             agentId: 'antigravity',
+            model: 'Gemini 3.1 Pro (High)',
             message: 'hello',
           }),
         });
@@ -1735,6 +1760,7 @@ process.exit(0);
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             agentId: 'qoder',
+            model: 'lite',
             message: 'hello',
           }),
         });
@@ -1779,6 +1805,7 @@ process.exit(0);
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             agentId: 'qoder',
+            model: 'lite',
             message: 'hello',
           }),
         });
@@ -1820,6 +1847,7 @@ setInterval(() => {}, 1000);
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               agentId: 'opencode',
+              model: 'openai/gpt-5',
               message: 'hello',
             }),
           });
@@ -1883,6 +1911,7 @@ const timer = setInterval(() => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               agentId: 'claude',
+              model: 'sonnet',
               message: 'hello',
             }),
           });
@@ -1915,6 +1944,7 @@ process.exit(1);
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             agentId: 'claude',
+            model: 'sonnet',
             message: 'hello',
           }),
         });
@@ -1955,6 +1985,7 @@ setTimeout(() => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               agentId: 'opencode',
+              model: 'openai/gpt-5',
               message: 'hello',
             }),
           });
@@ -1991,6 +2022,7 @@ setInterval(() => {}, 1000);
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               agentId: 'opencode',
+              model: 'openai/gpt-5',
               message: 'hello',
             }),
           });
@@ -2059,6 +2091,7 @@ process.stdin.on('end', () => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               agentId: 'opencode',
+              model: 'openai/gpt-5',
               message: transcript,
               currentPrompt: formAnswers,
             }),
@@ -2109,7 +2142,7 @@ setInterval(() => {}, 1000);
           const activeResponse = await fetch(`${started.url}/api/runs`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ agentId: 'opencode', message: 'hello' }),
+            body: JSON.stringify({ agentId: 'opencode', model: 'openai/gpt-5', message: 'hello' }),
           });
           expect(activeResponse.status).toBe(202);
           const { runId } = await activeResponse.json() as { runId: string };
@@ -2120,12 +2153,12 @@ setInterval(() => {}, 1000);
           const runResponse = await fetch(`${started.url}/api/runs`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ agentId: 'opencode', message: 'late run' }),
+            body: JSON.stringify({ agentId: 'opencode', model: 'openai/gpt-5', message: 'late run' }),
           });
           const chatResponse = await fetch(`${started.url}/api/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ agentId: 'opencode', message: 'late chat' }),
+            body: JSON.stringify({ agentId: 'opencode', model: 'openai/gpt-5', message: 'late chat' }),
           });
 
           expect(runResponse.status).toBe(503);

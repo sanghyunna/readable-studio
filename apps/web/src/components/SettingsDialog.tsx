@@ -55,6 +55,7 @@ import { dedupeAgentModels } from './modelCatalog';
 import {
   DEFAULT_CONFIG,
   DEFAULT_NOTIFICATIONS,
+import { effectiveAgentModelChoice } from './agentModelSelection';
   KNOWN_PROVIDERS,
   syncConfigToDaemon,
 } from '../state/config';
@@ -121,7 +122,6 @@ import {
   blockingByokDraftFields,
   blockingByokDraftIssues,
   cleanByokApiKey,
-  resolveByokModelPreference,
   validateByokDraft,
   type ByokDraftField,
   type ByokDraftIssue,
@@ -341,8 +341,7 @@ export function shouldShowCustomModelInput(
 ): boolean {
   return (
     explicitCustomMode ||
-    !modelValue ||
-    !knownModelIds.includes(modelValue)
+    Boolean(modelValue && !knownModelIds.includes(modelValue))
   );
 }
 
@@ -1056,11 +1055,6 @@ export function SettingsDialog({
   const modelSelectRef = useRef<HTMLButtonElement | null>(null);
   const customModelInputRef = useRef<HTMLInputElement | null>(null);
   const focusByokRequiredFieldAfterProtocolSwitchRef = useRef(false);
-  // Tracks whether the current BYOK model value came from an explicit user
-  // pick (combobox selection or custom entry) rather than an auto-populated
-  // provider preset. The account-model auto-switch must never overwrite a
-  // deliberate choice, even when that choice equals the provider preset id.
-  const apiModelUserSelectedRef = useRef(false);
   const [apiModelCustomEditing, setApiModelCustomEditing] = useState(false);
   const [agentCustomModelIds, setAgentCustomModelIds] = useState<
     ReadonlySet<string>
@@ -1121,10 +1115,11 @@ export function SettingsDialog({
       : null;
   const selectedMemoryChatModel =
     cfg.mode === 'daemon' && cfg.agentId
-      ? cfg.agentModels?.[cfg.agentId]?.model
-      ?? selectedMemoryChatAgent?.models?.[0]?.id
-      ?? null
-    : null;
+      ? effectiveAgentModelChoice(
+          selectedMemoryChatAgent,
+          cfg.agentModels?.[cfg.agentId],
+        )?.model ?? null
+      : null;
   const agentChoiceForTest =
     cfg.mode === 'daemon' && cfg.agentId
       ? cfg.agentModels?.[cfg.agentId]
@@ -1218,7 +1213,6 @@ export function SettingsDialog({
   };
   const setApiProtocol = (protocol: ApiProtocol) => {
     setApiModelCustomEditing(false);
-    apiModelUserSelectedRef.current = false;
     focusByokRequiredFieldAfterProtocolSwitchRef.current = true;
     setCfg((c) => switchApiProtocolConfig(c, protocol));
   };
@@ -2352,35 +2346,6 @@ export function SettingsDialog({
     () => apiModelOptions.map((m) => m.id),
     [apiModelOptions],
   );
-  const providerDefaultModel =
-    selectedProvider?.model.trim() || suggestedApiModelIds[0] || '';
-  useEffect(() => {
-    if (cfg.mode !== 'api') return;
-    if (apiModelCustomEditing) return;
-    // Respect an explicit user pick — even when it equals the provider preset
-    // id, the user deliberately chose it and discovery must not rewrite it.
-    if (apiModelUserSelectedRef.current) return;
-    if (fetchedApiModelOptions.length === 0) return;
-    const currentModel = cfg.model.trim();
-    if (currentModel && fetchedApiModelIds.has(currentModel)) return;
-    if (currentModel && currentModel !== providerDefaultModel) return;
-
-    const preference = resolveByokModelPreference({
-      currentModel: '',
-      accountModels: fetchedApiModelOptions,
-      providerDefaultModel,
-    });
-    if (preference.source !== 'account') return;
-    if (preference.model === currentModel) return;
-    updateApiConfig({ model: preference.model });
-  }, [
-    apiModelCustomEditing,
-    cfg.mode,
-    cfg.model,
-    fetchedApiModelIds,
-    fetchedApiModelOptions,
-    providerDefaultModel,
-  ]);
   const apiModelCustomActive =
     shouldShowCustomModelInput(
       cfg.model,
@@ -2483,9 +2448,12 @@ export function SettingsDialog({
   const agentModelSummary = (agent: AgentInfo) => {
     const models = dedupeAgentModels(agent.models ?? []);
     if (models.length === 0) return null;
-    const choice = cfg.agentModels?.[agent.id] ?? {};
-    const modelValue = choice.model ?? models[0]?.id ?? '';
-    if (!modelValue) return t('settings.modelCustom');
+    const choice = effectiveAgentModelChoice(
+      agent,
+      cfg.agentModels?.[agent.id],
+    );
+    const modelValue = choice?.model ?? '';
+    if (!modelValue) return t('inlineSwitcher.modelUnselected');
     return agentModelOptionLabel(
       models.find((m) => m.id === modelValue),
       modelValue,
@@ -2559,12 +2527,7 @@ export function SettingsDialog({
         };
       });
     };
-    const modelValue =
-      selected.id === 'amr' &&
-      configuredModel &&
-      !knownModelIds.includes(configuredModel)
-        ? models[0]?.id ?? ''
-        : configuredModel ?? models[0]?.id ?? '';
+    const modelValue = effectiveAgentModelChoice(selected, choice)?.model ?? '';
     const reasoningValue =
       choice.reasoning ??
       selected.reasoningOptions?.[0]?.id ?? '';
@@ -3479,17 +3442,8 @@ export function SettingsDialog({
                 const models = dedupeAgentModels(selected.models ?? []);
                 const hasModels = models.length > 0;
                 const choice = cfg.agentModels?.[selected.id] ?? {};
-                const knownModelIds = models.map((model) => model.id);
-                const configuredModel =
-                  typeof choice.model === 'string' && choice.model
-                    ? choice.model
-                    : null;
                 const modelValue =
-                  selected.id === 'amr' &&
-                  configuredModel &&
-                  !knownModelIds.includes(configuredModel)
-                    ? models[0]?.id ?? ''
-                    : configuredModel ?? models[0]?.id ?? '';
+                  effectiveAgentModelChoice(selected, choice)?.model ?? '';
                 return (
                   <details className="agent-cli-env settings-memory-advanced">
                     <summary className="agent-cli-env-summary">
@@ -3687,7 +3641,7 @@ export function SettingsDialog({
                     setApiModelCustomEditing(false);
                     updateApiConfig({
                       baseUrl: p.baseUrl,
-                      model: p.model,
+                      model: '',
                       apiProviderBaseUrl: p.baseUrl,
                     });
                   }}
@@ -3836,7 +3790,6 @@ export function SettingsDialog({
                 azureModelFetchHint={t('settings.azureModelFetchHint')}
                 onCustomModelChange={(value) => updateApiConfig({ model: value })}
                 onCustomModelSelect={() => {
-                  apiModelUserSelectedRef.current = true;
                   setApiModelCustomEditing(true);
                   updateApiConfig({ model: '' });
                 }}
@@ -3853,7 +3806,6 @@ export function SettingsDialog({
                   }
                 }}
                 onModelSelect={(nextValue) => {
-                  apiModelUserSelectedRef.current = true;
                   setApiModelCustomEditing(false);
                   updateApiConfig({ model: nextValue });
                 }}
@@ -3894,6 +3846,7 @@ export function SettingsDialog({
                     onChange={(e) => updateApiConfig({ apiVersion: e.target.value.trim() })}
                   />
                 </label>
+                  modelUnselected: t('inlineSwitcher.modelUnselected'),
               ) : null}
             </section>
           )}

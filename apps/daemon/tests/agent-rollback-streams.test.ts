@@ -24,6 +24,7 @@ describe('agent rollback stream filtering', () => {
   it.each([
     {
       agentId: 'claude',
+      model: 'sonnet',
       bin: 'claude',
       script: `
 if (process.argv.includes('--version')) { console.log('claude 1.0.0'); process.exit(0); }
@@ -37,18 +38,19 @@ console.log(JSON.stringify({ type: 'result', usage: {}, stop_reason: 'end_turn' 
     },
     {
       agentId: 'qwen',
+      model: 'qwen3-coder-plus',
       bin: 'qwen',
       script: `
 if (process.argv.includes('--version')) { console.log('qwen 1.0.0'); process.exit(0); }
 process.stdout.write('before <readable-rollback-request mode="files_only" /> after <');
 `,
     },
-  ])('leaves rollback markers inert for legacy $agentId streams', async ({ agentId, bin, script }) => {
+  ])('leaves rollback markers inert for legacy $agentId streams', async ({ agentId, model, bin, script }) => {
     await withFakeAgent(bin, script, async () => {
       const response = await fetch(`${baseUrl}/api/runs`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agentId, message: 'test' }),
+        body: JSON.stringify({ agentId, model, message: 'test' }),
       });
       expect(response.status).toBe(202);
       const { runId } = await response.json() as { runId: string };
@@ -95,6 +97,7 @@ process.stdout.write('before <readable-rollback-request mode="files_only" /> aft
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             agentId: 'qwen',
+            model: 'qwen3-coder-plus',
             projectId,
             conversationId,
             designSystemId: 'default',

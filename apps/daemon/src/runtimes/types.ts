@@ -175,15 +175,6 @@ export type RuntimeAgentDef = {
   // RuntimeContext.hasPriorAssistantTurn comment for why double-context
   // is the discovery-form loop's root cause.
   resumesSessionViaCli?: boolean;
-  // Optional name of a daemon-process environment variable that overrides
-  // the default model id when the chat run reaches the spawn layer with
-  // null or the synthetic 'default'. Used by adapters whose CLI rejects
-  // 'default' (e.g. AMR / vela) so an operator can swap the hardcoded
-  // fallback without a code change — set the env var on the daemon
-  // process when launching `tools-dev` / `readable` daemon. The value must be
-  // present in the daemon's `process.env`; Settings-UI per-agent env
-  // values only reach the spawned child and are NOT consulted here.
-  defaultModelEnvVar?: string;
   // Declarative authentication probe. When set, detection spawns
   // `<bin> <args>` after the version check and classifies the combined
   // stdout/stderr to derive `authStatus`. This replaces the previous

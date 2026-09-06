@@ -54,7 +54,10 @@ import {
   amrLoginStatusEventReason,
   notifyAmrLoginStatusChanged,
 } from './amrLoginPolling';
-import { normalizeAgentModelChoice } from './agentModelSelection';
+import {
+  effectiveAgentModelChoice,
+  MODEL_SELECTION_REQUIRED_EVENT,
+} from './agentModelSelection';
 import { SearchableModelSelect } from './modelOptions';
 import { dedupeAgentModels } from './modelCatalog';
 import { placePopover } from './popoverPlacement';
@@ -169,6 +172,12 @@ export function InlineModelSwitcher({
   const t = useT();
   const analytics = useAnalytics();
   const [open, setOpen] = useState(false);
+  const [selectionWarningNonce, setSelectionWarningNonce] = useState(0);
+  const [showSelectionWarning, setShowSelectionWarning] = useState(false);
+  const [selectionWarningPos, setSelectionWarningPos] = useState<{
+    right: number;
+    top: number;
+  } | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const chipRef = useRef<HTMLButtonElement | null>(null);
@@ -439,50 +448,54 @@ export function InlineModelSwitcher({
 
   const currentChoice =
     (config.agentId && config.agentModels?.[config.agentId]) || {};
-  const normalizedCurrentChoice = normalizeAgentModelChoice(
-    currentAgent,
-    currentChoice,
-  );
-  const currentAgentId = currentAgent?.id ?? null;
-  const normalizedCurrentModelId = normalizedCurrentChoice?.model ?? null;
-  const normalizedCurrentReasoning = normalizedCurrentChoice?.reasoning;
-  const currentAgentModelIds = currentAgent?.models?.map((m) => m.id) ?? [];
-  const configuredModelId =
-    typeof currentChoice.model === 'string' && currentChoice.model
-      ? currentChoice.model
-      : null;
-  const currentModelId =
-    currentAgent?.id === 'amr' &&
-    configuredModelId &&
-    !currentAgentModelIds.includes(configuredModelId)
-      ? currentAgent?.models?.[0]?.id ?? null
-      : configuredModelId ?? currentAgent?.models?.[0]?.id ?? null;
+  const currentModelChoice = effectiveAgentModelChoice(currentAgent, currentChoice);
+  const currentModelId = currentModelChoice?.model ?? null;
 
   useEffect(() => {
-    if (!currentAgentId || !normalizedCurrentModelId) return;
-    onAgentModelChange(currentAgentId, {
-      model: normalizedCurrentModelId,
-      reasoning: normalizedCurrentReasoning,
-    });
-  }, [
-    currentAgentId,
-    normalizedCurrentModelId,
-    normalizedCurrentReasoning,
-    onAgentModelChange,
-  ]);
+    if (variant !== 'model') return;
+    const warn = () => {
+      setSelectionWarningNonce((nonce) => nonce + 1);
+      setShowSelectionWarning(true);
+    };
+    window.addEventListener(MODEL_SELECTION_REQUIRED_EVENT, warn);
+    return () => window.removeEventListener(MODEL_SELECTION_REQUIRED_EVENT, warn);
+  }, [variant]);
+
+  useLayoutEffect(() => {
+    if (!showSelectionWarning) {
+      setSelectionWarningPos(null);
+      return undefined;
+    }
+    const place = () => {
+      const chip = chipRef.current;
+      if (!chip) return;
+      const box = chip.getBoundingClientRect();
+      setSelectionWarningPos({
+        right: Math.max(8, window.innerWidth - box.right),
+        top: box.bottom + 5,
+      });
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [showSelectionWarning]);
 
   // One coherent, correctly-named set: alias/id pairs the daemon reports
   // separately (`sonnet` + `claude-sonnet-4-5`) collapse into a single honest
   // entry that still executes the canonical id. Nothing is invented or dropped.
   const agentModelChoices = useMemo(
-    () => dedupeAgentModels(currentAgent?.models ?? []),
+    () => dedupeAgentModels(currentAgent?.models ?? []).filter((model) => model.id !== 'default'),
     [currentAgent],
   );
 
   const currentModelLabel =
     agentModelChoices.find((m) => m.id === currentModelId)?.label ??
     currentAgent?.models?.find((m) => m.id === currentModelId)?.label ??
-    null;
+    (currentModelId && currentModelId !== 'default' ? currentModelId : null);
   const amrLoggedIn = amrStatus?.loggedIn === true;
   const amrActionLabel = amrLoginPending
     ? t('settings.amrSigningIn')
@@ -617,12 +630,19 @@ export function InlineModelSwitcher({
           ? t('inlineSwitcher.detectingAgent')
           : t('inlineSwitcher.noAgent')
       : apiProtocolLabel(apiProtocol);
-  const chipModel =
-    config.mode === 'daemon'
-      ? currentModelLabel && currentModelId !== 'default'
-        ? currentModelLabel
-        : t('inlineSwitcher.modelDefault')
-      : config.model.trim() || t('inlineSwitcher.modelDefault');
+  const apiModelId = config.model.trim();
+  const hasExplicitModel = config.mode === 'daemon'
+    ? Boolean(currentModelId)
+    : Boolean(apiModelId && apiModelId !== 'default');
+  const chipModel = config.mode === 'daemon'
+    ? currentModelLabel ?? (hasExplicitModel
+        ? t('inlineSwitcher.modelDefault')
+        : t('inlineSwitcher.modelUnselected'))
+    : hasExplicitModel ? apiModelId : t('inlineSwitcher.modelUnselected');
+
+  useEffect(() => {
+    if (hasExplicitModel) setShowSelectionWarning(false);
+  }, [hasExplicitModel]);
 
   const handleChipClick = useCallback(() => {
     const nextOpen = !open;
@@ -678,7 +698,9 @@ export function InlineModelSwitcher({
         className={
           'inline-switcher__chip' +
           (variant === 'combined' ? '' : ` inline-switcher__chip--${variant}`) +
-          (showAmrReminder ? ' has-amr-reminder' : '')
+          (showAmrReminder ? ' has-amr-reminder' : '') +
+          (isModelVariant && !hasExplicitModel ? ' is-model-unselected' : '') +
+          (isModelVariant && showSelectionWarning ? ' is-model-warning' : '')
         }
         data-testid={
           variant === 'combined'
@@ -719,7 +741,21 @@ export function InlineModelSwitcher({
         {isAgentVariant ? null : (
           <span className="inline-switcher__chip-text">
             {isModelVariant ? (
-              <span className="inline-switcher__chip-model">{chipModel}</span>
+              <span
+                key={selectionWarningNonce}
+                className="inline-switcher__chip-model"
+                data-testid="inline-model-switcher-model-label"
+              >
+                {chipModel}
+                {!hasExplicitModel ? (
+                  <span
+                    className="inline-switcher__model-warning-mark"
+                    data-testid="inline-model-switcher-model-warning-mark"
+                    aria-hidden="true"
+                  >!
+                  </span>
+                ) : null}
+              </span>
             ) : (
               <>
                 <span className="inline-switcher__chip-mode">{chipMode}</span>
@@ -743,12 +779,31 @@ export function InlineModelSwitcher({
           />
         ) : null}
       </button>
+      {isModelVariant && showSelectionWarning && typeof document !== 'undefined'
+        ? createPortal(
+            <span
+              className="inline-switcher__model-toast"
+              role="status"
+              data-testid="inline-model-switcher-model-toast"
+              style={selectionWarningPos === null
+                ? { right: 0, top: 0, visibility: 'hidden' }
+                : {
+                    right: `${selectionWarningPos.right}px`,
+                    top: `${selectionWarningPos.top}px`,
+                  }}
+            >
+              {t('inlineSwitcher.modelSelectionRequired')}
+            </span>,
+            document.body,
+          )
+        : null}
 
       {open && typeof document !== 'undefined' ? createPortal(
         <div
           ref={popoverRef}
           className={
             'inline-switcher__popover inline-switcher__popover--layer' +
+            (isModelVariant ? ' inline-switcher__popover--model' : '') +
             (surface ? ` inline-switcher__popover--${surface}` : '')
           }
           role="menu"
@@ -803,7 +858,6 @@ export function InlineModelSwitcher({
                 title={
                   !daemonLive
                     ? t('inlineSwitcher.daemonOffline')
-            (isModelVariant ? ' inline-switcher__popover--model' : '') +
                     : t('inlineSwitcher.useCli')
                 }
               >
@@ -995,8 +1049,7 @@ export function InlineModelSwitcher({
                 </div>
               ) : !isAgentVariant &&
               currentAgent &&
-              currentAgent.models &&
-              currentAgent.models.length > 0 ? (
+              agentModelChoices.length > 0 ? (
                 <div className="inline-switcher__row">
                   <span className="inline-switcher__label">
                     {t('inlineSwitcher.modelLabel')}

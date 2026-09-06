@@ -569,6 +569,8 @@ process.stdin.on('end', () => {
               JSON.stringify({ topic }),
               '--agent',
               'opencode',
+              '--model',
+              'openai/gpt-5',
               '--follow',
             ], { timeout: 60_000 });
             expect(run.stdout).toContain('[run] started run');

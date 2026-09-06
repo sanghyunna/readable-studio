@@ -1,23 +1,15 @@
 /**
- * Coverage for `resolveModelForAgent` — the safety net that turns the
- * synthetic `'default'` / null model into a concrete fallback id for
- * adapters whose CLI cannot accept "default" (e.g. AMR / vela, which
- * requires an explicit `session/set_model` before `session/prompt` and
- * has no notion of a CLI-side saved default).
- *
- * The chat-run path in server.ts goes:
- *
- *   user/plugin model -> isKnownModel | sanitizeCustomModel -> resolveModelForAgent
- *
- * so the substitution kicks in even when a plugin or stored chat state
- * sends `model: 'default'` (or omits the field). Without this, AMR turns
- * fail in production with `session/set_model must be called before
- * session/prompt`.
+ * Coverage for daemon-side model admission. A concrete model must be one
+ * the user explicitly sent: catalog-only adapters accept surfaced ids,
+ * custom-capable adapters may also accept safe free-form ids, and omission
+ * never triggers a fallback. The synthetic `default` remains valid only for
+ * adapters that surface it as their daemon-owned no-choice sentinel.
  */
 
 import { describe, expect, it } from 'vitest';
 
 import {
+  agentHasModelChoice,
   getRememberedLiveModels,
   isKnownModel,
   preferFreshLiveModels,
@@ -46,25 +38,25 @@ function defWithId(id: string, fallbackIds: string[]): RuntimeAgentDef {
 }
 
 describe('resolveModelForAgent', () => {
-  it('substitutes the first concrete fallback when the resolved model is null and the def has no "default" option', () => {
+  it('does not substitute a concrete fallback when the model is omitted', () => {
     const def = defWith(['gpt-5.4-mini', 'gpt-5.4']);
-    expect(resolveModelForAgent(def, null)).toBe('gpt-5.4-mini');
+    expect(resolveModelForAgent(def, null)).toBe(null);
   });
 
-  it('substitutes when the resolved model is the synthetic "default" id and the def omits "default"', () => {
+  it('rejects the synthetic "default" id when the adapter does not surface it', () => {
     const def = defWith(['gpt-5.4-mini', 'gpt-5.4']);
-    expect(resolveModelForAgent(def, 'default')).toBe('gpt-5.4-mini');
+    expect(resolveModelForAgent(def, 'default')).toBe(null);
   });
 
-  it('prefers the first remembered live model when the def cannot accept the synthetic default model', () => {
+  it('does not substitute the first remembered live model for an omitted selection', () => {
     const def = defWithId('live-default-test', []);
     rememberLiveModels(def.id, [
       { id: 'deepseek-v3.2', label: 'deepseek-v3.2' },
       { id: 'glm-5.1', label: 'glm-5.1' },
     ]);
 
-    expect(resolveModelForAgent(def, null)).toBe('deepseek-v3.2');
-    expect(resolveModelForAgent(def, 'default')).toBe('deepseek-v3.2');
+    expect(resolveModelForAgent(def, null)).toBe(null);
+    expect(resolveModelForAgent(def, 'default')).toBe(null);
     expect(getRememberedLiveModels(def.id)).toEqual([
       { id: 'deepseek-v3.2', label: 'deepseek-v3.2' },
       { id: 'glm-5.1', label: 'glm-5.1' },
@@ -88,8 +80,10 @@ describe('resolveModelForAgent', () => {
     ]);
     expect(isKnownModel(def, 'prod-model', 'prod')).toBe(true);
     expect(isKnownModel(def, 'prod-model', 'test')).toBe(false);
-    expect(resolveModelForAgent(def, null, {}, 'prod')).toBe('prod-model');
-    expect(resolveModelForAgent(def, null, {}, 'test')).toBe('test-model');
+    expect(resolveModelForAgent(def, null, {}, 'prod')).toBe(null);
+    expect(resolveModelForAgent(def, null, {}, 'test')).toBe(null);
+    expect(resolveModelForAgent(def, 'prod-model', {}, 'prod')).toBe('prod-model');
+    expect(resolveModelForAgent(def, 'prod-model', {}, 'test')).toBe('prod-model');
   });
 
   it('prefers remembered live models only when the fresh AMR catalog is empty', () => {
@@ -103,64 +97,56 @@ describe('resolveModelForAgent', () => {
     expect(preferFreshLiveModels([], remembered)).toEqual(remembered);
   });
 
-  it('keeps common default-capable defs untouched even when live models are remembered', () => {
-    const def = defWithId('live-default-capable-test', ['default', 'sonnet']);
+  it('rejects the default sentinel when remembered concrete models are available', () => {
+    const def = defWithId('live-default-capable-test', ['default']);
     rememberLiveModels(def.id, [
       { id: 'deepseek-v3.2', label: 'deepseek-v3.2' },
     ]);
 
+    expect(agentHasModelChoice(def)).toBe(true);
     expect(resolveModelForAgent(def, null)).toBe(null);
-    expect(resolveModelForAgent(def, 'default')).toBe('default');
+    expect(resolveModelForAgent(def, 'default')).toBe(null);
   });
 
-  it('leaves the resolved model alone when the def lists "default" itself (the common case for hermes/devin/kimi)', () => {
+  it('rejects the default sentinel when the static catalog has concrete choices', () => {
     const def = defWith(['default', 'sonnet']);
-    expect(resolveModelForAgent(def, 'default')).toBe('default');
+    expect(agentHasModelChoice(def)).toBe(true);
+    expect(resolveModelForAgent(def, 'default')).toBe(null);
     expect(resolveModelForAgent(def, null)).toBe(null);
   });
 
-  it('leaves real model ids untouched even when the def omits "default"', () => {
+  it('accepts a sanitized uncatalogued id when custom models are supported', () => {
     const def = defWith(['gpt-5.4-mini']);
-    expect(resolveModelForAgent(def, 'gpt-5.4')).toBe('gpt-5.4');
+    expect(resolveModelForAgent(def, 'vendor/gpt-5.4-fast')).toBe('vendor/gpt-5.4-fast');
   });
 
-  it('returns the original value when fallbackModels is empty (no substitution possible)', () => {
-    const def = defWith([]);
-    expect(resolveModelForAgent(def, null)).toBe(null);
-    expect(resolveModelForAgent(def, 'default')).toBe('default');
-  });
-
-  it('honors defaultModelEnvVar over the hardcoded fallback when the env var is set', () => {
+  it('rejects an uncatalogued id when custom models are not supported', () => {
     const def: RuntimeAgentDef = {
       ...defWith(['gpt-5.4-mini']),
-      defaultModelEnvVar: 'VELA_DEFAULT_MODEL',
+      supportsCustomModel: false,
     };
+    expect(resolveModelForAgent(def, 'vendor/gpt-5.4-fast')).toBe(null);
+  });
+
+  it('accepts a surfaced id when custom models are not supported', () => {
+    const def: RuntimeAgentDef = {
+      ...defWith(['gpt-5.4-mini']),
+      supportsCustomModel: false,
+    };
+    expect(resolveModelForAgent(def, 'gpt-5.4-mini')).toBe('gpt-5.4-mini');
+  });
+
+  it('keeps a no-model CLI sendable through its surfaced default sentinel', () => {
+    const def = defWith(['default']);
+    expect(agentHasModelChoice(def)).toBe(false);
+    expect(resolveModelForAgent(def, 'default')).toBe('default');
+    expect(def.buildArgs('prompt', [], [], { model: 'default' })).toEqual([]);
+  });
+
+  it('does not use an environment override when the model is omitted', () => {
+    const def = defWith(['gpt-5.4-mini']);
     expect(
       resolveModelForAgent(def, null, { VELA_DEFAULT_MODEL: 'gpt-5.5' }),
-    ).toBe('gpt-5.5');
-    expect(
-      resolveModelForAgent(def, 'default', { VELA_DEFAULT_MODEL: 'gpt-5.5' }),
-    ).toBe('gpt-5.5');
-  });
-
-  it('falls back to the static list when defaultModelEnvVar is set but the env var is empty / missing', () => {
-    const def: RuntimeAgentDef = {
-      ...defWith(['gpt-5.4-mini']),
-      defaultModelEnvVar: 'VELA_DEFAULT_MODEL',
-    };
-    expect(resolveModelForAgent(def, null, {})).toBe('gpt-5.4-mini');
-    expect(
-      resolveModelForAgent(def, null, { VELA_DEFAULT_MODEL: '   ' }),
-    ).toBe('gpt-5.4-mini');
-  });
-
-  it('does NOT use the env override when the user already picked a real model', () => {
-    const def: RuntimeAgentDef = {
-      ...defWith(['gpt-5.4-mini']),
-      defaultModelEnvVar: 'VELA_DEFAULT_MODEL',
-    };
-    expect(
-      resolveModelForAgent(def, 'gpt-5.4-fast', { VELA_DEFAULT_MODEL: 'gpt-5.5' }),
-    ).toBe('gpt-5.4-fast');
+    ).toBe(null);
   });
 });

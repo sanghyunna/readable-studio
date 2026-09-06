@@ -195,7 +195,7 @@ describe('BYOK draft validation', () => {
     expect(modelFetchDraft.ok).toBe(true);
   });
 
-  it('defines the model preference order for later model-fetch PRs', () => {
+  it('never turns catalog suggestions into a model selection', () => {
     expect(
       resolveByokModelPreference({
         currentModel: 'custom-model',
@@ -210,7 +210,7 @@ describe('BYOK draft validation', () => {
         accountModels: [{ id: 'account-model', label: 'Account model' }],
         providerDefaultModel: 'provider-model',
       }),
-    ).toEqual({ model: 'account-model', source: 'account' });
+    ).toEqual({ model: '', source: 'empty' });
 
     expect(
       resolveByokModelPreference({
@@ -218,6 +218,6 @@ describe('BYOK draft validation', () => {
         accountModels: [],
         providerDefaultModel: 'provider-model',
       }),
-    ).toEqual({ model: 'provider-model', source: 'provider_default' });
+    ).toEqual({ model: '', source: 'empty' });
   });
 });

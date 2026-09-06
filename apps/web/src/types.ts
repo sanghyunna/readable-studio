@@ -153,8 +153,9 @@ export interface ApiProtocolConfig {
 
 // Per-CLI model + reasoning the user picked in the model menu. Each agent
 // keeps its own slot so flipping between Codex and Gemini doesn't reset the
-// other one's choice. Missing entries fall back to the agent's first
-// declared model (`'default'` — let the CLI pick).
+// other one's choice. Missing entries remain unselected; capability-aware
+// resolution may use the CLI-owned `default` sentinel only when the agent
+// exposes no concrete model choice.
 export type AgentModelChoice = AgentModelPrefs;
 export type AgentCliEnvConfig = AgentCliEnvPrefs;
 
@@ -296,8 +297,8 @@ export interface AppConfig {
   // this is set so refreshing the page doesn't re-prompt.
   onboardingCompleted?: boolean;
   // Per-CLI model picker state, keyed by agent id (e.g. `gemini`, `codex`).
-  // Pre-existing configs without this field fall through to the agent's
-  // declared default.
+  // An absent choice remains unselected unless the CLI exposes no concrete
+  // model choices and therefore owns model resolution itself.
   agentModels?: Record<string, AgentModelChoice>;
   // Per-agent non-secret CLI config locations injected into detection and runs.
   agentCliEnv?: AgentCliEnvConfig;

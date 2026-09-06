@@ -152,7 +152,9 @@ test('[P1] legacy known OpenAI provider switches to the matching Anthropic prese
   await expect(anthropicTab).toHaveAttribute('aria-selected', 'true');
   await expect(dialog.getByRole('heading', { name: 'Anthropic API' })).toBeVisible();
   await expect(baseUrlInput).toHaveValue('https://api.deepseek.com/anthropic');
-  await expect(modelSelect).toContainText(/deepseek-chat/i);
+  await expect(modelSelect).toContainText('None selected');
+  await modelSelect.click();
+  await expect(page.locator(MODEL_POPOVER_SELECTOR).last().getByRole('option', { name: /deepseek-chat/i })).toBeVisible();
 });
 
 test('[P1] legacy custom provider preserves custom baseUrl and model when switching protocols', async ({ page }) => {
@@ -212,8 +214,9 @@ test('[P0] @critical BYOK quick fill provider updates fields and saved settings 
   await dialog.getByRole('tab', { name: 'OpenAI', exact: true }).click();
   const providerPicker = providerPresetCombobox(dialog);
   await selectComboboxOption(page, providerPicker, /DeepSeek — OpenAI/i, '[data-testid="settings-byok-provider-preset-popover"]');
-  await expectModelComboboxText(dialog, /deepseek-chat/i);
+  await expectModelComboboxText(dialog, 'None selected');
   await expect(dialog.getByLabel('Base URL')).toHaveValue('https://api.deepseek.com');
+  await selectComboboxOption(page, modelCombobox(dialog), /deepseek-chat/i, MODEL_POPOVER_SELECTOR);
 
   await dialog.getByRole('button', { name: 'Show' }).click();
   const apiKeyInput = dialog.getByLabel('API key');

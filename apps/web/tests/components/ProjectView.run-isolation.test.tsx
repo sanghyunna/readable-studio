@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProjectView, mergeSavedPreviewComment } from '../../src/components/ProjectView';
+import { requireModelSelection } from '../../src/components/agentModelSelection';
 import type {
   AgentInfo,
   AppConfig,
@@ -246,10 +247,12 @@ vi.mock('../../src/components/ChatPane', () => ({
     messages,
     onAttachComment,
     onSelectConversation,
-    onSend,
+    onSend: onSendUnsafe,
     onSendQueuedNow,
     onNewConversation,
     error,
+    config,
+    agents,
   }: {
     activeConversationId: string | null;
     conversations: Conversation[];
@@ -260,6 +263,8 @@ vi.mock('../../src/components/ChatPane', () => ({
     attachedComments?: PreviewComment[];
     messages?: ChatMessage[];
     error: string | null;
+    config?: AppConfig;
+    agents?: AgentInfo[];
     onAttachComment?: (comment: PreviewComment) => void;
     onSelectConversation: (id: string) => void;
     onSend: (
@@ -272,6 +277,15 @@ vi.mock('../../src/components/ChatPane', () => ({
     onNewConversation: () => void;
   }) => {
     const attached = attachedComments ?? [];
+    const onSend: typeof onSendUnsafe = (...args) => {
+      const configuredAgentChoice = config?.agentId
+        ? config.agentModels?.[config.agentId]
+        : undefined;
+      // Preserve the real composer's stale-explicit-choice gate without making
+      // unrelated run-isolation fixtures model-selection fixtures too.
+      if (config && configuredAgentChoice && !requireModelSelection(config, agents ?? [])) return;
+      onSendUnsafe(...args);
+    };
     return (
       <section>
         <output data-testid="active-conversation">{activeConversationId}</output>
@@ -615,7 +629,7 @@ describe('ProjectView conversation run isolation', () => {
     );
   });
 
-  it('submits the live AMR fallback model when the saved AMR model is stale', async () => {
+  it('refuses to submit when the saved AMR model is stale', async () => {
     conversationAMessages = [];
     renderProjectView(
       {
@@ -633,6 +647,7 @@ describe('ProjectView conversation run isolation', () => {
           bin: 'amr',
           available: true,
           models: [{ id: 'glm-5', label: 'GLM 5' }],
+          supportsCustomModel: false,
         },
       ],
     );
@@ -642,14 +657,7 @@ describe('ProjectView conversation run isolation', () => {
 
     fireEvent.click(screen.getByTestId('send-message'));
 
-    await waitFor(() => expect(streamViaDaemon).toHaveBeenCalledTimes(1));
-    expect(streamViaDaemon).toHaveBeenCalledWith(
-      expect.objectContaining({
-        agentId: 'amr',
-        model: 'glm-5',
-        reasoning: 'medium',
-      }),
-    );
+    expect(streamViaDaemon).not.toHaveBeenCalled();
   });
 
   it('does not create duplicate empty conversations while a fresh conversation is loading', async () => {

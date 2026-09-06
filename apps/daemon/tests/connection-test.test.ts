@@ -1940,7 +1940,7 @@ describe('POST /api/test/connection provider mode', () => {
 });
 
 describe('POST /api/test/connection agent mode', () => {
-  it('uses the AMR profile-scoped remembered model during connection tests when no explicit model is selected', async () => {
+  it('accepts an explicitly selected AMR profile-scoped remembered model during connection tests', async () => {
     rememberLiveModels('amr', [{ id: 'local-scoped-model', label: 'local-scoped-model' }], 'local');
 
     await withFakeAgent(
@@ -1949,6 +1949,7 @@ describe('POST /api/test/connection agent mode', () => {
       async () => {
         const result = await testAgentConnection({
           agentId: 'amr',
+          model: 'local-scoped-model',
           agentCliEnv: {
             amr: {
               READABLE_AMR_PROFILE: 'local',
@@ -1978,6 +1979,7 @@ describe('POST /api/test/connection agent mode', () => {
         async () => {
           const result = await testAgentConnection({
             agentId: 'amr',
+            model: 'local-env-model',
             agentCliEnv: {
               amr: {
                 VELA_BIN: '/tmp/fake-vela-bin',
@@ -2009,7 +2011,7 @@ setImmediate(() => process.exit(0));
         const res = await realFetch(`${baseUrl}/api/test/connection`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ mode: 'agent', agentId: 'codex' }),
+          body: JSON.stringify({ mode: 'agent', agentId: 'codex', model: 'gpt-5.4' }),
         });
         expect(res.status).toBe(200);
         await expect(res.json()).resolves.toMatchObject({
@@ -2051,6 +2053,7 @@ setImmediate(() => process.exit(0));
             body: JSON.stringify({
               mode: 'agent',
               agentId: 'codex',
+              model: 'gpt-5.4',
               agentCliEnv: {
                 codex: {
                   CODEX_HOME: codexHome,
@@ -2114,6 +2117,7 @@ setImmediate(() => process.exit(0));
             body: JSON.stringify({
               mode: 'agent',
               agentId: 'codex',
+              model: 'gpt-5.4',
               agentCliEnv: {
                 codex: {
                   CODEX_HOME: codexHome,
@@ -2156,7 +2160,7 @@ setTimeout(() => {
         const res = await realFetch(`${baseUrl}/api/test/connection`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ mode: 'agent', agentId: 'codex' }),
+          body: JSON.stringify({ mode: 'agent', agentId: 'codex', model: 'gpt-5.4' }),
         });
         expect(res.status).toBe(200);
         await expect(res.json()).resolves.toMatchObject({
@@ -2613,7 +2617,7 @@ setTimeout(() => process.exit(0), 50);
         const res = await realFetch(`${baseUrl}/api/test/connection`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ mode: 'agent', agentId: 'opencode' }),
+          body: JSON.stringify({ mode: 'agent', agentId: 'opencode', model: 'openai/gpt-5' }),
         });
         expect(res.status).toBe(200);
         await expect(res.json()).resolves.toMatchObject({
@@ -2712,7 +2716,7 @@ process.exit(1);
         const res = await realFetch(`${baseUrl}/api/test/connection`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ mode: 'agent', agentId: 'cursor-agent' }),
+          body: JSON.stringify({ mode: 'agent', agentId: 'cursor-agent', model: 'auto' }),
         });
         expect(res.status).toBe(200);
         await expect(res.json()).resolves.toMatchObject({
@@ -2748,7 +2752,7 @@ process.exit(1);
         const res = await realFetch(`${baseUrl}/api/test/connection`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ mode: 'agent', agentId: 'cursor-agent' }),
+          body: JSON.stringify({ mode: 'agent', agentId: 'cursor-agent', model: 'auto' }),
         });
         expect(res.status).toBe(200);
         await expect(res.json()).resolves.toMatchObject({
@@ -2846,6 +2850,45 @@ process.exit(1);
         expect(result.detail).toContain('workspace path does not exist');
       },
     );
+  });
+
+  it('rejects an omitted model for an agent with concrete choices before spawning', async () => {
+    rememberLiveModels('amr', [{ id: 'explicit-model', label: 'explicit-model' }]);
+    const res = await realFetch(`${baseUrl}/api/test/connection`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: 'agent', agentId: 'amr' }),
+    });
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      ok: false,
+      kind: 'invalid_model_id',
+      model: '',
+      agentName: 'AMR',
+      detail: 'Select a model available for this agent.',
+    });
+  });
+
+  it('rejects an uncatalogued model for a catalog-only agent before spawning', async () => {
+    const res = await realFetch(`${baseUrl}/api/test/connection`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'agent',
+        agentId: 'amr',
+        model: 'vendor/uncatalogued-model',
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      ok: false,
+      kind: 'invalid_model_id',
+      model: 'vendor/uncatalogued-model',
+      agentName: 'AMR',
+      detail: 'Select a model available for this agent.',
+    });
   });
 
   it('rejects invalid custom model ids before spawning an agent', async () => {

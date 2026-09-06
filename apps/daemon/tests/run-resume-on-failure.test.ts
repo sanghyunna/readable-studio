@@ -345,6 +345,7 @@ async function sendRunAndWait(url: string, encoded: string): Promise<RunStatus> 
       assistantMessageId,
       clientRequestId: `client_resume_${randomUUID()}`,
       agentId: 'claude',
+      model: 'sonnet',
       message: 'please do the task',
       currentPrompt: 'please do the task',
     }),

@@ -66,6 +66,7 @@ describe('same-run retry runtime', () => {
     started = await startServer({ port: 0, returnServer: true }) as StartedServer;
     await putConfig(started.url, {
       agentId: 'claude',
+      model: 'sonnet',
       agentCliEnv: { claude: { CLAUDE_BIN: fakeClaude } },
       telemetry: { metrics: true, content: false, artifactManifest: false },
       privacyDecisionAt: Date.now(),
@@ -122,6 +123,7 @@ describe('same-run retry runtime', () => {
     started = await startServer({ port: 0, returnServer: true }) as StartedServer;
     await putConfig(started.url, {
       agentId: 'claude',
+      model: 'sonnet',
       agentCliEnv: { claude: { CLAUDE_BIN: fakeClaude } },
       telemetry: { metrics: true, content: false, artifactManifest: false },
       privacyDecisionAt: Date.now(),
@@ -304,6 +306,7 @@ async function createAndWaitForRun(url: string): Promise<RunStatus> {
       assistantMessageId,
       clientRequestId: `client_retry_${randomUUID()}`,
       agentId: 'claude',
+      model: 'sonnet',
       message: 'please retry a transient runtime failure',
       currentPrompt: 'please retry a transient runtime failure',
     }),

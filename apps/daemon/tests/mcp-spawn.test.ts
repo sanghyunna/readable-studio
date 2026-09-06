@@ -187,6 +187,7 @@ describe('spawn writes external MCP config for Claude Code', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           agentId: 'claude',
+          model: 'sonnet',
           projectId: id,
           message: 'hello mcp',
         }),
@@ -217,6 +218,7 @@ describe('spawn writes external MCP config for Claude Code', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           agentId: 'claude',
+          model: 'sonnet',
           projectId: id,
           message: 'second turn',
         }),
@@ -255,6 +257,7 @@ describe('spawn writes external MCP config for Claude Code', () => {
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
             agentId: 'claude',
+            model: 'sonnet',
             projectId: id,
             message: 'hello sandbox mcp',
           }),
@@ -298,6 +301,7 @@ describe('spawn writes external MCP config for Claude Code', () => {
           schedule: { kind: 'daily', time: '09:00', timezone: 'UTC' },
           target: { mode: 'reuse', projectId: id },
           agentId: 'claude',
+          model: 'sonnet',
           enabled: false,
         }),
       });
@@ -368,6 +372,7 @@ describe('spawn writes external MCP config for Claude Code', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           agentId: 'claude',
+          model: 'sonnet',
           projectId: id,
           message: 'headless fallback prompt',
         }),
@@ -417,6 +422,7 @@ describe('spawn writes external MCP config for Claude Code', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           agentId: 'claude',
+          model: 'sonnet',
           projectId: id,
           message: 'hello run-scoped mcp',
           toolBundle: {
@@ -482,6 +488,7 @@ describe('spawn writes external MCP config for Claude Code', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         agentId: 'claude',
+        model: 'sonnet',
         projectId: id,
         message: 'imported run-scoped tools',
         toolBundle: {
@@ -504,6 +511,7 @@ describe('spawn writes external MCP config for Claude Code', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         agentId: 'claude',
+        model: 'sonnet',
         projectId: id,
         message: 'imported chat-scoped tools',
         toolBundle: {
@@ -542,6 +550,7 @@ describe('spawn writes external MCP config for Claude Code', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         agentId: 'claude',
+        model: 'sonnet',
         projectId: id,
         message: 'bad tools',
         toolBundle: {
@@ -563,6 +572,7 @@ describe('spawn writes external MCP config for Claude Code', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         agentId: 'claude',
+        model: 'sonnet',
         projectId: id,
         message: 'bad tools',
         toolBundle: 'bad',
@@ -581,6 +591,7 @@ describe('spawn writes external MCP config for Claude Code', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         agentId: 'codex',
+        model: 'gpt-5.4',
         projectId: id,
         message: 'bad tools',
         toolBundle: {

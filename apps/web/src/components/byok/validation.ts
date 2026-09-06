@@ -53,11 +53,7 @@ export interface NormalizedByokBaseUrl {
   addedOpenAiVersionPath: boolean;
 }
 
-export type ByokModelPreferenceSource =
-  | 'explicit'
-  | 'account'
-  | 'provider_default'
-  | 'empty';
+export type ByokModelPreferenceSource = 'explicit' | 'empty';
 
 export interface ByokModelPreference {
   model: string;
@@ -204,22 +200,15 @@ export function blockingByokDraftFields(
 
 export function resolveByokModelPreference({
   currentModel,
-  accountModels,
-  providerDefaultModel,
 }: {
   currentModel: string;
   accountModels: readonly ProviderModelOption[];
   providerDefaultModel?: string;
 }): ByokModelPreference {
   const explicit = currentModel.trim();
-  if (explicit) return { model: explicit, source: 'explicit' };
-  const account = accountModels.find((model) => model.id.trim());
-  if (account) return { model: account.id, source: 'account' };
-  const providerDefault = providerDefaultModel?.trim() ?? '';
-  if (providerDefault) {
-    return { model: providerDefault, source: 'provider_default' };
-  }
-  return { model: '', source: 'empty' };
+  return explicit
+    ? { model: explicit, source: 'explicit' }
+    : { model: '', source: 'empty' };
 }
 
 function validateApiKeyShape(

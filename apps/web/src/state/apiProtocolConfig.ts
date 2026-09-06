@@ -10,7 +10,7 @@ function defaultApiProtocolConfig(protocol: ApiProtocol): ApiProtocolConfig {
   return {
     apiKey: '',
     baseUrl: provider?.baseUrl ?? '',
-    model: provider?.model ?? '',
+    model: '',
     apiVersion: '',
     apiProviderBaseUrl: provider ? provider.baseUrl : null,
   };
@@ -64,7 +64,7 @@ function nextApiProtocolConfig(
     return {
       ...defaultApiProtocolConfig(protocol),
       baseUrl: siblingProvider.baseUrl,
-      model: siblingProvider.model,
+      model: '',
       apiProviderBaseUrl: siblingProvider.baseUrl,
     };
   }

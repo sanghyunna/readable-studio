@@ -65,6 +65,7 @@ interface SearchableModelSelectProps
   popoverTestId?: string;
   popoverClassName?: string;
   additionalOptions?: Array<{ value: string; label: string }>;
+  emptyLabel?: string;
   minSearchableOptions?: number;
   popoverMinWidth?: number;
 }
@@ -82,6 +83,7 @@ export const SearchableModelSelect = forwardRef<
     popoverTestId,
     popoverClassName,
     additionalOptions,
+    emptyLabel = '',
     minSearchableOptions = 8,
     popoverMinWidth,
     className,
@@ -112,7 +114,7 @@ export const SearchableModelSelect = forwardRef<
   }, [additionalOptions, models]);
   const selectedOption =
     allOptions.find((option) => option.id === value) ??
-    (value ? { id: value, label: value } : allOptions[0] ?? null);
+    (value ? { id: value, label: value } : null);
   const normalizedQuery = query.trim().toLowerCase();
   const filteredOptions = useMemo(() => {
     if (!normalizedQuery) return allOptions;
@@ -225,7 +227,7 @@ export const SearchableModelSelect = forwardRef<
           if (!event.defaultPrevented) setOpen((prev) => !prev);
         }}
       >
-        {selectedOption?.label ?? ''}
+        {selectedOption?.label ?? emptyLabel}
       </button>
       {open && popoverStyle
         ? createPortal(

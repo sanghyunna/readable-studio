@@ -20,7 +20,9 @@ export {
   checkWindowsDirectExeCommandLineBudget,
 } from './runtimes/prompt-budget.js';
 export {
+  agentHasModelChoice,
   rememberLiveModels,
   isKnownModel,
+  resolveModelForAgent,
   sanitizeCustomModel,
 } from './runtimes/models.js';

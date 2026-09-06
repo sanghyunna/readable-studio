@@ -450,7 +450,23 @@ test('filtered, busy, error, tooltip, toast/undo and palette are behavioral stat
   recordRegion({ region: 'R13', state: 'error', pass: dangerPaint && errorPaint.visible && errorPaint.below && errorPaint.aligned && errorPaint.shadow !== 'none', anchor: `color=${errorPaint.color}; rgba=${errorPaint.rgba.red},${errorPaint.rgba.green},${errorPaint.rgba.blue},${errorPaint.rgba.alpha}; below=${errorPaint.below}; aligned=${errorPaint.aligned}; ariaInvalid=true`, observation: 'red-dominant sibling alert below the ringed composer clears on input' });
 
   let release: (() => void) | undefined; const gate = new Promise<void>((resolve) => { release = resolve; });
-  await page.route('**/api/projects', async (route) => { if (route.request().method() !== 'POST') return route.fallback(); await gate; await route.fallback(); });
+  let projectPostRequests = 0;
+  await page.route('**/api/projects', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    projectPostRequests += 1;
+    await gate;
+    await route.fallback();
+  });
+  await editor.fill('새로운 분기 보고서를 만들어 주세요');
+  await page.getByTestId('home-hero-submit').click();
+  await expect(page.getByTestId('inline-model-switcher-model-toast')).toHaveText('모델을 선택해야합니다');
+  await expect(page.getByTestId('inline-model-switcher-model-trigger')).toHaveClass(/\bis-model-warning\b/u);
+  expect(projectPostRequests).toBe(0);
+
+  await page.getByTestId('inline-model-switcher-model-trigger').click();
+  const modelOption = page.locator('[data-testid^="inline-model-switcher-model-option-"]').first();
+  await expect(modelOption).toBeVisible();
+  await modelOption.click();
   const posted = page.waitForRequest((incoming) => incoming.method() === 'POST' && new URL(incoming.url()).pathname === '/api/projects');
   await editor.fill('새로운 분기 보고서를 만들어 주세요'); await page.getByTestId('home-hero-submit').click(); await posted;
   await expect(composer).toHaveAttribute('aria-busy', 'true'); await expect(editor).toHaveAttribute('contenteditable', 'false');

@@ -175,6 +175,23 @@ describe('workspace chat composer: agent + model execution pair', () => {
     expect(screen.queryByTestId('inline-model-switcher-mode-daemon')).toBeNull();
   });
 
+  it('blocks an unselected-model send and warns through the shared model trigger', () => {
+    const onSend = vi.fn();
+    renderPane({
+      config: { ...CONFIG, agentModels: {} },
+      initialDraft: 'hello',
+      onSend,
+    });
+
+    fireEvent.click(screen.getByTestId('chat-send'));
+
+    expect(onSend).not.toHaveBeenCalled();
+    expect(screen.getByTestId('inline-model-switcher-model-trigger').className)
+      .toContain('is-model-warning');
+    expect(screen.getByTestId('inline-model-switcher-model-toast').textContent)
+      .toBe('inlineSwitcher.modelSelectionRequired');
+  });
+
   it('routes a model pick to the config mutator for the active agent', () => {
     const onAgentModelChange = vi.fn();
     renderPane({ onAgentModelChange });

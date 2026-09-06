@@ -74,6 +74,7 @@ import {
   spawnEnvForAgent,
 } from './agents.js';
 import {
+  agentHasModelChoice,
   getRememberedLiveModels,
   preferFreshLiveModels,
   rememberLiveModels,
@@ -5183,6 +5184,8 @@ export async function startServer({
     testAgentConnection,
     getAgentDef,
     isKnownModel,
+    agentHasModelChoice,
+    resolveModelForAgent,
     sanitizeCustomModel,
   };
   const critiqueDeps = {
@@ -10144,10 +10147,9 @@ export async function startServer({
       configuredAgentEnv = {};
     }
     // Per-agent model + reasoning the user picked in the model menu.
-    // Trust the value when it matches the most recent /api/agents listing
-    // (live or fallback). Otherwise allow it through if it passes a
-    // permissive sanitizer — that's the path for user-typed custom model
-    // ids the CLI's listing didn't surface yet.
+    // Catalog-only agents accept only a model surfaced by the daemon;
+    // custom-capable agents may additionally accept a sanitized free-form id.
+    // An omitted model remains omitted: the daemon must never choose for the user.
     const requestedLiveModelScope = def.id === 'amr'
       ? resolveAmrProfile({
           ...process.env,
@@ -10157,14 +10159,11 @@ export async function startServer({
       : null;
     let safeModel = resolveModelForAgent(
       def,
-      typeof model === 'string'
-        ? isKnownModel(def, model, requestedLiveModelScope)
-          ? model
-          : sanitizeCustomModel(model)
-        : null,
+      model,
       process.env,
       requestedLiveModelScope,
     );
+    const requestedModel = typeof model === 'string' ? model.trim() : '';
     const safeReasoning =
       typeof reasoning === 'string' && Array.isArray(def.reasoningOptions)
         ? (def.reasoningOptions.find((r) => r.id === reasoning)?.id ?? null)
@@ -10259,6 +10258,17 @@ export async function startServer({
       const visible = filterAgentRollbackText(text);
       if (visible) emitRollbackTail(visible);
     };
+    if (
+      def.id !== 'amr' &&
+      !safeModel &&
+      (requestedModel || agentHasModelChoice(def, requestedLiveModelScope))
+    ) {
+      send('error', {
+        code: 'MODEL_SELECTION_REQUIRED',
+        message: 'A model must be explicitly selected for this agent.',
+      });
+      return design.runs.finish(run, 'failed', 1, null);
+    }
     const flushAgentRollbackText = () => agentRollbackIsolationEnabled ? rollbackDetector.flush() : '';
     const flushAgentRollbackTail = () => {
       const visible = flushAgentRollbackText();
@@ -10738,24 +10748,16 @@ export async function startServer({
         rememberLiveModels(def.id, liveModels, amrModelScope);
       }
       liveModels = preferFreshLiveModels(liveModels, rememberedLiveModels);
+      safeModel = resolveModelForAgent(
+        def,
+        model,
+        process.env,
+        requestedLiveModelScope,
+      );
+      agentOptions.model = safeModel;
       const liveModelIds = new Set(
         liveModels.map((candidate) => candidate?.id).filter(Boolean),
       );
-      // A request that came in as 'default'/empty is normally pre-resolved to a
-      // concrete id via the agent-wide cached model order; if it still is not,
-      // adopt the first catalog entry so the spawn layer always has a real id.
-      const userAskedForDefault =
-        typeof model !== 'string' ||
-        !model.trim() ||
-        model.trim().toLowerCase() === 'default';
-      if (
-        !safeModel ||
-        safeModel === 'default' ||
-        (userAskedForDefault && !liveModelIds.has(safeModel))
-      ) {
-        safeModel = liveModels[0]?.id ?? safeModel ?? null;
-        agentOptions.model = safeModel;
-      }
       if (liveModelIds.size === 0) {
         // The catalog is genuinely empty: even the offline preset seed could
         // not be read, which almost always means the user is signed out (`vela`

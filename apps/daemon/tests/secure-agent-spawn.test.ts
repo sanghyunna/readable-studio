@@ -60,7 +60,12 @@ async function runAgent(
   const response = await fetch(`${baseUrl}/api/runs`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ agentId, message: 'edit then self-correct', ...project }),
+    body: JSON.stringify({
+      agentId,
+      model: agentId === 'qwen' ? 'qwen3-coder-plus' : 'gpt-5.4',
+      message: 'edit then self-correct',
+      ...project,
+    }),
   });
   expect(response.status).toBe(202);
   const { runId } = await response.json() as { runId: string };

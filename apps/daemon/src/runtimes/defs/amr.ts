@@ -277,8 +277,4 @@ export const amrAgentDef = {
   // surfaces the live Vela catalog instead.
   supportsCustomModel: false,
   supportsImagePaths: true,
-  // Daemon-process env override for emergency operator pinning. Normal UI
-  // selection comes from the live `vela models` catalog and is preflighted
-  // before spawn.
-  defaultModelEnvVar: 'VELA_DEFAULT_MODEL',
 } satisfies RuntimeAgentDef;

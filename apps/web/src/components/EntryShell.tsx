@@ -56,6 +56,7 @@ import {
 import type { PluginUseAction } from './plugins-home/useActions';
 import { IntegrationsView, type IntegrationTab } from './IntegrationsView';
 import { InlineModelSwitcher } from './InlineModelSwitcher';
+import { requireModelSelection } from './agentModelSelection';
 import type { EntrySettingsSection } from './EntrySettingsMenu';
 import { NewProjectModal } from './NewProjectModal';
 import { PluginsView } from './PluginsView';
@@ -462,6 +463,7 @@ export function EntryShell({
   // hidden readable-default router plugin and projectKind='other', so the
   // agent asks for the exact task type before continuing.
   function handlePluginLoopSubmit(payload: PluginLoopSubmit) {
+    if (!requireModelSelection(config, agents)) return;
     const head = payload.prompt.trim().split(/\s+/).slice(0, 8).join(' ');
     const firstAttachmentName = payload.attachments?.[0]?.name ?? '';
     const fallbackName = head.length > 0 ? head : firstAttachmentName || 'Untitled';

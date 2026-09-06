@@ -120,24 +120,24 @@ describe('SettingsDialog API protocol switching', () => {
     });
   });
 
-  it('loads the new protocol default on first visit', () => {
+  it('leaves the model unselected on a protocol first visit', () => {
     expect(switchApiProtocolConfig(baseConfig, 'openai')).toMatchObject({
       mode: 'api',
       apiProtocol: 'openai',
       apiKey: '',
       baseUrl: 'https://api.openai.com/v1',
-      model: 'gpt-4o',
+      model: '',
       apiProviderBaseUrl: 'https://api.openai.com/v1',
     });
   });
 
-  it('auto-fills Google defaults when switching from a selected known provider', () => {
+  it('leaves the model unselected when switching to a sibling provider protocol', () => {
     expect(switchApiProtocolConfig(baseConfig, 'google')).toMatchObject({
       mode: 'api',
       apiProtocol: 'google',
       apiKey: '',
       baseUrl: 'https://generativelanguage.googleapis.com',
-      model: 'gemini-2.0-flash',
+      model: '',
       apiProviderBaseUrl: 'https://generativelanguage.googleapis.com',
     });
   });
@@ -289,7 +289,7 @@ describe('SettingsDialog custom model picker state', () => {
     expect(
       shouldShowCustomModelInput('gpt-5.5', ['gpt-5', 'o3'], false),
     ).toBe(true);
-    expect(shouldShowCustomModelInput('', ['gpt-5', 'o3'], false)).toBe(true);
+    expect(shouldShowCustomModelInput('', ['gpt-5', 'o3'], false)).toBe(false);
   });
 });
 

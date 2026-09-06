@@ -1369,6 +1369,8 @@ export const en: Dict = {
   'inlineSwitcher.chipCli': 'Local CLI',
   'inlineSwitcher.chipByok': 'BYOK',
   'inlineSwitcher.modelDefault': 'default',
+  'inlineSwitcher.modelUnselected': 'None selected',
+  'inlineSwitcher.modelSelectionRequired': 'You must select a model',
   'inlineSwitcher.noAgent': 'no agent',
   'inlineSwitcher.detectingAgent': 'detecting…',
   'inlineSwitcher.modeLabel': 'Mode',

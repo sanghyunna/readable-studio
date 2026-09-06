@@ -39,6 +39,7 @@ const amrAgent: AgentInfo = {
     { id: 'default', label: 'Default' },
     { id: 'amr-cloud-latest', label: 'AMR Cloud Latest' },
   ],
+  supportsCustomModel: false,
 };
 
 const codexAgent: AgentInfo = {
@@ -235,15 +236,15 @@ describe('InlineModelSwitcher AMR row', () => {
     const modelPicker = within(popover).getByTestId(
       'inline-model-switcher-agent-model',
     );
-    expect(modelPicker.textContent).toContain('Default');
+    expect(screen.getByTestId('inline-model-switcher-chip').textContent).toContain('None selected');
     fireEvent.click(modelPicker);
     const modelPopover = screen.getByTestId('inline-model-switcher-agent-model-popover');
     expect(
       within(modelPopover).getAllByRole('option').map((option) => option.textContent?.trim()),
-    ).toEqual(['Default', 'AMR Cloud Latest']);
+    ).toEqual(['AMR Cloud Latest']);
   });
 
-  it('persists the live AMR fallback when the saved AMR model is stale', async () => {
+  it('requires an explicit AMR pick when the saved model is stale', async () => {
     vi.stubGlobal('fetch', vi.fn(async () =>
       new Response(
         JSON.stringify({
@@ -266,18 +267,13 @@ describe('InlineModelSwitcher AMR row', () => {
     const modelPicker = within(popover).getByTestId(
       'inline-model-switcher-agent-model',
     );
-    expect(modelPicker.textContent).toContain('Default');
+    expect(screen.getByTestId('inline-model-switcher-chip').textContent).toContain('None selected');
     fireEvent.click(modelPicker);
     const modelPopover = screen.getByTestId('inline-model-switcher-agent-model-popover');
     expect(
       within(modelPopover).getAllByRole('option').map((option) => option.textContent?.trim()),
-    ).toEqual(['Default', 'AMR Cloud Latest']);
-    await waitFor(() => {
-      expect(onAgentModelChange).toHaveBeenCalledWith('amr', {
-        model: 'default',
-        reasoning: 'default',
-      });
-    });
+    ).toEqual(['AMR Cloud Latest']);
+    expect(onAgentModelChange).not.toHaveBeenCalled();
   });
 
   it('shows icon-only signed-in status instead of account information in the AMR button', async () => {

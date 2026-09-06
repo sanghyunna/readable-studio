@@ -57,36 +57,39 @@ export function isKnownModel(
   return false;
 }
 
-// Some adapters reject the synthetic `'default'` model id (e.g. AMR / vela,
-// which requires an explicit `session/set_model` before `session/prompt`).
-// Those defs declare it by omitting DEFAULT_MODEL_OPTION from
-// `fallbackModels` entirely. When the chat run produces a null or 'default'
-// model for one of those adapters, prefer the first model from the live list
-// last surfaced to the UI, then fall back to the def's first concrete fallback
-// id so the spawn layer always has a real model to forward.
-// Defs that DO list 'default' (the common case) are left untouched.
+export function agentHasModelChoice(
+  def: RuntimeAgentDef,
+  liveModelScope?: string | null,
+): boolean {
+  const hasConcreteFallback = def.fallbackModels.some(
+    (model) => model.id !== DEFAULT_MODEL_OPTION.id,
+  );
+  const liveModels = liveModelOrder.get(liveModelCacheKey(def.id, liveModelScope)) ?? [];
+  return hasConcreteFallback || liveModels.some((id) => id !== DEFAULT_MODEL_OPTION.id);
+}
+
+// Admit only a model the caller explicitly supplied. Catalog-only adapters
+// reject ids that were not surfaced by their live/static model list, while
+// custom-capable adapters may accept a safe free-form id. The synthetic
+// `default` is not a universal fallback: it is valid only when the adapter
+// has no concrete model choice to make.
 export function resolveModelForAgent(
   def: RuntimeAgentDef,
-  resolved: string | null,
-  env: Record<string, string | undefined> = process.env,
+  requested: string | null | undefined,
+  _env: Record<string, string | undefined> = process.env,
   liveModelScope?: string | null,
 ): string | null {
-  if (resolved && resolved !== 'default') return resolved;
-  // Daemon-process env override (e.g. VELA_DEFAULT_MODEL for AMR). Lets an
-  // operator pin a different fallback id without a code change when the
-  // hardcoded default goes away upstream.
-  if (def.defaultModelEnvVar) {
-    const raw = env[def.defaultModelEnvVar];
-    if (typeof raw === 'string' && raw.trim()) return raw.trim();
+  if (typeof requested !== 'string') return null;
+  const trimmed = requested.trim();
+  if (!trimmed) return null;
+  if (trimmed === DEFAULT_MODEL_OPTION.id) {
+    return isKnownModel(def, trimmed, liveModelScope) && !agentHasModelChoice(def, liveModelScope)
+      ? trimmed
+      : null;
   }
-  const fallbacks = Array.isArray(def.fallbackModels) ? def.fallbackModels : [];
-  if (fallbacks.some((m) => m.id === 'default')) return resolved;
-  const liveModels = liveModelOrder.get(liveModelCacheKey(def.id, liveModelScope)) ?? [];
-  const firstLive = liveModels[0];
-  if (firstLive) return firstLive;
-  if (fallbacks.length === 0) return resolved;
-  const firstFallback = fallbacks[0];
-  return firstFallback ? firstFallback.id : resolved;
+  if (isKnownModel(def, trimmed, liveModelScope)) return trimmed;
+  if (def.supportsCustomModel === false) return null;
+  return sanitizeCustomModel(trimmed);
 }
 
 // Permit user-typed model ids that didn't appear in either the live

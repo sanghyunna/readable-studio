@@ -288,7 +288,7 @@ describe('loadConfig', () => {
     expect(config.baseUrl).toBe('https://api.deepseek.com');
     expect(config.model).toBe('deepseek-chat');
     expect(config.apiProtocol).toBe('openai');
-    expect(config.configMigrationVersion).toBe(1);
+    expect(config.configMigrationVersion).toBe(2);
   });
 
   it('backfills the fixed-origin base URL for AIHubMix when persisted empty', () => {
@@ -364,7 +364,7 @@ describe('loadConfig', () => {
 
     expect(config.mode).toBe('daemon');
     expect(config.apiProtocol).toBe('openai');
-    expect(config.configMigrationVersion).toBe(1);
+    expect(config.configMigrationVersion).toBe(2);
   });
 
   it('migrates legacy Ollama Cloud configs to an explicit ollama apiProtocol', () => {
@@ -386,7 +386,7 @@ describe('loadConfig', () => {
     expect(config.model).toBe('gpt-oss:120b');
     expect(config.apiProtocol).toBe('ollama');
     expect(config.apiProviderBaseUrl).toBe('https://ollama.com');
-    expect(config.configMigrationVersion).toBe(1);
+    expect(config.configMigrationVersion).toBe(2);
   });
 
   it('migrates legacy ollama.com configs with a custom base URL path', () => {
@@ -465,6 +465,38 @@ describe('loadConfig', () => {
     expect(config.apiProtocol).toBe('anthropic');
   });
 
+  it('clears version-1 browser defaults while preserving custom model ids', () => {
+    store.set('readable-studio:config', JSON.stringify({
+      mode: 'api',
+      apiProtocol: 'openai',
+      apiProviderBaseUrl: 'https://api.openai.com/v1',
+      baseUrl: 'https://api.openai.com/v1',
+      model: 'gpt-4o',
+      configMigrationVersion: 1,
+      apiProtocolConfigs: {
+        anthropic: {
+          apiKey: '',
+          baseUrl: 'https://api.anthropic.com',
+          model: 'claude-sonnet-4-5',
+          apiProviderBaseUrl: 'https://api.anthropic.com',
+        },
+        google: {
+          apiKey: '',
+          baseUrl: 'https://generativelanguage.googleapis.com',
+          model: 'custom-gemini-model',
+          apiProviderBaseUrl: 'https://generativelanguage.googleapis.com',
+        },
+      },
+    }));
+
+    const config = loadConfig();
+
+    expect(config.model).toBe('');
+    expect(config.apiProtocolConfigs?.anthropic?.model).toBe('');
+    expect(config.apiProtocolConfigs?.google?.model).toBe('custom-gemini-model');
+    expect(config.configMigrationVersion).toBe(2);
+  });
+
   it('preserves a valid saved accent color', () => {
     const savedConfig: Partial<AppConfig> = {
       theme: 'dark',
@@ -523,7 +555,7 @@ describe('loadConfig', () => {
   it('sets explicit defaults for new configs', () => {
     expect(DEFAULT_CONFIG.theme).toBe('light');
     expect(DEFAULT_CONFIG.apiProtocol).toBe('anthropic');
-    expect(DEFAULT_CONFIG.configMigrationVersion).toBe(1);
+    expect(DEFAULT_CONFIG.configMigrationVersion).toBe(2);
     expect(DEFAULT_CONFIG.accentColor).toBe('#c96442');
   });
 

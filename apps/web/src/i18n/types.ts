@@ -1837,6 +1837,8 @@ export interface Dict {
   'inlineSwitcher.chipCli': string;
   'inlineSwitcher.chipByok': string;
   'inlineSwitcher.modelDefault': string;
+  'inlineSwitcher.modelUnselected': string;
+  'inlineSwitcher.modelSelectionRequired': string;
   'inlineSwitcher.noAgent': string;
   'inlineSwitcher.detectingAgent': string;
   'inlineSwitcher.modeLabel': string;

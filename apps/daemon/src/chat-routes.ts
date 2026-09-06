@@ -41,7 +41,7 @@ export interface RegisterChatRoutesDeps extends RouteDeps<'db' | 'design' | 'htt
 export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
   const { db, design } = ctx;
   const { sendApiError, createSseResponse } = ctx.http;
-  const { testProviderConnection, testAgentConnection, getAgentDef, isKnownModel, sanitizeCustomModel, listProviderModels } = ctx.agents;
+  const { testProviderConnection, testAgentConnection, getAgentDef, agentHasModelChoice, resolveModelForAgent, listProviderModels } = ctx.agents;
   const {
     handleCritiqueArtifact,
     handleCritiqueInterrupt,
@@ -316,20 +316,24 @@ export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
         try {
           const def = getAgentDef(body.agentId);
           const testStart = Date.now();
-          const safeModel =
-            def && typeof body.model === 'string'
-              ? isKnownModel(def, body.model)
-                ? body.model
-                : sanitizeCustomModel(body.model)
-              : undefined;
-          if (def && typeof body.model === 'string' && body.model.trim() && !safeModel) {
+          const safeModel = def
+            ? resolveModelForAgent(def, body.model)
+            : undefined;
+          const requestedModel = typeof body.model === 'string' ? body.model.trim() : '';
+          if (
+            def &&
+            !safeModel &&
+            (requestedModel || agentHasModelChoice(def))
+          ) {
             return res.json({
               ok: false,
               kind: 'invalid_model_id',
               latencyMs: Date.now() - testStart,
-              model: body.model.trim(),
+              model: requestedModel,
               agentName: def.name,
-              detail: 'Invalid custom model id. Use a model id that starts with a letter or number and contains no spaces.',
+              detail: def?.supportsCustomModel === false
+                ? 'Select a model available for this agent.'
+                : 'Invalid custom model id. Use a model id that starts with a letter or number and contains no spaces.',
             });
           }
           const safeReasoning =

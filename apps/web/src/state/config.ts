@@ -20,7 +20,7 @@ import {
 } from '../utils/notifications';
 
 const STORAGE_KEY = 'readable-studio:config';
-const CONFIG_MIGRATION_VERSION = 1;
+const CONFIG_MIGRATION_VERSION = 2;
 
 // Hatched out of the box, but tucked away — the user has to go through
 // either the entry-view "adopt a pet" callout or Settings → Pets to
@@ -60,7 +60,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   mode: 'daemon',
   apiKey: '',
   baseUrl: 'https://api.anthropic.com',
-  model: 'claude-sonnet-4-5',
+  model: '',
   // New configs should be explicit. loadConfig() still detects parsed legacy
   // saved configs that did not have this field and migrates those from their
   // saved baseUrl/model before applying the current migration version.
@@ -97,7 +97,7 @@ export interface KnownProvider {
   label: string;
   protocol: ApiProtocol;
   baseUrl: string;
-  /** Default model to apply when the provider is selected. */
+  /** Provider model used as a catalogue suggestion, never an implicit selection. */
   model: string;
   /** Optional provider-specific model choices shown in Settings. */
   models?: string[];
@@ -113,8 +113,8 @@ export interface KnownProvider {
 //
 // Model lists are hand-curated from provider docs/current public presets rather
 // than fetched dynamically. To add a provider, include a user-facing label, the
-// protocol that determines request routing, the base URL, a default model, and
-// optional provider-specific model choices.
+// protocol that determines request routing, the base URL, a suggested model,
+// and optional provider-specific model choices.
 export const KNOWN_PROVIDERS: KnownProvider[] = [
   {
     label: 'Anthropic (Claude)',
@@ -439,6 +439,30 @@ export function loadConfig(): AppConfig {
           (p) => p.baseUrl === merged.baseUrl,
         );
         merged.apiProviderBaseUrl = knownProvider?.baseUrl ?? null;
+      }
+      // Migration v2: version-1 Settings auto-selected known provider presets.
+      // Those values carry no proof of a user choice, so clear only exact
+      // browser-owned preset defaults. Custom model ids remain untouched.
+      if (parsed.configMigrationVersion === 1) {
+        const currentProvider = KNOWN_PROVIDERS.find(
+          (provider) => provider.baseUrl === merged.apiProviderBaseUrl,
+        );
+        if (currentProvider && merged.model === currentProvider.model) {
+          merged.model = '';
+        }
+        merged.apiProtocolConfigs = Object.fromEntries(
+          Object.entries(merged.apiProtocolConfigs ?? {}).map(([protocol, draft]) => {
+            const provider = KNOWN_PROVIDERS.find(
+              (candidate) => candidate.baseUrl === draft?.apiProviderBaseUrl,
+            );
+            return [
+              protocol,
+              provider && draft?.model === provider.model
+                ? { ...draft, model: '' }
+                : draft,
+            ];
+          }),
+        );
       }
       merged.configMigrationVersion = CONFIG_MIGRATION_VERSION;
     }

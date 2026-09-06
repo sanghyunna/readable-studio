@@ -14,6 +14,7 @@ interface ByokModelFieldProps {
     customModelPlaceholder: string;
     fetchModelsUnsupported: string;
     model: string;
+    modelUnselected: string;
     required: string;
     searchPlaceholder: string;
     suggestedModelsHint: string;
@@ -74,6 +75,7 @@ export function ByokModelField({
           popoverClassName="settings-byok-select-popover"
           models={models}
           value={selectValue}
+          emptyLabel={labels.modelUnselected}
           onFocus={onFocus}
           onChange={(nextValue) => {
             if (nextValue === CUSTOM_MODEL_SENTINEL) {

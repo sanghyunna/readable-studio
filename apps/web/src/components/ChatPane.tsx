@@ -54,6 +54,7 @@ import { listDesignArtifactCandidates } from './design-files/designArtifacts';
 import type { PluginFolderAgentAction } from './design-files/pluginFolderActions';
 import { Icon, type IconName } from './Icon';
 import { InlineModelSwitcher } from './InlineModelSwitcher';
+import { requireModelSelection } from './agentModelSelection';
 import type { ProviderModelsCache } from './providerModelsCache';
 import { repoConnectCopy } from './design-system-github-evidence';
 import { isRenderableSketchJson, SketchPreview } from './SketchPreview';
@@ -1467,6 +1468,11 @@ export function ChatPane({
   // callback, so a surface that wires CLI selection gets a working pair, and a
   // BYOK model pick there is inert rather than crashing. That keeps the pair
   // from being all-or-nothing on props one surface happens not to thread yet.
+  const modelSelectionGuard = useCallback(
+    () => !config || requireModelSelection(config, agents ?? []),
+    [agents, config],
+  );
+
   const executionSwitcher =
     config &&
     agents &&
@@ -1509,6 +1515,7 @@ export function ChatPane({
       skills={skills}
       streaming={streaming}
       sendDisabled={sendDisabled}
+      modelSelectionGuard={modelSelectionGuard}
       initialDraft={initialDraft}
       draftStorageKey={composerDraftStorageKey}
       onEnsureProject={onEnsureProject}

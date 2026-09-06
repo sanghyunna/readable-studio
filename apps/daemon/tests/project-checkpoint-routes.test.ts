@@ -139,6 +139,7 @@ setInterval(() => {}, 1000);
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             agentId: 'opencode',
+            model: 'openai/gpt-5',
             projectId,
             conversationId,
             message: 'test rollback request',
@@ -215,6 +216,7 @@ setInterval(() => {}, 1000);
       body: JSON.stringify({
         projectId,
         agentId: 'codex',
+        model: 'gpt-5.4',
         message: 'should not start without checkpoint coverage',
       }),
     });
@@ -237,6 +239,7 @@ setInterval(() => {}, 1000);
       body: JSON.stringify({
         projectId,
         agentId: 'codex',
+        model: 'gpt-5.4',
         message: 'should not start without checkpoint coverage',
       }),
     });
@@ -263,6 +266,7 @@ setInterval(() => {}, 1000);
         conversationId: second.conversationId,
         assistantMessageId,
         agentId: 'codex',
+        model: 'gpt-5.4',
         message: 'must not start with a foreign conversation',
       }),
     });
@@ -291,6 +295,7 @@ setInterval(() => {}, 1000);
         conversationId: second.conversationId,
         assistantMessageId,
         agentId: 'codex',
+        model: 'gpt-5.4',
         message: 'must not stream with a foreign conversation',
       }),
     });

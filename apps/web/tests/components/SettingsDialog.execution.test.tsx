@@ -526,13 +526,13 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
     expect((screen.getByLabelText('Base URL') as HTMLInputElement).readOnly).toBe(true);
   });
 
-  it('updates model and base URL when quick fill provider changes', () => {
+  it('updates the base URL without selecting a model when quick fill provider changes', () => {
     renderSettingsDialog({ apiProtocol: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o', apiProviderBaseUrl: 'https://api.openai.com/v1' });
 
     fireEvent.click(screen.getByRole('tab', { name: 'OpenAI' }));
     selectGatewayPreset('DeepSeek — OpenAI');
 
-    expect(screen.getByRole('combobox', { name: 'Model' }).textContent).toContain('deepseek-chat');
+    expect(screen.getByRole('combobox', { name: 'Model' }).textContent).toBe('None selected');
     expect((screen.getByLabelText('Base URL') as HTMLInputElement).value).toBe('https://api.deepseek.com');
   });
 
@@ -552,7 +552,7 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
 
     fireEvent.click(within(providerPopover).getByRole('option', { name: 'DeepSeek — Anthropic' }));
 
-    expect(screen.getByRole('combobox', { name: 'Model' }).textContent).toContain('deepseek-chat');
+    expect(screen.getByRole('combobox', { name: 'Model' }).textContent).toBe('None selected');
     expect((screen.getByLabelText('Base URL') as HTMLInputElement).value).toBe(
       'https://api.deepseek.com/anthropic',
     );
@@ -592,38 +592,10 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
       'http://localhost:11434',
     );
     expect(screen.queryByRole('link', { name: /Get key/i })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Test' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Test' })).toBeNull();
   });
 
-  it('saves and auto-tests the self-hosted Ollama preset without an API key', async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = input.toString();
-      if (url === '/api/memory') {
-        return new Response(
-          JSON.stringify({ enabled: true, memories: [], extraction: null }),
-          { status: 200, headers: { 'content-type': 'application/json' } },
-        );
-      }
-      expect(url).toBe('/api/test/connection');
-      expect(JSON.parse(String(init?.body))).toMatchObject({
-        mode: 'provider',
-        protocol: 'ollama',
-        apiKey: '',
-        baseUrl: 'http://localhost:11434',
-        model: 'gemma3:4b',
-      });
-      return new Response(
-        JSON.stringify({
-          ok: true,
-          kind: 'ok',
-          latencyMs: 28,
-          model: 'gemma3:4b',
-          sample: 'pong',
-        }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      );
-    });
-    vi.stubGlobal('fetch', fetchMock);
+  it('saves a self-hosted Ollama preset without selecting or testing a model', async () => {
     const { onPersist } = renderSettingsDialog();
 
     fireEvent.click(screen.getByRole('tab', { name: 'Ollama Cloud' }));
@@ -771,9 +743,13 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
     fireEvent.change(screen.getByLabelText('API key'), {
       target: { value: 'azure-key' },
     });
-    fireEvent.change(screen.getByLabelText('Deployment name'), {
-      target: { value: '__custom__' },
-    });
+    fireEvent.click(screen.getByLabelText('Deployment name'));
+    fireEvent.click(
+      within(screen.getByTestId('settings-byok-model-popover')).getByRole(
+        'option',
+        { name: 'Custom (type below)…' },
+      ),
+    );
     fireEvent.change(screen.getByLabelText('Custom deployment name'), {
       target: { value: 'deployment-one' },
     });
@@ -922,7 +898,7 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
     );
   });
 
-  it('defaults to an account model when discovery replaces a provider preset', async () => {
+  it('keeps the model unselected when account discovery returns models', async () => {
     fetchProviderModelsMock.mockResolvedValueOnce({
       ok: true,
       kind: 'success',
@@ -1979,7 +1955,7 @@ describe('SettingsDialog execution settings Local CLI interactions', () => {
       name: en['settings.modelPicker'],
     });
     expect(modelPickers).toHaveLength(1);
-    expect(modelPickers[0]?.textContent).toContain('GLM 5');
+    expect(modelPickers[0]?.textContent).toBe('');
     fireEvent.click(modelPickers[0]!);
     const modelPopover = screen.getByTestId('settings-agent-model-popover-amr');
     expect(

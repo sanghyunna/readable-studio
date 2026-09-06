@@ -38,6 +38,11 @@ export interface ChatRequest {
   designSystemId?: string | null;
   attachments?: string[];
   commentAttachments?: ChatCommentAttachment[];
+  /**
+   * Explicit model id selected for this turn. The daemon-owned `default`
+   * sentinel is valid only for agents that expose no concrete model choice;
+   * omission never asks the daemon to choose a concrete model.
+   */
   model?: string | null;
   reasoning?: string | null;
   /** UI locale selected by the client, used by prompt composition for user-visible generated UI. */

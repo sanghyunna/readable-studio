@@ -725,6 +725,7 @@ describe('hosted request boundary', () => {
             projectId,
             conversationId,
             agentId: 'claude',
+            model: 'sonnet',
             message: 'hosted trace run',
             sessionMode: 'design',
           }),
@@ -757,6 +758,7 @@ describe('hosted request boundary', () => {
             projectId,
             conversationId,
             agentId: 'claude',
+            model: 'sonnet',
             message: 'hosted trace resumed prompt',
             sessionMode: 'design',
           }),
@@ -797,6 +799,7 @@ describe('hosted request boundary', () => {
             projectId,
             conversationId,
             agentId: 'claude',
+            model: 'sonnet',
             message: 'hosted trace chat prompt',
             sessionMode: 'design',
           }),
@@ -861,6 +864,7 @@ async function installHostedClaudeFixture(): Promise<{
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         agentId: 'claude',
+        model: 'sonnet',
         agentCliEnv: { claude: { CLAUDE_BIN: bin } },
       }),
     });

@@ -157,6 +157,8 @@ interface Props {
   sessionMode?: ChatSessionMode;
   onSessionModeChange?: (mode: ChatSessionMode) => void;
   sendDisabled?: boolean;
+  /** Shared execution-policy gate invoked immediately before submission. */
+  modelSelectionGuard?: () => boolean;
   initialDraft?: string;
   draftStorageKey?: string;
   // Lazy ensure — the composer calls this before its first upload, so the
@@ -311,6 +313,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       sessionMode = 'design',
       onSessionModeChange,
       sendDisabled = false,
+      modelSelectionGuard,
       initialDraft,
       draftStorageKey,
       onEnsureProject,
@@ -1731,6 +1734,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
     async function submit() {
       const prompt = draft.trim();
       if (sendDisabled) return;
+      if (modelSelectionGuard && !modelSelectionGuard()) return;
       // Intercept `/pet …` and `/mcp` before sending so the slash command
       // never hits the agent — these are local UX hooks, not model prompts.
       if (tryHandlePetSlash()) return;

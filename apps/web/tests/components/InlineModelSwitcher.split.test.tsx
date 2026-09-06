@@ -11,6 +11,7 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { InlineModelSwitcher } from '../../src/components/InlineModelSwitcher';
+import { MODEL_SELECTION_REQUIRED_EVENT } from '../../src/components/agentModelSelection';
 import type { AgentInfo, AppConfig } from '../../src/types';
 
 vi.mock('../../src/providers/provider-models', () => ({
@@ -73,13 +74,19 @@ function renderSplit(
     onApiModelChange: vi.fn(),
     onOpenSettings: vi.fn(),
   };
-  const view = render(
+  const controls = (configOverrides: Partial<AppConfig>) => (
     <div className="home-hero__execution-switcher home-hero__execution-switcher--agent-model">
-      <InlineModelSwitcher {...props} variant="agent" />
-      <InlineModelSwitcher {...props} variant="model" />
-    </div>,
+      <InlineModelSwitcher {...props} config={{ ...baseConfig, ...configOverrides }} variant="agent" />
+      <InlineModelSwitcher {...props} config={{ ...baseConfig, ...configOverrides }} variant="model" />
+    </div>
   );
-  return { ...view, onAgentChange, onAgentModelChange };
+  const view = render(controls(overrides));
+  return {
+    ...view,
+    onAgentChange,
+    onAgentModelChange,
+    rerenderSplit: (configOverrides: Partial<AppConfig>) => view.rerender(controls(configOverrides)),
+  };
 }
 
 afterEach(cleanup);
@@ -109,6 +116,60 @@ describe('InlineModelSwitcher split variants', () => {
     expect(agent.getAttribute('aria-label')).toContain('detecting');
     expect(agent.getAttribute('aria-label')).not.toContain('no agent');
     expect(agent.querySelector('svg')).not.toBeNull();
+  });
+
+  it('shows the localized unselected label with a small warning mark', () => {
+    renderSplit({ agentModels: {} });
+
+    expect(screen.getByTestId('inline-model-switcher-model-label').textContent)
+      .toContain('None selected');
+    expect(screen.getByTestId('inline-model-switcher-model-warning-mark').textContent)
+      .toBe('!');
+  });
+
+  it('shakes the model name and keeps the required-selection toast in an unclipped layer', () => {
+    const { rerenderSplit } = renderSplit({ agentModels: {} });
+    const trigger = screen.getByTestId('inline-model-switcher-model-trigger');
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue(
+      new DOMRect(180, 10, 120, 30),
+    );
+
+    fireEvent(window, new Event(MODEL_SELECTION_REQUIRED_EVENT));
+
+    const toast = screen.getByTestId('inline-model-switcher-model-toast');
+    expect(trigger.className).toContain('is-model-warning');
+    expect(toast.textContent).toBe('You must select a model');
+    expect(toast.parentElement).toBe(document.body);
+    expect(toast.style.right).toBe(`${window.innerWidth - 300}px`);
+    expect(toast.style.top).toBe('45px');
+
+    const firstLabel = screen.getByTestId('inline-model-switcher-model-label');
+    fireEvent(firstLabel, new Event('webkitAnimationEnd', { bubbles: true }));
+    expect(screen.getByTestId('inline-model-switcher-model-trigger').className)
+      .toContain('is-model-warning');
+
+    fireEvent(window, new Event(MODEL_SELECTION_REQUIRED_EVENT));
+
+    expect(screen.getByTestId('inline-model-switcher-model-trigger').className)
+      .toContain('is-model-warning');
+    expect(screen.getByTestId('inline-model-switcher-model-label')).not.toBe(firstLabel);
+    expect(screen.getByTestId('inline-model-switcher-model-toast')).toBe(toast);
+
+    rerenderSplit({ agentModels: { codex: { model: 'gpt-5-mini' } } });
+    expect(screen.getByTestId('inline-model-switcher-model-trigger').className)
+      .not.toContain('is-model-warning');
+    expect(screen.queryByTestId('inline-model-switcher-model-toast')).toBeNull();
+  });
+
+  it('shows a default-only CLI as usable without an unselected warning', () => {
+    renderSplit(
+      { agentId: 'claude', agentModels: {} },
+      { agents: [codexAgent, claudeAgent] },
+    );
+
+    expect(screen.getByTestId('inline-model-switcher-model-label').textContent)
+      .toContain('Default');
+    expect(screen.queryByTestId('inline-model-switcher-model-warning-mark')).toBeNull();
   });
 
   it('shows an honest dropdown chevron only on the model-list trigger', () => {
