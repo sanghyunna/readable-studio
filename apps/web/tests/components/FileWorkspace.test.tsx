@@ -1311,14 +1311,17 @@ describe('FileWorkspace Questions tab', () => {
     expect(screen.getByTestId('questions-tab')).toBeTruthy();
   });
 
-  it('closes the Questions preview after submit, then lets the answered form reopen', async () => {
+  it('keeps a restored uploaded file selected when persisted questions rehydrate', async () => {
     const baseProps: React.ComponentProps<typeof FileWorkspace> = {
       projectId: 'project-1',
       projectKind: 'prototype',
-      files: [],
+      files: [workspaceFile('root-design-reference.png')],
       onRefreshFiles: vi.fn(),
       isDeck: false,
-      tabsState: { tabs: [], active: null },
+      tabsState: {
+        tabs: ['root-design-reference.png'],
+        active: 'root-design-reference.png',
+      },
       onTabsStateChange: vi.fn(),
       questionForm: discoveryForm,
       focusQuestionsRequest: { nonce: 1 },
@@ -1326,7 +1329,10 @@ describe('FileWorkspace Questions tab', () => {
     const { rerender } = render(<FileWorkspace {...baseProps} />);
 
     await waitFor(() => {
-      expect(screen.getByText('Quick brief')).toBeTruthy();
+      expect(
+        screen.getByRole('tab', { name: 'root-design-reference.png' })
+          .getAttribute('aria-selected'),
+      ).toBe('true');
     });
 
     rerender(
@@ -1353,6 +1359,19 @@ describe('projectSplitClassName', () => {
     expect(projectSplitClassName(true)).toBe('split split-focus');
   });
 
+  });
+
+  it('selects a submitted Questions preview when persisted messages rehydrate', async () => {
+    const baseProps: React.ComponentProps<typeof FileWorkspace> = {
+      projectId: 'project-1',
+      projectKind: 'prototype',
+      files: [],
+      onRefreshFiles: vi.fn(),
+      isDeck: false,
+      tabsState: { tabs: [], active: DESIGN_FILES_TAB },
+      onTabsStateChange: vi.fn(),
+    };
+    const { rerender } = render(<FileWorkspace {...baseProps} />);
   it('uses CSS variables for split widths so pointer resize can update layout without rerendering workspace content', () => {
     expect(projectSplitStyle(false, 512, 'minmax(420px, 1fr)')).toEqual({
       '--project-chat-panel-width': '512px',

@@ -769,6 +769,8 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
   background: var(--bg-panel);
+  color: var(--text);
+  font-family: inherit;
   font-size: 12px;
   cursor: pointer;
   transition: border-color 120ms var(--ease-out), background 120ms var(--ease-out), color 120ms var(--ease-out);
@@ -790,6 +792,10 @@
   opacity: 0.72;
 }
 .qf-chip:hover { border-color: var(--border-strong); }
+.qf-chip:focus-visible {
+  outline: 2px solid var(--selected);
+  outline-offset: 2px;
+}
 .qf-chip-disabled {
   cursor: not-allowed;
   opacity: 0.48;

@@ -837,6 +837,26 @@ export function FileWorkspace({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slideNavRequest]);
 
+  // Focus the Questions tab when hydration discovers a form occurrence. This
+  // includes an already-submitted form restored from persisted messages: its
+  // locked preview is still the authoritative confirmation that the blocking
+  // step completed. Key changes represent distinct occurrences; answer updates
+  // retain the same key and therefore do not steal focus again.
+  const previousQuestionFormKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    const previousKey = previousQuestionFormKeyRef.current;
+    previousQuestionFormKeyRef.current = questionFormKey;
+    if (
+      questionFormKey
+      && questionFormKey !== previousKey
+      && (tabsState.active === null
+        || tabsState.active === DESIGN_FILES_TAB
+        || tabsState.active === DESIGN_SYSTEM_TAB)
+    ) {
+      setActiveTab(QUESTIONS_TAB);
+    }
+  }, [questionFormKey, tabsState.active]);
+
   // Focus the Questions tab when the parent bumps the nonce (banner click in
   // chat, or a freshly generated form). The tab is transient — not added to
   // the persisted tab list.
@@ -846,18 +866,9 @@ export function FileWorkspace({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusQuestionsRequest?.nonce]);
 
-  // Submitting from the right-hand panel should close the preview once. The
-  // answered form remains available, so a later chat-banner click can reopen
-  // the same Questions tab without this effect immediately closing it again.
-  const previousQuestionFormSubmittedAnswersRef = useRef(questionFormSubmittedAnswers);
-  useEffect(() => {
-    const wasAnswered = previousQuestionFormSubmittedAnswersRef.current !== undefined;
-    const isAnswered = questionFormSubmittedAnswers !== undefined;
-    previousQuestionFormSubmittedAnswersRef.current = questionFormSubmittedAnswers;
-    if (activeTab === QUESTIONS_TAB && !wasAnswered && isAnswered) {
-      setActiveTab(defaultRootTab);
-    }
-  }, [activeTab, defaultRootTab, questionFormSubmittedAnswers]);
+  // Keep the Questions tab open when answers arrive so the form itself can
+  // acknowledge acceptance in its locked state. The user can leave via the
+  // tab bar; silently switching surfaces makes a successful submit look lost.
 
   // If the Questions tab is active but the form is gone because a new assistant
   // turn has no form, fall back to the default root tab.

@@ -131,6 +131,20 @@ describe('QuestionFormView', () => {
     expect(screen.getAllByRole('button', { pressed: true })).toHaveLength(2);
   });
 
+  it('explains that submitted answers are in effect when the panel owns the submit controls', () => {
+    render(
+      <QuestionFormView
+        form={form}
+        interactive={false}
+        submittedAnswers={{ tone: ['Editorial / magazine', 'Modern minimal'] }}
+        hideInternalSubmit
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Answers sent — agent is using these for the rest of the session.')).toBeTruthy();
+  });
+
   it('renders select options with labels and submits the selected voice id', () => {
     const onSubmit = vi.fn();
     const { container, rerender } = render(
@@ -176,16 +190,24 @@ describe('QuestionFormView', () => {
     ).toEqual({ platform: 'mobile' });
   });
 
-  it('renders radio object options and submits the readable label with stable value', () => {
+  it('renders visible, pointer-operable radio pills and submits the stable value', () => {
     const onSubmit = vi.fn();
-    render(<QuestionFormView form={richForm} interactive onSubmit={onSubmit} />);
+    const { container } = render(<QuestionFormView form={richForm} interactive onSubmit={onSubmit} />);
 
-    expect(screen.getByText('Responsive')).toBeTruthy();
-    expect(screen.getByText('Mobile (iOS/Android)')).toBeTruthy();
+    const group = screen.getByRole('radiogroup', { name: 'Primary surface' });
+    const responsive = screen.getByRole('radio', { name: 'Responsive' });
+    expect(responsive.tagName).toBe('BUTTON');
+    expect((responsive as HTMLButtonElement).disabled).toBe(false);
+    expect(container.querySelector('input[type="radio"]')).toBeNull();
     expect(screen.getByText('Phone-first app prototype')).toBeTruthy();
-    expect(screen.getByText('Desktop web')).toBeTruthy();
+    expect(group.querySelectorAll('[role="radio"]')).toHaveLength(3);
 
-    fireEvent.click(screen.getByLabelText('Mobile (iOS/Android)'));
+    fireEvent.click(screen.getByRole('radio', { name: 'Mobile (iOS/Android)' }));
+
+    expect(screen.getAllByRole('radio', { checked: true })).toHaveLength(1);
+    expect(screen.getByRole('radio', { name: 'Mobile (iOS/Android)' }).getAttribute('aria-checked')).toBe(
+      'true',
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Send answers' }));
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
@@ -193,6 +215,32 @@ describe('QuestionFormView', () => {
       '- Primary surface: Mobile (iOS/Android) [value: mobile]',
     );
     expect(onSubmit.mock.calls[0]?.[1]).toEqual({ platform: 'mobile' });
+  });
+
+  it('uses arrow, Home, and End keys for roving radio focus and selection', () => {
+    render(<QuestionFormView form={richForm} interactive onSubmit={vi.fn()} />);
+
+    const responsive = screen.getByRole('radio', { name: 'Responsive' });
+    const mobile = screen.getByRole('radio', { name: 'Mobile (iOS/Android)' });
+    const desktop = screen.getByRole('radio', { name: 'Desktop web' });
+    expect(responsive.tabIndex).toBe(0);
+    expect(mobile.tabIndex).toBe(-1);
+
+    responsive.focus();
+    fireEvent.keyDown(responsive, { key: 'ArrowRight' });
+    expect(document.activeElement).toBe(mobile);
+    expect(mobile.getAttribute('aria-checked')).toBe('true');
+    expect(mobile.tabIndex).toBe(0);
+    expect(responsive.tabIndex).toBe(-1);
+
+    fireEvent.keyDown(mobile, { key: 'End' });
+    expect(document.activeElement).toBe(desktop);
+    expect(desktop.getAttribute('aria-checked')).toBe('true');
+
+    fireEvent.keyDown(desktop, { key: 'Home' });
+    expect(document.activeElement).toBe(responsive);
+    expect(responsive.getAttribute('aria-checked')).toBe('true');
+    expect(screen.getAllByRole('radio', { checked: true })).toHaveLength(1);
   });
 
   it('submits required checkbox object options with stable values', () => {

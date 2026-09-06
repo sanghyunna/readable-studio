@@ -85,7 +85,8 @@ export function QuestionsPanel({
     onSubmit(text);
   }, [analytics.track, form, formKey, onSubmit, projectId]);
 
-  const canContinue = Boolean(form && interactive && !generating && !submitDisabled && ready);
+  const canSubmit = Boolean(form && interactive && !generating && !submitDisabled);
+  const canContinue = canSubmit && ready;
 
   return (
     <div className="questions-panel" data-testid="questions-panel">
@@ -107,6 +108,16 @@ export function QuestionsPanel({
       </div>
       <div className="questions-panel-foot">
         <span className="questions-panel-status">{generating ? t('questions.generating') : null}</span>
+        {!answered ? (
+          <button
+            type="button"
+            className="questions-skip"
+            disabled={!canSubmit}
+            onClick={() => formRef.current?.skipAll()}
+          >
+            {t('questions.skipAll')}
+          </button>
+        ) : null}
         <button type="button" className="questions-continue" disabled={!canContinue} onClick={() => formRef.current?.submit()}>
           {t('questions.continue')}
         </button>

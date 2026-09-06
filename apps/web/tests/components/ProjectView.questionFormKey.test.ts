@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildQuestionFormKey,
+  findLatestQuestionFormOccurrence,
   mergeServerMessagesIntoConversation,
   parseBriefReceipt,
 } from '../../src/components/ProjectView';
@@ -33,6 +34,32 @@ describe('buildQuestionFormKey', () => {
     expect(buildQuestionFormKey(null, 'msg-1', true)).toBeNull();
     expect(buildQuestionFormKey('conv-1', null, true)).toBeNull();
     expect(buildQuestionFormKey('conv-1', 'msg-1', false)).toBeNull();
+  });
+});
+
+describe('findLatestQuestionFormOccurrence', () => {
+  it('retains the submitted form after the agent posts its follow-up message', () => {
+    const form = '<question-form id="discovery">{"questions":[{"id":"tone","label":"Tone","type":"text"}]}</question-form>';
+    const messages: ChatMessage[] = [
+      { id: 'assistant-form', role: 'assistant', content: form },
+      { id: 'user-answers', role: 'user', content: '[form answers — discovery]\n- Tone: Warm' },
+      { id: 'assistant-follow-up', role: 'assistant', content: 'Thanks — I will use that.' },
+    ];
+
+    const occurrence = findLatestQuestionFormOccurrence(messages);
+
+    expect(occurrence?.messageId).toBe('assistant-form');
+    expect(occurrence?.messageIndex).toBe(0);
+    expect(occurrence?.form.id).toBe('discovery');
+  });
+
+  it('prefers a newer completed form over an older answered form', () => {
+    const messages: ChatMessage[] = [
+      { id: 'assistant-old', role: 'assistant', content: '<question-form id="old">{"questions":[{"id":"old-q","label":"Old","type":"text"}]}</question-form>' },
+      { id: 'assistant-new', role: 'assistant', content: '<question-form id="new">{"questions":[{"id":"new-q","label":"New","type":"text"}]}</question-form>' },
+    ];
+
+    expect(findLatestQuestionFormOccurrence(messages)?.messageId).toBe('assistant-new');
   });
 });
 
@@ -112,5 +139,15 @@ describe('mergeServerMessagesIntoConversation', () => {
 
     expect(merged.map((message) => message.id)).toEqual(['user-1', 'assistant-1', 'cta-1']);
     expect(merged[1]?.producedFiles).toEqual([producedFile]);
+  });
+
+  it('does not replace richer live assistant content with a shorter stale refresh row', () => {
+    const liveForm = '<question-form id="discovery">{"questions":[{"id":"tone"}]}</question-form>';
+    const merged = mergeServerMessagesIntoConversation(
+      [{ id: 'assistant-1', role: 'assistant', content: liveForm, runStatus: 'succeeded' }],
+      [{ id: 'assistant-1', role: 'assistant', content: 'Done', runStatus: 'succeeded' }],
+    );
+
+    expect(merged[0]?.content).toBe(liveForm);
   });
 });

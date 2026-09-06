@@ -20,9 +20,15 @@ describe('QuestionsPanel blocking forms', () => {
     expect(document.querySelectorAll('.qf-field')).toHaveLength(2);
   });
 
-  it('has no skip-all control or countdown', () => {
-    render(<QuestionsPanel form={form} interactive generating={false} onSubmit={() => {}} />);
-    expect(screen.queryByRole('button', { name: /skip all/i })).toBeNull();
+  it('offers a recovery path that bypasses required fields without a countdown', () => {
+    const onSubmit = vi.fn();
+    render(<QuestionsPanel form={form} interactive generating={false} onSubmit={onSubmit} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /skip all/i }));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      '[form answers — blocking-input]\n- Source URL: (skipped)\n- Notes: (skipped)',
+    );
     expect(document.querySelector('.questions-skip-timer')).toBeNull();
   });
 

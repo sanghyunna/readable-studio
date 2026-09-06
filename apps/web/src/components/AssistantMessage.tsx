@@ -254,7 +254,18 @@ function AssistantMessageImpl({
   onAgentRollbackShowDiff,
 }: Props) {
   const t = useT();
-  const events = message.events ?? [];
+  // `content` is the persisted transcript's canonical prose and `events` is an
+  // optional richer projection. Content-only messages (legacy rows, imports,
+  // and API-created fixtures) must still render their prose and question-form
+  // banner; ProjectView already discovers the Questions tab from this content.
+  // Only synthesize the fallback when no text event exists, avoiding duplicate
+  // prose for normal streamed turns while preserving any status/tool events.
+  const events = useMemo<AgentEvent[]>(() => {
+    const persistedEvents = message.events ?? [];
+    return message.content.length > 0 && !persistedEvents.some((event) => event.kind === "text")
+      ? [...persistedEvents, { kind: "text", text: message.content }]
+      : persistedEvents;
+  }, [message.content, message.events]);
   const rollbackEvent = events.find(
     (e): e is AgentRollbackRequestEvent => e.kind === "agent_rollback_request",
   );

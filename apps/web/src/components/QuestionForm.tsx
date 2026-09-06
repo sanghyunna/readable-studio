@@ -1,4 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from 'react';
+import type { KeyboardEvent } from 'react';
 import { ToggleButton } from '@readable-studio/components';
 import { useT } from '../i18n';
 import type { DirectionCard, FormOption, QuestionForm } from '../artifacts/question-form';
@@ -135,7 +136,15 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
   }, [onReadyChange, locked, ready]);
 
   return (
-    <div className={`question-form${locked ? ' question-form-locked' : ''}`} data-form-id={form.id}>
+    <div
+      className={`question-form${locked ? ' question-form-locked' : ''}`}
+      data-form-id={form.id}
+      data-reachability-required={
+        submittedAnswers === undefined && form.questions.some((question) => question.required)
+          ? 'true'
+          : undefined
+      }
+    >
       <div className="question-form-head">
         <span className="question-form-icon" aria-hidden>?</span>
         <div className="question-form-titles">
@@ -159,26 +168,13 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
               </label>
               {q.help ? <div className="qf-help">{q.help}</div> : null}
               {q.type === 'radio' && q.options ? (
-                <div className="qf-options">
-                  {q.options.map((opt) => (
-                    <label
-                      key={opt.value}
-                      className={`qf-chip${value === opt.value ? ' qf-chip-on' : ''}`}
-                      title={opt.description}
-                    >
-                      <input
-                        type="radio"
-                        name={`${form.id}-${q.id}`}
-                        value={opt.value}
-                        checked={value === opt.value}
-                        disabled={locked}
-                        aria-label={opt.label}
-                        onChange={() => update(q.id, opt.value)}
-                      />
-                      <OptionCopy option={opt} />
-                    </label>
-                  ))}
-                </div>
+                <RadioPillGroup
+                  label={q.label}
+                  options={q.options}
+                  value={typeof value === 'string' ? value : ''}
+                  disabled={locked}
+                  onSelect={(nextValue) => update(q.id, nextValue)}
+                />
               ) : null}
               {q.type === 'checkbox' && q.options ? (
                 <div className="qf-options">
@@ -262,31 +258,102 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
           );
         })}
       </div>
-      {hideInternalSubmit ? null : (
+      {locked ? (
         <div className="question-form-foot">
-          {locked ? (
-            <span className="qf-locked-note">
-              {submittedAnswers ? t('qf.lockedSubmitted') : t('qf.lockedPrev')}
-            </span>
-          ) : (
-            <span className="qf-hint">{t('qf.hint')}</span>
-          )}
-          {!locked ? (
-            <button
-              type="button"
-              className="primary"
-              onClick={handleSubmit}
-              disabled={!ready}
-              title={ready ? t('qf.submitTitle') : t('qf.submitDisabledTitle')}
-            >
-              {form.submitLabel ?? t('qf.submitDefault')}
-            </button>
-          ) : null}
+          <span className="qf-locked-note">
+            {submittedAnswers ? t('qf.lockedSubmitted') : t('qf.lockedPrev')}
+          </span>
+        </div>
+      ) : hideInternalSubmit ? null : (
+        <div className="question-form-foot">
+          <span className="qf-hint">{t('qf.hint')}</span>
+          <button
+            type="button"
+            className="primary"
+            onClick={handleSubmit}
+            disabled={!ready}
+            title={ready ? t('qf.submitTitle') : t('qf.submitDisabledTitle')}
+          >
+            {form.submitLabel ?? t('qf.submitDefault')}
+          </button>
         </div>
       )}
     </div>
   );
 });
+
+function RadioPillGroup({
+  label,
+  options,
+  value,
+  disabled,
+  onSelect,
+}: {
+  label: string;
+  options: FormOption[];
+  value: string;
+  disabled: boolean;
+  onSelect: (value: string) => void;
+}) {
+  const selectedIndex = options.findIndex((option) => option.value === value);
+  const tabStopIndex = selectedIndex >= 0 ? selectedIndex : 0;
+
+  function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+    let nextIndex: number;
+    switch (event.key) {
+      case 'ArrowRight':
+      case 'ArrowDown':
+        nextIndex = (index + 1) % options.length;
+        break;
+      case 'ArrowLeft':
+      case 'ArrowUp':
+        nextIndex = (index - 1 + options.length) % options.length;
+        break;
+      case 'Home':
+        nextIndex = 0;
+        break;
+      case 'End':
+        nextIndex = options.length - 1;
+        break;
+      default:
+        return;
+    }
+
+    event.preventDefault();
+    const nextOption = options[nextIndex];
+    if (!nextOption) return;
+    onSelect(nextOption.value);
+    event.currentTarget.parentElement
+      ?.querySelectorAll<HTMLButtonElement>('[role="radio"]')
+      .item(nextIndex)
+      .focus();
+  }
+
+  return (
+    <div className="qf-options" role="radiogroup" aria-label={label}>
+      {options.map((option, index) => {
+        const selected = index === selectedIndex;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            aria-label={option.label}
+            tabIndex={index === tabStopIndex ? 0 : -1}
+            title={option.description}
+            className={`qf-chip${selected ? ' qf-chip-on' : ''}`}
+            disabled={disabled}
+            onClick={() => onSelect(option.value)}
+            onKeyDown={(event) => handleKeyDown(event, index)}
+          >
+            <OptionCopy option={option} />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 function OptionCopy({ option }: { option: FormOption }) {
   return (

@@ -232,6 +232,14 @@ export function mergeSavedPreviewComment(current: PreviewComment[], saved: Previ
 function mergeServerMessageWithLocal(server: ChatMessage, local?: ChatMessage): ChatMessage {
   if (!local) return server;
   const merged: ChatMessage = { ...server };
+  // A completion-triggered list read can beat the daemon's final message
+  // persistence. Do not replace a richer live stream row with a shorter stale
+  // snapshot carrying the same id: doing so removes structured surfaces (for
+  // example a completed question form) while the user is interacting with
+  // them. A same-length or richer server row remains authoritative.
+  if ((server.content?.length ?? 0) < (local.content?.length ?? 0)) {
+    merged.content = local.content;
+  }
   if (!server.producedFiles?.length && local.producedFiles?.length) {
     merged.producedFiles = local.producedFiles;
   }
@@ -267,6 +275,20 @@ export function mergeServerMessagesIntoConversation(
     if (!serverIds.has(message.id)) merged.push(message);
   }
   return merged;
+}
+
+export function findLatestQuestionFormOccurrence(messages: ChatMessage[]): {
+  form: QuestionForm;
+  messageId: string;
+  messageIndex: number;
+} | null {
+  for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex--) {
+    const message = messages[messageIndex];
+    if (message?.role !== 'assistant') continue;
+    const form = findFirstQuestionForm(message.content ?? '')?.form;
+    if (form) return { form, messageId: message.id, messageIndex };
+  }
+  return null;
 }
 
 interface Props {
@@ -1229,9 +1251,14 @@ export function ProjectView({
     lastAssistantIndex >= 0 ? messages[lastAssistantIndex]?.content ?? '' : '';
   const lastAssistantMessageId =
     lastAssistantIndex >= 0 ? messages[lastAssistantIndex]?.id ?? null : null;
-  const questionForm: QuestionForm | null = useMemo(
-    () => findFirstQuestionForm(lastAssistantContent)?.form ?? null,
-    [lastAssistantContent],
+  const questionsGenerating =
+    currentConversationStreaming && hasUnterminatedQuestionForm(lastAssistantContent);
+  const questionFormOccurrence = useMemo(
+    () => questionsGenerating ? null : findLatestQuestionFormOccurrence(messages),
+  const questionForm = questionFormOccurrence?.form ?? null;
+  const questionFormAssistantIndex = questionFormOccurrence?.messageIndex ?? -1;
+  const questionFormMessageId = questionFormOccurrence?.messageId ?? null;
+    [messages, questionsGenerating],
   );
   const receiptAssumptions = useMemo(
     () => parseBriefReceipt(lastAssistantContent),
@@ -1267,16 +1294,14 @@ export function ProjectView({
   }, [project.id, project.metadata]);
   const questionFormSubmittedAnswers = useMemo(() => {
     if (!questionForm) return undefined;
-    for (let i = lastAssistantIndex + 1; i < messages.length; i++) {
+    for (let i = questionFormAssistantIndex + 1; i < messages.length; i++) {
       const m = messages[i];
       if (m?.role !== 'user') continue;
       const parsed = parseSubmittedAnswers(questionForm, m.content ?? '');
       if (parsed) return parsed;
     }
     return undefined;
-  }, [questionForm, lastAssistantIndex, messages]);
-  const questionsGenerating =
-    currentConversationStreaming && hasUnterminatedQuestionForm(lastAssistantContent);
+  }, [questionForm, questionFormAssistantIndex, messages]);
   // While the form is still streaming, parse it tolerantly so the Questions tab
   // can show a frame (title) immediately and fill questions in as they arrive.
   const questionFormPreview = useMemo(
@@ -1288,10 +1313,11 @@ export function ProjectView({
   // flickers between the locked (grey) and interactive (accent) styles.
   // Submission is gated separately by the panel via `submitDisabled`/generating.
   const questionFormActive =
-    (!!questionForm || questionsGenerating) && questionFormSubmittedAnswers === undefined;
-  // Mirror `questionFormActive`'s unanswered gate: once the user answers, the
-  // Questions tab closes, so the auto-focus nonce must not treat an answered
-  // form as a freshly appeared one.
+    (!!questionForm || questionsGenerating)
+    && (questionsGenerating || questionFormAssistantIndex === lastAssistantIndex)
+    && questionFormSubmittedAnswers === undefined;
+  // Mirror `questionFormActive`'s unanswered gate: an answered form stays
+  // visible but must not be treated as a freshly appeared form for auto-focus.
   const hasQuestions =
     Boolean(questionForm || questionsGenerating) && questionFormSubmittedAnswers === undefined;
   // Stable identity for the current form occurrence, used to remember that its
@@ -1306,10 +1332,17 @@ export function ProjectView({
     () =>
       buildQuestionFormKey(
         activeConversationId,
-        lastAssistantMessageId,
+        questionsGenerating ? lastAssistantMessageId : questionFormMessageId,
         Boolean(questionForm ?? questionFormPreview),
       ),
-    [activeConversationId, lastAssistantMessageId, questionForm, questionFormPreview],
+    [
+      activeConversationId,
+      lastAssistantMessageId,
+      questionForm,
+      questionFormMessageId,
+      questionFormPreview,
+      questionsGenerating,
+    ],
   );
 
   // Release #3661: let a past question form be manually re-opened in the
@@ -1328,7 +1361,12 @@ export function ProjectView({
   const displayedQuestionFormPreview = manualQuestionFormRequest ? null : questionFormPreview;
   const displayedQuestionFormSubmittedAnswers =
     manualQuestionFormRequest?.submittedAnswers ?? questionFormSubmittedAnswers;
-  const displayedQuestionFormActive = manualQuestionFormRequest ? false : questionFormActive;
+  // An unanswered form remains answerable when reopened from its chat banner.
+  // Treating every manually reopened occurrence as historical previously put
+  // required forms into the locked state even when no answer existed.
+  const displayedQuestionFormActive = manualQuestionFormRequest
+    ? manualQuestionFormRequest.submittedAnswers === undefined
+    : questionFormActive;
   const displayedQuestionsGenerating = manualQuestionFormRequest ? false : questionsGenerating;
   const displayedQuestionFormKey = manualQuestionFormRequest
     ? `${activeConversationId ?? 'conversation'}:${manualQuestionFormRequest.messageId}:${manualQuestionFormRequest.form.id}:manual`

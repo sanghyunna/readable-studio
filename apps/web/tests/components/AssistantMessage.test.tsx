@@ -257,6 +257,42 @@ describe('AssistantMessage thinking blocks', () => {
 });
 
 describe('AssistantMessage question forms', () => {
+  it('keeps a content-only unanswered form recoverable from its chat banner', () => {
+    const form = [
+      '<question-form id="task-type" title="작업 유형 선택">',
+      JSON.stringify({
+        questions: [
+          {
+            id: 'taskType',
+            label: '작업 유형',
+            type: 'radio',
+            required: true,
+            options: ['Prototype', 'Slide deck', 'Other'],
+          },
+        ],
+      }),
+      '</question-form>',
+    ].join('\n');
+    const onOpenQuestions = vi.fn();
+
+    render(
+      <AssistantMessage
+        message={baseMessage({ content: form, events: undefined })}
+        streaming={false}
+        projectId="proj-1"
+        onOpenQuestions={onOpenQuestions}
+      />,
+    );
+
+    const banner = screen.getByTestId('questions-banner');
+    fireEvent.click(banner);
+    expect(onOpenQuestions).toHaveBeenCalledWith(expect.objectContaining({
+      form: expect.objectContaining({ id: 'task-type', title: '작업 유형 선택' }),
+      messageId: 'msg-1',
+      submittedAnswers: undefined,
+    }));
+  });
+
   it('renders repeated question forms as one compact Questions banner in chat', () => {
     const firstForm = [
       '<question-form id="discovery" title="Quick brief — tailored">',
