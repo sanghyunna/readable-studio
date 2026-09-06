@@ -70,6 +70,38 @@ describe('interactive reachability contracts', () => {
     expect(modalOverlay.exit).toMatchObject({ opacity: 0, pointerEvents: 'none' });
   });
 
+  it('stacks portalled Hub menus above the interactive rail', () => {
+    const zIndexFor = (selector: string): number => {
+      let value: string | undefined;
+      sheets.hub.walkRules((rule) => {
+        if (!rule.selectors.includes(selector)) return;
+        const declaration = rule.nodes.find(
+          (node): node is Declaration => node.type === 'decl' && node.prop === 'z-index',
+        );
+        if (declaration) value = declaration.value;
+      });
+      if (!value) throw new Error(`${selector} must declare a z-index`);
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed)) throw new Error(`${selector} must use a numeric z-index`);
+      return parsed;
+    };
+
+    // HubMenu is portalled to document.body rather than nested in the rail.
+    // Its whole surface must therefore beat the rail's stacking context.
+    expect(zIndexFor('.hub-menu')).toBeGreaterThan(zIndexFor('.hub__nav'));
+
+    // Interaction-layer convention: a wrapper containing native controls stays
+    // in normal hit testing. Visibility belongs to the controls themselves and
+    // overlap arbitration belongs to stacking order. Making the wrapper inert
+    // creates a hover deadlock: the row wins the initial hit, so automation (and
+    // touch/pointer users) cannot reliably establish the child hover state that
+    // would opt the button back in.
+    expect(
+      hasRule('hub', '.hub-row__actions', { 'pointer-events': 'none' }),
+      'native-control wrappers must not use pointer-events:none',
+    ).toBe(false);
+  });
+
   it('pairs every opacity-hidden action with non-hit-testable and restoring states', () => {
     const controls: readonly {
       sheet: SheetName;
