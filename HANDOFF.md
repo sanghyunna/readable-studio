@@ -134,7 +134,7 @@ Bin: `"readable": "./apps/daemon/bin/readable.mjs"`. `SUBCOMMAND_MAP` in `cli.ts
 `export`, `artifacts`, `mcp`, `research`, `plugin`, `ui`, `marketplace`, `share`,
 `project`, `automation(s)`, `memory`, `run`, `files`, `templates`, `conversation`, `chat`,
 `daemon`, `atoms`, `skills`, `design-systems`, `craft`, `fonts`, `diagnostics`, `status`,
-`version`, `doctor`, `config`, `agent`, `provider`. `--json` gives machine-readable output;
+`version`, `doctor`, `config`, `system-prompts`, `agent`, `provider`. `--json` gives machine-readable output;
 prompt-bearing commands accept `--prompt-file <path|->`.
 
 `mcp.ts` exposes: `list_projects`, `get_active_context`, `get_artifact`, `get_project`,
