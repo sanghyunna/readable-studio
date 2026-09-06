@@ -177,8 +177,9 @@ test('Hub context mention keeps the caret outside and remains atomically deletab
   });
   expect(trace.keydownCount).toBeGreaterThan(0);
   expect(trace.beforeinputCount).toBeGreaterThan(0);
-  expect(trace.mentionMarginInlineStart).toBe('4px');
-  expect(trace.mentionMarginInlineEnd).toBe('4px');
+  // Keep enough logical space for the caret not to jam against either edge.
+  expect(trace.mentionMarginInlineStart).toBe('8px');
+  expect(trace.mentionMarginInlineEnd).toBe('8px');
   await expect(editor).toHaveText(`${mentionText}${SUFFIX}`);
   await expect(editor.locator('[data-lexical-decorator="true"]')).toHaveCount(1);
   await expect(page.locator(PILL)).toHaveAttribute('contenteditable', 'false');
