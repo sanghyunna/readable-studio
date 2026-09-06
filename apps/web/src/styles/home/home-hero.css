@@ -717,11 +717,21 @@
   gap: 3px;
   overflow-y: auto;
 }
+/* Reserve the details card's hit region before hover. Inserting this block into
+   the scrolling flex layout only after the pointer enters an option can scroll
+   or reposition the portaled picker while the pointer travels to Details,
+   turning its pointerdown into an outside click that dismisses the picker. */
+.home-hero__plugin-hover-slot {
+  flex: 0 0 124px;
+  min-height: 124px;
+}
 .home-hero__plugin-hover-card {
+  box-sizing: border-box;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px 14px;
   align-items: center;
+  height: 120px;
   margin-top: 4px;
   padding: 10px;
   border: 1px solid var(--border-soft);

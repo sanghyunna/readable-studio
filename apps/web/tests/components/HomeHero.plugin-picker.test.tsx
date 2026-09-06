@@ -771,10 +771,12 @@ describe('HomeHero plugin picker', () => {
 
     setHomeHeroPrompt('@sam');
     await settle();
+
+    const hoverSlot = screen.getByTestId('home-hero-plugin-hover-slot');
+    expect(screen.getByTestId('home-hero-plugin-picker')).toBeTruthy();
     fireEvent.mouseEnter(screen.getByRole('option', { name: /sample plugin/i }));
     await settle();
-
-    expect(screen.getByTestId('home-hero-plugin-picker')).toBeTruthy();
+    expect(screen.getByTestId('home-hero-plugin-hover-slot')).toBe(hoverSlot);
     fireEvent.click(screen.getByRole('button', { name: 'Details' }));
 
     expect(onOpenPluginDetails).toHaveBeenCalledWith(plugin);

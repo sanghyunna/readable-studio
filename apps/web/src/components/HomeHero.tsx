@@ -1329,34 +1329,41 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
                   })}
                 </div>
               ))}
-              {hoveredPlugin ? (
+              {visiblePickerOptions.some((item) => item.pluginRecord) ? (
                 <div
-                  className="home-hero__plugin-hover-card"
-                  data-testid="home-hero-plugin-hover-card"
+                  className="home-hero__plugin-hover-slot"
+                  data-testid="home-hero-plugin-hover-slot"
                 >
-                  <div>
-                    <span className="home-hero__plugin-hover-kicker">
-                      {getPluginSourceLabel(hoveredPlugin)}
-                    </span>
-                    <strong>{localizePluginTitle(locale, hoveredPlugin)}</strong>
-                    <p>{localizePluginDescription(locale, hoveredPlugin) || hoveredPlugin.id}</p>
-                  </div>
-                  <div className="home-hero__plugin-hover-meta">
-                    <span>{t('homeHero.parameters', { n: (hoveredPlugin.manifest?.readable?.inputs ?? []).length })}</span>
-                    {getPluginQueryPreview(hoveredPlugin) ? (
-                      <span>{getPluginQueryPreview(hoveredPlugin)}</span>
-                    ) : null}
-                  </div>
-                  <button
-                    type="button"
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => {
-                      dismissMentionPicker();
-                      onOpenPluginDetails(hoveredPlugin);
-                    }}
-                  >
-                    {t('homeHero.details')}
-                  </button>
+                  {hoveredPlugin ? (
+                    <div
+                      className="home-hero__plugin-hover-card"
+                      data-testid="home-hero-plugin-hover-card"
+                    >
+                      <div>
+                        <span className="home-hero__plugin-hover-kicker">
+                          {getPluginSourceLabel(hoveredPlugin)}
+                        </span>
+                        <strong>{localizePluginTitle(locale, hoveredPlugin)}</strong>
+                        <p>{localizePluginDescription(locale, hoveredPlugin) || hoveredPlugin.id}</p>
+                      </div>
+                      <div className="home-hero__plugin-hover-meta">
+                        <span>{t('homeHero.parameters', { n: (hoveredPlugin.manifest?.readable?.inputs ?? []).length })}</span>
+                        {getPluginQueryPreview(hoveredPlugin) ? (
+                          <span>{getPluginQueryPreview(hoveredPlugin)}</span>
+                        ) : null}
+                      </div>
+                      <button
+                        type="button"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => {
+                          dismissMentionPicker();
+                          onOpenPluginDetails(hoveredPlugin);
+                        }}
+                      >
+                        {t('homeHero.details')}
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </div>
