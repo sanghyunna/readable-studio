@@ -85,7 +85,8 @@ async function gotoEntryHome(page: Page) {
 async function gotoAutomations(page: Page) {
   await gotoEntryHome(page);
   await ensureRailOpen(page);
-  await page.getByTestId('entry-nav-tasks').click();
+  await page.getByTestId('hub-library').click();
+  await page.getByTestId('hub-library-tasks').click();
   const view = page.getByTestId('tasks-view');
   await expect(view.getByRole('heading', { name: 'Automations', exact: true })).toBeVisible();
   return view;

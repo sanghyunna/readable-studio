@@ -16,14 +16,14 @@ test('[P0] @critical home loads with the primary entry controls', async ({ page 
 
   // The Hub rail is the primary Home navigation surface. Its toggle and New
   // Project action must both be discoverable and interactable after expansion.
-  const hubRail = page.getByTestId('hub-nav');
-  const railToggle = page.getByTestId('hub-rail-toggle');
+  const hubRail = page.locator('[data-project-rail]');
+  const railToggle = page.locator('[data-project-rail-toggle]');
   await expect(hubRail).toBeVisible();
   await expect(railToggle).toBeVisible();
   await expect(railToggle).toBeEnabled();
   await expect(page.getByTestId('home-hero-input')).toBeVisible();
   await ensureRailOpen(page);
-  await expect(railToggle).toHaveAttribute('aria-pressed', 'false');
+  await expect(railToggle).toHaveAttribute('aria-expanded', 'true');
   await expect(page.getByTestId('hub-new-project')).toBeVisible();
   await expect(page.getByTestId('hub-new-project')).toBeEnabled();
 });

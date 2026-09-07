@@ -9,7 +9,7 @@
 // first rendered frame, and leaves no residue behind when the user returns to
 // the Hub.
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../../src/App';
@@ -29,7 +29,9 @@ import {
   fetchDesignTemplates,
   fetchSkills,
 } from '../../src/providers/registry';
-import { listProjects, listTemplates } from '../../src/state/projects';
+import { getProject, listProjects, listTemplates } from '../../src/state/projects';
+
+const moduleReadiness = vi.hoisted(() => ({ ready: Promise.resolve() }));
 
 type TestRoute =
   | { kind: 'home'; view: 'home' }
@@ -70,16 +72,18 @@ vi.mock('../../src/components/EntryView', () => ({
   ),
 }));
 
-vi.mock('../../src/components/ProjectView', () => ({
-  ProjectView: ({ onBack }: { onBack: () => void }) => (
-    <div className="app">
-      <button type="button" onClick={onBack}>
-        Back to hub
-      </button>
-      <input aria-label="Workspace composer" />
-    </div>
-  ),
-}));
+vi.mock('../../src/components/ProjectView', async () => {
+  // Keep next/dynamic real: hold the module itself, not a mock loading UI.
+  await moduleReadiness.ready;
+  return {
+    ProjectView: ({ onBack }: { onBack: () => void }) => (
+      <div className="app">
+        <button type="button" onClick={onBack}>Back to hub</button>
+        <input aria-label="Workspace composer" />
+      </div>
+    ),
+  };
+});
 
 vi.mock('../../src/components/pet/PetOverlay', () => ({
   PetOverlay: () => null,
@@ -116,7 +120,7 @@ vi.mock('../../src/state/projects', async () => {
   const actual = await vi.importActual<typeof import('../../src/state/projects')>(
     '../../src/state/projects',
   );
-  return { ...actual, listProjects: vi.fn(), listTemplates: vi.fn() };
+  return { ...actual, getProject: vi.fn(), listProjects: vi.fn(), listTemplates: vi.fn() };
 });
 
 vi.mock('../../src/state/config', async () => {
@@ -160,7 +164,7 @@ const project: Project = {
 };
 
 function surface(): HTMLElement {
-  const node = document.querySelector<HTMLElement>('.workspace-shell__body > *');
+  const node = document.querySelector<HTMLElement>('.workspace-shell__body > [data-surface]');
   if (!node) throw new Error('No workspace surface rendered');
   return node;
 }
@@ -174,6 +178,7 @@ beforeEach(() => {
   vi.mocked(fetchDesignSystems).mockResolvedValue([]);
   vi.mocked(fetchAppVersionInfo).mockResolvedValue(null);
   vi.mocked(listProjects).mockResolvedValue([project]);
+  vi.mocked(getProject).mockResolvedValue(null);
   vi.mocked(listTemplates).mockResolvedValue([]);
   vi.mocked(fetchDaemonConfig).mockResolvedValue({});
   vi.mocked(mergeDaemonConfig).mockImplementation((local) => local);
@@ -191,35 +196,111 @@ afterEach(() => {
 });
 
 describe('Hub -> workspace transition wiring', () => {
-  it('does not animate the first surface painted in the session', async () => {
-    render(<App />);
+  it('carries visible content through separate data and cold-module readiness commits', async () => {
+    let finishModule!: () => void;
+    moduleReadiness.ready = new Promise<void>((resolve) => { finishModule = resolve; });
+    let finishProject!: (value: Project) => void;
+    const projectReady = new Promise<Project>((resolve) => { finishProject = resolve; });
+    vi.mocked(listProjects).mockResolvedValue([]);
+    vi.mocked(getProject).mockReturnValue(projectReady);
+    await act(async () => { render(<App />); });
+    const rail = document.querySelector('[data-project-rail]');
+    const states: boolean[] = [];
+    const sample = () => {
+      const content = surface();
+      states.push(Boolean(content.querySelector('.entry-shell, .app, [data-testid="project-route-loading"]')));
+    };
+    const observer = new MutationObserver(sample);
+    observer.observe(document.querySelector('.workspace-shell__body')!, {
+      childList: true, subtree: true, attributes: true,
+    });
+    sample();
+    try {
+      await act(async () => setRoute({ kind: 'project', projectId: project.id, conversationId: null, fileName: null }));
+      const pendingSurface = surface();
+      const loading = screen.getByTestId('project-route-loading');
+      expect(loading.querySelectorAll('[aria-hidden="true"] span')).toHaveLength(6);
+      expect(loading.querySelector('button, input, [tabindex]')).toBeNull();
+      expect(pendingSurface.dataset.surface).toBe(`project:${project.id}`);
+      expect(screen.queryByLabelText('Workspace composer')).toBeNull();
+      sample();
 
-    await screen.findByRole('button', { name: 'Open work' });
+      await act(async () => { finishProject(project); await projectReady; });
+      // Data alone must not clear the fallback while next/dynamic is pending.
+      expect(surface()).toBe(pendingSurface);
+      screen.getByTestId('project-route-loading');
+      expect(screen.queryByLabelText('Workspace composer')).toBeNull();
+      sample();
+
+      await act(async () => {
+        finishModule();
+        await import('../../src/components/ProjectView');
+      });
+      screen.getByLabelText('Workspace composer');
+      expect(screen.queryByTestId('project-route-loading')).toBeNull();
+      expect(surface()).toBe(pendingSurface);
+      expect(document.querySelector('[data-project-rail]')).toBe(rail);
+      sample();
+      expect(states.length).toBeGreaterThanOrEqual(4);
+      expect(states.every(Boolean)).toBe(true);
+    } finally {
+      finishModule();
+      observer.disconnect();
+    }
+  });
+
+  it('discards stale readiness after a new route or a return to Home', async () => {
+    let finishOld!: (value: Project) => void;
+    const oldReady = new Promise<Project>((resolve) => { finishOld = resolve; });
+    let finishNew!: (value: Project) => void;
+    const newReady = new Promise<Project>((resolve) => { finishNew = resolve; });
+    vi.mocked(listProjects).mockResolvedValue([]);
+    vi.mocked(getProject).mockImplementation((id) => id === 'old' ? oldReady : newReady);
+    await act(async () => { render(<App />); });
+    const rail = document.querySelector('[data-project-rail]');
+    await act(async () => setRoute({ kind: 'project', projectId: 'old', conversationId: null, fileName: null }));
+    screen.getByTestId('project-route-loading');
+    await act(async () => setRoute({ kind: 'project', projectId: 'new', conversationId: null, fileName: null }));
+    screen.getByTestId('project-route-loading');
+    await act(async () => { finishOld({ ...project, id: 'old' }); await oldReady; });
+    expect(surface().dataset.surface).toBe('project:new');
+    screen.getByTestId('project-route-loading');
+    await act(async () => setRoute({ kind: 'home', view: 'home' }));
+    await act(async () => { finishNew({ ...project, id: 'new' }); await newReady; });
+    expect(surface().dataset.surface).toBe('hub');
+    screen.getByRole('button', { name: 'Open work' });
+    expect(screen.queryByTestId('project-route-loading')).toBeNull();
+    expect(document.querySelector('[data-project-rail]')).toBe(rail);
+  });
+
+  it('does not animate the first surface painted in the session', async () => {
+    await act(async () => { render(<App />); });
+    screen.getByRole('button', { name: 'Open work' });
     expect(surface().dataset.transition).toBe('none');
     expect(surface().dataset.surface).toBe('hub');
   });
 
   it('marks the workspace direction when the existing route state opens a project', async () => {
-    render(<App />);
-    await screen.findByRole('button', { name: 'Open work' });
-
-    setRoute({ kind: 'project', projectId: 'project-1', conversationId: null, fileName: null });
-
-    await waitFor(() => {
-      expect(surface().dataset.surface).toBe('project:project-1');
+    await act(async () => { render(<App />); });
+    screen.getByRole('button', { name: 'Open work' });
+    await act(async () => {
+      setRoute({ kind: 'project', projectId: 'project-1', conversationId: null, fileName: null });
+      await import('../../src/components/ProjectView');
     });
+    expect(surface().dataset.surface).toBe('project:project-1');
     expect(surface().dataset.transition).toBe('workspace');
   });
 
   it('mounts the workspace fully interactive in the same commit as the animation', async () => {
-    render(<App />);
-    await screen.findByRole('button', { name: 'Open work' });
+    await act(async () => { render(<App />); });
+    screen.getByRole('button', { name: 'Open work' });
+    await act(async () => {
+      setRoute({ kind: 'project', projectId: 'project-1', conversationId: null, fileName: null });
+      await import('../../src/components/ProjectView');
+    });
 
-    setRoute({ kind: 'project', projectId: 'project-1', conversationId: null, fileName: null });
-
-    // The composer exists and takes focus on the very first frame the animated
-    // surface is present: the animation cannot be gating input or focus.
-    const composer = await screen.findByLabelText('Workspace composer');
+    // jsdom has no live animations; the gate must fail open in this case.
+    const composer = screen.getByLabelText('Workspace composer');
     expect(surface().dataset.transition).toBe('workspace');
     composer.focus();
     expect(document.activeElement).toBe(composer);
@@ -228,24 +309,27 @@ describe('Hub -> workspace transition wiring', () => {
   });
 
   it('keeps the Hub re-enterable with no leftover overlay or stuck state', async () => {
-    render(<App />);
-    await screen.findByRole('button', { name: 'Open work' });
+    await act(async () => { render(<App />); });
+    screen.getByRole('button', { name: 'Open work' });
+    await act(async () => {
+      setRoute({ kind: 'project', projectId: 'project-1', conversationId: null, fileName: null });
+      await import('../../src/components/ProjectView');
+    });
+    screen.getByRole('button', { name: 'Back to hub' });
 
-    setRoute({ kind: 'project', projectId: 'project-1', conversationId: null, fileName: null });
-    await screen.findByRole('button', { name: 'Back to hub' });
-
-    setRoute({ kind: 'home', view: 'home' });
-    await screen.findByRole('button', { name: 'Open work' });
+    await act(async () => setRoute({ kind: 'home', view: 'home' }));
+    screen.getByRole('button', { name: 'Open work' });
 
     // Exactly one surface is mounted — the outgoing view is gone, not parked
     // behind an overlay — and the return direction is the Hub one.
-    expect(document.querySelectorAll('.workspace-shell__body > *')).toHaveLength(1);
+    expect(document.querySelectorAll('.workspace-shell__body > [data-surface]')).toHaveLength(1);
+    expect(document.querySelectorAll('.workspace-shell__body > [data-project-rail]')).toHaveLength(1);
     expect(surface().dataset.surface).toBe('hub');
     expect(surface().dataset.transition).toBe('hub');
 
     // And re-entering the workspace still animates forward.
-    setRoute({ kind: 'project', projectId: 'project-1', conversationId: null, fileName: null });
-    await screen.findByRole('button', { name: 'Back to hub' });
+    await act(async () => setRoute({ kind: 'project', projectId: 'project-1', conversationId: null, fileName: null }));
+    screen.getByRole('button', { name: 'Back to hub' });
     expect(surface().dataset.transition).toBe('workspace');
   });
 });

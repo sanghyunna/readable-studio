@@ -75,8 +75,8 @@ describe('Hub rail long-name truncation contract', () => {
   });
 
   it('removes names rather than exposing overflow in the collapsed rail', () => {
-    expect(declarations('.hub--rail-collapsed .hub-row__title')).toContain('display: none;');
-    expect(declarations('.hub--rail-collapsed .hub-row')).toContain('padding: 0;');
+    expect(declarations("[data-project-rail-state='collapsed'] .hub-row__title")).toContain('display: none;');
+    expect(declarations("[data-project-rail-state='collapsed'] .hub-row")).toContain('padding: 0;');
   });
 });
 
@@ -104,8 +104,8 @@ describe('Hub rail search affordance contract', () => {
   });
 
   it('retains the recessed field behind the collapsed-rail search glyph', () => {
-    const collapsed = declarations('.hub--rail-collapsed .hub__search');
-    const glyph = declarations('.hub--rail-collapsed .hub__nav-actions::after');
+    const collapsed = declarations("[data-project-rail-state='collapsed'] .hub__search");
+    const glyph = declarations("[data-project-rail-state='collapsed'] .hub__nav-actions::after");
 
     expect(collapsed).not.toContain('background: transparent;');
     expect(collapsed).not.toContain('box-shadow: none;');

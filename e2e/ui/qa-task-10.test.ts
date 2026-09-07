@@ -42,7 +42,7 @@ async function gotoHub(page: Page) {
   });
   await page.goto('/');
   await expect(page.getByTestId('entry-view-home')).toHaveAttribute('data-active', 'true');
-  await expect(page.getByTestId('hub-nav')).toBeVisible();
+  await expect(page.locator('[data-project-rail]')).toBeVisible();
 }
 
 test('todo 10 command palette, global shortcuts, and tree shortcuts', async ({ page, request, context }) => {
@@ -135,9 +135,9 @@ test('todo 10 command palette, global shortcuts, and tree shortcuts', async ({ p
 
   await page.getByTestId('hub-brand').focus();
   await page.keyboard.press('Control+B');
-  await expect(page.locator('.hub')).toHaveAttribute('data-rail-collapsed', 'true');
+  await expect(page.locator('[data-project-rail]')).toHaveAttribute('data-project-rail-state', 'collapsed');
   await page.keyboard.press('Control+B');
-  await expect(page.locator('.hub')).toHaveAttribute('data-rail-collapsed', 'false');
+  await expect(page.locator('[data-project-rail]')).toHaveAttribute('data-project-rail-state', 'expanded');
 
   await page.evaluate(() => {
     (window as Window & { __inspectorShortcutCount?: number }).__inspectorShortcutCount = 0;

@@ -22,7 +22,7 @@ vi.mock('../../src/router', async (importOriginal) => {
   return { ...actual, navigate };
 });
 
-import { HubHome } from '../../src/components/hub/HubHome';
+import { TestHubHome as HubHome } from '../helpers/HubTestHost';
 import { openSessionRoute } from '../../src/components/hub/openSessionRoute';
 import type { Project } from '../../src/types';
 import { setHomeHeroPrompt } from '../helpers/home-hero-lexical';

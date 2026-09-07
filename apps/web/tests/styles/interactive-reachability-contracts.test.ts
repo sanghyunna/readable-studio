@@ -609,31 +609,10 @@ describe('interactive reachability contracts', () => {
     });
 
     const generic = tracks.get('.entry-shell--no-header .entry');
-    const home = tracks.get(
-      '.entry-shell--no-header .entry:has(.entry-main__inner--home)',
-    );
-
-    // Non-vacuous regression proof: the generic narrow shell really does
-    // reserve the 44px rail track that swallowed Home when it won the cascade.
-    expect(generic).toMatchObject({
-      value: 'var(--entry-rail-strip-width, 44px) minmax(0, 1fr)',
-      important: true,
-    });
-    expect(home).toMatchObject({ value: 'minmax(0, 1fr)', important: true });
-    if (!generic || !home) throw new Error('narrow Home track declarations were not found');
-    expect(generic.value).not.toBe('minmax(0, 1fr)');
-
-    // Home owns a ProjectRail inside HubHome, so its `.entry` has one child and
-    // must have one track. This later, equally-important rule is the effective
-    // narrow declaration; the main/composer can consume the viewport instead
-    // of being auto-placed into the synthetic 44px first track.
-    const genericRule = generic.parent;
-    const homeRule = home.parent;
-    if (genericRule?.type !== 'rule' || homeRule?.type !== 'rule') {
-      throw new Error('narrow Home track declarations must belong to CSS rules');
-    }
-    expect(narrowNodes.indexOf(homeRule)).toBeGreaterThan(
-      narrowNodes.indexOf(genericRule),
-    );
+    // The rail belongs to App's grid on ALL routes. EntryShell has one child
+    // and one content track, including below the forced-collapse breakpoint.
+    expect(generic).toMatchObject({ value: 'minmax(0, 1fr)', important: true });
+    expect(tracks.has('.entry-shell--no-header .entry.entry--rail-open')).toBe(false);
+    expect(tracks.has('.entry-shell--no-header .entry:has(.entry-main__inner--home)')).toBe(false);
   });
 });

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { readConversationsFromListMock } from '../helpers/hub-conversations-mock';
@@ -77,6 +77,11 @@ vi.mock('../../src/components/PluginsView', () => ({
 vi.mock('../../src/components/TasksView', () => ({ TasksView: () => null }));
 
 import { EntryShell } from '../../src/components/EntryShell';
+import { HubRail } from '../../src/components/hub/HubRail';
+import { HubRailProvider } from '../../src/components/hub/HubRailContext';
+import { HubRailOverlays } from '../../src/components/hub/HubRailOverlays';
+import { useHubRailController } from '../../src/components/hub/useHubRailController';
+import { navigate } from '../../src/router';
 import type { Project, SkillSummary } from '../../src/types';
 
 class ResizeObserverMock {
@@ -116,41 +121,62 @@ const skills: SkillSummary[] = [{
 function renderEntryShell(projects: Project[] = [project]) {
   const onCreateProject = vi.fn(() => true);
   const onOpenSettings = vi.fn();
-  render(
-    <EntryShell
-      skills={skills}
-      designTemplates={[]}
-      designSystems={[]}
-      projects={projects}
-      templates={[]}
-      defaultDesignSystemId={null}
-      config={{
-        mode: 'api', apiKey: '', baseUrl: '', model: '', agentId: null,
-        skillId: null, designSystemId: null,
-      }}
-      agents={[]}
-      daemonLive
-      onModeChange={vi.fn()}
-      onAgentChange={vi.fn()}
-      onAgentModelChange={vi.fn()}
-      onApiProtocolChange={vi.fn()}
-      onApiModelChange={vi.fn()}
-      onConfigPersist={vi.fn()}
-      onRefreshAgents={vi.fn(() => [])}
-      onThemeChange={vi.fn()}
-      onCreateProject={onCreateProject}
-      onCreatePluginShareProject={vi.fn()}
-      onImportClaudeDesign={vi.fn()}
-      onImportFolder={vi.fn()}
-      onImportFolderResponse={vi.fn()}
-      onOpenProject={vi.fn()}
-      onDeleteProject={vi.fn()}
-      onRenameProject={vi.fn()}
-      onChangeDefaultDesignSystem={vi.fn()}
-      onOpenSettings={onOpenSettings}
-    />,
-  );
-  return { onCreateProject, onOpenSettings };
+  const onOpenNewProject = vi.fn();
+
+  function ShellWithPersistentRail() {
+    const rail = useHubRailController({
+      projects,
+      currentSessionId: null,
+      onOpenSession: vi.fn(),
+      onNewProject: () => onOpenNewProject('prototype'),
+      onOpenProject: vi.fn(),
+      onNavigateDestination: vi.fn(),
+    });
+
+    return (
+      <HubRailProvider value={rail}>
+        <HubRail
+          onOpenDestination={(destination) => navigate({ kind: 'home', view: destination })}
+          onOpenSettings={() => onOpenSettings()}
+          onOpenWorkspaceFolder={() => onOpenSettings('projectLocations')}
+        />
+        <EntryShell
+          skills={skills}
+          designTemplates={[]}
+          designSystems={[]}
+          projects={projects}
+          templates={[]}
+          defaultDesignSystemId={null}
+          config={{
+            mode: 'api', apiKey: '', baseUrl: '', model: '', agentId: null,
+            skillId: null, designSystemId: null,
+          }}
+          agents={[]}
+          daemonLive
+          onModeChange={vi.fn()}
+          onAgentChange={vi.fn()}
+          onAgentModelChange={vi.fn()}
+          onApiProtocolChange={vi.fn()}
+          onApiModelChange={vi.fn()}
+          onConfigPersist={vi.fn()}
+          onRefreshAgents={vi.fn(() => [])}
+          onThemeChange={vi.fn()}
+          onCreateProject={onCreateProject}
+          onCreatePluginShareProject={vi.fn()}
+          onOpenNewProject={onOpenNewProject}
+          onOpenProject={vi.fn()}
+          onDeleteProject={vi.fn()}
+          onRenameProject={vi.fn()}
+          onChangeDefaultDesignSystem={vi.fn()}
+          onOpenSettings={onOpenSettings}
+        />
+        <HubRailOverlays />
+      </HubRailProvider>
+    );
+  }
+
+  render(<ShellWithPersistentRail />);
+  return { onCreateProject, onOpenSettings, onOpenNewProject };
 }
 
 beforeEach(() => {
@@ -268,81 +294,24 @@ describe('EntryShell production hub wiring', () => {
     );
   });
 
-  it('forwards New Project modal creation through handleCreate with normalized input', async () => {
-    const { onCreateProject } = renderEntryShell();
-    await screen.findByTestId('home-hero-input');
-
-    fireEvent.click(screen.getByTestId('hub-new-project'));
-    const body = await screen.findByTestId('new-project-modal');
-    fireEvent.change(within(body).getByTestId('new-project-name'), {
-      target: { value: '  Advanced wired project  ' },
-    });
-    fireEvent.click(within(body).getByTestId('create-project'));
-
-    await waitFor(() => expect(onCreateProject).toHaveBeenCalledTimes(1));
-    expect(onCreateProject).toHaveBeenCalledWith({
-      name: 'Advanced wired project',
-      skillId: 'prototype-skill',
-      designSystemId: null,
-      metadata: {
-        kind: 'prototype',
-        platform: 'responsive',
-        platformTargets: ['responsive'],
-        fidelity: 'high-fidelity',
-        nameSource: 'user',
-      },
-      conversationMode: 'design',
-      requestId: expect.any(String),
-      pluginId: 'example-web-prototype',
-      pluginInputs: {
-        artifactKind: 'web prototype',
-        fidelity: 'high-fidelity',
-        audience: 'product evaluators',
-        designSystem: 'the active project design system',
-        template: 'the bundled web prototype seed',
-      },
-    });
+  // Form normalization and relocated controls are exercised through the real
+  // App owner in App.new-project-modal.test.tsx, not a duplicate shell modal.
+  it('delegates Home New Project to App with the prototype tab and owns no modal', async () => {
+    const { onOpenNewProject, onCreateProject } = renderEntryShell();
+    await act(async () => { fireEvent.click(screen.getByTestId('hub-new-project')); });
+    expect(onOpenNewProject).toHaveBeenCalledExactlyOnceWith('prototype');
+    expect(onCreateProject).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('new-project-modal')).toBeNull();
   });
 
-  it('has no Advanced / Import disclosure on the Hub', async () => {
-    renderEntryShell();
-    await screen.findByTestId('home-hero-input');
-
-    expect(screen.queryByTestId('new-project-advanced')).toBeNull();
-    expect(screen.queryByTestId('new-project-advanced-toggle')).toBeNull();
-    expect(screen.queryByTestId('new-project-advanced-body')).toBeNull();
-    // The panel itself must not be mounted anywhere outside the modal.
-    expect(screen.queryByTestId('new-project-panel')).toBeNull();
-  });
-
-  it('keeps every relocated pre-creation control reachable in the New Project modal', async () => {
-    renderEntryShell();
-    await screen.findByTestId('home-hero-input');
-
-    fireEvent.click(screen.getByTestId('hub-new-project'));
-    const modal = await screen.findByTestId('new-project-modal');
-    const panel = within(modal).getByTestId('new-project-panel');
-
-    // 1. working-directory picker
-    const workingDir = panel.querySelector('button.newproj-working-dir');
-    expect(workingDir).not.toBeNull();
-    expect((workingDir as HTMLButtonElement).disabled).toBe(false);
-
-    // 2. Claude ZIP import (button + its file input)
-    const zip = within(panel).getByTestId('new-project-import-claude-zip') as HTMLButtonElement;
-    expect(zip.disabled).toBe(false);
-    const zipInput = within(panel).getByTestId('new-project-import-claude-zip-input');
-    expect(zipInput.getAttribute('type')).toBe('file');
-
-    // 3. open-folder import (host bridge is available in this render)
-    const openFolder = within(panel).getByTestId('new-project-import-folder') as HTMLButtonElement;
-    expect(openFolder.disabled).toBe(false);
-
-    // 4. template picker tab
-    const templateTab = within(panel).getByTestId('new-project-tab-template') as HTMLButtonElement;
-    expect(templateTab.disabled).toBe(false);
-    fireEvent.click(templateTab);
-    expect(templateTab.getAttribute('aria-selected')).toBe('true');
+  it('delegates the command palette template path to App with the template tab', async () => {
+    const { onOpenNewProject } = renderEntryShell();
+    await act(async () => { fireEvent.click(screen.getByTestId('hub-open-palette')); });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('hub-palette-item-command-create-template'));
+    });
+    expect(onOpenNewProject).toHaveBeenCalledExactlyOnceWith('template');
+    expect(screen.queryByTestId('new-project-modal')).toBeNull();
   });
 
   it('maps the hub workspace-folder item to Project Locations settings', async () => {

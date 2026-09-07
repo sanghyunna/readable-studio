@@ -360,7 +360,7 @@ async function createProject(page: Page, name: string, agentId: FakeAgentId = 'c
   await expectBrowserAgentConfig(page, agentId);
   await dismissPrivacyDialog(page);
   await ensureRailOpen(page);
-  await page.getByTestId('entry-nav-new-project').click();
+  await page.getByTestId('hub-new-project').click();
   await expect(page.getByTestId('new-project-modal')).toBeVisible();
   await expect(page.getByTestId('new-project-panel')).toBeVisible();
   await page.getByTestId('new-project-tab-prototype').click();

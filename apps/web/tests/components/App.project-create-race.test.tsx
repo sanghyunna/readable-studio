@@ -2,6 +2,8 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ComponentProps } from 'react';
+import type { NewProjectModal } from '../../src/components/NewProjectModal';
 
 import { App } from '../../src/App';
 import type { AgentInfo, AppConfig, Project } from '../../src/types';
@@ -35,7 +37,7 @@ vi.mock('../../src/components/EntryView', () => ({
   EntryView: ({
     onCreateProject,
     onDeleteProject,
-    onImportFolderResponse,
+    onOpenNewProject,
     onOpenProject,
     onRefreshAgents,
     agents,
@@ -43,12 +45,7 @@ vi.mock('../../src/components/EntryView', () => ({
   }: {
     onCreateProject: (input: unknown) => void;
     onDeleteProject: (id: string) => void;
-    onImportFolderResponse?: (response: {
-      conversationId: string;
-      entryFile: string | null;
-      ok: true;
-      projectId: string;
-    }) => Promise<void> | void;
+    onOpenNewProject: (tab: 'prototype') => void;
     onOpenProject: (id: string) => void;
     onRefreshAgents: () => void | Promise<void>;
     agents: AgentInfo[];
@@ -88,16 +85,9 @@ vi.mock('../../src/components/EntryView', () => ({
       </button>
       <button
         type="button"
-        onClick={() =>
-          void onImportFolderResponse?.({
-            conversationId: 'conv-import',
-            entryFile: null,
-            ok: true,
-            projectId: 'project-new',
-          })
-        }
+        onClick={() => onOpenNewProject('prototype')}
       >
-        Host import folder
+        Open New Project
       </button>
       <button type="button" onClick={() => void onRefreshAgents()}>
         Refresh agents
@@ -122,6 +112,16 @@ vi.mock('../../src/components/EntryView', () => ({
       ))}
     </main>
   ),
+}));
+
+vi.mock('../../src/components/NewProjectModal', () => ({
+  NewProjectModal: ({ open, onImportFolderResponse }: ComponentProps<typeof NewProjectModal>) => open ? (
+    <button type="button" onClick={() => void onImportFolderResponse?.({
+      conversationId: 'conv-import', entryFile: null, ok: true, projectId: 'project-new',
+    })}>
+      Host import folder
+    </button>
+  ) : null,
 }));
 
 vi.mock('../../src/components/ProjectView', () => ({
@@ -844,18 +844,18 @@ describe('App project creation routing', () => {
       .mockResolvedValue([]);
     mockedGetProject.mockResolvedValue(null);
 
-    render(<App />);
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Host import folder' }));
+    await act(async () => { render(<App />); });
+    fireEvent.click(screen.getByRole('button', { name: 'Open New Project' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Host import folder' }));
+    });
 
     await act(async () => {
       importListProjects.resolve([]);
       await importListProjects.promise;
     });
 
-    await waitFor(() => {
-      expect(screen.getByTestId('project-view')).toBeTruthy();
-    });
+    expect(screen.getByTestId('project-view')).toBeTruthy();
     expect(window.location.pathname).toBe('/projects/project-new');
 
     await act(async () => {
@@ -876,18 +876,18 @@ describe('App project creation routing', () => {
       .mockResolvedValue([]);
     mockedGetProject.mockResolvedValue(null);
 
-    render(<App />);
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Host import folder' }));
+    await act(async () => { render(<App />); });
+    fireEvent.click(screen.getByRole('button', { name: 'Open New Project' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Host import folder' }));
+    });
 
     await act(async () => {
       importListProjects.resolve([]);
       await importListProjects.promise;
     });
 
-    await waitFor(() => {
-      expect(screen.getByTestId('project-view')).toBeTruthy();
-    });
+    expect(screen.getByTestId('project-view')).toBeTruthy();
     expect(screen.getByTestId('project-title').textContent).toBe('');
     expect(window.location.pathname).toBe('/projects/project-new');
 
@@ -909,18 +909,18 @@ describe('App project creation routing', () => {
       .mockResolvedValue([]);
     mockedGetProject.mockResolvedValue(null);
 
-    render(<App />);
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Host import folder' }));
+    await act(async () => { render(<App />); });
+    fireEvent.click(screen.getByRole('button', { name: 'Open New Project' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Host import folder' }));
+    });
 
     await act(async () => {
       importListProjects.resolve([]);
       await importListProjects.promise;
     });
 
-    await waitFor(() => {
-      expect(screen.getByTestId('project-view')).toBeTruthy();
-    });
+    expect(screen.getByTestId('project-view')).toBeTruthy();
     expect(screen.getByTestId('project-title').textContent).toBe('');
     expect(window.location.pathname).toBe('/projects/project-new');
 

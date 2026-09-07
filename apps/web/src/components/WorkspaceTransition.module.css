@@ -14,8 +14,9 @@
  * - `animation` never touches layout: only `opacity`, `transform` and
  *   `filter`. The destination content is laid out at its final geometry from
  *   the first frame, so there is no layout shift and no reflow-driven jank.
- * - The element is mounted, painted and laid out immediately; the animation is
- *   presentational only and does not gate data loading.
+ * - Project content never fades out as a whole: data and module readiness
+ *   share a visible pane skeleton, and the project entrance is transform-only.
+ *   Other destinations retain their directional fade.
  * - `pointer-events` IS gated, but only for the transparent frames. This
  *   wrapper is the ancestor of the ENTIRE incoming surface (for the Hub: the
  *   whole rail - brand, new-project, search, palette, library, settings), and
@@ -107,6 +108,76 @@
   animation: hubEnter 260ms var(--ease-out) both;
 }
 
+/* A loading surface has full bounds even when its parent has opacity zero.
+   Keep project content visible throughout data/module hydration and the first
+   workspace commit. The nested boot fade must not reopen the same gap. */
+@keyframes workspaceEnterOpaque {
+  from {
+    transform: translate3d(0, 10px, 0) scale(0.988);
+  }
+  to {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+.surface[data-surface^='project:'][data-transition='workspace'] {
+  animation-name: workspaceEnterOpaque;
+}
+
+.surface[data-surface^='project:'] > :global(.app) {
+  animation: none;
+}
+
+.surface > :global(.readable-loading-shell--surface) {
+  display: flex;
+  padding: 24px;
+}
+
+/* Static pane geometry, not another canvas or simulated interactive controls.
+   The shared shell remains visible through every area of this fallback. */
+.loading {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  gap: 24px;
+  width: 100%;
+  min-height: 0;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.loadingPane,
+.loadingPreview {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.loadingLines {
+  display: grid;
+  gap: 12px;
+}
+
+.loadingLines > span {
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--text-muted) 24%, transparent);
+}
+
+.loadingLines > span:last-child {
+  width: 60%;
+}
+
+.loadingComposer {
+  height: 100px;
+  margin-top: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
 /*
  * First paint of the session must not animate: the app shell already fades in
  * (styles/entrance.css `.app, .entry-shell`), and re-animating here would read
@@ -125,7 +196,8 @@
 @media (prefers-reduced-motion: reduce) {
   .surface,
   .surface[data-transition='workspace'],
-  .surface[data-transition='hub'] {
+  .surface[data-transition='hub'],
+  .surface[data-surface^='project:'][data-transition='workspace'] {
     animation: none;
     opacity: 1;
     transform: none;
@@ -143,15 +215,6 @@
  * background.
  */
 @media (prefers-reduced-transparency: reduce) {
-  @keyframes workspaceEnterOpaque {
-    from {
-      transform: translate3d(0, 10px, 0) scale(0.988);
-    }
-    to {
-      transform: translate3d(0, 0, 0) scale(1);
-    }
-  }
-
   @keyframes hubEnterOpaque {
     from {
       transform: translate3d(0, -8px, 0) scale(1.008);

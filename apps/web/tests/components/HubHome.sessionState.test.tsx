@@ -18,7 +18,7 @@ vi.mock('../../src/state/projects', () => ({
   createConversation,
 }));
 
-import { HubHome } from '../../src/components/hub/HubHome';
+import { TestHubHome as HubHome } from '../helpers/HubTestHost';
 import type { Conversation, Project } from '../../src/types';
 
 afterEach(() => {

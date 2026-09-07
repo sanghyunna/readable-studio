@@ -77,20 +77,20 @@ describe('project rail: one shared contract', () => {
 
     // Neither surface may re-declare a literal collapsed width of its own; the
     // Hub alias must resolve THROUGH the shared custom property.
-    expect(hubCss).toMatch(/--hub-rail-collapsed:\s*var\(--project-rail-collapsed\)/);
-    expect(/--hub-rail-collapsed:\s*[\d.]+px/.test(hubCss)).toBe(false);
-    expect(entryLayoutCss).toMatch(/--entry-rail-strip-width:\s*var\(--project-rail-collapsed\)/);
+    expect(shellCss).toContain('grid-template-columns: var(--project-rail-collapsed)');
+    expect(hubCss).not.toMatch(/--hub-rail-collapsed:/);
+    expect(entryLayoutCss).not.toMatch(/--entry-rail-strip-width:/);
   });
 
   it('gives both surfaces the SAME collapsed width', () => {
-    const stripWidth = /--entry-rail-strip-width:\s*([^;]+);/.exec(entryLayoutCss)?.[1];
+    const stripWidth = /grid-template-columns:\s*(var\(--project-rail-collapsed\))/.exec(shellCss)?.[1];
 
     expect(stripWidth).toBe('var(--project-rail-collapsed)');
     expect(SHARED_COLLAPSED).toBe('44px');
   });
 
   it('expands the workspace rail to the shared full panel width, not the legacy icon width', () => {
-    const expandedWidth = /--entry-rail-width:\s*([^;]+);/.exec(entryLayoutCss)?.[1];
+    const expandedWidth = /var\(--hub-rail-expanded,\s*(var\(--project-rail-expanded\))/.exec(shellCss)?.[1];
 
     expect(SHARED_EXPANDED).toBe('292px');
     expect(expandedWidth).toBe('var(--project-rail-expanded)');
@@ -177,7 +177,7 @@ describe('project rail: one shared contract', () => {
 
   it('left-aligns the expanded Readable Studio brand while centering the collapsed mark', () => {
     const expanded = mount(`<div class="hub"><nav class="hub__nav"><div class="hub__nav-head"><button class="hub__brand"></button></div></nav></div>`);
-    const collapsed = mount(`<div class="hub hub--rail-collapsed"><nav class="hub__nav"><div class="hub__nav-head"><button class="hub__brand"></button></div></nav></div>`);
+    const collapsed = mount(`<div class="workspace-shell__body"><nav class="hub__nav" data-project-rail-state="collapsed"><div class="hub__nav-head"><button class="hub__brand"></button></div></nav></div>`);
 
     expect(getComputedStyle(expanded.querySelector('.hub__brand') as HTMLElement).justifySelf).toBe('start');
     expect(getComputedStyle(collapsed.querySelector('.hub__brand') as HTMLElement).justifyContent).toBe('center');
@@ -190,12 +190,11 @@ describe('project rail: one shared contract', () => {
     // intermediate width, rather than jumping from `auto` to a state-only 44px.
     expect(projectRailCss).toMatch(/\[data-project-rail\]\s*\{[^}]*inline-size:\s*100%/s);
     expect(projectRailCss).not.toMatch(/transition:\s*inline-size/);
-    expect(hubCss).toMatch(
+    expect(shellCss).toMatch(
       /transition:\s*grid-template-columns\s+var\(--dur-enter\)\s+var\(--ease-out\)/,
     );
-    expect(entryLayoutCss).toMatch(
-      /transition:\s*grid-template-columns\s+var\(--dur-enter\)\s+var\(--ease-out\)/,
-    );
+    expect(hubCss).not.toMatch(/transition:\s*grid-template-columns/);
+    expect(entryLayoutCss).not.toMatch(/transition:\s*grid-template-columns/);
   });
 
   it('never lets the collapsed rail become a zero-width third state', () => {

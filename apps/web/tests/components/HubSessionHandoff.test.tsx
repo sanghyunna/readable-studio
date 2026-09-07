@@ -22,7 +22,7 @@ vi.mock('../../src/router', async (importOriginal) => {
 });
 
 import { openProjectRoute, openSessionRoute } from '../../src/components/hub/openSessionRoute';
-import { HubHome } from '../../src/components/hub/HubHome';
+import { TestHubHome as HubHome } from '../helpers/HubTestHost';
 import type { Project } from '../../src/types';
 
 // workspaceTabEvents keeps this constant module-private; the hub must keep

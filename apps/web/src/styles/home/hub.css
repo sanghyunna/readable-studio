@@ -6,18 +6,9 @@
  */
 
 .hub {
-  /* The two project-rail surfaces share one collapsed width, and it is now
-     declared ONCE for both in `styles/home/project-rail.css`. This alias is
-     kept so the Hub's existing rules keep reading naturally, but it no longer
-     carries an independent value that could drift from the workspace rail. */
-  --hub-rail-collapsed: var(--project-rail-collapsed);
-  /* The collapsed search glyph. A mask source, so it is a shape and not a
-     colour - the paint comes from a theme token at the use site. */
-  --hub-search-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E");
   position: relative;
   display: grid;
-  grid-template-columns: var(--hub-rail-expanded, 292px) minmax(0, 1fr);
-  transition: grid-template-columns var(--dur-enter) var(--ease-out);
+  grid-template-columns: minmax(0, 1fr);
   min-height: 0;
   height: 100%;
   /* The scroll surface owns the single full-height canvas so its gradients run
@@ -30,13 +21,7 @@
 /* Peeking opens a third column rather than covering the stage, so the row that
    was peeked stays visible next to what it describes. */
 .hub--inspecting {
-  grid-template-columns: var(--hub-rail-expanded, 292px) minmax(0, 1fr) 300px;
-}
-
-.hub--rail-resizing {
-  transition: none;
-  cursor: col-resize;
-  user-select: none;
+  grid-template-columns: minmax(0, 1fr) 300px;
 }
 
 .hub__rail-resizer {
@@ -66,7 +51,7 @@
 
 .hub__rail-resizer:hover::after,
 .hub__rail-resizer:focus-visible::after,
-.hub--rail-resizing .hub__rail-resizer::after {
+.workspace-shell__body--rail-resizing .hub__rail-resizer::after {
   opacity: 1;
 }
 
@@ -93,6 +78,8 @@
 }
 
 .hub__nav {
+  /* Search glyph is rail-owned, including outside the Home surface. */
+  --hub-search-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E");
   position: relative;
   /* Above the entry surface's transparent sticky topbar. That bar spans the
      viewport and otherwise wins hit-testing over the rail header even though
@@ -422,8 +409,8 @@
 .hub__status {
   position: absolute;
   z-index: 2;
-  inset-block-start: 8px;
-  inset-inline-start: 312px;
+  inset-block-start: calc(var(--app-window-chrome-height, 36px) + 8px);
+  inset-inline-start: 20px;
   color: var(--text-muted);
   font-size: 12px;
 }
@@ -1157,7 +1144,7 @@
 /* ---- start surface ---- */
 
 .hub__stage {
-  grid-column: 2;
+  grid-column: 1;
   grid-row: 1;
   min-width: 0;
   min-height: 0;
@@ -1347,7 +1334,7 @@
 /* ---- inspector ---- */
 
 .hub-inspector {
-  grid-column: 3;
+  grid-column: 2;
   grid-row: 1;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -1456,7 +1443,7 @@
   /* Below this the inspector would squeeze the stage narrower than the
      composer needs, so it overlays the right edge instead. */
   .hub--inspecting {
-    grid-template-columns: var(--hub-rail-expanded, 292px) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .hub-inspector {
@@ -1478,31 +1465,22 @@
  * fold on exactly the screens with the least vertical room.
  */
 
-.hub--rail-collapsed {
-  grid-template-columns: var(--hub-rail-collapsed) minmax(0, 1fr);
-  transition-duration: var(--dur-exit);
-}
-
-.hub--rail-collapsed.hub--inspecting {
-  grid-template-columns: var(--hub-rail-collapsed) minmax(0, 1fr) 300px;
-}
-
-.hub--rail-collapsed .hub__brand-name,
-.hub--rail-collapsed .hub__brand-home,
-.hub--rail-collapsed .hub-tree__filters,
-.hub--rail-collapsed .hub-tree__group-label,
-.hub--rail-collapsed .hub-tree__empty,
-.hub--rail-collapsed .hub-tree__group,
-.hub--rail-collapsed .hub-open__label,
-.hub--rail-collapsed .hub-row__title,
-.hub--rail-collapsed .hub-row__state,
-.hub--rail-collapsed .hub-row__meta,
-.hub--rail-collapsed .hub-row__actions,
-.hub--rail-collapsed .hub-row__chevron {
+[data-project-rail-state='collapsed'] .hub__brand-name,
+[data-project-rail-state='collapsed'] .hub__brand-home,
+[data-project-rail-state='collapsed'] .hub-tree__filters,
+[data-project-rail-state='collapsed'] .hub-tree__group-label,
+[data-project-rail-state='collapsed'] .hub-tree__empty,
+[data-project-rail-state='collapsed'] .hub-tree__group,
+[data-project-rail-state='collapsed'] .hub-open__label,
+[data-project-rail-state='collapsed'] .hub-row__title,
+[data-project-rail-state='collapsed'] .hub-row__state,
+[data-project-rail-state='collapsed'] .hub-row__meta,
+[data-project-rail-state='collapsed'] .hub-row__actions,
+[data-project-rail-state='collapsed'] .hub-row__chevron {
   display: none;
 }
 
-.hub--rail-collapsed .hub__nav {
+.hub__nav[data-project-rail-state='collapsed'] {
   /* Auto stretch follows the interpolating grid track while this inset reaches
      zero with the same exit timing. An explicit 44px width here made the
      visible slab snap before its parent track finished. */
@@ -1511,29 +1489,29 @@
   border-radius: 0;
 }
 
-.hub--rail-collapsed .hub__nav-actions {
+[data-project-rail-state='collapsed'] .hub__nav-actions {
   padding-inline: 4px;
 }
 
-.hub--rail-collapsed .hub__brand {
+[data-project-rail-state='collapsed'] .hub__brand {
   justify-content: center;
   flex: none;
   width: 100%;
   padding: 4px 0;
 }
 
-.hub--rail-collapsed .hub__brand-mark {
+[data-project-rail-state='collapsed'] .hub__brand-mark {
   display: block;
 }
 
-.hub--rail-collapsed .hub__new-project {
+[data-project-rail-state='collapsed'] .hub__new-project {
   /* The label cannot fit, so the button becomes the '+' glyph the mockup uses
      while keeping its accessible name. */
   font-size: 0;
   gap: 0;
 }
 
-.hub--rail-collapsed .hub__new-project::before {
+[data-project-rail-state='collapsed'] .hub__new-project::before {
   content: '+';
   font-size: 19px;
   font-weight: 500;
@@ -1548,27 +1526,27 @@
    magnifier as a mask instead - an empty bordered box gives the user nothing to
    recognise. A mask rather than a background image because it inherits
    `currentColor` and therefore every theme, with no literal colour anywhere. */
-.hub--rail-collapsed .hub__search {
+[data-project-rail-state='collapsed'] .hub__search {
   padding-inline: 0;
   text-align: center;
   transition: width 160ms var(--ease-out);
 }
 
-.hub--rail-collapsed .hub__search::placeholder {
+[data-project-rail-state='collapsed'] .hub__search::placeholder {
   color: transparent;
 }
 
-.hub--rail-collapsed .hub__search-shortcut {
+[data-project-rail-state='collapsed'] .hub__search-shortcut {
   display: none;
 }
 
 /* The glyph is painted on the wrapper so the input keeps its own background,
    border and focus ring. */
-.hub--rail-collapsed .hub__nav-actions {
+[data-project-rail-state='collapsed'] .hub__nav-actions {
   position: relative;
 }
 
-.hub--rail-collapsed .hub__nav-actions::after {
+[data-project-rail-state='collapsed'] .hub__nav-actions::after {
   content: '';
   position: absolute;
   inset-inline: 0;
@@ -1582,11 +1560,11 @@
 
 /* Once the field is focused it is a real text box again, so the decorative
    glyph must not sit on top of what the user is typing. */
-.hub--rail-collapsed .hub__nav-actions:focus-within::after {
+[data-project-rail-state='collapsed'] .hub__nav-actions:focus-within::after {
   display: none;
 }
 
-.hub--rail-collapsed .hub__search:focus-visible {
+[data-project-rail-state='collapsed'] .hub__search:focus-visible {
   position: relative;
   z-index: 1;
   width: 232px;
@@ -1594,24 +1572,24 @@
   text-align: start;
 }
 
-.hub--rail-collapsed .hub__search:focus-visible::placeholder {
+[data-project-rail-state='collapsed'] .hub__search:focus-visible::placeholder {
   color: var(--text-faint);
 }
 
-.hub--rail-collapsed .hub-tree__body,
-.hub--rail-collapsed .hub-open {
+[data-project-rail-state='collapsed'] .hub-tree__body,
+[data-project-rail-state='collapsed'] .hub-open {
   padding-inline: 4px;
 }
 
 /* The open-work group keeps a rule under it so its glyphs read as a distinct
    list rather than merging into the project column. */
-.hub--rail-collapsed .hub-open {
+[data-project-rail-state='collapsed'] .hub-open {
   border-bottom: 1px solid var(--border-subtle);
   margin-bottom: 8px;
   padding-bottom: 8px;
 }
 
-.hub--rail-collapsed .hub-row {
+[data-project-rail-state='collapsed'] .hub-row {
   justify-content: center;
   min-height: 38px;
   margin-bottom: 2px;
@@ -1619,44 +1597,44 @@
   border-radius: var(--radius-md);
 }
 
-.hub--rail-collapsed .hub-row--project {
+[data-project-rail-state='collapsed'] .hub-row--project {
   /* The grid areas exist to lay out a title, state and actions that are all
      hidden here; a single centred glyph is the whole row. */
   display: flex;
 }
 
-.hub--rail-collapsed .hub-row--project:hover {
+[data-project-rail-state='collapsed'] .hub-row--project:hover {
   background: var(--bg-hover);
 }
 
-.hub--rail-collapsed .hub-row--more {
+[data-project-rail-state='collapsed'] .hub-row--more {
   display: none;
 }
 
-.hub--rail-collapsed .hub-row::before {
+[data-project-rail-state='collapsed'] .hub-row::before {
   content: attr(data-initial);
   font-size: 13px;
   font-weight: 650;
   color: var(--text-muted);
 }
 
-.hub--rail-collapsed .hub-row--open::before {
+[data-project-rail-state='collapsed'] .hub-row--open::before {
   color: var(--hub-accent);
 }
 
-.hub--rail-collapsed .hub-row--open.is-current,
-.hub--rail-collapsed .hub-row--project[data-current='true'] {
+[data-project-rail-state='collapsed'] .hub-row--open.is-current,
+[data-project-rail-state='collapsed'] .hub-row--project[data-current='true'] {
   background: var(--hub-accent-fill);
 }
 
-.hub--rail-collapsed .hub-row--open.is-current::before,
-.hub--rail-collapsed .hub-row--project[data-current='true']::before {
+[data-project-rail-state='collapsed'] .hub-row--open.is-current::before,
+[data-project-rail-state='collapsed'] .hub-row--project[data-current='true']::before {
   color: var(--hub-accent);
 }
 
 /* Expanded open-work rows use this pseudo-element as an absolutely positioned
    selection bar. In the collapsed rail it becomes the visible glyph again. */
-.hub--rail-collapsed .hub-row--open.is-current::before {
+[data-project-rail-state='collapsed'] .hub-row--open.is-current::before {
   position: static;
   inset: auto;
   width: auto;
@@ -1664,52 +1642,52 @@
   background: none;
 }
 
-.hub--rail-collapsed .hub-row--open.is-current::before,
-.hub--rail-collapsed .hub-row--project[data-state='running'] {
+[data-project-rail-state='collapsed'] .hub-row--open.is-current::before,
+[data-project-rail-state='collapsed'] .hub-row--project[data-state='running'] {
   box-shadow: inset 2px 0 0 var(--hub-accent);
 }
 
-.hub--rail-collapsed .hub-row--project[data-state='running']::before {
+[data-project-rail-state='collapsed'] .hub-row--project[data-state='running']::before {
   color: var(--hub-accent);
 }
 
-.hub--rail-collapsed .hub-row--project[data-state='awaiting'],
-.hub--rail-collapsed .hub-row--project[data-state='failed'] {
+[data-project-rail-state='collapsed'] .hub-row--project[data-state='awaiting'],
+[data-project-rail-state='collapsed'] .hub-row--project[data-state='failed'] {
   background: color-mix(in srgb, var(--warning) 10%, transparent);
 }
 
-.hub--rail-collapsed .hub-row--project[data-state='awaiting']::before,
-.hub--rail-collapsed .hub-row--project[data-state='failed']::before {
+[data-project-rail-state='collapsed'] .hub-row--project[data-state='awaiting']::before,
+[data-project-rail-state='collapsed'] .hub-row--project[data-state='failed']::before {
   color: var(--warning);
 }
 
 /* The inset current marker on an open-work row is drawn by ::before in the
    expanded rail, which the glyph now occupies. */
-.hub--rail-collapsed .hub-row--open.is-current::after,
-.hub--rail-collapsed .hub-row--session.is-current::after {
+[data-project-rail-state='collapsed'] .hub-row--open.is-current::after,
+[data-project-rail-state='collapsed'] .hub-row--session.is-current::after {
   content: none;
 }
 
 /* The footer retains its real buttons and menus, but collapsed presentation is
    a full-width glyph stack: library, settings, then the workspace avatar. */
-.hub--rail-collapsed .hub__foot {
+[data-project-rail-state='collapsed'] .hub__foot {
   gap: 2px;
   padding-inline: 4px;
 }
 
-.hub--rail-collapsed .hub__dest-row {
+[data-project-rail-state='collapsed'] .hub__dest-row {
   flex-direction: column;
   gap: 2px;
 }
 
-.hub--rail-collapsed .hub__menu-anchor {
+[data-project-rail-state='collapsed'] .hub__menu-anchor {
   width: 100%;
   flex: none;
 }
 
-.hub--rail-collapsed .hub__dest-more,
-.hub--rail-collapsed .hub__dest,
-.hub--rail-collapsed .hub__user-row {
+[data-project-rail-state='collapsed'] .hub__dest-more,
+[data-project-rail-state='collapsed'] .hub__dest,
+[data-project-rail-state='collapsed'] .hub__user-row {
   justify-content: center;
   width: 100%;
   padding-inline: 0;
@@ -1717,12 +1695,12 @@
 
 /* Collapsed the gear is a full-width row rather than a fixed square, so it
    keeps the enlarged glyph without stretching past the stacked library row. */
-.hub--rail-collapsed .hub__dest {
+[data-project-rail-state='collapsed'] .hub__dest {
   height: 38px;
 }
 
-.hub--rail-collapsed .hub__dest-more span,
-.hub--rail-collapsed .hub__user-meta {
+[data-project-rail-state='collapsed'] .hub__dest-more span,
+[data-project-rail-state='collapsed'] .hub__user-meta {
   position: absolute;
   inline-size: 1px;
   block-size: 1px;
@@ -1880,6 +1858,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  [data-project-rail],
+  [data-project-rail] *,
+  [data-project-rail] *::before,
+  [data-project-rail] *::after,
   .hub,
   .hub *,
   .hub *::before,

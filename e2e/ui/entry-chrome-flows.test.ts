@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { ensureRailOpen } from '@/playwright/rail';
 import { expect, test } from '@playwright/test';
 import type { Page, Request } from '@playwright/test';
 import { applyStandardMocks, fulfillAgentsRoute, STORAGE_KEY } from '@/playwright/mock-factory';
@@ -31,7 +32,7 @@ async function gotoEntryHome(page: Page) {
   if (await privacyDialog.isVisible().catch(() => false)) {
     await privacyDialog.getByRole('button', { name: /I get it|not now|got it|don't share/i }).click();
   }
-  await expect(page.getByTestId('hub-nav')).toBeVisible();
+  await ensureRailOpen(page);
   await expect(page.getByTestId('home-hero-input')).toBeVisible();
 }
 
@@ -41,15 +42,14 @@ async function openLibraryDestination(page: Page, destination: string) {
 }
 
 async function returnHome(page: Page) {
-  const toggle = page.getByTestId('entry-rail-toggle');
-  if (await toggle.isVisible()) await toggle.click();
-  await page.getByTestId('entry-nav-home').click();
-  await expect(page.getByTestId('hub-nav')).toBeVisible();
+  await ensureRailOpen(page);
+  await page.getByTestId('hub-brand').click();
+  await expect(page.getByTestId('home-hero-input')).toBeVisible();
 }
 
 test('[P0] @critical entry chrome exposes the Hub composer, navigation, and settings entry', async ({ page }) => {
   await gotoEntryHome(page);
-  await expect(page.getByTestId('hub-rail-toggle')).toBeVisible();
+  await expect(page.locator('[data-project-rail-toggle]')).toBeVisible();
   await expect(page.getByTestId('hub-new-project')).toBeVisible();
   await expect(page.getByTestId('hub-search')).toBeVisible();
   await expect(page.getByTestId('hub-open-palette')).toBeVisible();
@@ -213,7 +213,7 @@ test('[P1] topbar execution control remains available across Library destination
   await routeDesignSystems(page);
   await gotoEntryHome(page);
   for (const destination of ['projects', 'tasks', 'plugins', 'design-systems', 'integrations']) {
-    if (!(await page.getByTestId('hub-library').isVisible())) await returnHome(page);
+    await returnHome(page);
     await openLibraryDestination(page, destination);
     const control = topbarSwitcher(page);
     await expect(control).toBeVisible();
@@ -260,16 +260,16 @@ test('[P0] @critical Hub composer stages and removes attachments', async ({ page
 
 test('[P1] Hub rail collapse control preserves the compact navigation surface', async ({ page }) => {
   await gotoEntryHome(page);
-  const hub = page.locator('.hub');
-  const toggle = page.getByTestId('hub-rail-toggle');
+  const rail = page.locator('[data-project-rail]');
+  const toggle = page.locator('[data-project-rail-toggle]');
   await toggle.click();
-  await expect(hub).toHaveAttribute('data-rail-collapsed', 'true');
-  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await expect(rail).toHaveAttribute('data-project-rail-state', 'collapsed');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await expect(page.getByTestId('hub-brand')).toBeVisible();
   await expect(page.getByTestId('hub-new-project')).toBeVisible();
   await toggle.click();
-  await expect(hub).toHaveAttribute('data-rail-collapsed', 'false');
-  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  await expect(rail).toHaveAttribute('data-project-rail-state', 'expanded');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
 });
 
 async function routeDesignSystems(page: Page) {

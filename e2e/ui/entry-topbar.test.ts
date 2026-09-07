@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { routeAgents } from '@/playwright/mock-factory';
+import { ensureRailOpen } from '@/playwright/rail';
 import type { Page } from '@playwright/test';
 
 const STORAGE_KEY = 'readable-studio:config';
@@ -14,7 +15,7 @@ async function gotoEntryHome(page: Page) {
   if (await privacyDialog.isVisible().catch(() => false)) {
     await privacyDialog.getByRole('button', { name: /I get it|not now|got it|don't share/i }).click();
   }
-  await expect(page.getByTestId('hub-nav')).toBeVisible();
+  await ensureRailOpen(page);
   await expect(page.getByTestId('home-hero-input')).toBeVisible();
 }
 
@@ -117,9 +118,8 @@ test('[P2] returning from another entry view via the home nav reaches the Hub co
   await gotoEntryHome(page);
   await openLibraryDestination(page, 'integrations');
   await expect(page.getByRole('heading', { name: 'Integrations' })).toBeVisible();
-  const railToggle = page.getByTestId('entry-rail-toggle');
-  if (await railToggle.isVisible()) await railToggle.click();
-  await page.getByTestId('entry-nav-home').click();
-  await expect(page.getByTestId('hub-nav')).toBeVisible();
+  await ensureRailOpen(page);
+  await page.getByTestId('hub-brand').click();
+  await expect(page.locator('[data-project-rail]')).toBeVisible();
   await expect(page.getByTestId('home-hero-input')).toBeVisible();
 });

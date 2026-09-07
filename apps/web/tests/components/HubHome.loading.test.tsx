@@ -16,7 +16,7 @@ vi.mock('../../src/state/projects', () => ({
   readConversations: readConversationsFromListMock(listConversations),
 }));
 
-import { HubHome } from '../../src/components/hub/HubHome';
+import { TestHubHome as HubHome } from '../helpers/HubTestHost';
 import type { Project } from '../../src/types';
 
 afterEach(() => {

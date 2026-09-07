@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import type { ComponentProps } from 'react';
+import { StrictMode, type ComponentProps } from 'react';
 import { KEY_ENTER_COMMAND } from 'lexical';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
@@ -12,6 +12,8 @@ import type {
   TrustTier,
 } from '@readable-studio/contracts';
 import { HomeHero } from '../../src/components/HomeHero';
+import { HomeView } from '../../src/components/HomeView';
+import * as projectState from '../../src/state/projects';
 import { I18nProvider } from '../../src/i18n';
 import {
   getHomeHeroEditor,
@@ -798,6 +800,42 @@ describe('HomeHero plugin picker', () => {
     expect(onPickPlugin).toHaveBeenCalledExactlyOnceWith(plugin, 'Make @Sample Plugin');
     expect(onSubmit).not.toHaveBeenCalled();
     expect(screen.queryByTestId('home-hero-plugin-picker')).toBeNull();
+  });
+
+  it('acknowledges authoring only after catalogue readiness and never replays a retained nonce', async () => {
+    let resolveCatalogue!: (plugins: InstalledPluginRecord[]) => void;
+    const catalogue = new Promise<InstalledPluginRecord[]>((resolve) => { resolveCatalogue = resolve; });
+    const listPlugins = vi.spyOn(projectState, 'listPlugins').mockReturnValue(catalogue);
+    const accepted = vi.fn();
+    const home = (enabled: boolean) => (
+      <StrictMode>
+        <HomeView
+          projects={[]}
+          projectsLoading
+          richDataEnabled={enabled}
+          onSubmit={vi.fn()}
+          onOpenProject={vi.fn()}
+          onViewAllProjects={vi.fn()}
+          commandChip={{ id: 'create-plugin', nonce: 19 }}
+          onCommandChipAccepted={accepted}
+        />
+      </StrictMode>
+    );
+    const view = render(home(false));
+    await settle();
+    expect(listPlugins).not.toHaveBeenCalled();
+    expect(accepted).not.toHaveBeenCalled();
+    await act(async () => { view.rerender(home(true)); });
+    expect(listPlugins).toHaveBeenCalledTimes(1);
+    expect(accepted).not.toHaveBeenCalled();
+    // Resolve the exact pending catalogue, rather than polling its UI effects.
+    await act(async () => { resolveCatalogue([]); await catalogue; });
+    expect(accepted).toHaveBeenCalledExactlyOnceWith(19);
+    await act(async () => {
+      view.rerender(home(true));
+      fireEvent(window, new CustomEvent('readable-studio:plugins-changed'));
+    });
+    expect(accepted).toHaveBeenCalledExactlyOnceWith(19);
   });
 
   it('opens active plugin details from the active plugin chip', () => {

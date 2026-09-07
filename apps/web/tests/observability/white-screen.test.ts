@@ -29,6 +29,7 @@ vi.mock('../../src/router', () => ({
 }));
 
 vi.mock('../../src/components/EntryView', () => ({
+  // EntryView supplies only the stage; App owns the persistent rail action.
   EntryView: ({ config, daemonLive, onOpenSettings }: {
     config: AppConfig;
     daemonLive: boolean;
@@ -36,7 +37,6 @@ vi.mock('../../src/components/EntryView', () => ({
   }) => createElement(
     'main',
     { 'data-testid': 'home-ready' },
-    createElement('button', { type: 'button' }, 'New project'),
     createElement('button', { type: 'button', onClick: () => onOpenSettings('codeAgents') }, 'Open agent settings'),
     createElement('span', { 'data-testid': 'selected-agent' }, config.agentId ?? 'none'),
     createElement('span', { 'data-testid': 'daemon-status' }, daemonLive ? 'online' : 'offline'),
@@ -188,6 +188,7 @@ afterEach(() => {
   vi.useRealTimers();
   globalThis.fetch = ORIGINAL_FETCH;
   cleanup();
+  vi.unstubAllGlobals();
   document.body.innerHTML = '';
   document.documentElement.removeAttribute('data-readable-app-mounted');
   vi.clearAllMocks();
@@ -214,6 +215,41 @@ describe('observability/white-screen', () => {
     // it overlaps the splash. The white-screen guarantee is that Home commits
     // synchronously while the genuinely deferred registries remain untouched.
     expect(fetchAgentsStream).toHaveBeenCalledTimes(1);
+    expect(fetchDesignTemplates).not.toHaveBeenCalled();
+    expect(fetchAppVersionInfo).not.toHaveBeenCalled();
+  });
+
+  it('opens one App-owned modal from the single persistent rail before registries settle', () => {
+    // Only geometry is stubbed: the rail, controller and modal stay real.
+    vi.stubGlobal('ResizeObserver', class {
+      observe() {}
+      disconnect() {}
+      unobserve() {}
+    });
+    render(createElement(App));
+
+    // Singular global queries fail on duplicate reachable controls/owners.
+    const rail = screen.getByRole('navigation');
+    const action = screen.getByRole<HTMLButtonElement>('button', { name: 'New project' });
+    expect(action).toBe(screen.getByTestId('hub-new-project'));
+    expect(rail.contains(action)).toBe(true);
+    expect(action.disabled).toBe(false);
+    expect(action.closest('[inert], [hidden], [aria-hidden="true"]')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    for (let opening = 0; opening < 2; opening++) {
+      fireEvent.click(action);
+      const modal = screen.getByRole('dialog', { name: 'New project' });
+      expect(modal).toBe(screen.getByTestId('new-project-modal'));
+      expect(screen.getByTestId('home-ready').contains(modal)).toBe(false);
+      expect(screen.getByRole('navigation')).toBe(rail);
+      expect(screen.getByRole('button', { name: 'New project' })).toBe(action);
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close' }));
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(screen.queryByTestId('new-project-modal')).toBeNull();
+    }
+
     expect(fetchDesignTemplates).not.toHaveBeenCalled();
     expect(fetchAppVersionInfo).not.toHaveBeenCalled();
   });

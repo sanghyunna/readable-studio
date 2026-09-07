@@ -16,8 +16,8 @@ const EVIDENCE_DIR =
   process.env.READABLE_TASK12_EVIDENCE_DIR ??
   resolve(dirname(fileURLToPath(import.meta.url)), '../../../../../.omo/evidence/task-12');
 
-// Kept in sync with `--hub-rail-collapsed` in apps/web/src/styles/home/hub.css.
-const COLLAPSED_RAIL_PX = 78;
+// Shared project-rail collapsed strip and default expanded track.
+const COLLAPSED_RAIL_PX = 44;
 // The expanded rail is 292px (`.hub` grid-template-columns). Anything at or below
 // this is unambiguously not the expanded rail.
 const EXPANDED_RAIL_PX = 292;
@@ -84,7 +84,7 @@ async function gotoHub(page: Page) {
   });
   await page.goto('/');
   await expect(page.getByTestId('entry-view-home')).toHaveAttribute('data-active', 'true');
-  await expect(page.getByTestId('hub-nav')).toBeVisible();
+  await expect(page.locator('[data-project-rail]')).toBeVisible();
   const stale = await page.evaluate(() => {
     const had = window.localStorage.getItem('readable-studio:hub-rail-collapsed') === 'true';
     window.localStorage.removeItem('readable-studio:hub-rail-collapsed');
@@ -95,13 +95,13 @@ async function gotoHub(page: Page) {
   // state matches the cleared preference before any assertion runs.
   if (stale) {
     await page.reload();
-    await expect(page.getByTestId('hub-nav')).toBeVisible();
+    await expect(page.locator('[data-project-rail]')).toBeVisible();
   }
 }
 
 /** The rail's real painted width. A hidden rail measures 0 and fails the collapsed check too. */
 async function railWidth(page: Page): Promise<number> {
-  return page.getByTestId('hub-nav').evaluate((node) => node.getBoundingClientRect().width);
+  return page.locator('[data-project-rail]').evaluate((node) => node.getBoundingClientRect().width);
 }
 
 /**
@@ -112,7 +112,7 @@ async function railWidth(page: Page): Promise<number> {
 async function filterOverflow(page: Page): Promise<number> {
   return page.evaluate(() => {
     const filters = document.querySelector('.hub-tree__filters');
-    const nav = document.querySelector('.hub__nav');
+    const nav = document.querySelector('[data-project-rail]');
     if (!filters || !nav) return Number.NaN;
     const filterBox = filters.getBoundingClientRect();
     const navBox = nav.getBoundingClientRect();
@@ -121,7 +121,7 @@ async function filterOverflow(page: Page): Promise<number> {
 }
 
 async function isCollapsed(page: Page): Promise<boolean> {
-  return (await page.locator('.hub').getAttribute('data-rail-collapsed')) === 'true';
+  return (await page.locator('[data-project-rail]').getAttribute('data-project-rail-state')) === 'collapsed';
 }
 
 test.describe('todo 12 - collapsed rail, flyout and narrow layout', () => {
@@ -143,17 +143,17 @@ test.describe('todo 12 - collapsed rail, flyout and narrow layout', () => {
     expect(await isCollapsed(page)).toBe(false);
 
     // --- the toggle button ---
-    const toggle = page.getByTestId('hub-rail-toggle');
+    const toggle = page.locator('[data-project-rail-toggle]');
     await expect(toggle).toBeEnabled();
-    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
     await toggle.click();
-    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
     await expect
       .poll(() => railWidth(page), { message: 'rail must narrow to the icon rail' })
       .toBeLessThanOrEqual(COLLAPSED_RAIL_PX + 2);
     // ...and it must NOT have merely been hidden: an icon rail is still a visible rail.
     expect(await railWidth(page)).toBeGreaterThan(COLLAPSED_RAIL_PX - 20);
-    await expect(page.getByTestId('hub-nav')).toBeVisible();
+    await expect(page.locator('[data-project-rail]')).toBeVisible();
 
     await page.screenshot({ path: `${EVIDENCE_DIR}/collapsed-1280.png`, fullPage: false });
 
@@ -184,7 +184,7 @@ test.describe('todo 12 - collapsed rail, flyout and narrow layout', () => {
     ).toBe('true');
 
     await page.reload();
-    await expect(page.getByTestId('hub-nav')).toBeVisible();
+    await expect(page.locator('[data-project-rail]')).toBeVisible();
     // stale_state observable: the persisted flag and the painted width must agree.
     expect(await isCollapsed(page)).toBe(true);
     expect(
@@ -193,10 +193,10 @@ test.describe('todo 12 - collapsed rail, flyout and narrow layout', () => {
     await expect.poll(() => railWidth(page)).toBeLessThanOrEqual(COLLAPSED_RAIL_PX + 2);
 
     // ...and expanding again persists the opposite value rather than just clearing it.
-    await page.getByTestId('hub-rail-toggle').click();
+    await page.locator('[data-project-rail-toggle]').click();
     await expect.poll(() => railWidth(page)).toBeGreaterThan(EXPANDED_RAIL_PX - 40);
     await page.reload();
-    await expect(page.getByTestId('hub-nav')).toBeVisible();
+    await expect(page.locator('[data-project-rail]')).toBeVisible();
     expect(await isCollapsed(page)).toBe(false);
     await expect.poll(() => railWidth(page)).toBeGreaterThan(EXPANDED_RAIL_PX - 40);
   });
@@ -214,7 +214,7 @@ test.describe('todo 12 - collapsed rail, flyout and narrow layout', () => {
     await gotoHub(page);
     await expect(page.getByTestId(`hub-session-${alpha.sessions[0]!.id}`)).toBeVisible();
 
-    await page.getByTestId('hub-rail-toggle').click();
+    await page.locator('[data-project-rail-toggle]').click();
     await expect.poll(() => railWidth(page)).toBeLessThanOrEqual(COLLAPSED_RAIL_PX + 2);
 
     const alphaRow: Locator = page.locator(`[data-project-id="${alpha.id}"]`);
@@ -297,7 +297,7 @@ test.describe('todo 12 - collapsed rail, flyout and narrow layout', () => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await gotoHub(page);
     await expect(page.getByTestId(`hub-session-${alpha.sessions[0]!.id}`)).toBeVisible();
-    await page.getByTestId('hub-rail-toggle').click();
+    await page.locator('[data-project-rail-toggle]').click();
     await expect.poll(() => railWidth(page)).toBeLessThanOrEqual(COLLAPSED_RAIL_PX + 2);
 
     const alphaRow = page.locator(`[data-project-id="${alpha.id}"]`);
@@ -333,7 +333,7 @@ test.describe('todo 12 - collapsed rail, flyout and narrow layout', () => {
     await page.mouse.move(600, 400);
     await alphaRow.hover();
     await expect(flyout).toBeVisible();
-    await page.getByTestId('hub-rail-toggle').click();
+    await page.locator('[data-project-rail-toggle]').click();
     await expect(flyout).toHaveCount(0);
     await expect.poll(() => railWidth(page)).toBeGreaterThan(EXPANDED_RAIL_PX - 40);
   });
@@ -356,7 +356,7 @@ test.describe('todo 12 - collapsed rail, flyout and narrow layout', () => {
     // The mockup keeps the two-column split: the rail sits BESIDE the canvas, never
     // stacked above it. Proved by geometry, not by a media-query reading.
     const geometry = await page.evaluate(() => {
-      const nav = document.querySelector('.hub__nav')!.getBoundingClientRect();
+      const nav = document.querySelector('[data-project-rail]')!.getBoundingClientRect();
       const start = document.querySelector('.hub__start')!.getBoundingClientRect();
       return { navRight: nav.right, startLeft: start.left, navTop: nav.top, startTop: start.top };
     });
@@ -364,7 +364,7 @@ test.describe('todo 12 - collapsed rail, flyout and narrow layout', () => {
     expect(Math.abs(geometry.startTop - geometry.navTop)).toBeLessThan(80);
 
     // The toggle cannot fight the viewport: below the breakpoint it is inert.
-    await expect(page.getByTestId('hub-rail-toggle')).toBeDisabled();
+    await expect(page.locator('[data-project-rail-toggle]')).toBeDisabled();
     await page.screenshot({ path: `${EVIDENCE_DIR}/narrow-860.png`, fullPage: false });
 
     // Widening restores the user's stored preference (expanded) rather than latching.

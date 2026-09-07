@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type CSSProperties } from 'react';
 import { flushSync } from 'react-dom';
 import dynamic from 'next/dynamic';
 import { AnimatePresence, MotionConfig } from 'motion/react';
 import { useAnalytics } from './analytics/provider';
 import {
   trackFileUploadResult,
+  trackHomeNavClick,
   trackProjectCreateResult,
 } from './analytics/events';
 import { deriveUploadCohort } from './analytics/upload-tracking';
@@ -14,10 +15,15 @@ import {
   projectKindToTracking,
   fidelityToTracking,
 } from '@readable-studio/contracts/analytics';
-import type { AmrModelsResponse, ChatSessionMode } from '@readable-studio/contracts';
+import {
+  defaultScenarioPluginIdForProjectMetadata,
+  type AmrModelsResponse,
+  type ChatSessionMode,
+} from '@readable-studio/contracts';
 import { EntryView } from './components/EntryView';
 import type { IntegrationTab } from './components/IntegrationsView';
-import type { CreateInput, ImportClaudeDesignOutcome } from './components/NewProjectPanel';
+import type { CreateInput, CreateTab, ImportClaudeDesignOutcome } from './components/NewProjectPanel';
+import { NewProjectModal } from './components/NewProjectModal';
 import { MemoryToast } from './components/MemoryToast';
 import { Toast } from './components/Toast';
 import { PetOverlay, type PetTaskCenter } from './components/pet/PetOverlay';
@@ -26,7 +32,12 @@ import { migrateCustomPetAtlas } from './components/pet/pets';
 import { TooltipLayer } from './components/TooltipLayer';
 import { openWorkspaceTab } from './components/workspaceTabEvents';
 import { WindowControls } from './components/WindowControls';
-import { EntryNavRail } from './components/EntryNavRail';
+import { HubRail } from './components/hub/HubRail';
+import { HubRailProvider } from './components/hub/HubRailContext';
+import { HubRailOverlays } from './components/hub/HubRailOverlays';
+import { useHubRailController, type HubNavigateDestination } from './components/hub/useHubRailController';
+import { openProjectRoute, openSessionRoute } from './components/hub/openSessionRoute';
+import { useRuntimeUsername } from './hooks/useRuntimeUser';
 import workspaceTransition from './components/WorkspaceTransition.module.css';
 import {
   IframeKeepAliveProvider,
@@ -115,8 +126,34 @@ const PluginDetailView = dynamic(
 );
 const ProjectView = dynamic(
   () => import('./components/ProjectView').then((m) => m.ProjectView),
-  { ssr: false },
+  { ssr: false, loading: ProjectRouteLoading },
 );
+
+function ProjectRouteLoading() {
+  const { t } = useI18n();
+  return (
+    <div
+      className="readable-loading-shell readable-loading-shell--surface"
+      role="status"
+      data-testid="project-route-loading"
+    >
+      <div className={workspaceTransition.loading}>
+        <div className={workspaceTransition.loadingPane}>
+          <span>{t('entry.loadingWorkspace')}</span>
+          <div className={workspaceTransition.loadingLines} aria-hidden="true">
+            <span /><span /><span />
+          </div>
+          <div className={workspaceTransition.loadingComposer} aria-hidden="true" />
+        </div>
+        <div className={workspaceTransition.loadingPreview} aria-hidden="true">
+          <div className={workspaceTransition.loadingLines}>
+            <span /><span /><span />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 const DesignSystemCreationFlow = dynamic(
   () => import('./components/DesignSystemFlow').then((m) => m.DesignSystemCreationFlow),
   { ssr: false },
@@ -134,6 +171,56 @@ const APP_CONFIG_CHANGED_EVENT = 'readable-studio:app-config-changed';
 const AMR_AGENT_ID = 'amr';
 const AMR_PROFILE_ENV_KEY = 'READABLE_AMR_PROFILE';
 
+
+function defaultPluginInputsForCreate(
+  input: CreateInput,
+  pluginId: string | null,
+): Record<string, unknown> | null {
+  const kind = input.metadata.kind;
+  const projectName = input.name.trim();
+
+  if (pluginId === 'example-web-prototype') {
+    return {
+      artifactKind: input.metadata.includeLandingPage
+        ? 'landing page'
+        : 'web prototype',
+      fidelity: input.metadata.fidelity ?? 'high-fidelity',
+      audience: 'product evaluators',
+      designSystem: 'the active project design system',
+      template: input.metadata.templateLabel ?? 'the bundled web prototype seed',
+    };
+  }
+
+  if (pluginId === 'example-simple-deck') {
+    return {
+      deckType: 'pitch deck',
+      topic: projectName || 'the user brief',
+      audience: 'decision makers',
+      slideCount: '10-15 pages',
+      speakerNotes: input.metadata.speakerNotes
+        ? 'include speaker notes'
+        : 'no speaker notes',
+      designSystem: 'the active project design system',
+    };
+  }
+
+  if (pluginId === 'readable-new-generation') {
+    const templateLabel = input.metadata.templateLabel?.trim();
+    const artifactKind =
+      kind === 'template'
+        ? 'artifact based on a saved template'
+        : kind === 'other'
+          ? 'custom design artifact'
+          : `${kind} artifact`;
+    return {
+      artifactKind,
+      audience: 'product and design reviewers',
+      topic: templateLabel || projectName || 'the user brief',
+    };
+  }
+
+  return null;
+}
 
 function amrProfileForConfig(config: AppConfig): string | null {
   const profile = config.agentCliEnv?.[AMR_AGENT_ID]?.[AMR_PROFILE_ENV_KEY];
@@ -297,27 +384,15 @@ function AppInner() {
       document.documentElement.setAttribute('data-readable-app-mounted', '1');
     }
   }, []);
-  // Shared with the hub's left panel (`EntryShell`) through the same
-  // localStorage key, so expanding the panel on one surface is remembered on
-  // the other. The workspace still opens collapsed on a cold start because the
-  // stored default is `false`.
-  const [workspaceRailOpen, setWorkspaceRailOpen] = useState<boolean>(false);
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(
-        'readable.entry.railOpen',
-        workspaceRailOpen ? 'true' : 'false',
-      );
-    } catch {
-      /* ignore quota / disabled storage */
-    }
-  }, [workspaceRailOpen]);
   const [config, setConfig] = useState<AppConfig>(() => loadConfig());
   const configRef = useRef(config);
   configRef.current = config;
   const latestPersistedConfigRef = useRef(config);
   latestPersistedConfigRef.current = config;
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // One modal across entry and workspace surfaces; null means closed.
+  const [newProjectTab, setNewProjectTab] = useState<CreateTab | null>(null);
+  const openNewProject = useCallback((tab: CreateTab) => setNewProjectTab(tab), []);
   // Surfaced when a picked project folder could not be applied to a freshly
   // created project (expired/invalid desktop token, daemon rejection). Without
   // this the failure was swallowed and the user believed their folder was in
@@ -1324,6 +1399,20 @@ function AppInner() {
     [analytics.track, rememberLocalProject],
   );
 
+  const handleCreateFromModal = useCallback((input: CreateInput & { requestId?: string }) => {
+    // Artifact projects use the shared scenario mapping; Ask/chat projects
+    // are not artifact pipelines and must remain unbound.
+    const pluginId = input.conversationMode === 'chat'
+      ? null
+      : defaultScenarioPluginIdForProjectMetadata(input.metadata);
+    const pluginInputs = defaultPluginInputsForCreate(input, pluginId);
+    return handleCreateProject({
+      ...input,
+      ...(pluginId ? { pluginId } : {}),
+      ...(pluginInputs ? { pluginInputs } : {}),
+    });
+  }, [handleCreateProject]);
+
   const handleCreatePluginShareProject = useCallback(
     async (
       pluginId: string,
@@ -1372,6 +1461,7 @@ function AppInner() {
         result.project,
         ...curr.filter((p) => p.id !== result.project.id),
       ]);
+      setNewProjectTab(null);
       navigate({
         kind: 'project',
         projectId: result.project.id,
@@ -1390,6 +1480,7 @@ function AppInner() {
     const result = await importFolderProject({ baseDir });
     rememberLocalProject(result.project.id);
     setProjects((curr) => [result.project, ...curr.filter((p) => p.id !== result.project.id)]);
+    setNewProjectTab(null);
     navigate({
       kind: 'project',
       projectId: result.project.id,
@@ -1428,6 +1519,7 @@ function AppInner() {
       const list = await listProjects();
       reconcileFetchedProjects(list, request);
     }
+    setNewProjectTab(null);
     navigate({
       kind: 'project',
       projectId: result.projectId,
@@ -1852,16 +1944,35 @@ function AppInner() {
   // swap; see the `ref` on the transition wrapper below.
   const setSurfaceInertRef = useTransparentPhaseInert();
 
-  // The hub's collapsible left panel now exists on the workspace too, so the
-  // two surfaces share one navigation model. It starts collapsed there (the
-  // workspace is a focus surface) and expands via the panel toggle, using the
-  // same persisted `readable.entry.railOpen` key as the hub.
-  const isEntrySurface =
-    route.kind === 'home'
-    || route.kind === 'marketplace'
-    || route.kind === 'marketplace-detail'
-    || route.kind === 'design-system-create'
-    || route.kind === 'design-system-detail';
+  const username = useRuntimeUsername();
+  const activeWorkspaceName = useMemo(() => {
+    const locations = config.projectLocations ?? [];
+    const active = locations.find((location) => location.id === config.defaultProjectLocationId)
+      ?? locations[0];
+    return active?.name?.trim() || null;
+  }, [config.projectLocations, config.defaultProjectLocationId]);
+  const navigateHub = useCallback((destination: HubNavigateDestination) => {
+    const element = destination === 'tasks' ? 'automations'
+      : destination === 'design-systems' ? 'design_systems' : destination;
+    trackHomeNavClick(analytics.track, { page_name: 'home', area: 'nav', element });
+    navigate({ kind: 'home', view: destination });
+  }, [analytics.track]);
+  const goHome = useCallback(() => navigateHub('home'), [navigateHub]);
+  const newRailProject = useCallback(() => openNewProject('prototype'), [openNewProject]);
+  const rail = useHubRailController({
+    projects,
+    currentSessionId: route.kind === 'project' ? route.conversationId ?? null : null,
+    // Route detail hydration takes priority over background session fan-out.
+    // The controller aborts the old wave, retains rows, and resumes on release.
+    pauseSessionReads: route.kind === 'project' && !activeProject,
+    onOpenSession: openSessionRoute,
+    onOpenProject: openProjectRoute,
+    onNewProject: newRailProject,
+    onRenameProject: handleRenameProject,
+    onDeleteProject: handleDeleteProject,
+    onNavigateDestination: navigateHub,
+    onCommandChip: goHome,
+  });
 
   // Once streaming has found an available agent, keep the entry control
   // populated while the rest of the probe finishes. This render-only fallback
@@ -1961,20 +2072,10 @@ function AppInner() {
     // during that gap: its Hub starts per-project session reads and can occupy
     // the same browser request pool as the detail fetch that resolves this
     // route. Keep the destination surface mounted while the route hydrates.
-    // The `--surface` variant is transparent and height-bounded: the shell
-    // canvas is already painted behind it here, so restarting a canvas of its
-    // own would put a full-window opaque slab between the two surfaces — the
-    // single blink the transition is meant to remove. The base class stays
-    // opaque for the pre-mount boot shell, where nothing is painted yet.
-    appMain = (
-      <div
-        className="readable-loading-shell readable-loading-shell--surface"
-        role="status"
-        data-testid="project-route-loading"
-      >
-        {t('entry.loadingWorkspace')}
-      </div>
-    );
+    // Use the same visible pane skeleton for data and module readiness. A
+    // transparent full-bounds element alone is not content continuity, and
+    // next/dynamic's default null fallback would reopen the gap after data.
+    appMain = <ProjectRouteLoading />;
   } else {
     appMain = (
       <EntryView
@@ -1983,7 +2084,6 @@ function AppInner() {
         designSystems={enabledDS}
         projects={projects}
         templates={templates}
-        onDeleteTemplate={handleDeleteTemplate}
         defaultDesignSystemId={config.designSystemId}
         agents={agents}
         agentsLoading={agentsLoading}
@@ -2005,9 +2105,7 @@ function AppInner() {
         projectsLoading={projectsLoading}
         onCreateProject={handleCreateProject}
         onCreatePluginShareProject={handleCreatePluginShareProject}
-        onImportClaudeDesign={handleImportClaudeDesign}
-        onImportFolder={handleImportFolder}
-        onImportFolderResponse={handleImportFolderResponse}
+        onOpenNewProject={openNewProject}
         onOpenProject={handleOpenProject}
         onDeleteProject={handleDeleteProject}
         onRenameProject={handleRenameProject}
@@ -2020,10 +2118,11 @@ function AppInner() {
     );
   }
   return (
-    <>
+    <HubRailProvider value={rail}>
       <div
         className={`workspace-shell workspace-shell--${clientType}`}
         data-client-type={clientType}
+        style={{ '--hub-rail-expanded': `${rail.railWidth}px` } as CSSProperties}
       >
         {/* The window has no native title bar (the desktop main window is
             frameless), so this strip is the app's own chrome: a drag region
@@ -2046,64 +2145,37 @@ function AppInner() {
           <div className="app-window-chrome__drag app-chrome-drag" aria-hidden="true" />
           <WindowControls />
         </header>
-        <div className="workspace-shell__body">
+        <div
+          className={`workspace-shell__body${rail.railResizing ? ' workspace-shell__body--rail-resizing' : ''}`}
+        >
+          <HubRail
+            projectsLoading={projectsLoading}
+            username={username}
+            workspaceName={activeWorkspaceName}
+            onGoHome={goHome}
+            onOpenDestination={navigateHub}
+            onOpenSettings={() => openSettings()}
+            onOpenWorkspaceFolder={() => openSettings('projectLocations')}
+          />
           {/*
             Keyed on the surface identity so React mounts a fresh element per
-            swap and the one-shot CSS entrance replays. There is no exit phase
-            and no overlay, so returning to the Hub cannot strand animation
-            state. The element is interactive from its first frame — the
-            animation only touches opacity/transform.
+            swap and the one-shot CSS entrance replays. Project surfaces stay
+            visible from the first frame, including both readiness fallbacks;
+            only their transform animates. Other entrances retain their
+            transparent-phase input gate. No exit overlay can strand state.
           */}
           <div
             key={surfaceId}
             className={workspaceTransition.surface}
             data-transition={surfaceTransition}
             data-surface={surfaceId}
-            /* `hubEnter` / `workspaceEnter` run with `both` fill from
-               `opacity: 0`, and this wrapper is the ancestor of the ENTIRE
-               incoming surface — for the Hub that is the whole rail. The
-               keyframes withhold `pointer-events` for the transparent frames,
-               but focus is not animatable, so without `inert` every rail
-               control stays Tab-reachable while the surface is invisible. The
-               hook reads the live animation, so `data-transition='none'` (first
-               paint) and the reduced-motion path — both of which resolve to
-               `animation: none` — never gate anything. */
+            /* Only the incoming content is gated during transparent frames.
+               The persistent rail and its chrome toggle never become inert. */
             ref={setSurfaceInertRef}
           >
-            {isEntrySurface ? (
-              appMain
-            ) : (
-              <div className="entry-shell entry-shell--no-header entry-shell--workspace">
-                <div
-                  className={`entry${workspaceRailOpen ? ' entry--rail-open' : ''}`}
-                  data-testid="workspace-rail-host"
-                >
-                  <EntryNavRail
-                    view="home"
-                    onViewChange={(next) => {
-                      setWorkspaceRailOpen(false);
-                      navigate({ kind: 'home', view: next });
-                    }}
-                    onNewProject={() => {
-                      setWorkspaceRailOpen(false);
-                      navigate({ kind: 'home', view: 'home' });
-                    }}
-                    open={workspaceRailOpen}
-                    onClose={() => setWorkspaceRailOpen(false)}
-                    onOpen={() => setWorkspaceRailOpen(true)}
-                  />
-                  {/* The floating `workspace-rail-toggle` that used to sit here
-                      is gone: it was the button-only state the user rejected,
-                      and it overlapped the window-chrome band. Expand/collapse
-                      now lives in the rail strip itself
-                      (`entry-nav-collapse`), which is always on screen. */}
-                  <div className="entry-main entry-main--workspace">
-                    {appMain}
-                  </div>
-                </div>
-              </div>
-            )}
+            {appMain}
           </div>
+          <HubRailOverlays />
         </div>
       </div>
       {clientType === 'desktop' ? null : (
@@ -2113,6 +2185,21 @@ function AppInner() {
           onOpenProject={handleOpenProject}
         />
       )}
+      <NewProjectModal
+        open={newProjectTab !== null}
+        initialTab={newProjectTab ?? 'prototype'}
+        skills={enabledSkills}
+        designSystems={enabledDS}
+        defaultDesignSystemId={config.designSystemId}
+        templates={templates}
+        onDeleteTemplate={handleDeleteTemplate}
+        loading={skillsLoading}
+        onCreate={handleCreateFromModal}
+        onImportClaudeDesign={handleImportClaudeDesign}
+        onImportFolder={handleImportFolder}
+        onImportFolderResponse={handleImportFolderResponse}
+        onClose={() => setNewProjectTab(null)}
+      />
       <TooltipLayer />
       <AnimatePresence>
       {settingsOpen ? (
@@ -2161,6 +2248,6 @@ function AppInner() {
           onDismiss={() => setWorkingDirError(null)}
         />
       ) : null}
-    </>
+    </HubRailProvider>
   );
 }

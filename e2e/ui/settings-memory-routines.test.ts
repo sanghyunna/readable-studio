@@ -719,7 +719,8 @@ test.describe('Settings Memory and Automations flows', () => {
 
     await gotoEntryHome(page);
     await ensureRailOpen(page);
-    await page.getByTestId('entry-nav-tasks').click();
+    await page.getByTestId('hub-library').click();
+    await page.getByTestId('hub-library-tasks').click();
     const view = page.getByTestId('tasks-view');
     await expect(view.getByRole('heading', { name: 'Automations', exact: true })).toBeVisible();
 
@@ -790,7 +791,8 @@ test.describe('Settings Memory and Automations flows', () => {
 
     await gotoEntryHome(page);
     await ensureRailOpen(page);
-    await page.getByTestId('entry-nav-tasks').click();
+    await page.getByTestId('hub-library').click();
+    await page.getByTestId('hub-library-tasks').click();
     const view = page.getByTestId('tasks-view');
 
     await view.getByRole('button', { name: 'New automation' }).click();

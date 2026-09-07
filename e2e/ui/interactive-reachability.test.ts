@@ -168,7 +168,7 @@ for (const { theme, viewport } of SURFACE_MATRIX) {
     const kanbanProjectName = `Reachability kanban card ${theme} ${viewport.width} ${kanbanProjectId}`;
     await createProjectViaApi(page, kanbanProjectId, kanbanProjectName);
     await gotoEntryHome(page);
-    await expect(page.getByTestId('hub-nav')).toBeVisible();
+    await expect(page.locator('[data-project-rail]')).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
 
     // The list of controls is intentionally not encoded here. Every semantic
@@ -190,8 +190,8 @@ for (const { theme, viewport } of SURFACE_MATRIX) {
     }));
     expect(servedHubSignature, 'cold served CSS must contain the hub action signature').toBe(true);
     const projectMenuTrigger = page.getByTestId(`hub-menu-project-${kanbanProjectId}`);
-    const railCollapsed = await page.locator('.hub').getAttribute('data-rail-collapsed');
-    if (railCollapsed === 'true') {
+    const railState = await page.locator('[data-project-rail]').getAttribute('data-project-rail-state');
+    if (railState === 'collapsed') {
       await hubProject.hover();
       const projectFlyout = page.getByTestId('hub-project-flyout');
       await expect(projectFlyout).toBeVisible();

@@ -59,14 +59,38 @@
      each content column clears the drag region internally. */
   grid-column: 1;
   grid-row: 1 / -1;
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--hub-rail-expanded, var(--project-rail-expanded)) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  transition: grid-template-columns var(--dur-enter) var(--ease-out);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
 }
-.workspace-shell__body > .app,
-.workspace-shell__body > .entry-shell {
-  height: 100%;
+.workspace-shell__body:has(> [data-project-rail-state='collapsed']) {
+  grid-template-columns: var(--project-rail-collapsed) minmax(0, 1fr);
+  transition-duration: var(--dur-exit);
+}
+.workspace-shell__body.workspace-shell__body--rail-resizing {
+  transition: none;
+  cursor: col-resize;
+  user-select: none;
+}
+.workspace-shell__body > [data-surface] {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
   min-height: 0;
+  height: 100%;
+}
+.workspace-shell__body > [data-surface]:not([data-surface='hub']) {
+  padding-block-start: var(--app-window-chrome-height, 36px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace-shell__body {
+    transition: none;
+  }
 }
 
 /* -------- App window chrome (frameless window) ----------------------- */
@@ -226,33 +250,6 @@
     background: transparent;
   }
 }
-
-/* -------- Workspace left panel -------------------------------------- */
-/* The hub's collapsible panel is mounted on the workspace too, so both
-   surfaces share one navigation model. It starts collapsed (the grid track is
-   0-wide) and the toggle expands it in place. */
-.entry-shell--workspace,
-.entry-shell--workspace > .entry {
-  height: 100%;
-  min-height: 0;
-}
-.entry-shell--workspace .entry-main--workspace {
-  position: relative;
-  min-width: 0;
-  min-height: 0;
-  height: 100%;
-  padding-block-start: var(--app-window-chrome-height, 36px);
-  overflow: hidden;
-}
-.entry-shell--workspace .entry-main--workspace > * {
-  height: 100%;
-  min-height: 0;
-}
-/* The floating `.entry-rail-toggle--workspace` button is gone. It produced the
-   exact state the user rejected: the rail fully hidden with only a button left,
-   the button itself jammed into the top-left over the window-chrome band. The
-   workspace now shows the same two-state rail as every other surface, and
-   expand/collapse lives inside the rail strip. */
 
 .iframe-keep-alive-pool {
   display: none;

@@ -12,8 +12,7 @@ vi.mock('../../src/state/projects', () => ({
   readConversations: readConversationsFromListMock(listConversations),
 }));
 
-import { EntryNavRail } from '../../src/components/EntryNavRail';
-import { HubHome } from '../../src/components/hub/HubHome';
+import { TestHubHome as HubHome } from '../helpers/HubTestHost';
 import { I18nProvider } from '../../src/i18n';
 import { en } from '../../src/i18n/locales/en';
 import { ko } from '../../src/i18n/locales/ko';
@@ -65,24 +64,6 @@ function renderHub(overrides: Partial<Parameters<typeof HubHome>[0]> = {}) {
 describe('HubHome', () => {
   it('localizes the entry rail and command palette surfaces in Korean', async () => {
     listConversations.mockResolvedValue([]);
-    const { unmount } = render(
-      <I18nProvider initial="ko">
-        <EntryNavRail
-          view="home"
-          onViewChange={vi.fn()}
-          onNewProject={vi.fn()}
-          open
-          onClose={vi.fn()}
-        />
-      </I18nProvider>,
-    );
-    expect(screen.getByTestId('entry-nav-rail').getAttribute('aria-label')).toBe(
-      ko['entry.navPrimary'],
-    );
-    expect(ko['entry.navPrimary']).not.toBe(en['entry.navPrimary']);
-    expect(screen.queryByLabelText(en['entry.navPrimary'])).toBeNull();
-    unmount();
-
     const { container } = render(
       <I18nProvider initial="ko">
         <HubHome
@@ -94,6 +75,8 @@ describe('HubHome', () => {
         />
       </I18nProvider>,
     );
+    expect(screen.getByTestId('hub-nav').getAttribute('aria-label')).toBe(ko['hub.treeLabel']);
+    expect(screen.queryByLabelText(en['hub.treeLabel'])).toBeNull();
     const opener = await screen.findByTestId('hub-open-palette');
     expect(opener.getAttribute('aria-label')).toBe(ko['hub.paletteOpen']);
     fireEvent.click(opener);

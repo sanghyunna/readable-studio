@@ -17,9 +17,8 @@ import { describe, expect, it } from 'vitest';
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8');
 
 const tokens = read('../../src/styles/tokens.css');
-const hubCss = read('../../src/styles/home/hub.css');
+const shellCss = read('../../src/styles/shell.css');
 const projectRailCss = read('../../src/styles/home/project-rail.css');
-const entryCss = read('../../src/styles/home/entry-layout.css');
 const transitionCss = read('../../src/components/WorkspaceTransition.module.css');
 
 function tokenMs(name: string): number {
@@ -74,20 +73,17 @@ describe('motion duration is proportionate to distance travelled', () => {
   it('the Hub rail collapse travels a short distance and is fine on --dur-exit', () => {
     // Expanded track defaults to the persisted-width baseline. Collapsed stays
     // on the shared 44px strip regardless of the saved expanded width.
-    const hub = ruleBody('.hub', hubCss);
-    const collapsedWidth = customPropertyPx(
-      '--hub-rail-collapsed',
-      [hubCss, projectRailCss],
-    );
-    const expandedDefault = /grid-template-columns:\s*var\(--hub-rail-expanded,\s*(\d+)px\)/.exec(hub);
-    expect(expandedDefault).not.toBeNull();
+    const shell = ruleBody('.workspace-shell__body', shellCss);
+    const collapsedWidth = customPropertyPx('--project-rail-collapsed', [projectRailCss]);
+    const expandedDefault = customPropertyPx('--project-rail-expanded', [projectRailCss]);
+    expect(shell).toContain('var(--hub-rail-expanded, var(--project-rail-expanded))');
 
-    const distance = Number(expandedDefault![1]) - collapsedWidth;
+    const distance = expandedDefault - collapsedWidth;
     expect(distance).toBeLessThanOrEqual(260);
 
     // At <=260px the 140ms exit runs ~1.9px/ms - an order of magnitude calmer
     // per pixel than the disclosure's failing 6.4px/ms. Left as-is deliberately.
-    expect(ruleBody('.hub--rail-collapsed', hubCss)).toContain('var(--dur-exit)');
+    expect(ruleBody(".workspace-shell__body:has(> [data-project-rail-state='collapsed'])", shellCss)).toContain('var(--dur-exit)');
     expect(distance / tokenMs('dur-exit')).toBeLessThan(2);
   });
 
@@ -99,7 +95,7 @@ describe('motion duration is proportionate to distance travelled', () => {
     // now use the full 292px panel baseline while the parent grid interpolates.
     const distance = full - strip;
     expect(distance).toBe(248);
-    expect(ruleBody('.entry-shell--no-header .entry', entryCss)).toContain('var(--dur-enter)');
+    expect(ruleBody('.workspace-shell__body', shellCss)).toContain('var(--dur-enter)');
   });
 
   it('the Hub <-> workspace transition moves <=10px and sits well above the frame floor', () => {
@@ -134,8 +130,8 @@ describe('reduced motion still snaps on every audited surface', () => {
   });
 
   it('the rail and surface transition keep their own reduced-motion guards', () => {
-    expect(entryCss).toMatch(/@media \(prefers-reduced-motion: reduce\)/);
+    expect(shellCss).toMatch(/@media \(prefers-reduced-motion: reduce\)/);
     expect(transitionCss).toMatch(/@media \(prefers-reduced-motion: reduce\)/);
-    expect(hubCss).toMatch(/@media\s*\(prefers-reduced-motion:\s*reduce\)/);
+    expect(read('../../src/styles/home/hub.css')).toMatch(/@media\s*\(prefers-reduced-motion:\s*reduce\)/);
   });
 });

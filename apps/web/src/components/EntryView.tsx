@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from 'react';
-import type { ReadableStudioHostProjectImportSuccess } from '@readable-studio/host';
 import type {
   AgentInfo,
   ApiProtocol,
@@ -20,7 +19,7 @@ import type {
 // to a no-op here.
 import { EntryShell } from './EntryShell';
 import type { IntegrationTab } from './IntegrationsView';
-import type { CreateInput, ImportClaudeDesignOutcome } from './NewProjectPanel';
+import type { CreateInput, CreateTab } from './NewProjectPanel';
 import type { EntrySettingsSection } from './EntrySettingsMenu';
 import type {
   PluginShareAction,
@@ -39,7 +38,6 @@ interface Props {
   designSystems: DesignSystemSummary[];
   projects: Project[];
   templates: ProjectTemplate[];
-  onDeleteTemplate: (id: string) => Promise<boolean>;
   defaultDesignSystemId: string | null;
   agents: AgentInfo[];
   agentsLoading?: boolean;
@@ -88,11 +86,7 @@ interface Props {
     action: PluginShareAction,
     locale?: string,
   ) => Promise<PluginShareProjectOutcome>;
-  onImportClaudeDesign: (
-    file: File,
-  ) => Promise<ImportClaudeDesignOutcome | void> | ImportClaudeDesignOutcome | void;
-  onImportFolder?: (baseDir: string) => Promise<void> | void;
-  onImportFolderResponse?: (response: ReadableStudioHostProjectImportSuccess) => Promise<void> | void;
+  onOpenNewProject: (tab: CreateTab) => void;
   onOpenProject: (id: string) => void;
   onDeleteProject: (id: string) => void;
   onRenameProject: (id: string, name: string) => void;
@@ -109,7 +103,6 @@ export function EntryView({
   designSystems,
   projects,
   templates,
-  onDeleteTemplate,
   defaultDesignSystemId,
   agents,
   agentsLoading = false,
@@ -131,9 +124,7 @@ export function EntryView({
   projectsLoading = false,
   onCreateProject,
   onCreatePluginShareProject,
-  onImportClaudeDesign,
-  onImportFolder,
-  onImportFolderResponse,
+  onOpenNewProject,
   onOpenProject,
   onDeleteProject,
   onRenameProject,
@@ -156,7 +147,6 @@ export function EntryView({
       designSystems={designSystems}
       projects={projects}
       templates={templates}
-      onDeleteTemplate={onDeleteTemplate}
       defaultDesignSystemId={defaultDesignSystemId}
       {...(integrationInitialTab ? { integrationInitialTab } : {})}
       skillsLoading={skillsLoading}
@@ -178,9 +168,7 @@ export function EntryView({
       onThemeChange={onThemeChange}
       onCreateProject={onCreateProject}
       onCreatePluginShareProject={onCreatePluginShareProject}
-      onImportClaudeDesign={onImportClaudeDesign}
-      {...(onImportFolder ? { onImportFolder } : {})}
-      {...(onImportFolderResponse ? { onImportFolderResponse } : {})}
+      onOpenNewProject={onOpenNewProject}
       onOpenProject={onOpenProject}
       onDeleteProject={onDeleteProject}
       onRenameProject={onRenameProject}

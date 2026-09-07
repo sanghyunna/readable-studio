@@ -15,7 +15,7 @@ vi.mock('../../src/state/projects', () => ({
   readConversations: readConversationsFromListMock(listConversations),
 }));
 
-import { HubHome } from '../../src/components/hub/HubHome';
+import { TestHubHome as HubHome } from '../helpers/HubTestHost';
 import type { DesignSystemSummary, Project } from '../../src/types';
 import { setHomeHeroPrompt } from '../helpers/home-hero-lexical';
 

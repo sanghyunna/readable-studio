@@ -18,7 +18,10 @@
  *  2. A rail is mounted on BOTH surfaces, and it is mounted continuously — at
  *     no observed commit is the window without one. The rail is the product's
  *     stated continuity anchor, so a gap in it is a visible discontinuity even
- *     if both endpoints look right.
+ *     if both endpoints look right. That is only possible when the ONE rail is
+ *     owned by AppInner OUTSIDE the keyed surface: a rail owned by either
+ *     surface (HubHome-local, or an EntryNavRail mounted on the workspace)
+ *     unmounts with that surface and the swap is a rail gap by construction.
  *  3. No commit between the two surfaces renders the opaque loading
  *     interstitial as the ONLY content. That interstitial is the literal blank
  *     frame; the pending route must keep project surface identity (which it
@@ -77,13 +80,14 @@ vi.mock('../../src/router', () => ({
   },
 }));
 
-// Both stand-ins carry a rail marked the way the shared ProjectRail marks it,
-// so "a rail exists on this surface" is observed through the same attribute the
-// real component emits rather than through a test-only hook.
+// The stand-ins carry NO rail: under the target ownership the rail is not the
+// surface's to mount. HubHome renders only the stage and the workspace renders
+// its own root; the ONE rail lives in AppInner outside the keyed surface, so
+// "a rail exists on this surface" is observed through the shared ProjectRail
+// attribute the shell-mounted rail emits, never through a surface-local copy.
 vi.mock('../../src/components/EntryView', () => ({
   EntryView: () => (
     <div className="entry-shell entry-shell--no-header">
-      <nav data-project-rail="hub" data-project-rail-state="collapsed" />
       <div className="entry-main__inner entry-main__inner--home">
         <div data-testid="entry-view-home" />
       </div>
@@ -232,21 +236,25 @@ describe('Hub <-> workspace surface persistence', () => {
     expect(document.querySelector('.workspace-shell__body')).toBe(bodyBefore);
   });
 
-  it('keeps a rail mounted on both surfaces and through the swap', async () => {
+  it('keeps ONE shell-owned rail mounted on both surfaces and through the swap', async () => {
     render(<App />);
     await screen.findByTestId('entry-view-home');
-    expect(document.querySelector('[data-project-rail]')).not.toBeNull();
+    // Exactly one rail, and it is the shell's: mounted outside the keyed
+    // surface, so the swap below cannot unmount it. A surface-local rail
+    // (HubHome's own, or a workspace EntryNavRail) would be a second node on
+    // one side and a gap on the other.
+    const railBefore = document.querySelector('[data-project-rail]');
+    expect(railBefore).not.toBeNull();
 
     const observed = observeBody();
     setRoute({ kind: 'project', projectId: 'project-1', conversationId: null, fileName: null });
     await screen.findByTestId('project-root');
     observed.stop();
 
-    // The workspace mounts EntryNavRail directly in App.tsx, so a rail is on
-    // screen for the destination too.
-    expect(document.querySelector('[data-testid="workspace-rail-host"]')).not.toBeNull();
+    // The same node, not a remounted look-alike.
+    expect(document.querySelector('[data-project-rail]')).toBe(railBefore);
     // And no observed intermediate state was railless.
-    const railless = observed.frames.filter((frame) => !frame.includes('rail'));
+    const railless = observed.frames.filter((frame) => !frame.includes('data-project-rail'));
     expect(railless).toEqual([]);
   });
 

@@ -30,7 +30,7 @@ vi.mock('../../src/state/projects', () => ({
   readConversations: readConversationsFromListMock(listConversations),
 }));
 
-import { HubHome } from '../../src/components/hub/HubHome';
+import { TestHubHome as HubHome } from '../helpers/HubTestHost';
 import { InlineModelSwitcher } from '../../src/components/InlineModelSwitcher';
 import type { AgentInfo, AppConfig, Project } from '../../src/types';
 

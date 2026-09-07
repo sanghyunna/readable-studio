@@ -27,7 +27,7 @@ async function gotoHub(page: Page) {
       .getByRole('button', { name: /I get it|not now|got it|don't share/i })
       .click();
   }
-  await expect(page.getByTestId('hub-nav')).toBeVisible();
+  await expect(page.locator('[data-project-rail]')).toBeVisible();
 }
 
 async function createProject(page: Page, name: string) {
@@ -292,7 +292,7 @@ test('[P1] an aborted session read shows a retry, re-issues the request, and nev
   await expect(page.getByTestId(`hub-sessions-loading-${project.id}`)).toHaveCount(0);
 
   // The empty-state copy must never be used for a read that FAILED.
-  await expect(page.getByTestId('hub-nav')).not.toContainText(/no sessions/i);
+  await expect(page.locator('[data-project-rail]')).not.toContainText(/no sessions/i);
 
   // The aggregate failure is announced as text in a status region.
   const status = page.getByTestId('hub-sessions-status');
@@ -308,5 +308,5 @@ test('[P1] an aborted session read shows a retry, re-issues the request, and nev
   await expect(page.getByTestId(`hub-sessions-error-${project.id}`)).toHaveCount(0, {
     timeout: 20_000,
   });
-  await expect(page.getByTestId('hub-nav')).toContainText('qa-task-2 unreachable session');
+  await expect(page.locator('[data-project-rail]')).toContainText('qa-task-2 unreachable session');
 });

@@ -120,7 +120,7 @@ async function openHub(page: Page, request: APIRequestContext, viewport = { widt
   const preferencesSession = await emulatePreferences(page, 'no-preference', 'no-preference');
   try {
     await page.goto('/');
-    await expect(page.getByTestId('hub-nav')).toBeVisible();
+    await expect(page.locator('[data-project-rail]')).toBeVisible();
     await expect(page.getByTestId('hub-composer')).toBeVisible();
     expect(await page.evaluate(() => ({
       transparency: matchMedia('(prefers-reduced-transparency: reduce)').matches,
@@ -262,8 +262,8 @@ test('canonical start proves R1-R11 and R14 from rendered paint and geometry', a
     backdropSupported: CSS.supports('backdrop-filter', 'blur(1px)'),
   }));
   expect(canonicalMedia).toEqual({ reducedTransparency: false, backdropSupported: true });
-  const hubBox = await geometry(page.locator('.hub'));
-  const rail = page.getByTestId('hub-nav'); const railBox = await geometry(rail);
+  const hubBox = await geometry(page.locator('.workspace-shell__body'));
+  const rail = page.locator('[data-project-rail]'); const railBox = await geometry(rail);
   const railPaint = await rail.evaluate((node) => {
     const canvas = document.createElement('canvas'); canvas.width = 1; canvas.height = 1;
     const context = canvas.getContext('2d', { willReadFrequently: true });
@@ -358,7 +358,7 @@ test('canonical start proves R1-R11 and R14 from rendered paint and geometry', a
   await page.mouse.move(900, 700);
   await page.evaluate(() => { document.body.focus(); (document.activeElement as HTMLElement | null)?.blur(); });
   await page.keyboard.press('Tab');
-  await expect(page.getByTestId('hub-rail-toggle')).toBeFocused();
+  await expect(page.locator('[data-project-rail-toggle]')).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(page.getByTestId('hub-brand')).toBeFocused(); await expect(brandHome).toHaveCSS('opacity', '1');
   const brandHomeFocusOpacity = await brandHome.evaluate((node) => getComputedStyle(node).opacity);
@@ -368,9 +368,9 @@ test('canonical start proves R1-R11 and R14 from rendered paint and geometry', a
   const chromeTabOrder = await page.evaluate(() => {
     const focusable = [...document.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input, select, textarea, [tabindex]')]
       .filter((node) => node.tabIndex >= 0 && node.offsetParent !== null);
-    return focusable.slice(0, 3).map((node) => node.dataset.testid ?? node.tagName.toLowerCase());
+    return focusable.slice(0, 3).map((node) => node.hasAttribute('data-project-rail-toggle') ? 'project-rail-toggle' : node.dataset.testid ?? node.tagName.toLowerCase());
   });
-  expect(chromeTabOrder).toEqual(['hub-rail-toggle', 'hub-brand', 'hub-new-project']);
+  expect(chromeTabOrder).toEqual(['project-rail-toggle', 'hub-brand', 'hub-new-project']);
   const live = page.getByTestId('hub-live-strip'); const arrow = live.locator('.hub__live-arrow');
   const liveBefore = await geometry(live); const arrowBefore = await geometry(arrow); await live.hover();
   await live.evaluate((node) =>
@@ -433,7 +433,7 @@ test('canonical start proves R1-R11 and R14 from rendered paint and geometry', a
   // through the same user path rather than synthesizing rail state in HubHome.
   await page.getByTestId(`hub-session-${primaryProject.sessions[0]?.id}`).click();
   await page.goBack();
-  await expect(page.getByTestId('hub-nav')).toBeVisible();
+  await expect(page.locator('[data-project-rail]')).toBeVisible();
   await expect(page.getByTestId('hub-open-work')).toBeVisible();
   await captureCanonical(page, 'start');
 });
@@ -529,9 +529,9 @@ test('tooltip, toast/undo, and palette are behavioral states', async ({ page, re
   // interaction contract, not a hidden no-op click followed by a second click.
   await primaryProjectRow.click();
   await expect(primaryProjectRow).toHaveAttribute('aria-expanded', 'true');
-  const hoverToggle = page.getByTestId('hub-rail-toggle'); const hoverStarted = Date.now(); await hoverToggle.hover(); const tooltip = page.locator('.readable-tooltip-layer, [role="tooltip"]'); await expect(tooltip).toBeVisible(); const hoverDelay = Date.now() - hoverStarted;
+  const hoverToggle = page.locator('[data-project-rail-toggle]'); const hoverStarted = Date.now(); await hoverToggle.hover(); const tooltip = page.locator('.readable-tooltip-layer, [role="tooltip"]'); await expect(tooltip).toBeVisible(); const hoverDelay = Date.now() - hoverStarted;
   expect(hoverDelay).toBeGreaterThanOrEqual(350); expect(await hoverToggle.getAttribute('aria-describedby')).toBeTruthy();
-  await page.mouse.move(900, 700); await expect(tooltip).toHaveCount(0); const focusToggle = page.getByTestId('hub-rail-toggle'); await page.keyboard.press('Tab'); await focusToggle.focus(); await expect(tooltip).toBeVisible();
+  await page.mouse.move(900, 700); await expect(tooltip).toHaveCount(0); const focusToggle = page.locator('[data-project-rail-toggle]'); await page.keyboard.press('Tab'); await focusToggle.focus(); await expect(tooltip).toBeVisible();
   recordRegion({ region: 'R15', state: 'tooltip', pass: hoverDelay >= 350, anchor: `hoverDelayMs=${hoverDelay}; describedBy=${await focusToggle.getAttribute('aria-describedby')}`, observation: 'delayed hover and focus tooltip' });
 
   const session = primaryProject.sessions.at(2);
@@ -580,7 +580,7 @@ test('tooltip, toast/undo, and palette are behavioral states', async ({ page, re
 
   const stableLocators = [
     page.locator('.hub'),
-    page.getByTestId('hub-nav'),
+    page.locator('[data-project-rail]'),
     page.locator('.hub__stage'),
     page.locator('.hub__start'),
     page.getByTestId('hub-composer'),
@@ -643,7 +643,7 @@ test('tooltip, toast/undo, and palette are behavioral states', async ({ page, re
 });
 
 test('collapsed, narrow, reduced preferences and both-theme contrast are measurable', async ({ page, request, browserName }) => {
-  await openHub(page, request); const hub = page.locator('.hub'); const stageLocator = page.locator('.hub__stage'); const rail = page.getByTestId('hub-nav'); const toggle = page.getByTestId('hub-rail-toggle');
+  await openHub(page, request); const hub = page.locator('.workspace-shell__body'); const stageLocator = page.locator('.hub__stage'); const rail = page.locator('[data-project-rail]'); const toggle = page.locator('[data-project-rail-toggle]');
   const brandTransition = await screenshotMotion(page, 'brand-hover', page.getByTestId('hub-brand'), () => page.getByTestId('hub-brand').hover());
   expect(brandTransition.propertyName).toBe('opacity');
   expect(brandTransition.target).toBe('span.hub__brand-home');

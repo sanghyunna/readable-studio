@@ -100,7 +100,8 @@ async function gotoHome(page: Page): Promise<void> {
       .getByRole('button', { name: /I get it|not now|got it|don't share/i })
       .click();
   }
-  await expect(page.getByTestId('hub-nav')).toBeVisible();
+  await expect(page.locator('[data-project-rail]')).toBeVisible();
+  await expect(page.getByTestId('home-hero-input')).toBeVisible();
 }
 
 /**
@@ -166,7 +167,7 @@ test('[P0] every entry destination is reachable from home in one interaction and
 
   for (const destination of DESTINATIONS) {
     await expect(
-      page.getByTestId('hub-nav'),
+      page.getByTestId('home-hero-input'),
       `${destination.id}: must start from home`,
     ).toBeVisible();
 
@@ -183,7 +184,9 @@ test('[P0] every entry destination is reachable from home in one interaction and
       destination.mount(page),
       `${destination.id}: destination did not mount`,
     ).toBeVisible();
-    await expect(page.getByTestId('hub-nav')).toBeHidden();
+    await expect(page.getByTestId('home-hero-input')).toBeHidden();
+    await expect(page.locator('[data-project-rail]')).toHaveCount(1);
+    await expect(page.locator('[data-project-rail]')).toBeVisible();
 
     // Captured AFTER the mount assertion, so the image is of a destination
     // that demonstrably rendered rather than of a bare route change.
@@ -195,7 +198,8 @@ test('[P0] every entry destination is reachable from home in one interaction and
     // cached route cannot leave a previously-mounted destination on screen
     // while a later one silently fails to render.
     await page.goBack();
-    await expect(page.getByTestId('hub-nav')).toBeVisible();
+    await expect(page.locator('[data-project-rail]')).toBeVisible();
+    await expect(page.getByTestId('home-hero-input')).toBeVisible();
     await expect(destination.mount(page)).toBeHidden();
     expect(new URL(page.url()).pathname).toBe('/');
   }
@@ -231,7 +235,9 @@ test('[P0] a project with zero sessions opens from the tree', async ({ page }) =
       expect(new URL(page.url()).pathname).toBe(`/projects/${projectId}`);
     }).toPass({ timeout: 10_000 });
     // Prove the workspace mounted rather than trusting the route.
-    await expect(page.getByTestId('hub-nav')).toBeHidden();
+    await expect(page.getByTestId('home-hero-input')).toBeHidden();
+    await expect(page.locator('[data-project-rail]')).toHaveCount(1);
+    await expect(page.locator('[data-project-rail]')).toBeVisible();
     await expect(page.getByTestId('chat-composer')).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId('file-workspace')).toBeVisible();
     await page.screenshot({ path: `${EVIDENCE_DIR}/sessionless-project-opened.png` });
@@ -298,7 +304,7 @@ test('[P0] home renders the mockup rail footer and topbar chrome', async ({ page
 
   await page.screenshot({ path: `${EVIDENCE_DIR}/home-chrome.png`, fullPage: false });
   await page
-    .locator('.hub__nav')
+    .locator('[data-project-rail]')
     .screenshot({ path: `${EVIDENCE_DIR}/rail-footer.png` });
   await page
     .locator('.entry-main__topbar')

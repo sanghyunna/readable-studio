@@ -2,7 +2,7 @@
 //
 // This component owns the entire JSX render and local UI state for
 // the redesigned home view (left rail + sticky settings cog + hero +
-// recent projects + plugins section + new-project modal). It is
+// recent projects + plugins section). App owns the new-project modal. It is
 // intentionally a sibling of `EntryView` so that upstream `main`
 // changes to `EntryView` (props, lifecycle, helpers, exports) can be
 // rebased without touching this file. `EntryView` becomes a thin wrapper
@@ -17,16 +17,11 @@ import {
   type SetStateAction,
 } from 'react';
 import {
-  defaultScenarioPluginIdForProjectMetadata,
   type ChatSessionMode,
   type InstalledPluginRecord,
 } from '@readable-studio/contracts';
-import type { ReadableStudioHostProjectImportSuccess } from '@readable-studio/host';
 import { useAnalytics } from '../analytics/provider';
-import {
-  trackHomeNavClick,
-  trackHomeToolbarClick,
-} from '../analytics/events';
+import { trackHomeNavClick } from '../analytics/events';
 import { useT } from '../i18n';
 import { navigate, useRoute } from '../router';
 import type {
@@ -45,9 +40,9 @@ import { CenteredLoader } from './Loading';
 import { DesignsTab } from './DesignsTab';
 import { DesignSystemPreviewModal } from './DesignSystemPreviewModal';
 import { DesignSystemsTab } from './DesignSystemsTab';
-import { EntryNavRail, type EntryView as EntryViewKind } from './EntryNavRail';
+import type { EntryView as EntryViewKind } from './EntryNavRail';
 import { HubHome } from './hub/HubHome';
-import { openProjectRoute, openSessionRoute } from './hub/openSessionRoute';
+import { openSessionRoute } from './hub/openSessionRoute';
 import {
   createPluginAuthoringHandoff,
   createPluginUseHandoff,
@@ -58,9 +53,8 @@ import { IntegrationsView, type IntegrationTab } from './IntegrationsView';
 import { InlineModelSwitcher } from './InlineModelSwitcher';
 import { requireModelSelection } from './agentModelSelection';
 import type { EntrySettingsSection } from './EntrySettingsMenu';
-import { NewProjectModal } from './NewProjectModal';
 import { PluginsView } from './PluginsView';
-import type { CreateInput, CreateTab, ImportClaudeDesignOutcome } from './NewProjectPanel';
+import type { CreateInput, CreateTab } from './NewProjectPanel';
 import type { PluginLoopSubmit } from './PluginLoopHome';
 import type {
   PluginShareAction,
@@ -74,30 +68,6 @@ import {
   type ProviderModelsCache,
 } from './providerModelsCache';
 
-// Persist the entry nav-rail open/collapsed state so it survives both a
-// home -> project -> home navigation (EntryShell unmounts on the project
-// route) and a full reload. Without this the rail always reset to its
-// collapsed default on return.
-const RAIL_OPEN_STORAGE_KEY = 'readable.entry.railOpen';
-
-function readStoredRailOpen(): boolean {
-  if (typeof window === 'undefined') return false;
-  try {
-    return window.localStorage.getItem(RAIL_OPEN_STORAGE_KEY) === 'true';
-  } catch {
-    return false;
-  }
-}
-
-function writeStoredRailOpen(open: boolean): void {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(RAIL_OPEN_STORAGE_KEY, open ? 'true' : 'false');
-  } catch {
-    /* ignore quota / disabled storage */
-  }
-}
-
 // The topbar chips (GitHub star, model switcher, Use everywhere)
 // collapse into the settings dropdown when the viewport gets
 // narrow. The transition is driven entirely by CSS @media queries
@@ -105,72 +75,12 @@ function writeStoredRailOpen(open: boolean): void {
 // markup — both surfaces are always present, and CSS toggles
 // `display` based on `--compact-topbar` breakpoint (900px).
 
-// Default scenario plugin for each project kind/intent. The mapping
-// lives in `@readable-studio/contracts` so the daemon's `/api/projects`
-// and `/api/runs` fallbacks resolve to the same plugin id when no
-// `pluginId` is on the request body — plan §3.3 of
-// `specs/current/plugin-driven-flow-plan.md`.
-function defaultPluginIdForMetadata(metadata: ProjectMetadata): string | null {
-  return defaultScenarioPluginIdForProjectMetadata(metadata);
-}
-
-function defaultPluginInputsForCreate(
-  input: CreateInput,
-  pluginId: string | null,
-): Record<string, unknown> | null {
-  const kind = input.metadata.kind;
-  const projectName = input.name.trim();
-
-  if (pluginId === 'example-web-prototype') {
-    return {
-      artifactKind: input.metadata.includeLandingPage
-        ? 'landing page'
-        : 'web prototype',
-      fidelity: input.metadata.fidelity ?? 'high-fidelity',
-      audience: 'product evaluators',
-      designSystem: 'the active project design system',
-      template: input.metadata.templateLabel ?? 'the bundled web prototype seed',
-    };
-  }
-
-  if (pluginId === 'example-simple-deck') {
-    return {
-      deckType: 'pitch deck',
-      topic: projectName || 'the user brief',
-      audience: 'decision makers',
-      slideCount: '10-15 pages',
-      speakerNotes: input.metadata.speakerNotes
-        ? 'include speaker notes'
-        : 'no speaker notes',
-      designSystem: 'the active project design system',
-    };
-  }
-
-  if (pluginId === 'readable-new-generation') {
-    const templateLabel = input.metadata.templateLabel?.trim();
-    const artifactKind =
-      kind === 'template'
-        ? 'artifact based on a saved template'
-        : kind === 'other'
-          ? 'custom design artifact'
-          : `${kind} artifact`;
-    return {
-      artifactKind,
-      audience: 'product and design reviewers',
-      topic: templateLabel || projectName || 'the user brief',
-    };
-  }
-
-  return null;
-}
-
 interface Props {
   skills: SkillSummary[];
   designTemplates: SkillSummary[];
   designSystems: DesignSystemSummary[];
   projects: Project[];
   templates: ProjectTemplate[];
-  onDeleteTemplate?: (id: string) => Promise<boolean>;
   defaultDesignSystemId: string | null;
   integrationInitialTab?: IntegrationTab;
   skillsLoading?: boolean;
@@ -215,11 +125,7 @@ interface Props {
     action: PluginShareAction,
     locale?: string,
   ) => Promise<PluginShareProjectOutcome>;
-  onImportClaudeDesign: (
-    file: File,
-  ) => Promise<ImportClaudeDesignOutcome | void> | ImportClaudeDesignOutcome | void;
-  onImportFolder?: (baseDir: string) => Promise<void> | void;
-  onImportFolderResponse?: (response: ReadableStudioHostProjectImportSuccess) => Promise<void> | void;
+  onOpenNewProject: (tab: CreateTab) => void;
   onOpenProject: (id: string) => void;
   onDeleteProject: (id: string) => Promise<boolean | void> | boolean | void;
   onRenameProject: (id: string, name: string) => void;
@@ -274,7 +180,10 @@ function navElementForView(
 function inactiveViewProps(active: boolean) {
   return {
     style: active ? undefined : ({ display: 'none' } as const),
-    inert: !active,
+    // React 18 cannot serialize inert as a boolean prop; use the DOM boolean API.
+    ref: (node: HTMLDivElement | null) => {
+      node?.toggleAttribute('inert', !active);
+    },
     'aria-hidden': !active,
   };
 }
@@ -285,7 +194,6 @@ export function EntryShell({
   designSystems,
   projects,
   templates,
-  onDeleteTemplate,
   defaultDesignSystemId,
   integrationInitialTab = 'mcp',
   skillsLoading = false,
@@ -307,9 +215,7 @@ export function EntryShell({
   onThemeChange,
   onCreateProject,
   onCreatePluginShareProject,
-  onImportClaudeDesign,
-  onImportFolder,
-  onImportFolderResponse,
+  onOpenNewProject,
   onOpenProject,
   onDeleteProject,
   onRenameProject,
@@ -328,17 +234,6 @@ export function EntryShell({
   const username = useRuntimeUsername();
   const view: EntryViewKind = route.kind === 'home' ? route.view : 'home';
   const [previewSystemId, setPreviewSystemId] = useState<string | null>(null);
-  const [newProjectOpen, setNewProjectOpen] = useState(false);
-  // The entry nav rail is collapsed by default (Manus-style) so the entry
-  // view opens clean and full-width; the panel toggle in the topbar opens it
-  // as an overlay that dismisses on selection / backdrop click / Escape.
-  // Its open/collapsed state is persisted (localStorage) so it survives a
-  // home -> project -> home round trip (EntryShell unmounts on the project
-  // route) and a reload, instead of snapping back to collapsed.
-  const [railOpen, setRailOpen] = useState<boolean>(readStoredRailOpen);
-  useEffect(() => {
-    writeStoredRailOpen(railOpen);
-  }, [railOpen]);
   const [localProviderModelsCache, setLocalProviderModelsCache] =
     useState<ProviderModelsCache>({});
   const hasSharedProviderModelsCache =
@@ -351,8 +246,6 @@ export function EntryShell({
     hasSharedProviderModelsCache
       ? onProviderModelsCacheChange!
       : setLocalProviderModelsCache;
-  const [newProjectInitialTab, setNewProjectInitialTab] =
-    useState<CreateTab>('prototype');
   const [integrationTab, setIntegrationTab] = useState<IntegrationTab>(integrationInitialTab);
   const [homePromptHandoff, setHomePromptHandoff] = useState<HomePromptHandoff | null>(null);
   const entryMainScrollRef = useRef<HTMLElement | null>(null);
@@ -406,8 +299,7 @@ export function EntryShell({
   }
 
   function openNewProject(tab: CreateTab = 'prototype') {
-    setNewProjectInitialTab(tab);
-    setNewProjectOpen(true);
+    onOpenNewProject(tab);
   }
 
   const previewSystem = useMemo(
@@ -425,29 +317,6 @@ export function EntryShell({
       locations[0];
     return active?.name?.trim() || null;
   }, [config.projectLocations, config.defaultProjectLocationId]);
-
-  function handleCreate(input: CreateInput) {
-    // The NewProjectModal no longer asks the user to pick a plugin.
-    // Each project kind is silently bound to its default scenario
-    // pipeline at creation time so the user lands in a running flow
-    // without having to reason about pipeline internals. The mapping
-    // is intentionally explicit so future kind-specific scenarios
-    // (e.g. a deck- or image-specialized pipeline) can take over a
-    // single row without touching the form.
-    // Ask/chat projects are not artifact pipelines, so they are not bound to a
-    // scenario plugin — the same rule the Hub composer applied when the mode
-    // toggle still lived there.
-    const pluginId =
-      input.conversationMode === 'chat'
-        ? null
-        : defaultPluginIdForMetadata(input.metadata);
-    const pluginInputs = defaultPluginInputsForCreate(input, pluginId);
-    return onCreateProject({
-      ...input,
-      ...(pluginId ? { pluginId } : {}),
-      ...(pluginInputs ? { pluginInputs } : {}),
-    });
-  }
 
   // Plan §3.F5 — the home prompt-loop submit path. The user picks a
   // plugin (which calls /api/plugins/:id/apply and binds a snapshot),
@@ -546,19 +415,7 @@ export function EntryShell({
 
   return (
     <div className="entry-shell entry-shell--no-header">
-      <div className={`entry${railOpen && view !== 'home' ? ' entry--rail-open' : ''}`}>
-        {/* The hub's left panel is the single navigation model on the home
-            route; the legacy icon rail would duplicate brand/home/new-project. */}
-        {view === 'home' ? null : (
-          <EntryNavRail
-            view={view}
-            onViewChange={changeView}
-            onNewProject={() => openNewProject()}
-            open={railOpen}
-            onClose={() => setRailOpen(false)}
-            onOpen={() => setRailOpen(true)}
-          />
-        )}
+      <div className="entry">
         <main className="entry-main entry-main--scroll" ref={entryMainScrollRef}>
           <div className="entry-main__topbar">
             {/* The topbar rail toggle was removed: it duplicated the rail's own
@@ -590,6 +447,7 @@ export function EntryShell({
                   hub. Navigation lives in the hub's left panel; the centre stays
                   a calm start surface instead of a wall of past projects. */}
               <HubHome
+                active={view === 'home'}
                 projects={projects}
                 username={username}
                 projectsLoading={projectsLoading}
@@ -688,21 +546,6 @@ export function EntryShell({
           />
         ) : null}
       </AnimatePresence>
-      <NewProjectModal
-        open={newProjectOpen}
-        initialTab={newProjectInitialTab}
-        skills={skills}
-        designSystems={designSystems}
-        defaultDesignSystemId={defaultDesignSystemId}
-        templates={templates}
-        {...(onDeleteTemplate ? { onDeleteTemplate } : {})}
-        loading={skillsLoading}
-        onCreate={handleCreate}
-        onImportClaudeDesign={onImportClaudeDesign}
-        {...(onImportFolder ? { onImportFolder } : {})}
-        {...(onImportFolderResponse ? { onImportFolderResponse } : {})}
-        onClose={() => setNewProjectOpen(false)}
-      />
     </div>
   );
 }

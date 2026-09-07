@@ -228,7 +228,8 @@ test('[P1] publishing a user design system promotes it to the default system in 
 
   await gotoEntryHome(page);
   await ensureRailOpen(page);
-  await page.getByTestId('entry-nav-design-systems').click();
+  await page.getByTestId('hub-library').click();
+  await page.getByTestId('hub-library-design-systems').click();
   await expect(page).toHaveURL(/\/design-systems$/);
   await page.getByRole('tab', { name: 'Your systems' }).click();
 
@@ -272,7 +273,8 @@ test('[P1] filters user design systems by draft and published status in the mana
 
   await gotoEntryHome(page);
   await ensureRailOpen(page);
-  await page.getByTestId('entry-nav-design-systems').click();
+  await page.getByTestId('hub-library').click();
+  await page.getByTestId('hub-library-design-systems').click();
   await expect(page).toHaveURL(/\/design-systems$/);
   await page.getByRole('tab', { name: 'Your systems' }).click();
 
@@ -318,7 +320,8 @@ test('[P1] deleting the active design system falls back to another user system',
 
   await gotoEntryHome(page);
   await ensureRailOpen(page);
-  await page.getByTestId('entry-nav-design-systems').click();
+  await page.getByTestId('hub-library').click();
+  await page.getByTestId('hub-library-design-systems').click();
   await expect(page).toHaveURL(/\/design-systems$/);
   await page.getByRole('tab', { name: 'Your systems' }).click();
 

@@ -2781,7 +2781,7 @@ async function createPrototypeProject(page: Page, projectName: string) {
 }
 
 async function expectProjectsView(page: Page) {
-  await expect(page.getByTestId('hub-nav')).toBeVisible();
+  await expect(page.locator('[data-project-rail]')).toBeVisible();
   await expect(page.locator('[data-testid^="hub-project-"]').first()).toBeVisible();
 }
 

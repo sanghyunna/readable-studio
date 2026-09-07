@@ -55,6 +55,18 @@ describe('Hub -> workspace transition motion contract', () => {
     expect(transitionCss).toMatch(/@keyframes hubEnter\s*\{[\s\S]*?translate3d\(0, -8px, 0\)/);
   });
 
+  it('never makes the project loading or ready content transparent on a transition frame', () => {
+    const project = ruleBody(".surface[data-surface^='project:'][data-transition='workspace']");
+    expect(project).toMatch(/animation-name:\s*workspaceEnterOpaque\s*;/);
+    const frames = /@keyframes workspaceEnterOpaque\s*\{[\s\S]*?\n\}/.exec(transitionCss)?.[0];
+    expect(frames).toBeDefined();
+    expect(frames).not.toMatch(/opacity\s*:/);
+    expect(ruleBody(".surface[data-surface^='project:'] > :global(.app)")).toMatch(/animation:\s*none\s*;/);
+    expect(ruleBody('.loading')).toMatch(/pointer-events:\s*none\s*;/);
+    expect(ruleBody('.loadingLines > span')).toMatch(/background:\s*color-mix/);
+    expect(reducedMotionBlock()).toContain(".surface[data-surface^='project:'][data-transition='workspace']");
+  });
+
   it('does not animate the first painted surface of the session', () => {
     expect(ruleBody(".surface[data-transition='none']")).toMatch(/animation:\s*none\s*;/);
   });
@@ -138,7 +150,7 @@ describe('Hub -> workspace transition motion contract', () => {
 
     // The reduced-transparency keyframes drop the opacity ramp entirely, so the
     // surface is never transparent and must never be gated there.
-    const opaqueFrames = transitionCss.match(/@keyframes \w+Opaque\s*\{[\s\S]*?\n  \}/g) ?? [];
+    const opaqueFrames = transitionCss.match(/@keyframes \w+Opaque\s*\{(?:\s*(?:from|to)\s*\{[^}]*\}\s*)+\}/g) ?? [];
     expect(opaqueFrames.length).toBe(2);
     for (const frames of opaqueFrames) {
       expect(frames).not.toMatch(/pointer-events\s*:\s*none/);
@@ -161,9 +173,9 @@ describe('Hub -> workspace transition motion contract', () => {
     expect(start).toBeGreaterThan(-1);
     const block = transitionCss.slice(start);
 
-    expect(block).toMatch(/@keyframes workspaceEnterOpaque/);
+    expect(block).toMatch(/animation:\s*workspaceEnterOpaque/);
     expect(block).toMatch(/@keyframes hubEnterOpaque/);
-    const opaqueFrames = block.match(/@keyframes \w+Opaque\s*\{[\s\S]*?\n  \}/g) ?? [];
+    const opaqueFrames = transitionCss.match(/@keyframes \w+Opaque\s*\{(?:\s*(?:from|to)\s*\{[^}]*\}\s*)+\}/g) ?? [];
     expect(opaqueFrames.length).toBe(2);
     for (const frames of opaqueFrames) {
       expect(frames).not.toMatch(/opacity\s*:/);

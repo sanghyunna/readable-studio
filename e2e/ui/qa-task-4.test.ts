@@ -77,7 +77,7 @@ async function expectNoOnboardingSurface(page: Page) {
 
 // Positive proof the HUB actually rendered — never merely "no error was thrown".
 async function expectHubRendered(page: Page) {
-  await expect(page.getByTestId('hub-nav')).toBeVisible();
+  await expect(page.locator('[data-project-rail]')).toBeVisible();
   await expect(page.getByTestId('hub-composer')).toBeVisible();
 }
 

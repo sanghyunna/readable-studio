@@ -204,6 +204,8 @@ interface Props {
   executionSwitcher?: ReactNode;
   /** Hub command-palette selection routed through the same chip dispatcher as pointer input. */
   commandChip?: { readonly id: string; readonly nonce: number } | null;
+  /** Acknowledge once the action is bound/queued, not when its eventual run succeeds. */
+  onCommandChipAccepted?: (nonce: number) => void;
 }
 
 const EMPTY_DESIGN_SYSTEMS: DesignSystemSummary[] = [];
@@ -228,6 +230,7 @@ export function HomeView({
   skillsLoading = false,
   executionSwitcher,
   commandChip = null,
+  onCommandChipAccepted,
 }: Props) {
   const { locale, t } = useI18n();
   const analytics = useAnalytics();
@@ -309,7 +312,9 @@ export function HomeView({
   }, []);
   useEffect(() => {
     if (!richDataEnabled) {
-      setPluginsLoading(false);
+      // Disabled discovery is not a completed (empty) catalogue. Keep plugin
+      // handoffs pending until discovery is enabled and its response arrives.
+      setPluginsLoading(true);
       return undefined;
     }
     let cancelled = false;
@@ -1147,8 +1152,8 @@ export function HomeView({
   // Pure UI-state mapping — the heavy lifting is delegated back to
   // existing handlers. Migration chips that don't have a bound plugin
   // (`open-template-picker`) forward to callbacks threaded in from EntryShell.
-  function pickChip(chip: HomeHeroChip) {
-    if (rejectDraftMutationDuringSubmit()) return;
+  function pickChip(chip: HomeHeroChip): boolean {
+    if (rejectDraftMutationDuringSubmit()) return false;
     setError(null);
     // P0 ui_click area=chat_composer element=plugin_chip|action_chip. The
     // chip's `action.kind` discriminates: plugin-bound chips
@@ -1175,7 +1180,7 @@ export function HomeView({
           setError(
             `Bundled scenario "${targetId}" is not installed. Reinstall the daemon to restore the default plugin set.`,
           );
-          return;
+          return false;
         }
         const pluginOptions = {
           projectKind: chip.action.projectKind,
@@ -1199,11 +1204,11 @@ export function HomeView({
         } else {
           requestActivePlugin(record, undefined, pluginOptions);
         }
-        return;
+        return true;
       }
       case 'create-plugin': {
         queuePluginAuthoring(chip.id);
-        return;
+        return true;
       }
       case 'open-template-picker': {
         // The template picker seeds the initial file set, so it stays
@@ -1211,23 +1216,33 @@ export function HomeView({
         // folder picker and the imports.
         if (!onOpenNewProject) {
           setError('Template picker is not available in this shell.');
-          return;
+          return false;
         }
         onOpenNewProject('template');
-        return;
+        return true;
       }
     }
   }
 
+  const acceptedCommandChipNonceRef = useRef<number | null>(null);
   useEffect(() => {
-    if (!commandChip) return;
+    if (!commandChip || acceptedCommandChipNonceRef.current === commandChip.nonce) return;
+    if (submitInFlightRef.current || continuingWithoutPrompt) return;
     if (commandChip.id === 'continue') {
       void continueWithoutPrompt();
-      return;
+    } else {
+      const chip = findChip(commandChip.id);
+      if (!chip) return;
+      // Mounting is not acceptance: plugin-backed actions need the catalogue.
+      // Template navigation has no catalogue dependency and stays immediate.
+      if (chip.action.kind !== 'open-template-picker' && (!richDataEnabled || pluginsLoading)) return;
+      if (!pickChip(chip)) return;
     }
-    const chip = findChip(commandChip.id);
-    if (chip) pickChip(chip);
-  }, [commandChip]);
+    // Set this before notifying the owner: effect replay/catalogue refresh must
+    // not apply the same nonce again, even if the owner has not cleared it yet.
+    acceptedCommandChipNonceRef.current = commandChip.nonce;
+    onCommandChipAccepted?.(commandChip.nonce);
+  }, [commandChip, richDataEnabled, pluginsLoading, plugins, submitInFlight, continuingWithoutPrompt, onOpenNewProject, onCommandChipAccepted]);
 
   async function submit(autoSendFirstMessage = true): Promise<boolean> {
     const trimmed = prompt.trim();

@@ -22,7 +22,7 @@ vi.mock('../../src/state/projects', () => ({
   patchConversation,
 }));
 
-import { HubHome } from '../../src/components/hub/HubHome';
+import { TestHubHome as HubHome } from '../helpers/HubTestHost';
 import type { Project } from '../../src/types';
 
 afterEach(() => {
@@ -128,22 +128,21 @@ describe('HubHome rail', () => {
 
   it('updates collapsed semantics and the rendered tree synchronously', () => {
     renderHub();
-    const hub = screen.getByTestId('hub-nav').parentElement;
+    const rail = screen.getByTestId('hub-nav');
     const toggle = screen.getByTestId('hub-rail-toggle');
 
-    expect(hub?.dataset['railCollapsed']).toBe('false');
+    expect(rail.dataset['projectRailState']).toBe('expanded');
     expect(toggle.getAttribute('aria-pressed')).toBe('false');
     const expandedLabel = toggle.getAttribute('aria-label');
 
     fireEvent.click(toggle);
 
-    expect(hub?.dataset['railCollapsed']).toBe('true');
-    expect(hub?.classList.contains('hub--rail-collapsed')).toBe(true);
+    expect(rail.dataset['projectRailState']).toBe('collapsed');
     expect(toggle.getAttribute('aria-pressed')).toBe('true');
     expect(toggle.getAttribute('aria-label')).not.toBe(expandedLabel);
 
     fireEvent.click(toggle);
-    expect(hub?.dataset['railCollapsed']).toBe('false');
+    expect(rail.dataset['projectRailState']).toBe('expanded');
   });
 
   it('resizes within bounds by keyboard and preserves the expanded width through collapse and remount', () => {
@@ -160,10 +159,10 @@ describe('HubHome rail', () => {
     expect(hub.style.getPropertyValue('--hub-rail-expanded')).toBe('420px');
 
     fireEvent.click(toggle);
-    expect(hub.dataset['railCollapsed']).toBe('true');
+    expect(screen.getByTestId('hub-nav').dataset['projectRailState']).toBe('collapsed');
     expect(hub.style.getPropertyValue('--hub-rail-expanded')).toBe('420px');
     fireEvent.click(toggle);
-    expect(hub.dataset['railCollapsed']).toBe('false');
+    expect(screen.getByTestId('hub-nav').dataset['projectRailState']).toBe('expanded');
     expect(hub.style.getPropertyValue('--hub-rail-expanded')).toBe('420px');
 
     first.unmount();

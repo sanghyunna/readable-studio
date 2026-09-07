@@ -233,7 +233,7 @@ async function gotoHub(page: Page, openWorkIds: string[] = []): Promise<void> {
   );
   await page.goto('/');
   await expect(page.getByTestId('entry-view-home')).toHaveAttribute('data-active', 'true');
-  await expect(page.getByTestId('hub-nav')).toBeVisible();
+  await expect(page.locator('[data-project-rail]')).toBeVisible();
   // The rail fans out one conversations fetch per project; wait on real rows
   // rather than on a timer. Every seeded project must have painted, and the
   // per-project session fetches must have landed - asserted through the
@@ -374,7 +374,7 @@ test('the rail renders the mockup shape and matches the approved region', async 
     expect(pillInfo.color).not.toBe('');
   }
 
-  const rail = page.getByTestId('hub-nav');
+  const rail = page.locator('[data-project-rail]');
   await rail.screenshot({ path: resolve(evidenceDir, 'rail-seeded.png') });
 
   // The mockup region is compared as a real image: both rails are captured at

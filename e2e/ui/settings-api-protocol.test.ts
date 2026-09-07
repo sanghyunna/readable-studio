@@ -20,7 +20,7 @@ async function gotoEntryHome(page: Page) {
   if (await privacyDialog.isVisible()) {
     await privacyDialog.getByRole('button', { name: /I get it|not now|got it|don't share/i }).click();
   }
-  await expect(page.getByTestId('hub-nav')).toBeVisible();
+  await expect(page.locator('[data-project-rail]')).toBeVisible();
   await expect(page.getByTestId('entry-settings-menu-trigger')).toHaveCount(0);
   const settings = page.getByTestId('hub-footer-settings');
   await expect(settings).toHaveCount(1);
