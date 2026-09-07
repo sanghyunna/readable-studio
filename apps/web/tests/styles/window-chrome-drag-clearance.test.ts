@@ -14,9 +14,9 @@
  *     specificity source order wins, so its `min-height: 48px` beat the strip's
  *     `height: 36px`; the band overflowed its 36px grid row by 12px and covered
  *     the top of the surface below.
- *  2. The rail toggle used to float against the viewport, allowing its box to
- *     enter the title bar. It is now an in-flow child of the rail header, which
- *     itself lives in the shell body's second grid row.
+ *  2. The rail toggle now deliberately lives in that title row. Its chrome
+ *     slot and the button both opt out of the drag region so pointer input is
+ *     handled by the control rather than native window dragging.
  *
  * These are geometric facts, so the assertions are geometric: the real
  * stylesheets are loaded into jsdom and `getComputedStyle` resolves the actual
@@ -62,15 +62,8 @@ function readChromeHeightToken(): number | null {
   return declared ? Number.parseFloat(declared[1] as string) : null;
 }
 
-function reservedChromeTrack(element: HTMLElement): number {
-  const rows = getComputedStyle(element).gridTemplateRows;
-  const firstTrack = rows.match(/^var\(--app-window-chrome-height(?:,[^)]+)?\)/)?.[0] ?? '';
-  return px(firstTrack);
-}
-
 let shell: HTMLElement;
 let chrome: HTMLElement;
-let body: HTMLElement;
 let toggle: HTMLElement;
 
 beforeAll(() => {
@@ -84,17 +77,18 @@ beforeAll(() => {
   document.body.innerHTML = `
     <div class="workspace-shell workspace-shell--desktop">
       <header class="app-chrome-header app-window-chrome" data-testid="app-window-chrome">
-        <div class="window-controls" data-testid="window-controls"></div>
+        <div class="app-window-chrome__rail-toggle" id="app-window-chrome-rail-toggle">
+          <button class="hub__rail-toggle" data-project-rail-toggle data-testid="hub-rail-toggle"></button>
+        </div>
         <div class="app-window-chrome__drag app-chrome-drag"></div>
+        <div class="window-controls" data-testid="window-controls"></div>
       </header>
       <div class="workspace-shell__body">
         <main class="entry-main--scroll">
           <div class="entry-main__inner entry-main__inner--home">
             <div class="hub">
               <nav class="hub__nav" data-project-rail="hub" data-project-rail-state="expanded">
-                <div class="hub__nav-head">
-                  <button class="hub__rail-toggle" data-project-rail-toggle data-testid="hub-rail-toggle"></button>
-                </div>
+                <div class="hub__nav-head"></div>
               </nav>
             </div>
           </div>
@@ -105,7 +99,6 @@ beforeAll(() => {
 
   shell = document.querySelector('.workspace-shell') as HTMLElement;
   chrome = document.querySelector('.app-window-chrome') as HTMLElement;
-  body = document.querySelector('.workspace-shell__body') as HTMLElement;
   toggle = document.querySelector('.hub__rail-toggle') as HTMLElement;
 });
 
@@ -157,40 +150,30 @@ describe('frameless window chrome drag clearance', () => {
     expect(minHeight).toBeLessThanOrEqual(36);
   });
 
-  it('keeps the Hub rail toggle in flow below the reserved drag-band row', () => {
-    const bandBottom = Math.max(
-      px(getComputedStyle(chrome).height),
-      px(getComputedStyle(chrome).minHeight),
-    );
-    const bodyTop = reservedChromeTrack(shell);
+  it('places the Hub rail toggle in the same chrome row as the traffic lights', () => {
+    const slot = chrome.querySelector('.app-window-chrome__rail-toggle') as HTMLElement;
+    const traffic = chrome.querySelector('.window-controls') as HTMLElement;
 
-    // Static positioning is the shared ProjectRail contract: because the rail
-    // is inside the shell body (the second grid child), its control cannot
-    // escape upward into the first-row drag surface via viewport offsets.
-    expect(getComputedStyle(toggle).position).toBe('static');
-    expect(shell.children[1]).toBe(body);
-    expect(body.contains(toggle)).toBe(true);
-    expect(bodyTop).toBeGreaterThanOrEqual(bandBottom);
+    expect(toggle.parentElement).toBe(slot);
+    expect(slot.parentElement).toBe(chrome);
+    expect(traffic.parentElement).toBe(chrome);
+    expect(chrome.children[0]).toBe(slot);
+    expect(chrome.children[2]).toBe(traffic);
   });
 
-  it('leaves no vertical overlap between the drag band and the in-flow rail toggle', () => {
-    // jsdom has no layout engine, so derive the body's real top boundary from
-    // the winning first grid track rather than reading a fabricated offset from
-    // a static element. This stays numeric and fails if the reserved row stops
-    // resolving, if the band outgrows it, or if the toggle becomes floating.
-    const bandTop = 0;
-    const bandBottom = Math.max(
-      px(getComputedStyle(chrome).height),
-      px(getComputedStyle(chrome).minHeight),
-    );
-    const toggleTop = reservedChromeTrack(shell);
-    const toggleBottom = toggleTop + px(getComputedStyle(toggle).height);
+  it('centres the rail control within the 36px title row without consuming the drag filler', () => {
+    const slot = chrome.querySelector('.app-window-chrome__rail-toggle') as HTMLElement;
+    const bandHeight = px(getComputedStyle(chrome).height);
+    const slotStyle = getComputedStyle(slot);
+    const toggleStyle = getComputedStyle(toggle);
+    const slotHeight = px(slotStyle.blockSize || slotStyle.height);
+    const toggleHeight = px(toggleStyle.blockSize || toggleStyle.height);
 
-    expect(Number.isFinite(toggleTop)).toBe(true);
-    expect(Number.isFinite(toggleBottom)).toBe(true);
-    expect(getComputedStyle(toggle).position).toBe('static');
-    const overlap = Math.min(bandBottom, toggleBottom) - Math.max(bandTop, toggleTop);
-    expect(overlap).toBeLessThanOrEqual(0);
+    expect(bandHeight).toBe(36);
+    expect(slotHeight).toBe(28);
+    expect(toggleHeight).toBe(28);
+    expect(slotHeight).toBeLessThan(bandHeight);
+    expect(chrome.querySelector('.app-window-chrome__drag')).not.toBeNull();
   });
 
   it('reserves exactly the band height in the shell grid row', () => {

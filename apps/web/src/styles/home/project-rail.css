@@ -24,7 +24,7 @@
      [data-project-rail-state='collapsed']   thin, always-visible strip
      [data-project-rail-state='expanded']    docked panel
      [data-project-rail-toggle]              the collapse/expand control,
-                                             a DESCENDANT of the rail
+                                             portaled into window chrome
 
    There is no third state. "Gone, only a button remains" is not a state.
 
@@ -74,16 +74,11 @@
   pointer-events: auto;
 }
 
-/* ---- Rule 3: the toggle is ATTACHED to the rail ----
-   It is a child of the rail's own head row and participates in that row's
-   flow. It is never `position: fixed` against the viewport, and it is never
-   absolutely positioned against an ancestor that is not the rail - both of
-   which are how it ended up hovering over bare canvas.
-
-   `static` is asserted here rather than merely "not fixed" because the
-   floating variants this replaces were absolute AND fixed at different
-   times. One rule closes both. */
-[data-project-rail] [data-project-rail-toggle] {
+/* ---- Rule 3: the toggle belongs to the shared window chrome ----
+   ProjectRail portals its one toggle into the top-left chrome slot. Static
+   positioning keeps it in that row's flow, while `no-drag` makes the control
+   clickable inside the frameless title bar. */
+[data-project-rail-toggle] {
   position: static;
   z-index: auto;
   flex: none;
@@ -103,31 +98,30 @@
      working. Raising the control above its row neighbours is what makes the
      centre pixel hit THIS button. */
   isolation: isolate;
+  -webkit-app-region: no-drag;
 }
 
 /* The toggle is never hover-revealed. In the collapsed strip it is the only
    affordance that can bring the panel back, so hiding it at rest strands the
    user on hover-less input; in the expanded panel a control that appears
    only on hover is undiscoverable. It is visible at rest in both states. */
-[data-project-rail] [data-project-rail-toggle],
-[data-project-rail][data-project-rail-state='collapsed'] [data-project-rail-toggle],
-[data-project-rail][data-project-rail-state='expanded'] [data-project-rail-toggle] {
+[data-project-rail-toggle] {
   opacity: 1;
   pointer-events: auto;
   visibility: visible;
 }
 
-[data-project-rail] [data-project-rail-toggle]:hover {
+[data-project-rail-toggle]:hover {
   background: var(--bg-hover);
   color: var(--text-strong);
 }
 
-[data-project-rail] [data-project-rail-toggle]:focus-visible {
+[data-project-rail-toggle]:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 
-[data-project-rail] [data-project-rail-toggle] svg {
+[data-project-rail-toggle] svg {
   flex-shrink: 0;
 }
 

@@ -2025,10 +2025,15 @@ function AppInner() {
           className="app-chrome-header app-window-chrome"
           data-testid="app-window-chrome"
         >
-          {/* Drag filler FIRST so the traffic lights land in the top-RIGHT
-              corner (the placement the user asked for) instead of the macOS
-              top-left. The strip is still a full-width drag region; only the
-              controls opt out via `no-drag`. */}
+          {/* The rail control occupies the top-left control slot while the
+              flexible drag filler keeps the traffic lights pinned top-right.
+              Both control islands opt out of the native drag region; all bare
+              space between them still supports drag, snap and double-click. */}
+          <div
+            id="app-window-chrome-rail-toggle"
+            className="app-window-chrome__rail-toggle"
+            data-testid="app-window-chrome-rail-toggle"
+          />
           <div className="app-window-chrome__drag app-chrome-drag" aria-hidden="true" />
           <WindowControls />
         </header>

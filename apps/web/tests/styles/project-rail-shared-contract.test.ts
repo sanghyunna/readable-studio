@@ -151,37 +151,38 @@ describe('project rail: one shared contract', () => {
     host.remove();
   });
 
-  it('attaches the toggle to the rail instead of floating it', () => {
-    for (const state of ['collapsed', 'expanded'] as const) {
-      const host = mount(`
-        <div class="entry-shell entry-shell--no-header">
-          <div class="entry${state === 'expanded' ? ' entry--rail-open' : ''}">
-            <nav class="entry-nav-rail"
-                 data-project-rail="workspace"
-                 data-project-rail-state="${state}">
-              <div class="entry-nav-rail__brand">
-                <button class="entry-nav-rail__collapse" data-project-rail-toggle></button>
-              </div>
-            </nav>
-          </div>
+  it('keeps the chrome-hosted toggle visible, clickable, and out of the drag region', () => {
+    const host = mount(`
+      <header class="app-window-chrome">
+        <div class="app-window-chrome__rail-toggle">
+          <button class="hub__rail-toggle" data-project-rail-toggle></button>
         </div>
-      `);
-      const toggle = host.querySelector('[data-project-rail-toggle]') as HTMLElement;
-      const computed = getComputedStyle(toggle);
+      </header>
+    `);
+    const toggle = host.querySelector('[data-project-rail-toggle]') as HTMLElement;
+    const slot = host.querySelector('.app-window-chrome__rail-toggle') as HTMLElement;
+    const computed = getComputedStyle(toggle);
 
-      // The reported defect: the toggle was positioned against the viewport
-      // (`fixed`) or against a non-rail ancestor, so it hovered on bare canvas.
-      expect(computed.position).not.toBe('fixed');
-      expect(computed.position).toBe('static');
+    expect(computed.position).toBe('static');
+    expect(computed.opacity).toBe('1');
+    expect(computed.pointerEvents).toBe('auto');
+    expect(computed.visibility).toBe('visible');
+    // jsdom drops Electron's non-standard app-region property from computed
+    // styles, so pin its two authored boundaries directly as well.
+    expect(projectRailCss).toMatch(/\[data-project-rail-toggle\]\s*\{[^}]*-webkit-app-region:\s*no-drag/s);
+    expect(shellCss).toMatch(/\.app-window-chrome__rail-toggle\s*\{[^}]*-webkit-app-region:\s*no-drag/s);
+    expect(slot.className).toBe('app-window-chrome__rail-toggle');
+    host.remove();
+  });
 
-      // ...and it is never hover-revealed: in the collapsed strip it is the
-      // ONLY control that can bring the panel back.
-      expect(computed.opacity).toBe('1');
-      expect(computed.pointerEvents).toBe('auto');
-      expect(computed.visibility).toBe('visible');
+  it('left-aligns the expanded Readable Studio brand while centering the collapsed mark', () => {
+    const expanded = mount(`<div class="hub"><nav class="hub__nav"><div class="hub__nav-head"><button class="hub__brand"></button></div></nav></div>`);
+    const collapsed = mount(`<div class="hub hub--rail-collapsed"><nav class="hub__nav"><div class="hub__nav-head"><button class="hub__brand"></button></div></nav></div>`);
 
-      host.remove();
-    }
+    expect(getComputedStyle(expanded.querySelector('.hub__brand') as HTMLElement).justifySelf).toBe('start');
+    expect(getComputedStyle(collapsed.querySelector('.hub__brand') as HTMLElement).justifyContent).toBe('center');
+    expanded.remove();
+    collapsed.remove();
   });
 
   it('keeps the rail attached to each surface animation instead of snapping independently', () => {

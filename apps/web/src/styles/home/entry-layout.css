@@ -118,20 +118,17 @@
   overflow: visible;
 }
 
-/* Brand slot — the logo, with a collapse button that fades in on hover so the
-   docked rail can be dismissed Manus-style without a separate chrome control. */
-/* The brand slot is the head ROW: the logo and the rail's own collapse toggle
-   sit side by side in it. It was a fixed 36x36 box holding an absolutely
-   positioned toggle, which is what let the toggle drift off the row. */
+/* The rail header now owns only the logo. ProjectRail portals the stateful
+   collapse control into the shared title-bar slot instead of letting header
+   content determine panel geometry. */
 .entry-nav-rail__brand {
   position: relative;
   display: grid;
-  grid-template-rows: 36px 30px;
+  grid-template-rows: 36px;
   place-items: center;
-  gap: 4px;
   width: 100%;
-  height: 70px;
-  min-height: 70px;
+  height: 36px;
+  min-height: 36px;
   flex-shrink: 0;
 }
 /* DEFECT: the toggle was absolutely positioned inside the brand slot, which is
@@ -139,10 +136,10 @@
    to sit under a neighbour's hit area, so real pointer presses were swallowed
    while keyboard activation kept working.
 
-   It is now an in-flow child of the rail's head row, exactly like the Hub's.
+   It now participates in the shared window-chrome slot, exactly like the Hub's.
    Structure comes from the shared contract in `styles/home/project-rail.css`;
    only the workspace's own sizing stays here. */
-.entry-nav-rail .entry-nav-rail__collapse {
+.entry-nav-rail__collapse {
   position: static;
   transform: none;
   width: 30px;

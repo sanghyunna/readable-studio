@@ -90,6 +90,19 @@
   backdrop-filter: none;
 }
 
+/* The rail toggle is the left control island at the same vertical centre as
+   the right-side traffic lights. It stays compact so the title bar retains a
+   broad drag target and can never collide with the window controls. */
+.app-window-chrome__rail-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 28px;
+  inline-size: 28px;
+  block-size: 28px;
+  -webkit-app-region: no-drag;
+}
+
 /* The drag filler takes the remaining width so the whole strip - not just the
    gap beside the lights - drags, snaps and double-click-maximizes the window. */
 .app-window-chrome__drag {

@@ -200,18 +200,18 @@
      The top padding clears the frameless drag strip while the rail's glass
      surface itself still begins at y=0. */
   display: grid;
-  grid-template-rows: 34px 28px;
-  place-items: center;
-  gap: 2px;
-  height: 108px;
+  grid-template-rows: 34px;
+  align-items: center;
+  height: 78px;
   padding: calc(var(--app-window-chrome-height, 36px) + 4px) 8px 4px;
 }
 
 .hub__brand {
   display: flex;
   align-items: center;
+  justify-self: start;
   gap: 9px;
-  flex: 1;
+  width: 100%;
   min-width: 0;
   height: 34px;
   padding: 0 4px;

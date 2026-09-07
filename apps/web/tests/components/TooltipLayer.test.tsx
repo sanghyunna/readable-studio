@@ -21,27 +21,34 @@ describe('TooltipLayer', () => {
       ['workspace', true],
     ] as const) {
       const toggleTestId = `${surface}-${expanded ? 'expanded' : 'collapsed'}-toggle`;
+      const onToggle = vi.fn();
       const view = render(
-        <ProjectRail
-          surface={surface}
-          expanded={expanded}
-          ariaLabel={`${surface} rail`}
-          className="rail"
-          headClassName="rail-head"
-          toggleClassName="rail-toggle"
-          toggleLabel={expanded ? 'Collapse rail' : 'Expand rail'}
-          toggleTestId={toggleTestId}
-          testId={`${surface}-rail`}
-          onToggle={() => undefined}
-          header={<span>Brand</span>}
-        >
-          <span>Content</span>
-        </ProjectRail>,
+        <>
+          <div id="app-window-chrome-rail-toggle" />
+          <ProjectRail
+            surface={surface}
+            expanded={expanded}
+            ariaLabel={`${surface} rail`}
+            className="rail"
+            headClassName="rail-head"
+            toggleClassName="rail-toggle"
+            toggleLabel={expanded ? 'Collapse rail' : 'Expand rail'}
+            toggleTestId={toggleTestId}
+            testId={`${surface}-rail`}
+            onToggle={onToggle}
+            header={<span>Brand</span>}
+          >
+            <span>Content</span>
+          </ProjectRail>
+        </>,
       );
 
       const toggle = screen.getByTestId(toggleTestId);
+      expect(toggle.parentElement?.id).toBe('app-window-chrome-rail-toggle');
       expect(toggle.getAttribute('aria-expanded')).toBe(String(expanded));
       expect(toggle.hasAttribute('data-tooltip-allow-expanded')).toBe(true);
+      fireEvent.click(toggle);
+      expect(onToggle).toHaveBeenCalledTimes(1);
       view.unmount();
     }
   });

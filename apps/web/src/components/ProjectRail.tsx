@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Icon } from './Icon';
 
 type Props = {
@@ -25,8 +26,8 @@ type Props = {
  * Shared frame for every project rail.
  *
  * Surfaces configure their content and skin, but cannot fork the structural
- * rules: the rail is always present, has exactly two states, and owns an
- * in-flow toggle in its own header.
+ * rules: the rail is always present, has exactly two states, and supplies one
+ * toggle to the shared window-chrome slot.
  */
 export function ProjectRail({
   surface,
@@ -48,6 +49,33 @@ export function ProjectRail({
   tooltipPlacement = 'right',
 }: Props) {
   const state = expanded ? 'expanded' : 'collapsed';
+  const [chromeSlot, setChromeSlot] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    setChromeSlot(document.getElementById('app-window-chrome-rail-toggle'));
+  }, []);
+
+  const toggle = (
+    <button
+      type="button"
+      className={`${toggleClassName} readable-tooltip`}
+      data-project-rail-toggle=""
+      data-project-rail-surface={surface}
+      data-testid={toggleTestId}
+      aria-label={toggleLabel}
+      aria-expanded={expanded}
+      {...(toggleAriaPressed === undefined ? {} : { 'aria-pressed': toggleAriaPressed })}
+      title={toggleLabel}
+      data-tooltip={toggleLabel}
+      data-tooltip-placement={tooltipPlacement}
+      data-tooltip-allow-expanded=""
+      disabled={toggleDisabled}
+      onClick={onToggle}
+    >
+      <Icon name="panel-left" size={toggleIconSize} {...(toggleStrokeWidth === undefined ? {} : { strokeWidth: toggleStrokeWidth })} />
+    </button>
+  );
+
   return (
     <nav
       className={className}
@@ -59,24 +87,8 @@ export function ProjectRail({
     >
       <div className={headClassName}>
         {header}
-        <button
-          type="button"
-          className={`${toggleClassName} readable-tooltip`}
-          data-project-rail-toggle=""
-          data-testid={toggleTestId}
-          aria-label={toggleLabel}
-          aria-expanded={expanded}
-          {...(toggleAriaPressed === undefined ? {} : { 'aria-pressed': toggleAriaPressed })}
-          title={toggleLabel}
-          data-tooltip={toggleLabel}
-          data-tooltip-placement={tooltipPlacement}
-          data-tooltip-allow-expanded=""
-          disabled={toggleDisabled}
-          onClick={onToggle}
-        >
-          <Icon name="panel-left" size={toggleIconSize} {...(toggleStrokeWidth === undefined ? {} : { strokeWidth: toggleStrokeWidth })} />
-        </button>
       </div>
+      {chromeSlot ? createPortal(toggle, chromeSlot) : toggle}
       {children}
     </nav>
   );
