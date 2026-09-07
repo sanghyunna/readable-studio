@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BriefCard } from '../../src/components/BriefCard';
 import { formatBriefSteering, mergeBriefAssumptions, persistProjectBrief, type ProjectBrief } from '../../src/components/brief-state';
@@ -110,7 +110,7 @@ describe('BriefCard', () => {
     expect(screen.getByRole('listitem', { name: 'Brand: Acme (Stated by you)' }).dataset.provenance).toBe('stated');
   });
 
-  it('uses the field control and sends one sibling-format steering payload', () => {
+  it('uses the field control and sends one sibling-format steering payload', async () => {
     const onChange = vi.fn();
     const onSteer = vi.fn();
     const onTrackEdit = vi.fn();
@@ -122,10 +122,33 @@ describe('BriefCard', () => {
     fireEvent.change(input, { target: { value: 'security leaders' } });
     fireEvent.click(screen.getByRole('button', { name: 'Apply correction' }));
 
-    expect(onSteer).toHaveBeenCalledOnce();
+    await waitFor(() => expect(onSteer).toHaveBeenCalledOnce());
     expect(onSteer).toHaveBeenCalledWith('[brief correction — audience]\n- Who is this for?: security leaders');
     expect(onChange.mock.calls[0]?.[0].assumptions[0]).toMatchObject({ value: 'security leaders', provenance: 'stated' });
+    expect(onChange.mock.calls[0]?.[1]).toMatchObject({
+      id: 'audience', value: 'security leaders', provenance: 'stated',
+    });
     expect(onTrackEdit).toHaveBeenCalledOnce();
+  });
+
+  it('waits for durable metadata persistence before steering and does not steer after failure', async () => {
+    let finishPersistence: ((persisted: boolean) => void) | undefined;
+    const onChange = vi.fn(() => new Promise<boolean>((resolve) => {
+      finishPersistence = resolve;
+    }));
+    const onSteer = vi.fn();
+    render(<BriefCard brief={brief} onChange={onChange} onSteer={onSteer} />);
+    expandBrief();
+    fireEvent.click(screen.getByRole('listitem', { name: 'Audience: dev-tools buyers (Inferred)' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Who is this for?' }), {
+      target: { value: 'security leaders' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply correction' }));
+
+    expect(onChange).toHaveBeenCalledOnce();
+    expect(onSteer).not.toHaveBeenCalled();
+    await act(async () => finishPersistence?.(false));
+    expect(onSteer).not.toHaveBeenCalled();
   });
 
   it('stays collapsed on arrival and can be summoned', () => {

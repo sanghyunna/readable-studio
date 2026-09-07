@@ -57,8 +57,55 @@ export interface DesignSystemReviewEntry {
   agentTask?: DesignSystemReviewAgentTask;
 }
 
+export type BriefAssumptionProvenance = 'stated' | 'inferred' | 'default';
+export type BriefAssumptionValue = string | string[];
+
+export interface BriefQuestionOption {
+  label: string;
+  value: string;
+  description?: string;
+}
+
+export interface BriefDirectionCard {
+  id: string;
+  label: string;
+  mood: string;
+  references: string[];
+  palette: string[];
+  displayFont: string;
+  bodyFont: string;
+}
+
+export interface BriefQuestion {
+  id: string;
+  label: string;
+  type: 'radio' | 'checkbox' | 'select' | 'text' | 'textarea' | 'direction-cards';
+  options?: BriefQuestionOption[];
+  placeholder?: string;
+  required?: boolean;
+  help?: string;
+  defaultValue?: BriefAssumptionValue;
+  maxSelections?: number;
+  cards?: BriefDirectionCard[];
+}
+
+export interface BriefAssumption {
+  id: string;
+  label: string;
+  value: BriefAssumptionValue;
+  displayValue?: string;
+  provenance: BriefAssumptionProvenance;
+  question?: BriefQuestion;
+}
+
+export interface ProjectBrief {
+  assumptions: BriefAssumption[];
+  updatedAt: number;
+}
+
 export interface ProjectMetadata {
   kind: ProjectKind;
+  brief?: ProjectBrief;
   intent?: 'report';
   fidelity?: 'wireframe' | 'high-fidelity';
   speakerNotes?: boolean;

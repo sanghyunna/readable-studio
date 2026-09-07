@@ -66,6 +66,7 @@ export interface Dict {
   'brief.title': string;
   'brief.description': string;
   'brief.collapse': string;
+  'brief.backToSummary': string;
   'brief.assumptions': string;
   'brief.provenance.stated': string;
   'brief.provenance.inferred': string;

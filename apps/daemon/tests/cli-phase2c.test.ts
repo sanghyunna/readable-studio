@@ -225,6 +225,35 @@ describe('Phase 2C CLI wrappers', () => {
     expect(snapshot.pluginId).toBe('example-report');
   });
 
+  it('round-trips brief corrections through JSON and prompt-file stdin', async () => {
+    const created = await runCli(
+      ['project', 'create', '--name', 'CLI Brief', '--metadata-json', '-', '--json'],
+      { input: JSON.stringify({ kind: 'prototype' }) },
+    );
+    const projectId = (JSON.parse(created.stdout) as { project: { id: string } }).project.id;
+
+    const set = await runCli(
+      ['project', 'brief', 'set', projectId, 'fidelity', '--prompt-file', '-', '--json'],
+      { input: 'wireframe\n' },
+    );
+    const setBody = JSON.parse(set.stdout) as {
+      brief: { assumptions: Array<{ id: string; value: string; provenance: string }> };
+    };
+    expect(setBody.brief.assumptions).toContainEqual(expect.objectContaining({
+      id: 'fidelity', value: 'wireframe', provenance: 'stated',
+    }));
+
+    const get = await runCli(['project', 'brief', 'get', projectId, '--json']);
+    expect(JSON.parse(get.stdout)).toEqual(setBody);
+
+    const info = await runCli(['project', 'info', projectId, '--json']);
+    const metadata = (JSON.parse(info.stdout) as {
+      project: { metadata: { fidelity?: string; brief?: unknown } };
+    }).project.metadata;
+    expect(metadata.fidelity).toBe('wireframe');
+    expect(metadata.brief).toEqual(setBody.brief);
+  });
+
   it('imports through CLI project import commands when desktop import auth gate is active', async () => {
     const folder = makeFolder();
     await writeFile(path.join(folder, 'index.html'), '<!doctype html>');

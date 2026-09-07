@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { applyBriefAssumptionToMetadata } from '../../src/brief.js';
 import { composeSystemPrompt } from '../../src/prompts/system.js';
 import { DECK_FRAMEWORK_DIRECTIVE } from '../../src/prompts/deck-framework.js';
 
@@ -136,6 +137,24 @@ describe('composeSystemPrompt', () => {
   // into live chat runs. The contracts copy at packages/contracts/src/prompts
   // /system.ts exists for non-daemon contexts, so keep deck metadata behavior
   // from drifting silently.
+  it('uses a corrected brief value in the next run prompt and applies it idempotently', () => {
+    const initial = { kind: 'prototype' as const };
+    const correction = {
+      id: 'fidelity',
+      label: 'Fidelity',
+      value: 'wireframe',
+      provenance: 'stated' as const,
+    };
+    const corrected = applyBriefAssumptionToMetadata(initial, correction);
+    const reapplied = applyBriefAssumptionToMetadata(corrected, correction);
+    const prompt = composeSystemPrompt({ metadata: reapplied });
+
+    expect(corrected).toEqual({ kind: 'prototype', fidelity: 'wireframe' });
+    expect(reapplied).toEqual(corrected);
+    expect(prompt).toContain('- **fidelity**: wireframe');
+    expect(prompt).not.toContain('- **fidelity**: (unknown');
+  });
+
   it('does not add the responsive web contract to deck metadata without platform fields', () => {
     const prompt = composeSystemPrompt({
       metadata: {

@@ -215,18 +215,28 @@ export function applyBriefAssumptionToMetadata(
       return value === 'wireframe' || value === 'high-fidelity'
         ? { ...metadata, fidelity: value }
         : metadata;
-    case 'platformTargets':
+    case 'platformTargets': {
+      const platforms: readonly string[] = [
+        'auto', 'responsive', 'web-desktop', 'mobile-ios', 'mobile-android', 'tablet', 'desktop-app',
+      ];
+      if (!list.every(item => platforms.includes(item))) return metadata;
       return { ...metadata, platformTargets: list as ProjectPlatform[] };
+    }
     case 'companionSurfaces':
+      if (!list.every(item => item === 'landing' || item === 'os-widgets')) return metadata;
       return {
         ...metadata,
         includeLandingPage: list.includes('landing'),
         includeOsWidgets: list.includes('os-widgets'),
       };
     case 'speakerNotes':
-      return { ...metadata, speakerNotes: value === 'yes' };
+      return value === 'yes' || value === 'no'
+        ? { ...metadata, speakerNotes: value === 'yes' }
+        : metadata;
     case 'animations':
-      return { ...metadata, animations: value === 'yes' };
+      return value === 'yes' || value === 'no'
+        ? { ...metadata, animations: value === 'yes' }
+        : metadata;
     default:
       return metadata;
   }

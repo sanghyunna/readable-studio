@@ -120,6 +120,14 @@ function renderReadabilityPrompt(locale: string | undefined): string {
 
 type ProjectMetadata = {
   kind?: string;
+  brief?: {
+    assumptions: Array<{
+      id: string;
+      value: string | string[];
+      provenance: 'stated' | 'inferred' | 'default';
+    }>;
+    updatedAt: number;
+  } | null;
   intent?: string | null;
   fidelity?: string | null;
   speakerNotes?: boolean | null;

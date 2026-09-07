@@ -23,6 +23,7 @@ import {
   type QuestionForm,
 } from '../artifacts/question-form';
 import { parseSubmittedAnswers } from './QuestionForm';
+import { applyBriefAssumptionToMetadata } from './home-hero/creation-brief';
 import {
   mergeBriefAssumptions,
   persistProjectBrief,
@@ -1286,9 +1287,22 @@ export function ProjectView({
     projectBrief,
     receiptAssumptions,
   ]);
-  const handleBriefChange = useCallback(async (next: ProjectBrief): Promise<void> => {
-    setProjectBrief(next);
-    await persistProjectBrief(project.id, project.metadata ?? { kind: 'prototype' }, next);
+  const handleBriefChange = useCallback(async (
+    next: ProjectBrief,
+    correctedAssumption: BriefAssumption,
+  ): Promise<boolean> => {
+    const baseMetadata = project.metadata ?? { kind: 'prototype' };
+    const metadata = next.assumptions.reduce(
+      applyBriefAssumptionToMetadata,
+      baseMetadata,
+    );
+    // The edited value must be the final write even if malformed historical
+    // state contains a duplicate id. This also preserves earlier corrections
+    // while the parent project snapshot is catching up with the PATCH.
+    const correctedMetadata = applyBriefAssumptionToMetadata(metadata, correctedAssumption);
+    const persisted = await persistProjectBrief(project.id, correctedMetadata, next);
+    if (persisted) setProjectBrief(next);
+    return persisted;
   }, [project.id, project.metadata]);
   const questionFormSubmittedAnswers = useMemo(() => {
     if (!questionForm) return undefined;

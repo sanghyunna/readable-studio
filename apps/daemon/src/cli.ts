@@ -10,6 +10,7 @@ import { parseDesignSystemRenameArgs } from './design-system-rename-args.js';
 import { runProviderCli } from './provider-cli.js';
 import { SIDECAR_ENV, SIDECAR_MESSAGES } from '@readable-studio/sidecar-proto';
 import { STANDALONE_HTML_EXPORT_HEADERS } from '@readable-studio/contracts';
+import { applyBriefAssumptionToMetadata } from './brief.js';
 import {
   AGENT_SLUGS,
   isAgentSlug,
@@ -4628,6 +4629,10 @@ async function runProject(args) {
                     [--design-system <id>] [--json]
   readable project list                         List projects.
   readable project info <id>                    Print one project.
+  readable project brief get <id>               Print the persisted project brief.
+  readable project brief set <id> <field> <value>
+                    [--prompt-file <path|->] [--json]
+                    Correct one brief field; --prompt-file replaces <value>.
   readable project delete <id>                  Delete a project.
   readable project handoff <id> --conversation <id> --api-key <key> --model <model>
                     [--base-url <url>] [--max-tokens <n>]
@@ -4680,6 +4685,82 @@ Common options:
       if (!resp.ok) return structuredHttpFailure(resp, 'project-not-found');
       const data = await resp.json();
       process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+      return;
+    }
+    case 'brief': {
+      const [action, id, field, positionalValue] = positionalArgs(rest, PROJECT_STRING_FLAGS);
+      if ((action !== 'get' && action !== 'set') || !id) {
+        console.error('Usage: readable project brief get <id> | brief set <id> <field> <value> [--prompt-file <path|->] [--json]');
+        process.exit(2);
+      }
+      const getResponse = await client.request(`/api/projects/${encodeURIComponent(id)}`);
+      if (!getResponse.ok) return structuredHttpFailure(getResponse, 'project-not-found');
+      const detail = await getResponse.json();
+      const metadata = detail.project?.metadata ?? { kind: 'prototype' };
+      const currentBrief = metadata.brief ?? null;
+      if (action === 'get') {
+        const result = { brief: currentBrief };
+        if (flags.json) return process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+        if (!currentBrief) return console.log('No project brief.');
+        for (const assumption of currentBrief.assumptions) {
+          console.log(`${assumption.id}\t${JSON.stringify(assumption.value)}\t${assumption.provenance}`);
+        }
+        return;
+      }
+      if (!field) {
+        console.error('Usage: readable project brief set <id> <field> <value> [--prompt-file <path|->] [--json]');
+        process.exit(2);
+      }
+      if (positionalValue !== undefined && flags['prompt-file'] !== undefined) {
+        console.error('<value> and --prompt-file cannot be used together');
+        process.exit(2);
+      }
+      const sourceValue = flags['prompt-file'] !== undefined
+        ? await readPromptFromFlags({ 'prompt-file': flags['prompt-file'] })
+        : positionalValue;
+      if (typeof sourceValue !== 'string' || sourceValue.trim().length === 0) {
+        console.error('readable project brief set requires <value> or --prompt-file <path|->');
+        process.exit(2);
+      }
+      let value = sourceValue.trim();
+      try {
+        const parsed = JSON.parse(value);
+        if (typeof parsed === 'string' || (Array.isArray(parsed) && parsed.every(item => typeof item === 'string'))) {
+          value = parsed;
+        }
+      } catch {
+        // Plain text is the normal scalar form.
+      }
+      const prior = currentBrief?.assumptions.find(assumption => assumption.id === field);
+      const corrected = {
+        ...(prior ?? { id: field, label: field }),
+        value,
+        provenance: 'stated',
+      };
+      delete corrected.displayValue;
+      const assumptions = currentBrief
+        ? currentBrief.assumptions.map(assumption => assumption.id === field ? corrected : assumption)
+        : [corrected];
+      if (currentBrief && !prior) assumptions.push(corrected);
+      const brief = { assumptions, updatedAt: Date.now() };
+      const appliedMetadata = applyBriefAssumptionToMetadata(metadata, corrected);
+      const promptFacingFields = new Set([
+        'fidelity', 'platformTargets', 'companionSurfaces', 'speakerNotes', 'animations',
+      ]);
+      if (promptFacingFields.has(field) && appliedMetadata === metadata) {
+        console.error(`invalid value for brief field: ${field}`);
+        process.exit(2);
+      }
+      const nextMetadata = { ...appliedMetadata, brief };
+      const patchResponse = await client.request(`/api/projects/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ metadata: nextMetadata }),
+      }, true);
+      if (!patchResponse.ok) return structuredHttpFailure(patchResponse, 'project-not-found');
+      const result = { brief };
+      if (flags.json) return process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      console.log(`[project] brief ${field} set to ${JSON.stringify(value)}`);
       return;
     }
     case 'create': {

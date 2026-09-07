@@ -16,8 +16,11 @@ import './BriefCard.css';
 
 interface BriefCardProps {
   brief: ProjectBrief;
-  onChange: (brief: ProjectBrief) => void | Promise<void>;
-  onSteer: (payload: string) => void;
+  onChange: (
+    brief: ProjectBrief,
+    correctedAssumption: BriefAssumption,
+  ) => boolean | void | Promise<boolean | void>;
+  onSteer: (payload: string) => void | Promise<void>;
   onTrackEdit?: (event: { fieldId: string; provenance: BriefAssumption['provenance'] }) => void;
 }
 
@@ -126,16 +129,24 @@ export function BriefCard({ brief, onChange, onSteer, onTrackEdit }: BriefCardPr
     };
   }, [collapse, expanded]);
 
-  function apply(value: AssumptionValue) {
+  async function apply(value: AssumptionValue) {
     if (!editing) return;
+    const correctedAssumption: BriefAssumption = {
+      ...editing,
+      value,
+      displayValue: undefined,
+      provenance: 'stated',
+    };
     const assumptions = brief.assumptions.map(item => item.id === editing.id
-      ? { ...item, value, displayValue: undefined, provenance: 'stated' as const }
+      ? correctedAssumption
       : item);
     const next = { assumptions, updatedAt: Date.now() };
-    // One chokepoint owns persistence, steering, and analytics so a correction
-    // can never send duplicate messages from individual controls.
-    void onChange(next);
-    onSteer(formatBriefSteering(editing, value));
+    // Persist the brief and its prompt-facing metadata in one PATCH before
+    // sending the correction. A failed write must not let those two sources
+    // disagree; repeating a successful correction writes the same values.
+    const persisted = await onChange(next, correctedAssumption);
+    if (persisted === false) return;
+    await onSteer(formatBriefSteering(editing, value));
     onTrackEdit?.({ fieldId: editing.id, provenance: editing.provenance });
     setEditingId(null);
   }
