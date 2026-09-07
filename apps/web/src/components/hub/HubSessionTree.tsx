@@ -35,7 +35,7 @@ import {
 
 interface Props {
   projects: HubProjectNode[];
-  /** Open only the first project when this tree is used in the compact hub rail. */
+  /** Open one project when this tree is used in the compact hub rail, preferring live work. */
   compactByDefault?: boolean;
   /** Content placed after the shared filters and before the project tree. */
   openWork?: ReactNode;
@@ -306,10 +306,20 @@ export function HubSessionTree({
 
   const ordered = useMemo(() => sortProjects(projects, sort), [projects, sort]);
   const sessionPageSize = compactSessionPage ? COMPACT_SESSION_PAGE : HUB_SESSION_PAGE;
+  // Compact mode has room for one expanded project. That slot must follow live
+  // work rather than incidental project recency: the Hub's live strip can point
+  // at a running session in an older project, and collapsing that same project
+  // leaves its session and overflow rows mounted under `hidden` with no visible
+  // route to them. Explicit disclosure choices in `collapsed` still win.
+  const defaultOpenProjectId = compactByDefault
+    ? (ordered.find((project) =>
+        project.state === 'running' || project.sessions.some((session) => session.state === 'running'))
+        ?.id ?? ordered[0]?.id)
+    : undefined;
 
   const visible = useMemo(() => {
     return ordered
-      .map((project, projectIndex) => {
+      .map((project) => {
         const matching = [...project.sessions]
           .sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id))
           .filter((session) => matchesHubFilter(session.state, filter));
@@ -327,14 +337,22 @@ export function HubSessionTree({
             filter !== 'all'
               ? true
               : collapsed[project.id] === undefined
-                ? !compactByDefault || projectIndex === 0
+                ? !compactByDefault || project.id === defaultOpenProjectId
                 : !collapsed[project.id],
           empty: matching.length === 0,
           selfMatches: projectMatchesFilter(project, filter),
         };
       })
       .filter((entry) => (filter === 'all' ? true : !entry.empty || entry.selfMatches));
-  }, [ordered, filter, collapsed, expandedOverflow, sessionPageSize, compactByDefault]);
+  }, [
+    ordered,
+    filter,
+    collapsed,
+    expandedOverflow,
+    sessionPageSize,
+    compactByDefault,
+    defaultOpenProjectId,
+  ]);
 
   const rows = useMemo<FlatRow[]>(() => {
     const next: FlatRow[] = [];

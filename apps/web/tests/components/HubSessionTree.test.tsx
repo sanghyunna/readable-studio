@@ -56,6 +56,28 @@ describe('HubSessionTree', () => {
     expect(overflowRow()).toHaveLength(0);
   });
 
+  it('keeps a live project overflow visible and clickable when a newer project sorts first', () => {
+    const newer = node({ id: 'newer', updatedAt: 1_000 });
+    render(
+      <HubSessionTree
+        projects={[newer, MANY]}
+        compactByDefault
+        currentSessionId={null}
+        onOpenSession={vi.fn()}
+      />,
+    );
+
+    const project = screen.getByTestId('hub-project-p1');
+    const more = screen.getByTestId('hub-tree-more-p1');
+    const group = more.closest<HTMLElement>('[role="group"]');
+    expect(project.getAttribute('aria-expanded')).toBe('true');
+    expect(group?.hidden).toBe(false);
+
+    fireEvent.click(more);
+    expect(project.querySelectorAll('[data-testid^="hub-session-"]')).toHaveLength(8);
+    expect(screen.queryByTestId('hub-tree-more-p1')).toBeNull();
+  });
+
   it('filters to attention rows without duplicating them', () => {
     render(<HubSessionTree projects={[MANY, OTHER]} currentSessionId={null} onOpenSession={vi.fn()} />);
     fireEvent.click(screen.getByTestId('hub-filter-attention'));
