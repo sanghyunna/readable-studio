@@ -194,14 +194,20 @@ const EDITOR_THEME = {
   paragraph: 'composer-editor-paragraph',
 };
 
-// Walk back from the caret across the current line (stopping at the previous
-// LineBreakNode) to reconstruct the text the trigger regexes need. Mentions
-// are token nodes, so their text is included verbatim, which keeps the
-// trailing-space "already inserted" suppression working.
-function textBeforeCaretOnLine(node: TextNode, offset: number): string {
+// Walk back from the caret across the current line to reconstruct the text a
+// trigger regex needs. A completed MentionNode is an atomic boundary for a new
+// mention query: text typed after its pill must not extend the pill's @token.
+// Slash commands still inspect the whole line because they are only valid at
+// the actual line start.
+function textBeforeCaretOnLine(
+  node: TextNode,
+  offset: number,
+  stopAtMention = false,
+): string {
   let acc = node.getTextContent().slice(0, offset);
   let prev: LexicalNode | null = node.getPreviousSibling();
   while (prev && !$isLineBreakNode(prev)) {
+    if (stopAtMention && $isMentionNode(prev)) break;
     acc = prev.getTextContent() + acc;
     prev = prev.getPreviousSibling();
   }
@@ -345,7 +351,8 @@ function TriggerPlugin({
           return;
         }
         const before = textBeforeCaretOnLine(node, sel.anchor.offset);
-        const m = /(^|\s)@([^\s@]*)$/.exec(before);
+        const mentionBefore = textBeforeCaretOnLine(node, sel.anchor.offset, true);
+        const m = /(^|\s)@([^\s@]*)$/.exec(mentionBefore);
         const s = /^\/([^\s/]*)$/.exec(before);
         const active = Boolean(m) || Boolean(s);
         // Only pay for the DOM read when a trigger is live; otherwise the rect

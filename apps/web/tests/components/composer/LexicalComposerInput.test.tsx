@@ -192,6 +192,91 @@ describe('LexicalComposerInput', () => {
     expect(document.activeElement).toBe(host);
   });
 
+  it('does not continue a completed mention trigger when typing immediately after its pill', async () => {
+    const { ref, onTrigger } = setup();
+    await waitFor(() => expect(ref.current).not.toBeNull());
+
+    act(() => {
+      ref.current?.insertMention({
+        token: '@Apple',
+        entity: { id: 'apple', kind: 'file', label: 'Apple' },
+      });
+    });
+    onTrigger.mockClear();
+    act(() => {
+      ref.current?.insertText('test');
+    });
+
+    await waitFor(() => {
+      expect(onTrigger.mock.calls.at(-1)?.[0].mention).toBeNull();
+    });
+    expect(ref.current?.getText()).toBe('@Appletest');
+  });
+
+  it('scopes each fresh trigger independently after multiple completed mention pills', async () => {
+    const { ref, onTrigger, getByTestId } = setup();
+    const host = getByTestId('chat-composer-input');
+    await waitFor(() => expect(ref.current).not.toBeNull());
+
+    act(() => {
+      ref.current?.insertMention({
+        token: '@Apple',
+        entity: { id: 'apple', kind: 'file', label: 'Apple' },
+      });
+      ref.current?.insertText('@');
+    });
+    await waitFor(() => {
+      expect(onTrigger.mock.calls.at(-1)?.[0].mention).toEqual({ q: '' });
+    });
+
+    act(() => {
+      ref.current?.insertMention({
+        token: '@Banana',
+        entity: { id: 'banana', kind: 'file', label: 'Banana' },
+      });
+      ref.current?.insertText('done');
+    });
+    await waitFor(() => {
+      expect(host.querySelectorAll('.composer-inline-mention')).toHaveLength(2);
+      expect(onTrigger.mock.calls.at(-1)?.[0].mention).toBeNull();
+    });
+
+    act(() => {
+      ref.current?.insertText(' @');
+    });
+    await waitFor(() => {
+      expect(onTrigger.mock.calls.at(-1)?.[0].mention).toEqual({ q: '' });
+    });
+    expect(ref.current?.getText()).toBe('@Apple@Bananadone @');
+  });
+
+  it('keeps trigger state closed when Backspace deletes into a completed pill', async () => {
+    const { ref, onTrigger, getByTestId } = setup();
+    const host = getByTestId('chat-composer-input');
+    await waitFor(() => expect(ref.current).not.toBeNull());
+    act(() => {
+      ref.current?.insertMention({
+        token: '@Apple',
+        entity: { id: 'apple', kind: 'file', label: 'Apple' },
+      });
+    });
+    await waitFor(() =>
+      expect(host.querySelectorAll('.composer-inline-mention')).toHaveLength(1),
+    );
+
+    onTrigger.mockClear();
+    const backspace = keyEvent('Backspace');
+    act(() => {
+      liveEditor(host).dispatchCommand(KEY_BACKSPACE_COMMAND, backspace);
+    });
+
+    expect(backspace.preventDefault).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(host.querySelectorAll('.composer-inline-mention')).toHaveLength(0);
+      expect(onTrigger.mock.calls.at(-1)?.[0].mention).toBeNull();
+    });
+  });
+
   it('keeps sequential start/end mentions on outside boundaries and deletes each atomically', async () => {
     const { ref, getByTestId } = setup();
     const host = getByTestId('chat-composer-input');
@@ -527,6 +612,42 @@ describe('LexicalComposerInput', () => {
   // branch of the same handler.
   it.skip('does NOT call onEnterSend when Enter fires during IME composition (#2851 guard)', () => {
     // Intentionally skipped — see TODO above.
+  });
+
+  it('preserves existing text when Shift+Enter inserts a newline and typing continues', async () => {
+    const { ref, onChange, onEnterSend, getByTestId } = setup({ draft: 'Line one' });
+    const host = getByTestId('chat-composer-input');
+    await waitFor(() => expect(ref.current?.getText()).toBe('Line one'));
+    const editor = liveEditor(host);
+    act(() => ref.current?.focus());
+    await waitFor(() => expect(document.activeElement).toBe(host));
+    act(() => {
+      editor.update(() => {
+        const last = $getRoot().getLastDescendant();
+        if ($isTextNode(last)) {
+          const end = last.getTextContentSize();
+          last.select(end, end);
+        }
+      }, { discrete: true });
+    });
+    act(() => {
+      editor.dispatchCommand(KEY_ENTER_COMMAND, {
+        key: 'Enter',
+        shiftKey: true,
+        metaKey: false,
+        ctrlKey: false,
+        altKey: false,
+        preventDefault: vi.fn(),
+      } as unknown as KeyboardEvent);
+    });
+    await waitFor(() => expect(ref.current?.getText()).toBe('Line one\n'));
+    act(() => {
+      ref.current?.insertText('Line two');
+    });
+
+    await waitFor(() => expect(ref.current?.getText()).toBe('Line one\nLine two'));
+    expect(onChange.mock.calls.at(-1)?.[0]).toBe('Line one\nLine two');
+    expect(onEnterSend).not.toHaveBeenCalled();
   });
 
   it('calls onEnterSend on a plain Enter outside composition', async () => {
