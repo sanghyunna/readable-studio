@@ -94,6 +94,8 @@ function hasManualEditTextPassageAncestor(el: Element): boolean {
 export function buildManualEditBridge(enabled: boolean): string {
   return `<script data-readable-edit-bridge>(function(){
   var enabled = ${JSON.stringify(enabled)};
+  var bridgeDocument = document;
+  var layoutSuspended = false;
   var discoverySelector = ${JSON.stringify(MANUAL_EDIT_DISCOVERY_SELECTOR)};
   var targetSelector = ${JSON.stringify(MANUAL_EDIT_TARGET_SELECTOR)};
   var hostNodeSelector = ${JSON.stringify(MANUAL_EDIT_HOST_NODE_SELECTOR)};
@@ -571,7 +573,7 @@ export function buildManualEditBridge(enabled: boolean): string {
     return targets;
   }
   function postTargets(){
-    if (!enabled) return;
+    if (!hasLiveLayoutDocument() || !enabled) return;
     postManualMessage({ type: 'readable-edit-targets', targets: allTargets() });
   }
   var lastHoverId;
@@ -1375,7 +1377,7 @@ export function buildManualEditBridge(enabled: boolean): string {
     activateClickTarget(el, event, result.cycled, selectionAware !== false);
   }
   window.addEventListener('message', function(ev){
-    if (!ev.data) return;
+    if (!hasLiveLayoutDocument() || !ev.data) return;
     if (ev.data.type === 'readable-edit-mode') {
       var nextEnabled = !!ev.data.enabled;
       documentEpoch = typeof ev.data.documentEpoch === 'string' ? ev.data.documentEpoch : null;
@@ -1631,49 +1633,91 @@ export function buildManualEditBridge(enabled: boolean): string {
   // the stale click-time rect. Coalesce observed changes to one post per frame.
   var suppressObservedLayoutUntil = 0;
   var queuedTargetsPost = false;
+  var targetsFrame = null;
+  var targetsQuietTimer = null;
+  var layoutMutationObserver = null;
+  var layoutResizeObserver = null;
   var scheduleFrame = window.requestAnimationFrame
     ? window.requestAnimationFrame.bind(window)
     : function(cb){ return window.setTimeout(cb, 16); };
+  var cancelFrame = window.cancelAnimationFrame
+    ? window.cancelAnimationFrame.bind(window)
+    : window.clearTimeout.bind(window);
+  function stopObservingLayout(){
+    layoutSuspended = true;
+    if (layoutMutationObserver) layoutMutationObserver.disconnect();
+    if (layoutResizeObserver) layoutResizeObserver.disconnect();
+    if (targetsFrame !== null) cancelFrame(targetsFrame);
+    if (targetsQuietTimer !== null) window.clearTimeout(targetsQuietTimer);
+    targetsFrame = null;
+    targetsQuietTimer = null;
+    queuedTargetsPost = false;
+    clearDeferredOverlayClick();
+  }
+  function hasLiveLayoutDocument(){
+    // jsdom close() and document replacement can leave queued observer delivery
+    // behind after the window has lost this document. Disconnect before querying.
+    if (window.document !== bridgeDocument) stopObservingLayout();
+    return !layoutSuspended;
+  }
+  function startObservingLayout(){
+    if (window.document !== bridgeDocument) return;
+    layoutSuspended = false;
+    if (layoutMutationObserver) layoutMutationObserver.observe(bridgeDocument.documentElement, {
+      attributes: true,
+      childList: true,
+      subtree: true,
+      characterData: true
+    });
+    if (layoutResizeObserver) {
+      layoutResizeObserver.observe(bridgeDocument.documentElement);
+      if (bridgeDocument.body) layoutResizeObserver.observe(bridgeDocument.body);
+    }
+  }
   function queuePostTargets(){
-    if (!enabled || queuedTargetsPost) return;
+    if (!hasLiveLayoutDocument() || !enabled || queuedTargetsPost) return;
     queuedTargetsPost = true;
     flushTargetsWhenQuiet();
   }
   function flushTargetsWhenQuiet(){
+    targetsQuietTimer = null;
+    if (!hasLiveLayoutDocument()) return;
     // Defer — never drop — echoes that land inside the preview mute window.
     // The last DOM mutation of a drag IS the final preview write; dropping its
     // echo would strand the host overlays on stale rects (no resize/scroll
     // event follows a pointerup to trigger another re-measure).
     var wait = suppressObservedLayoutUntil - Date.now();
     if (wait > 0) {
-      window.setTimeout(flushTargetsWhenQuiet, wait + 8);
+      targetsQuietTimer = window.setTimeout(flushTargetsWhenQuiet, wait + 8);
       return;
     }
-    scheduleFrame(function(){
+    targetsFrame = scheduleFrame(function(){
+      targetsFrame = null;
       queuedTargetsPost = false;
       postTargets();
     });
   }
   if (typeof MutationObserver === 'function') {
-    new MutationObserver(function(records){
+    layoutMutationObserver = new MutationObserver(function(records){
+      if (!hasLiveLayoutDocument()) return;
       for (var i = 0; i < records.length; i++) {
         if (records[i].type === 'childList') setHoveredTarget(hoveredTarget);
         if (records[i].type !== 'attributes' || records[i].attributeName !== runtimeHoverAttr) {
           queuePostTargets();
         }
       }
-    }).observe(document.documentElement, {
-      attributes: true,
-      childList: true,
-      subtree: true,
-      characterData: true
     });
   }
   if (typeof ResizeObserver === 'function') {
-    var layoutResizeObserver = new ResizeObserver(queuePostTargets);
-    layoutResizeObserver.observe(document.documentElement);
-    if (document.body) layoutResizeObserver.observe(document.body);
+    layoutResizeObserver = new ResizeObserver(queuePostTargets);
   }
+  startObservingLayout();
+  window.addEventListener('pagehide', stopObservingLayout);
+  window.addEventListener('pageshow', function(ev){
+    if (!ev.persisted) return;
+    startObservingLayout();
+    queuePostTargets();
+  });
   document.addEventListener('load', queuePostTargets, true);
   document.addEventListener('transitionend', queuePostTargets, true);
   document.addEventListener('animationend', queuePostTargets, true);

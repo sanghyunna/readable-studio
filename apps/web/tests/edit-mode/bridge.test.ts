@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { JSDOM } from 'jsdom';
+import { JSDOM } from './bridge-dom';
 import {
   buildManualEditBridge,
   isMeaningfulManualEditElement,
@@ -8,6 +8,82 @@ import {
   manualEditDomPathForElement,
   manualEditStableIdForElement,
 } from '../../src/edit-mode/bridge';
+
+describe('manual edit bridge observer lifecycle', () => {
+  it('disconnects queued observers when close deletes the window document without pagehide', async () => {
+    const dom = new JSDOM(
+      `<main><h1 data-readable-id="title">Title</h1></main>${buildManualEditBridge(true)}`,
+      { runScripts: 'dangerously', url: 'http://localhost' },
+    );
+    const document = dom.window.document;
+    const disconnect = vi.spyOn(dom.window.MutationObserver.prototype, 'disconnect');
+    const postMessage = vi.spyOn(dom.window.parent, 'postMessage');
+    document.querySelector('h1')!.replaceChildren('Changed');
+
+    await dom.dispose();
+
+    expect(dom.window.document).toBeUndefined();
+    // The bridge disconnects itself, as does the fixture's close sentinel.
+    expect(disconnect).toHaveBeenCalledTimes(2);
+    expect(postMessage).not.toHaveBeenCalled();
+    expect(dom.errors).toEqual([]);
+  });
+
+  it.each([
+    ['timeout frame', false, false],
+    ['animation frame', true, false],
+    ['muted echo', false, true],
+  ] as const)('cancels a pending %s on pagehide and resumes observers on persisted pageshow', async (_name, visual, muted) => {
+    vi.useFakeTimers();
+    const observeResize = vi.fn();
+    const disconnectResize = vi.fn();
+    const dom = new JSDOM(
+      `<main><h1 data-readable-id="title">Title</h1></main>${buildManualEditBridge(true)}`,
+      {
+        runScripts: 'dangerously', url: 'http://localhost', pretendToBeVisual: visual,
+        beforeParse(window) {
+          window.Date = Date;
+          window.ResizeObserver = class {
+            observe = observeResize;
+            unobserve = vi.fn();
+            disconnect = disconnectResize;
+          };
+        },
+      },
+    );
+    await dom.loaded;
+    await vi.runAllTimersAsync();
+    const postMessage = vi.spyOn(dom.window.parent, 'postMessage').mockImplementation(() => {});
+    const disconnectMutation = vi.spyOn(dom.window.MutationObserver.prototype, 'disconnect');
+    await dom.nextMutation(() => {
+      if (muted) dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
+        data: { type: 'readable-edit-preview-style', id: 'title', styles: { width: '120px' }, version: 1 },
+      }));
+      else dom.window.document.querySelector('h1')!.setAttribute('class', 'changed');
+    });
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    disconnectMutation.mockClear();
+    postMessage.mockClear();
+
+    dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pagehide', { persisted: true }));
+
+    expect(disconnectMutation).toHaveBeenCalledTimes(1);
+    expect(disconnectResize).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+    dom.window.document.body.append('While hidden');
+    await vi.runAllTimersAsync();
+    expect(postMessage).not.toHaveBeenCalled();
+
+    dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pageshow', { persisted: true }));
+    await vi.runAllTimersAsync();
+    expect(observeResize).toHaveBeenCalledTimes(4);
+    expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'readable-edit-targets' }), '*');
+    postMessage.mockClear();
+    await dom.nextMutation(() => dom.window.document.querySelector('h1')!.setAttribute('class', 'restored'));
+    await vi.runAllTimersAsync();
+    expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'readable-edit-targets' }), '*');
+  });
+});
 
 describe('manual edit bridge target normalization', () => {
   it('prefers explicit data-readable-id over generated ids', () => {
@@ -89,7 +165,7 @@ describe('manual edit bridge target normalization', () => {
     dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
       data: { type: 'readable-edit-mode', enabled: true },
     }));
-    await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
+    await dom.discover();
 
     const targetsMessage = posts.find((message) => message.type === 'readable-edit-targets');
     expect(targetsMessage?.targets?.map((target) => target.id)).toEqual([
@@ -128,7 +204,7 @@ describe('manual edit bridge target normalization', () => {
     dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
       data: { type: 'readable-edit-mode', enabled: true },
     }));
-    await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
+    await dom.discover();
 
     const targetsMessage = posts.find((message) => message.type === 'readable-edit-targets');
     const hiddenSection = targetsMessage?.targets?.find((target) => target.id === 'path-0-0');
@@ -169,7 +245,7 @@ describe('manual edit bridge target normalization', () => {
     dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
       data: { type: 'readable-edit-mode', enabled: true },
     }));
-    await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
+    await dom.discover();
 
     const targetsMessage = posts.find((message) => message.type === 'readable-edit-targets');
     const hiddenSection = targetsMessage?.targets?.find((target) => target.id === 'path-0-0');
@@ -204,7 +280,7 @@ describe('manual edit bridge target normalization', () => {
     dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
       data: { type: 'readable-edit-mode', enabled: true },
     }));
-    await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
+    await dom.discover();
 
     const targetsMessage = posts.find((message) => message.type === 'readable-edit-targets');
     const hiddenSection = targetsMessage?.targets?.find((target) => target.id === 'path-0-0-0');
@@ -243,7 +319,7 @@ describe('manual edit bridge target normalization', () => {
     dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
       data: { type: 'readable-edit-mode', enabled: true },
     }));
-    await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
+    await dom.discover();
 
     const targetsMessage = posts.find((message) => message.type === 'readable-edit-targets');
     expect(targetsMessage?.targets?.find((target) => target.id === 'path-0-0')?.isHidden).toBe(true);
@@ -579,7 +655,7 @@ describe('manual edit bridge target normalization', () => {
     dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
       data: { type: 'readable-edit-mode', enabled: true },
     }));
-    await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
+    await dom.discover();
 
     const targetsMessage = posts.find((message) => message.type === 'readable-edit-targets');
     expect(targetsMessage?.targets?.map((target) => target.id)).toEqual(['path-0-0']);
@@ -1028,8 +1104,7 @@ describe('manual edit bridge target normalization', () => {
     dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
       data: { type: 'readable-edit-hover-reset' },
     }));
-    image.replaceWith(clone);
-    await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
+    await dom.nextTargets(() => image.replaceWith(clone));
     expect(dom.window.document.querySelectorAll('[data-readable-runtime-hovered]')).toHaveLength(0);
 
     dom.window.close();
@@ -1489,7 +1564,7 @@ describe('manual edit bridge target normalization', () => {
     dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
       data: { type: 'readable-edit-mode', enabled: true },
     }));
-    await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
+    await dom.discover();
 
     const targets = posts.find((m) => m.type === 'readable-edit-targets')?.targets ?? [];
     expect(targets.find((target) => target.id === 'fancy-title')).toMatchObject({
@@ -1532,7 +1607,7 @@ describe('manual edit bridge target normalization', () => {
     dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
       data: { type: 'readable-edit-mode', enabled: true },
     }));
-    await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
+    await dom.discover();
 
     const targets = posts.find((m) => m.type === 'readable-edit-targets')?.targets ?? [];
     expect(targets.find((target) => target.id === 'grad')).toMatchObject({
@@ -1567,7 +1642,7 @@ describe('manual edit bridge target normalization', () => {
     dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
       data: { type: 'readable-edit-mode', enabled: true },
     }));
-    await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
+    await dom.discover();
 
     const targets = posts.find((m) => m.type === 'readable-edit-targets')?.targets ?? [];
     expect(targets.find((target) => target.id === 'image-label')).toMatchObject({
@@ -1699,15 +1774,16 @@ describe('manual edit bridge target normalization', () => {
     dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
       data: { type: 'readable-edit-mode', enabled: true },
     }));
-    // Let initial discovery (and any runtime-id stamping it performs) settle.
-    await new Promise((resolve) => dom.window.setTimeout(resolve, 60));
+    await dom.loaded;
+    await dom.discover();
 
     const countBefore = posts.filter((message) => message.type === 'readable-edit-targets').length;
     expect(countBefore).toBeGreaterThan(0);
 
     // A deck-style class flip: mutates layout, fires neither resize nor scroll.
-    dom.window.document.querySelector('h1')!.setAttribute('class', 'slide-active');
-    await new Promise((resolve) => dom.window.setTimeout(resolve, 60));
+    await dom.nextTargets(() => {
+      dom.window.document.querySelector('h1')!.setAttribute('class', 'slide-active');
+    });
 
     const countAfter = posts.filter((message) => message.type === 'readable-edit-targets').length;
     expect(countAfter).toBeGreaterThan(countBefore);
@@ -1722,6 +1798,7 @@ describe('manual edit bridge target normalization', () => {
     // the stream quiets. Dropping it (instead of deferring it) strands the host
     // overlays on stale rects after every drag: no resize/scroll event follows
     // a pointerup, so nothing else re-measures.
+    vi.useFakeTimers();
     const posts: Array<{ type?: string }> = [];
     const dom = new JSDOM(
       `<main><h1 data-readable-source-path="path-0-0">Title</h1></main>${buildManualEditBridge(true)}`,
@@ -1734,14 +1811,16 @@ describe('manual edit bridge target normalization', () => {
     dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
       data: { type: 'readable-edit-mode', enabled: true },
     }));
-    await new Promise((resolve) => dom.window.setTimeout(resolve, 60));
+    dom.window.Date = Date;
+    await dom.loaded;
+    await vi.runAllTimersAsync();
 
     const countBefore = posts.filter((message) => message.type === 'readable-edit-targets').length;
     for (const width of ['120px', '130px', '140px']) {
       dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
         data: { type: 'readable-edit-preview-style', id: 'path-0-0', styles: { width }, version: 7 },
       }));
-      await new Promise((resolve) => dom.window.setTimeout(resolve, 10));
+      await vi.advanceTimersByTimeAsync(10);
     }
 
     // Inside the mute window: no per-frame storm.
@@ -1749,7 +1828,7 @@ describe('manual edit bridge target normalization', () => {
     expect(countDuring).toBe(countBefore);
 
     // After the stream quiets: exactly one coalesced re-broadcast.
-    await new Promise((resolve) => dom.window.setTimeout(resolve, 200));
+    await vi.advanceTimersByTimeAsync(200);
     const countAfter = posts.filter((message) => message.type === 'readable-edit-targets').length;
     expect(countAfter).toBe(countBefore + 1);
 
@@ -2244,7 +2323,7 @@ describe('manual edit bridge target normalization', () => {
     dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
       data: { type: 'readable-edit-mode', enabled: true },
     }));
-    await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
+    await dom.discover();
 
     const countBeforeScroll = posts.filter((message) => message.type === 'readable-edit-targets').length;
     expect(countBeforeScroll).toBeGreaterThan(0);
@@ -2259,8 +2338,20 @@ describe('manual edit bridge target normalization', () => {
 });
 
 describe('manual edit duplicate preview bridge', () => {
+  class DuplicateJSDOM extends JSDOM {
+    constructor(...args: ConstructorParameters<typeof JSDOM>) {
+      super(...args);
+      // These fixtures have no pseudo-elements. Model that explicitly because
+      // jsdom cannot compute pseudo styles; keep real element cascade/layout.
+      const computedStyle = this.window.getComputedStyle.bind(this.window);
+      vi.spyOn(this.window, 'getComputedStyle').mockImplementation((element, pseudo) => (
+        pseudo ? this.window.document.createElement('span').style : computedStyle(element)
+      ));
+    }
+  }
+
   it('creates, updates, and removes a transient source-derived clone without discovering it', () => {
-    const dom = new JSDOM(
+    const dom = new DuplicateJSDOM(
       `<main><h1 data-readable-id="original">Original</h1></main>${buildManualEditBridge(true)}`,
       { runScripts: 'dangerously', url: 'http://localhost' },
     );
@@ -2335,7 +2426,7 @@ describe('manual edit duplicate preview bridge', () => {
   });
 
   it('returns insertion offsets in CSS pixels under an ancestor transform', () => {
-    const dom = new JSDOM(
+    const dom = new DuplicateJSDOM(
       `<main><h1 data-readable-id="original">Original</h1></main>${buildManualEditBridge(true)}`,
       { runScripts: 'dangerously', url: 'http://localhost' },
     );
@@ -2377,7 +2468,7 @@ describe('manual edit duplicate preview bridge', () => {
   });
 
   it('removes a rejected in-flight clone and invalidates a transaction after external reflow', () => {
-    const dom = new JSDOM(
+    const dom = new DuplicateJSDOM(
       `<main><h1 data-readable-id="original">Original</h1></main>${buildManualEditBridge(true)}`,
       { runScripts: 'dangerously', url: 'http://localhost' },
     );
@@ -2445,7 +2536,7 @@ describe('manual edit duplicate preview bridge', () => {
   });
 
   it('rejects a clone that changes computed styles through a sibling-sensitive selector', () => {
-    const dom = new JSDOM(
+    const dom = new DuplicateJSDOM(
       `<style>[data-readable-id="original"]:last-child { color: rgb(1, 2, 3); }</style>
        <main><h1 data-readable-id="original">Original</h1></main>${buildManualEditBridge(true)}`,
       { runScripts: 'dangerously', url: 'http://localhost' },
@@ -2478,7 +2569,7 @@ describe('manual edit duplicate preview bridge', () => {
       { name: 'itemref', previewHtml: '<div data-readable-id="original-copy" itemref="title">Copy</div>' },
     ];
     for (const testCase of cases) {
-      const dom = new JSDOM(
+      const dom = new DuplicateJSDOM(
         `<main><h1 data-readable-id="original">Original</h1></main>${buildManualEditBridge(true)}`,
         { runScripts: 'dangerously', url: 'http://localhost' },
       );
@@ -2512,7 +2603,7 @@ describe('manual edit duplicate preview bridge', () => {
   });
 
   it('rejects stale epochs and stale command sequences without touching the original', () => {
-    const dom = new JSDOM(
+    const dom = new DuplicateJSDOM(
       `<main><h1 data-readable-id="original">Original</h1></main>${buildManualEditBridge(true)}`,
       { runScripts: 'dangerously', url: 'http://localhost' },
     );
@@ -2749,7 +2840,7 @@ describe('manual edit bridge rich-text editing', () => {
     dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
       data: { type: 'readable-edit-mode', enabled: true },
     }));
-    await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
+    await dom.discover();
     const targetsMessage = postMessage.mock.calls
       .map(([message]) => message as { type?: string; targets?: Array<{ id: string; kind: string; tagName: string }> })
       .find((message) => message.type === 'readable-edit-targets');
@@ -2833,7 +2924,7 @@ describe('manual edit bridge rich-text editing', () => {
     dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
       data: { type: 'readable-edit-mode', enabled: true },
     }));
-    await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
+    await dom.discover();
     const targetsMessage = postMessage.mock.calls
       .map(([message]) => message as { type?: string; targets?: Array<{ id: string; kind: string; label?: string }> })
       .find((message) => message.type === 'readable-edit-targets');
@@ -2875,7 +2966,7 @@ describe('manual edit bridge rich-text editing', () => {
     dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
       data: { type: 'readable-edit-mode', enabled: true },
     }));
-    await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
+    await dom.discover();
     expect(latestTargets().some((target) => target.id === 'path-0-0-0')).toBe(false);
 
     dom.window.document.body.removeAttribute('aria-hidden');
@@ -2883,7 +2974,7 @@ describe('manual edit bridge rich-text editing', () => {
     dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
       data: { type: 'readable-edit-mode', enabled: true },
     }));
-    await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
+    await dom.discover();
     expect(latestTargets().some((target) => target.id === 'path-0-0-0')).toBe(false);
 
     dom.window.close();
@@ -3439,7 +3530,6 @@ describe('manual edit bridge selection-state + rich-format bridge', () => {
     // Put the element into a rich edit session by clicking it.
     p.getBoundingClientRect = () => ({ x: 0, y: 0, width: 80, height: 20, top: 0, right: 80, bottom: 20, left: 0, toJSON: () => ({}) } as DOMRect);
     p.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    await new Promise((r) => dom.window.setTimeout(r, 0));
     expect(p.getAttribute('data-readable-editing')).toBe('true');
 
     dom.window.dispatchEvent(new dom.window.MessageEvent('message', { data: { type: 'readable-edit-rich-format', command: 'bold' } }));
@@ -3487,7 +3577,7 @@ describe('manual edit bridge ancestry + rect precision', () => {
     pEl.getBoundingClientRect = () => ({ x: 10.2, y: 20.4, width: 100, height: 50, top: 20.4, right: 110.2, bottom: 70.4, left: 10.2, toJSON: () => ({}) } as DOMRect);
     dom.window.parent.postMessage = ((m: unknown) => { posts.push(m as { type?: string; targets?: Array<Record<string, unknown>> }); }) as typeof dom.window.parent.postMessage;
     dom.window.dispatchEvent(new dom.window.MessageEvent('message', { data: { type: 'readable-edit-mode', enabled: true } }));
-    await new Promise((resolve) => { dom.window.setTimeout(resolve, 0); });
+    await dom.discover();
     const targetsPost = posts.find((m) => m.type === 'readable-edit-targets');
     expect(targetsPost).toBeTruthy();
     const p = targetsPost!.targets!.find((t) => t.id === 'path-p');
@@ -3508,7 +3598,7 @@ describe('manual edit bridge ancestry + rect precision', () => {
     pEl.getBoundingClientRect = () => ({ x: 10.2, y: 20.4, width: 100.7, height: 50.3, top: 20.4, right: 110.9, bottom: 70.7, left: 10.2, toJSON: () => ({}) } as DOMRect);
     dom.window.parent.postMessage = ((m: unknown) => { posts.push(m as { type?: string; targets?: Array<Record<string, unknown>> }); }) as typeof dom.window.parent.postMessage;
     dom.window.dispatchEvent(new dom.window.MessageEvent('message', { data: { type: 'readable-edit-mode', enabled: true } }));
-    await new Promise((resolve) => { dom.window.setTimeout(resolve, 0); });
+    await dom.discover();
     const targetsPost = posts.find((m) => m.type === 'readable-edit-targets');
     const p = targetsPost!.targets!.find((t) => t.id === 'path-p');
     const rect = p!.rect as { width: number; height: number };
