@@ -1019,46 +1019,6 @@ export function HubSessionTree({
                 data-open={entry.open && !railCollapsed}
                 hidden={!entry.open || railCollapsed}
               >
-                <div className="hub-tree__surface-actions" role="presentation">
-                  {onOpenProject ? (
-                    <button
-                      type="button"
-                      className="hub-row hub-row--session hub-row--surface"
-                      data-testid={`hub-new-terminal-${entry.project.id}`}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        queueHubSessionSurface({ projectId: entry.project.id, kind: 'terminal' });
-                        onOpenProject(entry.project);
-                      }}
-                    >
-                      <Icon name="terminal" size={13} />
-                      <span className="hub-row__title">{t('workspace.newTerminal')}</span>
-                      <Icon name="plus" size={12} />
-                    </button>
-                  ) : null}
-                  {entry.sessions[0] ? (
-                    <button
-                      type="button"
-                      className="hub-row hub-row--session hub-row--surface"
-                      data-testid={`hub-open-side-chat-${entry.sessions[0].id}`}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        const session = entry.sessions[0];
-                        if (!session) return;
-                        queueHubSessionSurface({
-                          projectId: entry.project.id,
-                          kind: 'side-chat',
-                          conversationId: session.id,
-                        });
-                        onOpenSession(session);
-                      }}
-                    >
-                      <Icon name="comment" size={13} />
-                      <span className="hub-row__title">{t('workspace.sideChatDefaultTitle')}</span>
-                      <span className="hub-row__meta">{entry.sessions[0].title}</span>
-                    </button>
-                  ) : null}
-                </div>
                 {sessionsStatus === 'loading' ? (
                   <p
                     role="presentation"

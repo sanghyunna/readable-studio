@@ -1,15 +1,11 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  consumeHubSessionSurface,
-  HubSessionTree,
-} from '../../src/components/hub/HubSessionTree';
+import { HubSessionTree } from '../../src/components/hub/HubSessionTree';
 import { FileWorkspace } from '../../src/components/FileWorkspace';
 import type { HubProjectNode } from '../../src/components/hub/types';
-import { createTerminal } from '../../src/state/projects';
 
 vi.mock('../../src/state/projects', async () => {
   const actual = await vi.importActual<typeof import('../../src/state/projects')>(
@@ -60,111 +56,22 @@ afterEach(() => {
 });
 
 describe('Hub session surface handoff', () => {
-  it('exposes project-scoped terminal and side-chat entries in the session tree', () => {
-    const onOpenProject = vi.fn();
-    const onOpenSession = vi.fn();
+  it('omits terminal and side-chat launchers while retaining ordinary sessions', () => {
     render(
       <HubSessionTree
         projects={[PROJECT]}
         currentSessionId={null}
-        onOpenProject={onOpenProject}
-        onOpenSession={onOpenSession}
+        onOpenProject={vi.fn()}
+        onOpenSession={vi.fn()}
         onNewSession={vi.fn()}
       />,
     );
 
     expect(screen.getByTestId('hub-new-session-p1')).toBeTruthy();
-    fireEvent.click(screen.getByTestId('hub-new-terminal-p1'));
-    expect(onOpenProject).toHaveBeenCalledWith(PROJECT);
-    // The handoff is now an addressed, perishable envelope rather than a bare
-    // request: the deadline is what stops a collected request from being applied
-    // long after the navigation that queued it. See HubSessionTree.
-    expect(consumeHubSessionSurface('p1')).toEqual({
-      request: { projectId: 'p1', kind: 'terminal' },
-      expiresAt: expect.any(Number),
-    });
-
-    fireEvent.click(screen.getByTestId('hub-open-side-chat-c1'));
-    expect(onOpenSession).toHaveBeenCalledWith(PROJECT.sessions[0]);
-    expect(consumeHubSessionSurface('p1')).toEqual({
-      request: { projectId: 'p1', kind: 'side-chat', conversationId: 'c1' },
-      expiresAt: expect.any(Number),
-    });
-  });
-
-  it.each([
-    {
-      kind: 'terminal',
-      actionTestId: 'hub-new-terminal-p1',
-      expectedTab: 'terminal:term-tree',
-    },
-    {
-      kind: 'side-chat',
-      actionTestId: 'hub-open-side-chat-c1',
-      expectedTab: 'chat:c1',
-    },
-  ] as const)('carries the real $kind click through navigation into FileWorkspace', async ({
-    kind,
-    actionTestId,
-    expectedTab,
-  }) => {
-    vi.mocked(createTerminal).mockResolvedValue({
-      id: 'term-tree',
-      projectId: 'p1',
-      cwd: 'D:/project',
-      shell: 'powershell.exe',
-      cols: 80,
-      rows: 24,
-      status: 'running',
-      createdAt: 1,
-      updatedAt: 1,
-      exitCode: null,
-      signal: null,
-    });
-    const onOpenProject = vi.fn();
-    const onOpenSession = vi.fn();
-    const tree = render(
-      <HubSessionTree
-        projects={[PROJECT]}
-        currentSessionId={null}
-        onOpenProject={onOpenProject}
-        onOpenSession={onOpenSession}
-        onNewSession={vi.fn()}
-      />,
-    );
-
-    // This callback is the production route boundary: click first, then unmount
-    // the hub as navigation does. Nothing consumes or reconstructs the handoff.
-    fireEvent.click(screen.getByTestId(actionTestId));
-    if (kind === 'terminal') {
-      expect(onOpenProject).toHaveBeenCalledWith(PROJECT);
-    } else {
-      expect(onOpenSession).toHaveBeenCalledWith(PROJECT.sessions[0]);
-    }
-    tree.unmount();
-
-    const onTabsStateChange = vi.fn();
-    const workspace = render(
-      <FileWorkspace
-        {...workspaceProps}
-        tabsState={{ tabs: [], active: null }}
-        onTabsStateChange={onTabsStateChange}
-      />,
-    );
-    workspace.rerender(
-      <FileWorkspace
-        {...workspaceProps}
-        tabsState={{ tabs: [], active: null, hasSavedState: true }}
-        onTabsStateChange={onTabsStateChange}
-      />,
-    );
-
-    await waitFor(() => {
-      expect(onTabsStateChange).toHaveBeenCalledWith({
-        tabs: [expectedTab],
-        active: expectedTab,
-      });
-    });
+    expect(screen.queryByTestId('hub-new-terminal-p1')).toBeNull();
+    expect(screen.queryByTestId('hub-open-side-chat-c1')).toBeNull();
+    expect(screen.getByTestId('hub-session-c1')).toBeTruthy();
+    expect(screen.getByTestId('hub-session-c2')).toBeTruthy();
   });
 
   it('keeps multiple concurrent terminal and side-chat sessions switchable and closable', () => {

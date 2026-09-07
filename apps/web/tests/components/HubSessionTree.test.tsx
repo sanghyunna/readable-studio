@@ -167,7 +167,8 @@ describe('HubSessionTree', () => {
     expect(screen.getByTestId('hub-project-loading')).toBe(row);
     expect(row.getAttribute('aria-expanded')).toBe('true');
     expect(onOpenProject).not.toHaveBeenCalled();
-    expect(screen.getByTestId('hub-new-terminal-loading')).toBeTruthy();
+    expect(screen.queryByTestId('hub-new-terminal-loading')).toBeNull();
+    expect(screen.getByTestId('hub-sessions-loading-loading')).toBeTruthy();
   });
 
   it('opens a session on click without an intermediate view', () => {

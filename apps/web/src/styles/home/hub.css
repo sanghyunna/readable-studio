@@ -755,32 +755,6 @@
   min-height: 32px;
 }
 
-.hub-tree__surface-actions {
-  display: grid;
-  gap: 2px;
-  padding-block: 3px;
-}
-
-.hub-row--surface {
-  width: 100%;
-  border: 0;
-  background: transparent;
-  box-shadow: inset 0 1px color-mix(in srgb, var(--bg-elevated) 38%, transparent);
-  font: inherit;
-}
-
-.hub-row--surface > svg {
-  flex: none;
-  color: var(--text-soft);
-}
-
-.hub-row--surface .hub-row__meta {
-  max-width: 42%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .hub-row--session .hub-row__title {
   font-size: 12.5px;
   font-weight: 450;
