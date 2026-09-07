@@ -827,6 +827,9 @@ test('grok-build omits effort for default/build models but keeps it for reasonin
   const buildArgs = grokBuild.buildArgs('', [], [], { model: 'grok-build', reasoning: 'high' }, { promptFilePath });
   assert.equal(buildArgs.includes('--effort'), false);
 
+  const nonReasoningArgs = grokBuild.buildArgs('', [], [], { model: 'grok-4.20-non-reasoning', reasoning: 'high' }, { promptFilePath });
+  assert.equal(nonReasoningArgs.includes('--effort'), false);
+
   const reasoningArgs = grokBuild.buildArgs('', [], [], { model: 'grok-4.20-reasoning', reasoning: 'high' }, { promptFilePath });
   assert.deepEqual(reasoningArgs, [
     '--prompt-file',

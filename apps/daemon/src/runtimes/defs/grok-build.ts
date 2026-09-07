@@ -19,7 +19,7 @@ export function parseGrokBuildModels(stdout: string): RuntimeModelOption[] {
 
 function grokModelSupportsReasoningEffort(model: string | null | undefined): boolean {
   if (!model || model === DEFAULT_MODEL_OPTION.id || model === 'grok-build') return false;
-  return /reasoning/i.test(model);
+  return /reasoning/i.test(model) && !/non-reasoning/i.test(model);
 }
 
 // xAI's first-party CLI agent — https://x.ai/cli — distributed as the
