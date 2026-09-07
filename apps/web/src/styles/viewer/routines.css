@@ -100,113 +100,149 @@
 }
 
 /* ----- Toast (#451) ---------------------------------------------------- */
-/* Single transient bottom-center toast for project-scoped actions. */
-.readable-studio-toast {
-  position: fixed;
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%);
-  max-width: 480px;
-  padding: 10px 14px;
-  border-radius: var(--radius-sm, 4px);
-  background: var(--text-strong);
-  color: var(--bg, var(--white));
-  font-size: 12.5px;
-  line-height: 1.4;
-  box-shadow: 0 4px 12px color-mix(in srgb, var(--black) 18%, transparent);
-  z-index: 1000;
-  pointer-events: auto;
-}
-.readable-studio-toast.placement-top {
-  top: 64px;
-  bottom: auto;
+/* Single transient toast for project-scoped actions.
+
+   Geometry and the resting surface are NOT declared here. `home/hub.css` owns
+   the toast's approved glass treatment (fill, blur, radius, ink, shadow) and
+   centres it with `translate: -50% 0` off `inset-inline-start: 50%`. Because
+   that sheet is imported AFTER this one, anything declared twice would resolve
+   there anyway - and `transform`/`translate` are SEPARATE properties, so a
+   duplicate `transform: translateX(-50%)` here would not lose the cascade, it
+   would COMPOUND, dragging the toast a full width off centre. This block is
+   therefore strictly the parts hub.css does not supply: tones, the icon, the
+   top placement, the details/code/dismiss bodies, and the animations. */
+/* hub.css pins the default placement with the LOGICAL `inset-block-end`, so the
+   top placement must clear that same property - a physical `bottom: auto` maps
+   to the same used value in a horizontal writing mode but would silently stop
+   overriding if the sheet ever set `inset-block-end` under a vertical mode. */
+.readable-toast.placement-top {
+  inset-block-start: 64px;
+  inset-block-end: auto;
   z-index: 1200;
 }
-.readable-studio-toast.tone-success {
-  border: 1px solid color-mix(in srgb, var(--success) 42%, var(--border));
-  background: color-mix(in srgb, var(--success) 14%, var(--bg));
-  color: var(--text);
-  box-shadow:
-    0 4px 14px color-mix(in srgb, var(--black) 14%, transparent),
-    0 0 0 1px color-mix(in srgb, var(--success) 12%, transparent);
+/* Tones TINT the glass, they do not replace it. `.readable-toast.tone-success`
+   is specificity 0,2,0 and would out-rank hub.css's 0,1,0 glass rule, so any
+   `background`/`box-shadow` redeclared here would knock a success or error
+   toast back to a flat opaque plate while every neutral toast stayed glass.
+   The tint is applied as a `::before` overlay instead, leaving hub.css the
+   single owner of the surface itself. */
+.readable-toast.tone-success,
+.readable-toast.tone-error {
+  /* hub.css already makes the toast `position: fixed`, which is enough to
+     contain the absolutely-positioned tint. `isolation` keeps the negative
+     z-index overlay behind the content but inside the toast's own stack. */
+  isolation: isolate;
 }
-.readable-studio-toast.tone-error {
-  border: 1px solid color-mix(in srgb, var(--danger) 42%, var(--border));
-  background: color-mix(in srgb, var(--danger) 13%, var(--bg));
-  color: var(--text);
-  box-shadow:
-    0 4px 14px color-mix(in srgb, var(--black) 14%, transparent),
-    0 0 0 1px color-mix(in srgb, var(--danger) 12%, transparent);
+.readable-toast.tone-success::before,
+.readable-toast.tone-error::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
 }
-.readable-studio-toast-body {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.readable-toast.tone-success::before {
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--success) 30%, transparent);
 }
-.readable-studio-toast-icon {
+.readable-toast.tone-error::before {
+  background: color-mix(in srgb, var(--danger) 13%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 30%, transparent);
+}
+.readable-toast-icon {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
 }
-.readable-studio-toast.tone-success .readable-studio-toast-icon {
+.readable-toast.tone-success .readable-toast-icon {
   color: var(--success);
 }
-.readable-studio-toast.tone-error .readable-studio-toast-icon {
+.readable-toast.tone-error .readable-toast-icon {
   color: var(--danger);
 }
-.readable-studio-toast.tone-loading .readable-studio-toast-icon {
+.readable-toast.tone-loading .readable-toast-icon {
   color: var(--text-muted);
 }
 /* Entrance: gentle rise + fade (ease-out per the UI animation philosophy).
    Exit: the .leaving class plays a faster fade-out before onDismiss unmounts
-   the toast, so confirmations like "copied to clipboard" don't blink away. */
-.readable-studio-toast {
+   the toast, so confirmations like "copied to clipboard" don't blink away.
+
+   Both keyframe sets animate `translate`, never `transform`: hub.css centres
+   the toast with `translate: -50% 0`, so animating `transform` would stack a
+   second, independent offset on top of the centring instead of replacing it. */
+.readable-toast {
   animation: readable-toast-in 200ms cubic-bezier(0.23, 1, 0.32, 1);
 }
-.readable-studio-toast.leaving {
+.readable-toast.leaving {
   animation: readable-toast-out 140ms cubic-bezier(0.23, 1, 0.32, 1) forwards;
 }
+/* `pointer-events` is declared alongside `opacity` in these keyframes so the
+   two share one timeline and cannot desynchronise (it is a discrete animatable
+   property, so it flips at the offset rather than easing). The exit below is
+   the more dangerous of the pair: it runs with `forwards`, so its final
+   `opacity: 0` frame PERSISTS until the toast unmounts. Without the paired
+   `pointer-events: none` the toast would keep swallowing clicks aimed at
+   whatever sits beneath it, invisibly and indefinitely — not for one frame. */
 @keyframes readable-toast-in {
   from {
     opacity: 0;
-    transform: translateX(-50%) translateY(8px);
+    translate: -50% 8px;
+    pointer-events: none;
+  }
+  1% {
+    pointer-events: auto;
   }
   to {
     opacity: 1;
-    transform: translateX(-50%) translateY(0);
+    translate: -50% 0;
+    pointer-events: auto;
   }
 }
 @keyframes readable-toast-out {
   from {
     opacity: 1;
-    transform: translateX(-50%) translateY(0);
+    translate: -50% 0;
+    pointer-events: auto;
+  }
+  99% {
+    pointer-events: none;
   }
   to {
     opacity: 0;
-    transform: translateX(-50%) translateY(8px);
+    translate: -50% 8px;
+    pointer-events: none;
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .readable-studio-toast,
-  .readable-studio-toast.leaving {
+  .readable-toast,
+  .readable-toast.leaving {
     animation: none;
   }
 }
-.readable-studio-toast-message {
+/* `.readable-toast-body` and `.readable-toast-message` layout is owned by
+   hub.css; only the weight of the primary line is added here. */
+.readable-toast-message {
   font-weight: 500;
 }
-.readable-studio-toast-details {
+.readable-toast-details {
   margin-top: 4px;
   font-size: 11.5px;
   opacity: 0.85;
   font-weight: 400;
 }
-.readable-studio-toast-code {
+/* The code body and dismiss button were written for the ORIGINAL inverted
+   toast, whose plate was `var(--text-strong)` - which is why they tinted
+   themselves with `--white`. hub.css replaced that plate with a light glass
+   panel inked in `--text-strong`, so white-on-glass would be invisible. They
+   are re-expressed against the panel's own surface tokens. */
+.readable-toast-code {
   margin: 8px 0 0;
   padding: 8px 10px;
   border-radius: var(--radius-sm, 4px);
-  background: color-mix(in srgb, var(--white) 8%, transparent);
+  background: color-mix(in srgb, var(--text-strong) 8%, transparent);
+  color: var(--text-strong);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 11px;
   line-height: 1.45;
@@ -216,18 +252,18 @@
   overflow: auto;
   user-select: text;
 }
-.readable-studio-toast-dismiss {
+.readable-toast-dismiss {
   margin-top: 8px;
-  background: color-mix(in srgb, var(--white) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--white) 20%, transparent);
-  color: var(--bg, var(--white));
+  background: color-mix(in srgb, var(--text-strong) 8%, transparent);
+  border: 1px solid var(--border-strong);
+  color: var(--text-strong);
   font-size: 11.5px;
   padding: 4px 10px;
-  border-radius: var(--radius-sm, 4px);
+  border-radius: var(--radius-pill);
   cursor: pointer;
 }
-.readable-studio-toast-dismiss:hover {
-  background: color-mix(in srgb, var(--white) 18%, transparent);
+.readable-toast-dismiss:hover {
+  background: color-mix(in srgb, var(--text-strong) 14%, transparent);
 }
 
 /* ---------------- Routines (Settings → Automations) ---------------- */
@@ -2253,8 +2289,9 @@
   background: var(--bg);
 }
 @keyframes project-ds-picker-fullscreen-in {
-  from { opacity: 0; transform: scale(0.98); }
-  to { opacity: 1; transform: scale(1); }
+  from { opacity: 0; transform: scale(0.98); pointer-events: none; }
+  1% { pointer-events: auto; }
+  to { opacity: 1; transform: scale(1); pointer-events: auto; }
 }
 @media (max-width: 720px) {
   .project-ds-picker-body {
