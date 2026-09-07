@@ -2,7 +2,7 @@
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState, type ComponentProps } from 'react';
 import { act, cleanup, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -51,6 +51,31 @@ import { emptyManualEditStyles } from '../../src/edit-mode/types';
 import { readExpandedIndexCss } from '../helpers/read-expanded-css';
 
 const TEST_SNAPSHOT_DATA_URL = 'data:image/png;base64,c25hcHNob3Q=';
+
+async function renderFileViewerOnServer(props: ComponentProps<typeof FileViewer>) {
+  // The static imports above belong to jsdom. SSR must select the server hook
+  // at import time, without replacing HtmlViewer or PreviewDrawOverlay.
+  const browserWindow = window;
+  const browserDocument = document;
+  const consoleError = vi.spyOn(console, 'error');
+  const consoleWarn = vi.spyOn(console, 'warn');
+  vi.resetModules();
+  vi.stubGlobal('window', undefined);
+  vi.stubGlobal('document', undefined);
+  try {
+    const { FileViewer: ServerFileViewer } = await import('../../src/components/FileViewer');
+    const markup = renderToStaticMarkup(<ServerFileViewer {...props} />);
+    expect(consoleError).not.toHaveBeenCalled();
+    expect(consoleWarn).not.toHaveBeenCalled();
+    return markup;
+  } finally {
+    vi.stubGlobal('window', browserWindow);
+    vi.stubGlobal('document', browserDocument);
+    vi.resetModules();
+    consoleError.mockRestore();
+    consoleWarn.mockRestore();
+  }
+}
 
 afterEach(() => {
   cleanup();
@@ -866,7 +891,7 @@ describe('FileViewer SVG artifacts', () => {
     expect(secondFrame.getAttribute('src')).toBe('/api/projects/project-1/raw/page.html?v=1&r=0');
   });
 
-  it('URL-loads a plain HTML preview iframe instead of inlining via srcDoc', () => {
+  it('URL-loads a plain HTML preview iframe instead of inlining via srcDoc', async () => {
     const file = baseFile({
       name: 'page.html',
       path: 'page.html',
@@ -882,9 +907,12 @@ describe('FileViewer SVG artifacts', () => {
       },
     });
 
-    const markup = renderToStaticMarkup(
-      <FileViewer projectId="project-1" projectKind="prototype" file={file} liveHtml="<html><body>hi</body></html>" />,
-    );
+    const markup = await renderFileViewerOnServer({
+      projectId: 'project-1',
+      projectKind: 'prototype',
+      file,
+      liveHtml: '<html><body>hi</body></html>',
+    });
 
     expect(markup).toContain('data-testid="artifact-preview-frame"');
     expect(markup).toContain('data-readable-render-mode="url-load"');
@@ -1449,7 +1477,7 @@ describe('FileViewer SVG artifacts', () => {
     expect(onOpenFileReplacing).toHaveBeenCalledWith('backups.html', 'icons.jsx');
   });
 
-  it('keeps decks on the srcDoc path so the deck postMessage bridge can run', () => {
+  it('keeps decks on the srcDoc path so the deck postMessage bridge can run', async () => {
     const file = baseFile({
       name: 'deck.html',
       path: 'deck.html',
@@ -1465,12 +1493,13 @@ describe('FileViewer SVG artifacts', () => {
       },
     });
 
-    const markup = renderToStaticMarkup(
-      <FileViewer projectId="project-1" projectKind="prototype" file={file}
-        isDeck
-        liveHtml={'<html><body><section class="slide">one</section></body></html>'}
-      />,
-    );
+    const markup = await renderFileViewerOnServer({
+      projectId: 'project-1',
+      projectKind: 'prototype',
+      file,
+      isDeck: true,
+      liveHtml: '<html><body><section class="slide">one</section></body></html>',
+    });
 
     expect(markup).toContain('data-testid="artifact-preview-frame"');
     expect(markup).toContain('data-readable-render-mode="srcdoc"');
@@ -1480,7 +1509,7 @@ describe('FileViewer SVG artifacts', () => {
     expect(markup).toContain('sandbox="allow-scripts allow-downloads"');
   });
 
-  it('falls back to srcDoc when the HTML body looks deck-shaped even without an isDeck hint', () => {
+  it('falls back to srcDoc when the HTML body looks deck-shaped even without an isDeck hint', async () => {
     const file = baseFile({
       name: 'inferred.html',
       path: 'inferred.html',
@@ -1496,11 +1525,12 @@ describe('FileViewer SVG artifacts', () => {
       },
     });
 
-    const markup = renderToStaticMarkup(
-      <FileViewer projectId="project-1" projectKind="prototype" file={file}
-        liveHtml={'<html><body><section class="slide">one</section><section class="slide">two</section></body></html>'}
-      />,
-    );
+    const markup = await renderFileViewerOnServer({
+      projectId: 'project-1',
+      projectKind: 'prototype',
+      file,
+      liveHtml: '<html><body><section class="slide">one</section><section class="slide">two</section></body></html>',
+    });
 
     expect(markup).toContain('data-readable-render-mode="srcdoc"');
     expect(markup).toContain('data-readable-render-mode="srcdoc" data-readable-active="true"');

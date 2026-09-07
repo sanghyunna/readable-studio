@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type CSSProperties, type PointerEvent, type ReactNode, type WheelEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type CSSProperties, type PointerEvent, type ReactNode, type WheelEvent } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 
 import { Icon } from './Icon';
@@ -7,6 +7,7 @@ import { useT } from '../i18n';
 import type { PreviewVisualMarkKind } from '../types';
 import { requestPreviewSnapshot } from '../runtime/exports';
 import { isImeComposing } from '../utils/imeComposing';
+import { useBrowserLayoutEffect } from '../hooks/useBrowserLayoutEffect';
 
 interface Point { x: number; y: number }
 interface Stroke { points: Point[] }
@@ -704,7 +705,7 @@ export function PreviewDrawOverlay({
   // first `active` paint is already portaled — with a post-paint effect the clipped
   // inline toolbar would flash for one frame before the host is found.
   const [toolbarHost, setToolbarHost] = useState<HTMLElement | null>(null);
-  useLayoutEffect(() => {
+  useBrowserLayoutEffect(() => {
     if (!active) {
       setToolbarHost(null);
       return;

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { Button, Input, Select, VisuallyHidden } from '@readable-studio/components';
 import { APP_CHROME_FILE_ACTIONS_ID, APP_CHROME_FILE_ACTIONS_SELECTOR } from './AppChromeHeader';
@@ -94,6 +94,7 @@ import { RemixIcon } from './RemixIcon';
 import { SocialShareGrid } from './SocialShareGrid';
 import { Toast } from './Toast';
 import { PreviewDrawOverlay, type DrawToolbarElement } from './PreviewDrawOverlay';
+import { useBrowserLayoutEffect } from '../hooks/useBrowserLayoutEffect';
 import {
   buildBoardCommentAttachments,
   commentSnapshotEqual,
@@ -7115,7 +7116,7 @@ function HtmlViewer({
   // Track whether the selected-object overlay surface owned focus right before a
   // target change or iframe reload, then restore it onto the new surface. This
   // keeps Arrow/Escape routed to the overlay after the iframe re-renders.
-  useLayoutEffect(() => {
+  useBrowserLayoutEffect(() => {
     return () => {
       if (!manualEditMode) return;
       // Recognize focus on ANY selected-object surface (the move frame OR the
