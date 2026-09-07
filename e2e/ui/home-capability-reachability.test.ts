@@ -511,6 +511,13 @@ function composer(page: Page) {
   return page.locator('.home-hero [contenteditable="true"]').first();
 }
 
+async function replaceComposerText(page: Page, text: string) {
+  const input = composer(page);
+  await input.click();
+  await input.press('Control+A');
+  await input.pressSequentially(text);
+}
+
 async function openMention(page: Page, query = '@') {
   const control = page.getByTestId('home-hero-context-control');
   await visible(control, 'context-control');
@@ -522,7 +529,7 @@ async function openMention(page: Page, query = '@') {
 async function operate(page: Page, kind: AssertionKind, control: Control) {
   const id = control.id;
   switch (kind) {
-    case 'composer': { const input = composer(page); await visible(input, id); await input.fill('operable composer'); await expect(input).toContainText('operable composer').catch(async () => expect(input).toHaveValue('operable composer')); return; }
+    case 'composer': { const input = composer(page); await visible(input, id); await replaceComposerText(page, 'operable composer'); await expect(input).toContainText('operable composer'); return; }
     case 'design-system': {
       const panel = await openProjectCreationPanel(page, id);
       const picker = panel.getByTestId('design-system-trigger');
@@ -545,7 +552,7 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
       expect((await request).postDataJSON()).toMatchObject({ designSystemId: 'airbnb' });
       return;
     }
-    case 'submit': { const input = composer(page); await visible(input, id); await input.fill('reachability submit'); const button = page.getByTestId('hub-send').or(page.getByTestId('home-hero-submit')).first(); await expect(button).toBeEnabled(); const request = page.waitForRequest(r => r.method() === 'POST' && new URL(r.url()).pathname === '/api/projects'); await button.click(); await request; return; }
+    case 'submit': { const input = composer(page); await visible(input, id); await replaceComposerText(page, 'reachability submit'); const button = page.getByTestId('hub-send').or(page.getByTestId('home-hero-submit')).first(); await expect(button).toBeEnabled(); const request = page.waitForRequest(r => r.method() === 'POST' && new URL(r.url()).pathname === '/api/projects'); await button.click(); expect((await request).postDataJSON()).toMatchObject({ pendingPrompt: 'reachability submit' }); return; }
     case 'file-input': await stageFile(page); return;
     case 'file-remove': await stageFile(page); { const remove = page.getByRole('button', { name: /Remove reachability\.txt/i }); await visible(remove, id); await remove.click(); await expect(page.getByTestId('home-hero-staged-files')).toHaveCount(0); } return;
     case 'preview-close': await stageFile(page, 'pixel.png', 'image/png'); { const preview = page.getByRole('button', { name: /Preview pixel\.png/i }); const dialog = page.getByRole('dialog', { name: 'pixel.png' }); await preview.click(); await visible(dialog, id); await dialog.getByRole('button', { name: /Close/i }).click(); await expect(dialog).toHaveCount(0); await preview.click(); const box = await dialog.boundingBox(); expect(box).not.toBeNull(); if (box) await page.mouse.click(box.x + box.width - 3, box.y + box.height - 3); await expect(dialog).toHaveCount(0); await preview.click(); await visible(dialog, id); await page.keyboard.press('Escape'); await expect(dialog).toHaveCount(0); } return;
@@ -603,7 +610,7 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
       page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/api/projects'),
       page.getByTestId('home-hero-submit').click(),
     ]); expect(applyRequest.postDataJSON()).toMatchObject({ inputs: { topic: 'routing observables' } }); expect(creationRequest.postDataJSON()).toMatchObject({ pluginId: 'localized-plugin', appliedPluginSnapshotId: 'snap-localized-plugin', pluginInputs: { topic: 'routing observables' } }); } return; }
-    case 'skill-clear': case 'skill-route': { await openMention(page); const tab = page.getByRole('tab', { name: /Skills/i }); await tab.click(); const option = page.getByRole('option', { name: /QA Skill/i }); await option.click(); const chip = page.getByTestId('home-hero-active-skill'); await visible(chip, id); if (kind === 'skill-clear') { await chip.getByRole('button').click(); await expect(chip).toHaveCount(0); } else { await composer(page).fill('skill routed creation'); const payload = await captureCreation(page); expect(payload).toMatchObject({ skillId: 'qa-skill', pendingPrompt: 'skill routed creation' }); expect(payload).not.toHaveProperty('pluginId'); } return; }
+    case 'skill-clear': case 'skill-route': { await openMention(page); const tab = page.getByRole('tab', { name: /Skills/i }); await tab.click(); const option = page.getByRole('option', { name: /QA Skill/i }); await option.click(); const chip = page.getByTestId('home-hero-active-skill'); await visible(chip, id); if (kind === 'skill-clear') { await chip.getByRole('button').click(); await expect(chip).toHaveCount(0); } else { await replaceComposerText(page, 'skill routed creation'); const payload = await captureCreation(page); expect(payload).toMatchObject({ skillId: 'qa-skill', pendingPrompt: 'skill routed creation' }); expect(payload).not.toHaveProperty('pluginId'); } return; }
     case 'context-clear': { await openMention(page, '@local'); const option = page.getByRole('option', { name: /Localized Plugin/i }); await option.hover(); const details = page.getByTestId('home-hero-plugin-hover-card').getByRole('button'); await visible(details, id); await details.click(); await page.getByTestId('plugin-details-use-localized-plugin').click(); const chip = page.getByTestId('home-hero-active-plugin'); await visible(chip, id); const clear = chip.getByRole('button', { name: /Clear active plugin/i }); await visible(clear, id); await clear.click(); await expect(chip).toHaveCount(0); return; }
     // Session mode is a creation-time choice, so it lives in the New Project
     // flow rather than the Hub composer footer. The capability being pinned is
@@ -626,7 +633,7 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
     case 'resolution': await operateFooter(page, 'resolution', /4k/i, id); return;
     case 'view-all': { const library = page.getByTestId('hub-library'); await visible(library, id); await library.click(); const button = page.getByTestId('hub-library-projects'); await visible(button, id); await button.click(); await expect(page).toHaveURL(/\/projects$/); return; }
     case 'recent-card': { await page.getByTestId('hub-open-palette').click(); const input = page.getByTestId('hub-palette-input'); await input.fill('Zulu Running Project'); const card = page.getByTestId('hub-palette-item-project-qa-running'); await visible(card, id); await card.click(); await expect(page).toHaveURL(/\/projects\/qa-running/); return; }
-    case 'replace-cancel': case 'replace-confirm': { await chooseType(page, 'prototype'); await composer(page).fill('keep this prompt'); const presets = page.getByTestId('home-hero-plugin-presets'); await visible(presets, id); const preset = presets.locator('[data-testid="home-hero-plugin-preset"]').first(); await preset.click(); const dialog = page.getByRole('dialog'); await visible(dialog, id); const action = kind === 'replace-cancel' ? dialog.getByRole('button', { name: /Cancel/i }) : dialog.getByRole('button', { name: /Replace/i }); await action.click(); await expect(dialog).toHaveCount(0); return; }
+    case 'replace-cancel': case 'replace-confirm': { await chooseType(page, 'prototype'); await replaceComposerText(page, 'keep this prompt'); const presets = page.getByTestId('home-hero-plugin-presets'); await visible(presets, id); const preset = presets.locator('[data-testid="home-hero-plugin-preset"]').first(); await preset.click(); const dialog = page.getByRole('dialog'); await visible(dialog, id); const action = kind === 'replace-cancel' ? dialog.getByRole('button', { name: /Cancel/i }) : dialog.getByRole('button', { name: /Replace/i }); await action.click(); await expect(dialog).toHaveCount(0); return; }
     case 'drop-file': case 'paste-file': { const input = composer(page); await visible(input, id); await input.evaluate((element, eventKind) => {
       const file = new File(['fixture'], `${eventKind}.txt`, { type: 'text/plain' });
       const dataTransfer = new DataTransfer(); dataTransfer.items.add(file);

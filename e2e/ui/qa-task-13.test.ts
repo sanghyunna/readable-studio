@@ -341,9 +341,36 @@ test('canonical start proves R1-R11 and R14 from rendered paint and geometry', a
   await expect(newProjectModal).toHaveCount(0);
   await expect(page.getByTestId('hub-live-time')).toBeVisible(); await expect(page.getByTestId('hub-live-strip').locator('svg')).toBeVisible();
   const brandHome = page.locator('.hub__brand-home'); await expect(brandHome).toHaveCSS('opacity', '0');
+  // hub.css raises the Home label to opacity 1 only under `.hub__brand:hover` /
+  // `:focus-visible`, so R10 has to sample each state while that state still
+  // holds. Re-reading the label later - after focus has advanced to
+  // `hub-new-project` and the pointer has moved to the live strip - would record
+  // the resting value under a hover/focus claim.
+  const brandHomeRestOpacity = await brandHome.evaluate((node) => getComputedStyle(node).opacity);
   await page.getByTestId('hub-brand').hover(); await expect(brandHome).toHaveCSS('opacity', '1');
-  await page.mouse.move(900, 700); await page.getByTestId('hub-rail-toggle').focus(); await page.keyboard.press('Shift+Tab');
+  const brandHomeHoverOpacity = await brandHome.evaluate((node) => getComputedStyle(node).opacity);
+  // The rail collapse toggle is portalled into the 36px window-chrome row
+  // (`#app-window-chrome-rail-toggle`, App.tsx), which precedes the shell body in
+  // DOM order, so it is the document's FIRST tab stop and the brand is the second.
+  // Traversal therefore runs forwards, toggle -> brand; a Shift+Tab from the
+  // toggle correctly leaves the document. Both facts are asserted so a regression
+  // that reorders the chrome, or that strands either control, fails loudly.
+  await page.mouse.move(900, 700);
+  await page.evaluate(() => { document.body.focus(); (document.activeElement as HTMLElement | null)?.blur(); });
+  await page.keyboard.press('Tab');
+  await expect(page.getByTestId('hub-rail-toggle')).toBeFocused();
+  await page.keyboard.press('Tab');
   await expect(page.getByTestId('hub-brand')).toBeFocused(); await expect(brandHome).toHaveCSS('opacity', '1');
+  const brandHomeFocusOpacity = await brandHome.evaluate((node) => getComputedStyle(node).opacity);
+  // Keyboard traversal must keep reaching the rail's own contents, not stop at the brand.
+  await page.keyboard.press('Tab');
+  await expect(page.getByTestId('hub-new-project')).toBeFocused();
+  const chromeTabOrder = await page.evaluate(() => {
+    const focusable = [...document.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input, select, textarea, [tabindex]')]
+      .filter((node) => node.tabIndex >= 0 && node.offsetParent !== null);
+    return focusable.slice(0, 3).map((node) => node.dataset.testid ?? node.tagName.toLowerCase());
+  });
+  expect(chromeTabOrder).toEqual(['hub-rail-toggle', 'hub-brand', 'hub-new-project']);
   const live = page.getByTestId('hub-live-strip'); const arrow = live.locator('.hub__live-arrow');
   const liveBefore = await geometry(live); const arrowBefore = await geometry(arrow); await live.hover();
   await live.evaluate((node) =>
@@ -385,7 +412,7 @@ test('canonical start proves R1-R11 and R14 from rendered paint and geometry', a
     ['R6', railBrandCount === 1 && railBrandVisible && visibleBrandMarks === 1 && visibleDuplicateBrands === 0, `railBrands=${railBrandCount}; railBrandVisible=${railBrandVisible}; visibleMarks=${visibleBrandMarks}; visibleDuplicateBrands=${visibleDuplicateBrands}`, 'one visible rail brand and mark with the duplicate hero brand absent'],
     ['R7', systematicBlueAccent, `controls=${JSON.stringify(accentMeasurements)}; colorKeys=${accentColorKeys.join('|')}; minContrast=${minimumAccentContrast.toFixed(3)}`, 'composer control icons share one blue-dominant accent with measurable contrast'],
     ['R8', composerAndSendPainted, `composer=${JSON.stringify(composerBounds)}; background=${composerBackground}; send=${JSON.stringify(sendBounds)}; contained=${sendContained}; sendVisible=${sendVisible}; actionVisible=${sendActionVisible}`, 'finite painted composer bounds contain a visible send action'],
-    ['R10', await brandHome.evaluate((node) => getComputedStyle(node).opacity) === '1', 'restOpacity=0; hover/focusOpacity=1', 'brand Home label responds to pointer and keyboard'],
+    ['R10', brandHomeRestOpacity === '0' && brandHomeHoverOpacity === '1' && brandHomeFocusOpacity === '1', `restOpacity=${brandHomeRestOpacity}; hoverOpacity=${brandHomeHoverOpacity}; focusOpacity=${brandHomeFocusOpacity}`, 'brand Home label responds to pointer and keyboard'],
     ['R11', liveLift >= 0.75 && liveLift <= 1.25 && arrowShift >= 1.75 && arrowShift <= 2.25 && liveAfter.shadow !== liveBefore.shadow && liveBefore.shadow.includes('0px 2px 10px') && liveAfter.shadow.includes('0px 6px 18px'), `liveLift=${liveLift.toFixed(2)}px; arrowShift=${arrowShift.toFixed(2)}px; restShadow=${liveBefore.shadow}; hoverShadow=${liveAfter.shadow}`, 'settled live strip lifts 1px, arrow advances 2px, and hover material strengthens'],
     ['R14', await footerButtons.count() === 1 && await modeTrigger.count() === 0 && relocatedModeAvailable && agentModelAvailable, `footerButtons=${await footerButtons.count()}; hubModeCount=${await modeTrigger.count()}; relocatedModeAvailable=${relocatedModeAvailable}; agentModelAvailable=${agentModelAvailable}`, 'Hub omits the mode chip while New Project exposes both creation-mode cards alongside context and agent-model controls'],
 
@@ -423,6 +450,7 @@ test('filtered, busy, and error are behavioral states', async ({ page, request }
   const alert = page.getByTestId('home-hero-error'); await expect(alert).toHaveCount(1); await expect(alert).toBeVisible();
   await expect(alert).toHaveText('무엇을 만들지 조금 더 자세히 적어 주세요.');
   await expect(editor).toHaveAttribute('aria-invalid', 'true');
+  const ariaInvalidWhileErrored = await editor.getAttribute('aria-invalid');
   const errorPaint = await alert.evaluate((node) => {
     const canvas = document.createElement('canvas'); canvas.width = 1; canvas.height = 1;
     const context = canvas.getContext('2d', { willReadFrequently: true });
@@ -446,7 +474,8 @@ test('filtered, busy, and error are behavioral states', async ({ page, request }
   expect(dangerPaint).toBeTruthy(); expect(errorPaint.shadow).not.toBe('none');
   expect(errorPaint.visible).toBeTruthy(); expect(errorPaint.below).toBeTruthy(); expect(errorPaint.aligned).toBeTruthy();
   await captureCanonical(page, 'error'); await editor.fill('abcd'); await expect(editor).not.toHaveAttribute('aria-invalid', 'true'); await expect(alert).toHaveCount(0);
-  recordRegion({ region: 'R13', state: 'error', pass: dangerPaint && errorPaint.visible && errorPaint.below && errorPaint.aligned && errorPaint.shadow !== 'none', anchor: `color=${errorPaint.color}; rgba=${errorPaint.rgba.red},${errorPaint.rgba.green},${errorPaint.rgba.blue},${errorPaint.rgba.alpha}; below=${errorPaint.below}; aligned=${errorPaint.aligned}; ariaInvalid=true`, observation: 'red-dominant sibling alert below the ringed composer clears on input' });
+  const ariaInvalidAfterInput = await editor.getAttribute('aria-invalid');
+  recordRegion({ region: 'R13', state: 'error', pass: dangerPaint && errorPaint.visible && errorPaint.below && errorPaint.aligned && errorPaint.shadow !== 'none' && ariaInvalidWhileErrored === 'true' && ariaInvalidAfterInput !== 'true', anchor: `color=${errorPaint.color}; rgba=${errorPaint.rgba.red},${errorPaint.rgba.green},${errorPaint.rgba.blue},${errorPaint.rgba.alpha}; below=${errorPaint.below}; aligned=${errorPaint.aligned}; ariaInvalid=${ariaInvalidWhileErrored}->${ariaInvalidAfterInput ?? 'absent'}`, observation: 'red-dominant sibling alert below the ringed composer clears on input' });
 
   let release: (() => void) | undefined; const gate = new Promise<void>((resolve) => { release = resolve; });
   let projectPostRequests = 0;

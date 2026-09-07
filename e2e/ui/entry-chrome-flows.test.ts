@@ -238,9 +238,10 @@ test('[P1] plugin registry creation remains reachable through Hub Library', asyn
 test('[P0] @critical Hub composer keeps Shift+Enter as a newline and submits on Enter', async ({ page }) => {
   await gotoEntryHome(page);
   const input = page.getByTestId('home-hero-input');
-  await input.fill('Line one');
+  await input.click();
+  await input.pressSequentially('Line one');
   await input.press('Shift+Enter');
-  await input.type('Line two');
+  await input.pressSequentially('Line two');
   const projectRequest = page.waitForRequest(isCreateProjectRequest);
   await input.press('Enter');
   expect((await projectRequest).postDataJSON()).toMatchObject({ pendingPrompt: 'Line one\nLine two' });

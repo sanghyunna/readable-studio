@@ -1,7 +1,9 @@
 import { readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
+import ts from 'typescript';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 const requiredRegions = [
@@ -29,6 +31,104 @@ function evidence(
 ) {
   return { region, state, pass, anchor: 'test-anchor', observation: 'test-observation' } as const;
 }
+
+const specPath = resolve(dirname(fileURLToPath(import.meta.url)), '../ui/qa-task-13.test.ts');
+
+interface AnchorSite {
+  readonly label: string;
+  readonly anchor: ts.Expression;
+}
+
+/**
+ * Collects the `anchor` expression of every `recordRegion` record in the Task 13
+ * spec, covering both call shapes: a direct object literal, and the
+ * `[region, pass, anchor, observation]` tuples fed through the shared loop.
+ */
+function collectAnchorSites(): AnchorSite[] {
+  const source = ts.createSourceFile(
+    specPath,
+    readFileSync(specPath, 'utf8'),
+    ts.ScriptTarget.ESNext,
+    true,
+    ts.ScriptKind.TS,
+  );
+  const sites: AnchorSite[] = [];
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isCallExpression(node)
+      && ts.isIdentifier(node.expression)
+      && node.expression.text === 'recordRegion'
+    ) {
+      const [argument] = node.arguments;
+      if (!argument || !ts.isObjectLiteralExpression(argument)) {
+        throw new Error(`recordRegion is called without an object literal at ${specPath}`);
+      }
+      const named = (name: string): ts.ObjectLiteralElementLike | undefined =>
+        argument.properties.find(
+          (property) =>
+            (ts.isPropertyAssignment(property) || ts.isShorthandPropertyAssignment(property))
+            && ts.isIdentifier(property.name)
+            && property.name.text === name,
+        );
+      const anchorProperty = named('anchor');
+      if (!anchorProperty) throw new Error(`recordRegion record without an anchor at ${specPath}`);
+      if (ts.isPropertyAssignment(anchorProperty)) {
+        const regionProperty = named('region');
+        const label =
+          regionProperty
+          && ts.isPropertyAssignment(regionProperty)
+          && ts.isStringLiteral(regionProperty.initializer)
+            ? regionProperty.initializer.text
+            : 'unknown-region';
+        sites.push({ label, anchor: anchorProperty.initializer });
+      }
+    }
+    if (ts.isArrayLiteralExpression(node) && node.elements.length === 4) {
+      const [region, , anchor] = node.elements;
+      if (region && anchor && ts.isStringLiteral(region) && /^R\d+$/u.test(region.text)) {
+        sites.push({ label: region.text, anchor });
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return sites;
+}
+
+describe('Task 13 region anchors report what they measured', () => {
+  test('every anchor is a template built from measured values', () => {
+    const sites = collectAnchorSites();
+    expect(sites).toHaveLength(19);
+    const constant = sites.filter(
+      ({ anchor }) => !ts.isTemplateExpression(anchor) || anchor.templateSpans.length === 0,
+    );
+    expect(constant.map(({ label }) => label)).toEqual([]);
+  });
+
+  test('no anchor asserts a value the record never substitutes', () => {
+    const claim = /[A-Za-z_][\w-]*=/gu;
+    const offenders: string[] = [];
+    for (const { label, anchor } of collectAnchorSites()) {
+      if (!ts.isTemplateExpression(anchor)) continue;
+      const spans = anchor.templateSpans;
+      // Every chunk except the final one is immediately followed by a
+      // substitution; a `key=` claim is honest only when the measured value is
+      // what comes next, so it must sit at the very end of its chunk. The final
+      // chunk has nothing after it and therefore may not open a claim at all.
+      const substituted = [anchor.head.text, ...spans.slice(0, -1).map((span) => span.literal.text)];
+      const tail = spans.at(-1)?.literal.text ?? '';
+      for (const chunk of substituted) {
+        for (const match of chunk.matchAll(claim)) {
+          if (match.index + match[0].length !== chunk.length) {
+            offenders.push(`${label}: hardcoded ${match[0]}`);
+          }
+        }
+      }
+      for (const match of tail.matchAll(claim)) offenders.push(`${label}: hardcoded ${match[0]}`);
+    }
+    expect(offenders).toEqual([]);
+  });
+});
 
 describe('Task 13 region report lifecycle', () => {
   test('assembles and validates region evidence across restarted worker modules', async () => {
