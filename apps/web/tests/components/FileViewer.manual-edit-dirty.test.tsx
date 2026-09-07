@@ -187,6 +187,27 @@ describe('FileViewer manual edit dirty-state persistence', () => {
     });
   });
 
+  it('explains the block with a toast when another tool is clicked while dirty', async () => {
+    const fetchMock = buildFetchMock();
+    vi.stubGlobal('fetch', fetchMock);
+    render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={htmlSource()} />);
+
+    clickManualTool('manual-edit-mode-toggle');
+    await selectManualEditTarget(containerTarget());
+    fireEvent.change(screen.getByLabelText('Width'), { target: { value: '200' } });
+
+    expect(screen.queryByRole('alert')).toBeNull();
+
+    clickManualTool('board-mode-toggle');
+
+    const toast = await screen.findByRole('alert');
+    expect(toast.textContent).toContain('You have unsaved edits');
+    // Still blocked: the tool switch must not have happened.
+    expect(screen.getByTestId('manual-edit-mode-toggle').getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByTestId('board-mode-toggle').getAttribute('aria-pressed')).toBe('false');
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
+  });
+
   it('shows Save and Discard actions while dirty', async () => {
     const fetchMock = buildFetchMock();
     vi.stubGlobal('fetch', fetchMock);

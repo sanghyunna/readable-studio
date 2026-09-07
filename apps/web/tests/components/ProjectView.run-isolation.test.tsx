@@ -40,6 +40,7 @@ const patchProject = vi.fn();
 const saveTabs = vi.fn();
 const playSound = vi.fn();
 const showCompletionNotification = vi.fn();
+const commentDispatchAccepted = vi.fn();
 
 vi.mock('../../src/i18n', () => ({
   useI18n: () => ({
@@ -132,7 +133,7 @@ vi.mock('../../src/components/FileWorkspace', () => ({
     onRetry?: (message: ChatMessage) => void;
     onAuthorizeAndRetry?: (message: ChatMessage) => void;
     onLaunchTerminalAuth?: () => void;
-    onSendBoardCommentAttachments: (attachments: unknown[]) => void;
+    onSendBoardCommentAttachments: (attachments: unknown[]) => Promise<boolean | void> | boolean | void;
     onCommentModeChange?: (active: boolean) => void;
     onFocusModeChange?: (focused: boolean) => void;
     questionFormSubmitDisabled?: boolean;
@@ -196,7 +197,12 @@ vi.mock('../../src/components/FileWorkspace', () => ({
       <button
         type="button"
         data-testid="workspace-send-comment"
-        onClick={() => onSendBoardCommentAttachments([{ id: 'comment-1' }])}
+        onClick={async () => {
+          const accepted = await onSendBoardCommentAttachments([{ id: 'comment-1' }]);
+          if (accepted === false) return;
+          commentDispatchAccepted(document.querySelector('.comment-left-host')?.isConnected ?? false);
+          onCommentModeChange?.(false);
+        }}
       >
         workspace send
       </button>
@@ -547,6 +553,16 @@ const secondPreviewComment: PreviewComment = {
   note: 'keep this attached',
 };
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 describe('mergeSavedPreviewComment', () => {
   it('appends newly saved comments after existing comments', () => {
     expect(mergeSavedPreviewComment([previewComment], secondPreviewComment).map((comment) => comment.id))
@@ -799,6 +815,22 @@ describe('ProjectView conversation run isolation', () => {
 
     expect(streamViaDaemon).not.toHaveBeenCalled();
     expect(reattachDaemonRun).not.toHaveBeenCalled();
+  });
+
+  it('keeps the comment portal mounted until the viewer accepts dispatch and exits comment mode', async () => {
+    await act(async () => { renderProjectView(); });
+    expect(screen.getByTestId('streaming-state').textContent).toBe('streaming');
+    fireEvent.click(screen.getByTestId('workspace-open-comments'));
+    expect(document.querySelector('.comment-left-host')?.isConnected).toBe(true);
+
+    const { promise: dispatched, resolve: resolveDispatch } = deferred<void>();
+    commentDispatchAccepted.mockImplementationOnce(() => resolveDispatch());
+    fireEvent.click(screen.getByTestId('workspace-send-comment'));
+    await act(async () => { await dispatched; });
+
+    expect(commentDispatchAccepted).toHaveBeenCalledExactlyOnceWith(true);
+    expect(document.querySelector('.comment-left-host')).toBeNull();
+    expect(screen.getByTestId('send-queued-0')).toBeTruthy();
   });
 
   it('returns to chat after sending board comments from the comment surface', async () => {

@@ -4088,6 +4088,10 @@ function HtmlViewer({
     };
   }, [boardImages]);
   const [commentSavedToast, setCommentSavedToast] = useState<string | null>(null);
+  // Leaving direct-edit mode with unsaved edits is blocked until the user picks
+  // Save/Discard. Blocking silently reads as an unresponsive app, so every
+  // blocked switch explains itself here.
+  const [manualEditBlockedToast, setManualEditBlockedToast] = useState<string | null>(null);
   const [templateSavedToast, setTemplateSavedToast] = useState<string | null>(null);
   const [deploySavedToast, setDeploySavedToast] = useState<{ message: string; details: string } | null>(null);
   const [deployActionToast, setDeployActionToast] = useState<string | null>(null);
@@ -7565,6 +7569,20 @@ function HtmlViewer({
     setStrokePoints([]);
   }
 
+  // Disable both kept-alive bridges before the render can switch active iframes.
+  // Closing the panel then notifies ProjectView to remove its inspector portal.
+  function exitCommentModeAfterDispatch() {
+    for (const frame of new Set([iframeRef.current, urlPreviewIframeRef.current, srcDocPreviewIframeRef.current])) {
+      frame?.contentWindow?.postMessage({
+        type: 'readable-studio:comment-mode', enabled: false, mode: boardTool,
+      }, '*');
+    }
+    setBoardMode(false);
+    setCommentCreateMode(false);
+    setCommentPanelOpen(false);
+    clearBoardComposer();
+  }
+
   function addBoardImages(files: File[]) {
     const imgs = files.filter((file) => file.type.startsWith('image/'));
     if (imgs.length > 0) setBoardImages((current) => [...current, ...imgs]);
@@ -7589,6 +7607,7 @@ function HtmlViewer({
     }
     capturePreviewScrollPosition();
     const activateDraw = () => {
+      setManualEditBlockedToast(null);
       setCommentPanelOpen(false);
       setCommentCreateMode(false);
       setBoardMode(false);
@@ -7599,6 +7618,7 @@ function HtmlViewer({
       closeArtifactToolMenus();
     };
     if (manualEditMode && manualEditDirtyRef.current) {
+      setManualEditBlockedToast(t('manualEdit.pendingSaveBlocked'));
       closeArtifactToolMenus();
       return;
     }
@@ -7622,6 +7642,7 @@ function HtmlViewer({
       return;
     }
     const activateComment = () => {
+      setManualEditBlockedToast(null);
       setCommentPanelOpen(false);
       setCommentCreateMode(false);
       clearBoardComposer();
@@ -7632,6 +7653,7 @@ function HtmlViewer({
       closeArtifactToolMenus();
     };
     if (manualEditMode && manualEditDirtyRef.current) {
+      setManualEditBlockedToast(t('manualEdit.pendingSaveBlocked'));
       closeArtifactToolMenus();
       return;
     }
@@ -7656,6 +7678,7 @@ function HtmlViewer({
       return;
     }
     const activateCommentCreate = () => {
+      setManualEditBlockedToast(null);
       setCommentPanelOpen(true);
       setCommentSidePanelCollapsed(false);
       setCommentCreateMode(true);
@@ -7667,6 +7690,7 @@ function HtmlViewer({
       closeArtifactToolMenus();
     };
     if (manualEditMode && manualEditDirtyRef.current) {
+      setManualEditBlockedToast(t('manualEdit.pendingSaveBlocked'));
       closeArtifactToolMenus();
       return;
     }
@@ -7696,9 +7720,11 @@ function HtmlViewer({
       return;
     }
     if (manualEditDirtyRef.current) {
+      setManualEditBlockedToast(t('manualEdit.pendingSaveBlocked'));
       closeArtifactToolMenus();
       return;
     }
+    setManualEditBlockedToast(null);
     closeArtifactToolMenus();
     void exitManualEditModeAfterFlush();
   }
@@ -7738,8 +7764,8 @@ function HtmlViewer({
       if (existingComment) {
         setSendingBoardBatch(true);
         try {
-          await onSendBoardCommentAttachments(commentsToAttachments([existingComment]));
-          clearBoardComposer();
+          const accepted = await onSendBoardCommentAttachments(commentsToAttachments([existingComment]));
+          if (accepted !== false) exitCommentModeAfterDispatch();
         } finally {
           setSendingBoardBatch(false);
         }
@@ -7764,7 +7790,7 @@ function HtmlViewer({
         boardImages,
       );
       if (accepted === false) return;
-      clearBoardComposer();
+      exitCommentModeAfterDispatch();
     } finally {
       setSendingBoardBatch(false);
     }
@@ -8790,6 +8816,7 @@ function HtmlViewer({
             setSelectedSideCommentIds(new Set());
             setCommentOrderIds((current) => current.filter((id) => !sentIds.has(id)));
             setActivePreviewCommentId((current) => current && sentIds.has(current) ? null : current);
+            exitCommentModeAfterDispatch();
           }
         } finally {
           setSendingBoardBatch(false);
@@ -9744,6 +9771,19 @@ function HtmlViewer({
                       ttlMs={exportToast.tone === 'loading' ? 8000 : 2200}
                       placement="top"
                       onDismiss={() => setExportToast(null)}
+                    />,
+                    document.body,
+                  )
+                : null}
+              {manualEditBlockedToast
+                ? createPortal(
+                    <Toast
+                      message={manualEditBlockedToast}
+                      tone="error"
+                      role="alert"
+                      ttlMs={3200}
+                      placement="top"
+                      onDismiss={() => setManualEditBlockedToast(null)}
                     />,
                     document.body,
                   )

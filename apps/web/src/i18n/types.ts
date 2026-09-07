@@ -2660,6 +2660,7 @@ export interface Dict {
   'manualEdit.selectBehindHint': string;
   'manualEdit.saveChanges': string;
   'manualEdit.discardChanges': string;
+  'manualEdit.pendingSaveBlocked': string;
   'fileViewer.zoomOut': string;
   'fileViewer.zoomIn': string;
   'fileViewer.resetZoom': string;

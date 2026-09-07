@@ -3673,6 +3673,67 @@ describe('FileViewer tweaks toolbar', () => {
     expect(screen.getByTestId('comment-active-pin').textContent).toBe('1');
   });
 
+  it('clears the hover indicator after the queued comments are pushed to chat', async () => {
+    const savedComment: PreviewComment = {
+      id: 'comment-queued',
+      projectId: 'project-1',
+      conversationId: 'conversation-1',
+      filePath: 'preview.html',
+      elementId: 'hero',
+      selector: '[data-readable-id="hero"]',
+      label: 'Hero',
+      text: 'Hero',
+      htmlHint: '<main data-readable-id="hero">Hero</main>',
+      position: { x: 8, y: 12, width: 120, height: 48 },
+      note: 'Queued note',
+      status: 'open',
+      createdAt: 10,
+      updatedAt: 10,
+    };
+    const onSendBoardCommentAttachments = vi.fn().mockResolvedValue(true);
+
+    render(
+      <FileViewer
+        projectId="project-1"
+        projectKind="prototype"
+        file={htmlPreviewFile()}
+        liveHtml='<html><body><main data-readable-id="hero">Hero</main></body></html>'
+        previewComments={[savedComment]}
+        onSendBoardCommentAttachments={onSendBoardCommentAttachments}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('comment-panel-toggle'));
+
+    const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
+    window.dispatchEvent(new MessageEvent('message', {
+      source: frame.contentWindow,
+      data: {
+        type: 'readable-studio:comment-hover',
+        elementId: 'hero',
+        selector: '[data-readable-id="hero"]',
+        label: 'Hero',
+        text: 'Hero',
+        position: { x: 8, y: 12, width: 120, height: 48 },
+        hoverPoint: { x: 12, y: 16 },
+        htmlHint: '<main data-readable-id="hero">Hero</main>',
+      },
+    }));
+
+    expect(await screen.findByTestId('comment-target-overlay')).toBeTruthy();
+
+    fireEvent.click(screen.getByText('Select all'));
+    fireEvent.click(await screen.findByTestId('comment-side-send-claude'));
+
+    await waitFor(() => {
+      expect(onSendBoardCommentAttachments).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId('comment-target-overlay')).toBeNull();
+    });
+    expect(screen.getByTestId('board-mode-toggle').getAttribute('aria-pressed')).toBe('false');
+  });
+
   it('keeps comment marker numbers global across deck slides', async () => {
     const slideOneComment: PreviewComment = {
       id: 'comment-slide-one',

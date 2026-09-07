@@ -2156,6 +2156,7 @@ export const ko: Dict = {
   'manualEdit.selectBehindHint': '같은 곳을 다시 클릭하면 뒤에 있는 레이어를 선택합니다',
   'manualEdit.saveChanges': '저장하기',
   'manualEdit.discardChanges': '저장 안함',
+  'manualEdit.pendingSaveBlocked': '저장하지 않은 편집이 있습니다. 저장하기 또는 저장 안함을 선택한 뒤 이동하세요.',
   'fileViewer.zoomOut': '축소',
   'fileViewer.zoomIn': '확대',
   'fileViewer.resetZoom': '배율 초기화',

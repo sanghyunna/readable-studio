@@ -4302,7 +4302,8 @@ export function ProjectView({
       if (currentConversationQueueDisabled) return false;
       if (commentAttachments.length === 0 && images.length === 0) return false;
       setWorkspaceFocused(false);
-      setCommentInspectorActive(false);
+      // The viewer closes its inspector through onCommentModeChange only after
+      // dispatch succeeds and its preview mode/hover state has been cleared.
       // Upload any attached images once, then queue. Each comment becomes its
       // own task (so multiple notes => multiple queued tasks); the images ride
       // along the first task rather than being duplicated across every note.

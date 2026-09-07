@@ -2156,6 +2156,7 @@ export const en: Dict = {
   'manualEdit.selectBehindHint': 'Click again to select the layer behind',
   'manualEdit.saveChanges': 'Save changes',
   'manualEdit.discardChanges': 'Discard changes',
+  'manualEdit.pendingSaveBlocked': 'You have unsaved edits. Choose Save changes or Discard changes before switching tools.',
   'fileViewer.zoomOut': 'Zoom out',
   'fileViewer.zoomIn': 'Zoom in',
   'fileViewer.resetZoom': 'Reset zoom',
