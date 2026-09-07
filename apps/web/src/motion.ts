@@ -1,5 +1,7 @@
 import type { Transition, Variants } from 'motion/react';
 
+import { useExitPhaseInert } from './hooks/useExitPhaseInert';
+
 const spring: Transition = {
   type: 'spring',
   stiffness: 500,
@@ -91,3 +93,28 @@ export const popoverIn: Variants = {
     transition: { duration: 0.12 },
   },
 };
+
+/**
+ * Every variant above fades `opacity` to 0 on exit, and an exit is a
+ * transition: no `@keyframes` step exists in which `pointer-events` could ride
+ * along with `opacity`, and an ancestor's `pointer-events: none` is overridden
+ * by any descendant declaring `auto` (verified in-browser). A dismissing
+ * surface is therefore invisible AND both clickable and tab-reachable for the
+ * length of its fade unless the subtree is gated.
+ *
+ * `useFadingSurface` is the one place that gate is expressed. It returns the
+ * complete prop bundle for an animated root — presence variants plus the exit
+ * gate — so a surface opts into the motion and the safety together and cannot
+ * ship one without the other.
+ */
+export function useFadingSurface(variants: Variants, enabled = true) {
+  const gate = useExitPhaseInert(enabled);
+  return {
+    variants,
+    initial: 'hidden',
+    animate: 'visible',
+    exit: 'exit',
+    ref: gate.ref,
+    onAnimationStart: gate.onExitStart,
+  } as const;
+}

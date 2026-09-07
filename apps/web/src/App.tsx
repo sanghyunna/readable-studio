@@ -83,6 +83,7 @@ import {
   patchProject,
 } from './state/projects';
 import { useModalWindowDragGuard } from './hooks/useModalWindowDragGuard';
+import { useTransparentPhaseInert } from './hooks/useTransparentPhaseInert';
 import type {
   PluginShareAction,
   PluginShareProjectOutcome,
@@ -1847,6 +1848,9 @@ function AppInner() {
       : surfaceId === 'hub'
         ? 'hub'
         : 'workspace';
+  // Keyboard half of the invisible-but-interactive contract for the surface
+  // swap; see the `ref` on the transition wrapper below.
+  const setSurfaceInertRef = useTransparentPhaseInert();
 
   // The hub's collapsible left panel now exists on the workspace too, so the
   // two surfaces share one navigation model. It starts collapsed there (the
@@ -2055,6 +2059,16 @@ function AppInner() {
             className={workspaceTransition.surface}
             data-transition={surfaceTransition}
             data-surface={surfaceId}
+            /* `hubEnter` / `workspaceEnter` run with `both` fill from
+               `opacity: 0`, and this wrapper is the ancestor of the ENTIRE
+               incoming surface — for the Hub that is the whole rail. The
+               keyframes withhold `pointer-events` for the transparent frames,
+               but focus is not animatable, so without `inert` every rail
+               control stays Tab-reachable while the surface is invisible. The
+               hook reads the live animation, so `data-transition='none'` (first
+               paint) and the reduced-motion path — both of which resolve to
+               `animation: none` — never gate anything. */
+            ref={setSurfaceInertRef}
           >
             {isEntrySurface ? (
               appMain

@@ -1169,14 +1169,22 @@
     animation: home-hero-switcher-layer-in 120ms var(--ease-out) both;
   }
 }
+/* The layered switcher popover is a menu of real options and runs with `both`
+   fill, so its transparent frame would otherwise be clickable. `pointer-events`
+   is discrete and is declared alongside `opacity` so the two cannot drift. */
 @keyframes home-hero-switcher-layer-in {
   from {
     opacity: 0;
     transform: translateY(-2px);
+    pointer-events: none;
+  }
+  1% {
+    pointer-events: auto;
   }
   to {
     opacity: 1;
     transform: none;
+    pointer-events: auto;
   }
 }
 .home-hero__tool {

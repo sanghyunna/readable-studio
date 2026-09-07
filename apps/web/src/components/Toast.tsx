@@ -14,7 +14,7 @@ import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 
 import { Icon } from './Icon';
-import { toastSlideUp } from '../motion';
+import { toastSlideUp, useFadingSurface } from '../motion';
 
 export interface ToastProps {
   message: string;
@@ -79,16 +79,16 @@ export function Toast({ message, details, code, ttlMs = DEFAULT_TTL, onDismiss, 
   }, [message, details, code, effectiveTtl, onDismiss]);
 
   const iconName = TONE_ICON[tone];
+  // A toast carries an undo/dismiss button and fades out on a transition; the
+  // gate keeps that button off the pointer and Tab paths while it is invisible.
+  const toastMotion = useFadingSurface(toastSlideUp);
 
   return (
     <motion.div
       className={`readable-toast tone-${tone} placement-${placement}${leaving ? ' leaving' : ''}`}
       role={role}
       aria-live={role === 'alert' ? 'assertive' : 'polite'}
-      variants={toastSlideUp}
-      initial="hidden"
-      animate="visible"
-      exit="exit"
+      {...toastMotion}
     >
       <div className="readable-toast-body">
         {iconName ? (

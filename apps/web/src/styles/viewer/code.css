@@ -472,14 +472,25 @@
   white-space: nowrap;
 }
 
+/* `.chat-connect-repo` applies this with a 220ms delay and `forwards`, and
+   `forwards` alone still leaves the first animated frame at opacity 0 while the
+   subtree stays hit-testable. Pointer availability rides the same timeline as
+   opacity so the entrance can never be clicked while invisible - the shared
+   entrance keyframes in styles/entrance.css carry the same contract. The fade
+   and travel curves are unchanged. */
 @keyframes chat-example-in {
   from {
     opacity: 0;
     transform: translateY(8px);
+    pointer-events: none;
+  }
+  1% {
+    pointer-events: auto;
   }
   to {
     opacity: 1;
     transform: translateY(0);
+    pointer-events: auto;
   }
 }
 

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { motion } from 'motion/react';
 import { Button, Input, Textarea } from '@readable-studio/components';
 import { useT } from '../i18n';
-import { modalOverlay, modalContent } from '../motion';
+import { modalOverlay, modalContent, useFadingSurface } from '../motion';
 
 interface Props {
   onSave: (name: string, content: string) => void;
@@ -13,6 +13,10 @@ export function PasteTextDialog({ onSave, onClose }: Props) {
   const t = useT();
   const [name, setName] = useState('');
   const [content, setContent] = useState('');
+  // The dismissal fade is a transition: only the exit gate can keep this
+  // dialog's controls out of pointer and Tab reach while it is transparent.
+  const backdropMotion = useFadingSurface(modalOverlay);
+  const contentMotion = useFadingSurface(modalContent);
 
   function commit() {
     const trimmed = content.trim();
@@ -22,21 +26,11 @@ export function PasteTextDialog({ onSave, onClose }: Props) {
   }
 
   return (
-    <motion.div
-      className="modal-backdrop"
-      onClick={onClose}
-      variants={modalOverlay}
-      initial="hidden"
-      animate="visible"
-      exit="exit"
-    >
+    <motion.div className="modal-backdrop" onClick={onClose} {...backdropMotion}>
       <motion.div
         className="modal"
         onClick={(e) => e.stopPropagation()}
-        variants={modalContent}
-        initial="hidden"
-        animate="visible"
-        exit="exit"
+        {...contentMotion}
       >
         <h2>{t('pasteDialog.title')}</h2>
         <p className="hint">{t('pasteDialog.hint')}</p>

@@ -338,8 +338,9 @@
   will-change: transform;
 }
 @keyframes chat-loading-enter {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(6px); pointer-events: none; }
+  1% { pointer-events: auto; }
+  to { opacity: 1; transform: translateY(0); pointer-events: auto; }
 }
 @keyframes chat-loading-dot {
   0%, 70%, 100% { opacity: 0.3; transform: translateY(0); }
@@ -361,9 +362,13 @@
   max-width: 100%;
   animation: msg-enter 200ms cubic-bezier(0.23, 1, 0.32, 1) both;
 }
+/* `both` fill paints the transparent frame on every message; messages carry
+   copy/retry affordances and selectable text, so `pointer-events` is declared
+   with `opacity` to keep visibility and clickability on one timeline. */
 @keyframes msg-enter {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(6px); pointer-events: none; }
+  1% { pointer-events: auto; }
+  to { opacity: 1; transform: translateY(0); pointer-events: auto; }
 }
 @media (prefers-reduced-motion: reduce) {
   .msg { animation: none; }
@@ -1247,10 +1252,15 @@
   from {
     opacity: 0;
     transform: translateY(6px) scale(0.98);
+    pointer-events: none;
+  }
+  1% {
+    pointer-events: auto;
   }
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+    pointer-events: auto;
   }
 }
 .composer-row .icon-btn {

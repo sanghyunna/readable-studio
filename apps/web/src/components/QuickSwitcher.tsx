@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { WorkspaceContextItem } from '@readable-studio/contracts';
 import { motion } from 'motion/react';
-import { modalOverlay, scaleIn } from '../motion';
+import { modalOverlay, scaleIn, useFadingSurface } from '../motion';
 import { useT } from '../i18n';
 import { pushRecent, readRecents } from '../quickSwitcherRecents';
 import type { ProjectFile } from '../types';
@@ -142,6 +142,10 @@ export function QuickSwitcher({
 
   const hasQuery = query.trim().length > 0;
   const emptyLabel = hasQuery ? t('quickSwitcher.noMatches') : t('quickSwitcher.empty');
+  // Exit is a transition, so the palette's input and result rows would stay
+  // clickable and tab-reachable through the fade without this gate.
+  const overlayMotion = useFadingSurface(modalOverlay);
+  const paletteMotion = useFadingSurface(scaleIn);
 
   return (
     <motion.div
@@ -149,18 +153,12 @@ export function QuickSwitcher({
       onMouseDown={onClose}
       role="dialog"
       aria-modal="true"
-      variants={modalOverlay}
-      initial="hidden"
-      animate="visible"
-      exit="exit"
+      {...overlayMotion}
     >
       <motion.div
         className="qs-palette"
         onMouseDown={(e) => e.stopPropagation()}
-        variants={scaleIn}
-        initial="hidden"
-        animate="visible"
-        exit="exit"
+        {...paletteMotion}
       >
         <input
           ref={inputRef}

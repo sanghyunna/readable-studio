@@ -33,6 +33,7 @@ import { DesignSystemPicker } from './DesignSystemPicker';
 import { buildDesignSystemPalettes, pluginSwatches } from './design-system-swatch-map';
 import type { SkillSummary } from '../types';
 import { Icon, type IconName } from './Icon';
+import { useTransparentPhaseInert } from '../hooks/useTransparentPhaseInert';
 import { useAnalytics } from '../analytics/provider';
 import { trackHomeChatComposerClick } from '../analytics/events';
 import {
@@ -601,6 +602,10 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     '--home-hero-prompt-max-height': `${promptMaxHeight}px`,
   } as CSSProperties;
 
+  // Keyboard half of the invisible-but-interactive contract; see the hook and
+  // the `ref` on `.home-hero__input-card` below.
+  const setEntranceInertRef = useTransparentPhaseInert();
+
   useEffect(() => {
     if (selectedIndex >= visiblePickerOptions.length) setSelectedIndex(0);
   }, [selectedIndex, visiblePickerOptions.length]);
@@ -981,6 +986,15 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
         }`}
         data-testid={surface === 'hub' ? 'hub-composer' : undefined}
         data-guide-active={surface === 'hub' && guidePulseChipId ? 'true' : undefined}
+        /* The card enters via `readable-fade-slide-up ... 100ms both`, so it is
+           painted at exactly `opacity: 0` through the delay and the first
+           animated frame. The keyframes already withhold `pointer-events` for
+           that window, but focus is not animatable: without this the prompt
+           input and its toolbar stay Tab-reachable while invisible. `inert` is
+           applied to the animated element itself and therefore covers the whole
+           subtree; it is released on `animationend`, so the reduced-motion path
+           (which collapses the animation) never leaves a control inert. */
+        ref={setEntranceInertRef}
         style={inputCardStyle}
         onDragEnter={(event) => {
           if (event.dataTransfer.types.includes('Files')) setDragActive(true);

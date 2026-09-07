@@ -1206,9 +1206,14 @@ button.plugins-home__use-menu-item:focus-visible {
   from {
     opacity: 0;
     transform: translate(-50%, 8px);
+    pointer-events: none;
+  }
+  1% {
+    pointer-events: auto;
   }
   to {
     opacity: 1;
     transform: translate(-50%, 0);
+    pointer-events: auto;
   }
 }

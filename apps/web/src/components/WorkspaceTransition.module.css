@@ -14,9 +14,23 @@
  * - `animation` never touches layout: only `opacity`, `transform` and
  *   `filter`. The destination content is laid out at its final geometry from
  *   the first frame, so there is no layout shift and no reflow-driven jank.
- * - The element is mounted, painted and interactive immediately; the animation
- *   is presentational only and does not gate input, focus or data loading.
- *   `pointer-events` is deliberately never disabled.
+ * - The element is mounted, painted and laid out immediately; the animation is
+ *   presentational only and does not gate data loading.
+ * - `pointer-events` IS gated, but only for the transparent frames. This
+ *   wrapper is the ancestor of the ENTIRE incoming surface (for the Hub: the
+ *   whole rail - brand, new-project, search, palette, library, settings), and
+ *   `both` fill paints the `from` frame at `opacity: 0` while every one of
+ *   those controls stays hit-testable. A browser run caught exactly that: 12
+ *   inert-symptom failures on `.hub__*` rail controls during this transition,
+ *   at ~1634ms - long after any mount entrance, because this timeline is
+ *   navigation-driven rather than mount-driven
+ *   (.omo/evidence/spec-paint-verification/entrance-reachability.json).
+ *   `pointer-events` is discrete, so pairing it with `opacity` in the same
+ *   keyframe makes visibility and clickability one timeline that cannot
+ *   desynchronise. Pointers return at the `1%` offset, i.e. within the first
+ *   ~3ms of a 260-280ms entrance - sub-frame, and the fade is untouched.
+ * - Focus is NOT animatable and is therefore NOT covered here; see
+ *   `useTransparentPhaseInert` for the keyboard half of this contract.
  * - Durations/easing come from the product tokens (`--dur-enter`, `--ease-out`)
  *   in styles/tokens.css. No bounce, no spring, no full-screen wipe.
  */
@@ -53,10 +67,15 @@
   from {
     opacity: 0;
     transform: translate3d(0, 10px, 0) scale(0.988);
+    pointer-events: none;
+  }
+  1% {
+    pointer-events: auto;
   }
   to {
     opacity: 1;
     transform: translate3d(0, 0, 0) scale(1);
+    pointer-events: auto;
   }
 }
 
@@ -68,10 +87,15 @@
   from {
     opacity: 0;
     transform: translate3d(0, -8px, 0) scale(1.008);
+    pointer-events: none;
+  }
+  1% {
+    pointer-events: auto;
   }
   to {
     opacity: 1;
     transform: translate3d(0, 0, 0) scale(1);
+    pointer-events: auto;
   }
 }
 
@@ -105,6 +129,11 @@
     animation: none;
     opacity: 1;
     transform: none;
+    /* `animation: none` discards the keyframes wholesale, so the pointer
+       handoff above never runs and cannot strand the surface inert. Restated
+       explicitly so a future edit that reintroduces a 0.01ms animation here
+       still lands on the interactive side. */
+    pointer-events: auto;
   }
 }
 

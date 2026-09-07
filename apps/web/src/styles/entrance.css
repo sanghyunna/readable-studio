@@ -3,36 +3,73 @@
 
 /* ================================================================
    Keyframes
+
+   INTERACTION CONTRACT — read before editing any keyframe below.
+
+   Every entrance here is applied with `animation-fill-mode: both`, so the
+   `from` frame is painted backwards through the animation-delay as well as
+   on the first animated frame. An entrance that starts at `opacity: 0`
+   therefore holds its ENTIRE subtree at exactly transparent for
+   delay + first frame, while layout, semantics and hit testing all stay
+   live. A pointer landing in that window activates a control the user
+   cannot see. That is the `invisible but clickable` defect class, expressed
+   in the time dimension instead of the stacking dimension.
+
+   The project already contracts that wrappers containing native controls
+   stay hit-testable and that overlap is arbitrated by stacking order
+   (see tests/styles/interactive-reachability-contracts.test.ts). The time
+   dimension gets the equivalent guarantee here, and it is carried by the
+   keyframes themselves rather than by each of the ~39 call sites, so a new
+   entrance cannot opt out of it by forgetting to.
+
+   `pointer-events` is a discrete (non-interpolated) animatable property: it
+   flips at the keyframe offset rather than easing. Pairing it with opacity
+   in the SAME keyframe makes visibility and pointer availability one
+   timeline that cannot desynchronise. `none` covers the transparent phase;
+   the offset where the surface first carries real luminance restores `auto`
+   for the whole remaining fade, so the perceived motion is untouched — the
+   fade and travel curves are byte-for-byte what they were.
+
+   Keyboard availability is not animatable and therefore is NOT handled
+   here; entrances that must also gate focus have to pair this with `inert`
+   in the component. See the sweep in
+   .omo/evidence/fix-entrance-opacity/ for which surfaces those are.
    ================================================================ */
 
 @keyframes readable-fade-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
+  from { opacity: 0; pointer-events: none; }
+  1%   { pointer-events: auto; }
+  to   { opacity: 1; pointer-events: auto; }
 }
 
 @keyframes readable-fade-slide-up {
-  from { opacity: 0; transform: translateY(10px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(10px); pointer-events: none; }
+  1%   { pointer-events: auto; }
+  to   { opacity: 1; transform: translateY(0); pointer-events: auto; }
 }
 
 @keyframes readable-fade-slide-down {
-  from { opacity: 0; transform: translateY(-8px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(-8px); pointer-events: none; }
+  1%   { pointer-events: auto; }
+  to   { opacity: 1; transform: translateY(0); pointer-events: auto; }
 }
 
 @keyframes readable-scale-in {
-  from { opacity: 0; transform: scale(0.96); }
-  to   { opacity: 1; transform: scale(1); }
+  from { opacity: 0; transform: scale(0.96); pointer-events: none; }
+  1%   { pointer-events: auto; }
+  to   { opacity: 1; transform: scale(1); pointer-events: auto; }
 }
 
 @keyframes readable-popover-in {
-  from { opacity: 0; transform: scale(0.93) translateY(-3px); }
-  to   { opacity: 1; transform: scale(1) translateY(0); }
+  from { opacity: 0; transform: scale(0.93) translateY(-3px); pointer-events: none; }
+  1%   { pointer-events: auto; }
+  to   { opacity: 1; transform: scale(1) translateY(0); pointer-events: auto; }
 }
 
 @keyframes readable-slide-left {
-  from { opacity: 0; transform: translateX(16px); }
-  to   { opacity: 1; transform: translateX(0); }
+  from { opacity: 0; transform: translateX(16px); pointer-events: none; }
+  1%   { pointer-events: auto; }
+  to   { opacity: 1; transform: translateX(0); pointer-events: auto; }
 }
 
 /* ================================================================

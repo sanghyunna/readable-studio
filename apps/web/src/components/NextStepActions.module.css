@@ -14,14 +14,24 @@
   animation: next-step-in 200ms cubic-bezier(0.23, 1, 0.32, 1) both;
 }
 
+/* `pointer-events` is paired with `opacity` here because this animation runs
+   with `both` fill on `.root`, `.detail` and `.flyout` - all of which contain
+   the next-step action buttons. Without the pairing the transparent fill frame
+   is fully clickable. `pointer-events` is discrete, so it flips at the offset
+   and the fade curve is unchanged. */
 @keyframes next-step-in {
   from {
     opacity: 0;
     transform: translateY(4px);
+    pointer-events: none;
+  }
+  1% {
+    pointer-events: auto;
   }
   to {
     opacity: 1;
     transform: translateY(0);
+    pointer-events: auto;
   }
 }
 

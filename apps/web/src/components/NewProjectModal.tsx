@@ -10,7 +10,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { ReadableStudioHostProjectImportSuccess } from '@readable-studio/host';
-import { modalOverlay, modalContent } from '../motion';
+import { modalOverlay, modalContent, useFadingSurface } from '../motion';
 import type {
   DesignSystemSummary,
   ProjectTemplate,
@@ -95,6 +95,12 @@ function NewProjectModalBody({
     closeRef.current?.focus();
   }, []);
 
+  // Presence variants + the exit gate as one bundle: the dismissal fade is a
+  // transition, so nothing in the keyframes (and no ancestor `pointer-events`)
+  // can stop the controls being clicked or tabbed while they are transparent.
+  const backdropMotion = useFadingSurface(modalOverlay);
+  const contentMotion = useFadingSurface(modalContent);
+
   async function handleCreate(input: CreateInput & { requestId?: string }) {
     if (creating) return;
     setCreating(true);
@@ -123,18 +129,9 @@ function NewProjectModalBody({
       onClick={(e) => {
         if (e.target === e.currentTarget && !creating) onClose();
       }}
-      variants={modalOverlay}
-      initial="hidden"
-      animate="visible"
-      exit="exit"
+      {...backdropMotion}
     >
-      <motion.div
-        className="new-project-modal"
-        variants={modalContent}
-        initial="hidden"
-        animate="visible"
-        exit="exit"
-      >
+      <motion.div className="new-project-modal" {...contentMotion}>
         <header className="new-project-modal__head">
           <h2 className="new-project-modal__title">New project</h2>
           <button

@@ -59,7 +59,12 @@ describe('Hub -> workspace transition motion contract', () => {
     expect(ruleBody(".surface[data-transition='none']")).toMatch(/animation:\s*none\s*;/);
   });
 
-  it('only animates compositor properties, so the destination never shifts layout', () => {
+  it('never animates a property that can shift layout or force paint', () => {
+    // The point of this assertion is that the transition cannot cause reflow.
+    // `opacity` and `transform` are compositor properties; `pointer-events` is
+    // a discrete, non-interpolated property that affects hit testing only and
+    // never triggers layout or paint, so it belongs to the same safe set. The
+    // assertion stays a strict allow-list: anything else still fails.
     const keyframeBlocks = transitionCss.match(
       /@keyframes\s+\w+\s*\{(?:\s*(?:from|to|\d+%)\s*\{[^}]*\}\s*)+\}/g,
     ) ?? [];
@@ -69,13 +74,75 @@ describe('Hub -> workspace transition motion contract', () => {
       const declarations = block.match(/^\s*([a-z-]+)\s*:/gm) ?? [];
       for (const declaration of declarations) {
         const property = declaration.trim().replace(':', '');
-        expect(['opacity', 'transform']).toContain(property);
+        expect(['opacity', 'transform', 'pointer-events']).toContain(property);
       }
     }
   });
 
-  it('never gates pointer input during the transition', () => {
-    expect(transitionCss).not.toMatch(/pointer-events\s*:\s*none/);
+  it('gates pointer input for exactly the frames the surface is transparent', () => {
+    // This assertion previously read "never gates pointer input during the
+    // transition", on the belief that the incoming surface is interactive from
+    // its first frame. A browser run disproved it: this wrapper is the ancestor
+    // of the ENTIRE incoming surface - for the Hub, the whole rail - and it runs
+    // with `both` fill from `opacity: 0`, so every rail control was hit-testable
+    // while invisible. The run recorded 12 such failures on `.hub__*` controls
+    // at ~1634ms (.omo/evidence/spec-paint-verification/entrance-reachability.json).
+    //
+    // The contract is therefore not "never gate" but "gate exactly the
+    // transparent frames, and no longer". `pointer-events` is discrete, so
+    // declaring it in the same keyframe as `opacity` makes visibility and
+    // clickability one timeline that cannot desynchronise.
+    for (const name of ['workspaceEnter', 'hubEnter']) {
+      const block = new RegExp(`@keyframes ${name}\\s*\\{[\\s\\S]*?\\n\\}`).exec(transitionCss)?.[0];
+      expect(block, `${name} keyframes must exist`).toBeDefined();
+      if (!block) throw new Error(`${name} keyframes were not found`);
+
+      const steps = [...block.matchAll(/(from|to|[\d.]+%)\s*\{([^}]*)\}/g)].map((match) => {
+        const selector = match[1] ?? '';
+        const body = match[2] ?? '';
+        return {
+          offset: selector === 'from' ? 0 : selector === 'to' ? 100 : Number.parseFloat(selector),
+          opacity: /opacity:\s*([\d.]+)/.exec(body)?.[1],
+          pointerEvents: /pointer-events:\s*(\w+)/.exec(body)?.[1],
+        };
+      });
+
+      // Non-vacuous: the transparent frame this exists to cover must still ship.
+      const transparent = steps.filter((step) => step.opacity !== undefined && Number(step.opacity) === 0);
+      expect(transparent.length, `${name} must still fade in from transparent`).toBeGreaterThan(0);
+
+      for (const step of transparent) {
+        expect(
+          step.pointerEvents,
+          `${name} is transparent at ${step.offset}% and must not be hit-testable there`,
+        ).toBe('none');
+      }
+
+      // ...and must hand pointers back at the very start of the visible phase,
+      // or the fix would trade an invisible-but-clickable surface for a
+      // visible-but-dead one for the whole 260-280ms.
+      const restored = steps.filter((step) => step.pointerEvents === 'auto').map((step) => step.offset);
+      expect(restored.length, `${name} must restore pointer-events`).toBeGreaterThan(0);
+      expect(
+        Math.min(...restored),
+        `${name} must return pointers as soon as it carries luminance`,
+      ).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('leaves nothing gated once the transition is over or collapsed', () => {
+    // The failure mode that matters more than the one being fixed: a surface
+    // stuck pointer-inert is permanently unusable. Both the reduced-motion path
+    // and the reduced-transparency variants must land on the interactive side.
+    expect(reducedMotionBlock()).toMatch(/pointer-events:\s*auto/);
+
+    // The reduced-transparency keyframes drop the opacity ramp entirely, so the
+    // surface is never transparent and must never be gated there.
+    const opaqueFrames = transitionCss.match(/@keyframes \w+Opaque\s*\{[\s\S]*?\n  \}/g) ?? [];
+    expect(opaqueFrames.length).toBe(2);
+    for (const frames of opaqueFrames) {
+      expect(frames).not.toMatch(/pointer-events\s*:\s*none/);
+    }
   });
 
   it('disables the movement entirely under prefers-reduced-motion', () => {

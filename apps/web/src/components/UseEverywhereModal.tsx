@@ -14,7 +14,7 @@ import { useAnalytics } from '../analytics/provider';
 import { trackIntegrationsUseEverywhereTabClick } from '../analytics/events';
 import { Icon } from './Icon';
 import { useT } from '../i18n';
-import { modalOverlay, modalContent } from '../motion';
+import { modalOverlay, modalContent, useFadingSurface } from '../motion';
 import type { Dict } from '../i18n/types';
 import {
   buildAgentGuideMarkdown,
@@ -83,6 +83,11 @@ export function UseEverywhereModal({
     closeRef.current?.focus();
   }, []);
 
+  // Dismissal is a transition, so the exit gate - not the keyframes - is what
+  // keeps these controls unreachable while they fade.
+  const backdropMotion = useFadingSurface(modalOverlay);
+  const contentMotion = useFadingSurface(modalContent);
+
   return (
     <motion.div
       className="use-everywhere-modal-backdrop"
@@ -93,18 +98,9 @@ export function UseEverywhereModal({
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      variants={modalOverlay}
-      initial="hidden"
-      animate="visible"
-      exit="exit"
+      {...backdropMotion}
     >
-      <motion.div
-        className="use-everywhere-modal"
-        variants={modalContent}
-        initial="hidden"
-        animate="visible"
-        exit="exit"
-      >
+      <motion.div className="use-everywhere-modal" {...contentMotion}>
         <header className="use-everywhere-modal__head">
           <div className="use-everywhere-modal__head-titles">
             <span className="use-everywhere-modal__kicker">{t('integrations.kicker')}</span>

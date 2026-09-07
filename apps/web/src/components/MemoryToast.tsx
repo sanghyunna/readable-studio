@@ -11,7 +11,7 @@ import type { CSSProperties } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { MemoryChangeEvent } from '@readable-studio/contracts';
 import { useT } from '../i18n';
-import { toastSlideUp } from '../motion';
+import { toastSlideUp, useFadingSurface } from '../motion';
 
 interface ActiveToast {
   key: number;
@@ -107,6 +107,12 @@ export function MemoryToast({ onOpenMemory }: Props) {
     transition: 'transform 0.15s ease, box-shadow 0.15s ease',
   };
 
+  // Two mutually exclusive roots, one gate each: the clickable variant is a
+  // button that fades out on a transition, so it stays activatable by pointer
+  // and by Tab through the dismissal unless the subtree is made inert.
+  const pillMotion = useFadingSurface(toastSlideUp);
+  const buttonMotion = useFadingSurface(toastSlideUp);
+
   return (
     <AnimatePresence>
       {toast ? (
@@ -116,10 +122,7 @@ export function MemoryToast({ onOpenMemory }: Props) {
             role="status"
             aria-live="polite"
             style={pillStyle}
-            variants={toastSlideUp}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
+            {...pillMotion}
           >
             <span aria-hidden style={{ fontSize: 14 }}>✦</span>
             <span>{label}</span>
@@ -135,10 +138,7 @@ export function MemoryToast({ onOpenMemory }: Props) {
             onClick={onOpenMemory}
             whileHover={{ y: -1, boxShadow: '0 10px 28px rgba(0,0,0,0.24)' }}
             style={pillStyle}
-            variants={toastSlideUp}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
+            {...buttonMotion}
           >
             <span aria-hidden style={{ fontSize: 14 }}>✦</span>
             <span>{label}</span>
