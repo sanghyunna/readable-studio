@@ -545,6 +545,47 @@ describe('FileViewer manual edit move frame', () => {
     fireEvent.keyDown(interiorSurface(), { key: 'Escape' });
   });
 
+  it('does not grow the preview workspace scroll extent when a drag acknowledgement moves the frame past its edge', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () =>
+      new Response(SOURCE, { status: 200, headers: { 'Content-Type': 'text/html' } })));
+    render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={SOURCE} />);
+    fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
+    const { frame } = await selectManualEditTarget(imageTarget());
+    const workspace = moveFrame().closest('.manual-edit-workspace') as HTMLElement;
+
+    Object.defineProperty(workspace, 'clientWidth', { configurable: true, value: 800 });
+    Object.defineProperty(workspace, 'scrollWidth', {
+      configurable: true,
+      get: () => {
+        const move = moveFrame();
+        const right = Number.parseFloat(move.style.left) + Number.parseFloat(move.style.width);
+        return move.closest('.manual-edit-drag-layer') ? 800 : Math.max(800, right);
+      },
+    });
+    const initialScrollWidth = workspace.scrollWidth;
+
+    const surface = interiorSurface();
+    fireEvent.pointerDown(surface, { pointerId: 71, clientX: 300, clientY: 150 });
+    fireEvent.pointerMove(surface, { pointerId: 71, clientX: 900, clientY: 150 });
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: {
+          type: 'readable-edit-preview-style-applied',
+          id: 'pic',
+          version: 1,
+          ok: true,
+          rect: { x: 900, y: 50, width: 200, height: 120 },
+        },
+        source: frame.contentWindow,
+      }));
+    });
+    await waitFor(() => expect(moveFrame().style.left).toBe('900px'));
+
+    expect(initialScrollWidth).toBe(800);
+    expect(workspace.scrollWidth).toBe(initialScrollWidth);
+    fireEvent.pointerCancel(surface, { pointerId: 71 });
+  });
+
   it('reconciles final pointerup coordinates and Shift state before saving', async () => {
     let savedContent = '';
     const fetchMock = savingFetch((content) => { savedContent = content; });

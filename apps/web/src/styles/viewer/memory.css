@@ -620,6 +620,19 @@
 .manual-edit-workspace > .manual-edit-hover-action:hover {
   background: color-mix(in srgb, var(--selected) 12%, var(--bg-panel));
 }
+
+/* Drag acknowledgements reposition the selection frame every animation frame.
+   Keep that absolute chrome in a non-scrolling clip layer so an element moved
+   beyond the preview edge cannot enlarge the workspace's scrollable overflow.
+   `clip` is intentional: unlike `hidden`, it does not create an invisible
+   scroll container that can become a pointer-event target. */
+.manual-edit-drag-layer {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  pointer-events: none;
+}
+
 @keyframes manual-edit-hover-action-in {
   to {
     opacity: 1;

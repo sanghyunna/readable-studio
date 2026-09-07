@@ -9546,15 +9546,19 @@ function HtmlViewer({
           >
             {manualEditPanel}
             {manualEditHoverAffordance}
-            {manualEditMoveFrame}
-            {manualEditResizeHandles}
-            {/* Guides paint above the resize handles (z-index 33 over 32). */}
-            <ManualEditSnapGuides
-              guides={manualEditSnapGuides}
-              scale={overlayPreviewScale}
-              offsetX={manualEditOverlayTransform.offsetX}
-              offsetY={manualEditOverlayTransform.offsetY}
-            />
+            {manualEditMode ? (
+              <div className="manual-edit-drag-layer">
+                {manualEditMoveFrame}
+                {manualEditResizeHandles}
+                {/* Guides paint above the resize handles (z-index 33 over 32). */}
+                <ManualEditSnapGuides
+                  guides={manualEditSnapGuides}
+                  scale={overlayPreviewScale}
+                  offsetX={manualEditOverlayTransform.offsetX}
+                  offsetY={manualEditOverlayTransform.offsetY}
+                />
+              </div>
+            ) : null}
             {manualEditMovementAnnouncement && manualEditMovementAnnouncement.length > 0 ? (
               <VisuallyHidden role="status" aria-live="polite" aria-atomic="true">
                 {manualEditMovementAnnouncement.map((segment, index) => (
