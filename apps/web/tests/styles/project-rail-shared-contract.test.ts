@@ -32,6 +32,7 @@ const shellCss = read('shell.css');
 
 /** The one shared collapsed width, taken from its single declaration site. */
 const SHARED_COLLAPSED = /--project-rail-collapsed:\s*([\d.]+px)/.exec(projectRailCss)?.[1];
+const SHARED_EXPANDED = /--project-rail-expanded:\s*([\d.]+px)/.exec(projectRailCss)?.[1];
 
 /**
  * jsdom does not substitute `var()` and normalises `0px` to `0`, so a raw
@@ -78,13 +79,22 @@ describe('project rail: one shared contract', () => {
     // Hub alias must resolve THROUGH the shared custom property.
     expect(hubCss).toMatch(/--hub-rail-collapsed:\s*var\(--project-rail-collapsed\)/);
     expect(/--hub-rail-collapsed:\s*[\d.]+px/.test(hubCss)).toBe(false);
-    expect(/--entry-rail-strip-width:\s*[\d.]+px/.test(entryLayoutCss)).toBe(true);
+    expect(entryLayoutCss).toMatch(/--entry-rail-strip-width:\s*var\(--project-rail-collapsed\)/);
   });
 
   it('gives both surfaces the SAME collapsed width', () => {
-    const stripWidth = /--entry-rail-strip-width:\s*([\d.]+px)/.exec(entryLayoutCss)?.[1];
+    const stripWidth = /--entry-rail-strip-width:\s*([^;]+);/.exec(entryLayoutCss)?.[1];
 
-    expect(stripWidth).toBe(SHARED_COLLAPSED);
+    expect(stripWidth).toBe('var(--project-rail-collapsed)');
+    expect(SHARED_COLLAPSED).toBe('44px');
+  });
+
+  it('expands the workspace rail to the shared full panel width, not the legacy icon width', () => {
+    const expandedWidth = /--entry-rail-width:\s*([^;]+);/.exec(entryLayoutCss)?.[1];
+
+    expect(SHARED_EXPANDED).toBe('292px');
+    expect(expandedWidth).toBe('var(--project-rail-expanded)');
+    expect(Number.parseFloat(SHARED_EXPANDED ?? '') - Number.parseFloat(SHARED_COLLAPSED ?? '')).toBe(248);
   });
 
   it('anchors the collapsed rail to the window bottom - no floating card gap', () => {

@@ -589,6 +589,7 @@ export const ko: Dict = {
   'entry.navNewProject': '새 프로젝트',
   'entry.navPrimary': '주요 탐색',
   'hub.treeLabel': '프로젝트와 세션',
+  'hub.resizeRail': '프로젝트 패널 크기 조절',
   'hub.paletteCreate': '만들기',
   'hub.paletteNavigate': '이동',
   'hub.paletteOpen': '명령 팔레트 열기',

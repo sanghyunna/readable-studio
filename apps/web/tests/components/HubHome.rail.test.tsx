@@ -28,6 +28,8 @@ import type { Project } from '../../src/types';
 afterEach(() => {
   cleanup();
   window.sessionStorage.removeItem('readable-studio:hub-open-work');
+  window.localStorage.removeItem('readable-studio:hub-rail-collapsed');
+  window.localStorage.removeItem('readable-studio:hub-rail-width');
   listConversations.mockReset();
   createConversation.mockReset();
   deleteConversation.mockReset();
@@ -74,6 +76,56 @@ function seedTwoSessions() {
 }
 
 describe('HubHome rail', () => {
+  // The collapse toggle was deliberately relocated into the 36px window-chrome
+  // row, which is rendered ABOVE the shell body in App.tsx. ProjectRail portals
+  // the toggle into `#app-window-chrome-rail-toggle`, so the toggle becomes the
+  // document's FIRST tab stop and the brand the second - the exact inversion of
+  // the order that held before the move.
+  //
+  // This asserts the shipped order (chrome control -> brand -> rail contents)
+  // and, critically, that the relocation stranded nothing: every control still
+  // appears exactly once in the keyboard sequence. e2e/ui/qa-task-13.test.ts
+  // encodes the same contract against a real browser; this is its jsdom guard.
+  it('portals the collapse toggle ahead of the brand without stranding either control', () => {
+    const slot = document.createElement('div');
+    slot.id = 'app-window-chrome-rail-toggle';
+    document.body.append(slot);
+    try {
+      const { container } = renderHub();
+
+      const toggle = screen.getByTestId('hub-rail-toggle');
+      const brand = screen.getByTestId('hub-brand');
+      const newProject = screen.getByTestId('hub-new-project');
+
+      // The toggle really left the rail and now lives in the chrome slot.
+      expect(toggle.parentElement).toBe(slot);
+      expect(container.contains(toggle)).toBe(false);
+      expect(screen.getAllByTestId('hub-rail-toggle')).toHaveLength(1);
+
+      // Document order is what the browser walks for Tab, so compare positions.
+      const ordered = [...document.querySelectorAll<HTMLElement>('[data-testid]')].filter(
+        (node) => node === toggle || node === brand || node === newProject,
+      );
+      expect(ordered.map((node) => node.dataset['testid'])).toEqual([
+        'hub-rail-toggle',
+        'hub-brand',
+        'hub-new-project',
+      ]);
+
+      // Nothing became unreachable: each control is focusable, enabled and not
+      // removed from the tab sequence by a negative tabindex.
+      for (const control of [toggle, brand, newProject]) {
+        expect(control.tagName).toBe('BUTTON');
+        expect((control as HTMLButtonElement).disabled).toBe(false);
+        expect(control.tabIndex).toBeGreaterThanOrEqual(0);
+        control.focus();
+        expect(document.activeElement).toBe(control);
+      }
+    } finally {
+      slot.remove();
+    }
+  });
+
   it('updates collapsed semantics and the rendered tree synchronously', () => {
     renderHub();
     const hub = screen.getByTestId('hub-nav').parentElement;
@@ -92,6 +144,35 @@ describe('HubHome rail', () => {
 
     fireEvent.click(toggle);
     expect(hub?.dataset['railCollapsed']).toBe('false');
+  });
+
+  it('resizes within bounds by keyboard and preserves the expanded width through collapse and remount', () => {
+    const first = renderHub();
+    const hub = screen.getByTestId('hub-nav').parentElement as HTMLElement;
+    const resizer = screen.getByTestId('hub-rail-resizer');
+    const toggle = screen.getByTestId('hub-rail-toggle');
+
+    expect(hub.style.getPropertyValue('--hub-rail-expanded')).toBe('292px');
+    fireEvent.keyDown(resizer, { key: 'End' });
+    expect(hub.style.getPropertyValue('--hub-rail-expanded')).toBe('420px');
+    expect(resizer.getAttribute('aria-valuenow')).toBe('420');
+    fireEvent.keyDown(resizer, { key: 'ArrowRight' });
+    expect(hub.style.getPropertyValue('--hub-rail-expanded')).toBe('420px');
+
+    fireEvent.click(toggle);
+    expect(hub.dataset['railCollapsed']).toBe('true');
+    expect(hub.style.getPropertyValue('--hub-rail-expanded')).toBe('420px');
+    fireEvent.click(toggle);
+    expect(hub.dataset['railCollapsed']).toBe('false');
+    expect(hub.style.getPropertyValue('--hub-rail-expanded')).toBe('420px');
+
+    first.unmount();
+    renderHub();
+    const restoredHub = screen.getByTestId('hub-nav').parentElement as HTMLElement;
+    const restoredResizer = screen.getByTestId('hub-rail-resizer');
+    expect(restoredHub.style.getPropertyValue('--hub-rail-expanded')).toBe('420px');
+    fireEvent.keyDown(restoredResizer, { key: 'Home' });
+    expect(restoredHub.style.getPropertyValue('--hub-rail-expanded')).toBe('262px');
   });
 
   it('calls New Project once when the current Hub trigger is clicked', () => {

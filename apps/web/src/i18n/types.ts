@@ -899,6 +899,7 @@ export interface Dict {
   'entry.navPrimary': string;
   // Entry hub — left navigation (projects → sessions) + start surface.
   'hub.treeLabel': string;
+  'hub.resizeRail': string;
   'hub.paletteCreate': string;
   'hub.paletteNavigate': string;
   'hub.paletteOpen': string;

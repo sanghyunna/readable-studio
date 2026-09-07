@@ -11,6 +11,8 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
 
@@ -59,6 +61,10 @@ const HUB_INSPECTOR_TOGGLE_EVENT = 'readable:hub-inspector-toggle';
 // Collapsing the rail is a durable preference, not a per-tab one: a user who
 // works in the narrow rail expects it still narrow tomorrow.
 const RAIL_COLLAPSED_STORAGE_KEY = 'readable-studio:hub-rail-collapsed';
+const RAIL_WIDTH_STORAGE_KEY = 'readable-studio:hub-rail-width';
+const RAIL_WIDTH_DEFAULT = 292;
+const RAIL_WIDTH_MIN = 262;
+const RAIL_WIDTH_MAX = 420;
 // The mockup's breakpoint. Below it the rail is ALWAYS the icon rail, so the
 // stored preference is irrelevant until the window widens again.
 const NARROW_RAIL_QUERY = '(max-width: 900px)';
@@ -71,6 +77,16 @@ const SESSION_READ_CONCURRENCY = 6;
 function loadRailCollapsed(): boolean {
   if (typeof window === 'undefined') return false;
   return window.localStorage.getItem(RAIL_COLLAPSED_STORAGE_KEY) === 'true';
+}
+
+export function clampHubRailWidth(width: number): number {
+  return Math.min(RAIL_WIDTH_MAX, Math.max(RAIL_WIDTH_MIN, Math.round(width)));
+}
+
+function loadRailWidth(): number {
+  if (typeof window === 'undefined') return RAIL_WIDTH_DEFAULT;
+  const stored = Number.parseFloat(window.localStorage.getItem(RAIL_WIDTH_STORAGE_KEY) ?? '');
+  return Number.isFinite(stored) ? clampHubRailWidth(stored) : RAIL_WIDTH_DEFAULT;
 }
 
 /** The narrow-rail media query, or `null` where no viewport is available. */
@@ -223,6 +239,9 @@ export function HubHome({
   // below the narrow breakpoint the rail is forced collapsed WITHOUT rewriting
   // the preference, so widening the window restores what the user chose.
   const [railCollapsedPreference, setRailCollapsedPreference] = useState(loadRailCollapsed);
+  const [railWidth, setRailWidth] = useState(loadRailWidth);
+  const [railResizing, setRailResizing] = useState(false);
+  const railResizeCleanupRef = useRef<(() => void) | null>(null);
   const [narrow, setNarrow] = useState(() => narrowRailQuery()?.matches ?? false);
   const railCollapsed = railCollapsedPreference || narrow;
   const [peekedSessionId, setPeekedSessionId] = useState<string | null>(null);
@@ -245,6 +264,39 @@ export function HubHome({
     query.addEventListener('change', onChange);
     return () => query.removeEventListener('change', onChange);
   }, []);
+
+  const setPersistedRailWidth = useCallback((width: number) => {
+    const next = clampHubRailWidth(width);
+    setRailWidth(next);
+    window.localStorage.setItem(RAIL_WIDTH_STORAGE_KEY, String(next));
+  }, []);
+
+  const beginRailResize = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (railCollapsed || narrow) return;
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = railWidth;
+    setRailResizing(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+
+    const move = (moveEvent: PointerEvent) => {
+      setPersistedRailWidth(startWidth + moveEvent.clientX - startX);
+    };
+    const finish = () => {
+      setRailResizing(false);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', finish);
+      window.removeEventListener('pointercancel', finish);
+      railResizeCleanupRef.current = null;
+    };
+    railResizeCleanupRef.current?.();
+    railResizeCleanupRef.current = finish;
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', finish, { once: true });
+    window.addEventListener('pointercancel', finish, { once: true });
+  }, [narrow, railCollapsed, railWidth, setPersistedRailWidth]);
+
+  useEffect(() => () => railResizeCleanupRef.current?.(), []);
 
   const toggleRail = useCallback(() => {
     setRailCollapsedPreference((current) => {
@@ -822,8 +874,9 @@ export function HubHome({
     <div
       className={`hub${peeked ? ' hub--inspecting' : ''}${
         railCollapsed ? ' hub--rail-collapsed' : ''
-      }`}
+      }${railResizing ? ' hub--rail-resizing' : ''}`}
       data-rail-collapsed={railCollapsed ? 'true' : 'false'}
+      style={{ '--hub-rail-expanded': `${railWidth}px` } as CSSProperties}
     >
       <div className="hub__wash" aria-hidden="true" />
       <div className="sr-only" role="status" aria-live="polite" data-testid="hub-live-region">
@@ -947,6 +1000,28 @@ export function HubHome({
           />
         ) : null}
       </ProjectRail>
+
+      <div
+        className="hub__rail-resizer"
+        role="separator"
+        aria-label={t('hub.resizeRail')}
+        aria-orientation="vertical"
+        aria-valuemin={RAIL_WIDTH_MIN}
+        aria-valuemax={RAIL_WIDTH_MAX}
+        aria-valuenow={railWidth}
+        tabIndex={railCollapsed || narrow ? -1 : 0}
+        hidden={railCollapsed || narrow}
+        data-testid="hub-rail-resizer"
+        onPointerDown={beginRailResize}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowLeft') setPersistedRailWidth(railWidth - 16);
+          else if (event.key === 'ArrowRight') setPersistedRailWidth(railWidth + 16);
+          else if (event.key === 'Home') setPersistedRailWidth(RAIL_WIDTH_MIN);
+          else if (event.key === 'End') setPersistedRailWidth(RAIL_WIDTH_MAX);
+          else return;
+          event.preventDefault();
+        }}
+      />
 
       <div className="hub__stage">
         <div className="hub__start">

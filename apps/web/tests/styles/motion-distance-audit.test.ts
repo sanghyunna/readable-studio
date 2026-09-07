@@ -72,16 +72,17 @@ function framesFor(durationMs: number): number {
 
 describe('motion duration is proportionate to distance travelled', () => {
   it('the Hub rail collapse travels a short distance and is fine on --dur-exit', () => {
-    // Expanded track: clamp(262px, ..., 292px). Collapsed: --hub-rail-collapsed.
+    // Expanded track defaults to the persisted-width baseline. Collapsed stays
+    // on the shared 44px strip regardless of the saved expanded width.
     const hub = ruleBody('.hub', hubCss);
     const collapsedWidth = customPropertyPx(
       '--hub-rail-collapsed',
       [hubCss, projectRailCss],
     );
-    const expandedMax = /grid-template-columns:\s*clamp\(\d+px,[^,]+,\s*(\d+)px\)/.exec(hub);
-    expect(expandedMax).not.toBeNull();
+    const expandedDefault = /grid-template-columns:\s*var\(--hub-rail-expanded,\s*(\d+)px\)/.exec(hub);
+    expect(expandedDefault).not.toBeNull();
 
-    const distance = Number(expandedMax![1]) - collapsedWidth;
+    const distance = Number(expandedDefault![1]) - collapsedWidth;
     expect(distance).toBeLessThanOrEqual(260);
 
     // At <=260px the 140ms exit runs ~1.9px/ms - an order of magnitude calmer
@@ -90,16 +91,15 @@ describe('motion duration is proportionate to distance travelled', () => {
     expect(distance / tokenMs('dur-exit')).toBeLessThan(2);
   });
 
-  it('the entry rail strip transition covers a tiny distance and needs no change', () => {
-    const strip = /--entry-rail-strip-width:\s*(\d+)px/.exec(entryCss);
-    const full = /--entry-rail-width:\s*(\d+)px/.exec(entryCss);
-    expect(strip).not.toBeNull();
-    expect(full).not.toBeNull();
+  it('the workspace rail uses the full shared transition distance', () => {
+    const strip = customPropertyPx('--project-rail-collapsed', [projectRailCss]);
+    const full = customPropertyPx('--project-rail-expanded', [projectRailCss]);
 
-    // 56px -> 44px is 12px of travel; any duration in the scale is ample.
-    const distance = Number(full![1]) - Number(strip![1]);
-    expect(distance).toBeLessThan(40);
-    expect(distance).toBeGreaterThan(0);
+    // The legacy 56px icon width made "expand" travel only 12px. Both surfaces
+    // now use the full 292px panel baseline while the parent grid interpolates.
+    const distance = full - strip;
+    expect(distance).toBe(248);
+    expect(ruleBody('.entry-shell--no-header .entry', entryCss)).toContain('var(--dur-enter)');
   });
 
   it('the Hub <-> workspace transition moves <=10px and sits well above the frame floor', () => {

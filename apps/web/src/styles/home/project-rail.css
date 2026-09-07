@@ -37,6 +37,7 @@
   /* THE shared collapsed width. Both surfaces resolve their collapsed strip
      from this one declaration, so they cannot drift apart again. */
   --project-rail-collapsed: 44px;
+  --project-rail-expanded: 292px;
 }
 
 /* ---- Rule 1: the rail reaches the window bottom, in BOTH states ----

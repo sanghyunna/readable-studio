@@ -66,13 +66,13 @@ describe('workspace tabs chrome styles', () => {
       'var(--entry-rail-strip-width, 44px) minmax(0, 1fr)',
     );
     expect(ruleValue(openShell, 'grid-template-columns')).toContain(
-      'var(--entry-rail-width, 56px) minmax(0, 1fr)',
+      'var(--entry-rail-width, 292px) minmax(0, 1fr)',
     );
     expect(ruleValue(narrowShell, 'grid-template-columns')).toBe(
       'var(--entry-rail-strip-width, 44px) minmax(0, 1fr) !important',
     );
     expect(ruleValue(narrowOpenShell, 'grid-template-columns')).toBe(
-      'var(--entry-rail-width, 56px) minmax(0, 1fr) !important',
+      'var(--entry-rail-width, 292px) minmax(0, 1fr) !important',
     );
     expect(ruleValue(rail, 'width')).toBe('100%');
     expect(entryLayoutCss).not.toContain('  .entry-nav-rail {\n    width: 56px;\n  }');

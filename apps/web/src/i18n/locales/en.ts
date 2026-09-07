@@ -589,6 +589,7 @@ export const en: Dict = {
   'entry.navNewProject': 'New project',
   'entry.navPrimary': 'Primary navigation',
   'hub.treeLabel': 'Projects and sessions',
+  'hub.resizeRail': 'Resize project panel',
   'hub.paletteCreate': 'Create',
   'hub.paletteNavigate': 'Navigate',
   'hub.paletteOpen': 'Open command palette',

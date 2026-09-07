@@ -31,12 +31,15 @@
 }
 .entry-shell--no-header {
   grid-template-rows: 1fr;
-  --entry-rail-width: 56px;
+  /* Workspace used to inherit the legacy 56px icon-rail width, so its
+     "expanded" state moved only 12px beyond the 44px strip. A full panel is
+     the shared project-rail width; the parent grid still owns the animation. */
+  --entry-rail-width: var(--project-rail-expanded);
   /* HARD PRODUCT RULE: the project rail has exactly TWO states - a thin
      collapsed STRIP that is always on screen, or the fully expanded panel.
      The "gone, only a button remains" state is not a state. This strip width
      is what makes the collapsed state visible instead of zero-width. */
-  --entry-rail-strip-width: 44px;
+  --entry-rail-strip-width: var(--project-rail-collapsed);
 }
 
 /* Collapsed no longer means ABSENT. The first track animates between the thin
@@ -76,7 +79,7 @@
   grid-template-columns: minmax(0, 1fr);
 }
 .entry-shell--no-header .entry.entry--rail-open {
-  grid-template-columns: var(--entry-rail-width, 56px) minmax(0, 1fr);
+  grid-template-columns: var(--entry-rail-width, 292px) minmax(0, 1fr);
 }
 
 /* Left rail — docked column. Lives in the grid's first track; collapsed the
@@ -1910,7 +1913,7 @@
     grid-template-columns: var(--entry-rail-strip-width, 44px) minmax(0, 1fr) !important;
   }
   .entry-shell--no-header .entry.entry--rail-open {
-    grid-template-columns: var(--entry-rail-width, 56px) minmax(0, 1fr) !important;
+    grid-template-columns: var(--entry-rail-width, 292px) minmax(0, 1fr) !important;
   }
   /* Home mounts ProjectRail inside HubHome rather than as an `.entry` grid
      sibling. Keep its only child in the content track at this breakpoint;
