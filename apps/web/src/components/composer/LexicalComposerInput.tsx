@@ -686,7 +686,6 @@ function SeedingPlugin({
   lastEmittedTextRef: React.MutableRefObject<string | null>;
 }) {
   const [editor] = useLexicalComposerContext();
-  const lastSeeded = useRef<string | null>(null);
   const entitiesRef = useRef(entities);
   entitiesRef.current = entities;
   useEffect(() => {
@@ -697,17 +696,22 @@ function SeedingPlugin({
     // The `serializeComposer` compare below stays as the source of truth for
     // every non-typing path (external seeds, the editor-not-yet-mounted case).
     if (draft === lastEmittedTextRef.current) return; // user-typed → caret preserved
-    const current = serializeComposer(editor.getEditorState()).text;
-    if (draft === current) {
-      // Same outcome as the fast path, reached via an external seed that
-      // happens to match the live text; align the ref so the next run with
-      // this draft takes the cheap path (self-heal).
-      lastEmittedTextRef.current = draft;
-      return; // user-typed → no reseed → caret preserved
-    }
-    if (draft === lastSeeded.current) return; // StrictMode double-invoke guard
-    lastSeeded.current = draft;
-    setComposerFromText(editor, draft, entitiesRef.current);
+    // A discrete seed commits decorators immediately; PlainTextPlugin renders
+    // them with flushSync. Run that commit outside React's effect lifecycle.
+    // Cleanup cancels superseded drafts, unmounts and StrictMode effect replay.
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled || draft === lastEmittedTextRef.current) return;
+      const current = serializeComposer(editor.getEditorState()).text;
+      if (draft === current) {
+        lastEmittedTextRef.current = draft;
+        return; // Same text: preserve the live nodes and caret.
+      }
+      setComposerFromText(editor, draft, entitiesRef.current);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [draft, editor, lastEmittedTextRef]);
   return null;
 }

@@ -11,7 +11,6 @@ import {
   composerText,
   pressEnter,
   typeAndSettle,
-  typeInComposer,
 } from '../helpers/lexical-composer';
 import type { ChatAttachment, ChatCommentAttachment } from '../../src/types';
 
@@ -571,6 +570,35 @@ describe('ChatComposer /search command', () => {
     });
   });
 
+  it('sends the edited search query rather than the pending initial draft', async () => {
+    const onSend = vi.fn();
+
+    render(
+      <ChatComposer
+        projectId="project-1"
+        projectFiles={[]}
+        streaming={false}
+        researchAvailable
+        initialDraft="/search original query"
+        onEnsureProject={async () => 'project-1'}
+        onSend={onSend}
+        onStop={vi.fn()}
+      />,
+    );
+
+    // No separate mount flush: the typing helper must model input after the
+    // scheduled initial seed, not batch both into the same synthetic task.
+    await typeAndSettle('/search edited query');
+    expect(composerText()).toBe('/search edited query');
+    fireEvent.click(screen.getByTestId('chat-send'));
+
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(onSend.mock.calls[0]?.[3]).toEqual({
+      research: { enabled: true, query: 'edited query' },
+    });
+    expect(composerText()).toBe('');
+  });
+
   it('does not send research metadata for normal prompts', async () => {
     const onSend = vi.fn();
 
@@ -660,7 +688,7 @@ describe('ChatComposer /search command', () => {
       />,
     );
 
-    typeInComposer('keep this draft');
+    await typeAndSettle('keep this draft');
     pressEnter({ meta: true });
     pressEnter();
 

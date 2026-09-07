@@ -19,7 +19,7 @@ import { I18nProvider } from '../../src/i18n';
 import { ko } from '../../src/i18n/locales/ko';
 import type { Locale } from '../../src/i18n/types';
 import type { AppliedPluginSnapshot } from '@readable-studio/contracts';
-import { composerText, pressEnter, typeAndSettle } from '../helpers/lexical-composer';
+import { composerText, flushMounts, pressEnter, typeAndSettle } from '../helpers/lexical-composer';
 
 const COMMUNITY_PLUGIN = {
   id: 'community-deck',
@@ -155,14 +155,6 @@ function renderComposer(
   return options.locale
     ? render(<I18nProvider initial={options.locale}>{tree}</I18nProvider>)
     : render(tree);
-}
-
-// Flush the composer's lazy mount fetches (MCP servers, installed plugins)
-// so the @-picker lists are populated before we drive the editor.
-async function flushMounts() {
-  await act(async () => {
-    await new Promise((r) => setTimeout(r, 0));
-  });
 }
 
 function stagedPluginChip(): Element | null {

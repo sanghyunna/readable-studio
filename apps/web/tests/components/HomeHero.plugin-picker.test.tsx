@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ComponentProps } from 'react';
 import { KEY_ENTER_COMMAND } from 'lexical';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -15,7 +15,7 @@ import { HomeHero } from '../../src/components/HomeHero';
 import { I18nProvider } from '../../src/i18n';
 import {
   getHomeHeroEditor,
-  setHomeHeroPrompt,
+  setHomeHeroPrompt as setPrompt,
 } from '../helpers/home-hero-lexical';
 
 function makePlugin(
@@ -79,15 +79,15 @@ function makeMcp(id: string, label: string): McpServerConfig {
   };
 }
 
-// HomeHero embeds the project composer's Lexical editor now. jsdom cannot drive
-// Lexical's beforeinput pipeline, so we open the @-picker by seeding the editor
-// with `setHomeHeroPrompt(...)` (a real editor.update that fires the genuine
-// trigger-detection listeners) and flushing a microtask so the picker's React
-// state lands before asserting. Mirrors the project composer's typeAndSettle.
+// Finish React's asynchronous controlled seed before simulating a user edit.
+// The editor update itself is discrete; async act flushes its React listeners.
 async function settle(): Promise<void> {
-  await act(async () => {
-    await Promise.resolve();
-  });
+  await act(async () => {});
+}
+
+async function setHomeHeroPrompt(value: string): Promise<void> {
+  await settle();
+  await act(async () => { setPrompt(value); });
 }
 
 // Dispatch a plain Enter through the editor's command pipeline (jsdom does not
@@ -111,6 +111,7 @@ function pressEnterInHomeHero(): void {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
 });
 
 describe('HomeHero plugin picker', () => {
@@ -135,8 +136,7 @@ describe('HomeHero plugin picker', () => {
       />,
     );
 
-    setHomeHeroPrompt('@');
-    await settle();
+    await setHomeHeroPrompt('@');
     expect(screen.getByTestId('home-hero-plugin-picker')).toBeTruthy();
 
     rerender(
@@ -189,7 +189,7 @@ describe('HomeHero plugin picker', () => {
     );
 
     // Typing `@sam` opens the picker via the editor's live trigger detection.
-    setHomeHeroPrompt('Make @sam');
+    await setHomeHeroPrompt('Make @sam');
     await settle();
 
     expect(screen.getByTestId('home-hero-plugin-picker')).toBeTruthy();
@@ -236,8 +236,7 @@ describe('HomeHero plugin picker', () => {
       />,
     );
 
-    setHomeHeroPrompt('@');
-    await settle();
+    await setHomeHeroPrompt('@');
 
     const mentionPicker = screen.getByTestId('home-hero-plugin-picker');
     expect(within(mentionPicker).getAllByRole('option')).toHaveLength(3);
@@ -289,7 +288,7 @@ describe('HomeHero plugin picker', () => {
       />,
     );
 
-    setHomeHeroPrompt('@catalog');
+    await setHomeHeroPrompt('@catalog');
     await settle();
 
     const picker = screen.getByTestId('home-hero-plugin-picker');
@@ -329,7 +328,7 @@ describe('HomeHero plugin picker', () => {
       </I18nProvider>,
     );
 
-    setHomeHeroPrompt('@看板');
+    await setHomeHeroPrompt('@看板');
     await settle();
 
     expect(screen.getByRole('option', { name: /官方看板/i })).toBeTruthy();
@@ -358,7 +357,7 @@ describe('HomeHero plugin picker', () => {
       </I18nProvider>,
     );
 
-    setHomeHeroPrompt('@中文能力');
+    await setHomeHeroPrompt('@中文能力');
     await settle();
 
     expect(screen.getByRole('option', { name: /杂志文章/i })).toBeTruthy();
@@ -387,17 +386,14 @@ describe('HomeHero plugin picker', () => {
       </>,
     );
 
-    setHomeHeroPrompt('@sample');
-    await settle();
+    await setHomeHeroPrompt('@sample');
 
     expect(screen.getByTestId('home-hero-plugin-picker')).toBeTruthy();
 
     fireEvent.mouseDown(screen.getByTestId('outside-control'));
     fireEvent.focusIn(screen.getByTestId('outside-control'));
 
-    await waitFor(() => {
-      expect(screen.queryByTestId('home-hero-plugin-picker')).toBeNull();
-    });
+    expect(screen.queryByTestId('home-hero-plugin-picker')).toBeNull();
   });
 
   it('keeps the home @ picker open while interacting with its tabs', async () => {
@@ -423,8 +419,7 @@ describe('HomeHero plugin picker', () => {
       />,
     );
 
-    setHomeHeroPrompt('@sample');
-    await settle();
+    await setHomeHeroPrompt('@sample');
 
     const picker = screen.getByTestId('home-hero-plugin-picker');
     const skillsTab = within(picker).getByRole('tab', { name: /skills/i });
@@ -504,8 +499,7 @@ describe('HomeHero plugin picker', () => {
       />,
     );
 
-    setHomeHeroPrompt('@');
-    await settle();
+    await setHomeHeroPrompt('@');
 
     expect(screen.getByTestId('home-hero-plugin-picker')).toBeTruthy();
     expect(screen.getByRole('tab', { name: /design files/i })).toBeTruthy();
@@ -555,16 +549,14 @@ describe('HomeHero plugin picker', () => {
       />,
     );
 
-    setHomeHeroPrompt('Use @br');
+    await setHomeHeroPrompt('Use @br');
     await settle();
 
-    fireEvent.click(screen.getByRole('option', { name: /brief\.html/i }));
+    await act(async () => { fireEvent.click(screen.getByRole('option', { name: /brief\.html/i })); });
     // pickFile inserts the atomic file pill; the editor's onChange forwards the
     // new serialized text to the host, replacing the old explicit
     // `onPromptChange('Use @brief.html')` path.
-    await waitFor(() =>
-      expect(onPromptChange).toHaveBeenLastCalledWith('Use @brief.html'),
-    );
+    expect(onPromptChange).toHaveBeenLastCalledWith('Use @brief.html');
 
     rerender(
       <HomeHero
@@ -617,7 +609,7 @@ describe('HomeHero plugin picker', () => {
       />,
     );
 
-    setHomeHeroPrompt('Make @proto');
+    await setHomeHeroPrompt('Make @proto');
     await settle();
 
     fireEvent.click(screen.getByRole('option', { name: /prototype lab/i }));
@@ -648,7 +640,7 @@ describe('HomeHero plugin picker', () => {
       />,
     );
 
-    setHomeHeroPrompt('@lin');
+    await setHomeHeroPrompt('@lin');
     await settle();
 
     fireEvent.click(screen.getByRole('option', { name: /linear/i }));
@@ -686,8 +678,8 @@ describe('HomeHero plugin picker', () => {
 
     await settle();
 
-    pressEnterInHomeHero();
-    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    await act(async () => { pressEnterInHomeHero(); });
+    expect(onSubmit).toHaveBeenCalledTimes(1);
   });
 
   it('routes Enter to the open picker instead of picking before a query resolves', async () => {
@@ -726,15 +718,9 @@ describe('HomeHero plugin picker', () => {
     pressEnterInHomeHero();
     await settle();
 
-    // Enter routed to the picker and picked the selected plugin: the host
-    // callback fires for that record and the editor inserts the atomic pill.
-    // (The `nextPrompt` arg is intentionally not asserted here — when the pick
-    // is reached through the keyboard-command path the nested insert update has
-    // not yet committed when pickPlugin reads back getText(), so the serialized
-    // text is exercised by the mouseDown-driven test above instead.)
-    expect(onPickPlugin).toHaveBeenCalledTimes(1);
-    expect(onPickPlugin.mock.calls[0]?.[0]).toEqual(
+    expect(onPickPlugin).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ id: 'sample-plugin' }),
+      'Make @Sample Plugin',
     );
     const pill = screen
       .getByTestId('home-hero-input')
@@ -769,7 +755,7 @@ describe('HomeHero plugin picker', () => {
       />,
     );
 
-    setHomeHeroPrompt('@sam');
+    await setHomeHeroPrompt('@sam');
     await settle();
 
     const hoverSlot = screen.getByTestId('home-hero-plugin-hover-slot');
@@ -780,6 +766,37 @@ describe('HomeHero plugin picker', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Details' }));
 
     expect(onOpenPluginDetails).toHaveBeenCalledWith(plugin);
+    expect(screen.queryByTestId('home-hero-plugin-picker')).toBeNull();
+  });
+
+  it('consumes Enter with no results and picks the catalogue result once it arrives', async () => {
+    const onPickPlugin = vi.fn();
+    const onSubmit = vi.fn();
+    const props = {
+      prompt: 'Make @sam', onPromptChange: vi.fn(), onSubmit,
+      activePluginTitle: null, activeChipId: null, onClearActivePlugin: vi.fn(),
+      pluginOptions: [], pluginsLoading: true, pendingPluginId: null,
+      pendingChipId: null, onPickPlugin, onPickChip: vi.fn(),
+      contextItemCount: 0, error: null,
+    } satisfies ComponentProps<typeof HomeHero>;
+    const view = render(<HomeHero {...props} />);
+    await settle();
+    expect(screen.getByTestId('home-hero-plugin-picker')).toBeTruthy();
+    await act(async () => { pressEnterInHomeHero(); });
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(onPickPlugin).not.toHaveBeenCalled();
+    expect(screen.getByTestId('home-hero-plugin-picker')).toBeTruthy();
+
+    // An empty completed response still owns Enter; it is not a send gesture.
+    view.rerender(<HomeHero {...props} pluginsLoading={false} />);
+    await act(async () => { pressEnterInHomeHero(); });
+    expect(onSubmit).not.toHaveBeenCalled();
+    const plugin = makePlugin('sample-plugin', 'Sample Plugin');
+    view.rerender(<HomeHero {...props} pluginsLoading={false} pluginOptions={[plugin]} />);
+    expect(screen.getByRole('option', { name: /sample plugin/i })).toBeTruthy();
+    await act(async () => { pressEnterInHomeHero(); });
+    expect(onPickPlugin).toHaveBeenCalledExactlyOnceWith(plugin, 'Make @Sample Plugin');
+    expect(onSubmit).not.toHaveBeenCalled();
     expect(screen.queryByTestId('home-hero-plugin-picker')).toBeNull();
   });
 

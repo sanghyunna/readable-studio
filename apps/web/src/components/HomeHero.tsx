@@ -838,7 +838,9 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
       setMentionTrigger(null);
       return true;
     }
-    if (visiblePickerOptions.length === 0) return false;
+    // An empty/loading picker still owns navigation, especially Enter: it
+    // must not submit the unfinished @query while the catalogue is resolving.
+    if (visiblePickerOptions.length === 0) return true;
     if (key === 'ArrowDown') {
       setSelectedIndex((idx) => (idx + 1) % visiblePickerOptions.length);
       return true;
@@ -851,7 +853,12 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     }
     if (key === 'Tab' || key === 'Enter') {
       const selected = visiblePickerOptions[selectedIndex] ?? visiblePickerOptions[0];
-      if (selected && !selected.disabled) selected.onPick();
+      if (selected && !selected.disabled) {
+        // Lexical invokes this inside its command update. Insert after that
+        // transaction exits so the discrete mention commit precedes getText()
+        // and the host receives the same prompt as a pointer selection.
+        queueMicrotask(() => selected.onPick());
+      }
       return true;
     }
     return false;
@@ -1229,11 +1236,11 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
                 if (canSubmit) onSubmit();
               }}
               onPasteFiles={handleFiles}
-              popoverOpen={pickerOpen && visiblePickerOptions.length > 0}
+              popoverOpen={pickerOpen}
               onPopoverKey={handlePopoverKey}
               comboboxAria={{
                 expanded: pickerOpen,
-                activeId: pickerOpen ? `home-hero-option-${selectedIndex}` : null,
+                activeId: pickerOpen && visiblePickerOptions.length > 0 ? `home-hero-option-${selectedIndex}` : null,
               }}
             />
           </div>

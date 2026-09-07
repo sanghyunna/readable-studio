@@ -1,5 +1,4 @@
-import { act } from 'react';
-import { screen } from '@testing-library/react';
+import { act, screen } from '@testing-library/react';
 import {
   $createLineBreakNode,
   $createParagraphNode,

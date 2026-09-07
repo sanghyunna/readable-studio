@@ -1,14 +1,9 @@
-import { act } from 'react';
-import { screen } from '@testing-library/react';
+import { act, screen } from '@testing-library/react';
 
-// Let the composer's mount-time effects (lazy fetches for plugins/skills/MCP,
-// the Lexical editor attaching to the DOM) settle before driving input. A
-// macrotask flush inside act() drains the pending promises + state updates so
-// the editor is live and `getComposerEditor()` finds `__lexicalEditor`.
+// Drain the mounted editor's effects and already-resolved fetch mocks through
+// Testing Library's act boundary, without waiting for an arbitrary timer.
 export async function flushMounts(): Promise<void> {
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  });
+  await act(async () => {});
 }
 import {
   $createLineBreakNode,
@@ -104,15 +99,14 @@ export function composerText(): string {
   return serializeComposer(editor.getEditorState()).text;
 }
 
-// Type `value` and wait for the editor's OnChange update listener to flush its
-// onChange → setDraft into React state (the host's `draft` is what submit()
-// reads). Lexical fires the listener synchronously under `discrete: true`, but
-// the React state update may still be pending a microtask; awaiting one tick
-// inside act settles it. Use this in flows that submit right after typing.
+// Finish pending mount/seed work before simulating a user input task. Otherwise
+// async act batches the new draft while SeedingPlugin's previous draft microtask
+// is still queued, letting that stale seed overwrite the synthetic keystroke.
+// Then settle the edit's React effects before the caller's next interaction.
 export async function typeAndSettle(value: string, caret = value.length): Promise<void> {
-  typeInComposer(value, caret);
+  await flushMounts();
   await act(async () => {
-    await Promise.resolve();
+    typeInComposer(value, caret);
   });
 }
 

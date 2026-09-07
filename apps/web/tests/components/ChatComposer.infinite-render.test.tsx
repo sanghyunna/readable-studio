@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ComponentProps } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -69,12 +69,9 @@ describe('ChatComposer infinite re-render regression (#2097)', () => {
     renderComposer({ streaming: true, onSend, onStop });
     await flushMounts();
 
-    typeAndSettle('change the font');
+    await typeAndSettle('change the font');
 
-    // The editor's onChange → setDraft settles a tick after typeAndSettle
-    // returns; wait for the send button (which only shows once the composer has
-    // payload) before asserting Stop is gone.
-    await waitFor(() => expect(screen.getByTestId('chat-send')).toBeTruthy());
+    expect(screen.getByTestId('chat-send')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull();
     fireEvent.click(screen.getByTestId('chat-send'));
 
@@ -90,7 +87,7 @@ describe('ChatComposer infinite re-render regression (#2097)', () => {
     });
     await flushMounts();
 
-    await waitFor(() => expect(composerText()).toBe('draft before refresh'));
+    expect(composerText()).toBe('draft before refresh');
   });
 
   it('clears the saved draft after submitting it', async () => {
@@ -102,13 +99,18 @@ describe('ChatComposer infinite re-render regression (#2097)', () => {
     });
     await flushMounts();
 
-    typeAndSettle('send then clear');
+    await typeAndSettle('send then clear');
 
-    await waitFor(() => expect(window.localStorage.getItem(key)).toBe('send then clear'));
-    pressEnter({ meta: true });
+    // Persist through the real eager-flush event; debounce timing is covered
+    // by the dedicated draft-persistence suite with fake timers.
+    fireEvent(window, new Event('pagehide'));
+    expect(window.localStorage.getItem(key)).toBe('send then clear');
+    await act(async () => {
+      pressEnter({ meta: true });
+    });
 
-    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(window.localStorage.getItem(key)).toBeNull());
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(window.localStorage.getItem(key)).toBeNull();
   });
 
   it('does not enter an infinite update loop on rapid plain-text typing', async () => {
@@ -116,13 +118,13 @@ describe('ChatComposer infinite re-render regression (#2097)', () => {
     // between the input and a layout effect. The Lexical editor owns its own
     // text now (no overlay scroll-sync effect), so rapid edits must settle
     // without re-render storms.
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const consoleError = vi.spyOn(console, 'error');
     try {
       renderComposer();
       await flushMounts();
 
       for (const value of ['h', 'he', 'hel', 'hell', 'hello']) {
-        typeAndSettle(value);
+        await typeAndSettle(value);
       }
 
       const maxDepth = consoleError.mock.calls.find((args) =>

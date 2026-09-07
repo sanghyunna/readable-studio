@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
-import { act, type ComponentProps } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { type ComponentProps } from 'react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { focusComposerWhenUnowned, HomeView } from '../../src/components/HomeView';
 import {
@@ -1297,13 +1297,12 @@ describe('HomeView prompt handoff', () => {
     // Browser fill is two-phase: it focuses/selects the field, then inserts
     // text. The activation frame runs in between under load, so it may only
     // claim focus while no newer control owns it.
-    input.focus();
-    input.select();
     const composerFocusSpy = vi.spyOn(screen.getByTestId('home-hero-input'), 'focus');
     await act(async () => {
+      input.focus();
+      input.select();
       expect(pendingFrames.length).toBeGreaterThan(0);
       for (const callback of pendingFrames.splice(0)) callback(window.performance.now());
-      await Promise.resolve();
     });
     expect(composerFocusSpy).not.toHaveBeenCalled();
     expect(document.activeElement).toBe(input);
@@ -1316,7 +1315,7 @@ describe('HomeView prompt handoff', () => {
       }));
       await applyResponse;
     });
-    await waitFor(() => expect(input.value).toBe('routing observables'));
+    expect(input.value).toBe('routing observables');
     fireEvent.blur(input);
     expect(input.value).toBe('routing observables');
   });
