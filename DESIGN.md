@@ -91,6 +91,17 @@ Motion communicates state or spatial continuity. Animate composited properties (
 
 The strategy is mixed but restrained: tonal shifts and borders establish the shell; `--shadow-xs` through `--shadow-lg` are reserved for genuine elevation such as menus, dialogs, and floating controls. Generated document previews remain palette-neutral so application chrome never biases document design.
 
+### Ambient background vocabulary
+
+One ambient composition lights every shell surface, so the Hub <-> workspace swap never changes the light itself. The ingredients are declared once in `styles/themes/recipes.css` and consumed by both surfaces:
+
+| Ingredient | Token | Carrier |
+|---|---|---|
+| Canvas | `--hub-canvas-background` (four corner blooms over `--hub-canvas-base`) | painted once on `.workspace-shell`; every surface root above it stays transparent |
+| Wash blooms | `--hub-wash-bloom-accent`, `--hub-wash-bloom-warm`, `--hub-wash-bloom-cool` (soft circular falloffs over the theme-aware `--hub-wash*` colours) | Hub: `.hub__wash` + `::before`/`::after`; workspace: `.app::before`/`::after` + `.split::before` |
+
+Carriers are fixed to the viewport, blurred, faded, pill-shaped and inert; positions and intensity may vary per surface, but the ingredient set may not. No surface-local selector may re-declare or delete an ingredient: the wash colours substitute at the recipe root, so a scoped `--hub-wash*` override is dead by construction, and reduced transparency hides every carrier on both surfaces while the canvas flattens to `--hub-canvas`.
+
 Radii use only `--radius-xs`, `--radius-sm`, `--radius`, `--radius-md`, `--radius-lg`, and `--radius-pill`.
 
 ## 8. Accessibility Constraints & Accepted Debt

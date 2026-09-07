@@ -98,46 +98,45 @@ function classCount(selector: string): number {
   return (selector.match(/\.[a-zA-Z_-][\w-]*/g) ?? []).length;
 }
 
-const HUB_CANVAS_BLOOMS = [
-  '--hub-canvas-blue',
-  '--hub-canvas-pink',
-  '--hub-canvas-cyan',
-  '--hub-canvas-green',
-  '--hub-canvas-base',
+const WORKSPACE_WASH_BLOOMS = [
+  '--hub-wash-bloom-accent',
+  '--hub-wash-bloom-warm',
+  '--hub-wash-bloom-cool',
 ] as const;
 
 describe('project workspace shell material', () => {
-  it('paints the ambient hub canvas around the panes so every theme recipe propagates', () => {
+  it('paints no canvas of its own - the shell owns --hub-canvas-background and the split stays transparent to it', () => {
     const split = cssDeclarations(baseCascade(shellCss), '.split');
-    const background = ruleValue(split, 'background');
 
-    for (const token of HUB_CANVAS_BLOOMS) {
-      expect(background).toContain(`var(${token})`);
-    }
-    expect(background).toContain('radial-gradient');
+    // The ambient canvas is painted once on `.workspace-shell` for BOTH
+    // surfaces; a private gradient stack here was what made the workspace's
+    // light read as a different composition from the Hub's.
+    expect(ruleValue(split, 'background')).toBe('transparent');
+    expect(split).not.toContain('radial-gradient');
+
+    const shell = cssDeclarations(baseCascade(shellCss), '.workspace-shell');
+    expect(ruleValue(shell, 'background')).toBe('var(--hub-canvas-background)');
   });
 
-  // Regression: the canvas used to be four corner-anchored blooms only, which
-  // measured within 2-4 of flat `--bg` across the mid-height working band at
-  // 1440x900 - the middle of the screen showed no ambient colour at all.
-  it('anchors ambient blooms inside the working area, not only at the corners', () => {
-    const split = cssDeclarations(baseCascade(shellCss), '.split');
-    const background = ruleValue(split, 'background');
+  it('lights the working area with the shared wash blooms, not a private canvas', () => {
+    const base = baseCascade(shellCss);
+    const carriers = ['.app::before', '.split::after', '.split::before'] as const;
+    const consumed = new Set<string>();
+    for (const carrier of carriers) {
+      const background = ruleValue(cssDeclarations(base, carrier), 'background');
+      for (const bloom of WORKSPACE_WASH_BLOOMS) {
+        if (background.includes(`var(${bloom})`)) consumed.add(bloom);
+      }
+    }
+    expect([...consumed].sort()).toEqual([...WORKSPACE_WASH_BLOOMS].sort());
 
-    const anchors = [...background.matchAll(/radial-gradient\([^,]+at\s+([\d.]+)%\s+([-\d.]+)%/g)].map(
-      ([, x, y]) => ({ x: Number(x), y: Number(y) }),
-    );
-    expect(anchors.length).toBeGreaterThanOrEqual(4);
-
-    // At least two blooms must originate within the vertical band the user
-    // looks at, so the tint does not depend on gradient tails reaching inward.
-    const midBand = anchors.filter((anchor) => anchor.y >= 25 && anchor.y <= 75);
-    expect(midBand.length).toBeGreaterThanOrEqual(2);
-
-    // ...and they must be spread horizontally, so both the chat-pane gutter and
-    // the stage edge receive tint rather than a single centred hotspot.
-    const spread = Math.max(...midBand.map((a) => a.x)) - Math.min(...midBand.map((a) => a.x));
-    expect(spread).toBeGreaterThanOrEqual(30);
+    // The warm bloom is anchored to the chat pane's outer edge (the inline
+    // `--project-chat-panel-width` custom property on `.split`), so its falloff
+    // lights the pane/stage boundary band instead of the corner tails.
+    const warm = cssDeclarations(base, '.split::after');
+    expect(ruleValue(warm, 'background')).toBe('var(--hub-wash-bloom-warm)');
+    expect(ruleValue(warm, 'inset')).toContain('var(--project-chat-panel-width');
+    expect(ruleValue(warm, 'filter')).toMatch(/^blur\(/);
   });
 
   it('separates the panes with canvas gutters instead of a shared flat fill', () => {

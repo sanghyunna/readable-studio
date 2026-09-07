@@ -1360,6 +1360,10 @@ const requiredHubMaterialTokens = new Set([
   "--hub-wash",
   "--hub-wash-warm",
   "--hub-wash-cool",
+  // Shared ambient wash blooms consumed by both the Hub and the workspace.
+  "--hub-wash-bloom-accent",
+  "--hub-wash-bloom-warm",
+  "--hub-wash-bloom-cool",
   "--hub-canvas-base",
   "--hub-canvas-blue",
   "--hub-canvas-pink",
@@ -1409,6 +1413,9 @@ const composedHubRecipeSources = new Map<string, readonly string[]>([
       "--hub-canvas-base",
     ],
   ],
+  ["--hub-wash-bloom-accent", ["--hub-wash"]],
+  ["--hub-wash-bloom-warm", ["--hub-wash-warm"]],
+  ["--hub-wash-bloom-cool", ["--hub-wash-cool"]],
 ]);
 
 type WebThemeRecipeSources = {

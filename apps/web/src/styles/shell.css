@@ -21,6 +21,68 @@
   grid-row: 2;
 }
 
+/* `viewer/routines.css` is imported after this file and repaints `.app` with
+   an opaque `--bg-panel` at equal specificity. Behind a transparent `.split`
+   that slab would hide the shell canvas and the wash blooms, so the ambient
+   layer must win the cascade for real, not only in isolation. The stacking
+   context keeps the negative-z wash carriers above the shell canvas and below
+   the panes. */
+.workspace-shell .app {
+  background: transparent;
+  isolation: isolate;
+}
+
+/* Workspace wash carriers: the same three ambient blooms the Hub paints
+   through `.hub__wash` (recipes.css), so the light composition persists across
+   the Hub <-> workspace swap. Positions are this surface's own: the accent
+   bloom stays in the upper left like the Hub's, the warm bloom is pulled
+   toward the pane/stage boundary so its falloff - not its tail - lights the
+   working band, and the cool bloom keeps the lower-left anchoring. All are
+   fixed to the viewport, blurred, faded, pill-shaped and inert, exactly like
+   the Hub carriers. */
+.app::before,
+.split::after,
+.split::before {
+  content: '';
+  position: fixed;
+  z-index: -1;
+  border-radius: var(--radius-pill);
+  pointer-events: none;
+}
+
+.app::before {
+  inset: -180px auto auto -160px;
+  width: 680px;
+  height: 740px;
+  background: var(--hub-wash-bloom-accent);
+  filter: blur(80px);
+  opacity: 0.62;
+}
+
+/* Anchored to the chat pane's outer edge (the pane width is the inline
+   `--project-chat-panel-width` custom property set on `.split`), so the warm
+   light always lands where the glass pane meets the stage instead of drifting
+   with the viewport width. The carrier belongs to `.split` so it inherits
+   both the initial width and DOM-only pointer-resize updates; `.app` cannot
+   inherit a custom property from its child. */
+.split::after {
+  inset: 10vh auto auto calc(var(--project-chat-panel-width, 460px) + 24px);
+  width: 36vw;
+  height: 44vh;
+  background: var(--hub-wash-bloom-warm);
+  filter: blur(88px);
+  opacity: 0.5;
+}
+
+.split::before {
+  inset: auto auto -10vh -6vw;
+  width: 38vw;
+  height: 38vw;
+  background: var(--hub-wash-bloom-cool);
+  filter: blur(88px);
+  opacity: 0.46;
+}
+
 .workspace-shell {
   --workspace-tabs-chrome-height: 38px;
   /* One number for the frameless title strip: the grid track that reserves it,
@@ -1454,28 +1516,13 @@ a.avatar-item:visited {
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
-  /* Ambient canvas. The corner blooms alone (geometry from the Hub canvas in
-     `home/entry-layout.css`) are corner-weighted: measured at 1440x900 they
-     faded to within 2-4 of flat `--bg` across y=300..600, so the middle of the
-     working area — where the user actually looks — showed no ambient colour and
-     the glass tier read as flat white on flat white.
-
-     The Hub does not have this problem because it layers large, heavily blurred
-     `.hub__wash` blooms (`home/hub.css`) on top of the same corner stack, and
-     those blooms are anchored on-screen rather than off the edges. Reproduced
-     here without extra elements: two mid-anchored blooms lead the stack, sized
-     past the viewport so their falloff — not their tail — covers the working
-     band, with the corner stack kept behind them for the same edge character.
-     Anchors sit at the left gutter and the stage's right edge so the tint reads
-     strongest exactly where the pane/stage boundary needs separating. */
-  background:
-    radial-gradient(1200px 900px at 34% 46%, var(--hub-canvas-cyan) 0%, transparent 46%),
-    radial-gradient(1000px 820px at 88% 58%, var(--hub-canvas-pink) 0%, transparent 44%),
-    radial-gradient(1100px 640px at 10% -8%, var(--hub-canvas-blue) 0%, transparent 62%),
-    radial-gradient(880px 560px at 92% -4%, var(--hub-canvas-pink) 0%, transparent 58%),
-    radial-gradient(760px 620px at 74% 108%, var(--hub-canvas-cyan) 0%, transparent 62%),
-    radial-gradient(620px 520px at 22% 96%, var(--hub-canvas-green) 0%, transparent 60%),
-    var(--hub-canvas-base);
+  /* Transparent: the ambient canvas is painted ONCE on `.workspace-shell`
+     (`--hub-canvas-background`) and the wash blooms by the fixed carriers
+     above. This region previously re-rolled its own six-gradient canvas with
+     sharper mid-anchored blooms, so the workspace's light composition differed
+     from the Hub's and the swap changed the light itself. The reduced
+     transparency fallback below still flattens this region to `--hub-canvas`. */
+  background: transparent;
 }
 .split.is-resizing-chat {
   cursor: col-resize;
@@ -1696,6 +1743,13 @@ a.avatar-item:visited {
   .app .split.split,
   .app .split.split-focus {
     background: var(--hub-canvas);
+  }
+  /* The wash carriers collapse with the canvas, exactly as `.hub__wash` does
+     on the Hub, so the fallback is one flat neutral on both surfaces. */
+  .app::before,
+  .split::after,
+  .split::before {
+    display: none;
   }
   .split > .split-chat-slot > .pane,
   .split > .split-chat-slot > .comment-left-host,

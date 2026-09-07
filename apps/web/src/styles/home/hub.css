@@ -140,7 +140,9 @@
   width: 680px;
   height: 740px;
   border-radius: var(--radius-pill);
-  background: radial-gradient(circle, var(--hub-wash), transparent 68%);
+  /* The shared shell ambient vocabulary (recipes.css): the workspace paints
+     these same three blooms, so the light persists across the surface swap. */
+  background: var(--hub-wash-bloom-accent);
   filter: blur(80px);
   opacity: 0.62;
   pointer-events: none;
@@ -163,7 +165,7 @@
   inset: 8vh -8vw auto auto;
   width: 44vw;
   height: 44vw;
-  background: radial-gradient(circle, var(--hub-wash-warm), transparent 68%);
+  background: var(--hub-wash-bloom-warm);
   filter: blur(90px);
   opacity: 0.5;
 }
@@ -174,7 +176,7 @@
   inset: auto auto -10vh -6vw;
   width: 38vw;
   height: 38vw;
-  background: radial-gradient(circle, var(--hub-wash-cool), transparent 68%);
+  background: var(--hub-wash-bloom-cool);
   filter: blur(88px);
   opacity: 0.46;
 }

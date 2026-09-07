@@ -29,6 +29,16 @@
   --hub-wash: color-mix(in srgb, var(--accent) 28%, transparent);
   --hub-wash-warm: color-mix(in srgb, var(--purple) 30%, transparent);
   --hub-wash-cool: color-mix(in srgb, var(--green) 26%, transparent);
+  /* The ambient wash blooms, declared once for BOTH surfaces. The Hub layers
+     them through `.hub__wash` and the workspace through `.app`/`.split`
+     pseudo-elements; carriers may differ in position and intensity, but the
+     light itself is this one recipe, so a surface swap never swaps the
+     composition. The wash colour substitutes HERE (custom properties resolve
+     where declared), so a surface-scoped `--hub-wash*` override cannot fork
+     the two surfaces - it would simply stop painting. */
+  --hub-wash-bloom-accent: radial-gradient(circle, var(--hub-wash) 0%, transparent 68%);
+  --hub-wash-bloom-warm: radial-gradient(circle, var(--hub-wash-warm) 0%, transparent 68%);
+  --hub-wash-bloom-cool: radial-gradient(circle, var(--hub-wash-cool) 0%, transparent 68%);
   --hub-canvas-base: var(--bg-app);
   /* Bloom stops are mixed hard enough that a mid-height sample still reads as
      ambient colour rather than flat `--bg`. At the previous 16-24% the light

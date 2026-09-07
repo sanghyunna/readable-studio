@@ -455,10 +455,10 @@
   /* Dark blooms must carry real chroma: at the previous 0.13-0.20 alphas the
      washes composited to within 1-3 of the #1a1917 base everywhere except the
      extreme corners, so the composer's backdrop-filter had a flat grey to
-     sample and the surface read as clay. */
-  --hub-wash: rgba(107, 143, 232, 0.34);
-  --hub-wash-warm: rgba(214, 118, 156, 0.26);
-  --hub-wash-cool: rgba(72, 166, 148, 0.24);
+     sample and the surface read as clay. The wash colours themselves are NOT
+     re-declared here: the shared `--hub-wash-bloom-*` ingredients substitute
+     the root recipe value where they are declared, so a scoped copy would be
+     dead and would only fork the Hub from the workspace. */
   /* Dark glass keeps the app's warm-neutral hue (the canvas is #1a1917, not a
      cool blue-grey); a cold fill here reads as a foreign panel, not glass. */
   --hub-glass-fill: rgba(38, 36, 33, 0.62);
@@ -622,9 +622,8 @@
     --hub-pearl-border: rgba(255, 255, 255, 0.12);
     --hub-pearl-highlight: rgba(255, 255, 255, 0.32);
     --hub-pearl-elevation: rgba(0, 0, 0, 0.34);
-    --hub-wash: rgba(107, 143, 232, 0.34);
-    --hub-wash-warm: rgba(214, 118, 156, 0.26);
-    --hub-wash-cool: rgba(72, 166, 148, 0.24);
+    /* See the explicit-dark block above: the wash colours stay on the shared
+       root recipe so both surfaces light identically. */
     --hub-glass-fill: rgba(38, 36, 33, 0.62);
     --hub-glass-fill-strong: rgba(38, 36, 33, 0.8);
     --hub-glass-blur: blur(22px) saturate(150%);

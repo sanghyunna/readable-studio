@@ -24,6 +24,11 @@ const HUB_MATERIAL_TOKENS = [
   '--hub-wash',
   '--hub-wash-warm',
   '--hub-wash-cool',
+  // The shared ambient wash blooms: one recipe consumed by BOTH surfaces, so
+  // the Hub <-> workspace swap can never change the light composition.
+  '--hub-wash-bloom-accent',
+  '--hub-wash-bloom-warm',
+  '--hub-wash-bloom-cool',
   '--hub-canvas-base',
   '--hub-canvas-blue',
   '--hub-canvas-pink',
@@ -124,6 +129,17 @@ describe('Screen Mode theme recipes', () => {
         ]) {
           expect(value, `${token} -> ${source}`).toContain(`var(${source})`);
         }
+        continue;
+      }
+      const washBloomSource = (
+        {
+          '--hub-wash-bloom-accent': '--hub-wash',
+          '--hub-wash-bloom-warm': '--hub-wash-warm',
+          '--hub-wash-bloom-cool': '--hub-wash-cool',
+        } as Record<string, string | undefined>
+      )[token];
+      if (washBloomSource) {
+        expect(value, `${token} -> ${washBloomSource}`).toContain(`var(${washBloomSource})`);
         continue;
       }
       expect(value, token).toMatch(/var\(--(?:bg|bg-app|bg-panel|bg-elevated|bg-fill(?:-secondary|-tertiary)?|border|border-strong|border-soft|text|text-strong|text-muted|text-soft|text-faint|accent|accent-strong|accent-soft|accent-tint|accent-hover|accent-contrast|blue|blue-bg|blue-border|purple|purple-bg|purple-border|green|green-bg|green-border|shadow-color|shadow-(?:sm|md|lg))\)/);
