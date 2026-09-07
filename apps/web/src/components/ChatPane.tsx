@@ -4,18 +4,15 @@ import {
   useCallback,
   useDeferredValue,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
   type Dispatch,
   type DragEvent as ReactDragEvent,
   type MutableRefObject,
   type ReactNode,
   type SetStateAction,
 } from 'react';
-import { createPortal } from 'react-dom';
 import { useAnalytics } from '../analytics/provider';
 import { trackChatPanelClick, trackMessageQueueClick, trackRunFailedToastSurfaceView } from '../analytics/events';
 import { attributedAmrUrl, recordAmrEntry } from '../analytics/amr-attribution';
@@ -635,8 +632,6 @@ export function ChatPane({
   const chatLogScrollIdleTimerRef = useRef<number | null>(null);
   const historyWrapRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<ChatComposerHandle | null>(null);
-  const composerSlotRef = useRef<HTMLDivElement | null>(null);
-  const composerLayerRef = useRef<HTMLDivElement | null>(null);
   const queuedSendStripRef = useRef<HTMLDivElement | null>(null);
   const didInitialScrollRef = useRef(false);
   const runFailedToastSurfaceKeysRef = useRef<Set<string>>(new Set());
@@ -708,13 +703,6 @@ export function ChatPane({
   const [scrolledFromBottom, setScrolledFromBottom] = useState(false);
   const [chatLogScrollable, setChatLogScrollable] = useState(false);
   const [chatLogScrolling, setChatLogScrolling] = useState(false);
-  const [composerPortalTarget, setComposerPortalTarget] = useState<HTMLElement | null>(null);
-  const [composerPortalRect, setComposerPortalRect] = useState<{
-    left: number;
-    width: number;
-    bottom: number;
-  } | null>(null);
-  const [composerSlotHeight, setComposerSlotHeight] = useState(0);
   const [editingQueuedSendId, setEditingQueuedSendId] = useState<string | null>(null);
   // Reverse scan (no array copy) + memo so this and the maps below don't
   // recompute on every non-`messages` render (scroll, hover, toggles).
@@ -1372,93 +1360,6 @@ export function ChatPane({
     el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   }
 
-  useEffect(() => {
-    if (typeof document === 'undefined') return;
-    setComposerPortalTarget(document.body);
-  }, []);
-
-  useLayoutEffect(() => {
-    if (tab !== 'chat') {
-      setComposerPortalRect(null);
-      return;
-    }
-    const slot = composerSlotRef.current;
-    if (!slot || typeof window === 'undefined') return;
-
-    let frame: number | null = null;
-    const updateRect = () => {
-      frame = null;
-      const rect = slot.getBoundingClientRect();
-      setComposerPortalRect((prev) => {
-        const next = {
-          left: Math.round(rect.left),
-          width: Math.round(rect.width),
-          bottom: Math.max(0, Math.round(window.innerHeight - rect.bottom)),
-        };
-        if (
-          prev
-          && prev.left === next.left
-          && prev.width === next.width
-          && prev.bottom === next.bottom
-        ) {
-          return prev;
-        }
-        return next;
-      });
-    };
-    const scheduleUpdate = () => {
-      if (frame !== null) return;
-      frame = window.requestAnimationFrame(updateRect);
-    };
-
-    updateRect();
-    const resizeObserver =
-      typeof ResizeObserver !== 'undefined'
-        ? new ResizeObserver(scheduleUpdate)
-        : null;
-    resizeObserver?.observe(slot);
-    const pane = slot.closest('.pane');
-    if (pane) resizeObserver?.observe(pane);
-    window.addEventListener('resize', scheduleUpdate);
-    window.visualViewport?.addEventListener('resize', scheduleUpdate);
-
-    return () => {
-      if (frame !== null) window.cancelAnimationFrame(frame);
-      resizeObserver?.disconnect();
-      window.removeEventListener('resize', scheduleUpdate);
-      window.visualViewport?.removeEventListener('resize', scheduleUpdate);
-    };
-  }, [tab]);
-
-  useLayoutEffect(() => {
-    if (tab !== 'chat' || !composerPortalTarget || !composerPortalRect) return;
-    const layer = composerLayerRef.current;
-    if (!layer || typeof window === 'undefined') return;
-
-    let frame: number | null = null;
-    const updateHeight = () => {
-      frame = null;
-      const nextHeight = Math.ceil(layer.getBoundingClientRect().height);
-      setComposerSlotHeight((prev) => (prev === nextHeight ? prev : nextHeight));
-    };
-    const scheduleUpdate = () => {
-      if (frame !== null) return;
-      frame = window.requestAnimationFrame(updateHeight);
-    };
-
-    updateHeight();
-    const resizeObserver =
-      typeof ResizeObserver !== 'undefined'
-        ? new ResizeObserver(scheduleUpdate)
-        : null;
-    resizeObserver?.observe(layer);
-
-    return () => {
-      if (frame !== null) window.cancelAnimationFrame(frame);
-      resizeObserver?.disconnect();
-    };
-  }, [composerPortalRect, composerPortalTarget, tab]);
-
   // Agent + model buttons for the workspace composer. Built here (rather than
   // inside ChatComposer) because ChatPane is where the execution wiring lands,
   // and mounted as two variants of the ONE InlineModelSwitcher so nothing about
@@ -1591,15 +1492,6 @@ export function ChatPane({
       onShowToast={onShowToast}
     />
   );
-  const shouldPortalComposer =
-    tab === 'chat'
-    && composerPortalTarget !== null
-    && composerPortalRect !== null
-    && composerPortalRect.width > 0;
-  const composerSlotStyle: CSSProperties | undefined = shouldPortalComposer
-    ? { minHeight: composerSlotHeight > 0 ? composerSlotHeight : undefined }
-    : undefined;
-
   return (
     <div className="pane">
       <div className="chat-project-header">
@@ -2055,30 +1947,17 @@ export function ChatPane({
                 }
               : undefined}
           />
-          <div
-            className="chat-composer-slot"
-            ref={composerSlotRef}
-            style={composerSlotStyle}
-            aria-hidden={shouldPortalComposer ? true : undefined}
-          >
-            {shouldPortalComposer ? null : composerNode}
+          {/* The composer is laid out IN the pane. It used to be portaled to
+              <body> as a fixed layer positioned from this slot's measured
+              rect; the slot lives under the keyed, transform-animated surface
+              wrapper, and transforms never fire ResizeObserver, so the copied
+              coordinates went stale during the Hub -> workspace entrance and
+              under browser zoom. In-flow placement needs no measurement.
+              The layer keeps its class name: it is the selector the composer
+              skin in chat.css / viewer/routines.css is keyed on. */}
+          <div className="chat-composer-slot">
+            <div className="chat-composer-fixed-layer">{composerNode}</div>
           </div>
-          {shouldPortalComposer && composerPortalTarget && composerPortalRect
-            ? createPortal(
-                <div
-                  className="chat-composer-fixed-layer"
-                  ref={composerLayerRef}
-                  style={{
-                    left: composerPortalRect.left,
-                    bottom: composerPortalRect.bottom,
-                    width: composerPortalRect.width,
-                  }}
-                >
-                  {composerNode}
-                </div>,
-                composerPortalTarget,
-              )
-            : null}
         </>
       ) : null}
     </div>

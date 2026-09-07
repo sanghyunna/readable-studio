@@ -54,7 +54,8 @@ describe('open agent/model cluster geometry', () => {
     expect(value(declarations(homeHeroCss, hub.slot), 'gap')).toBe('2px');
     expect(value(declarations(homeHeroCss, hub.chip), 'gap')).toBe('3px');
     expect(value(declarations(homeHeroCss, hub.chip), 'justify-content')).toBe('flex-start');
-    expect(value(declarations(homeHeroCss, hub.open), 'width')).toBe('168px');
+    expect(value(declarations(homeHeroCss, hub.open), 'width'))
+      .toBe('var(--inline-switcher-model-menu-width)');
     expect(value(declarations(homeHeroCss, hub.mount), 'flex')).toBe('0 0 auto');
   });
 
@@ -65,7 +66,9 @@ describe('open agent/model cluster geometry', () => {
     expect(value(declarations(chatCss, workspace.slot), 'gap')).toBe('2px');
     expect(value(declarations(chatCss, workspace.chip), 'gap')).toBe('3px');
     expect(value(declarations(chatCss, workspace.chip), 'justify-content')).toBe('flex-start');
-    expect(value(declarations(chatCss, workspace.mount), 'flex')).toBe('0 0 auto');
+    expect(value(declarations(chatCss, workspace.mount), 'flex')).toBe('0 1 auto');
+    expect(value(declarations(chatCss, `${workspace.mount}:has(> [aria-expanded='true'])`), 'flex'))
+      .toBe('0 0 auto');
     expect(workspaceOpenWidth).toBe(hubOpenWidth);
   });
 
@@ -76,7 +79,12 @@ describe('open agent/model cluster geometry', () => {
       .toBe(value(declarations(chatCss, workspace.chip), 'justify-content'));
     expect(value(declarations(chatCss, thinking.mount), 'flex'))
       .toBe(value(declarations(chatCss, workspace.mount), 'flex'));
-    expect(value(declarations(chatCss, thinking.open), 'width')).toBe('168px');
+    // Interaction twin, deliberately NOT a width twin: the effort options are
+    // short Korean words, so the panel is sized to its own content.
+    expect(value(declarations(chatCss, thinking.open), 'width'))
+      .toBe('var(--inline-switcher-effort-menu-width)');
+    expect(value(declarations(chatCss, thinking.open), 'width'))
+      .not.toBe(value(declarations(chatCss, workspace.open), 'width'));
   });
 
 });

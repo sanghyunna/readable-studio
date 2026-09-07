@@ -1045,9 +1045,12 @@
    button to its right, then Send (which is a sibling of the slot). They are
    two mounts of the same switcher component, so the shared chip rules above
    still describe both; only their footprints differ. */
+/* The cluster is the part that YIELDS when the footer runs short: it may
+   shrink (`0 1 auto` + `min-width: 0`) and its model label is capped, so Send
+   keeps its reserved place instead of being pushed out of the row. */
 .home-hero__execution-switcher--agent-model {
   display: inline-flex;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   align-items: center;
   justify-content: flex-end;
   gap: 2px;
@@ -1091,10 +1094,10 @@
 }
 .home-hero__execution-switcher--agent-model .inline-switcher__chip--model .inline-switcher__chip-text {
   flex: 0 0 auto;
-  max-width: none;
+  max-width: var(--inline-switcher-trigger-label-max);
 }
 .home-hero__execution-switcher--agent-model .inline-switcher__chip--model[aria-expanded='true'] {
-  width: 168px;
+  width: var(--inline-switcher-model-menu-width);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1124,8 +1127,15 @@
   z-index: 1700;
 }
 .inline-switcher__popover--model {
-  width: 168px;
+  width: var(--inline-switcher-model-menu-width);
   padding: 8px;
+}
+/* Interaction twin, not a width twin: the effort list holds short Korean words
+   plus the `실행 설정 열기` footer, so it is sized to its own content. Declared
+   after `--model` because the reasoning panel carries BOTH classes (the shared
+   direct-listbox skin plus this width). */
+.inline-switcher__popover--reasoning {
+  width: var(--inline-switcher-effort-menu-width);
 }
 .inline-switcher__model-warning-mark {
   display: inline-flex;
@@ -2113,6 +2123,9 @@
 .home-hero__submit {
   appearance: none;
   display: inline-flex;
+  /* Reserved place in the footer: Send is the one control that must never be
+     displaced or squeezed by a long model name. */
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   gap: 6px;

@@ -2,7 +2,8 @@
 //
 // The composer bottom row's execution cluster is agent icon, model name, then
 // Send. These controls are authored in different components and the composer
-// mounts under `.chat-composer-fixed-layer` (a body-level portal), so the
+// mounts under `.chat-composer-fixed-layer` (once a body-level portal, now
+// laid out in the pane slot under the same class), so the
 // `.app`-scoped "one control system" normalization in chat.css once failed to
 // reach it. The resulting 28/30/32px controls looked visibly misaligned even
 // though the row centered them.

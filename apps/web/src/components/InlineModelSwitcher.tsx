@@ -145,6 +145,56 @@ function markAmrReminderSeen(): void {
   amrReminderSeenFallback = true;
 }
 
+/**
+ * One option label in the direct listbox.
+ *
+ * The panel is deliberately narrow, so a rare long catalogue name still cannot
+ * fit. Rather than scroll the list horizontally (the scrollbar the user
+ * rejected) the label truncates with an ellipsis and, ONLY when it genuinely
+ * overflows, carries the measured overflow distance. CSS then slides the text
+ * on hover and on keyboard focus so the tail becomes readable; a name that fits
+ * is never flagged and never moves.
+ */
+function ModelOptionLabel({ label }: { label: string }) {
+  const ref = useRef<HTMLSpanElement | null>(null);
+  const textRef = useRef<HTMLSpanElement | null>(null);
+  const [reveal, setReveal] = useState(0);
+
+  useLayoutEffect(() => {
+    const viewport = ref.current;
+    const text = textRef.current;
+    if (!viewport || !text) return;
+    // Measure the intrinsic text, not the wrapper's scrollable overflow: that
+    // changes while the text is translated and can erase the reveal on resize.
+    const measure = () => {
+      setReveal(Math.max(0, text.scrollWidth - viewport.clientWidth));
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(viewport);
+    observer.observe(text);
+    return () => observer.disconnect();
+  }, [label]);
+
+  return (
+    <span
+      ref={ref}
+      className="inline-switcher__model-option-label"
+      data-overflowing={reveal > 0 ? 'true' : undefined}
+      style={
+        reveal > 0
+          ? ({
+              ['--inline-switcher-option-reveal' as string]: `${reveal}px`,
+            } as CSSProperties)
+          : undefined
+      }
+    >
+      <span ref={textRef} className="inline-switcher__model-option-label-text">{label}</span>
+    </span>
+  );
+}
+
 function displayAgentName(agent: Pick<AgentInfo, 'id' | 'name'>): string {
   return agent.id === 'amr' ? 'Readable Studio AMR' : agent.name;
 }
@@ -835,6 +885,9 @@ export function InlineModelSwitcher({
           className={
             'inline-switcher__popover inline-switcher__popover--layer' +
             (isDirectListVariant ? ' inline-switcher__popover--model' : '') +
+            // Interaction twin of the model list, but sized to its own short
+            // options rather than inheriting the model panel's width.
+            (isReasoningVariant ? ' inline-switcher__popover--reasoning' : '') +
             (surface ? ` inline-switcher__popover--${surface}` : '')
           }
           role="menu"
@@ -935,6 +988,7 @@ export function InlineModelSwitcher({
                     role="option"
                     aria-selected={selected}
                     className={`inline-switcher__model-option${selected ? ' is-active' : ''}`}
+                    title={reasoningLabel(option.id)}
                     data-testid={`inline-model-switcher-reasoning-option-${option.id}`}
                     onClick={() => {
                       if (currentAgent) {
@@ -943,9 +997,7 @@ export function InlineModelSwitcher({
                       setOpen(false);
                     }}
                   >
-                    <span className="inline-switcher__model-option-label">
-                      {reasoningLabel(option.id)}
-                    </span>
+                    <ModelOptionLabel label={reasoningLabel(option.id)} />
                     <span className="inline-switcher__model-option-check" aria-hidden="true">
                       {selected ? <Icon name="check" size={13} /> : null}
                     </span>
@@ -1084,6 +1136,7 @@ export function InlineModelSwitcher({
                           'inline-switcher__model-option' +
                           (selected ? ' is-active' : '')
                         }
+                        title={model.label}
                         data-testid={`inline-model-switcher-model-option-${model.id}`}
                         onClick={() => {
                           trackExecutionSettingsPopoverClick(analytics.track, {
@@ -1099,9 +1152,7 @@ export function InlineModelSwitcher({
                           setOpen(false);
                         }}
                       >
-                        <span className="inline-switcher__model-option-label">
-                          {model.label}
-                        </span>
+                        <ModelOptionLabel label={model.label} />
                         <span
                           className="inline-switcher__model-option-check"
                           aria-hidden="true"

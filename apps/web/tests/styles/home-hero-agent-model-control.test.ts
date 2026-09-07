@@ -95,8 +95,8 @@ describe('Hub composer footer: agent icon -> model name -> send', () => {
     expect(ruleValue(slot, 'gap')).toBe('2px');
     expect(ruleValue(slot, 'width')).toBe('auto');
     expect(ruleValue(modelMount, 'width')).toBe('auto');
-    expect(ruleValue(openModelChip, 'width')).toBe('168px');
-    expect(ruleValue(modelPopover, 'width')).toBe('168px');
+    expect(ruleValue(openModelChip, 'width')).toBe('var(--inline-switcher-model-menu-width)');
+    expect(ruleValue(modelPopover, 'width')).toBe('var(--inline-switcher-model-menu-width)');
     // The model affordance is intentionally text + chevron, not a nested pill.
     expect(ruleValue(modelChip, 'border')).toBe('0');
     expect(ruleValue(modelChip, 'border-radius')).toBe('0');

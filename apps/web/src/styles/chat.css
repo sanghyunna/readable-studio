@@ -11,7 +11,13 @@
    title, and (right-aligned) the session-history trigger. position:
    relative anchors the absolutely-positioned history popover.
    v5: it sits ON the pane glass — no fill of its own, and its bottom
-   edge is a pearl light ray (hub-dna §2 tier 4), never a grey rule. */
+   edge is a pearl light ray (hub-dna §2 tier 4), never a grey rule.
+   v6: min-height, never fixed height. The title block is two stacked
+   lines (.title 18px + 2px padding over .meta 16px = 36px), and the
+   wrapper keeps overflow:hidden for the ellipsis — a fixed 38px height
+   clipped the meta line. 52px = 36px stack + 2×8px vertical padding;
+   align-items:center keeps the 28px icons centered against the taller
+   bar, and a single-line title simply leaves more breathing room. */
 .chat-project-header {
   display: flex;
   align-items: center;
@@ -21,7 +27,8 @@
   background: transparent;
   box-shadow: inset 0 -1px 0 var(--hub-pearl-highlight);
   min-width: 0;
-  height: 38px;
+  min-height: 52px;
+  box-sizing: border-box;
   position: sticky;
   top: 0;
   z-index: 4;
@@ -61,6 +68,15 @@
   min-width: 0;
   flex: 1 1 auto;
   overflow: hidden;
+}
+/* ProjectView supplies this nested block; stacking the outer wrapper does not
+   change the inline formatting of its title and metadata spans. */
+.chat-project-title-line {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 .chat-project-header-title .title {
   color: var(--text-strong);
@@ -926,16 +942,18 @@
 .chat-composer-slot {
   flex: 0 0 auto;
 }
+/* The composer layer is laid out IN the pane slot. It was a body-portaled
+   `position: fixed` box whose left/bottom/width were copied from the slot's
+   measured rect; that rect went stale under the surface entrance transform
+   and browser zoom (transforms never fire ResizeObserver). In flow it needs no
+   measurement. The class name is kept because the composer skin below and in
+   viewer/routines.css is keyed on it. No `contain` and no transform here: both
+   would make this box the containing block for the composer's fixed-position
+   descendants and re-create the drift this rule exists to remove. */
 .chat-composer-fixed-layer {
-  position: fixed;
+  position: relative;
   z-index: 45;
   pointer-events: none;
-  /* `contain: paint` would clip the composer "+" menu, which pops UP and out of
-     this fixed layer's box — the overflow got cut and revealed the chat log
-     behind it. Keep layout/style containment but drop paint so the menu draws
-     fully above the transcript. */
-  contain: layout style;
-  transform: translateZ(0);
 }
 .chat-composer-fixed-layer .composer {
   pointer-events: auto;
@@ -975,9 +993,8 @@
   .composer-row .inline-switcher__chip { padding: 0 7px 0 5px; gap: 5px; }
   /* Narrow chat: the model name is the first thing to give up room, but the
      control stays reachable (its popover is the only in-composer model path). */
-  .composer-execution-switcher .inline-switcher__chip--model .inline-switcher__chip-text,
-  .composer-execution-switcher .inline-switcher__chip--reasoning .inline-switcher__chip-text {
-    max-width: 72px;
+  .composer-execution-switcher {
+    --inline-switcher-trigger-label-max: 72px;
   }
   .composer-row .composer-send {
     width: 32px;
@@ -1321,9 +1338,11 @@
    outlines on the controls, translucent glass with an inset highlight instead.
    `.app` raises specificity above the base `.inline-switcher__chip` rules in
    entry-layout.css, which carry a border and the 32px height. */
+/* Mirrors the Hub: the cluster yields (shrinks, then truncates its model label
+   with the hover/focus reveal) so Send keeps its reserved place. */
 .composer-execution-switcher {
   display: inline-flex;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   align-items: center;
   justify-content: flex-end;
   gap: 2px;
@@ -1388,16 +1407,17 @@
   justify-content: center;
   margin: 0;
 }
-/* Model: intrinsic plain text plus chevron at rest. Opening reserves the
-   compact menu width to the right, moving the visible cluster left as one unit.
-   Its contents stay at that reservation's leading edge, so no void can open
-   between the agent icon and model label; flex shrinking cannot erase the same
-   motion from the body-portaled workspace composer. */
+/* Closed controls yield all the way down to their labels. Only the open
+   control reserves its menu width; the right-aligned cluster expands left. */
 .composer-execution-switcher .inline-switcher--model,
 .composer-execution-switcher .inline-switcher--reasoning {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   width: auto;
   min-width: 0;
+}
+.composer-execution-switcher .inline-switcher--model:has(> [aria-expanded='true']),
+.composer-execution-switcher .inline-switcher--reasoning:has(> [aria-expanded='true']) {
+  flex: 0 0 auto;
 }
 .app .composer-row .composer-execution-switcher .inline-switcher__chip--model,
 .app .composer-row .composer-execution-switcher .inline-switcher__chip--reasoning,
@@ -1419,15 +1439,17 @@
 }
 .composer-execution-switcher .inline-switcher__chip--model .inline-switcher__chip-text,
 .composer-execution-switcher .inline-switcher__chip--reasoning .inline-switcher__chip-text {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   min-width: 0;
-  max-width: none;
+  max-width: var(--inline-switcher-trigger-label-max);
 }
 .app .composer-row .composer-execution-switcher .inline-switcher__chip--model[aria-expanded='true'],
+.chat-composer-fixed-layer .composer-row .composer-execution-switcher .inline-switcher__chip--model[aria-expanded='true'] {
+  width: var(--inline-switcher-model-menu-width);
+}
 .app .composer-row .composer-execution-switcher .inline-switcher__chip--reasoning[aria-expanded='true'],
-.chat-composer-fixed-layer .composer-row .composer-execution-switcher .inline-switcher__chip--model[aria-expanded='true'],
 .chat-composer-fixed-layer .composer-row .composer-execution-switcher .inline-switcher__chip--reasoning[aria-expanded='true'] {
-  width: 168px;
+  width: var(--inline-switcher-effort-menu-width);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1499,13 +1521,23 @@
    Hub design language: borderless rows, translucent hover, tokens only. */
 .inline-switcher__model-list {
   display: grid;
+  /* An auto track inherits the button's unbroken text minimum, even with
+     width: 100% on the button. The list, not its contents, owns the width. */
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  width: 100%;
   gap: 2px;
   max-height: 320px;
   overflow-y: auto;
+  /* Keep horizontal overflow clipped. With an auto vertical axis, browsers
+     compute clip to hidden; the sizing above and clipped label below must
+     therefore prevent horizontal scrollable overflow, not just hide its bar. */
+  overflow-x: clip;
   overscroll-behavior: contain;
 }
 .inline-switcher__model-option {
   display: flex;
+  min-width: 0;
   width: 100%;
   min-height: 30px;
   align-items: center;
@@ -1532,12 +1564,55 @@
   outline: 2px solid var(--hub-accent);
   outline-offset: -2px;
 }
+/* Rest state reads as truncation (ellipsis). A name that genuinely overflows
+   its box is measured in JS, which sets `data-overflowing` plus the exact
+   distance; hovering or keyboard-focusing the row then slides the text so its
+   tail comes into view. A name that fits carries no flag and never moves. */
 .inline-switcher__model-option-label {
   min-width: 0;
-  flex: 1 1 auto;
+  width: 0;
+  flex: 1 1 0px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.inline-switcher__model-option-label-text {
+  display: inline-block;
+  width: max-content;
+  white-space: nowrap;
+  will-change: transform;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .inline-switcher__model-option-label-text {
+    transition: transform var(--dur-enter) var(--ease-out);
+  }
+}
+.inline-switcher__model-option:hover
+  .inline-switcher__model-option-label[data-overflowing='true'],
+.inline-switcher__model-option:focus-visible
+  .inline-switcher__model-option-label[data-overflowing='true'],
+.inline-switcher__model-option:focus
+  .inline-switcher__model-option-label[data-overflowing='true'] {
+  /* The ellipsis would otherwise stay painted over the revealed tail. */
+  text-overflow: clip;
+}
+.inline-switcher__model-option:hover
+  .inline-switcher__model-option-label[data-overflowing='true']
+  .inline-switcher__model-option-label-text,
+.inline-switcher__model-option:focus-visible
+  .inline-switcher__model-option-label[data-overflowing='true']
+  .inline-switcher__model-option-label-text,
+.inline-switcher__model-option:focus
+  .inline-switcher__model-option-label[data-overflowing='true']
+  .inline-switcher__model-option-label-text {
+  transform: translateX(calc(-1 * var(--inline-switcher-option-reveal, 0px)));
+}
+/* Genuine 0s path: the full string still becomes readable, it simply arrives
+   instantly instead of travelling. */
+@media (prefers-reduced-motion: reduce) {
+  .inline-switcher__model-option-label-text {
+    transition: none;
+  }
 }
 .inline-switcher__model-option-check {
   display: inline-flex;
@@ -1817,7 +1892,8 @@
   align-items: center;
   justify-content: center;
   gap: 5px;
-  flex-shrink: 0;
+  /* Reserved place: the execution cluster yields, Send never does. */
+  flex: 0 0 auto;
   white-space: nowrap;
   min-width: 0;
   height: 32px;
@@ -1825,7 +1901,7 @@
   border: 1px solid var(--hub-accent);
   color: var(--hub-accent-fg);
   font-weight: 650;
-  padding: 0 11px;
+  padding: 0 12px;
   font-size: 12.5px;
   border-radius: var(--radius-sm);
   box-shadow:

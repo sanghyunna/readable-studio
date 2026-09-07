@@ -234,6 +234,19 @@
   --radius-lg: var(--radius-surface);
   --radius-pill: 999px;
 
+  /* Composer execution-cluster widths. The model listbox was cut to 168px at
+     the user's request ("about half"), which was narrow enough to produce a
+     horizontal scrollbar on ordinary names; 192px is the smallest 8px-grid step
+     that seats the ordinary catalogue names with breathing room while staying
+     far below the 320px generic switcher panel. The thinking-effort twin is
+     interaction-identical but its options are short Korean words, so it gets
+     its own width sized to `실행 설정 열기` (its widest row). The label cap is what
+     the right-aligned cluster yields with, so Send is never displaced: a longer
+     name truncates and reveals itself on hover/focus instead of growing. */
+  --inline-switcher-model-menu-width: 192px;
+  --inline-switcher-effort-menu-width: 144px;
+  --inline-switcher-trigger-label-max: 132px;
+
   /* Motion — codifies the UI animation philosophy (see AGENTS.md). The
      built-in `ease` curve is too weak and `ease-in` is banned for UI;
      --ease-out is the single canonical curve for product transitions.
