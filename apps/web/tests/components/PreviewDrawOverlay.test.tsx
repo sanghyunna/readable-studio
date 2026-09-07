@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PreviewDrawOverlay } from '../../src/components/PreviewDrawOverlay';
 import { requestPreviewSnapshot } from '../../src/runtime/exports';
+import { stubMissingCanvasContext } from '../helpers/canvas';
 
 vi.mock('../../src/runtime/exports', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/runtime/exports')>();
@@ -14,9 +15,14 @@ vi.mock('../../src/runtime/exports', async (importOriginal) => {
   };
 });
 
+beforeEach(() => {
+  stubMissingCanvasContext();
+});
+
 afterEach(() => {
   cleanup();
   vi.mocked(requestPreviewSnapshot).mockClear();
+  vi.restoreAllMocks();
 });
 
 function installImageCompositeMocks() {

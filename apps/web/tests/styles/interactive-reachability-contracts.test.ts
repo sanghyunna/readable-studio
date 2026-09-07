@@ -1,4 +1,6 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import postcss, { type AtRule, type Declaration, type Rule } from 'postcss';
 import { describe, expect, it } from 'vitest';
 import { modalOverlay } from '../../src/motion';
@@ -32,15 +34,10 @@ type ExpectedDeclarations = Readonly<Record<string, string>>;
 const stylesRoot = new URL('../../src/', import.meta.url);
 
 function listStylesheets(directory: URL): readonly URL[] {
-  const found: URL[] = [];
-  for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    if (entry.isDirectory()) {
-      found.push(...listStylesheets(new URL(`${entry.name}/`, directory)));
-    } else if (entry.name.endsWith('.css')) {
-      found.push(new URL(entry.name, directory));
-    }
-  }
-  return found;
+  const paths = execFileSync('fd', [
+    '--type', 'f', '--extension', 'css', '--absolute-path', '.', fileURLToPath(directory),
+  ], { encoding: 'utf8' });
+  return paths.trim().split(/\r?\n/).filter(Boolean).map((path) => pathToFileURL(path));
 }
 
 interface KeyframeStep {

@@ -787,6 +787,8 @@ describe('FileViewer manual edit resize handles', () => {
   ])('keeps an external source when its watcher response arrives %s the save response', async (_order, watcherFirst) => {
     let persistedSource = SOURCE;
     let savedSource = '';
+    let resolveRecheckedBody!: (body: Promise<string>) => void;
+    const recheckedBody = new Promise<string>((resolve) => { resolveRecheckedBody = resolve; });
     let resolveSave!: (response: Response) => void;
     const saveResponse = new Promise<Response>((resolve) => {
       resolveSave = resolve;
@@ -814,7 +816,16 @@ describe('FileViewer manual edit resize handles', () => {
         return saveResponse;
       }
       if (url.includes('/api/projects/project-1/raw/')) {
-        if (init?.cache === 'no-store') return Promise.resolve(textResponse(persistedSource));
+        if (init?.cache === 'no-store') {
+          const response = textResponse(persistedSource);
+          const readText = response.text.bind(response);
+          response.text = () => {
+            const body = readText();
+            resolveRecheckedBody(body);
+            return body;
+          };
+          return Promise.resolve(response);
+        }
         return new Promise<Response>((resolve) => rawResponseResolvers.push(resolve));
       }
       return Promise.resolve(textResponse(persistedSource));
@@ -877,12 +888,13 @@ describe('FileViewer manual edit resize handles', () => {
       await resolvePost();
       await act(async () => {
         releaseWatcherBody?.();
-        await waitFor(() => {
-          expect(fetchMock.mock.calls.some(([, init]) => (
-            (init as RequestInit | undefined)?.cache === 'no-store'
-          ))).toBe(true);
-        });
+        // Keep the recheck's body consumption and resulting source update in act,
+        // not just the request start: native Response.text() is asynchronous.
+        await recheckedBody;
       });
+      expect(fetchMock.mock.calls.some(([, init]) => (
+        (init as RequestInit | undefined)?.cache === 'no-store'
+      ))).toBe(true);
     } else {
       await resolvePost();
       await resolveWatcher();

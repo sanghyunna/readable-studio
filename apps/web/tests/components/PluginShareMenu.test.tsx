@@ -7,7 +7,7 @@
 // homepage links when the manifest carries them.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act } from 'react';
+import { act } from '@testing-library/react';
 import { createRoot, type Root } from 'react-dom/client';
 import type { InstalledPluginRecord } from '@readable-studio/contracts';
 
@@ -16,6 +16,7 @@ import {
   PluginShareMenu,
 } from '../../src/components/plugin-details/PluginShareMenu';
 import { I18nProvider, type Locale } from '../../src/i18n';
+import { en } from '../../src/i18n/locales/en';
 import { ko } from '../../src/i18n/locales/ko';
 
 interface MakeArgs {
@@ -58,17 +59,23 @@ describe('PluginShareMenu', () => {
   let container: HTMLDivElement;
   let root: Root;
   let writes: string[];
+  let clipboardWrite: Promise<void>;
+  let finishClipboardWrite: () => void;
 
   beforeEach(() => {
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
     writes = [];
+    clipboardWrite = new Promise<void>((resolve) => {
+      finishClipboardWrite = resolve;
+    });
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: {
-        writeText: vi.fn(async (value: string) => {
+        writeText: vi.fn((value: string) => {
           writes.push(value);
+          return clipboardWrite;
         }),
       },
     });
@@ -81,13 +88,13 @@ describe('PluginShareMenu', () => {
     });
   });
 
-  afterEach(() => {
-    act(() => root.unmount());
+  afterEach(async () => {
+    await act(async () => root.unmount());
     container.remove();
   });
 
-  function renderMenu(record: InstalledPluginRecord, locale?: Locale) {
-    act(() => {
+  async function renderMenu(record: InstalledPluginRecord, locale?: Locale) {
+    await act(async () => {
       root.render(
         locale ? (
           <I18nProvider initial={locale}>
@@ -100,30 +107,37 @@ describe('PluginShareMenu', () => {
     });
   }
 
-  function openPopover(expectedTriggerText = 'More') {
+  async function openPopover(expectedTriggerText = 'More') {
     const trigger = container.querySelector(
       '.plugin-share-trigger',
     ) as HTMLButtonElement;
     expect(trigger).toBeTruthy();
     expect(trigger.textContent).toContain(expectedTriggerText);
-    act(() => {
+    await act(async () => {
       trigger.click();
     });
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(container.querySelector('[role="menu"]')).toBeTruthy();
   }
 
-  function clickItem(label: string) {
+  async function clickItem(label: string) {
     const items = Array.from(
       container.querySelectorAll('.plugin-share-item'),
     ) as HTMLButtonElement[];
     const match = items.find((b) => b.textContent?.includes(label));
     expect(match, `expected an item labelled "${label}"`).toBeTruthy();
-    act(() => {
+    await act(async () => {
       match!.click();
+      // Resolve the actual clipboard operation inside act so its callers'
+      // continuations and the resulting feedback render finish before returning.
+      finishClipboardWrite();
+      await clipboardWrite;
     });
+    expect(match!.textContent).toBe(en['preview.shareCopied']);
   }
 
   it('copies an install command for marketplace plugins using the registry entry name', async () => {
-    renderMenu(
+    await renderMenu(
       make({
         id: 'mp-plugin',
         sourceKind: 'github',
@@ -132,29 +146,27 @@ describe('PluginShareMenu', () => {
         marketplaceEntryName: 'readable-studio/mp-plugin',
       }),
     );
-    openPopover();
-    clickItem('Copy install command');
-    await Promise.resolve();
+    await openPopover();
+    await clickItem('Copy install command');
     expect(writes).toContain('readable plugin install readable-studio/mp-plugin');
   });
 
   it('copies the github source string for github-installed plugins', async () => {
-    renderMenu(
+    await renderMenu(
       make({
         id: 'gh-plugin',
         sourceKind: 'github',
         source: 'github:owner/repo@main/sub',
       }),
     );
-    openPopover();
-    clickItem('Copy install command');
-    await Promise.resolve();
+    await openPopover();
+    await clickItem('Copy install command');
     expect(writes).toContain('readable plugin install github:owner/repo@main/sub');
   });
 
-  it('does not duplicate the template share link action', () => {
-    renderMenu(make({ id: 'live-dashboard' }));
-    openPopover();
+  it('does not duplicate the template share link action', async () => {
+    await renderMenu(make({ id: 'live-dashboard' }));
+    await openPopover();
     const labels = Array.from(
       container.querySelectorAll('.plugin-share-item'),
     ).map((item) => item.textContent ?? '');
@@ -162,30 +174,28 @@ describe('PluginShareMenu', () => {
   });
 
   it('copies the bare plugin id for paste-into-yaml workflows', async () => {
-    renderMenu(make({ id: 'agentic-ds' }));
-    openPopover();
-    clickItem('Copy plugin ID');
-    await Promise.resolve();
+    await renderMenu(make({ id: 'agentic-ds' }));
+    await openPopover();
+    await clickItem('Copy plugin ID');
     expect(writes).toContain('agentic-ds');
   });
 
   it('copies a README badge that links back to the marketplace detail page', async () => {
-    renderMenu(make({
+    await renderMenu(make({
       id: 'badge-plugin',
       title: 'Badge Plugin',
       marketplaceId: 'official',
       marketplaceEntryName: 'readable-studio/badge-plugin',
     }));
-    openPopover();
-    clickItem('Copy README badge');
-    await Promise.resolve();
+    await openPopover();
+    await clickItem('Copy README badge');
     expect(writes.some((value) => (
       value.includes('Badge Plugin') &&
       value.includes('https://github.com/sanghyunna/readable-studio/search?q=path%3Aplugins%20badge-plugin&type=code')
     ))).toBe(true);
   });
 
-  it('does not expose public share artifacts for local-only plugins', () => {
+  it('does not expose public share artifacts for local-only plugins', async () => {
     const localOnly = make({
       id: 'local-plugin',
       sourceKind: 'local',
@@ -193,15 +203,15 @@ describe('PluginShareMenu', () => {
     });
     expect(buildPluginShareUrl(localOnly)).toBeNull();
 
-    renderMenu(localOnly);
-    openPopover();
+    await renderMenu(localOnly);
+    await openPopover();
     const labels = Array.from(
       container.querySelectorAll('.plugin-share-item'),
     ).map((item) => item.textContent ?? '');
     expect(labels.some((label) => label.includes('Copy README badge'))).toBe(false);
   });
 
-  it('does not expose public share artifacts for private marketplace plugins', () => {
+  it('does not expose public share artifacts for private marketplace plugins', async () => {
     const privateMarketplace = make({
       id: 'private-plugin',
       sourceKind: 'marketplace',
@@ -211,16 +221,16 @@ describe('PluginShareMenu', () => {
     });
     expect(buildPluginShareUrl(privateMarketplace)).toBeNull();
 
-    renderMenu(privateMarketplace);
-    openPopover();
+    await renderMenu(privateMarketplace);
+    await openPopover();
     const labels = Array.from(
       container.querySelectorAll('.plugin-share-item'),
     ).map((item) => item.textContent ?? '');
     expect(labels.some((label) => label.includes('Copy README badge'))).toBe(false);
   });
 
-  it('localizes the plugin action menu labels', () => {
-    renderMenu(
+  it('localizes the plugin action menu labels', async () => {
+    await renderMenu(
       make({
         id: 'ko-plugin',
         sourceKind: 'github',
@@ -231,7 +241,7 @@ describe('PluginShareMenu', () => {
       }),
       'ko',
     );
-    openPopover(ko['homeHero.moreShortcuts']);
+    await openPopover(ko['homeHero.moreShortcuts']);
     const labels = Array.from(
       container.querySelectorAll('.plugin-share-item'),
     ).map((item) => item.textContent ?? '');
@@ -243,9 +253,9 @@ describe('PluginShareMenu', () => {
     expect(labels).toContain(ko['plugins.actions.openMarketplace']);
     expect(labels.some((label) => label.includes('Copy install command'))).toBe(false);
   });
-  it('points Open in marketplace at the public GitHub search for bundled plugins', () => {
-    renderMenu(make({ id: 'plain' }));
-    openPopover();
+  it('points Open in marketplace at the public GitHub search for bundled plugins', async () => {
+    await renderMenu(make({ id: 'plain' }));
+    await openPopover();
     const items = Array.from(
       container.querySelectorAll('.plugin-share-item'),
     ) as HTMLButtonElement[];
@@ -287,7 +297,7 @@ describe('PluginShareMenu', () => {
   });
 
   it('copies a README badge for community marketplace plugins', async () => {
-    renderMenu(
+    await renderMenu(
       make({
         id: 'community-registry-starter',
         title: 'Community Registry Starter',
@@ -297,9 +307,8 @@ describe('PluginShareMenu', () => {
         marketplaceEntryName: 'community/registry-starter',
       }),
     );
-    openPopover();
-    clickItem('Copy README badge');
-    await Promise.resolve();
+    await openPopover();
+    await clickItem('Copy README badge');
     expect(
       writes.some(
         (value) =>
@@ -309,8 +318,8 @@ describe('PluginShareMenu', () => {
     ).toBe(true);
   });
 
-  it('points Open in marketplace at the public page for community marketplace plugins', () => {
-    renderMenu(
+  it('points Open in marketplace at the public page for community marketplace plugins', async () => {
+    await renderMenu(
       make({
         id: 'community-registry-starter',
         sourceKind: 'marketplace',
@@ -319,7 +328,7 @@ describe('PluginShareMenu', () => {
         marketplaceEntryName: 'community/registry-starter',
       }),
     );
-    openPopover();
+    await openPopover();
     const marketplaceLink = Array.from(
       container.querySelectorAll<HTMLAnchorElement>('a.plugin-share-item'),
     ).find((link) => link.textContent?.includes('Open in marketplace'));
@@ -328,15 +337,15 @@ describe('PluginShareMenu', () => {
     );
   });
 
-  it('surfaces the GitHub source link when sourceKind is github', () => {
-    renderMenu(
+  it('surfaces the GitHub source link when sourceKind is github', async () => {
+    await renderMenu(
       make({
         id: 'gh-with-link',
         sourceKind: 'github',
         source: 'github:owner/repo',
       }),
     );
-    openPopover();
+    await openPopover();
     const items = Array.from(
       container.querySelectorAll('.plugin-share-item'),
     ) as HTMLElement[];
@@ -349,15 +358,15 @@ describe('PluginShareMenu', () => {
     expect(sourceLink).toBeTruthy();
   });
 
-  it('surfaces the homepage link when manifest.homepage is set', () => {
-    renderMenu(
+  it('surfaces the homepage link when manifest.homepage is set', async () => {
+    await renderMenu(
       make({
         id: 'with-homepage',
         sourceKind: 'local',
         homepage: 'https://example.test/plugin-home',
       }),
     );
-    openPopover();
+    await openPopover();
     const items = Array.from(
       container.querySelectorAll('.plugin-share-item'),
     ) as HTMLElement[];
@@ -371,15 +380,15 @@ describe('PluginShareMenu', () => {
     expect(homepageLink?.getAttribute('href')).toBe('https://example.test/plugin-home');
   });
 
-  it('renders official bundled repo links as anchors', () => {
-    renderMenu(
+  it('renders official bundled repo links as anchors', async () => {
+    await renderMenu(
       make({
         id: 'official-plugin',
         sourceKind: 'bundled',
         source: 'plugins/_official/scenarios/official-plugin',
       }),
     );
-    openPopover();
+    await openPopover();
     const repoLinks = Array.from(
       container.querySelectorAll<HTMLAnchorElement>(
         'a.plugin-share-item[href="https://github.com/sanghyunna/readable-studio"]',

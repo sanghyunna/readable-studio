@@ -1,15 +1,17 @@
 // @vitest-environment jsdom
 
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SketchEditor } from '../../src/components/SketchEditor';
+import { stubMissingCanvasContext } from '../helpers/canvas';
 
 vi.mock('../../src/i18n', () => ({
   useT: () => (key: string) => key,
 }));
 
-beforeAll(() => {
+beforeEach(() => {
+  stubMissingCanvasContext();
   vi.stubGlobal('ResizeObserver', class {
     observe() {}
     disconnect() {}
@@ -19,14 +21,15 @@ beforeAll(() => {
 
 afterEach(() => {
   cleanup();
-  vi.clearAllMocks();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   vi.useRealTimers();
 });
 
 const noop = () => {};
 
 function renderEditor(overrides: Partial<Parameters<typeof SketchEditor>[0]> = {}) {
-  return render(
+  const result = render(
     <SketchEditor
       items={[]}
       onItemsChange={noop}
@@ -35,6 +38,10 @@ function renderEditor(overrides: Partial<Parameters<typeof SketchEditor>[0]> = {
       {...overrides}
     />,
   );
+  // Save behavior must still work when the platform has no drawing context.
+  expect(HTMLCanvasElement.prototype.getContext).toHaveBeenCalledExactlyOnceWith('2d');
+  expect(HTMLCanvasElement.prototype.getContext).toHaveLastReturnedWith(null);
+  return result;
 }
 
 function saveButton(): HTMLButtonElement {
@@ -79,10 +86,12 @@ describe('SketchEditor save', () => {
     expect(saveButton().disabled).toBe(false);
   });
 
-  it('calls onSave when clicked', () => {
+  it('calls onSave when clicked', async () => {
     const onSave = vi.fn();
     renderEditor({ dirty: true, onSave });
-    fireEvent.click(saveButton());
+    await act(async () => {
+      fireEvent.click(saveButton());
+    });
     expect(onSave).toHaveBeenCalledTimes(1);
   });
 

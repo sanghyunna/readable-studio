@@ -1,8 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { act } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -15,11 +13,13 @@ import { DesignFilesPanel } from '../../src/components/DesignFilesPanel';
 import { projectSplitClassName, projectSplitStyle } from '../../src/components/ProjectView';
 import {
   fetchProjectFileText,
+  fetchProjectDeployments,
   uploadProjectFiles,
   writeProjectTextFile,
   fetchProjectFolders,
 } from '../../src/providers/registry';
 import type { ChatMessage, ProjectFile, ProjectFolder } from '../../src/types';
+import { stubMissingCanvasContext } from '../helpers/canvas';
 
 vi.mock('../../src/providers/registry', async () => {
   const actual = await vi.importActual<typeof import('../../src/providers/registry')>(
@@ -28,6 +28,7 @@ vi.mock('../../src/providers/registry', async () => {
   return {
     ...actual,
     fetchProjectFileText: vi.fn(),
+    fetchProjectDeployments: vi.fn().mockResolvedValue([]),
     uploadProjectFiles: vi.fn(),
     writeProjectTextFile: vi.fn(),
     fetchProjectFolders: vi.fn().mockResolvedValue([]),
@@ -87,11 +88,6 @@ const mockedFetchProjectFileText = vi.mocked(fetchProjectFileText);
 const mockedUploadProjectFiles = vi.mocked(uploadProjectFiles);
 const mockedWriteProjectTextFile = vi.mocked(writeProjectTextFile);
 
-let root: Root | null = null;
-let host: HTMLDivElement | null = null;
-
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-
 // Needed else the ResizeObserver in SketchEditor crashes the test
 beforeAll(() => {
   globalThis.ResizeObserver = class {
@@ -103,16 +99,11 @@ beforeAll(() => {
 
 beforeEach(() => {
   mockedFetchProjectFileText.mockResolvedValue('');
+  stubMissingCanvasContext();
 });
 
 afterEach(() => {
   cleanup();
-  if (root) {
-    act(() => root?.unmount());
-    root = null;
-  }
-  host?.remove();
-  host = null;
   vi.clearAllMocks();
   vi.restoreAllMocks();
   vi.useRealTimers();
@@ -144,14 +135,23 @@ function workspaceFile(name: string): ProjectFile {
   };
 }
 
-function renderWorkspace(element: React.ReactElement) {
-  host = document.createElement('div');
-  document.body.appendChild(host);
-  root = createRoot(host);
-  act(() => {
-    root?.render(element);
+async function settleWorkspaceLoads() {
+  // Mounting (or switching file tabs) starts folder, source and deployment
+  // requests. Await those exact requests in act so their state updates and
+  // the resulting HtmlViewer/PreviewDrawOverlay effects commit together.
+  await act(async () => {
+    await Promise.all([
+      ...vi.mocked(fetchProjectFolders).mock.results,
+      ...mockedFetchProjectFileText.mock.results,
+      ...vi.mocked(fetchProjectDeployments).mock.results,
+    ].map((result) => result.value));
   });
-  return host;
+}
+
+async function renderWorkspace(element: React.ReactElement) {
+  const view = render(element);
+  await settleWorkspaceLoads();
+  return view;
 }
 
 function getTabByName(container: HTMLElement, name: RegExp): HTMLElement {
@@ -251,8 +251,8 @@ function unreadableDropDataTransfer(fallbackFiles: File[] = []) {
 }
 
 describe('FileWorkspace brief placement', () => {
-  it('does not permanently mount the project brief above the preview body', () => {
-    render(
+  it('does not permanently mount the project brief above the preview body', async () => {
+    await renderWorkspace(
       <FileWorkspace
         projectId="returning-project"
         projectKind="slide_deck"
@@ -268,8 +268,8 @@ describe('FileWorkspace brief placement', () => {
     expect(document.querySelector('.ws-body')).toBeTruthy();
   });
 
-  it('retains the blocking Questions tab beside the persistent brief', () => {
-    render(
+  it('retains the blocking Questions tab beside the persistent brief', async () => {
+    await renderWorkspace(
       <FileWorkspace
         projectId="project-with-blocker"
         projectKind="prototype"
@@ -314,7 +314,7 @@ describe('FileWorkspace upload input', () => {
   it('hides upload failure details during in-panel preview and restores them after closing preview', async () => {
     mockedUploadProjectFiles.mockRejectedValueOnce(new Error('storage offline'));
 
-    render(
+    await renderWorkspace(
       <FileWorkspace
         projectId="project-1"
         projectKind="prototype"
@@ -371,7 +371,7 @@ describe('FileWorkspace upload input', () => {
       error: 'permission denied',
     });
 
-    render(
+    await renderWorkspace(
       <FileWorkspace
         projectId="project-1"
         projectKind="prototype"
@@ -399,7 +399,7 @@ describe('FileWorkspace upload input', () => {
     });
   });
 
-  it('starts Design Files navigation fresh when switching projects', () => {
+  it('starts Design Files navigation fresh when switching projects', async () => {
     const baseProps: React.ComponentProps<typeof FileWorkspace> = {
       projectId: 'project-a',
       projectKind: 'prototype',
@@ -413,7 +413,7 @@ describe('FileWorkspace upload input', () => {
       onTabsStateChange: vi.fn(),
     };
 
-    const { container, rerender } = render(<FileWorkspace {...baseProps} />);
+    const { container, rerender } = await renderWorkspace(<FileWorkspace {...baseProps} />);
 
     fireEvent.click(container.querySelector('.df-dir-row .df-row-name-btn')!);
     expect(container.querySelector('.df-breadcrumb-current')?.textContent).toBe('assets');
@@ -431,6 +431,7 @@ describe('FileWorkspace upload input', () => {
 
     expect(container.querySelector('.df-breadcrumb-current')?.textContent).toBe('project');
     expect(screen.getByTestId('design-file-row-home.html')).toBeTruthy();
+    await settleWorkspaceLoads();
   });
 
   it('drops the previous project folders when switching, before the new fetch resolves', async () => {
@@ -457,7 +458,7 @@ describe('FileWorkspace upload input', () => {
       tabsState: { tabs: [], active: null },
       onTabsStateChange: vi.fn(),
     };
-    const { container, rerender } = render(<FileWorkspace {...baseProps} />);
+    const { container, rerender } = await renderWorkspace(<FileWorkspace {...baseProps} />);
     // project-a's empty folder shows once its fetch resolves.
     await waitFor(() => {
       expect(
@@ -504,7 +505,7 @@ describe('FileWorkspace upload input', () => {
       });
 
     const onRefreshFiles = vi.fn();
-    render(
+    await renderWorkspace(
       <FileWorkspace
         projectId="project-1"
         projectKind="prototype"
@@ -631,7 +632,7 @@ describe('FileWorkspace launcher tab creation', () => {
     // composer must not auto-stage a "Design files" chip that points at
     // nothing, so the active workspace context stays null.
     const onActiveContextChange = vi.fn();
-    render(
+    await renderWorkspace(
       <FileWorkspace
         projectId="project-1"
         projectKind="prototype"
@@ -653,7 +654,7 @@ describe('FileWorkspace launcher tab creation', () => {
 
   it('reports the active Design Files tab as workspace context once files exist', async () => {
     const onActiveContextChange = vi.fn();
-    render(
+    await renderWorkspace(
       <FileWorkspace
         projectId="project-1"
         projectKind="prototype"
@@ -678,8 +679,8 @@ describe('FileWorkspace launcher tab creation', () => {
     });
   });
 
-  it('hides terminal creation while keeping browser creation available', () => {
-    render(
+  it('hides terminal creation while keeping browser creation available', async () => {
+    await renderWorkspace(
       <FileWorkspace
         projectId="project-1"
         projectKind="prototype"
@@ -698,8 +699,8 @@ describe('FileWorkspace launcher tab creation', () => {
     expect(screen.getByText('Create new')).toBeTruthy();
   });
 
-  it('renders terminal and side chat tabs after a Design Files-anchored browser tab', () => {
-    render(
+  it('renders terminal and side chat tabs after a Design Files-anchored browser tab', async () => {
+    await renderWorkspace(
       <FileWorkspace
         projectId="project-1"
         projectKind="prototype"
@@ -746,7 +747,7 @@ describe('FileWorkspace launcher tab creation', () => {
       label: 'Browser',
     };
 
-    render(
+    await renderWorkspace(
       <FileWorkspace
         projectId="project-1"
         projectKind="prototype"
@@ -789,7 +790,7 @@ describe('FileWorkspace launcher tab creation', () => {
       label: 'Browser',
     };
 
-    render(
+    await renderWorkspace(
       <FileWorkspace
         projectId="project-1"
         projectKind="prototype"
@@ -823,7 +824,7 @@ describe('FileWorkspace launcher tab creation', () => {
   });
 
   it('opens the Design Files tab launcher with the browser new-tab shortcut', async () => {
-    render(
+    await renderWorkspace(
       <FileWorkspace
         projectId="project-1"
         projectKind="prototype"
@@ -848,8 +849,8 @@ describe('FileWorkspace launcher tab creation', () => {
     expect(screen.getByTestId('tab-launcher-search')).toBe(document.activeElement);
   });
 
-  it('names a file tab by its title without folding in the close control', () => {
-    render(
+  it('names a file tab by its title without folding in the close control', async () => {
+    await renderWorkspace(
       <FileWorkspace
         projectId="project-1"
         projectKind="prototype"
@@ -866,9 +867,9 @@ describe('FileWorkspace launcher tab creation', () => {
     expect(screen.queryByRole('tab', { name: /alpha-file\.png Close tab/i })).toBeNull();
   });
 
-  it('closes the active Design Files workspace tab with the browser close-tab shortcut', () => {
+  it('closes the active Design Files workspace tab with the browser close-tab shortcut', async () => {
     const onTabsStateChange = vi.fn();
-    render(
+    await renderWorkspace(
       <FileWorkspace
         projectId="project-1"
         projectKind="prototype"
@@ -884,6 +885,7 @@ describe('FileWorkspace launcher tab creation', () => {
       key: 'w',
       ctrlKey: true,
     });
+    await settleWorkspaceLoads();
 
     expect(allowedDefault).toBe(false);
     expect(onTabsStateChange).toHaveBeenLastCalledWith({
@@ -894,7 +896,7 @@ describe('FileWorkspace launcher tab creation', () => {
 
   it('switches Design Files workspace tabs with browser-style next and previous shortcuts', async () => {
     const onTabsStateChange = vi.fn();
-    render(
+    await renderWorkspace(
       <FileWorkspace
         projectId="project-1"
         projectKind="prototype"
@@ -910,6 +912,7 @@ describe('FileWorkspace launcher tab creation', () => {
       key: 'Tab',
       ctrlKey: true,
     });
+    await settleWorkspaceLoads();
 
     expect(nextAllowedDefault).toBe(false);
     await waitFor(() => {
@@ -927,6 +930,7 @@ describe('FileWorkspace launcher tab creation', () => {
       ctrlKey: true,
       shiftKey: true,
     });
+    await settleWorkspaceLoads();
 
     expect(previousAllowedDefault).toBe(false);
     await waitFor(() => {
@@ -951,7 +955,7 @@ describe('FileWorkspace launcher tab creation', () => {
       },
     ];
 
-    render(
+    await renderWorkspace(
       <FileWorkspace
         projectId="project-1"
         projectKind="prototype"
@@ -984,7 +988,7 @@ describe('FileWorkspace launcher tab creation', () => {
       },
     ];
 
-    render(
+    await renderWorkspace(
       <FileWorkspace
         projectId="project-1"
         projectKind="prototype"
@@ -1012,7 +1016,7 @@ describe('FileWorkspace launcher tab creation', () => {
       { id: '__browser__:1', label: 'Browser 1', title: 'Dribbble', url: 'https://dribbble.com/' },
     ];
 
-    render(
+    await renderWorkspace(
       <FileWorkspace
         projectId="project-1"
         projectKind="prototype"
@@ -1037,7 +1041,7 @@ describe('FileWorkspace launcher tab creation', () => {
   it('focuses the design-system workspace tab without adding it to file tabs', async () => {
     const onTabsStateChange = vi.fn();
 
-    render(
+    await renderWorkspace(
       <FileWorkspace
         projectId="project-1"
         projectKind="prototype"
@@ -1068,7 +1072,7 @@ describe('FileWorkspace launcher tab creation', () => {
   it('focuses an already-open file tab without adding a duplicate tab', async () => {
     const onTabsStateChange = vi.fn();
 
-    render(
+    await renderWorkspace(
       <FileWorkspace
         projectId="project-1"
         projectKind="prototype"
@@ -1096,7 +1100,7 @@ describe('FileWorkspace launcher tab creation', () => {
 describe('DesignFilesPanel plugin folders', () => {
   it('surfaces generated plugin folders with agent-routed CLI actions', async () => {
     const onPluginFolderAgentAction = vi.fn();
-    const container = renderWorkspace(
+    const { container } = await renderWorkspace(
       <DesignFilesPanel
         projectId="project-1"
         files={[
@@ -1150,10 +1154,10 @@ describe('DesignFilesPanel plugin folders', () => {
 });
 
 describe('FileWorkspace tab reordering', () => {
-  it('persists a dragged file tab before the tab it is dropped on', () => {
+  it('persists a dragged file tab before the tab it is dropped on', async () => {
     const onTabsStateChange = vi.fn();
 
-    const container = renderWorkspace(
+    const { container } = await renderWorkspace(
       <FileWorkspace
         projectId="project-1"
         projectKind="prototype"
@@ -1189,10 +1193,10 @@ describe('FileWorkspace tab reordering', () => {
     });
   });
 
-  it('persists a dragged file tab after the tab when dropped on its right side', () => {
+  it('persists a dragged file tab after the tab when dropped on its right side', async () => {
     const onTabsStateChange = vi.fn();
 
-    const container = renderWorkspace(
+    const { container } = await renderWorkspace(
       <FileWorkspace
         projectId="project-1"
         projectKind="prototype"
@@ -1227,10 +1231,10 @@ describe('FileWorkspace tab reordering', () => {
     });
   });
 
-  it('does not persist when a tab is dropped on itself', () => {
+  it('does not persist when a tab is dropped on itself', async () => {
     const onTabsStateChange = vi.fn();
 
-    const container = renderWorkspace(
+    const { container } = await renderWorkspace(
       <FileWorkspace
         projectId="project-1"
         projectKind="prototype"
@@ -1257,8 +1261,8 @@ describe('FileWorkspace tab reordering', () => {
     expect(onTabsStateChange).not.toHaveBeenCalled();
   });
 
-  it('clears the drop indicator when the drag leaves the tab bar', () => {
-    const container = renderWorkspace(
+  it('clears the drop indicator when the drag leaves the tab bar', async () => {
+    const { container } = await renderWorkspace(
       <FileWorkspace
         projectId="project-1"
         projectKind="prototype"
@@ -1312,8 +1316,8 @@ describe('FileWorkspace Questions tab', () => {
     ],
   };
 
-  it('shows the Questions tab while the form is unanswered', () => {
-    render(
+  it('shows the Questions tab while the form is unanswered', async () => {
+    await renderWorkspace(
       <FileWorkspace
         projectId="project-1"
         projectKind="prototype"
@@ -1342,7 +1346,7 @@ describe('FileWorkspace Questions tab', () => {
       },
       onTabsStateChange: vi.fn(),
     };
-    const { rerender } = render(<FileWorkspace {...baseProps} />);
+    const { rerender } = await renderWorkspace(<FileWorkspace {...baseProps} />);
 
     rerender(
       <FileWorkspace
@@ -1371,7 +1375,7 @@ describe('FileWorkspace Questions tab', () => {
       tabsState: { tabs: [], active: DESIGN_FILES_TAB },
       onTabsStateChange: vi.fn(),
     };
-    const { rerender } = render(<FileWorkspace {...baseProps} />);
+    const { rerender } = await renderWorkspace(<FileWorkspace {...baseProps} />);
 
     expect(screen.queryByTestId('questions-panel')).toBeNull();
 
@@ -1592,7 +1596,7 @@ describe('FileWorkspace sketch save', () => {
     );
     mockedWriteProjectTextFile.mockResolvedValue(file);
 
-    render(
+    await renderWorkspace(
       <FileWorkspace
         projectId="project-1"
         projectKind="prototype"
@@ -1637,8 +1641,8 @@ describe('FileWorkspace sketch save', () => {
 });
 
 describe('FileWorkspace add-module menu', () => {
-  it('opens the add-module menu with Browser available and Terminal hidden', () => {
-    render(
+  it('opens the add-module menu with Browser available and Terminal hidden', async () => {
+    await renderWorkspace(
       <FileWorkspace
         projectId="project-1"
         projectKind="prototype"
@@ -1674,8 +1678,8 @@ describe('FileWorkspace add-module menu', () => {
     expect(addButton.closest('.ws-add-tab')).not.toBeNull();
   });
 
-  it('orders launcher sections as create new, files, then tabs in one scroll body', () => {
-    render(
+  it('orders launcher sections as create new, files, then tabs in one scroll body', async () => {
+    await renderWorkspace(
       <FileWorkspace
         projectId="project-1"
         projectKind="prototype"
@@ -1714,9 +1718,9 @@ describe('FileWorkspace add-module menu', () => {
     expect(fileHeader.compareDocumentPosition(tabsHeader) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('adds a new browser tab every time the Browser module is selected', () => {
+  it('adds a new browser tab every time the Browser module is selected', async () => {
     const onTabsStateChange = vi.fn();
-    render(
+    await renderWorkspace(
       <FileWorkspace
         projectId="project-1"
         projectKind="prototype"
@@ -1767,8 +1771,8 @@ describe('FileWorkspace add-module menu', () => {
     });
   });
 
-  it('restores persisted browser tabs with their active URL state', () => {
-    render(
+  it('restores persisted browser tabs with their active URL state', async () => {
+    await renderWorkspace(
       <FileWorkspace
         projectId="project-1"
         projectKind="prototype"
@@ -1801,9 +1805,9 @@ describe('FileWorkspace add-module menu', () => {
     expect(browserPanel.dataset.initialIconUrl).toBe('https://www.svgrepo.com/favicon.ico');
   });
 
-  it('persists browser-tab removal when a browser tab is closed', () => {
+  it('persists browser-tab removal when a browser tab is closed', async () => {
     const onTabsStateChange = vi.fn();
-    render(
+    await renderWorkspace(
       <FileWorkspace
         projectId="project-1"
         projectKind="prototype"
@@ -1859,8 +1863,8 @@ describe('FileWorkspace empty-project generation contract', () => {
   // AND failed turns, with no card hijacking the surface.
   it.each(['running', 'failed'] as const)(
     'keeps the design-files empty placeholder and shows no generation card for a %s turn',
-    (runStatus) => {
-      render(
+    async (runStatus) => {
+      await renderWorkspace(
         <FileWorkspace
           projectId="project-1"
           projectKind="prototype"

@@ -1,5 +1,6 @@
 import { JSDOM } from 'jsdom';
-import React, { act } from 'react';
+import React from 'react';
+import { act } from '@testing-library/react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -14,17 +15,34 @@ type OnStyleChange = (id: string, styles: Partial<ManualEditStyles>, label: stri
 type OnInvalidStyle = (id: string, keys: Array<keyof ManualEditStyles>) => void;
 type OnError = (message: string) => void;
 
+const SYSTEM_FONT_FAMILY = 'Panel Test Sans';
+
 describe('ManualEditPanel', () => {
   let dom: JSDOM;
   let host: HTMLDivElement;
   let root: Root;
+  let resolveSystemFontResponseRead: () => void;
+  let systemFontResponseRead: Promise<void>;
+  let systemFontsHaveLoaded = false;
 
   beforeEach(() => {
     dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>');
     globalThis.window = dom.window as unknown as Window & typeof globalThis;
     globalThis.document = dom.window.document;
     globalThis.HTMLElement = dom.window.HTMLElement;
-    (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    systemFontResponseRead = new Promise((resolve) => {
+      resolveSystemFontResponseRead = resolve;
+    });
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {
+      if (String(input) !== '/api/system/fonts') throw new Error(`Unexpected request: ${String(input)}`);
+      return {
+        ok: true,
+        json: async () => {
+          resolveSystemFontResponseRead();
+          return { fonts: [{ family: SYSTEM_FONT_FAMILY, faces: [] }] };
+        },
+      } as Response;
+    }));
     host = dom.window.document.querySelector('#root') as HTMLDivElement;
     root = createRoot(host);
   });
@@ -35,11 +53,11 @@ describe('ManualEditPanel', () => {
     Reflect.deleteProperty(globalThis, 'window');
     Reflect.deleteProperty(globalThis, 'document');
     Reflect.deleteProperty(globalThis, 'HTMLElement');
-    Reflect.deleteProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT');
+    vi.unstubAllGlobals();
   });
 
-  it('renders only the page-style inspector in the fixed floating card', () => {
-    renderPanel();
+  it('renders only the page-style inspector in the fixed floating card', async () => {
+    await renderPanel();
 
     expect(host.querySelector('.manual-edit-page-card')).not.toBeNull();
     expect(host.querySelector('.manual-edit-drag-handle')).toBeNull();
@@ -52,9 +70,9 @@ describe('ManualEditPanel', () => {
     expect(host.querySelector('button[aria-label="Delete element"]')).toBeNull();
   });
 
-  it('routes the page-card close action', () => {
+  it('routes the page-card close action', async () => {
     const onExit = vi.fn();
-    renderPanel({ onExit });
+    await renderPanel({ onExit });
 
     const close = host.querySelector('button[aria-label="Close edit panel"]') as HTMLButtonElement | null;
     if (!close) throw new Error('Close button not found');
@@ -65,8 +83,8 @@ describe('ManualEditPanel', () => {
     expect(onExit).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps page controls scrollable separately from footer actions', () => {
-    renderPanel();
+  it('keeps page controls scrollable separately from footer actions', async () => {
+    await renderPanel();
 
     const scrollRegion = host.querySelector('.manual-edit-scroll');
     const footer = host.querySelector('.manual-edit-footer');
@@ -77,10 +95,10 @@ describe('ManualEditPanel', () => {
     expect(scrollRegion?.contains(footer)).toBe(false);
   });
 
-  it('routes page-card cancel and save actions', () => {
+  it('routes page-card cancel and save actions', async () => {
     const onCancelDraft = vi.fn();
     const onSaveDraft = vi.fn();
-    renderPanel({ onCancelDraft, onSaveDraft });
+    await renderPanel({ onCancelDraft, onSaveDraft });
 
     const footerButtons = Array.from(host.querySelectorAll('.manual-edit-footer button'));
     const cancel = footerButtons.find((button) => button.textContent === 'Cancel') as HTMLButtonElement | undefined;
@@ -215,16 +233,16 @@ describe('ManualEditPanel', () => {
     });
   });
 
-  it('does not emit page styles when the card opens', () => {
+  it('does not emit page styles when the card opens', async () => {
     const onStyleChange = vi.fn<OnStyleChange>();
-    renderPanel({ onStyleChange });
+    await renderPanel({ onStyleChange });
 
     expect(onStyleChange).not.toHaveBeenCalled();
   });
 
-  it('emits only the changed page background field', () => {
+  it('emits only the changed page background field', async () => {
     const onStyleChange = vi.fn<OnStyleChange>();
-    renderPanel({ onStyleChange });
+    await renderPanel({ onStyleChange });
 
     const bgSwatch = host.querySelector('button[aria-label="Pick Background"]') as HTMLButtonElement | null;
     if (!bgSwatch) throw new Error('Background swatch not found');
@@ -245,9 +263,9 @@ describe('ManualEditPanel', () => {
     );
   });
 
-  it('emits only the changed page font field', () => {
+  it('emits only the changed page font field', async () => {
     const onStyleChange = vi.fn<OnStyleChange>();
-    renderPanel({ onStyleChange });
+    await renderPanel({ onStyleChange });
 
     const fontSelect = host.querySelector('.cc-row select') as HTMLSelectElement | null;
     if (!fontSelect) throw new Error('Font select not found');
@@ -264,9 +282,9 @@ describe('ManualEditPanel', () => {
     );
   });
 
-  it('shows an inactive page inspector for fragment HTML sources', () => {
+  it('shows an inactive page inspector for fragment HTML sources', async () => {
     const onStyleChange = vi.fn<OnStyleChange>();
-    renderPanel({ onStyleChange, pageStylesEnabled: false });
+    await renderPanel({ onStyleChange, pageStylesEnabled: false });
 
     expect(host.textContent).toContain('Page styles are available only for full HTML documents.');
     expect(host.textContent).not.toContain('Background');
@@ -275,9 +293,9 @@ describe('ManualEditPanel', () => {
     expect(onStyleChange).not.toHaveBeenCalled();
   });
 
-  it('keeps explicit empty page values as field-specific clears', () => {
+  it('keeps explicit empty page values as field-specific clears', async () => {
     const onStyleChange = vi.fn<OnStyleChange>();
-    renderPanel({ onStyleChange });
+    await renderPanel({ onStyleChange });
 
     const fontSelect = host.querySelector('.cc-row select') as HTMLSelectElement | null;
     if (!fontSelect) throw new Error('Font select not found');
@@ -296,10 +314,10 @@ describe('ManualEditPanel', () => {
     });
   });
 
-  it('routes enabled Undo and Redo controls', () => {
+  it('routes enabled Undo and Redo controls', async () => {
     const onUndo = vi.fn();
     const onRedo = vi.fn();
-    renderPanel({ canUndo: true, canRedo: true, onUndo, onRedo });
+    await renderPanel({ canUndo: true, canRedo: true, onUndo, onRedo });
 
     const undo = host.querySelector('button[aria-label="Undo"]') as HTMLButtonElement | null;
     const redo = host.querySelector('button[aria-label="Redo"]') as HTMLButtonElement | null;
@@ -315,20 +333,20 @@ describe('ManualEditPanel', () => {
     expect(onRedo).toHaveBeenCalledTimes(1);
   });
 
-  it('disables Undo and Redo when there is no history to traverse', () => {
-    renderPanel();
+  it('disables Undo and Redo when there is no history to traverse', async () => {
+    await renderPanel();
 
     expect((host.querySelector('button[aria-label="Undo"]') as HTMLButtonElement | null)?.disabled).toBe(true);
     expect((host.querySelector('button[aria-label="Redo"]') as HTMLButtonElement | null)?.disabled).toBe(true);
   });
 
-  it('renders page-style errors in the footer', () => {
-    renderPanel({ error: 'Invalid style value.' });
+  it('renders page-style errors in the footer', async () => {
+    await renderPanel({ error: 'Invalid style value.' });
 
     expect(host.querySelector('.manual-edit-error')?.textContent).toBe('Invalid style value.');
   });
 
-  function renderPanel({
+  async function renderPanel({
     error = null,
     canUndo = false,
     canRedo = false,
@@ -376,5 +394,15 @@ describe('ManualEditPanel', () => {
         />,
       );
     });
+
+    const fontSelect = host.querySelector('select[aria-label="Font"]') as HTMLSelectElement | null;
+    if (!fontSelect) return;
+    await act(async () => {
+      if (!systemFontsHaveLoaded) await systemFontResponseRead;
+    });
+    systemFontsHaveLoaded = true;
+    if (!Array.from(fontSelect.options).some((option) => option.textContent === SYSTEM_FONT_FAMILY)) {
+      throw new Error('System font options did not finish loading');
+    }
   }
 });

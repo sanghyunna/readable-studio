@@ -16,7 +16,7 @@
 // poster-less entries, so the discovery surface degrades cleanly
 // instead of leaving a broken-image state.
 
-import { describe, expect, it, afterEach } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi, type MockInstance } from 'vitest';
 import { cleanup, fireEvent, render } from '@testing-library/react';
 import { MediaSurface } from '../../src/components/plugins-home/cards/MediaSurface';
 import type { MediaPreviewSpec } from '../../src/components/plugins-home/preview';
@@ -47,6 +47,7 @@ const BAKED_CLIP: MediaPreviewSpec = {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
 });
 
 describe('MediaSurface broken-poster fallback (#2955)', () => {
@@ -124,6 +125,14 @@ describe('MediaSurface broken-poster fallback (#2955)', () => {
 });
 
 describe('MediaSurface tiered clip preload (scroll-in prefetch)', () => {
+  let pause: MockInstance<HTMLMediaElement['pause']>;
+
+  beforeEach(() => {
+    // jsdom has no media playback engine. Keep the real mount/effect path and
+    // record its pause command for clips mounted outside the visible zone.
+    pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+  });
+
   it('keeps preload at metadata while mounted but before the prefetch zone is reached', () => {
     // A non-firing IntersectionObserver models the tile being mounted in the
     // wide margin but not yet in the prefetch zone: the observer never reports
@@ -141,6 +150,8 @@ describe('MediaSurface tiered clip preload (scroll-in prefetch)', () => {
       const video = container.querySelector('video');
       expect(video).not.toBeNull();
       expect(video!.getAttribute('preload')).toBe('metadata');
+      expect(pause).toHaveBeenCalledExactlyOnceWith();
+      expect(pause.mock.contexts).toEqual([video]);
     } finally {
       globalThis.IntersectionObserver = orig;
     }
@@ -157,6 +168,8 @@ describe('MediaSurface tiered clip preload (scroll-in prefetch)', () => {
     );
     const video = container.querySelector('video');
     expect(video!.getAttribute('preload')).toBe('auto');
+    expect(pause).toHaveBeenCalledExactlyOnceWith();
+    expect(pause.mock.contexts).toEqual([video]);
   });
 
   it('starts observing when a reused media card becomes a baked clip', () => {
@@ -175,13 +188,19 @@ describe('MediaSurface tiered clip preload (scroll-in prefetch)', () => {
       disconnect() {}
     } as unknown as typeof IntersectionObserver;
     try {
-      const { rerender } = render(
+      const { container, rerender } = render(
         <MediaSurface preview={VIDEO_POSTER} pluginTitle="Video" inView={true} visible={false} />,
       );
       expect(observed).toHaveLength(0);
+      expect(container.querySelector('video')).toBeNull();
+      expect(pause).not.toHaveBeenCalled();
 
       rerender(<MediaSurface preview={BAKED_CLIP} pluginTitle="Clip" inView={true} visible={false} />);
       expect(observed).toHaveLength(1);
+      const video = container.querySelector('video');
+      expect(video).not.toBeNull();
+      expect(pause).toHaveBeenCalledExactlyOnceWith();
+      expect(pause.mock.contexts).toEqual([video]);
     } finally {
       globalThis.IntersectionObserver = orig;
     }

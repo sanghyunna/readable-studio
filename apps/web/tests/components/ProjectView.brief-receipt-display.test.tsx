@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -142,13 +142,15 @@ describe('brief receipt display boundary', () => {
     const persisted = assistant(`Before receipt.\n${receipt}\nAfter receipt.`);
     vi.mocked(listConversations).mockResolvedValue([conversation]);
     vi.mocked(createConversation).mockResolvedValue(conversation);
-    vi.mocked(listMessages).mockResolvedValue([persisted]);
+    let deliverMessages!: (messages: ChatMessage[]) => void;
+    const messageResponse = new Promise<ChatMessage[]>((resolve) => { deliverMessages = resolve; });
+    vi.mocked(listMessages).mockReturnValue(messageResponse);
     const config: AppConfig = {
       mode: 'api', apiKey: '', baseUrl: '', model: '', agentId: null,
       skillId: null, designSystemId: null,
     };
 
-    render(
+    await act(async () => render(
       <ProjectView
         project={project}
         routeFileName={null}
@@ -169,11 +171,12 @@ describe('brief receipt display boundary', () => {
         onProjectChange={vi.fn()}
         onProjectsRefresh={vi.fn()}
       />,
-    );
+    ));
 
-    await waitFor(() => {
-      expect(screen.getByTestId('chat-pane-messages').textContent).toContain('Before receipt.');
-      expect(screen.getByTestId('file-workspace-messages').textContent).toContain('After receipt.');
+    expect(listMessages).toHaveBeenCalledWith(project.id, conversation.id);
+    await act(async () => {
+      deliverMessages([persisted]);
+      await messageResponse;
     });
     for (const boundary of ['chat-pane-messages', 'file-workspace-messages']) {
       const content = screen.getByTestId(boundary).textContent ?? '';
@@ -205,11 +208,14 @@ describe('brief receipt display boundary', () => {
     };
     vi.mocked(listConversations).mockResolvedValue([conversation]);
     vi.mocked(createConversation).mockResolvedValue(conversation);
-    vi.mocked(listMessages).mockResolvedValue([{
+    const persisted: ChatMessage = {
       ...assistant('The workspace remains available.'),
       runStatus: 'succeeded',
       producedFiles: malformedProducedFiles as ProjectFile[],
-    }]);
+    };
+    let deliverMessages!: (messages: ChatMessage[]) => void;
+    const messageResponse = new Promise<ChatMessage[]>((resolve) => { deliverMessages = resolve; });
+    vi.mocked(listMessages).mockReturnValue(messageResponse);
     vi.mocked(fetchProjectFiles).mockResolvedValueOnce([{
       name: 'index.html',
       path: 'index.html',
@@ -223,7 +229,7 @@ describe('brief receipt display boundary', () => {
       skillId: null, designSystemId: null,
     };
 
-    render(
+    await act(async () => render(
       <ProjectView
         project={project}
         routeFileName={null}
@@ -244,15 +250,23 @@ describe('brief receipt display boundary', () => {
         onProjectChange={vi.fn()}
         onProjectsRefresh={vi.fn()}
       />,
-    );
+    ));
 
-    expect(await screen.findByTestId('chat-pane-rendered')).toBeTruthy();
+    expect(listMessages).toHaveBeenCalledWith(project.id, conversation.id);
+    expect(screen.getByTestId('chat-pane-rendered')).toBeTruthy();
     expect(screen.getByTestId('file-workspace-rendered')).toBeTruthy();
-    expect(screen.getByTestId('chat-pane-messages').textContent).toContain('workspace remains available');
-    await waitFor(() => {
-      expect(screen.getByTestId('chat-pane-produced-count').textContent).toBe('1');
-      expect(screen.getByTestId('file-workspace-produced-count').textContent).toBe('1');
+    // The surfaces mount after conversations load, before their messages arrive.
+    // Deliver the exact pending response inside act, not a shell-presence wait.
+    expect(screen.getByTestId('chat-pane-messages').textContent).toBe('');
+    expect(screen.getByTestId('file-workspace-messages').textContent).toBe('');
+    await act(async () => {
+      deliverMessages([persisted]);
+      await messageResponse;
     });
+    expect(screen.getByTestId('chat-pane-messages').textContent).toContain('workspace remains available');
+    expect(screen.getByTestId('file-workspace-messages').textContent).toContain('workspace remains available');
+    expect(screen.getByTestId('chat-pane-produced-count').textContent).toBe('1');
+    expect(screen.getByTestId('file-workspace-produced-count').textContent).toBe('1');
   });
 
   it('proves the fixture leaks without consumption, then hides a complete receipt and its JSON', () => {

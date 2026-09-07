@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 
-import { act } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
+import { act, cleanup, render } from '@testing-library/react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -9,6 +8,7 @@ import { FileWorkspace } from '../../src/components/FileWorkspace';
 import type { AgentEvent, DesignSystemSummary, ProjectFile } from '../../src/types';
 
 const registryMocks = vi.hoisted(() => ({
+  fetchProjectFolders: vi.fn().mockResolvedValue([]),
   updateDesignSystemDraft: vi.fn(),
 }));
 
@@ -18,22 +18,13 @@ vi.mock('../../src/providers/registry', async () => {
   );
   return {
     ...actual,
+    fetchProjectFolders: registryMocks.fetchProjectFolders,
     updateDesignSystemDraft: registryMocks.updateDesignSystemDraft,
   };
 });
 
-let root: Root | null = null;
-let host: HTMLDivElement | null = null;
-
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-
 afterEach(() => {
-  if (root) {
-    act(() => root?.unmount());
-    root = null;
-  }
-  host?.remove();
-  host = null;
+  cleanup();
   vi.clearAllMocks();
   vi.unstubAllGlobals();
 });
@@ -65,14 +56,13 @@ function designSystem(overrides: Partial<DesignSystemSummary> = {}): DesignSyste
   };
 }
 
-function renderWorkspace(element: React.ReactElement) {
-  host = document.createElement('div');
-  document.body.appendChild(host);
-  act(() => {
-    root = createRoot(host!);
-    root.render(element);
+async function renderWorkspace(element: React.ReactElement) {
+  const { container } = render(element);
+  // The review surface is synchronous, but its workspace still loads folders.
+  await act(async () => {
+    await registryMocks.fetchProjectFolders.mock.results.at(-1)!.value;
   });
-  return host;
+  return container;
 }
 
 type ToolUseEvent = Extract<AgentEvent, { kind: 'tool_use' }>;
@@ -189,8 +179,8 @@ describe('FileWorkspace design-system project surface', () => {
     expect(markup).not.toContain('<iframe');
   });
 
-  it('keeps source evidence files out of the Design System review tab', () => {
-    const container = renderWorkspace(
+  it('keeps source evidence files out of the Design System review tab', async () => {
+    const container = await renderWorkspace(
       <FileWorkspace
         projectId="ds-acme"
         projectKind="prototype"
@@ -243,7 +233,7 @@ describe('FileWorkspace design-system project surface', () => {
   });
 
   it('blocks publishing GitHub-backed design systems until repo evidence snapshots exist', async () => {
-    const container = renderWorkspace(
+    const container = await renderWorkspace(
       <FileWorkspace
         projectId="ds-acme"
         projectKind="prototype"
@@ -271,16 +261,15 @@ describe('FileWorkspace design-system project surface', () => {
     expect(container.textContent).toContain('Connect your repo to pull aspects of your design system');
     expect(publishButton?.disabled).toBe(true);
 
-    await act(async () => {
+    act(() => {
       publishButton?.click();
-      await Promise.resolve();
     });
 
     expect(registryMocks.updateDesignSystemDraft).not.toHaveBeenCalled();
   });
 
-  it('keeps the disabled-publish guidance on a non-disabled wrapper so it stays reachable', () => {
-    const container = renderWorkspace(
+  it('keeps the disabled-publish guidance on a non-disabled wrapper so it stays reachable', async () => {
+    const container = await renderWorkspace(
       <FileWorkspace
         projectId="ds-acme"
         projectKind="prototype"
@@ -321,7 +310,7 @@ describe('FileWorkspace design-system project surface', () => {
       designSystem({ status: 'published' }),
     );
     const onRefresh = vi.fn();
-    const container = renderWorkspace(
+    const container = await renderWorkspace(
       <FileWorkspace
         projectId="ds-acme"
         projectKind="prototype"
@@ -351,7 +340,7 @@ describe('FileWorkspace design-system project surface', () => {
 
     await act(async () => {
       publishButton?.click();
-      await Promise.resolve();
+      await registryMocks.updateDesignSystemDraft.mock.results.at(-1)!.value;
     });
 
     expect(registryMocks.updateDesignSystemDraft).toHaveBeenCalledWith('user:acme', {
@@ -363,7 +352,7 @@ describe('FileWorkspace design-system project surface', () => {
 
   it('offers a Connect GitHub action when repo evidence is missing', async () => {
     const onConnectRepo = vi.fn();
-    const container = renderWorkspace(
+    const container = await renderWorkspace(
       <FileWorkspace
         projectId="ds-acme"
         projectKind="prototype"
@@ -388,16 +377,15 @@ describe('FileWorkspace design-system project surface', () => {
     );
     expect(connectButton).toBeTruthy();
 
-    await act(async () => {
+    act(() => {
       connectButton?.click();
-      await Promise.resolve();
     });
 
     expect(onConnectRepo).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps the Connect GitHub action when evidence notes exist but file snapshots are still missing', () => {
-    const container = renderWorkspace(
+  it('keeps the Connect GitHub action when evidence notes exist but file snapshots are still missing', async () => {
+    const container = await renderWorkspace(
       <FileWorkspace
         projectId="ds-acme"
         projectKind="prototype"
@@ -428,8 +416,8 @@ describe('FileWorkspace design-system project surface', () => {
     expect(connectButton).toBeTruthy();
   });
 
-  it('shows re-import guidance instead of Connect when GitHub is already connected', () => {
-    const container = renderWorkspace(
+  it('shows re-import guidance instead of Connect when GitHub is already connected', async () => {
+    const container = await renderWorkspace(
       <FileWorkspace
         projectId="ds-acme"
         projectKind="prototype"
@@ -461,8 +449,8 @@ describe('FileWorkspace design-system project surface', () => {
     expect(importButton).toBeTruthy();
   });
 
-  it('collapses a section once it is marked looks-good', () => {
-    const container = renderWorkspace(
+  it('collapses a section once it is marked looks-good', async () => {
+    const container = await renderWorkspace(
       <FileWorkspace
         projectId="ds-acme"
         projectKind="prototype"
@@ -495,8 +483,8 @@ describe('FileWorkspace design-system project surface', () => {
     expect(unreviewed?.classList.contains('is-expanded')).toBe(true);
   });
 
-  it('reopens a looks-good section after it is regenerated so the review-again prompt stays visible', () => {
-    const container = renderWorkspace(
+  it('reopens a looks-good section after it is regenerated so the review-again prompt stays visible', async () => {
+    const container = await renderWorkspace(
       <FileWorkspace
         projectId="ds-acme"
         projectKind="prototype"
@@ -533,7 +521,7 @@ describe('FileWorkspace design-system project surface', () => {
 
   it('routes the Set as default toggle button to the selected design system id', async () => {
     const onSetDefault = vi.fn();
-    const container = renderWorkspace(
+    const container = await renderWorkspace(
       <FileWorkspace
         projectId="ds-acme"
         projectKind="prototype"
@@ -552,9 +540,8 @@ describe('FileWorkspace design-system project surface', () => {
     );
 
     expect(defaultToggle?.getAttribute('aria-pressed')).toBe('false');
-    await act(async () => {
+    act(() => {
       defaultToggle?.click();
-      await Promise.resolve();
     });
 
     expect(onSetDefault).toHaveBeenCalledWith('user:acme');
@@ -562,7 +549,7 @@ describe('FileWorkspace design-system project surface', () => {
 
   it('clears the default design system when the selected Default toggle is pressed', async () => {
     const onSetDefault = vi.fn();
-    const container = renderWorkspace(
+    const container = await renderWorkspace(
       <FileWorkspace
         projectId="ds-acme"
         projectKind="prototype"
@@ -581,16 +568,15 @@ describe('FileWorkspace design-system project surface', () => {
     );
 
     expect(defaultToggle?.getAttribute('aria-pressed')).toBe('true');
-    await act(async () => {
+    act(() => {
       defaultToggle?.click();
-      await Promise.resolve();
     });
 
     expect(onSetDefault).toHaveBeenCalledWith(null);
   });
 
-  it('exposes published state through a pressed button', () => {
-    const container = renderWorkspace(
+  it('exposes published state through a pressed button', async () => {
+    const container = await renderWorkspace(
       <FileWorkspace
         projectId="ds-acme"
         projectKind="prototype"
