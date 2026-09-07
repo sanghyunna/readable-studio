@@ -25,6 +25,25 @@ export type FakeAgentRuntimeOptions = {
   runtimeIds?: FakeAgentId[];
 };
 
+// Codex-only held-run contract. Use a fresh project; the release file must not
+// exist at launch. POST /api/projects/:id/files with this exact name/content
+// releases the run. A complete form is emitted only after fs.watch is armed.
+// No terminal frame is emitted before release; cancellation closes the watcher.
+export const HELD_QUESTION_RUN = {
+  prompt: 'Emit the required held-run question form until explicitly released',
+  releaseFile: 'e2e-held-question.release',
+  releaseToken: 'readable-e2e-held-question:release:v1',
+  timeoutMs: 120_000,
+  formId: 'held-question-queue',
+  form: {
+    questions: [
+      { id: 'target', label: 'Delivery target', type: 'radio', required: true,
+        options: [{ label: 'Desktop web', value: 'desktop-web' }, { label: 'Mobile web', value: 'mobile-web' }] },
+      { id: 'audience', label: 'Audience details', type: 'textarea', required: true },
+    ],
+  },
+} as const;
+
 const AGENT_BIN_NAMES: Record<FakeAgentId, string> = {
   claude: 'claude-e2e.cjs',
   codex: 'codex-e2e.cjs',
@@ -100,7 +119,9 @@ function renderFakeAgentScript(agentId: FakeAgentId): string {
 const agentId = ${JSON.stringify(agentId)};
 const args = process.argv.slice(2);
 const { mkdir, writeFile: writeFileFs } = require('node:fs/promises');
+const { existsSync, readFileSync, watch } = require('node:fs');
 const { join } = require('node:path');
+const heldQuestion = ${JSON.stringify(HELD_QUESTION_RUN)};
 
 if (args.includes('--version')) {
   process.stdout.write(agentId + '-e2e 0.0.0\\n');
@@ -121,6 +142,9 @@ process.stdin.resume();
 process.stdin.on('data', (chunk) => {
   prompt += chunk;
   if (emitted) return;
+  // Codex's prompt pipe is closed by the daemon. Wait for EOF rather than
+  // guessing when a potentially chunked transcript has finished arriving.
+  if (agentId === 'codex') return;
   if (emitTimer) clearTimeout(emitTimer);
   emitTimer = setTimeout(() => {
     void emitRun(prompt).catch(failUnhandled);
@@ -137,6 +161,14 @@ if (process.stdin.isTTY || agentId === 'deepseek') {
 async function emitRun(promptText) {
   if (emitted) return;
   emitted = true;
+  // Only the latest user section can arm the hold: the promoted answer's
+  // transcript still contains the original sentinel in an earlier user turn.
+  const latestUserPrompt = promptText.split(/^## user\\r?$/m).at(-1).trim();
+  if (latestUserPrompt.includes(heldQuestion.prompt)) {
+    if (agentId !== 'codex') throw new Error('Held question fixture requires codex');
+    emitHeldQuestionRun();
+    return;
+  }
   if (promptText.includes('Hold the daemon run open until canceled')) {
     // Stay running (busy) without ever emitting a terminal result, so a test
     // can queue a follow-up turn and interrupt it via send-now. Keep the event
@@ -192,6 +224,62 @@ async function emitRun(promptText) {
   emitSuccess(assistantText, isChunked, isDelayed);
   process.exitCode = 0;
   exitSoon(0);
+}
+
+function emitHeldQuestionRun() {
+  const releasePath = join(process.cwd(), heldQuestion.releaseFile);
+  if (existsSync(releasePath)) throw new Error('Held question release file already exists: ' + releasePath);
+  let settled = false;
+  const watcher = watch(process.cwd(), (_event, filename) => {
+    if (filename !== null && String(filename) !== heldQuestion.releaseFile) return;
+    checkRelease();
+  });
+  const timeout = setTimeout(() => {
+    cleanup();
+    failUnhandled(new Error('Held question run timed out awaiting ' + releasePath));
+  }, heldQuestion.timeoutMs);
+  function cleanup() {
+    settled = true;
+    watcher.close();
+    clearTimeout(timeout);
+    process.removeListener('SIGTERM', cancel);
+    process.removeListener('SIGINT', cancel);
+  }
+  function cancel() {
+    cleanup();
+    process.exit(143);
+  }
+  function checkRelease() {
+    if (settled) return;
+    let content;
+    try {
+      content = readFileSync(releasePath, 'utf8');
+    } catch (error) {
+      if (error.code === 'ENOENT') return;
+      cleanup();
+      failUnhandled(error);
+      return;
+    }
+    if (content !== heldQuestion.releaseToken) return;
+    cleanup();
+    writeJson({ type: 'turn.completed', usage: { input_tokens: 1, output_tokens: 1 } });
+    // Flush the terminal frame, without a timing-based exit grace period.
+    process.stdout.write('', () => process.exit(0));
+  }
+  watcher.on('error', (error) => {
+    if (settled) return;
+    cleanup();
+    failUnhandled(error);
+  });
+  process.once('SIGTERM', cancel);
+  process.once('SIGINT', cancel);
+  writeJson({ type: 'thread.started' });
+  writeJson({ type: 'turn.started' });
+  writeJson({ type: 'item.completed', item: { type: 'agent_message', text:
+    '<question-form id="' + heldQuestion.formId + '" title="Held run brief">' +
+    JSON.stringify(heldQuestion.form) + '</question-form>' } });
+  // Watch first, then check: a release racing listener registration cannot be lost.
+  checkRelease();
 }
 
 async function emitPluginAuthoringRun() {

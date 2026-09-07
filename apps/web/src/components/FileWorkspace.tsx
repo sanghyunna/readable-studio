@@ -205,9 +205,10 @@ interface Props {
   // across the streaming→persisted remount instead of re-animating.
   questionFormKey?: string | null;
   questionFormInteractive?: boolean;
-  // The turn is busy (streaming/queued) — keep Continue/Skip disabled while the
-  // form itself stays editable.
+  // A true submission boundary (conversation loading/failed), distinct from a
+  // healthy active run where answers can enter the chat queue.
   questionFormSubmitDisabled?: boolean;
+  questionFormSubmissionQueued?: boolean;
   questionFormSubmittedAnswers?: Record<string, string | string[]>;
   questionsGenerating?: boolean;
   onSubmitQuestionForm?: (text: string) => void;
@@ -414,6 +415,7 @@ export function FileWorkspace({
   questionFormKey = null,
   questionFormInteractive = false,
   questionFormSubmitDisabled = false,
+  questionFormSubmissionQueued = false,
   questionFormSubmittedAnswers,
   questionsGenerating = false,
   onSubmitQuestionForm,
@@ -2091,6 +2093,7 @@ export function FileWorkspace({
             form={questionForm ?? questionFormPreview}
             interactive={questionFormInteractive}
             submitDisabled={questionFormSubmitDisabled}
+            submissionQueued={questionFormSubmissionQueued}
             submittedAnswers={questionFormSubmittedAnswers}
             generating={questionsGenerating}
             onSubmit={(text) => onSubmitQuestionForm?.(text)}

@@ -15,6 +15,9 @@ interface Props {
   // begins with "[form answers — <id>]", we parse it back out and pass it
   // here so the rendered form reflects what was sent.
   submittedAnswers?: Record<string, string | string[]>;
+  // The accepted answers are waiting behind an active run rather than already
+  // being consumed by the agent.
+  submittedQueued?: boolean;
   // When the form lives in the Questions tab the Continue button owns the
   // submit, so hide the form's own footer button and report ready-state out.
   hideInternalSubmit?: boolean;
@@ -45,6 +48,7 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
     form,
     interactive,
     submittedAnswers,
+    submittedQueued = false,
     hideInternalSubmit = false,
     hideInternalHead = false,
     draftAnswers,
@@ -269,7 +273,9 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
       {locked ? (
         <div className="question-form-foot">
           <span className="qf-locked-note">
-            {submittedAnswers ? t('qf.lockedSubmitted') : t('qf.lockedPrev')}
+            {submittedAnswers
+              ? t(submittedQueued ? 'qf.lockedQueued' : 'qf.lockedSubmitted')
+              : t('qf.lockedPrev')}
           </span>
         </div>
       ) : hideInternalSubmit ? null : (
@@ -479,35 +485,58 @@ export function parseSubmittedAnswers(
   form: QuestionForm,
   userMessageContent: string,
 ): Record<string, string | string[]> | null {
-  const lines = userMessageContent.split('\n').map((l) => l.trim());
+  const lines = userMessageContent.split('\n');
   if (lines.length === 0) return null;
-  const header = lines[0] ?? '';
+  const header = (lines[0] ?? '').trim();
   // We accept any "form answers" header so the agent can paraphrase.
   if (!/^\[form answers/i.test(header)) return null;
   const answers: Record<string, string | string[]> = {};
-  const labelToId = new Map<string, string>();
-  for (const q of form.questions) labelToId.set(q.label.toLowerCase(), q.id);
+  const labelToQuestion = new Map(form.questions.map((q) => [q.label.toLowerCase(), q]));
+  const rawAnswers = new Map<string, string>();
+  let currentQuestion: QuestionForm['questions'][number] | undefined;
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i] ?? '';
-    const m = /^[-*]\s*([^:]+):\s*(.*)$/.exec(line);
-    if (!m) continue;
-    const labelKey = m[1]!.trim().toLowerCase();
-    const value = m[2]!.trim();
-    const id = labelToId.get(labelKey);
-    if (!id) continue;
-    const q = form.questions.find((x) => x.id === id);
-    if (!q) continue;
+    const m = /^[-*]\s*([^:]+):\s*(.*)$/.exec(line.trim());
+    const q = m ? labelToQuestion.get(m[1]!.trim().toLowerCase()) : undefined;
+    if (q && m) {
+      currentQuestion = q;
+      rawAnswers.set(q.id, m[2]!);
+    } else if (currentQuestion?.type === 'text' || currentQuestion?.type === 'textarea') {
+      rawAnswers.set(currentQuestion.id, `${rawAnswers.get(currentQuestion.id)}\n${line}`);
+    }
+  }
+  for (const q of form.questions) {
+    const raw = rawAnswers.get(q.id);
+    if (raw === undefined) continue;
+    const value = raw.trim();
     if (q.type === 'checkbox') {
-      answers[id] = value
-        .split(',')
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0 && s.toLowerCase() !== '(skipped)')
-        .map((s) => formOptionValueForLabel(q, parseSubmittedOptionToken(s)));
+      answers[q.id] = parseSubmittedOptionValues(q, value);
     } else {
-      answers[id] = value.toLowerCase() === '(skipped)' ? '' : formOptionValueForLabel(q, parseSubmittedOptionToken(value));
+      answers[q.id] = value.toLowerCase() === '(skipped)' ? '' : formOptionValueForLabel(q, parseSubmittedOptionToken(value));
     }
   }
   return Object.keys(answers).length > 0 ? answers : null;
+}
+
+function parseSubmittedOptionValues(q: QuestionForm['questions'][number], value: string): string[] {
+  // Match complete known options before consuming the comma separator: labels
+  // and stable values can themselves contain commas, including legacy labels.
+  const tokens = (q.options ?? []).flatMap((option) => [
+    `${option.label} [value: ${option.value}]`, option.label, option.value,
+  ]).sort((a, b) => b.length - a.length);
+  const values: string[] = [];
+  let remaining = value;
+  while (remaining) {
+    const token = tokens.find((candidate) => remaining.startsWith(candidate)
+      && (remaining.length === candidate.length || remaining[candidate.length] === ','));
+    const next = token ?? remaining.split(',')[0]!;
+    const trimmed = next.trim();
+    if (trimmed && trimmed.toLowerCase() !== '(skipped)') {
+      values.push(formOptionValueForLabel(q, parseSubmittedOptionToken(trimmed)));
+    }
+    remaining = remaining.slice(next.length).replace(/^,\s*/, '').trim();
+  }
+  return values;
 }
 
 function parseSubmittedOptionToken(raw: string): string {

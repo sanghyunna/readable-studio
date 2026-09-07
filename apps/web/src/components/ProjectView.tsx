@@ -992,6 +992,11 @@ export function ProjectView({
   // wipes both — leaving the daemon's run with no client-side message to
   // attach the runId to.
   const [messagesInitialized, setMessagesInitialized] = useState(false);
+  // Message persistence can lag the daemon run record. Restored queued sends
+  // must wait for that record to be reconciled, not just for listMessages.
+  const [runsHydratedKey, setRunsHydratedKey] = useState<string | null>(null);
+  const runsHydrationKey = `${project.id}:${activeConversationId}:${config.mode}`;
+  const restoringQueuedRuns = runsHydratedKey !== runsHydrationKey;
   const [previewComments, setPreviewComments] = useState<PreviewComment[]>([]);
   // Mirror so the send-now interrupt path can read the current statuses
   // synchronously without re-creating its callback on every comment change.
@@ -1230,7 +1235,7 @@ export function ProjectView({
     || currentConversationHasActiveRun;
   const currentConversationAwaitingActiveRunAttach =
     currentConversationHasActiveRun && !currentConversationStreaming;
-  const currentConversationSendDisabled = currentConversationLoading
+  const currentConversationSendDisabled = restoringQueuedRuns || currentConversationLoading
     || failedMessagesConversationId === activeConversationId
     || currentConversationAwaitingActiveRunAttach;
   const currentConversationActionDisabled = currentConversationBusy || currentConversationSendDisabled;
@@ -1304,7 +1309,7 @@ export function ProjectView({
     if (persisted) setProjectBrief(next);
     return persisted;
   }, [project.id, project.metadata]);
-  const questionFormSubmittedAnswers = useMemo(() => {
+  const persistedQuestionFormAnswers = useMemo(() => {
     if (!questionForm) return undefined;
     for (let i = questionFormAssistantIndex + 1; i < messages.length; i++) {
       const m = messages[i];
@@ -1314,6 +1319,22 @@ export function ProjectView({
     }
     return undefined;
   }, [questionForm, questionFormAssistantIndex, messages]);
+  // Form answers use the same persisted queue as brief corrections. Recognize
+  // them as accepted immediately (and after reload), before the queued user
+  // message is promoted into conversation history when the active run ends.
+  const queuedQuestionFormAnswers = useMemo(() => {
+    if (!questionForm || !activeConversationId) return undefined;
+    for (let i = queuedChatSends.length - 1; i >= 0; i--) {
+      const item = queuedChatSends[i];
+      if (item?.conversationId !== activeConversationId) continue;
+      const parsed = parseSubmittedAnswers(questionForm, item.prompt);
+      if (parsed) return parsed;
+    }
+    return undefined;
+  }, [activeConversationId, questionForm, queuedChatSends]);
+  const questionFormSubmittedAnswers = persistedQuestionFormAnswers ?? queuedQuestionFormAnswers;
+  const questionFormSubmissionQueued =
+    persistedQuestionFormAnswers === undefined && queuedQuestionFormAnswers !== undefined;
   // While the form is still streaming, parse it tolerantly so the Questions tab
   // can show a frame (title) immediately and fill questions in as they arrive.
   const questionFormPreview = useMemo(
@@ -1538,6 +1559,7 @@ export function ProjectView({
   // on project mount (after conversations load) and on user-triggered
   // conversation switches.
   useEffect(() => {
+    setRunsHydratedKey(null);
     if (!activeConversationId) {
       setMessages([]);
       setMessagesInitialized(false);
@@ -1606,6 +1628,41 @@ export function ProjectView({
       cancelled = true;
     };
   }, [project.id, activeConversationId, messageLoadRetryNonce]);
+
+  useEffect(() => {
+    if (!messagesInitialized || messagesConversationId !== activeConversationId || !activeConversationId) return;
+    let cancelled = false;
+    const restoreRuns = async () => {
+      // Automatic sends need an authoritative read before accepting Home's
+      // one-shot handoff or promoting a restored queue. Message persistence
+      // can lag an active run, so an empty transcript does not establish idle.
+      if (config.mode === 'daemon' && (autoSendFirstMessageRef.current
+        || queuedChatSendsRef.current.some(item => item.conversationId === activeConversationId))) {
+        if (!daemonLive) return;
+        const runs = await listActiveChatRuns(project.id, activeConversationId, { requireSuccess: true });
+        if (cancelled) return;
+        setMessages(current => {
+          const restored = [...current];
+          for (const run of runs) {
+            if (!run.assistantMessageId) continue;
+            const index = restored.findIndex(message => message.id === run.assistantMessageId);
+            const message: ChatMessage = index >= 0 ? restored[index]! : {
+              id: run.assistantMessageId, role: 'assistant', content: '', createdAt: run.createdAt,
+            };
+            const reconciled = { ...message, runId: run.id, runStatus: run.status };
+            if (index >= 0) restored[index] = reconciled;
+            else restored.push(reconciled);
+          }
+          return restored;
+        });
+      }
+      if (!cancelled) setRunsHydratedKey(runsHydrationKey);
+    };
+    void restoreRuns().catch(err => {
+      if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+    });
+    return () => { cancelled = true; };
+  }, [project.id, activeConversationId, messagesConversationId, messagesInitialized, config.mode, daemonLive, runsHydrationKey]);
 
   useEffect(() => {
     return () => {
@@ -2663,7 +2720,7 @@ export function ProjectView({
   );
 
   useEffect(() => {
-    if (config.mode !== 'daemon' || !daemonLive || !activeConversationId || streaming) return;
+    if (config.mode !== 'daemon' || !daemonLive || !activeConversationId || streaming || restoringQueuedRuns) return;
     let cancelled = false;
     const reattachConversationId = activeConversationId;
 
@@ -3055,6 +3112,7 @@ export function ProjectView({
     requestOpenFile,
     onProjectsRefresh,
     scheduleConversationMessageRefresh,
+    restoringQueuedRuns,
   ]);
 
   const commitQueuedChatSends = useCallback((next: QueuedChatSend[]) => {
@@ -3173,7 +3231,7 @@ export function ProjectView({
       meta?: ProjectChatSendMeta,
       baseMessages?: ChatMessage[],
     ) => {
-      if (!activeConversationId) return false;
+      if (!activeConversationId || restoringQueuedRuns) return false;
       if (messagesConversationIdRef.current !== activeConversationId) return false;
       const runSessionMode = meta?.sessionMode ?? activeSessionMode;
       const retryTarget = meta?.retryOfAssistantId
@@ -3908,6 +3966,7 @@ export function ProjectView({
       attachedComments,
       activeConversationId,
       activeSessionMode,
+      restoringQueuedRuns,
       currentConversationBusy,
       queueChatSendForCurrentConversation,
       messages,
@@ -3981,6 +4040,7 @@ export function ProjectView({
   }, []);
 
   const sendQueuedChatSendNow = useCallback((id: string) => {
+    if (currentConversationSendDisabled) return;
     const item = queuedChatSendsRef.current.find((candidate) => candidate.id === id);
     if (!item) return;
     if (currentConversationBusy) {
@@ -4043,7 +4103,7 @@ export function ProjectView({
       );
       if (started) removeQueuedChatSend(id);
     })();
-  }, [armSlideNavForQueuedSend, currentConversationBusy, handleSend, handleStop, prioritizeQueuedChatSend, project.id, removeQueuedChatSend]);
+  }, [armSlideNavForQueuedSend, currentConversationBusy, currentConversationSendDisabled, handleSend, handleStop, prioritizeQueuedChatSend, project.id, removeQueuedChatSend]);
 
   const handleAgentRollbackConfirm = useCallback(
     (payload: AgentRollbackRequestEvent, accepted: boolean, dismiss: () => void) => {
@@ -4088,6 +4148,7 @@ export function ProjectView({
       return;
     }
     if (startingQueuedChatSendIdRef.current) return;
+    if (restoringQueuedRuns || !messagesInitialized) return;
     if (!activeConversationId) return;
     if (messagesConversationIdRef.current !== activeConversationId) return;
     const next = queuedChatSendsRef.current.find(
@@ -4120,6 +4181,8 @@ export function ProjectView({
     activeConversationId,
     armSlideNavForQueuedSend,
     currentConversationBusy,
+    restoringQueuedRuns,
+    messagesInitialized,
     queuedAutoStartTick,
     queuedChatSends,
     handleSend,
@@ -4974,7 +5037,7 @@ export function ProjectView({
             onRemoveQueuedSend: removeQueuedChatSend,
             onUpdateQueuedSend: updateQueuedChatSend,
             onReorderQueuedSends: reorderCurrentConversationQueuedChatSends,
-            onSendQueuedNow: sendQueuedChatSendNow,
+            onSendQueuedNow: currentConversationSendDisabled ? undefined : sendQueuedChatSendNow,
           }
         : undefined,
     [
@@ -5355,10 +5418,9 @@ export function ProjectView({
   useEffect(() => {
     const pendingPrompt = project.pendingPrompt;
     if (!pendingPrompt) return;
-    if (autoSendFirstMessageRef.current) {
-      onClearPendingPrompt();
-      return;
-    }
+    // Keep the persisted Home seed until the queue accepts it. A remount
+    // during run hydration must not lose the prompt captured by this view.
+    if (autoSendFirstMessageRef.current) return;
     setInitialDraft((current) =>
       current?.projectId === project.id
         ? current
@@ -5519,12 +5581,10 @@ export function ProjectView({
 
   // PluginLoopHome auto-send: when the user submits on Home, app.tsx
   // sets `sessionStorage['readable:auto-send-first:<projectId>']` and routes
-  // through createProject. Once the conversation id resolves and the
-  // composer is mounted, fire handleSend(pendingPrompt) exactly once so
-  // the user lands inside a running pipeline without an extra click.
-  // We gate on `messages.length === 0` so a refresh after the run is
-  // mid-flight never double-fires; the sessionStorage flag is cleared
-  // immediately after the first dispatch.
+  // through createProject. After message and run hydration, transfer the
+  // pending turn into the persisted queue exactly once. The normal queue
+  // policy dispatches when idle, including after a reattached run finishes.
+  // A persisted user turn means this first-turn handoff is already stale.
   const autoSentRef = useRef(false);
   useEffect(() => {
     if (autoSentRef.current) return;
@@ -5534,9 +5594,9 @@ export function ProjectView({
     // arrives with `setMessages([])` and wipes the freshly-pushed user +
     // assistant placeholder out of React state — leaving the daemon's run
     // with no in-memory message to attach the runId to.
-    if (!messagesInitialized) return;
-    if (streaming) return;
-    if (messages.length > 0) return;
+    if (!messagesInitialized || restoringQueuedRuns) return;
+    if (messagesConversationIdRef.current !== activeConversationId) return;
+    if (messages.some(message => message.role === 'user')) return;
     let flag: string | null = null;
     try {
       flag = window.sessionStorage.getItem(autoSendFirstMessageKey(project.id));
@@ -5564,19 +5624,28 @@ export function ProjectView({
     if (isDesignSystemWorkspaceMetadata(project.metadata)) {
       markDesignSystemAuditAutoRepairEligible(project.id);
     }
+    queueChatSendForCurrentConversation({
+      conversationId: activeConversationId,
+      prompt: seed,
+      attachments,
+      commentAttachments: [],
+      meta: { sessionMode: activeSessionMode },
+    });
     clearAutoSendSession(project.id);
     autoSendAttachmentsRef.current = [];
-    void handleSend(seed, attachments, []);
+    onClearPendingPrompt();
   }, [
     activeConversationId,
     messagesInitialized,
-    streaming,
-    messages.length,
+    restoringQueuedRuns,
+    messages,
     project.id,
     project.metadata,
     initialDraft,
     project.pendingPrompt,
-    handleSend,
+    activeSessionMode,
+    queueChatSendForCurrentConversation,
+    onClearPendingPrompt,
   ]);
 
   // Wire the Critique Theater drop-in mount into the project workspace.
@@ -5703,7 +5772,7 @@ export function ProjectView({
               onRemoveQueuedSend={removeQueuedChatSend}
               onUpdateQueuedSend={updateQueuedChatSend}
               onReorderQueuedSends={reorderCurrentConversationQueuedChatSends}
-              onSendQueuedNow={sendQueuedChatSendNow}
+              onSendQueuedNow={currentConversationSendDisabled ? undefined : sendQueuedChatSendNow}
               onRequestOpenFile={requestOpenFile}
               onRequestPluginDetails={handleOpenContextPluginDetails}
               onRequestDesignSystemDetails={setContextDesignSystemDetails}
@@ -5940,12 +6009,18 @@ export function ProjectView({
           questionFormPreview={displayedQuestionFormPreview}
           questionFormKey={displayedQuestionFormKey}
           questionFormInteractive={displayedQuestionFormActive}
-          questionFormSubmitDisabled={currentConversationActionDisabled}
+          questionFormSubmitDisabled={currentConversationQueueDisabled}
+          questionFormSubmissionQueued={
+            !manualQuestionFormRequest
+            && (questionFormSubmissionQueued
+              || (questionFormSubmittedAnswers === undefined
+                && currentConversationBusy
+                && !currentConversationQueueDisabled))
+          }
           questionFormSubmittedAnswers={displayedQuestionFormSubmittedAnswers}
           questionsGenerating={displayedQuestionsGenerating}
           focusQuestionsRequest={focusQuestionsRequest}
           onSubmitQuestionForm={(text) => {
-            if (currentConversationActionDisabled) return;
             void handleSend(text, [], []);
           }}
         />

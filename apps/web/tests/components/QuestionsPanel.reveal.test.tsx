@@ -12,6 +12,21 @@ const form: QuestionForm = {
   ],
 };
 
+const scopeForm: QuestionForm = {
+  id: 'scope',
+  title: 'Confirm the scope',
+  questions: [
+    {
+      id: 'platform', label: 'Target platform', type: 'radio', required: true,
+      options: [{ label: 'Desktop web', value: 'desktop-web' }],
+    },
+    {
+      id: 'fidelity', label: 'Revision fidelity', type: 'radio', required: true,
+      options: [{ label: 'High fidelity', value: 'high' }],
+    },
+  ],
+};
+
 afterEach(() => { cleanup(); window.sessionStorage.clear(); });
 
 describe('QuestionsPanel blocking forms', () => {
@@ -30,6 +45,29 @@ describe('QuestionsPanel blocking forms', () => {
       '[form answers — blocking-input]\n- Source URL: (skipped)\n- Notes: (skipped)',
     );
     expect(document.querySelector('.questions-skip-timer')).toBeNull();
+  });
+
+  it('enables Continue after every required choice is answered, including during an in-flight run', () => {
+    const onSubmit = vi.fn();
+    render(
+      <QuestionsPanel
+        form={scopeForm}
+        interactive
+        generating={false}
+        submissionQueued
+        onSubmit={onSubmit}
+      />,
+    );
+
+    const continueButton = screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement;
+    expect(continueButton.disabled).toBe(true);
+    fireEvent.click(screen.getByRole('radio', { name: 'Desktop web' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'High fidelity' }));
+
+    expect(continueButton.disabled).toBe(false);
+    expect(screen.getByText('Answers will be queued and applied when the current run finishes.')).toBeTruthy();
+    fireEvent.click(continueButton);
+    expect(onSubmit).toHaveBeenCalledTimes(1);
   });
 
   it('preserves drafts across remount and clears them on submit', () => {

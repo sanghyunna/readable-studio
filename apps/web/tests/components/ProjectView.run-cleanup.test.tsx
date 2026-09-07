@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, waitFor } from '@testing-library/react';
+import { act, cleanup, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ProjectView,
@@ -626,7 +626,7 @@ describe('ProjectView daemon cleanup', () => {
     window.sessionStorage.setItem('readable:auto-send-first:project-2', '1');
 
     try {
-      render(
+      await act(async () => render(
         <ProjectView
           project={{
             id: 'project-2',
@@ -653,9 +653,9 @@ describe('ProjectView daemon cleanup', () => {
           onProjectChange={() => {}}
           onProjectsRefresh={() => {}}
         />,
-      );
+      ));
 
-      await waitFor(() => expect(streamViaDaemon).toHaveBeenCalledTimes(1));
+      expect(streamViaDaemon).toHaveBeenCalledTimes(1);
       const seededCall = chatPaneSpy.mock.calls.find(
         (call) => call[0]?.initialDraft === 'design a landing page for a coffee shop',
       );
@@ -689,7 +689,7 @@ describe('ProjectView daemon cleanup', () => {
     );
 
     try {
-      render(
+      await act(async () => render(
         <ProjectView
           project={{
             id: 'project-files',
@@ -715,9 +715,9 @@ describe('ProjectView daemon cleanup', () => {
           onProjectChange={() => {}}
           onProjectsRefresh={() => {}}
         />,
-      );
+      ));
 
-      await waitFor(() => expect(streamViaDaemon).toHaveBeenCalledTimes(1));
+      expect(streamViaDaemon).toHaveBeenCalledTimes(1);
       expect(streamViaDaemon.mock.calls[0]?.[0]).toMatchObject({
         attachments: ['brief.pdf', 'logo.png'],
         history: [

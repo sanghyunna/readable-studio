@@ -16,6 +16,7 @@ interface Props {
   formKey?: string | null;
   interactive: boolean;
   submitDisabled?: boolean;
+  submissionQueued?: boolean;
   submittedAnswers?: QuestionFormAnswers;
   generating: boolean;
   onSubmit: (text: string) => void;
@@ -27,6 +28,7 @@ export function QuestionsPanel({
   formKey = null,
   interactive,
   submitDisabled = false,
+  submissionQueued = false,
   submittedAnswers,
   generating,
   onSubmit,
@@ -97,6 +99,7 @@ export function QuestionsPanel({
             form={form}
             interactive={interactive}
             submittedAnswers={submittedAnswers}
+            submittedQueued={submissionQueued}
             draftAnswers={draftAnswers}
             hideInternalSubmit
             onReadyChange={setReady}
@@ -107,7 +110,13 @@ export function QuestionsPanel({
         ) : <div className="questions-panel-skeleton">{t('questions.generating')}</div>}
       </div>
       <div className="questions-panel-foot">
-        <span className="questions-panel-status">{generating ? t('questions.generating') : null}</span>
+        <span className="questions-panel-status">
+          {generating
+            ? t('questions.generating')
+            : submissionQueued
+              ? t(answered ? 'questions.queued' : 'questions.willQueue')
+              : null}
+        </span>
         {!answered ? (
           <button
             type="button"

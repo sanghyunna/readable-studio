@@ -824,14 +824,18 @@ export async function reportChatRunFeedback(req: {
 export async function listActiveChatRuns(
   projectId: string,
   conversationId: string,
+  options?: { requireSuccess?: boolean },
 ): Promise<ChatRunStatusResponse[]> {
   try {
     const qs = new URLSearchParams({ projectId, conversationId, status: 'active' });
     const resp = await fetch(`/api/runs?${qs.toString()}`);
-    if (!resp.ok) return [];
+    if (!resp.ok) throw new Error(`Could not restore active runs (HTTP ${resp.status}).`);
     const body = (await resp.json()) as ChatRunListResponse;
     return body.runs ?? [];
-  } catch {
+  } catch (err) {
+    // Queue hydration must distinguish an authoritative idle result from a
+    // failed read. Legacy best-effort callers retain their empty-list fallback.
+    if (options?.requireSuccess) throw err;
     return [];
   }
 }

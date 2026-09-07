@@ -2937,6 +2937,7 @@ export interface Dict {
   'qf.choose': string;
   'qf.required': string;
   'qf.lockedSubmitted': string;
+  'qf.lockedQueued': string;
   'qf.lockedPrev': string;
   'qf.hint': string;
   'qf.submitDefault': string;
@@ -2950,6 +2951,8 @@ export interface Dict {
   'questions.bannerAnswered': string;
   'questions.continue': string;
   'questions.generating': string;
+  'questions.willQueue': string;
+  'questions.queued': string;
   'questions.skipAll': string;
   'questions.autoSkipHint': string;
 

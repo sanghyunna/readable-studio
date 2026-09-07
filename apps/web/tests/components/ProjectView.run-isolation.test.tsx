@@ -123,6 +123,9 @@ vi.mock('../../src/components/FileWorkspace', () => ({
     onSendBoardCommentAttachments,
     onCommentModeChange,
     onFocusModeChange,
+    questionFormSubmitDisabled,
+    questionFormSubmissionQueued,
+    onSubmitQuestionForm,
   }: {
     streaming: boolean;
     messages?: ChatMessage[];
@@ -132,6 +135,9 @@ vi.mock('../../src/components/FileWorkspace', () => ({
     onSendBoardCommentAttachments: (attachments: unknown[]) => void;
     onCommentModeChange?: (active: boolean) => void;
     onFocusModeChange?: (focused: boolean) => void;
+    questionFormSubmitDisabled?: boolean;
+    questionFormSubmissionQueued?: boolean;
+    onSubmitQuestionForm?: (text: string) => void;
   }) => {
     const failedAssistant =
       [...(messages ?? [])]
@@ -163,6 +169,16 @@ vi.mock('../../src/components/FileWorkspace', () => ({
     return (
       <>
       <output data-testid="workspace-streaming-state">{streaming ? 'streaming' : 'idle'}</output>
+      <output data-testid="question-submit-disabled">{questionFormSubmitDisabled ? 'disabled' : 'enabled'}</output>
+      <output data-testid="question-submission-queued">{questionFormSubmissionQueued ? 'queued' : 'direct'}</output>
+      <button
+        type="button"
+        data-testid="submit-question-form"
+        disabled={questionFormSubmitDisabled}
+        onClick={() => onSubmitQuestionForm?.('[form answers — scope]\n- Target platform: Desktop web [value: desktop-web]\n- Revision fidelity: High fidelity [value: high]')}
+      >
+        submit questions
+      </button>
       <button
         type="button"
         data-testid="workspace-open-comments"
@@ -627,6 +643,28 @@ describe('ProjectView conversation run isolation', () => {
         locale: 'en',
       }),
     );
+  });
+
+  it('accepts question-form answers into the queue while a run is in flight', async () => {
+    conversationAMessages = [{
+      ...runningAssistant,
+      content: [
+        '<question-form id="scope" title="Confirm the scope">',
+        '{"questions":[{"id":"platform","label":"Target platform","type":"radio","required":true,"options":[{"label":"Desktop web","value":"desktop-web"}]},{"id":"fidelity","label":"Revision fidelity","type":"radio","required":true,"options":[{"label":"High fidelity","value":"high"}]}]}',
+        '</question-form>',
+      ].join(''),
+    }];
+    renderProjectView();
+
+    await waitFor(() => expect(screen.getByTestId('streaming-state').textContent).toBe('streaming'));
+    expect(screen.getByTestId('question-submit-disabled').textContent).toBe('enabled');
+    expect(screen.getByTestId('question-submission-queued').textContent).toBe('queued');
+
+    fireEvent.click(screen.getByTestId('submit-question-form'));
+
+    await waitFor(() => expect(screen.getByTestId('send-queued-0')).toBeTruthy());
+    expect(screen.getByTestId('send-queued-0').textContent).toContain('[form answers — scope]');
+    expect(streamViaDaemon).not.toHaveBeenCalled();
   });
 
   it('sends the persisted thinking-effort selection in the workspace run payload', async () => {
