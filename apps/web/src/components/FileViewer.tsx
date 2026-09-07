@@ -5226,7 +5226,7 @@ function HtmlViewer({
         if (!Number.isInteger(sequence) || sequence <= duplicate.lastAckSequence) return;
         duplicate.lastAckSequence = sequence;
         if (!data.ok) {
-          failManualEditDuplicate(movement, duplicate, data.error || 'Could not create the duplicate preview.');
+          failManualEditDuplicate(movement, duplicate, t('manualEdit.error.duplicatePreviewFailed'));
           return;
         }
         const wasCreating = duplicate.status === 'creating';
@@ -5415,7 +5415,7 @@ function HtmlViewer({
           });
         }
         if (!data.ok && version === manualEditPreviewVersionRef.current) {
-          setManualEditError(data.error || 'Could not apply preview style.');
+          setManualEditError(t('manualEdit.error.previewStyleFailed'));
         }
         return;
       }
@@ -5465,7 +5465,7 @@ function HtmlViewer({
     }
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [isActivePreviewIframeSource, isOurPreviewIframeSource, manualEditMode, source]);
+  }, [isActivePreviewIframeSource, isOurPreviewIframeSource, manualEditMode, source, t]);
 
   function nextManualEditPreviewVersion(): number {
     manualEditPreviewVersionRef.current += 1;
@@ -5488,7 +5488,7 @@ function HtmlViewer({
     savedSource: string,
   ) {
     if (id !== '__body__' && !readManualEditOuterHtml(savedSource, id)) {
-      setManualEditError('The selected target no longer exists in the saved source. Refreshing the preview.');
+      setManualEditError(t('manualEdit.error.selectedTargetMissing'));
       selectedManualEditTargetRef.current = null;
       setSelectedManualEditTarget(null);
       setManualEditFrozenSource(null);
@@ -5512,7 +5512,7 @@ function HtmlViewer({
       ...current,
       styles: { ...current.styles, ...repairStyles },
     }));
-    setManualEditError('Saved styles differed from the active preview. Reconciled the selected target from source.');
+    setManualEditError(t('manualEdit.error.stylesReconciled'));
   }
 
   function cancelManualEditPendingStyles(id: string, keys: Array<keyof ManualEditStyles>) {
@@ -5941,24 +5941,24 @@ function HtmlViewer({
       await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
       if (!duplicatePreparationIsCurrent(movement, duplicate)) return;
       if (!(await waitForManualEditSaveIdle())) {
-        failManualEditDuplicate(movement, duplicate, 'Could not finish the current edit before duplicating.');
+        failManualEditDuplicate(movement, duplicate, t('manualEdit.error.finishBeforeDuplicateFailed'));
         return;
       }
       if (!(await flushManualEditStyleSave())) {
-        failManualEditDuplicate(movement, duplicate, 'Could not save the current edit before duplicating.');
+        failManualEditDuplicate(movement, duplicate, t('manualEdit.error.saveBeforeDuplicateFailed'));
         return;
       }
       const snapshot = sourceRef.current;
       if (snapshot == null || !duplicatePreparationIsCurrent(movement, duplicate)) return;
       const planned = planManualEditDuplicate(snapshot, movement.session.targetId);
       if (!planned.ok) {
-        failManualEditDuplicate(movement, duplicate, planned.error);
+        failManualEditDuplicate(movement, duplicate, t('manualEdit.error.duplicatePreviewFailed'));
         return;
       }
       if (!duplicatePreparationIsCurrent(movement, duplicate)) return;
       const win = iframeRef.current?.contentWindow;
       if (!win) {
-        failManualEditDuplicate(movement, duplicate, 'The preview is unavailable for duplication.');
+        failManualEditDuplicate(movement, duplicate, t('manualEdit.error.duplicatePreviewUnavailable'));
         return;
       }
       const plan: ManualEditDuplicatePlan = {
@@ -6056,7 +6056,7 @@ function HtmlViewer({
       }
       const duplicate = movement.duplicate;
       if (!duplicate || duplicate.status === 'failed') {
-        setManualEditError('Could not prepare the duplicate preview.');
+        setManualEditError(t('manualEdit.error.duplicatePreviewFailed'));
         finalizeOwnedMovement(session, true);
         return;
       }
@@ -6069,7 +6069,7 @@ function HtmlViewer({
       const finalSequence = sendManualEditDuplicateUpdate(movement, result);
       if (finalSequence === null) {
         duplicate.pendingFinalCommit = null;
-        setManualEditError('The duplicate preview is no longer available.');
+        setManualEditError(t('manualEdit.error.duplicatePreviewUnavailable'));
         finalizeOwnedMovement(session, true);
         return;
       }
@@ -6077,7 +6077,7 @@ function HtmlViewer({
       if (!finalAcked) {
         if (activeManualEditMovementRef.current === movement && movement.duplicate === duplicate) {
           duplicate.pendingFinalCommit = null;
-          setManualEditError('The duplicate preview changed before it could be saved.');
+          setManualEditError(t('manualEdit.error.duplicatePreviewChanged'));
           finalizeOwnedMovement(session, true);
         }
         return;
@@ -6469,14 +6469,12 @@ function HtmlViewer({
       manualEditInFlightSourceRef.current = null;
       if (!saved.ok) {
         if ('conflict' in saved && saved.conflict) {
-          setManualEditError('The file changed outside Manual Edit. Refresh the preview before saving.');
+          setManualEditError(t('manualEdit.error.fileChangedBeforeSave'));
         } else {
           const status = 'status' in saved ? saved.status : undefined;
-          const code = 'code' in saved ? saved.code : undefined;
-          const message = 'message' in saved ? saved.message : 'Could not save changes.';
-          setManualEditError(
-            `Could not save the edited file${status ? ` (${status}${code ? ` ${code}` : ''})` : ''}: ${message}`,
-          );
+          setManualEditError(status
+            ? t('manualEdit.error.saveFailedWithStatus', { status })
+            : t('manualEdit.error.saveFailed'));
         }
         return false;
       }
@@ -6492,7 +6490,7 @@ function HtmlViewer({
         await onFileSaved?.();
       } catch (error) {
         if (!(error instanceof Error)) throw error;
-        setManualEditError('Saved changes, but the preview could not be refreshed.');
+        setManualEditError(t('manualEdit.error.savedPreviewRefreshFailed'));
       }
       return true;
     } finally {
@@ -6626,7 +6624,7 @@ function HtmlViewer({
     const baseSource = sourceRef.current;
     const result = applyManualEditPatch(baseSource, patch);
     if (!result.ok) {
-      setManualEditError(result.error ?? 'Could not apply edit.');
+      setManualEditError(t('manualEdit.error.applyFailed'));
       return false;
     }
     const entry: ManualEditHistoryEntry = {
@@ -6727,7 +6725,7 @@ function HtmlViewer({
       if (currentSource !== latest.afterSource) {
         replaceManualEditSource(
           currentSource,
-          'The file changed outside Manual Edit. Refresh the preview before undoing.',
+          t('manualEdit.error.fileChangedBeforeUndo'),
         );
         return;
       }
@@ -6777,7 +6775,7 @@ function HtmlViewer({
       if (currentSource !== latest.beforeSource) {
         replaceManualEditSource(
           currentSource,
-          'The file changed outside Manual Edit. Refresh the preview before redoing.',
+          t('manualEdit.error.fileChangedBeforeRedo'),
         );
         return;
       }
@@ -8389,7 +8387,7 @@ function HtmlViewer({
     const result = await uploadProjectFiles(projectId, [pickedFile]);
     const uploaded = result.uploaded[0];
     if (!uploaded?.path) {
-      setManualEditError(result.error ?? t('manualEdit.uploadImageFailed'));
+      setManualEditError(t('manualEdit.uploadImageFailed'));
       return null;
     }
     setManualEditError(null);
@@ -9053,6 +9051,7 @@ function HtmlViewer({
             onError: setManualEditError,
             onInvalidStyle: cancelManualEditPendingStyles,
             onStyleChange: (id, styleUpdates, label) => { void handleManualEditStyleChange(id, styleUpdates, label); },
+            invalidStyleMessage: t('manualEdit.error.invalidStyleValue'),
           })}
           onRichFormat={sendManualEditRichFormat}
         />
@@ -9081,6 +9080,7 @@ function HtmlViewer({
             onError: setManualEditError,
             onInvalidStyle: cancelManualEditPendingStyles,
             onStyleChange: (id, styleUpdates, label) => { void handleManualEditStyleChange(id, styleUpdates, label); },
+            invalidStyleMessage: t('manualEdit.error.invalidStyleValue'),
           })}
           onApplyPatch={(patch, label) => { void applyManualEdit(patch, label); }}
           onPickImage={pickManualEditImage}
@@ -9153,6 +9153,7 @@ function HtmlViewer({
                   onError: setManualEditError,
                   onInvalidStyle: cancelManualEditPendingStyles,
                   onStyleChange: (id, styleUpdates, label) => { void handleManualEditStyleChange(id, styleUpdates, label); },
+                  invalidStyleMessage: t('manualEdit.error.invalidStyleValue'),
                 });
               }}
               onStyleFields={(styleUpdates) => {
@@ -9165,6 +9166,7 @@ function HtmlViewer({
                   onError: setManualEditError,
                   onInvalidStyle: cancelManualEditPendingStyles,
                   onStyleChange: (id, normalizedStyles, label) => { void handleManualEditStyleChange(id, normalizedStyles, label); },
+                  invalidStyleMessage: t('manualEdit.error.invalidStyleValue'),
                 });
               }}
               onRichFormat={sendManualEditRichFormat}

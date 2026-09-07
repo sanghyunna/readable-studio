@@ -265,8 +265,9 @@ export function applyManualEditStyleField(params: {
   onError: (message: string) => void;
   onInvalidStyle?: (id: string, keys: Array<keyof ManualEditStyles>) => void;
   onStyleChange?: (id: string, styles: Partial<ManualEditStyles>, label: string) => void;
+  invalidStyleMessage: string;
 }): void {
-  const { target, draft, key, value, onDraftChange, onError, onInvalidStyle, onStyleChange } = params;
+  const { target, draft, key, value, onDraftChange, onError, onInvalidStyle, onStyleChange, invalidStyleMessage } = params;
   applyManualEditStyleFields({
     target,
     draft,
@@ -275,6 +276,7 @@ export function applyManualEditStyleField(params: {
     onError,
     onInvalidStyle,
     onStyleChange,
+    invalidStyleMessage,
   });
 }
 
@@ -286,13 +288,14 @@ export function applyManualEditStyleFields(params: {
   onError: (message: string) => void;
   onInvalidStyle?: (id: string, keys: Array<keyof ManualEditStyles>) => void;
   onStyleChange?: (id: string, styles: Partial<ManualEditStyles>, label: string) => void;
+  invalidStyleMessage: string;
 }): void {
-  const { target, draft, styles, onDraftChange, onError, onInvalidStyle, onStyleChange } = params;
+  const { target, draft, styles, onDraftChange, onError, onInvalidStyle, onStyleChange, invalidStyleMessage } = params;
   const keys = Object.keys(styles) as Array<keyof ManualEditStyles>;
   onDraftChange({ ...draft, styles: { ...draft.styles, ...styles } });
   const normalized = normalizeManualEditStyles(styles, { layoutEnabled: target.isLayoutContainer });
   if (!normalized.ok) {
-    onError('error' in normalized ? normalized.error : 'Invalid style value.');
+    onError(invalidStyleMessage);
     onInvalidStyle?.(target.id, keys);
     return;
   }

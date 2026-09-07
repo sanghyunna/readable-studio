@@ -158,6 +158,7 @@ describe('ManualEditPanel', () => {
       onDraftChange,
       onStyleChange,
       onError,
+      invalidStyleMessage: 'Enter a valid style value.',
     });
 
     expect(onDraftChange).toHaveBeenCalledWith({

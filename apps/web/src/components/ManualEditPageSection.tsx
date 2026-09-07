@@ -4,11 +4,12 @@
 // field at a time through the shared normalize pipeline.
 import { useState } from 'react';
 import type { ManualEditStyles } from '../edit-mode/types';
+import { useT } from '../i18n';
 import { normalizeManualEditStyles } from './ManualEditPanel';
 import { ColorRow, FontSelectRow, NumberRow, Section } from './ManualEditInspectorRows';
 
 export function ManualEditPageSection({
-  title = 'PAGE',
+  title,
   enabled,
   onStyleChange,
   onError,
@@ -20,6 +21,7 @@ export function ManualEditPageSection({
   onError: (message: string) => void;
   onInvalidStyle?: (id: string, keys: Array<keyof ManualEditStyles>) => void;
 }) {
+  const t = useT();
   const [bg, setBg] = useState('');
   const [font, setFont] = useState('');
   const [size, setSize] = useState('');
@@ -27,21 +29,21 @@ export function ManualEditPageSection({
   const emit = (styles: Partial<ManualEditStyles>) => {
     const normalized = normalizeManualEditStyles(styles, { layoutEnabled: true });
     if (!normalized.ok) {
-      onError('error' in normalized ? normalized.error : 'Invalid style value.');
+      onError(t('manualEdit.error.invalidStyleValue'));
       onInvalidStyle?.('__body__', Object.keys(styles) as Array<keyof ManualEditStyles>);
       return;
     }
     onError('');
-    onStyleChange('__body__', normalized.styles, 'Page styles');
+    onStyleChange('__body__', normalized.styles, t('manualEdit.pageStyles'));
   };
 
   return (
     <div className="cc-inspector">
-      <Section title={title}>
+      <Section title={title ?? t('manualEdit.page')}>
         {enabled ? (
           <>
             <ColorRow
-              label="Background"
+              label={t('manualEdit.background')}
               value={bg}
               onChange={(value) => {
                 setBg(value);
@@ -49,7 +51,7 @@ export function ManualEditPageSection({
               }}
             />
             <FontSelectRow
-              label="Font"
+              label={t('manualEdit.typography.font')}
               value={font}
               onChange={(value) => {
                 setFont(value);
@@ -57,7 +59,7 @@ export function ManualEditPageSection({
               }}
             />
             <NumberRow
-              label="Base size"
+              label={t('manualEdit.baseSize')}
               value={size}
               unit="px"
               autoUnit
@@ -68,7 +70,7 @@ export function ManualEditPageSection({
             />
           </>
         ) : (
-          <p className="cc-section-hint">Page styles are available only for full HTML documents.</p>
+          <p className="cc-section-hint">{t('manualEdit.pageStylesUnavailable')}</p>
         )}
       </Section>
     </div>

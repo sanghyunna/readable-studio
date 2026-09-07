@@ -8,6 +8,7 @@ import {
   manualEditSupersededStyleKeys,
 } from '../../src/components/FileViewer';
 import { emptyManualEditStyles, type ManualEditTarget } from '../../src/edit-mode/types';
+import { en } from '../../src/i18n/locales/en';
 import type { ProjectFile } from '../../src/types';
 
 afterEach(() => {
@@ -391,7 +392,7 @@ describe('FileViewer manual edit regressions', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByRole('alert').textContent).toBe('Target not found');
+      expect(screen.getByRole('alert').textContent).toBe(en['manualEdit.error.previewStyleFailed']);
     });
   });
 
@@ -689,7 +690,7 @@ describe('FileViewer manual edit regressions', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText('Target not found')).toBeTruthy();
+      expect(screen.getByText(en['manualEdit.error.previewStyleFailed'])).toBeTruthy();
     });
   });
 
