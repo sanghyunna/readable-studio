@@ -18,6 +18,11 @@ interface Props {
   // When the form lives in the Questions tab the Continue button owns the
   // submit, so hide the form's own footer button and report ready-state out.
   hideInternalSubmit?: boolean;
+  // When the host surface already titles the form in its own visual language
+  // (the Brief drill-in owns its header, back affordance and copy), suppress
+  // this component's chat-era head so two title blocks in two design languages
+  // never render together. Default keeps the standard chat rendering.
+  hideInternalHead?: boolean;
   draftAnswers?: Record<string, string | string[]>;
   onReadyChange?: (ready: boolean) => void;
   onDraftChange?: (answers: Record<string, string | string[]>) => void;
@@ -41,6 +46,7 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
     interactive,
     submittedAnswers,
     hideInternalSubmit = false,
+    hideInternalHead = false,
     draftAnswers,
     onReadyChange,
     onDraftChange,
@@ -145,16 +151,18 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
           : undefined
       }
     >
-      <div className="question-form-head">
-        <span className="question-form-icon" aria-hidden>?</span>
-        <div className="question-form-titles">
-          <div className="question-form-title">{form.title}</div>
-          {form.description ? (
-            <div className="question-form-desc">{form.description}</div>
-          ) : null}
+      {hideInternalHead ? null : (
+        <div className="question-form-head">
+          <span className="question-form-icon" aria-hidden>?</span>
+          <div className="question-form-titles">
+            <div className="question-form-title">{form.title}</div>
+            {form.description ? (
+              <div className="question-form-desc">{form.description}</div>
+            ) : null}
+          </div>
+          {locked ? <span className="question-form-pill">{t('qf.answered')}</span> : null}
         </div>
-        {locked ? <span className="question-form-pill">{t('qf.answered')}</span> : null}
-      </div>
+      )}
       <div className="question-form-body">
         {form.questions.map((q) => {
           const value = currentAnswers[q.id];

@@ -186,6 +186,8 @@ export function BriefCard({ brief, onChange, onSteer, onTrackEdit }: BriefCardPr
           ref={panelRef}
           className="brief-card__panel"
           data-testid="brief-card-panel"
+          data-step={editing ? 'correct' : 'summary'}
+          role="dialog"
           aria-labelledby="brief-card-title"
           style={
             rect
@@ -196,12 +198,41 @@ export function BriefCard({ brief, onChange, onSteer, onTrackEdit }: BriefCardPr
           }
         >
           <header className="brief-card__head">
+            {editing ? (
+              <button
+                type="button"
+                className="brief-card__back"
+                aria-label={t('brief.backToSummary')}
+                onClick={() => setEditingId(null)}
+              >
+                <span aria-hidden>‹</span>
+              </button>
+            ) : null}
             <div>
-              <h2 id="brief-card-title">{t('brief.title')}</h2>
-              <p>{t('brief.description')}</p>
+              <h2 id="brief-card-title">
+                {editing ? t('brief.correctTitle', { label: editing.label }) : t('brief.title')}
+              </h2>
+              <p>{editing ? t('brief.correctionDescription') : t('brief.description')}</p>
             </div>
             <button type="button" className="brief-card__close" aria-label={t('brief.collapse')} onClick={collapse}>×</button>
           </header>
+          {editing && editorForm ? (
+            // Drill-in step, not a layer: the summary list above is unmounted,
+            // so there is no second surface to stack over, occlude, or leave
+            // visible-but-unclickable. The panel keeps its own header, tokens
+            // and motion; the shared form renders headless inside it.
+            <div className="brief-card__editor">
+              <QuestionFormView
+                key={editing.id}
+                form={editorForm}
+                interactive
+                hideInternalHead
+                draftAnswers={{ [editing.id]: editing.value }}
+                onSubmit={(_text, answers) => apply(answers[editing.id] ?? '')}
+              />
+              <button type="button" className="brief-card__cancel" onClick={() => setEditingId(null)}>{t('common.cancel')}</button>
+            </div>
+          ) : (
           <div className="brief-card__groups" role="group" aria-label={t('brief.assumptions')}>
             {grouped.map(group => (
               <section className="brief-card__group" key={group.provenance}>
@@ -229,18 +260,7 @@ export function BriefCard({ brief, onChange, onSteer, onTrackEdit }: BriefCardPr
               </section>
             ))}
           </div>
-          {editing && editorForm ? (
-            <div className="brief-card__editor" role="dialog" aria-label={t('brief.correctTitle', { label: editing.label })}>
-              <QuestionFormView
-                key={editing.id}
-                form={editorForm}
-                interactive
-                draftAnswers={{ [editing.id]: editing.value }}
-                onSubmit={(_text, answers) => apply(answers[editing.id] ?? '')}
-              />
-              <button type="button" className="brief-card__cancel" onClick={() => setEditingId(null)}>{t('common.cancel')}</button>
-            </div>
-          ) : null}
+          )}
         </section>,
         document.body,
       ) : null}
