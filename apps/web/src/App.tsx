@@ -1957,9 +1957,14 @@ function AppInner() {
     // during that gap: its Hub starts per-project session reads and can occupy
     // the same browser request pool as the detail fetch that resolves this
     // route. Keep the destination surface mounted while the route hydrates.
+    // The `--surface` variant is transparent and height-bounded: the shell
+    // canvas is already painted behind it here, so restarting a canvas of its
+    // own would put a full-window opaque slab between the two surfaces — the
+    // single blink the transition is meant to remove. The base class stays
+    // opaque for the pre-mount boot shell, where nothing is painted yet.
     appMain = (
       <div
-        className="readable-loading-shell"
+        className="readable-loading-shell readable-loading-shell--surface"
         role="status"
         data-testid="project-route-loading"
       >

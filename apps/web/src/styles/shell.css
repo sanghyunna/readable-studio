@@ -9,7 +9,12 @@
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto 1fr;
   height: 100vh;
-  background: var(--bg-app);
+  /* Transparent so the shell's single canvas continues through the workspace.
+     An opaque fill here re-created the blink one layer down: the canvas would
+     be continuous but covered by a solid slab that appears in the same frame
+     the workspace mounts. The workspace's own material (the chat and viewer
+     panels) is painted by those panels, not by this root. */
+  background: transparent;
   overflow: hidden;
 }
 .app > .split {
@@ -30,7 +35,21 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: var(--app-window-chrome-height) minmax(0, 1fr);
-  background: var(--bg-app);
+  /* ONE canvas for the whole session. This element spans both grid rows and
+     outlives every surface swap, so painting the shared radial recipe HERE -
+     unconditionally, not only when a Home-scoped `:has()` happens to match -
+     is what makes Hub -> workspace read as one continuous place.
+
+     It previously declared `var(--bg-app)` and let entry-layout.css override
+     it for Home alone. Leaving Home therefore dropped the match and repainted
+     the entire window from the radial canvas to a flat solid in a single
+     frame: the "blink, as if entering a new window". No entrance animation on
+     the incoming child can hide that, because the cut happens BENEATH it.
+
+     The Home-scoped rule in entry-layout.css is left in place: it now restates
+     the same value for the same element, so the two cannot disagree, and the
+     reduced-transparency fallback keyed to that selector still applies. */
+  background: var(--hub-canvas-background);
   overflow: hidden;
 }
 .workspace-shell__body {

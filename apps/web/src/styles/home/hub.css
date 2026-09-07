@@ -2089,7 +2089,15 @@
   /* Opaque and restrained: the tinted canvas collapses to a flat neutral and
      the glass pills fall back to a solid fill with one faint outline. The
      shell owns this fallback too, keeping one continuous paint behind the
-     otherwise-transparent title row and Hub body. */
+     otherwise-transparent title row and Hub body.
+
+     The bare `.workspace-shell` is listed alongside the Home-scoped selector
+     so the fallback collapses the canvas for EVERY surface, not just Home.
+     The shell now paints the shared gradient unconditionally (shell.css), so
+     a Home-only fallback would leave the Hub flat while the workspace kept
+     the gradient - the same one-frame repaint on the swap that this work
+     removes, just inverted and visible only to reduced-transparency users. */
+  .workspace-shell,
   .workspace-shell:has(> .workspace-shell__body .entry-main__inner--home),
   .hub {
     background: var(--hub-canvas);

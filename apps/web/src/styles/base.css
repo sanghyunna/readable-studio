@@ -46,3 +46,22 @@ body {
   display: block;
   filter: drop-shadow(0 16px 28px color-mix(in srgb, var(--shadow-color) 28%, transparent));
 }
+
+/* In-app variant, used only where the shell canvas is ALREADY painted behind
+   this element - i.e. the pending-project route, which holds the workspace
+   surface until ProjectView can mount.
+
+   The base class above is also the pre-mount BOOT shell
+   (`app/[[...slug]]/client-app.tsx`), rendered before any shell exists. That
+   one must stay opaque and full-height or startup shows a genuine white
+   screen. So the transparency is scoped here rather than removed there.
+
+   Without this variant the interstitial painted a third, unrelated canvas at
+   full viewport height between the Hub and the workspace - a literal blank
+   frame, and the one the user sees every time they create a project. */
+.readable-loading-shell--surface {
+  min-block-size: 0;
+  block-size: 100%;
+  background: transparent;
+  color: var(--text-muted);
+}
