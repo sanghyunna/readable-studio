@@ -18,6 +18,13 @@
   --text-muted: #9da5b4;
   --text-soft: #7f8795;
   --text-faint: #5c6370;
+  /* Engraved-well hint rung, derived from this theme's own ink ramp:
+     30% --text-muted / 70% --text-soft. The engraved well is darker than the
+     composer glass --text-soft was tuned against, so the hint gets its own
+     rung here. Measured 3.49:1 on the well over --bg-panel and 3.00:1 on a
+     bloom-lifted well, both clear of the 3:1 hint floor; it stays 1.51:1 from
+     typed --text ink, which also carries a heavier, untracked voice. */
+  --text-placeholder-engraved: #88909e;
   --accent: #61afef;
   --accent-strong: #7cc4ff;
   --accent-soft: #1d3348;

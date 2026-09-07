@@ -87,6 +87,24 @@
   --hub-control-highlight: rgba(255, 255, 255, 0.6);
   --hub-control-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 1px 2px rgba(16, 24, 40, 0.05);
   --hub-control-shadow-hover: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 2px 8px rgba(16, 24, 40, 0.08);
+  /* Engraved (음각) control tier — for dense inspector stacks where the raised
+     pill tier disappears. Over the light pane (--hub-glass-fill on the canvas)
+     a *raised* white 0.42 fill composites to 1.03:1: the card edge, and so the
+     existence of a control at a given position, is invisible. The engraved
+     tier inverts the direction and recesses the surface with an ink wash, then
+     lights the lower lip so the well reads as a well and not as a hole. Still
+     borderless: depth alone carries it. Light measures 1.17:1 card-vs-pane
+     with --text at 13.2:1 and --text-muted at 4.95:1 on the recessed fill. */
+  --hub-control-engraved: rgba(16, 24, 40, 0.08);
+  --hub-control-engraved-hover: rgba(16, 24, 40, 0.13);
+  --hub-control-engraved-shadow:
+    inset 0 1px 2px rgba(16, 24, 40, 0.09), inset 0 -1px 0 rgba(255, 255, 255, 0.7);
+  --hub-control-engraved-shadow-hover:
+    inset 0 1px 3px rgba(16, 24, 40, 0.13), inset 0 -1px 0 rgba(255, 255, 255, 0.82);
+  /* Selected segment chip: a tonal accent fill that sits *above* the engraved
+     track, so selected reads as raised out of the well and unselected reads as
+     the well floor. 1.33:1 against the track, label at 6.17:1. */
+  --hub-segment-selected: rgba(37, 99, 235, 0.22);
   --hub-send-disabled: rgba(16, 24, 40, 0.12);
   --hub-ready-shadow: rgba(29, 78, 216, 0.28);
   --hub-ready-highlight: rgba(255, 255, 255, 0.22);
@@ -108,6 +126,33 @@
      untouched. */
   --text-placeholder-light: #8d8a83;
   --text-placeholder-dark: #7a766f;
+  /* Placeholder ink for the ENGRAVED (음각) control tier. The rung above is
+     tuned against composer glass; an engraved well is a DARKER backdrop than
+     that glass, so the same ink lands lower there. Measured in a real browser
+     on the direct-edit panel's numeric well, --text-soft reached only 2.439:1
+     in dark - below the 3:1 hint floor - while light measured 4.354:1 and was
+     already correct. Hence a per-scheme engraved rung rather than one value:
+     light keeps the ink it already passes with, dark lifts to a rung that is
+     deliberately NOT --text-muted. Reusing the muted rung would clear the
+     floor at ~4.4:1 but is the token for real muted TEXT, so a placeholder
+     wearing it reads as an entered value - the same confusion from the other
+     side. This rung sits between --text-placeholder-dark and --text-muted:
+     3.32:1 against the well (3.84:1 as rendered), still 2.67:1 BELOW the typed
+     value at 8.87:1, so hint and value stay two visibly different rungs.
+
+     The light rung is --text-soft's own value: light already measured 4.354:1
+     and needed no change, so the base declaration below is byte-identical to
+     what every theme resolves today. Only the app's dark blocks override it,
+     which is where the defect was measured. A derived color-mix() was tried
+     for all themes and rejected: one formula cannot serve both ramp
+     directions, and every mix that cleared the floor in dark collapsed the
+     hint-to-value gap to ~1.3:1 in light, which is the placeholder-reads-as-a-
+     value failure from the other side. light-dark() is unavailable here for
+     the reason home-hero.css documents: the light side declares no
+     color-scheme, so the declaration dies as invalid. */
+  --text-placeholder-engraved-light: #6a6761;
+  --text-placeholder-engraved-dark: #8f8b85;
+  --text-placeholder-engraved: var(--text-placeholder-engraved-light);
 
   /* Accent — Readable Studio action color for app chrome only. */
   /* Action colour matches the approved hub mockup exactly (#2563eb).
@@ -304,6 +349,10 @@
   --text-muted: #9a9690;
   --text-soft: #6e6b65;
   --text-faint: #4e4b46;
+  /* Dark's engraved well is a darker backdrop than composer glass, so the
+     composer placeholder rung falls under the 3:1 hint floor there. This rung
+     is lifted for the well and still sits clearly below typed --text. */
+  --text-placeholder-engraved: var(--text-placeholder-engraved-dark);
 
   /* Dark counterpart of the mockup's blue action colour; reuses the hub's
      already-validated dark blue so both layers stay consistent.
@@ -437,6 +486,19 @@
   --hub-control-highlight: rgba(255, 255, 255, 0.12);
   --hub-control-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 1px 2px rgba(0, 0, 0, 0.3);
   --hub-control-shadow-hover: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 2px 8px rgba(0, 0, 0, 0.38);
+  /* Dark's engraved tier is deliberately NOT light's inverted. The dark pane
+     composites to rgb(33,32,29); an ink wash on it tops out near 1.09:1 and
+     flattens the warm glass into the unsaturated 'clay' reading that was
+     rejected. Dark therefore engraves by *raising* a warm glass wash — the
+     recess is spelled by the shadow recipe, the surface by luminance — landing
+     1.45:1 card-vs-pane with --text at 9.45:1 and --text-muted at 4.54:1. */
+  --hub-control-engraved: rgba(255, 255, 255, 0.12);
+  --hub-control-engraved-hover: rgba(255, 255, 255, 0.18);
+  --hub-control-engraved-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.42), inset 0 -1px 0 rgba(255, 255, 255, 0.1);
+  --hub-control-engraved-shadow-hover:
+    inset 0 1px 3px rgba(0, 0, 0, 0.5), inset 0 -1px 0 rgba(255, 255, 255, 0.16);
+  --hub-segment-selected: rgba(107, 143, 232, 0.34);
   --hub-send-disabled: rgba(255, 255, 255, 0.14);
   --hub-ready-shadow: rgba(42, 75, 160, 0.38);
   --hub-ready-highlight: rgba(255, 255, 255, 0.18);
@@ -464,6 +526,7 @@
     --text-muted: #9a9690;
     --text-soft: #6e6b65;
     --text-faint: #4e4b46;
+    --text-placeholder-engraved: var(--text-placeholder-engraved-dark);
 
     --accent: #6b8fe8;
     --accent-strong: #89a6ee;
@@ -580,6 +643,13 @@
     --hub-control-highlight: rgba(255, 255, 255, 0.12);
     --hub-control-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 1px 2px rgba(0, 0, 0, 0.3);
     --hub-control-shadow-hover: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 2px 8px rgba(0, 0, 0, 0.38);
+    --hub-control-engraved: rgba(255, 255, 255, 0.12);
+    --hub-control-engraved-hover: rgba(255, 255, 255, 0.18);
+    --hub-control-engraved-shadow:
+      inset 0 1px 2px rgba(0, 0, 0, 0.42), inset 0 -1px 0 rgba(255, 255, 255, 0.1);
+    --hub-control-engraved-shadow-hover:
+      inset 0 1px 3px rgba(0, 0, 0, 0.5), inset 0 -1px 0 rgba(255, 255, 255, 0.16);
+    --hub-segment-selected: rgba(107, 143, 232, 0.34);
     --hub-send-disabled: rgba(255, 255, 255, 0.14);
     --hub-ready-shadow: rgba(42, 75, 160, 0.38);
     --hub-ready-highlight: rgba(255, 255, 255, 0.18);

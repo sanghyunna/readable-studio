@@ -1,16 +1,21 @@
 .root {
   /* Control material = the Hub's control grammar (hub-dna §3): borderless,
-     soft translucent surface + pearl top highlight at rest, lifting to a
-     brighter surface on hover. The old values were an opaque grey fill plus a
-     1px outline on every widget, which is exactly the "dark outlined control
-     capsule" the Hub refuses (hub-dna §10). */
-  --manual-edit-field-bg: var(--hub-control-surface);
-  --manual-edit-field-bg-hover: var(--hub-control-surface-hover);
+     carried by depth rather than by a 1px outline — the "dark outlined control
+     capsule" stays refused (hub-dna §10).
+
+     This panel uses the ENGRAVED (음각) tier rather than the raised pill tier
+     the composer uses. The raised tier is tuned for a handful of controls on
+     open canvas; stacked forty-deep on a glass pane it composited to 1.03:1
+     against that pane in light theme, so a card edge vanished and an empty
+     field was indistinguishable from no field at all. Recessing instead of
+     lifting buys 1.17:1 in light and 1.45:1 in dark with no new chrome. */
+  --manual-edit-field-bg: var(--hub-control-engraved);
+  --manual-edit-field-bg-hover: var(--hub-control-engraved-hover);
   --manual-edit-field-border: transparent;
   --manual-edit-field-text: var(--text);
   --manual-edit-field-muted: var(--text-muted);
-  --manual-edit-field-shadow: inset 0 1px 0 var(--hub-control-highlight);
-  --manual-edit-field-shadow-hover: var(--hub-control-shadow-hover);
+  --manual-edit-field-shadow: var(--hub-control-engraved-shadow);
+  --manual-edit-field-shadow-hover: var(--hub-control-engraved-shadow-hover);
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
@@ -154,10 +159,17 @@
    rays become hairlines and the pane reads on a solid panel (hub-dna 9). */
 @media (prefers-reduced-transparency: reduce) {
   .root {
+    /* Opaque mode keeps the engraving: a flat fill on a flat panel is the
+       original defect wearing a different hat. The well is spelled by the same
+       top-shadow + lit-lower-lip recipe, over solid surfaces. */
     --manual-edit-field-bg: var(--bg-subtle);
-    --manual-edit-field-bg-hover: var(--bg-panel);
-    --manual-edit-field-shadow: inset 0 0 0 1px var(--border);
-    --manual-edit-field-shadow-hover: inset 0 0 0 1px var(--border-strong, var(--border));
+    --manual-edit-field-bg-hover: var(--bg-muted);
+    --manual-edit-field-shadow:
+      inset 0 1px 2px color-mix(in srgb, var(--shadow-color) 14%, transparent),
+      inset 0 -1px 0 var(--bg-elevated);
+    --manual-edit-field-shadow-hover:
+      inset 0 1px 3px color-mix(in srgb, var(--shadow-color) 20%, transparent),
+      inset 0 -1px 0 var(--bg-elevated);
   }
   .header { box-shadow: inset 0 -1px 0 var(--border); }
   .footer { box-shadow: inset 0 1px 0 var(--border); }

@@ -18,6 +18,31 @@
   --text-muted: #6d8588;
   --text-soft: #586e75;
   --text-faint: #3f5961;
+  /* Engraved-well hint rung, derived from this theme's own ink ramp:
+     10% --text-strong / 90% --text-muted. Solarized fixes body ink at base0 on
+     base02, which is 4.111:1 before the well is cut and 3.671:1 after it, so
+     this ramp has roughly a third of the hint budget its siblings carry
+     (5.27-9.72:1 of ink headroom over their own wells). Measured 3.094:1 on
+     the well over --bg-panel, clear of the 3:1 hint floor, and 1.187:1 from
+     typed --text ink.
+
+     That last number is the honest cost: siblings hold 1.51-2.50:1 between
+     hint and value, and no rung in this palette reaches that. Every rung at or
+     above 3.0:1 lands within 1.06-1.24:1 of base0, because base0 itself is
+     only 3.671:1 above the well; remapping --text to base1 does not rescue it
+     either (the well re-derives to 4.278:1 and the same rung search still tops
+     out at 1.40:1) while rewriting every piece of body copy in the theme. The
+     separation the ink cannot pay for is carried by the voice instead: the
+     hint wears the panel's tracked 500 label treatment and typed digits wear
+     untracked 600 (ManualEditGeometryControls.module.css), which is a channel
+     every theme already uses and no theme branches on.
+
+     On a bloom-lifted well (over --bg-elevated) this rung reads 2.451:1 and
+     nothing in the palette clears the floor there — base0 itself is 2.909:1.
+     The empty well is why that is survivable: it holds its REST depth through
+     hover and focus, so the hint is never rendered against the lifted floor in
+     the inspector. */
+  --text-placeholder-engraved: #71888b;
   --accent: #268bd2;
   --accent-strong: #42a5e8;
   --accent-soft: #11334a;

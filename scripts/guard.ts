@@ -1382,6 +1382,15 @@ const requiredHubMaterialTokens = new Set([
   "--hub-control-highlight",
   "--hub-control-shadow",
   "--hub-control-shadow-hover",
+  // Engraved (음각) control tier. The raised pill tier composited to 1.032:1
+  // against its own pane when stacked in the inspector; recessing instead buys
+  // 1.174:1 light / 1.449:1 dark for card-vs-pane and 1.326:1 / 1.570:1 for
+  // selected-vs-unselected segments, with no new chrome.
+  "--hub-control-engraved",
+  "--hub-control-engraved-hover",
+  "--hub-control-engraved-shadow",
+  "--hub-control-engraved-shadow-hover",
+  "--hub-segment-selected",
   "--hub-send-disabled",
   "--hub-ready-shadow",
   "--hub-ready-highlight",

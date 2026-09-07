@@ -46,6 +46,13 @@ const HUB_MATERIAL_TOKENS = [
   '--hub-control-highlight',
   '--hub-control-shadow',
   '--hub-control-shadow-hover',
+  // Engraved control tier: the recessed material dense inspector stacks use
+  // when the raised pill tier composites to near-nothing against its pane.
+  '--hub-control-engraved',
+  '--hub-control-engraved-hover',
+  '--hub-control-engraved-shadow',
+  '--hub-control-engraved-shadow-hover',
+  '--hub-segment-selected',
   '--hub-send-disabled',
   '--hub-ready-shadow',
   '--hub-ready-highlight',
@@ -58,6 +65,33 @@ function customPropertyNames(source: string): readonly string[] {
 function customPropertyValue(source: string, token: string): string {
   const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return source.match(new RegExp(`^\\s*${escaped}\\s*:\\s*([^;]+);`, 'mi'))?.[1]?.trim() ?? '';
+}
+
+type Rgb = readonly [number, number, number];
+
+function hexToRgb(value: string): Rgb {
+  const hex = /^#([0-9a-f]{6})$/i.exec(value)?.[1];
+  expect(hex, `expected a six-digit hex literal, got "${value}"`).toBeDefined();
+  const channels = hex as string;
+  return [0, 2, 4].map((offset) => Number.parseInt(channels.slice(offset, offset + 2), 16)) as unknown as Rgb;
+}
+
+/** The engraved well: the theme's own ink mixed into the surface it recesses. */
+function mixOver(ink: Rgb, ratio: number, surface: Rgb): Rgb {
+  return ink.map((channel, index) => channel * ratio + surface[index]! * (1 - ratio)) as unknown as Rgb;
+}
+
+function relativeLuminance([r, g, b]: Rgb): number {
+  const linear = (channel: number): number => {
+    const value = channel / 255;
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+}
+
+function contrastRatio(a: Rgb, b: Rgb): number {
+  const [hi, lo] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x);
+  return (hi! + 0.05) / (lo! + 0.05);
 }
 
 describe('Screen Mode theme recipes', () => {
@@ -140,6 +174,37 @@ describe('Screen Mode theme recipes', () => {
     for (const [, signature, selector] of signatures) {
       expect(signature).not.toContain('||');
       expect(recipe).toContain(selector);
+    }
+  });
+
+  // Every named theme cuts its engraved well out of its own ink, so the well
+  // eats the ramp headroom the placeholder hint needs. solarized-dark is the
+  // tight one: base0 on base02 is 4.111:1 before the well and 3.671:1 after,
+  // against 5.27-9.72:1 elsewhere. The hint still has to clear the 3:1 floor on
+  // the rest well while staying quieter than typed ink, in both ramp
+  // directions - that is what makes the empty field a field and not a value.
+  it('keeps every named theme hint above the 3:1 floor on its own engraved well', async () => {
+    // Given
+    const recipe = await readFile(recipePath, 'utf8');
+    const wellPercent = Number(/(\d+)%/.exec(customPropertyValue(recipe, '--hub-control-engraved'))?.[1]);
+    const namedThemeIds = EXPLICIT_THEME_OPTIONS.map(({ id }) => id).filter((id) => id !== 'light' && id !== 'dark');
+
+    // When
+    const measured = await Promise.all(namedThemeIds.map(async (id) => {
+      const source = await readFile(path.join(themesRoot, `${id}.css`), 'utf8');
+      const ink = hexToRgb(customPropertyValue(source, '--text'));
+      const panel = hexToRgb(customPropertyValue(source, '--bg-panel'));
+      const hint = hexToRgb(customPropertyValue(source, '--text-placeholder-engraved'));
+      const well = mixOver(ink, wellPercent / 100, panel);
+      return { id, hintOnWell: contrastRatio(hint, well), inkOnWell: contrastRatio(ink, well) };
+    }));
+
+    // Then
+    expect(wellPercent).toBeGreaterThan(0);
+    expect(measured).toHaveLength(namedThemeIds.length);
+    for (const { id, hintOnWell, inkOnWell } of measured) {
+      expect(hintOnWell, `${id} hint on its engraved well`).toBeGreaterThanOrEqual(3);
+      expect(hintOnWell, `${id} hint must stay quieter than typed ink`).toBeLessThan(inkOnWell);
     }
   });
 

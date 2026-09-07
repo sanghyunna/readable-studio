@@ -251,9 +251,15 @@
   }
 }
 
+/* `pointer-events` rides in the same keyframes as `opacity` (it is a discrete
+   animatable property, so it flips at the offset instead of easing). These
+   popovers run with `both` fill, so the `opacity: 0` frame is painted while the
+   swatch//preset buttons inside stay hit-testable; pairing the two properties
+   makes visibility and clickability one timeline that cannot desynchronise. */
 @keyframes shape-pop-in {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(-4px); pointer-events: none; }
+  1% { pointer-events: auto; }
+  to { opacity: 1; transform: translateY(0); pointer-events: auto; }
 }
 
 @media (prefers-reduced-motion: reduce) {

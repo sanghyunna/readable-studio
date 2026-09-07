@@ -35,6 +35,10 @@
   font-weight: 600;
 }
 
+/* Fields are engraved wells: the recess plus the lit lower lip is the whole
+   affordance, so an EMPTY input still reads as an input. That was the second
+   half of the report — not just "which card is this" but "is there even a
+   field here". No border participates. */
 .dimension,
 .offset {
   display: flex;
@@ -42,14 +46,76 @@
   align-items: center;
   gap: 3px;
   padding: 0 7px;
-  border: 1px solid var(--manual-edit-field-border, var(--border));
-  border-radius: 7px;
-  background: var(--manual-edit-field-bg, var(--bg-panel));
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--manual-edit-field-bg, var(--hub-control-engraved));
+  box-shadow: var(--manual-edit-field-shadow, var(--hub-control-engraved-shadow));
+  transition:
+    background-color var(--dur-quick) var(--ease-out),
+    box-shadow var(--dur-quick) var(--ease-out);
+}
+
+.dimension:hover,
+.offset:hover {
+  background: var(--manual-edit-field-bg-hover, var(--hub-control-engraved-hover));
+  box-shadow: var(--manual-edit-field-shadow-hover, var(--hub-control-engraved-shadow-hover));
 }
 
 .dimension:focus-within,
 .offset:focus-within {
-  border-color: color-mix(in srgb, var(--accent) 62%, var(--border));
+  background: var(--manual-edit-field-bg-hover, var(--hub-control-engraved-hover));
+  box-shadow:
+    var(--manual-edit-field-shadow-hover, var(--hub-control-engraved-shadow-hover)),
+    inset 0 0 0 1px var(--hub-accent-line);
+}
+
+/* An EMPTY well holds its REST depth while hovered or focused. The hover/focus
+   lift raises the well floor toward the placeholder ink, and in dark that lift
+   alone costs the hint ~0.8 of its contrast ratio - hovering and focusing are
+   exactly when the user is reaching for the field, so they are the last
+   moments the hint may fade. A filled field still lifts, because its ink has
+   8.9:1 of headroom to spend. Focus keeps its accent ring either way, so the
+   focused state stays unmistakable without the ink paying for it. These sit
+   after the hover/focus rules so the later rule wins at equal specificity. */
+.dimension:hover:has(input:placeholder-shown),
+.offset:hover:has(input:placeholder-shown) {
+  background: var(--manual-edit-field-bg, var(--hub-control-engraved));
+  box-shadow: var(--manual-edit-field-shadow, var(--hub-control-engraved-shadow));
+}
+
+.dimension:focus-within:has(input:placeholder-shown),
+.offset:focus-within:has(input:placeholder-shown) {
+  background: var(--manual-edit-field-bg, var(--hub-control-engraved));
+  box-shadow:
+    var(--manual-edit-field-shadow, var(--hub-control-engraved-shadow)),
+    inset 0 0 0 1px var(--hub-accent-line);
+}
+
+/* Placeholder ink is the empty field's only copy, so it keeps its own rung
+   rather than fading into the well floor. --text-soft was tuned against
+   composer glass and measured 2.439:1 in a real dark-theme render of this
+   engraved well - below the 3:1 hint floor - so the well gets the ink rung cut
+   for engraved surfaces instead. */
+.dimension input::placeholder,
+.offset input::placeholder {
+  color: var(--text-placeholder-engraved);
+  opacity: 1;
+
+  /* Empty vs filled must not rest on ink alone: a hint lifted far enough to
+     clear the floor is a hint drifting toward looking like a value. The hint
+     therefore carries the panel's label voice - the tracked, lighter-weight
+     treatment .subheading and .axisName already use - which typed digits never
+     wear, so the two states stay tellable apart by shape as well as by tone. */
+  font-weight: 500;
+  letter-spacing: 0.06em;
+}
+
+/* Typed values are the opposite voice: heavier and untracked, so a filled
+   field reads as data the moment it lands. */
+.dimension input:not(:placeholder-shown),
+.offset input:not(:placeholder-shown) {
+  font-weight: 600;
+  letter-spacing: 0;
 }
 
 .dimension input,
@@ -72,13 +138,18 @@
   font-style: normal;
 }
 
+/* The segmented track is an engraved channel; the selected option is the one
+   thing that sits raised out of it. Previously the track was near-invisible
+   and only the selected chip was tinted, so unselected options read as bare
+   background — the group had no perceptible extent. */
 .segment {
   display: inline-flex;
   min-width: 0;
   padding: 2px;
-  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--bg-subtle) 78%, transparent);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--hub-control-engraved);
+  box-shadow: var(--hub-control-engraved-shadow);
 }
 
 .segmentButton {
@@ -95,9 +166,11 @@
 
 .segmentButton.active,
 .aspect.active {
-  color: var(--accent-strong, var(--text));
-  background: var(--accent-tint);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent);
+  color: var(--hub-accent-ink, var(--accent-strong));
+  background: var(--hub-segment-selected);
+  box-shadow:
+    inset 0 1px 0 var(--hub-pearl-highlight),
+    0 1px 2px var(--hub-pearl-elevation);
 }
 
 .aspect {
@@ -118,10 +191,11 @@
   align-items: flex-start;
   gap: 9px;
   padding: 9px 10px;
-  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-  border-radius: 8px;
+  border: 0;
+  border-radius: var(--radius-control);
   color: var(--text-muted);
-  background: color-mix(in srgb, var(--bg-subtle) 55%, transparent);
+  background: var(--hub-control-engraved);
+  box-shadow: var(--hub-control-engraved-shadow);
 }
 
 .positionState > i {
@@ -165,6 +239,33 @@
   min-width: 30px;
   height: 32px;
   color: var(--text-muted);
+}
+
+/* Opaque fallback: no translucency to composite, so the well is spelled by
+   solid surfaces plus the same shadow geometry. */
+@media (prefers-reduced-transparency: reduce) {
+  .dimension,
+  .offset,
+  .segment,
+  .positionState {
+    background: var(--bg-subtle);
+    box-shadow:
+      inset 0 1px 2px color-mix(in srgb, var(--shadow-color) 14%, transparent),
+      inset 0 -1px 0 var(--bg-elevated);
+  }
+
+  .segmentButton.active,
+  .aspect.active {
+    background: var(--accent-tint);
+    box-shadow: 0 1px 2px var(--hub-pearl-elevation);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dimension,
+  .offset {
+    transition-duration: 1ms;
+  }
 }
 
 @media (max-width: 380px) {

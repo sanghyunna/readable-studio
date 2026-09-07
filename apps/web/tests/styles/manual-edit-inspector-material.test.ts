@@ -46,8 +46,12 @@ describe('manual-edit inspector material', () => {
       expect(collectCssHardcodedColorMatches(css)).toEqual([]);
     }
     const root = ruleBody(inspectorCss, '.root');
-    expect(root).toMatch(/--manual-edit-field-bg:\s*var\(--hub-control-surface\)/);
-    expect(root).toMatch(/--manual-edit-field-bg-hover:\s*var\(--hub-control-surface-hover\)/);
+    // The tier moved from the raised control pill to the engraved well (see
+    // manual-edit-panel-legibility.test.ts): stacked on the pane, the raised
+    // fill separated by only 1.03:1 in light theme. Still Hub tokens, still
+    // borderless — the direction of the depth is what changed.
+    expect(root).toMatch(/--manual-edit-field-bg:\s*var\(--hub-control-engraved\)/);
+    expect(root).toMatch(/--manual-edit-field-bg-hover:\s*var\(--hub-control-engraved-hover\)/);
     expect(root).toMatch(/--manual-edit-field-border:\s*transparent/);
   });
 
