@@ -54,7 +54,10 @@ import { listDesignArtifactCandidates } from './design-files/designArtifacts';
 import type { PluginFolderAgentAction } from './design-files/pluginFolderActions';
 import { Icon, type IconName } from './Icon';
 import { InlineModelSwitcher } from './InlineModelSwitcher';
-import { requireModelSelection } from './agentModelSelection';
+import {
+  effectiveAgentModelChoice,
+  requireModelSelection,
+} from './agentModelSelection';
 import type { ProviderModelsCache } from './providerModelsCache';
 import { repoConnectCopy } from './design-system-github-evidence';
 import { isRenderableSketchJson, SketchPreview } from './SketchPreview';
@@ -1494,10 +1497,29 @@ export function ChatPane({
           onApiModelChange: onApiModelChange ?? (() => {}),
           onOpenSettings,
         } as const;
+        const activeAgent = agents.find((agent) => agent.id === config.agentId);
+        const selectedModel = effectiveAgentModelChoice(
+          activeAgent,
+          config.agentId ? config.agentModels?.[config.agentId] : undefined,
+        )?.model;
+        // Grok Build advertises effort presets at the agent level, but its CLI
+        // applies --effort only to reasoning models. Hiding the picker for its
+        // non-reasoning models prevents a selectable value the adapter would
+        // intentionally ignore.
+        const modelAcceptsReasoning =
+          activeAgent?.id !== 'grok-build' ||
+          (/reasoning/i.test(selectedModel ?? '') && !/non-reasoning/i.test(selectedModel ?? ''));
+        const supportsReasoning =
+          config.mode === 'daemon' &&
+          Boolean(activeAgent?.reasoningOptions?.length) &&
+          modelAcceptsReasoning;
         return (
           <>
             <InlineModelSwitcher {...switcherProps} variant="agent" />
             <InlineModelSwitcher {...switcherProps} variant="model" />
+            {supportsReasoning ? (
+              <InlineModelSwitcher {...switcherProps} variant="reasoning" />
+            ) : null}
           </>
         );
       })()

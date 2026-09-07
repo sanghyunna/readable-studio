@@ -56,6 +56,11 @@ const AGENTS: AgentInfo[] = [
       { id: 'sonnet', label: 'Sonnet 4.5' },
       { id: 'opus', label: 'Opus 4.1' },
     ],
+    reasoningOptions: [
+      { id: 'default', label: 'Default' },
+      { id: 'high', label: 'High' },
+      { id: 'xhigh', label: 'XHigh' },
+    ],
   } as AgentInfo,
   {
     id: 'codex',
@@ -69,7 +74,7 @@ const CONFIG: AppConfig = {
   ...DEFAULT_CONFIG,
   mode: 'daemon',
   agentId: 'claude',
-  agentModels: { claude: { model: 'sonnet' } },
+  agentModels: { claude: { model: 'sonnet', reasoning: 'high' } },
 };
 
 function renderPane(extra: Partial<React.ComponentProps<typeof ChatPane>> = {}) {
@@ -104,46 +109,32 @@ function renderPane(extra: Partial<React.ComponentProps<typeof ChatPane>> = {}) 
 }
 
 describe('workspace chat composer: agent + model execution pair', () => {
-  it('renders agent and model as two distinct controls, agent first, then Send', () => {
+  it('replaces the workspace mode button with agent, model, and thinking controls', () => {
     renderPane();
 
     const slot = screen.getByTestId('composer-execution-switcher');
     const agent = screen.getByTestId('inline-model-switcher-agent-trigger');
     const model = screen.getByTestId('inline-model-switcher-model-trigger');
+    const reasoning = screen.getByTestId('inline-model-switcher-reasoning-trigger');
     const send = screen.getByTestId('chat-send');
 
-    // Two separate triggers, not one combined chip.
+    // Separate triggers, not one combined chip.
     expect(agent).not.toBe(model);
     expect(screen.queryByTestId('inline-model-switcher-chip')).toBeNull();
 
     // Both really live in the composer footer slot.
     expect(slot.contains(agent)).toBe(true);
     expect(slot.contains(model)).toBe(true);
+    expect(slot.contains(reasoning)).toBe(true);
+    expect(document.querySelector('.session-mode-toggle__trigger')).toBeNull();
 
-    // Left-to-right: agent, then model, then Send.
+    // Left-to-right: agent, model, thinking effort, then Send.
     expect(agent.compareDocumentPosition(model) & Node.DOCUMENT_POSITION_FOLLOWING)
       .toBeTruthy();
-    expect(model.compareDocumentPosition(send) & Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(model.compareDocumentPosition(reasoning) & Node.DOCUMENT_POSITION_FOLLOWING)
       .toBeTruthy();
-
-    // Pin the full footer sequence, not just the pairwise gaps: the pair must
-    // precede the session-mode toggle too. Asserting only agent<model<send
-    // still passes with the pair stranded after the toggle.
-    const toggle = document.querySelector('.session-mode-toggle__trigger');
-    expect(toggle).not.toBeNull();
-    expect(model.compareDocumentPosition(toggle!) & Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(reasoning.compareDocumentPosition(send) & Node.DOCUMENT_POSITION_FOLLOWING)
       .toBeTruthy();
-
-    const footer = slot.parentElement!;
-    const order = Array.from(
-      footer.querySelectorAll(
-        '[data-testid="inline-model-switcher-agent-trigger"],' +
-        '[data-testid="inline-model-switcher-model-trigger"],' +
-        '.session-mode-toggle__trigger,' +
-        '[data-testid="chat-send"]',
-      ),
-    );
-    expect(order).toEqual([agent, model, toggle, send]);
   });
 
   it('opens only the agent concern from the agent button', () => {
@@ -209,6 +200,28 @@ describe('workspace chat composer: agent + model execution pair', () => {
     );
   });
 
+  it('opens a model-picker twin and routes a thinking-effort pick to persisted config', () => {
+    const onAgentModelChange = vi.fn();
+    renderPane({ onAgentModelChange });
+    onAgentModelChange.mockClear();
+
+    const trigger = screen.getByTestId('inline-model-switcher-reasoning-trigger');
+    expect(trigger.textContent).toContain('inlineSwitcher.reasoningHigh');
+    expect(trigger.querySelector('.inline-switcher__chip-chevron')).not.toBeNull();
+
+    fireEvent.click(trigger);
+    const popover = screen.getByTestId('inline-model-switcher-reasoning-popover');
+    expect(popover.className).toContain('inline-switcher__popover--model');
+    expect(within(popover).getByTestId('inline-model-switcher-reasoning-list')).toBeTruthy();
+    expect(within(popover).queryByTestId('inline-model-switcher-agent-model')).toBeNull();
+
+    fireEvent.click(within(popover).getByRole('option', {
+      name: 'inlineSwitcher.reasoningXHigh',
+    }));
+    expect(onAgentModelChange).toHaveBeenCalledWith('claude', { reasoning: 'xhigh' });
+    expect(screen.queryByTestId('inline-model-switcher-reasoning-popover')).toBeNull();
+  });
+
   it('routes an agent pick to the config mutator', () => {
     const onAgentChange = vi.fn();
     renderPane({ onAgentChange });
@@ -253,11 +266,32 @@ describe('workspace chat composer: agent + model execution pair', () => {
     );
   });
 
-  it('keeps the session-mode toggle alongside the new pair', () => {
-    const { container } = renderPane();
+  it('does not invent an effort control for an agent without runtime support', () => {
+    renderPane({
+      config: { ...CONFIG, agentId: 'codex', agentModels: { codex: { model: 'gpt-5' } } },
+    });
 
-    // The workspace composer's Design/Ask toggle is not part of this change;
-    // its removal applied to the Hub composer only.
-    expect(container.querySelector('.session-mode-toggle__trigger')).not.toBeNull();
+    expect(screen.queryByTestId('inline-model-switcher-reasoning-trigger')).toBeNull();
+    expect(document.querySelector('.session-mode-toggle__trigger')).toBeNull();
+  });
+
+  it('hides Grok effort when its selected model would ignore the value', () => {
+    const grok = {
+      id: 'grok-build',
+      name: 'Grok Build',
+      available: true,
+      models: [{ id: 'grok-4.20-non-reasoning', label: 'Grok fast' }],
+      reasoningOptions: [{ id: 'high', label: 'High' }],
+    } as AgentInfo;
+    renderPane({
+      agents: [grok],
+      config: {
+        ...CONFIG,
+        agentId: grok.id,
+        agentModels: { [grok.id]: { model: 'grok-4.20-non-reasoning' } },
+      },
+    });
+
+    expect(screen.queryByTestId('inline-model-switcher-reasoning-trigger')).toBeNull();
   });
 });

@@ -43,6 +43,11 @@ const workspace = {
   chip: '.chat-composer-fixed-layer .composer-row .composer-execution-switcher .inline-switcher__chip--model',
   open: ".chat-composer-fixed-layer .composer-row .composer-execution-switcher .inline-switcher__chip--model[aria-expanded='true']",
 };
+const thinking = {
+  mount: '.composer-execution-switcher .inline-switcher--reasoning',
+  chip: '.chat-composer-fixed-layer .composer-row .composer-execution-switcher .inline-switcher__chip--reasoning',
+  open: ".chat-composer-fixed-layer .composer-row .composer-execution-switcher .inline-switcher__chip--reasoning[aria-expanded='true']",
+};
 
 describe('open agent/model cluster geometry', () => {
   it('keeps the icon, model label, and chevron adjacent while the Hub trigger expands left', () => {
@@ -62,6 +67,16 @@ describe('open agent/model cluster geometry', () => {
     expect(value(declarations(chatCss, workspace.chip), 'justify-content')).toBe('flex-start');
     expect(value(declarations(chatCss, workspace.mount), 'flex')).toBe('0 0 auto');
     expect(workspaceOpenWidth).toBe(hubOpenWidth);
+  });
+
+  it('makes thinking effort an exact geometry twin of the workspace model picker', () => {
+    expect(value(declarations(chatCss, thinking.chip), 'gap'))
+      .toBe(value(declarations(chatCss, workspace.chip), 'gap'));
+    expect(value(declarations(chatCss, thinking.chip), 'justify-content'))
+      .toBe(value(declarations(chatCss, workspace.chip), 'justify-content'));
+    expect(value(declarations(chatCss, thinking.mount), 'flex'))
+      .toBe(value(declarations(chatCss, workspace.mount), 'flex'));
+    expect(value(declarations(chatCss, thinking.open), 'width')).toBe('168px');
   });
 
 });

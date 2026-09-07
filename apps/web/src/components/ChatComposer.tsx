@@ -23,11 +23,9 @@ import { useAnalytics } from '../analytics/provider';
 import {
   trackChatPanelClick,
   trackComposerBarClick,
-  trackComposerSessionModeClick,
   trackDesignToolboxClick,
   trackFileUploadResult,
 } from '../analytics/events';
-import { sessionModeToTracking } from '@readable-studio/contracts/analytics';
 import type {
   ComposerBarClickProps,
   DesignToolboxClickProps,
@@ -51,7 +49,6 @@ import type {
 } from '@readable-studio/contracts';
 import { buildVisualAnnotationAttachment, commentTargetDisplayName } from '../comments';
 import { Icon, type IconName } from "./Icon";
-import { SessionModeToggle } from './SessionModeToggle';
 import { ComposerPlusMenu } from './ComposerPlusMenu';
 import {
   DESIGN_TOOLBOX_ACTIONS,
@@ -310,8 +307,6 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       projectFiles,
       activeProjectFileName = null,
       streaming,
-      sessionMode = 'design',
-      onSessionModeChange,
       sendDisabled = false,
       modelSelectionGuard,
       initialDraft,
@@ -2190,12 +2185,10 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
                 reachable from the switcher popover's "open full settings" row.
                 Surfaces with no execution wiring still render the accessory. */}
             {executionSwitcher ? null : footerAccessory}
-            {/* Agent button, then model button to its right, then Send — the
-                same left-to-right order as the Hub composer footer. Two mounts
-                of one switcher, so switching either really mutates the shared
-                app config that this project's runs read. The session-mode
-                toggle keeps its place after the pair; it is a different
-                concern (how the turn runs, not what runs it). */}
+            {/* Agent, model, and supported thinking-effort controls precede
+                Send. They are variants of one switcher and mutate the shared
+                app config that the next project run reads. Conversation mode
+                is chosen when the project is created, not changed mid-run. */}
             {executionSwitcher ? (
               <div
                 className="composer-execution-switcher"
@@ -2204,22 +2197,6 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
                 {executionSwitcher}
               </div>
             ) : null}
-            <SessionModeToggle
-              mode={sessionMode}
-              onChange={(next) => {
-                if (next !== sessionMode) {
-                  trackComposerSessionModeClick(analytics.track, {
-                    page_name: 'chat_panel',
-                    area: 'chat_composer',
-                    element: 'session_mode_toggle',
-                    mode_before: sessionModeToTracking(sessionMode),
-                    mode_after: sessionModeToTracking(next),
-                    ...(projectId ? { project_id: projectId } : {}),
-                  });
-                }
-                onSessionModeChange?.(next);
-              }}
-            />
             {showStopButton ? (
               <button
                 type="button"

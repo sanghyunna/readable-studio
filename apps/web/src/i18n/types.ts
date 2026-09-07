@@ -1846,6 +1846,16 @@ export interface Dict {
   'inlineSwitcher.agentLabel': string;
   'inlineSwitcher.providerLabel': string;
   'inlineSwitcher.modelLabel': string;
+  'inlineSwitcher.reasoningLabel': string;
+  'inlineSwitcher.reasoningDefault': string;
+  'inlineSwitcher.reasoningNone': string;
+  'inlineSwitcher.reasoningOff': string;
+  'inlineSwitcher.reasoningMinimal': string;
+  'inlineSwitcher.reasoningLow': string;
+  'inlineSwitcher.reasoningMedium': string;
+  'inlineSwitcher.reasoningHigh': string;
+  'inlineSwitcher.reasoningXHigh': string;
+  'inlineSwitcher.reasoningMax': string;
   'inlineSwitcher.useCli': string;
   'inlineSwitcher.useByok': string;
   'inlineSwitcher.daemonOffline': string;

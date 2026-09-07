@@ -629,6 +629,22 @@ describe('ProjectView conversation run isolation', () => {
     );
   });
 
+  it('sends the persisted thinking-effort selection in the workspace run payload', async () => {
+    conversationAMessages = [];
+    renderProjectView({
+      ...config,
+      agentModels: { 'agent-1': { reasoning: 'high' } },
+    });
+
+    await waitFor(() => expect(screen.getByTestId('send-message')).toHaveProperty('disabled', false));
+    fireEvent.click(screen.getByTestId('send-message'));
+
+    await waitFor(() => expect(streamViaDaemon).toHaveBeenCalledTimes(1));
+    expect(streamViaDaemon).toHaveBeenCalledWith(
+      expect.objectContaining({ reasoning: 'high' }),
+    );
+  });
+
   it('refuses to submit when the saved AMR model is stale', async () => {
     conversationAMessages = [];
     renderProjectView(

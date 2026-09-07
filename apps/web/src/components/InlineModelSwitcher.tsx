@@ -77,7 +77,7 @@ import {
  * exactly one implementation of agent selection, model selection, the AMR
  * login dance and the provider-models fetch.
  */
-export type InlineSwitcherVariant = 'combined' | 'agent' | 'model';
+export type InlineSwitcherVariant = 'combined' | 'agent' | 'model' | 'reasoning';
 
 interface Props {
   config: AppConfig;
@@ -496,6 +496,25 @@ export function InlineModelSwitcher({
     agentModelChoices.find((m) => m.id === currentModelId)?.label ??
     currentAgent?.models?.find((m) => m.id === currentModelId)?.label ??
     (currentModelId && currentModelId !== 'default' ? currentModelId : null);
+  const reasoningOptions = currentAgent?.reasoningOptions ?? [];
+  const currentReasoningId = currentChoice.reasoning ?? reasoningOptions[0]?.id ?? null;
+  const reasoningLabel = (id: string): string => {
+    const labels: Record<string, string> = {
+      default: t('inlineSwitcher.reasoningDefault'),
+      none: t('inlineSwitcher.reasoningNone'),
+      off: t('inlineSwitcher.reasoningOff'),
+      minimal: t('inlineSwitcher.reasoningMinimal'),
+      low: t('inlineSwitcher.reasoningLow'),
+      medium: t('inlineSwitcher.reasoningMedium'),
+      high: t('inlineSwitcher.reasoningHigh'),
+      xhigh: t('inlineSwitcher.reasoningXHigh'),
+      max: t('inlineSwitcher.reasoningMax'),
+    };
+    return labels[id] ?? reasoningOptions.find((option) => option.id === id)?.label ?? id;
+  };
+  const currentReasoningLabel = currentReasoningId
+    ? reasoningLabel(currentReasoningId)
+    : t('inlineSwitcher.reasoningDefault');
   const amrLoggedIn = amrStatus?.loggedIn === true;
   const amrActionLabel = amrLoginPending
     ? t('settings.amrSigningIn')
@@ -671,13 +690,18 @@ export function InlineModelSwitcher({
 
   const isAgentVariant = variant === 'agent';
   const isModelVariant = variant === 'model';
+  const isReasoningVariant = variant === 'reasoning';
+  const isDirectListVariant = isModelVariant || isReasoningVariant;
   const splitAgentLabel = `${t('inlineSwitcher.agentLabel')}: ${chipPrimary}`;
   const splitModelLabel = `${t('inlineSwitcher.modelLabel')}: ${chipModel}`;
+  const splitReasoningLabel = `${t('inlineSwitcher.reasoningLabel')}: ${currentReasoningLabel}`;
   const triggerAccessibleName = isAgentVariant
     ? splitAgentLabel
     : isModelVariant
       ? splitModelLabel
-      : `${chipMode} · ${chipPrimary} · ${chipModel}`;
+      : isReasoningVariant
+        ? splitReasoningLabel
+        : `${chipMode} · ${chipPrimary} · ${chipModel}`;
 
   return (
     <div
@@ -721,7 +745,7 @@ export function InlineModelSwitcher({
             aria-hidden="true"
           />
         ) : null}
-        {isModelVariant ? null : (
+        {isDirectListVariant ? null : (
           <span className="inline-switcher__chip-icon" aria-hidden="true">
             {config.mode === 'daemon' && currentAgent ? (
               <AgentIcon id={currentAgent.id} size={18} />
@@ -756,6 +780,13 @@ export function InlineModelSwitcher({
                   </span>
                 ) : null}
               </span>
+            ) : isReasoningVariant ? (
+              <span
+                className="inline-switcher__chip-model"
+                data-testid="inline-model-switcher-reasoning-label"
+              >
+                {currentReasoningLabel}
+              </span>
             ) : (
               <>
                 <span className="inline-switcher__chip-mode">{chipMode}</span>
@@ -771,7 +802,7 @@ export function InlineModelSwitcher({
             )}
           </span>
         )}
-        {variant === 'combined' || isModelVariant ? (
+        {variant === 'combined' || isDirectListVariant ? (
           <Icon
             name="chevron-down"
             size={12}
@@ -803,7 +834,7 @@ export function InlineModelSwitcher({
           ref={popoverRef}
           className={
             'inline-switcher__popover inline-switcher__popover--layer' +
-            (isModelVariant ? ' inline-switcher__popover--model' : '') +
+            (isDirectListVariant ? ' inline-switcher__popover--model' : '') +
             (surface ? ` inline-switcher__popover--${surface}` : '')
           }
           role="menu"
@@ -823,7 +854,7 @@ export function InlineModelSwitcher({
                 } satisfies CSSProperties)
           }
         >
-          {isModelVariant ? null : (
+          {isDirectListVariant ? null : (
           <div className="inline-switcher__row">
             <span className="inline-switcher__label">
               {t('inlineSwitcher.modeLabel')}
@@ -888,7 +919,41 @@ export function InlineModelSwitcher({
           </div>
           )}
 
-          {config.mode === 'daemon' ? (
+          {isReasoningVariant ? (
+            <div
+              className="inline-switcher__model-list"
+              role="listbox"
+              aria-label={t('inlineSwitcher.reasoningLabel')}
+              data-testid="inline-model-switcher-reasoning-list"
+            >
+              {reasoningOptions.map((option) => {
+                const selected = option.id === currentReasoningId;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    role="option"
+                    aria-selected={selected}
+                    className={`inline-switcher__model-option${selected ? ' is-active' : ''}`}
+                    data-testid={`inline-model-switcher-reasoning-option-${option.id}`}
+                    onClick={() => {
+                      if (currentAgent) {
+                        onAgentModelChange?.(currentAgent.id, { reasoning: option.id });
+                      }
+                      setOpen(false);
+                    }}
+                  >
+                    <span className="inline-switcher__model-option-label">
+                      {reasoningLabel(option.id)}
+                    </span>
+                    <span className="inline-switcher__model-option-check" aria-hidden="true">
+                      {selected ? <Icon name="check" size={13} /> : null}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : config.mode === 'daemon' ? (
             <>
               {isModelVariant ? null : (
               <div className="inline-switcher__row">

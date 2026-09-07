@@ -970,13 +970,10 @@
   .composer-row .inline-switcher__chip { padding: 0 7px 0 5px; gap: 5px; }
   /* Narrow chat: the model name is the first thing to give up room, but the
      control stays reachable (its popover is the only in-composer model path). */
-  .composer-execution-switcher .inline-switcher__chip--model .inline-switcher__chip-text {
+  .composer-execution-switcher .inline-switcher__chip--model .inline-switcher__chip-text,
+  .composer-execution-switcher .inline-switcher__chip--reasoning .inline-switcher__chip-text {
     max-width: 72px;
   }
-  /* Hide ONLY the trigger's label — the popover options share this class
-     and must keep their labels ("Ask" / "Design") visible. */
-  .composer-row .session-mode-toggle__trigger .session-mode-toggle__label { display: none; }
-  .composer-row .session-mode-toggle__trigger { padding: 0 7px; gap: 3px; }
   .composer-row .composer-send {
     width: 32px;
     padding: 0;
@@ -1386,13 +1383,16 @@
    Its contents stay at that reservation's leading edge, so no void can open
    between the agent icon and model label; flex shrinking cannot erase the same
    motion from the body-portaled workspace composer. */
-.composer-execution-switcher .inline-switcher--model {
+.composer-execution-switcher .inline-switcher--model,
+.composer-execution-switcher .inline-switcher--reasoning {
   flex: 0 0 auto;
   width: auto;
   min-width: 0;
 }
 .app .composer-row .composer-execution-switcher .inline-switcher__chip--model,
-.chat-composer-fixed-layer .composer-row .composer-execution-switcher .inline-switcher__chip--model {
+.app .composer-row .composer-execution-switcher .inline-switcher__chip--reasoning,
+.chat-composer-fixed-layer .composer-row .composer-execution-switcher .inline-switcher__chip--model,
+.chat-composer-fixed-layer .composer-row .composer-execution-switcher .inline-switcher__chip--reasoning {
   width: auto;
   min-width: 0;
   height: 28px;
@@ -1407,22 +1407,27 @@
   interpolate-size: allow-keywords;
   transition: width 160ms var(--ease-out);
 }
-.composer-execution-switcher .inline-switcher__chip--model .inline-switcher__chip-text {
+.composer-execution-switcher .inline-switcher__chip--model .inline-switcher__chip-text,
+.composer-execution-switcher .inline-switcher__chip--reasoning .inline-switcher__chip-text {
   flex: 0 0 auto;
   min-width: 0;
   max-width: none;
 }
 .app .composer-row .composer-execution-switcher .inline-switcher__chip--model[aria-expanded='true'],
-.chat-composer-fixed-layer .composer-row .composer-execution-switcher .inline-switcher__chip--model[aria-expanded='true'] {
+.app .composer-row .composer-execution-switcher .inline-switcher__chip--reasoning[aria-expanded='true'],
+.chat-composer-fixed-layer .composer-row .composer-execution-switcher .inline-switcher__chip--model[aria-expanded='true'],
+.chat-composer-fixed-layer .composer-row .composer-execution-switcher .inline-switcher__chip--reasoning[aria-expanded='true'] {
   width: 168px;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .composer-execution-switcher .inline-switcher__chip--model {
+  .composer-execution-switcher .inline-switcher__chip--model,
+  .composer-execution-switcher .inline-switcher__chip--reasoning {
     transition: none;
   }
 }
-.composer-execution-switcher .inline-switcher__chip--model .inline-switcher__chip-chevron {
+.composer-execution-switcher .inline-switcher__chip--model .inline-switcher__chip-chevron,
+.composer-execution-switcher .inline-switcher__chip--reasoning .inline-switcher__chip-chevron {
   display: block;
   flex: 0 0 auto;
 }
