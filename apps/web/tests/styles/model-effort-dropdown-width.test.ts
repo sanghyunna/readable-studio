@@ -84,7 +84,7 @@ describe('model dropdown width', () => {
     expect(value(workspaceOpen, 'width')).toBe(`var(${MODEL_MENU_TOKEN})`);
   });
 
-  it('never leaves a horizontal scroll container under the option list', () => {
+  it('declares independent vertical scrolling and horizontal clipping for the option list', () => {
     const list = declarations(chatCss, '.inline-switcher__model-list');
 
     expect(value(list, 'overflow-y')).toBe('auto');
