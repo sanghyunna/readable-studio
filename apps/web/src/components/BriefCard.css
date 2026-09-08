@@ -185,6 +185,34 @@
   overscroll-behavior: contain;
 }
 
+/* Influence evidence: what the brief is doing right now. Reads as a status
+   row, not a section - same dot idiom as the provenance group headers, in the
+   accent the house reserves for user-stated state. */
+.brief-card__influence {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--white) 34%, transparent), var(--shadow-sm);
+  color: var(--text-strong);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.brief-card__influence::before {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  content: '';
+}
+
 .brief-card__group h3 {
   display: flex;
   align-items: center;

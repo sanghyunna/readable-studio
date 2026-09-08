@@ -68,6 +68,7 @@ export const en: Dict = {
   'brief.provenance.inferred': 'Inferred',
   'brief.provenance.default': 'Working defaults',
   'brief.assumptionLabel': '{label}: {value} ({provenance})',
+  'brief.influence': '{count} assumptions shaping every run · {stated} confirmed by you',
   'brief.correctTitle': 'Correct {label}',
   'brief.correctionDescription': 'This updates the project brief now. If work is running, the correction is queued for the next turn.',
   'brief.applyCorrection': 'Apply correction',

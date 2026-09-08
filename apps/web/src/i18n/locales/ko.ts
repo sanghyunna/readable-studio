@@ -68,6 +68,7 @@ export const ko: Dict = {
   'brief.provenance.inferred': '추론한 내용',
   'brief.provenance.default': '작업 기본값',
   'brief.assumptionLabel': '{label}: {value} ({provenance})',
+  'brief.influence': '가정 {count}개가 모든 실행에 반영됨 · {stated}개 직접 확인',
   'brief.correctTitle': '{label} 수정',
   'brief.correctionDescription': '프로젝트 브리프를 바로 업데이트합니다. 작업이 진행 중이면 수정 사항은 다음 차례에 반영됩니다.',
   'brief.applyCorrection': '수정 적용',

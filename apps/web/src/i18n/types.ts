@@ -72,6 +72,7 @@ export interface Dict {
   'brief.provenance.inferred': string;
   'brief.provenance.default': string;
   'brief.assumptionLabel': string;
+  'brief.influence': string;
   'brief.correctTitle': string;
   'brief.correctionDescription': string;
   'brief.applyCorrection': string;

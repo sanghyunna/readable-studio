@@ -49,6 +49,11 @@ export function BriefCard({ brief, onChange, onSteer, onTrackEdit }: BriefCardPr
     assumptions: localizedAssumptions.filter(item => item.provenance === provenance),
   })).filter(group => group.assumptions.length > 0), [localizedAssumptions]);
   const summary = localizedAssumptions.find(item => item.provenance === 'stated') ?? localizedAssumptions[0];
+  // Influence evidence, derived only from the brief itself: how many
+  // assumptions steer every run, and how many of those the user has confirmed.
+  // Queue state is deliberately NOT claimed here - the card cannot see it, and
+  // the correction copy already tells that truth at the moment it matters.
+  const statedCount = localizedAssumptions.filter(item => item.provenance === 'stated').length;
   const editorForm = useMemo<QuestionForm | null>(() => editing ? ({
     id: `brief-${editing.id}`,
     title: t('brief.correctTitle', { label: editing.label }),
@@ -234,6 +239,9 @@ export function BriefCard({ brief, onChange, onSteer, onTrackEdit }: BriefCardPr
             </div>
           ) : (
           <div className="brief-card__groups" role="group" aria-label={t('brief.assumptions')}>
+            <p className="brief-card__influence" data-testid="brief-card-influence">
+              {t('brief.influence', { count: localizedAssumptions.length, stated: statedCount })}
+            </p>
             {grouped.map(group => (
               <section className="brief-card__group" key={group.provenance}>
                 <h3 data-provenance={group.provenance}>{provenanceLabel(group.provenance)}</h3>

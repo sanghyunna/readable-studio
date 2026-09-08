@@ -98,6 +98,55 @@ describe('BriefCard', () => {
     expect(brief.assumptions[0]?.label).toBe('Audience');
   });
 
+  it('shows what the brief currently influences, derived from live assumption state', () => {
+    render(<BriefCard brief={brief} onChange={() => {}} onSteer={() => {}} />);
+    expandBrief();
+
+    const influence = screen.getByTestId('brief-card-influence');
+    // Value state, not prose: counts come from the brief payload itself.
+    expect(influence.textContent).toBe(
+      en['brief.influence'].replace('{count}', '3').replace('{stated}', '1'),
+    );
+
+    // A brief the user has never corrected must not claim confirmed state.
+    cleanup();
+    const unconfirmed: ProjectBrief = {
+      updatedAt: 2,
+      assumptions: [
+        { id: 'audience', label: 'Audience', value: 'dev-tools buyers', provenance: 'inferred' },
+        { id: 'scale', label: 'Scale', value: '8 slides', provenance: 'default' },
+      ],
+    };
+    render(<BriefCard brief={unconfirmed} onChange={() => {}} onSteer={() => {}} />);
+    expandBrief();
+    expect(screen.getByTestId('brief-card-influence').textContent).toBe(
+      en['brief.influence'].replace('{count}', '2').replace('{stated}', '0'),
+    );
+  });
+
+  it('localizes the influence line and unmounts it during the correction drill-in', () => {
+    render(
+      <I18nProvider initial="ko">
+        <BriefCard brief={brief} onChange={() => {}} onSteer={() => {}} />
+      </I18nProvider>,
+    );
+    expandBrief();
+
+    expect(ko['brief.influence']).not.toBe(en['brief.influence']);
+    expect(screen.getByTestId('brief-card-influence').textContent).toBe(
+      ko['brief.influence'].replace('{count}', '3').replace('{stated}', '1'),
+    );
+
+    // One-surface rule: the drill-in replaces the summary, influence included.
+    const inferredLabel = ko['brief.assumptionLabel']
+      .replace('{label}', ko['brief.field.audience'])
+      .replace('{value}', 'dev-tools buyers')
+      .replace('{provenance}', ko['brief.provenance.inferred']);
+    fireEvent.click(screen.getByRole('listitem', { name: inferredLabel }));
+    expect(screen.queryByTestId('brief-card-influence')).toBeNull();
+    expect(screen.getAllByTestId('brief-card-panel')).toHaveLength(1);
+  });
+
   it('renders stated, inferred, and default provenance on grouped assumption controls', () => {
     render(<BriefCard brief={brief} onChange={() => {}} onSteer={() => {}} />);
     expandBrief();
