@@ -1208,11 +1208,6 @@ export interface Dict {
   'mcpClient.storedAt': string;
   'mcpClient.daemonError': string;
   'mcpClient.saveFailed': string;
-  'useEverywhere.modalAria': string;
-  'useEverywhere.modalTitle': string;
-  'useEverywhere.modalSubtitle': string;
-  'useEverywhere.closeAria': string;
-  'useEverywhere.closeTitle': string;
   'useEverywhere.tabsAria': string;
   'useEverywhere.footStrong': string;
   'useEverywhere.footBody': string;

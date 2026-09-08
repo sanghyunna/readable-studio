@@ -7,7 +7,7 @@ import {
 } from '../analytics/events';
 import { Icon } from './Icon';
 import { McpClientSection } from './McpClientSection';
-import { UseEverywhereGuidePanel } from './UseEverywhereModal';
+import { UseEverywhereGuidePanel } from './UseEverywhereGuidePanel';
 import { useT } from '../i18n';
 
 export type IntegrationTab = 'mcp' | 'skills' | 'use-everywhere';

@@ -1,20 +1,13 @@
-// Use Readable Studio Everywhere — modal entry that documents Readable Studio's
-// non-UI surfaces (CLI, MCP, HTTP, Skills) and ships a one-click "copy
-// guide for an agent" payload. Reachable from the entry top-bar and
-// from Settings → Integrations as a sibling of the existing MCP install
-// snippets.
-//
-// The technical content lives in ./use-everywhere/sections.ts and the
-// agent-handoff markdown blob in ./use-everywhere/agent-guide.ts so the
-// modal only owns rendering + clipboard interactions.
+// The Integrations guide documents Readable Studio's non-UI surfaces (CLI,
+// MCP, HTTP, Skills) and ships a one-click "copy guide for an agent" payload.
+// Its technical content lives in ./use-everywhere/sections.ts and
+// ./use-everywhere/agent-guide.ts.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { motion } from 'motion/react';
+import { useMemo, useState } from 'react';
 import { useAnalytics } from '../analytics/provider';
 import { trackIntegrationsUseEverywhereTabClick } from '../analytics/events';
 import { Icon } from './Icon';
 import { useT } from '../i18n';
-import { modalOverlay, modalContent, useFadingSurface } from '../motion';
 import type { Dict } from '../i18n/types';
 import {
   buildAgentGuideMarkdown,
@@ -40,9 +33,8 @@ function useEverywhereSectionToElement(
   }
 }
 
-interface Props {
-  onClose: () => void;
-  /** Deep-link to Settings → Integrations (existing MCP install snippets). */
+interface GuidePanelProps {
+  /** Switch to the MCP configuration panel. */
   onOpenSettings?: () => void;
   /** Live daemon URL when known (e.g. http://127.0.0.1:7456). */
   daemonUrl?: string;
@@ -54,90 +46,11 @@ type CopyState = 'idle' | 'copied' | 'failed';
 
 const COPY_RESET_MS = 1600;
 
-export function UseEverywhereModal({
-  onClose,
-  onOpenSettings,
-  daemonUrl,
-  versionHint,
-}: Props) {
-  const t = useT();
-  const closeRef = useRef<HTMLButtonElement | null>(null);
-
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, []);
-
-  useEffect(() => {
-    closeRef.current?.focus();
-  }, []);
-
-  // Dismissal is a transition, so the exit gate - not the keyframes - is what
-  // keeps these controls unreachable while they fade.
-  const backdropMotion = useFadingSurface(modalOverlay);
-  const contentMotion = useFadingSurface(modalContent);
-
-  return (
-    <motion.div
-      className="use-everywhere-modal-backdrop"
-      role="dialog"
-      aria-modal="true"
-      aria-label={t('useEverywhere.modalAria')}
-      data-testid="use-everywhere-modal"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-      {...backdropMotion}
-    >
-      <motion.div className="use-everywhere-modal" {...contentMotion}>
-        <header className="use-everywhere-modal__head">
-          <div className="use-everywhere-modal__head-titles">
-            <span className="use-everywhere-modal__kicker">{t('integrations.kicker')}</span>
-            <h2 className="use-everywhere-modal__title">
-              {t('useEverywhere.modalTitle')}
-            </h2>
-            <p className="use-everywhere-modal__subtitle">
-              {t('useEverywhere.modalSubtitle')}
-            </p>
-          </div>
-          <button
-            ref={closeRef}
-            type="button"
-            className="use-everywhere-modal__close"
-            onClick={onClose}
-            aria-label={t('useEverywhere.closeAria')}
-            title={t('useEverywhere.closeTitle')}
-          >
-            <Icon name="close" size={14} />
-          </button>
-        </header>
-
-        <UseEverywhereGuidePanel
-          onOpenSettings={onOpenSettings}
-          daemonUrl={daemonUrl}
-          versionHint={versionHint}
-        />
-      </motion.div>
-    </motion.div>
-  );
-}
-
 export function UseEverywhereGuidePanel({
   onOpenSettings,
   daemonUrl,
   versionHint,
-}: Omit<Props, 'onClose'>) {
+}: GuidePanelProps) {
   const t = useT();
   const analytics = useAnalytics();
   const [activeId, setActiveId] = useState<GuideSection['id']>('overview');

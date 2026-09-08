@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { routeAgents } from '@/playwright/mock-factory';
 import { ensureRailOpen } from '@/playwright/rail';
+import { expectInlineUseEverywhereGuide } from '@/playwright/use-everywhere';
 import type { Page } from '@playwright/test';
 
 const STORAGE_KEY = 'readable-studio:config';
@@ -95,11 +96,11 @@ test('[P2] retired help and account controls stay absent while footer settings r
   await expect(dialog.getByRole('heading', { name: 'Execution mode' })).toBeVisible();
 });
 
-test('[P2] home Library navigates to Integrations with the tab selected', async ({ page }) => {
-  await gotoEntryHome(page);
-  await openLibraryDestination(page, 'integrations');
-  await expect(page.getByRole('heading', { name: 'Integrations' })).toBeVisible();
-  await expect(page.getByTestId('integrations-tab-use-everywhere')).toBeVisible();
+test('[P2] home Library loads the inline Integrations guide without the retired modal', async ({ page }) => {
+  await expectInlineUseEverywhereGuide(page, async () => {
+    await gotoEntryHome(page);
+    await openLibraryDestination(page, 'integrations');
+  });
 });
 
 test('[P1] footer settings opens execution settings and closes the composer execution popover', async ({ page }) => {

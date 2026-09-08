@@ -1,7 +1,7 @@
-// Content fixtures for the "Use Readable Studio everywhere" guide modal.
+// Content fixtures for the "Use Readable Studio everywhere" guide panel.
 //
 // Kept as a plain data module (no React imports) so the same source
-// feeds both the modal UI and the agent-handoff markdown blob in
+// feeds both the Integrations panel and the agent-handoff markdown blob in
 // ./agent-guide.ts. Strings here are intentionally English-only
 // because they document a developer-facing CLI / HTTP / MCP surface
 // — localized labels stay in i18n; this module owns the technical

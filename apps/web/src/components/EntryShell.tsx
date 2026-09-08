@@ -68,7 +68,7 @@ import {
   type ProviderModelsCache,
 } from './providerModelsCache';
 
-// The topbar chips (GitHub star, model switcher, Use everywhere)
+// The topbar chips (GitHub star, model switcher)
 // collapse into the settings dropdown when the viewport gets
 // narrow. The transition is driven entirely by CSS @media queries
 // in `entry-layout.css` so server and client render identical

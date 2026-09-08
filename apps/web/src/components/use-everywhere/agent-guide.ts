@@ -1,6 +1,6 @@
 // Pure builder for the "Copy guide for an agent" markdown blob.
 //
-// The blob is the headline payoff of the Use Everywhere modal: paste it
+// The guide is available from the Integrations panel: paste it
 // into Claude Code, Codex, Cursor, openclaw, or hermes and the agent has
 // everything it needs to install Readable Studio, expose it as MCP, and
 // drive it from CLI / HTTP without further hand-holding.
