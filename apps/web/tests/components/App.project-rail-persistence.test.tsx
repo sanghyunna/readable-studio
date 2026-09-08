@@ -86,6 +86,14 @@ vi.mock('../../src/hooks/useRuntimeUser', () => ({ useRuntimeUsername: () => 'wi
 // Entry sub-views that stay mounted behind the Hub and talk to the daemon on
 // mount; none of them owns any part of the rail.
 vi.mock('../../src/components/InlineModelSwitcher', () => ({ InlineModelSwitcher: () => null }));
+// Repeated Home mounts otherwise spend the test budget rendering the unrelated
+// composer. Keep EntryView, HubHome and HomeView real: HomeView must still
+// consume palette commands and open the real New Project modal. Only its leaf
+// presentation is replaced, just as ProjectView's workspace content is above.
+vi.mock('../../src/components/HomeHero', async () => {
+  const { forwardRef } = await import('react');
+  return { HomeHero: forwardRef(() => <div data-testid="home-hero" />) };
+});
 vi.mock('../../src/components/PluginsView', () => ({ PluginsView: () => null }));
 vi.mock('../../src/components/TasksView', () => ({ TasksView: () => null }));
 vi.mock('../../src/components/DesignSystemsTab', () => ({ DesignSystemsTab: () => null }));
@@ -528,8 +536,8 @@ describe('Project rail persistence across Hub -> workspace -> Hub', () => {
     within(rail).getByTestId('hub-project-project-1');
 
     // New Project from the workspace opens the real creation surface.
-    fireEvent.click(newProject);
-    await screen.findByTestId('new-project-modal');
+    await act(async () => fireEvent.click(newProject));
+    screen.getByTestId('new-project-modal');
 
     await returnToHub();
     const railOnHub = theRail();
