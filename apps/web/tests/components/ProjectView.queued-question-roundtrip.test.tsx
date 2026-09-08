@@ -2,7 +2,7 @@
 
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ComponentProps, ReactNode } from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectView } from '../../src/components/ProjectView';
 import { QuestionsPanel } from '../../src/components/QuestionsPanel';
 import { formatFormAnswers, type QuestionForm } from '../../src/artifacts/question-form';
@@ -48,6 +48,7 @@ vi.mock('../../src/components/FileWorkspace', () => ({
   FileWorkspace: (props: ComponentProps<typeof import('../../src/components/FileWorkspace').FileWorkspace>) => (
     <QuestionsPanel form={props.questionForm ?? null} formKey={props.questionFormKey}
       interactive={props.questionFormInteractive ?? false} submitDisabled={props.questionFormSubmitDisabled}
+      runHydrationStatus={props.questionRunHydrationStatus} onRetryRunHydration={props.onRetryQuestionRunHydration}
       submissionQueued={props.questionFormSubmissionQueued} submittedAnswers={props.questionFormSubmittedAnswers}
       generating={props.questionsGenerating ?? false} onSubmit={props.onSubmitQuestionForm!} />
   ),
@@ -84,10 +85,88 @@ function mount() {
     onProjectChange={vi.fn()} onProjectsRefresh={vi.fn()} />);
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
+}
+
+beforeEach(() => { vi.mocked(listActiveChatRuns).mockReset().mockResolvedValue([]); });
 afterEach(() => { cleanup(); window.localStorage.clear(); window.sessionStorage.clear(); vi.clearAllMocks(); });
 
 describe('queued question answer lifecycle', () => {
-  it.each(['running', 'idle', 'interrupt', 'error'] as const)('waits for run hydration on %s reload before promoting a persisted answer', async (outcome) => {
+  it.each(['idle', 'active', 'retry-failure'] as const)('holds editable answers through failed hydration and local %s recovery', async outcome => {
+    vi.mocked(listConversations).mockResolvedValue([{ id: 'conv-q', projectId: 'queue-question-project', title: 'Q', createdAt: 1, updatedAt: 1 }]);
+    vi.mocked(listMessages).mockResolvedValue([{ id: 'assistant-q', role: 'assistant', content, createdAt: 1 }]);
+    const hydration = deferred<Awaited<ReturnType<typeof listActiveChatRuns>>>();
+    const retry = deferred<Awaited<ReturnType<typeof listActiveChatRuns>>>();
+    vi.mocked(listActiveChatRuns).mockReturnValueOnce(hydration.promise).mockReturnValueOnce(retry.promise);
+    const completion = deferred<void>();
+    let attached!: Parameters<typeof reattachDaemonRun>[0];
+    const heldRun = { id: 'run-q', projectId: 'queue-question-project', conversationId: 'conv-q', assistantMessageId: 'assistant-q', agentId: 'claude', status: 'running' as const, createdAt: 1, updatedAt: 1, exitCode: null, signal: null };
+    vi.mocked(fetchChatRunStatus).mockResolvedValue(heldRun);
+    vi.mocked(reattachDaemonRun).mockImplementation(input => {
+      attached = input;
+      input.handlers.onDelta(content);
+      input.handlers.onAgentEvent?.({ kind: 'status', label: 'running' });
+      return completion.promise;
+    });
+    vi.mocked(streamViaDaemon).mockImplementation(async input => { input.onRunCreated?.('run-next'); });
+    await act(async () => { mount(); });
+    expect(listActiveChatRuns).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('radio', { name: 'Desktop web' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Search, filter' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Export' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Notes' }), { target: { value: answers.notes } });
+    const draftKey = 'readable-studio:question-form-draft:conv-q:assistant-q';
+    const draft = window.sessionStorage.getItem(draftKey);
+    expect(draft).not.toBeNull();
+    expect(screen.getByRole('status').textContent).toBe('questions.hydratingRuns');
+    expect(screen.getByRole('button', { name: 'questions.continue' })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: 'questions.skipAll' })).toHaveProperty('disabled', true);
+    fireEvent.click(screen.getByRole('button', { name: 'questions.continue' }));
+    expect(streamViaDaemon).not.toHaveBeenCalled();
+    expect(window.sessionStorage.getItem(draftKey)).toBe(draft);
+
+    await act(async () => { hydration.reject(new Error('Run hydration unavailable')); });
+    expect(screen.getByRole('status').textContent).toBe('questions.runHydrationFailed');
+    expect(screen.getByRole('button', { name: 'questions.continue' })).toHaveProperty('disabled', true);
+    const retryButton = screen.getByRole('button', { name: 'questions.retryRunHydration' });
+    await act(async () => { fireEvent.click(retryButton); fireEvent.click(retryButton); });
+    expect(listActiveChatRuns).toHaveBeenCalledTimes(2);
+    expect(listActiveChatRuns).toHaveBeenLastCalledWith('queue-question-project', 'conv-q', { requireSuccess: true });
+    expect(listMessages).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('status').textContent).toBe('questions.hydratingRuns');
+    expect(screen.queryByText('Run hydration unavailable')).toBeNull();
+    expect(window.sessionStorage.getItem(draftKey)).toBe(draft);
+    if (outcome === 'retry-failure') {
+      await act(async () => { retry.reject(new Error('Retry unavailable')); });
+      expect(screen.getByRole('status').textContent).toBe('questions.runHydrationFailed');
+      expect(screen.getByRole('button', { name: 'questions.retryRunHydration' })).toHaveProperty('disabled', false);
+      expect(screen.getByRole('button', { name: 'questions.continue' })).toHaveProperty('disabled', true);
+      expect(window.sessionStorage.getItem(draftKey)).toBe(draft);
+      expect(streamViaDaemon).not.toHaveBeenCalled();
+      return;
+    }
+    await act(async () => { retry.resolve(outcome === 'active' ? [heldRun] : []); await retry.promise; });
+    expect(screen.queryByRole('button', { name: 'questions.retryRunHydration' })).toBeNull();
+    expect(screen.getByRole('textbox', { name: 'Notes' })).toHaveProperty('value', answers.notes);
+    expect(screen.getByRole('button', { name: 'questions.continue' })).toHaveProperty('disabled', false);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'questions.continue' })); });
+    if (outcome === 'active') {
+      expect(screen.getByRole('status').textContent).toBe('questions.queued');
+      expect(streamViaDaemon).not.toHaveBeenCalled();
+      expect(JSON.parse(window.localStorage.getItem(storageKey)!)).toHaveLength(1);
+      await act(async () => { attached.handlers.onDone(content); completion.resolve(); await completion.promise; });
+    }
+    expect(streamViaDaemon).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(streamViaDaemon).mock.calls[0]![0].history.at(-1)).toMatchObject({ role: 'user', content: formatFormAnswers(form, answers), sessionMode: 'design' });
+    expect(window.localStorage.getItem(storageKey)).toBeNull();
+    expect(listMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['running', 'idle', 'interrupt', 'error', 'retry-idle', 'retry-active', 'retry-failure'] as const)('waits for run hydration on %s reload before promoting a persisted answer', async (outcome) => {
     const queued = { id: 'answer-q', conversationId: 'conv-q', prompt: formatFormAnswers(form, answers),
       attachments: [], commentAttachments: [], createdAt: 2, meta: { sessionMode: 'design' } };
     window.localStorage.setItem(storageKey, JSON.stringify([queued]));
@@ -117,17 +196,39 @@ describe('queued question answer lifecycle', () => {
     expect(JSON.parse(window.localStorage.getItem(storageKey)!)).toEqual([queued]);
 
     expect(screen.getByTestId('chat-queued-send-now')).toHaveProperty('disabled', true);
-    if (outcome === 'error') {
+    const idle = outcome === 'idle' || outcome === 'retry-idle' || outcome === 'retry-failure';
+    if (outcome === 'error' || outcome.startsWith('retry-')) {
       await act(async () => { rejectHydration(new Error('Run hydration unavailable')); });
       expect(streamViaDaemon).not.toHaveBeenCalled();
       expect(screen.getByTestId('chat-queued-send-now')).toHaveProperty('disabled', true);
       expect(JSON.parse(window.localStorage.getItem(storageKey)!)).toEqual([queued]);
       expect(screen.getByText('Run hydration unavailable')).toBeTruthy();
-      return;
+      if (outcome === 'error') return;
+      const retry = deferred<Awaited<ReturnType<typeof listActiveChatRuns>>>();
+      vi.mocked(listActiveChatRuns).mockReturnValueOnce(retry.promise);
+      const retryButton = screen.getByRole('button', { name: 'questions.retryRunHydration' });
+      await act(async () => { fireEvent.click(retryButton); fireEvent.click(retryButton); });
+      expect(listActiveChatRuns).toHaveBeenCalledTimes(2);
+      expect(listMessages).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId('chat-queued-send-now')).toHaveProperty('disabled', true);
+      expect(JSON.parse(window.localStorage.getItem(storageKey)!)).toEqual([queued]);
+      expect(screen.getByRole('textbox', { name: 'Notes' })).toHaveProperty('value', answers.notes);
+      if (outcome === 'retry-failure') {
+        await act(async () => { retry.reject(new Error('Retry unavailable')); });
+        expect(streamViaDaemon).not.toHaveBeenCalled();
+        expect(JSON.parse(window.localStorage.getItem(storageKey)!)).toEqual([queued]);
+        expect(screen.getByRole('status').textContent).toBe('questions.runHydrationFailed');
+        // A second failure must remain locally recoverable, not leave a stuck latch.
+        await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'questions.retryRunHydration' })); });
+        expect(listActiveChatRuns).toHaveBeenCalledTimes(3);
+      } else {
+        await act(async () => { retry.resolve(idle ? [] : [heldRun]); await retry.promise; });
+      }
+    } else {
+      await act(async () => { reconcile(idle ? [] : [heldRun]); });
     }
-    await act(async () => { reconcile(outcome === 'idle' ? [] : [heldRun]); });
     expect(listActiveChatRuns).toHaveBeenCalledWith('queue-question-project', 'conv-q', { requireSuccess: true });
-    if (outcome !== 'idle') {
+    if (!idle) {
       expect(attached).toBeDefined();
       expect(streamViaDaemon).not.toHaveBeenCalled();
       expect(screen.getByRole('textbox', { name: 'Notes' })).toHaveProperty('value', answers.notes);

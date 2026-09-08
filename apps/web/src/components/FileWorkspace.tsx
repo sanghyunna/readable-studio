@@ -72,7 +72,7 @@ import { SideChatTab, type ActiveConversationChatState } from './workspace/SideC
 import { TerminalViewer } from './workspace/TerminalViewer';
 import { MissingBrandFontsBanner } from './MissingBrandFontsBanner';
 import { PasteTextDialog } from './PasteTextDialog';
-import { QuestionsPanel } from './QuestionsPanel';
+import { QuestionsPanel, type QuestionRunHydrationStatus } from './QuestionsPanel';
 import { consumeHubSessionSurface } from './hub/HubSessionTree';
 import { QuickSwitcher } from './QuickSwitcher';
 import { SketchEditor } from './SketchEditor';
@@ -208,6 +208,8 @@ interface Props {
   // A true submission boundary (conversation loading/failed), distinct from a
   // healthy active run where answers can enter the chat queue.
   questionFormSubmitDisabled?: boolean;
+  questionRunHydrationStatus?: QuestionRunHydrationStatus;
+  onRetryQuestionRunHydration?: () => void;
   questionFormSubmissionQueued?: boolean;
   questionFormSubmittedAnswers?: Record<string, string | string[]>;
   questionsGenerating?: boolean;
@@ -415,6 +417,8 @@ export function FileWorkspace({
   questionFormKey = null,
   questionFormInteractive = false,
   questionFormSubmitDisabled = false,
+  questionRunHydrationStatus = 'ready',
+  onRetryQuestionRunHydration,
   questionFormSubmissionQueued = false,
   questionFormSubmittedAnswers,
   questionsGenerating = false,
@@ -2093,6 +2097,8 @@ export function FileWorkspace({
             form={questionForm ?? questionFormPreview}
             interactive={questionFormInteractive}
             submitDisabled={questionFormSubmitDisabled}
+            runHydrationStatus={questionRunHydrationStatus}
+            onRetryRunHydration={onRetryQuestionRunHydration}
             submissionQueued={questionFormSubmissionQueued}
             submittedAnswers={questionFormSubmittedAnswers}
             generating={questionsGenerating}

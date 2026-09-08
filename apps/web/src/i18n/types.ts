@@ -2952,6 +2952,9 @@ export interface Dict {
   'questions.bannerAnswered': string;
   'questions.continue': string;
   'questions.generating': string;
+  'questions.hydratingRuns': string;
+  'questions.runHydrationFailed': string;
+  'questions.retryRunHydration': string;
   'questions.willQueue': string;
   'questions.queued': string;
   'questions.skipAll': string;

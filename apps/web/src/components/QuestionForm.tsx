@@ -11,6 +11,8 @@ interface Props {
   // disables the form when the assistant turn is no longer the most recent
   // one (i.e. the user has already moved past it).
   interactive: boolean;
+  // Hold submission without locking draft inputs or marking the form answered.
+  submitDisabled?: boolean;
   // Pre-existing answers — when we detect a follow-up user message that
   // begins with "[form answers — <id>]", we parse it back out and pass it
   // here so the rendered form reflects what was sent.
@@ -47,6 +49,7 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
   {
     form,
     interactive,
+    submitDisabled = false,
     submittedAnswers,
     submittedQueued = false,
     hideInternalSubmit = false,
@@ -106,7 +109,7 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
   }
 
   function handleSubmit() {
-    if (locked || !onSubmit) return;
+    if (locked || submitDisabled || !onSubmit) return;
     // Block submit until required fields are answered and selection caps hold.
     // skipAll() is the only path that intentionally bypasses this (the new
     // Questions-tab Skip button / countdown).
@@ -115,7 +118,7 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
   }
 
   function handleSkipAll() {
-    if (locked || !onSubmit) return;
+    if (locked || submitDisabled || !onSubmit) return;
     const empty: Record<string, string | string[]> = {};
     onSubmit(formatFormAnswers(form, empty), empty);
   }
@@ -285,7 +288,7 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
             type="button"
             className="primary"
             onClick={handleSubmit}
-            disabled={!ready}
+            disabled={submitDisabled || !ready}
             title={ready ? t('qf.submitTitle') : t('qf.submitDisabledTitle')}
           >
             {form.submitLabel ?? t('qf.submitDefault')}

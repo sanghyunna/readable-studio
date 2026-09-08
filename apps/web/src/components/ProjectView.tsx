@@ -995,7 +995,10 @@ export function ProjectView({
   // Message persistence can lag the daemon run record. Restored queued sends
   // must wait for that record to be reconciled, not just for listMessages.
   const [runsHydratedKey, setRunsHydratedKey] = useState<string | null>(null);
-  const runsHydrationKey = `${project.id}:${activeConversationId}:${config.mode}`;
+  const [runHydrationRetryNonce, setRunHydrationRetryNonce] = useState(0);
+  const [runHydrationFailure, setRunHydrationFailure] = useState<{ key: string; message: string } | null>(null);
+  const runHydrationFailureRef = useRef<typeof runHydrationFailure>(null);
+  const runsHydrationKey = `${project.id}:${activeConversationId}:${config.mode}:${runHydrationRetryNonce}`;
   const restoringQueuedRuns = runsHydratedKey !== runsHydrationKey;
   const [previewComments, setPreviewComments] = useState<PreviewComment[]>([]);
   // Mirror so the send-now interrupt path can read the current statuses
@@ -1262,6 +1265,7 @@ export function ProjectView({
     [messages, questionsGenerating],
   );
   const questionForm = questionFormOccurrence?.form ?? null;
+  const hasHydratableQuestionForm = Boolean(questionForm);
   const questionFormAssistantIndex = questionFormOccurrence?.messageIndex ?? -1;
   const questionFormMessageId = questionFormOccurrence?.messageId ?? null;
   const receiptAssumptions = useMemo(
@@ -1629,14 +1633,30 @@ export function ProjectView({
     };
   }, [project.id, activeConversationId, messageLoadRetryNonce]);
 
+  const clearRunHydrationFailure = useCallback(() => {
+    const failure = runHydrationFailureRef.current;
+    runHydrationFailureRef.current = null;
+    setRunHydrationFailure(null);
+    if (failure) setError(current => current === failure.message ? null : current);
+  }, []);
+  const retryRunHydration = useCallback(() => {
+    // Consume the failure synchronously: two clicks before React commits must
+    // still produce only one authoritative read, never a message reload.
+    if (runHydrationFailureRef.current?.key !== runsHydrationKey) return;
+    clearRunHydrationFailure();
+    setRunHydrationRetryNonce(nonce => nonce + 1);
+  }, [clearRunHydrationFailure, runsHydrationKey]);
+
   useEffect(() => {
     if (!messagesInitialized || messagesConversationId !== activeConversationId || !activeConversationId) return;
+    if (runsHydratedKey === runsHydrationKey) return;
     let cancelled = false;
+    clearRunHydrationFailure();
     const restoreRuns = async () => {
-      // Automatic sends need an authoritative read before accepting Home's
-      // one-shot handoff or promoting a restored queue. Message persistence
-      // can lag an active run, so an empty transcript does not establish idle.
-      if (config.mode === 'daemon' && (autoSendFirstMessageRef.current
+      // Questions, Home's one-shot handoff and restored queues all need an
+      // authoritative read. Message persistence can lag an active run, so a
+      // completed form (or an empty transcript) does not establish idle.
+      if (config.mode === 'daemon' && (hasHydratableQuestionForm || autoSendFirstMessageRef.current
         || queuedChatSendsRef.current.some(item => item.conversationId === activeConversationId))) {
         if (!daemonLive) return;
         const runs = await listActiveChatRuns(project.id, activeConversationId, { requireSuccess: true });
@@ -1659,10 +1679,15 @@ export function ProjectView({
       if (!cancelled) setRunsHydratedKey(runsHydrationKey);
     };
     void restoreRuns().catch(err => {
-      if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+      if (cancelled) return;
+      const failure = { key: runsHydrationKey, message: err instanceof Error ? err.message : String(err) };
+      runHydrationFailureRef.current = failure;
+      setRunHydrationFailure(failure);
+      setError(failure.message);
     });
     return () => { cancelled = true; };
-  }, [project.id, activeConversationId, messagesConversationId, messagesInitialized, config.mode, daemonLive, runsHydrationKey]);
+  }, [project.id, activeConversationId, messagesConversationId, messagesInitialized, config.mode, daemonLive,
+    runsHydrationKey, runsHydratedKey, hasHydratableQuestionForm, clearRunHydrationFailure]);
 
   useEffect(() => {
     return () => {
@@ -6010,7 +6035,11 @@ export function ProjectView({
           questionFormPreview={displayedQuestionFormPreview}
           questionFormKey={displayedQuestionFormKey}
           questionFormInteractive={displayedQuestionFormActive}
-          questionFormSubmitDisabled={currentConversationQueueDisabled}
+          questionFormSubmitDisabled={currentConversationQueueDisabled || restoringQueuedRuns}
+          questionRunHydrationStatus={restoringQueuedRuns
+            ? runHydrationFailure?.key === runsHydrationKey ? 'failed' : 'pending'
+            : 'ready'}
+          onRetryQuestionRunHydration={retryRunHydration}
           questionFormSubmissionQueued={
             !manualQuestionFormRequest
             && (questionFormSubmissionQueued

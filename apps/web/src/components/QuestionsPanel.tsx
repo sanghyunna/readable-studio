@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Button } from '@readable-studio/components';
 import { questionsFormTrackingId } from '@readable-studio/contracts/analytics';
 import { useT } from '../i18n';
 import { useAnalytics } from '../analytics/provider';
@@ -9,6 +10,7 @@ import { QuestionFormView, type QuestionFormHandle } from './QuestionForm';
 const viewedFormOccurrences = new Set<string>();
 const QUESTION_FORM_DRAFT_STORAGE_PREFIX = 'readable-studio:question-form-draft:';
 type QuestionFormAnswers = Record<string, string | string[]>;
+export type QuestionRunHydrationStatus = 'pending' | 'failed' | 'ready';
 
 interface Props {
   projectId?: string;
@@ -16,6 +18,8 @@ interface Props {
   formKey?: string | null;
   interactive: boolean;
   submitDisabled?: boolean;
+  runHydrationStatus?: QuestionRunHydrationStatus;
+  onRetryRunHydration?: () => void;
   submissionQueued?: boolean;
   submittedAnswers?: QuestionFormAnswers;
   generating: boolean;
@@ -28,6 +32,8 @@ export function QuestionsPanel({
   formKey = null,
   interactive,
   submitDisabled = false,
+  runHydrationStatus = 'ready',
+  onRetryRunHydration,
   submissionQueued = false,
   submittedAnswers,
   generating,
@@ -87,7 +93,8 @@ export function QuestionsPanel({
     onSubmit(text);
   }, [analytics.track, form, formKey, onSubmit, projectId]);
 
-  const canSubmit = Boolean(form && interactive && !generating && !submitDisabled);
+  const canSubmit = Boolean(form && interactive && !answered && !generating && !submitDisabled
+    && runHydrationStatus === 'ready');
   const canContinue = canSubmit && ready;
 
   return (
@@ -98,6 +105,7 @@ export function QuestionsPanel({
             ref={formRef}
             form={form}
             interactive={interactive}
+            submitDisabled={!canSubmit}
             submittedAnswers={submittedAnswers}
             submittedQueued={submissionQueued}
             draftAnswers={draftAnswers}
@@ -110,13 +118,22 @@ export function QuestionsPanel({
         ) : <div className="questions-panel-skeleton">{t('questions.generating')}</div>}
       </div>
       <div className="questions-panel-foot">
-        <span className="questions-panel-status">
-          {generating
-            ? t('questions.generating')
-            : submissionQueued
-              ? t(answered ? 'questions.queued' : 'questions.willQueue')
-              : null}
+        <span className="questions-panel-status" role="status">
+          {runHydrationStatus === 'pending'
+            ? t('questions.hydratingRuns')
+            : runHydrationStatus === 'failed'
+              ? t('questions.runHydrationFailed')
+              : generating
+                ? t('questions.generating')
+                : submissionQueued
+                  ? t(answered ? 'questions.queued' : 'questions.willQueue')
+                  : null}
         </span>
+        {runHydrationStatus === 'failed' && onRetryRunHydration ? (
+          <Button variant="ghost" onClick={onRetryRunHydration}>
+            {t('questions.retryRunHydration')}
+          </Button>
+        ) : null}
         {!answered ? (
           <button
             type="button"
