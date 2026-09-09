@@ -178,6 +178,19 @@ export function localizeBriefAssumption(assumption: BriefAssumption, t: Translat
   };
 }
 
+/** Stable field ids, never localized labels, connect ordinary answers to Questions. */
+export function briefAssumptionsFromAnswers(
+  form: QuestionForm,
+  answers: Record<string, string | string[]>,
+): BriefAssumption[] {
+  return form.questions.flatMap(question => {
+    const value = answers[question.id];
+    if (!FIELD_LABEL_KEYS[question.id] || value === undefined
+      || (Array.isArray(value) ? value.length === 0 : value.trim().length === 0)) return [];
+    return [{ id: question.id, label: question.id, value, provenance: 'stated' as const, question }];
+  });
+}
+
 export function formatBriefSteering(
   assumption: BriefAssumption,
   value: AssumptionValue,

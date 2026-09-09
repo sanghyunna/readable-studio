@@ -11,6 +11,7 @@ import { createJsonIpcServer } from '@readable-studio/sidecar';
 import { SIDECAR_ENV, SIDECAR_MESSAGES, normalizeDaemonSidecarMessage } from '@readable-studio/sidecar-proto';
 
 import { createAgentRuntimeEnv, startServer } from '../src/server.js';
+import { composeSystemPrompt } from '../src/prompts/system.js';
 import { resetDesktopAuthForTests, setDesktopAuthSecret } from '../src/desktop-auth.js';
 import { mintImportTokenForCli } from '../src/sidecar/server.js';
 
@@ -256,6 +257,11 @@ describe('Phase 2C CLI wrappers', () => {
     }).project.metadata;
     expect(metadata.fidelity).toBe('wireframe');
     expect(metadata.brief).toEqual(setBody.brief);
+
+    await runCli(['project', 'brief', 'set', projectId, 'audience', 'INTAKE_READER_729', '--json']);
+    const saved = await runCli(['project', 'info', projectId, '--json']);
+    const persisted = JSON.parse(saved.stdout).project.metadata;
+    expect(composeSystemPrompt({ metadata: persisted }).split('INTAKE_READER_729')).toHaveLength(2);
   });
 
   it('imports through CLI project import commands when desktop import auth gate is active', async () => {

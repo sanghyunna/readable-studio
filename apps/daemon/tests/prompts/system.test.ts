@@ -36,6 +36,18 @@ describe('composeSystemPrompt — activeStageBlocks splice (spec §23.4)', () =>
 });
 
 describe('composeSystemPrompt', () => {
+  it.each(['stated', 'inferred', 'default'] as const)('includes persisted brief-only values in the real prompt (%s)', provenance => {
+    const value = 'INTAKE_READER_729';
+    const prompt = composeSystemPrompt({ metadata: { kind: 'prototype', brief: { updatedAt: 1, assumptions: [
+      { id: 'audience', value, provenance },
+      { id: 'constraints', value: ['INTAKE_CONSTRAINT_1', 'INTAKE_CONSTRAINT_2'], provenance },
+      { id: 'unknown-field', value: 'UNRECOGNIZED_VALUE_729', provenance },
+    ] } } });
+    expect(prompt.split(value)).toHaveLength(2);
+    expect(prompt).toContain('INTAKE_CONSTRAINT_1');
+    expect(prompt).toContain('INTAKE_CONSTRAINT_2');
+    expect(prompt).not.toContain('UNRECOGNIZED_VALUE_729');
+  });
   it('keeps scenario visual references while excluding their source subject and identity', () => {
     const prompt = composeSystemPrompt({
       metadata: {

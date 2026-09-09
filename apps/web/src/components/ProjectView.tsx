@@ -26,6 +26,7 @@ import { parseSubmittedAnswers } from './QuestionForm';
 import { applyBriefAssumptionToMetadata } from './home-hero/creation-brief';
 import {
   formatBriefSteering,
+  briefAssumptionsFromAnswers,
   mergeBriefAssumptions,
   persistProjectBrief,
   readProjectBrief,
@@ -392,13 +393,23 @@ interface DesignSystemReviewDetails {
   agentTask?: DesignSystemReviewAgentTask;
 }
 
-function workspacePanelMinWidthForSplit(splitWidth: number): number {
+// Track budget excludes shell padding and both desktop divider gutters, even
+// while stacked. Measuring the same budget in both modes avoids breakpoint loops.
+export function projectSplitTrackWidth(split: HTMLDivElement): number {
+  const style = window.getComputedStyle(split);
+  return split.clientWidth
+    - (parseFloat(style.paddingLeft) || 0)
+    - (parseFloat(style.paddingRight) || 0)
+    - 2 * (parseFloat(style.columnGap) || 0);
+}
+
+export function workspacePanelMinWidthForSplit(splitWidth: number): number {
   if (!Number.isFinite(splitWidth) || splitWidth <= 0) return MIN_WORKSPACE_PANEL_WIDTH;
   return splitWidth < MIN_NORMAL_SPLIT_WIDTH ? 0 : MIN_WORKSPACE_PANEL_WIDTH;
 }
 
-function maxChatPanelWidthForSplit(splitWidth: number): number {
-  if (!Number.isFinite(splitWidth) || splitWidth <= 0) return MAX_CHAT_PANEL_WIDTH;
+export function maxChatPanelWidthForSplit(splitWidth: number): number {
+  if (!Number.isFinite(splitWidth) || splitWidth < MIN_NORMAL_SPLIT_WIDTH) return MAX_CHAT_PANEL_WIDTH;
   const workspaceMinWidth = workspacePanelMinWidthForSplit(splitWidth);
   const viewportAwareMax = splitWidth - SPLIT_RESIZE_HANDLE_WIDTH - workspaceMinWidth;
   return Math.max(0, Math.min(MAX_CHAT_PANEL_WIDTH, Math.floor(viewportAwareMax)));
@@ -868,12 +879,16 @@ export function projectSplitStyle(
   workspaceFocused: boolean,
   chatPanelWidth: number,
   workspacePanelTrack: string,
+  stacked = false,
 ): ProjectSplitStyle | undefined {
   if (workspaceFocused) return undefined;
   return {
     '--project-chat-panel-width': `${chatPanelWidth}px`,
     '--project-workspace-panel-track': workspacePanelTrack,
-    gridTemplateColumns: `${chatPanelWidth}px ${SPLIT_RESIZE_HANDLE_WIDTH}px ${workspacePanelTrack}`,
+    gridTemplateColumns: stacked
+      ? 'minmax(0, 1fr)'
+      : `${chatPanelWidth}px ${SPLIT_RESIZE_HANDLE_WIDTH}px ${workspacePanelTrack}`,
+    ...(stacked ? { gridTemplateRows: 'minmax(0, 1fr) minmax(0, 1fr)' } : {}),
   };
 }
 
@@ -884,6 +899,7 @@ function applySplitChatPanelWidth(
 ): void {
   if (!split) return;
   split.style.setProperty('--project-chat-panel-width', `${width}px`);
+  if (split.classList.contains('split-stacked') || split.classList.contains('split-focus')) return;
   split.style.gridTemplateColumns =
     `${width}px ${SPLIT_RESIZE_HANDLE_WIDTH}px ${workspacePanelTrack}`;
 }
@@ -1274,20 +1290,31 @@ export function ProjectView({
   );
   const metadataBrief = useMemo(() => readProjectBrief(project.metadata), [project.metadata]);
   const briefProjectIdRef = useRef(project.id);
+  const questionMetadataRef = useRef(project.metadata);
+  const questionWritePendingRef = useRef(false);
+  useEffect(() => { questionMetadataRef.current = project.metadata; }, [project.metadata]);
   const [projectBrief, setProjectBrief] = useState<ProjectBrief | null>(() => metadataBrief);
   if (briefProjectIdRef.current !== project.id) {
     briefProjectIdRef.current = project.id;
+    questionMetadataRef.current = project.metadata;
+    questionWritePendingRef.current = false;
     setProjectBrief(metadataBrief);
   }
   useEffect(() => {
-    if (!receiptAssumptions) return;
+    if (!receiptAssumptions || questionWritePendingRef.current) return;
     // Persisted state is authoritative when reopening historical chat. A receipt
     // from an active run is newer and may intentionally revise those assumptions.
     if (metadataBrief && !currentConversationStreaming) return;
-    const next = mergeBriefAssumptions(projectBrief ?? metadataBrief, receiptAssumptions);
+    const current = projectBrief ?? metadataBrief;
+    const next = mergeBriefAssumptions(current, receiptAssumptions.filter(item =>
+      !current?.assumptions.some(prior => prior.id === item.id && prior.provenance === 'stated')));
     if (briefAssumptionsEqual(projectBrief ?? metadataBrief, next)) return;
     setProjectBrief(next);
-    void persistProjectBrief(project.id, project.metadata ?? { kind: 'prototype' }, next);
+    const metadata = next.assumptions.reduce(applyBriefAssumptionToMetadata, questionMetadataRef.current ?? { kind: 'prototype' });
+    questionMetadataRef.current = { ...metadata, brief: next };
+    void persistProjectBrief(project.id, metadata, next).then(persisted => {
+      if (!persisted) setError(t('questions.correctionFailed'));
+    });
   }, [
     currentConversationStreaming,
     metadataBrief,
@@ -1295,12 +1322,13 @@ export function ProjectView({
     project.metadata,
     projectBrief,
     receiptAssumptions,
+    t,
   ]);
   const handleBriefChange = useCallback(async (
     next: ProjectBrief,
     correctedAssumption: BriefAssumption,
   ): Promise<boolean> => {
-    const baseMetadata = project.metadata ?? { kind: 'prototype' };
+    const baseMetadata = questionMetadataRef.current ?? { kind: 'prototype' };
     const metadata = next.assumptions.reduce(
       applyBriefAssumptionToMetadata,
       baseMetadata,
@@ -1312,7 +1340,11 @@ export function ProjectView({
     if (['fidelity', 'platformTargets', 'companionSurfaces', 'speakerNotes', 'animations'].includes(correctedAssumption.id)
       && correctedMetadata === metadata) return false;
     const persisted = await persistProjectBrief(project.id, correctedMetadata, next);
-    if (persisted) setProjectBrief(next);
+    if (briefProjectIdRef.current !== project.id) return false;
+    if (persisted) {
+      questionMetadataRef.current = { ...correctedMetadata, brief: next };
+      setProjectBrief(next);
+    }
     return persisted;
   }, [project.id, project.metadata]);
   const persistedQuestionFormAnswers = useMemo(() => {
@@ -2353,7 +2385,7 @@ export function ProjectView({
       designSystemBody,
       designSystemTitle,
       memoryBody,
-      metadata: project.metadata,
+      metadata: questionMetadataRef.current,
       template,
       streamFormat: config.mode === 'api' ? 'plain' : undefined,
       sessionMode: sessionModeOverride,
@@ -5223,6 +5255,7 @@ export function ProjectView({
     [skills, designTemplates, project.skillId],
   );
   const chatResizeLabel = t('project.resizeChatPanel');
+  const splitStacked = workspacePanelMinWidth === 0;
   const workspacePanelTrack =
     workspacePanelMinWidth === 0
       ? 'minmax(0, 1fr)'
@@ -5289,7 +5322,7 @@ export function ProjectView({
     if (!split) return undefined;
 
     const updateAllowedWidth = () => {
-      const splitWidth = split.clientWidth;
+      const splitWidth = projectSplitTrackWidth(split);
       const nextWorkspaceMin = workspacePanelMinWidthForSplit(splitWidth);
       const nextMax = maxChatPanelWidthForSplit(splitWidth);
       chatPanelMaxWidthRef.current = nextMax;
@@ -5747,10 +5780,11 @@ export function ProjectView({
         ref={splitRef}
         className={[
           projectSplitClassName(workspaceFocused),
+          splitStacked && !workspaceFocused ? 'split-stacked' : '',
           leftInspectorActive && !workspaceFocused ? 'split-manual-edit' : '',
           resizingChatPanel && !workspaceFocused ? 'is-resizing-chat' : '',
         ].filter(Boolean).join(' ')}
-        style={projectSplitStyle(workspaceFocused, splitLeftPanelWidth, workspacePanelTrack)}
+        style={projectSplitStyle(workspaceFocused, splitLeftPanelWidth, workspacePanelTrack, splitStacked)}
       >
         <div className="split-chat-slot" hidden={workspaceFocused}>
           {manualEditInspectorActive ? (
@@ -5912,7 +5946,7 @@ export function ProjectView({
             </div>
           )}
         </div>
-        {!workspaceFocused ? (
+        {!workspaceFocused && !splitStacked ? (
           leftInspectorActive ? (
             <div className="split-edit-divider" aria-hidden />
           ) : (
@@ -6048,8 +6082,31 @@ export function ProjectView({
           questionFormSubmittedAnswers={displayedQuestionFormSubmittedAnswers}
           questionsGenerating={displayedQuestionsGenerating}
           focusQuestionsRequest={focusQuestionsRequest}
-          onSubmitQuestionForm={(text) => {
-            void handleSend(text, [], []);
+          onSubmitQuestionForm={async (text, answers) => {
+            if (!displayedQuestionForm || questionWritePendingRef.current
+              || currentConversationQueueDisabled || restoringQueuedRuns) return false;
+            questionWritePendingRef.current = true;
+            try {
+              const incoming = briefAssumptionsFromAnswers(displayedQuestionForm, answers);
+              const metadata = questionMetadataRef.current ?? { kind: 'prototype' };
+              // Reject malformed machine values before writing either representation.
+              if (incoming.some(item => ['fidelity', 'platformTargets', 'companionSurfaces', 'speakerNotes', 'animations'].includes(item.id)
+                && applyBriefAssumptionToMetadata(metadata, item) === metadata)) return false;
+              if (incoming.length > 0) {
+                const next = mergeBriefAssumptions(readProjectBrief(metadata) ?? projectBrief, incoming);
+                const projected = next.assumptions.reduce(applyBriefAssumptionToMetadata, metadata);
+                if (!await persistProjectBrief(project.id, projected, next)) return false;
+                if (briefProjectIdRef.current !== project.id) return false;
+                questionMetadataRef.current = { ...projected, brief: next };
+                setProjectBrief(next);
+              }
+              // Queue acceptance is durable and synchronous; the existing controller
+              // promotes immediately when idle, or after the current run terminates.
+              await handleSend(text, [], [], { queueOnly: true });
+              return queuedChatSendsRef.current.some(item => item.conversationId === activeConversationId && item.prompt === text);
+            } finally {
+              if (briefProjectIdRef.current === project.id) questionWritePendingRef.current = false;
+            }
           }}
         />
       </div>

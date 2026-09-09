@@ -92,10 +92,84 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-beforeEach(() => { vi.mocked(listActiveChatRuns).mockReset().mockResolvedValue([]); });
+beforeEach(() => {
+  vi.mocked(listActiveChatRuns).mockReset().mockResolvedValue([]);
+  vi.mocked(patchProject).mockReset().mockImplementation(async (_id, patch) => ({ id: 'queue-question-project', name: 'Q', skillId: null, designSystemId: null, createdAt: 1, updatedAt: 1, metadata: patch.metadata }));
+});
 afterEach(() => { cleanup(); window.localStorage.clear(); window.sessionStorage.clear(); vi.clearAllMocks(); });
 
 describe('queued question answer lifecycle', () => {
+  it.each(['saved', 'failed'] as const)('persists standard typed answers exactly once before accepting the send (%s)', async outcome => {
+    const intake: QuestionForm = { id: 'intake', title: 'Intake', questions: [
+      { id: 'audience', label: 'Reader', type: 'text', required: true },
+      { id: 'platformTargets', label: 'Targets', type: 'checkbox', options: [{ label: 'Desktop', value: 'web-desktop' }] },
+    ] };
+    vi.mocked(listConversations).mockResolvedValue([{ id: 'conv-q', projectId: 'queue-question-project', title: 'Q', createdAt: 1, updatedAt: 1 }]);
+    vi.mocked(listMessages).mockResolvedValue([{ id: 'assistant-q', role: 'assistant', content: `<question-form id="intake" title="Intake">${JSON.stringify({ questions: intake.questions })}</question-form>`, createdAt: 1 }]);
+    const saved = deferred<Awaited<ReturnType<typeof patchProject>>>();
+    vi.mocked(patchProject).mockReturnValueOnce(saved.promise);
+    vi.mocked(streamViaDaemon).mockImplementation(async input => { input.onRunCreated?.('run-next'); });
+    await act(async () => { mount({ kind: 'prototype' }); });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Reader' }), { target: { value: 'INTAKE_READER_729' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Desktop' }));
+    await act(async () => { const submit = screen.getByRole('button', { name: 'questions.continue' }); fireEvent.click(submit); fireEvent.click(submit); });
+    expect(patchProject).toHaveBeenCalledTimes(1);
+    expect(streamViaDaemon).not.toHaveBeenCalled();
+    expect(window.sessionStorage.getItem('readable-studio:question-form-draft:conv-q:assistant-q')).not.toBeNull();
+    const metadata = vi.mocked(patchProject).mock.calls[0]![1].metadata!;
+    expect(metadata.platformTargets).toEqual(['web-desktop']);
+    expect(metadata.brief?.assumptions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'audience', value: 'INTAKE_READER_729', provenance: 'stated' }),
+      expect.objectContaining({ id: 'platformTargets', value: ['web-desktop'], provenance: 'stated' }),
+    ]));
+    if (outcome === 'failed') {
+      await act(async () => { saved.resolve(null); await saved.promise; });
+      expect(streamViaDaemon).not.toHaveBeenCalled();
+      expect(screen.getByRole('alert')).toBeTruthy();
+      expect(screen.getByRole('textbox', { name: 'Reader' })).toHaveProperty('value', 'INTAKE_READER_729');
+      expect(window.sessionStorage.getItem('readable-studio:question-form-draft:conv-q:assistant-q')).not.toBeNull();
+      expect(screen.getByRole('button', { name: 'questions.continue' })).toHaveProperty('disabled', false);
+      return;
+    }
+    await act(async () => { saved.resolve({ id: 'queue-question-project', name: 'Q', skillId: null, designSystemId: null, createdAt: 1, updatedAt: 1, metadata }); await saved.promise; });
+    expect(streamViaDaemon).toHaveBeenCalledTimes(1);
+    expect(patchProject).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('questions-influence').dataset).toMatchObject({ count: '2', confirmed: '2' });
+    expect(window.sessionStorage.getItem('readable-studio:question-form-draft:conv-q:assistant-q')).toBeNull();
+  });
+  it('projects receipt metadata and never replaces a stated answer with a streaming inference', async () => {
+    const receipt = `<brief-receipt>${JSON.stringify({ assumptions: [
+      { id: 'audience', label: 'Audience', value: 'STALE_READER_729', provenance: 'inferred' },
+      { id: 'fidelity', label: 'Fidelity', value: 'wireframe', provenance: 'inferred' },
+    ] })}</brief-receipt>`;
+    vi.mocked(listConversations).mockResolvedValue([{ id: 'conv-q', projectId: 'queue-question-project', title: 'Q', createdAt: 1, updatedAt: 1 }]);
+    vi.mocked(listMessages).mockResolvedValue([{ id: 'assistant-q', role: 'assistant', content: '', createdAt: 1, runId: 'run-q', runStatus: 'running' }]);
+    vi.mocked(fetchChatRunStatus).mockResolvedValue({ id: 'run-q', projectId: 'queue-question-project', conversationId: 'conv-q', assistantMessageId: 'assistant-q', agentId: 'claude', status: 'running', createdAt: 1, updatedAt: 1, exitCode: null, signal: null });
+    const completion = deferred<void>();
+    let attached!: Parameters<typeof reattachDaemonRun>[0];
+    vi.mocked(reattachDaemonRun).mockImplementation(input => {
+      attached = input;
+      input.handlers.onDelta(receipt);
+      // A non-text event flushes the real stream buffer synchronously; never
+      // depend on requestAnimationFrame firing before the assertion.
+      input.handlers.onAgentEvent?.({ kind: 'status', label: 'running' });
+      return completion.promise;
+    });
+    await act(async () => { mount({ kind: 'prototype', brief: { updatedAt: 1, assumptions: [
+      { id: 'audience', label: 'Audience', value: 'INTAKE_READER_729', provenance: 'stated' },
+    ] } }); });
+    expect(patchProject).toHaveBeenCalledTimes(1);
+    const metadata = vi.mocked(patchProject).mock.calls[0]![1].metadata!;
+    expect(metadata.fidelity).toBe('wireframe');
+    expect(metadata.brief?.assumptions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'audience', value: 'INTAKE_READER_729', provenance: 'stated' }),
+      expect.objectContaining({ id: 'fidelity', value: 'wireframe', provenance: 'inferred' }),
+    ]));
+    await act(async () => { attached.handlers.onDone(receipt); completion.resolve(); await completion.promise; });
+    expect(patchProject).toHaveBeenCalledTimes(1);
+    expect(streamViaDaemon).not.toHaveBeenCalled();
+  });
+
   it('persists rapid repeated Questions corrections atomically without losing earlier prompt metadata', async () => {
     vi.mocked(listConversations).mockResolvedValue([{ id: 'conv-q', projectId: 'queue-question-project', title: 'Q', createdAt: 1, updatedAt: 1 }]);
     vi.mocked(listMessages).mockResolvedValue([]);
@@ -306,6 +380,12 @@ describe('queued question answer lifecycle', () => {
     expect(persisted[0].meta).not.toHaveProperty('queueOnly');
     expect(persisted[0].meta.sessionMode).toBe('design');
     expect(streamViaDaemon).not.toHaveBeenCalled();
+    if (source === 'panel') {
+      expect(patchProject).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(patchProject).mock.calls[0]![1].metadata?.brief?.assumptions).toEqual([
+        expect.objectContaining({ id: 'platform', value: answers.platform, provenance: 'stated' }),
+      ]);
+    }
 
     first!.unmount();
     await act(async () => { mount(); });
@@ -338,6 +418,7 @@ describe('queued question answer lifecycle', () => {
     expect(run.sessionMode).toBe(persisted[0].meta.sessionMode);
     expect(saveMessage).toHaveBeenCalledWith('queue-question-project', 'conv-q', expect.objectContaining({ role: 'user', content: editedPrompt }), undefined);
     expect(window.localStorage.getItem(storageKey)).toBeNull();
+    expect(patchProject).toHaveBeenCalledTimes(source === 'panel' ? 1 : 0);
     expect(screen.getAllByRole('button', { pressed: true })).toHaveLength(2);
     expect(screen.getByRole('textbox', { name: 'Notes' })).toHaveProperty('value', editedAnswers.notes);
   });

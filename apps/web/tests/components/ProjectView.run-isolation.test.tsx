@@ -5,6 +5,10 @@ import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProjectView, mergeSavedPreviewComment } from '../../src/components/ProjectView';
+import { QuestionsPanel, type SubmitQuestionAnswers } from '../../src/components/QuestionsPanel';
+import { parseSubmittedAnswers } from '../../src/components/QuestionForm';
+import type { QuestionForm } from '../../src/artifacts/question-form';
+import type { reattachDaemonRun as ReattachDaemonRun } from '../../src/providers/daemon';
 import { requireModelSelection } from '../../src/components/agentModelSelection';
 import type {
   AgentInfo,
@@ -124,6 +128,9 @@ vi.mock('../../src/components/FileWorkspace', () => ({
     onSendBoardCommentAttachments,
     onCommentModeChange,
     onFocusModeChange,
+    questionForm,
+    questionFormInteractive,
+    questionFormSubmittedAnswers,
     questionFormSubmitDisabled,
     questionFormSubmissionQueued,
     onSubmitQuestionForm,
@@ -136,9 +143,12 @@ vi.mock('../../src/components/FileWorkspace', () => ({
     onSendBoardCommentAttachments: (attachments: unknown[]) => Promise<boolean | void> | boolean | void;
     onCommentModeChange?: (active: boolean) => void;
     onFocusModeChange?: (focused: boolean) => void;
+    questionForm?: QuestionForm | null;
+    questionFormInteractive?: boolean;
+    questionFormSubmittedAnswers?: Record<string, string | string[]>;
     questionFormSubmitDisabled?: boolean;
     questionFormSubmissionQueued?: boolean;
-    onSubmitQuestionForm?: (text: string) => void;
+    onSubmitQuestionForm?: SubmitQuestionAnswers;
   }) => {
     const failedAssistant =
       [...(messages ?? [])]
@@ -172,14 +182,17 @@ vi.mock('../../src/components/FileWorkspace', () => ({
       <output data-testid="workspace-streaming-state">{streaming ? 'streaming' : 'idle'}</output>
       <output data-testid="question-submit-disabled">{questionFormSubmitDisabled ? 'disabled' : 'enabled'}</output>
       <output data-testid="question-submission-queued">{questionFormSubmissionQueued ? 'queued' : 'direct'}</output>
-      <button
-        type="button"
-        data-testid="submit-question-form"
-        disabled={questionFormSubmitDisabled}
-        onClick={() => onSubmitQuestionForm?.('[form answers — scope]\n- Target platform: Desktop web [value: desktop-web]\n- Revision fidelity: High fidelity [value: high]')}
-      >
-        submit questions
-      </button>
+      {questionForm && onSubmitQuestionForm ? (
+        <QuestionsPanel
+          form={questionForm}
+          interactive={questionFormInteractive ?? false}
+          submitDisabled={questionFormSubmitDisabled}
+          submissionQueued={questionFormSubmissionQueued}
+          submittedAnswers={questionFormSubmittedAnswers}
+          generating={false}
+          onSubmit={onSubmitQuestionForm}
+        />
+      ) : null}
       <button
         type="button"
         data-testid="workspace-open-comments"
@@ -662,24 +675,63 @@ describe('ProjectView conversation run isolation', () => {
   });
 
   it('accepts question-form answers into the queue while a run is in flight', async () => {
-    conversationAMessages = [{
-      ...runningAssistant,
-      content: [
-        '<question-form id="scope" title="Confirm the scope">',
-        '{"questions":[{"id":"platform","label":"Target platform","type":"radio","required":true,"options":[{"label":"Desktop web","value":"desktop-web"}]},{"id":"fidelity","label":"Revision fidelity","type":"radio","required":true,"options":[{"label":"High fidelity","value":"high"}]}]}',
-        '</question-form>',
-      ].join(''),
-    }];
-    renderProjectView();
+    const form: QuestionForm = {
+      id: 'scope', title: 'Confirm the scope', questions: [
+        { id: 'platform', label: 'Target platform', type: 'radio', required: true,
+          options: [{ label: 'Desktop web', value: 'desktop-web' }] },
+        { id: 'fidelity', label: 'Revision fidelity', type: 'radio', required: true,
+          options: [{ label: 'High fidelity', value: 'high-fidelity' }] },
+      ],
+    };
+    const content = `<question-form id="${form.id}" title="${form.title}">${JSON.stringify({ questions: form.questions })}</question-form>`;
+    conversationAMessages = [{ ...runningAssistant, content }];
+    const completion = deferred<void>();
+    reattachDaemonRun.mockImplementation((input: Parameters<typeof ReattachDaemonRun>[0]) => {
+      // Reattachment clears the saved content before replay. Deliver the form
+      // again and flush it via an event, without waiting for an animation frame.
+      input.handlers.onDelta(content);
+      input.handlers.onAgentEvent?.({ kind: 'status', label: 'running' });
+      return completion.promise;
+    });
+    const metadataWrite = deferred<Project | null>();
+    patchProject.mockReturnValueOnce(metadataWrite.promise);
+    await act(async () => { renderProjectView(); });
 
-    await waitFor(() => expect(screen.getByTestId('streaming-state').textContent).toBe('streaming'));
+    expect(reattachDaemonRun).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('streaming-state').textContent).toBe('streaming');
     expect(screen.getByTestId('question-submit-disabled').textContent).toBe('enabled');
     expect(screen.getByTestId('question-submission-queued').textContent).toBe('queued');
+    fireEvent.click(screen.getByRole('radio', { name: 'Desktop web' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'High fidelity' }));
+    expect(screen.getByRole('button', { name: 'questions.continue' })).toHaveProperty('disabled', false);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'questions.continue' })); });
 
-    fireEvent.click(screen.getByTestId('submit-question-form'));
+    expect(patchProject).toHaveBeenCalledTimes(1);
+    const metadata = patchProject.mock.calls[0]![1].metadata;
+    expect(metadata.fidelity).toBe('high-fidelity');
+    expect(metadata.brief.assumptions).toEqual([
+      expect.objectContaining({ id: 'platform', value: 'desktop-web', provenance: 'stated' }),
+      expect.objectContaining({ id: 'fidelity', value: 'high-fidelity', provenance: 'stated' }),
+    ]);
+    const storageKey = 'readable:chat-queued-sends:project-1:v1';
+    expect(window.localStorage.getItem(storageKey)).toBeNull();
+    expect(screen.queryByTestId('send-queued-0')).toBeNull();
+    expect(streamViaDaemon).not.toHaveBeenCalled();
 
-    await waitFor(() => expect(screen.getByTestId('send-queued-0')).toBeTruthy());
-    expect(screen.getByTestId('send-queued-0').textContent).toContain('[form answers — scope]');
+    await act(async () => {
+      metadataWrite.resolve({ ...project, metadata });
+      await metadataWrite.promise;
+    });
+
+    const queued = JSON.parse(window.localStorage.getItem(storageKey)!);
+    expect(queued).toHaveLength(1);
+    expect(queued[0].conversationId).toBe('conv-a');
+    expect(queued[0].meta).toEqual({ sessionMode: 'design' });
+    expect(parseSubmittedAnswers(form, queued[0].prompt)).toEqual({ platform: 'desktop-web', fidelity: 'high-fidelity' });
+    expect(screen.getByTestId('send-queued-0').textContent).toBe(queued[0].prompt);
+    expect(screen.getByRole('button', { name: 'questions.continue' })).toHaveProperty('disabled', true);
+    expect(screen.getByTestId('streaming-state').textContent).toBe('streaming');
+    expect(patchProject).toHaveBeenCalledTimes(1);
     expect(streamViaDaemon).not.toHaveBeenCalled();
   });
 
@@ -793,8 +845,7 @@ describe('ProjectView conversation run isolation', () => {
     listMessages.mockClear();
     reattachDaemonRun.mockClear();
 
-    fireEvent.click(screen.getByTestId('conversation-select-conv-a'));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await act(async () => { fireEvent.click(screen.getByTestId('conversation-select-conv-a')); });
 
     expect(screen.getByTestId('streaming-state').textContent).toBe('streaming');
     expect(listMessages).not.toHaveBeenCalled();
@@ -1033,7 +1084,6 @@ describe('ProjectView conversation run isolation', () => {
     await act(async () => {
       daemonRuns[0]?.onRunStatus?.('canceled');
       daemonRuns[0]?.handlers.onDone('interrupted done');
-      await new Promise((resolve) => window.setTimeout(resolve, 0));
     });
 
     await waitFor(() => expect(screen.getByTestId('streaming-state').textContent).toBe('streaming'));
@@ -1344,9 +1394,7 @@ describe('ProjectView conversation run isolation', () => {
     expect(screen.getByTestId('send-queued-0').textContent).toBe('hello from c');
     expect(screen.queryByTestId('send-queued-1')).toBeNull();
 
-    await act(async () => {
-      await new Promise((resolve) => window.setTimeout(resolve, 0));
-    });
+    await act(async () => { daemonRuns[0]?.onRunStatus?.('running'); });
     expect(streamViaDaemon).toHaveBeenCalledTimes(1);
 
     await act(async () => {
