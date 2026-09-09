@@ -445,6 +445,10 @@ function applyTelemetryDefaults(prefs: AppConfigPrefs): AppConfigPrefs {
 }
 
 export async function readAppConfig(dataDir: string): Promise<AppConfigPrefs> {
+  return withConfigLock(dataDir, () => doRead(dataDir));
+}
+
+async function doRead(dataDir: string): Promise<AppConfigPrefs> {
   const base = await readAppConfigFileOnly(dataDir);
   // Channel-root installation file is the new authoritative source for the
   // identity bits that must survive a namespace-scoped data-dir wipe. It
@@ -495,29 +499,37 @@ async function readAppConfigFileOnly(dataDir: string): Promise<AppConfigPrefs> {
   }
 }
 
-// Serialize concurrent writes to the same dataDir so the read-modify-write
-// cycle doesn't lose updates when two PUT requests overlap.
-const writeLocks = new Map<string, Promise<unknown>>();
+// Readers must release their file handles before rename replaces the config
+// on Windows. Queue reads as well as read-modify-write cycles, including callers
+// outside the HTTP routes. A rejected operation still rejects its own caller;
+// it must not prevent the next queued operation from running.
+const configLocks = new Map<string, Promise<unknown>>();
+
+async function withConfigLock<T>(dataDir: string, operation: () => Promise<T>): Promise<T> {
+  const key = path.resolve(dataDir);
+  const prev = configLocks.get(key) ?? Promise.resolve();
+  const task = prev.catch(() => {}).then(operation);
+  configLocks.set(key, task);
+  try {
+    return await task;
+  } finally {
+    if (configLocks.get(key) === task) configLocks.delete(key);
+  }
+}
 
 export async function writeAppConfig(
   dataDir: string,
   partial: Record<string, unknown>,
 ): Promise<AppConfigPrefs> {
-  const prev = writeLocks.get(dataDir) ?? Promise.resolve();
-  const task = prev.catch(() => {}).then(() => doWrite(dataDir, partial));
-  writeLocks.set(dataDir, task);
-  try {
-    return await task;
-  } finally {
-    if (writeLocks.get(dataDir) === task) writeLocks.delete(dataDir);
-  }
+  return withConfigLock(dataDir, () => doWrite(dataDir, partial));
 }
 
 async function doWrite(
   dataDir: string,
   partial: Record<string, unknown>,
 ): Promise<AppConfigPrefs> {
-  const existing = await readAppConfig(dataDir);
+  // Already inside the config lock; do not enqueue a nested read.
+  const existing = await doRead(dataDir);
   const next: Record<string, unknown> = { ...existing };
   for (const key of Object.keys(partial)) {
     if (!ALLOWED_KEYS.has(key as keyof AppConfigPrefs)) continue;

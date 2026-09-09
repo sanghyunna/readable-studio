@@ -290,8 +290,12 @@ export function isManagedProjectCwd(
 ): boolean {
   if (!cwd || typeof cwd !== 'string') return false;
   if (typeof projectsDir !== 'string' || projectsDir.length === 0) return false;
-  if (cwd === projectsDir) return false; // PROJECTS_DIR root, not a project
-  return cwd.startsWith(projectsDir + path.sep);
+  // Use native path semantics, including Windows separators/case and equivalent
+  // extended-length paths. A strict descendant cannot be the root, escape via
+  // `..`, or resolve to an absolute path on another drive or UNC share.
+  const relative = path.relative(path.toNamespacedPath(projectsDir), path.toNamespacedPath(cwd));
+  return relative !== '' && relative !== '..' &&
+    !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative);
 }
 
 /**

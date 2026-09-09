@@ -594,8 +594,46 @@ describe('isManagedProjectCwd', () => {
     ).toBe(true);
   });
 
+  it('accepts native paths produced by project resolution', () => {
+    const nativeProjectsDir = path.resolve(projectsDir);
+    expect(isManagedProjectCwd(path.join(nativeProjectsDir, 'abc'), nativeProjectsDir)).toBe(true);
+  });
+
+  it('accepts trailing separators on the parent and child', () => {
+    expect(isManagedProjectCwd(`${projectsDir}/abc/`, `${projectsDir}/`)).toBe(true);
+    const nativeProjectsDir = path.resolve(projectsDir);
+    expect(
+      isManagedProjectCwd(path.join(nativeProjectsDir, 'abc') + path.sep, nativeProjectsDir + path.sep),
+    ).toBe(true);
+  });
+
+  it('uses native path case semantics', () => {
+    const nativeProjectsDir = path.resolve(projectsDir);
+    expect(
+      isManagedProjectCwd(path.join(nativeProjectsDir.toUpperCase(), 'abc'), nativeProjectsDir),
+    ).toBe(process.platform === 'win32');
+  });
+
+  it('accepts dot segments that resolve to a child', () => {
+    expect(isManagedProjectCwd(`${projectsDir}/abc/../def/.`, projectsDir)).toBe(true);
+  });
+
+  it('accepts a child name starting with two dots', () => {
+    expect(isManagedProjectCwd(`${projectsDir}/..abc`, projectsDir)).toBe(true);
+  });
+
   it('rejects the projects-dir root itself (no per-project id)', () => {
     expect(isManagedProjectCwd(projectsDir, projectsDir)).toBe(false);
+    expect(isManagedProjectCwd(`${projectsDir}/`, projectsDir)).toBe(false);
+    expect(isManagedProjectCwd(`${projectsDir}/abc/..`, projectsDir)).toBe(false);
+  });
+
+  it('rejects traversal out of the managed tree', () => {
+    const nativeProjectsDir = path.resolve(projectsDir);
+    expect(isManagedProjectCwd(`${nativeProjectsDir}${path.sep}..`, nativeProjectsDir)).toBe(false);
+    expect(
+      isManagedProjectCwd(`${nativeProjectsDir}${path.sep}abc${path.sep}..${path.sep}..${path.sep}repo`, nativeProjectsDir),
+    ).toBe(false);
   });
 
   it('rejects a git-linked baseDir outside of projects-dir', () => {
@@ -613,12 +651,104 @@ describe('isManagedProjectCwd', () => {
   });
 
   it('rejects path-prefix collisions (different sibling dir)', () => {
-    // `/abs/.readable-studio/projects-other` starts with `/abs/.readable-studio/projects` as a string,
-    // but is NOT a child of `/abs/.readable-studio/projects/`. Strict-separator check
-    // makes sure we don't accidentally write to an unrelated tree.
     expect(
       isManagedProjectCwd('/abs/.readable-studio/projects-other/x', projectsDir),
     ).toBe(false);
+    const nativeProjectsDir = path.resolve(projectsDir);
+    expect(
+      isManagedProjectCwd(path.join(`${nativeProjectsDir}-evil`, 'abc'), nativeProjectsDir),
+    ).toBe(false);
+  });
+
+  describe.runIf(process.platform === 'win32')('Windows path aliases', () => {
+    it.each([
+      {
+        name: 'forward-slash child and backslash parent',
+        parent: String.raw`C:\data\parent-dir`,
+        cwd: 'C:/data/parent-dir/abc',
+        managed: true,
+      },
+      {
+        name: 'backslash child and forward-slash parent',
+        parent: 'C:/data/parent-dir',
+        cwd: String.raw`C:\data\parent-dir\abc`,
+        managed: true,
+      },
+      {
+        name: 'drive-letter and directory case differences',
+        parent: 'C:/Data/Parent-Dir',
+        cwd: String.raw`c:\DATA\PARENT-DIR\abc`,
+        managed: true,
+      },
+      {
+        name: 'root alias with case and trailing separator differences',
+        parent: 'C:/Data/Parent-Dir/',
+        cwd: String.raw`c:\DATA\PARENT-DIR`,
+        managed: false,
+      },
+      {
+        name: 'sibling prefix with case and separator differences',
+        parent: 'C:/Data/Parent-Dir/',
+        cwd: String.raw`c:\DATA\PARENT-DIR-EVIL\abc`,
+        managed: false,
+      },
+      {
+        name: 'different drive',
+        parent: 'C:/data/parent-dir',
+        cwd: 'D:/data/parent-dir/abc',
+        managed: false,
+      },
+      {
+        name: 'UNC child with case and separator differences',
+        parent: String.raw`\\server\share\parent-dir`,
+        cwd: '//SERVER/SHARE/PARENT-DIR/abc/',
+        managed: true,
+      },
+      {
+        name: 'different UNC share',
+        parent: String.raw`\\server\share\parent-dir`,
+        cwd: String.raw`\\server\share-evil\parent-dir\abc`,
+        managed: false,
+      },
+      {
+        name: 'different UNC server',
+        parent: String.raw`\\server\share\parent-dir`,
+        cwd: String.raw`\\server-evil\share\parent-dir\abc`,
+        managed: false,
+      },
+      {
+        name: 'extended-length child with ordinary parent',
+        parent: 'C:/data/parent-dir',
+        cwd: String.raw`\\?\C:\data\parent-dir\abc`,
+        managed: true,
+      },
+      {
+        name: 'ordinary child with extended-length parent',
+        parent: String.raw`\\?\C:\data\parent-dir`,
+        cwd: 'C:/data/parent-dir/abc',
+        managed: true,
+      },
+      {
+        name: 'extended-length root alias',
+        parent: 'C:/data/parent-dir',
+        cwd: String.raw`\\?\C:\data\parent-dir`,
+        managed: false,
+      },
+      {
+        name: 'extended-length sibling prefix',
+        parent: 'C:/data/parent-dir',
+        cwd: String.raw`\\?\C:\data\parent-dir-evil\abc`,
+        managed: false,
+      },
+      {
+        name: 'extended-length UNC child',
+        parent: String.raw`\\server\share\parent-dir`,
+        cwd: String.raw`\\?\UNC\SERVER\SHARE\parent-dir\abc`,
+        managed: true,
+      },
+    ])('$name', ({ parent, cwd, managed }) => {
+      expect(isManagedProjectCwd(cwd, parent)).toBe(managed);
+    });
   });
 });
 
