@@ -11,7 +11,8 @@ import './QuestionsPanel.css';
 
 const viewedFormOccurrences = new Set<string>();
 const QUESTION_FORM_DRAFT_STORAGE_PREFIX = 'readable-studio:question-form-draft:';
-type QuestionFormAnswers = Record<string, string | string[]>;
+export type QuestionFormAnswers = Record<string, string | string[]>;
+export type SubmitQuestionAnswers = (text: string, answers: QuestionFormAnswers) => boolean | void | Promise<boolean | void>;
 export type QuestionRunHydrationStatus = 'pending' | 'failed' | 'ready';
 
 interface Props {
@@ -27,7 +28,7 @@ interface Props {
   submissionQueued?: boolean;
   submittedAnswers?: QuestionFormAnswers;
   generating: boolean;
-  onSubmit: (text: string) => void;
+  onSubmit: SubmitQuestionAnswers;
 }
 
 export function QuestionsPanel({
@@ -110,25 +111,41 @@ export function QuestionsPanel({
     });
   }, [analytics.track, form, projectId]);
 
-  const submitAndClearDraft = useCallback((text: string, answers: QuestionFormAnswers) => {
-    if (form && projectId) {
-      const answeredCount = form.questions.filter(q => {
-        const value = answers[q.id];
-        return Array.isArray(value) ? value.length > 0 : typeof value === 'string' && value.trim().length > 0;
-      }).length;
-      trackQuestionsFormClick(analytics.track, {
-        page_name: 'chat_panel', area: 'questions_form', element: 'submit',
-        answered_count: answeredCount, skipped_count: form.questions.length - answeredCount,
-        form_id: questionsFormTrackingId(form.id), project_id: projectId,
-      });
+  const submitAndClearDraft = useCallback(async (text: string, answers: QuestionFormAnswers) => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    setCorrectionError(false);
+    try {
+      const submission = onSubmit(text, answers);
+      const accepted = submission instanceof Promise ? await submission : submission;
+      if (accepted === false) {
+        setCorrectionError(true);
+        return;
+      }
+      if (form && projectId) {
+        const answeredCount = form.questions.filter(q => {
+          const value = answers[q.id];
+          return Array.isArray(value) ? value.length > 0 : typeof value === 'string' && value.trim().length > 0;
+        }).length;
+        trackQuestionsFormClick(analytics.track, {
+          page_name: 'chat_panel', area: 'questions_form', element: 'submit',
+          answered_count: answeredCount, skipped_count: form.questions.length - answeredCount,
+          form_id: questionsFormTrackingId(form.id), project_id: projectId,
+        });
+      }
+      clearQuestionFormDraft(formKey);
+      setDraftAnswers(undefined);
+    } catch {
+      setCorrectionError(true);
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
     }
-    clearQuestionFormDraft(formKey);
-    setDraftAnswers(undefined);
-    onSubmit(text);
   }, [analytics.track, form, formKey, onSubmit, projectId]);
 
   const canSubmit = Boolean(form && interactive && !answered && !generating && !submitDisabled
-    && runHydrationStatus === 'ready');
+    && runHydrationStatus === 'ready' && !saving);
   const canContinue = canSubmit && ready;
 
   return (
@@ -145,6 +162,30 @@ export function QuestionsPanel({
             onSubmit={(_text, answers) => applyCorrection(answers)} />
           {correctionError ? <p role="alert">{t('questions.correctionFailed')}</p> : null}
         </div> : <>
+        {form ? (
+          <div className="questions-panel__editor questions-panel__editor--primary">
+          <div className="questions-panel__formhead">
+            <h3>{form.title}</h3>{answered ? <span className="question-form-pill">{t('qf.answered')}</span> : null}
+            {form.description ? <p>{form.description}</p> : null}
+          </div>
+          <QuestionFormView
+            ref={formRef}
+            form={form}
+            interactive={interactive}
+            submitDisabled={!canSubmit}
+            submittedAnswers={submittedAnswers}
+            submittedQueued={submissionQueued}
+            draftAnswers={draftAnswers}
+            hideInternalSubmit
+            hideInternalHead
+            onReadyChange={setReady}
+            onDraftChange={updateDraftAnswers}
+            onAnswerChange={handleAnswerChange}
+            onSubmit={submitAndClearDraft}
+          />
+          {correctionError ? <p role="alert">{t('questions.correctionFailed')}</p> : null}
+          </div>
+        ) : !brief ? <div className="questions-panel-skeleton">{t(generating ? 'questions.generating' : 'questions.empty')}</div> : null}
         {brief ? <div className="questions-panel__groups" role="group" aria-label={t('questions.assumptions')}>
           <p className="questions-panel__influence" data-testid="questions-influence" data-count={assumptions.length} data-confirmed={assumptions.filter(item => item.provenance === 'stated').length}>
             {t('questions.influence', { count: assumptions.length, stated: assumptions.filter(item => item.provenance === 'stated').length })}
@@ -164,27 +205,6 @@ export function QuestionsPanel({
             </section> : null;
           })}
         </div> : null}
-        {form ? (
-          <div className="questions-panel__editor">
-          <h3>{form.title}</h3>{answered ? <span className="question-form-pill">{t('qf.answered')}</span> : null}
-          {form.description ? <p>{form.description}</p> : null}
-          <QuestionFormView
-            ref={formRef}
-            form={form}
-            interactive={interactive}
-            submitDisabled={!canSubmit}
-            submittedAnswers={submittedAnswers}
-            submittedQueued={submissionQueued}
-            draftAnswers={draftAnswers}
-            hideInternalSubmit
-            hideInternalHead
-            onReadyChange={setReady}
-            onDraftChange={updateDraftAnswers}
-            onAnswerChange={handleAnswerChange}
-            onSubmit={submitAndClearDraft}
-          />
-          </div>
-        ) : !brief ? <div className="questions-panel-skeleton">{t(generating ? 'questions.generating' : 'questions.empty')}</div> : null}
         </>}
       </div>
       <div className="questions-panel-foot">

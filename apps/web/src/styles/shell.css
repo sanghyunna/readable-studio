@@ -115,12 +115,14 @@
   overflow: hidden;
 }
 .workspace-shell__body {
-  /* Share the full shell grid area with the overlay chrome. Both grid axes are
-     explicit so auto-placement cannot create a second implicit column beside
-     the chrome. The project rail surface begins at the physical window edge;
-     each content column clears the drag region internally. */
+  /* The content row only: the rail and every surface begin BELOW the
+     frameless chrome row, at one shared content origin. The body previously
+     spanned the chrome row (`grid-row: 1 / -1`) so the rail's box began at
+     y=0 and faked its clearance with padding inside the head row - which is
+     also what moved the toggle diagonally, because the expanded panel's 10px
+     float shifted that padded row while the flush collapsed strip did not. */
   grid-column: 1;
-  grid-row: 1 / -1;
+  grid-row: 2;
   position: relative;
   display: grid;
   grid-template-columns: var(--hub-rail-expanded, var(--project-rail-expanded)) minmax(0, 1fr);
@@ -146,9 +148,8 @@
   min-height: 0;
   height: 100%;
 }
-.workspace-shell__body > [data-surface]:not([data-surface='hub']) {
-  padding-block-start: var(--app-window-chrome-height, 36px);
-}
+/* The body starts below the chrome row, so no surface fakes the clearance
+   with internal padding anymore; the band above is the chrome's own row. */
 @media (prefers-reduced-motion: reduce) {
   .workspace-shell__body {
     transition: none;
@@ -1531,7 +1532,8 @@ a.avatar-item:visited {
 .split.split-focus .html-viewer:has(.deck-nav) .preview-frame-clip {
   background: var(--text-strong);
 }
-.split.split-focus {
+.split.split-focus,
+.app .split.split-focus {
   grid-template-columns: minmax(0, 1fr);
 }
 .split-chat-slot {

@@ -24,11 +24,41 @@ const layout = new URL('../../app/layout.tsx', import.meta.url);
 const css = [...readFileSync(layout, 'utf8').matchAll(/import ['"]([^'"]+\.css)['"]/g)]
   .map((match) => expand(new URL(match[1]!, layout))).join('\n');
 
+// Project declarations, not selectors: keep every cascade competitor for the
+// measured properties, including shorthands/resets and transitive var() values.
+// Unrelated paint, icon content and font sources dominate cold jsdom parsing.
+const measuredCss = (() => {
+  const root = postcss.parse(css);
+  const measured = /^(?:(?:min-|max-)?(?:width|height|inline-size|block-size)|flex(?:-.+)?|align-items|place-items|display|padding(?:-.+)?|(?:row-|column-)?gap|font(?:-.+)?|line-height|overflow(?:-.+)?|text-overflow|white-space(?:-.+)?|transform(?:-.+)?|transition(?:-.+)?|position|box-sizing|all|direction|writing-mode)$/;
+  const tokens = new Set<string>();
+  const definitions = new Map<string, string[]>();
+  const reference = (value: string) => {
+    for (const match of value.matchAll(/var\(\s*(--[\w-]+)/g)) tokens.add(match[1]!);
+  };
+  root.walkDecls((declaration) => {
+    if (declaration.prop.startsWith('--')) {
+      const values = definitions.get(declaration.prop) ?? [];
+      values.push(declaration.value);
+      definitions.set(declaration.prop, values);
+    } else if (measured.test(declaration.prop)) reference(declaration.value);
+  });
+  // Set iteration visits new dependencies and terminates even for cycles.
+  for (const token of tokens) {
+    for (const value of definitions.get(token) ?? []) reference(value);
+  }
+  root.walkDecls((declaration) => {
+    if (!measured.test(declaration.prop) && !tokens.has(declaration.prop)) declaration.remove();
+  });
+  root.walkComments((comment) => { comment.remove(); });
+  root.walkRules((rule) => { if (!rule.nodes.length) rule.remove(); });
+  return root;
+})();
+
 type Motion = 'reduce' | 'no-preference';
 type Engagement = 'rest' | 'hover' | 'focus';
 
-function fixture(motion: Motion, engagement: Engagement = 'rest', width = 320) {
-  const root = postcss.parse(css);
+function fixture(motion: Motion) {
+  const root = measuredCss.clone();
   // jsdom has no media-query or hover engine. Select the requested motion
   // branch and substitute only hover state; its CSSOM resolves the cascade.
   // Other media/container branches are inactive for this base-light fixture.
@@ -41,7 +71,7 @@ function fixture(motion: Motion, engagement: Engagement = 'rest', width = 320) {
     rule.selector = rule.selector.replace(/:hover\b/g, '[data-test-hover]');
   });
   const dom = new JSDOM(`<!doctype html><html><body>
-    <div class="app"><div class="split"><div class="split-chat-slot" style="width: ${width}px"><div class="pane">
+    <div class="app"><div class="split"><div class="split-chat-slot" style="width: 320px"><div class="pane">
       <div class="chat-project-header">
         <button class="chat-project-back"></button>
         <span class="chat-project-header-title"><div class="chat-project-title-line">
@@ -54,7 +84,7 @@ function fixture(motion: Motion, engagement: Engagement = 'rest', width = 320) {
     ${['home-hero', 'composer'].map((surface) => `
       <div class="inline-switcher__popover inline-switcher__popover--layer inline-switcher__popover--${surface} inline-switcher__popover--model" data-surface="${surface}">
         <div class="inline-switcher__model-list">
-          ${['long', 'fitting'].map((label) => `<button class="inline-switcher__model-option" data-label="${label}" ${engagement === 'hover' ? 'data-test-hover' : ''}>
+          ${['long', 'fitting'].map((label) => `<button class="inline-switcher__model-option" data-label="${label}">
             <span class="inline-switcher__model-option-label" ${label === 'long' ? 'data-overflowing="true"' : ''} style="--inline-switcher-option-reveal: 105px">
               <span class="inline-switcher__model-option-label-text">${label}</span>
             </span>
@@ -87,45 +117,113 @@ function fixture(motion: Motion, engagement: Engagement = 'rest', width = 320) {
       throw new Error(`Unresolved token: ${token}`);
     },
   );
-  return { computed, element, resolveVars, close: () => dom.window.close() };
+  const engage = (engagement: Engagement) => {
+    for (const option of dom.window.document.querySelectorAll<HTMLElement>('.inline-switcher__model-option')) {
+      option.blur();
+      option.toggleAttribute('data-test-hover', engagement === 'hover');
+    }
+  };
+  return { computed, element, resolveVars, engage, close: () => dom.window.close() };
 }
+
+type Fixture = ReturnType<typeof fixture>;
+
+function modelSnapshot({ computed, element, resolveVars, engage }: Fixture, engagement: Engagement) {
+  engage(engagement);
+  return Object.freeze(['home-hero', 'composer'].map((surface) => Object.freeze({
+    labels: Object.freeze(['long', 'fitting'].map((label) => {
+      const option = `[data-surface="${surface}"] [data-label="${label}"]`;
+      const clip = `${option} .inline-switcher__model-option-label`;
+      const text = `${clip} .inline-switcher__model-option-label-text`;
+      if (engagement === 'focus') element(option).focus();
+      return Object.freeze({
+        label,
+        transform: resolveVars(computed(text).transform || 'none', text),
+        textOverflow: computed(clip).textOverflow,
+        transition: computed(text).transition,
+      });
+    })),
+    overflowX: computed(`[data-surface="${surface}"] .inline-switcher__model-list`).overflowX,
+    width: resolveVars(computed(`[data-surface="${surface}"]`).width, `[data-surface="${surface}"]`),
+  })));
+}
+
+function titleSnapshot({ computed, element, engage }: Fixture, width: number) {
+  engage('rest');
+  element('.split-chat-slot').style.width = `${width}px`;
+  // Read property getters now: retaining a CSSStyleDeclaration would defer lazy
+  // computation into the test body and keep the mutable DOM alive.
+  const header = computed('.chat-project-header');
+  const wrapper = computed('.chat-project-header-title');
+  const stack = computed('.chat-project-title-line');
+  const text = (selector: string) => {
+    const style = computed(selector);
+    return Object.freeze({
+      lineHeight: style.lineHeight, paddingTop: style.paddingTop, paddingBottom: style.paddingBottom,
+      textOverflow: style.textOverflow, overflow: style.overflow, whiteSpace: style.whiteSpace,
+    });
+  };
+  return Object.freeze({
+    width,
+    header: Object.freeze({
+      minHeight: header.minHeight, paddingTop: header.paddingTop, paddingBottom: header.paddingBottom,
+      height: header.height, position: header.position, alignItems: header.alignItems,
+    }),
+    wrapper: Object.freeze({ overflow: wrapper.overflow, minWidth: wrapper.minWidth }),
+    stack: Object.freeze({
+      display: stack.display, flexDirection: stack.flexDirection, alignItems: stack.alignItems,
+      minWidth: stack.minWidth, flexShrink: stack.flexShrink, rowGap: stack.rowGap,
+    }),
+    title: text('.chat-project-title-line .title'),
+    meta: text('.chat-project-title-line .meta'),
+    icons: Object.freeze(['.chat-project-back', '.chat-session-trigger'].map((selector) => {
+      const style = computed(selector);
+      return Object.freeze({ width: style.width, height: style.height });
+    })),
+  });
+}
+
+function collect(motion: Motion) {
+  const source = fixture(motion);
+  try {
+    return Object.freeze({
+      models: Object.freeze({
+        rest: modelSnapshot(source, 'rest'),
+        hover: modelSnapshot(source, 'hover'),
+        focus: modelSnapshot(source, 'focus'),
+      }),
+      titles: Object.freeze(motion === 'reduce' ? [320, 430, 600].map((width) => titleSnapshot(source, width)) : []),
+    });
+  } finally { source.close(); }
+}
+
+// Two stylesheet parses, independent of case count/order/filtering. All DOM
+// mutations and eager snapshots happen during collection, outside test timers;
+// only frozen strings/numbers survive after each motion fixture is disposed.
+const snapshots = Object.freeze({ reduce: collect('reduce'), 'no-preference': collect('no-preference') });
 
 describe('model reveal: imported cascade and motion branches', () => {
   it.each([
     ['reduce', 'rest'], ['reduce', 'hover'], ['reduce', 'focus'],
     ['no-preference', 'rest'], ['no-preference', 'hover'], ['no-preference', 'focus'],
   ] as const)('%s / %s reveals exactly the measured overflow, never fitting labels', (motion, engagement) => {
-    const { computed, element, resolveVars, close } = fixture(motion, engagement);
-    try {
-      for (const surface of ['home-hero', 'composer']) {
-        for (const label of ['long', 'fitting']) {
-          const option = `[data-surface="${surface}"] [data-label="${label}"]`;
-          const clip = `${option} .inline-switcher__model-option-label`;
-          const text = `${clip} .inline-switcher__model-option-label-text`;
-          if (engagement === 'focus') element(option).focus();
-          const revealed = label === 'long' && engagement !== 'rest';
-          expect(resolveVars(computed(text).transform || 'none', text))
-            .toBe(revealed ? 'translateX(calc(-1 * 105px))' : 'none');
-          expect(computed(clip).textOverflow).toBe(revealed ? 'clip' : 'ellipsis');
-          if (motion === 'reduce') expect(computed(text).transition).toBe('none');
-          else expect(computed(text).transition).toContain('transform');
-        }
-        expect(computed(`[data-surface="${surface}"] .inline-switcher__model-list`).overflowX).toBe('clip');
-        expect(resolveVars(computed(`[data-surface="${surface}"]`).width, `[data-surface="${surface}"]`)).toBe('192px');
+    for (const surface of snapshots[motion].models[engagement]) {
+      for (const label of surface.labels) {
+        const revealed = label.label === 'long' && engagement !== 'rest';
+        expect(label.transform).toBe(revealed ? 'translateX(calc(-1 * 105px))' : 'none');
+        expect(label.textOverflow).toBe(revealed ? 'clip' : 'ellipsis');
+        if (motion === 'reduce') expect(label.transition).toBe('none');
+        else expect(label.transition).toContain('transform');
       }
-    } finally { close(); }
+      expect(surface.overflowX).toBe('clip');
+      expect(surface.width).toBe('192px');
+    }
   }, 15_000);
 });
 
 describe('project title: actual nested title/meta layout', () => {
-  it.each([320, 430, 600])('stacks both lines within the unchanged header at %ipx', (width) => {
-    const { computed, close } = fixture('reduce', 'rest', width);
-    try {
-      const header = computed('.chat-project-header');
-      const wrapper = computed('.chat-project-header-title');
-      const stack = computed('.chat-project-title-line');
-      const title = computed('.chat-project-title-line .title');
-      const meta = computed('.chat-project-title-line .meta');
+  it.each(snapshots.reduce.titles.map((snapshot) => [snapshot.width, snapshot] as const))(
+    'stacks both lines within the unchanged header at %ipx', (_width, { header, wrapper, stack, title, meta, icons }) => {
       expect.soft(stack.display).toBe('flex');
       expect.soft(stack.flexDirection).toBe('column');
       expect.soft(stack.alignItems).toBe('stretch');
@@ -147,10 +245,10 @@ describe('project title: actual nested title/meta layout', () => {
         expect(text.overflow).toBe('hidden');
         expect(text.whiteSpace).toBe('nowrap');
       }
-      for (const icon of ['.chat-project-back', '.chat-session-trigger']) {
-        expect(computed(icon).width).toBe('28px');
-        expect(computed(icon).height).toBe('28px');
+      for (const icon of icons) {
+        expect(icon.width).toBe('28px');
+        expect(icon.height).toBe('28px');
       }
-    } finally { close(); }
-  });
+    },
+  );
 });

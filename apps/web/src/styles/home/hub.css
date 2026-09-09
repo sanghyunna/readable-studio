@@ -27,11 +27,9 @@
 .hub__rail-resizer {
   position: absolute;
   z-index: 80;
-  /* The hit box straddles the rail's trailing edge and spans the rail's own
-     height only: it starts below the title strip (the band above is a drag
-     region the resizer must not carve into) and stops at the rail's bottom
-     inset, never reaching into the gap under the panel. */
-  inset-block: var(--app-window-chrome-height, 36px) var(--project-rail-inset);
+  /* Match both expanded rail insets: the hit box must not enter either gap
+     between the floating panel and the shell content edges. */
+  inset-block: var(--project-rail-inset) var(--project-rail-inset);
   inset-inline-start: calc(var(--hub-rail-expanded, 292px) - 4px);
   inline-size: 8px;
   padding: 0;
@@ -82,6 +80,9 @@
 }
 
 .hub__nav {
+  /* Shared trailing line for the head and actions. The app does not declare
+     --space-3, so this rail-owned token must have a concrete value. */
+  --hub-rail-inline-inset: 12px;
   /* Search glyph is rail-owned, including outside the Home surface. */
   --hub-search-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E");
   position: relative;
@@ -130,39 +131,40 @@
   overflow: hidden;
 }
 
-/* Glass only reads as glass when there is something saturated behind it to
-   refract. A single faint wash left the blurred surfaces looking flat grey, so
-   the canvas carries several coloured blooms that the rail and composer pick
-   up at their edges. */
+/* The shell owns Home's ambient light across BOTH grid tracks. A wash inside
+   the routed Hub is clipped at the content boundary and cannot illuminate the
+   persistent rail. These carriers sit above the one shell canvas and beneath
+   its controls; they do not inherit a routed surface's entrance transform.
+   Workspace keeps its existing carriers, especially the pane-width-aware warm
+   bloom on .split. */
+.workspace-shell:has(> .workspace-shell__body .entry-main__inner--home) {
+  isolation: isolate;
+}
+
 .hub__wash {
+  display: none;
+}
+
+.workspace-shell:has(> .workspace-shell__body .entry-main__inner--home)::before,
+.workspace-shell:has(> .workspace-shell__body .entry-main__inner--home)::after,
+.workspace-shell:has(> .workspace-shell__body .entry-main__inner--home) > .workspace-shell__body::before {
+  content: '';
   position: fixed;
-  z-index: 0;
+  z-index: -1;
+  border-radius: var(--radius-pill);
+  pointer-events: none;
+}
+
+.workspace-shell:has(> .workspace-shell__body .entry-main__inner--home)::before {
   inset: -180px auto auto -160px;
   width: 680px;
   height: 740px;
-  border-radius: var(--radius-pill);
-  /* The shared shell ambient vocabulary (recipes.css): the workspace paints
-     these same three blooms, so the light persists across the surface swap. */
   background: var(--hub-wash-bloom-accent);
   filter: blur(80px);
   opacity: 0.62;
-  pointer-events: none;
 }
 
-.hub__wash::before,
-.hub__wash::after {
-  content: '';
-  position: fixed;
-  border-radius: var(--radius-pill);
-  filter: blur(72px);
-  pointer-events: none;
-}
-
-/* The warm bloom owns the upper right, where the stage is otherwise bare
-   white. Sized in vw like the mockup and pulled mostly on-screen (-8vw, not a
-   fixed -260px) so the colour actually lands in the viewport instead of
-   clipping off the edge - an off-screen bloom leaves the glass reading grey. */
-.hub__wash::before {
+.workspace-shell:has(> .workspace-shell__body .entry-main__inner--home) > .workspace-shell__body::before {
   inset: 8vh -8vw auto auto;
   width: 44vw;
   height: 44vw;
@@ -171,9 +173,7 @@
   opacity: 0.5;
 }
 
-/* Pulled to the lower left (not centre-right) so the cyan-green bloom reads
-   under the rail's bottom edge at 1440x900, matching the mockup. */
-.hub__wash::after {
+.workspace-shell:has(> .workspace-shell__body .entry-main__inner--home)::after {
   inset: auto auto -10vh -6vw;
   width: 38vw;
   height: 38vw;
@@ -182,23 +182,86 @@
   opacity: 0.46;
 }
 
+/* Body-portalled confirmation: the entire scrim dismisses, including its top
+   band. Do not opt into modal-backdrop's native window drag strip/capture guard.
+   Shared dialog geometry/buttons remain the contract. */
+.hub-delete-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: var(--scrim);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
+  animation: fade-in 160ms var(--ease-out);
+}
+
+.hub-delete-confirm {
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  color: var(--text-strong);
+  background: var(--hub-glass-fill-strong);
+  -webkit-backdrop-filter: var(--hub-glass-blur);
+  backdrop-filter: var(--hub-glass-blur);
+  box-shadow: inset 0 1px 0 var(--hub-pearl-highlight), var(--hub-glass-shadow-lg);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .workspace-shell:has(> .workspace-shell__body .entry-main__inner--home)::before,
+  .workspace-shell:has(> .workspace-shell__body .entry-main__inner--home)::after,
+  .workspace-shell:has(> .workspace-shell__body .entry-main__inner--home) > .workspace-shell__body::before {
+    display: none;
+  }
+
+  .hub-delete-backdrop {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .hub-delete-confirm {
+    background: var(--bg-panel);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: var(--shadow-lg), 0 0 0 1px var(--border);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hub-delete-backdrop,
+  .hub-delete-confirm {
+    animation: none;
+  }
+}
+
 .hub__nav-head {
-  /* One in-flow brand row that reads as a single brand+control cluster:
-     [mark][wordmark][toggle] packed to the start while expanded, and the
-     toggle alone - centred - once collapsed. The row height is state
-     invariant (one 34px row) so nothing below it moves on toggle. The top
-     padding clears the frameless drag strip plus one 4px step of breathing
-     room, measured from the rail's own top edge: the row rides with the
-     panel (10px lower while the panel floats, flush while collapsed) and is
-     always below the band, therefore clickable. */
+  /* One in-flow brand row: [brand][toggle] with the toggle at the row's
+     trailing edge while expanded, and the toggle alone - centred - once
+     collapsed. Reserve the brand's 34px content height even when only the
+     28px toggle remains: with border-box sizing that needs a 42px minimum
+     including the 4px top/bottom padding. Collapsed adds the shared rail inset
+     to both the minimum and top padding, cancelling the rail's top motion.
+     Both transitions use the rail margin's timing, so the centre stays fixed
+     between states as well as at rest.
+     The trailing inset derives from the SAME token the actions block owns, so
+     the toggle's right edge shares the New Project button's right edge at
+     every track width - one vertical line down the panel, not a hardcoded
+     pixel that drifts when the rail is resized. The rail starts below the
+     frameless drag strip by layout, so no chrome clearance lives in this row. */
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: space-between;
   gap: 4px;
-  min-block-size: 34px;
-  padding-block-start: calc(var(--app-window-chrome-height, 36px) + 4px);
-  padding-inline: 8px;
+  min-block-size: 42px;
+  padding-block-start: 4px;
+  padding-inline: var(--hub-rail-inline-inset, var(--space-3));
   padding-block-end: 4px;
+  transition:
+    padding-block-start var(--dur-enter) var(--ease-out),
+    min-block-size var(--dur-enter) var(--ease-out);
 }
 
 .hub__brand {
@@ -280,7 +343,11 @@
 .hub__nav-actions {
   display: grid;
   gap: 6px;
-  padding: 4px 12px 8px;
+  /* The rail's trailing content edge is ONE vertical line, owned here and
+     read back by the head row through the same token: the New Project
+     button's right edge and the toggle's right edge are the same line at
+     every track width from 262 to 420px. */
+  padding: 4px var(--hub-rail-inline-inset, var(--space-3)) 8px;
 }
 
 .hub__search-wrap {
@@ -1460,13 +1527,18 @@
 
 /* Collapsed, the toggle takes the brand's place: the brand (mark included)
    is not shown beside it, and the single control is centred in the 44px
-   strip - 8px row padding on each side leaves exactly its 28px. */
+   strip. The strip's own centring owns the position, so the row's trailing
+   inset is lifted out of the way. */
 [data-project-rail-state='collapsed'] .hub__brand {
   display: none;
 }
 
 [data-project-rail-state='collapsed'] .hub__nav-head {
   justify-content: center;
+  padding-inline: 0;
+  min-block-size: calc(42px + var(--project-rail-inset));
+  padding-block-start: calc(4px + var(--project-rail-inset));
+  transition-duration: var(--dur-exit);
 }
 
 [data-project-rail-state='collapsed'] .hub__new-project {
@@ -1686,7 +1758,7 @@
 
   .hub__nav-actions {
     gap: 5px;
-    padding: 3px 12px 7px;
+    padding-block: 3px 7px;
   }
 
   .hub-tree__filters {

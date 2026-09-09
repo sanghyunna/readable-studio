@@ -45,11 +45,14 @@ const entryLayoutCss = readFileSync(resolve(styles, 'home/entry-layout.css'), 'u
  */
 function px(value: string): number {
   const chromeHeight = readChromeHeightToken();
-  // Substitute the one custom property this geometry depends on, then fold the
-  // `calc(<px> + <px>)` shape the offsets use.
+  // Resolve the shell origin and any rail-local inset from their real tokens,
+  // then fold the `calc(<px> + <px>)` shape the offsets use.
   const substituted = value.replace(
     /var\(--app-window-chrome-height(?:,\s*([^)]+))?\)/g,
     (_match, fallback: string | undefined) => `${chromeHeight ?? Number.parseFloat(fallback ?? '')}px`,
+  ).replace(
+    /var\(--project-rail-inset\)/g,
+    () => projectRailCss.match(/--project-rail-inset:\s*([\d.]+px)/)?.[1] ?? '',
   );
   const calc = substituted.match(/^calc\(\s*([\d.]+)px\s*\+\s*([\d.]+)px\s*\)$/);
   if (calc) return Number.parseFloat(calc[1] as string) + Number.parseFloat(calc[2] as string);
@@ -57,7 +60,7 @@ function px(value: string): number {
   return Number.isFinite(parsed) ? parsed : Number.NaN;
 }
 
-/** The single source of truth both the band and the toggle offset read. */
+/** The single source of truth for the band and the shell's content origin. */
 function readChromeHeightToken(): number | null {
   const declared = shellCss.match(/--app-window-chrome-height:\s*([\d.]+)px/);
   return declared ? Number.parseFloat(declared[1] as string) : null;
@@ -82,18 +85,19 @@ beforeAll(() => {
         <div class="window-controls" data-testid="window-controls"></div>
       </header>
       <div class="workspace-shell__body">
-        <main class="entry-main--scroll">
-          <div class="entry-main__inner entry-main__inner--home">
-            <div class="hub">
-              <nav class="hub__nav" data-project-rail="hub" data-project-rail-state="expanded">
-                <div class="hub__nav-head" data-project-rail-head>
-                  <button class="hub__brand"></button>
-                  <button class="hub__rail-toggle" data-project-rail-toggle data-testid="hub-rail-toggle"></button>
-                </div>
-              </nav>
-            </div>
+        <nav class="hub__nav" data-project-rail="hub" data-project-rail-state="expanded">
+          <div class="hub__nav-head" data-project-rail-head>
+            <button class="hub__brand"></button>
+            <button class="hub__rail-toggle" data-project-rail-toggle data-testid="hub-rail-toggle"></button>
           </div>
-        </main>
+        </nav>
+        <div data-surface="home:home">
+          <main class="entry-main--scroll">
+            <div class="entry-main__inner entry-main__inner--home">
+              <div class="hub"></div>
+            </div>
+          </main>
+        </div>
       </div>
     </div>
   `;
@@ -162,23 +166,52 @@ describe('frameless window chrome drag clearance', () => {
     expect(chrome.children[1]).toBe(traffic);
   });
 
-  it('keeps the rail toggle in the rail brand row, below the 36px band, at its full hit target', () => {
-    const head = toggle.parentElement as HTMLElement;
-    const bandHeight = px(getComputedStyle(chrome).height);
-    const headStyle = getComputedStyle(head);
-    const toggleStyle = getComputedStyle(toggle);
-    const toggleHeight = px(toggleStyle.blockSize || toggleStyle.height);
+  it.each(['expanded', 'collapsed'] as const)(
+    'keeps the %s rail toggle below the 36px band at its full hit target',
+    (state) => {
+      const head = toggle.parentElement as HTMLElement;
+      const rail = head.parentElement as HTMLElement;
+      const body = rail.parentElement as HTMLElement;
+      rail.dataset.projectRailState = state;
 
-    expect(head.hasAttribute('data-project-rail-head')).toBe(true);
-    expect(toggle.closest('[data-project-rail]')).not.toBeNull();
-    expect(toggle.previousElementSibling).toBe(head.querySelector('.hub__brand'));
-    // The row starts under the band: its top padding clears the band height
-    // measured from the rail's own top edge, so it is never beneath the drag
-    // surface in either rail state.
-    expect(bandHeight).toBe(36);
-    expect(px(headStyle.getPropertyValue('padding-block-start') || headStyle.paddingTop)).toBeGreaterThanOrEqual(bandHeight);
-    expect(toggleHeight).toBe(28);
-  });
+      const shellStyle = getComputedStyle(shell);
+      const bodyStyle = getComputedStyle(body);
+      const railStyle = getComputedStyle(rail);
+      const headStyle = getComputedStyle(head);
+      const toggleStyle = getComputedStyle(toggle);
+      const bandHeight = px(getComputedStyle(chrome).height);
+
+      expect(head.hasAttribute('data-project-rail-head')).toBe(true);
+      expect(rail.hasAttribute('data-project-rail')).toBe(true);
+      expect(body.classList.contains('workspace-shell__body')).toBe(true);
+      expect(toggle.previousElementSibling).toBe(head.querySelector('.hub__brand'));
+      expect(shellStyle.display).toBe('grid');
+      expect(bodyStyle.gridRow).toBe('2');
+      expect(getComputedStyle(chrome).gridRow).toBe('1');
+      expect(railStyle.gridRow).toBe('1');
+
+      // jsdom has no layout boxes. Resolve the first track as the body's
+      // viewport origin, then add rail-local clearance. The old assertion
+      // mistook the head's 4px padding for a viewport Y coordinate.
+      const firstTrack = shellStyle.gridTemplateRows.match(/^var\(--app-window-chrome-height(?:,\s*36px)?\)/)?.[0];
+      expect(firstTrack).toBeDefined();
+      const contentTop = px(firstTrack ?? '');
+      const railTop = contentTop + px(railStyle.marginBlockStart || railStyle.marginTop);
+      const headPadding = px(headStyle.paddingBlockStart || headStyle.paddingTop);
+      // The static, centred flex child cannot start above its content box;
+      // flex centring may add clearance, so this is a lower bound, not a rect.
+      expect(headStyle.display).toBe('flex');
+      expect(headStyle.alignItems).toBe('center');
+      expect(toggleStyle.position).toBe('static');
+      expect(bandHeight).toBe(36);
+      expect(contentTop).toBe(bandHeight);
+      expect(railTop).toBeGreaterThanOrEqual(bandHeight);
+      expect(headPadding).toBeLessThan(bandHeight);
+      expect(railTop + headPadding).toBeGreaterThanOrEqual(bandHeight);
+      expect(px(toggleStyle.blockSize || toggleStyle.height)).toBe(28);
+      expect(px(toggleStyle.inlineSize || toggleStyle.width)).toBe(28);
+    },
+  );
 
   it('reserves exactly the band height in the shell grid row', () => {
     // If the row and the band ever disagree, the strip either overflows onto the

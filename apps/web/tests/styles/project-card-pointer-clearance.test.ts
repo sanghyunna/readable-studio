@@ -6,6 +6,7 @@ import postcss, { type Declaration, type Rule } from 'postcss';
 import { describe, expect, it } from 'vitest';
 
 const styles = resolve(process.cwd(), 'src/styles');
+const shell = postcss.parse(readFileSync(resolve(styles, 'shell.css'), 'utf8'));
 const entryLayout = postcss.parse(readFileSync(resolve(styles, 'home/entry-layout.css'), 'utf8'));
 const drawer = postcss.parse(readFileSync(resolve(styles, 'workspace/drawer.css'), 'utf8'));
 
@@ -30,9 +31,19 @@ describe('project card pointer clearance from frameless chrome', () => {
       '.entry-shell--no-header .entry-main--scroll:not(:has(.entry-main__inner--home))',
     );
 
-    expect(declaration(scrollViewport, 'margin-block-start')).toMatchObject({
-      value: 'var(--app-window-chrome-height, 36px)',
-    });
+    const entryShell = ruleFor(
+      entryLayout,
+      '.workspace-shell:has(> .workspace-shell__body .entry-shell--no-header)',
+    );
+    const body = ruleFor(shell, '.workspace-shell__body');
+
+    // Clearance belongs to the shell's first grid track, outside the scroll
+    // viewport. A second chrome-height margin would now double the gap.
+    expect(declaration(entryShell, 'grid-template-rows')?.value).toBe(
+      'var(--app-window-chrome-height, 36px) minmax(0, 1fr)',
+    );
+    expect(declaration(body, 'grid-row')?.value).toBe('2');
+    expect(declaration(scrollViewport, 'margin-block-start')?.value).toBe('0');
   });
 
   it('prevents programmatic scrolling from placing controls under adjacent chrome', () => {

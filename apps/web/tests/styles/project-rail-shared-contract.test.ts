@@ -13,12 +13,13 @@
  *   - the collapse toggle floating on bare canvas, attached to nothing;
  *   - the rail's geometry against the window frame.
  *
- * The current, deliberate geometry: EXPANDED is a panel floating inside the
- * shell, inset by the ONE shared `--project-rail-inset` on its top, bottom and
- * start edges; COLLAPSED is the edge-anchored 44px strip, flush to the wall,
- * the window top and the window floor. The toggle lives in the rail's own
- * brand row - beside the wordmark expanded, in the brand's place collapsed -
- * and never in the window chrome.
+ * The current, deliberate geometry: the shell body starts BELOW the 36px
+ * chrome row. EXPANDED detaches from the content top, floor and start wall
+ * by the ONE shared `--project-rail-inset`; COLLAPSED is
+ * the edge-anchored 44px strip, flush to the wall, the content top and the
+ * window floor. The toggle lives in the rail's own brand row - at the row's
+ * trailing edge expanded (sharing the New Project button's right edge), in
+ * the brand's place collapsed - and never in the window chrome.
  *
  * These assertions are read back through `getComputedStyle` against the REAL
  * stylesheets rather than grepped as text, because a losing declaration can be
@@ -154,7 +155,7 @@ describe('project rail: one shared contract', () => {
     host.remove();
   });
 
-  it('floats the EXPANDED rail inset from the window top and floor by the one shared inset', () => {
+  it('floats the EXPANDED rail off the content top and window floor by the one shared inset', () => {
     const host = mount(`
       <div class="entry-shell entry-shell--no-header">
         <div class="entry entry--rail-open">
@@ -170,19 +171,20 @@ describe('project rail: one shared contract', () => {
 
     expect(SHARED_INSET).toBe('10px');
     const inset = pixels(SHARED_INSET ?? '');
+    // Both block edges detach. Equal toggle Y must come from head clearance,
+    // never from removing the required top gap.
     expect(blockMargins(computed)).toEqual({ start: inset, end: inset });
     expect(computed.blockSize || computed.height).toBe('auto');
     host.remove();
   });
 
-  it('gives the expanded Hub panel the same gap on its top, bottom and start edges, and the collapsed strip none', () => {
+  it('gives the expanded Hub panel the same top, floor and start gaps, and the collapsed strip none', () => {
     const expanded = mount(`<div class="workspace-shell__body"><nav class="hub__nav" data-project-rail="hub" data-project-rail-state="expanded"></nav></div>`);
     const collapsed = mount(`<div class="workspace-shell__body"><nav class="hub__nav" data-project-rail="hub" data-project-rail-state="collapsed"></nav></div>`);
     const panel = getComputedStyle(expanded.querySelector('.hub__nav') as HTMLElement);
     const strip = getComputedStyle(collapsed.querySelector('.hub__nav') as HTMLElement);
 
-    // One deliberate value: the vertical gaps are derived from the inline
-    // inset the Hub already owned, not a second and third number.
+    // One deliberate value for all three detached edges.
     const start = pixels(panel.marginLeft);
     expect(start).toBe(pixels(SHARED_INSET ?? ''));
     expect(blockMargins(panel)).toEqual({ start, end: start });
@@ -191,7 +193,7 @@ describe('project rail: one shared contract', () => {
     // the transitioned property - not just the inline-start edge.
     expect(hubCss).toMatch(/\.hub__nav\s*\{[^}]*transition:\s*margin\s+var\(--dur-enter\)\s+var\(--ease-out\)/s);
 
-    // The collapsed strip is unchanged: flush to the wall, top and floor.
+    // The collapsed strip is unchanged: flush to the wall, content top, floor.
     expect(pixels(strip.marginLeft)).toBe(0);
     expect(blockMargins(strip)).toEqual({ start: 0, end: 0 });
     expect(pixels(strip.borderRadius || strip.borderTopLeftRadius)).toBe(0);
@@ -199,18 +201,19 @@ describe('project rail: one shared contract', () => {
     collapsed.remove();
   });
 
-  it('keeps the resizer inside the expanded rail\'s vertical span, never into the floor gap', () => {
+  it('keeps the resizer inside the expanded rail\'s vertical span, never into either block gap', () => {
     const resizer = ruleBody('.hub__rail-resizer', hubCss);
     const insetBlock = /inset-block:\s*([^;]+);/.exec(resizer)?.[1]?.trim();
     expect(insetBlock).toBeDefined();
     const [top, bottom] = (insetBlock ?? '').split(/\s+(?![^(]*\))/);
 
-    const railTop = pixels(SHARED_INSET ?? '');
-    const railBottomGap = pixels(SHARED_INSET ?? '');
-    // Starts below the drag strip (which is below the rail's own top edge)…
-    expect(pixels(top ?? '')).toBeGreaterThanOrEqual(railTop);
-    // …and stops exactly where the rail stops, not at the window floor.
-    expect(pixels(bottom ?? '')).toBe(railBottomGap);
+    const host = mount(`<nav class="hub__nav" data-project-rail="hub" data-project-rail-state="expanded"></nav>`);
+    const rail = getComputedStyle(host.querySelector('.hub__nav') as HTMLElement);
+    const margins = blockMargins(rail);
+    expect(pixels(top ?? '')).toBe(margins.start);
+    expect(pixels(bottom ?? '')).toBe(margins.end);
+    expect(margins).toEqual({ start: pixels(SHARED_INSET ?? ''), end: pixels(SHARED_INSET ?? '') });
+    host.remove();
   });
 
   it('keeps the brand-row toggle visible, clickable and out of the drag region, with no chrome slot left behind', () => {
@@ -242,11 +245,11 @@ describe('project rail: one shared contract', () => {
     const head = getComputedStyle(expanded.querySelector('.hub__nav-head') as HTMLElement);
     const brand = expanded.querySelector('.hub__brand') as HTMLElement;
     const toggle = expanded.querySelector('[data-project-rail-toggle]') as HTMLElement;
-    // Left-aligned cluster: the brand hugs its content (no growth into the
-    // leftover space) and the toggle is its immediate next sibling, so it
-    // sits right of the wordmark rather than floating at the far end.
+    // The brand hugs its content at the row's start and the toggle takes the
+    // row's trailing edge, so its right edge shares the New Project button's
+    // trailing line rather than hugging the wordmark.
     expect(head.display).toBe('flex');
-    expect(head.justifyContent).toBe('flex-start');
+    expect(head.justifyContent).toBe('space-between');
     expect(getComputedStyle(brand).display).toBe('flex');
     expect(getComputedStyle(brand).flexGrow).toBe('0');
     expect(toggle.previousElementSibling).toBe(brand);

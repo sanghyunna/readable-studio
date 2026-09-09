@@ -8,12 +8,16 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from 'react';
+
+import { createPortal } from 'react-dom';
+import { Button } from '@readable-studio/components';
 
 import { useT } from '../../i18n';
 import { Icon } from '../Icon';
@@ -270,6 +274,9 @@ export function HubSessionTree({
   // Rename happens in place: a modal for one field is heavier than the edit.
   const [renaming, setRenaming] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<ConfirmState | null>(null);
+  const confirmId = useId();
+  const confirmRef = useRef<HTMLDivElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
   const typeAheadRef = useRef('');
   const typeAheadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // A row activated out of existence (the overflow row) hands focus to a row
@@ -278,6 +285,47 @@ export function HubSessionTree({
   const pendingFocusRef = useRef<string | null>(null);
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // The confirmation lives above the shell, not inside the rail's filtered,
+  // scrolling containing block. Keep its keyboard scope there too, including
+  // focus moved programmatically by another shell control.
+  useEffect(() => {
+    if (!confirming) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    cancelRef.current?.focus();
+    const onFocus = (event: FocusEvent) => {
+      if (!confirmRef.current?.contains(event.target as Node)) cancelRef.current?.focus();
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        setConfirming(null);
+      } else if (event.key === 'Tab') {
+        const buttons = confirmRef.current?.querySelectorAll<HTMLButtonElement>('button');
+        const first = buttons?.[0];
+        const last = buttons?.[buttons.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last?.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first?.focus();
+        }
+      }
+    };
+    document.addEventListener('focusin', onFocus);
+    document.addEventListener('keydown', onKey, true);
+    return () => {
+      document.removeEventListener('focusin', onFocus);
+      document.removeEventListener('keydown', onKey, true);
+      document.body.style.overflow = previousOverflow;
+      // A completed deletion can remove the origin in the same commit.
+      const target = rowRefs.current.get(confirming.rowKey) ?? rowRefs.current.values().next().value;
+      target?.focus();
+    };
+  }, [confirming]);
 
   const cancelHoverFlyout = useCallback(() => {
     if (hoverTimerRef.current === null) return;
@@ -1210,47 +1258,40 @@ export function HubSessionTree({
         />
       ) : null}
 
-      {confirming ? (
+      {confirming ? createPortal(
         <div
-          className="modal-backdrop"
+          className="hub-delete-backdrop"
           data-testid="hub-delete-confirm-backdrop"
-          onClick={() => {
+          onClick={(event) => {
+            // The body portal still bubbles through the rail's React owners.
+            event.stopPropagation();
             setConfirming(null);
-            rowRefs.current.get(confirming.rowKey)?.focus();
           }}
         >
           <div
-            className="modal modal-confirm"
+            ref={confirmRef}
+            className="modal modal-confirm hub-delete-confirm"
             role="alertdialog"
             aria-modal="true"
+            aria-labelledby={`${confirmId}-title`}
+            aria-describedby={`${confirmId}-message`}
             data-testid="hub-delete-confirm"
             onClick={(event) => event.stopPropagation()}
-            onKeyDown={(event) => {
-              event.stopPropagation();
-              if (event.key !== 'Escape') return;
-              event.preventDefault();
-              setConfirming(null);
-              rowRefs.current.get(confirming.rowKey)?.focus();
-            }}
           >
-            <h2>{confirming.title}</h2>
-            <p className="modal-confirm-message">{confirming.message}</p>
+            <h2 id={`${confirmId}-title`}>{confirming.title}</h2>
+            <p id={`${confirmId}-message`} className="modal-confirm-message">{confirming.message}</p>
             <div className="row">
-              <button
-                type="button"
+              <Button
+                ref={cancelRef}
                 data-testid="hub-delete-cancel"
-                onClick={() => {
-                  setConfirming(null);
-                  rowRefs.current.get(confirming.rowKey)?.focus();
-                }}
+                onClick={() => setConfirming(null)}
               >
                 {t('designs.renameCancel')}
-              </button>
-              <button
-                type="button"
-                className="primary danger"
+              </Button>
+              <Button
+                variant="primary"
+                className="danger"
                 data-testid="hub-delete-confirm-cta"
-                autoFocus
                 onClick={() => {
                   const run = confirming.onConfirm;
                   setConfirming(null);
@@ -1258,10 +1299,11 @@ export function HubSessionTree({
                 }}
               >
                 {confirming.confirmLabel}
-              </button>
+              </Button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       ) : null}
 
       {flyout && flyoutProject && flyoutItems.length > 0 ? (

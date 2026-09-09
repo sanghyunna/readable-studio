@@ -42,7 +42,7 @@ describe('QuestionsPanel blocking forms', () => {
     fireEvent.click(screen.getByRole('button', { name: /skip all/i }));
 
     expect(onSubmit).toHaveBeenCalledWith(
-      '[form answers — blocking-input]\n- Source URL: (skipped)\n- Notes: (skipped)',
+      '[form answers — blocking-input]\n- Source URL: (skipped)\n- Notes: (skipped)', {},
     );
     expect(document.querySelector('.questions-skip-timer')).toBeNull();
   });
@@ -80,7 +80,7 @@ describe('QuestionsPanel blocking forms', () => {
     const second = render(<QuestionsPanel {...props} />);
     expect((screen.getByRole('textbox', { name: 'Source URL' }) as HTMLInputElement).value).toBe('https://brand.example');
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    expect(onSubmit).toHaveBeenCalledWith('[form answers — blocking-input]\n- Source URL: https://brand.example\n- Notes: (skipped)');
+    expect(onSubmit).toHaveBeenCalledWith('[form answers — blocking-input]\n- Source URL: https://brand.example\n- Notes: (skipped)', { q1: 'https://brand.example', q2: '' });
     second.unmount();
 
     render(<QuestionsPanel {...props} />);

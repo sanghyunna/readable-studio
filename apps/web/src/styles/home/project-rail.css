@@ -51,18 +51,15 @@
   --project-rail-inset: 10px;
 }
 
-/* ---- Rule 1: expanded floats on every side, collapsed is edge-anchored ----
-   EXPANDED is a panel inset from the shell top, floor and wall by the one
-   shared inset - never a full-height column with a gap on one side only.
-   COLLAPSED keeps today's strip: flush to the wall, the window top and the
-   window floor, 44px wide. The block inset therefore exists only when
-   expanded, exactly like the inline inset the surfaces already own.
-   `block-size: auto` is load-bearing: a grid item's percentage height
-   ignores its margins, so `100%` plus a block margin overflowed the track.
-   Auto stretch subtracts the live margin instead, in both states, so the
-   height interpolates with the margins rather than snapping at the state
-   flip. The inline-start inset is the surface's own business (it animates
-   with the track) and is left alone. */
+/* ---- Rule 1: expanded floats on three sides, collapsed docks to the wall ----
+   Both states share ONE content origin below the chrome row. EXPANDED
+   detaches from the content top, floor and start wall by the shared inset;
+   COLLAPSED is flush to all three edges. The head row compensates internally
+   for the changing top inset so its toggle moves horizontally only.
+   `block-size: auto` is load-bearing: percentage height ignores margins and
+   overflows the track, while auto stretch subtracts both live block margins
+   throughout the transition. The inline-start inset is the surface's own
+   business (it animates with the track) and is left alone. */
 [data-project-rail] {
   position: relative;
   min-block-size: 0;

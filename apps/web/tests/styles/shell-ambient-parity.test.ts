@@ -48,7 +48,12 @@ const WASH_SOURCES: Record<(typeof WASH_BLOOMS)[number], string> = {
 };
 
 /** The wash carriers each surface owns. Geometry is theirs; ingredients are shared. */
-const HUB_WASH_CARRIERS = ['.hub__wash', '.hub__wash::before', '.hub__wash::after'] as const;
+const HOME_SHELL = '.workspace-shell:has(> .workspace-shell__body .entry-main__inner--home)';
+const HUB_WASH_CARRIERS = [
+  `${HOME_SHELL}::before`,
+  `${HOME_SHELL} > .workspace-shell__body::before`,
+  `${HOME_SHELL}::after`,
+] as const;
 const WORKSPACE_WASH_CARRIERS = ['.app::before', '.split::after', '.split::before'] as const;
 
 function stripComments(css: string): string {

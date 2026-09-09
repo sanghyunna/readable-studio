@@ -42,13 +42,13 @@
    track is 0-wide so the rail is clipped away, expanded it occupies the rail
    width. */
 .entry-nav-rail {
-  /* Fill the animated grid track at every frame. The surface begins at y=0;
-     only its interactive content clears the frameless drag strip. */
+  /* Fill the animated grid track at every frame. The surface begins below
+     the chrome row, at the same content origin as every other surface. */
   width: 100%;
   min-width: 0;
   border-right: 0;
   background: var(--bg-panel);
-  padding: calc(var(--app-window-chrome-height, 36px) + 8px) 0 10px;
+  padding: 8px 0 10px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -477,14 +477,15 @@
      sticky topbar even though the card is nominally inside the viewport. */
   scroll-padding-block-start: var(--entry-topbar-h);
 }
-/* The native drag chrome overlays the shell body. A scroll child's padding is
-   not a boundary: after scrolling, ordinary content can still move underneath
-   that padding and into the app-region. Start the viewport itself below the
-   drag strip so no project card or other interactive descendant can ever be
-   scrolled into native chrome. Home is excluded because its fixed Hub surface
-   deliberately paints behind the strip and clears its controls internally. */
+/* The native drag chrome occupies the row above the shell body. A scroll
+   child's padding is not a boundary: after scrolling, ordinary content can
+   still move underneath that padding and into the app-region, so the scroll
+   viewport keeps its own top margin - but measured from the body's content
+   origin, which is already below the band. Home is excluded because its
+   fixed Hub surface deliberately paints behind the strip and clears its
+   controls internally. */
 .entry-shell--no-header .entry-main--scroll:not(:has(.entry-main__inner--home)) {
-  margin-block-start: var(--app-window-chrome-height, 36px);
+  margin-block-start: 0;
 }
 .entry-main__inner {
   width: 100%;
@@ -501,6 +502,14 @@
    controls. The title region itself remains a drag surface but paints nothing. */
 .workspace-shell:has(> .workspace-shell__body .entry-main__inner--home) {
   background: var(--hub-canvas-background);
+}
+
+/* Routed layout boxes ride on the shared shell canvas. Their opaque base
+   fills in workspace/artifacts.css otherwise hide it at the rail boundary,
+   even though the Hub stage and its immediate scroll parent are transparent. */
+.workspace-shell .entry-shell,
+.workspace-shell .entry {
+  background: transparent;
 }
 
 /* The hub grid must begin at the scroll body's inline origin so its own 10px/8px

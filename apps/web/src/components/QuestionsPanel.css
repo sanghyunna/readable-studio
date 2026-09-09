@@ -1,14 +1,28 @@
-.questions-panel__head { padding: 16px 20px 0; }
-.questions-panel .questions-panel-body .question-form { border: 0; background: transparent; box-shadow: none; }
-.questions-panel .questions-panel-foot { border: 0; background: transparent; box-shadow: none; }
-.questions-panel .questions-skip { border: 0; background: var(--bg-subtle); }
-.questions-panel .questions-panel-body .question-form-body { padding: 0; }
-.questions-panel .questions-panel-body .qf-field { animation: none; }
+/* Questions tab — the single document-generation intake surface.
+
+   Composition contract (order is the hierarchy):
+     1. The blocking question form leads the body and is the unmistakable
+        primary task — it sits first, on the translucent glass field, with the
+        solid Continue action pinned in the footer.
+     2. The merged Brief assumptions recede below it: secondary, correctable
+        context. One quiet section, translucent chips, no hard outlines.
+     3. The influence line is a compact orientation cue — plain text and an
+        accent dot, not a filled pill competing with the chips.
+     4. Summary -> single-field correction is one continuous panel: the summary
+        unmounts while the drill-in renders, so there is exactly one dialog and
+        one design language, never two stacked surfaces.
+
+   Material contract: the shared shell canvas/blooms stay perceptible. Fills
+   are translucent (color-mix over transparent), separation comes from soft
+   shadows, inset highlights and spacing — never 1px drawn lines. Primary
+   actions stay solid. No raw color literals; every value is a token. */
+
 .questions-panel__head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
+  padding: 20px 20px 0;
 }
 
 .questions-panel__head > div {
@@ -19,42 +33,242 @@
 .questions-panel__head h2 {
   margin: 0;
   color: var(--text-strong);
-  font-size: 15px;
-  letter-spacing: -0.015em;
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
 }
 
 .questions-panel__head p {
-  max-width: 310px;
-  margin: 4px 0 0;
+  max-width: 34ch;
+  margin: 5px 0 0;
   color: var(--text-muted);
-  font-size: 11px;
-  line-height: 1.45;
+  font-size: 12px;
+  line-height: 1.5;
+  text-wrap: pretty;
 }
 
-.questions-panel__groups {
+/* The back affordance on the correction step: quiet, ghost, optically aligned
+   with the title it returns from. */
+.questions-panel__head .ghost {
+  flex: 0 0 auto;
+}
+
+/* ---------------------------------------------------------------------------
+   Primary task: the blocking question form.
+   ------------------------------------------------------------------------- */
+
+.questions-panel__editor {
   display: grid;
-  gap: 13px;
-  margin-top: 16px;
+  gap: 14px;
+  margin-top: 18px;
   padding: 1px 3px 4px 1px;
   overscroll-behavior: contain;
 }
 
-/* Influence evidence: what the assumptions are doing right now. Reads as a status
-   row, not a section - same dot idiom as the provenance group headers, in the
-   accent the house reserves for user-stated state. */
-.questions-panel__influence {
+/* The primary form is the lead surface. It carries the glass field so the
+   shell canvas reads through, separated from the panel by depth and spacing
+   rather than a drawn border. The correction drill-in (same class, no
+   --primary modifier) stays quieter — it is a focused single-field step, not
+   the lead. */
+.questions-panel__editor--primary {
+  gap: 16px;
+  padding: 16px 16px 18px;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: color-mix(in oklch, var(--bg-elevated) 56%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklch, var(--white) 30%, transparent),
+    var(--shadow-md);
+}
+
+/* Form title row: the form's own name plus the answered pill, in the panel's
+   type language (the chat-era head is suppressed by hideInternalHead). */
+.questions-panel__formhead {
   display: flex;
-  align-items: center;
-  gap: 7px;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+.questions-panel__formhead h3 {
   margin: 0;
-  padding: 7px 10px;
+  color: var(--text-strong);
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+.questions-panel__formhead p {
+  flex: 1 1 100%;
+  margin: 2px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+/* The answered pill, re-materialised borderless to sit in the formhead. */
+.questions-panel__formhead .question-form-pill {
+  border: 0;
+  background: color-mix(in oklch, var(--bg-subtle) 72%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--white) 26%, transparent);
+  color: var(--text-muted);
+}
+
+/* The shared question form drops its chat-era card chrome inside the panel:
+   borderless, transparent, no elevation of its own — the primary editor
+   wrapper owns the surface. */
+.questions-panel .questions-panel-body .question-form {
+  margin: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.questions-panel .questions-panel-body .question-form-body {
+  gap: 16px;
+  padding: 0;
+}
+
+/* Fields stream in without a theatrical per-field slide; the panel is an
+   intake surface, not a reveal. Motion lives on interactive feedback only. */
+.questions-panel .questions-panel-body .qf-field {
+  animation: none;
+}
+
+/* Field labels: a clear small rung, sentence case, that reads as a label
+   rather than a shouted overline. */
+.questions-panel__editor .qf-label {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* Required fields outrank optional ones: the marker is a real accent rung
+   with an accessible name, not a bare asterisk lost beside the label. */
+.questions-panel__editor .qf-required {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.questions-panel__editor .qf-help {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* Option chips and fields share one borderless material: translucent fill,
+   inset top highlight, soft shadow. Selected state is the accent tint with
+   stronger ink — fill and weight, never a drawn outline. */
+.questions-panel__editor .qf-chip {
   border: 0;
   border-radius: var(--radius-md);
+  background: color-mix(in oklch, var(--bg-subtle) 72%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--white) 26%, transparent), var(--shadow-sm);
+  color: var(--text);
+  font-size: 12px;
+  transition:
+    background var(--dur-quick) var(--ease-out),
+    transform var(--dur-quick) var(--ease-out),
+    box-shadow var(--dur-quick) var(--ease-out);
+}
+
+.questions-panel__editor .qf-chip:hover:not(:disabled) {
+  background: var(--bg-hover);
+  transform: translateY(-1px);
+}
+
+.questions-panel__editor .qf-chip:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.questions-panel__editor .qf-chip-on {
   background: var(--accent-soft);
   box-shadow: inset 0 1px 0 color-mix(in oklch, var(--white) 34%, transparent), var(--shadow-sm);
   color: var(--text-strong);
-  font-size: 10px;
   font-weight: 600;
+}
+
+.questions-panel__editor .qf-input,
+.questions-panel__editor .qf-textarea,
+.questions-panel__editor .qf-select {
+  border: 0;
+  border-radius: var(--radius-md);
+  background: color-mix(in oklch, var(--bg-subtle) 72%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--white) 26%, transparent), var(--shadow-sm);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 13px;
+  transition: background var(--dur-quick) var(--ease-out), box-shadow var(--dur-quick) var(--ease-out);
+}
+
+.questions-panel__editor .qf-input:focus-visible,
+.questions-panel__editor .qf-textarea:focus-visible,
+.questions-panel__editor .qf-select:focus-visible {
+  background: var(--bg-elevated);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklch, var(--white) 30%, transparent),
+    0 0 0 2px var(--selected-soft),
+    var(--shadow-sm);
+  outline: none;
+}
+
+/* The form's own footer (used on the correction step, where the panel's
+   Continue row is hidden) is re-materialised: no chat-surface border or fill. */
+.questions-panel__editor .question-form-foot {
+  gap: 12px;
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.questions-panel__editor .qf-hint {
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.questions-panel__editor .question-form-foot .primary {
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--white) 26%, transparent), var(--shadow-sm);
+  color: var(--accent-contrast);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+/* ---------------------------------------------------------------------------
+   Secondary context: the merged Brief assumptions.
+   ------------------------------------------------------------------------- */
+
+.questions-panel__groups {
+  display: grid;
+  gap: 14px;
+  margin-top: 22px;
+  padding: 1px 3px 4px 1px;
+  overscroll-behavior: contain;
+}
+
+/* Influence evidence: a compact orientation cue, not a section banner. Plain
+   text with an accent dot — it informs without competing with the chips. */
+.questions-panel__influence {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 550;
   line-height: 1.4;
 }
 
@@ -70,13 +284,13 @@
 .questions-panel__group h3 {
   display: flex;
   align-items: center;
-  gap: 7px;
-  margin: 0 0 7px;
+  gap: 8px;
+  margin: 0 0 8px;
   color: var(--text-faint);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
 }
 
 .questions-panel__group h3::before {
@@ -93,161 +307,135 @@
 .questions-panel__chips {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 7px;
+  gap: 8px;
 }
 
+/* Assumption chips recede: translucent fill, inset highlight, soft shadow.
+   Stated (user-confirmed) chips carry the accent tint so confirmed context
+   reads at a glance without a drawn border. */
 .questions-panel__chip {
   display: grid;
   min-width: 0;
-  min-height: 54px;
-  padding: 9px 11px;
+  min-height: 56px;
+  padding: 10px 12px;
   align-content: center;
   gap: 3px;
   border: 0;
   border-radius: var(--radius-md);
-  background: var(--bg-subtle);
-  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--white) 34%, transparent), var(--shadow-sm);
+  background: color-mix(in oklch, var(--bg-subtle) 64%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--white) 26%, transparent), var(--shadow-sm);
   color: var(--text);
   cursor: pointer;
   font: inherit;
   text-align: start;
-  transition: background var(--dur-quick) var(--ease-out), transform var(--dur-quick) var(--ease-out);
+  transition:
+    background var(--dur-quick) var(--ease-out),
+    transform var(--dur-quick) var(--ease-out),
+    box-shadow var(--dur-quick) var(--ease-out);
 }
 
-.questions-panel__chip:hover {
+.questions-panel__chip:hover:not(:disabled) {
   background: var(--bg-hover);
   transform: translateY(-1px);
 }
 
-.questions-panel__chip[data-provenance='stated'] { background: var(--accent-soft); }
+.questions-panel__chip:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.questions-panel__chip[data-provenance='stated'] {
+  background: color-mix(in oklch, var(--accent-soft) 70%, transparent);
+}
+
 .questions-panel__key {
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 600;
+  letter-spacing: 0.01em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
 .questions-panel__value {
   display: -webkit-box;
   overflow: hidden;
   color: var(--text-strong);
-  font-size: 11px;
-  font-weight: 650;
+  font-size: 12px;
+  font-weight: 600;
   line-height: 1.35;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
 
-/* Correction step. This is a DRILL-IN of the same panel, never a layer over
-   it: the summary list is unmounted while this renders, so it stays in normal
-   flow with no position/z-index/inset of its own. Two stacked surfaces in two
-   design languages were the defect this replaces. */
-.questions-panel__editor {
-  display: grid;
-  gap: 10px;
-  margin-top: 16px;
-  padding: 1px 3px 4px 1px;
-  overscroll-behavior: contain;
-}
+/* ---------------------------------------------------------------------------
+   Footer: status + the one solid primary action.
+   ------------------------------------------------------------------------- */
 
-/* The shared question form uses the Questions panel's material:
-   borderless fills, inset highlights, chip motion. Its
-   own head is suppressed at the component level (hideInternalHead) because
-   this panel already titles the step. */
-.questions-panel__editor .question-form {
-  margin: 0;
-  border: 0;
-  border-radius: var(--radius-md);
-  background: transparent;
-  box-shadow: none;
-}
-
-.questions-panel__editor .question-form-body {
-  gap: 10px;
-  padding: 0;
-}
-
-.questions-panel__editor .qf-label {
-  color: var(--text-faint);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-}
-
-.questions-panel__editor .qf-help {
-  color: var(--text-muted);
-  font-size: 11px;
-  line-height: 1.45;
-}
-
-/* Option chips read as the summary chips they drilled in from. */
-.questions-panel__editor .qf-chip {
-  border: 0;
-  border-radius: var(--radius-md);
-  background: var(--bg-subtle);
-  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--white) 34%, transparent), var(--shadow-sm);
-  color: var(--text);
-  font-size: 11px;
-  transition: background var(--dur-quick) var(--ease-out), transform var(--dur-quick) var(--ease-out);
-}
-
-.questions-panel__editor .qf-chip:hover:not(:disabled) {
-  background: var(--bg-hover);
-  transform: translateY(-1px);
-}
-
-.questions-panel__editor .qf-chip-on {
-  background: var(--accent-soft);
-  color: var(--text-strong);
-}
-
-.questions-panel__editor .qf-input,
-.questions-panel__editor .qf-textarea,
-.questions-panel__editor .qf-select {
-  border: 0;
-  border-radius: var(--radius-md);
-  background: var(--bg-subtle);
-  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--white) 34%, transparent), var(--shadow-sm);
-  color: var(--text-strong);
-  font: inherit;
-  font-size: 12px;
-}
-
-.questions-panel__editor .question-form-foot {
-  gap: 10px;
-  margin-top: 4px;
-  padding: 0;
+.questions-panel .questions-panel-foot {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
   border: 0;
   background: transparent;
   box-shadow: none;
 }
 
-.questions-panel__editor .qf-hint {
-  color: var(--text-faint);
-  font-size: 10px;
-  line-height: 1.4;
+/* Hydration/queue status owns a row instead of competing with two
+   non-shrinking actions for the last few pixels of a narrow panel. */
+.questions-panel .questions-panel-status:not(:empty) {
+  flex: 1 0 100%;
+  overflow-wrap: anywhere;
 }
 
-.questions-panel__editor .question-form-foot .primary {
+.questions-panel .questions-panel-status:empty {
+  display: none;
+}
+
+.questions-panel .questions-panel-foot > button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Skip stays a quiet secondary next to the solid Continue. */
+.questions-panel .questions-skip {
   border: 0;
-  border-radius: var(--radius-pill);
-  background: var(--accent);
+  background: color-mix(in oklch, var(--bg-subtle) 72%, transparent);
   box-shadow: inset 0 1px 0 color-mix(in oklch, var(--white) 26%, transparent), var(--shadow-sm);
-  color: var(--accent-contrast);
-  font-size: 11px;
-  font-weight: 650;
 }
+
+.questions-panel .questions-skip:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+/* ---------------------------------------------------------------------------
+   Adaptive contracts.
+   ------------------------------------------------------------------------- */
 
 @media (max-width: 420px) {
   .questions-panel__chips { grid-template-columns: 1fr; }
+  .questions-panel__editor--primary { padding: 14px 14px 16px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .questions-panel__chip,
-  .questions-panel__editor .qf-chip { transition: none; }
-  .questions-panel__chip:hover,
+  .questions-panel__editor .qf-chip,
+  .questions-panel__editor .qf-input,
+  .questions-panel__editor .qf-textarea,
+  .questions-panel__editor .qf-select { transition: none; }
+  .questions-panel__chip:hover:not(:disabled),
   .questions-panel__editor .qf-chip:hover:not(:disabled) { transform: none; }
 }
 
+/* Reduced transparency: the shell canvas flattens, so the translucent fills
+   would read as muddy. Swap them for their opaque token equivalents. */
+@media (prefers-reduced-transparency: reduce) {
+  .questions-panel__editor--primary { background: var(--bg-elevated); }
+  .questions-panel__chip { background: var(--bg-subtle); }
+  .questions-panel__chip[data-provenance='stated'] { background: var(--accent-soft); }
+  .questions-panel__editor .qf-chip,
+  .questions-panel__editor .qf-input,
+  .questions-panel__editor .qf-textarea,
+  .questions-panel__editor .qf-select,
+  .questions-panel .questions-skip { background: var(--bg-subtle); }
+}
