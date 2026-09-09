@@ -24,7 +24,6 @@ describe('TooltipLayer', () => {
       const onToggle = vi.fn();
       const view = render(
         <>
-          <div id="app-window-chrome-rail-toggle" />
           <ProjectRail
             surface={surface}
             expanded={expanded}
@@ -44,7 +43,10 @@ describe('TooltipLayer', () => {
       );
 
       const toggle = screen.getByTestId(toggleTestId);
-      expect(toggle.parentElement?.id).toBe('app-window-chrome-rail-toggle');
+      // The toggle is rendered in the rail's own brand row, right after the brand.
+      expect(toggle.parentElement?.className).toBe('rail-head');
+      expect(toggle.previousSibling?.textContent).toBe('Brand');
+      expect(document.getElementById('app-window-chrome-rail-toggle')).toBeNull();
       expect(toggle.getAttribute('aria-expanded')).toBe(String(expanded));
       expect(toggle.hasAttribute('data-tooltip-allow-expanded')).toBe(true);
       fireEvent.click(toggle);

@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from 'r
 import type { KeyboardEvent } from 'react';
 import { ToggleButton } from '@readable-studio/components';
 import { useT } from '../i18n';
+import { DirectListbox } from './DirectListbox';
 import type { DirectionCard, FormOption, QuestionForm } from '../artifacts/question-form';
 import { formatFormAnswers, formOptionValueForLabel } from '../artifacts/question-form';
 
@@ -215,22 +216,21 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
                 </div>
               ) : null}
               {q.type === 'select' && q.options ? (
-                <select
+                // The product's direct listbox (shared with the composer's
+                // model picker), never a native <select>: the OS-drawn control
+                // ignored every product token and broke the form's look.
+                <DirectListbox
                   className="qf-select"
-                  aria-label={q.label}
-                  value={typeof value === 'string' ? value : ''}
+                  label={q.label}
+                  options={q.options}
+                  // Submitted history may carry the option label rather than
+                  // its stable value; resolve it so the locked field shows
+                  // the pick instead of the placeholder.
+                  value={typeof value === 'string' ? formOptionValueForLabel(q, value) : ''}
+                  placeholder={q.placeholder ?? t('qf.choose')}
                   disabled={locked}
-                  onChange={(e) => update(q.id, e.target.value)}
-                >
-                  <option value="" disabled>
-                    {q.placeholder ?? t('qf.choose')}
-                  </option>
-                  {q.options.map((opt) => (
-                    <option key={opt.value} value={opt.value} title={opt.description}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(nextValue) => update(q.id, nextValue)}
+                />
               ) : null}
               {q.type === 'text' ? (
                 <input

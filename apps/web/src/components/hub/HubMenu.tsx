@@ -1,7 +1,10 @@
-// Floating menu for the hub rail: row overflow menus and the sort dropdown.
+// Floating menu for the hub rail: row overflow menus, the collapsed-rail
+// project flyout, the sort dropdown and the footer's Library menu.
 //
-// The rail's scroller clips absolutely positioned children, so the menu is
-// portalled to the body with a viewport-clamped fixed rect. Focus moves into
+// The rail is an `overflow: hidden` glass box (44px wide when collapsed), so
+// any menu left inside it is clipped. EVERY rail-owned menu therefore goes
+// through this one placer: it is portalled to the body with a
+// viewport-clamped fixed rect that flips above its anchor near the floor. Focus moves into
 // the menu on open and is handed BACK to the row that owns the menu on close -
 // the tree's roving tabindex is meaningless if a dismissed menu drops focus to
 // the body.
@@ -34,6 +37,8 @@ type HubMenuItemBase = {
   readonly icon?: IconName;
   readonly shortcut?: string;
   readonly danger?: boolean;
+  /** Overrides the derived `${menuTestId}-${id}` hook for callers with stable ids. */
+  readonly testId?: string;
   readonly onSelect: () => void;
 };
 
@@ -56,6 +61,8 @@ type HubMenuToggleItem = HubMenuItemBase & {
 export type HubMenuItem = HubMenuActionItem | HubMenuRadioItem | HubMenuToggleItem;
 
 interface Props {
+  /** DOM id, so a trigger can point `aria-controls` at the portalled menu. */
+  id?: string;
   /** Heading rendered above the items, as in the mockup's labelled menus. */
   title: string;
   items: readonly HubMenuItem[];
@@ -75,7 +82,7 @@ interface Props {
   testId?: string;
 }
 
-export function HubMenu({ title, items, anchor, point = null, returnFocusTo, onClose, testId }: Props) {
+export function HubMenu({ id, title, items, anchor, point = null, returnFocusTo, onClose, testId }: Props) {
   const menuRef = useRef<HTMLDivElement | null>(null);
   const typeAheadRef = useRef('');
   const typeAheadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -210,6 +217,7 @@ export function HubMenu({ title, items, anchor, point = null, returnFocusTo, onC
   const body: ReactNode = (
     <div
       ref={menuRef}
+      id={id}
       className="hub-menu"
       role="menu"
       aria-label={title}
@@ -249,7 +257,7 @@ export function HubMenu({ title, items, anchor, point = null, returnFocusTo, onC
             type="button"
             role={presentation.role}
             className={`hub-menu__item${item.danger ? ' hub-menu__item--danger' : ''}`}
-            data-testid={testId ? `${testId}-${item.id}` : undefined}
+            data-testid={item.testId ?? (testId ? `${testId}-${item.id}` : undefined)}
             aria-label={presentation.state ? `${item.label} ${presentation.state}` : undefined}
             aria-checked={presentation.checked}
             style={presentation.selected ? SELECTED_ITEM_STYLE : undefined}

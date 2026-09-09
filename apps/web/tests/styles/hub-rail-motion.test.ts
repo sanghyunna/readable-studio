@@ -34,10 +34,13 @@ describe('Hub rail motion contract', () => {
 
     // `100%` ignores a grid item's margin and made the 10px-inset rail occupy
     // the complete 292px track. Auto stretch subtracts the live margin, giving
-    // 282px expanded and 44px collapsed without a state-only width snap.
+    // 282px expanded and 44px collapsed without a state-only width snap. The
+    // expanded panel is inset on its top and bottom by the same value, so the
+    // whole margin box docks together on collapse: `margin`, not one edge.
     expect(rail).toMatch(/inline-size:\s*auto\s*;/);
+    expect(rail).toMatch(/block-size:\s*auto\s*;/);
     expect(rail).toMatch(
-      /transition:\s*margin-inline-start\s+var\(--dur-enter\)\s+var\(--ease-out\)\s*;/,
+      /transition:\s*margin\s+var\(--dur-enter\)\s+var\(--ease-out\)\s*;/,
     );
     expect(collapsedRail).toMatch(/margin:\s*0\s*;/);
     expect(collapsedRail).toMatch(/transition-duration:\s*var\(--dur-exit\)\s*;/);

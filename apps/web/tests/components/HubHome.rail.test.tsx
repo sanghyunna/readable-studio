@@ -76,53 +76,44 @@ function seedTwoSessions() {
 }
 
 describe('HubHome rail', () => {
-  // The collapse toggle was deliberately relocated into the 36px window-chrome
-  // row, which is rendered ABOVE the shell body in App.tsx. ProjectRail portals
-  // the toggle into `#app-window-chrome-rail-toggle`, so the toggle becomes the
-  // document's FIRST tab stop and the brand the second - the exact inversion of
-  // the order that held before the move.
-  //
-  // This asserts the shipped order (chrome control -> brand -> rail contents)
-  // and, critically, that the relocation stranded nothing: every control still
-  // appears exactly once in the keyboard sequence. e2e/ui/qa-task-13.test.ts
-  // encodes the same contract against a real browser; this is its jsdom guard.
-  it('portals the collapse toggle ahead of the brand without stranding either control', () => {
-    const slot = document.createElement('div');
-    slot.id = 'app-window-chrome-rail-toggle';
-    document.body.append(slot);
-    try {
-      const { container } = renderHub();
+  // The collapse toggle belongs to the rail's own brand row: it renders right
+  // AFTER the brand inside the head row, never in the window chrome, so the
+  // keyboard order is brand -> toggle -> rail contents and nothing is stranded
+  // in a slot outside the rail.
+  it('keeps the collapse toggle inside the brand row, after the brand, without stranding either control', () => {
+    const { container } = renderHub();
 
-      const toggle = screen.getByTestId('hub-rail-toggle');
-      const brand = screen.getByTestId('hub-brand');
-      const newProject = screen.getByTestId('hub-new-project');
+    const toggle = screen.getByTestId('hub-rail-toggle');
+    const brand = screen.getByTestId('hub-brand');
+    const newProject = screen.getByTestId('hub-new-project');
 
-      // The toggle really left the rail and now lives in the chrome slot.
-      expect(toggle.parentElement).toBe(slot);
-      expect(container.contains(toggle)).toBe(false);
-      expect(screen.getAllByTestId('hub-rail-toggle')).toHaveLength(1);
+    // One toggle, inside the rail, sharing the brand's row.
+    expect(screen.getAllByTestId('hub-rail-toggle')).toHaveLength(1);
+    expect(container.contains(toggle)).toBe(true);
+    expect(toggle.closest('[data-project-rail]')).toBe(brand.closest('[data-project-rail]'));
+    expect(toggle.parentElement).toBe(brand.parentElement);
+    expect(toggle.parentElement?.hasAttribute('data-project-rail-head')).toBe(true);
+    expect(toggle.previousElementSibling).toBe(brand);
+    expect(document.getElementById('app-window-chrome-rail-toggle')).toBeNull();
 
-      // Document order is what the browser walks for Tab, so compare positions.
-      const ordered = [...document.querySelectorAll<HTMLElement>('[data-testid]')].filter(
-        (node) => node === toggle || node === brand || node === newProject,
-      );
-      expect(ordered.map((node) => node.dataset['testid'])).toEqual([
-        'hub-rail-toggle',
-        'hub-brand',
-        'hub-new-project',
-      ]);
+    // Document order is what the browser walks for Tab, so compare positions.
+    const ordered = [...document.querySelectorAll<HTMLElement>('[data-testid]')].filter(
+      (node) => node === toggle || node === brand || node === newProject,
+    );
+    expect(ordered.map((node) => node.dataset['testid'])).toEqual([
+      'hub-brand',
+      'hub-rail-toggle',
+      'hub-new-project',
+    ]);
 
-      // Nothing became unreachable: each control is focusable, enabled and not
-      // removed from the tab sequence by a negative tabindex.
-      for (const control of [toggle, brand, newProject]) {
-        expect(control.tagName).toBe('BUTTON');
-        expect((control as HTMLButtonElement).disabled).toBe(false);
-        expect(control.tabIndex).toBeGreaterThanOrEqual(0);
-        control.focus();
-        expect(document.activeElement).toBe(control);
-      }
-    } finally {
-      slot.remove();
+    // Nothing became unreachable: each control is focusable, enabled and not
+    // removed from the tab sequence by a negative tabindex.
+    for (const control of [toggle, brand, newProject]) {
+      expect(control.tagName).toBe('BUTTON');
+      expect((control as HTMLButtonElement).disabled).toBe(false);
+      expect(control.tabIndex).toBeGreaterThanOrEqual(0);
+      control.focus();
+      expect(document.activeElement).toBe(control);
     }
   });
 

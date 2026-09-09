@@ -98,10 +98,16 @@ export interface BriefAssumption {
   question?: BriefQuestion;
 }
 
+/** Questions owns this state. The persisted `metadata.brief` and wire DTO names
+ * remain stable for existing projects and CLI consumers; retiring the UI does
+ * not migrate or discard their generation context. */
 export interface ProjectBrief {
   assumptions: BriefAssumption[];
   updatedAt: number;
 }
+
+export type ProjectQuestions = ProjectBrief;
+export type QuestionAssumption = BriefAssumption;
 
 export interface ProjectMetadata {
   kind: ProjectKind;

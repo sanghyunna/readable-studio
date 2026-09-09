@@ -250,7 +250,18 @@ function unreadableDropDataTransfer(fallbackFiles: File[] = []) {
   };
 }
 
-describe('FileWorkspace brief placement', () => {
+describe('FileWorkspace Questions placement', () => {
+  it('exposes persisted assumptions only through Questions without a form or Brief surface', async () => {
+    await renderWorkspace(<FileWorkspace projectId="assumptions-only" projectKind="prototype" files={[]}
+      onRefreshFiles={vi.fn()} isDeck={false} tabsState={{ tabs: [], active: null }} onTabsStateChange={vi.fn()}
+      projectQuestions={{ updatedAt: 1, assumptions: [{ id: 'audience', label: 'Audience', value: 'buyers', provenance: 'stated' }] }}
+      onCorrectQuestion={vi.fn()} />);
+    expect(screen.queryByRole('tab', { name: /Brief/i })).toBeNull();
+    expect(screen.queryByTestId('brief-card')).toBeNull();
+    fireEvent.click(screen.getByTestId('questions-tab'));
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    expect(screen.getByRole('listitem', { name: /buyers/ })).toBeTruthy();
+  });
   it('does not permanently mount the project brief above the preview body', async () => {
     await renderWorkspace(
       <FileWorkspace
@@ -268,7 +279,7 @@ describe('FileWorkspace brief placement', () => {
     expect(document.querySelector('.ws-body')).toBeTruthy();
   });
 
-  it('retains the blocking Questions tab beside the persistent brief', async () => {
+  it('retains the blocking Questions tab', async () => {
     await renderWorkspace(
       <FileWorkspace
         projectId="project-with-blocker"

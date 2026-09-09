@@ -25,6 +25,7 @@ import {
 import { parseSubmittedAnswers } from './QuestionForm';
 import { applyBriefAssumptionToMetadata } from './home-hero/creation-brief';
 import {
+  formatBriefSteering,
   mergeBriefAssumptions,
   persistProjectBrief,
   readProjectBrief,
@@ -172,7 +173,6 @@ import { DesignSystemPicker } from './DesignSystemPicker';
 import { PluginDetailsModal } from './PluginDetailsModal';
 import { DesignSystemPreviewModal } from './DesignSystemPreviewModal';
 import { ChatPane } from './ChatPane';
-import { BriefCard } from './BriefCard';
 import {
   ASSISTANT_ROLLBACK_EVENT,
   filterRenderableProducedFiles,
@@ -1265,7 +1265,7 @@ export function ProjectView({
     [messages, questionsGenerating],
   );
   const questionForm = questionFormOccurrence?.form ?? null;
-  const hasHydratableQuestionForm = Boolean(questionForm);
+  const hasHydratableQuestionForm = Boolean(questionForm || readProjectBrief(project.metadata));
   const questionFormAssistantIndex = questionFormOccurrence?.messageIndex ?? -1;
   const questionFormMessageId = questionFormOccurrence?.messageId ?? null;
   const receiptAssumptions = useMemo(
@@ -1309,6 +1309,8 @@ export function ProjectView({
     // state contains a duplicate id. This also preserves earlier corrections
     // while the parent project snapshot is catching up with the PATCH.
     const correctedMetadata = applyBriefAssumptionToMetadata(metadata, correctedAssumption);
+    if (['fidelity', 'platformTargets', 'companionSurfaces', 'speakerNotes', 'animations'].includes(correctedAssumption.id)
+      && correctedMetadata === metadata) return false;
     const persisted = await persistProjectBrief(project.id, correctedMetadata, next);
     if (persisted) setProjectBrief(next);
     return persisted;
@@ -6002,16 +6004,6 @@ export function ProjectView({
           onLaunchTerminalAuth={handleLaunchAntigravityOauth}
           conversationId={activeConversationId}
           headerActions={(
-            <div className="preview-brief-actions">
-              {projectBrief ? (
-                <BriefCard
-                  brief={projectBrief}
-                  onChange={handleBriefChange}
-                  onSteer={(payload) => {
-                    void handleSend(payload, [], []);
-                  }}
-                />
-              ) : null}
               <EntrySettingsMenu
               config={config}
               onThemeChange={handleThemeChange}
@@ -6029,8 +6021,14 @@ export function ProjectView({
                 });
               }}
             />
-            </div>
           )}
+          projectQuestions={projectBrief}
+          onCorrectQuestion={async (next, corrected) => {
+            const persisted = await handleBriefChange(next, corrected);
+            if (!persisted) return false;
+            await handleSend(formatBriefSteering(corrected, corrected.value), [], []);
+            return true;
+          }}
           questionForm={displayedQuestionForm}
           questionFormPreview={displayedQuestionFormPreview}
           questionFormKey={displayedQuestionFormKey}

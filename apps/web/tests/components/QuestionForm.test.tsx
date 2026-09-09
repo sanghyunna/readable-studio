@@ -151,12 +151,13 @@ describe('QuestionFormView', () => {
       <QuestionFormView form={voiceForm} interactive submittedAnswers={undefined} onSubmit={onSubmit} />,
     );
 
-    const select = screen.getByRole('combobox') as HTMLSelectElement;
-    expect(container.querySelector('option[value="21m00Tcm4TlvDq8ikWAM"]')?.textContent).toBe(
-      'Rachel — american · female',
-    );
+    const trigger = screen.getByRole('combobox', { name: 'Voice' });
+    expect(container.querySelector('select')).toBeNull();
+    expect(trigger.textContent).toContain('Choose a voice');
 
-    fireEvent.change(select, { target: { value: '21m00Tcm4TlvDq8ikWAM' } });
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole('option', { name: 'Rachel — american · female' }));
+    expect(trigger.textContent).toContain('Rachel — american · female');
     fireEvent.click(screen.getByRole('button', { name: 'Use voice' }));
 
     expect(onSubmit).toHaveBeenCalledWith(
@@ -173,9 +174,10 @@ describe('QuestionFormView', () => {
       />,
     );
 
-    expect((screen.getByRole('combobox') as HTMLSelectElement).value).toBe(
-      '21m00Tcm4TlvDq8ikWAM',
-    );
+    const locked = screen.getByRole('combobox', { name: 'Voice' }) as HTMLButtonElement;
+    expect(locked.getAttribute('data-value')).toBe('21m00Tcm4TlvDq8ikWAM');
+    expect(locked.textContent).toContain('Rachel — american · female');
+    expect(locked.disabled).toBe(true);
   });
 
   it('parses submitted object-option values from readable answer text', () => {
@@ -330,9 +332,9 @@ describe('QuestionFormView', () => {
     // Required select unanswered → submit stays disabled (regression guard).
     expect((submit as HTMLButtonElement).disabled).toBe(true);
 
-    const select = container.querySelector('select');
-    if (!select) throw new Error('expected select control');
-    fireEvent.change(select, { target: { value: 'mobile' } });
+    expect(container.querySelector('select')).toBeNull();
+    fireEvent.click(screen.getByRole('combobox', { name: 'Primary surface' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Mobile (iOS/Android)' }));
 
     expect((submit as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(submit);

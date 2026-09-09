@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@readable-studio/components';
 import { questionsFormTrackingId } from '@readable-studio/contracts/analytics';
 import { useT } from '../i18n';
@@ -6,6 +6,8 @@ import { useAnalytics } from '../analytics/provider';
 import { trackQuestionsFormClick, trackQuestionsFormSurfaceView } from '../analytics/events';
 import type { QuestionForm } from '../artifacts/question-form';
 import { QuestionFormView, type QuestionFormHandle } from './QuestionForm';
+import { localizeBriefAssumption, questionForAssumption, type BriefAssumption, type ProjectBrief } from './brief-state';
+import './QuestionsPanel.css';
 
 const viewedFormOccurrences = new Set<string>();
 const QUESTION_FORM_DRAFT_STORAGE_PREFIX = 'readable-studio:question-form-draft:';
@@ -13,6 +15,8 @@ type QuestionFormAnswers = Record<string, string | string[]>;
 export type QuestionRunHydrationStatus = 'pending' | 'failed' | 'ready';
 
 interface Props {
+  brief?: ProjectBrief | null;
+  onCorrect?: (brief: ProjectBrief, corrected: BriefAssumption) => Promise<boolean>;
   projectId?: string;
   form: QuestionForm | null;
   formKey?: string | null;
@@ -27,6 +31,8 @@ interface Props {
 }
 
 export function QuestionsPanel({
+  brief,
+  onCorrect,
   projectId,
   form,
   formKey = null,
@@ -45,6 +51,34 @@ export function QuestionsPanel({
   const [ready, setReady] = useState(false);
   const [draftAnswers, setDraftAnswers] = useState<QuestionFormAnswers | undefined>(() => readQuestionFormDraft(formKey));
   const answered = submittedAnswers !== undefined;
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [correctionError, setCorrectionError] = useState(false);
+  const savingRef = useRef(false);
+  const assumptions = useMemo(() => brief?.assumptions.map(item => localizeBriefAssumption(item, t)) ?? [], [brief, t]);
+  const editing = assumptions.find(item => item.id === editingId);
+  const correctionForm = useMemo<QuestionForm | null>(() => editing ? {
+    id: `correction-${editing.id}`, title: t('questions.correctTitle', { label: editing.label }),
+    questions: [questionForAssumption(editing)], submitLabel: t('questions.applyCorrection'),
+  } : null, [editing, t]);
+  const correctionDisabled = submitDisabled || runHydrationStatus !== 'ready' || saving;
+  async function applyCorrection(answers: QuestionFormAnswers) {
+    if (!editing || !brief || !onCorrect || correctionDisabled || savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    setCorrectionError(false);
+    const corrected: BriefAssumption = { ...editing, value: answers[editing.id] ?? '', displayValue: undefined, provenance: 'stated' };
+    try {
+      const persisted = await onCorrect({ assumptions: brief.assumptions.map(item => item.id === editing.id ? corrected : item), updatedAt: Date.now() }, corrected);
+      if (persisted) setEditingId(null);
+      else setCorrectionError(true);
+    } catch {
+      setCorrectionError(true);
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  }
 
   useEffect(() => {
     if (!form || answered || !projectId) return;
@@ -98,9 +132,42 @@ export function QuestionsPanel({
   const canContinue = canSubmit && ready;
 
   return (
-    <div className="questions-panel" data-testid="questions-panel">
+    <section className="questions-panel" data-testid="questions-panel" data-step={editing ? 'correct' : 'summary'} role="dialog" aria-labelledby="questions-panel-title">
+      <header className="questions-panel__head">
+        {editing ? <Button variant="ghost" disabled={saving} aria-label={t('questions.backToSummary')} onClick={() => { setEditingId(null); setCorrectionError(false); }}>‹</Button> : null}
+        <div><h2 id="questions-panel-title">{editing ? t('questions.correctTitle', { label: editing.label }) : t('questions.title')}</h2>
+          <p>{t(editing ? 'questions.correctionDescription' : 'questions.description')}</p></div>
+      </header>
       <div className="questions-panel-body">
+        {editing && correctionForm ? <div className="questions-panel__editor">
+          <QuestionFormView key={editing.id} form={correctionForm} interactive hideInternalHead
+            submitDisabled={correctionDisabled} draftAnswers={{ [editing.id]: editing.value }}
+            onSubmit={(_text, answers) => applyCorrection(answers)} />
+          {correctionError ? <p role="alert">{t('questions.correctionFailed')}</p> : null}
+        </div> : <>
+        {brief ? <div className="questions-panel__groups" role="group" aria-label={t('questions.assumptions')}>
+          <p className="questions-panel__influence" data-testid="questions-influence" data-count={assumptions.length} data-confirmed={assumptions.filter(item => item.provenance === 'stated').length}>
+            {t('questions.influence', { count: assumptions.length, stated: assumptions.filter(item => item.provenance === 'stated').length })}
+          </p>
+          {(['stated', 'inferred', 'default'] as const).map(provenance => {
+            const group = assumptions.filter(item => item.provenance === provenance);
+            return group.length ? <section className="questions-panel__group" key={provenance}>
+              <h3 data-provenance={provenance}>{t(`questions.provenance.${provenance}`)}</h3>
+              <div className="questions-panel__chips" role="list">{group.map(item => {
+                const value = item.displayValue ?? (Array.isArray(item.value) ? item.value.join(', ') : item.value);
+                return <Button key={item.id} role="listitem" className="questions-panel__chip" data-provenance={provenance}
+                  disabled={!onCorrect} aria-label={t('questions.assumptionLabel', { label: item.label, value, provenance: t(`questions.provenance.${provenance}`) })}
+                  onClick={() => { setEditingId(item.id); setCorrectionError(false); }}>
+                  <span className="questions-panel__key">{item.label}</span><span className="questions-panel__value">{value}</span>
+                </Button>;
+              })}</div>
+            </section> : null;
+          })}
+        </div> : null}
         {form ? (
+          <div className="questions-panel__editor">
+          <h3>{form.title}</h3>{answered ? <span className="question-form-pill">{t('qf.answered')}</span> : null}
+          {form.description ? <p>{form.description}</p> : null}
           <QuestionFormView
             ref={formRef}
             form={form}
@@ -110,12 +177,15 @@ export function QuestionsPanel({
             submittedQueued={submissionQueued}
             draftAnswers={draftAnswers}
             hideInternalSubmit
+            hideInternalHead
             onReadyChange={setReady}
             onDraftChange={updateDraftAnswers}
             onAnswerChange={handleAnswerChange}
             onSubmit={submitAndClearDraft}
           />
-        ) : <div className="questions-panel-skeleton">{t('questions.generating')}</div>}
+          </div>
+        ) : !brief ? <div className="questions-panel-skeleton">{t(generating ? 'questions.generating' : 'questions.empty')}</div> : null}
+        </>}
       </div>
       <div className="questions-panel-foot">
         <span className="questions-panel-status" role="status">
@@ -134,7 +204,7 @@ export function QuestionsPanel({
             {t('questions.retryRunHydration')}
           </Button>
         ) : null}
-        {!answered ? (
+        {!editing && form && !answered ? (
           <button
             type="button"
             className="questions-skip"
@@ -144,11 +214,11 @@ export function QuestionsPanel({
             {t('questions.skipAll')}
           </button>
         ) : null}
-        <button type="button" className="questions-continue" disabled={!canContinue} onClick={() => formRef.current?.submit()}>
+        {!editing && form ? <button type="button" className="questions-continue" disabled={!canContinue} onClick={() => formRef.current?.submit()}>
           {t('questions.continue')}
-        </button>
+        </button> : null}
       </div>
-    </div>
+    </section>
   );
 }
 

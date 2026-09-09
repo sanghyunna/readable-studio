@@ -11,9 +11,13 @@
        The toggle floated on bare canvas, attached to nothing, because it
        was a SIBLING of the rail positioned against the viewport/grid rather
        than a child of the rail's own head row.
-     - "사이드바 바닥이 왜 윈도우 바닥에 안 닿는거야?"
-       The rail carried a bottom margin/radius, so it hovered above the
-       window floor with a strip of bare canvas underneath it.
+     - The two surfaces disagreed about whether the rail met the window
+       floor at all. The current, deliberate answer (Rule 1): EXPANDED is a
+       panel floating inside the shell with ONE inset on its top, bottom and
+       start edges; COLLAPSED is an edge-anchored strip flush to the wall,
+       the window top and the window floor. The block inset follows the
+       same rule the inline inset already followed: it exists only when
+       expanded.
 
    The fix is not two more patches. Every rule that both surfaces must agree
    on lives HERE, once, keyed off the surface-agnostic `[data-project-rail]`
@@ -23,8 +27,10 @@
      [data-project-rail]                     the rail element itself
      [data-project-rail-state='collapsed']   thin, always-visible strip
      [data-project-rail-state='expanded']    docked panel
+     [data-project-rail-head]                the brand row, which owns the
+                                             brand and the toggle
      [data-project-rail-toggle]              the collapse/expand control,
-                                             portaled into window chrome
+                                             inside the brand row
 
    There is no third state. "Gone, only a button remains" is not a state.
 
@@ -38,22 +44,39 @@
      from this one declaration, so they cannot drift apart again. */
   --project-rail-collapsed: 44px;
   --project-rail-expanded: 292px;
+  /* THE one inset that detaches the expanded rail from the shell. It began
+     life as the Hub's 10px inline-start gap; the block-start and block-end
+     gaps derive from the same declaration so the panel reads as one
+     deliberate value on every side, not three unrelated numbers. */
+  --project-rail-inset: 10px;
 }
 
-/* ---- Rule 1: the rail reaches the window bottom, in BOTH states ----
-   A navigation rail is a full-height surface, not a floating card. Any
-   bottom gap reads as a rendering slip against the window frame, so the
-   block-end margin is zero and the bottom corners square off where they
-   meet the frame. The inline inset (the thing that detaches the slab from
-   the stage) is the surface's own business and is left alone. */
+/* ---- Rule 1: expanded floats on every side, collapsed is edge-anchored ----
+   EXPANDED is a panel inset from the shell top, floor and wall by the one
+   shared inset - never a full-height column with a gap on one side only.
+   COLLAPSED keeps today's strip: flush to the wall, the window top and the
+   window floor, 44px wide. The block inset therefore exists only when
+   expanded, exactly like the inline inset the surfaces already own.
+   `block-size: auto` is load-bearing: a grid item's percentage height
+   ignores its margins, so `100%` plus a block margin overflowed the track.
+   Auto stretch subtracts the live margin instead, in both states, so the
+   height interpolates with the margins rather than snapping at the state
+   flip. The inline-start inset is the surface's own business (it animates
+   with the track) and is left alone. */
 [data-project-rail] {
   position: relative;
   min-block-size: 0;
-  block-size: 100%;
+  block-size: auto;
+}
+
+[data-project-rail][data-project-rail-state='expanded'] {
+  margin-block-start: var(--project-rail-inset);
+  margin-block-end: var(--project-rail-inset);
+}
+
+[data-project-rail][data-project-rail-state='collapsed'] {
+  margin-block-start: 0;
   margin-block-end: 0;
-  border-block-end: 0;
-  border-end-start-radius: 0;
-  border-end-end-radius: 0;
 }
 
 /* ---- Rule 2: the collapsed strip is VISIBLE and INTERACTIVE ----
@@ -74,10 +97,13 @@
   pointer-events: auto;
 }
 
-/* ---- Rule 3: the toggle belongs to the shared window chrome ----
-   ProjectRail portals its one toggle into the top-left chrome slot. Static
-   positioning keeps it in that row's flow, while `no-drag` makes the control
-   clickable inside the frameless title bar. */
+/* ---- Rule 3: the toggle belongs to the rail's brand row ----
+   ProjectRail renders its one toggle inside `[data-project-rail-head]`, right
+   after the brand: beside the wordmark while expanded, in the brand's place
+   once collapsed. Static positioning keeps it in that row's flow. The brand
+   row sits below the frameless title strip, and `no-drag` is kept so the
+   control can never be swallowed by the native drag region if a surface ever
+   raises the row into it. */
 [data-project-rail-toggle] {
   position: static;
   z-index: auto;

@@ -190,6 +190,8 @@ interface Props {
   designSystems?: DesignSystemSummary[];
   defaultDesignSystemId?: string | null;
   onSubmit: (payload: PluginLoopSubmit) => Promise<boolean> | boolean | void;
+  /** Reject before submission can consume draft state or apply plugin context. */
+  modelSelectionGuard?: () => boolean;
   onOpenProject: (id: string) => void;
   onViewAllProjects: () => void;
   onBrowseRegistry?: () => void;
@@ -220,6 +222,7 @@ export function HomeView({
   designSystems = EMPTY_DESIGN_SYSTEMS,
   defaultDesignSystemId = null,
   onSubmit,
+  modelSelectionGuard,
   onOpenProject,
   onViewAllProjects,
   onBrowseRegistry,
@@ -1259,6 +1262,7 @@ export function HomeView({
       return false;
     }
     if (submitInFlightRef.current) return false;
+    if (modelSelectionGuard && !modelSelectionGuard()) return false;
     submitInFlightRef.current = true;
     setSubmitInFlight(true);
     setError(null);
@@ -1413,7 +1417,6 @@ export function HomeView({
       if (!autoSendFirstMessage || !examplePromptInfoRef.current) return null;
       const key = 'readable:example-prompt-used';
       if (localStorage.getItem(key)) return null;
-      localStorage.setItem(key, '1');
       return examplePromptInfoRef.current;
     })();
     let submission: Promise<boolean> | boolean | void;
@@ -1449,6 +1452,8 @@ export function HomeView({
         setError('Failed to start the project. Try again.');
         return false;
       }
+      if (examplePromptContext) localStorage.setItem('readable:example-prompt-used', '1');
+      setPrompt('');
       setSelectedPluginContexts([]);
       setSelectedMcpContexts([]);
       setStagedFiles([]);

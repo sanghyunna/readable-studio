@@ -77,7 +77,7 @@ import {
   parseBriefReceipt,
   stripBriefReceiptsForDisplay,
 } from '../../src/components/ProjectView';
-import { BriefCard } from '../../src/components/BriefCard';
+import { QuestionsPanel } from '../../src/components/QuestionsPanel';
 import type {
   AgentEvent,
   AgentInfo,
@@ -288,13 +288,12 @@ describe('brief receipt display boundary', () => {
     const assumptions = parseBriefReceipt(raw.content);
     expect(assumptions).toHaveLength(2);
     render(
-      <BriefCard
+      <QuestionsPanel
         brief={{ assumptions: assumptions!, updatedAt: 1 }}
-        onChange={() => {}}
-        onSteer={() => {}}
+        form={null} interactive={false} generating={false}
+        onCorrect={async () => true} onSubmit={() => {}}
       />,
     );
-    fireEvent.click(screen.getByTestId('brief-card').querySelector<HTMLButtonElement>('.brief-card__trigger')!);
     const stated = screen.getAllByRole('listitem', { hidden: true })
       .find((item) => item.getAttribute('data-provenance') === 'stated');
     expect(stated?.textContent).toContain('Slide deck (논문 요약)');

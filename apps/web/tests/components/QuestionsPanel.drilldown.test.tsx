@@ -1,26 +1,10 @@
 // @vitest-environment jsdom
-
-/**
- * The Brief correction flow is ONE surface, not two stacked layers.
- *
- * Shipped defect: opening the `Brief` trigger rendered the assumption list,
- * and picking a field rendered the correction editor as an absolutely
- * positioned overlay (`.brief-card__editor { position: absolute; inset: 8px }`)
- * ON TOP of that still-mounted list - two panels visible at once, in two
- * different visual languages, because the editor wrapped the chat-era
- * `QuestionFormView` chrome (blue circular `?` badge, its own head/foot).
- *
- * The model these tests pin: the correction is a DRILL-IN STEP of the same
- * panel. The list unmounts when the editor opens, so no second layer exists to
- * stack, occlude, or become unclickable - and the editor is built from the
- * Brief's own tokens, not a foreign palette.
- */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { BriefCard } from '../../src/components/BriefCard';
+import { QuestionsPanel } from '../../src/components/QuestionsPanel';
 import type { ProjectBrief } from '../../src/components/brief-state';
 
 const brief: ProjectBrief = {
@@ -33,7 +17,7 @@ const brief: ProjectBrief = {
 };
 
 const briefCss = readFileSync(
-  resolve(__dirname, '../../src/components/BriefCard.css'),
+  resolve(__dirname, '../../src/components/QuestionsPanel.css'),
   'utf8',
 );
 
@@ -48,13 +32,12 @@ afterEach(() => {
 });
 
 function openPanel(): HTMLElement {
-  fireEvent.click(screen.getByRole('button', { name: /Brief/ }));
-  return screen.getByTestId('brief-card-panel');
+  return screen.getByTestId('questions-panel');
 }
 
 function openEditor(): HTMLElement {
   fireEvent.click(screen.getByRole('listitem', { name: 'Audience: dev-tools buyers (Inferred)' }));
-  return screen.getByTestId('brief-card-panel');
+  return screen.getByTestId('questions-panel');
 }
 
 /** Every declaration block whose selector list mentions `selector`. */
@@ -70,9 +53,9 @@ function rulesFor(selector: string): string[] {
   return blocks;
 }
 
-describe('BriefCard correction is a drill-in, not a second panel', () => {
+describe('QuestionsPanel correction is a drill-in, not a second panel', () => {
   it('unmounts the assumption list when the correction step opens', () => {
-    render(<BriefCard brief={brief} onChange={() => {}} onSteer={() => {}} />);
+    render(<QuestionsPanel brief={brief} form={null} interactive={false} generating={false} onCorrect={async () => true} onSubmit={() => {}} />);
     openPanel();
 
     expect(screen.getByRole('group', { name: 'Project assumptions' })).toBeTruthy();
@@ -86,31 +69,31 @@ describe('BriefCard correction is a drill-in, not a second panel', () => {
     expect(screen.getByText('Correct Audience')).toBeTruthy();
   });
 
-  it('keeps exactly one Brief surface mounted in either step', () => {
-    render(<BriefCard brief={brief} onChange={() => {}} onSteer={() => {}} />);
+  it('keeps exactly one Questions surface mounted in either step', () => {
+    render(<QuestionsPanel brief={brief} form={null} interactive={false} generating={false} onCorrect={async () => true} onSubmit={() => {}} />);
     openPanel();
-    expect(screen.getAllByTestId('brief-card-panel')).toHaveLength(1);
+    expect(screen.getAllByTestId('questions-panel')).toHaveLength(1);
 
     openEditor();
-    expect(screen.getAllByTestId('brief-card-panel')).toHaveLength(1);
+    expect(screen.getAllByTestId('questions-panel')).toHaveLength(1);
     // No nested dialog layer inside the panel - the panel IS the dialog.
     expect(screen.getAllByRole('dialog')).toHaveLength(1);
   });
 
   it('marks which step the single panel is showing', () => {
-    render(<BriefCard brief={brief} onChange={() => {}} onSteer={() => {}} />);
+    render(<QuestionsPanel brief={brief} form={null} interactive={false} generating={false} onCorrect={async () => true} onSubmit={() => {}} />);
     expect(openPanel().dataset.step).toBe('summary');
     expect(openEditor().dataset.step).toBe('correct');
   });
 
   it('returns to the summary step from the correction step', () => {
-    render(<BriefCard brief={brief} onChange={() => {}} onSteer={() => {}} />);
+    render(<QuestionsPanel brief={brief} form={null} interactive={false} generating={false} onCorrect={async () => true} onSubmit={() => {}} />);
     openPanel();
     openEditor();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Back to project brief' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Back to questions' }));
 
-    expect(screen.getByTestId('brief-card-panel').dataset.step).toBe('summary');
+    expect(screen.getByTestId('questions-panel').dataset.step).toBe('summary');
     expect(screen.getAllByRole('listitem')).toHaveLength(3);
     expect(screen.queryByText('Correct Audience')).toBeNull();
   });
@@ -118,7 +101,7 @@ describe('BriefCard correction is a drill-in, not a second panel', () => {
   it('never positions the correction step as an overlay layer', () => {
     // The defect was structural: an absolutely positioned, z-indexed box inset
     // over the list. A drill-in step must be in normal flow.
-    for (const block of rulesFor('.brief-card__editor')) {
+    for (const block of rulesFor('.questions-panel__editor')) {
       expect(block).not.toMatch(/position\s*:\s*(absolute|fixed)/);
       expect(block).not.toMatch(/z-index\s*:/);
       expect(block).not.toMatch(/inset\s*:/);
@@ -126,9 +109,9 @@ describe('BriefCard correction is a drill-in, not a second panel', () => {
   });
 });
 
-describe('BriefCard shares one visual contract across both steps', () => {
+describe('QuestionsPanel shares one visual contract across both steps', () => {
   it('renders no foreign question-form chrome inside the panel', () => {
-    render(<BriefCard brief={brief} onChange={() => {}} onSteer={() => {}} />);
+    render(<QuestionsPanel brief={brief} form={null} interactive={false} generating={false} onCorrect={async () => true} onSubmit={() => {}} />);
     openPanel();
     const panel = openEditor();
 
@@ -144,7 +127,7 @@ describe('BriefCard shares one visual contract across both steps', () => {
     expect(loneGlyphs).toEqual([]);
     // Exactly one title for the step, owned by the Brief panel itself.
     expect(screen.getAllByText('Correct Audience')).toHaveLength(1);
-    expect(panel.querySelector('#brief-card-title')?.textContent).toBe('Correct Audience');
+    expect(panel.querySelector('#questions-panel-title')?.textContent).toBe('Correct Audience');
     // The submit row that remains is re-materialised by the Brief, not left in
     // the chat surface's borders-and-panel-fill styling.
     const footCss = rulesFor('.question-form-foot').join('\n');
@@ -170,16 +153,16 @@ describe('BriefCard shares one visual contract across both steps', () => {
   });
 
   it('styles the correction step with the same radius/shadow/typography tokens as the summary step', () => {
-    const editorCss = rulesFor('.brief-card__editor').join('\n');
+    const editorCss = rulesFor('.questions-panel__editor').join('\n');
     expect(editorCss).toMatch(/var\(--radius-/);
     // Same motion vocabulary as the chips it drills in from.
-    const chipCss = rulesFor('.brief-card__chip').join('\n');
+    const chipCss = rulesFor('.questions-panel__chip').join('\n');
     expect(chipCss).toMatch(/var\(--dur-quick\)/);
     expect(chipCss).toMatch(/var\(--ease-out\)/);
   });
 
   it('keeps the correction step reachable: no pointer-events lockout on the live panel', () => {
-    render(<BriefCard brief={brief} onChange={() => {}} onSteer={() => {}} />);
+    render(<QuestionsPanel brief={brief} form={null} interactive={false} generating={false} onCorrect={async () => true} onSubmit={() => {}} />);
     openPanel();
     const panel = openEditor();
 
@@ -198,7 +181,7 @@ describe('BriefCard shares one visual contract across both steps', () => {
       signalSteered = resolve;
     });
     const onSteer = vi.fn(() => signalSteered?.());
-    render(<BriefCard brief={brief} onChange={onChange} onSteer={onSteer} />);
+    render(<QuestionsPanel brief={brief} form={null} interactive={false} generating={false} onSubmit={() => {}} onCorrect={async (next, corrected) => { onChange(next, corrected); onSteer(); return true; }} />);
     openPanel();
     openEditor();
 
@@ -215,7 +198,7 @@ describe('BriefCard shares one visual contract across both steps', () => {
       value: 'security leaders',
       provenance: 'stated',
     });
-    expect(screen.getByTestId('brief-card-panel').dataset.step).toBe('summary');
+    expect(screen.getByTestId('questions-panel').dataset.step).toBe('summary');
     expect(screen.getAllByRole('listitem')).toHaveLength(3);
   });
 });

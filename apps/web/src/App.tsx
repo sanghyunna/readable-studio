@@ -23,6 +23,7 @@ import {
 import { EntryView } from './components/EntryView';
 import type { IntegrationTab } from './components/IntegrationsView';
 import type { CreateInput, CreateTab, ImportClaudeDesignOutcome } from './components/NewProjectPanel';
+import { documentProjectName, type HubImportFileOutcome } from './components/hub/drop-to-edit';
 import { NewProjectModal } from './components/NewProjectModal';
 import { MemoryToast } from './components/MemoryToast';
 import { Toast } from './components/Toast';
@@ -51,6 +52,7 @@ import {
   fetchDesignSystems,
   fetchDesignTemplates,
   fetchSkills,
+  uploadProjectFile,
   uploadProjectFiles,
   replaceProjectWorkingDir,
 } from './providers/registry';
@@ -1476,6 +1478,44 @@ function AppInner() {
     }
   }, [rememberLocalProject]);
 
+  // Hub drop-to-edit. Same seam the ZIP import drives: create the project,
+  // land the document through the project-file API (which keeps its name, so
+  // the workspace tab reads `report.html`, not an upload-stamped alias), then
+  // route straight to that file. No model, no prompt, no auto-send: the user
+  // came to edit, not to generate.
+  const handleImportFile = useCallback(async (file: File): Promise<HubImportFileOutcome> => {
+    const result = await createProject({
+      name: documentProjectName(file.name),
+      skillId: null,
+      designSystemId: null,
+      metadata: {
+        kind: 'other',
+        nameSource: 'user',
+        importedFrom: 'file',
+        sourceFileName: file.name,
+      },
+    });
+    if (!result) return { ok: false };
+    const written = await uploadProjectFile(result.project.id, file);
+    if (!written) {
+      // Never strand an empty project behind a failed write; the toast is
+      // the user's signal, the daemon must not keep a ghost row.
+      void deleteProjectApi(result.project.id);
+      return { ok: false };
+    }
+    rememberLocalProject(result.project.id);
+    setProjects((curr) => [
+      result.project,
+      ...curr.filter((p) => p.id !== result.project.id),
+    ]);
+    navigate({
+      kind: 'project',
+      projectId: result.project.id,
+      fileName: written.name,
+    });
+    return { ok: true };
+  }, [rememberLocalProject]);
+
   const handleImportFolder = useCallback(async (baseDir: string) => {
     const result = await importFolderProject({ baseDir });
     rememberLocalProject(result.project.id);
@@ -2106,6 +2146,7 @@ function AppInner() {
         onCreateProject={handleCreateProject}
         onCreatePluginShareProject={handleCreatePluginShareProject}
         onOpenNewProject={openNewProject}
+        onImportFile={handleImportFile}
         onOpenProject={handleOpenProject}
         onDeleteProject={handleDeleteProject}
         onRenameProject={handleRenameProject}
@@ -2133,15 +2174,11 @@ function AppInner() {
           className="app-chrome-header app-window-chrome"
           data-testid="app-window-chrome"
         >
-          {/* The rail control occupies the top-left control slot while the
-              flexible drag filler keeps the traffic lights pinned top-right.
-              Both control islands opt out of the native drag region; all bare
-              space between them still supports drag, snap and double-click. */}
-          <div
-            id="app-window-chrome-rail-toggle"
-            className="app-window-chrome__rail-toggle"
-            data-testid="app-window-chrome-rail-toggle"
-          />
+          {/* The flexible drag filler keeps the traffic lights pinned top-right
+              and makes the whole strip drag, snap and double-click. The rail's
+              collapse toggle lives in the rail's own brand row (below this
+              band), not here: the only control island in the strip is the
+              traffic lights, which opt out of the native drag region. */}
           <div className="app-window-chrome__drag app-chrome-drag" aria-hidden="true" />
           <WindowControls />
         </header>

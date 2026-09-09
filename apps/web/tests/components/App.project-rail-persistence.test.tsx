@@ -574,6 +574,81 @@ describe('Project rail persistence across Hub -> workspace -> Hub', () => {
     expect(rail.getAttribute('data-project-rail-state')).toBe('expanded');
   });
 
+  it('renders exactly one toggle, inside the rail brand row, with no chrome slot host, on the same node across the swap in both states', async () => {
+    await renderHubWithSessions();
+    const rail = theRail();
+    const toggle = railToggle();
+
+    const inBrandRow = () => {
+      const current = railToggle();
+      const head = current.parentElement as HTMLElement;
+      // A descendant of the rail's brand row, right after the brand itself.
+      expect(head.hasAttribute('data-project-rail-head')).toBe(true);
+      expect(head.parentElement).toBe(rail);
+      expect(current.previousElementSibling).toBe(screen.getByTestId('hub-brand'));
+      // No portal target and no dead host anywhere in the document.
+      expect(document.getElementById('app-window-chrome-rail-toggle')).toBeNull();
+      expect(screen.queryByTestId('app-window-chrome-rail-toggle')).toBeNull();
+      expect(screen.getByTestId('app-window-chrome').querySelector('[data-project-rail-toggle]')).toBeNull();
+      return current;
+    };
+
+    expect(inBrandRow()).toBe(toggle);
+    await openWorkspace();
+    expect(theRail()).toBe(rail);
+    expect(inBrandRow()).toBe(toggle);
+
+    fireEvent.click(railToggle());
+    expect(rail.dataset['projectRailState']).toBe('collapsed');
+    expect(inBrandRow()).toBe(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+
+    await returnToHub();
+    expect(theRail()).toBe(rail);
+    expect(inBrandRow()).toBe(toggle);
+    fireEvent.click(railToggle());
+    expect(rail.dataset['projectRailState']).toBe('expanded');
+    expect(inBrandRow()).toBe(toggle);
+  });
+
+  it('opens the Library menu outside the rail box and the content column in both rail states', async () => {
+    await renderHubWithSessions();
+    const rail = theRail();
+    const trigger = screen.getByTestId('hub-library');
+
+    const openAndCheck = () => {
+      fireEvent.click(trigger);
+      const menu = screen.getByTestId('hub-library-menu');
+      // Escapes the rail's `overflow: hidden` box entirely: it is a child of
+      // the body, not of the rail and not of the swapped content column, so
+      // neither can clip it or paint over it.
+      expect(rail.contains(menu)).toBe(false);
+      expect(menu.parentElement).toBe(document.body);
+      expect(menu.closest('[data-surface]')).toBeNull();
+      expect(menu.closest('[data-project-rail]')).toBeNull();
+      expect(menu.getAttribute('role')).toBe('menu');
+      expect(trigger.getAttribute('aria-controls')).toBe(menu.id);
+      within(menu).getByTestId('hub-library-projects');
+      within(menu).getByTestId('hub-workspace-folder');
+      return menu;
+    };
+
+    // Collapsed strip: the 44px box that used to clip the menu.
+    fireEvent.click(railToggle());
+    expect(rail.dataset['projectRailState']).toBe('collapsed');
+    const collapsedMenu = openAndCheck();
+    fireEvent.keyDown(collapsedMenu, { key: 'Escape' });
+    expect(screen.queryByTestId('hub-library-menu')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+
+    // Expanded panel, same placer, and outside-click dismissal still works.
+    fireEvent.click(railToggle());
+    expect(rail.dataset['projectRailState']).toBe('expanded');
+    openAndCheck();
+    fireEvent.mouseDown(screen.getByTestId('hub-search'));
+    expect(screen.queryByTestId('hub-library-menu')).toBeNull();
+  });
+
   it('carries the resized expanded width through the swap and back', async () => {
     await renderHubWithSessions();
     const resizer = railResizer();

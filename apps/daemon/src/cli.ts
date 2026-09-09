@@ -4629,10 +4629,10 @@ async function runProject(args) {
                     [--design-system <id>] [--json]
   readable project list                         List projects.
   readable project info <id>                    Print one project.
-  readable project brief get <id>               Print the persisted project brief.
-  readable project brief set <id> <field> <value>
+  readable project questions get <id>               Print the persisted project assumptions.
+  readable project questions set <id> <field> <value>
                     [--prompt-file <path|->] [--json]
-                    Correct one brief field; --prompt-file replaces <value>.
+                    Correct one Questions field; --prompt-file replaces <value>.
   readable project delete <id>                  Delete a project.
   readable project handoff <id> --conversation <id> --api-key <key> --model <model>
                     [--base-url <url>] [--max-tokens <n>]
@@ -4687,10 +4687,11 @@ Common options:
       process.stdout.write(JSON.stringify(data, null, 2) + '\n');
       return;
     }
-    case 'brief': {
+    case 'brief': // Compatibility alias; persisted metadata and JSON keep the brief key.
+    case 'questions': {
       const [action, id, field, positionalValue] = positionalArgs(rest, PROJECT_STRING_FLAGS);
       if ((action !== 'get' && action !== 'set') || !id) {
-        console.error('Usage: readable project brief get <id> | brief set <id> <field> <value> [--prompt-file <path|->] [--json]');
+        console.error('Usage: readable project questions get <id> | questions set <id> <field> <value> [--prompt-file <path|->] [--json]');
         process.exit(2);
       }
       const getResponse = await client.request(`/api/projects/${encodeURIComponent(id)}`);
@@ -4701,14 +4702,14 @@ Common options:
       if (action === 'get') {
         const result = { brief: currentBrief };
         if (flags.json) return process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-        if (!currentBrief) return console.log('No project brief.');
+        if (!currentBrief) return console.log('No project assumptions.');
         for (const assumption of currentBrief.assumptions) {
           console.log(`${assumption.id}\t${JSON.stringify(assumption.value)}\t${assumption.provenance}`);
         }
         return;
       }
       if (!field) {
-        console.error('Usage: readable project brief set <id> <field> <value> [--prompt-file <path|->] [--json]');
+        console.error('Usage: readable project questions set <id> <field> <value> [--prompt-file <path|->] [--json]');
         process.exit(2);
       }
       if (positionalValue !== undefined && flags['prompt-file'] !== undefined) {
@@ -4719,7 +4720,7 @@ Common options:
         ? await readPromptFromFlags({ 'prompt-file': flags['prompt-file'] })
         : positionalValue;
       if (typeof sourceValue !== 'string' || sourceValue.trim().length === 0) {
-        console.error('readable project brief set requires <value> or --prompt-file <path|->');
+        console.error('readable project questions set requires <value> or --prompt-file <path|->');
         process.exit(2);
       }
       let value = sourceValue.trim();
@@ -4748,7 +4749,7 @@ Common options:
         'fidelity', 'platformTargets', 'companionSurfaces', 'speakerNotes', 'animations',
       ]);
       if (promptFacingFields.has(field) && appliedMetadata === metadata) {
-        console.error(`invalid value for brief field: ${field}`);
+        console.error(`invalid value for question field: ${field}`);
         process.exit(2);
       }
       const nextMetadata = { ...appliedMetadata, brief };
@@ -4760,7 +4761,7 @@ Common options:
       if (!patchResponse.ok) return structuredHttpFailure(patchResponse, 'project-not-found');
       const result = { brief };
       if (flags.json) return process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      console.log(`[project] brief ${field} set to ${JSON.stringify(value)}`);
+      console.log(`[project] questions ${field} set to ${JSON.stringify(value)}`);
       return;
     }
     case 'create': {

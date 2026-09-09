@@ -60,6 +60,7 @@ import {
 } from './agentModelSelection';
 import { SearchableModelSelect } from './modelOptions';
 import { dedupeAgentModels } from './modelCatalog';
+import { ListboxOptionLabel } from './DirectListbox';
 import { placePopover } from './popoverPlacement';
 import {
   mergeProviderModelOptions,
@@ -143,56 +144,6 @@ function markAmrReminderSeen(): void {
     // Ignore storage failures; the reminder is purely advisory UI.
   }
   amrReminderSeenFallback = true;
-}
-
-/**
- * One option label in the direct listbox.
- *
- * The panel is deliberately narrow, so a rare long catalogue name still cannot
- * fit. Rather than scroll the list horizontally (the scrollbar the user
- * rejected) the label truncates with an ellipsis and, ONLY when it genuinely
- * overflows, carries the measured overflow distance. CSS then slides the text
- * on hover and on keyboard focus so the tail becomes readable; a name that fits
- * is never flagged and never moves.
- */
-function ModelOptionLabel({ label }: { label: string }) {
-  const ref = useRef<HTMLSpanElement | null>(null);
-  const textRef = useRef<HTMLSpanElement | null>(null);
-  const [reveal, setReveal] = useState(0);
-
-  useLayoutEffect(() => {
-    const viewport = ref.current;
-    const text = textRef.current;
-    if (!viewport || !text) return;
-    // Measure the intrinsic text, not the wrapper's scrollable overflow: that
-    // changes while the text is translated and can erase the reveal on resize.
-    const measure = () => {
-      setReveal(Math.max(0, text.scrollWidth - viewport.clientWidth));
-    };
-    measure();
-    if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(viewport);
-    observer.observe(text);
-    return () => observer.disconnect();
-  }, [label]);
-
-  return (
-    <span
-      ref={ref}
-      className="inline-switcher__model-option-label"
-      data-overflowing={reveal > 0 ? 'true' : undefined}
-      style={
-        reveal > 0
-          ? ({
-              ['--inline-switcher-option-reveal' as string]: `${reveal}px`,
-            } as CSSProperties)
-          : undefined
-      }
-    >
-      <span ref={textRef} className="inline-switcher__model-option-label-text">{label}</span>
-    </span>
-  );
 }
 
 function displayAgentName(agent: Pick<AgentInfo, 'id' | 'name'>): string {
@@ -997,7 +948,7 @@ export function InlineModelSwitcher({
                       setOpen(false);
                     }}
                   >
-                    <ModelOptionLabel label={reasoningLabel(option.id)} />
+                    <ListboxOptionLabel label={reasoningLabel(option.id)} />
                     <span className="inline-switcher__model-option-check" aria-hidden="true">
                       {selected ? <Icon name="check" size={13} /> : null}
                     </span>
@@ -1152,7 +1103,7 @@ export function InlineModelSwitcher({
                           setOpen(false);
                         }}
                       >
-                        <ModelOptionLabel label={model.label} />
+                        <ListboxOptionLabel label={model.label} />
                         <span
                           className="inline-switcher__model-option-check"
                           aria-hidden="true"

@@ -7,19 +7,12 @@
 // destination the old icon rail owned stays reachable without reinstating a
 // second always-visible rail next to the project tree.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
 import { useT } from '../../i18n';
 import { Icon, type IconName } from '../Icon';
+import { HubMenu, type HubMenuItem } from './HubMenu';
 import type { HubDestination } from './types';
-
-interface MenuItem {
-  id: string;
-  label: string;
-  icon: IconName;
-  onSelect: () => void;
-  testId?: string;
-}
 
 interface Props {
   /** Windows account running the local daemon, when available. */
@@ -54,99 +47,6 @@ export function workspaceInitials(name: string): string {
   return `${Array.from(words[0] ?? '')[0] ?? ''}${Array.from(words[1] ?? '')[0] ?? ''}`.toUpperCase();
 }
 
-/**
- * Menu model from the mockup (`index.html:1825-1865`): opening focuses the
- * first item, Up/Down move, Escape closes and returns focus to the trigger,
- * and a pointer press outside dismisses it.
- */
-function HubMenu({
-  id,
-  label,
-  items,
-  open,
-  onClose,
-  triggerRef,
-}: {
-  id: string;
-  label: string;
-  items: MenuItem[];
-  open: boolean;
-  onClose: (restoreFocus: boolean) => void;
-  triggerRef: React.RefObject<HTMLButtonElement | null>;
-}) {
-  const menuRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const node = menuRef.current;
-    node?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const onPointerDown = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (menuRef.current?.contains(target)) return;
-      if (triggerRef.current?.contains(target)) return;
-      onClose(false);
-    };
-    document.addEventListener('pointerdown', onPointerDown);
-    return () => document.removeEventListener('pointerdown', onPointerDown);
-  }, [open, onClose, triggerRef]);
-
-  if (!open) return null;
-
-  return (
-    <div
-      ref={menuRef}
-      id={id}
-      className="hub__menu"
-      role="menu"
-      aria-label={label}
-      data-testid={`${id}-menu`}
-      onKeyDown={(event) => {
-        const buttons = Array.from(
-          menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [],
-        );
-        const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
-        if (event.key === 'ArrowDown') {
-          event.preventDefault();
-          buttons[Math.min(index + 1, buttons.length - 1)]?.focus();
-          return;
-        }
-        if (event.key === 'ArrowUp') {
-          event.preventDefault();
-          buttons[Math.max(index - 1, 0)]?.focus();
-          return;
-        }
-        if (event.key === 'Escape') {
-          event.preventDefault();
-          event.stopPropagation();
-          onClose(true);
-        }
-      }}
-    >
-      <div className="hub__menu-label">{label}</div>
-      {items.map((item) => (
-        <button
-          key={item.id}
-          type="button"
-          role="menuitem"
-          className="hub__menu-item"
-          {...(item.testId ? { 'data-testid': item.testId } : {})}
-          onClick={() => {
-            onClose(false);
-            item.onSelect();
-          }}
-        >
-          <Icon name={item.icon} size={15} />
-          <span>{item.label}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
 export function HubRailFooter({
   username,
   onOpenDestination,
@@ -158,19 +58,19 @@ export function HubRailFooter({
   const [openMenu, setOpenMenu] = useState<'library' | null>(null);
   const libraryRef = useRef<HTMLButtonElement | null>(null);
 
-  const closeLibrary = useCallback((restoreFocus: boolean) => {
-    setOpenMenu(null);
-    if (restoreFocus) libraryRef.current?.focus();
-  }, []);
+  // The shared HubMenu owns dismissal and hands focus back to the trigger
+  // itself (Escape and item selection restore it; an outside click does not).
+  const closeLibrary = useCallback(() => setOpenMenu(null), []);
 
   // Projects remains reachable in the library menu without adding a separate
   // row above the reference footer hierarchy. The workspace folder joins the
   // same menu: the user row is presentational now, and the library menu is the
   // footer's only surface that already holds destination items, so this keeps
   // the storage-roots settings section reachable in one click.
-  const libraryItems = useMemo<MenuItem[]>(
+  const libraryItems = useMemo<HubMenuItem[]>(
     () => [
-      ...(['projects', 'tasks', 'design-systems', 'plugins', 'integrations'] as const).map((destination) => ({
+      ...(['projects', 'tasks', 'design-systems', 'plugins', 'integrations'] as const).map((destination): HubMenuItem => ({
+        kind: 'action',
         id: destination,
         icon: DESTINATION_ICON[destination],
         label: t(
@@ -188,6 +88,7 @@ export function HubRailFooter({
         onSelect: () => onOpenDestination(destination),
       })),
       {
+        kind: 'action',
         id: 'workspace-folder',
         icon: 'folder' as IconName,
         label: t('hub.workspaceFolder'),
@@ -218,14 +119,19 @@ export function HubRailFooter({
             <Icon name="swatch" size={16} strokeWidth={1.6} />
             <span>{t('hub.library')}</span>
           </button>
-          <HubMenu
-            id="hub-library"
-            label={t('hub.library')}
-            items={libraryItems}
-            open={openMenu === 'library'}
-            onClose={closeLibrary}
-            triggerRef={libraryRef}
-          />
+          {/* Rail-owned overlays escape the rail's `overflow: hidden` box through
+              the shared placer: portalled to the body, fixed, viewport-clamped
+              and flipped above the anchor at the floor, in both rail states. */}
+          {openMenu === 'library' ? (
+            <HubMenu
+              id="hub-library"
+              title={t('hub.library')}
+              items={libraryItems}
+              anchor={libraryRef.current}
+              testId="hub-library-menu"
+              onClose={closeLibrary}
+            />
+          ) : null}
         </div>
         <button
           type="button"

@@ -1120,6 +1120,8 @@ interface Props {
   onCommentModeChange?: (active: boolean) => void;
   manualEditPortalId?: string;
   onManualEditInspectorChange?: (active: boolean) => void;
+  // Workspace close requests reuse the viewer-owned dirty transaction veto.
+  onCloseGuardChange?: (guard: (() => boolean) | null) => void;
   // Bumped nonce asking this viewer to open its Share/Export menu (chat-side
   // "Share" next-step action). Only HTML artifacts expose a Share menu.
   shareRequest?: { nonce: number } | null;
@@ -1148,6 +1150,7 @@ export function FileViewer({
   onSendBoardCommentAttachments,
   onFileSaved,
   onOpenFileReplacing,
+  onCloseGuardChange,
   commentPortalId,
   onCommentModeChange,
   manualEditPortalId,
@@ -1198,6 +1201,7 @@ export function FileViewer({
         onCommentModeChange={onCommentModeChange}
         manualEditPortalId={manualEditPortalId}
         onManualEditInspectorChange={onManualEditInspectorChange}
+        onCloseGuardChange={onCloseGuardChange}
         shareRequest={shareRequest}
         downloadRequest={downloadRequest}
         slideNavRequest={slideNavRequest}
@@ -3446,6 +3450,7 @@ function HtmlViewer({
   shareRequest,
   downloadRequest,
   slideNavRequest,
+  onCloseGuardChange,
 }: {
   projectId: string;
   projectKind: TrackingProjectKind;
@@ -3466,6 +3471,7 @@ function HtmlViewer({
   onCommentModeChange?: (active: boolean) => void;
   manualEditPortalId?: string;
   onManualEditInspectorChange?: (active: boolean) => void;
+  onCloseGuardChange?: Props['onCloseGuardChange'];
   shareRequest?: { nonce: number } | null;
   downloadRequest?: { nonce: number } | null;
   slideNavRequest?: { slideIndex: number; nonce: number } | null;
@@ -4318,6 +4324,15 @@ function HtmlViewer({
     setManualEditDirty(dirty);
     manualEditDirtyRef.current = dirty;
   }, [manualEditMode, source, manualEditDraft, manualEditHistory, manualEditUndone]);
+
+  useEffect(() => {
+    onCloseGuardChange?.(() => {
+      if (!manualEditDirtyRef.current) return true;
+      setManualEditBlockedToast(t('workspace.unsavedTabCloseBlocked'));
+      return false;
+    });
+    return () => onCloseGuardChange?.(null);
+  }, [onCloseGuardChange, t]);
 
   useEffect(() => {
     const sourceFileKey = `${projectId}\0${file.name}\0${liveHtml === undefined ? 'raw' : 'live'}`;

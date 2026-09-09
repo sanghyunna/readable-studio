@@ -658,7 +658,7 @@ test('collapsed, narrow, reduced preferences and both-theme contrast are measura
   await expect.poll(async () => (await geometry(stageLocator)).left - (await geometry(hub)).left).toBeCloseTo(292, 0);
   await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; });
   await page.locator('body').evaluate((node) => Promise.allSettled(node.getAnimations({ subtree: true }).map((animation) => animation.finished)));
-  const bodyText = ['.home-hero__title', '.hub-row__title', '.hub__hint', '.hub-row__state', '.home-hero__footer-options button'];
+  const bodyText = ['.home-hero__title', '.hub-row__title', '[data-testid="hub-drop-to-edit-label"]', '.hub-row__state', '.home-hero__footer-options button'];
   const darkMeasurements = await Promise.all(bodyText.map((selector) => compositeContrast(page.locator(selector).first())));
   const darkContrast = Math.min(...darkMeasurements.map((measurement) => measurement.ratio));
   const darkAccent = await page.getByTestId('home-hero-submit').evaluate((node) => getComputedStyle(node).color);

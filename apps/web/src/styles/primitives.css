@@ -190,6 +190,17 @@ textarea { resize: vertical; font-family: inherit; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* DirectListbox trigger with nothing chosen yet: the placeholder reads as a
+   placeholder (same rung as input::placeholder), not as a picked value. */
+.readable-studio-select-trigger[data-placeholder='true'] .readable-studio-select-value {
+  color: var(--text-faint);
+}
+@media (prefers-reduced-motion: reduce) {
+  .readable-studio-select-trigger,
+  .readable-studio-select-trigger svg {
+    transition: none;
+  }
+}
 .readable-studio-select-menu {
   z-index: 9000;
   padding: 4px;

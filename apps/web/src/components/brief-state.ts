@@ -7,19 +7,9 @@ import { formatFormAnswers } from '../artifacts/question-form';
 export type AssumptionProvenance = 'stated' | 'inferred' | 'default';
 export type AssumptionValue = string | string[];
 
-export interface BriefAssumption {
-  id: string;
-  label: string;
-  value: AssumptionValue;
-  displayValue?: string;
-  provenance: AssumptionProvenance;
-  question?: FormQuestion;
-}
-
-export interface ProjectBrief {
-  assumptions: BriefAssumption[];
-  updatedAt: number;
-}
+// Keep the storage/protocol names compatible while Questions owns the capability.
+export type { QuestionAssumption as BriefAssumption, ProjectQuestions as ProjectBrief } from '@readable-studio/contracts';
+import type { QuestionAssumption as BriefAssumption, ProjectQuestions as ProjectBrief } from '@readable-studio/contracts';
 
 export type BriefProjectMetadata = ProjectMetadata & { brief?: ProjectBrief };
 
@@ -63,67 +53,67 @@ export function questionForAssumption(assumption: BriefAssumption): FormQuestion
 type Translate = (key: keyof Dict, vars?: Record<string, string | number>) => string;
 
 const FIELD_LABEL_KEYS: Partial<Record<string, keyof Dict>> = {
-  output: 'brief.field.output',
-  platform: 'brief.field.platform',
-  audience: 'brief.field.audience',
-  tone: 'brief.field.tone',
-  brand: 'brief.field.brand',
-  scale: 'brief.field.scale',
-  language: 'brief.field.language',
-  constraints: 'brief.field.constraints',
-  fidelity: 'brief.field.fidelity',
-  platformTargets: 'brief.field.platformTargets',
-  companionSurfaces: 'brief.field.companionSurfaces',
-  speakerNotes: 'brief.field.speakerNotes',
-  animations: 'brief.field.animations',
+  output: 'questions.field.output',
+  platform: 'questions.field.platform',
+  audience: 'questions.field.audience',
+  tone: 'questions.field.tone',
+  brand: 'questions.field.brand',
+  scale: 'questions.field.scale',
+  language: 'questions.field.language',
+  constraints: 'questions.field.constraints',
+  fidelity: 'questions.field.fidelity',
+  platformTargets: 'questions.field.platformTargets',
+  companionSurfaces: 'questions.field.companionSurfaces',
+  speakerNotes: 'questions.field.speakerNotes',
+  animations: 'questions.field.animations',
 };
 
 const QUESTION_LABEL_KEYS: Partial<Record<string, keyof Dict>> = {
-  output: 'brief.question.output',
-  platform: 'brief.question.platform',
-  audience: 'brief.question.audience',
-  tone: 'brief.question.tone',
-  brand: 'brief.question.brand',
-  scale: 'brief.question.scale',
-  language: 'brief.question.language',
-  constraints: 'brief.question.constraints',
+  output: 'questions.question.output',
+  platform: 'questions.question.platform',
+  audience: 'questions.question.audience',
+  tone: 'questions.question.tone',
+  brand: 'questions.question.brand',
+  scale: 'questions.question.scale',
+  language: 'questions.question.language',
+  constraints: 'questions.question.constraints',
   fidelity: 'newproj.fidelityLabel',
   platformTargets: 'newproj.targetPlatformsLabel',
-  companionSurfaces: 'brief.field.companionSurfaces',
+  companionSurfaces: 'questions.field.companionSurfaces',
   speakerNotes: 'newproj.toggleSpeakerNotes',
   animations: 'newproj.toggleAnimations',
 };
 
 const PLACEHOLDER_KEYS: Partial<Record<string, keyof Dict>> = {
-  audience: 'brief.placeholder.audience',
-  scale: 'brief.placeholder.scale',
-  constraints: 'brief.placeholder.constraints',
+  audience: 'questions.placeholder.audience',
+  scale: 'questions.placeholder.scale',
+  constraints: 'questions.placeholder.constraints',
 };
 
 const OPTION_LABEL_KEYS: Partial<Record<string, keyof Dict>> = {
-  'output:Slide deck / pitch': 'brief.option.slideDeck',
-  'output:Single web prototype / landing': 'brief.option.singlePrototype',
-  'output:Multi-screen app prototype': 'brief.option.multiPrototype',
-  'output:Dashboard / tool UI': 'brief.option.dashboard',
-  'output:Editorial / marketing page': 'brief.option.editorial',
-  'output:Other': 'brief.option.other',
+  'output:Slide deck / pitch': 'questions.option.slideDeck',
+  'output:Single web prototype / landing': 'questions.option.singlePrototype',
+  'output:Multi-screen app prototype': 'questions.option.multiPrototype',
+  'output:Dashboard / tool UI': 'questions.option.dashboard',
+  'output:Editorial / marketing page': 'questions.option.editorial',
+  'output:Other': 'questions.option.other',
   'platform:Responsive web': 'newproj.platform.responsive.label',
   'platform:Desktop web': 'newproj.platform.webDesktop.label',
   'platform:iOS app': 'newproj.platform.mobileIos.label',
   'platform:Android app': 'newproj.platform.mobileAndroid.label',
   'platform:Tablet app': 'newproj.platform.tablet.label',
   'platform:Desktop app': 'newproj.platform.desktopApp.label',
-  'platform:Fixed canvas (1920×1080)': 'brief.option.fixedCanvas',
-  'tone:Editorial / magazine': 'brief.option.toneEditorial',
-  'tone:Modern minimal': 'brief.option.toneMinimal',
-  'tone:Playful / illustrative': 'brief.option.tonePlayful',
-  'tone:Tech / utility': 'brief.option.toneTech',
-  'tone:Luxury / refined': 'brief.option.toneLuxury',
-  'tone:Brutalist / experimental': 'brief.option.toneBrutalist',
-  'tone:Human / approachable': 'brief.option.toneHuman',
-  'brand:pick_direction': 'brief.option.pickDirection',
-  'brand:brand_spec': 'brief.option.brandSpec',
-  'brand:reference_match': 'brief.option.referenceMatch',
+  'platform:Fixed canvas (1920×1080)': 'questions.option.fixedCanvas',
+  'tone:Editorial / magazine': 'questions.option.toneEditorial',
+  'tone:Modern minimal': 'questions.option.toneMinimal',
+  'tone:Playful / illustrative': 'questions.option.tonePlayful',
+  'tone:Tech / utility': 'questions.option.toneTech',
+  'tone:Luxury / refined': 'questions.option.toneLuxury',
+  'tone:Brutalist / experimental': 'questions.option.toneBrutalist',
+  'tone:Human / approachable': 'questions.option.toneHuman',
+  'brand:pick_direction': 'questions.option.pickDirection',
+  'brand:brand_spec': 'questions.option.brandSpec',
+  'brand:reference_match': 'questions.option.referenceMatch',
   'fidelity:wireframe': 'newproj.fidelityWireframe',
   'fidelity:high-fidelity': 'newproj.fidelityHigh',
   'platformTargets:responsive': 'newproj.platform.responsive.label',
@@ -134,10 +124,10 @@ const OPTION_LABEL_KEYS: Partial<Record<string, keyof Dict>> = {
   'platformTargets:desktop-app': 'newproj.platform.desktopApp.label',
   'companionSurfaces:landing': 'newproj.includeLandingPage',
   'companionSurfaces:os-widgets': 'newproj.includeOsWidgets',
-  'speakerNotes:yes': 'brief.option.included',
-  'speakerNotes:no': 'brief.option.notIncluded',
-  'animations:yes': 'brief.option.included',
-  'animations:no': 'brief.option.notIncluded',
+  'speakerNotes:yes': 'questions.option.included',
+  'speakerNotes:no': 'questions.option.notIncluded',
+  'animations:yes': 'questions.option.included',
+  'animations:no': 'questions.option.notIncluded',
 };
 
 function translatedOptionLabel(id: string, value: string, fallback: string, t: Translate): string {

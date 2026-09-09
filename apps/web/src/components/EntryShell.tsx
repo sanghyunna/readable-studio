@@ -41,6 +41,7 @@ import { DesignsTab } from './DesignsTab';
 import { DesignSystemPreviewModal } from './DesignSystemPreviewModal';
 import { DesignSystemsTab } from './DesignSystemsTab';
 import type { EntryView as EntryViewKind } from './EntryNavRail';
+import type { HubImportFileOutcome } from './hub/drop-to-edit';
 import { HubHome } from './hub/HubHome';
 import { openSessionRoute } from './hub/openSessionRoute';
 import {
@@ -126,6 +127,8 @@ interface Props {
     locale?: string,
   ) => Promise<PluginShareProjectOutcome>;
   onOpenNewProject: (tab: CreateTab) => void;
+  /** Hub drop-to-edit: one existing document -> project -> workspace with it open. */
+  onImportFile?: (file: File) => Promise<HubImportFileOutcome> | HubImportFileOutcome;
   onOpenProject: (id: string) => void;
   onDeleteProject: (id: string) => Promise<boolean | void> | boolean | void;
   onRenameProject: (id: string, name: string) => void;
@@ -216,6 +219,7 @@ export function EntryShell({
   onCreateProject,
   onCreatePluginShareProject,
   onOpenNewProject,
+  onImportFile,
   onOpenProject,
   onDeleteProject,
   onRenameProject,
@@ -332,7 +336,7 @@ export function EntryShell({
   // hidden readable-default router plugin and projectKind='other', so the
   // agent asks for the exact task type before continuing.
   function handlePluginLoopSubmit(payload: PluginLoopSubmit) {
-    if (!requireModelSelection(config, agents)) return;
+    if (!requireModelSelection(config, agents)) return false;
     const head = payload.prompt.trim().split(/\s+/).slice(0, 8).join(' ');
     const firstAttachmentName = payload.attachments?.[0]?.name ?? '';
     const fallbackName = head.length > 0 ? head : firstAttachmentName || 'Untitled';
@@ -460,10 +464,12 @@ export function EntryShell({
                 designSystems={designSystems}
                 defaultDesignSystemId={defaultDesignSystemId}
                 onSubmit={handlePluginLoopSubmit}
+                modelSelectionGuard={() => requireModelSelection(config, agents)}
                 onViewAllProjects={() => changeView('projects')}
                 onBrowseRegistry={() => changeView('plugins')}
                 onOpenMcp={() => openIntegrationTab('mcp')}
                 onOpenNewProject={(tab) => openNewProject(tab)}
+                onImportFile={onImportFile}
                 promptHandoff={homePromptHandoff}
                 skills={skills}
                 skillsLoading={skillsLoading}

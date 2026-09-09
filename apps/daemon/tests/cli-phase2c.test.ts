@@ -225,7 +225,7 @@ describe('Phase 2C CLI wrappers', () => {
     expect(snapshot.pluginId).toBe('example-report');
   });
 
-  it('round-trips brief corrections through JSON and prompt-file stdin', async () => {
+  it('round-trips questions corrections through JSON and prompt-file stdin', async () => {
     const created = await runCli(
       ['project', 'create', '--name', 'CLI Brief', '--metadata-json', '-', '--json'],
       { input: JSON.stringify({ kind: 'prototype' }) },
@@ -233,7 +233,7 @@ describe('Phase 2C CLI wrappers', () => {
     const projectId = (JSON.parse(created.stdout) as { project: { id: string } }).project.id;
 
     const set = await runCli(
-      ['project', 'brief', 'set', projectId, 'fidelity', '--prompt-file', '-', '--json'],
+      ['project', 'questions', 'set', projectId, 'fidelity', '--prompt-file', '-', '--json'],
       { input: 'wireframe\n' },
     );
     const setBody = JSON.parse(set.stdout) as {
@@ -243,7 +243,11 @@ describe('Phase 2C CLI wrappers', () => {
       id: 'fidelity', value: 'wireframe', provenance: 'stated',
     }));
 
-    const get = await runCli(['project', 'brief', 'get', projectId, '--json']);
+    const get = await runCli(['project', 'questions', 'get', projectId, '--json']);
+    const legacy = await runCli(['project', 'brief', 'get', projectId, '--json']);
+    expect(JSON.parse(legacy.stdout)).toEqual(setBody);
+    const invalid = await runCliExpectFailure(['project', 'questions', 'set', projectId, 'fidelity', 'invalid', '--json']);
+    expect(invalid.code).toBe(2);
     expect(JSON.parse(get.stdout)).toEqual(setBody);
 
     const info = await runCli(['project', 'info', projectId, '--json']);

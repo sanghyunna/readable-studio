@@ -14,9 +14,10 @@
  *     specificity source order wins, so its `min-height: 48px` beat the strip's
  *     `height: 36px`; the band overflowed its 36px grid row by 12px and covered
  *     the top of the surface below.
- *  2. The rail toggle now deliberately lives in that title row. Its chrome
- *     slot and the button both opt out of the drag region so pointer input is
- *     handled by the control rather than native window dragging.
+ *  2. The rail toggle once lived in that title row through a portalled chrome
+ *     slot. It now belongs to the rail's own brand row BELOW the band, and the
+ *     slot is gone: the strip holds only the drag filler and the traffic
+ *     lights, so no rail control can ever sit under the drag surface.
  *
  * These are geometric facts, so the assertions are geometric: the real
  * stylesheets are loaded into jsdom and `getComputedStyle` resolves the actual
@@ -77,9 +78,6 @@ beforeAll(() => {
   document.body.innerHTML = `
     <div class="workspace-shell workspace-shell--desktop">
       <header class="app-chrome-header app-window-chrome" data-testid="app-window-chrome">
-        <div class="app-window-chrome__rail-toggle" id="app-window-chrome-rail-toggle">
-          <button class="hub__rail-toggle" data-project-rail-toggle data-testid="hub-rail-toggle"></button>
-        </div>
         <div class="app-window-chrome__drag app-chrome-drag"></div>
         <div class="window-controls" data-testid="window-controls"></div>
       </header>
@@ -88,7 +86,10 @@ beforeAll(() => {
           <div class="entry-main__inner entry-main__inner--home">
             <div class="hub">
               <nav class="hub__nav" data-project-rail="hub" data-project-rail-state="expanded">
-                <div class="hub__nav-head"></div>
+                <div class="hub__nav-head" data-project-rail-head>
+                  <button class="hub__brand"></button>
+                  <button class="hub__rail-toggle" data-project-rail-toggle data-testid="hub-rail-toggle"></button>
+                </div>
               </nav>
             </div>
           </div>
@@ -150,30 +151,33 @@ describe('frameless window chrome drag clearance', () => {
     expect(minHeight).toBeLessThanOrEqual(36);
   });
 
-  it('places the Hub rail toggle in the same chrome row as the traffic lights', () => {
-    const slot = chrome.querySelector('.app-window-chrome__rail-toggle') as HTMLElement;
+  it('keeps the title row to the drag filler and the traffic lights - the rail toggle is not in it', () => {
     const traffic = chrome.querySelector('.window-controls') as HTMLElement;
 
-    expect(toggle.parentElement).toBe(slot);
-    expect(slot.parentElement).toBe(chrome);
-    expect(traffic.parentElement).toBe(chrome);
-    expect(chrome.children[0]).toBe(slot);
-    expect(chrome.children[2]).toBe(traffic);
+    expect(chrome.querySelector('.app-window-chrome__rail-toggle')).toBeNull();
+    expect(document.getElementById('app-window-chrome-rail-toggle')).toBeNull();
+    expect(chrome.contains(toggle)).toBe(false);
+    expect(chrome.children).toHaveLength(2);
+    expect(chrome.children[0]).toBe(chrome.querySelector('.app-window-chrome__drag'));
+    expect(chrome.children[1]).toBe(traffic);
   });
 
-  it('centres the rail control within the 36px title row without consuming the drag filler', () => {
-    const slot = chrome.querySelector('.app-window-chrome__rail-toggle') as HTMLElement;
+  it('keeps the rail toggle in the rail brand row, below the 36px band, at its full hit target', () => {
+    const head = toggle.parentElement as HTMLElement;
     const bandHeight = px(getComputedStyle(chrome).height);
-    const slotStyle = getComputedStyle(slot);
+    const headStyle = getComputedStyle(head);
     const toggleStyle = getComputedStyle(toggle);
-    const slotHeight = px(slotStyle.blockSize || slotStyle.height);
     const toggleHeight = px(toggleStyle.blockSize || toggleStyle.height);
 
+    expect(head.hasAttribute('data-project-rail-head')).toBe(true);
+    expect(toggle.closest('[data-project-rail]')).not.toBeNull();
+    expect(toggle.previousElementSibling).toBe(head.querySelector('.hub__brand'));
+    // The row starts under the band: its top padding clears the band height
+    // measured from the rail's own top edge, so it is never beneath the drag
+    // surface in either rail state.
     expect(bandHeight).toBe(36);
-    expect(slotHeight).toBe(28);
+    expect(px(headStyle.getPropertyValue('padding-block-start') || headStyle.paddingTop)).toBeGreaterThanOrEqual(bandHeight);
     expect(toggleHeight).toBe(28);
-    expect(slotHeight).toBeLessThan(bandHeight);
-    expect(chrome.querySelector('.app-window-chrome__drag')).not.toBeNull();
   });
 
   it('reserves exactly the band height in the shell grid row', () => {

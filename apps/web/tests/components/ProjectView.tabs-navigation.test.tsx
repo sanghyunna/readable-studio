@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProjectView } from '../../src/components/ProjectView';
+import { QuestionsPanel } from '../../src/components/QuestionsPanel';
 import { navigate } from '../../src/router';
 import type {
   AgentInfo,
@@ -101,13 +102,16 @@ vi.mock('../../src/components/AvatarMenu', () => ({
 }));
 
 vi.mock('../../src/components/FileWorkspace', () => ({
-  FileWorkspace: ({ tabsState, onTabsStateChange, headerActions }: {
+  FileWorkspace: ({ tabsState, onTabsStateChange, headerActions, projectQuestions, onCorrectQuestion }: {
+    projectQuestions?: import('../../src/components/brief-state').ProjectBrief | null;
+    onCorrectQuestion?: (brief: import('../../src/components/brief-state').ProjectBrief, corrected: import('../../src/components/brief-state').BriefAssumption) => Promise<boolean>;
     tabsState: { tabs: string[]; active: string | null };
     onTabsStateChange: (state: { tabs: string[]; active: string | null }) => void;
     headerActions?: ReactNode;
   }) => (
     <div data-testid="file-workspace">
       <div data-testid="preview-header-actions">{headerActions}</div>
+      <QuestionsPanel brief={projectQuestions} onCorrect={onCorrectQuestion} form={null} interactive={false} generating={false} onSubmit={vi.fn()} />
       <output data-testid="workspace-active-tab">{tabsState.active ?? ''}</output>
       <button
         type="button"
@@ -237,7 +241,7 @@ describe('ProjectView tab URL hydration', () => {
     expect(onAgentModelChange).toHaveBeenCalledWith('claude', { model: 'opus' });
   });
 
-  it('hydrates the collapsed preview-header Brief from persisted project metadata on return', async () => {
+  it('hydrates Questions from persisted project metadata without a preview-header Brief', async () => {
     renderProjectView({
       project: {
         ...project,
@@ -261,22 +265,12 @@ describe('ProjectView tab URL hydration', () => {
       },
     });
 
-    // Brief now lives in FileWorkspace's preview-header actions. Assert the
-    // placement separately from its content so i18n wording changes cannot
-    // hide a metadata-hydration regression.
-    const previewActions = await screen.findByTestId('preview-header-actions');
-    const briefCard = await screen.findByTestId('brief-card');
-    const briefTrigger = screen.getByRole('button', { name: /brief\.trigger/ });
-    expect(previewActions.contains(briefCard)).toBe(true);
-    expect(briefCard.contains(briefTrigger)).toBe(true);
-
-    // This file intentionally renders translation keys. The field label,
-    // persisted value, and count must all come from project.metadata.brief.
-    expect(briefTrigger.textContent).toContain('brief.field.audience');
-    expect(briefTrigger.textContent).toContain('security leaders');
-    expect(briefTrigger.textContent).toContain('1');
-    expect(briefTrigger.getAttribute('aria-expanded')).toBe('false');
-    expect(screen.queryByTestId('brief-card-panel')).toBeNull();
+    await act(async () => { await Promise.all([...mockedListMessages.mock.results, ...mockedLoadTabs.mock.results].map(result => result.value)); });
+    const previewActions = screen.getByTestId('preview-header-actions');
+    expect(previewActions.querySelector('[role="dialog"]')).toBeNull();
+    expect(screen.queryByTestId('brief-card')).toBeNull();
+    expect(screen.getByRole('listitem').textContent).toContain('security leaders');
+    expect(screen.getByTestId('questions-influence').dataset).toMatchObject({ count: '1', confirmed: '1' });
   });
 
   it('syncs a persisted active tab to the URL before the file list has hydrated', async () => {

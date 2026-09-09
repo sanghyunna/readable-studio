@@ -73,6 +73,7 @@ import { TerminalViewer } from './workspace/TerminalViewer';
 import { MissingBrandFontsBanner } from './MissingBrandFontsBanner';
 import { PasteTextDialog } from './PasteTextDialog';
 import { QuestionsPanel, type QuestionRunHydrationStatus } from './QuestionsPanel';
+import type { BriefAssumption, ProjectBrief } from './brief-state';
 import { consumeHubSessionSurface } from './hub/HubSessionTree';
 import { QuickSwitcher } from './QuickSwitcher';
 import { SketchEditor } from './SketchEditor';
@@ -197,6 +198,8 @@ interface Props {
   // Active discovery question form, surfaced in the right-hand Questions tab
   // instead of inline in the chat. Owned by ProjectView (derived from the
   // latest assistant message).
+  projectQuestions?: ProjectBrief | null;
+  onCorrectQuestion?: (brief: ProjectBrief, corrected: BriefAssumption) => Promise<boolean>;
   questionForm?: QuestionForm | null;
   // Tolerantly-parsed form shown while the block is still streaming, so the
   // panel renders a frame and fills questions in progressively.
@@ -412,6 +415,8 @@ export function FileWorkspace({
   messages = [],
   conversationId,
   headerActions,
+  projectQuestions = null,
+  onCorrectQuestion,
   questionForm = null,
   questionFormPreview = null,
   questionFormKey = null,
@@ -429,7 +434,7 @@ export function FileWorkspace({
   // The chat column only shows a compact Questions banner; the form itself
   // lives here, including after submission when a banner click can reopen the
   // answered preview.
-  const showQuestionsTab = Boolean(questionForm || questionFormPreview || questionsGenerating);
+  const showQuestionsTab = Boolean(projectQuestions || questionForm || questionFormPreview || questionsGenerating);
   const analytics = useAnalytics();
   // P1 page_view page_name=file_manager — once per project the user lands
   // inside the workspace. Re-fire when the projectId changes so a
@@ -450,6 +455,7 @@ export function FileWorkspace({
   // closures so opening the new tab appends to the freshest list instead of
   // replaying a stale closure and dropping tabs added in the meantime.
   const tabsStateRef = useRef(tabsState);
+  const committedTabsStateRef = useRef<OpenTabsState | null>(null);
   const lastTabsStatePropRef = useRef(tabsState);
   if (lastTabsStatePropRef.current !== tabsState) {
     tabsStateRef.current = tabsState;
@@ -499,6 +505,10 @@ export function FileWorkspace({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const launcherBtnRef = useRef<HTMLButtonElement | null>(null);
   const tabsBarRef = useRef<HTMLDivElement | null>(null);
+  const viewerCloseGuardRef = useRef<(() => boolean) | null>(null);
+  const registerViewerCloseGuard = useCallback((guard: (() => boolean) | null) => {
+    viewerCloseGuardRef.current = guard;
+  }, []);
   const draggedTabNameRef = useRef<string | null>(null);
   const browserTabSequenceRef = useRef(0);
   const designFilesNavProjectIdRef = useRef(projectId);
@@ -563,6 +573,9 @@ export function FileWorkspace({
   // (or on project switch). Fall back to the Design Files browser so a
   // fresh project lands in a useful place.
   useEffect(() => {
+    // Our own commits already choose local focus, including transient sketches
+    // and Questions. Only external hydration should replace that selection.
+    if (tabsStateRef.current === committedTabsStateRef.current) return;
     setActiveTab(tabsState.active ?? defaultRootTab);
   }, [tabsState.active, defaultRootTab]);
 
@@ -639,6 +652,7 @@ export function FileWorkspace({
   // Single entry point for committing tab state: mirror it into the ref so
   // async launcher actions read the freshest tabs, then notify the parent.
   function commitTabsState(next: OpenTabsState) {
+    committedTabsStateRef.current = next;
     tabsStateRef.current = next;
     onTabsStateChange(next);
   }
@@ -666,19 +680,35 @@ export function FileWorkspace({
   }
 
   function closeBrowserTab(tabId: string) {
-    const closingIndex = browserTabs.findIndex((tab) => tab.id === tabId);
-    const nextTabs = browserTabs.filter((tab) => tab.id !== tabId);
-    setBrowserTabs(nextTabs);
-    const nextActive =
-      activeTab === tabId
-        ? nextTabs[Math.min(Math.max(closingIndex, 0), nextTabs.length - 1)]?.id ?? DESIGN_FILES_TAB
-        : tabsState.active === tabId
-          ? DESIGN_FILES_TAB
-          : tabsState.active;
-    if (activeTab === tabId) {
-      setActiveTab(nextActive ?? DESIGN_FILES_TAB);
+    finishClosingWorkspaceTab(tabId, persistedTabs, browserTabs.filter((tab) => tab.id !== tabId));
+  }
+
+  function finishClosingWorkspaceTab(
+    tabId: string,
+    nextFileTabs: string[],
+    nextBrowserTabs = browserTabs,
+  ) {
+    const index = orderedWorkspaceTabs.findIndex((tab) => tab.id === tabId);
+    const nextActive = activeTab === tabId
+      ? orderedWorkspaceTabs[index + 1]?.id ?? orderedWorkspaceTabs[index - 1]?.id ?? DESIGN_FILES_TAB
+      : activeTab;
+    // Focus a surviving DOM node before removing the close control. Background
+    // middle-clicks leave keyboard focus alone unless their tab held it.
+    const tabElements = tabsBarRef.current?.querySelectorAll<HTMLElement>('[role="tab"]');
+    const closingElement = tabElements?.[workspaceTabIds.indexOf(tabId)];
+    if (activeTab === tabId || closingElement?.contains(document.activeElement)) {
+      tabElements?.[workspaceTabIds.indexOf(nextActive)]?.focus();
     }
-    onTabsStateChange(workspaceTabsState(persistedTabs, nextActive, nextTabs));
+    const remainingOrder = orderedWorkspaceTabs.filter((tab) => tab.id !== tabId);
+    const anchoredBrowsers = reanchorBrowserTabsToCurrentOrder(remainingOrder, nextBrowserTabs);
+    setBrowserTabs(anchoredBrowsers);
+    setActiveTab(nextActive);
+    const transient = nextActive === QUESTIONS_TAB
+      || (sketches[nextActive] && !sketches[nextActive]!.persisted);
+    const persistedActive = transient
+      ? tabsState.active === tabId ? null : tabsState.active
+      : nextActive;
+    commitTabsState(workspaceTabsState(nextFileTabs, persistedActive, anchoredBrowsers));
   }
 
   const updateBrowserTabInfo = useCallback((tabId: string, info: BrowserPageInfo) => {
@@ -986,6 +1016,7 @@ export function FileWorkspace({
   }
 
   function closeTab(name: string) {
+    if (activeTab === name && viewerCloseGuardRef.current?.() === false) return;
     // Terminal tabs own a daemon PTY that now outlives unmount (so tab switches
     // reattach cheaply). An explicit Close is the one place we terminate it —
     // kill the LIVE session (which may differ from the tab's original id after
@@ -997,33 +1028,18 @@ export function FileWorkspace({
       terminalLiveSessionsRef.current.delete(originalId);
     }
     const sketchEntry = sketches[name];
-    const isPending = sketchEntry && !sketchEntry.persisted;
     const hasUnsavedStrokes = sketchEntry && (sketchEntry.dirty || !sketchEntry.persisted);
     if (hasUnsavedStrokes && !confirm(t('sketch.closeConfirm'))) return;
-    if (isPending) {
+    finishClosingWorkspaceTab(name, persistedTabs.filter((n) => n !== name));
+    // A confirmed discard must also drop cached persisted-sketch edits, so
+    // reopening the file loads its saved strokes rather than the discarded ones.
+    if (sketchEntry) {
       setSketches((curr) => {
         const next = { ...curr };
         delete next[name];
         return next;
       });
-      if (activeTab === name) {
-        setPersistedActive(persistedTabs[persistedTabs.length - 1] ?? null);
-      }
-      return;
     }
-    const nextTabs = persistedTabs.filter((n) => n !== name);
-    const nextActive =
-      tabsState.active === name
-        ? nextTabs[nextTabs.length - 1] ?? null
-        : tabsState.active;
-    onTabsStateChange(workspaceTabsState(nextTabs, nextActive));
-    setActiveTab(nextActive ?? DESIGN_FILES_TAB);
-    setSketches((curr) => {
-      const next = { ...curr };
-      const entry = next[name];
-      if (entry && !entry.persisted) delete next[name];
-      return next;
-    });
   }
 
   function reorderPersistedTab(
@@ -2093,6 +2109,8 @@ export function FileWorkspace({
           <QuestionsPanel
             key={questionFormKey ?? undefined}
             projectId={projectId}
+            brief={projectQuestions}
+            onCorrect={onCorrectQuestion}
             formKey={questionFormKey}
             form={questionForm ?? questionFormPreview}
             interactive={questionFormInteractive}
@@ -2254,6 +2272,7 @@ export function FileWorkspace({
             onCommentModeChange={onCommentModeChange}
             manualEditPortalId={manualEditPortalId}
             onManualEditInspectorChange={onManualEditInspectorChange}
+            onCloseGuardChange={registerViewerCloseGuard}
             shareRequest={
               shareRequest && shareRequest.name === activeFile.name
                 ? { nonce: shareRequest.nonce }
@@ -3725,7 +3744,18 @@ function Tab({
         dragOverEdge ? `drag-over-${dragOverEdge}` : '',
       ].filter(Boolean).join(' ')}
       onClick={onActivate}
+      onMouseDown={(e) => {
+        if (e.button === 1 && closable && onClose) e.preventDefault();
+      }}
+      onAuxClick={(e) => {
+        if (e.button !== 1 || !closable || !onClose) return;
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }}
       onKeyDown={(e) => {
+        // Let the close button receive native Enter/Space activation.
+        if (e.target !== e.currentTarget) return;
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
           onActivate();
@@ -3753,7 +3783,7 @@ function Tab({
         {meta ? <span className="ws-tab-meta">{meta}</span> : null}
       </span>
       {closable && onClose ? (
-        <button
+        <Button
           type="button"
           className="ws-tab-close readable-tooltip"
           onClick={(e) => {
@@ -3765,8 +3795,8 @@ function Tab({
           data-tooltip-placement="bottom"
           aria-label={t('workspace.closeTab')}
         >
-          <Icon name="close" size={11} />
-        </button>
+          <Icon name="close" size={13} />
+        </Button>
       ) : null}
     </div>
   );

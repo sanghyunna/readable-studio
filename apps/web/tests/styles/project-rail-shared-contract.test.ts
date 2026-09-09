@@ -11,7 +11,14 @@
  * the user had to report by hand:
  *
  *   - the collapse toggle floating on bare canvas, attached to nothing;
- *   - the rail stopping short of the window floor.
+ *   - the rail's geometry against the window frame.
+ *
+ * The current, deliberate geometry: EXPANDED is a panel floating inside the
+ * shell, inset by the ONE shared `--project-rail-inset` on its top, bottom and
+ * start edges; COLLAPSED is the edge-anchored 44px strip, flush to the wall,
+ * the window top and the window floor. The toggle lives in the rail's own
+ * brand row - beside the wordmark expanded, in the brand's place collapsed -
+ * and never in the window chrome.
  *
  * These assertions are read back through `getComputedStyle` against the REAL
  * stylesheets rather than grepped as text, because a losing declaration can be
@@ -33,6 +40,8 @@ const shellCss = read('shell.css');
 /** The one shared collapsed width, taken from its single declaration site. */
 const SHARED_COLLAPSED = /--project-rail-collapsed:\s*([\d.]+px)/.exec(projectRailCss)?.[1];
 const SHARED_EXPANDED = /--project-rail-expanded:\s*([\d.]+px)/.exec(projectRailCss)?.[1];
+/** The one shared inset every expanded gap (start, top, bottom) derives from. */
+const SHARED_INSET = /--project-rail-inset:\s*([\d.]+px)/.exec(projectRailCss)?.[1];
 
 /**
  * jsdom does not substitute `var()` and normalises `0px` to `0`, so a raw
@@ -42,9 +51,11 @@ const SHARED_EXPANDED = /--project-rail-expanded:\s*([\d.]+px)/.exec(projectRail
  */
 function pixels(value: string): number {
   const substituted = value.replace(
-    /var\((--project-rail-collapsed)(?:,\s*([^)]+))?\)/g,
+    /var\((--project-rail-[a-z-]+|--app-window-chrome-height)(?:,\s*([^)]+))?\)/g,
     (_match, property: string, fallback: string | undefined) => {
-      const declared = new RegExp(`${property}:\\s*([\\d.]+px)`).exec(projectRailCss)?.[1];
+      const declared = new RegExp(`${property}:\\s*([\\d.]+px)`).exec(
+        property === '--app-window-chrome-height' ? shellCss : projectRailCss,
+      )?.[1];
       if (declared) return declared;
       if (fallback) return fallback.trim();
       throw new Error(`Could not resolve ${property}`);
@@ -57,12 +68,36 @@ function pixels(value: string): number {
   return parsed;
 }
 
+/** The winning block-axis margin, whichever spelling jsdom serialises it under. */
+function blockMargins(computed: CSSStyleDeclaration) {
+  return {
+    start: pixels(computed.getPropertyValue('margin-block-start') || computed.marginTop),
+    end: pixels(computed.getPropertyValue('margin-block-end') || computed.marginBottom),
+  };
+}
+
+function ruleBody(selector: string, css: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const body = new RegExp(`(?:^|\\n)${escaped}\\s*\\{([^}]*)\\}`).exec(css)?.[1];
+  if (!body) throw new Error(`Missing rule ${selector}`);
+  return body;
+}
+
 function mount(html: string): HTMLElement {
   const host = document.createElement('div');
   host.innerHTML = html;
   document.body.append(host);
   return host;
 }
+
+const HEAD_ROW = `
+  <div class="hub__nav-head" data-project-rail-head>
+    <button class="hub__brand" data-testid="hub-brand">
+      <img class="hub__brand-mark" alt="" />
+      <span class="hub__brand-name">Readable Studio</span>
+    </button>
+    <button class="hub__rail-toggle" data-project-rail-toggle data-testid="hub-rail-toggle"></button>
+  </div>`;
 
 beforeAll(() => {
   const style = document.createElement('style');
@@ -110,14 +145,16 @@ describe('project rail: one shared contract', () => {
     const rail = host.querySelector('[data-project-rail]') as HTMLElement;
     const computed = getComputedStyle(rail);
 
-    // The reported defect: a bottom margin left a strip of bare canvas under
-    // the rail, so its bottom edge never met the window frame.
-    expect(pixels(computed.marginBottom)).toBe(0);
-    expect(computed.blockSize || computed.height).toBe('100%');
+    // The collapsed strip is edge-anchored: no gap under it, none above it.
+    // Auto stretch with zero margins fills the track exactly like 100% did;
+    // it is `auto` (not 100%) so the SAME sizing rule serves the inset
+    // expanded panel without a state-only height snap.
+    expect(blockMargins(computed)).toEqual({ start: 0, end: 0 });
+    expect(computed.blockSize || computed.height).toBe('auto');
     host.remove();
   });
 
-  it('anchors the EXPANDED rail to the window bottom too', () => {
+  it('floats the EXPANDED rail inset from the window top and floor by the one shared inset', () => {
     const host = mount(`
       <div class="entry-shell entry-shell--no-header">
         <div class="entry entry--rail-open">
@@ -131,58 +168,117 @@ describe('project rail: one shared contract', () => {
       host.querySelector('[data-project-rail]') as HTMLElement,
     );
 
-    expect(pixels(computed.marginBottom)).toBe(0);
-    expect(computed.blockSize || computed.height).toBe('100%');
+    expect(SHARED_INSET).toBe('10px');
+    const inset = pixels(SHARED_INSET ?? '');
+    expect(blockMargins(computed)).toEqual({ start: inset, end: inset });
+    expect(computed.blockSize || computed.height).toBe('auto');
     host.remove();
   });
 
-  it('keeps the Hub rail on the window floor as well', () => {
-    const host = mount(`
-      <div class="hub">
-        <nav class="hub__nav"></nav>
-      </div>
-    `);
-    const computed = getComputedStyle(host.querySelector('.hub__nav') as HTMLElement);
+  it('gives the expanded Hub panel the same gap on its top, bottom and start edges, and the collapsed strip none', () => {
+    const expanded = mount(`<div class="workspace-shell__body"><nav class="hub__nav" data-project-rail="hub" data-project-rail-state="expanded"></nav></div>`);
+    const collapsed = mount(`<div class="workspace-shell__body"><nav class="hub__nav" data-project-rail="hub" data-project-rail-state="collapsed"></nav></div>`);
+    const panel = getComputedStyle(expanded.querySelector('.hub__nav') as HTMLElement);
+    const strip = getComputedStyle(collapsed.querySelector('.hub__nav') as HTMLElement);
 
-    // The Hub kept its inline inset (that is what detaches the slab from the
-    // stage) but must not keep a bottom gap.
-    expect(pixels(computed.marginBottom)).toBe(0);
-    expect(computed.blockSize || computed.height).toBe('100%');
-    host.remove();
+    // One deliberate value: the vertical gaps are derived from the inline
+    // inset the Hub already owned, not a second and third number.
+    const start = pixels(panel.marginLeft);
+    expect(start).toBe(pixels(SHARED_INSET ?? ''));
+    expect(blockMargins(panel)).toEqual({ start, end: start });
+    expect(hubCss).toMatch(/\.hub__nav\s*\{[^}]*margin-left:\s*var\(--project-rail-inset\)/s);
+    // Every inset edge docks together on collapse, so the whole margin box is
+    // the transitioned property - not just the inline-start edge.
+    expect(hubCss).toMatch(/\.hub__nav\s*\{[^}]*transition:\s*margin\s+var\(--dur-enter\)\s+var\(--ease-out\)/s);
+
+    // The collapsed strip is unchanged: flush to the wall, top and floor.
+    expect(pixels(strip.marginLeft)).toBe(0);
+    expect(blockMargins(strip)).toEqual({ start: 0, end: 0 });
+    expect(pixels(strip.borderRadius || strip.borderTopLeftRadius)).toBe(0);
+    expanded.remove();
+    collapsed.remove();
   });
 
-  it('keeps the chrome-hosted toggle visible, clickable, and out of the drag region', () => {
+  it('keeps the resizer inside the expanded rail\'s vertical span, never into the floor gap', () => {
+    const resizer = ruleBody('.hub__rail-resizer', hubCss);
+    const insetBlock = /inset-block:\s*([^;]+);/.exec(resizer)?.[1]?.trim();
+    expect(insetBlock).toBeDefined();
+    const [top, bottom] = (insetBlock ?? '').split(/\s+(?![^(]*\))/);
+
+    const railTop = pixels(SHARED_INSET ?? '');
+    const railBottomGap = pixels(SHARED_INSET ?? '');
+    // Starts below the drag strip (which is below the rail's own top edge)…
+    expect(pixels(top ?? '')).toBeGreaterThanOrEqual(railTop);
+    // …and stops exactly where the rail stops, not at the window floor.
+    expect(pixels(bottom ?? '')).toBe(railBottomGap);
+  });
+
+  it('keeps the brand-row toggle visible, clickable and out of the drag region, with no chrome slot left behind', () => {
     const host = mount(`
-      <header class="app-window-chrome">
-        <div class="app-window-chrome__rail-toggle">
-          <button class="hub__rail-toggle" data-project-rail-toggle></button>
-        </div>
-      </header>
+      <nav class="hub__nav" data-project-rail="hub" data-project-rail-state="expanded">${HEAD_ROW}</nav>
     `);
     const toggle = host.querySelector('[data-project-rail-toggle]') as HTMLElement;
-    const slot = host.querySelector('.app-window-chrome__rail-toggle') as HTMLElement;
     const computed = getComputedStyle(toggle);
 
+    expect(toggle.closest('[data-project-rail-head]')).not.toBeNull();
     expect(computed.position).toBe('static');
     expect(computed.opacity).toBe('1');
     expect(computed.pointerEvents).toBe('auto');
     expect(computed.visibility).toBe('visible');
     // jsdom drops Electron's non-standard app-region property from computed
-    // styles, so pin its two authored boundaries directly as well.
+    // styles, so pin the authored boundary directly.
     expect(projectRailCss).toMatch(/\[data-project-rail-toggle\]\s*\{[^}]*-webkit-app-region:\s*no-drag/s);
-    expect(shellCss).toMatch(/\.app-window-chrome__rail-toggle\s*\{[^}]*-webkit-app-region:\s*no-drag/s);
-    expect(slot.className).toBe('app-window-chrome__rail-toggle');
+    // The chrome slot the toggle used to be portalled into is gone for good:
+    // no dead host element, no second home for the control.
+    expect(shellCss).not.toContain('app-window-chrome__rail-toggle');
+    expect(projectRailCss).not.toMatch(/portal/i);
     host.remove();
   });
 
-  it('left-aligns the expanded Readable Studio brand while centering the collapsed mark', () => {
-    const expanded = mount(`<div class="hub"><nav class="hub__nav"><div class="hub__nav-head"><button class="hub__brand"></button></div></nav></div>`);
-    const collapsed = mount(`<div class="workspace-shell__body"><nav class="hub__nav" data-project-rail-state="collapsed"><div class="hub__nav-head"><button class="hub__brand"></button></div></nav></div>`);
+  it('packs the expanded brand row as one brand+toggle cluster and lets the toggle take the brand\'s place when collapsed', () => {
+    const expanded = mount(`<div class="workspace-shell__body"><nav class="hub__nav" data-project-rail="hub" data-project-rail-state="expanded">${HEAD_ROW}</nav></div>`);
+    const collapsed = mount(`<div class="workspace-shell__body"><nav class="hub__nav" data-project-rail="hub" data-project-rail-state="collapsed">${HEAD_ROW}</nav></div>`);
 
-    expect(getComputedStyle(expanded.querySelector('.hub__brand') as HTMLElement).justifySelf).toBe('start');
-    expect(getComputedStyle(collapsed.querySelector('.hub__brand') as HTMLElement).justifyContent).toBe('center');
+    const head = getComputedStyle(expanded.querySelector('.hub__nav-head') as HTMLElement);
+    const brand = expanded.querySelector('.hub__brand') as HTMLElement;
+    const toggle = expanded.querySelector('[data-project-rail-toggle]') as HTMLElement;
+    // Left-aligned cluster: the brand hugs its content (no growth into the
+    // leftover space) and the toggle is its immediate next sibling, so it
+    // sits right of the wordmark rather than floating at the far end.
+    expect(head.display).toBe('flex');
+    expect(head.justifyContent).toBe('flex-start');
+    expect(getComputedStyle(brand).display).toBe('flex');
+    expect(getComputedStyle(brand).flexGrow).toBe('0');
+    expect(toggle.previousElementSibling).toBe(brand);
+    expect(pixels(getComputedStyle(toggle).marginLeft || '0')).toBe(0);
+
+    // Collapsed: the brand (mark included) is not shown; the toggle occupies
+    // that slot, centred in the 44px strip.
+    const collapsedHead = getComputedStyle(collapsed.querySelector('.hub__nav-head') as HTMLElement);
+    expect(getComputedStyle(collapsed.querySelector('.hub__brand') as HTMLElement).display).toBe('none');
+    expect(getComputedStyle(collapsed.querySelector('[data-project-rail-toggle]') as HTMLElement).display).toBe('inline-flex');
+    expect(collapsedHead.justifyContent).toBe('center');
     expanded.remove();
     collapsed.remove();
+  });
+
+  it('routes every rail-owned menu through the body-portalled fixed placer, never the rail\'s overflow box', () => {
+    const host = mount(`
+      <nav class="hub__nav" data-project-rail="hub" data-project-rail-state="collapsed"></nav>
+      <div class="hub-menu"></div>
+    `);
+    const rail = getComputedStyle(host.querySelector('.hub__nav') as HTMLElement);
+    const menu = getComputedStyle(host.querySelector('.hub-menu') as HTMLElement);
+
+    // The rail clips: that is WHY an in-rail absolute menu was cut off at 44px.
+    expect(rail.overflow || rail.overflowX).toBe('hidden');
+    // The shared placer is viewport-fixed and painted above the rail.
+    expect(menu.position).toBe('fixed');
+    expect(Number.parseInt(menu.zIndex, 10)).toBeGreaterThan(Number.parseInt(rail.zIndex, 10));
+    // The footer's rail-local `.hub__menu` variant no longer exists.
+    expect(hubCss).not.toMatch(/\.hub__menu\s*\{/);
+    expect(hubCss).not.toMatch(/\.hub__menu-item/);
+    host.remove();
   });
 
   it('keeps the rail attached to each surface animation instead of snapping independently', () => {

@@ -62,14 +62,18 @@ export function HubRail({
         header={(
           <button
             type="button"
-            className="hub__brand"
+            className="hub__brand readable-tooltip"
             data-testid="hub-brand"
             aria-label={t('entry.navHome')}
+            /* The "Home" affordance rides on the canonical TooltipLayer. The
+               old in-flow hover hint sat between the wordmark and the row end,
+               which is exactly where the collapse toggle now lives. */
+            data-tooltip={t('entry.navHome')}
+            data-tooltip-placement="bottom"
             onClick={() => onGoHome?.()}
           >
             <img className="hub__brand-mark" src="/logo.svg" alt="" width={22} height={22} draggable={false} aria-hidden="true" />
             <span className="hub__brand-name">{t('app.brand')}</span>
-            <span className="hub__brand-home">{t('entry.navHome')}</span>
           </button>
         )}
       >

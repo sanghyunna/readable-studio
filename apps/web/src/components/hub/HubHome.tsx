@@ -20,6 +20,8 @@ import { HomeView } from '../HomeView';
 import type { HomePromptHandoff } from '../home-hero/plugin-authoring';
 import { Icon } from '../Icon';
 import type { PluginLoopSubmit } from '../PluginLoopHome';
+import type { HubImportFileOutcome } from './drop-to-edit';
+import { HubDropToEdit } from './HubDropToEdit';
 import { useHubRail } from './HubRailContext';
 import { relativeTimeShort } from './relativeTime';
 import type { HubDestination } from './types';
@@ -40,6 +42,7 @@ interface Props {
   onOpenSession: (projectId: string, conversationId: string) => void;
   /** Rich creation payload; HomeView owns all composer submission state. */
   onSubmit?: (payload: PluginLoopSubmit) => Promise<boolean> | boolean | void;
+  modelSelectionGuard?: () => boolean;
   /** @deprecated compatibility for callers not yet migrated to the rich payload. */
   onSubmitPrompt?: (prompt: string, options?: { designSystemId: string | null }) => unknown;
   /** Open a project itself, including projects with no sessions. */
@@ -48,6 +51,12 @@ interface Props {
   onBrowseRegistry?: () => void;
   onOpenMcp?: () => void;
   onOpenNewProject?: (tab: 'template') => void;
+  /**
+   * Drop-to-edit: route ONE existing document through the import path and
+   * land in the workspace with it open. The zone below the composer only
+   * renders when a host wires this; the entry shell always does.
+   */
+  onImportFile?: (file: File) => Promise<HubImportFileOutcome> | HubImportFileOutcome;
   /** Plugin/authoring selection handed back from a Library destination. */
   promptHandoff?: HomePromptHandoff | null;
   skills?: SkillSummary[];
@@ -85,12 +94,14 @@ export function HubHome({
   projects,
   projectsLoading = false,
   onSubmit,
+  modelSelectionGuard,
   onSubmitPrompt,
   onOpenProject,
   onViewAllProjects,
   onBrowseRegistry,
   onOpenMcp,
   onOpenNewProject,
+  onImportFile,
   promptHandoff,
   skills,
   skillsLoading,
@@ -152,6 +163,7 @@ export function HubHome({
           <HomeView
             surface="hub"
             richDataEnabled={Boolean(onSubmit)}
+            modelSelectionGuard={modelSelectionGuard}
             projects={projects}
             projectsLoading={projectsLoading}
             designSystems={designSystems}
@@ -176,12 +188,11 @@ export function HubHome({
             <p className="hub__empty" data-testid="hub-empty">
               <strong>{t('hub.noProjectsTitle')}</strong> {t('hub.noProjectsBody')}
             </p>
-          ) : (
-            <p className="hub__hint">
-              {t('hub.startHint')} <kbd className="hub-kbd">Ctrl K</kbd>{' '}
-              {t('hub.startHintContinuation')}
-            </p>
-          )}
+          ) : null}
+          {/* Editing an existing document is its own way in. The zone is a
+              sibling of the composer, so the composer's attachment drop keeps
+              its own files; the left panel and Ctrl K need no hint line. */}
+          {onImportFile ? <HubDropToEdit onImportFile={onImportFile} /> : null}
         </div>
       </div>
     </div>

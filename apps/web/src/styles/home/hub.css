@@ -27,7 +27,11 @@
 .hub__rail-resizer {
   position: absolute;
   z-index: 80;
-  inset-block: var(--app-window-chrome-height, 36px) 0;
+  /* The hit box straddles the rail's trailing edge and spans the rail's own
+     height only: it starts below the title strip (the band above is a drag
+     region the resizer must not carve into) and stops at the rail's bottom
+     inset, never reaching into the gap under the panel. */
+  inset-block: var(--app-window-chrome-height, 36px) var(--project-rail-inset);
   inset-inline-start: calc(var(--hub-rail-expanded, 292px) - 4px);
   inline-size: 8px;
   padding: 0;
@@ -91,31 +95,28 @@
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   min-inline-size: 0;
   min-height: 0;
-  /* DEFECT: the rail floated 10px above the window floor, so its bottom edge
-     and the footer inside it hung over a strip of bare canvas. The rail is a
-     full-height navigation surface, not a card, so it is anchored to the
-     window bottom: the inline inset stays (it is what detaches the slab from
-     the stage) and only the bottom gap goes. The bottom corners square off
-     with it - a radius on an edge that meets the window frame reads as a
-     rendering slip, not as a rounded card. */
-  /* Bottom anchoring is the SHARED contract's rule, not a Hub-local decision:
-     see `styles/home/project-rail.css`. Only the inline inset - which detaches
-     the slab from the stage and is genuinely Hub-specific - is set here. */
-  margin: 0 0 0 10px;
-  /* The shared rail normally fills its track at 100%, but this surface also
-     owns a 10px inline inset. Grid-item percentage sizing does not subtract
-     margins, so 100% made the inset rail itself 292px wide and overflowed its
-     292px track. Auto stretch consumes the remaining 282px instead. The margin
-     transitions with the parent track: collapse therefore moves continuously
-     from 10px to 0 while auto stretch grows into that recovered space, with no
-     state-only rail width to snap. */
+  /* Expanded, the rail is a panel floating inside the shell, inset by the ONE
+     shared `--project-rail-inset` on the top, bottom and start edges (the
+     trailing edge is the track boundary the resizer straddles). It previously
+     stood flush to the window top and floor with only the start gap, which
+     read as a full-height column with one stray gap rather than a panel. The
+     block inset is the shared contract's rule (`styles/home/project-rail.css`,
+     Rule 1, expanded only); this surface owns the inline-start inset because
+     it animates with the track. Collapsed zeroes every margin below. */
+  margin-left: var(--project-rail-inset);
+  /* Grid-item percentage sizing does not subtract margins, so 100% made the
+     inset rail itself 292px wide and overflowed its 292px track. Auto stretch
+     consumes the remaining 282px instead (and, on the block axis, the track
+     minus both block insets). Every margin transitions with the parent track:
+     collapse therefore docks the panel continuously on all three inset edges
+     while auto stretch grows into the recovered space, with no state-only
+     rail size to snap. */
   inline-size: auto;
-  block-size: 100%;
-  margin-block-end: 0;
-  transition: margin-inline-start var(--dur-enter) var(--ease-out);
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  border-end-start-radius: 0;
-  border-end-end-radius: 0;
+  block-size: auto;
+  transition: margin var(--dur-enter) var(--ease-out);
+  /* Every corner of the floating panel is free of the window frame, so every
+     corner is round; the collapsed strip squares them off below. */
+  border-radius: var(--radius-lg);
   /* Borderless: the rail is separated from the stage by its translucent fill,
      an inset top highlight and a soft drop shadow - not by a 1px line. */
   border: 0;
@@ -182,25 +183,32 @@
 }
 
 .hub__nav-head {
-  /* One state-invariant, in-flow header. The old expanded row / collapsed
-     column switch changed the header's height, pushed every control below it,
-     and let the toggle crowd the logo. Two fixed rows preserve object identity:
-     logo above, toggle below, at the same vertical centres in both states.
-     The top padding clears the frameless drag strip while the rail's glass
-     surface itself still begins at y=0. */
-  display: grid;
-  grid-template-rows: 34px;
+  /* One in-flow brand row that reads as a single brand+control cluster:
+     [mark][wordmark][toggle] packed to the start while expanded, and the
+     toggle alone - centred - once collapsed. The row height is state
+     invariant (one 34px row) so nothing below it moves on toggle. The top
+     padding clears the frameless drag strip plus one 4px step of breathing
+     room, measured from the rail's own top edge: the row rides with the
+     panel (10px lower while the panel floats, flush while collapsed) and is
+     always below the band, therefore clickable. */
+  display: flex;
   align-items: center;
-  height: 78px;
-  padding: calc(var(--app-window-chrome-height, 36px) + 4px) 8px 4px;
+  justify-content: flex-start;
+  gap: 4px;
+  min-block-size: 34px;
+  padding-block-start: calc(var(--app-window-chrome-height, 36px) + 4px);
+  padding-inline: 8px;
+  padding-block-end: 4px;
 }
 
 .hub__brand {
   display: flex;
   align-items: center;
-  justify-self: start;
+  /* Hugs its content so the toggle sits immediately after the wordmark
+     instead of at the far end of the row; the wordmark may still shrink and
+     truncate before the toggle ever loses width. */
+  flex: 0 1 auto;
   gap: 9px;
-  width: 100%;
   min-width: 0;
   height: 34px;
   padding: 0 4px;
@@ -211,8 +219,10 @@
   cursor: pointer;
 }
 
-/* Surface skin only. ProjectRail owns the in-flow control and state contract. */
+/* Surface skin only. ProjectRail owns the in-flow control and state contract.
+   `flex: none` keeps the hit target whole when the wordmark is squeezed. */
 .hub__rail-toggle {
+  flex: none;
   width: 28px;
   height: 28px;
 }
@@ -247,19 +257,6 @@
   background: var(--bg-hover);
 }
 
-.hub__brand-home {
-  margin-inline-start: auto;
-  color: var(--text-faint);
-  font-size: 11px;
-  opacity: 0;
-  transition: opacity var(--dur-quick) var(--ease-out);
-}
-
-.hub__brand:hover .hub__brand-home,
-.hub__brand:focus-visible .hub__brand-home {
-  opacity: 1;
-}
-
 /* The real brand asset (apps/web/public/logo.svg) already carries its own
    white rounded plate and the accent bar, so this rule only sizes it. It must
    never be recoloured or re-approximated in CSS. */
@@ -271,6 +268,10 @@
 }
 
 .hub__brand-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 13.5px;
   font-weight: 650;
   letter-spacing: -0.012em;
@@ -863,8 +864,10 @@
   gap: 4px;
 }
 
+/* Layout wrapper for the Library trigger only. The menu it opens is NOT a
+   child of this box: it goes through the shared, body-portalled HubMenu, so
+   nothing here needs a positioning context. */
 .hub__menu-anchor {
-  position: relative;
   min-width: 0;
   flex: 1;
 }
@@ -975,46 +978,6 @@
 
 /* Footer menus open upward, anchored to their trigger, because the rail
    footer sits on the bottom edge of the viewport. */
-.hub__menu {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 0;
-  z-index: 20;
-  min-width: 200px;
-  padding: 5px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 10px;
-  background: var(--bg-elevated);
-  box-shadow: var(--shadow-md);
-}
-
-.hub__menu-label {
-  padding: 5px 9px 6px;
-  color: var(--text-faint);
-  font-size: 11px;
-  font-weight: 650;
-}
-
-.hub__menu-item {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  width: 100%;
-  padding: 7px 9px;
-  border: 0;
-  border-radius: 7px;
-  background: none;
-  color: var(--text);
-  font-size: 12.5px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.hub__menu-item:hover,
-.hub__menu-item:focus-visible {
-  background: var(--bg-hover);
-}
-
 /* ---- command palette ---- */
 
 .hub-palette__scrim {
@@ -1241,7 +1204,6 @@
 
 
 
-.hub__hint,
 .hub__empty {
   margin-top: 26px;
   font-size: 12.5px;
@@ -1468,7 +1430,6 @@
  */
 
 [data-project-rail-state='collapsed'] .hub__brand-name,
-[data-project-rail-state='collapsed'] .hub__brand-home,
 [data-project-rail-state='collapsed'] .hub-tree__filters,
 [data-project-rail-state='collapsed'] .hub-tree__group-label,
 [data-project-rail-state='collapsed'] .hub-tree__empty,
@@ -1483,9 +1444,11 @@
 }
 
 .hub__nav[data-project-rail-state='collapsed'] {
-  /* Auto stretch follows the interpolating grid track while this inset reaches
-     zero with the same exit timing. An explicit 44px width here made the
-     visible slab snap before its parent track finished. */
+  /* Auto stretch follows the interpolating grid track while every inset
+     reaches zero with the same exit timing: the strip is edge-anchored -
+     flush to the wall, the window top and the window floor - so it squares
+     off. An explicit 44px width here made the visible slab snap before its
+     parent track finished. */
   margin: 0;
   transition-duration: var(--dur-exit);
   border-radius: 0;
@@ -1495,15 +1458,15 @@
   padding-inline: 4px;
 }
 
+/* Collapsed, the toggle takes the brand's place: the brand (mark included)
+   is not shown beside it, and the single control is centred in the 44px
+   strip - 8px row padding on each side leaves exactly its 28px. */
 [data-project-rail-state='collapsed'] .hub__brand {
-  justify-content: center;
-  flex: none;
-  width: 100%;
-  padding: 4px 0;
+  display: none;
 }
 
-[data-project-rail-state='collapsed'] .hub__brand-mark {
-  display: block;
+[data-project-rail-state='collapsed'] .hub__nav-head {
+  justify-content: center;
 }
 
 [data-project-rail-state='collapsed'] .hub__new-project {
@@ -1762,7 +1725,6 @@
     min-height: 76px;
   }
 
-  .hub__hint,
   .hub__empty {
     margin-top: 12px;
   }
@@ -1891,7 +1853,6 @@
    its ink is the strong text token over the strong glass fill (never the old
    inverted plate, which glass would have turned into white-on-white). */
 
-.hub__menu,
 .hub-menu,
 .hub-palette,
 .hub-inspector,
@@ -1975,7 +1936,6 @@
 .hub__dest-more:hover,
 .hub__user-row:hover,
 .hub__view-all:hover,
-.hub__menu-item:hover,
 .hub-menu__item:hover {
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
@@ -2015,7 +1975,6 @@
    surfaces, and fall back to a faint outline so the shapes stay legible. */
 @media (prefers-reduced-transparency: reduce) {
   .hub__nav,
-  .hub__menu,
   .hub-menu,
   .hub-palette,
   .hub-inspector,
@@ -2058,7 +2017,6 @@
   .hub__dest:hover,
   .hub__dest-more:hover,
   .hub__view-all:hover,
-  .hub__menu-item:hover,
   .hub-menu__item:hover {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;

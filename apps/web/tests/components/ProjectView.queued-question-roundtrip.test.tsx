@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ComponentProps, ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectView } from '../../src/components/ProjectView';
@@ -8,7 +8,7 @@ import { QuestionsPanel } from '../../src/components/QuestionsPanel';
 import { formatFormAnswers, type QuestionForm } from '../../src/artifacts/question-form';
 import { parseSubmittedAnswers } from '../../src/components/QuestionForm';
 import { fetchChatRunStatus, listActiveChatRuns, reattachDaemonRun, streamViaDaemon } from '../../src/providers/daemon';
-import { listConversations, listMessages, saveMessage } from '../../src/state/projects';
+import { listConversations, listMessages, patchProject, saveMessage } from '../../src/state/projects';
 import { DEFAULT_CONFIG } from '../../src/state/config';
 import { composerText, typeInComposer } from '../helpers/lexical-composer';
 
@@ -46,7 +46,7 @@ vi.mock('../../src/components/AppChromeHeader', () => ({
 vi.mock('../../src/components/AvatarMenu', () => ({ AvatarMenu: () => null }));
 vi.mock('../../src/components/FileWorkspace', () => ({
   FileWorkspace: (props: ComponentProps<typeof import('../../src/components/FileWorkspace').FileWorkspace>) => (
-    <QuestionsPanel form={props.questionForm ?? null} formKey={props.questionFormKey}
+    <QuestionsPanel brief={props.projectQuestions} onCorrect={props.onCorrectQuestion} form={props.questionForm ?? null} formKey={props.questionFormKey}
       interactive={props.questionFormInteractive ?? false} submitDisabled={props.questionFormSubmitDisabled}
       runHydrationStatus={props.questionRunHydrationStatus} onRetryRunHydration={props.onRetryQuestionRunHydration}
       submissionQueued={props.questionFormSubmissionQueued} submittedAnswers={props.questionFormSubmittedAnswers}
@@ -74,9 +74,9 @@ const answers = { platform: 'desktop-web', features: ['search-filter', 'export']
 const storageKey = 'readable:chat-queued-sends:queue-question-project:v1';
 const content = `<question-form id="scope" title="Scope">${JSON.stringify({ questions: form.questions })}</question-form>`;
 
-function mount() {
+function mount(metadata?: import('../../src/types').ProjectMetadata) {
   return render(<ProjectView
-    project={{ id: 'queue-question-project', name: 'Queue test', skillId: null, designSystemId: null, createdAt: 1, updatedAt: 1 }}
+    project={{ id: 'queue-question-project', name: 'Queue test', skillId: null, designSystemId: null, createdAt: 1, updatedAt: 1, metadata }}
     routeFileName={null} config={{ ...DEFAULT_CONFIG, mode: 'daemon', agentId: 'claude', agentModels: { claude: { model: 'sonnet' } }, notifications: { successSoundId: 'success', failureSoundId: 'failure', soundEnabled: false, desktopEnabled: false } }}
     agents={[{ id: 'claude', name: 'Claude', bin: 'claude', available: true, models: [{ id: 'sonnet', label: 'Sonnet' }] }]}
     skills={[]} designTemplates={[]} designSystems={[]} daemonLive
@@ -96,6 +96,36 @@ beforeEach(() => { vi.mocked(listActiveChatRuns).mockReset().mockResolvedValue([
 afterEach(() => { cleanup(); window.localStorage.clear(); window.sessionStorage.clear(); vi.clearAllMocks(); });
 
 describe('queued question answer lifecycle', () => {
+  it('persists rapid repeated Questions corrections atomically without losing earlier prompt metadata', async () => {
+    vi.mocked(listConversations).mockResolvedValue([{ id: 'conv-q', projectId: 'queue-question-project', title: 'Q', createdAt: 1, updatedAt: 1 }]);
+    vi.mocked(listMessages).mockResolvedValue([]);
+    vi.mocked(patchProject).mockImplementation(async (_id, patch) => ({ id: 'queue-question-project', name: 'Q', skillId: null, designSystemId: null, createdAt: 1, updatedAt: 1, metadata: patch.metadata }));
+    vi.mocked(streamViaDaemon).mockImplementation(async input => { input.onRunCreated?.('run-next'); });
+    await act(async () => { mount({ kind: 'prototype', fidelity: 'high-fidelity', brief: { updatedAt: 1, assumptions: [
+      { id: 'fidelity', label: 'Fidelity', value: 'high-fidelity', provenance: 'default', question: { id: 'fidelity', label: 'Fidelity', type: 'text' } },
+      { id: 'animations', label: 'Animations', value: 'no', provenance: 'default', question: { id: 'animations', label: 'Animations', type: 'text' } },
+    ] } }); });
+    expect(listActiveChatRuns).toHaveBeenCalledTimes(1);
+    for (const [id, value] of [['fidelity', 'wireframe'], ['animations', 'yes'], ['fidelity', 'wireframe']]) {
+      const item = screen.getAllByRole('listitem').find(node => node.textContent?.includes(`questions.field.${id}`))!;
+      fireEvent.click(item);
+      fireEvent.change(within(screen.getByTestId('questions-panel')).getByRole('textbox'), { target: { value } });
+      await act(async () => { const apply = screen.getByRole('button', { name: 'questions.applyCorrection' }); fireEvent.click(apply); fireEvent.click(apply); });
+    }
+    expect(patchProject).toHaveBeenCalledTimes(3);
+    const metadata = vi.mocked(patchProject).mock.calls.at(-1)![1].metadata!;
+    expect(metadata).toMatchObject({ fidelity: 'wireframe', animations: true });
+    expect(metadata.brief?.assumptions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'fidelity', value: 'wireframe', provenance: 'stated' }),
+      expect.objectContaining({ id: 'animations', value: 'yes', provenance: 'stated' }),
+    ]));
+    expect(screen.getByTestId('questions-influence').dataset).toMatchObject({ count: '2', confirmed: '2' });
+    fireEvent.click(screen.getAllByRole('listitem').find(node => node.textContent?.includes('questions.field.fidelity'))!);
+    fireEvent.change(within(screen.getByTestId('questions-panel')).getByRole('textbox'), { target: { value: 'invalid' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'questions.applyCorrection' })); });
+    expect(patchProject).toHaveBeenCalledTimes(3);
+    expect(screen.getByRole('alert')).toBeTruthy();
+  });
   it.each(['idle', 'active', 'retry-failure'] as const)('holds editable answers through failed hydration and local %s recovery', async outcome => {
     vi.mocked(listConversations).mockResolvedValue([{ id: 'conv-q', projectId: 'queue-question-project', title: 'Q', createdAt: 1, updatedAt: 1 }]);
     vi.mocked(listMessages).mockResolvedValue([{ id: 'assistant-q', role: 'assistant', content, createdAt: 1 }]);

@@ -18,6 +18,7 @@ import type {
 // component lets future rebases against upstream `EntryView` stay close
 // to a no-op here.
 import { EntryShell } from './EntryShell';
+import type { HubImportFileOutcome } from './hub/drop-to-edit';
 import type { IntegrationTab } from './IntegrationsView';
 import type { CreateInput, CreateTab } from './NewProjectPanel';
 import type { EntrySettingsSection } from './EntrySettingsMenu';
@@ -87,6 +88,8 @@ interface Props {
     locale?: string,
   ) => Promise<PluginShareProjectOutcome>;
   onOpenNewProject: (tab: CreateTab) => void;
+  /** Hub drop-to-edit: one existing document -> project -> workspace with it open. */
+  onImportFile?: (file: File) => Promise<HubImportFileOutcome> | HubImportFileOutcome;
   onOpenProject: (id: string) => void;
   onDeleteProject: (id: string) => void;
   onRenameProject: (id: string, name: string) => void;
@@ -125,6 +128,7 @@ export function EntryView({
   onCreateProject,
   onCreatePluginShareProject,
   onOpenNewProject,
+  onImportFile,
   onOpenProject,
   onDeleteProject,
   onRenameProject,
@@ -169,6 +173,7 @@ export function EntryView({
       onCreateProject={onCreateProject}
       onCreatePluginShareProject={onCreatePluginShareProject}
       onOpenNewProject={onOpenNewProject}
+      onImportFile={onImportFile}
       onOpenProject={onOpenProject}
       onDeleteProject={onDeleteProject}
       onRenameProject={onRenameProject}
