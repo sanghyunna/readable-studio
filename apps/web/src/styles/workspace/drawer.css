@@ -981,6 +981,7 @@
    File workspace — tabs + viewer
    ============================================================ */
 .workspace {
+  container: file-workspace / inline-size;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -990,6 +991,7 @@
   overflow: hidden;
 }
 .ws-tabs-shell {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1217,25 +1219,13 @@
 .ws-tab.design-files-tab {
   font-weight: 500;
   color: var(--text);
-  /* Pin the Design Files entry to the left edge of the horizontally
-     scrollable tab strip so the user always has a way back to the file
-     list even when many tabs overflow. Without sticky positioning,
-     Design Files sits at flex index 0 and scrolls off the left edge
-     once the strip is wide enough to require horizontal scrolling.
-     Issue #775. */
-  position: sticky;
-  left: 0;
-  z-index: 1;
-  /* Solid panel surface so other tabs that scroll past underneath the
-     sticky element do not visibly bleed through. */
+  /* A permanent entry, not an overlay: even a narrow scrollport must offer
+     its entire hit area to whichever sibling has been scrolled into view. */
+  position: static;
   background: var(--bg-panel);
-  /* Subtle right-edge shadow signals the visual separation when other
-     tabs are scrolled beneath it. */
-  box-shadow: 4px 0 6px -4px color-mix(in srgb, var(--black) 12%, transparent);
 }
 .ws-tab.design-files-tab.active {
-  /* Active state should still read as selected; layer the active tint
-     over the sticky panel surface. */
+  /* Permanent tabs use the same selected surface as preview tabs. */
   background: var(--bg-subtle);
 }
 
@@ -1278,6 +1268,30 @@
 }
 
 .ws-tabs-actions { display: inline-flex; gap: 4px; align-items: center; }
+/* The workspace width, not the viewport, determines whether actions compete
+   with tabs. Keep the whole first row available for scrolling permanent and
+   closable tabs; project/file actions wrap below instead of taking it to zero. */
+@container file-workspace (max-width: 480px) {
+  .workspace .ws-tabs-shell,
+  .app .workspace .ws-tabs-shell {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 38px;
+    row-gap: 4px;
+  }
+  .workspace .ws-tabs-bar,
+  .app .workspace .ws-tabs-bar {
+    flex: 1 1 0;
+    height: 32px;
+  }
+  .workspace .ws-tabs-actions,
+  .app .workspace .ws-tabs-actions {
+    flex: 1 1 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
 .ws-focus-expand {
   display: inline-flex;
   align-items: center;

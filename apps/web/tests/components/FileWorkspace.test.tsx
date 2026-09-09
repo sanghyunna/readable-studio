@@ -1327,6 +1327,18 @@ describe('FileWorkspace Questions tab', () => {
     ],
   };
 
+  it('forwards typed standard answers through the real workspace callback', async () => {
+    const onSubmitQuestionForm = vi.fn().mockResolvedValue(true);
+    await renderWorkspace(<FileWorkspace projectId="project-1" projectKind="prototype" files={[]}
+      onRefreshFiles={vi.fn()} isDeck={false} tabsState={{ tabs: [], active: null }}
+      onTabsStateChange={vi.fn()} questionForm={discoveryForm} questionFormInteractive
+      questionFormKey="typed-workspace" onSubmitQuestionForm={onSubmitQuestionForm} />);
+    fireEvent.click(screen.getByTestId('questions-tab'));
+    fireEvent.click(screen.getByRole('radio', { name: 'Desktop web' }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Continue' })); });
+    expect(onSubmitQuestionForm).toHaveBeenCalledExactlyOnceWith(expect.any(String), { platform: 'Desktop web' });
+  });
+
   it('shows the Questions tab while the form is unanswered', async () => {
     await renderWorkspace(
       <FileWorkspace

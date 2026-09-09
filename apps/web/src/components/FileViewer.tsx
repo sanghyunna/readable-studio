@@ -4315,15 +4315,26 @@ function HtmlViewer({
 
   // Dirty = current source differs from the entry snapshot or a style preview
   // is pending and has not yet been folded into source.
-  useEffect(() => {
-    const dirty = manualEditMode
+  const syncManualEditDirty = useCallback(() => {
+    const dirty = manualEditModeRef.current
       && (
         (sourceRef.current ?? '') !== (manualEditOriginalSourceRef.current ?? '')
         || manualEditPendingStyleRef.current !== null
       );
-    setManualEditDirty(dirty);
     manualEditDirtyRef.current = dirty;
-  }, [manualEditMode, source, manualEditDraft, manualEditHistory, manualEditUndone]);
+    setManualEditDirty(dirty);
+  }, []);
+
+  useEffect(() => {
+    syncManualEditDirty();
+  }, [manualEditMode, source, manualEditDraft, manualEditHistory, manualEditUndone, syncManualEditDirty]);
+
+  function setManualEditPendingStyle(pending: ManualEditPendingStyleSave | null) {
+    manualEditPendingStyleRef.current = pending;
+    // Page controls need not change the parent draft/source. Publish to both
+    // guards and Save/Discard immediately, without a render or preview ack.
+    syncManualEditDirty();
+  }
 
   useEffect(() => {
     onCloseGuardChange?.(() => {
@@ -4971,7 +4982,7 @@ function HtmlViewer({
     setManualEditUndone([]);
     setManualEditError(null);
     clearManualEditResizeFeedback();
-    manualEditPendingStyleRef.current = null;
+    setManualEditPendingStyle(null);
     clearManualEditMovement();
   }, [file.name]);
 
@@ -5227,7 +5238,7 @@ function HtmlViewer({
       manualEditActionSeqRef.current += 1;
       setManualEditError(null);
       clearManualEditResizeFeedback();
-      manualEditPendingStyleRef.current = null;
+      setManualEditPendingStyle(null);
       clearManualEditMovement();
       setManualEditRichFormat({ editing: false, hasSelection: false, bold: false, italic: false, underline: false });
       return;
@@ -5537,11 +5548,7 @@ function HtmlViewer({
 
   function cancelManualEditPendingStyles(id: string, keys: Array<keyof ManualEditStyles>) {
     const nextPending = cancelManualEditPendingStyleSnapshot(manualEditPendingStyleRef.current, id, keys);
-    if (!nextPending) {
-      manualEditPendingStyleRef.current = null;
-      return;
-    }
-    manualEditPendingStyleRef.current = nextPending;
+    setManualEditPendingStyle(nextPending);
   }
 
   async function handleManualEditStyleChange(id: string, styles: Partial<ManualEditStyles>, label: string) {
@@ -5552,7 +5559,7 @@ function HtmlViewer({
       ? { ...currentPending.styles, ...styles }
       : styles;
     const pending: ManualEditPendingStyleSave = { id, styles: pendingStyles, label, version };
-    manualEditPendingStyleRef.current = pending;
+    setManualEditPendingStyle(pending);
     setManualEditError(null);
     // Panel changes are low-frequency and need the exact winning declaration
     // (including stylesheet !important / a cleared inline size). Drag frames
@@ -6401,7 +6408,7 @@ function HtmlViewer({
     // Only clear if a newer edit hasn't already replaced this pending entry
     // while the save was in flight.
     if (ok && manualEditPendingStyleRef.current === pending) {
-      manualEditPendingStyleRef.current = null;
+      setManualEditPendingStyle(null);
     }
     return ok;
   }
@@ -6409,7 +6416,7 @@ function HtmlViewer({
   function cancelManualEditStyleDraft() {
     const pending = manualEditPendingStyleRef.current;
     if (!pending) return;
-    manualEditPendingStyleRef.current = null;
+    setManualEditPendingStyle(null);
     const base = sourceRef.current ?? '';
     const target = pending.id === '__body__'
       ? null
@@ -6531,7 +6538,7 @@ function HtmlViewer({
     setManualEditDocumentRevision((revision) => revision + 1);
     setManualEditHistory([]);
     setManualEditUndone([]);
-    manualEditPendingStyleRef.current = null;
+    setManualEditPendingStyle(null);
     setManualEditDraft(emptyManualEditDraft(originalSource));
     setManualEditError(null);
     clearManualEditMovement();
@@ -6673,7 +6680,7 @@ function HtmlViewer({
         : current);
     } else if (patch.kind === 'remove-element') {
       if (manualEditPendingStyleRef.current?.id === patch.id) {
-        manualEditPendingStyleRef.current = null;
+        setManualEditPendingStyle(null);
       }
       selectedManualEditTargetIdRef.current = null;
       selectedManualEditTargetRef.current = null;
@@ -6704,7 +6711,7 @@ function HtmlViewer({
     setInlinedSource(null);
     setManualEditHistory([]);
     setManualEditUndone([]);
-    manualEditPendingStyleRef.current = null;
+    setManualEditPendingStyle(null);
     setManualEditDraft((current) => ({ ...current, fullSource: source }));
     setManualEditError(message);
   }

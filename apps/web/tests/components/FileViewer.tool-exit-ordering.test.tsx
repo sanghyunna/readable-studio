@@ -130,6 +130,14 @@ describe('FileViewer tool exit ordering', () => {
       let armed = false;
       let disabledPosted = false;
       const bridge = bridgeDom(buildSrcdoc(html, { commentBridge: true }));
+      // JSDOM lacks Element.scrollTo; preserve the bridge's numeric scroll API
+      // on this fixture's scroll root without patching other windows/elements.
+      const scrollRoot = bridge.window.document.documentElement;
+      const scrollTo = vi.fn((left: number, top: number) => {
+        scrollRoot.scrollLeft = left;
+        scrollRoot.scrollTop = top;
+      });
+      Object.defineProperty(scrollRoot, 'scrollTo', { configurable: true, value: scrollTo });
       await act(async () => {
         render(<FileViewer projectId="project-1" projectKind="prototype" file={file} liveHtml={html}
           previewComments={[surface === 'saved-composer'
@@ -144,10 +152,22 @@ describe('FileViewer tool exit ordering', () => {
       });
       fireEvent.click(screen.getByTestId('comment-panel-toggle'));
       const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
+      fireEvent.load(frame);
       const post = vi.spyOn(frame.contentWindow!, 'postMessage').mockImplementation((data) => {
         if (data.type === 'readable-studio:comment-mode' && data.enabled === false) disabledPosted = true;
         bridge.window.dispatchEvent(new bridge.window.MessageEvent('message', { data }));
       });
+      // Exercise restoration through the host/bridge protocol, not rAF timing.
+      scrollRoot.scrollLeft = 24;
+      scrollRoot.scrollTop = 48;
+      message(frame, 'readable-studio:preview-scroll-request');
+      expect(post).toHaveBeenCalledWith({
+        type: 'readable-studio:preview-scroll-restore',
+        frameLeft: 0, frameTop: 0, canvasLeft: 0, canvasTop: 0,
+      }, '*');
+      expect(scrollTo).toHaveBeenCalledWith(0, 0);
+      expect(scrollRoot.scrollLeft).toBe(0);
+      expect(scrollRoot.scrollTop).toBe(0);
       message(frame, surface === 'side' ? 'readable-studio:comment-hover' : 'readable-studio:comment-target', comment);
       expect(screen.getByTestId('comment-target-overlay')).toBeTruthy();
       if (surface === 'side') {

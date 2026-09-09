@@ -72,7 +72,7 @@ import { SideChatTab, type ActiveConversationChatState } from './workspace/SideC
 import { TerminalViewer } from './workspace/TerminalViewer';
 import { MissingBrandFontsBanner } from './MissingBrandFontsBanner';
 import { PasteTextDialog } from './PasteTextDialog';
-import { QuestionsPanel, type QuestionRunHydrationStatus } from './QuestionsPanel';
+import { QuestionsPanel, type QuestionRunHydrationStatus, type SubmitQuestionAnswers } from './QuestionsPanel';
 import type { BriefAssumption, ProjectBrief } from './brief-state';
 import { consumeHubSessionSurface } from './hub/HubSessionTree';
 import { QuickSwitcher } from './QuickSwitcher';
@@ -216,7 +216,7 @@ interface Props {
   questionFormSubmissionQueued?: boolean;
   questionFormSubmittedAnswers?: Record<string, string | string[]>;
   questionsGenerating?: boolean;
-  onSubmitQuestionForm?: (text: string) => void;
+  onSubmitQuestionForm?: SubmitQuestionAnswers;
   // Bumped nonce that focuses the Questions tab (banner click / new form).
   focusQuestionsRequest?: { nonce: number } | null;
 }
@@ -1167,31 +1167,26 @@ export function FileWorkspace({
   // Browser-style tab bar: when the active tab changes (open from a chat
   // file chip, switch via Cmd+P, etc.), scroll it into view so the user
   // can always see what they have selected even when the strip overflows.
-  // The Design Files entry is already sticky-pinned, so we only scroll
-  // for real workspace tabs. Issue #775.
+  // Permanent tabs participate too: no tab is pinned over its siblings.
   useEffect(() => {
-    if (activeTab === DESIGN_FILES_TAB || activeTab === DESIGN_SYSTEM_TAB || activeTab === QUESTIONS_TAB) return;
     const tabBar = tabsBarRef.current;
     if (!tabBar) return;
-    const el = tabBar.querySelector<HTMLElement>('.ws-tab.active');
-    if (!el) return;
-    // The Design Files tab is sticky-pinned to the scrollport's left
-    // edge (index.css:.ws-tab.design-files-tab), so a naive scrollIntoView
-    // with inline: 'nearest' would slide a leftward-jumped active tab
-    // flush with that edge and leave it hidden underneath the sticky
-    // panel. Compute scrollLeft manually instead, treating the sticky
-    // tab's right edge as the effective visible-left boundary.
-    const tabRect = el.getBoundingClientRect();
-    const barRect = tabBar.getBoundingClientRect();
-    const stickyEl = tabBar.querySelector<HTMLElement>('.ws-tab.design-files-tab');
-    const stickyWidth = stickyEl ? stickyEl.getBoundingClientRect().width : 0;
-    const visibleLeft = barRect.left + stickyWidth;
-    const visibleRight = barRect.right;
-    if (tabRect.left < visibleLeft) {
-      tabBar.scrollLeft += tabRect.left - visibleLeft;
-    } else if (tabRect.right > visibleRight) {
-      tabBar.scrollLeft += tabRect.right - visibleRight;
-    }
+    const revealActiveTab = () => {
+      const el = tabBar.querySelector<HTMLElement>('.ws-tab.active');
+      if (!el) return;
+      const tabRect = el.getBoundingClientRect();
+      const barRect = tabBar.getBoundingClientRect();
+      if (tabRect.left < barRect.left) {
+        tabBar.scrollLeft += tabRect.left - barRect.left;
+      } else if (tabRect.right > barRect.right) {
+        tabBar.scrollLeft += tabRect.right - barRect.right;
+      }
+    };
+    revealActiveTab();
+    // Rail and split resizing can shrink the scrollport without a tab change.
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(revealActiveTab);
+    observer?.observe(tabBar);
+    return () => observer?.disconnect();
   }, [activeTab]);
 
   // Browser-style shortcuts for the high-frequency Design Files workspace
@@ -2120,7 +2115,7 @@ export function FileWorkspace({
             submissionQueued={questionFormSubmissionQueued}
             submittedAnswers={questionFormSubmittedAnswers}
             generating={questionsGenerating}
-            onSubmit={(text) => onSubmitQuestionForm?.(text)}
+            onSubmit={(text, answers) => onSubmitQuestionForm?.(text, answers)}
           />
         ) : activeTab === DESIGN_SYSTEM_TAB && designSystemProject ? (
           <DesignSystemProjectPanel

@@ -1478,6 +1478,18 @@ function AppInner() {
     }
   }, [rememberLocalProject]);
 
+  const handleDeleteProject = useCallback(async (id: string) => {
+    const ok = await deleteProjectApi(id);
+    if (!ok) return false;
+    clearLocalProject(id, { deleted: true });
+    iframeKeepAlivePool.evictProject(id, { includeActive: true });
+    setProjects((curr) => curr.filter((p) => p.id !== id));
+    if (route.kind === 'project' && route.projectId === id) {
+      navigate({ kind: 'home', view: 'home' });
+    }
+    return true;
+  }, [clearLocalProject, iframeKeepAlivePool, route]);
+
   // Hub drop-to-edit. Same seam the ZIP import drives: create the project,
   // land the document through the project-file API (which keeps its name, so
   // the workspace tab reads `report.html`, not an upload-stamped alias), then
@@ -1498,9 +1510,22 @@ function AppInner() {
     if (!result) return { ok: false };
     const written = await uploadProjectFile(result.project.id, file);
     if (!written) {
-      // Never strand an empty project behind a failed write; the toast is
-      // the user's signal, the daemon must not keep a ghost row.
-      void deleteProjectApi(result.project.id);
+      // Roll back through normal deletion bookkeeping: remove any row a
+      // concurrent list admitted and tombstone it against stale responses.
+      const deleted = await handleDeleteProject(result.project.id);
+      if (!deleted) {
+        // The project still exists. Keep it manageable instead of hiding a
+        // failed cleanup, and preserve the Hub's import-error toast.
+        rememberLocalProject(result.project.id);
+        setProjects((curr) => [
+          result.project,
+          ...curr.filter((p) => p.id !== result.project.id),
+        ]);
+        return {
+          ok: false,
+          message: `Could not remove the empty project "${result.project.name}" (${result.project.id}) after the file import failed.`,
+        };
+      }
       return { ok: false };
     }
     rememberLocalProject(result.project.id);
@@ -1514,7 +1539,7 @@ function AppInner() {
       fileName: written.name,
     });
     return { ok: true };
-  }, [rememberLocalProject]);
+  }, [handleDeleteProject, rememberLocalProject]);
 
   const handleImportFolder = useCallback(async (baseDir: string) => {
     const result = await importFolderProject({ baseDir });
@@ -1596,18 +1621,6 @@ function AppInner() {
       window.clearInterval(id);
     };
   }, [config.pet?.enabled, daemonLive, projects]);
-
-  const handleDeleteProject = useCallback(async (id: string) => {
-    const ok = await deleteProjectApi(id);
-    if (!ok) return false;
-    clearLocalProject(id, { deleted: true });
-    iframeKeepAlivePool.evictProject(id, { includeActive: true });
-    setProjects((curr) => curr.filter((p) => p.id !== id));
-    if (route.kind === 'project' && route.projectId === id) {
-      navigate({ kind: 'home', view: 'home' });
-    }
-    return true;
-  }, [clearLocalProject, iframeKeepAlivePool, route]);
 
   const handleRenameProject = useCallback(async (id: string, name: string) => {
     const trimmed = name.trim();
