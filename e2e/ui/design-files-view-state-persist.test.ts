@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { addStorageInitScript } from '@/playwright/storage-init';
 import type { Page } from '@playwright/test';
 import { routeAgents } from '@/playwright/mock-factory';
 import { ensureRailOpen } from '@/playwright/rail';
@@ -7,7 +8,7 @@ import { T } from '@/timeouts';
 const CONFIG_STORAGE_KEY = 'readable-studio:config';
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript((key) => {
+  await addStorageInitScript(page, (key) => {
     window.localStorage.setItem(
       key,
       JSON.stringify({

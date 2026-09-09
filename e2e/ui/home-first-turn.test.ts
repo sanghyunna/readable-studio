@@ -5,13 +5,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createFakeAgentRuntimes } from '@/fake-agents';
 import { enterHomeFirstTurnPrompt } from '@/playwright/home-first-turn';
+import { observeProjectFileHydration } from '@/playwright/project-file-hydration';
+import { cleanupHydrationRuns } from '@/playwright/question-hydration';
 import { routeAgents } from '@/playwright/mock-factory';
 import { T } from '@/timeouts';
+import { addStorageInitScript } from '@/playwright/storage-init';
 
 // Fresh Playwright contexts; only agent discovery is mocked. Project creation,
 // attachment upload, run start, SSE and message persistence use the real daemon.
 for (const attachment of [false, true]) {
-  test(`[P1] Home ${attachment ? 'prompt + attachment' : 'prompt'} starts exactly one first-turn run across reload`, async ({ page, request }) => {
+  test(`[P1] Home ${attachment ? 'prompt + attachment' : 'prompt'} starts exactly one first-turn run across reload`, async ({ page, request }, testInfo) => {
     test.setTimeout(T.xlong * 2);
     const root = await mkdtemp(join(tmpdir(), 'readable-home-first-turn-'));
     let savedConfig: Record<string, unknown> | undefined;
@@ -27,6 +30,7 @@ for (const attachment of [false, true]) {
       if (pathname === '/api/runs') runPosts.push(incoming.postDataJSON() as ChatRequest);
     };
     page.on('request', observeRequest);
+    const fileHydration = observeProjectFileHydration(page);
     const runs = async () => {
       const response = await request.get('/api/runs', { params: { projectId: projectId!, conversationId: conversationId! } });
       expect(response.ok(), await response.text()).toBe(true);
@@ -52,7 +56,7 @@ for (const attachment of [false, true]) {
         id: 'codex', name: 'Codex', bin: codex.bin, available: true, version: 'test',
         models: [{ id: 'gpt-5.4-mini', label: 'GPT-5.4-Mini' }],
       }]);
-      await page.addInitScript((initial) => {
+      await addStorageInitScript(page, (initial) => {
         if (location.protocol !== 'http:' && location.protocol !== 'https:') return;
         if (!localStorage.getItem('readable-studio:config')) {
           localStorage.setItem('readable-studio:config', JSON.stringify(initial));
@@ -101,6 +105,12 @@ for (const attachment of [false, true]) {
       expect(terminal.request().postDataJSON()).toMatchObject({ runId, role: 'assistant', runStatus: 'succeeded' });
       await expect(page.locator('.msg.user').filter({ hasText: prompt })).toBeVisible();
 
+      const artifact = page.frameLocator('[data-testid="artifact-preview-frame"]');
+      await expect(artifact.getByRole('heading', { name: 'Real Daemon Smoke' })).toBeVisible();
+      await expect(artifact.getByText('Generated through the daemon run path.', { exact: true })).toBeVisible();
+      await fileHydration.drain(T.long, 'raw');
+      const rawFinishedBeforeReload = fileHydration.counts.rawFinished;
+
       // A completed first turn has no pending handoff/queue/question, so its
       // reload need not issue an active-run GET. Observe real message hydration.
       const [hydrated] = await Promise.all([
@@ -110,6 +120,10 @@ for (const attachment of [false, true]) {
         page.reload(),
       ]);
       expect(hydrated.ok(), await hydrated.text()).toBe(true);
+      await expect(artifact.getByRole('heading', { name: 'Real Daemon Smoke' })).toBeVisible();
+      await expect(artifact.getByText('Generated through the daemon run path.', { exact: true })).toBeVisible();
+      await fileHydration.drain(T.long, 'raw');
+      expect(fileHydration.counts.rawFinished, JSON.stringify(fileHydration.counts)).toBeGreaterThan(rawFinishedBeforeReload);
       await expect(page.locator('.msg.user').filter({ hasText: prompt })).toBeVisible();
       expect(projectPosts).toHaveLength(1);
       expect(runPosts).toHaveLength(1);
@@ -126,12 +140,24 @@ for (const attachment of [false, true]) {
     } finally {
       page.off('request', observeRequest);
       try {
-        await page.goto('about:blank');
-        // Creation may have succeeded before a later run/terminal waiter failed.
-        if (!projectId && projectPosts[0]) projectId = (projectPosts[0].postDataJSON() as { id: string }).id;
-        if (projectId) {
-          const deleted = await request.delete(`/api/projects/${projectId}`);
-          expect(deleted.ok(), await deleted.text()).toBe(true);
+        try {
+          await fileHydration.drain(T.long, 'raw');
+        } finally {
+          // Even failed hydration must unmount before run cleanup/deletion.
+          fileHydration.dispose();
+          await page.close();
+          // Creation may have succeeded before a later run/terminal waiter failed.
+          if (!projectId && projectPosts[0]) projectId = (projectPosts[0].postDataJSON() as { id: string }).id;
+          try {
+            if (projectId && conversationId) {
+              await cleanupHydrationRuns(request, projectId, conversationId, false);
+            }
+          } finally {
+            if (projectId) {
+              const deleted = await request.delete(`/api/projects/${projectId}`);
+              expect(deleted.ok(), await deleted.text()).toBe(true);
+            }
+          }
         }
       } finally {
         try {
@@ -140,6 +166,10 @@ for (const attachment of [false, true]) {
             expect(restored.ok(), await restored.text()).toBe(true);
           }
         } finally {
+          fileHydration.dispose();
+          await testInfo.attach('project-file-hydration-counts', {
+            contentType: 'application/json', body: JSON.stringify({ ...fileHydration.counts, requests: fileHydration.requests }),
+          });
           await rm(root, { recursive: true, force: true });
         }
       }

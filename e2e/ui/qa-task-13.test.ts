@@ -1,5 +1,6 @@
 import { expect, test, type APIRequestContext, type CDPSession, type Locator, type Page } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
+import { addStorageInitScript } from '@/playwright/storage-init';
 import { gotoEntryHome } from '../lib/playwright/amr.ts';
 import { captureCanonical, describeMotionOffenders, evidenceDir, flushReport, maxCssTimeMilliseconds, recordRegion, resetReport, type MotionOffender } from '../lib/qa-task-13-helpers.ts';
 
@@ -108,7 +109,7 @@ async function emulatePreferences(
 
 async function openHub(page: Page, request: APIRequestContext, viewport = { width: 1440, height: 900 }): Promise<void> {
   await page.setViewportSize(viewport);
-  await page.addInitScript((config) => {
+  await addStorageInitScript(page, (config) => {
     localStorage.clear(); sessionStorage.clear();
     localStorage.setItem('readable-studio:locale', 'ko');
     localStorage.setItem('readable-studio:locale-source', 'manual');

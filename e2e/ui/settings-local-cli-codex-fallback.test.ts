@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { addStorageInitScript } from '@/playwright/storage-init';
 import type { Page } from '@playwright/test';
 import { openSettingsDialog } from '../lib/playwright/amr.js';
 import { routeAgents } from '../lib/playwright/mock-factory.js';
@@ -101,7 +102,7 @@ async function openLocalCliSettings(
     onConnectionTest: (payload: Record<string, unknown>) => ConnectionTestFixture;
   },
 ) {
-  await page.addInitScript(
+  await addStorageInitScript(page,
     ({ key, value, localeKey, localeValue }) => {
       window.localStorage.setItem(key, JSON.stringify(value));
       window.localStorage.setItem(localeKey, localeValue);

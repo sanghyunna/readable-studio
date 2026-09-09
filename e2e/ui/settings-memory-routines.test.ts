@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { addStorageInitScript } from '@/playwright/storage-init';
 import { ensureRailOpen } from '@/playwright/rail';
 import { routeAgents } from '@/playwright/mock-factory';
 import type { Page } from '@playwright/test';
@@ -29,7 +30,7 @@ function baseConfig(): Record<string, unknown> {
 }
 
 async function seedSettingsBase(page: Page) {
-  await page.addInitScript(({ key, value }) => {
+  await addStorageInitScript(page, ({ key, value }) => {
     window.localStorage.setItem(key, JSON.stringify(value));
   }, { key: STORAGE_KEY, value: baseConfig() });
 

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { evaluateStorageSeed } from '@/playwright/storage-init';
 import type { Locator, Page, Response } from '@playwright/test';
 import { applyStandardMocks } from '@/playwright/mock-factory';
 import { openNewProjectModal } from '@/playwright/new-project-modal';
@@ -106,7 +107,7 @@ test('[P1] keyboard chat panel resize persists after reload', async ({ page }) =
   await createProject(page, 'Chat panel resize persistence');
   await expectWorkspaceReady(page);
 
-  await page.evaluate((key) => {
+  await evaluateStorageSeed(page, (key) => {
     window.localStorage.removeItem(key);
   }, CHAT_PANEL_WIDTH_STORAGE_KEY);
   await page.reload();

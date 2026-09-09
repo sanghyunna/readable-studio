@@ -40,6 +40,8 @@ import { expect, test } from '@playwright/test';
 import type { Page, Route } from '@playwright/test';
 import { routeAgents } from '@/playwright/mock-factory';
 
+import { addStorageInitScript } from '@/playwright/storage-init';
+
 const STORAGE_KEY = 'readable-studio:config';
 
 interface CritiqueFrame {
@@ -105,7 +107,7 @@ function sseBody(frames: CritiqueFrame[]): string {
 }
 
 async function bootAppWithCritiqueEnabled(page: Page): Promise<void> {
-  await page.addInitScript((key: string) => {
+  await addStorageInitScript(page, (key: string) => {
     window.localStorage.setItem(
       key,
       JSON.stringify({

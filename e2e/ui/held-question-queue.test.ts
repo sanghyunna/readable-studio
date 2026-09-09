@@ -5,7 +5,9 @@ import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createFakeAgentRuntimes, HELD_QUESTION_RUN } from '@/fake-agents';
+import { observeProjectFileHydration, readHydratedProjectFile } from '@/playwright/project-file-hydration';
 import { T } from '@/timeouts';
+import { addStorageInitScript } from '@/playwright/storage-init';
 
 interface QueuedAnswer {
   id: string;
@@ -20,7 +22,7 @@ interface QueuedAnswer {
 // Real daemon + generated Codex CLI. No run/message routes are intercepted.
 // Completion is synchronized with successful message PUT responses, not sleeps
 // or repeated status requests. The file signal is sent only after reload proof.
-test('[P1] required questions queue during a held run, survive reload, and promote once', async ({ page, request }) => {
+test('[P1] required questions queue during a held run, survive reload, and promote once', async ({ page, request }, testInfo) => {
   test.setTimeout(T.xlong * 2);
   const root = await mkdtemp(join(tmpdir(), 'readable-held-question-'));
   let projectId: string | undefined;
@@ -33,6 +35,7 @@ test('[P1] required questions queue during a held run, survive reload, and promo
     if (body.projectId === projectId) runRequests.push(body);
   };
   page.on('request', observeRun);
+  const fileHydration = observeProjectFileHydration(page);
 
   try {
     const { codex } = await createFakeAgentRuntimes({ root, runtimeIds: ['codex'] });
@@ -49,7 +52,7 @@ test('[P1] required questions queue during a held run, survive reload, and promo
     };
     const configured = await request.put('/api/app-config', { data: config });
     expect(configured.ok(), await configured.text()).toBe(true);
-    await page.addInitScript((initialConfig) => {
+    await addStorageInitScript(page, (initialConfig) => {
       localStorage.setItem('readable-studio:config', JSON.stringify(initialConfig));
       localStorage.setItem('readable-studio:locale', 'en');
       localStorage.setItem('readable-studio:locale-source', 'manual');
@@ -136,7 +139,7 @@ test('[P1] required questions queue during a held run, survive reload, and promo
     await Promise.all([
       page.waitForRequest((incoming) => incoming.method() === 'GET'
         && new URL(incoming.url()).pathname === `/api/runs/${heldRunId}/events`, { timeout: T.long }),
-      page.reload({ waitUntil: 'domcontentloaded' }),
+      fileHydration.navigate(() => page.reload({ waitUntil: 'domcontentloaded', timeout: T.long }), T.long, 'no-artifact'),
     ]);
     await expect(page.getByTestId('chat-queued-send-strip').locator('.chat-queued-send-row')).toHaveCount(1);
     // Reopen through the public Questions tab if reload restored another tab.
@@ -154,7 +157,7 @@ test('[P1] required questions queue during a held run, survive reload, and promo
 
     // Subscribe to each exact transition before writing the release signal.
     // The held assistant's terminal PUT also proves reload reattached its SSE.
-    const [heldSaved, promoted, answerSaved, promotedSaved, released] = await Promise.all([
+    const [heldSaved, promoted, answerSaved, promotedSaved, artifact] = await Promise.all([
       page.waitForResponse((response) => isMessageSave(response, (message) => message.runId === heldRunId
         && message.runStatus === 'succeeded'), { timeout: T.long }),
       page.waitForResponse((response) => response.request().method() === 'POST'
@@ -164,11 +167,17 @@ test('[P1] required questions queue during a held run, survive reload, and promo
         && message.content === answer.prompt), { timeout: T.long }),
       page.waitForResponse((response) => isMessageSave(response, (message) => message.role === 'assistant'
         && message.runId !== heldRunId && message.runStatus === 'succeeded'), { timeout: T.long }),
-      request.post(`/api/projects/${projectId}/files`, { data: {
-        name: HELD_QUESTION_RUN.releaseFile, content: HELD_QUESTION_RUN.releaseToken,
-      } }),
+      readHydratedProjectFile(page, 'fake-agent-runtime-codex.html', async () => {
+        const released = await request.post(`/api/projects/${projectId}/files`, { data: {
+          name: HELD_QUESTION_RUN.releaseFile, content: HELD_QUESTION_RUN.releaseToken,
+        } });
+        expect(released.ok(), await released.text()).toBe(true);
+      }),
     ]);
-    for (const response of [heldSaved, promoted, answerSaved, promotedSaved, released]) {
+    expect(artifact).toContain('Generated through fake codex runtime.');
+    expect(fileHydration.counts.rawResponses, JSON.stringify(fileHydration.counts)).toBeGreaterThan(0);
+    await expect(page.frameLocator('[data-testid="artifact-preview-frame"]').getByRole('heading', { name: 'Fake Agent Runtime codex' })).toBeVisible();
+    for (const response of [heldSaved, promoted, answerSaved, promotedSaved]) {
       expect(response.ok(), await response.text()).toBe(true);
     }
     const { runId: promotedRunId } = (await promoted.json()) as { runId: string };
@@ -195,6 +204,7 @@ test('[P1] required questions queue during a held run, survive reload, and promo
     // Unmount first so cancellation cannot auto-promote a pending answer.
     // Delete the isolated project (including the signal) even on assertion failure.
     try {
+      await fileHydration.drain();
       await page.goto('about:blank');
       if (projectId && conversationId) {
         for (const run of await listRuns(request, projectId, conversationId)) {
@@ -218,6 +228,10 @@ test('[P1] required questions queue during a held run, survive reload, and promo
             expect(restored.ok(), await restored.text()).toBe(true);
           }
         } finally {
+          fileHydration.dispose();
+          await testInfo.attach('project-file-hydration-counts', {
+            contentType: 'application/json', body: JSON.stringify({ ...fileHydration.counts, requests: fileHydration.requests }),
+          });
           await rm(root, { recursive: true, force: true });
         }
       }

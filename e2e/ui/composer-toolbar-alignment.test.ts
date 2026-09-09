@@ -14,12 +14,13 @@
 
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
+import { addStorageInitScript } from '@/playwright/storage-init';
 import type { Page } from '@playwright/test';
 
 const STORAGE_KEY = 'readable-studio:config';
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript((key) => {
+  await addStorageInitScript(page, (key) => {
     window.localStorage.setItem(
       key,
       JSON.stringify({

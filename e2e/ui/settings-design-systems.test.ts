@@ -2,6 +2,8 @@ import { expect, test } from '@playwright/test';
 import type { Page, Route } from '@playwright/test';
 import { openSettingsDialog } from '../lib/playwright/amr.js';
 
+import { addStorageInitScript } from '@/playwright/storage-init';
+
 const STORAGE_KEY = 'readable-studio:config';
 
 type DesignSystemFixture = {
@@ -35,7 +37,7 @@ function baseConfig(): Record<string, unknown> {
 }
 
 async function seedSettingsBase(page: Page, override?: Record<string, unknown>) {
-  await page.addInitScript(
+  await addStorageInitScript(page,
     ({ key, value }) => {
       window.localStorage.setItem(key, JSON.stringify(value));
     },

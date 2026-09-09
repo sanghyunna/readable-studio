@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { addStorageInitScript } from '@/playwright/storage-init';
 import { routeAgents } from '@/playwright/mock-factory';
 import { ensureRailOpen } from '@/playwright/rail';
 import { expectInlineUseEverywhereGuide } from '@/playwright/use-everywhere';
@@ -34,7 +35,7 @@ async function openLibraryDestination(page: Page, destination: string) {
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript((key) => {
+  await addStorageInitScript(page, (key) => {
     window.localStorage.clear();
     window.sessionStorage.clear();
     window.localStorage.setItem(key, JSON.stringify({

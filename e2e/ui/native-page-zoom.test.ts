@@ -2,8 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { expect, test as base } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 import { applyStandardMocks, routeAgents, STORAGE_KEY } from '@/playwright/mock-factory';
-import { NativePageZoom, readZoomMetrics } from '@/playwright/native-page-zoom';
+import { NativePageZoom, openSettledSwitcherPopover, readZoomMetrics } from '@/playwright/native-page-zoom';
 import { T } from '@/timeouts';
+import { addStorageInitScript } from '@/playwright/storage-init';
 
 // Full Chromium's new headless mode includes chrome://settings; headless-shell
 // does not. An isolated persistent profile is essential: settingsPrivate refuses
@@ -45,7 +46,7 @@ test.beforeEach(async ({ page }) => {
     privacyDecisionAt: 1,
     telemetry: { metrics: false, content: false, artifactManifest: false },
   };
-  await page.addInitScript(({ key, value }) => {
+  await addStorageInitScript(page, ({ key, value }) => {
     localStorage.setItem(key, JSON.stringify(value));
     localStorage.setItem('readable-studio:hub-rail-collapsed', 'true');
     localStorage.setItem('readable-studio.project.chatPanelWidth', '600');
@@ -127,9 +128,9 @@ async function pointerTarget(locator: Locator): Promise<{ x: number; y: number }
     const x = rect.left + rect.width / 2;
     const y = rect.top + rect.height / 2;
     const target = document.elementFromPoint(x, y);
-    return { x, y, reachable: target !== null && element.contains(target) };
+    return { x, y, reachable: target !== null && element.contains(target), hitElement: target?.outerHTML ?? null };
   });
-  expect(hit.reachable, `${locator}: centre must receive a real pointer, without scrolling or force`).toBe(true);
+  expect(hit.reachable, `${locator}: centre must receive a real pointer, without scrolling or force; hit=${hit.hitElement}`).toBe(true);
   return hit;
 }
 
@@ -152,7 +153,19 @@ async function assertLayout(page: Page, phase: string) {
       const x = bounds.left + bounds.width / 2;
       const y = bounds.top + bounds.height / 2;
       const hit = document.elementFromPoint(x, y);
-      return { label, bounds, x, y, reachable: hit !== null && target.contains(hit) };
+      // A boolean alone cannot distinguish a real overlay from a stale hit-test
+      // result. Keep the receiver and its ancestors in this same renderer task.
+      const hitAncestry = [];
+      for (let node = hit; node; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        hitAncestry.push({
+          tag: node.tagName, id: node.id, class: node.getAttribute('class'),
+          testId: node.getAttribute('data-testid'), bounds: rect(node),
+          pointerEvents: style.pointerEvents, zIndex: style.zIndex,
+          transform: style.transform,
+        });
+      }
+      return { label, bounds, x, y, reachable: hit !== null && target.contains(hit), hitAncestry };
     };
     const shell = rect(element('.workspace-shell__body'));
     const surface = rect(element('.workspace-shell__body > [data-surface]'));
@@ -175,6 +188,16 @@ async function assertLayout(page: Page, phase: string) {
         control('[data-testid="project-title"]', 'project title'),
         control('[data-project-rail-toggle]', 'rail toggle'),
       ],
+      popovers: Array.from(document.querySelectorAll('.inline-switcher__popover--layer'), (popover) => ({
+        testId: popover.getAttribute('data-testid'), bounds: rect(popover),
+        style: popover.getAttribute('style'),
+      })),
+      animations: document.getAnimations().map((animation) => ({
+        name: animation instanceof CSSAnimation ? animation.animationName : null,
+        property: animation instanceof CSSTransition ? animation.transitionProperty : null,
+        playState: animation.playState,
+        timing: animation.effect?.getComputedTiming(),
+      })),
       overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     };
   });
@@ -280,7 +303,8 @@ for (const factor of FACTORS) {
         for (const variant of ['model', 'reasoning']) {
           const trigger = page.getByTestId('composer-execution-switcher').getByTestId(`inline-model-switcher-${variant}-trigger`);
           const point = await pointerTarget(trigger);
-          await page.mouse.click(point.x, point.y);
+          await openSettledSwitcherPopover(page, `inline-model-switcher-${variant}-popover`,
+            () => page.mouse.click(point.x, point.y));
           await expect(page.getByTestId(`inline-model-switcher-${variant}-popover`)).toBeVisible();
           await expect(page.getByTestId(`inline-model-switcher-${variant}-option-${variant === 'model' ? MODEL : EFFORT}`)).toBeVisible();
           // Opening either menu must not sacrifice Send's reserved space.

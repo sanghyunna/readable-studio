@@ -8,6 +8,7 @@
 // comparing it against the nav that contains it.
 
 import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
+import { addStorageInitScript, evaluateStorageSeed } from '@/playwright/storage-init';
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -67,7 +68,7 @@ async function gotoHub(page: Page) {
   // `addInitScript` re-runs on every navigation, so clearing the collapse preference
   // here would wipe the very state the reload assertions are meant to read back. The
   // per-test starting state is cleared once, after the first load, instead.
-  await page.addInitScript(() => {
+  await addStorageInitScript(page, () => {
     window.localStorage.removeItem('readable-studio:workspace-tabs:v1');
     window.localStorage.setItem(
       'readable-studio:config',
@@ -81,16 +82,16 @@ async function gotoHub(page: Page) {
         telemetry: { metrics: false, content: false, artifactManifest: false },
       }),
     );
-  });
+  }, undefined);
   await page.goto('/');
   await expect(page.getByTestId('entry-view-home')).toHaveAttribute('data-active', 'true');
   await expect(page.locator('[data-project-rail]')).toBeVisible();
-  const stale = await page.evaluate(() => {
+  const stale = await evaluateStorageSeed(page, () => {
     const had = window.localStorage.getItem('readable-studio:hub-rail-collapsed') === 'true';
     window.localStorage.removeItem('readable-studio:hub-rail-collapsed');
     window.sessionStorage.removeItem('readable-studio:hub-open-work');
     return had;
-  });
+  }, undefined);
   // A previous test may have left the rail collapsed; reload once so the rendered
   // state matches the cleared preference before any assertion runs.
   if (stale) {

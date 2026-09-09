@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { addStorageInitScript } from '@/playwright/storage-init';
 import type { Page } from '@playwright/test';
 import { routeAgents } from '@/playwright/mock-factory';
 
@@ -126,7 +127,7 @@ async function waitForLoadingToClear(page: Page) {
 }
 
 async function seedBrowserConfig(page: Page, config: Record<string, unknown>) {
-  await page.addInitScript(
+  await addStorageInitScript(page,
     ({ key, value }) => {
       window.localStorage.setItem(key, JSON.stringify(value));
     },
@@ -148,7 +149,7 @@ async function gotoEntryHome(page: Page) {
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(({ key, value }) => {
+  await addStorageInitScript(page, ({ key, value }) => {
     window.localStorage.clear();
     window.sessionStorage.clear();
     window.localStorage.setItem(key, JSON.stringify(value));

@@ -3,6 +3,7 @@ import type { Page, Route } from '@playwright/test';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fulfillAgentsRoute } from './mock-factory.js';
+import { addStorageInitScript } from './storage-init.js';
 
 const STORAGE_KEY = 'readable-studio:config';
 const GITHUB_STARS_STORAGE_KEY = 'readable-studio:gh-stars';
@@ -156,7 +157,7 @@ export async function configureVisualPage(page: Page, options: VisualPageOptions
   const config = { ...VISUAL_CONFIG, ...(options.config ?? {}) };
   const agents = options.agents ?? [MOCK_AGENT];
 
-  await page.addInitScript(([key, config, githubStarsKey, githubStarsCount]) => {
+  await addStorageInitScript(page, ([key, config, githubStarsKey, githubStarsCount]) => {
     window.localStorage.setItem(key, JSON.stringify(config));
     window.localStorage.setItem(
       githubStarsKey,

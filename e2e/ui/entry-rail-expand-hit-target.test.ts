@@ -12,6 +12,7 @@
 // `elementFromPoint` at the control's own centre catches an overlay intercept,
 // which is the second time that class of defect has appeared on this surface.
 import { expect, test } from '@playwright/test';
+import { addStorageInitScript } from '@/playwright/storage-init';
 import type { Page } from '@playwright/test';
 import { applyStandardMocks } from '@/playwright/mock-factory';
 
@@ -42,7 +43,7 @@ test.beforeEach(async ({ page }) => {
   await applyStandardMocks(page);
   // Start on the collapsed strip - the state whose expand affordance is the
   // only way back to the panel with a mouse.
-  await page.addInitScript(
+  await addStorageInitScript(page,
     ({ key }: { key: string }) => window.localStorage.setItem(key, 'true'),
     { key: RAIL_COLLAPSED_STORAGE_KEY },
   );
@@ -51,7 +52,7 @@ test.beforeEach(async ({ page }) => {
 /** Seed the theme through config - this product resolves theme from
  *  `readable-studio:config`, so `emulateMedia` would change nothing. */
 async function seedTheme(page: Page, theme: 'light' | 'dark'): Promise<void> {
-  await page.addInitScript(
+  await addStorageInitScript(page,
     ({ key, value }: { key: string; value: string }) => {
       const raw = window.localStorage.getItem(key);
       const config: Record<string, unknown> = raw ? JSON.parse(raw) : {};

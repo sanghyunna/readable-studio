@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { addStorageInitScript } from '@/playwright/storage-init';
 import type { Page } from '@playwright/test';
 import { routeAgents } from '@/playwright/mock-factory';
 
@@ -16,7 +17,7 @@ const STORAGE_KEY = 'readable-studio:config';
 
 // Reusable app-config seed: skip onboarding, mock agent, no real model calls.
 async function seedAppConfig(page: Page) {
-  await page.addInitScript((key) => {
+  await addStorageInitScript(page, (key) => {
     window.localStorage.setItem(
       key,
       JSON.stringify({

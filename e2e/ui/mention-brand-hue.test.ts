@@ -11,6 +11,8 @@ import { routeAgents } from '@/playwright/mock-factory';
 // pill in the config-driven dark theme remains readable after CSS
 // `color-mix()` is painted, including its hover surface.
 
+import { addStorageInitScript } from '@/playwright/storage-init';
+
 const STORAGE_KEY = 'readable-studio:config';
 const WCAG_AA_NORMAL = 4.5;
 const PILL = '.composer-inline-mention--plugin';
@@ -93,7 +95,7 @@ const NOTION_APPLY = {
 };
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(
+  await addStorageInitScript(page,
     ({ key, value }) => {
       window.localStorage.setItem(key, JSON.stringify(value));
     },

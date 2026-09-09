@@ -1,4 +1,5 @@
 import { expect, test, type CDPSession, type Page } from '@playwright/test';
+import { addStorageInitScript } from '@/playwright/storage-init';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -202,7 +203,7 @@ async function preparePage(
   // Theme is config-driven and applied by the pre-hydration script in
   // app/layout.tsx from this exact localStorage blob. `emulateMedia`
   // colorScheme does NOT drive it, so seeding must happen before hydration.
-  await page.addInitScript(
+  await addStorageInitScript(page,
     ([key, config]) => {
       localStorage.clear();
       sessionStorage.clear();

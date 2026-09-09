@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import { storageSeedScript } from '../playwright/storage-init.js';
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -88,13 +89,12 @@ export function createDesktopHarness(name: string) {
     },
     async seedConfigAndReload(config: Record<string, unknown>, stableField: string) {
       const value = JSON.stringify(config);
-      await this.eval(`
-        (() => {
-          window.localStorage.setItem(${JSON.stringify(STORAGE_KEY)}, ${JSON.stringify(value)});
-          window.location.reload();
-          return true;
-        })()
-      `);
+      const seeded = await this.eval(storageSeedScript(({ key, value }) => {
+        window.localStorage.setItem(key, value);
+        window.location.reload();
+        return true;
+      }, { key: STORAGE_KEY, value }));
+      assert.equal(seeded, true, 'desktop config must be seeded on the app document');
 
       await waitFor(async () => {
         const loaded = await this.eval(`

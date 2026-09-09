@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { addStorageInitScript } from '@/playwright/storage-init';
 import type { Locator, Page } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -51,7 +52,7 @@ const evidenceDir =
  */
 async function openHub(page: Page, width: number): Promise<void> {
   await page.setViewportSize({ width, height: 900 });
-  await page.addInitScript(
+  await addStorageInitScript(page,
     ({ key, value }) => {
       window.localStorage.setItem(key, JSON.stringify(value));
     },

@@ -3,6 +3,8 @@ import type { Locator, Page, Request, Route } from '@playwright/test';
 import { openSettingsDialog } from '../lib/playwright/amr.js';
 import { routeAgents } from '../lib/playwright/mock-factory.js';
 
+import { addStorageInitScript } from '@/playwright/storage-init';
+
 const STORAGE_KEY = 'readable-studio:config';
 const ACTIVE_ARTIFACT_PREVIEW_SELECTOR = '[data-testid="artifact-preview-frame"]:visible, [data-testid="artifact-preview-frame-url-load"]:visible, [data-testid="artifact-preview-frame-srcdoc"]:visible';
 
@@ -75,7 +77,7 @@ test.beforeEach(async ({ page }) => {
     agentCliEnv: {},
   };
 
-  await page.addInitScript((key) => {
+  await addStorageInitScript(page, (key) => {
     window.localStorage.setItem(
       key,
       JSON.stringify({
@@ -1469,7 +1471,7 @@ function homeDesignCard(page: Page, name: string): Locator {
 }
 
 async function seedAdoptedPet(page: Page) {
-  await page.addInitScript((key) => {
+  await addStorageInitScript(page, (key) => {
     window.localStorage.setItem(
       key,
       JSON.stringify({

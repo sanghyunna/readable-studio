@@ -2,6 +2,8 @@ import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 import { routeAgents } from '../lib/playwright/mock-factory.js';
 
+import { addStorageInitScript } from '@/playwright/storage-init';
+
 const STORAGE_KEY = 'readable-studio:config';
 const SETTINGS_LABEL = /Settings|설정|设置|設定/i;
 const LOCAL_CLI_LABEL = /Local CLI|本机 CLI|本地 CLI/i;
@@ -42,7 +44,7 @@ async function openExecutionSettings(
   page: Page,
   config: Record<string, unknown>,
 ) {
-  await page.addInitScript(
+  await addStorageInitScript(page,
     ({ key, value }) => {
       window.localStorage.setItem(key, JSON.stringify(value));
     },
@@ -103,7 +105,7 @@ async function openExecutionSettingsWithAgents(
     models?: Array<{ id: string; label: string }>;
   }>,
 ) {
-  await page.addInitScript(
+  await addStorageInitScript(page,
     ({ key, value }) => {
       window.localStorage.setItem(key, JSON.stringify(value));
     },

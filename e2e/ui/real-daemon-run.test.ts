@@ -7,6 +7,7 @@ import {
 } from '@/playwright/fake-agents';
 import type { FakeAgentId } from '@/playwright/fake-agents';
 import { T } from '@/timeouts';
+import { addStorageInitScript, evaluateStorageSeed } from '@/playwright/storage-init';
 
 const STORAGE_KEY = 'readable-studio:config';
 const ACTIVE_ARTIFACT_PREVIEW_SELECTOR = '[data-testid="artifact-preview-frame"]:visible, [data-testid="artifact-preview-frame-url-load"]:visible, [data-testid="artifact-preview-frame-srcdoc"]:visible';
@@ -38,7 +39,7 @@ test.beforeEach(async ({ page }) => {
 
   await resetDaemonAppConfig(page);
 
-  await page.addInitScript(({ key, codexEnv }) => {
+  await addStorageInitScript(page, ({ key, codexEnv }) => {
     if (window.localStorage.getItem(key)) return;
     window.localStorage.setItem(
       key,
@@ -493,11 +494,11 @@ async function configureFakeAgent(page: Page, agentId: FakeAgentId) {
 async function setBrowserAgentConfig(page: Page, agentId: FakeAgentId) {
   const payload = { key: STORAGE_KEY, id: agentId, env: fakeRuntimes[agentId].env };
   await installBrowserAgentConfig(page, agentId);
-  await page.evaluate(installConfig, payload);
+  await evaluateStorageSeed(page, installConfig, payload);
 }
 
 async function installBrowserAgentConfig(page: Page, agentId: FakeAgentId) {
-  await page.addInitScript(installConfig, {
+  await addStorageInitScript(page, installConfig, {
     key: STORAGE_KEY,
     id: agentId,
     env: fakeRuntimes[agentId].env,

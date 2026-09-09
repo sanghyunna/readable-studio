@@ -1,4 +1,5 @@
 import type { Page, Route } from '@playwright/test';
+import { addStorageInitScript } from './storage-init.js';
 
 export const STORAGE_KEY = 'readable-studio:config';
 
@@ -52,7 +53,7 @@ export async function applyStandardMocks(page: Page): Promise<void> {
 /** Seed localStorage with the standard config only (no route interception). */
 export async function applyStorageConfig(page: Page): Promise<void> {
   const configJson = JSON.stringify(STANDARD_CONFIG);
-  await page.addInitScript(
+  await addStorageInitScript(page,
     ({ key, value }: { key: string; value: string }) => window.localStorage.setItem(key, value),
     { key: STORAGE_KEY, value: configJson },
   );

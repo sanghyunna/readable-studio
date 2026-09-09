@@ -6,7 +6,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createFakeAgentRuntimes, HELD_QUESTION_RUN } from '@/fake-agents';
 import { cleanupHydrationRuns, gateQuestionHydration, seedHydrationQuestion } from '@/playwright/question-hydration';
+import { observeProjectFileHydration } from '@/playwright/project-file-hydration';
 import { T } from '@/timeouts';
+import { addStorageInitScript } from '@/playwright/storage-init';
 
 interface QueuedSend {
   id: string;
@@ -21,7 +23,7 @@ interface QueuedSend {
 // Real daemon and fake Codex process; only hydration responses are held/failed.
 // No timer controls the agent or establishes that a network request completed.
 for (const outcome of ['idle', 'active'] as const) {
-  test(`[P1] Questions ${outcome} hydration retries once per click burst and preserves answers and queue`, async ({ page, request }) => {
+  test(`[P1] Questions ${outcome} hydration retries once per click burst and preserves answers and queue`, async ({ page, request }, testInfo) => {
     test.setTimeout(T.xlong * 2);
     const root = await mkdtemp(join(tmpdir(), 'readable-question-hydration-'));
     let projectId: string | undefined;
@@ -40,6 +42,7 @@ for (const outcome of ['idle', 'active'] as const) {
         && url.pathname === `/api/projects/${projectId}/conversations/${conversationId}/messages`) messageReads++;
     };
     page.on('request', observe);
+    const fileHydration = observeProjectFileHydration(page);
     try {
       const { codex } = await createFakeAgentRuntimes({ root, runtimeIds: ['codex'] });
       const configResponse = await request.get('/api/app-config');
@@ -54,7 +57,7 @@ for (const outcome of ['idle', 'active'] as const) {
       };
       const configured = await request.put('/api/app-config', { data: config });
       expect(configured.ok(), await configured.text()).toBe(true);
-      await page.addInitScript((initialConfig) => {
+      await addStorageInitScript(page, (initialConfig) => {
         localStorage.setItem('readable-studio:config', JSON.stringify(initialConfig));
         localStorage.setItem('readable-studio:locale', 'en');
         localStorage.setItem('readable-studio:locale-source', 'manual');
@@ -107,13 +110,17 @@ for (const outcome of ['idle', 'active'] as const) {
           id: randomUUID(), conversationId: otherConversation.id, prompt: 'Preserve this other conversation queue',
           attachments: [], commentAttachments: [], createdAt: Date.now(), meta: { sessionMode: 'design' },
         };
-        await page.addInitScript(({ key, value }) => {
+        await addStorageInitScript(page, ({ key, value }) => {
           if (localStorage.getItem(key) === null) localStorage.setItem(key, JSON.stringify([value]));
         }, { key: queueKey, value: queued });
       }
 
       gate = await gateQuestionHydration(page, projectId, conversationId);
-      const initial = await gate.next(() => page.goto(url));
+      // Account for outgoing-document reads created by SSE teardown itself.
+      // Idle has no mounted project (and hence no pre-navigation reads).
+      const initial = await gate.next(() => outcome === 'active'
+        ? fileHydration.navigate(() => page.goto(url, { timeout: T.long }), T.long, 'no-artifact')
+        : page.goto(url, { timeout: T.long }));
       await page.getByRole('tab', { name: /^Questions/ }).click();
       const panel = page.getByTestId('questions-panel');
       const form = panel.locator(`[data-form-id="${HELD_QUESTION_RUN.formId}"]`);
@@ -194,6 +201,10 @@ for (const outcome of ['idle', 'active'] as const) {
         expect(finalQueue[0]).toEqual(originalQueue[0]);
         expect(finalQueue[1]).toMatchObject({ conversationId, prompt: expect.stringContaining(answer) });
         expect(runRequests).toHaveLength(postsBeforeRecovery);
+        // The held run has emitted only a question, not an artifact. Its final
+        // user-visible result is the preserved form plus two queued sends.
+        await expect(page.getByTestId('artifact-preview-frame')).toHaveCount(0);
+        await expect(audience).toHaveValue(answer);
       } else {
         const [started, saved] = await Promise.all([
           page.waitForResponse(isRunPost, { timeout: T.long }),
@@ -202,6 +213,9 @@ for (const outcome of ['idle', 'active'] as const) {
           continueButton.click(),
         ]);
         for (const response of [started, saved]) expect(response.ok(), await response.text()).toBe(true);
+        const artifact = page.frameLocator('[data-testid="artifact-preview-frame"]');
+        await expect(artifact.getByRole('heading', { name: 'Fake Agent Runtime codex' })).toBeVisible();
+        await expect(artifact.getByText('Generated through fake codex runtime.', { exact: true })).toBeVisible();
         expect(runRequests).toHaveLength(1);
         expect(runRequests[0]).toMatchObject({ projectId, conversationId, currentPrompt: expect.stringContaining(answer) });
         expect(await readQueue()).toEqual(originalQueue);
@@ -220,10 +234,15 @@ for (const outcome of ['idle', 'active'] as const) {
         await gate?.dispose();
       } finally {
         try {
-          // Unmount before terminating the held run, preventing queue promotion.
-          await page.goto('about:blank');
-          if (projectId && conversationId) {
-            await cleanupHydrationRuns(request, projectId, conversationId, outcome === 'active');
+          try {
+            await fileHydration.drain(T.long, outcome === 'active' ? 'no-artifact' : 'raw');
+          } finally {
+            // Always unmount, including when the validation above fails.
+            fileHydration.dispose();
+            await page.close();
+            if (projectId && conversationId) {
+              await cleanupHydrationRuns(request, projectId, conversationId, outcome === 'active');
+            }
           }
         } finally {
           try {
@@ -238,6 +257,10 @@ for (const outcome of ['idle', 'active'] as const) {
                 expect(restored.ok(), await restored.text()).toBe(true);
               }
             } finally {
+              fileHydration.dispose();
+              await testInfo.attach('project-file-hydration-counts', {
+                contentType: 'application/json', body: JSON.stringify({ ...fileHydration.counts, requests: fileHydration.requests }),
+              });
               await rm(root, { recursive: true, force: true });
             }
           }

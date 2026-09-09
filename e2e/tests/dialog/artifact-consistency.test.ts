@@ -11,6 +11,7 @@ import type { ProjectFile } from '@/vitest/artifacts';
 import { requestJson, requestText } from '@/vitest/http';
 import { listMessages, type E2eChatMessage } from '@/vitest/messages';
 import { createSmokeSuite } from '@/smoke-suite';
+import { addStorageInitScript } from '@/playwright/storage-init';
 
 const PROMPT = 'Create a deterministic smoke artifact';
 const FILE_NAME = 'real-daemon-smoke.html';
@@ -72,7 +73,7 @@ describe('dialog artifact consistency', () => {
 
       browser = await chromium.launch();
       const context = await browser.newContext({ baseURL: webUrl });
-      await context.addInitScript(({ key, codexEnv }) => {
+      await addStorageInitScript(context, ({ key, codexEnv }) => {
         window.localStorage.setItem(
           key,
           JSON.stringify({

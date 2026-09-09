@@ -5,6 +5,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 
 import { expect, test } from '@playwright/test';
+import { addStorageInitScript } from '@/playwright/storage-init';
 import type { Page } from '@playwright/test';
 
 const execFileAsync = promisify(execFile);
@@ -13,7 +14,7 @@ const STORAGE_KEY = 'readable-studio:config';
 test.describe.configure({ timeout: 45_000 });
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript((key) => {
+  await addStorageInitScript(page, (key) => {
     window.localStorage.setItem(
       key,
       JSON.stringify({

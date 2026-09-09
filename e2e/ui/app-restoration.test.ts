@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { addStorageInitScript } from '@/playwright/storage-init';
 import { openNewProjectModal } from '@/playwright/new-project-modal';
 import { routeAgents } from '@/playwright/mock-factory';
 import type { Dialog, Locator, Page, Request, Response } from '@playwright/test';
@@ -37,7 +38,7 @@ test.beforeEach(async ({ page }) => {
     },
   ]);
 
-  await page.addInitScript((key) => {
+  await addStorageInitScript(page, (key) => {
     window.localStorage.setItem(
       key,
       JSON.stringify({

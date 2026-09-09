@@ -9,6 +9,8 @@ import { expect, test } from '@playwright/test';
 import type { Page, Route } from '@playwright/test';
 import { routeAgents } from '@/playwright/mock-factory';
 
+import { addStorageInitScript } from '@/playwright/storage-init';
+
 const STORAGE_KEY = 'readable-studio:config';
 const EVIDENCE = (name: string) => `D:/readable-studio/.omo/evidence/task-8/${name}`;
 
@@ -162,7 +164,7 @@ async function gotoHome(page: Page) {
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(({ key, value }) => {
+  await addStorageInitScript(page, ({ key, value }) => {
     localStorage.clear();
     sessionStorage.clear();
     localStorage.setItem(key, JSON.stringify(value));

@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { addStorageInitScript } from '@/playwright/storage-init';
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -223,7 +224,7 @@ async function daemonProjects(
 
 async function gotoHub(page: Page, openWorkIds: string[] = []): Promise<void> {
   await page.setViewportSize({ width: 1440, height: 940 });
-  await page.addInitScript(
+  await addStorageInitScript(page,
     ({ key, value, openKey, open }) => {
       window.localStorage.setItem(key, JSON.stringify(value));
       window.localStorage.removeItem('readable-studio:workspace-tabs:v1');

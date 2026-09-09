@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { addStorageInitScript } from '@/playwright/storage-init';
 
 const EVIDENCE_DIR = 'D:/readable-studio/.omo/evidence/task-10';
 
@@ -28,7 +29,7 @@ async function seedProject(request: APIRequestContext, name: string, sessions: s
 }
 
 async function gotoHub(page: Page) {
-  await page.addInitScript(() => {
+  await addStorageInitScript(page, () => {
     window.localStorage.removeItem('readable-studio:workspace-tabs:v1');
     window.localStorage.setItem('readable-studio:config', JSON.stringify({
       mode: 'daemon',
@@ -39,7 +40,7 @@ async function gotoHub(page: Page) {
       privacyDecisionAt: 1,
       telemetry: { metrics: false, content: false, artifactManifest: false },
     }));
-  });
+  }, undefined);
   await page.goto('/');
   await expect(page.getByTestId('entry-view-home')).toHaveAttribute('data-active', 'true');
   await expect(page.locator('[data-project-rail]')).toBeVisible();

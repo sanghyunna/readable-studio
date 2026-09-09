@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { addStorageInitScript } from '@/playwright/storage-init';
 import type { Page } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -160,7 +161,7 @@ test('[P0] stale persisted state cannot resurrect the welcome screen', async ({ 
 
   // A workspace tab persisted by an older build, parked on the removed
   // 'onboarding' view, plus a first-run daemon flag.
-  await page.addInitScript(() => {
+  await addStorageInitScript(page, () => {
     window.localStorage.setItem(
       'readable-studio:workspace-tabs:v1',
       JSON.stringify({
@@ -176,7 +177,7 @@ test('[P0] stale persisted state cannot resurrect the welcome screen', async ({ 
         activeTabId: 'entry:onboarding:legacy',
       }),
     );
-  });
+  }, undefined);
 
   await page.goto('/onboarding', { waitUntil: 'domcontentloaded' });
   await waitForLoadingToClear(page);

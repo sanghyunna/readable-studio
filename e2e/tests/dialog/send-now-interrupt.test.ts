@@ -20,6 +20,7 @@ import { createFakeAgentRuntimes } from '@/fake-agents';
 import { requestJson } from '@/vitest/http';
 import { waitForRunTerminal } from '@/vitest/runs';
 import { createSmokeSuite } from '@/smoke-suite';
+import { addStorageInitScript } from '@/playwright/storage-init';
 
 const HELD_PROMPT = 'Hold the daemon run open until canceled for the send-now smoke';
 const QUEUED_PROMPT = 'Create a deterministic smoke artifact';
@@ -74,7 +75,7 @@ describe('dialog send-now interrupt', () => {
 
       browser = await chromium.launch();
       const context = await browser.newContext({ baseURL: webUrl });
-      await context.addInitScript(({ key, codexEnv }) => {
+      await addStorageInitScript(context, ({ key, codexEnv }) => {
         window.localStorage.setItem(
           key,
           JSON.stringify({

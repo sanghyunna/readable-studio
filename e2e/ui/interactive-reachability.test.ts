@@ -1,4 +1,5 @@
 import { expect, test as base } from '@playwright/test';
+import { addStorageInitScript } from '@/playwright/storage-init';
 import type { Page, TestInfo } from '@playwright/test';
 import { createProjectViaApi, gotoEntryHome, gotoProject, openSettingsDialog } from '@/playwright/amr';
 import { applyStandardMocks, STORAGE_KEY } from '@/playwright/mock-factory';
@@ -18,7 +19,7 @@ const test = base.extend<{ reachabilitySentinel: void }>({
 type Theme = 'light' | 'dark';
 
 async function seedTheme(page: Page, theme: Theme): Promise<void> {
-  await page.addInitScript(({ key, themeValue }) => {
+  await addStorageInitScript(page, ({ key, themeValue }) => {
     const raw = localStorage.getItem(key);
     const config: Record<string, unknown> = raw ? JSON.parse(raw) : {};
     config.theme = themeValue;

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { ensureRailOpen } from '@/playwright/rail';
 import { expect, test } from '@playwright/test';
+import { addStorageInitScript } from '@/playwright/storage-init';
 import type { Page, Request } from '@playwright/test';
 import { applyStandardMocks, fulfillAgentsRoute, STORAGE_KEY } from '@/playwright/mock-factory';
 
@@ -166,7 +167,7 @@ test('[P2] entry chrome avoids horizontal overflow on compact desktop width', as
 });
 
 test('[P0] @critical entry execution control opens the Local CLI and BYOK switcher', async ({ page }) => {
-  await page.addInitScript((key) => window.localStorage.setItem(key, JSON.stringify({ mode: 'daemon', agentId: 'codex', onboardingCompleted: true, agentModels: { codex: { model: 'default' } }, privacyDecisionAt: 1, telemetry: { metrics: false, content: false, artifactManifest: false } })), STORAGE_KEY);
+  await addStorageInitScript(page, (key) => window.localStorage.setItem(key, JSON.stringify({ mode: 'daemon', agentId: 'codex', onboardingCompleted: true, agentModels: { codex: { model: 'default' } }, privacyDecisionAt: 1, telemetry: { metrics: false, content: false, artifactManifest: false } })), STORAGE_KEY);
   await page.route('**/api/agents**', (route) => fulfillAgentsRoute(route, [
     { id: 'claude', name: 'Claude Code', bin: 'claude', available: true, version: '1.0.0', models: [{ id: 'default', label: 'Default' }] },
     { id: 'codex', name: 'Codex CLI', bin: 'codex', available: true, version: '0.80.0', models: [{ id: 'default', label: 'Default' }] },

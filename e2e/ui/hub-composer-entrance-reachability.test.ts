@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { addStorageInitScript } from '@/playwright/storage-init';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -89,7 +90,7 @@ async function preparePage(
 ): Promise<void> {
   await page.setViewportSize({ width: 1440, height: 900 });
   // Theme/config is read pre-hydration from this blob; seeding must precede it.
-  await page.addInitScript(
+  await addStorageInitScript(page,
     ([key, config]) => {
       localStorage.clear();
       sessionStorage.clear();

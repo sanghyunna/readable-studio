@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect } from '@playwright/test';
+import { addStorageInitScript } from './storage-init.js';
 
 export const STORAGE_KEY = 'readable-studio:config';
 export const OPEN_SETTINGS_LABEL = /Open settings|打开设置|開啟設定|Account & settings/i;
@@ -109,7 +110,7 @@ export async function readAppConfig(page: Page) {
 }
 
 export async function seedBrowserConfig(page: Page, value: Record<string, unknown>) {
-  await page.addInitScript(
+  await addStorageInitScript(page,
     ({ key, config }) => {
       window.localStorage.setItem(key, JSON.stringify(config));
     },

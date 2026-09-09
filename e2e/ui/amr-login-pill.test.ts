@@ -16,6 +16,8 @@ import type { Page } from '@playwright/test';
 import { openSettingsDialog as openEntrySettingsDialog } from '../lib/playwright/amr.js';
 import { routeAgents } from '../lib/playwright/mock-factory.js';
 
+import { addStorageInitScript } from '@/playwright/storage-init';
+
 const STORAGE_KEY = 'readable-studio:config';
 const SETTINGS_LABEL = /Settings|설정|设置|設定/i;
 
@@ -132,7 +134,7 @@ test('[P1] AMR card authorizes through daemon login status and returns to author
   const state: VelaMockState = { loggedIn: false, loginRequests: 0, logoutRequests: 0, statusRequests: 0 };
   await wireDaemonMocks(page, state);
 
-  await page.addInitScript(
+  await addStorageInitScript(page,
     ({ key, value }) => {
       window.localStorage.setItem(key, JSON.stringify(value));
     },

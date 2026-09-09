@@ -24,6 +24,54 @@ type ResizeWindow = Window & {
   nativeZoomResize?: { done: Promise<boolean>; cancel(): void };
 };
 
+type PopoverWindow = Window & {
+  nativeZoomPopover?: { done: Promise<string | null>; cancel(): void };
+};
+
+/** Subscribe before opening; visible at CSS (0, 0) is not yet positioned. */
+export async function openSettledSwitcherPopover(
+  page: Page, testId: string, open: () => Promise<void>,
+): Promise<void> {
+  await page.evaluate(({ id, timeoutMs }) => {
+    const target = window as PopoverWindow;
+    let complete!: (error: string | null) => void;
+    const done = new Promise<string | null>((resolve) => { complete = resolve; });
+    let settling = false;
+    let ended = false;
+    const finish = (error: string | null) => {
+      if (ended) return;
+      ended = true;
+      clearTimeout(timeout);
+      observer.disconnect();
+      complete(error);
+    };
+    const check = () => {
+      if (settling || ended) return;
+      const popover = document.querySelector<HTMLElement>(`[data-testid="${id}"]`);
+      // Inline left/top are InlineModelSwitcher's layout-effect commit signal.
+      // Do not use its eventual geometry as readiness: wrong placement must
+      // reach the assertions and fail, not time out or be tolerated.
+      if (!popover || !popover.style.left || !popover.style.top) return;
+      settling = true;
+      void Promise.all(popover.getAnimations().map((animation) => animation.finished)).then(() => {
+        finish(popover.isConnected ? null : `Popover ${id} detached while settling`);
+      }, (error: unknown) => finish(`Popover ${id} animation failed: ${String(error)}`));
+    };
+    const observer = new MutationObserver(check);
+    const timeout = window.setTimeout(() => finish(`Popover ${id} never committed position/completed animation`), timeoutMs);
+    observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
+    target.nativeZoomPopover = { done, cancel: () => finish(`Popover ${id} observation cancelled`) };
+    check();
+  }, { id: testId, timeoutMs: T.medium });
+  try {
+    await open();
+    const error = await page.evaluate(() => (window as PopoverWindow).nativeZoomPopover!.done);
+    if (error !== null) throw new Error(error);
+  } finally {
+    await page.evaluate(() => (window as PopoverWindow).nativeZoomPopover!.cancel());
+  }
+}
+
 /** CDP distinguishes browser page zoom from pinch zoom and device emulation. */
 export async function readZoomMetrics(page: Page, session: CDPSession): Promise<ZoomMetrics> {
   const [layout, dpr] = await Promise.all([

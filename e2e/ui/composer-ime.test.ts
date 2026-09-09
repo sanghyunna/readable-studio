@@ -6,7 +6,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createFakeAgentRuntimes, HELD_QUESTION_RUN } from '@/fake-agents';
 import { observeComposerIme } from '@/playwright/composer-ime';
+import { observeProjectFileHydration } from '@/playwright/project-file-hydration';
+import { cleanupHydrationRuns } from '@/playwright/question-hydration';
 import { T } from '@/timeouts';
+import { addStorageInitScript } from '@/playwright/storage-init';
 
 // Browser contract for the intentional #2851 skip in
 // apps/web/tests/components/composer/LexicalComposerInput.test.tsx:
@@ -30,6 +33,7 @@ test('[P1] Korean IME commits once without sending, then Enter sends once while 
     if (body.projectId === projectId) runRequests.push(body);
   };
   page.on('request', observeRun);
+  const fileHydration = observeProjectFileHydration(page);
   const runs = async () => {
     const response = await request.get('/api/runs', { params: { projectId: projectId!, conversationId: conversationId! } });
     expect(response.ok(), await response.text()).toBe(true);
@@ -50,7 +54,7 @@ test('[P1] Korean IME commits once without sending, then Enter sends once while 
     };
     const configured = await request.put('/api/app-config', { data: config });
     expect(configured.ok(), await configured.text()).toBe(true);
-    await page.addInitScript((initialConfig) => {
+    await addStorageInitScript(page, (initialConfig) => {
       localStorage.setItem('readable-studio:config', JSON.stringify(initialConfig));
       localStorage.setItem('readable-studio:locale', 'en');
       localStorage.setItem('readable-studio:locale-source', 'manual');
@@ -202,7 +206,7 @@ test('[P1] Korean IME commits once without sending, then Enter sends once while 
     // Releasing the real held run promotes the one queued Korean draft. Exact
     // saved messages and wire prompts prove text was committed/submitted once,
     // not merely painted once in the contenteditable DOM.
-    const [heldSaved, promoted, answerSaved, promotedSaved, released] = await Promise.all([
+    const [heldSaved, promoted, answerSaved, promotedSaved] = await Promise.all([
       page.waitForResponse((response) => isMessageSave(response, (message) => message.runId === heldRunId
         && message.runStatus === 'succeeded'), { timeout: T.long }),
       page.waitForResponse((response) => isRunStart(response, queuedPrompt), { timeout: T.long }),
@@ -210,11 +214,17 @@ test('[P1] Korean IME commits once without sending, then Enter sends once while 
         && message.content === queuedPrompt), { timeout: T.long }),
       page.waitForResponse((response) => isMessageSave(response, (message) => message.role === 'assistant'
         && message.runId !== heldRunId && message.runStatus === 'succeeded'), { timeout: T.long }),
-      request.post(`/api/projects/${projectId}/files`, { data: {
-        name: HELD_QUESTION_RUN.releaseFile, content: HELD_QUESTION_RUN.releaseToken,
-      } }),
+      (async () => {
+        const released = await request.post(`/api/projects/${projectId}/files`, { data: {
+          name: HELD_QUESTION_RUN.releaseFile, content: HELD_QUESTION_RUN.releaseToken,
+        } });
+        expect(released.ok(), await released.text()).toBe(true);
+      })(),
     ]);
-    for (const response of [heldSaved, promoted, answerSaved, promotedSaved, released]) expect(response.ok(), await response.text()).toBe(true);
+    for (const response of [heldSaved, promoted, answerSaved, promotedSaved]) expect(response.ok(), await response.text()).toBe(true);
+    const artifact = page.frameLocator('[data-testid="artifact-preview-frame"]');
+    await expect(artifact.getByRole('heading', { name: 'Fake Agent Runtime codex' })).toBeVisible();
+    await expect(artifact.getByText('Generated through fake codex runtime.', { exact: true })).toBeVisible();
     await expect(page.getByTestId('chat-queued-send-strip')).toHaveCount(0);
     expect(await readQueue()).toEqual([]);
     expect(runRequests.map((run) => run.currentPrompt)).toEqual([idlePrompt, queuedPrompt]);
@@ -225,15 +235,15 @@ test('[P1] Korean IME commits once without sending, then Enter sends once while 
   } finally {
     page.off('request', observeRun);
     try {
-      // Unmount before cancellation so cleanup cannot promote a queued draft.
-      await page.goto('about:blank');
-      if (projectId && conversationId) {
-        for (const run of await runs()) {
-          if (run.status !== 'queued' && run.status !== 'running') continue;
-          const canceled = await request.post(`/api/runs/${run.id}/cancel`);
-          expect(canceled.ok(), await canceled.text()).toBe(true);
-          const terminal = await request.get(`/api/runs/${run.id}/events`, { timeout: T.long });
-          expect(terminal.ok(), await terminal.text()).toBe(true);
+      try {
+        await fileHydration.drain(T.long, 'raw');
+      } finally {
+        // Validation failure must not bypass unmount and produce deletion 404s.
+        // The observer covers the mounted case, not teardown-induced aborts.
+        fileHydration.dispose();
+        await page.close();
+        if (projectId && conversationId) {
+          await cleanupHydrationRuns(request, projectId, conversationId, true);
         }
       }
     } finally {
@@ -249,6 +259,10 @@ test('[P1] Korean IME commits once without sending, then Enter sends once while 
             expect(restored.ok(), await restored.text()).toBe(true);
           }
         } finally {
+          fileHydration.dispose();
+          await testInfo.attach('project-file-hydration-counts', {
+            contentType: 'application/json', body: JSON.stringify({ ...fileHydration.counts, requests: fileHydration.requests }),
+          });
           await rm(root, { recursive: true, force: true });
         }
       }

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { addStorageInitScript } from '@/playwright/storage-init';
 import type { Page } from '@playwright/test';
 import { openSettingsDialog } from '../lib/playwright/amr.js';
 
@@ -13,7 +14,7 @@ const WCAG_AA_NORMAL = 4.5;
 type Theme = 'light' | 'dark';
 
 async function openSettings(page: Page, theme: Theme) {
-  await page.addInitScript(
+  await addStorageInitScript(page,
     ({ key, value }) => {
       window.localStorage.setItem(key, JSON.stringify(value));
     },

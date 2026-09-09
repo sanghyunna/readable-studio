@@ -3,6 +3,8 @@ import type { Page, Route } from '@playwright/test';
 import { routeAgents } from '@/playwright/mock-factory';
 import { DEFAULT_UNSELECTED_SCENARIO_PLUGIN_ID } from '@readable-studio/contracts';
 
+import { addStorageInitScript } from '@/playwright/storage-init';
+
 const STORAGE_KEY = 'readable-studio:config';
 const CONFIG = {
   mode: 'daemon', apiKey: '', baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-5',
@@ -121,7 +123,7 @@ async function fulfillProject(route: Route, suffix: string): Promise<ProjectPayl
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(({ key, value }) => {
+  await addStorageInitScript(page, ({ key, value }) => {
     localStorage.clear();
     sessionStorage.clear();
     localStorage.setItem(key, JSON.stringify(value));

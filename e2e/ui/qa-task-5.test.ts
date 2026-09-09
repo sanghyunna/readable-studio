@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test';
 import { routeAgents } from '@/playwright/mock-factory';
 
+import { addStorageInitScript } from '@/playwright/storage-init';
+
 const STORAGE_KEY = 'readable-studio:config';
 const CONFIG = {
   mode: 'daemon', apiKey: '', baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-5',
@@ -42,7 +44,7 @@ async function dropFile(page: import('@playwright/test').Page, name: string, typ
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(({ key, value }) => {
+  await addStorageInitScript(page, ({ key, value }) => {
     localStorage.clear(); sessionStorage.clear(); localStorage.setItem(key, JSON.stringify(value));
     const created: string[] = []; const revoked: string[] = [];
     const create = URL.createObjectURL.bind(URL); const revoke = URL.revokeObjectURL.bind(URL);

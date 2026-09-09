@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { addStorageInitScript } from '@/playwright/storage-init';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { openNewProjectModal } from '@/playwright/new-project-modal';
@@ -37,7 +38,7 @@ function isProjectFileWrite(response: Response, projectId: string): boolean {
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript((key) => {
+  await addStorageInitScript(page, (key) => {
     window.localStorage.setItem(
       key,
       JSON.stringify({
