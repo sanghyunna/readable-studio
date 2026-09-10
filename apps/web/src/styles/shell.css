@@ -158,9 +158,14 @@
 
 /* -------- App window chrome (frameless window) ----------------------- */
 /* The desktop window has no native title bar, so this strip IS the title bar:
-   a full-width drag region carrying the app's own traffic lights. It has no
-   material of its own: the shell canvas continues behind the controls without
-   an opaque, translucent or highlighted band. */
+   a full-width drag region carrying the app's own traffic lights. Its material
+   is a faint veil of the shared canvas's own top-edge stops - never a band of
+   its own: `--hub-canvas-blue` at the rail end, `--hub-canvas-pink` at the
+   content end, placed at the canvas blooms' x-positions (10% / 92%) so the
+   strip continues the accent -> warm order the wash blooms paint below it
+   (accent upper-left over the rail, warm toward the pane boundary). One
+   calibrated alpha step above the fully transparent strip it replaced: the
+   canvas still shows through, the bar just reads as material, not absence. */
 .app-window-chrome {
   grid-column: 1;
   grid-row: 1;
@@ -169,7 +174,11 @@
   gap: var(--space-2, 8px);
   min-width: 0;
   padding-inline: var(--space-3, 12px);
-  background: transparent;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--hub-canvas-blue) 30%, transparent) 10%,
+    color-mix(in srgb, var(--hub-canvas-pink) 30%, transparent) 92%
+  );
   border: 0;
   user-select: none;
   -webkit-app-region: drag;
@@ -188,8 +197,13 @@
   min-height: var(--app-window-chrome-height, 36px);
   /* `.app-chrome-header` is declared later and normally paints an opaque
      project-toolbar surface. This higher-specificity reset is load-bearing:
-     without it that shared rule turns the frameless drag row into a white bar. */
-  background: transparent;
+     without it that shared rule turns the frameless drag row into a white bar.
+     The veil restates the base rule's gradient so the reset cannot drop it. */
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--hub-canvas-blue) 30%, transparent) 10%,
+    color-mix(in srgb, var(--hub-canvas-pink) 30%, transparent) 92%
+  );
   border: 0;
   box-shadow: none;
   -webkit-backdrop-filter: none;
@@ -297,10 +311,12 @@
 }
 @media (prefers-reduced-transparency: reduce) {
   .app-chrome-header.app-window-chrome {
-    /* The title row is not a glass surface, so reduced transparency must not
-       resurrect it as a separate opaque strip. The shell's solid fallback
-       remains the single continuous background behind this drag region. */
-    background: transparent;
+    /* The veil cannot refract when transparency is reduced, so the strip takes
+       the shell's own flat fallback token - the SAME paint the canvas
+       collapses to, which keeps the band continuous without resurrecting a
+       separate strip, and resolves opaque rather than dropping to bare
+       transparency. */
+    background: var(--hub-canvas);
   }
 }
 

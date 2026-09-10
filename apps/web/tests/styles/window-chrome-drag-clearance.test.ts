@@ -108,12 +108,13 @@ beforeAll(() => {
 });
 
 describe('frameless window chrome drag clearance', () => {
-  it('paints no titlebar band and exposes the continuous Home canvas behind it', () => {
+  it('paints a faint canvas veil on the titlebar, continuous with the shared canvas behind it', () => {
     const chromeStyle = getComputedStyle(chrome);
     const homeScroll = document.querySelector('.entry-main--scroll') as HTMLElement;
 
-    // This computed assertion reproduces the real cascade: the later shared
-    // `.app-chrome-header { background: var(--bg) }` was the opaque white bar.
+    // The veil is a gradient only: no background-color slab, no border, no
+    // shadow. The later shared `.app-chrome-header { background: var(--bg) }`
+    // must still lose this cascade - that was the opaque white bar.
     expect(chromeStyle.backgroundColor).toBe('rgba(0, 0, 0, 0)');
     expect(chromeStyle.borderBottomWidth).toBe('0px');
     expect(chromeStyle.boxShadow).toBe('none');
@@ -133,14 +134,60 @@ describe('frameless window chrome drag clearance', () => {
     );
   });
 
-  it('keeps reduced transparency continuous rather than resurrecting a title strip', () => {
+  it('flattens the veil to the same opaque canvas token under reduced transparency', () => {
     const reducedChrome = shellCss.match(
       /@media \(prefers-reduced-transparency: reduce\)\s*\{[\s\S]*?\.app-chrome-header\.app-window-chrome\s*\{([^}]*)\}/,
     )?.[1] ?? '';
-    expect(reducedChrome).toMatch(/background:\s*transparent/);
+    // The veil cannot refract when transparency is reduced, so the strip takes
+    // the shell's own flat fallback token - the SAME paint the shell canvas
+    // collapses to, which keeps the band continuous instead of resurrecting a
+    // separate strip, and it resolves opaque rather than dropping the veil to
+    // bare transparency.
+    expect(reducedChrome).toMatch(/background:\s*var\(--hub-canvas\)/);
+    expect(reducedChrome).not.toMatch(/background:\s*transparent/);
     expect(hubCss).toMatch(
       /@media \(prefers-reduced-transparency: reduce\)[\s\S]*?\.workspace-shell:has\(> \.workspace-shell__body \.entry-main__inner--home\),\s*\.hub\s*\{[^}]*background:\s*var\(--hub-canvas\)/,
     );
+  });
+
+  it('veils the titlebar with the shared canvas top-edge order at one calibrated alpha step', () => {
+    // The strip was fully transparent (alpha 0): the canvas showed through
+    // untouched. The veil is a single material step MORE opaque than that -
+    // built from the canvas's own top-edge stops, never a new palette:
+    // `--hub-canvas-blue` at the rail end, `--hub-canvas-pink` at the content
+    // end, the same accent -> warm order the wash blooms paint below the band
+    // (accent upper-left over the rail, warm toward the pane boundary).
+    const chromeRule = shellCss.match(
+      /\.app-chrome-header\.app-window-chrome\s*\{([^}]*)\}/,
+    )?.[1] ?? '';
+    const background = /(?:^|[;\n])\s*background:\s*([^;]+);/.exec(chromeRule)?.[1]?.trim() ?? '';
+
+    expect(background).toContain('linear-gradient(');
+    // Order: the blue (accent-side) stop is declared before the pink
+    // (warm-side) stop, matching the canvas's top edge and the wash order.
+    const blueIndex = background.indexOf('var(--hub-canvas-blue)');
+    const pinkIndex = background.indexOf('var(--hub-canvas-pink)');
+    expect(blueIndex).toBeGreaterThanOrEqual(0);
+    expect(pinkIndex).toBeGreaterThan(blueIndex);
+    // Placement: the stops sit at the canvas blooms' own x-positions (10% /
+    // 92%), so the veil continues the shared canvas instead of re-rolling a
+    // generic 0 -> 100 sweep.
+    expect(background).toMatch(/var\(--hub-canvas-blue\)[^)]*\)\s*10%/);
+    expect(background).toMatch(/var\(--hub-canvas-pink\)[^)]*\)\s*92%/);
+
+    // Alpha: one calibrated step. Both stops share a single mix ratio that is
+    // measurably above the old transparent band (0%) and slightly so - well
+    // under halfway, never an opaque bar.
+    const ratios = [...background.matchAll(/color-mix\(in srgb,\s*var\(--hub-canvas-(?:blue|pink)\)\s*(\d+)%/g)].map(
+      (match) => Number(match[1]),
+    );
+    expect(ratios).toHaveLength(2);
+    expect(ratios[0]).toBe(ratios[1]);
+    expect(ratios[0]!).toBeGreaterThan(0);
+    expect(ratios[0]!).toBeLessThanOrEqual(40);
+
+    // Tokens only: no raw color literals in the veil.
+    expect(background).not.toMatch(/#[0-9a-f]{3,8}\b|\brgba?\(|\bhsla?\(/i);
   });
 
   it('keeps the drag band pinned to the height its grid row reserves', () => {
