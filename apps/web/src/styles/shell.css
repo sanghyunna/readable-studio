@@ -176,8 +176,8 @@
   padding-inline: var(--space-3, 12px);
   background: linear-gradient(
     90deg,
-    color-mix(in srgb, var(--hub-canvas-blue) 30%, transparent) 10%,
-    color-mix(in srgb, var(--hub-canvas-pink) 30%, transparent) 92%
+    color-mix(in srgb, var(--app-window-chrome-blue, var(--hub-canvas-blue)) 30%, transparent) 10%,
+    color-mix(in srgb, var(--app-window-chrome-pink, var(--hub-canvas-pink)) 30%, transparent) 92%
   );
   border: 0;
   user-select: none;
@@ -201,13 +201,31 @@
      The veil restates the base rule's gradient so the reset cannot drop it. */
   background: linear-gradient(
     90deg,
-    color-mix(in srgb, var(--hub-canvas-blue) 30%, transparent) 10%,
-    color-mix(in srgb, var(--hub-canvas-pink) 30%, transparent) 92%
+    color-mix(in srgb, var(--app-window-chrome-blue, var(--hub-canvas-blue)) 30%, transparent) 10%,
+    color-mix(in srgb, var(--app-window-chrome-pink, var(--hub-canvas-pink)) 30%, transparent) 92%
   );
   border: 0;
   box-shadow: none;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
+}
+
+/* Dark canvas stops nearly equal their backing at the bloom peaks: a 30%
+   overlay rounded away entirely in Chromium. Lift only the chrome's endpoints
+   with 12% theme ink, not its alpha or the shared canvas. Light keeps the exact
+   original stops; reduced transparency still overrides the image below. Avoid
+   light-dark() here: the light palette has no explicit color-scheme for the
+   Lightning CSS lowering (see home-hero.css). */
+[data-theme='dark'] .app-window-chrome,
+[data-theme-scheme='dark'] .app-window-chrome {
+  --app-window-chrome-blue: color-mix(in srgb, var(--hub-canvas-blue) 88%, var(--text));
+  --app-window-chrome-pink: color-mix(in srgb, var(--hub-canvas-pink) 88%, var(--text));
+}
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme]) .app-window-chrome {
+    --app-window-chrome-blue: color-mix(in srgb, var(--hub-canvas-blue) 88%, var(--text));
+    --app-window-chrome-pink: color-mix(in srgb, var(--hub-canvas-pink) 88%, var(--text));
+  }
 }
 
 /* The drag filler takes the remaining width so the whole strip - not just the

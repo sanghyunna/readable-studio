@@ -104,13 +104,17 @@
   font-family: var(--font);
   transition: transform var(--dur-quick) var(--ease-out);
 }
-.questions-panel .questions-panel__row:hover:not(:disabled) { box-shadow: var(--hub-control-engraved-shadow-hover); }
+/* Keep the readable well when Button's more-specific hover rule lifts its fill. */
+.questions-panel .questions-panel__row:hover:not(:disabled) {
+  background: linear-gradient(var(--hub-control-engraved), var(--hub-control-engraved)), var(--bg);
+  box-shadow: var(--hub-control-engraved-shadow-hover);
+}
 .questions-panel .questions-panel__row:active:not(:disabled) { transform: translateY(1px); }
 .questions-panel__row > span { min-inline-size: 0; overflow-wrap: anywhere; }
-.questions-panel__key { color: var(--text-strong); font-size: 13px; font-weight: 400; line-height: 1.5; }
-.questions-panel__value { color: var(--text-strong); font-size: 14px; font-weight: 500; line-height: 1.5; }
+.questions-panel .questions-panel__key { color: var(--text-strong); font-size: 13px; font-weight: 400; line-height: 1.5; }
+.questions-panel .questions-panel__value { color: var(--text-strong); font-size: 14px; font-weight: 500; line-height: 1.5; }
 .questions-panel__row[data-provenance='stated'] .questions-panel__value { font-weight: 700; }
-.questions-panel__provenance { color: var(--text-strong); font-size: 13px; font-weight: 400; line-height: 1.5; }
+.questions-panel .questions-panel__provenance { color: var(--text-strong); font-size: 13px; font-weight: 400; line-height: 1.5; }
 .questions-panel__row > svg { align-self: center; }
 .questions-panel__row[aria-expanded='true'] > svg { transform: rotate(180deg); }
 .questions-panel .questions-panel-foot { flex: 0 0 auto; flex-wrap: wrap; border: 0; background: transparent; box-shadow: none; }

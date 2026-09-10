@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { JSDOM } from 'jsdom';
+import postcss from 'postcss';
 import { EXPLICIT_THEME_OPTIONS } from '../../src/state/themes';
 
 const root = resolve(import.meta.dirname, '../../src/styles');
@@ -38,14 +40,91 @@ function luminance(color: Color) {
   return color.slice(0, 3).map(x => { const v = x / 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }).reduce((sum, x, i) => sum + x * [0.2126, 0.7152, 0.0722][i]!, 0);
 }
 function contrast(a: Color, b: Color) { const x = luminance(a), y = luminance(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); }
-const measurements = EXPLICIT_THEME_OPTIONS.map(({ id }) => {
+const buttonCss = readFileSync(resolve(root, '../../../../packages/components/src/button.module.css'), 'utf8');
+const primitivesCss = readFileSync(resolve(root, 'primitives.css'), 'utf8');
+const hoverSelector = '.questions-panel .questions-panel__row:hover:not(:disabled)';
+
+// jsdom does not resolve var() in backgrounds. Resolve only paint declarations
+// before handing the REAL selectors/shorthands to its specificity-aware cascade.
+// State attributes have the same specificity as the pseudo-classes they replace.
+function paintCss(source: string, vars: Record<string, string>) {
+  const sheet = postcss.parse(source);
+  sheet.walkDecls(decl => {
+    if (!['color', 'background', 'background-color', 'background-image', 'outline', 'opacity'].includes(decl.prop)) {
+      decl.remove();
+      return;
+    }
+    decl.value = decl.value.replace(/var\((--[\w-]+)\)/g, (_, token: string) => `rgba(${resolveColor(vars[token]!, vars).join(', ')})`);
+  });
+  sheet.walkRules(rule => { rule.selector = rule.selector.replace(/:(hover|active|focus-visible)\b/g, '[data-$1]'); });
+  // The tested paint is identical across container widths; forced-colors owns
+  // system colors rather than the bundled palette measured here.
+  sheet.walkAtRules(rule => { rule.remove(); });
+  return sheet.toString();
+}
+function rowSamples(vars: Record<string, string>, source = css, reverseOrder = false) {
+  const dom = new JSDOM(`<section class="questions-panel"><div class="questions-panel__content">
+    <button class="button questions-panel__row"><span class="questions-panel__key">Key</span>
+    <span class="questions-panel__value">Value</span><span class="questions-panel__provenance">Source</span></button>
+    </div></section>`);
+  const { document } = dom.window;
+  const sources = [primitivesCss, buttonCss, source];
+  if (reverseOrder) sources.reverse();
+  for (const contents of sources) {
+    const style = document.createElement('style');
+    style.textContent = paintCss(contents, vars);
+    document.head.append(style);
+  }
+  const row = document.querySelector('button')!;
+  function background(node: Element): Color {
+    const style = dom.window.getComputedStyle(node);
+    let result = resolveColor(style.backgroundColor, vars);
+    if (style.backgroundImage !== 'none') {
+      const colors = style.backgroundImage.match(/rgba?\([^)]+\)/g) ?? [];
+      expect(colors).toHaveLength(2);
+      expect(colors[0]).toBe(colors[1]);
+      result = over(resolveColor(colors[0]!, vars), result);
+    }
+    if (result[3] < 1) {
+      if (!node.parentElement) throw new Error('Missing opaque field backing');
+      result = over(result, background(node.parentElement));
+    }
+    return result;
+  }
+  const samples = ['rest', 'hover', 'active'].map(state => {
+    row.toggleAttribute('data-hover', state !== 'rest');
+    row.toggleAttribute('data-active', state === 'active');
+    row.setAttribute('data-focus-visible', '');
+    const surface = background(row);
+    const text = Math.min(...[...row.children].map(node => {
+      const style = dom.window.getComputedStyle(node);
+      const ink = resolveColor(style.color, vars);
+      ink[3] *= Number(style.opacity || 1);
+      return contrast(over(ink, surface), surface);
+    }));
+    // jsdom retains outline shorthand without expanding its longhands.
+    const outline = dom.window.getComputedStyle(row).outline;
+    expect(outline).toMatch(/^2px solid /);
+    const focus = contrast(resolveColor(outline.match(/rgba?\([^)]+\)/)![0], vars), surface);
+    return { state, text, focus, surface };
+  });
+  dom.window.close();
+  return samples;
+}
+function themeVars(id: string) {
   const source = id === 'light' ? block(tokens, ':root') : id === 'dark' ? block(tokens, '[data-theme="dark"]') : readFileSync(resolve(root, `themes/${id}.css`), 'utf8');
-  const vars = { ...declarations(block(tokens, ':root')), ...declarations(source), ...declarations(recipes) };
+  return { ...declarations(block(tokens, ':root')), ...declarations(source), ...declarations(recipes) };
+}
+const measurements = EXPLICIT_THEME_OPTIONS.map(({ id }) => {
+  const vars = themeVars(id);
   const get = (name: string) => resolveColor(vars[name]!, vars);
   const ink = get('--text-strong');
   const field = over(get('--hub-control-engraved'), get('--bg'));
   const surfaces = [field, get('--bg'), get('--bg-panel')];
-  return { id, text: Math.min(...surfaces.map(bg => contrast(ink, bg))), focus: contrast(ink, field), old: contrast(get('--text-faint'), field) };
+  const rows = [...rowSamples(vars), ...rowSamples(vars, css, true)];
+  return { id, text: Math.min(...surfaces.map(bg => contrast(ink, bg)), ...rows.map(row => row.text)),
+    label: Math.min(...rows.map(row => row.text)), focus: Math.min(...rows.map(row => row.focus)),
+    selection: contrast(ink, field), old: contrast(get('--text-faint'), field), oldBody: contrast(get('--text'), field) };
 });
 
 describe('Questions actual bundled theme contrast recipes', () => {
@@ -54,19 +133,39 @@ describe('Questions actual bundled theme contrast recipes', () => {
     expect(css).toContain('outline: 2px solid var(--text-strong)');
     expect(css).toContain('inset 0 -2px 0 var(--text-strong)');
     expect(css).not.toMatch(/color:\s*var\(--text-(muted|faint|soft)\)/);
+    // Keep the row inks bound to the measured semantic token. The regression
+    // below removes only the hover BACKGROUND fix, not these ink selectors.
+    expect(css).toMatch(/\.questions-panel \.questions-panel__key\s*\{[^}]*color:\s*var\(--text-strong\)/);
+    expect(css).toMatch(/\.questions-panel \.questions-panel__value\s*\{[^}]*color:\s*var\(--text-strong\)/);
+    expect(css).toMatch(/\.questions-panel \.questions-panel__provenance\s*\{[^}]*color:\s*var\(--text-strong\)/);
     expect(css).toMatch(/::placeholder\s*\{\s*color:\s*var\(--text-strong\)/);
     expect(measurements).toHaveLength(12);
     expect(measurements[0]!.text).not.toBe(measurements[1]!.text);
   });
-  it.each(measurements)('$id normal/value/placeholder text >=4.5; focus and selected markers >=3', ({ text, focus }) => {
+  it.each(measurements)('$id rest/hover/active text >=4.5; focus and selected markers >=3 in either stylesheet order', ({ text, focus, selection }) => {
     expect(text).toBeGreaterThanOrEqual(4.5);
     expect(focus).toBeGreaterThanOrEqual(3);
+    expect(selection).toBeGreaterThanOrEqual(3);
+  });
+  it('reproduces the exact browser failure when the old Button hover surface wins (negative control)', () => {
+    const oldCss = postcss.parse(css);
+    oldCss.walkRules(hoverSelector, rule => { rule.walkDecls('background', decl => { decl.remove(); }); });
+    const vars = themeVars('solarized-dark');
+    for (const reverse of [false, true]) {
+      const samples = rowSamples(vars, oldCss.toString(), reverse);
+      expect(samples[0]!.text).toBeGreaterThanOrEqual(4.5);
+      expect(samples[1]!.surface).toEqual(resolveColor(vars['--bg-subtle']!, vars));
+      expect(samples[1]!.text).toBeCloseTo(4.207877101125791, 10);
+      expect(samples[1]!.text).toBeLessThan(4.5);
+    }
   });
   it('rejects the old low-contrast group and label ink (negative control)', () => {
     const solarized = measurements.find(m => m.id === 'solarized-dark')!;
     expect(() => expect(solarized.old).toBeGreaterThanOrEqual(4.5)).toThrow();
+    // Base body ink also fails on the resting well, independently of hover.
+    expect(() => expect(solarized.oldBody).toBeGreaterThanOrEqual(4.5)).toThrow();
   });
   it('reports every resolved recipe, including base light and dark', () => {
-    process.stdout.write(`${JSON.stringify(measurements.map(m => ({ theme: m.id, text: m.text.toFixed(2), focus: m.focus.toFixed(2), oldFaint: m.old.toFixed(2) })))}\n`);
+    process.stdout.write(`${JSON.stringify(measurements.map(m => ({ theme: m.id, text: m.text.toFixed(4), label: m.label.toFixed(4), focus: m.focus.toFixed(4), selection: m.selection.toFixed(4), oldFaint: m.old.toFixed(4), oldBody: m.oldBody.toFixed(4) })))}\n`);
   });
 });
