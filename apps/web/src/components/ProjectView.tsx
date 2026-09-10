@@ -16,6 +16,7 @@ import { resolveHtmlPointerArtifactTarget } from '../artifacts/pointer';
 import { validateHtmlArtifact } from '../artifacts/validate';
 import { recoverHtmlArtifactFromPrecedingDocument, recoverHtmlDocumentFromMarkdownFence, recoverStandaloneHtmlDocument } from '../artifacts/recover';
 import { createArtifactParser } from '../artifacts/parser';
+import { normalizePersistedArtifactHtml, resolvePersistedHtmlArtifact, type ArtifactPersistenceRun } from '../artifacts/persistence';
 import {
   findFirstQuestionForm,
   hasUnterminatedQuestionForm,
@@ -1989,23 +1990,35 @@ export function ProjectView({
   }, []);
 
   const persistArtifact = useCallback(
-    async (art: Artifact, projectFilesSnapshot?: ProjectFile[], sourceText?: string) => {
+    async (art: Artifact, projectFilesSnapshot: ProjectFile[], sourceText: string, run: ArtifactPersistenceRun): Promise<ProjectFile | null> => {
       const recoveredHtml = recoverHtmlArtifactFromPrecedingDocument({
         artifactHtml: art.html,
         identifier: art.identifier,
         sourceText,
       });
-      const artifactToPersist = recoveredHtml ? { ...art, html: recoveredHtml } : art;
       const baseName = artifactBaseNameFor(art);
       const ext = artifactExtensionFor(art);
+      const artifactToPersist = { ...art, html: ext === '.html'
+        ? normalizePersistedArtifactHtml(recoveredHtml ?? art.html) : art.html };
       // Pick a name that doesn't collide with an existing project file.
       // The first run uses `<base>.<ext>`; subsequent runs append `-2`, `-3`…
       // so prior artifacts aren't silently overwritten.
-      const currentProjectFiles = projectFilesSnapshot ?? projectFilesRef.current;
+      const currentProjectFiles = projectFilesSnapshot;
       const existing = new Set(currentProjectFiles.map((f) => f.name));
-      let fileName = `${baseName}${ext}`;
+      if (run.replay && ext !== '.html') {
+        const recovered = findExistingArtifactProjectFile(art, currentProjectFiles, { minMtime: run.startedAt });
+        if (recovered) {
+          savedArtifactRef.current = recovered.name;
+          requestOpenFile(recovered.name);
+          return recovered;
+        }
+      }
+      const matchedFile = ext === '.html' && validateHtmlArtifact(artifactToPersist.html).ok
+        ? await resolvePersistedHtmlArtifact(project.id, artifactToPersist.html, art.identifier, `${baseName}${ext}`, currentProjectFiles, run)
+        : null;
+      let fileName = matchedFile?.name ?? `${baseName}${ext}`;
       let n = 2;
-      while (existing.has(fileName) && savedArtifactRef.current !== fileName) {
+      while (!matchedFile && existing.has(fileName) && savedArtifactRef.current !== fileName) {
         fileName = `${baseName}-${n}${ext}`;
         n += 1;
       }
@@ -2016,10 +2029,9 @@ export function ProjectView({
           projectFiles: currentProjectFiles,
         });
         if (pointerTarget) {
-          if (savedArtifactRef.current === pointerTarget) return;
           savedArtifactRef.current = pointerTarget;
           requestOpenFile(pointerTarget);
-          return;
+          return currentProjectFiles.find((file) => file.name === pointerTarget || file.path === pointerTarget) ?? null;
         }
       }
       // Pre-write structural gate for HTML artifacts (#50, #1143). Reject
@@ -2031,15 +2043,22 @@ export function ProjectView({
         const validation = validateHtmlArtifact(artifactToPersist.html);
         if (!validation.ok) {
           setError(`Refused to save artifact "${art.identifier || art.title || 'untitled'}": ${validation.reason}`);
-          return;
+          return null;
         }
       }
-      if (savedArtifactRef.current === fileName) return;
+      if (matchedFile?.artifactManifest?.metadata?.messageId === run.messageId
+        && matchedFile.artifactManifest.metadata.identifier === art.identifier) {
+        savedArtifactRef.current = matchedFile.name;
+        requestOpenFile(matchedFile.name);
+        return matchedFile;
+      }
+      if (savedArtifactRef.current === fileName) return matchedFile;
       savedArtifactRef.current = fileName;
       const title = art.title || art.identifier || fileName;
       const metadata = {
         identifier: art.identifier,
         artifactType: art.artifactType,
+        messageId: run.messageId,
         inferred: false,
       };
       const manifest =
@@ -2061,7 +2080,9 @@ export function ProjectView({
               },
             });
       const file = await writeProjectTextFile(project.id, fileName, artifactToPersist.html, {
-        artifactManifest: manifest ?? undefined,
+        artifactManifest: matchedFile?.artifactManifest
+          ? { ...matchedFile.artifactManifest, title, metadata: { ...matchedFile.artifactManifest.metadata, ...metadata } }
+          : manifest ?? undefined,
       });
       if (file) {
         setFilesRefresh((n) => n + 1);
@@ -2093,6 +2114,7 @@ export function ProjectView({
             'check the daemon logs for details.',
         );
       }
+      return file;
     },
     [project.id, project.designSystemId, project.skillId, requestOpenFile],
   );
@@ -3017,6 +3039,7 @@ export function ProjectView({
               );
               void (async () => {
                 const preTurn = message.preTurnFileNames;
+                const completedAt = isTerminalRunStatus(status.status) ? status.updatedAt : Date.now();
                 let nextFiles = await refreshProjectFiles();
                 // Use the turn-start snapshot when available so reload
                 // recovers files produced before the artifact write too;
@@ -3028,18 +3051,11 @@ export function ProjectView({
                   : artifactFromStandaloneHtml(replayedContent);
                 if (artifactToPersist?.html) {
                   const runStartedAt = status.createdAt || message.startedAt || message.createdAt;
-                  recoveredExistingArtifact = findExistingArtifactProjectFile(
-                    artifactToPersist,
-                    nextFiles,
-                    { minMtime: runStartedAt },
-                  );
-                  if (recoveredExistingArtifact) {
-                    savedArtifactRef.current = recoveredExistingArtifact.name;
-                    requestOpenFile(recoveredExistingArtifact.name);
-                  } else {
-                    await persistArtifact(artifactToPersist, nextFiles, replayedContent);
-                    nextFiles = await refreshProjectFiles();
-                  }
+                  recoveredExistingArtifact = await persistArtifact(artifactToPersist, nextFiles, replayedContent, {
+                    startedAt: runStartedAt, completedAt, messageId: message.id,
+                    preTurnFileNames: preTurn, events: replayedEvents, replay: true,
+                  });
+                  nextFiles = await refreshProjectFiles();
                 }
                 const diff = computeProducedFiles(beforeFileNames, nextFiles) ?? [];
                 const produced = mergeRecoveredArtifact(diff, recoveredExistingArtifact);
@@ -3757,11 +3773,15 @@ export function ProjectView({
             const artifactToPersist = parsedArtifact?.html
               ? parsedArtifact
               : artifactFromStandaloneHtml(finalText);
+            let persistedArtifact: ProjectFile | null = null;
             if (artifactToPersist?.html) {
-              await persistArtifact(artifactToPersist, nextFiles, finalText);
+              persistedArtifact = await persistArtifact(artifactToPersist, nextFiles, finalText, {
+                startedAt, completedAt: endedAt, messageId: assistantId, preTurnFileNames,
+                events: latestAssistantMsg.events,
+              });
               nextFiles = await refreshProjectFiles();
             }
-            const produced = computeProducedFiles(beforeFileNames, nextFiles) ?? [];
+            const produced = mergeRecoveredArtifact(computeProducedFiles(beforeFileNames, nextFiles) ?? [], persistedArtifact);
             const producedHtmlToOpen = selectAutoOpenProducedHtml(produced);
             if (producedHtmlToOpen) requestOpenFile(producedHtmlToOpen);
             setMessages((curr) => {

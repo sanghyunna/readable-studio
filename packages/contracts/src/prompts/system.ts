@@ -355,6 +355,15 @@ export function composeSystemPrompt({
   const isFreeformProject = !skillMode && (!metadata || metadata.kind === 'other');
   const hasSkillSeed =
     !!skillBody && /assets\/template\.html/.test(skillBody);
+
+  // Top-level HTML rule for every slide-deck run, including skill-seeded
+  // decks that skip the generic framework below.
+  if (isDeckProject) {
+    parts.push(
+      '\n\n---\n\nUnless the user explicitly requests multiple HTML documents, use the existing root `index.html` as the sole top-level HTML file and do not create a duplicate named HTML.',
+    );
+  }
+
   if (isDeckProject && !hasSkillSeed) {
     parts.push(`\n\n---\n\n${DECK_FRAMEWORK_DIRECTIVE}`);
   } else if (isFreeformProject && !hasSkillSeed) {

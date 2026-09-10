@@ -167,19 +167,27 @@ describe('composeSystemPrompt', () => {
     expect(prompt).not.toContain('- **fidelity**: (unknown');
   });
 
-  it('does not add the responsive web contract to deck metadata without platform fields', () => {
-    const prompt = composeSystemPrompt({
+  it('does not add the responsive web contract to deck metadata without platform fields and pins the top-level HTML rule once for deck runs', () => {
+    const generic = composeSystemPrompt({
       metadata: {
         kind: 'deck',
         speakerNotes: true,
         slideCount: '10-15 pages',
       } as any,
     });
+    const seeded = composeSystemPrompt({
+      metadata: { kind: 'deck' } as any,
+      skillBody: 'Read `assets/template.html` before writing any deck content.',
+    });
 
-    expect(prompt).toContain('- **kind**: deck');
-    expect(prompt).toContain('- **slideCount**: 10-15 pages');
-    expect(prompt).not.toContain('**responsive web contract**');
-    expect(prompt).not.toContain('**platformTargets**');
+    const rule = 'sole top-level HTML';
+    expect(generic.split(rule)).toHaveLength(2);
+    expect(seeded.split(rule)).toHaveLength(2);
+
+    expect(generic).toContain('- **kind**: deck');
+    expect(generic).toContain('- **slideCount**: 10-15 pages');
+    expect(generic).not.toContain('**responsive web contract**');
+    expect(generic).not.toContain('**platformTargets**');
   });
 
   it('tells artifact generation to summarize instead of dumping raw HTML source into chat', () => {
