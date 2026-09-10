@@ -44,6 +44,22 @@ export const HELD_QUESTION_RUN = {
   },
 } as const;
 
+// Codex-only artifact persistence sentinels. Dispatch on the latest user turn,
+// not prior transcript/system text. Writes finish before the full artifact is
+// emitted; historical never touches the project filesystem. No prompt rewriting
+// or injected NODE_OPTIONS is needed (the daemon owns the prompt envelope).
+export const ARTIFACT_DEDUP_RUN = {
+  prompts: {
+    identical: 'readable-e2e:artifact-dedup:identical:v1',
+    differing: 'readable-e2e:artifact-dedup:differing:v1',
+    historical: 'readable-e2e:artifact-dedup:historical:v1',
+  },
+  identifier: 'request-slug',
+  fileName: 'index.html',
+  html: '<!doctype html><html><head><title>Artifact dedup</title></head><body><main><h1>Artifact dedup</h1><p>Current project document.</p></main></body></html>',
+  differingHtml: '<!doctype html><html><head><title>Artifact dedup</title></head><body><main><h1>Artifact dedup</h1><p>Different artifact document.</p></main></body></html>',
+} as const;
+
 const AGENT_BIN_NAMES: Record<FakeAgentId, string> = {
   claude: 'claude-e2e.cjs',
   codex: 'codex-e2e.cjs',
@@ -120,8 +136,9 @@ const agentId = ${JSON.stringify(agentId)};
 const args = process.argv.slice(2);
 const { mkdir, writeFile: writeFileFs } = require('node:fs/promises');
 const { existsSync, readFileSync, watch } = require('node:fs');
-const { join } = require('node:path');
+const { isAbsolute, join } = require('node:path');
 const heldQuestion = ${JSON.stringify(HELD_QUESTION_RUN)};
+const artifactDedup = ${JSON.stringify(ARTIFACT_DEDUP_RUN)};
 
 if (args.includes('--version')) {
   process.stdout.write(agentId + '-e2e 0.0.0\\n');
@@ -164,6 +181,21 @@ async function emitRun(promptText) {
   // Only the latest user section can arm the hold: the promoted answer's
   // transcript still contains the original sentinel in an earlier user turn.
   const latestUserPrompt = promptText.split(/^## user\\r?$/m).at(-1).trim();
+  const dedupScenario = Object.entries(artifactDedup.prompts)
+    // Memory extraction quotes prior turns but appends its own JSON contract;
+    // a sentinel mentioned in that background prompt is not a new user request.
+    .find(([, sentinel]) => latestUserPrompt === sentinel)?.[0];
+  if (dedupScenario) {
+    if (agentId !== 'codex') throw new Error('Artifact dedup fixture requires codex');
+    if (dedupScenario !== 'historical') {
+      await writeFileFs(join(projectWorkingDirectory(), artifactDedup.fileName), artifactDedup.html, 'utf8');
+    }
+    const html = dedupScenario === 'differing' ? artifactDedup.differingHtml : artifactDedup.html;
+    emitSuccess('<artifact identifier="' + artifactDedup.identifier + '" type="text/html" title="Artifact dedup">' + html + '</artifact>', false, false);
+    // Flush the terminal frame, rather than racing a delayed process exit.
+    process.stdout.write('', () => process.exit(0));
+    return;
+  }
   if (latestUserPrompt.includes(heldQuestion.prompt)) {
     if (agentId !== 'codex') throw new Error('Held question fixture requires codex');
     emitHeldQuestionRun();
@@ -282,8 +314,23 @@ function emitHeldQuestionRun() {
   checkRelease();
 }
 
+// The real Codex CLI honors -C independently of its inherited process cwd.
+// Other runtimes receive READABLE_PROJECT_DIR from the daemon. Never fall back
+// to the launcher cwd for fixture writes: it may be the repository checkout.
+function projectWorkingDirectory() {
+  // Background memory extraction may use -C with the repository root, but it
+  // has no daemon project binding and must never perform fixture file writes.
+  if (!process.env.READABLE_PROJECT_DIR || !isAbsolute(process.env.READABLE_PROJECT_DIR)) {
+    throw new Error('Fixture writes require a daemon project binding');
+  }
+  const cwdFlag = agentId === 'codex' ? args.findIndex((arg) => arg === '-C' || arg === '--cd') : -1;
+  const directory = cwdFlag >= 0 ? args[cwdFlag + 1] : process.env.READABLE_PROJECT_DIR;
+  if (!directory || !isAbsolute(directory)) throw new Error('Fixture writes require an absolute project working directory');
+  return directory;
+}
+
 async function emitPluginAuthoringRun() {
-  const folder = join(process.cwd(), 'generated-plugin');
+  const folder = join(projectWorkingDirectory(), 'generated-plugin');
   await mkdir(join(folder, 'examples'), { recursive: true });
   await writeFileFs(
     join(folder, 'readable-studio.json'),
