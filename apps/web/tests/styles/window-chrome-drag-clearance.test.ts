@@ -33,6 +33,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 // stylesheets are resolved from the package root instead.
 const styles = resolve(process.cwd(), 'src/styles');
 const shellCss = readFileSync(resolve(styles, 'shell.css'), 'utf8');
+const routinesCss = readFileSync(resolve(styles, 'viewer/routines.css'), 'utf8');
 const projectRailCss = readFileSync(resolve(styles, 'home/project-rail.css'), 'utf8');
 const hubCss = readFileSync(resolve(styles, 'home/hub.css'), 'utf8');
 const entryLayoutCss = readFileSync(resolve(styles, 'home/entry-layout.css'), 'utf8');
@@ -73,9 +74,9 @@ let toggle: HTMLElement;
 beforeAll(() => {
   const style = document.createElement('style');
   // The sheets that own this geometry, concatenated in their real @import order
-  // so both the shell.css-internal source-order conflict and entry-layout.css's
-  // later grid override are reproduced exactly as they reach the browser.
-  style.textContent = `${shellCss}\n${projectRailCss}\n${entryLayoutCss}\n${hubCss}`;
+  // so the shared header minimum, legacy viewer shell override and Home's
+  // more-specific grid override all participate in the actual cascade.
+  style.textContent = `${shellCss}\n${routinesCss}\n${projectRailCss}\n${entryLayoutCss}\n${hubCss}`;
   document.head.append(style);
 
   document.body.innerHTML = `
@@ -172,13 +173,13 @@ describe('frameless window chrome drag clearance', () => {
     // Placement: the stops sit at the canvas blooms' own x-positions (10% /
     // 92%), so the veil continues the shared canvas instead of re-rolling a
     // generic 0 -> 100 sweep.
-    expect(background).toMatch(/var\(--hub-canvas-blue\)[^)]*\)\s*10%/);
-    expect(background).toMatch(/var\(--hub-canvas-pink\)[^)]*\)\s*92%/);
+    expect(background).toMatch(/var\(--app-window-chrome-blue, var\(--hub-canvas-blue\)\) 30%, transparent\)\s*10%/);
+    expect(background).toMatch(/var\(--app-window-chrome-pink, var\(--hub-canvas-pink\)\) 30%, transparent\)\s*92%/);
 
     // Alpha: one calibrated step. Both stops share a single mix ratio that is
     // measurably above the old transparent band (0%) and slightly so - well
     // under halfway, never an opaque bar.
-    const ratios = [...background.matchAll(/color-mix\(in srgb,\s*var\(--hub-canvas-(?:blue|pink)\)\s*(\d+)%/g)].map(
+    const ratios = [...background.matchAll(/color-mix\(in srgb,\s*var\(--app-window-chrome-(?:blue|pink), var\(--hub-canvas-(?:blue|pink)\)\)\s*(\d+)%/g)].map(
       (match) => Number(match[1]),
     );
     expect(ratios).toHaveLength(2);

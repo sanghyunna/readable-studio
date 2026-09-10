@@ -47,6 +47,7 @@ const projectRailCss = read('home/project-rail.css');
 const entryLayoutCss = read('home/entry-layout.css');
 const hubCss = read('home/hub.css');
 const shellCss = read('shell.css');
+const routinesCss = read('viewer/routines.css');
 const baseCss = read('base.css');
 const primitivesCss = read('primitives.css');
 
@@ -147,8 +148,9 @@ beforeAll(() => {
     /var\(--hub-rail-inline-inset,\s*var\(--space-3\)\)/g,
     (value) => `${pixels(value)}px`,
   );
-  // Same order the app uses: the shared contract loads before the surface skins.
-  style.textContent = `${baseCss}\n${primitivesCss}\n${shellCss}\n${projectRailCss}\n${entryLayoutCss}\n${resolvedHubCss}`;
+  // Include the later viewer cascade: its legacy 34px shell row used to
+  // override shell.css on workspace routes, while Home's :has() hid the bug.
+  style.textContent = `${baseCss}\n${primitivesCss}\n${shellCss}\n${routinesCss}\n${projectRailCss}\n${entryLayoutCss}\n${resolvedHubCss}`;
   document.head.append(style);
 });
 
@@ -183,11 +185,18 @@ describe('rail head: one content origin below the chrome row', () => {
     host.remove();
   });
 
-  it.each([262, 292, 420])('insets only the expanded rail while keeping toggle centre-Y equal at track width %ipx', (track) => {
+  it.each([262, 292, 420].flatMap(track => (['home', 'workspace'] as const).map(route => ({ track, route }))))(
+    'insets only the expanded rail while keeping toggle centre-Y equal on $route at $track px',
+    ({ track, route }) => {
     const geometry = (state: 'expanded' | 'collapsed') => {
       const host = mount(`<div class="workspace-shell" style="--hub-rail-expanded: ${track}px">
-        <header class="app-window-chrome"></header>
-        <div class="workspace-shell__body"><nav class="hub__nav" data-project-rail="hub" data-project-rail-state="${state}">${HEAD_ROW}</nav></div>
+        <header class="app-chrome-header app-window-chrome"></header>
+        <div class="workspace-shell__body">
+          <nav class="hub__nav" data-project-rail="hub" data-project-rail-state="${state}">${HEAD_ROW}</nav>
+          <div data-surface="${route}">${route === 'home'
+            ? '<div class="entry-shell entry-shell--no-header"><main class="entry-main__inner--home"></main></div>'
+            : '<div class="app"><div class="split"></div></div>'}</div>
+        </div>
       </div>`);
       const computed = (selector: string) => getComputedStyle(host.querySelector(selector) as HTMLElement);
       const shell = computed('.workspace-shell');
@@ -198,8 +207,12 @@ describe('rail head: one content origin below the chrome row', () => {
       const toggle = computed('[data-project-rail-toggle]');
       expect(shell.display).toBe('grid');
       expect(body.gridRow).toBe('2');
-      const firstTrack = shell.gridTemplateRows.match(/^var\(--app-window-chrome-height\)/)?.[0];
+      const firstTrack = shell.gridTemplateRows.match(/^(?:var\(--app-window-chrome-height(?:,\s*36px)?\)|[\d.]+px)/)?.[0];
       const contentOrigin = pixels(firstTrack ?? '');
+      expect(contentOrigin).toBe(36);
+      expect(contentOrigin).toBe(pixels(computed('.app-window-chrome').height));
+      expect(computed('[data-surface]').gridRow).toBe('1');
+      expect(rail.gridRow).toBe('1');
       const railTop = contentOrigin + pixels(rail.marginBlockStart || rail.marginTop);
       const top = pixels(head.paddingBlockStart || head.paddingTop);
       const bottom = pixels(head.paddingBlockEnd || head.paddingBottom);
