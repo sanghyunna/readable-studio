@@ -260,7 +260,7 @@ describe('FileWorkspace Questions placement', () => {
     expect(screen.queryByTestId('brief-card')).toBeNull();
     fireEvent.click(screen.getByTestId('questions-tab'));
     expect(screen.getAllByRole('dialog')).toHaveLength(1);
-    expect(screen.getByRole('listitem', { name: /buyers/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /buyers/ })).toBeTruthy();
   });
   it('does not permanently mount the project brief above the preview body', async () => {
     await renderWorkspace(
