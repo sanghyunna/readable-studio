@@ -59,6 +59,7 @@ export const en: Dict = {
   'window.maximize': 'Maximize',
   'window.restore': 'Restore',
   'questions.correctionFailed': 'Could not save this correction. Check the value and try again.',
+  'questions.unsavedDraft': 'Unsaved draft',
   'questions.empty': 'No questions yet. Project assumptions will appear here as the work takes shape.',
   'questions.title': 'Questions',
   'questions.description': 'These assumptions guide the work. Select any item to correct it.',

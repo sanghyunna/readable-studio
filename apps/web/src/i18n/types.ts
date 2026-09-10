@@ -63,6 +63,7 @@ export interface Dict {
 
   // Questions assumptions
   'questions.correctionFailed': string;
+  'questions.unsavedDraft': string;
   'questions.empty': string;
   'questions.title': string;
   'questions.description': string;

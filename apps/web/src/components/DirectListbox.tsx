@@ -24,6 +24,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type ReactNode,
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
 import { createPortal } from 'react-dom';
@@ -96,6 +97,16 @@ interface Props {
   /** Extra class for the trigger so a host surface can style it as its own field. */
   className?: string;
   testId?: string;
+  /** Host-owned field trigger; mounting opens the same list without a second trigger. */
+  anchorElement?: HTMLButtonElement;
+  onClose?: (returnFocus: boolean) => void;
+  /** Host persists before unmounting; also supports multi-value draft lists. */
+  keepOpenOnSelect?: boolean;
+  selectedValues?: string[];
+  maxSelections?: number;
+  footer?: ReactNode;
+  popoverClassName?: string;
+  listId?: string;
 }
 
 const OPTION_SELECTOR = '[role="option"]';
@@ -109,22 +120,32 @@ export function DirectListbox({
   disabled = false,
   className,
   testId,
+  anchorElement,
+  onClose,
+  keepOpenOnSelect = false,
+  selectedValues,
+  maxSelections,
+  footer,
+  popoverClassName,
+  listId: externalListId,
 }: Props) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(Boolean(anchorElement));
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(anchorElement ?? null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   // Option to focus once the list has mounted: the selection, else the first.
-  const pendingFocusRef = useRef<number | null>(null);
-  const listId = useId();
+  const pendingFocusRef = useRef<number | null>(anchorElement ? Math.max(0, options.findIndex(option => selectedValues ? selectedValues.includes(option.value) : option.value === value)) : null);
+  const generatedListId = useId();
+  const listId = externalListId ?? generatedListId;
 
   const selectedIndex = options.findIndex((option) => option.value === value);
   const selected = selectedIndex >= 0 ? options[selectedIndex] : undefined;
 
   const close = useCallback((returnFocus: boolean) => {
+    if (onClose) { onClose(returnFocus); return; }
     setOpen(false);
     if (returnFocus) triggerRef.current?.focus();
-  }, []);
+  }, [onClose]);
 
   const openList = useCallback(() => {
     if (disabled) return;
@@ -135,10 +156,12 @@ export function DirectListbox({
   const choose = useCallback(
     (index: number) => {
       const option = options[index];
-      if (option && option.value !== value) onChange(option.value);
-      close(true);
+      if (!option || disabled) return;
+      if (selectedValues && maxSelections !== undefined && !selectedValues.includes(option.value) && selectedValues.length >= maxSelections) return;
+      if (option.value !== value || keepOpenOnSelect) onChange(option.value);
+      if (!keepOpenOnSelect) close(true);
     },
-    [close, onChange, options, value],
+    [close, disabled, keepOpenOnSelect, maxSelections, onChange, options, selectedValues, value],
   );
 
   // Placement is measured, never assumed: the panel takes the trigger's width
@@ -155,7 +178,7 @@ export function DirectListbox({
       const panel = panelRef.current;
       if (!anchor || !panel) return;
       const anchorBox = anchor.getBoundingClientRect();
-      if (anchorBox.width > 0) panel.style.minWidth = `${anchorBox.width}px`;
+      if (anchorBox.width > 0) panel.style.minWidth = `${Math.min(anchorBox.width, window.innerWidth - 24, anchorElement ? 400 : Infinity)}px`;
       const width = panel.offsetWidth;
       if (width === 0) return;
       setPos(
@@ -256,7 +279,7 @@ export function DirectListbox({
         close(true);
         return;
       case 'Tab':
-        close(false);
+        if (!footer) close(false);
         return;
       default: {
         // Type-ahead: the next option (after the active one, wrapping) whose
@@ -279,7 +302,7 @@ export function DirectListbox({
 
   return (
     <>
-      <button
+      {anchorElement ? null : <button
         ref={triggerRef}
         type="button"
         role="combobox"
@@ -300,12 +323,12 @@ export function DirectListbox({
       >
         <span className="readable-studio-select-value">{selected?.label ?? placeholder}</span>
         <Icon name="chevron-down" size={12} />
-      </button>
+      </button>}
       {open && typeof document !== 'undefined'
         ? createPortal(
             <div
               ref={panelRef}
-              className="inline-switcher__popover inline-switcher__popover--layer inline-switcher__popover--model"
+              className={`inline-switcher__popover inline-switcher__popover--layer inline-switcher__popover--model${popoverClassName ? ` ${popoverClassName}` : ''}`}
               style={
                 pos === null
                   ? undefined
@@ -321,17 +344,20 @@ export function DirectListbox({
                 id={listId}
                 className="inline-switcher__model-list"
                 role="listbox"
+                aria-multiselectable={selectedValues ? true : undefined}
                 aria-label={label}
                 onKeyDown={handleListKeyDown}
               >
                 {options.map((option, index) => {
-                  const isSelected = index === selectedIndex;
+                  const isSelected = selectedValues ? selectedValues.includes(option.value) : index === selectedIndex;
+                  const maxed = selectedValues && maxSelections !== undefined && !isSelected && selectedValues.length >= maxSelections;
                   return (
                     <button
                       key={option.value}
                       type="button"
                       role="option"
                       aria-selected={isSelected}
+                      aria-disabled={disabled || maxed ? true : undefined}
                       className={`inline-switcher__model-option${isSelected ? ' is-active' : ''}`}
                       title={option.description ?? option.label}
                       onClick={() => choose(index)}
@@ -344,6 +370,7 @@ export function DirectListbox({
                   );
                 })}
               </div>
+              {footer}
             </div>,
             document.body,
           )

@@ -59,6 +59,7 @@ export const ko: Dict = {
   'window.maximize': '최대화',
   'window.restore': '복원',
   'questions.correctionFailed': '수정 사항을 저장하지 못했습니다. 값을 확인하고 다시 시도하세요.',
+  'questions.unsavedDraft': '저장하지 않은 수정',
   'questions.empty': '아직 질문이 없습니다. 작업이 진행되면 프로젝트 가정이 여기에 표시됩니다.',
   'questions.title': '질문',
   'questions.description': '이 가정은 작업의 방향을 정합니다. 수정할 항목을 선택하세요.',

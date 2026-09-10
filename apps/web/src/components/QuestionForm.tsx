@@ -29,6 +29,7 @@ interface Props {
   // this component's chat-era head so two title blocks in two design languages
   // never render together. Default keeps the standard chat rendering.
   hideInternalHead?: boolean;
+  listboxPopoverClassName?: string;
   draftAnswers?: Record<string, string | string[]>;
   onReadyChange?: (ready: boolean) => void;
   onDraftChange?: (answers: Record<string, string | string[]>) => void;
@@ -55,6 +56,7 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
     submittedQueued = false,
     hideInternalSubmit = false,
     hideInternalHead = false,
+    listboxPopoverClassName,
     draftAnswers,
     onReadyChange,
     onDraftChange,
@@ -221,6 +223,7 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
                 // ignored every product token and broke the form's look.
                 <DirectListbox
                   className="qf-select"
+                  popoverClassName={listboxPopoverClassName}
                   label={q.label}
                   options={q.options}
                   // Submitted history may carry the option label rather than

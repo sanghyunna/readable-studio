@@ -181,9 +181,9 @@ describe('queued question answer lifecycle', () => {
     ] } }); });
     expect(listActiveChatRuns).toHaveBeenCalledTimes(1);
     for (const [id, value] of [['fidelity', 'wireframe'], ['animations', 'yes'], ['fidelity', 'wireframe']]) {
-      const item = screen.getAllByRole('listitem').find(node => node.textContent?.includes(`questions.field.${id}`))!;
+      const item = screen.getAllByRole('button').find(node => node.textContent?.includes(`questions.field.${id}`))!;
       fireEvent.click(item);
-      fireEvent.change(within(screen.getByTestId('questions-panel')).getByRole('textbox'), { target: { value } });
+      fireEvent.change(within(document.querySelector<HTMLElement>('.questions-panel__popover')!).getByRole('textbox'), { target: { value } });
       await act(async () => { const apply = screen.getByRole('button', { name: 'questions.applyCorrection' }); fireEvent.click(apply); fireEvent.click(apply); });
     }
     expect(patchProject).toHaveBeenCalledTimes(3);
@@ -194,8 +194,8 @@ describe('queued question answer lifecycle', () => {
       expect.objectContaining({ id: 'animations', value: 'yes', provenance: 'stated' }),
     ]));
     expect(screen.getByTestId('questions-influence').dataset).toMatchObject({ count: '2', confirmed: '2' });
-    fireEvent.click(screen.getAllByRole('listitem').find(node => node.textContent?.includes('questions.field.fidelity'))!);
-    fireEvent.change(within(screen.getByTestId('questions-panel')).getByRole('textbox'), { target: { value: 'invalid' } });
+    fireEvent.click(screen.getAllByRole('button').find(node => node.textContent?.includes('questions.field.fidelity'))!);
+    fireEvent.change(within(document.querySelector<HTMLElement>('.questions-panel__popover')!).getByRole('textbox'), { target: { value: 'invalid' } });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'questions.applyCorrection' })); });
     expect(patchProject).toHaveBeenCalledTimes(3);
     expect(screen.getByRole('alert')).toBeTruthy();

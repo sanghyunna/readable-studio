@@ -1,12 +1,17 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../src/i18n', () => ({
-  useI18n: () => ({ locale: 'en', setLocale: () => undefined, t: (key: string) => key }),
-  useT: () => (key: string) => key,
-}));
+vi.mock('../../src/i18n', () => {
+  // Keep field/value/provenance in accessible names without pinning translated copy.
+  const t = (key: string, vars?: Record<string, string | number>) =>
+    [key, ...Object.values(vars ?? {})].join(' ');
+  return {
+    useI18n: () => ({ locale: 'en', setLocale: () => undefined, t }),
+    useT: () => t,
+  };
+});
 vi.mock('../../src/router', () => ({ navigate: vi.fn() }));
 vi.mock('../../src/providers/anthropic', () => ({ streamMessage: vi.fn() }));
 vi.mock('../../src/providers/daemon', () => ({
@@ -269,7 +274,7 @@ describe('brief receipt display boundary', () => {
     expect(screen.getByTestId('file-workspace-produced-count').textContent).toBe('1');
   });
 
-  it('proves the fixture leaks without consumption, then hides a complete receipt and its JSON', () => {
+  it('proves the fixture leaks without consumption, then hides a complete receipt and its JSON', async () => {
     const raw = assistant(`I’ll start with the deck.\n\n${receipt}\n\nBuilding the outline now.`);
 
     renderMessage(raw);
@@ -286,17 +291,42 @@ describe('brief receipt display boundary', () => {
     cleanup();
 
     const assumptions = parseBriefReceipt(raw.content);
-    expect(assumptions).toHaveLength(2);
-    render(
-      <QuestionsPanel
-        brief={{ assumptions: assumptions!, updatedAt: 1 }}
+    expect(assumptions).toMatchObject([
+      { id: 'output', value: 'Slide deck (논문 요약)', provenance: 'stated' },
+      { id: 'audience', value: 'Research leaders', provenance: 'inferred' },
+    ]);
+    function ReceiptQuestions() {
+      const [brief, setBrief] = useState({ assumptions: assumptions!, updatedAt: 1 });
+      return <QuestionsPanel
+        brief={brief}
         form={null} interactive={false} generating={false}
-        onCorrect={async () => true} onSubmit={() => {}}
-      />,
-    );
-    const stated = screen.getAllByRole('listitem', { hidden: true })
-      .find((item) => item.getAttribute('data-provenance') === 'stated');
-    expect(stated?.textContent).toContain('Slide deck (논문 요약)');
+        onCorrect={async next => { setBrief(next); return true; }} onSubmit={() => {}}
+      />;
+    }
+    render(<ReceiptQuestions />);
+    const stated = screen.getByRole('button', {
+      name: /questions\.field\.output Slide deck \(논문 요약\) questions\.provenance\.stated/,
+    });
+    expect(stated.dataset.provenance).toBe('stated');
+    expect(stated.textContent).toContain('Slide deck (논문 요약)');
+    const influence = screen.getByTestId('questions-influence');
+    expect(influence.dataset).toMatchObject({ count: '2', confirmed: '1' });
+
+    const inferred = screen.getByRole('button', {
+      name: /questions\.field\.audience Research leaders questions\.provenance\.inferred/,
+    });
+    expect(inferred.dataset.provenance).toBe('inferred');
+    fireEvent.click(inferred);
+    expect(screen.getByRole('textbox', { name: 'questions.question.audience' }))
+      .toHaveProperty('value', 'Research leaders');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'questions.applyCorrection' }));
+    });
+    expect(screen.getByRole('button', {
+      name: /questions\.field\.audience Research leaders questions\.provenance\.stated/,
+    }).dataset.provenance).toBe('stated');
+    expect(influence.dataset).toMatchObject({ count: '2', confirmed: '2' });
+    expect(stated.dataset.provenance).toBe('stated');
   });
 
   it('never flashes an opening tag split across streaming text events', () => {

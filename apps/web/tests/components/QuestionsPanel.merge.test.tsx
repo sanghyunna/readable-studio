@@ -12,18 +12,18 @@ const form = { id: 'source', title: 'Source', questions: [{ id: 'url', label: 'U
 afterEach(() => { cleanup(); window.sessionStorage.clear(); });
 
 describe('Questions merged surface', () => {
-  it('shows assumptions and live influence in one dialog and unmounts the summary during correction', () => {
+  it('keeps assumptions, influence and the primary form mounted during correction', () => {
     render(<QuestionsPanel brief={brief} onCorrect={vi.fn()} form={form} interactive generating={false} onSubmit={vi.fn()} />);
     expect(screen.getAllByRole('dialog')).toHaveLength(1);
     expect(screen.queryByTestId('brief-card')).toBeNull();
     expect(screen.getByTestId('questions-influence').dataset).toMatchObject({ count: '2', confirmed: '1' });
     fireEvent.change(screen.getByRole('textbox', { name: 'URL' }), { target: { value: 'https://example.com' } });
-    fireEvent.click(screen.getByRole('listitem', { name: /Audience: buyers/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Audience: buyers/ }));
     expect(screen.getAllByRole('dialog')).toHaveLength(1);
-    expect(screen.queryByRole('group')).toBeNull();
-    expect(screen.queryByRole('textbox', { name: 'URL' })).toBeNull();
+    expect(screen.getByRole('group', { name: 'Project assumptions' })).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: 'URL' })).toHaveProperty('value', 'https://example.com');
     expect(document.querySelector('.question-form-head')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /Back to questions/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(screen.getByRole('textbox', { name: 'URL' })).toHaveProperty('value', 'https://example.com');
     expect(screen.getAllByRole('listitem')).toHaveLength(2);
   });
@@ -37,7 +37,7 @@ describe('Questions merged surface', () => {
       form={null} interactive={false} generating={false} onSubmit={vi.fn()}
       runHydrationStatus={status} onRetryRunHydration={retry} />;
     const view = render(panel('pending'));
-    fireEvent.click(screen.getByRole('listitem', { name: /Audience: buyers/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Audience: buyers/ }));
     expect(screen.getByRole('button', { name: 'Apply correction' })).toHaveProperty('disabled', true);
     view.rerender(panel('failed'));
     fireEvent.click(screen.getByRole('button', { name: /retry/i }));

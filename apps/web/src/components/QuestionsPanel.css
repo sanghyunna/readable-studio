@@ -1,441 +1,172 @@
-/* Questions tab — the single document-generation intake surface.
-
-   Composition contract (order is the hierarchy):
-     1. The blocking question form leads the body and is the unmistakable
-        primary task — it sits first, on the translucent glass field, with the
-        solid Continue action pinned in the footer.
-     2. The merged Brief assumptions recede below it: secondary, correctable
-        context. One quiet section, translucent chips, no hard outlines.
-     3. The influence line is a compact orientation cue — plain text and an
-        accent dot, not a filled pill competing with the chips.
-     4. Summary -> single-field correction is one continuous panel: the summary
-        unmounts while the drill-in renders, so there is exactly one dialog and
-        one design language, never two stacked surfaces.
-
-   Material contract: the shared shell canvas/blooms stay perceptible. Fills
-   are translucent (color-mix over transparent), separation comes from soft
-   shadows, inset highlights and spacing — never 1px drawn lines. Primary
-   actions stay solid. No raw color literals; every value is a token. */
-
-.questions-panel__head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 20px 20px 0;
+/* Questions is a field ledger, not a card mosaic. The workspace owns chrome;
+   only its bounded body scrolls. One reading order at every container width. */
+.questions-panel {
+  min-inline-size: 0;
+  color: var(--text-strong);
+  container-type: inline-size;
 }
-
-.questions-panel__head > div {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
+.questions-panel__head { padding: 16px 20px 0; }
 .questions-panel__head h2 {
   margin: 0;
   color: var(--text-strong);
-  font-size: 17px;
+  font-size: 20px;
   font-weight: 650;
-  letter-spacing: -0.02em;
   line-height: 1.25;
+  letter-spacing: -0.02em;
 }
-
 .questions-panel__head p {
-  max-width: 34ch;
-  margin: 5px 0 0;
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.5;
-  text-wrap: pretty;
-}
-
-/* The back affordance on the correction step: quiet, ghost, optically aligned
-   with the title it returns from. */
-.questions-panel__head .ghost {
-  flex: 0 0 auto;
-}
-
-/* ---------------------------------------------------------------------------
-   Primary task: the blocking question form.
-   ------------------------------------------------------------------------- */
-
-.questions-panel__editor {
-  display: grid;
-  gap: 14px;
-  margin-top: 18px;
-  padding: 1px 3px 4px 1px;
-  overscroll-behavior: contain;
-}
-
-/* The primary form is the lead surface. It carries the glass field so the
-   shell canvas reads through, separated from the panel by depth and spacing
-   rather than a drawn border. The correction drill-in (same class, no
-   --primary modifier) stays quieter — it is a focused single-field step, not
-   the lead. */
-.questions-panel__editor--primary {
-  gap: 16px;
-  padding: 16px 16px 18px;
-  border: 0;
-  border-radius: var(--radius-lg);
-  background: color-mix(in oklch, var(--bg-elevated) 56%, transparent);
-  box-shadow:
-    inset 0 1px 0 color-mix(in oklch, var(--white) 30%, transparent),
-    var(--shadow-md);
-}
-
-/* Form title row: the form's own name plus the answered pill, in the panel's
-   type language (the chat-era head is suppressed by hideInternalHead). */
-.questions-panel__formhead {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 10px;
-}
-
-.questions-panel__formhead h3 {
-  margin: 0;
+  max-inline-size: 70ch;
+  margin: 4px 0 0;
   color: var(--text-strong);
-  font-size: 14px;
-  font-weight: 650;
-  letter-spacing: -0.015em;
-}
-
-.questions-panel__formhead p {
-  flex: 1 1 100%;
-  margin: 2px 0 0;
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.5;
-  text-wrap: pretty;
-}
-
-/* The answered pill, re-materialised borderless to sit in the formhead. */
-.questions-panel__formhead .question-form-pill {
-  border: 0;
-  background: color-mix(in oklch, var(--bg-subtle) 72%, transparent);
-  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--white) 26%, transparent);
-  color: var(--text-muted);
-}
-
-/* The shared question form drops its chat-era card chrome inside the panel:
-   borderless, transparent, no elevation of its own — the primary editor
-   wrapper owns the surface. */
-.questions-panel .questions-panel-body .question-form {
-  margin: 0;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.questions-panel .questions-panel-body .question-form-body {
-  gap: 16px;
-  padding: 0;
-}
-
-/* Fields stream in without a theatrical per-field slide; the panel is an
-   intake surface, not a reveal. Motion lives on interactive feedback only. */
-.questions-panel .questions-panel-body .qf-field {
-  animation: none;
-}
-
-/* Field labels: a clear small rung, sentence case, that reads as a label
-   rather than a shouted overline. */
-.questions-panel__editor .qf-label {
-  color: var(--text);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0;
-  text-transform: none;
-}
-
-/* Required fields outrank optional ones: the marker is a real accent rung
-   with an accessible name, not a bare asterisk lost beside the label. */
-.questions-panel__editor .qf-required {
-  color: var(--accent);
-  font-weight: 700;
-}
-
-.questions-panel__editor .qf-help {
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-/* Option chips and fields share one borderless material: translucent fill,
-   inset top highlight, soft shadow. Selected state is the accent tint with
-   stronger ink — fill and weight, never a drawn outline. */
-.questions-panel__editor .qf-chip {
-  border: 0;
-  border-radius: var(--radius-md);
-  background: color-mix(in oklch, var(--bg-subtle) 72%, transparent);
-  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--white) 26%, transparent), var(--shadow-sm);
-  color: var(--text);
-  font-size: 12px;
-  transition:
-    background var(--dur-quick) var(--ease-out),
-    transform var(--dur-quick) var(--ease-out),
-    box-shadow var(--dur-quick) var(--ease-out);
-}
-
-.questions-panel__editor .qf-chip:hover:not(:disabled) {
-  background: var(--bg-hover);
-  transform: translateY(-1px);
-}
-
-.questions-panel__editor .qf-chip:active:not(:disabled) {
-  transform: translateY(0);
-}
-
-.questions-panel__editor .qf-chip-on {
-  background: var(--accent-soft);
-  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--white) 34%, transparent), var(--shadow-sm);
-  color: var(--text-strong);
-  font-weight: 600;
-}
-
-.questions-panel__editor .qf-input,
-.questions-panel__editor .qf-textarea,
-.questions-panel__editor .qf-select {
-  border: 0;
-  border-radius: var(--radius-md);
-  background: color-mix(in oklch, var(--bg-subtle) 72%, transparent);
-  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--white) 26%, transparent), var(--shadow-sm);
-  color: var(--text-strong);
-  font: inherit;
   font-size: 13px;
-  transition: background var(--dur-quick) var(--ease-out), box-shadow var(--dur-quick) var(--ease-out);
+  line-height: 1.5;
+  text-wrap: pretty;
 }
-
-.questions-panel__editor .qf-input:focus-visible,
-.questions-panel__editor .qf-textarea:focus-visible,
-.questions-panel__editor .qf-select:focus-visible {
-  background: var(--bg-elevated);
-  box-shadow:
-    inset 0 1px 0 color-mix(in oklch, var(--white) 30%, transparent),
-    0 0 0 2px var(--selected-soft),
-    var(--shadow-sm);
-  outline: none;
+.questions-panel .questions-panel-body {
+  min-inline-size: 0;
+  min-block-size: 0;
+  padding: 12px 20px 20px;
+  overflow-y: auto;
 }
-
-/* The form's own footer (used on the correction step, where the panel's
-   Continue row is hidden) is re-materialised: no chat-surface border or fill. */
-.questions-panel__editor .question-form-foot {
-  gap: 12px;
-  margin-top: 4px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.questions-panel__editor .qf-hint {
-  color: var(--text-faint);
-  font-size: 11px;
-  line-height: 1.45;
-}
-
-.questions-panel__editor .question-form-foot .primary {
-  border: 0;
-  border-radius: var(--radius-pill);
-  background: var(--accent);
-  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--white) 26%, transparent), var(--shadow-sm);
-  color: var(--accent-contrast);
-  font-size: 12px;
-  font-weight: 650;
-}
-
-/* ---------------------------------------------------------------------------
-   Secondary context: the merged Brief assumptions.
-   ------------------------------------------------------------------------- */
-
-.questions-panel__groups {
+.questions-panel__content {
   display: grid;
-  gap: 14px;
-  margin-top: 22px;
-  padding: 1px 3px 4px 1px;
-  overscroll-behavior: contain;
+  gap: 24px;
+  max-inline-size: 70ch;
+  margin-inline: auto;
+  min-inline-size: 0;
+  padding: 16px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-panel);
+  box-shadow: inset 0 1px 0 var(--hub-control-highlight);
 }
-
-/* Influence evidence: a compact orientation cue, not a section banner. Plain
-   text with an accent dot — it informs without competing with the chips. */
-.questions-panel__influence {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.questions-panel__editor { display: grid; min-inline-size: 0; gap: 16px; }
+.questions-panel__formhead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.questions-panel__formhead h3,
+.questions-panel__group h3 {
   margin: 0;
-  padding: 0 2px;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-  color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 550;
+  color: var(--text-strong);
+  font-size: 16px;
+  font-weight: 650;
   line-height: 1.4;
 }
-
-.questions-panel__influence::before {
-  flex: 0 0 auto;
-  width: 6px;
-  height: 6px;
-  border-radius: var(--radius-pill);
-  background: var(--accent);
-  content: '';
-}
-
-.questions-panel__group h3 {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 0 8px;
-  color: var(--text-faint);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: none;
-}
-
-.questions-panel__group h3::before {
-  width: 6px;
-  height: 6px;
-  border-radius: var(--radius-pill);
-  background: var(--text-faint);
-  content: '';
-}
-
-.questions-panel__group h3[data-provenance='stated']::before { background: var(--accent); }
-.questions-panel__group h3[data-provenance='inferred']::before { background: var(--text-muted); }
-
-.questions-panel__chips {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-/* Assumption chips recede: translucent fill, inset highlight, soft shadow.
-   Stated (user-confirmed) chips carry the accent tint so confirmed context
-   reads at a glance without a drawn border. */
-.questions-panel__chip {
-  display: grid;
-  min-width: 0;
-  min-height: 56px;
-  padding: 10px 12px;
-  align-content: center;
-  gap: 3px;
+.questions-panel__formhead p { flex-basis: 100%; margin: 0; font-size: 13px; line-height: 1.5; }
+.questions-panel .questions-panel-body .question-form { margin: 0; border: 0; background: transparent; box-shadow: none; }
+.questions-panel .questions-panel-body .question-form-body { padding: 0; gap: 16px; }
+.questions-panel .questions-panel-body .qf-field { min-inline-size: 0; animation: none; }
+.questions-panel__editor .qf-label { color: var(--text-strong); font-size: 14px; font-weight: 600; text-transform: none; letter-spacing: 0; }
+.questions-panel__editor :is(.qf-help, .qf-hint, .qf-chip-desc, .qf-locked-note, .question-form-pill, .qf-required) { color: var(--text-strong); font-size: 13px; opacity: 1; }
+.questions-panel__editor :is(.qf-input, .qf-textarea, .qf-select, .qf-chip),
+.questions-panel__popover :is(.qf-input, .qf-textarea) {
+  box-sizing: border-box;
+  min-inline-size: 0;
+  max-inline-size: 100%;
   border: 0;
   border-radius: var(--radius-md);
-  background: color-mix(in oklch, var(--bg-subtle) 64%, transparent);
-  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--white) 26%, transparent), var(--shadow-sm);
-  color: var(--text);
-  cursor: pointer;
-  font: inherit;
-  text-align: start;
-  transition:
-    background var(--dur-quick) var(--ease-out),
-    transform var(--dur-quick) var(--ease-out),
-    box-shadow var(--dur-quick) var(--ease-out);
-}
-
-.questions-panel__chip:hover:not(:disabled) {
-  background: var(--bg-hover);
-  transform: translateY(-1px);
-}
-
-.questions-panel__chip:active:not(:disabled) {
-  transform: translateY(0);
-}
-
-.questions-panel__chip[data-provenance='stated'] {
-  background: color-mix(in oklch, var(--accent-soft) 70%, transparent);
-}
-
-.questions-panel__key {
-  overflow: hidden;
-  color: var(--text-muted);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.questions-panel__value {
-  display: -webkit-box;
-  overflow: hidden;
+  background: linear-gradient(var(--hub-control-engraved), var(--hub-control-engraved)), var(--bg);
+  box-shadow: var(--hub-control-engraved-shadow);
   color: var(--text-strong);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.35;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.5;
 }
-
-/* ---------------------------------------------------------------------------
-   Footer: status + the one solid primary action.
-   ------------------------------------------------------------------------- */
-
-.questions-panel .questions-panel-foot {
-  flex: 0 0 auto;
-  flex-wrap: wrap;
+.questions-panel__editor :is(.qf-input, .qf-textarea, .qf-select),
+.questions-panel__popover :is(.qf-input, .qf-textarea) { width: 100%; padding: 12px; }
+.questions-panel__editor .qf-chip { padding: 8px 12px; white-space: normal; overflow-wrap: anywhere; }
+.questions-panel__editor :is(.qf-input, .qf-textarea)::placeholder,
+.questions-panel__popover :is(.qf-input, .qf-textarea)::placeholder { color: var(--text-strong); opacity: 1; font-style: italic; }
+.questions-panel__editor .qf-select[data-placeholder] .readable-studio-select-value { color: var(--text-strong); font-style: italic; }
+.questions-panel__editor .qf-chip-on { box-shadow: inset 0 -2px 0 var(--text-strong), var(--hub-control-engraved-shadow); font-weight: 650; }
+.questions-panel__editor :is(.qf-card, .qf-card-title, .qf-card-mood, .qf-card-refs, .qf-card-pill) { color: var(--text-strong); background-color: var(--bg); }
+.questions-panel__editor .question-form-foot { padding: 0; border: 0; background: transparent; box-shadow: none; }
+.questions-panel__groups { display: grid; min-inline-size: 0; gap: 24px; }
+.questions-panel__influence { margin: 0; color: var(--text-strong); font-size: 13px; line-height: 1.5; font-variant-numeric: tabular-nums; }
+.questions-panel__group { min-inline-size: 0; }
+.questions-panel__group h3 { display: flex; align-items: baseline; gap: 8px; margin-block-end: 8px; }
+.questions-panel__group h3 > span { font-size: 13px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.questions-panel__rows { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; margin: 0; padding: 0; list-style: none; }
+.questions-panel__rows > li { min-inline-size: 0; }
+.questions-panel .questions-panel__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 12px;
+  width: 100%;
+  min-inline-size: 0;
+  min-block-size: 48px;
+  padding: 12px;
   border: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-/* Hydration/queue status owns a row instead of competing with two
-   non-shrinking actions for the last few pixels of a narrow panel. */
-.questions-panel .questions-panel-status:not(:empty) {
-  flex: 1 0 100%;
-  overflow-wrap: anywhere;
-}
-
-.questions-panel .questions-panel-status:empty {
-  display: none;
-}
-
-.questions-panel .questions-panel-foot > button {
-  max-width: 100%;
+  border-radius: var(--radius-md);
+  background: linear-gradient(var(--hub-control-engraved), var(--hub-control-engraved)), var(--bg);
+  box-shadow: var(--hub-control-engraved-shadow);
+  color: var(--text-strong);
+  text-align: start;
   white-space: normal;
-  overflow-wrap: anywhere;
+  font-family: var(--font);
+  transition: transform var(--dur-quick) var(--ease-out);
 }
-
-/* Skip stays a quiet secondary next to the solid Continue. */
-.questions-panel .questions-skip {
+.questions-panel .questions-panel__row:hover:not(:disabled) { box-shadow: var(--hub-control-engraved-shadow-hover); }
+.questions-panel .questions-panel__row:active:not(:disabled) { transform: translateY(1px); }
+.questions-panel__row > span { min-inline-size: 0; overflow-wrap: anywhere; }
+.questions-panel__key { color: var(--text-strong); font-size: 13px; font-weight: 400; line-height: 1.5; }
+.questions-panel__value { color: var(--text-strong); font-size: 14px; font-weight: 500; line-height: 1.5; }
+.questions-panel__row[data-provenance='stated'] .questions-panel__value { font-weight: 700; }
+.questions-panel__provenance { color: var(--text-strong); font-size: 13px; font-weight: 400; line-height: 1.5; }
+.questions-panel__row > svg { align-self: center; }
+.questions-panel__row[aria-expanded='true'] > svg { transform: rotate(180deg); }
+.questions-panel .questions-panel-foot { flex: 0 0 auto; flex-wrap: wrap; border: 0; background: transparent; box-shadow: none; }
+.questions-panel .questions-panel-status { color: var(--text-strong); }
+.questions-panel .questions-panel-status:not(:empty) { flex: 1 0 100%; overflow-wrap: anywhere; }
+.questions-panel .questions-panel-status:empty { display: none; }
+.questions-panel .questions-panel-foot > button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.questions-panel .questions-skip { border: 0; color: var(--text-strong); background: var(--bg-panel); box-shadow: var(--hub-control-shadow); }
+.questions-panel__popover.inline-switcher__popover {
+  box-sizing: border-box;
+  width: min(25rem, calc(100vw - 24px));
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
   border: 0;
-  background: color-mix(in oklch, var(--bg-subtle) 72%, transparent);
-  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--white) 26%, transparent), var(--shadow-sm);
+  border-radius: var(--radius-lg);
+  padding: 12px;
+  background: var(--bg);
+  color: var(--text-strong);
+  box-shadow: var(--shadow-lg);
+  font-family: var(--font);
+  font-size: 13px;
 }
-
-.questions-panel .questions-skip:hover:not(:disabled) {
-  background: var(--bg-hover);
+.questions-panel__popover--text { display: grid; gap: 12px; }
+.questions-panel__edit-label { font-size: 14px; font-weight: 600; }
+.questions-panel__popover p { margin: 0; line-height: 1.5; overflow-wrap: anywhere; }
+.questions-panel__edit-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-block-start: 12px; }
+.questions-panel__edit-actions > button { color: var(--text-strong); background: var(--bg-panel); box-shadow: var(--hub-control-shadow); }
+.questions-panel__popover .inline-switcher__model-option { min-height: 40px; color: var(--text-strong); }
+.questions-panel__popover .inline-switcher__model-option:hover,
+.questions-panel__popover .inline-switcher__model-option.is-active {
+  color: var(--text-strong);
+  background: linear-gradient(var(--hub-control-engraved), var(--hub-control-engraved)), var(--bg);
 }
-
-/* ---------------------------------------------------------------------------
-   Adaptive contracts.
-   ------------------------------------------------------------------------- */
-
-@media (max-width: 420px) {
-  .questions-panel__chips { grid-template-columns: 1fr; }
-  .questions-panel__editor--primary { padding: 14px 14px 16px; }
+.questions-panel__popover .inline-switcher__model-option-check { color: var(--text-strong); }
+.questions-panel :is(button, input, textarea):focus-visible,
+.questions-panel__popover :is(button, input, textarea):focus-visible {
+  outline: 2px solid var(--text-strong);
+  outline-offset: -2px;
 }
-
+@container (max-width: 540px) {
+  .questions-panel .questions-panel__row { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; }
+  .questions-panel__key { grid-column: 1; }
+  .questions-panel__value { grid-column: 1; }
+  .questions-panel__provenance { grid-column: 1; }
+  .questions-panel__row > svg { grid-column: 2; grid-row: 1 / 4; }
+  .questions-panel__content { padding: 12px; }
+  .questions-panel .questions-panel-body { padding-inline: 12px; }
+}
 @media (prefers-reduced-motion: reduce) {
-  .questions-panel__chip,
-  .questions-panel__editor .qf-chip,
-  .questions-panel__editor .qf-input,
-  .questions-panel__editor .qf-textarea,
-  .questions-panel__editor .qf-select { transition: none; }
-  .questions-panel__chip:hover:not(:disabled),
-  .questions-panel__editor .qf-chip:hover:not(:disabled) { transform: none; }
+  .questions-panel .questions-panel__row { transition: none; }
+  .questions-panel .questions-panel__row:active:not(:disabled) { transform: none; }
 }
-
-/* Reduced transparency: the shell canvas flattens, so the translucent fills
-   would read as muddy. Swap them for their opaque token equivalents. */
-@media (prefers-reduced-transparency: reduce) {
-  .questions-panel__editor--primary { background: var(--bg-elevated); }
-  .questions-panel__chip { background: var(--bg-subtle); }
-  .questions-panel__chip[data-provenance='stated'] { background: var(--accent-soft); }
-  .questions-panel__editor .qf-chip,
-  .questions-panel__editor .qf-input,
-  .questions-panel__editor .qf-textarea,
-  .questions-panel__editor .qf-select,
-  .questions-panel .questions-skip { background: var(--bg-subtle); }
+@media (forced-colors: active) {
+  .questions-panel .questions-panel__row,
+  .questions-panel__popover.inline-switcher__popover { outline: 1px solid ButtonText; }
+  .questions-panel :is(button, input, textarea):focus-visible,
+  .questions-panel__popover :is(button, input, textarea):focus-visible { outline-color: Highlight; }
 }

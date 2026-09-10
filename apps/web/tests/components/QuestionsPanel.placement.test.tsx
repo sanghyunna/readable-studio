@@ -4,29 +4,42 @@ import { resolve } from 'node:path';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { QuestionsPanel } from '../../src/components/QuestionsPanel';
+import { placePopover } from '../../src/components/popoverPlacement';
 import { I18nProvider } from '../../src/i18n';
 import { en } from '../../src/i18n/locales/en';
 import { ko } from '../../src/i18n/locales/ko';
 afterEach(cleanup);
-describe('Questions panel placement and locale', () => {
-  it.each(['en', 'ko'] as const)('keeps both steps inside the tab body in %s', locale => {
+describe('Questions anchored placement and locale', () => {
+  it.each(['en', 'ko'] as const)('preserves the summary while the localized editor is portaled in %s', locale => {
     const dict = locale === 'ko' ? ko : en;
     const view = render(<I18nProvider initial={locale}><QuestionsPanel form={null} interactive={false} generating={false}
       onSubmit={vi.fn()} onCorrect={async () => true} brief={{ updatedAt: 1, assumptions: [
         { id: 'audience', label: 'audience', value: 'buyers', provenance: 'default' },
       ] }} /></I18nProvider>);
     const panel = screen.getByRole('dialog');
-    expect(view.container.contains(panel)).toBe(true);
-    expect(panel.style.visibility).not.toBe('hidden');
-    expect(screen.getByTestId('questions-influence').textContent).toBe(dict['questions.influence'].replace('{count}', '1').replace('{stated}', '0'));
-    fireEvent.click(screen.getByRole('listitem'));
-    expect(screen.getByRole('textbox', { name: dict['questions.question.audience'] })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /buyers/ }));
+    const input = screen.getByRole('textbox', { name: dict['questions.question.audience'] });
+    expect(view.container.contains(input)).toBe(false);
     expect(screen.getByRole('dialog')).toBe(panel);
-    fireEvent.click(screen.getByRole('button', { name: dict['questions.backToSummary'] }));
-    expect(screen.getByRole('listitem')).toBeTruthy();
+    expect(screen.getByTestId('questions-influence').dataset.count).toBe('1');
+    fireEvent.click(screen.getByRole('button', { name: dict['common.cancel'] }));
+    expect(screen.queryByRole('textbox')).toBeNull();
   });
-  it('does not use a positioned overlay or viewport-sized popover inside the tab', () => {
+  it.each([375, 768, 1280])('clamps the actual placement function at %ipx without a screen-covering layer', width => {
+    const panelWidth = Math.min(400, width - 24);
+    const pos = placePopover({ left: width - 160, top: 450, width: 140, height: 48 }, { width: panelWidth, height: 220 }, { width, height: 700 });
+    expect(pos.left).toBeGreaterThanOrEqual(12);
+    expect(pos.left + panelWidth).toBeLessThanOrEqual(width - 12);
+    expect(pos.top).toBeGreaterThanOrEqual(12);
+    expect(pos.top + 220).toBeLessThanOrEqual(688);
+  });
+  it('keeps a single row stack, a bounded measure, wrapping values and no tab-blocking scrim', () => {
     const css = readFileSync(resolve(__dirname, '../../src/components/QuestionsPanel.css'), 'utf8');
-    expect(css).not.toMatch(/position:\s*(fixed|absolute)|z-index:|visibility:\s*hidden|pointer-events:\s*none/);
+    expect(css).toContain('grid-template-columns: minmax(0, 1fr)');
+    expect(css).toContain('max-inline-size: 70ch');
+    expect(css).toContain('@container (max-width: 540px)');
+    expect(css).toContain('overflow-wrap: anywhere');
+    expect(css).not.toMatch(/repeat\(2|inset:\s*0|pointer-events:\s*none/);
+    expect(css).not.toMatch(/#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(/);
   });
 });
