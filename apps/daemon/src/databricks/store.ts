@@ -49,11 +49,11 @@ export class DatabricksStore {
       for (const endpoint of [...generation.entries.map((entry) => entry.endpoint), ...generation.scans.flatMap((scan) => scan.endpoints)]) {
         endpoint.reasoningOptions = resolveDatabricksReasoningOptions(endpoint.api,
           (endpoint.servedModelName?.split(', ') ?? []).map((name) => ({ name })));
-        if (!endpoint.capabilities.limitSources) {
+        if (!endpoint.capabilities.limitSources || endpoint.capabilities.contextWindow === null || endpoint.capabilities.maxTokens === null) {
           const resolved = resolveDatabricksCapabilities({}, (endpoint.servedModelName?.split(', ') ?? []).map((name) => ({ name, metadata: {} })));
           endpoint.capabilities = { ...resolved, ...endpoint.capabilities, limitSources: {
-            contextWindow: endpoint.capabilities.contextWindow === null ? resolved.limitSources!.contextWindow : 'metadata',
-            maxTokens: endpoint.capabilities.maxTokens === null ? resolved.limitSources!.maxTokens : 'metadata',
+            contextWindow: endpoint.capabilities.contextWindow === null ? resolved.limitSources!.contextWindow : endpoint.capabilities.limitSources?.contextWindow ?? 'metadata',
+            maxTokens: endpoint.capabilities.maxTokens === null ? resolved.limitSources!.maxTokens : endpoint.capabilities.limitSources?.maxTokens ?? 'metadata',
           }, contextWindow: endpoint.capabilities.contextWindow ?? resolved.contextWindow,
           maxTokens: endpoint.capabilities.maxTokens ?? resolved.maxTokens };
         }

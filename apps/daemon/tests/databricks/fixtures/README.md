@@ -1,5 +1,18 @@
 ## Databricks fixtures
 
+`foundation-claude.json` is synthetic, based on the owner's 2026-09-14
+serving-endpoint lookup: `task: llm/v1/chat`, with no API-type arrays.
+The served identity is placed in the documented serving-endpoint
+`config.served_entities[].entity_name` field; that container is not claimed as
+an owner capture. State follows the recorded serving inventory below.
+The Messages-advertising variant uses the API strings from the recorded UC GET;
+it is a compatibility scenario, not proof that legacy serving endpoints advertise
+Messages. Public Databricks docs distinguish legacy OpenAI-compatible serving
+from native model-service Messages at `/ai-gateway/anthropic/v1/messages`:
+https://docs.databricks.com/aws/en/machine-learning/model-serving/score-foundation-models
+https://docs.databricks.com/aws/en/ai-gateway/model-services
+
+
 Limit discovery audit (2026-09-11): the recorded UC model-service GET below has
 only identity, timestamps, routing and supported API types; its live target
 contains `model` and `native_api_types`, not token limits. The recorded serving

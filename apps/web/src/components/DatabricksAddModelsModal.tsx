@@ -62,6 +62,8 @@ import { openExternalUrl } from '../providers/registry';
 import {
   notifyDatabricksModelsChanged,
   registeredEndpointToModelOption,
+  databricksProtocolDescription,
+  databricksLimitDescription,
 } from './databricksModels';
 import { Icon } from './Icon';
 import styles from './DatabricksAddModelsModal.module.css';
@@ -145,7 +147,7 @@ function kindLabel(t: Translate, kind: DatabricksEndpointKind): string {
 }
 
 function apiLabel(t: Translate, api: DatabricksEndpointApi): string {
-  if (api === 'openai-completions') return t('databricks.api.openai');
+  if (api === 'openai-completions') return 'OpenAI-compatible Chat';
   if (api === 'anthropic-messages') return t('databricks.api.anthropic');
   return t('databricks.api.unknown');
 }
@@ -1176,6 +1178,8 @@ function DatabricksAddModelsModalBody({
                                 <span className={styles.pill}>{t('databricks.capability.images')}</span>
                               ) : null}
                             </span>
+                            <small>{databricksProtocolDescription(endpoint)}</small>
+                            <small>{databricksLimitDescription(endpoint)}</small>
                             {issueText ? <span className={styles.rowIssue}>{issueText}</span> : null}
                             {rowErrors[endpoint.id] ? (
                               <span className={styles.rowError} role="alert">

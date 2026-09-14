@@ -16,7 +16,22 @@ import type {
   AgentInfo,
   AgentModelOption,
   DatabricksRegisteredEndpoint,
+  DatabricksEndpoint,
 } from '@readable-studio/contracts';
+
+export function databricksProtocolDescription(endpoint: DatabricksEndpoint): string {
+  const transport = endpoint.api === 'anthropic-messages' ? 'Anthropic Messages'
+    : endpoint.api === 'openai-completions' ? 'OpenAI-compatible Chat Completions' : 'Protocol unverified';
+  const evidence = endpoint.protocolEvidence;
+  if (!evidence) return `${transport}. Protocol evidence unavailable; rescan to refresh.`;
+  if (evidence.reason === 'chat-task') return `${transport}. Endpoint reports task llm/v1/chat, without API types; this is a transport, not the model family.`;
+  return `${transport}. Advertised: ${evidence.advertised.join(', ') || 'none'}. Native: ${evidence.native.join(', ') || 'not reported'}.${evidence.reason === 'prefer-messages' ? ' Messages preferred to preserve native thinking and tools.' : ''}`;
+}
+
+export function databricksLimitDescription(endpoint: DatabricksEndpoint): string {
+  const { capabilities } = endpoint;
+  return `Context: ${capabilities.contextWindow === null ? 'unknown - not reported or recognized; local planning estimate only' : capabilities.limitSources?.contextWindow ?? 'source unavailable'}. Output: ${capabilities.maxTokens === null ? 'unknown - endpoint default; a required budget is negotiated within the run' : capabilities.limitSources?.maxTokens ?? 'source unavailable'}. Explicit output-ceiling rejections are adapted within the run.`;
+}
 
 export const DATABRICKS_AGENT_ID = 'databricks';
 

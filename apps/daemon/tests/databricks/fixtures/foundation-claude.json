@@ -1,0 +1,9 @@
+{
+  "kind": "serving-endpoint",
+  "name": "system.ai.databricks-claude-sonnet-5",
+  "metadata": {
+    "task": "llm/v1/chat",
+    "state": { "ready": "READY" },
+    "config": { "served_entities": [{ "entity_name": "databricks-claude-sonnet-5" }] }
+  }
+}

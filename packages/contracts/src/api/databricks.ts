@@ -43,7 +43,7 @@ export interface DatabricksCapabilities {
   /** Optional only for catalogues/clients predating automatic limit discovery. */
   limitSources?: {
     contextWindow: 'metadata' | 'model-table' | 'unknown';
-    maxTokens: 'metadata' | 'model-table' | 'unknown';
+    maxTokens: 'metadata' | 'model-table' | 'unknown' | 'endpoint';
   };
 }
 
@@ -86,6 +86,12 @@ export interface DatabricksEndpoint {
   kind: DatabricksEndpointKind;
   availability: DatabricksAvailability;
   api: DatabricksEndpointApi;
+  /** Allowlisted wire evidence only; absent on older catalogues (rescan to refresh). */
+  protocolEvidence?: {
+    advertised: string[];
+    native: string[];
+    reason: 'native-api' | 'advertised-api' | 'prefer-messages' | 'chat-task' | 'unresolved';
+  };
   /** Registered with Readable, not selected or enabled remotely. */
   enabled: boolean;
   /** Opaque app provider/model alias, never the upstream model selector. */

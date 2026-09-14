@@ -498,7 +498,7 @@ describe('CLI and expiry boundaries', () => {
     expect(classifyProtocol({ kind: 'uc-model-service', name: 'claude-openai-gpt', metadata: {} })).toBeNull();
     const contradictory = structuredClone(claude);
     contradictory.config.routing.destinations[0].external_model_config.target.native_api_types = [];
-    expect(classifyProtocol({ kind: 'uc-model-service', name: claude.name, metadata: contradictory })).toBeNull();
+    expect(classifyProtocol({ kind: 'uc-model-service', name: claude.name, metadata: contradictory })).toBe('anthropic-messages');
     expect(classifyProtocol({ kind: 'uc-model-service', name: 'arbitrary-name', metadata: claude })).toBe('anthropic-messages');
   });
 });

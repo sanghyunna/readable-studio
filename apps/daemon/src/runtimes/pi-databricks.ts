@@ -63,9 +63,8 @@ export function renderDatabricksPiProvider(
             id: relay.modelAlias, name: relay.modelAlias,
             reasoning: true,
             input: runtime.capabilities.images === 'supported' ? ['text', 'image'] : ['text'],
-            // Pi's optional custom-model fields still resolve to 128K context and 16K output
-            // in provider-composer.js. Keep unknown registered limits null for the daemon/UI,
-            // but render the high, disclosed fallback instead of accepting those silent defaults.
+            // Pi requires numeric planning limits. Unknown catalogue maxima stay null;
+            // the relay strips speculative output budgets before any upstream request.
             ...effectiveDatabricksLimits(runtime.capabilities),
             cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
             thinkingLevelMap,

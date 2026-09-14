@@ -21,6 +21,23 @@ export interface DatabricksRelayOptions {
 
 const MAX_BODY_BYTES = 32 * 1024 * 1024;
 const MAX_FRAME_BYTES = 4 * 1024 * 1024;
+const OUTPUT_FIELDS = ['max_completion_tokens', 'max_tokens', 'max_output_tokens', 'max_new_tokens'] as const;
+
+/** Recognize validation grammar, not arbitrary numbers in upstream prose. */
+function outputCeiling(message: string): number | undefined {
+  const field = '(?:max_new_tokens|max_output_tokens|max_completion_tokens|max_tokens)';
+  const patterns = [
+    new RegExp(`\\b${field}\\s+\\d+\\s+cannot be greater than\\s+${field}\\s+(\\d+)`, 'i'),
+    new RegExp(`\\b${field}\\s*:?\\s*(?:\\d+\\s*)?(?:must be|must be less than|cannot be|should be)?\\s*(?:less than or equal to|at most|<=)\\s*(\\d+)`, 'i'),
+    new RegExp(`\\b${field}\\s*:\\s*\\d+\\s*>\\s*(\\d+)(?:\\s*[,.;]|\\s*$)`, 'i'),
+  ];
+  for (const pattern of patterns) {
+    const match = pattern.exec(message);
+    const limit = match ? Number(match[1]) : NaN;
+    if (Number.isSafeInteger(limit) && limit > 0) return limit;
+  }
+  return undefined;
+}
 const relayError = (detail: DatabricksFailureDetail) => ({ type: 'error', error: { type: 'api_error', ...detail } });
 class UpstreamStreamError extends Error {
   constructor(readonly detail: DatabricksFailureDetail) { super(detail.message); }
@@ -168,10 +185,12 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
   };
   // Endpoint-local wire capabilities learned from authoritative pre-inference
   // rejections. Never infer OpenAI passthrough support from MLflow API metadata.
-  // Retained for every tool round in this relay; a new run rechecks deployment changes.
-  let responsesUnsupported = false;
-  let chatTokensField: 'max_completion_tokens' | 'max_tokens' = 'max_completion_tokens';
-  let chatOutputLimit: number | undefined;
+  // Persisted beside registration; fresh metadata invalidates the learned recipe.
+  let responsesUnsupported = runtime.wireCapabilities?.responsesUnsupported ?? false;
+  let chatTokensField = runtime.wireCapabilities?.chatTokensField ?? 'max_completion_tokens';
+  let outputLimit = runtime.wireCapabilities?.outputLimit;
+  let requiredOutputBudget = runtime.wireCapabilities?.requiredOutputBudget ?? false;
+  const omittedFields = new Set<string>(runtime.wireCapabilities?.omittedFields);
   const active = new Set<AbortController>();
   const requests = new Set<Promise<void>>();
   let closed = false;
@@ -333,7 +352,13 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
       let result: Response;
       let rejected: unknown;
       let parameterHint: string | undefined;
-      // At most three measured adaptations: route, token field, output ceiling.
+      const corrections = new Set<string>();
+      const correctOnce = (correction: string) => {
+        if (corrections.has(correction)) return false;
+        corrections.add(correction);
+        return true;
+      };
+      // At most four measured adaptations: route, token field, required budget, ceiling.
       // Only explicit HTTP 400 validation failures are replayed; never a stream,
       // transport failure, rate limit, or a possibly completed inference.
       for (let attempt = 0; ; attempt++) {
@@ -344,10 +369,17 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
             wire.max_tokens = wire.max_completion_tokens;
             delete wire.max_completion_tokens;
           }
-          if (chatOutputLimit !== undefined) for (const field of ['max_tokens', 'max_completion_tokens']) {
-            if (typeof wire[field] === 'number') wire[field] = Math.min(wire[field], chatOutputLimit);
-          }
         }
+        // Pi needs numeric planning limits, but unknown maxima must never escape
+        // as speculative wire budgets. Messages may require one: negotiate a
+        // conservative starting budget only after an explicit required-field 400.
+        for (const field of OUTPUT_FIELDS) {
+          if (runtime.capabilities.maxTokens === null && !requiredOutputBudget && outputLimit === undefined) delete wire[field];
+          else if (typeof wire[field] === 'number' && outputLimit !== undefined) wire[field] = Math.min(wire[field], outputLimit);
+        }
+        const outputField = anthropic ? 'max_tokens' : responses ? 'max_output_tokens' : chatTokensField;
+        if (runtime.capabilities.maxTokens === null && requiredOutputBudget) wire[outputField] = Math.min(4096, outputLimit ?? 4096);
+        for (const field of omittedFields) delete wire[field];
         result = await upstreamFetch(responses ? new URL(`${runtime.baseUrl}/responses`) : upstream, {
           method: 'POST', redirect: 'error', signal: controller.signal,
           headers, body: JSON.stringify({ ...wire, model: runtime.model }),
@@ -368,23 +400,41 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
         if (named.length) parameterHint = `Rejected parameter: ${named.join(', ')}.`;
         if (responses && /^Responses API passthrough is not supported for model /.test(message)) {
           parameterHint = 'The endpoint does not support Responses API passthrough.';
-          if (attempt < 3) { responsesUnsupported = true; responses = false; continue; }
+          if (attempt < 4 && correctOnce('chat-route')) { responsesUnsupported = true; responses = false; continue; }
         }
-        if (!anthropic && !responses && attempt < 3) {
-          if (/unknown field "max_completion_tokens"/.test(message) && wire.max_completion_tokens !== undefined) {
-            chatTokensField = 'max_tokens';
+        if (attempt < 4) {
+          if (!anthropic && !responses && /Function tools with reasoning_effort are not supported/i.test(message)
+            && /(?:use|through)\s+\/?(?:v1\/)?responses\b/i.test(message) && correctOnce('responses-route')) {
+            responsesUnsupported = false;
+            responses = true;
             continue;
           }
-          const ceiling = /^max_new_tokens \d+ cannot be greater than max_output_tokens (\d+)\.\s*$/.exec(message);
-          const limit = ceiling ? Number(ceiling[1]) : NaN;
-          const requested = wire.max_tokens ?? wire.max_completion_tokens;
-          if (Number.isSafeInteger(limit) && limit > 0 && typeof requested === 'number' && limit < requested) {
-            chatOutputLimit = limit;
+          const unknown = /(?:unknown field|unrecognized (?:request )?(?:argument|field)|unsupported parameter)\s*:?\s*["'](max_completion_tokens|max_tokens|max_output_tokens|stream_options)["']/i.exec(message)?.[1];
+          if (unknown && wire[unknown] !== undefined && correctOnce(`field:${unknown}`)) {
+            if (!anthropic && !responses && unknown === 'max_completion_tokens') chatTokensField = 'max_tokens';
+            else omittedFields.add(unknown);
+            continue;
+          }
+          if (runtime.capabilities.maxTokens === null && wire[outputField] === undefined && !requiredOutputBudget
+            && new RegExp(`(?:\\b${outputField}\\b["']?\\s*:\\s*Field required|["']?\\b${outputField}\\b["']?\\s+(?:is )?required)`, 'i').test(message)) {
+            corrections.add('required-budget');
+            requiredOutputBudget = true;
+            omittedFields.delete(outputField);
+            continue;
+          }
+          const limit = outputCeiling(message);
+          const requested = wire[outputField];
+          if (limit !== undefined && typeof requested === 'number' && limit < requested && correctOnce(`ceiling:${limit}`)) {
+            outputLimit = limit;
             continue;
           }
         }
         break;
       }
+      if (result.ok && corrections.size) await runtime.onCapabilitiesLearned?.({
+        responsesUnsupported, chatTokensField, ...(outputLimit === undefined ? {} : { outputLimit }), requiredOutputBudget,
+        omittedFields: [...omittedFields],
+      });
       if (!result.ok) {
         const original = upstreamFailure(result.status, rejected, privateValues);
         const detail = parameterHint ? failureDetail(original.reason, result.status, parameterHint) : original;

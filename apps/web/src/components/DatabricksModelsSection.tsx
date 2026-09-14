@@ -18,7 +18,7 @@ import {
   fetchDatabricksModels,
   fetchDatabricksStatus,
 } from '../providers/databricks';
-import { notifyDatabricksModelsChanged, registeredEndpointToModelOption } from './databricksModels';
+import { notifyDatabricksModelsChanged, registeredEndpointToModelOption, databricksProtocolDescription, databricksLimitDescription } from './databricksModels';
 import { Icon } from './Icon';
 import styles from './DatabricksModelsSection.module.css';
 
@@ -234,6 +234,8 @@ export function DatabricksModelsSection() {
                           ? t('settings.databricksModelsOutput', { value: output })
                           : t('settings.databricksModelsLimitUnknown')}
                       </small>
+                      <small className={styles.rowMeta}>{databricksProtocolDescription(model)}</small>
+                      <small className={styles.rowMeta}>{databricksLimitDescription(model)}</small>
                       {rowError?.id === model.id ? (
                         <span className="settings-rescan-status-inline error" role="alert">
                           {rowError.message}

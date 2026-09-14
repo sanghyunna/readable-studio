@@ -4,8 +4,18 @@ import type { DiscoveredResource } from './scan.js';
 import { databricksEndpointLabel, resolveDatabricksCapabilities, resolveDatabricksReasoningOptions } from './capabilities.js';
 
 /** Daemon-private catalogue: routing and UI identities, never arbitrary upstream metadata. */
+export interface DatabricksWireCapabilities {
+  responsesUnsupported: boolean;
+  chatTokensField: 'max_completion_tokens' | 'max_tokens';
+  outputLimit?: number;
+  requiredOutputBudget: boolean;
+  omittedFields: string[];
+}
+
 export interface CatalogueEntry {
   endpoint: DatabricksEndpoint;
+  configurationId?: string;
+  wireCapabilities?: DatabricksWireCapabilities;
   upstreamName: string;
   basePath: string;
 }
@@ -20,8 +30,9 @@ function record(value: unknown): Record<string, unknown> {
 function strings(value: unknown): string[] { return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : []; }
 
 /** Protocol is selected from wire metadata, never from a model/provider name. */
-export function classifyProtocol(resource: DiscoveredResource): DatabricksEndpointApi {
-  const supported = strings(resource.metadata.supported_api_types);
+function protocolDecision(resource: DiscoveredResource): { api: DatabricksEndpointApi; evidence: NonNullable<DatabricksEndpoint['protocolEvidence']> } {
+  const allowed = ['anthropic/v1/messages', 'openai/v1/chat/completions', 'mlflow/v1/chat/completions', 'openai/v1/responses', 'mlflow/v1/responses'];
+  const supported = strings(resource.metadata.supported_api_types).filter((api) => allowed.includes(api));
   const destinations = record(record(resource.metadata.config).routing).destinations;
   const native: string[] = [];
   if (Array.isArray(destinations)) {
@@ -33,12 +44,20 @@ export function classifyProtocol(resource: DiscoveredResource): DatabricksEndpoi
   }
   const anthropic = supported.includes('anthropic/v1/messages');
   const openai = supported.some((api) => ['openai/v1/chat/completions', 'mlflow/v1/chat/completions'].includes(api));
-  if (anthropic && native.length > 0 && native.every((api) => api === 'anthropic/v1/messages')) return 'anthropic-messages';
-  if (anthropic && !openai) return 'anthropic-messages';
-  if (openai && !anthropic) return 'openai-completions';
-  if (openai && native.length > 0 && native.every((api) => api === 'openai/v1/chat/completions')) return 'openai-completions';
-  if (resource.kind === 'serving-endpoint' && resource.metadata.task === 'llm/v1/chat') return 'openai-completions';
-  return null;
+  const decision = (api: DatabricksEndpointApi, reason: NonNullable<DatabricksEndpoint['protocolEvidence']>['reason']) =>
+    ({ api, evidence: { advertised: supported, native: native.filter((api) => allowed.includes(api)), reason } });
+  if (anthropic && native.length > 0 && native.every((api) => api === 'anthropic/v1/messages')) return decision('anthropic-messages', 'native-api');
+  if (openai && native.length > 0 && native.every((api) => api === 'openai/v1/chat/completions')) return decision('openai-completions', 'native-api');
+  if (anthropic && !openai) return decision('anthropic-messages', 'advertised-api');
+  if (openai && !anthropic) return decision('openai-completions', 'advertised-api');
+  // Both surfaces are advertised: avoid translating native thinking/tool blocks.
+  if (anthropic && openai && !native.length) return decision('anthropic-messages', 'prefer-messages');
+  if (!strings(resource.metadata.supported_api_types).length && resource.kind === 'serving-endpoint' && resource.metadata.task === 'llm/v1/chat') return decision('openai-completions', 'chat-task');
+  return decision(null, 'unresolved');
+}
+
+export function classifyProtocol(resource: DiscoveredResource): DatabricksEndpointApi {
+  return protocolDecision(resource).api;
 }
 
 /** Read only model identity fields, not destination aliases or provider credentials. */
@@ -74,7 +93,7 @@ function servedModels(resource: DiscoveredResource): Array<{ name?: string; meta
 
 export function normalizeResource(secret: string, profileId: string, resource: DiscoveredResource, previous?: CatalogueEntry): CatalogueEntry {
   const id = opaqueId(secret, 'dbe', profileId, resource.kind, resource.name);
-  const api = classifyProtocol(resource);
+  const { api, evidence: protocolEvidence } = protocolDecision(resource);
   const ready = record(resource.metadata.state).ready;
   const unavailable = ready != null && ready !== 'READY';
   const models = servedModels(resource);
@@ -84,16 +103,22 @@ export function normalizeResource(secret: string, profileId: string, resource: D
     id, profileId, label: databricksEndpointLabel(modelName ?? resource.name), displayName: resource.name,
     ...(modelName ? { servedModelName: modelName } : {}),
     kind: resource.kind, availability: unavailable ? 'unavailable' : api ? 'compatible' : 'verification-required',
-    api, enabled: previous?.endpoint.enabled ?? false,
+    api, protocolEvidence, enabled: previous?.endpoint.enabled ?? false,
     appModelId: opaqueId(secret, 'dbm', id),
     capabilities,
     evidence: Object.values(capabilities.limitSources!).includes('model-table') ? 'recipe' : 'metadata',
     reasoningOptions: resolveDatabricksReasoningOptions(api, models),
     ...(!api ? { issue: { code: 'DATABRICKS_VERIFICATION_REQUIRED' as const, action: 'verify' as const, retryable: false } } : {}),
   };
+  const configurationId = opaqueId(secret, 'dbcfg', JSON.stringify(resource.metadata));
+  if (previous?.configurationId === configurationId && previous.wireCapabilities?.outputLimit !== undefined) {
+    endpoint.capabilities.maxTokens = previous.wireCapabilities.outputLimit;
+    endpoint.capabilities.limitSources!.maxTokens = 'endpoint';
+  }
   return {
-    endpoint, upstreamName: resource.name,
-    basePath: resource.kind === 'serving-endpoint' ? '/serving-endpoints'
-      : api === 'anthropic-messages' ? '/ai-gateway/anthropic' : '/ai-gateway/openai/v1',
+    endpoint, upstreamName: resource.name, configurationId,
+    ...(previous?.configurationId === configurationId && previous.wireCapabilities ? { wireCapabilities: previous.wireCapabilities } : {}),
+    basePath: api === 'anthropic-messages' ? '/ai-gateway/anthropic'
+      : resource.kind === 'serving-endpoint' ? '/serving-endpoints' : '/ai-gateway/openai/v1',
   };
 }

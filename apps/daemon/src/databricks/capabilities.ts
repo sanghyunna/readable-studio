@@ -29,11 +29,9 @@ const MODEL_LIMITS = [
 ] as const;
 
 /**
- * Pi requires numeric budgets even when the workspace/model reports none.
- * Use the current long-document Sonnet budget rather than silently truncating
- * at 4K. These are NOT claimed model maxima: null + unknown provenance remains
- * in the catalogue, and the model list explicitly marks unknown limits.
- * An upstream with lower limits may reject it; we never retry with a hidden cap.
+ * Pi requires numeric planning budgets. These are NOT wire budgets or claimed
+ * maxima: the relay removes unknown output budgets and negotiates if required.
+ * Null + unknown provenance remains in the catalogue.
  */
 const UNKNOWN_LIMITS = { contextWindow: 1_000_000, maxTokens: 128_000 };
 
@@ -56,6 +54,13 @@ export function resolveDatabricksReasoningOptions(
   const levels = recipes[0]?.levels ?? [];
   return levels.filter((level) => recipes.every((recipe) => recipe?.levels.includes(level)))
     .map((id) => ({ id, label: EFFORT_LABELS[id]! }));
+}
+
+/** Strip only known registries/vendors and dated releases, never arbitrary aliases or model versions. */
+export function normalizeDatabricksModelIdentity(name: string): string {
+  return name.trim().toLowerCase().replace(/^system\.ai\./, '')
+    .replace(/^(?:anthropic|openai)\//, '').replace(/^databricks-/, '')
+    .replace(/-(?:20\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])|20\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01]))$/, '');
 }
 
 type Limits = Pick<DatabricksCapabilities, 'contextWindow' | 'maxTokens'>;
@@ -91,7 +96,7 @@ export function resolveDatabricksCapabilities(
   const reported = metadataLimits(metadata);
   const resolved = models.map((model) => {
     const limits = metadataLimits(model.metadata);
-    const known = MODEL_LIMITS.find((entry) => entry.names.some((name) => name === model.name?.trim().toLowerCase()));
+    const known = MODEL_LIMITS.find((entry) => entry.names.some((name) => name === (model.name ? normalizeDatabricksModelIdentity(model.name) : undefined)));
     return { limits, known };
   });
   const field = (key: keyof Limits): { value: number | null; source: Source } => {

@@ -26,7 +26,7 @@ function foundationFetch(requests: Array<{ route: string; body: any }>): typeof 
     if (route.endsWith('/responses')) return Response.json(unsupportedResponses, { status: 400 });
     if (body.max_completion_tokens !== undefined) return Response.json(unknownTokens, { status: 400 });
     if (body.max_tokens > 25000) return Response.json(outputCeiling, { status: 400 });
-    assert.equal(body.max_tokens, 25000);
+    assert.ok(body.max_tokens === undefined || body.max_tokens === 25000);
     assert.ok(body.tools.every((tool: any) => tool.type === 'function' && tool.function));
     assert.ok(Array.isArray(body.messages));
     return body.stream ? new Response(stream, { headers: { 'content-type': 'text/event-stream' } }) : Response.json(completion);
@@ -71,9 +71,8 @@ test('real Pi renders unknown foundation limits, negotiates its wire shape and e
     await run.completed;
     assert.equal(run.session.hasFatalError(), false);
     assert.equal(events.filter(x => x.type === 'text_delta').map(x => x.delta).join(''), 'FOUNDATION_OK');
-    assert.equal(requests.length, 4);
-    assert.equal(requests[0]!.body.max_output_tokens, 128000);
-    assert.equal(requests.at(-1)!.body.max_tokens, 25000);
+    assert.equal(requests.length, 2);
+    for (const request of requests) for (const field of ['max_tokens', 'max_completion_tokens', 'max_output_tokens']) assert.equal(request.body[field], undefined);
     assert.equal(requests.at(-1)!.body.reasoning_effort, undefined);
     assert.equal(requests.at(-1)!.body.tools.length, 4);
   } finally {
