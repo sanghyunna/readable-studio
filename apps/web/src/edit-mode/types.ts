@@ -171,6 +171,13 @@ export interface ManualEditTargetMessage {
 export interface ManualEditSelectMessage {
   type: 'readable-edit-select';
   target: ManualEditTarget;
+  /** Double-click requests text entry after the normal selection/save funnel. */
+  beginTextEdit?: boolean;
+}
+
+export interface ManualEditDeselectMessage {
+  type: 'readable-edit-deselect';
+  id: string;
 }
 
 export interface ManualEditHoverMessage {
@@ -340,7 +347,7 @@ export interface ManualEditNudgeKeyupMessage {
 // typography toolbar can enable + show pressed state for B/I/U.
 export interface ManualEditSelectionStateMessage {
   type: 'readable-edit-selection-state';
-  editing: boolean;       // an element is in a rich (contenteditable="true") edit session
+  editing: boolean;       // an element is in a rich or plain-text edit session
   hasSelection: boolean;  // a non-collapsed selection sits inside that element
   bold: boolean;
   italic: boolean;
@@ -366,6 +373,13 @@ export interface ManualEditBeginTextEditMessage {
 // (editing: false) so the host flips the move frame to object-selected mode.
 export interface ManualEditEndTextEditMessage {
   type: 'readable-edit-end-text-edit';
+  /** When present, acknowledge only after posting all text/HTML commits. */
+  requestId?: number;
+}
+
+export interface ManualEditTextFlushedMessage {
+  type: 'readable-edit-text-flushed';
+  requestId: number;
 }
 
 export interface ManualEditClickMessage {
@@ -393,6 +407,7 @@ export type ManualEditActivationMessage =
 export type ManualEditBridgeMessage =
   | ManualEditTargetMessage
   | ManualEditSelectMessage
+  | ManualEditDeselectMessage
   | ManualEditHoverMessage
   | ManualEditBackgroundMessage
   | ManualEditPreviewAppliedMessage
@@ -400,6 +415,7 @@ export type ManualEditBridgeMessage =
   | ManualEditDuplicateRemovedMessage
   | ManualEditTextCommitMessage
   | ManualEditHtmlCommitMessage
+  | ManualEditTextFlushedMessage
   | ManualEditUndoMessage
   | ManualEditNudgeMessage
   | ManualEditBurstCancelMessage

@@ -14,6 +14,7 @@ function renderFooter(username: string | null) {
       onOpenDestination={vi.fn()}
       onOpenSettings={vi.fn()}
       onOpenWorkspaceFolder={vi.fn()}
+      onThemeChange={vi.fn()}
     />,
   );
 }

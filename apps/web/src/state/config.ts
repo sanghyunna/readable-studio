@@ -22,6 +22,16 @@ import {
 const STORAGE_KEY = 'readable-studio:config';
 const CONFIG_MIGRATION_VERSION = 2;
 
+// Configs saved before `accentColorMode` existed always carried an
+// `accentColor`, and unless the user picked one it was the terracotta default
+// of that era. `loadConfig` reads that exact value as "never customised" so
+// those installs keep following the theme accent instead of waking up with a
+// forced orange custom accent. This is a migration sentinel, not a colour
+// anything paints: it must stay the retired hex even though the product accent
+// has moved on (the pre-hydration script in app/layout.tsx compares the same
+// value). The retired-accent guard test allowlists this one occurrence.
+const LEGACY_DEFAULT_ACCENT_COLOR = '#c96442';
+
 // Hatched out of the box, but tucked away — the user has to go through
 // either the entry-view "adopt a pet" callout or Settings → Pets to
 // summon them. Keeps the workspace quiet for first-run users.
@@ -51,7 +61,8 @@ export const DEFAULT_PET: PetConfig = {
   custom: {
     name: 'Buddy',
     glyph: '🦄',
-    accent: '#c96442',
+    // The pet's halo mirrors the product accent until the user recolours it.
+    accent: DEFAULT_ACCENT_COLOR,
     greeting: 'Hi! I am here whenever you need me.',
   },
 };
@@ -388,7 +399,7 @@ export function loadConfig(): AppConfig {
       parsed.accentColorMode === 'custom' ||
       parsed.accentColorMode === 'theme'
         ? parsed.accentColorMode
-        : parsedAccentColor && parsedAccentColor !== DEFAULT_ACCENT_COLOR
+        : parsedAccentColor && parsedAccentColor !== LEGACY_DEFAULT_ACCENT_COLOR
           ? 'custom'
           : 'theme';
     // Strip daemon-owned privacy fields if a stale localStorage payload

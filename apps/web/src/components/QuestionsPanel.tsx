@@ -6,7 +6,7 @@ import { useAnalytics } from '../analytics/provider';
 import { trackQuestionsFormClick, trackQuestionsFormSurfaceView } from '../analytics/events';
 import type { QuestionForm } from '../artifacts/question-form';
 import { QuestionFormView, type QuestionFormHandle } from './QuestionForm';
-import { localizeBriefAssumption, questionForAssumption, type BriefAssumption, type ProjectBrief } from './brief-state';
+import { questionForAssumption, type BriefAssumption, type ProjectBrief } from './brief-state';
 import { QuestionAssumptionEditor } from './QuestionAssumptionEditor';
 import { Icon } from './Icon';
 import './QuestionsPanel.css';
@@ -37,7 +37,7 @@ export function QuestionsPanel({
   brief,
   onCorrect,
   projectId,
-  form,
+  form: emittedForm,
   formKey = null,
   interactive,
   submitDisabled = false,
@@ -48,6 +48,7 @@ export function QuestionsPanel({
   generating,
   onSubmit,
 }: Props) {
+  const form = emittedForm?.questions.length ? emittedForm : null;
   const t = useT();
   const analytics = useAnalytics();
   const formRef = useRef<QuestionFormHandle>(null);
@@ -86,7 +87,7 @@ export function QuestionsPanel({
     document.getElementById(savedFocusId.current)?.focus();
     savedFocusId.current = null;
   }, [editingId, saving]);
-  const assumptions = useMemo(() => brief?.assumptions.map(item => localizeBriefAssumption(item, t)) ?? [], [brief, t]);
+  const assumptions = useMemo(() => brief?.assumptions ?? [], [brief]);
   const editing = assumptions.find(item => item.id === editingId);
   const correctionDisabled = submitDisabled || runHydrationStatus !== 'ready' || saving;
   async function applyCorrection(value: string | string[]) {
@@ -176,11 +177,36 @@ export function QuestionsPanel({
   const canSubmit = Boolean(form && interactive && !answered && !generating && !submitDisabled
     && runHydrationStatus === 'ready' && !saving);
   const canContinue = canSubmit && ready;
+  const pending = Boolean(form && interactive && !answered && !generating);
+
+  // The card is a request for action: when it appears answerable, move focus
+  // to its first control so the user can answer without hunting. Never steal
+  // an in-progress keystroke from the composer or any other text field.
+  const rootRef = useRef<HTMLElement | null>(null);
+  const titleId = `${editorId}-title`;
+  useEffect(() => {
+    if (!pending) return;
+    const root = rootRef.current;
+    if (!root) return;
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && !root.contains(active) && isTextEntry(active)) return;
+    const first = root.querySelector<HTMLElement>(
+      '[role="radio"][tabindex="0"], input:not([disabled]):not([type="radio"]), textarea:not([disabled]), button:not([disabled])',
+    );
+    first?.focus();
+    // Focus once per card appearance; answer edits must not re-run it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending, formKey]);
 
   return (
-    <section className="questions-panel" data-testid="questions-panel" data-step="summary" role="dialog" aria-labelledby="questions-panel-title">
+    <section ref={rootRef} className="questions-panel" data-testid="questions-panel" data-step="summary"
+      data-pending={pending ? 'true' : undefined} data-answered={answered ? 'true' : undefined}
+      aria-labelledby={titleId} aria-busy={generating || undefined}>
       <header className="questions-panel__head">
-        <div><h2 id="questions-panel-title">{t('questions.title')}</h2>
+        <span className="questions-panel__head-icon" aria-hidden>
+          <Icon name={answered ? 'check' : 'help-circle'} size={15} />
+        </span>
+        <div><h2 id={titleId}>{t(answered ? 'questions.bannerAnswered' : pending ? 'questions.banner' : 'questions.title')}</h2>
           <p>{t('questions.description')}</p></div>
       </header>
       <div className="questions-panel-body">
@@ -209,8 +235,8 @@ export function QuestionsPanel({
           />
           {correctionError && !editing ? <p role="alert">{t('questions.correctionFailed')}</p> : null}
           </div>
-        ) : !brief ? <div className="questions-panel-skeleton">{t(generating ? 'questions.generating' : 'questions.empty')}</div> : null}
-        {brief ? <div className="questions-panel__groups" role="group" aria-label={t('questions.assumptions')}>
+        ) : <div className="questions-panel-skeleton" data-testid={generating ? 'questions-generating' : 'questions-empty'}>{t(generating ? 'questions.generating' : 'questions.empty')}</div>}
+        {assumptions.length > 0 ? <div className="questions-panel__groups" role="group" aria-label={t('questions.assumptions')}>
           <p className="questions-panel__influence" data-testid="questions-influence" data-count={assumptions.length} data-confirmed={assumptions.filter(item => item.provenance === 'stated').length}>
             {t('questions.influence', { count: assumptions.length, stated: assumptions.filter(item => item.provenance === 'stated').length })}
           </p>
@@ -282,6 +308,12 @@ export function QuestionsPanel({
       </div>
     </section>
   );
+}
+
+function isTextEntry(element: HTMLElement): boolean {
+  if (element.isContentEditable) return true;
+  const tag = element.tagName;
+  return tag === 'TEXTAREA' || (tag === 'INPUT' && !['button', 'submit', 'radio', 'range'].includes((element as HTMLInputElement).type));
 }
 
 function questionFormDraftStorageKey(formKey: string | null | undefined): string | null {

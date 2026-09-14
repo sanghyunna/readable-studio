@@ -1,0 +1,180 @@
+/* Settings > Databricks models. Mirrors the project-locations row rhythm
+   (grid row, 8px gap, 10px inset, elevated card) and the skills inline
+   delete-confirm pair so the tab reads as a sibling, not a bespoke surface. */
+
+.empty {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  background: var(--bg-panel);
+}
+
+.empty strong {
+  display: block;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.empty p {
+  margin: 3px 0 0;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.group + .group {
+  margin-top: 6px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+}
+
+.groupHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.groupTitle {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.groupTitle strong {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.groupTitle small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 58px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  transition: border-color 140ms var(--ease-out);
+}
+
+.row:hover {
+  border-color: var(--border-strong);
+}
+
+.rowMain {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.rowTitle {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.rowIdentity {
+  color: var(--text-muted);
+  font-size: 11px;
+  word-break: break-all;
+}
+
+.rowMeta {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.rowActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.confirm {
+  display: inline-flex;
+  gap: 6px;
+  animation: confirm-in 200ms var(--ease-out);
+}
+
+/* Text stays on --text: --red on --red-bg drops below 4.5:1 in gruvbox and
+   nord, while --text on --red-bg clears 5:1 in every bundled theme. The red
+   border carries the destructive signal. */
+.danger {
+  color: var(--text);
+  border-color: var(--red);
+  background: var(--red-bg);
+}
+
+.danger:hover:not(:disabled) {
+  border-color: var(--red);
+  filter: brightness(0.95);
+}
+
+/* pointer-events is paired with opacity in both steps: it is discrete, so
+   binding the two keeps visibility and clickability on one timeline that
+   cannot desynchronise mid-animation. */
+@keyframes confirm-in {
+  from {
+    opacity: 0;
+    pointer-events: none;
+    transform: scale(0.9);
+  }
+  1% {
+    pointer-events: auto;
+  }
+  to {
+    opacity: 1;
+    pointer-events: auto;
+    transform: scale(1);
+  }
+}
+
+@media (max-width: 720px) {
+  .row {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .empty,
+  .row {
+    background: var(--bg-panel);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row {
+    transition: none;
+  }
+
+  .confirm {
+    animation: none;
+  }
+}

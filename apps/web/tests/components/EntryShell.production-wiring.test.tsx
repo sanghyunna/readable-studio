@@ -139,6 +139,7 @@ function renderEntryShell(projects: Project[] = [project]) {
           onOpenDestination={(destination) => navigate({ kind: 'home', view: destination })}
           onOpenSettings={() => onOpenSettings()}
           onOpenWorkspaceFolder={() => onOpenSettings('projectLocations')}
+          onThemeChange={vi.fn()}
         />
         <EntryShell
           skills={skills}

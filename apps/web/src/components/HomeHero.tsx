@@ -328,7 +328,14 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   const [contextControlAnchored, setContextControlAnchored] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const shortcutsMenuRef = useRef<HTMLDivElement>(null);
-  const canSubmit = !interactionLocked && (submitReady ?? ((prompt.trim().length > 0 || stagedFiles.length > 0) && !submitDisabled));
+  // Submission readiness includes validation owned above this component (such
+  // as an explicit model choice), but a missing model must reach that existing
+  // validation path so its model label warning can explain the block. The
+  // button only stays disabled for blockers HomeHero itself owns or is told
+  // are non-attemptable.
+  const canAttemptSubmit = !interactionLocked && !submitting && !submitDisabled
+    && (prompt.trim().length > 0 || stagedFiles.length > 0);
+  const canSubmit = canAttemptSubmit && (submitReady ?? true);
   const previewHomeFile = useMemo(() => {
     if (!previewHomeFileKey) return null;
     return stagedFiles.find((item) => item.id === previewHomeFileKey) ?? null;
@@ -1233,7 +1240,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
               }}
               onTrigger={handleTrigger}
               onEnterSend={() => {
-                if (canSubmit) onSubmit();
+                if (canAttemptSubmit) onSubmit();
               }}
               onPasteFiles={handleFiles}
               popoverOpen={pickerOpen}
@@ -1528,9 +1535,9 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
               data-testid="home-hero-submit"
               onClick={onSubmit}
               onAnimationEnd={() => setSendAttention(false)}
-              disabled={!canSubmit}
-              title={canSubmit ? t('homeHero.run') : t('homeHero.typeSomethingToRun')}
-              data-tooltip={canSubmit ? t('homeHero.run') : t('homeHero.typeSomethingToRun')}
+              disabled={!canAttemptSubmit}
+              title={canAttemptSubmit ? t('homeHero.run') : t('homeHero.typeSomethingToRun')}
+              data-tooltip={canAttemptSubmit ? t('homeHero.run') : t('homeHero.typeSomethingToRun')}
               aria-label={t(submitting ? 'hub.starting' : 'homeHero.run')}
             >
               {submitting ? (

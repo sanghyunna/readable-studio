@@ -4,12 +4,12 @@ const brief: ProjectBrief = { assumptions: [], updatedAt: 1 };
 describe('Questions persistence compatibility', () => {
   it('serializes option values exactly like form answers', () => {
     expect(formatBriefSteering(
-      { id: 'brand', label: 'Brand', value: 'pick_direction', displayValue: 'Pick a direction for me', provenance: 'default' },
+      { id: 'brand', label: 'Brand', value: 'pick_direction', provenance: 'default', question: { id: 'brand', label: 'Brand', type: 'radio', options: [{ label: 'Brand spec', value: 'brand_spec' }] } },
       'brand_spec',
-    )).toBe('[brief correction — brand]\n- Brand context: I have a brand spec - I will share it [value: brand_spec]');
+    )).toContain('[value: brand_spec]');
   });
 
-  it('stores known incoming fields by stable id instead of persisting presentation copy', () => {
+  it('preserves the model-authored editor schema even for previously hardcoded ids', () => {
     const merged = mergeBriefAssumptions(null, [{
       id: 'brand',
       label: 'Brand',
@@ -26,13 +26,13 @@ describe('Questions persistence compatibility', () => {
 
     expect(merged.assumptions[0]).toMatchObject({
       id: 'brand',
-      label: 'brand',
+      label: 'Brand',
       question: {
-        label: 'brand',
-        options: [{ label: 'pick_direction', value: 'pick_direction' }],
+        type: 'radio',
+        options: [{ value: 'pick_direction' }],
       },
     });
-    expect(merged.assumptions[0]?.displayValue).toBeUndefined();
+    expect(merged.assumptions[0]?.question?.id).toBe('brand');
   });
 
   it('persists the brief alongside existing project metadata', async () => {

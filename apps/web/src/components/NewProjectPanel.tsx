@@ -1124,18 +1124,23 @@ function WireframeArt() {
   );
 }
 
+// The high-fidelity card is a miniature of a finished screen in the product's
+// own palette: its call-to-action, highlighted rows and tinted card are the
+// accent and its tint, its copy the ink scale. Painted from the live tokens so
+// the thumbnail agrees with the theme around it (the wireframe card keeps its
+// deliberately neutral greys - a wireframe has no accent).
 function HighFidelityArt() {
   return (
     <svg viewBox="0 0 120 70" width="100%" height="100%" aria-hidden>
-      <rect x="6" y="8" width="34" height="6" rx="2" fill="#1a1916" />
-      <rect x="6" y="20" width="46" height="4" rx="2" fill="#74716b" />
-      <rect x="6" y="28" width="42" height="4" rx="2" fill="#b3b0a8" />
-      <rect x="6" y="40" width="22" height="9" rx="2" fill="#c96442" />
-      <rect x="64" y="8" width="50" height="54" rx="4" fill="#fbeee5" />
-      <rect x="70" y="14" width="38" height="4" rx="2" fill="#c96442" />
-      <rect x="70" y="22" width="32" height="3" rx="1.5" fill="#74716b" />
-      <rect x="70" y="29" width="36" height="3" rx="1.5" fill="#b3b0a8" />
-      <rect x="70" y="36" width="20" height="6" rx="2" fill="#c96442" />
+      <rect x="6" y="8" width="34" height="6" rx="2" style={{ fill: 'var(--text-strong)' }} />
+      <rect x="6" y="20" width="46" height="4" rx="2" style={{ fill: 'var(--text-muted)' }} />
+      <rect x="6" y="28" width="42" height="4" rx="2" style={{ fill: 'var(--text-faint)' }} />
+      <rect x="6" y="40" width="22" height="9" rx="2" style={{ fill: 'var(--accent)' }} />
+      <rect x="64" y="8" width="50" height="54" rx="4" style={{ fill: 'var(--accent-tint)' }} />
+      <rect x="70" y="14" width="38" height="4" rx="2" style={{ fill: 'var(--accent)' }} />
+      <rect x="70" y="22" width="32" height="3" rx="1.5" style={{ fill: 'var(--text-muted)' }} />
+      <rect x="70" y="29" width="36" height="3" rx="1.5" style={{ fill: 'var(--text-faint)' }} />
+      <rect x="70" y="36" width="20" height="6" rx="2" style={{ fill: 'var(--accent)' }} />
     </svg>
   );
 }

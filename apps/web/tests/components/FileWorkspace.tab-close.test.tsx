@@ -149,19 +149,6 @@ describe('workspace tab dismissal', () => {
     expect(changed.mock.lastCall?.[0].tabs).toEqual([]);
   });
 
-  it('keeps Design Files and Questions pinned and preserves transient Questions selection on background close', async () => {
-    await mount({ initial: { tabs: ['first.png'], active: 'first.png' },
-      questionForm: { id: 'questions', title: 'Questions', questions: [] } });
-    fireEvent.click(screen.getByTestId('questions-tab'));
-    for (const id of ['design-files-tab', 'questions-tab']) {
-      expect(within(screen.getByTestId(id)).queryByRole('button')).toBeNull();
-      middleClick(screen.getByTestId(id));
-      expect(screen.getByTestId(id)).toBeTruthy();
-    }
-    fireEvent.click(close('first.png'));
-    expect(screen.getByTestId('questions-tab').getAttribute('aria-selected')).toBe('true');
-  });
-
   it('keeps pending sketches active on background close and reuses their discard confirmation', async () => {
     await mount({ initial: { tabs: ['old.png'], active: DESIGN_FILES_TAB } });
     fireEvent.click(screen.getByTestId('design-files-empty-new-sketch'));

@@ -181,13 +181,18 @@ describe('hub composer execution switcher', () => {
     // jsdom's `import.meta.url` is not a file URL, so resolve from the vitest
     // root (apps/web) instead.
     const source = readFileSync(resolve('src/components/EntryShell.tsx'), 'utf8');
-    // Three mounts: the combined top-bar chip plus the composer's agent and
-    // model buttons — all fed by the SAME props object, so agent selection,
-    // model selection and the provider-models fetch are not forked.
-    expect(source.match(/<InlineModelSwitcher\b/g)?.length ?? 0).toBe(3);
-    expect(source.match(/\{\.\.\.switcherProps\}/g)?.length ?? 0).toBe(3);
+    // Four mounts: the combined top-bar chip plus the composer's agent, model
+    // and thinking-effort buttons — all fed by the SAME props object, so agent
+    // selection, model selection, effort selection and the provider-models
+    // fetch are not forked.
+    expect(source.match(/<InlineModelSwitcher\b/g)?.length ?? 0).toBe(4);
+    expect(source.match(/\{\.\.\.switcherProps\}/g)?.length ?? 0).toBe(4);
     expect(source).toContain('variant="agent"');
     expect(source).toContain('variant="model"');
+    expect(source).toContain('variant="reasoning"');
+    // The effort mount is gated by the shared resolver, never by an ad-hoc
+    // `reasoningOptions.length` check that would ignore per-model lists.
+    expect(source).toContain('composerReasoningOptions(config, agents)');
     // The hub composer gets the split pair; the top bar keeps the combined chip.
     expect(source).toContain('executionSwitcher={composerAgentModelControls}');
     expect(source).toContain('{executionSwitcher}');

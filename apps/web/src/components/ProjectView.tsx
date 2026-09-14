@@ -178,7 +178,7 @@ import { ChatPane } from './ChatPane';
 import {
   ASSISTANT_ROLLBACK_EVENT,
   filterRenderableProducedFiles,
-  type QuestionFormOpenRequest,
+  type InlineQuestionCardState,
 } from './AssistantMessage';
 import { RollbackModal } from './RollbackModal';
 import type { ChatSendMeta } from './ChatComposer';
@@ -1388,10 +1388,6 @@ export function ProjectView({
     (!!questionForm || questionsGenerating)
     && (questionsGenerating || questionFormAssistantIndex === lastAssistantIndex)
     && questionFormSubmittedAnswers === undefined;
-  // Mirror `questionFormActive`'s unanswered gate: an answered form stays
-  // visible but must not be treated as a freshly appeared form for auto-focus.
-  const hasQuestions =
-    Boolean(questionForm || questionsGenerating) && questionFormSubmittedAnswers === undefined;
   // Stable identity for the current form occurrence, used to remember that its
   // one-by-one reveal already played. Keyed on the conversation + the hosting
   // assistant message id (not the message index, and NOT the parsed form id —
@@ -1417,71 +1413,7 @@ export function ProjectView({
     ],
   );
 
-  // Release #3661: let a past question form be manually re-opened in the
-  // Questions panel. Layered on top of main's stable questionFormKey (#3644) —
-  // the `displayed*` values fall back to the live form when nothing is manually
-  // pinned, so both fixes coexist.
-  const [manualQuestionFormRequest, setManualQuestionFormRequest] =
-    useState<QuestionFormOpenRequest | null>(null);
-  useEffect(() => {
-    setManualQuestionFormRequest(null);
-  }, [project.id, activeConversationId]);
-  useEffect(() => {
-    if (hasQuestions && questionFormKey) setManualQuestionFormRequest(null);
-  }, [hasQuestions, questionFormKey]);
-  const displayedQuestionForm = manualQuestionFormRequest?.form ?? questionForm;
-  const displayedQuestionFormPreview = manualQuestionFormRequest ? null : questionFormPreview;
-  const displayedQuestionFormSubmittedAnswers =
-    manualQuestionFormRequest?.submittedAnswers ?? questionFormSubmittedAnswers;
-  // An unanswered form remains answerable when reopened from its chat banner.
-  // Treating every manually reopened occurrence as historical previously put
-  // required forms into the locked state even when no answer existed.
-  const displayedQuestionFormActive = manualQuestionFormRequest
-    ? manualQuestionFormRequest.submittedAnswers === undefined
-    : questionFormActive;
-  const displayedQuestionsGenerating = manualQuestionFormRequest ? false : questionsGenerating;
-  const displayedQuestionFormKey = manualQuestionFormRequest
-    ? `${activeConversationId ?? 'conversation'}:${manualQuestionFormRequest.messageId}:${manualQuestionFormRequest.form.id}:manual`
-    : questionFormKey;
-
-  // Auto-switch the workspace to the Questions tab when a new discovery form
-  // first appears, and let the chat banner re-focus it on click. The nonce
-  // bump is what FileWorkspace listens to.
-  const [questionsFocusNonce, setQuestionsFocusNonce] = useState(0);
-  const prevHasQuestionsRef = useRef(false);
-  useEffect(() => {
-    if (hasQuestions && !prevHasQuestionsRef.current) {
-      setQuestionsFocusNonce((n) => n + 1);
-    }
-    prevHasQuestionsRef.current = hasQuestions;
-  }, [hasQuestions]);
-  const focusQuestionsRequest = useMemo(
-    () => (questionsFocusNonce > 0 ? { nonce: questionsFocusNonce } : null),
-    [questionsFocusNonce],
-  );
-  const submittedAnswersForQuestionFormRequest = useCallback((request: QuestionFormOpenRequest) => {
-    const assistantIndex = messages.findIndex((m) => m.id === request.messageId);
-    if (assistantIndex < 0) return null;
-    for (let i = assistantIndex + 1; i < messages.length; i++) {
-      const m = messages[i];
-      if (!m) continue;
-      if (m.role === 'assistant') break;
-      if (m.role !== 'user') continue;
-      const parsed = parseSubmittedAnswers(request.form, m.content ?? '');
-      if (parsed) return parsed;
-    }
-    return null;
-  }, [messages]);
-  const openQuestionsTab = useCallback((request?: QuestionFormOpenRequest) => {
-    if (request) {
-      setManualQuestionFormRequest({
-        ...request,
-        submittedAnswers:
-          request.submittedAnswers ?? submittedAnswersForQuestionFormRequest(request) ?? undefined,
-      });
-    }
-    setQuestionsFocusNonce((n) => n + 1);
-  }, [submittedAnswersForQuestionFormRequest]);
+  const questionFormOwnerMessageId = questionsGenerating ? lastAssistantMessageId : questionFormMessageId;
 
   const currentConversationQueuedItems = activeConversationId
     ? queuedChatSends
@@ -4048,6 +3980,8 @@ export function ProjectView({
       restoringQueuedRuns,
       currentConversationBusy,
       queueChatSendForCurrentConversation,
+      questionForm,
+      questionFormKey,
       messages,
       config,
       locale,
@@ -5787,6 +5721,57 @@ export function ProjectView({
     />
   );
 
+  const questionCard: InlineQuestionCardState = {
+    messageId: questionFormOwnerMessageId,
+    formKey: questionFormKey,
+    formPreview: questionFormPreview,
+    generating: questionsGenerating,
+    brief: projectBrief,
+    onCorrect: async (next, corrected) => {
+      const persisted = await handleBriefChange(next, corrected);
+      if (!persisted) return false;
+      await handleSend(formatBriefSteering(corrected, corrected.value), [], []);
+      return true;
+    },
+    interactive: questionFormActive,
+    submitDisabled: currentConversationQueueDisabled || restoringQueuedRuns,
+    runHydrationStatus: restoringQueuedRuns
+      ? runHydrationFailure?.key === runsHydrationKey ? 'failed' : 'pending'
+      : 'ready',
+    onRetryRunHydration: retryRunHydration,
+    submissionQueued:
+      questionFormSubmissionQueued
+      || (questionFormSubmittedAnswers === undefined
+        && currentConversationBusy
+        && !currentConversationQueueDisabled),
+    submittedAnswers: questionFormSubmittedAnswers,
+    onSubmit: async (text, answers) => {
+      if (!questionForm || questionWritePendingRef.current
+        || currentConversationQueueDisabled || restoringQueuedRuns) return false;
+      questionWritePendingRef.current = true;
+      try {
+        const incoming = briefAssumptionsFromAnswers(questionForm, answers);
+        const metadata = questionMetadataRef.current ?? { kind: 'prototype' };
+        // Reject malformed machine values before writing either representation.
+        if (incoming.some(item => ['fidelity', 'platformTargets', 'companionSurfaces', 'speakerNotes', 'animations'].includes(item.id)
+          && applyBriefAssumptionToMetadata(metadata, item) === metadata)) return false;
+        if (incoming.length > 0) {
+          const next = mergeBriefAssumptions(readProjectBrief(metadata) ?? projectBrief, incoming);
+          const projected = next.assumptions.reduce(applyBriefAssumptionToMetadata, metadata);
+          if (!await persistProjectBrief(project.id, projected, next)) return false;
+          if (briefProjectIdRef.current !== project.id) return false;
+          questionMetadataRef.current = { ...projected, brief: next };
+          setProjectBrief(next);
+        }
+        // Queue acceptance is durable and synchronous; the existing controller
+        // promotes immediately when idle, or after the current run terminates.
+        await handleSend(text, [], [], { queueOnly: true });
+        return queuedChatSendsRef.current.some(item => item.conversationId === activeConversationId && item.prompt === text);
+      } finally {
+        if (briefProjectIdRef.current === project.id) questionWritePendingRef.current = false;
+      }
+    },
+  };
   return (
     <div className="app">
       <CritiqueTheaterMount
@@ -5863,7 +5848,7 @@ export function ProjectView({
               hiddenPluginActionPaths={hiddenAssistantPluginActionPaths}
               forceStreamingMessageIds={forceStreamingPluginMessageIds}
               initialDraft={chatInitialDraft}
-              onOpenQuestions={openQuestionsTab}
+              questionCard={questionCard}
               onContinueRemainingTasks={handleContinueRemainingTasks}
               onArtifactShare={handleArtifactShare}
               onArtifactDownload={handleArtifactDownload}
@@ -6076,58 +6061,6 @@ export function ProjectView({
               }}
             />
           )}
-          projectQuestions={projectBrief}
-          onCorrectQuestion={async (next, corrected) => {
-            const persisted = await handleBriefChange(next, corrected);
-            if (!persisted) return false;
-            await handleSend(formatBriefSteering(corrected, corrected.value), [], []);
-            return true;
-          }}
-          questionForm={displayedQuestionForm}
-          questionFormPreview={displayedQuestionFormPreview}
-          questionFormKey={displayedQuestionFormKey}
-          questionFormInteractive={displayedQuestionFormActive}
-          questionFormSubmitDisabled={currentConversationQueueDisabled || restoringQueuedRuns}
-          questionRunHydrationStatus={restoringQueuedRuns
-            ? runHydrationFailure?.key === runsHydrationKey ? 'failed' : 'pending'
-            : 'ready'}
-          onRetryQuestionRunHydration={retryRunHydration}
-          questionFormSubmissionQueued={
-            !manualQuestionFormRequest
-            && (questionFormSubmissionQueued
-              || (questionFormSubmittedAnswers === undefined
-                && currentConversationBusy
-                && !currentConversationQueueDisabled))
-          }
-          questionFormSubmittedAnswers={displayedQuestionFormSubmittedAnswers}
-          questionsGenerating={displayedQuestionsGenerating}
-          focusQuestionsRequest={focusQuestionsRequest}
-          onSubmitQuestionForm={async (text, answers) => {
-            if (!displayedQuestionForm || questionWritePendingRef.current
-              || currentConversationQueueDisabled || restoringQueuedRuns) return false;
-            questionWritePendingRef.current = true;
-            try {
-              const incoming = briefAssumptionsFromAnswers(displayedQuestionForm, answers);
-              const metadata = questionMetadataRef.current ?? { kind: 'prototype' };
-              // Reject malformed machine values before writing either representation.
-              if (incoming.some(item => ['fidelity', 'platformTargets', 'companionSurfaces', 'speakerNotes', 'animations'].includes(item.id)
-                && applyBriefAssumptionToMetadata(metadata, item) === metadata)) return false;
-              if (incoming.length > 0) {
-                const next = mergeBriefAssumptions(readProjectBrief(metadata) ?? projectBrief, incoming);
-                const projected = next.assumptions.reduce(applyBriefAssumptionToMetadata, metadata);
-                if (!await persistProjectBrief(project.id, projected, next)) return false;
-                if (briefProjectIdRef.current !== project.id) return false;
-                questionMetadataRef.current = { ...projected, brief: next };
-                setProjectBrief(next);
-              }
-              // Queue acceptance is durable and synchronous; the existing controller
-              // promotes immediately when idle, or after the current run terminates.
-              await handleSend(text, [], [], { queueOnly: true });
-              return queuedChatSendsRef.current.some(item => item.conversationId === activeConversationId && item.prompt === text);
-            } finally {
-              if (briefProjectIdRef.current === project.id) questionWritePendingRef.current = false;
-            }
-          }}
         />
       </div>
       {contextPluginDetails ? (

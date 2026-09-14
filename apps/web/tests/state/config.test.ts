@@ -534,9 +534,12 @@ describe('loadConfig', () => {
   });
 
   it('keeps legacy default and missing accent colors in theme accent mode', () => {
+    // Pre-`accentColorMode` configs persisted the terracotta default of that
+    // era; that exact value means "never customised" regardless of what the
+    // product's default accent is today.
     store.set(
       'readable-studio:config',
-      JSON.stringify({ accentColor: DEFAULT_CONFIG.accentColor }),
+      JSON.stringify({ accentColor: '#c96442' }),
     );
 
     expect(loadConfig().accentColorMode).toBe('theme');
@@ -544,6 +547,19 @@ describe('loadConfig', () => {
     store.set('readable-studio:config', JSON.stringify({}));
 
     expect(loadConfig().accentColorMode).toBe('theme');
+  });
+
+  it('treats a legacy config that picked the current default colour as a custom choice', () => {
+    // On a pre-mode build the current default was a preset the user had to
+    // choose, so an explicit pick must survive the migration as custom.
+    store.set(
+      'readable-studio:config',
+      JSON.stringify({ accentColor: DEFAULT_CONFIG.accentColor }),
+    );
+
+    const config = loadConfig();
+    expect(config.accentColorMode).toBe('custom');
+    expect(config.accentColor).toBe(DEFAULT_CONFIG.accentColor);
   });
 
   it('returns defaults for malformed localStorage JSON', () => {
@@ -556,7 +572,7 @@ describe('loadConfig', () => {
     expect(DEFAULT_CONFIG.theme).toBe('light');
     expect(DEFAULT_CONFIG.apiProtocol).toBe('anthropic');
     expect(DEFAULT_CONFIG.configMigrationVersion).toBe(2);
-    expect(DEFAULT_CONFIG.accentColor).toBe('#c96442');
+    expect(DEFAULT_CONFIG.accentColor).toBe('#2563eb');
   });
 
   it('does not embed a stale browser-owned enabled-agent default', () => {

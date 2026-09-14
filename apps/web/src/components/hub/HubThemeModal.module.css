@@ -1,0 +1,257 @@
+/* Theme modal, opened straight from the rail footer's Theme row. Rides the
+   shared modal material (`modal-backdrop` / `modal`) for scrim, surface and
+   window-drag strip; this module only owns the layout and the theme cards.
+
+   Motion: the surface enters over --dur-enter and exits over --dur-exit on
+   --ease-out through presence variants in HubThemeModal.tsx. The reduced-motion
+   variant is the root `MotionConfig reducedMotion="user"`, which zeroes the
+   transform half and keeps the fade; the card primitive stops its own
+   transitions under the same preference. Nothing in this module animates. */
+
+/* Rail-owned and reachable on every route, so it stacks with the rail's own
+   body-portalled confirmation (`.hub-delete-backdrop`, 1100): above the rail
+   (60), its row menus (70), the resizer (80) and the command palette (1000). */
+.backdrop {
+  z-index: 1100;
+  padding: 24px;
+  /* Presence variants own the timing (enter --dur-enter, exit --dur-exit on
+     --ease-out); the legacy keyframes on the shared classes would otherwise
+     race them with a different curve. */
+  animation: none;
+}
+
+.modal {
+  width: min(600px, calc(100vw - 32px));
+  max-height: min(720px, calc(100vh - 48px));
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  animation: none;
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  box-shadow: inset 0 1px 0 var(--hub-pearl-highlight);
+  color: var(--hub-accent);
+}
+
+.titles {
+  min-width: 0;
+  flex: 1;
+}
+
+.titles h2 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.titles p {
+  margin: 5px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.close:hover,
+.close:focus-visible {
+  background: var(--bg-subtle);
+  border-color: var(--border);
+  color: var(--text-strong);
+}
+
+.body {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  padding: 16px 20px;
+  overflow: auto;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(156px, 1fr));
+  gap: 8px;
+}
+
+/* Each card is a full-surface ToggleCard: a miniature of the theme it names,
+   then its name. Selection state comes from the primitive (`data-state='on'`
+   ring and fill); the check mark only confirms it.
+
+   The miniature is painted with the theme's REAL tokens. Its canvas element
+   carries that theme's `data-theme`, so the `[data-theme='…']` blocks in
+   tokens.css and styles/themes resolve --bg, --bg-panel, --border, --accent,
+   --text and --text-muted on it exactly as they do on the document root; this
+   module paints only those semantic tokens and carries no palette of its own.
+   Light is the `:root` baseline rather than a block, so HubThemeModal.tsx
+   hands its canvas that baseline inline (read from the same stylesheet). */
+.card {
+  position: relative;
+  min-block-size: 0;
+  gap: 8px;
+  padding: 8px 8px 10px;
+}
+
+/* The frame is modal chrome and stays in the CURRENT theme; only what is
+   inside it belongs to the previewed one. */
+.preview {
+  position: relative;
+  display: block;
+  block-size: 56px;
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-xs);
+}
+
+/* The theme's app canvas, with its panel surface rising from the bottom edge
+   the way the workspace sits on the app background. */
+.canvas {
+  position: absolute;
+  inset: 0;
+  padding: 8px 10px 0;
+  background: var(--bg);
+}
+
+.surface {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  block-size: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-block-end: 0;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: var(--bg-panel);
+}
+
+.accent,
+.ink,
+.inkMuted {
+  display: block;
+  border-radius: var(--radius-pill);
+}
+
+.accent {
+  block-size: 6px;
+  inline-size: 38%;
+  background: var(--accent);
+}
+
+.ink {
+  block-size: 4px;
+  inline-size: 78%;
+  background: var(--text);
+}
+
+.inkMuted {
+  block-size: 4px;
+  inline-size: 52%;
+  background: var(--text-muted);
+}
+
+/* System: the light miniature underneath and the dark one clipped to the
+   right of a diagonal seam, so one card shows both palettes the setting can
+   resolve to - each the real one. */
+.canvasSplit {
+  clip-path: polygon(60% 0, 100% 0, 100% 100%, 40% 100%);
+}
+
+.meta {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+  padding-inline: 2px;
+}
+
+.label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scheme {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.check {
+  position: absolute;
+  inset-block-start: 14px;
+  inset-inline-end: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-pill);
+  background: var(--selected);
+  box-shadow: var(--shadow-xs);
+  color: var(--selected-fg);
+}
+
+.foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 20px 18px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+
+@media (max-width: 640px) {
+  .backdrop {
+    padding: 12px;
+  }
+
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Translucency is decoration here, never the only signal. */
+@media (prefers-reduced-transparency: reduce) {
+  .glyph {
+    background: var(--bg-elevated);
+    box-shadow: none;
+  }
+}

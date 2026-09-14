@@ -1,0 +1,18 @@
+/* Theme chips for the settings surfaces. Tokens only: the wrapper's `data-theme`
+   scopes the theme's own --bg / --accent / --text to the chips through the
+   cascade, and it generates no box so the chips lay out in the surface's grid. */
+.palette {
+  display: contents;
+}
+
+.canvas {
+  background: var(--bg);
+}
+
+.accent {
+  background: var(--accent);
+}
+
+.ink {
+  background: var(--text);
+}

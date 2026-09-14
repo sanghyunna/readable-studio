@@ -18,27 +18,30 @@ export type ThemeLabelKey =
 
 export const DEFAULT_THEME: AppTheme = 'light';
 
+// The catalogue names themes; it carries no colours. Every surface that shows
+// a theme's palette (the Theme modal, the settings chips) paints the theme's
+// own tokens through the cascade, so `styles/tokens.css` and
+// `styles/themes/*.css` stay the only copies.
 export interface ThemeOption {
   id: AppTheme;
   labelKey: ThemeLabelKey;
   scheme: ThemeScheme | 'system';
-  swatch: readonly [string, string, string];
 }
 
 export const THEME_OPTIONS = [
-  { id: 'system', labelKey: 'settings.themeSystem', scheme: 'system', swatch: ['#faf9f7', '#c96442', '#1a1916'] },
-  { id: 'light', labelKey: 'settings.themeLight', scheme: 'light', swatch: ['#faf9f7', '#c96442', '#1a1916'] },
-  { id: 'dark', labelKey: 'settings.themeDark', scheme: 'dark', swatch: ['#1a1917', '#d97a56', '#f2ede4'] },
-  { id: 'monokai', labelKey: 'settings.themeMonokai', scheme: 'dark', swatch: ['#272822', '#a6e22e', '#f8f8f2'] },
-  { id: 'dracula', labelKey: 'settings.themeDracula', scheme: 'dark', swatch: ['#282a36', '#ff79c6', '#f8f8f2'] },
-  { id: 'catppuccin-latte', labelKey: 'settings.themeCatppuccinLatte', scheme: 'light', swatch: ['#eff1f5', '#8839ef', '#4c4f69'] },
-  { id: 'catppuccin-frappe', labelKey: 'settings.themeCatppuccinFrappe', scheme: 'dark', swatch: ['#303446', '#ca9ee6', '#c6d0f5'] },
-  { id: 'catppuccin-macchiato', labelKey: 'settings.themeCatppuccinMacchiato', scheme: 'dark', swatch: ['#24273a', '#c6a0f6', '#cad3f5'] },
-  { id: 'catppuccin-mocha', labelKey: 'settings.themeCatppuccinMocha', scheme: 'dark', swatch: ['#1e1e2e', '#cba6f7', '#cdd6f4'] },
-  { id: 'nord', labelKey: 'settings.themeNord', scheme: 'dark', swatch: ['#2e3440', '#88c0d0', '#e5e9f0'] },
-  { id: 'gruvbox', labelKey: 'settings.themeGruvbox', scheme: 'dark', swatch: ['#282828', '#fabd2f', '#ebdbb2'] },
-  { id: 'solarized-dark', labelKey: 'settings.themeSolarizedDark', scheme: 'dark', swatch: ['#002b36', '#268bd2', '#839496'] },
-  { id: 'one-dark', labelKey: 'settings.themeOneDark', scheme: 'dark', swatch: ['#282c34', '#61afef', '#abb2bf'] },
+  { id: 'system', labelKey: 'settings.themeSystem', scheme: 'system' },
+  { id: 'light', labelKey: 'settings.themeLight', scheme: 'light' },
+  { id: 'dark', labelKey: 'settings.themeDark', scheme: 'dark' },
+  { id: 'monokai', labelKey: 'settings.themeMonokai', scheme: 'dark' },
+  { id: 'dracula', labelKey: 'settings.themeDracula', scheme: 'dark' },
+  { id: 'catppuccin-latte', labelKey: 'settings.themeCatppuccinLatte', scheme: 'light' },
+  { id: 'catppuccin-frappe', labelKey: 'settings.themeCatppuccinFrappe', scheme: 'dark' },
+  { id: 'catppuccin-macchiato', labelKey: 'settings.themeCatppuccinMacchiato', scheme: 'dark' },
+  { id: 'catppuccin-mocha', labelKey: 'settings.themeCatppuccinMocha', scheme: 'dark' },
+  { id: 'nord', labelKey: 'settings.themeNord', scheme: 'dark' },
+  { id: 'gruvbox', labelKey: 'settings.themeGruvbox', scheme: 'dark' },
+  { id: 'solarized-dark', labelKey: 'settings.themeSolarizedDark', scheme: 'dark' },
+  { id: 'one-dark', labelKey: 'settings.themeOneDark', scheme: 'dark' },
 ] as const satisfies readonly ThemeOption[];
 
 export const EXPLICIT_THEME_OPTIONS = THEME_OPTIONS.filter((theme) => theme.id !== 'system');

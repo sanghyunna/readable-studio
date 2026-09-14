@@ -6,10 +6,10 @@ import { QuestionsPanel } from '../../src/components/QuestionsPanel';
 import type { ProjectBrief } from '../../src/components/brief-state';
 
 const brief: ProjectBrief = { updatedAt: 1, assumptions: [
-  { id: 'audience', label: 'Audience', value: 'buyers', provenance: 'inferred' },
+  { id: 'audience', label: 'Audience', value: 'buyers', provenance: 'inferred', question: { id: 'audience', label: 'Who is this for?', type: 'text' } },
   { id: 'scale', label: 'Scale', value: '8 slides', provenance: 'default' },
-  { id: 'brand', label: 'Brand', value: 'pick_direction', provenance: 'stated' },
-  { id: 'platform', label: 'Platform', value: ['Responsive web'], provenance: 'default' },
+  { id: 'brand', label: 'Brand', value: 'pick_direction', provenance: 'stated', question: { id: 'brand', label: 'Brand', type: 'radio', options: [{ label: 'I have a brand spec', value: 'brand_spec' }] } },
+  { id: 'platform', label: 'Platform', value: ['Responsive web'], provenance: 'default', question: { id: 'platform', label: 'Platform', type: 'checkbox', options: ['Responsive web', 'Desktop web'].map(value => ({ label: value, value })) } },
 ] };
 const form = { id: 'source', title: 'Source', questions: [{ id: 'url', label: 'URL', type: 'text' as const, required: true }] };
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -30,7 +30,7 @@ describe('Questions anchored corrections', () => {
     expect(screen.getByRole('textbox', { name: 'URL' })).toBe(input);
     expect(input).toHaveProperty('value', 'https://example.com');
     expect(screen.getByTestId('questions-panel').dataset.step).toBe('summary');
-    expect(screen.queryAllByRole('dialog')).toHaveLength(1);
+    expect(screen.queryAllByTestId('questions-panel')).toHaveLength(1);
     expect(view.container.querySelector('[data-step="correct"]')).toBeNull();
     expect([...summary.querySelectorAll('section')].map(node => node.dataset.provenance)).toEqual(['stated', 'inferred', 'default']);
     expect(input.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

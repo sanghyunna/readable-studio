@@ -64,6 +64,11 @@ import {
   type VelaLoginStatus,
 } from './providers/daemon';
 import { AMR_LOGIN_STATUS_EVENT } from './components/amrLoginPolling';
+import {
+  applyDatabricksModels,
+  DATABRICKS_MODELS_CHANGED_EVENT,
+  databricksModelsFromEvent,
+} from './components/databricksModels';
 import { navigate, useRoute } from './router';
 import {
   fetchDaemonConfig,
@@ -1186,6 +1191,20 @@ function AppInner() {
     return () => window.removeEventListener(APP_CONFIG_CHANGED_EVENT, handleAppConfigChanged);
   }, [refreshAgents, restartAmrPolling]);
 
+  // The Add Models modal registers Databricks endpoints without re-probing
+  // every CLI: it publishes the fresh catalogue and only the managed agent's
+  // model list is replaced. Registration never touches the active choice.
+  useEffect(() => {
+    const handleDatabricksModelsChanged = (event: Event) => {
+      const models = databricksModelsFromEvent(event);
+      if (!models) return;
+      setAgents((current) => applyDatabricksModels(current, models));
+    };
+    window.addEventListener(DATABRICKS_MODELS_CHANGED_EVENT, handleDatabricksModelsChanged);
+    return () =>
+      window.removeEventListener(DATABRICKS_MODELS_CHANGED_EVENT, handleDatabricksModelsChanged);
+  }, []);
+
   const handleCreateProject = useCallback(
     async (
       input: CreateInput & {
@@ -2206,6 +2225,8 @@ function AppInner() {
             onOpenDestination={navigateHub}
             onOpenSettings={() => openSettings()}
             onOpenWorkspaceFolder={() => openSettings('projectLocations')}
+            theme={config.theme}
+            onThemeChange={handleThemeChange}
           />
           {/*
             Keyed on the surface identity so React mounts a fresh element per

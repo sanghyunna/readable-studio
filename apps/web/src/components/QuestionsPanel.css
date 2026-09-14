@@ -1,18 +1,35 @@
-/* Questions is a field ledger, not a card mosaic. The workspace owns chrome;
-   only its bounded body scrolls. One reading order at every container width. */
+/* Questions is a ledger, not a stack of cards. One sheet holds the model's
+   questions and the brief's assumptions; rows are hairline-separated lines of
+   that sheet, and only the row under the pointer lifts a tonal wash. Every
+   colour is a semantic token so light, dark and each named palette light the
+   surface with their own ink; nothing here is a fixed grey. The card lives
+   inline in the chat log, so nothing inside it owns a scroll. */
 .questions-panel {
   min-inline-size: 0;
   color: var(--text-strong);
   container-type: inline-size;
 }
-.questions-panel__head { padding: 16px 20px 0; }
+.questions-panel__head { display: flex; align-items: flex-start; gap: 12px; padding: 16px 20px 0; }
+.questions-panel__head-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  inline-size: 28px;
+  block-size: 28px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--white);
+}
+.questions-panel[data-answered='true'] .questions-panel__head-icon { background: var(--success); }
 .questions-panel__head h2 {
   margin: 0;
   color: var(--text-strong);
-  font-size: 20px;
+  font-size: 15px;
   font-weight: 650;
   line-height: 1.25;
   letter-spacing: -0.02em;
+  text-wrap: balance;
 }
 .questions-panel__head p {
   max-inline-size: 70ch;
@@ -25,35 +42,40 @@
 .questions-panel .questions-panel-body {
   min-inline-size: 0;
   min-block-size: 0;
-  padding: 12px 20px 20px;
-  overflow-y: auto;
+  padding: 12px 20px 16px;
 }
+/* The sheet: the theme's opaque base tone (not the lighter panel tone: over
+   `--bg-panel` Solarized's engraved hover well measures 4.37:1, over `--bg` it
+   clears 4.5:1), lit by the same inset highlight the composer controls use.
+   Raised controls on it (Skip, editor actions) wear `--bg-panel`. */
 .questions-panel__content {
   display: grid;
-  gap: 24px;
-  max-inline-size: 70ch;
-  margin-inline: auto;
+  gap: 32px;
   min-inline-size: 0;
   padding: 16px;
   border-radius: var(--radius-lg);
-  background: var(--bg-panel);
-  box-shadow: inset 0 1px 0 var(--hub-control-highlight);
+  background: var(--bg);
+  box-shadow: inset 0 1px 0 var(--hub-control-highlight), var(--shadow-sm);
 }
-.questions-panel__editor { display: grid; min-inline-size: 0; gap: 16px; }
+.questions-panel__content:empty { display: none; }
+
+/* --- Model-authored questions: any count, any label length ------------- */
+.questions-panel__editor { display: grid; min-inline-size: 0; gap: 20px; }
 .questions-panel__formhead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
-.questions-panel__formhead h3,
-.questions-panel__group h3 {
+.questions-panel__formhead h3 {
   margin: 0;
   color: var(--text-strong);
   font-size: 16px;
   font-weight: 650;
   line-height: 1.4;
+  text-wrap: balance;
 }
-.questions-panel__formhead p { flex-basis: 100%; margin: 0; font-size: 13px; line-height: 1.5; }
+.questions-panel__formhead p { flex-basis: 100%; margin: 0; font-size: 13px; line-height: 1.5; text-wrap: pretty; }
 .questions-panel .questions-panel-body .question-form { margin: 0; border: 0; background: transparent; box-shadow: none; }
-.questions-panel .questions-panel-body .question-form-body { padding: 0; gap: 16px; }
+.questions-panel .questions-panel-body .question-form-body { padding: 0; gap: 20px; }
 .questions-panel .questions-panel-body .qf-field { min-inline-size: 0; animation: none; }
-.questions-panel__editor .qf-label { color: var(--text-strong); font-size: 14px; font-weight: 600; text-transform: none; letter-spacing: 0; }
+.questions-panel .questions-panel-body .qf-field + .qf-field { padding-block-start: 20px; border-block-start: 1px solid var(--border); }
+.questions-panel__editor .qf-label { color: var(--text-strong); font-size: 14px; font-weight: 600; line-height: 1.4; text-transform: none; letter-spacing: 0; }
 .questions-panel__editor :is(.qf-help, .qf-hint, .qf-chip-desc, .qf-locked-note, .question-form-pill, .qf-required) { color: var(--text-strong); font-size: 13px; opacity: 1; }
 .questions-panel__editor :is(.qf-input, .qf-textarea, .qf-select, .qf-chip),
 .questions-panel__popover :is(.qf-input, .qf-textarea) {
@@ -78,51 +100,130 @@
 .questions-panel__editor .qf-chip-on { box-shadow: inset 0 -2px 0 var(--text-strong), var(--hub-control-engraved-shadow); font-weight: 650; }
 .questions-panel__editor :is(.qf-card, .qf-card-title, .qf-card-mood, .qf-card-refs, .qf-card-pill) { color: var(--text-strong); background-color: var(--bg); }
 .questions-panel__editor .question-form-foot { padding: 0; border: 0; background: transparent; box-shadow: none; }
+.questions-panel__editor > p[role='alert'] { margin: 0; color: var(--text-strong); font-size: 13px; font-weight: 600; line-height: 1.5; }
+
+/* Nothing asked yet: a quiet, centred line inside the sheet, not a bare
+   caption floating in the stage. */
+.questions-panel .questions-panel-skeleton {
+  display: grid;
+  place-items: center;
+  min-block-size: 160px;
+  block-size: auto;
+  padding: 32px 16px;
+  color: var(--text-strong);
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: center;
+  text-wrap: balance;
+}
+
+/* --- Assumption ledger -------------------------------------------------- */
 .questions-panel__groups { display: grid; min-inline-size: 0; gap: 24px; }
-.questions-panel__influence { margin: 0; color: var(--text-strong); font-size: 13px; line-height: 1.5; font-variant-numeric: tabular-nums; }
+.questions-panel__influence {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 13px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  text-wrap: pretty;
+}
 .questions-panel__group { min-inline-size: 0; }
-.questions-panel__group h3 { display: flex; align-items: baseline; gap: 8px; margin-block-end: 8px; }
-.questions-panel__group h3 > span { font-size: 13px; font-weight: 400; font-variant-numeric: tabular-nums; }
-.questions-panel__rows { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; margin: 0; padding: 0; list-style: none; }
+/* The group heading states provenance ONCE: label, a hairline rule, then the
+   count as a tonal pill. Rows below no longer need to shout it. */
+.questions-panel__group h3 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 4px;
+  padding-inline: 10px;
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+}
+.questions-panel__group h3::after { content: ''; order: 1; flex: 1 1 auto; block-size: 1px; background: var(--border); }
+.questions-panel__group h3 > span {
+  order: 2;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--hub-control-engraved);
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.questions-panel__rows { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; margin: 0; padding: 0; list-style: none; }
 .questions-panel__rows > li { min-inline-size: 0; }
+.questions-panel__rows > li + li { border-block-start: 1px solid var(--border); }
+/* Question | answer | status | affordance. The sheet shows through at rest;
+   the wash on hover is the theme's own ink mixed over the sheet. */
 .questions-panel .questions-panel__row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 11rem) minmax(0, 1fr) auto 16px;
   align-items: baseline;
-  gap: 12px;
+  gap: 4px 16px;
   width: 100%;
   min-inline-size: 0;
-  min-block-size: 48px;
-  padding: 12px;
+  min-block-size: 44px;
+  padding: 12px 10px;
   border: 0;
   border-radius: var(--radius-md);
-  background: linear-gradient(var(--hub-control-engraved), var(--hub-control-engraved)), var(--bg);
-  box-shadow: var(--hub-control-engraved-shadow);
+  background: transparent;
+  box-shadow: none;
   color: var(--text-strong);
   text-align: start;
   white-space: normal;
   font-family: var(--font);
-  transition: transform var(--dur-quick) var(--ease-out);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-quick) var(--ease-out),
+    box-shadow var(--dur-quick) var(--ease-out),
+    transform var(--dur-quick) var(--ease-out);
 }
-/* Keep the readable well when Button's more-specific hover rule lifts its fill. */
-.questions-panel .questions-panel__row:hover:not(:disabled) {
-  background: linear-gradient(var(--hub-control-engraved), var(--hub-control-engraved)), var(--bg);
-  box-shadow: var(--hub-control-engraved-shadow-hover);
+/* Beats Button's own hover fill (an opaque --bg-subtle that fails Solarized)
+   in either stylesheet order; the wash is the rest engraved mix, never more. */
+.questions-panel .questions-panel__row:hover:not(:disabled),
+.questions-panel .questions-panel__row[aria-expanded='true'] {
+  background: var(--hub-control-engraved);
+  box-shadow: var(--hub-control-engraved-shadow);
 }
 .questions-panel .questions-panel__row:active:not(:disabled) { transform: translateY(1px); }
+.questions-panel .questions-panel__row:disabled { cursor: default; opacity: 1; }
 .questions-panel__row > span { min-inline-size: 0; overflow-wrap: anywhere; }
 .questions-panel .questions-panel__key { color: var(--text-strong); font-size: 13px; font-weight: 400; line-height: 1.5; }
 .questions-panel .questions-panel__value { color: var(--text-strong); font-size: 14px; font-weight: 500; line-height: 1.5; }
-.questions-panel__row[data-provenance='stated'] .questions-panel__value { font-weight: 700; }
-.questions-panel .questions-panel__provenance { color: var(--text-strong); font-size: 13px; font-weight: 400; line-height: 1.5; }
-.questions-panel__row > svg { align-self: center; }
-.questions-panel__row[aria-expanded='true'] > svg { transform: rotate(180deg); }
-.questions-panel .questions-panel-foot { flex: 0 0 auto; flex-wrap: wrap; border: 0; background: transparent; box-shadow: none; }
-.questions-panel .questions-panel-status { color: var(--text-strong); }
+.questions-panel__row[data-provenance='stated'] .questions-panel__value { font-weight: 600; }
+/* Status is a caption at the trailing edge: same ink (named palettes' muted
+   ramps cannot hold 4.5:1), one size down, so it reads as a ledger column
+   rather than a badge repeated on every line. */
+.questions-panel .questions-panel__provenance {
+  max-inline-size: 9rem;
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  text-align: end;
+  justify-self: end;
+}
+.questions-panel__row > svg {
+  align-self: center;
+  justify-self: end;
+  transition: transform var(--dur-exit) var(--ease-out);
+}
+.questions-panel .questions-panel__row:hover:not(:disabled) > svg { transform: translateY(1px); }
+.questions-panel__row[aria-expanded='true'] > svg { transform: rotate(180deg); transition-duration: var(--dur-enter); }
+
+/* --- Footer ------------------------------------------------------------- */
+.questions-panel .questions-panel-foot { flex: 0 0 auto; flex-wrap: wrap; gap: 12px; padding: 0 20px 16px; border: 0; background: transparent; box-shadow: none; }
+.questions-panel .questions-panel-status { color: var(--text-strong); font-size: 13px; }
 .questions-panel .questions-panel-status:not(:empty) { flex: 1 0 100%; overflow-wrap: anywhere; }
 .questions-panel .questions-panel-status:empty { display: none; }
 .questions-panel .questions-panel-foot > button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 .questions-panel .questions-skip { border: 0; color: var(--text-strong); background: var(--bg-panel); box-shadow: var(--hub-control-shadow); }
+.questions-panel .questions-skip:hover:not(:disabled) { background: var(--bg-panel); box-shadow: var(--hub-control-shadow-hover); }
+
+/* --- Anchored editor ---------------------------------------------------- */
 .questions-panel__popover.inline-switcher__popover {
   box-sizing: border-box;
   width: min(25rem, calc(100vw - 24px));
@@ -134,12 +235,12 @@
   padding: 12px;
   background: var(--bg);
   color: var(--text-strong);
-  box-shadow: var(--shadow-lg);
+  box-shadow: inset 0 1px 0 var(--hub-control-highlight), var(--shadow-lg);
   font-family: var(--font);
   font-size: 13px;
 }
 .questions-panel__popover--text { display: grid; gap: 12px; }
-.questions-panel__edit-label { font-size: 14px; font-weight: 600; }
+.questions-panel__edit-label { font-size: 14px; font-weight: 600; line-height: 1.4; }
 .questions-panel__popover p { margin: 0; line-height: 1.5; overflow-wrap: anywhere; }
 .questions-panel__edit-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-block-start: 12px; }
 .questions-panel__edit-actions > button { color: var(--text-strong); background: var(--bg-panel); box-shadow: var(--hub-control-shadow); }
@@ -155,22 +256,40 @@
   outline: 2px solid var(--text-strong);
   outline-offset: -2px;
 }
+
+/* --- Adaptive ----------------------------------------------------------- */
 @container (max-width: 540px) {
-  .questions-panel .questions-panel__row { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; }
+  .questions-panel .questions-panel__row { grid-template-columns: minmax(0, 1fr) 16px; gap: 2px 12px; }
   .questions-panel__key { grid-column: 1; }
   .questions-panel__value { grid-column: 1; }
-  .questions-panel__provenance { grid-column: 1; }
+  .questions-panel .questions-panel__provenance { grid-column: 1; justify-self: start; max-inline-size: none; text-align: start; }
   .questions-panel__row > svg { grid-column: 2; grid-row: 1 / 4; }
-  .questions-panel__content { padding: 12px; }
+  .questions-panel__content { padding: 16px 12px; gap: 24px; }
+  .questions-panel__head { padding-inline: 16px; }
   .questions-panel .questions-panel-body { padding-inline: 12px; }
+  .questions-panel .questions-panel-foot { padding-inline: 16px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .questions-panel .questions-panel__row { transition: none; }
+  .questions-panel .questions-panel__row,
+  .questions-panel__row > svg { transition: none; }
   .questions-panel .questions-panel__row:active:not(:disabled) { transform: none; }
+  .questions-panel .questions-panel__row:hover:not(:disabled) > svg { transform: none; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  /* The engraved wash is translucent by recipe; keep the sheet tone opaque and
+     let the inset rim alone mark hover and the open row. */
+  .questions-panel .questions-panel__row:hover:not(:disabled),
+  .questions-panel .questions-panel__row[aria-expanded='true'] {
+    background: var(--bg);
+    box-shadow: inset 0 0 0 1px var(--border-strong), var(--hub-control-engraved-shadow);
+  }
+  .questions-panel__group h3 > span { background: var(--bg); box-shadow: inset 0 0 0 1px var(--border-strong); }
 }
 @media (forced-colors: active) {
   .questions-panel .questions-panel__row,
   .questions-panel__popover.inline-switcher__popover { outline: 1px solid ButtonText; }
+  .questions-panel__rows > li + li { border-block-start-color: CanvasText; }
+  .questions-panel__group h3::after { background: CanvasText; }
   .questions-panel :is(button, input, textarea):focus-visible,
   .questions-panel__popover :is(button, input, textarea):focus-visible { outline-color: Highlight; }
 }

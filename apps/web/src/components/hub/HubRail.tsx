@@ -4,6 +4,7 @@
 // The shell owns layout, including the rail's resizer and transient overlays.
 
 import { useT } from '../../i18n';
+import type { AppTheme } from '../../types';
 import { ProjectRail } from '../ProjectRail';
 import { HubOpenWork } from './HubOpenWork';
 import { HubRailFooter } from './HubRailFooter';
@@ -26,6 +27,10 @@ export interface HubRailProps {
   onOpenSettings?: (() => void) | undefined;
   /** Open the surface that owns the workspace storage roots. */
   onOpenWorkspaceFolder?: (() => void) | undefined;
+  /** The theme the app config currently holds (rail footer Theme row). */
+  theme?: AppTheme | undefined;
+  /** App's appearance path; the footer's theme modal drives it. */
+  onThemeChange?: ((theme: AppTheme) => void) | undefined;
 }
 
 export function HubRail({
@@ -36,6 +41,8 @@ export function HubRail({
   onOpenDestination,
   onOpenSettings,
   onOpenWorkspaceFolder,
+  theme,
+  onThemeChange,
 }: HubRailProps) {
   const t = useT();
   const rail = useHubRail();
@@ -135,12 +142,14 @@ export function HubRail({
             />
           </div>
         )}
-        {onOpenDestination && onOpenSettings && onOpenWorkspaceFolder ? (
+        {onOpenDestination && onOpenSettings && onOpenWorkspaceFolder && onThemeChange ? (
           <HubRailFooter
             username={username}
             onOpenDestination={onOpenDestination}
             onOpenSettings={onOpenSettings}
             onOpenWorkspaceFolder={onOpenWorkspaceFolder}
+            theme={theme}
+            onThemeChange={onThemeChange}
             workspaceName={workspaceName}
           />
         ) : null}

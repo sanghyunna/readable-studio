@@ -86,6 +86,35 @@ function mixOver(ink: Rgb, ratio: number, surface: Rgb): Rgb {
   return ink.map((channel, index) => channel * ratio + surface[index]! * (1 - ratio)) as unknown as Rgb;
 }
 
+/**
+ * Resolves the engraved recipe composited over a surface. Light polarity is
+ * `color-mix(in srgb, var(--text) I%, color-mix(in srgb, var(--bg-elevated) E%,
+ * transparent))`: a premultiplied wash of I ink and (100-I)*E elevated
+ * material. Dark polarity is the plain ink wash `color-mix(in srgb,
+ * var(--text) I%, transparent)`, which lifts the floor because the ink is light.
+ */
+function engravedWell(recipeValue: string, ink: Rgb, elevated: Rgb, surface: Rgb): Rgb {
+  const match = /^color-mix\(in srgb, var\(--text\) (\d+)%, (?:color-mix\(in srgb, var\(--bg-elevated\) (\d+)%, transparent\)|transparent)\)$/.exec(recipeValue);
+  expect(match, `engraved recipe shape: ${recipeValue}`).not.toBeNull();
+  const inkShare = Number(match![1]) / 100;
+  const elevatedShare = (Number(match![2] ?? '0') / 100) * (1 - inkShare);
+  return ink.map((channel, index) =>
+    channel * inkShare + elevated[index]! * elevatedShare + surface[index]! * (1 - inkShare - elevatedShare)) as unknown as Rgb;
+}
+
+/** The declarations of the LAST recipe rule whose selector list contains `selector` (the cascade winner). */
+function recipeBlock(recipe: string, selector: string): string {
+  const blocks = [...recipe.matchAll(/((?:^|\n)[^{}@]*?)\{([^{}]*)\}/g)];
+  const block = blocks.reverse().find(([, selectors]) => (selectors ?? '').includes(selector));
+  expect(block, `recipe block for ${selector}`).toBeDefined();
+  return block![2] ?? '';
+}
+
+/** Named palettes declare their own polarity; the recipe branches on exactly that. */
+function isDarkPalette(source: string): boolean {
+  return /color-scheme:\s*dark/.test(source);
+}
+
 function relativeLuminance([r, g, b]: Rgb): number {
   const linear = (channel: number): number => {
     const value = channel / 255;
@@ -202,25 +231,73 @@ describe('Screen Mode theme recipes', () => {
   it('keeps every named theme hint above the 3:1 floor on its own engraved well', async () => {
     // Given
     const recipe = await readFile(recipePath, 'utf8');
-    const wellPercent = Number(/(\d+)%/.exec(customPropertyValue(recipe, '--hub-control-engraved'))?.[1]);
     const namedThemeIds = EXPLICIT_THEME_OPTIONS.map(({ id }) => id).filter((id) => id !== 'light' && id !== 'dark');
 
     // When
     const measured = await Promise.all(namedThemeIds.map(async (id) => {
       const source = await readFile(path.join(themesRoot, `${id}.css`), 'utf8');
+      const dark = isDarkPalette(source);
+      const wellRecipe = customPropertyValue(dark ? recipeBlock(recipe, `[data-theme='${id}']`) : recipe, '--hub-control-engraved');
+      const wellPercent = Number(/(\d+)%/.exec(wellRecipe)?.[1]);
+      expect(wellPercent, `${id} ink share`).toBeGreaterThan(0);
       const ink = hexToRgb(customPropertyValue(source, '--text'));
       const panel = hexToRgb(customPropertyValue(source, '--bg-panel'));
+      const elevated = hexToRgb(customPropertyValue(source, '--bg-elevated'));
       const hint = hexToRgb(customPropertyValue(source, '--text-placeholder-engraved'));
-      const well = mixOver(ink, wellPercent / 100, panel);
-      return { id, hintOnWell: contrastRatio(hint, well), inkOnWell: contrastRatio(ink, well) };
+      const well = engravedWell(wellRecipe, ink, elevated, panel);
+      // The pure-ink model is the floor: the elevated body only lifts the well.
+      expect(relativeLuminance(well), `${id} well lifts above a pure ink wash`).toBeGreaterThanOrEqual(relativeLuminance(mixOver(ink, wellPercent / 100, panel)) - 1e-9);
+      return { id, dark, hintOnWell: contrastRatio(hint, well), inkOnWell: contrastRatio(ink, well) };
     }));
 
     // Then
-    expect(wellPercent).toBeGreaterThan(0);
     expect(measured).toHaveLength(namedThemeIds.length);
     for (const { id, hintOnWell, inkOnWell } of measured) {
       expect(hintOnWell, `${id} hint on its engraved well`).toBeGreaterThanOrEqual(3);
       expect(hintOnWell, `${id} hint must stay quieter than typed ink`).toBeLessThan(inkOnWell);
+    }
+  });
+
+  // A recess does not have to be darker. In a dark palette the ink is light on
+  // dark, so the engraved well is LIFTED above its panel; a light palette keeps
+  // the well slightly below the panel. Both directions come from one recipe
+  // branched on the palette's own `color-scheme`, and the lip must land on the
+  // lit side of the floor in both, or the well reads as a raised button.
+  it('lifts the engraved well above the panel in dark palettes and recesses it in light ones', async () => {
+    // Given
+    const recipe = await readFile(recipePath, 'utf8');
+    const tokens = await readFile(path.join(webRoot, 'src/styles/tokens.css'), 'utf8');
+    const lightBlock = recipeBlock(recipe, ':root');
+
+    // When
+    const measured = await Promise.all(EXPLICIT_THEME_OPTIONS.map(async ({ id }) => {
+      const source = id === 'light'
+        ? (tokens.match(/:root\s*\{([\s\S]*?)\n\}/m)?.[1] ?? '')
+        : id === 'dark'
+          ? (tokens.match(/\[data-theme="dark"\]\s*\{([\s\S]*?)\n\}/m)?.[1] ?? '')
+          : await readFile(path.join(themesRoot, `${id}.css`), 'utf8');
+      const dark = id === 'dark' || (id !== 'light' && isDarkPalette(source));
+      const block = dark ? recipeBlock(recipe, `[data-theme='${id}']`) : lightBlock;
+      const ink = hexToRgb(customPropertyValue(source, '--text'));
+      const panel = hexToRgb(customPropertyValue(source, '--bg-panel'));
+      const elevated = hexToRgb(customPropertyValue(source, '--bg-elevated'));
+      const well = engravedWell(customPropertyValue(block, '--hub-control-engraved'), ink, elevated, panel);
+      const hover = engravedWell(customPropertyValue(block, '--hub-control-engraved-hover'), ink, elevated, panel);
+      const lipRecipe = /inset 0 -1px 0 (color-mix\([^;]*?\))\s*$/.exec(customPropertyValue(block, '--hub-control-engraved-shadow'))?.[1] ?? '';
+      const lip = engravedWell(lipRecipe, ink, elevated, well);
+      return { id, dark, separation: contrastRatio(well, panel), lifted: relativeLuminance(well) > relativeLuminance(panel), hoverStep: contrastRatio(hover, well), lipLit: relativeLuminance(lip) > relativeLuminance(well) };
+    }));
+
+    // Then
+    expect(measured.filter(({ dark }) => dark).length).toBeGreaterThan(0);
+    expect(measured.filter(({ dark }) => !dark).length).toBeGreaterThan(0);
+    for (const { id, dark, separation, lifted, hoverStep, lipLit } of measured) {
+      expect(lifted, `${id} well ${dark ? 'lifts above' : 'recesses below'} its panel`).toBe(dark);
+      expect(separation, `${id} well separates from its panel`).toBeGreaterThanOrEqual(1.05);
+      expect(hoverStep, `${id} hover is a distinct step`).toBeGreaterThan(1.03);
+      // The inverted cue: on a lifted floor the lip must still land on the lit
+      // side, otherwise the well reads as a raised button's bottom edge.
+      if (dark) expect(lipLit, `${id} lower lip is lit relative to the lifted floor`).toBe(true);
     }
   });
 

@@ -9,10 +9,13 @@ const ACCENT_VARS = [
   '--accent-hover',
 ] as const;
 
-export const DEFAULT_ACCENT_COLOR = '#c96442';
+// The accent a fresh install starts with, and the custom-mode fallback for an
+// unusable stored colour: the light theme's `--accent` in `styles/tokens.css`.
+// It has to be a literal (it seeds `color-mix()` values and is persisted as
+// hex), so the retired-accent guard test pins it to that token.
+export const DEFAULT_ACCENT_COLOR = '#2563eb';
 export const ACCENT_SWATCHES = [
   DEFAULT_ACCENT_COLOR,
-  '#2563eb',
   '#7c3aed',
   '#059669',
   '#dc2626',

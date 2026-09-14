@@ -89,14 +89,23 @@ afterEach(async () => {
 describe('FileViewer tool exit ordering', () => {
   for (const locale of ['en', 'ko'] as const) {
     it.each(['draw-overlay-toggle', 'board-mode-toggle', 'comment-panel-toggle', 'manual-edit-mode-toggle'])(
-      `keeps the dirty edit host mounted and shows shipped ${locale} Toast for %s`,
+      `saves through the edit toggle or keeps the dirty edit host mounted for other tools (${locale}, %s)`,
       async (tool) => {
         const inspector = host();
         const modeChanged = vi.fn();
+        let resolveSaved!: () => void;
+        const saved = new Promise<void>((resolve) => { resolveSaved = resolve; });
+        const writes: string[] = [];
+        if (tool === 'manual-edit-mode-toggle') {
+          vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
+            if (init?.method === 'POST') writes.push(JSON.parse(String(init.body)).content);
+            return new Response(JSON.stringify({ file }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          });
+        }
         await act(async () => {
           render(<I18nProvider initial={locale}><FileViewer projectId="project-1" projectKind="prototype"
             file={file} liveHtml={html} manualEditPortalId={inspector.id}
-            onManualEditInspectorChange={modeChanged} /></I18nProvider>);
+            onManualEditInspectorChange={modeChanged} onFileSaved={() => resolveSaved()} /></I18nProvider>);
         });
         fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
         const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
@@ -104,6 +113,14 @@ describe('FileViewer tool exit ordering', () => {
         expect(frame.srcdoc).toContain('changed-hero');
         expect(inspector.childElementCount).toBeGreaterThan(0);
         modeChanged.mockClear();
+        if (tool === 'manual-edit-mode-toggle') {
+          await act(async () => { fireEvent.click(screen.getByTestId(tool)); await saved; });
+          expect(writes).toHaveLength(1);
+          expect(writes[0]).toContain('changed-hero');
+          expect(screen.getByTestId(tool).getAttribute('aria-pressed')).toBe('false');
+          expect(inspector.childElementCount).toBe(0);
+          return;
+        }
         fireEvent.click(screen.getByTestId(tool));
         const toast = screen.getByRole('alert');
         expect(toast.textContent).toBe((locale === 'en' ? en : ko)['manualEdit.pendingSaveBlocked']);

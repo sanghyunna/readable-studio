@@ -55,12 +55,6 @@ import { visualReferenceForPlugin } from '../utils/visualPluginContext';
 import { HomeHero, type ExamplePromptInfo, type HomeHeroHandle } from './HomeHero';
 import { stageFiles as buildStagedFiles, type StagedFileItem } from './composer/stagedFiles';
 import { findChip, HOME_HERO_CHIPS, type HomeHeroChip } from './home-hero/chips';
-import { creationBriefAssumptions } from './home-hero/creation-brief';
-import {
-  mergeBriefAssumptions,
-  readProjectBrief,
-  type BriefProjectMetadata,
-} from './brief-state';
 
 import {
   buildPluginAuthoringInputs,
@@ -1808,26 +1802,9 @@ function homeCreateProjectMetadata(
   const kind = projectKind ?? existing?.kind ?? null;
   if (!kind) return existing;
 
-  // Artifact-specific settings (fidelity, speaker notes, slide count, …) are no
-  // longer collected in the home composer; the agent asks for them via
-  // question-form, so we only seed `kind` here and let those fields stay
-  // unset (the system prompt then marks them "unknown — ask").
-  const next: ProjectMetadata = {
-    ...(existing ?? {}),
-    kind,
-  };
-  // Creation is a composer send, so the settings the New project modal used to
-  // freeze into metadata are seeded as *brief assumptions* carrying their
-  // default. The Brief card renders them as correctable chips, which is how
-  // they become editable after creation for the first time.
-  const assumptions = creationBriefAssumptions(kind, next);
-  if (assumptions.length === 0) return next;
-  const existingBrief = readProjectBrief(next);
-  const seeded: BriefProjectMetadata = {
-    ...next,
-    brief: mergeBriefAssumptions(existingBrief, assumptions, Date.now()),
-  };
-  return seeded;
+  // The model decides which questions and assumptions apply to the request.
+  // Preserve explicit metadata, but never seed a discovery questionnaire.
+  return { ...(existing ?? {}), kind };
 }
 
 // Selectable design systems for the home composer, sorted to match the picker:

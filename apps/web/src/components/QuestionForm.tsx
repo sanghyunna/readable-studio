@@ -177,7 +177,7 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
         {form.questions.map((q) => {
           const value = currentAnswers[q.id];
           return (
-            <div key={q.id} className="qf-field">
+            <div key={q.id} className="qf-field" data-question-id={q.id} data-question-type={q.type}>
               <label className="qf-label">
                 <span>{q.label}</span>
                 {q.required ? (

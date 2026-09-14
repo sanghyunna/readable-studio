@@ -56,8 +56,14 @@ import {
 } from './amrLoginPolling';
 import {
   effectiveAgentModelChoice,
+  effectiveReasoningOptions,
   MODEL_SELECTION_REQUIRED_EVENT,
 } from './agentModelSelection';
+import {
+  isDatabricksManagedAgent,
+} from './databricksModels';
+import { DatabricksAddModelsModal } from './DatabricksAddModelsModal';
+import { DatabricksAddModelsRow } from './DatabricksAddModelsRow';
 import { SearchableModelSelect } from './modelOptions';
 import { dedupeAgentModels } from './modelCatalog';
 import { ListboxOptionLabel } from './DirectListbox';
@@ -173,6 +179,7 @@ export function InlineModelSwitcher({
   const t = useT();
   const analytics = useAnalytics();
   const [open, setOpen] = useState(false);
+  const [databricksModalOpen, setDatabricksModalOpen] = useState(false);
   const [selectionWarningNonce, setSelectionWarningNonce] = useState(0);
   const [showSelectionWarning, setShowSelectionWarning] = useState(false);
   const [selectionWarningPos, setSelectionWarningPos] = useState<{
@@ -451,6 +458,13 @@ export function InlineModelSwitcher({
     (config.agentId && config.agentModels?.[config.agentId]) || {};
   const currentModelChoice = effectiveAgentModelChoice(currentAgent, currentChoice);
   const currentModelId = currentModelChoice?.model ?? null;
+  // Databricks owns its model catalogue: the dropdown always ends in the
+  // "Add models" action row, and the empty state is that row alone.
+  const databricksManaged = isDatabricksManagedAgent(currentAgent);
+  const openDatabricksAddModels = useCallback(() => {
+    setOpen(false);
+    setDatabricksModalOpen(true);
+  }, []);
 
   useEffect(() => {
     if (variant !== 'model') return;
@@ -497,7 +511,13 @@ export function InlineModelSwitcher({
     agentModelChoices.find((m) => m.id === currentModelId)?.label ??
     currentAgent?.models?.find((m) => m.id === currentModelId)?.label ??
     (currentModelId && currentModelId !== 'default' ? currentModelId : null);
-  const reasoningOptions = currentAgent?.reasoningOptions ?? [];
+  // A registered model can narrow the effort choices (e.g. the Anthropic
+  // Messages gateway rejects `minimal`); the per-model list wins. The same
+  // resolver gates the effort mount, so an empty list never reaches this UI.
+  const reasoningOptions = useMemo(
+    () => effectiveReasoningOptions(currentAgent, currentModelId),
+    [currentAgent, currentModelId],
+  );
   const currentReasoningId = currentChoice.reasoning ?? reasoningOptions[0]?.id ?? null;
   const reasoningLabel = (id: string): string => {
     const labels: Record<string, string> = {
@@ -761,8 +781,9 @@ export function InlineModelSwitcher({
           </span>
         )}
         {/* Split mounts carry a single honest label each: the agent button is
-            the agent icon alone; the model button is plain text followed by a
-            dropdown chevron because it opens the model list directly. */}
+            the agent icon; the model and effort buttons are plain text. Every
+            trigger ends in the same dropdown chevron, so the icon-only agent
+            button reads as selectable rather than as a static logo. */}
         {isAgentVariant ? null : (
           <span className="inline-switcher__chip-text">
             {isModelVariant ? (
@@ -803,13 +824,11 @@ export function InlineModelSwitcher({
             )}
           </span>
         )}
-        {variant === 'combined' || isDirectListVariant ? (
-          <Icon
-            name="chevron-down"
-            size={12}
-            className="inline-switcher__chip-chevron"
-          />
-        ) : null}
+        <Icon
+          name="chevron-down"
+          size={12}
+          className="inline-switcher__chip-chevron"
+        />
       </button>
       {isModelVariant && showSelectionWarning && typeof document !== 'undefined'
         ? createPortal(
@@ -1064,59 +1083,71 @@ export function InlineModelSwitcher({
 
               {isModelVariant &&
               currentAgent &&
-              agentModelChoices.length > 0 ? (
+              (agentModelChoices.length > 0 || databricksManaged) ? (
                 // DEFECT: clicking the model button used to open a panel that
                 // merely CONTAINED another control the user then had to
                 // operate. The model button now opens the list of models
                 // itself — one click to open, one click to pick.
-                <div
-                  className="inline-switcher__model-list"
-                  role="listbox"
-                  aria-label={t('inlineSwitcher.modelLabel')}
-                  data-testid="inline-model-switcher-model-list"
-                >
-                  {agentModelChoices.map((model) => {
-                    const selected = model.id === currentModelId;
-                    return (
-                      <button
-                        key={model.id}
-                        type="button"
-                        role="option"
-                        aria-selected={selected}
-                        className={
-                          'inline-switcher__model-option' +
-                          (selected ? ' is-active' : '')
-                        }
-                        title={model.label}
-                        data-testid={`inline-model-switcher-model-option-${model.id}`}
-                        onClick={() => {
-                          trackExecutionSettingsPopoverClick(analytics.track, {
-                            page_name: 'home',
-                            area: 'execution_settings_popover',
-                            element: 'model_dropdown',
-                            execution_mode: 'local_cli',
-                            model_id: modelIdForTracking(model.id),
-                          });
-                          onAgentModelChange?.(currentAgent.id, {
-                            model: model.id,
-                          });
-                          setOpen(false);
-                        }}
-                      >
-                        <ListboxOptionLabel label={model.label} />
-                        <span
-                          className="inline-switcher__model-option-check"
-                          aria-hidden="true"
-                        >
-                          {selected ? <Icon name="check" size={13} /> : null}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
+                <>
+                  {agentModelChoices.length > 0 ? (
+                    <div
+                      className="inline-switcher__model-list"
+                      role="listbox"
+                      aria-label={t('inlineSwitcher.modelLabel')}
+                      data-testid="inline-model-switcher-model-list"
+                    >
+                      {agentModelChoices.map((model) => {
+                        const selected = model.id === currentModelId;
+                        return (
+                          <button
+                            key={model.id}
+                            type="button"
+                            role="option"
+                            aria-selected={selected}
+                            className={
+                              'inline-switcher__model-option' +
+                              (selected ? ' is-active' : '')
+                            }
+                            title={model.label}
+                            data-testid={`inline-model-switcher-model-option-${model.id}`}
+                            onClick={() => {
+                              trackExecutionSettingsPopoverClick(analytics.track, {
+                                page_name: 'home',
+                                area: 'execution_settings_popover',
+                                element: 'model_dropdown',
+                                execution_mode: 'local_cli',
+                                model_id: modelIdForTracking(model.id),
+                              });
+                              onAgentModelChange?.(currentAgent.id, {
+                                model: model.id,
+                              });
+                              setOpen(false);
+                            }}
+                          >
+                            <ListboxOptionLabel label={model.label} />
+                            <span
+                              className="inline-switcher__model-option-check"
+                              aria-hidden="true"
+                            >
+                              {selected ? <Icon name="check" size={13} /> : null}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                  {databricksManaged ? (
+                    // Action, not an option: it opens the registration modal and
+                    // can never become the selected model.
+                    <DatabricksAddModelsRow
+                      separated={agentModelChoices.length > 0}
+                      onActivate={openDatabricksAddModels}
+                    />
+                  ) : null}
+                </>
               ) : !isAgentVariant &&
               currentAgent &&
-              agentModelChoices.length > 0 ? (
+              (agentModelChoices.length > 0 || databricksManaged) ? (
                 <div className="inline-switcher__row">
                   <span className="inline-switcher__label">
                     {t('inlineSwitcher.modelLabel')}
@@ -1153,6 +1184,14 @@ export function InlineModelSwitcher({
                             },
                           ]
                         : undefined
+                    }
+                    trailingAction={
+                      databricksManaged ? (
+                        <DatabricksAddModelsRow
+                          separated={agentModelChoices.length > 0}
+                          onActivate={openDatabricksAddModels}
+                        />
+                      ) : undefined
                     }
                   />
                 </div>
@@ -1269,25 +1308,39 @@ export function InlineModelSwitcher({
             </>
           )}
 
-          <button
-            type="button"
-            className="inline-switcher__more"
-            data-testid="inline-model-switcher-open-settings"
-            onClick={() => {
-              trackExecutionSettingsPopoverClick(analytics.track, {
-                page_name: 'home',
-                area: 'execution_settings_popover',
-                element: 'open_execution_settings',
-              });
-              setOpen(false);
-              onOpenSettings?.('execution');
-            }}
-          >
-            <Icon name="settings" size={13} />
-            <span>{t('inlineSwitcher.openFullSettings')}</span>
-          </button>
+          {/* A Databricks-only model picker is the catalogue itself: its rows
+              are models followed by Add Models, never a generic settings row.
+              Combined switchers retain their outer settings action; their
+              nested model dropdown owns this same exact list contract. */}
+          {isModelVariant && databricksManaged ? null : (
+            <button
+              type="button"
+              className="inline-switcher__more"
+              data-testid="inline-model-switcher-open-settings"
+              onClick={() => {
+                trackExecutionSettingsPopoverClick(analytics.track, {
+                  page_name: 'home',
+                  area: 'execution_settings_popover',
+                  element: 'open_execution_settings',
+                });
+                setOpen(false);
+                onOpenSettings?.('execution');
+              }}
+            >
+              <Icon name="settings" size={13} />
+              <span>{t('inlineSwitcher.openFullSettings')}</span>
+            </button>
+          )}
         </div>,
         document.body,
+      ) : null}
+      {databricksManaged ? (
+        <DatabricksAddModelsModal
+          open={databricksModalOpen}
+          onClose={() => setDatabricksModalOpen(false)}
+          {...(currentAgent?.installUrl ? { installUrl: currentAgent.installUrl } : {})}
+          {...(currentAgent?.docsUrl ? { docsUrl: currentAgent.docsUrl } : {})}
+        />
       ) : null}
     </div>
   );

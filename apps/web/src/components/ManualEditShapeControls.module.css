@@ -441,34 +441,7 @@
   gap: 6px;
 }
 
-.fillField {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.noFillToggle {
-  align-self: flex-start;
-  min-height: 26px;
-  padding: 2px 8px;
-  color: var(--text-muted);
-  font-size: 11.5px;
-  font-weight: 550;
-}
-
-.noFillToggle[aria-pressed="true"] {
-  color: var(--text);
-}
-
-/* Light ray, not a grey rule (hub-dna §4/§10). */
-.detailDivider {
-  height: 1px;
-  margin: 6px 0;
-  background: var(--hub-pearl-highlight);
-}
-
 @media (prefers-reduced-transparency: reduce) {
-  .detailDivider { background: var(--border); }
   .quickPanel { box-shadow: inset 0 -1px 0 var(--border); }
 }
 

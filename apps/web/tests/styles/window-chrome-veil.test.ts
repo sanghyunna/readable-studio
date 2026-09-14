@@ -54,13 +54,31 @@ function color(value: string, vars: Record<string, string>): Color {
   throw new Error(`Unsupported color ${value}`);
 }
 
-function endpoints(dark: boolean, attributes: string, systemDark = false) {
+const chroma = (paint: Color) => Math.max(...paint.slice(0, 3)) - Math.min(...paint.slice(0, 3));
+const composite = (paint: Color, backing: readonly number[]) =>
+  paint.slice(0, 3).map((channel, i) => channel * paint[3] + backing[i]! * (1 - paint[3]));
+
+interface Chrome {
+  background: string;
+  endpoints: Color[];
+  canvasStops: Color[];
+  glass: string;
+}
+
+/**
+ * The real cascade for the chrome strip: jsdom cannot evaluate media queries,
+ * so the requested media state is unwrapped first (system dark, reduced
+ * transparency), then the real selector cascade resolves the chrome-local
+ * endpoint tokens and the winning background declaration.
+ */
+function chrome(dark: boolean, attributes: string, systemDark = false, reducedTransparency = false): Chrome {
   const sheet = postcss.parse(shell);
-  // jsdom cannot evaluate media queries: select the requested media state,
-  // then let its real selector cascade resolve the chrome-local overrides.
   sheet.walkAtRules('media', rule => {
     if (systemDark && rule.params === '(prefers-color-scheme: dark)') {
       if (!rule.nodes) throw new Error('Missing system-dark media body');
+      rule.replaceWith(...rule.nodes);
+    } else if (reducedTransparency && rule.params === '(prefers-reduced-transparency: reduce)') {
+      if (!rule.nodes) throw new Error('Missing reduced-transparency media body');
       rule.replaceWith(...rule.nodes);
     } else rule.remove();
   });
@@ -69,27 +87,46 @@ function endpoints(dark: boolean, attributes: string, systemDark = false) {
     const style = dom.window.getComputedStyle(dom.window.document.querySelector('header')!);
     const vars = palette(dark);
     for (const name of ['blue', 'pink']) vars[`--app-window-chrome-${name}`] = style.getPropertyValue(`--app-window-chrome-${name}`).trim();
+    const glass = style.getPropertyValue('--app-window-chrome-glass').trim();
     let background = '';
     sheet.walkRules('.app-chrome-header.app-window-chrome', rule => {
       rule.walkDecls('background', decl => { background = decl.value; });
     });
-    const [angle, ...stops] = args(background.slice('linear-gradient('.length, -1));
-    expect(angle).toBe('90deg');
-    expect(stops.map(stop => stop.match(/ (\d+)%$/)?.[1])).toEqual(['10', '92']);
-    return stops.map(stop => color(stop.replace(/ \d+%$/, ''), vars));
+    if (background.startsWith('linear-gradient(')) {
+      const [angle, ...stops] = args(background.slice('linear-gradient('.length, -1));
+      expect(angle).toBe('90deg');
+      expect(stops.map(stop => stop.match(/ (\d+)%$/)?.[1])).toEqual(['10', '92']);
+      return {
+        background,
+        glass,
+        endpoints: stops.map(stop => color(stop.replace(/ \d+%$/, ''), vars)),
+        canvasStops: [color('var(--hub-canvas-blue)', vars), color('var(--hub-canvas-pink)', vars)],
+      };
+    }
+    return { background, glass, endpoints: [], canvasStops: [] };
   } finally { dom.window.close(); }
 }
 
-const composite = (paint: Color, backing: readonly number[]) => paint.slice(0, 3).map((channel, i) => channel * paint[3] + backing[i]! * (1 - paint[3]));
+/** The shipped ribbon recipe, resolved against one scheme's palette. */
+function ribbonEndpoints(dark: boolean): Color[] {
+  const vars = palette(dark);
+  return [
+    color('color-mix(in srgb, color-mix(in srgb, var(--hub-canvas-blue) 70%, var(--blue)) 72%, transparent)', vars),
+    color('color-mix(in srgb, color-mix(in srgb, var(--hub-canvas-pink) 70%, var(--purple)) 72%, transparent)', vars),
+  ];
+}
 
-describe('window chrome veil separation', () => {
-  it('keeps both light endpoint colors and their 30% alpha unchanged', () => {
-    const actual = endpoints(false, 'data-theme="light" data-theme-scheme="light"');
-    const vars = palette(false);
+describe('window chrome ribbon separation', () => {
+  it('light theme: both endpoints resolve to the saturated recipe at the strong-glass alpha', () => {
+    const actual = chrome(false, 'data-theme="light" data-theme-scheme="light"');
+    const expected = ribbonEndpoints(false);
     for (const [i, name] of ['blue', 'pink'].entries()) {
-      const original = color(`color-mix(in srgb, var(--hub-canvas-${name}) 30%, transparent)`, vars);
-      expect(actual[i]).toEqual(original);
-      process.stdout.write(`${JSON.stringify({ kind: 'sRGB calculation, not browser pixels', theme: 'light', endpoint: name, before: original, after: actual[i] })}\n`);
+      expect(actual.endpoints[i]).toEqual(expected[i]);
+      expect(actual.endpoints[i]![3]).toBe(0.72);
+      // Saturation is the separation story: the band must be measurably more
+      // chromatic than the canvas stop it continues, in the light scheme too.
+      expect(chroma(actual.endpoints[i]!)).toBeGreaterThanOrEqual(1.6 * chroma(actual.canvasStops[i]!));
+      process.stdout.write(`${JSON.stringify({ kind: 'sRGB calculation, not browser pixels', theme: 'light', endpoint: name, before: actual.canvasStops[i], after: actual.endpoints[i] })}\n`);
     }
   });
 
@@ -98,29 +135,67 @@ describe('window chrome veil separation', () => {
     ['scheme dark', 'data-theme="dark" data-theme-scheme="dark"', false],
     ['named dark scheme', 'data-theme="nord" data-theme-scheme="dark"', false],
     ['system dark', '', true],
-  ] as const)('%s separates both endpoints while retaining 70% backing', (_name, attributes, systemDark) => {
-    const actual = endpoints(true, attributes, systemDark);
-    const vars = palette(true);
-    for (const [i, name] of ['blue', 'pink'].entries()) {
-      const original = color(`var(--hub-canvas-${name})`, vars);
-      expect(actual[i]![3]).toBe(0.3);
-      // Even directly over the same canvas stop, every channel must move by
-      // several bytes, not barely cross the screenshot's no-op assertion.
-      const painted = composite(actual[i]!, original);
-      for (const [channel, value] of painted.entries()) {
-        expect(value - original[channel]!).toBeGreaterThanOrEqual(4);
-        expect(value - original[channel]!).toBeLessThan(9);
-      }
+  ] as const)('%s separates both endpoints with the same saturated recipe', (_name, attributes, systemDark) => {
+    const actual = chrome(true, attributes, systemDark);
+    const expected = ribbonEndpoints(true);
+    for (const [i] of ['blue', 'pink'].entries()) {
+      expect(actual.endpoints[i]).toEqual(expected[i]);
+      expect(actual.endpoints[i]![3]).toBe(0.72);
+      expect(chroma(actual.endpoints[i]!)).toBeGreaterThanOrEqual(1.6 * chroma(actual.canvasStops[i]!));
+      // Even directly over the same canvas stop, the band must move by a
+      // clearly visible amount, not the old rounding error.
+      const painted = composite(actual.endpoints[i]!, actual.canvasStops[i]!);
+      const shift = Math.max(...painted.map((value, channel) => value - actual.canvasStops[i]![channel]!));
+      expect(shift).toBeGreaterThanOrEqual(24);
     }
   });
 
-  it('clears the reported Chromium dark-blue backing by more than rounding tolerance', () => {
+  it('clears the reported Chromium dark-blue backing by an obvious step', () => {
     const backing = [47, 56, 78];
-    const actual = endpoints(true, 'data-theme="dark"')[0]!;
+    const actual = chrome(true, 'data-theme="dark"').endpoints[0]!;
     const painted = composite(actual, backing);
-    for (const [i, channel] of painted.entries()) expect(channel - backing[i]!).toBeGreaterThan(5);
+    for (const [i, channel] of painted.entries()) expect(channel - backing[i]!).toBeGreaterThan(12);
+    // The rejected 30% veil moved this same backing by under 1.6 per channel.
     const old = color('color-mix(in srgb, var(--hub-canvas-blue) 30%, transparent)', palette(true));
     expect(Math.max(...composite(old, backing).map((value, i) => value - backing[i]!))).toBeLessThan(1.6);
     process.stdout.write(`${JSON.stringify({ kind: 'sRGB calculation, not browser pixels', backing, oldEndpoint: old.slice(0, 3), newEndpoint: actual.slice(0, 3), oldComposite: composite(old, backing), newComposite: painted })}\n`);
+  });
+
+  it('refracts the backdrop hard through a chrome-local glass token in both schemes', () => {
+    for (const [dark, attributes] of [
+      [false, 'data-theme="light" data-theme-scheme="light"'],
+      [true, 'data-theme="dark"'],
+    ] as const) {
+      const { glass } = chrome(dark, attributes);
+      expect(glass).toBe('blur(32px) saturate(240%)');
+      // Hard means well above the shared glass tier (blur 22px, saturate 165%).
+      const blur = Number(/blur\((\d+)px\)/.exec(glass)?.[1]);
+      const saturate = Number(/saturate\((\d+)%\)/.exec(glass)?.[1]);
+      expect(blur).toBeGreaterThanOrEqual(28);
+      expect(saturate).toBeGreaterThanOrEqual(200);
+    }
+  });
+
+  it('keeps the reduced-transparency fallback opaque and unfiltered in both schemes', () => {
+    for (const [dark, attributes] of [
+      [false, 'data-theme="light" data-theme-scheme="light"'],
+      [true, 'data-theme="dark"'],
+    ] as const) {
+      const actual = chrome(dark, attributes, false, true);
+      expect(actual.background).toBe('var(--hub-canvas)');
+      expect(color(actual.background, palette(dark))[3]).toBe(1);
+      // The fallback rule must also drop the refraction: no backdrop filter
+      // survives the media block for the chrome strip.
+      const sheet = postcss.parse(shell);
+      sheet.walkAtRules('media', rule => {
+        if (rule.params === '(prefers-reduced-transparency: reduce)') rule.replaceWith(...(rule.nodes ?? []));
+        else rule.remove();
+      });
+      const dom = new JSDOM(`<html ${attributes}><head><style>${sheet.toString()}</style></head><body><header class="app-chrome-header app-window-chrome"></header></body></html>`);
+      try {
+        const style = dom.window.getComputedStyle(dom.window.document.querySelector('header')!);
+        expect(style.getPropertyValue('backdrop-filter')).toBe('none');
+      } finally { dom.window.close(); }
+    }
   });
 });

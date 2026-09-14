@@ -1,0 +1,206 @@
+/* Assumption ledger: a quiet chat-header affordance that opens the persisted
+   project assumptions on demand. It is background context, so it borrows the
+   header's icon-trigger idiom (same as the session switcher) rather than the
+   inline card's pending treatment. Every colour is a semantic token. */
+.assumption-ledger {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+}
+.assumption-ledger__trigger {
+  position: relative;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 4px;
+  gap: 4px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-quick) var(--ease-out),
+    box-shadow var(--dur-quick) var(--ease-out),
+    color var(--dur-quick) var(--ease-out);
+}
+.assumption-ledger__trigger:hover,
+.assumption-ledger.open .assumption-ledger__trigger {
+  background: var(--hub-control-surface-hover);
+  box-shadow: var(--hub-control-shadow-hover);
+  color: var(--text);
+}
+.assumption-ledger__trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.assumption-ledger__count {
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--hub-control-engraved);
+  color: var(--text-strong);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Popover: anchored under the sticky header like the session menu. Entrance
+   reuses the shared readable-popover-in keyframe (pointer handoff at 1%). */
+.assumption-ledger__menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 12px;
+  right: 12px;
+  max-height: min(420px, calc(100vh - 160px));
+  display: flex;
+  flex-direction: column;
+  background: color-mix(in srgb, var(--bg-panel) 96%, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: var(--radius);
+  box-shadow:
+    0 18px 48px color-mix(in srgb, var(--black) 12%, transparent),
+    0 1px 0 color-mix(in srgb, var(--white) 42%, transparent) inset;
+  color: var(--text-strong);
+  z-index: 30;
+  overflow: hidden;
+  transform-origin: top right;
+  animation: readable-popover-in var(--dur-enter) var(--ease-out) both;
+}
+.assumption-ledger__head {
+  display: grid;
+  gap: 2px;
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+}
+.assumption-ledger__title {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+}
+.assumption-ledger__influence {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 12px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  text-wrap: pretty;
+}
+.assumption-ledger__body {
+  display: grid;
+  gap: 16px;
+  padding: 10px 8px 12px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.assumption-ledger__group { min-inline-size: 0; }
+.assumption-ledger__group h3 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 2px;
+  padding-inline: 8px;
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+}
+.assumption-ledger__group h3::after { content: ''; order: 1; flex: 1 1 auto; block-size: 1px; background: var(--border); }
+.assumption-ledger__group h3 > span {
+  order: 2;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--hub-control-engraved);
+  color: var(--text-strong);
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.assumption-ledger__rows { display: grid; grid-template-columns: minmax(0, 1fr); margin: 0; padding: 0; list-style: none; }
+.assumption-ledger__rows > li { min-inline-size: 0; }
+.assumption-ledger__rows > li + li { border-block-start: 1px solid var(--border); }
+.assumption-ledger .assumption-ledger__row {
+  display: grid;
+  grid-template-columns: minmax(0, 9rem) minmax(0, 1fr) 16px;
+  align-items: baseline;
+  gap: 2px 12px;
+  width: 100%;
+  min-inline-size: 0;
+  min-block-size: 40px;
+  padding: 8px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-strong);
+  text-align: start;
+  white-space: normal;
+  font-family: var(--font);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-quick) var(--ease-out),
+    box-shadow var(--dur-quick) var(--ease-out);
+}
+.assumption-ledger .assumption-ledger__row:hover:not(:disabled),
+.assumption-ledger .assumption-ledger__row[aria-expanded='true'] {
+  background: var(--hub-control-engraved);
+  box-shadow: var(--hub-control-engraved-shadow);
+}
+.assumption-ledger .assumption-ledger__row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.assumption-ledger .assumption-ledger__row:disabled { cursor: default; opacity: 1; }
+.assumption-ledger__row > span { min-inline-size: 0; overflow-wrap: anywhere; }
+.assumption-ledger .assumption-ledger__key { color: var(--text-strong); font-size: 12px; font-weight: 400; line-height: 1.5; }
+.assumption-ledger .assumption-ledger__value { color: var(--text-strong); font-size: 13px; font-weight: 500; line-height: 1.5; }
+.assumption-ledger__row[data-provenance='stated'] .assumption-ledger__value { font-weight: 600; }
+.assumption-ledger__row > svg {
+  align-self: center;
+  justify-self: end;
+  transition: transform var(--dur-exit) var(--ease-out);
+}
+.assumption-ledger__row[aria-expanded='true'] > svg { transform: rotate(180deg); transition-duration: var(--dur-enter); }
+.assumption-ledger__error {
+  margin: 0;
+  padding: 8px 16px 12px;
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+@container (max-width: 360px) {
+  .assumption-ledger .assumption-ledger__row { grid-template-columns: minmax(0, 1fr) 16px; }
+  .assumption-ledger__row > svg { grid-column: 2; grid-row: 1 / 3; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .assumption-ledger__menu { animation: none; }
+  .assumption-ledger__trigger,
+  .assumption-ledger .assumption-ledger__row,
+  .assumption-ledger__row > svg { transition: none; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .assumption-ledger__menu { background: var(--bg-panel); border-color: var(--border-strong); }
+  .assumption-ledger__head { border-bottom-color: var(--border); }
+  .assumption-ledger .assumption-ledger__row:hover:not(:disabled),
+  .assumption-ledger .assumption-ledger__row[aria-expanded='true'] {
+    background: var(--bg);
+    box-shadow: inset 0 0 0 1px var(--border-strong), var(--hub-control-engraved-shadow);
+  }
+  .assumption-ledger__count,
+  .assumption-ledger__group h3 > span { background: var(--bg); box-shadow: inset 0 0 0 1px var(--border-strong); }
+}
+@media (forced-colors: active) {
+  .assumption-ledger__menu,
+  .assumption-ledger .assumption-ledger__row { outline: 1px solid ButtonText; }
+  .assumption-ledger__rows > li + li { border-block-start-color: CanvasText; }
+  .assumption-ledger__group h3::after { background: CanvasText; }
+  .assumption-ledger :is(button):focus-visible { outline-color: Highlight; }
+}

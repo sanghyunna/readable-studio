@@ -333,76 +333,9 @@ describe('non-file workspace surfaces retain their own hosts', () => {
     return initializer.expression;
   }
 
-  function assertQuestionsOwnership(ast: ts.SourceFile) {
-    const host = one(jsxOpenings('QuestionsPanel', ast));
-    expect(owner(host)).toBe('FileWorkspace');
-    const component = one(nodes(ast, ts.isFunctionDeclaration).filter((node) => node.name?.text === 'FileWorkspace'));
-    const inputs = nodes(component.parameters[0]!, ts.isBindingElement).map((node) => node.name.getText());
-    const assertInput = (expression: ts.Expression, input: string) => {
-      expect(inputs).toContain(input);
-      expect(ts.isIdentifier(expression) && expression.text === input).toBe(true);
-    };
-    // ProjectView owns these values; the merged Questions surface must keep
-    // both the form occurrence and the persisted brief/correction path live.
-    for (const [prop, input] of [
-      ['projectId', 'projectId'],
-      ['brief', 'projectQuestions'],
-      ['onCorrect', 'onCorrectQuestion'],
-      ['formKey', 'questionFormKey'],
-      ['interactive', 'questionFormInteractive'],
-      ['submitDisabled', 'questionFormSubmitDisabled'],
-      ['runHydrationStatus', 'questionRunHydrationStatus'],
-      ['onRetryRunHydration', 'onRetryQuestionRunHydration'],
-      ['submissionQueued', 'questionFormSubmissionQueued'],
-      ['submittedAnswers', 'questionFormSubmittedAnswers'],
-      ['generating', 'questionsGenerating'],
-    ] as const) assertInput(expressionAttribute(host, prop), input);
-    const form = expressionAttribute(host, 'form');
-    expect(ts.isBinaryExpression(form)).toBe(true);
-    if (!ts.isBinaryExpression(form)) throw new Error('Expected the live form with its streaming fallback');
-    expect(form.operatorToken.kind).toBe(ts.SyntaxKind.QuestionQuestionToken);
-    assertInput(form.left, 'questionForm');
-    assertInput(form.right, 'questionFormPreview');
-
-    const submit = expressionAttribute(host, 'onSubmit');
-    expect(ts.isArrowFunction(submit)).toBe(true);
-    if (!ts.isArrowFunction(submit)) throw new Error('Expected the workspace submit adapter');
-    expect(submit.parameters).toHaveLength(2);
-    // The return value is acceptance (or its promise), not fire-and-forget:
-    // QuestionsPanel must retain its draft when ProjectView rejects a write.
-    const result = ts.isBlock(submit.body)
-      ? one(submit.body.statements.filter(ts.isReturnStatement)).expression
-      : submit.body;
-    if (!result || !ts.isCallExpression(result)) throw new Error('Expected the returned workspace submission');
-    assertInput(result.expression, 'onSubmitQuestionForm');
-    expect(result.arguments.map((argument) => argument.getText()))
-      .toEqual(submit.parameters.map((parameter) => parameter.name.getText()));
-  }
-
-  it('mounts QuestionsPanel with its live workspace callback or identity', () => {
-    assertQuestionsOwnership(workspace);
-  });
-
-  function withQuestionExpression(prop: string, replacement: string): ts.SourceFile {
-    const expression = expressionAttribute(one(jsxOpenings('QuestionsPanel', workspace)), prop);
-    return parse(workspace.text.slice(0, expression.getStart()) + replacement + workspace.text.slice(expression.end));
-  }
-
-  it('accepts submit parameter renaming and an explicit returned callback result', () => {
-    assertQuestionsOwnership(withQuestionExpression('onSubmit', '(prompt, values) => { return onSubmitQuestionForm?.(prompt, values); }'));
-  });
-
-  it.each([
-    ['disconnected submission', 'onSubmit', '() => undefined'],
-    ['dropped structured answers', 'onSubmit', '(text, answers) => onSubmitQuestionForm?.(text)'],
-    ['discarded acceptance result', 'onSubmit', '(text, answers) => { onSubmitQuestionForm?.(text, answers); }'],
-    ['disconnected project identity', 'projectId', '"fixed-project"'],
-    ['disconnected form identity', 'formKey', 'null'],
-    ['disconnected form state', 'form', 'null'],
-    ['disconnected brief state', 'brief', 'null'],
-    ['disconnected correction callback', 'onCorrect', '() => undefined'],
-  ])('rejects QuestionsPanel %s', (_name, prop, replacement) => {
-    expect(() => assertQuestionsOwnership(withQuestionExpression(prop, replacement))).toThrow();
+  it('no longer hosts the Questions tab: the question card is inline in the chat log', () => {
+    expect(jsxOpenings('QuestionsPanel', workspace)).toHaveLength(0);
+    expect(workspace.text).not.toContain('__questions__');
   });
 
   it.each([

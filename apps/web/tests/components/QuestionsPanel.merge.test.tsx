@@ -14,12 +14,12 @@ afterEach(() => { cleanup(); window.sessionStorage.clear(); });
 describe('Questions merged surface', () => {
   it('keeps assumptions, influence and the primary form mounted during correction', () => {
     render(<QuestionsPanel brief={brief} onCorrect={vi.fn()} form={form} interactive generating={false} onSubmit={vi.fn()} />);
-    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    expect(screen.getAllByTestId('questions-panel')).toHaveLength(1);
     expect(screen.queryByTestId('brief-card')).toBeNull();
     expect(screen.getByTestId('questions-influence').dataset).toMatchObject({ count: '2', confirmed: '1' });
     fireEvent.change(screen.getByRole('textbox', { name: 'URL' }), { target: { value: 'https://example.com' } });
     fireEvent.click(screen.getByRole('button', { name: /Audience: buyers/ }));
-    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    expect(screen.getAllByTestId('questions-panel')).toHaveLength(1);
     expect(screen.getByRole('group', { name: 'Project assumptions' })).toBeTruthy();
     expect(screen.getByRole('textbox', { name: 'URL' })).toHaveProperty('value', 'https://example.com');
     expect(document.querySelector('.question-form-head')).toBeNull();

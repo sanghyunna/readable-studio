@@ -52,7 +52,7 @@ import {
 import type { PluginUseAction } from './plugins-home/useActions';
 import { IntegrationsView, type IntegrationTab } from './IntegrationsView';
 import { InlineModelSwitcher } from './InlineModelSwitcher';
-import { requireModelSelection } from './agentModelSelection';
+import { composerReasoningOptions, requireModelSelection } from './agentModelSelection';
 import type { EntrySettingsSection } from './EntrySettingsMenu';
 import { PluginsView } from './PluginsView';
 import type { CreateInput, CreateTab } from './NewProjectPanel';
@@ -406,14 +406,21 @@ export function EntryShell({
   // Top bar keeps the combined chip (mode · agent · model in one popover).
   const executionSwitcher = <InlineModelSwitcher {...switcherProps} />;
 
-  // Hub composer footer: two separate buttons — agent, then model to its
-  // right — each opening only its own concern. Both are the same component in
-  // a different variant, so agent selection, model selection and the
-  // provider-models fetch each exist exactly once.
+  // Hub composer footer: separate buttons — agent, then model, then thinking
+  // effort to its right — each opening only its own concern. All are the same
+  // component in a different variant, so agent selection, model selection,
+  // effort selection and the provider-models fetch each exist exactly once.
+  // The effort button mounts only when the active agent + model pair
+  // advertises effort levels (per-model lists override the agent-wide one);
+  // an agent without them gets no empty or disabled dropdown.
+  const composerReasoningSupported = composerReasoningOptions(config, agents).length > 0;
   const composerAgentModelControls = (
     <>
       <InlineModelSwitcher {...switcherProps} variant="agent" />
       <InlineModelSwitcher {...switcherProps} variant="model" />
+      {composerReasoningSupported ? (
+        <InlineModelSwitcher {...switcherProps} variant="reasoning" />
+      ) : null}
     </>
   );
 

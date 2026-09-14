@@ -85,6 +85,24 @@ describe('AgentIcon', () => {
     expect(markup).not.toContain('agent-icon-fallback');
   });
 
+  it('renders Databricks as the bundled brand mark instead of the fallback initial', () => {
+    // The composer chip and the agent picker key the glyph on the daemon
+    // runtime id `databricks`; without this asset both showed a bare `D`.
+    const databricksSvg = readFileSync(
+      new URL('../../public/agent-icons/databricks.svg', import.meta.url),
+      'utf8',
+    );
+    const markup = renderToStaticMarkup(<AgentIcon id="databricks" size={20} />);
+
+    expect(databricksSvg).toMatch(/^<svg\b/);
+    // Brand red-orange is baked in, so it renders through <img>, not a mask.
+    expect(databricksSvg).toContain('fill="#ff3621"');
+    expect(markup).toContain('src="/agent-icons/databricks.svg"');
+    expect(markup).toContain('class="agent-icon"');
+    expect(markup).not.toContain('agent-icon-mono');
+    expect(markup).not.toContain('agent-icon-fallback');
+  });
+
   it('renders monochrome SVGs as a CSS-masked <span> so they pick up theme color', () => {
     // cursor-agent.svg ships with `fill="currentColor"` and would lose its
     // ink under a dark theme if loaded through `<img>` (which would make

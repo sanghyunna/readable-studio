@@ -16,11 +16,11 @@ describe('Questions anchored placement and locale', () => {
       onSubmit={vi.fn()} onCorrect={async () => true} brief={{ updatedAt: 1, assumptions: [
         { id: 'audience', label: 'audience', value: 'buyers', provenance: 'default' },
       ] }} /></I18nProvider>);
-    const panel = screen.getByRole('dialog');
+    const panel = screen.getByTestId('questions-panel');
     fireEvent.click(screen.getByRole('button', { name: /buyers/ }));
-    const input = screen.getByRole('textbox', { name: dict['questions.question.audience'] });
+    const input = screen.getByRole('textbox', { name: 'audience' });
     expect(view.container.contains(input)).toBe(false);
-    expect(screen.getByRole('dialog')).toBe(panel);
+    expect(screen.getByTestId('questions-panel')).toBe(panel);
     expect(screen.getByTestId('questions-influence').dataset.count).toBe('1');
     fireEvent.click(screen.getByRole('button', { name: dict['common.cancel'] }));
     expect(screen.queryByRole('textbox')).toBeNull();

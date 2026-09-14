@@ -3,6 +3,7 @@ import {
   codexPetSpritesheetUrl,
   fetchCodexPets,
 } from '../../providers/registry';
+import { DEFAULT_ACCENT_COLOR } from '../../state/appearance';
 import { prepareCodexAtlas } from './codexAtlas';
 
 // Built-in pet catalog. Historically this listed a handful of emoji-only
@@ -91,7 +92,8 @@ function resolveCustomPet(c: PetCustom): ResolvedPet {
     id: CUSTOM_PET_ID,
     name: c.name?.trim() || 'Buddy',
     glyph: c.glyph?.trim() || '🦄',
-    accent: c.accent?.trim() || '#c96442',
+    // An unset halo colour follows the product accent, like a fresh custom pet.
+    accent: c.accent?.trim() || DEFAULT_ACCENT_COLOR,
     greeting: c.greeting?.trim() || 'Hi! I am here whenever you need me.',
     // Custom pets get the gentle float animation by default. We could
     // expose this in the editor later; today's UX keeps the picker
@@ -256,7 +258,7 @@ export function defaultCustomPet(): PetCustom {
   return {
     name: 'Buddy',
     glyph: '🦄',
-    accent: '#c96442',
+    accent: DEFAULT_ACCENT_COLOR,
     greeting: 'Hi! I am here whenever you need me.',
   };
 }
@@ -332,7 +334,7 @@ export async function prepareCodexPetCustom(pet: CodexPetSummary): Promise<PetCu
   return {
     name: pet.displayName || pet.id,
     glyph: '🦄',
-    accent: '#c96442',
+    accent: DEFAULT_ACCENT_COLOR,
     greeting: pet.description || `Hi! I am ${pet.displayName || pet.id}.`,
     imageUrl: prepared.dataUrl,
     frames: 1,

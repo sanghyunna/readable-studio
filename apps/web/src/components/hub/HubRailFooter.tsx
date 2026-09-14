@@ -10,8 +10,10 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 
 import { useT } from '../../i18n';
+import type { AppTheme } from '../../types';
 import { Icon, type IconName } from '../Icon';
 import { HubMenu, type HubMenuItem } from './HubMenu';
+import { HUB_THEME_DIALOG_ID, HubThemeModal } from './HubThemeModal';
 import type { HubDestination } from './types';
 
 interface Props {
@@ -23,6 +25,10 @@ interface Props {
   onOpenSettings: () => void;
   /** Open the surface that owns the workspace storage roots. */
   onOpenWorkspaceFolder: () => void;
+  /** The theme the app config currently holds (absent = default). */
+  theme?: AppTheme | undefined;
+  /** App's appearance path: persists the theme and applies it live. */
+  onThemeChange: (theme: AppTheme) => void;
   /** Name of the active workspace, when the user has configured one. */
   workspaceName?: string | null;
 }
@@ -52,15 +58,22 @@ export function HubRailFooter({
   onOpenDestination,
   onOpenSettings,
   onOpenWorkspaceFolder,
+  theme,
+  onThemeChange,
   workspaceName = null,
 }: Props) {
   const t = useT();
   const [openMenu, setOpenMenu] = useState<'library' | null>(null);
+  const [themeOpen, setThemeOpen] = useState(false);
   const libraryRef = useRef<HTMLButtonElement | null>(null);
+  const themeRef = useRef<HTMLButtonElement | null>(null);
 
   // The shared HubMenu owns dismissal and hands focus back to the trigger
   // itself (Escape and item selection restore it; an outside click does not).
   const closeLibrary = useCallback(() => setOpenMenu(null), []);
+  // The theme modal owns its own dismissal (Escape, backdrop, Done) and hands
+  // focus back to the Theme row through the ref it is given.
+  const closeTheme = useCallback(() => setThemeOpen(false), []);
 
   // Projects remains reachable in the library menu without adding a separate
   // row above the reference footer hierarchy. The workspace folder joins the
@@ -104,6 +117,30 @@ export function HubRailFooter({
 
   return (
     <div className="hub__foot" data-testid="hub-rail-footer">
+      {/* Theme sits directly above Library and opens its modal in one click:
+          no settings screen, no submenu. Same row chrome as Library so the two
+          read as one stack; the modal itself is body-portalled and so, like
+          the Library menu, clears the rail box in both rail states. */}
+      <button
+        ref={themeRef}
+        type="button"
+        className="hub__dest-more"
+        data-testid="hub-theme"
+        aria-haspopup="dialog"
+        aria-expanded={themeOpen}
+        aria-controls={themeOpen ? HUB_THEME_DIALOG_ID : undefined}
+        onClick={() => setThemeOpen(true)}
+      >
+        <Icon name="sun-moon" size={16} strokeWidth={1.6} />
+        <span>{t('hub.theme')}</span>
+      </button>
+      <HubThemeModal
+        open={themeOpen}
+        theme={theme}
+        onThemeChange={onThemeChange}
+        onClose={closeTheme}
+        returnFocusRef={themeRef}
+      />
       <div className="hub__dest-row">
         <div className="hub__menu-anchor">
           <button

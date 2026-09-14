@@ -128,7 +128,7 @@ describe('splitOnQuestionForms', () => {
   });
 
   it('finds close tags without Unicode index desync (#1194)', () => {
-    const out = splitOnQuestionForms(`prefix İ suffix<ask-question id="x">${VALID_BODY}</ask-question>`);
+    const out = splitOnQuestionForms(`prefix İ suffix\n<ask-question id="x">${VALID_BODY}</ask-question>`);
     expect(out.map((s) => s.kind)).toEqual(['text', 'form']);
     if (out[1]?.kind === 'form') {
       expect(out[1].form.id).toBe('x');

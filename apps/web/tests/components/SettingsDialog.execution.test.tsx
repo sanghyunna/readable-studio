@@ -2669,6 +2669,24 @@ describe('SettingsDialog appearance interactions', () => {
     );
   });
 
+  it('scopes each theme chip to that theme\'s own tokens instead of a catalogue palette', () => {
+    const { container } = renderSettingsDialog(
+      { theme: 'system' },
+      { initialSection: 'appearance' },
+    );
+
+    // Each option's chips carry the theme's `data-theme`, so the cascade paints
+    // that theme's real --bg / --accent / --text; System shows both palettes.
+    for (const option of container.querySelectorAll<HTMLElement>('[data-theme-picker] [data-theme-option]')) {
+      const id = option.dataset['themeOption'];
+      const scoped = Array.from(option.querySelectorAll('[data-theme]')).map((chip) =>
+        chip.getAttribute('data-theme'),
+      );
+      expect(scoped, id).toEqual(id === 'system' ? ['light', 'dark'] : [id]);
+      expect(option.querySelector('[style*="background"]'), `${id} paints no literal`).toBeNull();
+    }
+  });
+
   it('supports arrow-key selection in the Settings theme radiogroup', async () => {
     renderSettingsDialog(
       { theme: 'system' },

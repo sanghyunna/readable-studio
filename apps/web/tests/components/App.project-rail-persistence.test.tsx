@@ -649,6 +649,72 @@ describe('Project rail persistence across Hub -> workspace -> Hub', () => {
     expect(screen.queryByTestId('hub-library-menu')).toBeNull();
   });
 
+  it('opens the Theme modal from the collapsed rail, outside the rail box, and drives the app appearance path', async () => {
+    // The real persistence for this one test: the choice must land in the
+    // `readable-studio:config` blob the app reloads from, not just in a spy.
+    const actualConfig = await vi.importActual<typeof import('../../src/state/config')>(
+      '../../src/state/config',
+    );
+    vi.mocked(saveConfig).mockImplementation(actualConfig.saveConfig);
+    await renderHubWithSessions();
+    const rail = theRail();
+    const trigger = screen.getByTestId('hub-theme');
+    const library = screen.getByTestId('hub-library');
+
+    // Theme sits directly above Library in the footer.
+    expect(trigger.nextElementSibling).toBe(library.closest('.hub__dest-row'));
+
+    // Collapsed strip: the 44px box that would clip anything left inside it.
+    fireEvent.click(railToggle());
+    expect(rail.dataset['projectRailState']).toBe('collapsed');
+
+    // One click, straight to the dialog: no settings surface, no menu, no
+    // route change.
+    fireEvent.click(trigger);
+    const modal = screen.getByTestId('hub-theme-modal');
+    const backdrop = screen.getByTestId('hub-theme-backdrop');
+    expect(modal.getAttribute('role')).toBe('dialog');
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(currentRoute).toEqual(HOME_ROUTE);
+    expect(trigger.getAttribute('aria-controls')).toBe(modal.id);
+
+    // A child of the body: not of the rail, not of the swapped content column,
+    // so neither can clip it or paint over it.
+    expect(backdrop.parentElement).toBe(document.body);
+    expect(rail.contains(modal)).toBe(false);
+    expect(modal.closest('[data-surface]')).toBeNull();
+    expect(modal.closest('[data-project-rail]')).toBeNull();
+
+    // Selecting a card goes through App's own theme handler: persisted to the
+    // browser config, synced to the daemon, and applied to the document.
+    fireEvent.click(screen.getByTestId('hub-theme-option-dark'));
+    const stored = JSON.parse(window.localStorage.getItem('readable-studio:config') ?? '{}') as { theme?: string };
+    expect(stored.theme).toBe('dark');
+    expect(syncConfigToDaemon).toHaveBeenCalledWith(expect.objectContaining({ theme: 'dark' }));
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+    expect(document.documentElement.getAttribute('data-theme-scheme')).toBe('dark');
+    expect(screen.getByTestId('hub-theme-option-dark').getAttribute('aria-checked')).toBe('true');
+
+    // Escape dismisses and hands focus back to the Theme row.
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+    expect(screen.queryByTestId('hub-theme-modal')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+
+    // Expanded panel: same portal, and the backdrop dismisses too. The press
+    // lands below the shared modal-backdrop's 56px desktop window-drag strip,
+    // which the App-level guard reserves for dragging the window.
+    fireEvent.click(railToggle());
+    expect(rail.dataset['projectRailState']).toBe('expanded');
+    fireEvent.click(trigger);
+    expect(screen.getByTestId('hub-theme-backdrop').parentElement).toBe(document.body);
+    fireEvent.mouseDown(screen.getByTestId('hub-theme-backdrop'), { clientY: 320 });
+    expect(screen.queryByTestId('hub-theme-modal')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+
+    document.documentElement.removeAttribute('data-theme');
+    document.documentElement.removeAttribute('data-theme-scheme');
+  });
+
   it('carries the resized expanded width through the swap and back', async () => {
     await renderHubWithSessions();
     const resizer = railResizer();

@@ -70,16 +70,15 @@ describe('workspace responsive sizing and permanent-tab reachability', () => {
       .not.toBe(projectSplitStyle(false, 460, 'minmax(0, 1fr)', true)?.gridTemplateColumns);
   });
 
-  it.each([375, 768, 1280])('reveals Questions, Design Files and Design System on activation and resize (%ipx input)', async (viewport) => {
+  it.each([375, 768, 1280])('reveals Design Files and Design System on activation and resize (%ipx input)', async (viewport) => {
     render(<FileWorkspace projectId="responsive-tabs" projectKind="prototype" files={[]}
       onRefreshFiles={() => {}} isDeck={false} tabsState={{ tabs: [], active: null }} onTabsStateChange={() => {}}
-      designSystemProject={{ id: 'user:responsive', title: 'Responsive', category: 'Custom', summary: '', swatches: [], surface: 'web', source: 'user', status: 'draft', isEditable: true }}
-      questionForm={{ id: 'responsive-form', title: 'Intake', questions: [] }} />);
+      designSystemProject={{ id: 'user:responsive', title: 'Responsive', category: 'Custom', summary: '', swatches: [], surface: 'web', source: 'user', status: 'draft', isEditable: true }} />);
     await act(async () => { await vi.mocked(fetchProjectFolders).mock.results.at(-1)!.value; });
     const bar = screen.getByRole('tablist');
     const barWidth = viewport === 1280 ? 300 : 180;
     vi.spyOn(bar, 'getBoundingClientRect').mockImplementation(() => ({ left: 10, right: 10 + barWidth, width: barWidth } as DOMRect));
-    for (const id of ['questions-tab', 'design-files-tab', 'design-system-project-tab']) {
+    for (const id of ['design-files-tab', 'design-system-project-tab']) {
       const tab = screen.getByTestId(id);
       bar.scrollLeft = 0;
       vi.spyOn(tab, 'getBoundingClientRect').mockImplementation(() => ({ left: 350 - bar.scrollLeft, right: 450 - bar.scrollLeft, width: 100 } as DOMRect));

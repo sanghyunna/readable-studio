@@ -166,6 +166,25 @@ describe('EntrySettingsMenu theme picker', () => {
     );
   });
 
+  it('scopes each theme chip to that theme\'s own tokens instead of a catalogue palette', () => {
+    const { container } = renderMenu();
+    fireEvent.click(screen.getByTestId('entry-settings-menu-trigger'));
+
+    const themeRow = container.querySelector(
+      '.entry-settings-menu__theme-row',
+    ) as HTMLElement;
+    for (const option of EXPECTED_THEME_OPTIONS) {
+      const item = within(themeRow).getByRole('menuitemradio', { name: option.label });
+      // The chips carry the theme's `data-theme`, so the cascade paints that
+      // theme's real --bg / --accent / --text; System shows both palettes.
+      const scoped = Array.from(
+        item.querySelectorAll('.entry-settings-menu__theme-swatch [data-theme]'),
+      ).map((chip) => chip.getAttribute('data-theme'));
+      expect(scoped, option.id).toEqual(option.id === 'system' ? ['light', 'dark'] : [option.id]);
+      expect(item.querySelector('[style*="background"]'), `${option.id} paints no literal`).toBeNull();
+    }
+  });
+
   it('uses roving focus for theme menu keyboard navigation', () => {
     const { container } = renderMenu({ config: baseConfig({ theme: 'dracula' }) });
     fireEvent.click(screen.getByTestId('entry-settings-menu-trigger'));

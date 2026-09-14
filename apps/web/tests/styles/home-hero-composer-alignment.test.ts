@@ -21,7 +21,7 @@ describe('Hub composer text alignment', () => {
 
     expect(card).toMatch(/--hub-composer-content-inset-top:\s*16px\s*;/);
     expect(editable).toMatch(
-      /padding:\s*var\(--hub-composer-content-inset-top\)\s+4px\s+10px\s*;/,
+      /padding:\s*var\(--hub-composer-content-inset-top\)\s+4px\s+var\(--hub-composer-content-inset-bottom\)\s*;/,
     );
     expect(placeholder).toMatch(/top:\s*var\(--hub-composer-content-inset-top\)\s*;/);
   });

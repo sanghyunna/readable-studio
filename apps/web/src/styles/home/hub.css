@@ -2001,12 +2001,13 @@
   box-shadow: inset 0 1px 0 var(--hub-pearl-highlight);
 }
 
-/* Rows and destinations are already borderless; hover lifts them into glass. */
+/* Rows and destinations are already borderless; hover lifts them into glass.
+   `.hub__user-row` is deliberately absent: it is presentational identity, not
+   a control, so it must show NO hover reaction at all. */
 .hub-row:hover,
 .hub-row.is-menu-open,
 .hub__dest:hover,
 .hub__dest-more:hover,
-.hub__user-row:hover,
 .hub__view-all:hover,
 .hub-menu__item:hover {
   -webkit-backdrop-filter: blur(8px);

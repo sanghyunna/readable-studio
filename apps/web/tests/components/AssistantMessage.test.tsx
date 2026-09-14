@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AssistantMessage } from '../../src/components/AssistantMessage';
+import { AssistantMessage, type InlineQuestionCardState } from '../../src/components/AssistantMessage';
+import { formatFormAnswers } from '../../src/artifacts/question-form';
 import type { ChatMessage, ProjectFile } from '../../src/types';
 
 beforeAll(() => {
@@ -256,229 +257,107 @@ describe('AssistantMessage thinking blocks', () => {
   });
 });
 
-describe('AssistantMessage question forms', () => {
-  it('keeps a content-only unanswered form recoverable from its chat banner', () => {
-    const form = [
-      '<question-form id="task-type" title="작업 유형 선택">',
-      JSON.stringify({
-        questions: [
-          {
-            id: 'taskType',
-            label: '작업 유형',
-            type: 'radio',
-            required: true,
-            options: ['Prototype', 'Slide deck', 'Other'],
-          },
-        ],
-      }),
-      '</question-form>',
-    ].join('\n');
-    const onOpenQuestions = vi.fn();
-
-    render(
-      <AssistantMessage
-        message={baseMessage({ content: form, events: undefined })}
-        streaming={false}
-        projectId="proj-1"
-        onOpenQuestions={onOpenQuestions}
-      />,
-    );
-
-    const banner = screen.getByTestId('questions-banner');
-    fireEvent.click(banner);
-    expect(onOpenQuestions).toHaveBeenCalledWith(expect.objectContaining({
-      form: expect.objectContaining({ id: 'task-type', title: '작업 유형 선택' }),
-      messageId: 'msg-1',
-      submittedAnswers: undefined,
-    }));
+describe('AssistantMessage inline question card', () => {
+  const stubForm = {
+    id: 'brief',
+    title: 'Quick brief',
+    questions: [
+      { id: 'platform', label: 'Platform', type: 'radio', required: true, options: ['Mobile', 'Desktop'] },
+      { id: 'features', label: 'Features', type: 'checkbox', options: ['Search', 'Export'], maxSelections: 2 },
+      { id: 'tone', label: 'Tone', type: 'select', options: [{ value: 'warm', label: 'Warm' }, { value: 'crisp', label: 'Crisp' }] },
+      { id: 'audience', label: 'Audience', type: 'text', placeholder: 'e.g. buyers' },
+      { id: 'notes', label: 'Notes', type: 'textarea' },
+      { id: 'direction', label: 'Direction', type: 'direction-cards', options: ['editorial'], cards: [
+        { id: 'editorial', label: 'Editorial', mood: 'Calm', references: ['FT'], palette: ['#111'], displayFont: 'serif', bodyFont: 'sans-serif' },
+      ] },
+    ],
+  };
+  const content = `<question-form id="brief" title="Quick brief">${JSON.stringify({ questions: stubForm.questions })}</question-form>`;
+  const card = (overrides: Partial<InlineQuestionCardState> = {}): InlineQuestionCardState => ({
+    messageId: 'msg-1', formKey: 'conv:msg-1:brief', formPreview: null, generating: false, brief: null,
+    interactive: true, submitDisabled: false, runHydrationStatus: 'ready', submissionQueued: false,
+    onSubmit: vi.fn(() => true), ...overrides,
   });
 
-  it('renders repeated question forms as one compact Questions banner in chat', () => {
-    const firstForm = [
-      '<question-form id="discovery" title="Quick brief — tailored">',
-      JSON.stringify({
-        questions: [
-          {
-            id: 'audience',
-            label: 'Who is this for?',
-            type: 'text',
-          },
-        ],
-      }),
-      '</question-form>',
-    ].join('\n');
-    const duplicateForm = [
-      '<question-form id="discovery" title="Quick brief — 30 seconds">',
-      JSON.stringify({
-        questions: [
-          {
-            id: 'output',
-            label: 'What are we making?',
-            type: 'radio',
-            required: true,
-            options: ['Slide deck / pitch', 'Dashboard / tool UI'],
-          },
-        ],
-      }),
-      '</question-form>',
-    ].join('\n');
-    const onOpenQuestions = vi.fn();
-
-    render(
-      <AssistantMessage
-        message={baseMessage({
-          events: [
-            {
-              kind: 'text',
-              text: `${firstForm}\n\nFirst answer the tailored brief:\n\n${duplicateForm}`,
-            } as ChatMessage['events'][number],
-          ],
-        })}
-        streaming={false}
-        projectId="proj-1"
-        onOpenQuestions={onOpenQuestions}
-      />,
-    );
-
-    const banners = screen.getAllByTestId('questions-banner');
-    expect(banners).toHaveLength(1);
-    fireEvent.click(banners[0]!);
-    expect(onOpenQuestions).toHaveBeenCalledWith(expect.objectContaining({
-      form: expect.objectContaining({ id: 'discovery', title: 'Quick brief — tailored' }),
-    }));
-    expect(screen.queryByText('Quick brief — tailored')).toBeNull();
-    expect(screen.queryByText('Who is this for?')).toBeNull();
-    expect(screen.queryByText('Quick brief — 30 seconds')).toBeNull();
-    expect(screen.queryByText('What are we making?')).toBeNull();
+  it('renders every question type as its proper control inside the assistant message', () => {
+    render(<AssistantMessage message={baseMessage({ content, events: undefined })} streaming={false} projectId="proj-1" questionCard={card()} />);
+    const panel = screen.getByTestId('questions-panel');
+    expect(panel.getAttribute('data-pending')).toBe('true');
+    expect(screen.queryByTestId('questions-banner')).toBeNull();
+    expect(screen.getByRole('radiogroup', { name: 'Platform' })).toBeTruthy();
+    expect(screen.getByRole('radio', { name: 'Mobile' })).toBeTruthy();
+    // checkbox type renders as pressed toggles, never a visible checkbox.
+    expect(screen.getByRole('button', { name: 'Search' }).getAttribute('aria-pressed')).toBe('false');
+    expect(panel.querySelector('input[type="checkbox"]')).toBeNull();
+    expect(panel.querySelector('[data-question-type="select"] .qf-select')).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: 'Audience' }).tagName).toBe('INPUT');
+    expect(screen.getByRole('textbox', { name: 'Notes' }).tagName).toBe('TEXTAREA');
+    expect(panel.querySelector('.qf-direction-cards .qf-card')).toBeTruthy();
+    // The first control takes focus so the request is immediately answerable.
+    expect(document.activeElement).toBe(screen.getByRole('radio', { name: 'Mobile' }));
   });
 
-  it('renders an answered question banner as a disabled, non-clickable done state', () => {
-    const form = [
-      '<question-form id="discovery" title="Quick brief — tailored">',
-      JSON.stringify({
-        questions: [
-          {
-            id: 'audience',
-            label: 'Who is this for?',
-            type: 'text',
-          },
-        ],
-      }),
-      '</question-form>',
-    ].join('\n');
-
-    const onOpenQuestions = vi.fn();
-    render(
-      <AssistantMessage
-        message={baseMessage({
-          events: [
-            {
-              kind: 'text',
-              text: form,
-            } as ChatMessage['events'][number],
-          ],
-        })}
-        streaming={false}
-        projectId="proj-1"
-        nextUserContent={'[form answers for discovery]\n- Who is this for?: Product evaluators'}
-        onOpenQuestions={onOpenQuestions}
-      />,
-    );
-
-    const banner = screen.getByTestId('questions-banner') as HTMLButtonElement;
-    // Answered: no longer an open affordance — disabled, marked answered, and
-    // clicking it must not re-open the Questions panel.
-    expect(banner.disabled).toBe(true);
-    expect(banner.getAttribute('data-answered')).toBe('true');
-    expect(banner.textContent).toContain('Questions answered');
-    fireEvent.click(banner);
-    expect(onOpenQuestions).not.toHaveBeenCalled();
-    expect(screen.queryByText('Quick brief — tailored')).toBeNull();
-    expect(screen.queryByText('Who is this for?')).toBeNull();
-    expect(screen.queryByText('Product evaluators')).toBeNull();
+  it('does not steal focus from an in-progress composer keystroke', () => {
+    const composer = document.createElement('textarea');
+    document.body.appendChild(composer);
+    composer.focus();
+    render(<AssistantMessage message={baseMessage({ content, events: undefined })} streaming={false} projectId="proj-1" questionCard={card()} />);
+    expect(document.activeElement).toBe(composer);
+    composer.remove();
   });
 
-  it('keeps an unanswered question banner clickable', () => {
-    const form = [
-      '<question-form id="discovery" title="Quick brief — tailored">',
-      JSON.stringify({
-        questions: [
-          {
-            id: 'audience',
-            label: 'Who is this for?',
-            type: 'text',
-          },
-        ],
-      }),
-      '</question-form>',
-    ].join('\n');
-
-    const onOpenQuestions = vi.fn();
-    render(
-      <AssistantMessage
-        message={baseMessage({
-          events: [
-            {
-              kind: 'text',
-              text: form,
-            } as ChatMessage['events'][number],
-          ],
-        })}
-        streaming={false}
-        projectId="proj-1"
-        onOpenQuestions={onOpenQuestions}
-      />,
-    );
-
-    const banner = screen.getByTestId('questions-banner') as HTMLButtonElement;
-    expect(banner.disabled).toBe(false);
-    expect(banner.getAttribute('data-answered')).toBeNull();
-    fireEvent.click(banner);
-    expect(onOpenQuestions).toHaveBeenCalledWith(expect.objectContaining({
-      form: expect.objectContaining({ id: 'discovery', title: 'Quick brief — tailored' }),
-    }));
+  it('blocks submit until required answers are present, then submits through the existing answer path', async () => {
+    const onSubmit = vi.fn(() => true);
+    render(<AssistantMessage message={baseMessage({ content, events: undefined })} streaming={false} projectId="proj-1" questionCard={card({ onSubmit })} />);
+    const submit = screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+    fireEvent.click(submit);
+    expect(onSubmit).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('radio', { name: 'Desktop' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Export' }));
+    expect(submit.disabled).toBe(false);
+    await act(async () => { fireEvent.click(submit); });
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    const [text, answers] = onSubmit.mock.calls[0]!;
+    expect(answers).toMatchObject({ platform: 'Desktop', features: ['Export'] });
+    expect(text).toMatch(/^\[form answers/i);
+    expect(text).toContain('Platform: Desktop');
   });
 
-  it('recovers a final unclosed question form as a banner instead of raw JSON', () => {
-    const form = [
-      '<question-form id="task-type" title="Task type">',
-      JSON.stringify({
-        description: 'Pick the workflow.',
-        questions: [
-          {
-            id: 'taskType',
-            label: 'What should we build?',
-            type: 'radio',
-            required: true,
-            options: ['Prototype', 'Report', 'Other'],
-          },
-        ],
-      }, null, 2),
-    ].join('\n');
-    const onOpenQuestions = vi.fn();
-    const { container } = render(
-      <AssistantMessage
-        message={baseMessage({
-          events: [
-            {
-              kind: 'text',
-              text: `Okay.\n\n${form}`,
-            } as ChatMessage['events'][number],
-          ],
-        })}
-        streaming={false}
-        projectId="proj-1"
-        onOpenQuestions={onOpenQuestions}
-      />,
-    );
+  it('settles into an answered state from the next user message and cannot double-send', () => {
+    const onSubmit = vi.fn(() => true);
+    const nextUserContent = formatFormAnswers(stubForm as never, { platform: 'Mobile', features: ['Search'] });
+    render(<AssistantMessage message={baseMessage({ content, events: undefined })} streaming={false} projectId="proj-1"
+      nextUserContent={nextUserContent} questionCard={card({ onSubmit, interactive: false, submittedAnswers: { platform: 'Mobile', features: ['Search'] } })} />);
+    const panel = screen.getByTestId('questions-panel');
+    expect(panel.getAttribute('data-answered')).toBe('true');
+    expect(panel.getAttribute('data-pending')).toBeNull();
+    expect(screen.getByRole('radio', { name: 'Mobile' }).getAttribute('aria-checked')).toBe('true');
+    expect((screen.getByRole('radio', { name: 'Mobile' }) as HTMLButtonElement).disabled).toBe(true);
+    const submit = screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+    fireEvent.click(submit);
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
 
-    const banner = screen.getByTestId('questions-banner');
+  it('renders a stale (non-owner) form occurrence locked, showing its historical answers', () => {
+    const onSubmit = vi.fn(() => true);
+    const nextUserContent = formatFormAnswers(stubForm as never, { platform: 'Desktop' });
+    render(<AssistantMessage message={baseMessage({ content, events: undefined })} streaming={false} projectId="proj-1"
+      nextUserContent={nextUserContent} questionCard={card({ messageId: 'msg-other', onSubmit })} />);
+    expect(screen.getByTestId('questions-panel').getAttribute('data-answered')).toBe('true');
+    expect(screen.getByRole('radio', { name: 'Desktop' }).getAttribute('aria-checked')).toBe('true');
+    expect((screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('renders the streaming card frame instead of raw JSON while the form is still open', () => {
+    const open = '<question-form id="brief" title="Quick brief">{"questions":[{"id":"platform","label":"Platform","type":"radio","options":["Mobile"]},{"id":"x"';
+    const { container } = render(<AssistantMessage message={baseMessage({ content: open, events: undefined })} streaming isLast
+      projectId="proj-1" questionCard={card({ generating: true, interactive: false, formPreview: { id: 'brief', title: 'Quick brief', questions: [stubForm.questions[0] as never] } })} />);
     expect(container.textContent).not.toContain('"questions"');
-    expect(container.textContent).not.toContain('Task type');
-    fireEvent.click(banner);
-    expect(onOpenQuestions).toHaveBeenCalledWith(expect.objectContaining({
-      form: expect.objectContaining({ id: 'task-type', title: 'Task type' }),
-    }));
+    expect(screen.getByTestId('questions-panel').getAttribute('aria-busy')).toBe('true');
+    expect((screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
 

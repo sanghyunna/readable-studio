@@ -1,0 +1,81 @@
+/* Quiet action row pinned under the Databricks model list. Same footprint as
+   a model option so the list reads as one column, but muted, glyph-led and
+   never highlighted as "selected". */
+.row,
+.rowSeparated {
+  display: flex;
+  min-width: 0;
+  width: 100%;
+  min-height: 30px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--dur-quick) var(--ease-out),
+    color var(--dur-quick) var(--ease-out);
+}
+
+/* The separator belongs to the row, not the list, so a lone action row in an
+   empty catalogue carries no orphaned rule above it. */
+.rowSeparated {
+  position: relative;
+  margin-top: 6px;
+}
+
+.rowSeparated::before {
+  content: '';
+  position: absolute;
+  inset-inline: 8px;
+  top: -4px;
+  height: 1px;
+  background: var(--border-soft);
+}
+
+.row:hover:not(:disabled),
+.rowSeparated:hover:not(:disabled) {
+  background: var(--bg-subtle);
+  color: var(--text-strong);
+}
+
+.row:focus-visible,
+.rowSeparated:focus-visible {
+  outline: 2px solid var(--hub-accent);
+  outline-offset: -2px;
+}
+
+.row:disabled,
+.rowSeparated:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.glyph {
+  display: inline-flex;
+  width: 13px;
+  flex: 0 0 13px;
+  align-items: center;
+  justify-content: center;
+}
+
+.label {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row,
+  .rowSeparated {
+    transition: none;
+  }
+}

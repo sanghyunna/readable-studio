@@ -172,13 +172,27 @@ describe('InlineModelSwitcher split variants', () => {
     expect(screen.queryByTestId('inline-model-switcher-model-warning-mark')).toBeNull();
   });
 
-  it('shows an honest dropdown chevron only on the model-list trigger', () => {
+  it('gives the agent trigger the model trigger\'s chevron, after its icon', () => {
     renderSplit();
 
     const agent = screen.getByTestId('inline-model-switcher-agent-trigger');
     const model = screen.getByTestId('inline-model-switcher-model-trigger');
-    expect(agent.querySelector('.inline-switcher__chip-chevron')).toBeNull();
-    expect(model.querySelector('.inline-switcher__chip-chevron')).not.toBeNull();
+    const agentChevron = agent.querySelector('.inline-switcher__chip-chevron');
+    const modelChevron = model.querySelector('.inline-switcher__chip-chevron');
+    expect(agentChevron).not.toBeNull();
+    expect(modelChevron).not.toBeNull();
+    // Identical glyph: same element, size and class, so the two chevrons can
+    // only ever be styled together.
+    expect(agentChevron!.outerHTML).toBe(modelChevron!.outerHTML);
+    // Right of the icon: the chevron is the trigger's last child and the icon
+    // precedes it, so the button reads icon -> chevron like label -> chevron.
+    const icon = agent.querySelector('.inline-switcher__chip-icon');
+    expect(icon).not.toBeNull();
+    expect(agent.lastElementChild).toBe(agentChevron);
+    expect(icon!.compareDocumentPosition(agentChevron!) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy();
+    // The agent button stays icon-only otherwise: no text label sneaks in.
+    expect(agent.textContent).toBe('');
   });
 
   it('agent button opens agent switching only', () => {

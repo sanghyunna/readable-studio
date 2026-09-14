@@ -758,7 +758,7 @@ export function buildManualEditBridge(enabled: boolean): string {
   }
   function postSelectionState(){
     if (!enabled) return;
-    var el = richEditingEl();
+    var el = document.querySelector('[data-readable-editing="true"]');
     if (!el) {
       window.parent.postMessage({ type: 'readable-edit-selection-state', editing: false, hasSelection: false, bold: false, italic: false, underline: false }, '*');
       return;
@@ -776,8 +776,13 @@ export function buildManualEditBridge(enabled: boolean): string {
     try { document.execCommand(command); } catch (e) {}
     postSelectionState();
   }
+  var activeTextEditFinish = null;
+  function finishActiveTextEdit(){
+    if (activeTextEditFinish) activeTextEditFinish(true);
+  }
   function makeEditable(el, clickEvent){
     if (!el || isTransient(el) || el.getAttribute('contenteditable') === 'true' || el.getAttribute('contenteditable') === 'plaintext-only') return;
+    finishActiveTextEdit();
     // Links (and any element the host routes here as a non-text leaf) stay on the
     // plain-text path: their inline label is the only editable surface and rich
     // markup would fight the panel's link/href fields. Everything else gets a
@@ -799,10 +804,12 @@ export function buildManualEditBridge(enabled: boolean): string {
     if (!restoreSelectionRange(selectedRange)) placeCaretFromClick(clickEvent, el);
     if (rich) postSelectionState();
     function finish(commit){
+      activeTextEditFinish = null;
       el.removeAttribute('contenteditable');
       el.removeAttribute('data-readable-editing');
       el.removeEventListener('blur', onBlur);
       el.removeEventListener('keydown', onKey);
+      setSelectedTarget(hostSelectedTargetId);
       postSelectionState();
       if (!commit) {
         if (rich) el.innerHTML = originalHtml;
@@ -850,15 +857,18 @@ export function buildManualEditBridge(enabled: boolean): string {
       }
       if (ev.key === 'Enter' && !ev.shiftKey) {
         ev.preventDefault();
+        ev.stopPropagation();
         finish(true);
         try { el.blur(); } catch (e) {}
       }
       if (ev.key === 'Escape') {
         ev.preventDefault();
+        ev.stopPropagation();
         finish(true); // PPT: Esc commits typed text and promotes to object-select; undo stays on host Ctrl+Z
         try { el.blur(); } catch (e) {}
       }
     }
+    activeTextEditFinish = finish;
     el.addEventListener('blur', onBlur);
     el.addEventListener('keydown', onKey);
   }
@@ -1351,18 +1361,22 @@ export function buildManualEditBridge(enabled: boolean): string {
       deferredOverlayClick = null;
     }
   }
+  var nativeObjectClick = null;
+  function requestTextEdit(el){
+    if (!el) return false;
+    var target = targetFrom(el, true, true);
+    if (target.kind !== 'text' && target.kind !== 'link' && !target.textEditTargetId) return false;
+    window.parent.postMessage({ type: 'readable-edit-select', target: target, beginTextEdit: true }, '*');
+    return true;
+  }
   function activateClickTarget(el, event, cycled, selectionAware){
     if (selectionAware) el = targetForSelection(el);
-    var kind = inferKind(el);
     var id = stableId(el);
     setSelectedTarget(id);
     hostSelectedTargetId = id;
     window.parent.postMessage({ type: 'readable-edit-select', target: targetFrom(el, true, true) }, '*');
     resolveHoverAtPoint(event.clientX, event.clientY, event.target);
-    // Only enter inline edit on a fresh, non-modified click on the topmost
-    // text/link target. Cycled clicks are explicitly drilling the z-stack;
-    // Alt/Option clicks are an explicit "select without editing" gesture.
-    if (!event.altKey && !cycled && (kind === 'text' || kind === 'link')) makeEditable(el, event);
+    // Selection never opens a caret. Text entry is an explicit host command.
   }
   function handleClick(event, selectionAware){
     var result = clickTarget(event);
@@ -1388,6 +1402,7 @@ export function buildManualEditBridge(enabled: boolean): string {
       enabled = nextEnabled;
       document.documentElement.toggleAttribute('data-readable-edit-mode', enabled);
       if (!enabled) {
+        nativeObjectClick = null;
         removeDuplicateRoot();
         clearSelectedTarget();
         setHoveredTarget(null);
@@ -1420,6 +1435,18 @@ export function buildManualEditBridge(enabled: boolean): string {
       clearDeferredOverlayClick();
       var clickEl = document.elementFromPoint ? document.elementFromPoint(clickX, clickY) : null;
       var overlayEvent = { target: clickEl, altKey: ev.data.type === 'readable-edit-alt-click', clientX: clickX, clientY: clickY };
+      // The first click can mount a host overlay before the second press. The
+      // browser cannot emit dblclick across documents, so carry that one native
+      // click into the overlay's existing text-entry path.
+      var nativeClick = nativeObjectClick;
+      nativeObjectClick = null;
+      if (!overlayEvent.altKey && nativeClick && nativeClick.id === ev.data.selectedId
+        && nativeClick.id === hostSelectedTargetId && Date.now() - nativeClick.time <= 350
+        && Math.abs(nativeClick.x - clickX) <= clickCycleTolerance
+        && Math.abs(nativeClick.y - clickY) <= clickCycleTolerance
+        && requestTextEdit(findById(nativeClick.id))) {
+        return;
+      }
       if (overlayEvent.altKey) {
         handleClick(overlayEvent, false);
         return;
@@ -1502,7 +1529,11 @@ export function buildManualEditBridge(enabled: boolean): string {
     }
     if (ev.data.type === 'readable-edit-end-text-edit') {
       var endEl = document.querySelector('[data-readable-editing="true"]');
+      finishActiveTextEdit();
       if (endEl && typeof endEl.blur === 'function') endEl.blur();
+      if (typeof ev.data.requestId === 'number') {
+        window.parent.postMessage({ type: 'readable-edit-text-flushed', requestId: ev.data.requestId }, '*');
+      }
       return;
     }
   });
@@ -1512,7 +1543,20 @@ export function buildManualEditBridge(enabled: boolean): string {
     if (ev.target && ev.target.closest && ev.target.closest('[data-readable-editing="true"]')) return;
     ev.preventDefault();
     ev.stopPropagation();
+    // The second click of a native double-click must not cycle to the object
+    // behind the first click's target before dblclick arrives.
+    if (ev.detail > 1 && !ev.altKey) return;
     handleClick(ev);
+    nativeObjectClick = !ev.altKey && hostSelectedTargetId
+      ? { id: hostSelectedTargetId, x: ev.clientX, y: ev.clientY, time: Date.now() } : null;
+  }, true);
+  document.addEventListener('dblclick', function(ev){
+    if (!enabled || ev.altKey || (ev.target && ev.target.closest && ev.target.closest('[data-readable-editing="true"]'))) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    clearDeferredOverlayClick();
+    nativeObjectClick = null;
+    requestTextEdit(findById(hostSelectedTargetId));
   }, true);
   document.addEventListener('pointerover', function(ev){
     if (!enabled) return;
@@ -1586,6 +1630,12 @@ export function buildManualEditBridge(enabled: boolean): string {
       return;
     }
     if (isEditing) return;
+    if (ev.key === 'Escape' && selectedEl && hostSelectedTargetId && !isNudgeBlocked(ev.target, ev.isComposing)) {
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      window.parent.postMessage({ type: 'readable-edit-deselect', id: hostSelectedTargetId }, '*');
+      return;
+    }
     if (!(ev.ctrlKey || ev.metaKey)) return;
     var key = (ev.key || '').toLowerCase();
     var isUndo = key === 'z' && !ev.shiftKey;

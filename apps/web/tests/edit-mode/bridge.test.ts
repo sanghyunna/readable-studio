@@ -924,7 +924,7 @@ describe('manual edit bridge target normalization', () => {
     dom.window.close();
   });
 
-  it('still enters inline edit for plain clicks on text and link targets', () => {
+  it('selects text and links on single click without contenteditable or a caret', () => {
     const dom = new JSDOM(
       `<main>
         <h1 data-readable-id="title">Title</h1>
@@ -935,12 +935,18 @@ describe('manual edit bridge target normalization', () => {
     const title = dom.window.document.querySelector('[data-readable-id="title"]') as HTMLElement;
     const link = dom.window.document.querySelector('[data-readable-id="cta"]') as HTMLElement;
 
-    title.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
-    expect(title.getAttribute('data-readable-editing')).toBe('true');
-    title.dispatchEvent(new dom.window.FocusEvent('blur', { bubbles: false }));
-
-    link.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
-    expect(link.getAttribute('data-readable-editing')).toBe('true');
+    const postMessage = vi.spyOn(dom.window.parent, 'postMessage');
+    for (const [element, kind] of [[title, 'text'], [link, 'link']] as const) {
+      element.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+      expect(element.getAttribute('data-readable-edit-selected')).toBe('true');
+      expect(element.hasAttribute('data-readable-editing')).toBe(false);
+      expect(element.hasAttribute('contenteditable')).toBe(false);
+      expect(dom.window.document.activeElement).not.toBe(element);
+      expect(dom.window.getSelection()?.rangeCount).toBe(0);
+      expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'readable-edit-select', target: expect.objectContaining({ kind }),
+      }), '*');
+    }
 
     dom.window.close();
   });
@@ -1059,7 +1065,7 @@ describe('manual edit bridge target normalization', () => {
     native.dom.window.close();
   });
 
-  it('re-enters the same selected text target from an overlay click', () => {
+  it('keeps the same selected text target object-selected after an overlay click', () => {
     const dom = new JSDOM(
       `<main><h1 data-readable-id="title">Title</h1></main>${buildManualEditBridge(true)}`,
       { runScripts: 'dangerously', url: 'http://localhost' },
@@ -1072,8 +1078,8 @@ describe('manual edit bridge target normalization', () => {
       data: { type: 'readable-edit-click', clientX: 10, clientY: 10, selectedId: 'title' },
     }));
 
-    expect(title.getAttribute('data-readable-editing')).toBe('true');
-    expect(title.getAttribute('contenteditable')).toBe('true');
+    expect(title.getAttribute('data-readable-edit-selected')).toBe('true');
+    expect(title.hasAttribute('contenteditable')).toBe(false);
     dom.window.close();
   });
 
@@ -1337,6 +1343,9 @@ describe('manual edit bridge target normalization', () => {
       clientX: 8,
       clientY: 8,
     }));
+    dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
+      data: { type: 'readable-edit-begin-text-edit', id: 'title' },
+    }));
     expect(title.getAttribute('contenteditable')).toBe('true');
     expect(title.getAttribute('data-readable-editing')).toBe('true');
     expect(postMessage).toHaveBeenCalledWith({
@@ -1370,6 +1379,9 @@ describe('manual edit bridge target normalization', () => {
     const image = dom.window.document.querySelector('[data-readable-id="image"]') as HTMLElement;
 
     title.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+    dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
+      data: { type: 'readable-edit-begin-text-edit', id: 'title' },
+    }));
     image.dispatchEvent(new dom.window.MouseEvent('pointerover', { bubbles: true }));
     expect(image.getAttribute('data-readable-runtime-hovered')).toBe('true');
 
@@ -1388,6 +1400,9 @@ describe('manual edit bridge target normalization', () => {
     const postMessage = vi.spyOn(dom.window.parent, 'postMessage');
 
     tagline.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+    dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
+      data: { type: 'readable-edit-begin-text-edit', id: 'tagline' },
+    }));
 
     expect(tagline.getAttribute('contenteditable')).toBe('true');
     expect(postMessage).toHaveBeenCalledWith({
@@ -1419,6 +1434,9 @@ describe('manual edit bridge target normalization', () => {
     const postMessage = vi.spyOn(dom.window.parent, 'postMessage');
 
     eyebrow.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+    dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
+      data: { type: 'readable-edit-begin-text-edit', id: 'eyebrow' },
+    }));
 
     expect(eyebrow.getAttribute('contenteditable')).toBe('true');
     expect(postMessage).toHaveBeenCalledWith({
@@ -1442,6 +1460,9 @@ describe('manual edit bridge target normalization', () => {
     const postMessage = vi.spyOn(dom.window.parent, 'postMessage');
 
     leaf.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+    dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
+      data: { type: 'readable-edit-begin-text-edit', id: 'wrapper' },
+    }));
 
     expect(wrapper.getAttribute('contenteditable')).toBe('true');
     expect(leaf.hasAttribute('contenteditable')).toBe(false);
@@ -1466,6 +1487,9 @@ describe('manual edit bridge target normalization', () => {
     const postMessage = vi.spyOn(dom.window.parent, 'postMessage');
 
     value.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+    dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
+      data: { type: 'readable-edit-begin-text-edit', id: 'path-0-0' },
+    }));
 
     expect(value.getAttribute('contenteditable')).toBe('true');
     expect(postMessage).toHaveBeenCalledWith({
@@ -1513,6 +1537,9 @@ describe('manual edit bridge target normalization', () => {
     const postMessage = vi.spyOn(dom.window.parent, 'postMessage');
 
     body.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+    dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
+      data: { type: 'readable-edit-begin-text-edit', id: 'body' },
+    }));
     body.textContent = 'Draft body';
     body.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
       bubbles: true,
@@ -2653,6 +2680,9 @@ describe('manual edit bridge rich-text editing', () => {
     const title = dom.window.document.querySelector('[data-readable-id="title"]') as HTMLElement;
 
     title.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+    dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
+      data: { type: 'readable-edit-begin-text-edit', id: 'title' },
+    }));
 
     expect(title.getAttribute('contenteditable')).toBe('true');
 
@@ -2667,6 +2697,9 @@ describe('manual edit bridge rich-text editing', () => {
     const link = dom.window.document.querySelector('[data-readable-id="cta"]') as HTMLElement;
 
     link.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+    dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
+      data: { type: 'readable-edit-begin-text-edit', id: 'cta' },
+    }));
 
     expect(link.getAttribute('contenteditable')).toBe('plaintext-only');
 
@@ -2698,6 +2731,9 @@ describe('manual edit bridge rich-text editing', () => {
     const execCommand = stubExecCommand(win);
 
     copy.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+    dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
+      data: { type: 'readable-edit-begin-text-edit', id: 'copy' },
+    }));
     selectContents(win, copy);
     execCommand.mockClear(); // drop the styleWithCSS call fired on session start
 
@@ -2725,6 +2761,9 @@ describe('manual edit bridge rich-text editing', () => {
     const execCommand = stubExecCommand(win);
 
     copy.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+    dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
+      data: { type: 'readable-edit-begin-text-edit', id: 'copy' },
+    }));
 
     expect(execCommand).toHaveBeenCalledWith('styleWithCSS', false, 'false');
     expect(execCommand).toHaveBeenCalledTimes(1);
@@ -2742,6 +2781,9 @@ describe('manual edit bridge rich-text editing', () => {
     const execCommand = stubExecCommand(win);
 
     link.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+    dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
+      data: { type: 'readable-edit-begin-text-edit', id: 'cta' },
+    }));
 
     expect(execCommand).not.toHaveBeenCalled();
 
@@ -2768,6 +2810,9 @@ describe('manual edit bridge rich-text editing', () => {
 
     selectTextRange(win, textNode, 0, 5); // "Hello"
     copy.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+    dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
+      data: { type: 'readable-edit-begin-text-edit', id: 'copy' },
+    }));
 
     const selection = win.getSelection();
     expect(copy.getAttribute('contenteditable')).toBe('true');
@@ -2792,6 +2837,9 @@ describe('manual edit bridge rich-text editing', () => {
     const range = win.getSelection()!.getRangeAt(0);
     range.setEnd(secondText, 5);
     spans[1]!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+    dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
+      data: { type: 'readable-edit-begin-text-edit', id: 'copy' },
+    }));
 
     const selection = win.getSelection();
     expect(copy.getAttribute('contenteditable')).toBe('true');
@@ -2885,6 +2933,9 @@ describe('manual edit bridge rich-text editing', () => {
     const postMessage = vi.spyOn(dom.window.parent, 'postMessage');
 
     emphasis.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
+    dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
+      data: { type: 'readable-edit-begin-text-edit', id: 'copy' },
+    }));
 
     expect(postMessage).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'readable-edit-select', target: expect.objectContaining({ id: 'copy' }) }),
@@ -2989,6 +3040,9 @@ describe('manual edit bridge rich-text editing', () => {
     const postMessage = vi.spyOn(dom.window.parent, 'postMessage');
 
     nested.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+    dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
+      data: { type: 'readable-edit-begin-text-edit', id: 'nested' },
+    }));
     expect(nested.getAttribute('contenteditable')).toBe('true');
 
     nested.innerHTML = '<strong>Nested</strong> revised copy';
@@ -3192,7 +3246,7 @@ describe('manual edit bridge keyboard forwarding', () => {
     dom.window.close();
   });
 
-  it('leaves Escape untouched when no nudge burst is held', () => {
+  it('forwards object Escape for deselection when no nudge burst is held', () => {
     const dom = new JSDOM(
       `<main><img data-readable-id="image" alt="Preview"></main>${buildManualEditBridge(true)}`,
       { runScripts: 'dangerously', url: 'http://localhost' },
@@ -3210,7 +3264,8 @@ describe('manual edit bridge keyboard forwarding', () => {
     dom.window.document.dispatchEvent(event);
 
     expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'readable-edit-burst-cancel' }), '*');
-    expect(event.defaultPrevented).toBe(false);
+    expect(postMessage).toHaveBeenCalledWith({ type: 'readable-edit-deselect', id: 'image' }, '*');
+    expect(event.defaultPrevented).toBe(true);
 
     dom.window.close();
   });
@@ -3408,6 +3463,9 @@ describe('manual edit bridge keyboard forwarding', () => {
     );
     const title = dom.window.document.querySelector('[data-readable-id="title"]') as HTMLElement;
     title.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+    dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
+      data: { type: 'readable-edit-begin-text-edit', id: 'title' },
+    }));
     expect(title.getAttribute('data-readable-editing')).toBe('true');
 
     const postMessage = vi.spyOn(dom.window.parent, 'postMessage');
@@ -3480,6 +3538,9 @@ describe('manual edit bridge keyboard forwarding', () => {
     );
     const title = dom.window.document.querySelector('[data-readable-id="title"]') as HTMLElement;
     title.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+    dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
+      data: { type: 'readable-edit-begin-text-edit', id: 'title' },
+    }));
     expect(title.getAttribute('data-readable-editing')).toBe('true');
 
     const postMessage = vi.spyOn(dom.window.parent, 'postMessage');
@@ -3530,6 +3591,9 @@ describe('manual edit bridge selection-state + rich-format bridge', () => {
     // Put the element into a rich edit session by clicking it.
     p.getBoundingClientRect = () => ({ x: 0, y: 0, width: 80, height: 20, top: 0, right: 80, bottom: 20, left: 0, toJSON: () => ({}) } as DOMRect);
     p.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
+      data: { type: 'readable-edit-begin-text-edit', id: 'path-0-0' },
+    }));
     expect(p.getAttribute('data-readable-editing')).toBe('true');
 
     dom.window.dispatchEvent(new dom.window.MessageEvent('message', { data: { type: 'readable-edit-rich-format', command: 'bold' } }));

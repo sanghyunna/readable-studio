@@ -12,7 +12,11 @@
   overflow: visible;
 }
 
+/* Owns its display: the tracks below must not depend on `ToggleCard`'s
+   `.toggleCard { display: grid }` reaching this element (same class of
+   failure that collapsed the Databricks profile row). */
 .codeAgentCard {
+  display: grid;
   grid-template-columns: 32px minmax(0, 1fr);
   align-content: center;
   align-items: center;

@@ -38,7 +38,8 @@ import { isTodoWriteToolName, latestTodoWriteInputForPinnedCard } from '../runti
 import type { AgentInfo, AgentRollbackRequestEvent, ApiProtocol, AppConfig, ChatAttachment, ChatCommentAttachment, ChatMessage, Conversation, DesignSystemSummary, PreviewComment, Project, ProjectFile, ProjectMetadata, SkillSummary } from '../types';
 import { exactDateTime, messageTime, shortTime } from '../utils/chatTime';
 import { commentTargetDisplayName, commentsToAttachments, simplePositionLabel } from '../comments';
-import { AssistantMessage, type QuestionFormOpenRequest } from './AssistantMessage';
+import { AssistantMessage, type InlineQuestionCardState } from './AssistantMessage';
+import { AssumptionLedger } from './AssumptionLedger';
 import { CollapsibleErrorText } from './CollapsibleErrorText';
 import { amrRechargeUrlForProfile, resolveRunFailureUi } from '../runtime/amr-guidance';
 import { RESUME_CONTINUE_PROMPT } from '../runtime/resume';
@@ -52,7 +53,7 @@ import type { PluginFolderAgentAction } from './design-files/pluginFolderActions
 import { Icon, type IconName } from './Icon';
 import { InlineModelSwitcher } from './InlineModelSwitcher';
 import {
-  effectiveAgentModelChoice,
+  composerReasoningOptions,
   requireModelSelection,
 } from './agentModelSelection';
 import type { ProviderModelsCache } from './providerModelsCache';
@@ -356,8 +357,8 @@ interface Props {
   // time before the full `tool_use` arrives. Never persisted.
   liveToolInput?: Record<string, { name: string; text: string; seq?: number }>;
   initialDraft?: string;
-  // Focus the right-hand Questions tab from the chat banner.
-  onOpenQuestions?: (request?: QuestionFormOpenRequest) => void;
+  // Live state for the active inline question card (owned by ProjectView).
+  questionCard?: InlineQuestionCardState | null;
   onContinueRemainingTasks?: (assistantMessage: ChatMessage, todos: TodoItem[]) => void;
   // "Next step" affordance handlers forwarded to the last assistant message.
   // The featured design-toolbox rows are driven directly off the composer ref
@@ -566,7 +567,7 @@ export function ChatPane({
   forceStreamingMessageIds,
   liveToolInput,
   initialDraft,
-  onOpenQuestions,
+  questionCard,
   onContinueRemainingTasks,
   onArtifactShare,
   onArtifactDownload,
@@ -850,8 +851,7 @@ export function ChatPane({
     [messages],
   );
   // Map each assistant message id to the user message that follows it (if any)
-  // so the chat-side Questions banner can reopen that exact answered form in
-  // the right-hand panel later.
+  // so an earlier inline question card can settle into its answered state.
   const nextUserContentByAssistantId = useMemo(() => {
     const map = new Map<string, string>();
     for (let i = 0; i < messages.length - 1; i++) {
@@ -1398,22 +1398,11 @@ export function ChatPane({
           onApiModelChange: onApiModelChange ?? (() => {}),
           onOpenSettings,
         } as const;
-        const activeAgent = agents.find((agent) => agent.id === config.agentId);
-        const selectedModel = effectiveAgentModelChoice(
-          activeAgent,
-          config.agentId ? config.agentModels?.[config.agentId] : undefined,
-        )?.model;
-        // Grok Build advertises effort presets at the agent level, but its CLI
-        // applies --effort only to reasoning models. Hiding the picker for its
-        // non-reasoning models prevents a selectable value the adapter would
-        // intentionally ignore.
-        const modelAcceptsReasoning =
-          activeAgent?.id !== 'grok-build' ||
-          (/reasoning/i.test(selectedModel ?? '') && !/non-reasoning/i.test(selectedModel ?? ''));
-        const supportsReasoning =
-          config.mode === 'daemon' &&
-          Boolean(activeAgent?.reasoningOptions?.length) &&
-          modelAcceptsReasoning;
+        // The effort button mounts only when the active agent + model pair
+        // advertises effort levels (a per-model list overrides the agent-wide
+        // one; Grok Build's non-reasoning models advertise none). The same
+        // resolver feeds the button's option list, so it never opens empty.
+        const supportsReasoning = composerReasoningOptions(config, agents).length > 0;
         return (
           <>
             <InlineModelSwitcher {...switcherProps} variant="agent" />
@@ -1508,6 +1497,13 @@ export function ChatPane({
         ) : null}
         {projectHeader ? (
           <span className="chat-project-header-title">{projectHeader}</span>
+        ) : null}
+        {questionCard ? (
+          <AssumptionLedger
+            brief={questionCard.brief}
+            onCorrect={questionCard.onCorrect}
+            disabled={questionCard.submitDisabled || questionCard.runHydrationStatus !== 'ready'}
+          />
         ) : null}
         <div
           className={`chat-history-wrap chat-session-switcher${showConvList ? ' open' : ''}`}
@@ -1768,7 +1764,7 @@ export function ChatPane({
                 onAgentRollbackConfirm={onAgentRollbackConfirm}
                 onAgentRollbackShowDiff={onAgentRollbackShowDiff}
                 t={t}
-                onOpenQuestions={onOpenQuestions}
+                questionCard={questionCard}
                 scrollContainerRef={logRef}
               />
               {displayError ? (
@@ -2039,7 +2035,7 @@ function ChatRows({
   onAgentRollbackConfirm,
   onAgentRollbackShowDiff,
   t,
-  onOpenQuestions,
+  questionCard,
   scrollContainerRef,
 }: {
   messages: ChatMessage[];
@@ -2082,7 +2078,7 @@ function ChatRows({
   ) => void;
   onAgentRollbackShowDiff?: (payload: AgentRollbackRequestEvent) => void;
   t: TranslateFn;
-  onOpenQuestions?: (request?: QuestionFormOpenRequest) => void;
+  questionCard?: InlineQuestionCardState | null;
   scrollContainerRef: MutableRefObject<HTMLDivElement | null>;
 }) {
   const conversationTodoInput = useMemo(
@@ -2164,7 +2160,7 @@ function ChatRows({
         errorCardOwnerId={errorCardOwnerId}
         nextUserContent={nextUserContentByAssistantId.get(m.id)}
         suppressDirectionForms={hasActiveDesignSystem}
-        onOpenQuestions={onOpenQuestions}
+        questionCard={questionCard}
         onContinueRemainingTasks={
           m.id === lastAssistantId && onContinueRemainingTasks
             ? (todos) => assistantCallbacksRef.current.onContinueRemainingTasks?.(m, todos)

@@ -1,11 +1,10 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import type { ReactNode } from 'react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import type { ComponentProps, ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProjectView } from '../../src/components/ProjectView';
-import { QuestionsPanel } from '../../src/components/QuestionsPanel';
 import { navigate } from '../../src/router';
 import type {
   AgentInfo,
@@ -102,16 +101,13 @@ vi.mock('../../src/components/AvatarMenu', () => ({
 }));
 
 vi.mock('../../src/components/FileWorkspace', () => ({
-  FileWorkspace: ({ tabsState, onTabsStateChange, headerActions, projectQuestions, onCorrectQuestion }: {
-    projectQuestions?: import('../../src/components/brief-state').ProjectBrief | null;
-    onCorrectQuestion?: (brief: import('../../src/components/brief-state').ProjectBrief, corrected: import('../../src/components/brief-state').BriefAssumption) => Promise<boolean>;
+  FileWorkspace: ({ tabsState, onTabsStateChange, headerActions }: {
     tabsState: { tabs: string[]; active: string | null };
     onTabsStateChange: (state: { tabs: string[]; active: string | null }) => void;
     headerActions?: ReactNode;
   }) => (
     <div data-testid="file-workspace">
       <div data-testid="preview-header-actions">{headerActions}</div>
-      <QuestionsPanel brief={projectQuestions} onCorrect={onCorrectQuestion} form={null} interactive={false} generating={false} onSubmit={vi.fn()} />
       <output data-testid="workspace-active-tab">{tabsState.active ?? ''}</output>
       <button
         type="button"
@@ -128,15 +124,13 @@ vi.mock('../../src/components/Loading', () => ({
   CenteredLoader: () => <div data-testid="loader" />,
 }));
 
-vi.mock('../../src/components/ChatPane', () => ({
-  ChatPane: ({ agents, daemonLive, onModeChange, onAgentChange, onAgentModelChange, projectHeader }: {
-    agents?: AgentInfo[];
-    daemonLive?: boolean;
-    onModeChange?: (mode: AppConfig['mode']) => void;
-    onAgentChange?: (id: string) => void;
-    onAgentModelChange?: (id: string, choice: { model?: string }) => void;
-    projectHeader?: ReactNode;
-  }) => (
+const chatSurface = vi.hoisted(() => ({ real: false }));
+vi.mock('../../src/components/ChatPane', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../src/components/ChatPane')>();
+  return { ChatPane: (props: ComponentProps<typeof actual.ChatPane>) => {
+    if (chatSurface.real) return <actual.ChatPane {...props} />;
+    const { agents, daemonLive, onModeChange, onAgentChange, onAgentModelChange, projectHeader } = props;
+    return (
     <div data-testid="chat-pane">
       {projectHeader}
       <output data-testid="execution-wiring">
@@ -146,8 +140,9 @@ vi.mock('../../src/components/ChatPane', () => ({
         choose opus
       </button>
     </div>
-  ),
-}));
+    );
+  } };
+});
 
 const mockedListConversations = vi.mocked(listConversations);
 const mockedCreateConversation = vi.mocked(createConversation);
@@ -226,6 +221,8 @@ describe('ProjectView tab URL hydration', () => {
 
   afterEach(() => {
     cleanup();
+    chatSurface.real = false;
+    vi.unstubAllGlobals();
     vi.clearAllMocks();
   });
 
@@ -241,8 +238,10 @@ describe('ProjectView tab URL hydration', () => {
     expect(onAgentModelChange).toHaveBeenCalledWith('claude', { model: 'opus' });
   });
 
-  it('hydrates Questions from persisted project metadata without a preview-header Brief', async () => {
-    renderProjectView({
+  it('hydrates the chat-header assumption ledger from persisted metadata without a form or preview-header Brief', async () => {
+    chatSurface.real = true;
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+    await act(async () => { renderProjectView({
       project: {
         ...project,
         metadata: {
@@ -263,14 +262,22 @@ describe('ProjectView tab URL hydration', () => {
           }>;
         } },
       },
-    });
+    }); });
 
-    await act(async () => { await Promise.all([...mockedListMessages.mock.results, ...mockedLoadTabs.mock.results].map(result => result.value)); });
+    expect(mockedListMessages).toHaveBeenCalledWith(project.id, conversation.id);
+    expect(screen.queryByTestId('questions-panel')).toBeNull();
+    expect(screen.queryByTestId('questions-tab')).toBeNull();
+    const trigger = screen.getByTestId('assumption-ledger-trigger');
+    expect(trigger.closest('.chat-project-header')).not.toBeNull();
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(trigger);
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByRole('dialog')).toBe(screen.getByTestId('assumption-ledger-menu'));
     const previewActions = screen.getByTestId('preview-header-actions');
     expect(previewActions.querySelector('[role="dialog"]')).toBeNull();
     expect(screen.queryByTestId('brief-card')).toBeNull();
-    expect(screen.getByRole('listitem').textContent).toContain('security leaders');
-    expect(screen.getByTestId('questions-influence').dataset).toMatchObject({ count: '1', confirmed: '1' });
+    expect(within(screen.getByTestId('assumption-ledger-menu')).getByRole('listitem').textContent).toContain('security leaders');
+    expect(screen.getByTestId('assumption-ledger-influence').dataset).toMatchObject({ count: '1', confirmed: '1' });
   });
 
   it('syncs a persisted active tab to the URL before the file list has hydrated', async () => {

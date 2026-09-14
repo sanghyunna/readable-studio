@@ -1,6 +1,7 @@
 import { createPortal } from 'react-dom';
-import { forwardRef, useEffect, useLayoutEffect, useMemo, useRef, useState, type ButtonHTMLAttributes, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { forwardRef, useEffect, useLayoutEffect, useMemo, useRef, useState, type ButtonHTMLAttributes, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import type { AgentModelOption } from '../types';
+import { isDatabricksActionId } from './databricksModels';
 
 export function renderModelOptions(models: AgentModelOption[]) {
   const groups = new Map<string, AgentModelOption[]>();
@@ -68,6 +69,13 @@ interface SearchableModelSelectProps
   emptyLabel?: string;
   minSearchableOptions?: number;
   popoverMinWidth?: number;
+  /**
+   * Action row pinned after the option list. It is not an option: it never
+   * enters the searchable set, is never selectable as a value, and stays
+   * visible whatever the search query filters out. Activating it closes the
+   * list; the node owns its own handler.
+   */
+  trailingAction?: ReactNode;
 }
 
 export const SearchableModelSelect = forwardRef<
@@ -86,6 +94,7 @@ export const SearchableModelSelect = forwardRef<
     emptyLabel = '',
     minSearchableOptions = 8,
     popoverMinWidth,
+    trailingAction,
     className,
     ...buttonProps
   },
@@ -112,9 +121,11 @@ export const SearchableModelSelect = forwardRef<
     }
     return Array.from(merged.values());
   }, [additionalOptions, models]);
+  // An action id is never a model: it resolves to "nothing selected" even if
+  // a caller hands it over as the value.
   const selectedOption =
-    allOptions.find((option) => option.id === value) ??
-    (value ? { id: value, label: value } : null);
+    allOptions.find((option) => option.id === value && !isDatabricksActionId(option.id)) ??
+    (value && !isDatabricksActionId(value) ? { id: value, label: value } : null);
   const normalizedQuery = query.trim().toLowerCase();
   const filteredOptions = useMemo(() => {
     if (!normalizedQuery) return allOptions;
@@ -267,7 +278,14 @@ export const SearchableModelSelect = forwardRef<
                 id={listboxId}
                 role="listbox"
                 style={{
-                  maxHeight: `${Math.max(96, popoverStyle.maxHeight - (shouldShowSearch ? 52 : 12))}px`,
+                  maxHeight: `${Math.max(
+                    96,
+                    popoverStyle.maxHeight -
+                      (shouldShowSearch ? 52 : 12) -
+                      // The pinned action row must stay inside the popover's
+                      // clipped box, so the list yields its height.
+                      (trailingAction ? TRAILING_ACTION_ROW_HEIGHT : 0),
+                  )}px`,
                 }}
               >
                 {filteredOptions.map((option) => {
@@ -293,6 +311,14 @@ export const SearchableModelSelect = forwardRef<
                   <div className="model-select-searchable__empty">No matching models</div>
                 ) : null}
               </div>
+              {trailingAction ? (
+                <div
+                  className="model-select-searchable__trailing"
+                  onClick={() => setOpen(false)}
+                >
+                  {trailingAction}
+                </div>
+              ) : null}
             </div>,
             document.body,
           )
@@ -310,3 +336,6 @@ export function isCustomModel(
 }
 
 export const CUSTOM_MODEL_SENTINEL = '__custom__';
+
+/** Reserved box for `trailingAction` (row + separator) inside the popover's max height. */
+const TRAILING_ACTION_ROW_HEIGHT = 40;

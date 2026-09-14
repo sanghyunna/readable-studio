@@ -3926,6 +3926,9 @@ function HtmlViewer({
   const [manualEditResizeFeedback, setManualEditResizeFeedback] = useState<ManualEditResizeFeedback | null>(null);
   const [manualEditSaving, setManualEditSaving] = useState(false);
   const manualEditSavingRef = useRef(false);
+  // Keep this latched through blur: its commit is a later postMessage task.
+  const manualEditTextNeedsFlushRef = useRef(false);
+  const manualEditTextFlushSequenceRef = useRef(0);
   // Deferred-save transaction: immutable original source captured on entry.
   const manualEditOriginalSourceRef = useRef<string | null>(null);
   const manualEditHistoryOperationRef = useRef(false);
@@ -4553,7 +4556,9 @@ function HtmlViewer({
     selectionBridge: true,
     editBridge: manualEditRequiresSrcDoc,
     paletteBridge: false,
-    previewFocusGuard: true,
+    // Explicit host-overlay text entry must be able to focus the iframe editor,
+    // even when the iframe itself has not received a recent trusted pointerdown.
+    previewFocusGuard: !manualEditRequiresSrcDoc,
   })), [previewSource, effectiveDeck, projectId, file.name, previewStateKey, manualEditRequiresSrcDoc]);
   const srcDoc = useMemo(
     () => (useLazySrcDocTransport ? '' : buildPreviewSrcDoc()),
@@ -4866,6 +4871,7 @@ function HtmlViewer({
   const sendManualEditTextEdit = useCallback(
     (message: ManualEditBeginTextEditMessage | ManualEditEndTextEditMessage) => {
       const win = iframeRef.current?.contentWindow;
+      if (message.type === 'readable-edit-begin-text-edit') manualEditTextNeedsFlushRef.current = true;
       if (win) win.postMessage(message, '*');
     },
     [],
@@ -5227,6 +5233,7 @@ function HtmlViewer({
 
   useEffect(() => {
     if (!manualEditMode) {
+      manualEditTextNeedsFlushRef.current = false;
       setManualEditTargets([]);
       setSelectedManualEditTarget(null);
       setManualEditHoverTarget(null);
@@ -5356,7 +5363,11 @@ function HtmlViewer({
       }
       if (data.type === 'readable-edit-select') {
         setManualEditHoverTarget(null);
-        void selectManualEditTarget(data.target);
+        void selectManualEditTarget(data.target, undefined, data.beginTextEdit);
+        return;
+      }
+      if (data.type === 'readable-edit-deselect') {
+        if (data.id === selectedManualEditTargetIdRef.current) void clearManualEditTargetSelection();
         return;
       }
       if (data.type === 'readable-edit-hover') {
@@ -5399,6 +5410,7 @@ function HtmlViewer({
         return;
       }
       if (data.type === 'readable-edit-selection-state') {
+        if (data.editing) manualEditTextNeedsFlushRef.current = true;
         setManualEditRichFormat({
           editing: !!data.editing, hasSelection: !!data.hasSelection,
           bold: !!data.bold, italic: !!data.italic, underline: !!data.underline,
@@ -6453,25 +6465,58 @@ function HtmlViewer({
     }
   }
 
-  async function exitManualEditModeAfterFlush(actionSeq = ++manualEditActionSeqRef.current): Promise<boolean> {
+  async function flushManualEditText(): Promise<boolean> {
+    if (!manualEditTextNeedsFlushRef.current) return true;
+    const win = iframeRef.current?.contentWindow;
+    if (!win) return false;
+    const requestId = ++manualEditTextFlushSequenceRef.current;
+    return new Promise<boolean>((resolve) => {
+      const finish = (ok: boolean) => {
+        window.clearTimeout(timeout);
+        window.removeEventListener('message', onFlushed);
+        if (ok) manualEditTextNeedsFlushRef.current = false;
+        else setManualEditError(t('manualEdit.error.saveFailed'));
+        resolve(ok);
+      };
+      const onFlushed = (event: MessageEvent) => {
+        if (event.source !== win || event.data?.type !== 'readable-edit-text-flushed'
+          || event.data.requestId !== requestId) return;
+        // Same-sender message ordering puts all source commits before this ack.
+        finish(true);
+      };
+      const timeout = window.setTimeout(() => finish(false), 3000);
+      window.addEventListener('message', onFlushed);
+      win.postMessage({ type: 'readable-edit-end-text-edit', requestId } satisfies ManualEditEndTextEditMessage, '*');
+    });
+  }
+
+  async function flushManualEditSession(): Promise<boolean> {
+    if (!(await flushManualEditText())) return false;
     await flushKeyboardBurst();
     if (manualEditSavingRef.current) return false;
     cancelManualEditMovement();
-    const ok = await flushManualEditStyleSave();
+    iframeRef.current?.contentWindow?.postMessage({ type: 'readable-edit-click-cancel' } satisfies ManualEditActivationMessage, '*');
+    return flushManualEditStyleSave();
+  }
+
+  async function exitManualEditModeAfterFlush(actionSeq = ++manualEditActionSeqRef.current): Promise<boolean> {
+    const ok = await flushManualEditSession();
     if (actionSeq !== manualEditActionSeqRef.current) return false;
     if (!ok) return false;
-    iframeRef.current?.contentWindow?.postMessage({ type: 'readable-edit-click-cancel' } satisfies ManualEditActivationMessage, '*');
+    // A previously clean session can become dirty only when its live text is
+    // committed above. Persist it rather than dropping it during mode teardown.
+    if (sourceRef.current !== manualEditOriginalSourceRef.current) return saveManualEditChanges();
     setManualEditMode(false);
     return true;
   }
 
   async function saveManualEditChanges(): Promise<boolean> {
     if (!manualEditModeRef.current) return false;
-    await flushKeyboardBurst();
-    if (manualEditSavingRef.current) return false;
-    const styleFlushed = await flushManualEditStyleSave();
-    if (!styleFlushed) return false;
-    const finalSource = sourceRef.current ?? '';
+    if (!(await flushManualEditSession())) return false;
+    const finalSource = sourceRef.current;
+    // A file switch can leave the new document's source loading. Never turn
+    // that absence into an empty-file write through either exit surface.
+    if (finalSource === null) return false;
     const originalSource = manualEditOriginalSourceRef.current ?? finalSource;
     if (finalSource === originalSource && !manualEditPendingStyleRef.current) {
       setManualEditMode(false);
@@ -6561,8 +6606,16 @@ function HtmlViewer({
     if (win) win.postMessage({ type: 'readable-edit-hover-reset' }, '*');
   }
 
-  async function selectManualEditTarget(target: ManualEditTarget, actionSeq = ++manualEditActionSeqRef.current) {
+  function beginManualEditTextEditing(target: ManualEditTarget) {
+    const textTargetId = target.kind === 'text' || target.kind === 'link' ? target.id : target.textEditTargetId;
+    if (!textTargetId) return;
+    sendManualEditTextEdit({ type: 'readable-edit-begin-text-edit', id: textTargetId });
+    setManualEditMoveMode('editing');
+  }
+
+  async function selectManualEditTarget(target: ManualEditTarget, actionSeq = ++manualEditActionSeqRef.current, beginTextEdit = false) {
     manualEditPendingDuplicateSelectionRef.current = null;
+    if (target.id !== selectedManualEditTargetIdRef.current && !(await flushManualEditText())) return;
     await flushKeyboardBurst();
     manualEditPostSaveIntentRef.current = null;
     clearManualEditResizeFeedback();
@@ -6587,9 +6640,9 @@ function HtmlViewer({
     // A genuine new selection re-snapshots the panel's placement anchor. This
     // is the single funnel for readable-edit-select, the panel's onSelectTarget,
     // and the hover-affordance click — none of them call setSelectedManualEditTarget directly.
-    // Text/link land in the caret (PPT click-into-textbox); everything else is
-    // object-selected so the whole box is a move surface.
-    setManualEditMoveMode(target.kind === 'text' || target.kind === 'link' ? 'editing' : 'selected');
+    // Every kind starts as one movable object; only a double-click opens text.
+    setManualEditMoveMode('selected');
+    if (beginTextEdit) beginManualEditTextEditing(target);
     setManualEditDraft({
       text: fields.text ?? target.fields.text ?? target.text,
       href: fields.href ?? target.fields.href ?? '',
@@ -7042,9 +7095,8 @@ function HtmlViewer({
   // Host Esc ladder: with an object-selected element, Esc deselects (like
   // clicking empty canvas). The editing→selected Esc is handled inside the
   // iframe (the move frame promotes on the resulting editing:false broadcast);
-  // a mid-drag Esc is swallowed by the move frame's own handler. NOTE: the
-  // second Esc may not fire when focus is trapped in the iframe post-edit —
-  // empty-canvas click is the reliable deselect (no focus-juggling for v1).
+  // a mid-drag Esc is swallowed by the move frame's own handler. The bridge
+  // forwards object-level Escape too, when focus remains inside the iframe.
   useEffect(() => {
     if (!manualEditMode || !selectedManualEditTarget || manualEditMoveMode !== 'selected') return;
     function onKey(e: KeyboardEvent) {
@@ -7152,6 +7204,7 @@ function HtmlViewer({
   useEffect(() => {
     if (!selectedObjectSurfaceHadFocusRef.current) return;
     selectedObjectSurfaceHadFocusRef.current = false;
+    if (manualEditMoveMode === 'editing') return;
     const surface = document.querySelector<HTMLElement>('[data-readable-edit-primary-surface]')
       ?? document.querySelector<HTMLElement>('[data-readable-edit-selected-surface]');
     if (surface && typeof surface.focus === 'function') {
@@ -7742,14 +7795,10 @@ function HtmlViewer({
       closeArtifactToolMenus();
       return;
     }
-    if (manualEditDirtyRef.current) {
-      setManualEditBlockedToast(t('manualEdit.pendingSaveBlocked'));
-      closeArtifactToolMenus();
-      return;
-    }
     setManualEditBlockedToast(null);
     closeArtifactToolMenus();
-    void exitManualEditModeAfterFlush();
+    // The edit toggle is the same save-and-exit action as the Save button.
+    void saveManualEditChanges();
   }
 
   function queueCurrentDraft() {
@@ -8672,12 +8721,8 @@ function HtmlViewer({
           win.postMessage(message, '*');
         }}
         onSurfaceDoubleClick={() => {
-          const textTargetId = selectedManualEditTarget.kind === 'text' || selectedManualEditTarget.kind === 'link'
-            ? selectedManualEditTarget.id
-            : selectedManualEditTarget.textEditTargetId;
-          if (!textTargetId || manualEditMoveMode !== 'selected') return;
-          sendManualEditTextEdit({ type: 'readable-edit-begin-text-edit', id: textTargetId });
-          setManualEditMoveMode('editing');
+          if (manualEditMoveMode !== 'selected') return;
+          beginManualEditTextEditing(selectedManualEditTarget);
         }}
       />
     ) : null;

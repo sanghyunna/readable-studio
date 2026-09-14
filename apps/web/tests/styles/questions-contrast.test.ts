@@ -91,9 +91,10 @@ function rowSamples(vars: Record<string, string>, source = css, reverseOrder = f
     }
     return result;
   }
-  const samples = ['rest', 'hover', 'active'].map(state => {
-    row.toggleAttribute('data-hover', state !== 'rest');
+  const samples = ['rest', 'hover', 'active', 'expanded'].map(state => {
+    row.toggleAttribute('data-hover', state === 'hover' || state === 'active');
     row.toggleAttribute('data-active', state === 'active');
+    row.setAttribute('aria-expanded', String(state === 'expanded'));
     row.setAttribute('data-focus-visible', '');
     const surface = background(row);
     const text = Math.min(...[...row.children].map(node => {
@@ -113,17 +114,33 @@ function rowSamples(vars: Record<string, string>, source = css, reverseOrder = f
 }
 function themeVars(id: string) {
   const source = id === 'light' ? block(tokens, ':root') : id === 'dark' ? block(tokens, '[data-theme="dark"]') : readFileSync(resolve(root, `themes/${id}.css`), 'utf8');
-  return { ...declarations(block(tokens, ':root')), ...declarations(source), ...declarations(recipes) };
+  // The recipe branches on the palette's own polarity: the shared block is the
+  // light derivation, and dark palettes (`color-scheme: dark`) take the later
+  // `[data-theme='<id>']` block as their cascade winner.
+  const dark = id === 'dark' || (id !== 'light' && /color-scheme:\s*dark/.test(source));
+  const recipeBlocks = [...recipes.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}@]*?)\{([^{}]*)\}/g)];
+  const themeRecipes = recipeBlocks.filter(([, selectors = '']) => selectors.includes(':root') || (dark && selectors.includes(`[data-theme='${id}']`)));
+  return { ...declarations(block(tokens, ':root')), ...declarations(source), ...Object.assign({}, ...themeRecipes.map(([, , body]) => declarations(body!))) };
 }
 const measurements = EXPLICIT_THEME_OPTIONS.map(({ id }) => {
   const vars = themeVars(id);
   const get = (name: string) => resolveColor(vars[name]!, vars);
   const ink = get('--text-strong');
+  // Input wells and popover options: engraved wash over the opaque `--bg`.
   const field = over(get('--hub-control-engraved'), get('--bg'));
-  const surfaces = [field, get('--bg'), get('--bg-panel')];
+  // Ledger sheet (`--bg`) and the hovered/open row + count pill: the same
+  // wash composited over the sheet. `--bg-panel` stays measured for the
+  // raised Skip/editor buttons that sit on the sheet.
+  const sheet = get('--bg');
+  const well = over(get('--hub-control-engraved'), sheet);
+  const surfaces = [field, sheet, get('--bg-panel'), well];
   const rows = [...rowSamples(vars), ...rowSamples(vars, css, true)];
+  const hovered = rows.find(row => row.state === 'hover')!;
+  const expanded = rows.find(row => row.state === 'expanded')!;
   return { id, text: Math.min(...surfaces.map(bg => contrast(ink, bg)), ...rows.map(row => row.text)),
     label: Math.min(...rows.map(row => row.text)), focus: Math.min(...rows.map(row => row.focus)),
+    rest: rows.find(row => row.state === 'rest')!.text, hover: hovered.text, expanded: expanded.text,
+    hoverSurface: hovered.surface, wellSurface: well,
     selection: contrast(ink, field), old: contrast(get('--text-faint'), field), oldBody: contrast(get('--text'), field) };
 });
 
@@ -133,6 +150,26 @@ describe('Questions actual bundled theme contrast recipes', () => {
     expect(css).toContain('outline: 2px solid var(--text-strong)');
     expect(css).toContain('inset 0 -2px 0 var(--text-strong)');
     expect(css).not.toMatch(/color:\s*var\(--text-(muted|faint|soft)\)/);
+    // Token-only paint: no literal colours of any notation and no `--bg-subtle`
+    // (the opaque grey that failed Solarized when Button's hover fill won).
+    const paintOnly = css.replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(paintOnly).not.toMatch(/#[\da-f]{3,8}\b/i);
+    expect(paintOnly).not.toMatch(/\b(?:rgba?|hsla?|oklch|oklab|color-mix)\(/);
+    expect(paintOnly).not.toMatch(/[:(,]\s*(?:white|black|gr[ae]y|silver|gainsboro|whitesmoke)(?![\w-])/i);
+    expect(paintOnly).not.toContain('--bg-subtle');
+    // Rest rows are lines of the sheet; hover and the open row lift the
+    // theme-derived engraved wash rather than an opaque fill.
+    expect(paintOnly).toMatch(/\.questions-panel \.questions-panel__row\s*\{[^}]*background:\s*transparent/);
+    expect(paintOnly).toMatch(/\.questions-panel \.questions-panel__row:hover:not\(:disabled\),\s*\.questions-panel \.questions-panel__row\[aria-expanded='true'\]\s*\{[^}]*background:\s*var\(--hub-control-engraved\)/);
+    expect(paintOnly).toMatch(/\.questions-panel__content\s*\{[^}]*background:\s*var\(--bg\)/);
+    // Motion: repository easing and the enter/exit pair, with a reduced-motion
+    // variant that drops every row transition.
+    expect(paintOnly).toMatch(/transition:[^;]*var\(--dur-quick\) var\(--ease-out\)/);
+    expect(paintOnly).toMatch(/transition-duration:\s*var\(--dur-enter\)/);
+    expect(paintOnly).toMatch(/transition:\s*transform var\(--dur-exit\) var\(--ease-out\)/);
+    expect(paintOnly).not.toMatch(/cubic-bezier|\d+ms/);
+    expect(paintOnly).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{[^@]*\.questions-panel__row > svg\s*\{\s*transition:\s*none/);
+    expect(paintOnly).toMatch(/@media \(prefers-reduced-transparency: reduce\)/);
     // Keep the row inks bound to the measured semantic token. The regression
     // below removes only the hover BACKGROUND fix, not these ink selectors.
     expect(css).toMatch(/\.questions-panel \.questions-panel__key\s*\{[^}]*color:\s*var\(--text-strong\)/);
@@ -142,14 +179,19 @@ describe('Questions actual bundled theme contrast recipes', () => {
     expect(measurements).toHaveLength(12);
     expect(measurements[0]!.text).not.toBe(measurements[1]!.text);
   });
-  it.each(measurements)('$id rest/hover/active text >=4.5; focus and selected markers >=3 in either stylesheet order', ({ text, focus, selection }) => {
+  it.each(measurements)('$id rest/hover/active/expanded text >=4.5; focus and selected markers >=3 in either stylesheet order', ({ text, focus, selection, hoverSurface, wellSurface }) => {
     expect(text).toBeGreaterThanOrEqual(4.5);
     expect(focus).toBeGreaterThanOrEqual(3);
     expect(selection).toBeGreaterThanOrEqual(3);
+    // The cascaded hover row lands on the derived well, so the count pill and
+    // the open row (same recipe) are covered by the same measurement. jsdom
+    // quantises the substituted rgba() channels, so identity is within half a
+    // channel step rather than float-exact.
+    hoverSurface.forEach((channel, i) => expect(channel).toBeCloseTo(wellSurface[i]!, 0));
   });
   it('reproduces the exact browser failure when the old Button hover surface wins (negative control)', () => {
     const oldCss = postcss.parse(css);
-    oldCss.walkRules(hoverSelector, rule => { rule.walkDecls('background', decl => { decl.remove(); }); });
+    oldCss.walkRules(rule => { if (rule.selectors.includes(hoverSelector)) rule.walkDecls('background', decl => { decl.remove(); }); });
     const vars = themeVars('solarized-dark');
     for (const reverse of [false, true]) {
       const samples = rowSamples(vars, oldCss.toString(), reverse);
@@ -166,6 +208,6 @@ describe('Questions actual bundled theme contrast recipes', () => {
     expect(() => expect(solarized.oldBody).toBeGreaterThanOrEqual(4.5)).toThrow();
   });
   it('reports every resolved recipe, including base light and dark', () => {
-    process.stdout.write(`${JSON.stringify(measurements.map(m => ({ theme: m.id, text: m.text.toFixed(4), label: m.label.toFixed(4), focus: m.focus.toFixed(4), selection: m.selection.toFixed(4), oldFaint: m.old.toFixed(4), oldBody: m.oldBody.toFixed(4) })))}\n`);
+    process.stdout.write(`${JSON.stringify(measurements.map(m => ({ theme: m.id, text: m.text.toFixed(4), rest: m.rest.toFixed(4), hover: m.hover.toFixed(4), expanded: m.expanded.toFixed(4), focus: m.focus.toFixed(4), selection: m.selection.toFixed(4), oldFaint: m.old.toFixed(4), oldBody: m.oldBody.toFixed(4) })))}\n`);
   });
 });

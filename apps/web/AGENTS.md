@@ -31,11 +31,21 @@ Both iframes stay mounted and swap by CSS visibility to avoid a reload flash, so
 ## Chat conventions
 
 - **Clarifying questions** use exactly one mechanism: the `<question-form>` markdown
-  artifact the model emits inline. `AssistantMessage.tsx` renders a `QuestionsBanner`;
-  the form itself renders in the Questions tab (`QuestionsPanel` + `QuestionFormView`);
-  answers return as the next user message via `formatFormAnswers`
-  (`src/artifacts/question-form.ts`) → `POST /api/chat`. Valid on any turn, not just
-  discovery. There is no inline interactive tool card — do not build one.
+  artifact the model emits inline, rendered as the **inline interactive question card**
+  in the chat log, where the model asked. `AssistantMessage.tsx` (`FormBlock`) mounts
+  `QuestionsPanel` + `QuestionFormView` inside the assistant message; ProjectView owns
+  the live state as one `InlineQuestionCardState` (`questionCard` prop, threaded through
+  `ChatPane`). The message whose id matches `questionCard.messageId` gets the pending,
+  answerable card (first control auto-focused unless a text field already has focus);
+  every other occurrence renders the same card locked with the answers parsed back from
+  the following user message, so a stale form can never re-send. Answers return as the
+  next user message via `formatFormAnswers` (`src/artifacts/question-form.ts`) →
+  `POST /api/chat`; a submission during an active run is queued and auto-applied when
+  the run settles, and the card shows the queued state. The assumption ledger (influence
+  + confirmed count, anchored corrections) lives on the same card. Valid on any turn, not
+  just discovery. There is no separate Questions surface or workspace tab — do not
+  reintroduce one. The card sits inside `.chat-log` and never owns its own scroll, so
+  the auto-scroll `ResizeObserver` sees every height change.
 - **TodoWrite** renders as one pinned card above the composer (`PinnedTodoSlot` in
   `ChatPane.tsx`, snapshot from `src/runtime/todos.ts`);
   `AssistantMessage.stripTodoToolGroups` removes per-message duplicates. Progress counts

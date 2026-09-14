@@ -1,0 +1,719 @@
+/* Databricks Add Models modal. Sits above the model dropdown it is opened
+   from (the switcher popover layers top out at 1750) and reuses the shared
+   modal chrome (`modal-backdrop` / `modal`) for scrim, surface and motion.
+
+   Rhythm: one scale for the whole surface, declared once on `.modal` so every
+   block reads from the same values instead of carrying its own numbers.
+
+   - `--dbx-stack`   between the body's sections and the closing note
+   - `--dbx-pad`     inside the large framed cards (setup form, guided state)
+   - `--dbx-block`   section head -> content, and the one inline inset every
+                     framed block shares (profile card, progress strip,
+                     notices, endpoint rows, closing note)
+   - `--dbx-cluster` between siblings inside a block (buttons, glyph + text,
+                     stacked notices, row padding-block)
+   - `--dbx-tight`   a label and its own meta line, chips, quiet actions
+   - `--dbx-control` the single height of every header control, the close
+                     button included
+   - `--dbx-row-action` the register switch column: wide enough for the
+                     longest state text in either locale so the track sits on
+                     one vertical line down a list of ten */
+.backdrop {
+  z-index: 1800;
+  padding: 24px;
+}
+
+.modal {
+  --dbx-stack: 20px;
+  --dbx-pad: 16px;
+  --dbx-block: 12px;
+  --dbx-cluster: 8px;
+  --dbx-tight: 4px;
+  --dbx-control: 28px;
+  --dbx-row-action: 128px;
+  width: min(600px, calc(100vw - 32px));
+  max-height: min(720px, calc(100vh - 48px));
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--dbx-pad);
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.titles {
+  min-width: 0;
+  flex: 1;
+}
+
+.titles h2 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.titles p {
+  margin: var(--dbx-tight) 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--dbx-control);
+  height: var(--dbx-control);
+  flex: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.close:hover,
+.close:focus-visible {
+  background: var(--bg-subtle);
+  border-color: var(--border);
+  color: var(--text-strong);
+}
+
+.body {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: var(--dbx-stack);
+  padding: var(--dbx-pad) 20px var(--dbx-stack);
+  overflow: auto;
+}
+
+.section {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--dbx-block);
+}
+
+/* Every section head is one control row: the label sits on the control's
+   centre line whether the actions beside it are quiet text buttons or the
+   scan buttons, so the two heads share one baseline rhythm. */
+.sectionHead {
+  display: flex;
+  min-height: var(--dbx-control);
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--dbx-tight) var(--dbx-block);
+}
+
+.label {
+  display: inline-flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: var(--dbx-cluster);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.count {
+  color: var(--text-faint);
+  font-weight: 500;
+}
+
+.hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* Actions keep the trailing edge even when a narrow head wraps them onto
+   their own line. */
+.quietActions {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--dbx-tight);
+  margin-left: auto;
+}
+
+.quietAction {
+  display: inline-flex;
+  min-height: var(--dbx-control);
+  align-items: center;
+  gap: 6px;
+  padding: 0 var(--dbx-cluster);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
+  transition:
+    background var(--dur-quick) var(--ease-out),
+    color var(--dur-quick) var(--ease-out);
+}
+
+.quietAction:hover:not(:disabled) {
+  background: var(--bg-subtle);
+  color: var(--text-strong);
+}
+
+.quietAction:focus-visible {
+  outline: 2px solid var(--hub-accent);
+  outline-offset: 2px;
+}
+
+.quietAction:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* The shared Button at header size: same height and type as the quiet
+   actions so "Cancel scan" / "Scan workspace" sit level with "Check again". */
+.headButton {
+  display: inline-flex;
+  min-height: var(--dbx-control);
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.headButton svg {
+  flex: none;
+}
+
+/* --- Framed blocks ---------------------------------------------------------
+   Progress strip, checking-CLI status, notices and the closing note share one
+   frame: the block inset on the inline axis, the cluster step on the block
+   axis, a 20px line so a single-line strip and a single-line note come out
+   the same height. */
+.status,
+.progress,
+.note,
+.warning,
+.error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--dbx-cluster);
+  margin: 0;
+  padding: var(--dbx-cluster) var(--dbx-block);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.status svg,
+.progress svg,
+.note svg,
+.warning svg,
+.error svg {
+  flex: none;
+  /* Centre a 13-14px glyph on the 20px first line without pulling
+     multi-line notices off their top alignment. */
+  margin-block-start: 3px;
+}
+
+.status,
+.progress {
+  align-items: center;
+}
+
+.status svg,
+.progress svg {
+  margin-block-start: 0;
+}
+
+.progressCounters {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.note {
+  background: var(--bg-subtle);
+}
+
+.note svg {
+  color: var(--accent);
+}
+
+/* The setup footnote carries an inline "Install CLI" action: it sits on the
+   note's 20px line instead of at header-control height. */
+.note .quietAction {
+  min-height: 20px;
+  padding-block: 0;
+}
+
+.warning {
+  border-color: color-mix(in srgb, var(--amber) 32%, var(--border));
+  background: var(--amber-bg);
+  color: var(--text-strong);
+}
+
+.warning svg {
+  color: var(--amber);
+}
+
+.error {
+  border-color: color-mix(in srgb, var(--red) 38%, var(--border));
+  background: color-mix(in srgb, var(--red) 9%, var(--bg-panel));
+  color: var(--text-strong);
+}
+
+.error svg {
+  color: var(--red);
+}
+
+.warning strong,
+.error strong {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.warning p,
+.error p {
+  margin: 2px 0 0;
+  color: var(--text-muted);
+}
+
+/* --- Guided state (CLI missing / unusable / not signed in) --------------- */
+.guided {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--dbx-block);
+  padding: var(--dbx-pad);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-subtle);
+}
+
+.guidedGlyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.guidedText {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--dbx-tight);
+}
+
+.guidedText strong {
+  color: var(--text-strong);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.guidedText p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.command {
+  align-self: flex-start;
+  max-width: 100%;
+  margin-top: var(--dbx-tight);
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--text-strong);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.issueList {
+  margin: 2px 0 0;
+  padding-left: var(--dbx-pad);
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.guidedActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--dbx-cluster);
+}
+
+/* --- Setup step (workspace URL + personal access token) ------------------ */
+.setup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dbx-pad);
+  padding: var(--dbx-pad);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-subtle);
+  animation: setup-enter var(--dur-enter) var(--ease-out);
+}
+
+.setupIntro {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--dbx-block);
+}
+
+.setupIntro p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* `.setup .field` outranks the shared `.modal label` rule on purpose. */
+.setup .field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dbx-tight);
+}
+
+.fieldLabel {
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.fieldHint,
+.fieldError {
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.fieldError {
+  color: var(--red);
+  font-weight: 600;
+}
+
+.setupActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--dbx-cluster);
+}
+
+/* `pointer-events` shares the opacity timeline (discrete property, flips at
+   the offset) so the transparent first frame of the form - URL and token
+   inputs, submit - is never clickable while invisible. The fade is unchanged. */
+@keyframes setup-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+    pointer-events: none;
+  }
+
+  1% {
+    pointer-events: auto;
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
+}
+
+/* --- Profiles ------------------------------------------------------------- */
+/* `auto-fit` collapses the empty tracks, so a single signed-in profile is
+   one full-width card instead of a third of the row. */
+.profiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--dbx-cluster);
+}
+
+/* Two left-aligned lines, same structure as a results row: the primary
+   line carries what the user scans for (name, default chip, sign-in state
+   as a status pill at the trailing edge); the workspace URL is the
+   secondary line underneath. The card owns its own layout instead of
+   leaning on the primitive's grid, so a user-agent button rule (inline,
+   centred text) can never re-flow the spans into one run-on string. */
+.profileCard {
+  display: flex;
+  min-width: 0;
+  min-block-size: 0;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--dbx-tight);
+  padding: 10px var(--dbx-block);
+  text-align: start;
+}
+
+.profilePrimary {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.profileName {
+  min-width: 0;
+  flex: 0 1 auto;
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profileDefault {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--hub-accent-fill);
+  color: var(--hub-accent-ink);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 14px;
+}
+
+/* The sign-in state is a pill from the results-row idiom (`.pill*` below),
+   pinned to the trailing edge of the primary line. `flex: none` keeps it
+   whole when the name truncates. Its ink is the status hue pulled toward
+   `--text-strong` the way recipes.css derives `--hub-accent-ink`, because
+   the raw `--green` / `--amber` inks fall under 4.5:1 on `--bg-subtle` in
+   the light Catppuccin and Gruvbox palettes. */
+.profileAuth {
+  flex: none;
+  margin-inline-start: auto;
+}
+
+/* `[data-auth]` outranks the later `.pill*` colour on purpose. */
+.profileAuth[data-auth] {
+  color: color-mix(in srgb, var(--text-muted) 60%, var(--text-strong));
+}
+
+.profileAuth[data-auth='ok'] {
+  color: color-mix(in srgb, var(--green) 60%, var(--text-strong));
+}
+
+.profileAuth[data-auth='required'] {
+  color: color-mix(in srgb, var(--amber) 60%, var(--text-strong));
+}
+
+/* Secondary line: the URL truncates inside the card's width instead of
+   widening the card or pushing the status out of view. */
+.profileWorkspace {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- Scan controls + results ---------------------------------------------- */
+.scanControls {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--dbx-cluster);
+  margin-left: auto;
+}
+
+/* One framed list with hairline dividers instead of a stack of bordered
+   cards: ten rows read as one table, and a registered row is a tinted line
+   inside it rather than a differently-coloured box. */
+.rows {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  list-style: none;
+  overflow: hidden;
+}
+
+.row,
+.rowRegistered {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(var(--dbx-row-action), auto);
+  align-items: center;
+  column-gap: var(--dbx-block);
+  padding: var(--dbx-cluster) var(--dbx-block);
+}
+
+.rows > li + li {
+  border-top: 1px solid var(--border-soft);
+}
+
+.rowRegistered {
+  background: color-mix(in srgb, var(--selected) 6%, var(--bg-panel));
+}
+
+.rowMain {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--dbx-tight);
+}
+
+.rowLabel {
+  min-width: 0;
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--dbx-tight);
+}
+
+.pill,
+.pillOk,
+.pillWarn,
+.pillDanger {
+  padding: 1px 7px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.pillOk {
+  border-color: color-mix(in srgb, var(--green) 30%, var(--border-soft));
+  color: var(--green);
+}
+
+.pillWarn {
+  border-color: color-mix(in srgb, var(--amber) 30%, var(--border-soft));
+  color: var(--amber);
+}
+
+.pillDanger {
+  border-color: color-mix(in srgb, var(--red) 30%, var(--border-soft));
+  color: var(--red);
+}
+
+.rowIssue,
+.rowError {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.rowError {
+  color: var(--red);
+  font-weight: 600;
+}
+
+/* The shared Switch fills its column, with the track pinned to the column's
+   leading edge and the state text after it, so "Register" / "Registered" /
+   "Saving…" never shift the track between rows. */
+/* Declares its own display: the track list below is inert without it, and
+   inheriting `inline-grid` from the shared Switch primitive is exactly how the
+   profile row silently collapsed into one run-on line. */
+.switch {
+  display: inline-grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  justify-self: stretch;
+  min-block-size: 30px;
+  padding: 4px var(--dbx-cluster);
+}
+
+.foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--dbx-cluster);
+  padding: 14px 20px 18px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+
+@media (max-width: 640px) {
+  .backdrop {
+    padding: 12px;
+  }
+
+  .profiles {
+    grid-template-columns: 1fr;
+  }
+
+  .row,
+  .rowRegistered {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--dbx-cluster);
+  }
+
+  .switch {
+    justify-self: start;
+    min-inline-size: var(--dbx-row-action);
+  }
+}
+
+/* Translucency is decoration here, never the only signal: the accent wash
+   behind the default-profile pill collapses to the opaque accent tint. */
+@media (prefers-reduced-transparency: reduce) {
+  .profileDefault {
+    background: var(--hub-accent-tint);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .setup {
+    animation: none;
+  }
+
+  .quietAction {
+    transition: none;
+  }
+}

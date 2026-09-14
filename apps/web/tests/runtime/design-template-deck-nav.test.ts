@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { JSDOM, VirtualConsole } from 'jsdom';
 import { DECK_SKELETON_HTML } from '@readable-studio/contracts';
 import type { DOMWindow } from 'jsdom';
@@ -172,6 +172,55 @@ describe('design template deck navigation', () => {
 });
 
 describe('deck framework skeleton navigation', () => {
+  it('reveals by pointer proximity with hysteresis and a cancellable hide delay', () => {
+    vi.useFakeTimers();
+    const dom = new JSDOM(DECK_SKELETON_HTML, {
+      runScripts: 'dangerously',
+      url: 'https://example.test/deck-autohide.html',
+      virtualConsole: new VirtualConsole(),
+    });
+    const { window: win } = dom;
+    const nav = win.document.querySelector('.deck-counter')!;
+    const pointer = (distance: number, type = 'pointermove') => {
+      win.document.dispatchEvent(new win.MouseEvent(type, {
+        bubbles: true,
+        clientY: win.innerHeight - distance,
+      }));
+    };
+    try {
+      expect(nav.classList.contains('is-open')).toBe(false);
+      pointer(73);
+      expect(nav.classList.contains('is-open')).toBe(false);
+      pointer(72);
+      expect(nav.classList.contains('is-open')).toBe(true);
+      pointer(160);
+      vi.advanceTimersByTime(900);
+      expect(nav.classList.contains('is-open')).toBe(true);
+      pointer(161);
+      vi.advanceTimersByTime(899);
+      expect(nav.classList.contains('is-open')).toBe(true);
+      pointer(100);
+      vi.advanceTimersByTime(900);
+      expect(nav.classList.contains('is-open')).toBe(true);
+      pointer(161);
+      vi.advanceTimersByTime(900);
+      expect(nav.classList.contains('is-open')).toBe(false);
+      expect(nav.hasAttribute('aria-hidden')).toBe(false);
+      win.document.body.dispatchEvent(new win.KeyboardEvent('keydown', {
+        bubbles: true, cancelable: true, key: 'ArrowRight',
+      }));
+      expect(win.document.getElementById('deck-cur')?.textContent).toBe('02');
+      pointer(72, 'pointerdown');
+      expect(nav.classList.contains('is-open')).toBe(true);
+      win.document.dispatchEvent(new win.MouseEvent('pointerout', { relatedTarget: null }));
+      vi.advanceTimersByTime(900);
+      expect(nav.classList.contains('is-open')).toBe(false);
+    } finally {
+      dom.window.close();
+      vi.useRealTimers();
+    }
+  });
+
   it('advances one slide for one ArrowRight keydown', () => {
     const frameworkChromeMarker = '\n    </div>\n  </div>\n\n  <!-- Framework chrome';
     const html = DECK_SKELETON_HTML.replace(

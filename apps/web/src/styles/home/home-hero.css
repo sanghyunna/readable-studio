@@ -981,15 +981,16 @@
   border-radius: var(--radius-sm);
 }
 
-/* Composer footer: agent icon -> model name -> send.
+/* Composer footer: agent icon -> model name -> thinking effort -> send.
 
    The switcher node is authored elsewhere (InlineModelSwitcher) and arrives
    opaque, so the footer contract is expressed here by re-laying-out its parts
    rather than by rebuilding the control. Two rules matter:
 
-   1. The chevron is removed, not merely hidden by opacity. A chevron promises
-      an inline dropdown; this trigger opens a full popover, so keeping the
-      glyph would be a false affordance.
+   1. Every trigger ends in the same dropdown chevron. The model and effort
+      buttons open their own direct listboxes, and the agent button carries
+      the identical glyph so its icon reads as a selectable control rather
+      than as a static logo.
    2. The agent icon becomes the leading element and the MODEL NAME the only
       visible text. The redundant "Local CLI · Claude" prefix segments are
       dropped from view; the full triple stays in aria-label/title on the
@@ -1058,27 +1059,34 @@
   min-width: 0;
 }
 
-/* Agent: icon only. The full "mode · agent · model" string stays in
-   aria-label/title, so nothing is lost for assistive tech or hover. */
+/* Agent: the icon, then the same chevron the model trigger ends in. The
+   button is intrinsic (icon + gap + chevron) with the model trigger's
+   label -> chevron gap, so the two read as one family of triggers. The full
+   "mode · agent · model" string stays in aria-label/title, so nothing is lost
+   for assistive tech or hover. */
 .home-hero__execution-switcher--agent-model .inline-switcher__chip--agent {
-  width: 24px;
-  min-width: 24px;
+  width: auto;
+  min-width: 0;
   padding: 0;
-  justify-content: center;
-  gap: 0;
+  gap: 3px;
+  justify-content: flex-start;
 }
 
-/* Model: intrinsic text and chevron at rest, expanding to the compact menu
-   width while open. The transparent trailing reservation keeps the popover's
-   right edge anchored while the visible icon -> label -> chevron cluster stays
-   tight at the leading edge and travels left as one unit. Neither mount may
-   flex-shrink the reservation away. */
-.home-hero__execution-switcher--agent-model .inline-switcher--model {
+/* Model and effort: intrinsic text and chevron at rest, expanding to their
+   own menu width while open. The transparent trailing reservation keeps the
+   popover's right edge anchored while the visible label -> chevron cluster
+   stays tight at the leading edge and travels left as one unit. Neither mount
+   may flex-shrink the reservation away. The effort trigger is a geometry twin
+   of the model trigger (plain label + chevron, no pill); only its open width
+   differs, because the effort list is sized to its own short options. */
+.home-hero__execution-switcher--agent-model .inline-switcher--model,
+.home-hero__execution-switcher--agent-model .inline-switcher--reasoning {
   flex: 0 0 auto;
   width: auto;
   min-width: 0;
 }
-.home-hero__execution-switcher--agent-model .inline-switcher__chip--model {
+.home-hero__execution-switcher--agent-model .inline-switcher__chip--model,
+.home-hero__execution-switcher--agent-model .inline-switcher__chip--reasoning {
   width: auto;
   min-width: 0;
   padding: 0;
@@ -1092,20 +1100,31 @@
   interpolate-size: allow-keywords;
   transition: width 160ms var(--ease-out);
 }
-.home-hero__execution-switcher--agent-model .inline-switcher__chip--model .inline-switcher__chip-text {
+/* The label is capped by one shared budget, so the cluster's widest possible
+   footprint stays bounded and Send is never pushed out. */
+.home-hero__execution-switcher--agent-model .inline-switcher__chip--model .inline-switcher__chip-text,
+.home-hero__execution-switcher--agent-model .inline-switcher__chip--reasoning .inline-switcher__chip-text {
   flex: 0 0 auto;
   max-width: var(--inline-switcher-trigger-label-max);
 }
 .home-hero__execution-switcher--agent-model .inline-switcher__chip--model[aria-expanded='true'] {
   width: var(--inline-switcher-model-menu-width);
 }
+.home-hero__execution-switcher--agent-model .inline-switcher__chip--reasoning[aria-expanded='true'] {
+  width: var(--inline-switcher-effort-menu-width);
+}
 
 @media (prefers-reduced-motion: reduce) {
-  .home-hero__execution-switcher--agent-model .inline-switcher__chip--model {
+  .home-hero__execution-switcher--agent-model .inline-switcher__chip--model,
+  .home-hero__execution-switcher--agent-model .inline-switcher__chip--reasoning {
     transition: none;
   }
 }
-.home-hero__execution-switcher--agent-model .inline-switcher__chip--model .inline-switcher__chip-chevron {
+/* One chevron rule for the whole cluster: agent, model and effort triggers
+   end in the same non-shrinking glyph. */
+.home-hero__execution-switcher--agent-model .inline-switcher__chip--agent .inline-switcher__chip-chevron,
+.home-hero__execution-switcher--agent-model .inline-switcher__chip--model .inline-switcher__chip-chevron,
+.home-hero__execution-switcher--agent-model .inline-switcher__chip--reasoning .inline-switcher__chip-chevron {
   display: block;
   flex: 0 0 auto;
 }
@@ -2580,7 +2599,13 @@
 }
 
 .home-view--hub .home-hero__input-card {
-  --hub-composer-content-inset-top: 16px;  display: grid;
+  --hub-composer-content-inset-top: 16px;
+  /* Bottom inset of the typed area, measured from the last text line to the
+     foot row's top edge (the foot's own padding is frozen by the send
+     button's position). It was 10px and read as too tight against the "+"
+     attachment control; the owner set it to exactly 150% of that value. */
+  --hub-composer-content-inset-bottom: 15px;
+  display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   gap: 0;
   max-width: 100%;
@@ -2654,7 +2679,7 @@
 
 .home-view--hub .home-hero__lexical .composer-editable {
   min-height: 82px;
-  padding: var(--hub-composer-content-inset-top) 4px 10px;
+  padding: var(--hub-composer-content-inset-top) 4px var(--hub-composer-content-inset-bottom);
   caret-color: var(--hub-accent);
 }
 
@@ -2794,7 +2819,11 @@
   color: var(--hub-accent);
 }
 
-.home-view--hub .home-hero__execution-switcher--agent-model .inline-switcher__chip--model {
+/* Model and effort triggers share one skin: plain label + chevron, no pill.
+   The reduced-transparency block below swaps both to the opaque surface
+   through the shared `.inline-switcher__chip` selector. */
+.home-view--hub .home-hero__execution-switcher--agent-model .inline-switcher__chip--model,
+.home-view--hub .home-hero__execution-switcher--agent-model .inline-switcher__chip--reasoning {
   border: 0;
   background: transparent;
   box-shadow: none;
@@ -2808,7 +2837,10 @@
 }
 .home-view--hub
   .home-hero__execution-switcher--agent-model
-  .inline-switcher__chip--model:hover:not(:disabled) {
+  .inline-switcher__chip--model:hover:not(:disabled),
+.home-view--hub
+  .home-hero__execution-switcher--agent-model
+  .inline-switcher__chip--reasoning:hover:not(:disabled) {
   background: transparent;
   box-shadow: none;
   color: var(--hub-accent);

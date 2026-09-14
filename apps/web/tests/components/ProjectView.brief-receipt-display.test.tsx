@@ -305,7 +305,7 @@ describe('brief receipt display boundary', () => {
     }
     render(<ReceiptQuestions />);
     const stated = screen.getByRole('button', {
-      name: /questions\.field\.output Slide deck \(논문 요약\) questions\.provenance\.stated/,
+      name: /Output Slide deck \(논문 요약\) questions\.provenance\.stated/,
     });
     expect(stated.dataset.provenance).toBe('stated');
     expect(stated.textContent).toContain('Slide deck (논문 요약)');
@@ -313,17 +313,17 @@ describe('brief receipt display boundary', () => {
     expect(influence.dataset).toMatchObject({ count: '2', confirmed: '1' });
 
     const inferred = screen.getByRole('button', {
-      name: /questions\.field\.audience Research leaders questions\.provenance\.inferred/,
+      name: /Audience Research leaders questions\.provenance\.inferred/,
     });
     expect(inferred.dataset.provenance).toBe('inferred');
     fireEvent.click(inferred);
-    expect(screen.getByRole('textbox', { name: 'questions.question.audience' }))
+    expect(screen.getByRole('textbox', { name: 'Audience' }))
       .toHaveProperty('value', 'Research leaders');
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'questions.applyCorrection' }));
     });
     expect(screen.getByRole('button', {
-      name: /questions\.field\.audience Research leaders questions\.provenance\.stated/,
+      name: /Audience Research leaders questions\.provenance\.stated/,
     }).dataset.provenance).toBe('stated');
     expect(influence.dataset).toMatchObject({ count: '2', confirmed: '2' });
     expect(stated.dataset.provenance).toBe('stated');

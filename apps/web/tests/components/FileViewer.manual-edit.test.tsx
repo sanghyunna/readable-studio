@@ -474,20 +474,28 @@ describe('FileViewer manual edit regressions', () => {
     );
   });
 
-  it('keeps manual edit mode active when the edit toggle is clicked while dirty', async () => {
+  it('keeps manual edit mode active when saving through the edit toggle conflicts', async () => {
     const source = '<!doctype html><html><body><main data-readable-id="hero">Hero</main><section data-readable-id="trend">Trend</section></body></html>';
-    const fetchMock = vi.fn(async () => new Response(source, { status: 200, headers: { 'Content-Type': 'text/html' } }));
+    let resolveRequested!: () => void;
+    const requested = new Promise<void>((resolve) => { resolveRequested = resolve; });
+    const fetchMock = vi.fn(async (_input: unknown, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        resolveRequested();
+        return new Response(JSON.stringify({ code: 'CONFLICT' }), { status: 409 });
+      }
+      return new Response(source, { status: 200, headers: { 'Content-Type': 'text/html' } });
+    });
     vi.stubGlobal('fetch', fetchMock);
     render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={source} />);
 
     clickManualTool('manual-edit-mode-toggle');
     await selectManualEditTarget(containerTarget());
     fireEvent.change(screen.getByLabelText('Width'), { target: { value: '111' } });
-    clickManualTool('manual-edit-mode-toggle');
+    await act(async () => { clickManualTool('manual-edit-mode-toggle'); await requested; });
 
     expect(screen.getByTestId('manual-edit-mode-toggle').getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByTestId('manual-edit-shape-toolbar')).toBeTruthy();
-    expect(fetchMock).not.toHaveBeenCalledWith(
+    expect(fetchMock).toHaveBeenCalledWith(
       '/api/projects/project-1/files', expect.objectContaining({ method: 'POST' }),
     );
   });

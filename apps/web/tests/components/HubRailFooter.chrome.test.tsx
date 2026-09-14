@@ -26,6 +26,7 @@ function renderFooter(overrides: {
       onOpenDestination={onOpenDestination as never}
       onOpenSettings={onOpenSettings}
       onOpenWorkspaceFolder={onOpenWorkspaceFolder}
+      onThemeChange={vi.fn()}
     />,
   );
   return { onOpenSettings, onOpenWorkspaceFolder, onOpenDestination };

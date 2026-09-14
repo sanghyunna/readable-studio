@@ -159,14 +159,29 @@
 /* -------- App window chrome (frameless window) ----------------------- */
 /* The desktop window has no native title bar, so this strip IS the title bar:
    a full-width drag region carrying the app's own traffic lights. Its material
-   is a faint veil of the shared canvas's own top-edge stops - never a band of
-   its own: `--hub-canvas-blue` at the rail end, `--hub-canvas-pink` at the
-   content end, placed at the canvas blooms' x-positions (10% / 92%) so the
-   strip continues the accent -> warm order the wash blooms paint below it
-   (accent upper-left over the rail, warm toward the pane boundary). One
-   calibrated alpha step above the fully transparent strip it replaced: the
-   canvas still shows through, the bar just reads as material, not absence. */
+   is a saturated glass ribbon built from the shared canvas's own top-edge
+   stops - never a new palette: `--hub-canvas-blue` at the rail end,
+   `--hub-canvas-pink` at the content end, placed at the canvas blooms'
+   x-positions (10% / 92%) so the strip continues the accent -> warm order the
+   wash blooms paint below it (accent upper-left over the rail, warm toward the
+   pane boundary).
+
+   The first veil (30% of the raw canvas stops, no refraction) was judged
+   invisible in the shipped build: at the bloom peaks the band painted the
+   same colour as its own backing, in both schemes. Two hard steps make it
+   read as a separate band everywhere the canvas can sit under it:
+     - the endpoints are pushed toward their semantic chroma sources
+       (`--blue`, `--purple`) and laid down at 72%, the strong-glass fill
+       tier, so the band is more chromatic than any canvas region below it;
+     - the backdrop is refracted hard (blur + saturate well above the
+       `--hub-glass-blur` tier), so the rail's top edge frosts into the band
+       instead of the two sharing one continuous paint.
+   Both endpoint recipes derive from theme tokens, so light, dark, system and
+   every named theme lift and saturate their own palette. */
 .app-window-chrome {
+  --app-window-chrome-blue: color-mix(in srgb, var(--hub-canvas-blue) 70%, var(--blue));
+  --app-window-chrome-pink: color-mix(in srgb, var(--hub-canvas-pink) 70%, var(--purple));
+  --app-window-chrome-glass: blur(32px) saturate(240%);
   grid-column: 1;
   grid-row: 1;
   display: flex;
@@ -176,9 +191,12 @@
   padding-inline: var(--space-3, 12px);
   background: linear-gradient(
     90deg,
-    color-mix(in srgb, var(--app-window-chrome-blue, var(--hub-canvas-blue)) 30%, transparent) 10%,
-    color-mix(in srgb, var(--app-window-chrome-pink, var(--hub-canvas-pink)) 30%, transparent) 92%
+    color-mix(in srgb, var(--app-window-chrome-blue, var(--hub-canvas-blue)) 72%, transparent) 10%,
+    color-mix(in srgb, var(--app-window-chrome-pink, var(--hub-canvas-pink)) 72%, transparent) 92%
   );
+  /* Lightning CSS requires prefix-first order to retain both declarations. */
+  -webkit-backdrop-filter: var(--app-window-chrome-glass);
+  backdrop-filter: var(--app-window-chrome-glass);
   border: 0;
   user-select: none;
   -webkit-app-region: drag;
@@ -198,34 +216,17 @@
   /* `.app-chrome-header` is declared later and normally paints an opaque
      project-toolbar surface. This higher-specificity reset is load-bearing:
      without it that shared rule turns the frameless drag row into a white bar.
-     The veil restates the base rule's gradient so the reset cannot drop it. */
+     The ribbon restates the base rule's gradient and refraction so the reset
+     cannot drop either. */
   background: linear-gradient(
     90deg,
-    color-mix(in srgb, var(--app-window-chrome-blue, var(--hub-canvas-blue)) 30%, transparent) 10%,
-    color-mix(in srgb, var(--app-window-chrome-pink, var(--hub-canvas-pink)) 30%, transparent) 92%
+    color-mix(in srgb, var(--app-window-chrome-blue, var(--hub-canvas-blue)) 72%, transparent) 10%,
+    color-mix(in srgb, var(--app-window-chrome-pink, var(--hub-canvas-pink)) 72%, transparent) 92%
   );
   border: 0;
   box-shadow: none;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-
-/* Dark canvas stops nearly equal their backing at the bloom peaks: a 30%
-   overlay rounded away entirely in Chromium. Lift only the chrome's endpoints
-   with 12% theme ink, not its alpha or the shared canvas. Light keeps the exact
-   original stops; reduced transparency still overrides the image below. Avoid
-   light-dark() here: the light palette has no explicit color-scheme for the
-   Lightning CSS lowering (see home-hero.css). */
-[data-theme='dark'] .app-window-chrome,
-[data-theme-scheme='dark'] .app-window-chrome {
-  --app-window-chrome-blue: color-mix(in srgb, var(--hub-canvas-blue) 88%, var(--text));
-  --app-window-chrome-pink: color-mix(in srgb, var(--hub-canvas-pink) 88%, var(--text));
-}
-@media (prefers-color-scheme: dark) {
-  html:not([data-theme]) .app-window-chrome {
-    --app-window-chrome-blue: color-mix(in srgb, var(--hub-canvas-blue) 88%, var(--text));
-    --app-window-chrome-pink: color-mix(in srgb, var(--hub-canvas-pink) 88%, var(--text));
-  }
+  -webkit-backdrop-filter: var(--app-window-chrome-glass);
+  backdrop-filter: var(--app-window-chrome-glass);
 }
 
 /* The drag filler takes the remaining width so the whole strip - not just the
@@ -329,11 +330,13 @@
 }
 @media (prefers-reduced-transparency: reduce) {
   .app-chrome-header.app-window-chrome {
-    /* The veil cannot refract when transparency is reduced, so the strip takes
-       the shell's own flat fallback token - the SAME paint the canvas
-       collapses to, which keeps the band continuous without resurrecting a
-       separate strip, and resolves opaque rather than dropping to bare
-       transparency. */
+    /* The ribbon cannot refract when transparency is reduced, so the strip
+       drops its backdrop filter and takes the shell's own flat fallback token
+       - the SAME paint the canvas collapses to, which keeps the band
+       continuous without resurrecting a separate strip, and resolves opaque
+       rather than dropping to bare transparency. */
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
     background: var(--hub-canvas);
   }
 }

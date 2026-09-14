@@ -21,6 +21,7 @@ import type { AppConfig, AppTheme } from '../types';
 import { Icon } from './Icon';
 import { AnimatedCollapsible } from './AnimatedCollapsible';
 import { workspaceInitials } from './hub/HubRailFooter';
+import { ThemeSwatch } from './ThemeSwatch';
 import { DEFAULT_THEME, THEME_OPTIONS } from '../state/themes';
 
 export type EntrySettingsSection =
@@ -270,11 +271,7 @@ export function EntrySettingsMenu({
                       setOpen(false);
                     }}
                   >
-                    <span className="entry-settings-menu__theme-swatch" aria-hidden="true">
-                      {option.swatch.map((color) => (
-                        <span key={color} style={{ background: color }} />
-                      ))}
-                    </span>
+                    <ThemeSwatch theme={option.id} className="entry-settings-menu__theme-swatch" />
                     <span>{t(option.labelKey)}</span>
                     {active ? <Icon name="check" size={12} /> : null}
                   </button>

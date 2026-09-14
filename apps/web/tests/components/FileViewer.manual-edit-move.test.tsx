@@ -150,7 +150,7 @@ describe('FileViewer manual edit move frame', () => {
     });
   }
 
-  it('seeds selected mode for an image (interior surface) and editing mode for text (ring only)', async () => {
+  it('seeds object-selected mode for images and text', async () => {
     const fetchMock = vi.fn(async () =>
       new Response(SOURCE, { status: 200, headers: { 'Content-Type': 'text/html' } }));
     vi.stubGlobal('fetch', fetchMock);
@@ -165,7 +165,7 @@ describe('FileViewer manual edit move frame', () => {
     expect(interiorSurface()).not.toBeNull();
 
     await selectManualEditTarget(textTarget());
-    expect(interiorSurface()).toBeNull();
+    expect(interiorSurface()).not.toBeNull();
     expect(ringSurface()).not.toBeNull();
   });
 
@@ -421,6 +421,7 @@ describe('FileViewer manual edit move frame', () => {
 
     fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
     await selectManualEditTarget(textTarget());
+    doubleClickSurface(interiorSurface());
 
     const frame = await previewFrame();
     const postSpy = vi.spyOn(frame.contentWindow as Window, 'postMessage');
@@ -445,6 +446,7 @@ describe('FileViewer manual edit move frame', () => {
     render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={SOURCE} />);
     fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
     await selectManualEditTarget(textTarget());
+    doubleClickSurface(interiorSurface());
     const frame = await previewFrame();
     const postSpy = vi.spyOn(frame.contentWindow as Window, 'postMessage');
     const ring = ringSurface();
@@ -802,6 +804,7 @@ describe('FileViewer manual edit move frame', () => {
       styles: { ...emptyManualEditStyles(), translate: '11px 4px' },
     };
     await selectManualEditTarget(initial);
+    doubleClickSurface(interiorSurface());
 
     const frame = await previewFrame();
     const postSpy = vi.spyOn(frame.contentWindow as Window, 'postMessage');
@@ -1979,9 +1982,7 @@ describe('FileViewer manual edit move frame', () => {
     fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
     await selectManualEditTarget(textTarget());
 
-    // Text/link selections seed the editing-mode overlay (ring only). With no
-    // active inline session the host surface owns arrows just like the iframe
-    // adapter does.
+    // Object-selected text owns arrows just like the iframe adapter.
     const ring = ringSurface();
     ring.focus();
     fireEvent.keyDown(ring, { key: 'ArrowRight' });

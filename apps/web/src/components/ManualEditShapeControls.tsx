@@ -3,7 +3,7 @@
 // (`layout="stack"`). Whole-element style edits go through onStyleField; image
 // replace and delete go through onApplyPatch.
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { Button, ToggleButton, VisuallyHidden } from '@readable-studio/components';
+import { Button, VisuallyHidden } from '@readable-studio/components';
 import { useT } from '../i18n';
 import type { ManualEditPatch, ManualEditResizeConstraint, ManualEditStyles, ManualEditTarget } from '../edit-mode/types';
 import { RemixIcon } from './RemixIcon';
@@ -18,12 +18,11 @@ import {
 } from './ManualEditPanel';
 import {
   ActionRow,
-  ColorRow,
   DisclosureSection,
   NumberRow,
-  QuadField,
   SelectRow,
 } from './ManualEditInspectorRows';
+import { ManualEditAppearanceControls, isNoFill, opacityPercent, opacityValue } from './ManualEditAppearanceControls';
 import { ManualEditBoxModelControls } from './ManualEditBoxModelControls';
 import { ManualEditGeometryControls, sizeMode } from './ManualEditGeometryControls';
 import styles from './ManualEditShapeControls.module.css';
@@ -259,15 +258,9 @@ function ShapeStack({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const noFill = isNoFill(elementStyles.backgroundColor);
-  const lastFillRef = useRef(noFill ? '#000000' : normalizeColorForPicker(elementStyles.backgroundColor));
   useEffect(() => {
     setConfirmingDelete(false);
   }, [target.id]);
-  useEffect(() => {
-    if (!isNoFill(elementStyles.backgroundColor)) {
-      lastFillRef.current = normalizeColorForPicker(elementStyles.backgroundColor);
-    }
-  }, [elementStyles.backgroundColor]);
   const update = (key: keyof ManualEditStyles, value: string) => onStyleField(key, value);
   const isTextLike = target.kind === 'text'
     || target.kind === 'link'
@@ -353,67 +346,12 @@ function ShapeStack({
         summary={appearanceSummary}
         icon="palette-line"
       >
-        <div className={styles.detailRows}>
-        <div className={styles.fillField}>
-          <ColorRow
-            label={t('manualEdit.shape.fill')}
-            description={t('manualEdit.shape.fillHelp')}
-            value={noFill ? '' : elementStyles.backgroundColor}
-            disabled={noFill}
-            onChange={(value) => {
-              lastFillRef.current = normalizeColorForPicker(value);
-              update('backgroundColor', value);
-            }}
-          />
-          <ToggleButton
-            className={styles.noFillToggle}
-            pressed={noFill}
-            onPressedChange={(pressed) => update('backgroundColor', pressed ? 'transparent' : lastFillRef.current)}
-          >
-            {t('manualEdit.shape.noFill')}
-          </ToggleButton>
-        </div>
-        <NumberRow
-          label={t('manualEdit.shape.radius')}
-          description={t('manualEdit.shape.radiusHelp')}
-          value={elementStyles.borderRadius}
-          unit="px"
-          autoUnit
-          onChange={(v) => update('borderRadius', v)}
-        />
-        <NumberRow
-          label={t('manualEdit.shape.opacity')}
-          description={t('manualEdit.shape.opacityHelp')}
-          value={opacityPercent(elementStyles.opacity)}
-          unit="%"
-          onChange={(v) => update('opacity', opacityValue(v))}
-        />
-        <div className={styles.detailDivider} />
-        <SelectRow
-          label={t('manualEdit.shape.style')}
-          description={t('manualEdit.shape.styleHelp')}
-          value={elementStyles.borderStyle}
-          options={BORDER_STYLE_OPTS}
-          onChange={(v) => update('borderStyle', v)}
-        />
-        <ColorRow
-          label={t('manualEdit.shape.borderColor')}
-          description={t('manualEdit.shape.borderColorHelp')}
-          value={elementStyles.borderColor}
-          onChange={(v) => update('borderColor', v)}
-        />
-        <QuadField
-          label={t('manualEdit.shape.borderWidths')}
-          description={t('manualEdit.shape.borderWidthsHelp')}
-          sideLabels={{
-            t: t('manualEdit.shape.borderWidthsTop'),
-            r: t('manualEdit.shape.borderWidthsRight'),
-            b: t('manualEdit.shape.borderWidthsBottom'),
-            l: t('manualEdit.shape.borderWidthsLeft'),
-          }}
-          values={{ t: elementStyles.borderTopWidth, r: elementStyles.borderRightWidth, b: elementStyles.borderBottomWidth, l: elementStyles.borderLeftWidth }}
-          onChange={(side, value) => update(`border${sideUpper(side)}Width` as keyof ManualEditStyles, value)}
-        />
+        <ManualEditAppearanceControls
+          key={target.id}
+          styles={elementStyles}
+          onStyleField={onStyleField}
+          onStyleFields={onStyleFields}
+        >
         {target.kind === 'image' && onPickImage ? (
           <>
             <ActionRow
@@ -476,7 +414,7 @@ function ShapeStack({
             onClick={() => setConfirmingDelete(true)}
           />
         )}
-        </div>
+        </ManualEditAppearanceControls>
       </DisclosureSection>
 
       {target.isLayoutContainer ? (
@@ -621,30 +559,6 @@ function emitUnitValue(raw: string, unit: string): string {
   if (!trimmed) return '';
   if (/^-?\d+(\.\d+)?$/.test(trimmed)) return `${trimmed}${unit}`;
   return raw;
-}
-
-function isNoFill(value: string): boolean {
-  const normalized = value.trim().toLowerCase();
-  return normalized === '' || normalized === 'transparent';
-}
-
-function opacityPercent(value: string): string {
-  const numeric = parsePlainDecimal(value);
-  if (numeric === undefined) return value;
-  return String(Math.round(numeric * 10000) / 100);
-}
-
-function opacityValue(value: string): string {
-  const numeric = parsePlainDecimal(value);
-  if (numeric === undefined) return value;
-  return String(Math.max(0, Math.min(100, numeric)) / 100);
-}
-
-function parsePlainDecimal(value: string): number | undefined {
-  const normalized = value.trim();
-  if (!/^-?(?:\d+(?:\.\d+)?|\.\d+)$/.test(normalized)) return undefined;
-  const numeric = Number(normalized);
-  return Number.isFinite(numeric) ? numeric : undefined;
 }
 
 function dimensionSummary(

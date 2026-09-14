@@ -5,6 +5,7 @@ import { trackSettingsPetsClick } from '../../analytics/events';
 import { useT } from '../../i18n';
 import { Icon } from '../Icon';
 import type { AppConfig, CodexPetSummary, PetConfig, PetCustom } from '../../types';
+import { DEFAULT_ACCENT_COLOR } from '../../state/appearance';
 import { DEFAULT_PET } from '../../state/config';
 import {
   codexPetSpritesheetUrl,
@@ -40,7 +41,7 @@ interface Props {
 // Curated palette so the customize swatch row stays compact and on-brand
 // without forcing a full color picker. The first entry mirrors --accent.
 const ACCENT_SWATCHES = [
-  '#c96442',
+  DEFAULT_ACCENT_COLOR,
   '#2348b8',
   '#1f7a3a',
   '#6c3aa6',

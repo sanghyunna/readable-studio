@@ -184,6 +184,72 @@ describe('ChatPane session switcher', () => {
   });
 });
 
+// Persisted assumptions live in project metadata, not in any message. With an
+// empty conversation (no `<question-form>` anywhere) the header still exposes
+// the ledger, and it disappears when the project has no assumptions.
+describe('ChatPane header assumption ledger', () => {
+  const questionCard = (brief: { updatedAt: number; assumptions: never[] | { id: string; label: string; value: string; provenance: 'stated' | 'inferred' }[] } | null) => ({
+    messageId: null,
+    formKey: null,
+    formPreview: null,
+    generating: false,
+    brief,
+    onCorrect: vi.fn(async () => true),
+    interactive: false,
+    submitDisabled: false,
+    runHydrationStatus: 'ready' as const,
+    submissionQueued: false,
+    onSubmit: vi.fn(),
+  });
+
+  it('mounts the ledger from persisted assumptions when no form message exists', () => {
+    render(
+      <ChatPane
+        messages={[]}
+        streaming={false}
+        error={null}
+        projectId="project-1"
+        projectFiles={[]}
+        onEnsureProject={async () => 'project-1'}
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+        conversations={[conversation({ id: 'conv-1', title: 'Fresh' })]}
+        activeConversationId="conv-1"
+        onSelectConversation={vi.fn()}
+        onDeleteConversation={vi.fn()}
+        questionCard={questionCard({ updatedAt: 1, assumptions: [
+          { id: 'audience', label: 'Audience', value: 'buyers', provenance: 'inferred' },
+          { id: 'scale', label: 'Scale', value: '8 slides', provenance: 'stated' },
+        ] })}
+      />,
+    );
+    expect(screen.queryByTestId('questions-panel')).toBeNull();
+    fireEvent.click(screen.getByTestId('assumption-ledger-trigger'));
+    expect(screen.getByTestId('assumption-ledger-influence').dataset).toMatchObject({ count: '2', confirmed: '1' });
+  });
+
+  it('renders no ledger affordance when the project has no assumptions', () => {
+    render(
+      <ChatPane
+        messages={[]}
+        streaming={false}
+        error={null}
+        projectId="project-1"
+        projectFiles={[]}
+        onEnsureProject={async () => 'project-1'}
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+        conversations={[conversation({ id: 'conv-1', title: 'Fresh' })]}
+        activeConversationId="conv-1"
+        onSelectConversation={vi.fn()}
+        onDeleteConversation={vi.fn()}
+        questionCard={questionCard(null)}
+      />,
+    );
+    expect(screen.queryByTestId('assumption-ledger')).toBeNull();
+  });
+});
+
 function renderChatPane(props: {
   conversations: Conversation[];
   activeConversationId: string | null;

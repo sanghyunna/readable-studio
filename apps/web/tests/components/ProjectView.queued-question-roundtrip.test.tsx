@@ -4,7 +4,6 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import type { ComponentProps, ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectView } from '../../src/components/ProjectView';
-import { QuestionsPanel } from '../../src/components/QuestionsPanel';
 import { formatFormAnswers, type QuestionForm } from '../../src/artifacts/question-form';
 import { parseSubmittedAnswers } from '../../src/components/QuestionForm';
 import { fetchChatRunStatus, listActiveChatRuns, reattachDaemonRun, streamViaDaemon } from '../../src/providers/daemon';
@@ -32,6 +31,8 @@ vi.mock('../../src/providers/registry', async (importOriginal) => ({
   ...await importOriginal<typeof import('../../src/providers/registry')>(),
   fetchLiveArtifacts: vi.fn().mockResolvedValue([]), fetchPreviewComments: vi.fn().mockResolvedValue([]),
   fetchProjectFiles: vi.fn().mockResolvedValue([]),
+  fetchProjectFolders: vi.fn().mockResolvedValue([]),
+  fetchProjectDeployments: vi.fn().mockResolvedValue([]),
 }));
 vi.mock('../../src/state/projects', async (importOriginal) => ({
   ...await importOriginal<typeof import('../../src/state/projects')>(),
@@ -40,19 +41,17 @@ vi.mock('../../src/state/projects', async (importOriginal) => ({
   patchProject: vi.fn(), saveMessage: vi.fn().mockResolvedValue(undefined), saveTabs: vi.fn(),
   persistTabsToDaemonNow: vi.fn(),
 }));
-vi.mock('../../src/components/AppChromeHeader', () => ({
+vi.mock('../../src/components/AppChromeHeader', async importOriginal => ({
+  ...await importOriginal<typeof import('../../src/components/AppChromeHeader')>(),
   AppChromeHeader: ({ children }: { children: ReactNode }) => <header>{children}</header>,
 }));
 vi.mock('../../src/components/AvatarMenu', () => ({ AvatarMenu: () => null }));
-vi.mock('../../src/components/FileWorkspace', () => ({
-  FileWorkspace: (props: ComponentProps<typeof import('../../src/components/FileWorkspace').FileWorkspace>) => (
-    <QuestionsPanel brief={props.projectQuestions} onCorrect={props.onCorrectQuestion} form={props.questionForm ?? null} formKey={props.questionFormKey}
-      interactive={props.questionFormInteractive ?? false} submitDisabled={props.questionFormSubmitDisabled}
-      runHydrationStatus={props.questionRunHydrationStatus} onRetryRunHydration={props.onRetryQuestionRunHydration}
-      submissionQueued={props.questionFormSubmissionQueued} submittedAnswers={props.questionFormSubmittedAnswers}
-      generating={props.questionsGenerating ?? false} onSubmit={props.onSubmitQuestionForm!} />
-  ),
-}));
+const workspaceSurface = vi.hoisted(() => ({ real: false }));
+vi.mock('../../src/components/FileWorkspace', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../src/components/FileWorkspace')>();
+  return {
+  FileWorkspace: (props: ComponentProps<typeof actual.FileWorkspace>) => workspaceSurface.real ? <actual.FileWorkspace {...props} /> : null,
+}; });
 // Keep the real pane/composer edit path; expose the typed queue-only caller
 // separately so this test also covers metadata entering ProjectView directly.
 vi.mock('../../src/components/ChatPane', async (importOriginal) => {
@@ -96,9 +95,54 @@ beforeEach(() => {
   vi.mocked(listActiveChatRuns).mockReset().mockResolvedValue([]);
   vi.mocked(patchProject).mockReset().mockImplementation(async (_id, patch) => ({ id: 'queue-question-project', name: 'Q', skillId: null, designSystemId: null, createdAt: 1, updatedAt: 1, metadata: patch.metadata }));
 });
-afterEach(() => { cleanup(); window.localStorage.clear(); window.sessionStorage.clear(); vi.clearAllMocks(); });
+afterEach(() => { cleanup(); workspaceSurface.real = false; window.localStorage.clear(); window.sessionStorage.clear(); vi.clearAllMocks(); vi.unstubAllGlobals(); });
 
 describe('queued question answer lifecycle', () => {
+  it.each(['accepted', 'failed'] as const)('keeps the inline card queued until application is %s by the daemon', async outcome => {
+    workspaceSurface.real = true;
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+    vi.mocked(listConversations).mockResolvedValue([{ id: 'conv-q', projectId: 'queue-question-project', title: 'Q', createdAt: 1, updatedAt: 1 }]);
+    vi.mocked(listMessages).mockResolvedValue([{ id: 'assistant-q', role: 'assistant', content, createdAt: 1, runId: 'run-q', runStatus: 'running' }]);
+    vi.mocked(fetchChatRunStatus).mockResolvedValue({ id: 'run-q', projectId: 'queue-question-project', conversationId: 'conv-q', assistantMessageId: 'assistant-q', agentId: 'claude', status: 'running', createdAt: 1, updatedAt: 1, exitCode: null, signal: null });
+    const completion = deferred<void>();
+    let attached!: Parameters<typeof reattachDaemonRun>[0];
+    vi.mocked(reattachDaemonRun).mockImplementation(input => {
+      attached = input;
+      input.handlers.onDelta(content);
+      input.handlers.onAgentEvent?.({ kind: 'status', label: 'running' });
+      return completion.promise;
+    });
+    const application = deferred<void>();
+    let promoted!: Parameters<typeof streamViaDaemon>[0];
+    vi.mocked(streamViaDaemon).mockImplementation(input => { promoted = input; return application.promise; });
+    await act(async () => { mount(); });
+    expect(screen.queryByTestId('questions-tab')).toBeNull();
+    const card = screen.getByTestId('questions-panel');
+    expect(card.getAttribute('data-pending')).toBe('true');
+    fireEvent.click(screen.getByRole('radio', { name: 'Desktop web' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Export' }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'questions.continue' })); });
+    expect(JSON.parse(window.localStorage.getItem(storageKey)!)).toHaveLength(1);
+    expect(streamViaDaemon).not.toHaveBeenCalled();
+    // Queued: the card settles into its answered state and its submit is gone,
+    // so a second click cannot double-send.
+    expect(screen.getByTestId('questions-panel').getAttribute('data-answered')).toBe('true');
+    expect(screen.getByTestId('questions-panel').getAttribute('data-pending')).toBeNull();
+    expect((screen.getByRole('button', { name: 'questions.continue' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('radio', { name: 'Desktop web' }) as HTMLButtonElement).getAttribute('aria-checked')).toBe('true');
+    await act(async () => { attached.handlers.onDone(content); completion.resolve(); await completion.promise; });
+    expect(streamViaDaemon).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      if (outcome === 'accepted') promoted.onRunCreated?.('run-next');
+      else promoted.handlers.onError(new Error('APPLICATION_FAILED_729'));
+      application.resolve();
+      await application.promise;
+    });
+    expect(streamViaDaemon).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('questions-panel')).toBeTruthy();
+    expect(screen.queryByTestId('questions-tab')).toBeNull();
+  });
+
   it.each(['saved', 'failed'] as const)('persists standard typed answers exactly once before accepting the send (%s)', async outcome => {
     const intake: QuestionForm = { id: 'intake', title: 'Intake', questions: [
       { id: 'audience', label: 'Reader', type: 'text', required: true },
@@ -171,8 +215,11 @@ describe('queued question answer lifecycle', () => {
   });
 
   it('persists rapid repeated Questions corrections atomically without losing earlier prompt metadata', async () => {
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
     vi.mocked(listConversations).mockResolvedValue([{ id: 'conv-q', projectId: 'queue-question-project', title: 'Q', createdAt: 1, updatedAt: 1 }]);
-    vi.mocked(listMessages).mockResolvedValue([]);
+    // The assumption ledger lives on the inline card, so the conversation must
+    // carry the form the card belongs to.
+    vi.mocked(listMessages).mockResolvedValue([{ id: 'assistant-q', role: 'assistant', content, createdAt: 1 }]);
     vi.mocked(patchProject).mockImplementation(async (_id, patch) => ({ id: 'queue-question-project', name: 'Q', skillId: null, designSystemId: null, createdAt: 1, updatedAt: 1, metadata: patch.metadata }));
     vi.mocked(streamViaDaemon).mockImplementation(async input => { input.onRunCreated?.('run-next'); });
     await act(async () => { mount({ kind: 'prototype', fidelity: 'high-fidelity', brief: { updatedAt: 1, assumptions: [
@@ -181,7 +228,7 @@ describe('queued question answer lifecycle', () => {
     ] } }); });
     expect(listActiveChatRuns).toHaveBeenCalledTimes(1);
     for (const [id, value] of [['fidelity', 'wireframe'], ['animations', 'yes'], ['fidelity', 'wireframe']]) {
-      const item = screen.getAllByRole('button').find(node => node.textContent?.includes(`questions.field.${id}`))!;
+      const item = screen.getAllByRole('button').find(node => node.textContent?.includes(id === 'fidelity' ? 'Fidelity' : 'Animations'))!;
       fireEvent.click(item);
       fireEvent.change(within(document.querySelector<HTMLElement>('.questions-panel__popover')!).getByRole('textbox'), { target: { value } });
       await act(async () => { const apply = screen.getByRole('button', { name: 'questions.applyCorrection' }); fireEvent.click(apply); fireEvent.click(apply); });
@@ -194,7 +241,7 @@ describe('queued question answer lifecycle', () => {
       expect.objectContaining({ id: 'animations', value: 'yes', provenance: 'stated' }),
     ]));
     expect(screen.getByTestId('questions-influence').dataset).toMatchObject({ count: '2', confirmed: '2' });
-    fireEvent.click(screen.getAllByRole('button').find(node => node.textContent?.includes('questions.field.fidelity'))!);
+    fireEvent.click(screen.getAllByRole('button').find(node => node.textContent?.includes('Fidelity'))!);
     fireEvent.change(within(document.querySelector<HTMLElement>('.questions-panel__popover')!).getByRole('textbox'), { target: { value: 'invalid' } });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'questions.applyCorrection' })); });
     expect(patchProject).toHaveBeenCalledTimes(3);
@@ -384,6 +431,8 @@ describe('queued question answer lifecycle', () => {
       expect(patchProject).toHaveBeenCalledTimes(1);
       expect(vi.mocked(patchProject).mock.calls[0]![1].metadata?.brief?.assumptions).toEqual([
         expect.objectContaining({ id: 'platform', value: answers.platform, provenance: 'stated' }),
+        expect.objectContaining({ id: 'features', value: answers.features, provenance: 'stated' }),
+        expect.objectContaining({ id: 'notes', value: answers.notes, provenance: 'stated' }),
       ]);
     }
 

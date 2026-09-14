@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProjectView, mergeSavedPreviewComment } from '../../src/components/ProjectView';
-import { QuestionsPanel, type SubmitQuestionAnswers } from '../../src/components/QuestionsPanel';
+import { AssistantMessage, type InlineQuestionCardState } from '../../src/components/AssistantMessage';
 import { parseSubmittedAnswers } from '../../src/components/QuestionForm';
 import type { QuestionForm } from '../../src/artifacts/question-form';
 import type { reattachDaemonRun as ReattachDaemonRun } from '../../src/providers/daemon';
@@ -128,12 +128,6 @@ vi.mock('../../src/components/FileWorkspace', () => ({
     onSendBoardCommentAttachments,
     onCommentModeChange,
     onFocusModeChange,
-    questionForm,
-    questionFormInteractive,
-    questionFormSubmittedAnswers,
-    questionFormSubmitDisabled,
-    questionFormSubmissionQueued,
-    onSubmitQuestionForm,
   }: {
     streaming: boolean;
     messages?: ChatMessage[];
@@ -143,12 +137,6 @@ vi.mock('../../src/components/FileWorkspace', () => ({
     onSendBoardCommentAttachments: (attachments: unknown[]) => Promise<boolean | void> | boolean | void;
     onCommentModeChange?: (active: boolean) => void;
     onFocusModeChange?: (focused: boolean) => void;
-    questionForm?: QuestionForm | null;
-    questionFormInteractive?: boolean;
-    questionFormSubmittedAnswers?: Record<string, string | string[]>;
-    questionFormSubmitDisabled?: boolean;
-    questionFormSubmissionQueued?: boolean;
-    onSubmitQuestionForm?: SubmitQuestionAnswers;
   }) => {
     const failedAssistant =
       [...(messages ?? [])]
@@ -180,19 +168,6 @@ vi.mock('../../src/components/FileWorkspace', () => ({
     return (
       <>
       <output data-testid="workspace-streaming-state">{streaming ? 'streaming' : 'idle'}</output>
-      <output data-testid="question-submit-disabled">{questionFormSubmitDisabled ? 'disabled' : 'enabled'}</output>
-      <output data-testid="question-submission-queued">{questionFormSubmissionQueued ? 'queued' : 'direct'}</output>
-      {questionForm && onSubmitQuestionForm ? (
-        <QuestionsPanel
-          form={questionForm}
-          interactive={questionFormInteractive ?? false}
-          submitDisabled={questionFormSubmitDisabled}
-          submissionQueued={questionFormSubmissionQueued}
-          submittedAnswers={questionFormSubmittedAnswers}
-          generating={false}
-          onSubmit={onSubmitQuestionForm}
-        />
-      ) : null}
       <button
         type="button"
         data-testid="workspace-open-comments"
@@ -282,6 +257,7 @@ vi.mock('../../src/components/ChatPane', () => ({
     messages,
     onAttachComment,
     onSelectConversation,
+    questionCard,
     onSend: onSendUnsafe,
     onSendQueuedNow,
     onNewConversation,
@@ -294,6 +270,7 @@ vi.mock('../../src/components/ChatPane', () => ({
     streaming: boolean;
     sendDisabled?: boolean;
     queuedItems?: Array<{ id: string; prompt: string }>;
+    questionCard?: InlineQuestionCardState | null;
     previewComments?: PreviewComment[];
     attachedComments?: PreviewComment[];
     messages?: ChatMessage[];
@@ -323,6 +300,10 @@ vi.mock('../../src/components/ChatPane', () => ({
     };
     return (
       <section>
+        {(messages ?? []).filter(message => message.id === questionCard?.messageId).map(message => (
+          <AssistantMessage key={message.id} message={message} streaming={streaming}
+            projectId="project-1" conversationId={activeConversationId} questionCard={questionCard} />
+        ))}
         <output data-testid="active-conversation">{activeConversationId}</output>
         <output data-testid="streaming-state">{streaming ? 'streaming' : 'idle'}</output>
         <output data-testid="chat-error">{error}</output>
@@ -686,7 +667,9 @@ describe('ProjectView conversation run isolation', () => {
     const content = `<question-form id="${form.id}" title="${form.title}">${JSON.stringify({ questions: form.questions })}</question-form>`;
     conversationAMessages = [{ ...runningAssistant, content }];
     const completion = deferred<void>();
+    let attached!: Parameters<typeof ReattachDaemonRun>[0];
     reattachDaemonRun.mockImplementation((input: Parameters<typeof ReattachDaemonRun>[0]) => {
+      attached = input;
       // Reattachment clears the saved content before replay. Deliver the form
       // again and flush it via an event, without waiting for an animation frame.
       input.handlers.onDelta(content);
@@ -699,8 +682,9 @@ describe('ProjectView conversation run isolation', () => {
 
     expect(reattachDaemonRun).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('streaming-state').textContent).toBe('streaming');
-    expect(screen.getByTestId('question-submit-disabled').textContent).toBe('enabled');
-    expect(screen.getByTestId('question-submission-queued').textContent).toBe('queued');
+    expect(screen.getByTestId('questions-panel').dataset.pending).toBe('true');
+    expect(within(screen.getByTestId('questions-panel')).getByRole('status').textContent).toBe('questions.willQueue');
+    expect(screen.queryByTestId('questions-tab')).toBeNull();
     fireEvent.click(screen.getByRole('radio', { name: 'Desktop web' }));
     fireEvent.click(screen.getByRole('radio', { name: 'High fidelity' }));
     expect(screen.getByRole('button', { name: 'questions.continue' })).toHaveProperty('disabled', false);
@@ -729,10 +713,30 @@ describe('ProjectView conversation run isolation', () => {
     expect(queued[0].meta).toEqual({ sessionMode: 'design' });
     expect(parseSubmittedAnswers(form, queued[0].prompt)).toEqual({ platform: 'desktop-web', fidelity: 'high-fidelity' });
     expect(screen.getByTestId('send-queued-0').textContent).toBe(queued[0].prompt);
+    expect(within(screen.getByTestId('questions-panel')).getByRole('status').textContent).toBe('questions.queued');
     expect(screen.getByRole('button', { name: 'questions.continue' })).toHaveProperty('disabled', true);
     expect(screen.getByTestId('streaming-state').textContent).toBe('streaming');
     expect(patchProject).toHaveBeenCalledTimes(1);
     expect(streamViaDaemon).not.toHaveBeenCalled();
+
+    streamViaDaemon.mockImplementation(async input => { input.onRunCreated?.('run-next'); });
+    await act(async () => {
+      attached.handlers.onDone(content);
+      completion.resolve();
+      await completion.promise;
+    });
+    expect(streamViaDaemon).toHaveBeenCalledTimes(1);
+    expect(streamViaDaemon.mock.calls[0]![0]).toMatchObject({
+      conversationId: 'conv-a', sessionMode: 'design',
+    });
+    expect(streamViaDaemon.mock.calls[0]![0].history.at(-1)).toMatchObject({
+      role: 'user', content: queued[0].prompt, sessionMode: 'design',
+    });
+    expect(saveMessage).toHaveBeenCalledWith(project.id, 'conv-a', expect.objectContaining({
+      role: 'user', content: queued[0].prompt, sessionMode: 'design',
+    }), undefined);
+    expect(window.localStorage.getItem(storageKey)).toBeNull();
+    expect(patchProject).toHaveBeenCalledTimes(1);
   });
 
   it('sends the persisted thinking-effort selection in the workspace run payload', async () => {

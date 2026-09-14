@@ -171,20 +171,20 @@ describe('FileViewer manual edit dirty-state persistence', () => {
     expect(fileSaveCalls(fetchMock)).toHaveLength(0);
   });
 
-  it('does not persist or exit when re-clicking the edit tool while dirty', async () => {
+  it('persists and exits when re-clicking the edit tool while dirty', async () => {
     const fetchMock = buildFetchMock();
     vi.stubGlobal('fetch', fetchMock);
-    render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={htmlSource()} />);
+    let resolveSaved!: () => void;
+    const saved = new Promise<void>((resolve) => { resolveSaved = resolve; });
+    render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={htmlSource()} onFileSaved={() => resolveSaved()} />);
 
     clickManualTool('manual-edit-mode-toggle');
     await selectManualEditTarget(containerTarget());
     fireEvent.change(screen.getByLabelText('Width'), { target: { value: '200' } });
-    clickManualTool('manual-edit-mode-toggle');
+    await act(async () => { clickManualTool('manual-edit-mode-toggle'); await saved; });
 
-    await waitFor(() => {
-      expect(fileSaveCalls(fetchMock)).toHaveLength(0);
-      expect(screen.getByTestId('manual-edit-mode-toggle').getAttribute('aria-pressed')).toBe('true');
-    });
+    expect(fileSaveCalls(fetchMock)).toHaveLength(1);
+    expect(screen.getByTestId('manual-edit-mode-toggle').getAttribute('aria-pressed')).toBe('false');
   });
 
   it('explains the block with a toast when another tool is clicked while dirty', async () => {

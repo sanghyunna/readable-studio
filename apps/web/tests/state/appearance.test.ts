@@ -2,6 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  ACCENT_SWATCHES,
   DEFAULT_ACCENT_COLOR,
   applyAppearanceToDocument,
   normalizeAccentColor,
@@ -26,6 +27,13 @@ describe('normalizeAccentColor', () => {
     expect(normalizeAccentColor('blue')).toBeNull();
     expect(normalizeAccentColor('#123')).toBeNull();
     expect(normalizeAccentColor('#12345g')).toBeNull();
+  });
+});
+
+describe('ACCENT_SWATCHES', () => {
+  it('leads with the default accent and lists every preset once', () => {
+    expect(ACCENT_SWATCHES[0]).toBe(DEFAULT_ACCENT_COLOR);
+    expect(new Set(ACCENT_SWATCHES).size).toBe(ACCENT_SWATCHES.length);
   });
 });
 

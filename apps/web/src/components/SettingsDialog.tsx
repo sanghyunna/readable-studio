@@ -114,6 +114,7 @@ import { McpClientSection } from './McpClientSection';
 import { SkillsSection } from './SkillsSection';
 import { DesignSystemsSection } from './DesignSystemsSection';
 import { ProjectLocationsSection } from './ProjectLocationsSection';
+import { DatabricksModelsSection } from './DatabricksModelsSection';
 import { RoutinesSection } from './RoutinesSection';
 import { MemoryModelInline } from './MemoryModelInline';
 import { MemorySection } from './MemorySection';
@@ -135,6 +136,7 @@ import {
   setCritiqueTheaterEnabled,
   useCritiqueTheaterEnabled,
 } from './Theater';
+import { ThemeSwatch } from './ThemeSwatch';
 import {
   ACCENT_SWATCHES,
   DEFAULT_ACCENT_COLOR,
@@ -170,6 +172,7 @@ export type SettingsSection =
   | 'skills'
   | 'designSystems'
   | 'projectLocations'
+  | 'databricksModels'
   | 'memory'
   | 'codeAgents'
   // 'library' is consumed by the EntryShell library route — App opens it
@@ -2500,6 +2503,10 @@ export function SettingsDialog({
       title: t('settings.projectLocations'),
       subtitle: t('settings.projectLocationsHint'),
     },
+    databricksModels: {
+      title: t('settings.databricksModels'),
+      subtitle: t('settings.databricksModelsHint'),
+    },
     codeAgents: {
       title: t('settings.codeAgentsTitle'),
       subtitle: t('settings.codeAgentsSubtitle'),
@@ -2998,6 +3005,17 @@ export function SettingsDialog({
               <span>
                 <strong>{t('settings.projectLocations')}</strong>
                 <small>{t('settings.projectLocationsHint')}</small>
+              </span>
+            </button>
+            <button
+              type="button"
+              className={`settings-nav-item${activeSection === 'databricksModels' ? ' active' : ''}`}
+              onClick={() => setActiveSection('databricksModels')}
+            >
+              <Icon name="sparkles" size={18} />
+              <span>
+                <strong>{t('settings.databricksModels')}</strong>
+                <small>{t('settings.databricksModelsHint')}</small>
               </span>
             </button>
             <button
@@ -4099,6 +4117,8 @@ export function SettingsDialog({
             <ProjectLocationsSection cfg={cfg} setCfg={setCfg} onProjectsRefresh={onProjectsRefresh} />
           ) : null}
 
+          {activeSection === 'databricksModels' ? <DatabricksModelsSection /> : null}
+
           {activeSection === 'instructions' ? (
             <section className="settings-section settings-section-card instructions-rules-section">
               <div className="memory-field-block instructions-rules-card">
@@ -4896,7 +4916,7 @@ function AppearanceSection({
   return (
     <section className="settings-section">
       <div className={styles.themePicker} role="radiogroup" aria-label={t('settings.appearance')} data-theme-picker>
-        {THEME_OPTIONS.map(({ id: value, labelKey, swatch }, index) => (
+        {THEME_OPTIONS.map(({ id: value, labelKey }, index) => (
           <button
             key={value}
             type="button"
@@ -4918,11 +4938,7 @@ function AppearanceSection({
               setTheme(value);
             }}
           >
-            <span className={styles.themeSwatch} aria-hidden="true">
-              {swatch.map((color) => (
-                <span key={color} style={{ background: color }} />
-              ))}
-            </span>
+            <ThemeSwatch theme={value} className={styles.themeSwatch} />
             <span className={styles.themeOptionLabel}>{t(labelKey)}</span>
             {current === value ? <Icon name="check" size={14} aria-hidden="true" /> : null}
           </button>

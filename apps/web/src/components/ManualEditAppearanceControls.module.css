@@ -1,0 +1,586 @@
+/* Appearance body of the left-inspector Shape panel.
+
+   Material: the inspector's engraved control tier (`--manual-edit-field-*`,
+   owned by ManualEditLeftInspector.module.css). This sheet consumes those
+   tokens and never redefines them, so a product-wide change to the engraving
+   lands here automatically.
+
+   Grammar: one icon column on the left of every field, the control on the
+   right, no sentence copy. Helpers live in `title` tooltips only. */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.groupTitle {
+  /* Group titles carry --text, not --text-muted: the muted rung lands under
+     4.5:1 on the engraved well in catppuccin-latte/frappe, so the title is
+     lowered by size and weight instead of by ink. */
+  margin: 0 0 2px 2px;
+  color: var(--text);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+}
+
+.groupBody {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ---------- field shell ---------- */
+
+.field {
+  position: relative;
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 10px;
+  border: 0;
+  border-radius: var(--radius-control);
+  color: var(--text);
+  background: var(--manual-edit-field-bg);
+  box-shadow: var(--manual-edit-field-shadow);
+  transition:
+    background-color var(--dur-quick) var(--ease-out),
+    box-shadow var(--dur-quick) var(--ease-out);
+}
+
+.field:hover {
+  background: var(--manual-edit-field-bg-hover);
+  box-shadow: var(--manual-edit-field-shadow-hover);
+}
+
+.field:focus-within {
+  background: var(--manual-edit-field-bg-hover);
+  box-shadow:
+    var(--manual-edit-field-shadow-hover),
+    inset 0 0 0 1px var(--hub-accent-line);
+}
+
+.fieldDisabled {
+  color: var(--text-muted);
+}
+
+.fieldIcon {
+  display: inline-flex;
+  flex: 0 0 18px;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: var(--text-muted);
+}
+
+.field:focus-within .fieldIcon {
+  color: var(--hub-accent);
+}
+
+.field input:not([type='range']):not([type='color']) {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  color: var(--text);
+  background: transparent;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.field input::placeholder {
+  color: var(--text-placeholder-engraved);
+}
+
+.field button:focus-visible,
+.field input:focus-visible {
+  outline: 2px solid var(--hub-accent);
+  outline-offset: 1px;
+}
+
+/* ---------- colour ---------- */
+
+.colorPair,
+.geometryPair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+
+.colorField {
+  gap: 8px;
+}
+
+/* The swatch is the value: a 24px chip on a checker so `transparent` reads as
+   "nothing" rather than as a broken fill. */
+.swatch {
+  position: relative;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: calc(var(--radius-control) - 2px);
+  background:
+    repeating-conic-gradient(var(--hub-pearl-border) 0 25%, transparent 0 50%) 0 0 / 8px 8px;
+  box-shadow: inset 0 0 0 1px var(--hub-pearl-border);
+  cursor: pointer;
+}
+
+.swatch::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--swatch-color, transparent);
+}
+
+.swatchEmpty {
+  cursor: default;
+}
+
+.swatchEmpty::before {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  background: linear-gradient(
+    to top left,
+    transparent calc(50% - 1px),
+    var(--danger, var(--text)) calc(50% - 1px),
+    var(--danger, var(--text)) calc(50% + 1px),
+    transparent calc(50% + 1px)
+  );
+}
+
+.colorInput {
+  flex: 1 1 auto;
+  width: 0;
+  font-family: var(--font-mono, inherit);
+  text-overflow: ellipsis;
+}
+
+.colorInput:disabled {
+  color: var(--text);
+}
+
+.noFill {
+  flex: 0 0 auto;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--text-muted);
+}
+
+.noFill[data-state='on'] {
+  color: var(--text);
+}
+
+.colorPopover {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  left: 36px;
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--bg-panel);
+  box-shadow:
+    inset 0 1px 0 var(--hub-pearl-highlight),
+    0 1px 2px color-mix(in srgb, var(--shadow-color) 8%, transparent),
+    0 10px 28px -10px color-mix(in srgb, var(--shadow-color) 26%, transparent);
+  animation: appearance-pop-in 200ms var(--ease-out) both;
+}
+
+.colorGrid {
+  display: grid;
+  grid-template-columns: repeat(6, 22px);
+  gap: 4px;
+}
+
+.colorTile {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: calc(var(--radius-control) - 3px);
+  background: var(--swatch-color);
+  box-shadow: inset 0 0 0 1px var(--hub-pearl-border);
+  cursor: pointer;
+}
+
+.colorNative {
+  width: 100%;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: calc(var(--radius-control) - 3px);
+  background: transparent;
+  cursor: pointer;
+}
+
+/* ---------- border style ---------- */
+
+.styleOptions {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 2px;
+}
+
+.styleOption {
+  display: inline-flex;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  border: 0;
+  border-radius: calc(var(--radius-control) - 2px);
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-quick) var(--ease-out),
+    color var(--dur-quick) var(--ease-out);
+}
+
+.styleOption:hover {
+  color: var(--text);
+  background: var(--manual-edit-field-bg-hover);
+}
+
+.styleOptionOn {
+  color: var(--text);
+  background: var(--hub-segment-selected);
+  box-shadow: inset 0 1px 0 var(--hub-control-highlight);
+}
+
+/* The option draws its own line style: this IS the label. */
+.styleLine {
+  display: block;
+  width: 100%;
+  max-width: 26px;
+  height: 0;
+  border-top: 2px solid currentColor;
+}
+
+.styleOption[data-style='double'] .styleLine {
+  height: 3px;
+  border-top-width: 3px;
+}
+
+/* ---------- border widths ---------- */
+
+.widthField {
+  align-items: stretch;
+  min-height: 0;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.widthField .fieldIcon {
+  align-self: center;
+}
+
+/* The figure: a box whose edges ARE the four widths. Edge thickness is bound
+   to `--bw-*` (clamped 0-6px) so the drawing tracks the values live. */
+.widthFigure {
+  position: relative;
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 96px;
+  place-items: center;
+}
+
+.widthBox {
+  position: absolute;
+  inset: 10px 38px;
+  border-radius: 3px;
+  border-style: solid;
+  border-color: var(--text);
+  border-top-width: var(--bw-top, 0px);
+  border-right-width: var(--bw-right, 0px);
+  border-bottom-width: var(--bw-bottom, 0px);
+  border-left-width: var(--bw-left, 0px);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  box-shadow: inset 0 0 0 1px var(--hub-pearl-border);
+  transition: border-width 200ms var(--ease-out);
+}
+
+.widthFigureLinked .widthBox {
+  border-color: var(--hub-accent);
+}
+
+.widthInput {
+  position: absolute;
+  z-index: 1;
+  display: inline-flex;
+  width: 52px;
+  height: 24px;
+  align-items: center;
+  gap: 2px;
+  padding: 0 5px;
+  border-radius: calc(var(--radius-control) - 2px);
+  background: var(--bg-panel);
+  box-shadow:
+    inset 0 0 0 1px var(--hub-pearl-border),
+    0 2px 6px color-mix(in srgb, var(--shadow-color) 16%, transparent);
+}
+
+.widthInput input {
+  width: 100%;
+  text-align: right;
+  font-size: 11.5px;
+}
+
+.widthInput em {
+  flex: 0 0 auto;
+  color: var(--text);
+  font-size: 10px;
+  font-style: normal;
+}
+
+.widthInputAll {
+  position: static;
+  width: 64px;
+  height: 28px;
+}
+
+.widthInputAll input {
+  font-size: 12.5px;
+}
+
+.widthInputTop { top: -2px; left: 50%; transform: translateX(-50%); }
+.widthInputBottom { bottom: -2px; left: 50%; transform: translateX(-50%); }
+.widthInputLeft { top: 50%; left: 6px; transform: translateY(-50%); }
+.widthInputRight { top: 50%; right: 6px; transform: translateY(-50%); }
+
+.linkToggle {
+  flex: 0 0 auto;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  align-self: center;
+  padding: 0;
+  color: var(--text-muted);
+}
+
+.linkToggle[data-state='on'] {
+  color: var(--hub-accent);
+}
+
+/* ---------- radius & opacity ---------- */
+
+/* The radius glyph is a corner drawn in CSS whose rounding follows the value. */
+.radiusGlyph {
+  width: 18px;
+  height: 18px;
+}
+
+.radiusGlyph::before {
+  content: '';
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-top: 2px solid currentColor;
+  border-left: 2px solid currentColor;
+  border-top-left-radius: var(--radius-preview, 0px);
+  transition: border-top-left-radius 200ms var(--ease-out);
+}
+
+.field:focus-within .radiusGlyph::before {
+  border-color: var(--hub-accent);
+}
+
+.stepper {
+  display: inline-flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.stepper input {
+  flex: 1 1 auto;
+  width: 0;
+  min-width: 40px;
+  text-align: right;
+}
+
+.stepper em {
+  flex: 0 0 auto;
+  margin-right: 2px;
+  color: var(--text);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.stepperCompact {
+  flex: 0 0 auto;
+}
+
+.stepperCompact input {
+  flex: 0 0 34px;
+  min-width: 34px;
+  width: 34px;
+}
+
+.step {
+  display: inline-flex;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: calc(var(--radius-control) - 2px);
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-quick) var(--ease-out),
+    color var(--dur-quick) var(--ease-out);
+}
+
+.step:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--manual-edit-field-bg-hover);
+}
+
+.step:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Opacity: the track fades from clear to the element's ink, so the slider
+   position is the value. */
+.opacityRange {
+  flex: 1 1 auto;
+  min-width: 48px;
+  height: 16px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.opacityRange::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+  background:
+    linear-gradient(to right, transparent, var(--text)) 0 0 / 100% 100%,
+    repeating-conic-gradient(var(--hub-pearl-border) 0 25%, transparent 0 50%) 0 0 / 6px 6px;
+  box-shadow: inset 0 0 0 1px var(--hub-pearl-border);
+}
+
+.opacityRange::-moz-range-track {
+  height: 6px;
+  border-radius: 3px;
+  background:
+    linear-gradient(to right, transparent, var(--text)) 0 0 / 100% 100%,
+    repeating-conic-gradient(var(--hub-pearl-border) 0 25%, transparent 0 50%) 0 0 / 6px 6px;
+  box-shadow: inset 0 0 0 1px var(--hub-pearl-border);
+}
+
+.opacityRange::-webkit-slider-thumb {
+  width: 14px;
+  height: 14px;
+  margin-top: -4px;
+  appearance: none;
+  border: 0;
+  border-radius: 50%;
+  background: var(--bg-panel);
+  box-shadow:
+    0 0 0 2px var(--hub-accent),
+    0 1px 3px color-mix(in srgb, var(--shadow-color) 20%, transparent);
+}
+
+.opacityRange::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--bg-panel);
+  box-shadow:
+    0 0 0 2px var(--hub-accent),
+    0 1px 3px color-mix(in srgb, var(--shadow-color) 20%, transparent);
+}
+
+.opacityRange:focus-visible {
+  outline: 2px solid var(--hub-accent);
+  outline-offset: 2px;
+}
+
+/* ---------- action zone ---------- */
+
+/* Element actions sit below a pearl light ray, apart from the property
+   controls, so the destructive row is never mistaken for a property. */
+.actionZone {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 0;
+  box-shadow: inset 0 1px 0 var(--hub-pearl-highlight);
+}
+
+.actionZone > :global(.cc-action) {
+  margin-top: 0;
+}
+
+/* `pointer-events` rides in the same keyframes as `opacity`: the popover is
+   painted at opacity 0 on the first frame with `both` fill, so the tiles inside
+   must not be hit-testable there. Pointers return at the START of the visible
+   phase (1%), not at the end. */
+@keyframes appearance-pop-in {
+  from { opacity: 0; transform: translateY(-4px); pointer-events: none; }
+  1% { pointer-events: auto; }
+  to { opacity: 1; transform: translateY(0); pointer-events: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .colorPopover { animation: none; }
+  .field,
+  .styleOption,
+  .step,
+  .widthBox,
+  .radiusGlyph::before { transition-duration: 1ms; }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .actionZone { box-shadow: inset 0 1px 0 var(--border); }
+  .widthInput { box-shadow: inset 0 0 0 1px var(--border); }
+  .swatch,
+  .colorTile,
+  .widthBox { box-shadow: inset 0 0 0 1px var(--border); }
+  .colorPopover {
+    box-shadow:
+      inset 0 0 0 1px var(--border),
+      0 10px 28px -10px color-mix(in srgb, var(--shadow-color) 26%, transparent);
+  }
+}
+
+@media (max-width: 360px) {
+  .widthBox { inset: 10px 30px; }
+}

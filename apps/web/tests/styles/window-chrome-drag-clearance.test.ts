@@ -151,13 +151,14 @@ describe('frameless window chrome drag clearance', () => {
     );
   });
 
-  it('veils the titlebar with the shared canvas top-edge order at one calibrated alpha step', () => {
-    // The strip was fully transparent (alpha 0): the canvas showed through
-    // untouched. The veil is a single material step MORE opaque than that -
-    // built from the canvas's own top-edge stops, never a new palette:
-    // `--hub-canvas-blue` at the rail end, `--hub-canvas-pink` at the content
-    // end, the same accent -> warm order the wash blooms paint below the band
-    // (accent upper-left over the rail, warm toward the pane boundary).
+  it('ribbons the titlebar with the shared canvas top-edge order at the strong-glass alpha', () => {
+    // The strip was fully transparent (alpha 0), then a 30% veil of the raw
+    // canvas stops - both judged invisible in the shipped build. The ribbon is
+    // a saturated glass band built from the canvas's own top-edge stops, never
+    // a new palette: `--hub-canvas-blue` at the rail end, `--hub-canvas-pink`
+    // at the content end, the same accent -> warm order the wash blooms paint
+    // below the band (accent upper-left over the rail, warm toward the pane
+    // boundary).
     const chromeRule = shellCss.match(
       /\.app-chrome-header\.app-window-chrome\s*\{([^}]*)\}/,
     )?.[1] ?? '';
@@ -171,23 +172,22 @@ describe('frameless window chrome drag clearance', () => {
     expect(blueIndex).toBeGreaterThanOrEqual(0);
     expect(pinkIndex).toBeGreaterThan(blueIndex);
     // Placement: the stops sit at the canvas blooms' own x-positions (10% /
-    // 92%), so the veil continues the shared canvas instead of re-rolling a
+    // 92%), so the ribbon continues the shared canvas instead of re-rolling a
     // generic 0 -> 100 sweep.
-    expect(background).toMatch(/var\(--app-window-chrome-blue, var\(--hub-canvas-blue\)\) 30%, transparent\)\s*10%/);
-    expect(background).toMatch(/var\(--app-window-chrome-pink, var\(--hub-canvas-pink\)\) 30%, transparent\)\s*92%/);
+    expect(background).toMatch(/var\(--app-window-chrome-blue, var\(--hub-canvas-blue\)\) 72%, transparent\)\s*10%/);
+    expect(background).toMatch(/var\(--app-window-chrome-pink, var\(--hub-canvas-pink\)\) 72%, transparent\)\s*92%/);
 
-    // Alpha: one calibrated step. Both stops share a single mix ratio that is
-    // measurably above the old transparent band (0%) and slightly so - well
-    // under halfway, never an opaque bar.
+    // Alpha: the strong-glass fill tier. Both stops share a single mix ratio
+    // that is measurably above the rejected 30% veil, yet never an opaque bar.
     const ratios = [...background.matchAll(/color-mix\(in srgb,\s*var\(--app-window-chrome-(?:blue|pink), var\(--hub-canvas-(?:blue|pink)\)\)\s*(\d+)%/g)].map(
       (match) => Number(match[1]),
     );
     expect(ratios).toHaveLength(2);
     expect(ratios[0]).toBe(ratios[1]);
-    expect(ratios[0]!).toBeGreaterThan(0);
-    expect(ratios[0]!).toBeLessThanOrEqual(40);
+    expect(ratios[0]!).toBeGreaterThan(40);
+    expect(ratios[0]!).toBeLessThan(100);
 
-    // Tokens only: no raw color literals in the veil.
+    // Tokens only: no raw color literals in the ribbon.
     expect(background).not.toMatch(/#[0-9a-f]{3,8}\b|\brgba?\(|\bhsla?\(/i);
   });
 

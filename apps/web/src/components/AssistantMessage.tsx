@@ -13,6 +13,12 @@ import {
   type QuestionForm,
 } from "../artifacts/question-form";
 import { parseSubmittedAnswers } from "./QuestionForm";
+import {
+  QuestionsPanel,
+  type QuestionRunHydrationStatus,
+  type SubmitQuestionAnswers,
+} from "./QuestionsPanel";
+import type { BriefAssumption, ProjectBrief } from "./brief-state";
 import { splitStreamingArtifact, stripArtifact, stripRecoveredHtmlFallbackForDisplay } from "../artifacts/strip";
 import {
   getPluginFolderCandidates,
@@ -51,10 +57,25 @@ type TranslateFn = (
   vars?: Record<string, string | number>
 ) => string;
 
-export type QuestionFormOpenRequest = {
-  form: QuestionForm;
-  messageId: string;
+// Live state for the one active `<question-form>` occurrence, owned by
+// ProjectView. The assistant message whose id matches `messageId` renders it
+// as the interactive inline card; every other form occurrence renders as a
+// settled, read-only card from conversation history.
+export type InlineQuestionCardState = {
+  messageId: string | null;
+  formKey: string | null;
+  // Tolerantly-parsed frame while the block is still streaming.
+  formPreview: QuestionForm | null;
+  generating: boolean;
+  brief: ProjectBrief | null;
+  onCorrect?: (brief: ProjectBrief, corrected: BriefAssumption) => Promise<boolean>;
+  interactive: boolean;
+  submitDisabled: boolean;
+  runHydrationStatus: QuestionRunHydrationStatus;
+  onRetryRunHydration?: () => void;
+  submissionQueued: boolean;
   submittedAnswers?: Record<string, string | string[]>;
+  onSubmit: SubmitQuestionAnswers;
 };
 
 interface ActionNotice {
@@ -125,13 +146,11 @@ interface Props {
   // to avoid duplication. Other messages keep their error pill.
   errorCardOwnerId?: string | null;
   // The user message that immediately follows this assistant turn, if any.
-  // Kept for ChatPane compatibility; chat-side question forms now always
-  // render as a compact Questions banner.
+  // A "[form answers ...]" reply here settles this message's question card.
   nextUserContent?: string;
-  // Open the right-hand Questions tab. The active discovery form renders
-  // there (Claude-Design style) instead of inline; this assistant message
-  // shows a banner that focuses the tab on click.
-  onOpenQuestions?: (request?: QuestionFormOpenRequest) => void;
+  // The active question form's live state; the owning assistant message
+  // renders it as the interactive inline card.
+  questionCard?: InlineQuestionCardState | null;
   onContinueRemainingTasks?: (todos: TodoItem[]) => void;
   onForkFromMessage?: () => void;
   forking?: boolean;
@@ -184,6 +203,7 @@ const ASSISTANT_MESSAGE_COMPARED_PROPS: Array<keyof Props> = [
   'isLast',
   'errorCardOwnerId',
   'nextUserContent',
+  'questionCard',
   'forking',
   'suppressDirectionForms',
   // Memoized + stable from ChatPane; compared so a late skill-list load
@@ -239,7 +259,7 @@ function AssistantMessageImpl({
   isLast,
   errorCardOwnerId = null,
   nextUserContent,
-  onOpenQuestions,
+  questionCard = null,
   onContinueRemainingTasks,
   onForkFromMessage,
   forking = false,
@@ -534,7 +554,7 @@ function AssistantMessageImpl({
                 showStreamCursor={streaming && i === lastTextBlockIndex}
                 nextUserContent={nextUserContent}
                 suppressDirectionForms={suppressDirectionForms}
-                onOpenQuestions={onOpenQuestions}
+                questionCard={questionCard}
                 projectId={projectId}
                 projectFileNames={projectFileNames}
                 onRequestOpenFile={onRequestOpenFile}
@@ -1345,7 +1365,7 @@ function ProseBlock({
   showStreamCursor,
   nextUserContent,
   suppressDirectionForms,
-  onOpenQuestions,
+  questionCard,
   projectId,
   projectFileNames,
   onRequestOpenFile,
@@ -1360,7 +1380,7 @@ function ProseBlock({
   suppressDirectionForms: boolean;
   projectId?: string | null;
   projectFileNames?: Set<string>;
-  onOpenQuestions?: (request?: QuestionFormOpenRequest) => void;
+  questionCard?: InlineQuestionCardState | null;
   onRequestOpenFile?: (name: string) => void;
 }) {
   const t = useT();
@@ -1429,7 +1449,8 @@ function ProseBlock({
       }));
     }
   );
-  if (renderable.length === 0 && !live) return null;
+  const streamingCard = hadOpenForm && questionCard && questionCard.messageId === assistantMessageId ? questionCard : null;
+  if (renderable.length === 0 && !live && !streamingCard) return null;
   return (
     <div className="prose-block" data-stream-cursor={showStreamCursor && !live ? "true" : undefined}>
       {renderable.map((seg) => {
@@ -1458,7 +1479,8 @@ function ProseBlock({
             form={seg.form}
             assistantMessageId={assistantMessageId}
             nextUserContent={nextUserContent}
-            onOpenQuestions={onOpenQuestions}
+            questionCard={questionCard}
+            projectId={projectId}
           />
         );
       })}
@@ -1469,48 +1491,29 @@ function ProseBlock({
           code={live.content}
         />
       ) : null}
-      {hadOpenForm ? <QuestionsBanner onOpen={onOpenQuestions} /> : null}
+      {streamingCard ? (
+        // The form is still streaming: render the card frame now and let the
+        // questions fill in, instead of flashing raw markup or nothing.
+        <QuestionsPanel
+          key={streamingCard.formKey ?? undefined}
+          projectId={projectId ?? undefined}
+          brief={streamingCard.brief}
+          onCorrect={streamingCard.onCorrect}
+          formKey={streamingCard.formKey}
+          form={streamingCard.formPreview}
+          interactive={false}
+          submitDisabled
+          runHydrationStatus={streamingCard.runHydrationStatus}
+          submissionQueued={false}
+          generating
+          onSubmit={streamingCard.onSubmit}
+        />
+      ) : null}
     </div>
   );
 }
 
-// Chat-side banner that points to the right-hand Questions tab where discovery
-// forms live. The chat column always stays compact: no inline form preview,
-// answered or not.
-function QuestionsBanner({
-  onOpen,
-  answered = false,
-}: {
-  onOpen?: () => void;
-  answered?: boolean;
-}) {
-  const t = useT();
-  // Once the form has been answered there is nothing left to open, so the
-  // banner becomes a non-interactive "done" marker: no chevron affordance, no
-  // click target, muted styling.
-  return (
-    <button
-      type="button"
-      className={`questions-banner${answered ? " questions-banner-answered" : ""}`}
-      data-testid="questions-banner"
-      data-answered={answered ? "true" : undefined}
-      disabled={answered}
-      onClick={answered ? undefined : () => onOpen?.()}
-    >
-      <span className="questions-banner-icon" aria-hidden>
-        <Icon name={answered ? "check" : "help-circle"} size={15} />
-      </span>
-      <span className="questions-banner-label">
-        {answered ? t("questions.bannerAnswered") : t("questions.banner")}
-      </span>
-      {answered ? null : (
-        <span className="questions-banner-cta" aria-hidden>
-          <Icon name="chevron-right" size={14} />
-        </span>
-      )}
-    </button>
-  );
-}
+const noopSubmit: SubmitQuestionAnswers = () => false;
 
 function isDirectionForm(form: QuestionForm): boolean {
   if (form.id.toLowerCase() === "direction") return true;
@@ -1518,16 +1521,22 @@ function isDirectionForm(form: QuestionForm): boolean {
   return form.questions.some((q) => q.type === "direction-cards");
 }
 
+// The inline question card. The assistant message that owns the active form
+// occurrence renders the live, interactive card wired to ProjectView's submit
+// path; every earlier occurrence renders the same card locked, showing the
+// answers parsed back out of the user's reply so nothing can be re-sent.
 function FormBlock({
   form,
   assistantMessageId,
   nextUserContent,
-  onOpenQuestions,
+  questionCard,
+  projectId,
 }: {
   form: QuestionForm;
   assistantMessageId: string;
   nextUserContent?: string;
-  onOpenQuestions?: (request?: QuestionFormOpenRequest) => void;
+  questionCard?: InlineQuestionCardState | null;
+  projectId?: string | null;
 }) {
   // A "[form answers …]" reply parked right after this message means the form
   // was already submitted; the banner then renders as an answered/done state.
@@ -1535,16 +1544,38 @@ function FormBlock({
     () => (nextUserContent ? parseSubmittedAnswers(form, nextUserContent) : null),
     [form, nextUserContent],
   );
+  const active = Boolean(questionCard && questionCard.messageId === assistantMessageId);
+  if (active && questionCard) {
+    return (
+      <QuestionsPanel
+        key={questionCard.formKey ?? undefined}
+        projectId={projectId ?? undefined}
+        brief={questionCard.brief}
+        onCorrect={questionCard.onCorrect}
+        formKey={questionCard.formKey}
+        form={form}
+        interactive={questionCard.interactive}
+        submitDisabled={questionCard.submitDisabled}
+        runHydrationStatus={questionCard.runHydrationStatus}
+        onRetryRunHydration={questionCard.onRetryRunHydration}
+        submissionQueued={questionCard.submissionQueued}
+        submittedAnswers={questionCard.submittedAnswers ?? submittedFromHistory ?? undefined}
+        generating={false}
+        onSubmit={questionCard.onSubmit}
+      />
+    );
+  }
   return (
-    <QuestionsBanner
-      answered={submittedFromHistory != null}
-      onOpen={() => {
-        onOpenQuestions?.({
-          form,
-          messageId: assistantMessageId,
-          submittedAnswers: submittedFromHistory ?? undefined,
-        });
-      }}
+    <QuestionsPanel
+      projectId={projectId ?? undefined}
+      brief={null}
+      form={form}
+      interactive={false}
+      submitDisabled
+      submittedAnswers={submittedFromHistory ?? undefined}
+      submissionQueued={false}
+      generating={false}
+      onSubmit={noopSubmit}
     />
   );
 }

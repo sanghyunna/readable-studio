@@ -10,8 +10,17 @@
 // entry that keeps the canonical (full) id as its value — the id the CLI
 // resolves the alias to anyway — and shows a clean human label. Models with no
 // counterpart pass through untouched.
+//
+// Registered Databricks endpoints are exempt from all of this: their ids are
+// opaque app aliases and their labels are already sanitized display names, so
+// two distinct endpoints (`sonnet`, `c-sonnet-model-service`) must never be
+// read as an alias pair and collapsed into one.
 
-import type { AgentModelOption } from '../types';
+import type { AgentModelOption } from '@readable-studio/contracts';
+
+function isManagedOption(option: AgentModelOption): boolean {
+  return option.source === 'databricks';
+}
 
 /** Strips the parenthetical noise the daemon appends to alias rows. */
 function bareLabel(label: string): string {
@@ -54,11 +63,14 @@ export function dedupeAgentModels(
   const canonicalForAlias = new Map<string, AgentModelOption>();
 
   for (const option of models) {
-    if (option.id === 'default') continue;
+    if (option.id === 'default' || isManagedOption(option)) continue;
     const alias = aliasToken(option.id);
     if (/[-_/]/.test(alias)) continue; // not a bare alias token
     const canonical = models.find(
-      (other) => other.id !== option.id && canonicalMatchesAlias(other.id, alias),
+      (other) =>
+        other.id !== option.id &&
+        !isManagedOption(other) &&
+        canonicalMatchesAlias(other.id, alias),
     );
     if (!canonical) continue;
     aliasIds.add(option.id);
@@ -73,6 +85,13 @@ export function dedupeAgentModels(
   const emitted = new Set<string>();
 
   for (const option of models) {
+    if (isManagedOption(option)) {
+      if (emitted.has(option.id)) continue;
+      emitted.add(option.id);
+      out.push(option);
+      continue;
+    }
+
     // The alias row is where the merged entry is emitted (aliases sort earlier
     // and carry the friendlier name), so the canonical row is skipped once its
     // alias has already produced the entry.

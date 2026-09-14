@@ -57,7 +57,6 @@ import {
 } from '../types';
 import type { ChatSessionMode, WorkspaceContextItem } from '@readable-studio/contracts';
 import { createTerminal, killTerminal } from '../state/projects';
-import type { QuestionForm } from '../artifacts/question-form';
 import { DesignFilesPanel, type DesignFilesNavState } from './DesignFilesPanel';
 import { DesignBrowserPanel, labelFromUrl, type BrowserPageInfo } from './DesignBrowserPanel';
 import type { PluginFolderAgentAction } from './design-files/pluginFolderActions';
@@ -72,8 +71,6 @@ import { SideChatTab, type ActiveConversationChatState } from './workspace/SideC
 import { TerminalViewer } from './workspace/TerminalViewer';
 import { MissingBrandFontsBanner } from './MissingBrandFontsBanner';
 import { PasteTextDialog } from './PasteTextDialog';
-import { QuestionsPanel, type QuestionRunHydrationStatus, type SubmitQuestionAnswers } from './QuestionsPanel';
-import type { BriefAssumption, ProjectBrief } from './brief-state';
 import { consumeHubSessionSurface } from './hub/HubSessionTree';
 import { QuickSwitcher } from './QuickSwitcher';
 import { SketchEditor } from './SketchEditor';
@@ -195,30 +192,6 @@ interface Props {
   // row was removed; these moved here alongside the FileViewer present/Share
   // portal that targets the same actions container.
   headerActions?: ReactNode;
-  // Active discovery question form, surfaced in the right-hand Questions tab
-  // instead of inline in the chat. Owned by ProjectView (derived from the
-  // latest assistant message).
-  projectQuestions?: ProjectBrief | null;
-  onCorrectQuestion?: (brief: ProjectBrief, corrected: BriefAssumption) => Promise<boolean>;
-  questionForm?: QuestionForm | null;
-  // Tolerantly-parsed form shown while the block is still streaming, so the
-  // panel renders a frame and fills questions in progressively.
-  questionFormPreview?: QuestionForm | null;
-  // Stable per-occurrence id so the panel can remember a completed reveal
-  // across the streaming→persisted remount instead of re-animating.
-  questionFormKey?: string | null;
-  questionFormInteractive?: boolean;
-  // A true submission boundary (conversation loading/failed), distinct from a
-  // healthy active run where answers can enter the chat queue.
-  questionFormSubmitDisabled?: boolean;
-  questionRunHydrationStatus?: QuestionRunHydrationStatus;
-  onRetryQuestionRunHydration?: () => void;
-  questionFormSubmissionQueued?: boolean;
-  questionFormSubmittedAnswers?: Record<string, string | string[]>;
-  questionsGenerating?: boolean;
-  onSubmitQuestionForm?: SubmitQuestionAnswers;
-  // Bumped nonce that focuses the Questions tab (banner click / new form).
-  focusQuestionsRequest?: { nonce: number } | null;
 }
 
 interface SketchState {
@@ -234,7 +207,6 @@ interface SketchState {
 
 export const DESIGN_FILES_TAB = '__design_files__';
 export const DESIGN_SYSTEM_TAB = '__design_system__';
-const QUESTIONS_TAB = '__questions__';
 const BROWSER_TAB_PREFIX = '__browser__:';
 // Keep at most this many embedded-browser `<webview>`s mounted at once. Each is
 // a full out-of-process Chromium guest (timers, JS, network, a GPU surface), so
@@ -415,26 +387,8 @@ export function FileWorkspace({
   messages = [],
   conversationId,
   headerActions,
-  projectQuestions = null,
-  onCorrectQuestion,
-  questionForm = null,
-  questionFormPreview = null,
-  questionFormKey = null,
-  questionFormInteractive = false,
-  questionFormSubmitDisabled = false,
-  questionRunHydrationStatus = 'ready',
-  onRetryQuestionRunHydration,
-  questionFormSubmissionQueued = false,
-  questionFormSubmittedAnswers,
-  questionsGenerating = false,
-  onSubmitQuestionForm,
-  focusQuestionsRequest = null,
 }: Props) {
   const t = useT();
-  // The chat column only shows a compact Questions banner; the form itself
-  // lives here, including after submission when a banner click can reopen the
-  // answered preview.
-  const showQuestionsTab = Boolean(projectQuestions || questionForm || questionFormPreview || questionsGenerating);
   const analytics = useAnalytics();
   // P1 page_view page_name=file_manager — once per project the user lands
   // inside the workspace. Re-fire when the projectId changes so a
@@ -688,9 +642,9 @@ export function FileWorkspace({
     nextFileTabs: string[],
     nextBrowserTabs = browserTabs,
   ) {
-    const index = orderedWorkspaceTabs.findIndex((tab) => tab.id === tabId);
+    const index = workspaceTabIds.indexOf(tabId);
     const nextActive = activeTab === tabId
-      ? orderedWorkspaceTabs[index + 1]?.id ?? orderedWorkspaceTabs[index - 1]?.id ?? DESIGN_FILES_TAB
+      ? workspaceTabIds[index + 1] ?? workspaceTabIds[index - 1] ?? defaultRootTab
       : activeTab;
     // Focus a surviving DOM node before removing the close control. Background
     // middle-clicks leave keyboard focus alone unless their tab held it.
@@ -703,8 +657,7 @@ export function FileWorkspace({
     const anchoredBrowsers = reanchorBrowserTabsToCurrentOrder(remainingOrder, nextBrowserTabs);
     setBrowserTabs(anchoredBrowsers);
     setActiveTab(nextActive);
-    const transient = nextActive === QUESTIONS_TAB
-      || (sketches[nextActive] && !sketches[nextActive]!.persisted);
+    const transient = sketches[nextActive] && !sketches[nextActive]!.persisted;
     const persistedActive = transient
       ? tabsState.active === tabId ? null : tabsState.active
       : nextActive;
@@ -778,7 +731,6 @@ export function FileWorkspace({
     if (
       activeTab === DESIGN_FILES_TAB
       || activeTab === DESIGN_SYSTEM_TAB
-      || activeTab === QUESTIONS_TAB
     ) return;
     if (isBrowserTabId(activeTab)) {
       if (!browserTabs.some((tab) => tab.id === activeTab)) {
@@ -873,48 +825,6 @@ export function FileWorkspace({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slideNavRequest]);
 
-  // Focus the Questions tab when hydration discovers a form occurrence. This
-  // includes an already-submitted form restored from persisted messages: its
-  // locked preview is still the authoritative confirmation that the blocking
-  // step completed. Key changes represent distinct occurrences; answer updates
-  // retain the same key and therefore do not steal focus again.
-  const previousQuestionFormKeyRef = useRef<string | null>(null);
-  useEffect(() => {
-    const previousKey = previousQuestionFormKeyRef.current;
-    previousQuestionFormKeyRef.current = questionFormKey;
-    if (
-      questionFormKey
-      && questionFormKey !== previousKey
-      && (tabsState.active === null
-        || tabsState.active === DESIGN_FILES_TAB
-        || tabsState.active === DESIGN_SYSTEM_TAB)
-    ) {
-      setActiveTab(QUESTIONS_TAB);
-    }
-  }, [questionFormKey, tabsState.active]);
-
-  // Focus the Questions tab when the parent bumps the nonce (banner click in
-  // chat, or a freshly generated form). The tab is transient — not added to
-  // the persisted tab list.
-  useEffect(() => {
-    if (!focusQuestionsRequest) return;
-    setActiveTab(QUESTIONS_TAB);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusQuestionsRequest?.nonce]);
-
-  // Keep the Questions tab open when answers arrive so the form itself can
-  // acknowledge acceptance in its locked state. The user can leave via the
-  // tab bar; silently switching surfaces makes a successful submit look lost.
-
-  // If the Questions tab is active but the form is gone because a new assistant
-  // turn has no form, fall back to the default root tab.
-  useEffect(() => {
-    if (activeTab === QUESTIONS_TAB && !showQuestionsTab) {
-      setActiveTab(defaultRootTab);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, showQuestionsTab]);
-
   function openFile(name: string) {
     setUploadError(null);
     // Read from the ref, not the `persistedTabs` prop closure: this path is
@@ -952,11 +862,6 @@ export function FileWorkspace({
   }
 
   function activateWorkspaceTab(tabId: string) {
-    if (tabId === QUESTIONS_TAB) {
-      setUploadError(null);
-      setActiveTab(tabId);
-      return;
-    }
     const sketchEntry = sketches[tabId];
     if (sketchEntry && !sketchEntry.persisted) {
       setUploadError(null);
@@ -988,10 +893,6 @@ export function FileWorkspace({
   function closeActiveWorkspaceTab() {
     if (!workspaceTabIds.includes(activeTab)) return;
     if (activeTab === DESIGN_FILES_TAB || activeTab === DESIGN_SYSTEM_TAB) return;
-    if (activeTab === QUESTIONS_TAB) {
-      setActiveTab(defaultRootTab);
-      return;
-    }
     if (isBrowserTabId(activeTab)) {
       closeBrowserTab(activeTab);
       return;
@@ -1499,7 +1400,6 @@ export function FileWorkspace({
     if (
       activeTab === DESIGN_FILES_TAB
       || activeTab === DESIGN_SYSTEM_TAB
-      || activeTab === QUESTIONS_TAB
       || isBrowserTabId(activeTab)
     ) return null;
     const onDisk = visibleFiles.find((f) => f.name === activeTab);
@@ -1622,12 +1522,11 @@ export function FileWorkspace({
     const ids: string[] = [];
     if (designSystemProject) ids.push(DESIGN_SYSTEM_TAB);
     ids.push(DESIGN_FILES_TAB);
-    if (showQuestionsTab) ids.push(QUESTIONS_TAB);
     for (const entry of orderedWorkspaceTabs) {
       ids.push(entry.kind === 'browser' ? entry.browserTab.id : entry.name);
     }
     return ids;
-  }, [designSystemProject, orderedWorkspaceTabs, showQuestionsTab]);
+  }, [designSystemProject, orderedWorkspaceTabs]);
 
   const workspaceContexts = useMemo<WorkspaceContextItem[]>(() => {
     const out: WorkspaceContextItem[] = [];
@@ -1875,23 +1774,6 @@ export function FileWorkspace({
             </span>
             <span className="ws-tab-label">{t('workspace.designFiles')}</span>
           </button>
-          {showQuestionsTab ? (
-            <button
-              type="button"
-              className={`ws-tab questions-tab ${activeTab === QUESTIONS_TAB ? 'active' : ''}`}
-              role="tab"
-              aria-selected={activeTab === QUESTIONS_TAB}
-              tabIndex={0}
-              data-testid="questions-tab"
-              onClick={() => setActiveTab(QUESTIONS_TAB)}
-              title={t('questions.tabLabel')}
-            >
-              <span className="tab-icon" aria-hidden>
-                <Icon name="help-circle" size={13} />
-              </span>
-              <span className="ws-tab-label">{t('questions.tabLabel')}</span>
-            </button>
-          ) : null}
           {orderedWorkspaceTabs.map((entry) => {
             if (entry.kind === 'browser') {
               const browserTab = entry.browserTab;
@@ -2100,24 +1982,7 @@ export function FileWorkspace({
             />
           </div>
         ))}
-        {activeTab === QUESTIONS_TAB ? (
-          <QuestionsPanel
-            key={questionFormKey ?? undefined}
-            projectId={projectId}
-            brief={projectQuestions}
-            onCorrect={onCorrectQuestion}
-            formKey={questionFormKey}
-            form={questionForm ?? questionFormPreview}
-            interactive={questionFormInteractive}
-            submitDisabled={questionFormSubmitDisabled}
-            runHydrationStatus={questionRunHydrationStatus}
-            onRetryRunHydration={onRetryQuestionRunHydration}
-            submissionQueued={questionFormSubmissionQueued}
-            submittedAnswers={questionFormSubmittedAnswers}
-            generating={questionsGenerating}
-            onSubmit={(text, answers) => onSubmitQuestionForm?.(text, answers)}
-          />
-        ) : activeTab === DESIGN_SYSTEM_TAB && designSystemProject ? (
+        {activeTab === DESIGN_SYSTEM_TAB && designSystemProject ? (
           <DesignSystemProjectPanel
             projectId={projectId}
             system={designSystemProject}
@@ -3688,6 +3553,8 @@ function DesignSystemInlinePreview({
 
 
 function Tab({
+  className,
+  testId,
   label,
   meta,
   title,
@@ -3706,6 +3573,8 @@ function Tab({
   onDrop,
   onDragEnd,
 }: {
+  className?: string;
+  testId?: string;
   label: string;
   meta?: string;
   title?: string;
@@ -3732,6 +3601,7 @@ function Tab({
     <div
       className={[
         'ws-tab',
+        className,
         meta ? 'has-meta' : '',
         active ? 'active' : '',
         draggable ? 'draggable' : '',
@@ -3757,6 +3627,7 @@ function Tab({
         }
       }}
       role="tab"
+      data-testid={testId}
       aria-label={label}
       aria-selected={active}
       tabIndex={0}

@@ -80,19 +80,71 @@
   /* Engraved (음각) control tier for dense inspector stacks. Derived from the
      theme's own ink and elevated surface, so a dark source theme recesses with
      its own ink rather than inheriting a light-theme wash. The rim light on
-     the lower lip is what keeps the well from reading as a hole. */
-  --hub-control-engraved: color-mix(in srgb, var(--text) 8%, transparent);
-  --hub-control-engraved-hover: color-mix(in srgb, var(--text) 13%, transparent);
+     the lower lip is what keeps the well from reading as a hole.
+
+     This is the LIGHT-polarity derivation and the default: a recess that
+     reads slightly darker than the panel. The wash is a minority of ink over
+     a body of elevated surface: the ink share was cut from 8% to 5% because
+     the pure-ink well dropped light themes ~18/255 below the sheet (rgb 232
+     on 250) and read as a hole, and the elevated body keeps the well lit
+     material rather than a thinner hole. The recess is carried by the shadow
+     pair instead: the top shade deepens to make up for the lighter floor, and
+     the lower lip takes a trace of ink over the elevated surface.
+
+     Dark-polarity palettes re-derive the four engraved tokens in the
+     `color-scheme: dark` block below; do not tune them here. */
+  --hub-control-engraved: color-mix(in srgb, var(--text) 5%, color-mix(in srgb, var(--bg-elevated) 30%, transparent));
+  --hub-control-engraved-hover: color-mix(in srgb, var(--text) 9%, color-mix(in srgb, var(--bg-elevated) 30%, transparent));
   --hub-control-engraved-shadow:
-    inset 0 1px 2px color-mix(in srgb, var(--shadow-color) 12%, transparent),
-    inset 0 -1px 0 color-mix(in srgb, var(--bg-elevated) 70%, transparent);
+    inset 0 1px 2px color-mix(in srgb, var(--shadow-color) 16%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--text) 6%, color-mix(in srgb, var(--bg-elevated) 80%, transparent));
   --hub-control-engraved-shadow-hover:
-    inset 0 1px 3px color-mix(in srgb, var(--shadow-color) 18%, transparent),
-    inset 0 -1px 0 color-mix(in srgb, var(--bg-elevated) 82%, transparent);
+    inset 0 1px 3px color-mix(in srgb, var(--shadow-color) 22%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--text) 8%, color-mix(in srgb, var(--bg-elevated) 90%, transparent));
   --hub-segment-selected: color-mix(in srgb, var(--accent) 22%, transparent);
   --hub-send-disabled: color-mix(in srgb, var(--text) 14%, transparent);
   --hub-ready-shadow: color-mix(in srgb, var(--accent-strong) 28%, transparent);
   --hub-ready-highlight: color-mix(in srgb, var(--bg-elevated) 22%, transparent);
+}
+
+/* DARK-polarity engraved well. Keyed by the palette's own `color-scheme:
+   dark` declaration: every selector here is a palette that declares it, and
+   the system-dark branch below re-applies the same four tokens where the
+   scheme is inferred from the OS. One derivation, no per-theme values.
+
+   In a dark palette a recess does not have to be darker. The ink is light on
+   dark, so the well is cut from the ink alone: a plain ink wash LIFTS the
+   floor above the panel (base dark rgb 34 -> 54, 1.30:1; monokai/dracula
+   1.35:1) instead of the 0-3 channel non-event the light formula produced
+   here, where the elevated body sat within a few channels of the panel. The
+   ink share stops at 10% because it is the last step at which every bundled
+   dark palette's `--text-placeholder-engraved` rung still clears 3:1 on the
+   lifted floor (solarized-dark measures 3.03:1 at 10% and 2.94:1 at 12%).
+
+   The depth cue inverts with the fill. On a lifted floor the light-polarity
+   lip (ink over `--bg-elevated`) paints DARKER than the well and reads as a
+   raised button's bottom edge, so the lip is re-derived from ink at twice
+   the floor's share (a lit lower rim, ~1.8:1 above the floor in base dark)
+   and the top shade doubles to 32%/40% of `--shadow-color`, since a brighter
+   floor gives the shade room to read as an overhang rather than a smudge. */
+[data-theme='dark'],
+[data-theme='monokai'],
+[data-theme='dracula'],
+[data-theme='catppuccin-frappe'],
+[data-theme='catppuccin-macchiato'],
+[data-theme='catppuccin-mocha'],
+[data-theme='nord'],
+[data-theme='gruvbox'],
+[data-theme='solarized-dark'],
+[data-theme='one-dark'] {
+  --hub-control-engraved: color-mix(in srgb, var(--text) 10%, transparent);
+  --hub-control-engraved-hover: color-mix(in srgb, var(--text) 15%, transparent);
+  --hub-control-engraved-shadow:
+    inset 0 1px 2px color-mix(in srgb, var(--shadow-color) 32%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--text) 20%, transparent);
+  --hub-control-engraved-shadow-hover:
+    inset 0 1px 3px color-mix(in srgb, var(--shadow-color) 40%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--text) 26%, transparent);
 }
 
 @media (prefers-color-scheme: light) {
@@ -104,5 +156,13 @@
 @media (prefers-color-scheme: dark) {
   html:not([data-theme]) {
     color-scheme: dark;
+    --hub-control-engraved: color-mix(in srgb, var(--text) 10%, transparent);
+    --hub-control-engraved-hover: color-mix(in srgb, var(--text) 15%, transparent);
+    --hub-control-engraved-shadow:
+      inset 0 1px 2px color-mix(in srgb, var(--shadow-color) 32%, transparent),
+      inset 0 -1px 0 color-mix(in srgb, var(--text) 20%, transparent);
+    --hub-control-engraved-shadow-hover:
+      inset 0 1px 3px color-mix(in srgb, var(--shadow-color) 40%, transparent),
+      inset 0 -1px 0 color-mix(in srgb, var(--text) 26%, transparent);
   }
 }
