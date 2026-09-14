@@ -27,12 +27,20 @@ export const opencodeAgentDef = {
       { id: 'openai/gpt-5', label: 'openai/gpt-5' },
       { id: 'google/gemini-2.5-pro', label: 'google/gemini-2.5-pro' },
     ],
-    // OpenCode's CLI help currently exposes model selection and session
-    // controls, but not an explicit per-run reasoning / effort flag. Keep
-    // `reasoningOptions` undefined and do not synthesize argv for
-    // `options.reasoning`; that would advertise a control the adapter cannot
-    // actually pass through. See issue #2828.
-    //
+    // OpenCode 1.17.8 run --help exposes --variant for provider-specific
+    // effort. --thinking only shows thinking blocks; it does not set effort.
+    // These are built-in variant names, not a promise that every model has
+    // every variant (provider/model configuration owns that vocabulary).
+    reasoningOptions: [
+      { id: 'default', label: 'Default' },
+      { id: 'none', label: 'None' },
+      { id: 'minimal', label: 'Minimal' },
+      { id: 'low', label: 'Low' },
+      { id: 'medium', label: 'Medium' },
+      { id: 'high', label: 'High' },
+      { id: 'xhigh', label: 'XHigh' },
+      { id: 'max', label: 'Max' },
+    ],
     // Prompt delivered via stdin (`opencode run` with no message argv) to
     // avoid Windows `spawn ENAMETOOLONG` while preserving OpenCode's
     // structured stream. A literal `-` is parsed as a positional message by
@@ -45,6 +53,9 @@ export const opencodeAgentDef = {
       ];
       if (options.model && options.model !== 'default') {
         args.push('-m', options.model);
+      }
+      if (options.reasoning && options.reasoning !== 'default') {
+        args.push('--variant', options.reasoning);
       }
       return args;
     },

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DISCOVERY_AND_PHILOSOPHY } from '../../src/prompts/discovery.js';
+import { composeSystemPrompt } from '../../src/prompts/system.js';
 
 describe('discovery assumption sources', () => {
   it('treats project metadata and plugin inputs as stated facts', () => {
@@ -14,8 +15,35 @@ describe('discovery assumption sources', () => {
     expect(DISCOVERY_AND_PHILOSOPHY).toContain('`designSystem` → brand');
   });
 
-  it('does not turn missing preference metadata back into questions', () => {
-    expect(DISCOVERY_AND_PHILOSOPHY).toContain('Resolve all applicable fields rather than omitting uncertainty');
-    expect(DISCOVERY_AND_PHILOSOPHY).toContain('Never use a question form merely to collect preferences');
-  });
+  it.each(['prototype', 'deck', 'template', 'other'])(
+    'does not turn missing preference metadata back into questions (%s)',
+    kind => {
+      const preferences = {
+        platform: 'desktop',
+        fidelity: 'wireframe',
+        slideCount: '8',
+        speakerNotes: false,
+        animations: false,
+      };
+      // Exercise the real composer, not the wording of its discovery guidance.
+      // Supplied values are the positive control: removing metadata rendering
+      // entirely must not make the missing-value assertions pass vacuously.
+      for (const values of [
+        {},
+        Object.fromEntries(Object.keys(preferences).map(key => [key, null])),
+        preferences,
+      ]) {
+        const prompt = composeSystemPrompt({ metadata: { kind, ...values } });
+        const block = prompt.match(/\n## Project metadata\n([\s\S]*?)(?=\n(?:## |---)|$)/)?.[1];
+        expect(block).toBeDefined();
+        const fields = Object.fromEntries(
+          [...block!.matchAll(/^- \*\*(\w+)\*\*: (.*)$/gm)].map(([, key, value]) => [key, value]),
+        );
+        expect(fields).toEqual(values === preferences
+          ? { kind, ...Object.fromEntries(Object.entries(preferences).map(([key, value]) => [key, String(value)])) }
+          : { kind });
+        expect(block).not.toMatch(/<(?:question-form|ask-question)\b/);
+      }
+    },
+  );
 });

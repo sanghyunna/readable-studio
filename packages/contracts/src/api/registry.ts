@@ -1,6 +1,16 @@
+import type { DatabricksAvailability, DatabricksCapabilities } from './databricks.js';
+
 export interface AgentModelOption {
   id: string;
   label: string;
+  source?: 'databricks';
+  /** Opaque connection and endpoint references, never upstream identities. */
+  connectionId?: string;
+  endpointId?: string;
+  availability?: DatabricksAvailability;
+  /** When present, overrides the agent-wide reasoning choices for this model. */
+  reasoningOptions?: Array<Pick<AgentModelOption, 'id' | 'label'>>;
+  capabilities?: DatabricksCapabilities;
 }
 
 /** Minimal agent descriptor exposed by {@link GET /api/agents/catalog}. */
@@ -128,6 +138,10 @@ export interface AgentInfo {
    * live Vela catalog). Undefined === allow, matching the historical UX.
    */
   supportsCustomModel?: boolean;
+  /** Requires an explicit registered model even when the catalogue is empty. */
+  modelSelectionRequired?: boolean;
+  /** Owns model registration; setup actions are not entries in the model list. */
+  modelManagement?: 'databricks';
 }
 
 export interface AgentsResponse {

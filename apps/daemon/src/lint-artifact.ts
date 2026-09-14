@@ -523,7 +523,10 @@ export function renderFindingsForAgent(findings: LintFinding[]): string {
     '<artifact-lint>',
     'The artifact you just produced has the following anti-slop / design-token issues.',
     `${findings.filter((f) => f.severity === 'P0').length} P0 (must fix), ${findings.filter((f) => f.severity === 'P1').length} P1 (should fix), ${findings.filter((f) => f.severity === 'P2').length} P2 (nice to have).`,
-    'Re-emit a corrected `<artifact>` in your next turn — do not write a separate explanation; the user has the previous version already.',
+    // Delivery-channel neutral: a file-backed run fixes index.html in place, an
+    // artifact-only run re-emits. Naming one channel here made the agent produce a
+    // second HTML document after it had already written the file.
+    'Fix these in the document you already delivered: edit `index.html` in place if you wrote it with file tools, otherwise re-emit the corrected `<artifact>` with the same identifier. Do not create an additional HTML file and do not write a separate explanation; the user has the previous version already.',
     '',
   ];
   for (const f of sorted) {

@@ -22,6 +22,19 @@ export const deepseekAgentDef = {
       { id: 'deepseek-v4-pro', label: 'deepseek-v4-pro' },
       { id: 'deepseek-v4-flash', label: 'deepseek-v4-flash' },
     ],
+    // CodeWhale's exec --reasoning-effort uses its strict preference parser.
+    // auto and ultra are native modes; minimal is an alias for low, not a tier.
+    reasoningOptions: [
+      { id: 'default', label: 'Default' },
+      { id: 'auto', label: 'Auto' },
+      { id: 'off', label: 'Off' },
+      { id: 'low', label: 'Low' },
+      { id: 'medium', label: 'Medium' },
+      { id: 'high', label: 'High' },
+      { id: 'xhigh', label: 'XHigh' },
+      { id: 'max', label: 'Max' },
+      { id: 'ultra', label: 'Ultra' },
+    ],
     // DeepSeek's exec mode requires the prompt as a positional argument
     // (no `-` stdin sentinel; `prompt: String` is a required clap field).
     // `--auto` enables agentic mode with auto-approval — the daemon runs
@@ -33,6 +46,9 @@ export const deepseekAgentDef = {
       const args = ['exec', '--auto'];
       if (options.model && options.model !== 'default') {
         args.push('--model', options.model);
+      }
+      if (options.reasoning && options.reasoning !== 'default') {
+        args.push('--reasoning-effort', options.reasoning);
       }
       args.push(prompt);
       return args;

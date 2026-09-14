@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -6,14 +6,14 @@ import {
   validateHostedProviderCredential,
 } from '../hosted-runtime-registry.js';
 
-export const HOSTED_PI_PACKAGE_NAME = '@earendil-works/pi-coding-agent';
-export const HOSTED_PI_PACKAGE_VERSION = '0.83.0';
-export const HOSTED_PI_RPC_ENTRYPOINT = path.join('dist', 'rpc-entry.js');
-
-export type HostedPiPackage = {
-  packageRoot: string;
-  entrypoint: string;
-};
+import { resolvePiEntrypoint as resolveHostedPiEntrypoint } from './pi-package.js';
+export {
+  PI_PACKAGE_NAME as HOSTED_PI_PACKAGE_NAME,
+  PI_PACKAGE_VERSION as HOSTED_PI_PACKAGE_VERSION,
+  PI_RPC_ENTRYPOINT as HOSTED_PI_RPC_ENTRYPOINT,
+  resolvePiEntrypoint as resolveHostedPiEntrypoint,
+  type PiPackage as HostedPiPackage,
+} from './pi-package.js';
 
 export type HostedPiInvocationOptions = {
   packageRoot?: string;
@@ -90,11 +90,6 @@ export type HostedPiRuntimeAdapter = (
   request: HostedPiRuntimeRequest,
 ) => Promise<HostedPiRuntimeHandle>;
 
-function defaultPackageRoot(): string {
-  const packageEntry = fileURLToPath(import.meta.resolve(`${HOSTED_PI_PACKAGE_NAME}/rpc-entry`));
-  return path.resolve(path.dirname(packageEntry), '..');
-}
-
 function pathInside(root: string, candidate: string): boolean {
   const relative = path.relative(root, candidate);
   return relative === '' || (
@@ -129,40 +124,6 @@ function createOwnedDirectory(input: string, label: string): string {
   } catch (error) {
     throw new Error(`hosted Pi ${label} is unavailable: ${error instanceof Error ? error.message : String(error)}`);
   }
-}
-
-function readPackageManifest(packageRoot: string): { name?: unknown; version?: unknown } {
-  try {
-    return JSON.parse(readFileSync(path.join(packageRoot, 'package.json'), 'utf8')) as {
-      name?: unknown;
-      version?: unknown;
-    };
-  } catch (error) {
-    throw new Error(`hosted Pi package manifest is unreadable: ${error instanceof Error ? error.message : String(error)}`);
-  }
-}
-
-export function resolveHostedPiEntrypoint(packageRoot = defaultPackageRoot()): HostedPiPackage {
-  const root = realDirectory(packageRoot, 'package root');
-  const manifest = readPackageManifest(root);
-  if (manifest.name !== HOSTED_PI_PACKAGE_NAME || manifest.version !== HOSTED_PI_PACKAGE_VERSION) {
-    throw new Error(
-      `hosted Pi package must be ${HOSTED_PI_PACKAGE_NAME}@${HOSTED_PI_PACKAGE_VERSION}`,
-    );
-  }
-
-  const entrypoint = path.join(root, HOSTED_PI_RPC_ENTRYPOINT);
-  let resolvedEntrypoint: string;
-  try {
-    if (!statSync(entrypoint).isFile()) throw new Error('entrypoint is not a file');
-    resolvedEntrypoint = realpathSync(entrypoint);
-  } catch (error) {
-    throw new Error(`hosted Pi package-local RPC entrypoint is unavailable: ${error instanceof Error ? error.message : String(error)}`);
-  }
-  if (!pathInside(root, resolvedEntrypoint)) {
-    throw new Error('hosted Pi package-local RPC entrypoint escapes the pinned package root');
-  }
-  return { packageRoot: root, entrypoint: resolvedEntrypoint };
 }
 
 function appendValue(args: string[], flag: string, value: string | null | undefined): void {

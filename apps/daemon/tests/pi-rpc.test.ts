@@ -1506,6 +1506,62 @@ test('attachPiRpcSession exposes quiescence only after validated state and child
   }
 });
 
+test.each([
+  { type: 'turn_end', message: { role: 'assistant', stopReason: 'error', errorMessage: 'provider-failure' } },
+  { type: 'message_update', assistantMessageEvent: { type: 'error', delta: 'provider-failure' } },
+  { type: 'extension_error', error: 'provider-failure' },
+  { type: 'auto_retry_end', success: false, finalError: 'provider-failure' },
+])('attachPiRpcSession records $type failure without interrupting session capture', async (failure) => {
+  const fixture = await createPiSessionFixture();
+  try {
+    const events: TestSentEvent[] = [];
+    const child = createMockChild();
+    const session = attachPiRpcSession({
+      child: child as unknown as ChildProcess,
+      prompt: 'turn',
+      cwd: fixture.cwd,
+      sessionDir: fixture.root,
+      send: (channel, payload) => events.push({ channel, ...payload }),
+    });
+    const quiescence = session.waitForQuiescence();
+    readCommands(child);
+
+    feedStdoutLines(child, [
+      { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'partial' } },
+      failure,
+    ]);
+    assert.equal(session.hasFatalError(), true);
+    assert.equal(events.find((event) => event.type === 'error')?.message, 'provider-failure');
+    assert.equal(child.killed, false);
+    assert.equal(child.stdin.writableEnded, false);
+
+    feedStdoutLines(child, [{ type: 'agent_end' }, { type: 'agent_settled' }]);
+    const [getState] = readCommands(child);
+    assert.equal(getState?.type, 'get_state');
+    feedStdoutLines(child, [{
+      type: 'response', id: getState?.id, command: 'get_state', success: true,
+      data: { sessionFile: fixture.sessionPath },
+    }]);
+    child.emit('close', 0, null);
+
+    await assert.doesNotReject(quiescence);
+    assert.equal(session.getLastSessionPath(), fixture.sessionPath);
+    assert.equal(session.hasFatalError(), true);
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test('attachPiRpcSession does not classify tool errors or suppressed abort errors as fatal', () => {
+  const { child, session } = createSession();
+  feedStdoutLines(child, [{ type: 'tool_execution_end', isError: true, result: { content: 'tool-failure' } }]);
+  assert.equal(session.hasFatalError(), false);
+  session.abort();
+  feedStdoutLines(child, [{ type: 'message_update', assistantMessageEvent: { type: 'error', reason: 'aborted' } }]);
+  assert.equal(session.hasFatalError(), false);
+  child.emit('close', 0, null);
+});
+
 test('attachPiRpcSession treats child exit without settled get_state as fatal', async () => {
   const fixture = await createPiSessionFixture();
   try {

@@ -1,4 +1,5 @@
 export * from './common.js';
+export * from './question-form.js';
 export * from './errors.js';
 export * from './tasks.js';
 export * from './api/app-config.js';
@@ -9,6 +10,7 @@ export * from './api/checkpoints.js';
 export * from './api/context.js';
 export * from './api/comments.js';
 export * from './api/connectionTest.js';
+export * from './api/databricks.js';
 export * from './api/files.js';
 export * from './api/finalize.js';
 export * from './api/fonts.js';

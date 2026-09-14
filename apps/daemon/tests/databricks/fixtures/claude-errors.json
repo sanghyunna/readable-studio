@@ -1,0 +1,40 @@
+{
+  "legacy_thinking": {
+    "status": 400,
+    "body": {
+      "error_code": "BAD_REQUEST",
+      "message": "Model Service returned error with status code 400: \"thinking.type.enabled\" is not supported for this model. Use \"thinking.type.adaptive\" and \"output_config.effort\" to control thinking behavior. The provider rejected the request as malformed — check the request body against the target model's API schema (e.g. supported parameters and message format).",
+      "details": [
+        {
+          "@type": "google.rpc.ErrorInfo",
+          "reason": "MODEL_PROVIDER_ERROR",
+          "metadata": {
+            "model_service": "app_dev.default.c-sonnet-model-service",
+            "provider": "anthropic",
+            "upstream_status": "400",
+            "upstream_body": "{\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"\\\"thinking.type.enabled\\\" is not supported for this model. Use \\\"thinking.type.adaptive\\\" and \\\"output_config.effort\\\" to control thinking behavior.\",\"request_id\":\"REDACTED\"}}"
+          }
+        }
+      ]
+    }
+  },
+  "effort_minimal": {
+    "status": 400,
+    "body": {
+      "error_code": "BAD_REQUEST",
+      "message": "Model Service returned error with status code 400: output_config.effort: Input should be 'low', 'medium', 'high', 'xhigh' or 'max'. The provider rejected the request as malformed — check the request body against the target model's API schema (e.g. supported parameters and message format).",
+      "details": [
+        {
+          "@type": "google.rpc.ErrorInfo",
+          "reason": "MODEL_PROVIDER_ERROR",
+          "metadata": {
+            "model_service": "app_dev.default.c-sonnet-model-service",
+            "provider": "anthropic",
+            "upstream_status": "400",
+            "upstream_body": "{\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"output_config.effort: Input should be 'low', 'medium', 'high', 'xhigh' or 'max'\",\"request_id\":\"REDACTED\"}}"
+          }
+        }
+      ]
+    }
+  }
+}

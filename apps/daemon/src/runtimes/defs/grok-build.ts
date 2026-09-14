@@ -83,12 +83,13 @@ export const grokBuildAgentDef = {
     if (options.model && options.model !== DEFAULT_MODEL_OPTION.id) {
       args.push('--model', options.model);
     }
-    if (options.reasoning && grokModelSupportsReasoningEffort(options.model)) {
+    if (options.reasoning && options.reasoning !== 'default' && grokModelSupportsReasoningEffort(options.model)) {
       args.push('--effort', options.reasoning);
     }
     return args;
   },
   reasoningOptions: [
+    { id: 'default', label: 'Default' },
     { id: 'low', label: 'low' },
     { id: 'medium', label: 'medium' },
     { id: 'high', label: 'high' },

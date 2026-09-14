@@ -308,7 +308,7 @@ const RENDERABLE_BODY = '{"questions":[{"question":"Which framework?"}]}';
 // real persisted shape carries the chunk on `delta` (not `text`) — see
 // packages/contracts/src/sse/chat.ts. Building the wrong field here is exactly
 // what made the old tests pass while production runs detected nothing.
-function questionFormText(text = `Quick brief <question-form id="q">${RENDERABLE_BODY}</question-form>`) {
+function questionFormText(text = `Quick brief\n<question-form id="q">${RENDERABLE_BODY}</question-form>`) {
   return [{ event: 'agent', data: { type: 'text_delta', delta: text } }];
 }
 
@@ -334,7 +334,7 @@ describe('runAskedUserQuestion', () => {
   it('reassembles a marker split across text_delta chunks', () => {
     expect(
       runAskedUserQuestion([
-        { event: 'agent', data: { type: 'text_delta', delta: 'ask a <question-form id="q">{"questions":[' } },
+        { event: 'agent', data: { type: 'text_delta', delta: 'ask a\n<question-form id="q">{"questions":[' } },
         { event: 'agent', data: { type: 'text_delta', delta: '{"question":"X"}]}</question-form>' } },
       ]),
     ).toBe(true);
@@ -347,7 +347,7 @@ describe('runAskedUserQuestion', () => {
   it('returns true for the renderable <ask-question> alias', () => {
     expect(
       runAskedUserQuestion([
-        { event: 'agent', data: { type: 'text_delta', delta: `one quick check <ask-question id="q">${RENDERABLE_BODY}</ask-question>` } },
+        { event: 'agent', data: { type: 'text_delta', delta: `one quick check\n<ask-question id="q">${RENDERABLE_BODY}</ask-question>` } },
       ]),
     ).toBe(true);
   });

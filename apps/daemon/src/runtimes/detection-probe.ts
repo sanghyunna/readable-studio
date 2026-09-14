@@ -105,6 +105,7 @@ function stripFns(
     maxPromptArgBytes,
     env,
     authProbe,
+    detect,
     ...rest
   } = def;
   return rest;
@@ -120,6 +121,7 @@ async function probe(
   def: RuntimeAgentDef,
   configuredEnv: Record<string, string> = {},
 ): Promise<DetectedAgent> {
+  if (def.detect) return { ...stripFns(def), ...await def.detect() };
   const launch = resolveAgentLaunch(def, configuredEnv);
   if (!launch.selectedPath || !launch.launchPath) {
     return unavailableAgent(def, [buildExecutableDiagnostic(def, configuredEnv)]);

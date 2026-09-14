@@ -22,6 +22,7 @@ import { isLocalSameOrigin } from '../../src/origin-validation.js';
 import { writeAppConfig } from '../../src/app-config.js';
 import { AGENT_DEFS } from '../../src/runtimes/registry.js';
 import { listSkills } from '../../src/skills.js';
+import { LEGACY_ENABLED_AGENT_IDS } from '../app-config-agents.fixture.js';
 
 type FakeAgent = { id: string; available?: boolean };
 type DetectAgentsFn = (
@@ -173,6 +174,25 @@ describe('GET /api/agents respects enabledAgentIds', () => {
     const options = callArgs[1] as { enabledAgentIds?: string[] } | undefined;
     expect(options?.enabledAgentIds).toBeDefined();
     expect(options?.enabledAgentIds).toEqual(AGENT_DEFS.map((agent) => agent.id));
+  });
+
+  it('offers a newly shipped agent to the picker from the measured legacy config', async () => {
+    fs.writeFileSync(
+      path.join(dataDir, 'app-config.json'),
+      JSON.stringify({ enabledAgentIds: LEGACY_ENABLED_AGENT_IDS }),
+    );
+    // Preserve detection's enabled-set filtering rather than returning an
+    // unconditional agent that would hide a broken migration.
+    detectAgentsMock.mockImplementationOnce(async (_env, options) =>
+      AGENT_DEFS.filter((agent) => options?.enabledAgentIds?.includes(agent.id))
+        .map(({ id }) => ({ id, available: true })),
+    );
+
+    const res = await fetch(`${baseUrl}/api/agents`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { agents: Array<{ id: string }> };
+    expect(body.agents.map((agent) => agent.id)).toContain('databricks');
+    expect(detectAgentsMock.mock.calls[0]?.[1]?.enabledAgentIds).toContain('databricks');
   });
 
   it('honors a saved enabledAgentIds override from app-config', async () => {

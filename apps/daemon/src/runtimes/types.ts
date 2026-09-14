@@ -1,14 +1,11 @@
 import type { ExecFileOptions } from 'node:child_process';
-import type { AgentDiagnostic } from '@readable-studio/contracts';
+import type { AgentDiagnostic, AgentInfo, AgentModelOption } from '@readable-studio/contracts';
 
 export type { AgentDiagnostic } from '@readable-studio/contracts';
 
 export type RuntimeEnv = NodeJS.ProcessEnv | Record<string, string>;
 
-export type RuntimeModelOption = {
-  id: string;
-  label: string;
-};
+export type RuntimeModelOption = AgentModelOption;
 
 export type RuntimeModelSource = 'live' | 'fallback';
 
@@ -168,6 +165,10 @@ export type RuntimeAgentDef = {
   // `session/set_model` and rejects free-form ids). Defaults to allowing
   // custom input (undefined === true) so most adapters keep today's UX.
   supportsCustomModel?: boolean;
+  modelSelectionRequired?: AgentInfo['modelSelectionRequired'];
+  modelManagement?: AgentInfo['modelManagement'];
+  /** Managed agents own detection rather than probing their hidden execution engine. */
+  detect?: () => Promise<Pick<DetectedAgent, 'available' | 'models' | 'modelsSource' | 'version' | 'authStatus'>>;
   // When `true`, the daemon trusts this adapter's CLI to carry its own
   // multi-turn conversation memory across spawn invocations (today only
   // `agy -c`). The chat composer skips the rendered web transcript on
@@ -202,6 +203,7 @@ export type DetectedAgent = Omit<
   | 'maxPromptArgBytes'
   | 'env'
   | 'authProbe'
+  | 'detect'
 > & {
   models: RuntimeModelOption[];
   modelsSource: RuntimeModelSource;

@@ -1,0 +1,29 @@
+{
+  "name": "model-services/app_dev.default.c-sonnet-model-service",
+  "securable_type": "MODEL_SERVICE",
+  "create_time": "2026-09-10T04:37:20.018Z",
+  "update_time": "2026-09-10T04:37:20.018Z",
+  "config": {
+    "routing": {
+      "destinations": [
+        {
+          "name": "c-sonnet",
+          "destination_type": "DESTINATION_TYPE_EXTERNAL_FOUNDATION_MODEL",
+          "traffic_percentage": 100,
+          "external_model_config": {
+            "model_provider_service": "model-provider-services/workspace.default.c-sonnet",
+            "target": {
+              "model": "claude-sonnet-5",
+              "native_api_types": ["anthropic/v1/messages"]
+            }
+          },
+          "is_deleted": false
+        }
+      ]
+    }
+  },
+  "supported_api_types": [
+    "mlflow/v1/chat/completions",
+    "anthropic/v1/messages"
+  ]
+}

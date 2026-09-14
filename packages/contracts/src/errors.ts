@@ -26,6 +26,18 @@ export const API_ERROR_CODES = [
   'AMR_MODEL_UNAVAILABLE',
   'AMR_AUTH_REQUIRED',
   'AMR_INSUFFICIENT_BALANCE',
+  // Sanitized Databricks management and compatibility failures.
+  'DATABRICKS_CLI_MISSING',
+  'DATABRICKS_CLI_UNSUPPORTED',
+  'DATABRICKS_AUTH_REQUIRED',
+  'DATABRICKS_KEYRING_UNAVAILABLE',
+  'DATABRICKS_PERMISSION_DENIED',
+  'DATABRICKS_SCAN_EXPIRED',
+  'DATABRICKS_STALE_REVISION',
+  'DATABRICKS_UNSUPPORTED_DIALECT',
+  'DATABRICKS_VERIFICATION_REQUIRED',
+  'DATABRICKS_RATE_LIMITED',
+  'DATABRICKS_UPSTREAM_UNAVAILABLE',
   // The agent emitted a fabricated Markdown role marker
   // (`## user` / `## assistant` / `## system`) inside its own response.
   // The chat host parses those lowercase lines as real turn
@@ -116,6 +128,8 @@ export const API_ERROR_CODES = [
 ] as const;
 
 export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
+
+export type DatabricksErrorCode = Extract<ApiErrorCode, `DATABRICKS_${string}`>;
 
 export interface ApiError {
   code: ApiErrorCode;

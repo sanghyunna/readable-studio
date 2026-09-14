@@ -110,6 +110,9 @@ export interface AppConfigPrefs {
   // Canonical agent ids that /api/agents will probe. When absent, every id in
   // the process-startup registry is enabled. Aliases are normalized on write.
   enabledAgentIds?: string[];
+  // Daemon-owned history, not a writable preference. Retain ids even if an
+  // adapter disappears so returning adapters do not undo explicit opt-outs.
+  offeredAgentIds?: string[];
 }
 
 const ALLOWED_KEYS: ReadonlySet<keyof AppConfigPrefs> = new Set([
@@ -421,6 +424,13 @@ function filterAllowedKeys(obj: Record<string, unknown>): AppConfigPrefs {
       applyConfigValue(result, key as keyof AppConfigPrefs, obj[key]);
     }
   }
+  // Only accept offered history from disk, never from a preference PATCH.
+  // Unlike the enabled set, history must retain ids absent from this release.
+  if (Array.isArray(obj.offeredAgentIds)) {
+    result.offeredAgentIds = [...new Set(obj.offeredAgentIds
+      .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+      .map((id) => normalizeAgentId(id) ?? id.trim()))];
+  }
   return result as AppConfigPrefs;
 }
 
@@ -450,6 +460,20 @@ export async function readAppConfig(dataDir: string): Promise<AppConfigPrefs> {
 
 async function doRead(dataDir: string): Promise<AppConfigPrefs> {
   const base = await readAppConfigFileOnly(dataDir);
+  // An absent selection already follows the live registry. Start recording
+  // history once there is an explicit selection; writes record the whole
+  // current catalog before any user opt-out can be mistaken for a new id.
+  if (base.enabledAgentIds !== undefined) {
+    // Legacy installs have no separate history: their saved enabled set is
+    // the baseline of ids already offered to them.
+    const offered = new Set(base.offeredAgentIds ?? base.enabledAgentIds);
+    const added = DEFAULT_ENABLED_AGENT_IDS.filter((id) => !offered.has(id));
+    if (base.offeredAgentIds === undefined || added.length > 0) {
+      base.enabledAgentIds = [...new Set([...base.enabledAgentIds, ...added])];
+      base.offeredAgentIds = [...new Set([...offered, ...DEFAULT_ENABLED_AGENT_IDS])];
+      await persistAppConfig(dataDir, base);
+    }
+  }
   // Channel-root installation file is the new authoritative source for the
   // identity bits that must survive a namespace-scoped data-dir wipe. It
   // lives outside `<namespace>/data/` so a reinstall of the same channel
@@ -535,11 +559,13 @@ async function doWrite(
     if (!ALLOWED_KEYS.has(key as keyof AppConfigPrefs)) continue;
     applyConfigValue(next, key as keyof AppConfigPrefs, partial[key]);
   }
-  const file = configFile(dataDir);
-  await mkdir(path.dirname(file), { recursive: true });
-  const tmp = file + '.' + randomBytes(4).toString('hex') + '.tmp';
-  await writeFile(tmp, JSON.stringify(next, null, 2), 'utf8');
-  await rename(tmp, file);
+  if (next.enabledAgentIds !== undefined) {
+    next.offeredAgentIds = [...new Set([
+      ...(existing.offeredAgentIds ?? []),
+      ...DEFAULT_ENABLED_AGENT_IDS,
+    ])];
+  }
+  await persistAppConfig(dataDir, next);
   // Mirror the identity bits to the channel-root installation file so they
   // survive a namespace-scoped data-dir wipe. Only fires when the caller
   // explicitly touched `installationId` (avoiding noisy writes on every
@@ -562,4 +588,15 @@ async function doWrite(
     }
   }
   return next as AppConfigPrefs;
+}
+
+// Both migrations and preference updates run under withConfigLock and share
+// this atomic replacement path. Unique temporary names also keep concurrent
+// daemon processes from truncating each other's writes.
+async function persistAppConfig(dataDir: string, config: AppConfigPrefs): Promise<void> {
+  const file = configFile(dataDir);
+  await mkdir(path.dirname(file), { recursive: true });
+  const tmp = file + '.' + randomBytes(4).toString('hex') + '.tmp';
+  await writeFile(tmp, JSON.stringify(config, null, 2), 'utf8');
+  await rename(tmp, file);
 }

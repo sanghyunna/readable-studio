@@ -467,6 +467,10 @@ import { registerSystemFontsRoutes } from './routes/system-fonts.js';
 import { registerRuntimeUserRoute } from './routes/runtime-user.js';
 import { registerMcpRoutes } from './mcp-routes.js';
 import { registerXaiRoutes } from './routes/xai.js';
+import { registerDatabricksRoutes, databricksFailure, DatabricksInputError } from './databricks-routes.js';
+import { createDatabricksService } from './databricks/service.js';
+import { configureDatabricksRuntime, registeredDatabricksModels } from './runtimes/defs/databricks.js';
+import { createDatabricksPiRuntime, type DatabricksPiRuntime } from './runtimes/pi-databricks.js';
 import { registerDesignSystemToolRoutes } from './routes/design-system-tool.js';
 import { registerDeployRoutes, registerDeploymentCheckRoutes } from './routes/deploy.js';
 import { registerMediaRoutes } from './media-routes.js';
@@ -2591,7 +2595,19 @@ Forbidden output for this turn:
 Required output for this turn:
 - Open with a brief prose confirmation of what the brief is.
 - Then proceed to RULE 2 (branch on the submitted \`brand\` value) and
-  RULE 3 (emit the \`<artifact>\` block with the full HTML document).
+  RULE 3 (continue the plan using the submitted answers).
+<readable-delivery channel="file-tools">
+With file tools, writing or editing \`index.html\` completes delivery; finish
+with a brief reference to that saved file and a summary of the changes.
+</readable-delivery>
+<readable-delivery channel="no-file-tools">
+Only without file tools, emit one \`<artifact>\` containing the complete HTML
+using this shape, with the user's topic in the title:
+<artifact identifier="index" type="text/html" title="User topic">
+<!doctype html>
+<html>...complete document...</html>
+</artifact>
+</readable-delivery>
 
 `;
 
@@ -4309,6 +4325,9 @@ export async function startServer({
     }
     next();
   });
+  const databricksService = createDatabricksService({ dataRoot: RUNTIME_DATA_DIR, fetch });
+  configureDatabricksRuntime(databricksService);
+  const activeDatabricksRuntimes = new Set<DatabricksPiRuntime>();
   const db = openDatabase(PROJECT_ROOT, { dataDir: RUNTIME_DATA_DIR });
   // Wire the upload-destination bridge to this db so multer can route
   // file uploads into baseDir-rooted projects' actual folders.
@@ -5206,6 +5225,17 @@ export async function startServer({
   registerXaiRoutes(app, {
     http: httpDeps,
     paths: pathDeps,
+  });
+  registerDatabricksRoutes(app, {
+    http: httpDeps,
+    service: databricksService,
+    setClient: async ({ executableId }) => {
+      // No owner-side executable reference registry exists yet. Never treat
+      // an opaque public ID as a filesystem path or silently accept it.
+      if (executableId !== null) throw new DatabricksInputError('Unknown executable reference');
+      await databricksService.probe();
+      return databricksService.status();
+    },
   });
   // Project workspace
   registerActiveContextRoutes(app, {
@@ -10157,6 +10187,10 @@ export async function startServer({
           ...configuredAgentEnv,
         })
       : null;
+    const databricksModels = def.id === 'databricks'
+      ? await registeredDatabricksModels(databricksService)
+      : null;
+    if (databricksModels) rememberLiveModels(def.id, databricksModels);
     let safeModel = resolveModelForAgent(
       def,
       model,
@@ -10164,9 +10198,12 @@ export async function startServer({
       requestedLiveModelScope,
     );
     const requestedModel = typeof model === 'string' ? model.trim() : '';
+    const reasoningOptions = databricksModels
+      ? databricksModels.find((candidate) => candidate.id === safeModel)?.reasoningOptions ?? []
+      : def.reasoningOptions;
     const safeReasoning =
-      typeof reasoning === 'string' && Array.isArray(def.reasoningOptions)
-        ? (def.reasoningOptions.find((r) => r.id === reasoning)?.id ?? null)
+      typeof reasoning === 'string' && Array.isArray(reasoningOptions)
+        ? (reasoningOptions.find((r) => r.id === reasoning)?.id ?? null)
         : null;
     const agentOptions = { model: safeModel, reasoning: safeReasoning };
     // Accumulates the agent's visible text this run so the close handler can
@@ -10632,23 +10669,49 @@ export async function startServer({
       ).catch(() => null);
     }
 
-    // Hosted Pi is opt-in through a server-owned adapter. The default local
-    // path still resolves the user's configured/global agent exactly as before;
-    // hosted callers provide an already-pinned process invocation and never
-    // enter executable discovery or inherit the daemon environment.
-    let hostedPiHandle = null;
-    let hostedPiClosed = false;
-    const closeHostedPi = async () => {
-      if (hostedPiClosed) return;
-      hostedPiClosed = true;
-      await hostedPiHandle?.close?.();
+    // Hosted Pi and Databricks supply managed invocations to the same launch
+    // plumbing. Direct Pi still resolves the user's configured/global agent.
+    let managedPiHandle = null;
+    let databricksChildSpawned = false;
+    if (def.id === 'databricks') {
+      try {
+        const runtime = await createDatabricksPiRuntime({
+          dataRoot: RUNTIME_DATA_DIR_CANONICAL,
+          cwd: effectiveCwd,
+          sessionKey: JSON.stringify([projectId ?? effectiveCwd, run.conversationId ?? runId]),
+          model: safeModel,
+          reasoning: safeReasoning,
+          service: databricksService,
+          fetch,
+        });
+        activeDatabricksRuntimes.add(runtime);
+        const close = async () => {
+          try { await runtime.close(); }
+          finally { activeDatabricksRuntimes.delete(runtime); }
+        };
+        managedPiHandle = { invocation: runtime.invocation, close };
+        // Covers pre-spawn failures and cancellation during async preparation.
+        // Once spawned, child close owns cleanup after RPC quiescence.
+        void design.runs.wait(run).then(async () => {
+          if (!databricksChildSpawned) await close();
+        }).catch(() => console.warn('[databricks] runtime cleanup failed'));
+      } catch (error) {
+        const failure = databricksFailure(error).error;
+        return design.runs.fail(run, failure.code, failure.message, { retryable: failure.retryable });
+      }
+    }
+    let managedPiClosed = false;
+    const closeManagedPi = async () => {
+      if (managedPiClosed) return;
+      managedPiClosed = true;
+      await managedPiHandle?.close?.();
     };
     if (def.id === 'pi' && hostedPiRuntime) {
       if (!cwd || typeof projectId !== 'string' || !projectId) {
         return design.runs.fail(run, 'BAD_REQUEST', 'hosted Pi requires a managed project');
       }
       try {
-        hostedPiHandle = await hostedPiRuntime({
+        managedPiHandle = await hostedPiRuntime({
           userKey: typeof chatBody.hostedPiUserKey === 'string' ? chatBody.hostedPiUserKey : '',
           runId,
           projectId,
@@ -10665,12 +10728,12 @@ export async function startServer({
         );
       }
     }
-    const agentLaunch = hostedPiHandle
+    const agentLaunch = managedPiHandle
       ? {
-          configuredOverridePath: hostedPiHandle.invocation.command,
-          pathResolvedPath: hostedPiHandle.invocation.command,
-          selectedPath: hostedPiHandle.invocation.command,
-          launchPath: hostedPiHandle.invocation.command,
+          configuredOverridePath: managedPiHandle.invocation.command,
+          pathResolvedPath: managedPiHandle.invocation.command,
+          selectedPath: managedPiHandle.invocation.command,
+          launchPath: managedPiHandle.invocation.command,
           launchKind: 'selected',
           childPathPrepend: [],
           diagnostic: null,
@@ -10866,8 +10929,8 @@ export async function startServer({
 
     let args;
     try {
-      args = hostedPiHandle
-        ? hostedPiHandle.invocation.args
+      args = managedPiHandle
+        ? managedPiHandle.invocation.args
         : def.buildArgs(
             composed,
             safeImages,
@@ -10884,7 +10947,7 @@ export async function startServer({
           );
     } catch (err) {
       cleanupPromptFile();
-      await closeHostedPi();
+      await closeManagedPi();
       throw err;
     }
     // Second-pass budget check that knows about the Windows `.cmd` shim
@@ -10904,7 +10967,7 @@ export async function startServer({
     );
     if (cmdShimBudgetError) {
       cleanupPromptFile();
-      await closeHostedPi();
+      await closeManagedPi();
       design.runs.emit(
         run,
         'error',
@@ -10933,7 +10996,7 @@ export async function startServer({
     );
     if (directExeBudgetError) {
       cleanupPromptFile();
-      await closeHostedPi();
+      await closeManagedPi();
       design.runs.emit(
         run,
         'error',
@@ -11170,8 +11233,8 @@ export async function startServer({
       ));
       return design.runs.finish(run, 'failed', 1, null);
     }
-    const agentSpawnEnv = hostedPiHandle
-      ? { ...hostedPiHandle.invocation.env }
+    const agentSpawnEnv = managedPiHandle
+      ? { ...managedPiHandle.invocation.env }
       : spawnEnvForAgent(
           def.id,
           {
@@ -11208,7 +11271,7 @@ export async function startServer({
         : {}),
     };
     if (run.cancelRequested || design.runs.isTerminal(run.status)) {
-      await closeHostedPi();
+      await closeManagedPi();
       cleanupPromptFile();
       revokeToolToken('child_exit');
       unregisterChatAgentEventSink();
@@ -11216,7 +11279,7 @@ export async function startServer({
     }
 
     let isolatedToolBroker = null;
-    if (!hostedPiHandle && agentRollbackIsolationEnabled) {
+    if (!managedPiHandle && agentRollbackIsolationEnabled) {
       try {
         isolatedToolBroker = await startIsolatedToolBroker({
           agentEnv: agentSpawnEnv,
@@ -11285,7 +11348,7 @@ export async function startServer({
         def.promptViaStdin || def.streamFormat === 'acp-json-rpc'
           ? 'pipe'
           : 'ignore';
-      const launchEnv = hostedPiHandle ? agentSpawnEnv : applyAgentLaunchEnv({
+      const launchEnv = managedPiHandle ? agentSpawnEnv : applyAgentLaunchEnv({
         ...agentSpawnEnv,
         ...(mmdRouteLaunchEnv || {}),
         ...odMediaEnv,
@@ -11309,7 +11372,7 @@ export async function startServer({
           ? { OPENCODE_CONFIG_CONTENT: opencodeConfigContent }
           : {}),
       }, agentLaunch);
-      const env = !hostedPiHandle && agentRollbackIsolationEnabled
+      const env = !managedPiHandle && agentRollbackIsolationEnabled
         ? isolatedAgentEnv(launchEnv, isolatedToolBroker, def.id)
         : launchEnv;
       spawnedAgentEnv = env;
@@ -11322,7 +11385,7 @@ export async function startServer({
         ...(run.analyticsTelemetry ?? {}),
         processSpawnStartedAt: Date.now(),
       };
-      if (!hostedPiHandle && agentRollbackIsolationEnabled) {
+      if (!managedPiHandle && agentRollbackIsolationEnabled) {
         const systemReadRoots = [
           process.env.ProgramFiles,
           process.env['ProgramFiles(x86)'],
@@ -11343,7 +11406,7 @@ export async function startServer({
         child = await isolatedAgentSpawn({
           args,
           command: agentLaunch.launchPath,
-          cwd: hostedPiHandle?.invocation.cwd ?? effectiveCwd,
+          cwd: managedPiHandle?.invocation.cwd ?? effectiveCwd,
           env,
           helperPath: PACKAGED_AGENT_ISOLATOR_PATH && fs.existsSync(PACKAGED_AGENT_ISOLATOR_PATH)
             ? PACKAGED_AGENT_ISOLATOR_PATH
@@ -11357,7 +11420,7 @@ export async function startServer({
         child = spawn(invocation.command, invocation.args, {
           env,
           stdio: [stdinMode, 'pipe', 'pipe'],
-           cwd: hostedPiHandle?.invocation.cwd ?? effectiveCwd,
+           cwd: managedPiHandle?.invocation.cwd ?? effectiveCwd,
           shell: false,
           // Required when invocation wraps a Windows .cmd/.bat shim through
           // cmd.exe; without this, Node re-escapes the inner command line and
@@ -11370,6 +11433,12 @@ export async function startServer({
         processSpawnedAt: Date.now(),
       };
       run.child = child;
+      if (def.id === 'databricks') {
+        databricksChildSpawned = true;
+        child.once('close', () => {
+          void closeManagedPi().catch(() => console.warn('[databricks] runtime cleanup failed'));
+        });
+      }
       // Schedule release of the antigravity model lock once agy's
       // --log-file confirms the chosen model was propagated to the
       // backend (the upstream signal that settings.json was read).
@@ -11445,14 +11514,14 @@ export async function startServer({
       }
     } catch (err) {
       await isolatedToolBroker?.close();
-      await closeHostedPi();
+      await closeManagedPi();
       cleanupPromptFile();
       revokeToolToken('child_exit');
       unregisterChatAgentEventSink();
       send('error', createSseErrorPayload(
-        !hostedPiHandle && agentRollbackIsolationEnabled ? 'AGENT_ISOLATION_UNAVAILABLE' : 'AGENT_EXECUTION_FAILED',
+        !managedPiHandle && agentRollbackIsolationEnabled ? 'AGENT_ISOLATION_UNAVAILABLE' : 'AGENT_EXECUTION_FAILED',
         `spawn failed: ${err.message}`,
-        { retryable: hostedPiHandle ? false : !agentRollbackIsolationEnabled },
+        { retryable: managedPiHandle ? false : !agentRollbackIsolationEnabled },
       ));
       design.runs.finish(run, 'failed', 1, null);
       return;
@@ -11978,17 +12047,19 @@ export async function startServer({
         child,
         prompt: composed,
         cwd: effectiveCwd,
-        ...(hostedPiHandle?.invocation.sessionDir
-          ? { sessionDir: hostedPiHandle.invocation.sessionDir }
+        ...(managedPiHandle?.invocation.sessionDir
+          ? { sessionDir: managedPiHandle.invocation.sessionDir }
           : {}),
         model: safeModel,
         ...(agentResumeCtx.isResuming && agentResumeCtx.resumeSessionId
           ? {
               resumeSession: {
                 path: agentResumeCtx.resumeSessionId,
-                root: hostedPiHandle?.invocation.sessionDir
-                  ? path.dirname(hostedPiHandle.invocation.sessionDir)
-                  : path.join(effectiveCwd, '.pi', 'sessions'),
+                root: def.id === 'databricks'
+                  ? managedPiHandle.invocation.sessionDir
+                  : managedPiHandle?.invocation.sessionDir
+                    ? path.dirname(managedPiHandle.invocation.sessionDir)
+                    : path.join(effectiveCwd, '.pi', 'sessions'),
               },
             }
           : {}),
@@ -12497,7 +12568,7 @@ export async function startServer({
           fs.promises.unlink(agentLogFilePath).catch(() => {});
         }
         await isolatedToolBroker?.close();
-        await closeHostedPi();
+        await closeManagedPi();
         cleanupPromptFile();
       }
     });
@@ -13861,6 +13932,8 @@ export async function startServer({
       daemonShutdownStarted = true;
       daemonShuttingDown = true;
       await design.runs.shutdownActive({ graceMs: resolveChatRunShutdownGraceMs() });
+      await Promise.all([...activeDatabricksRuntimes].map((runtime) => runtime.close()));
+      activeDatabricksRuntimes.clear();
       await terminalService.shutdownActive();
       await design.analytics.shutdown();
     };

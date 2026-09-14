@@ -17,6 +17,13 @@ import {
 } from '../sandbox-mode.js';
 
 type RuntimeEnvMap = NodeJS.ProcessEnv | Record<string, string>;
+
+/** Databricks gets OS execution necessities, never ambient cloud/provider credentials. */
+export function databricksChildEnv(base: RuntimeEnvMap): NodeJS.ProcessEnv {
+  const allowed = new Set(['PATH', 'PATHEXT', 'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'TEMP', 'TMP', 'LANG', 'LC_ALL']);
+  return Object.fromEntries(Object.entries(base).filter(([key, value]) => allowed.has(key.toUpperCase()) && value !== undefined));
+}
+
 type SpawnEnvOptions = {
   resolvedBin?: string | null;
 };
@@ -67,6 +74,7 @@ export function spawnEnvForAgent(
   systemProxyEnv: RuntimeEnvMap = resolveSystemProxyEnv(),
   options: SpawnEnvOptions = {},
 ): NodeJS.ProcessEnv {
+  if (agentId === 'databricks') return databricksChildEnv(baseEnv);
   const sandboxRuntime = sandboxRuntimeConfigForBaseEnv(baseEnv);
   const env = mergeProxyAwareEnv(
     process.platform,

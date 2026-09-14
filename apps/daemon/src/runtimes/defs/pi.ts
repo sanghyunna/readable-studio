@@ -7,16 +7,15 @@ export const piAgentDef = {
     name: 'Pi',
     bin: 'pi',
     versionArgs: ['--version'],
-    // `pi --list-models` prints a TSV table to stderr (not stdout),
-    // so we use a custom fetchModels that reads stderr.
+    // `pi --list-models` writes its model table to stdout.
     fetchModels: async (resolvedBin, env) => {
       try {
-        const { stderr } = await execAgentFile(resolvedBin, ['--list-models'], {
+        const { stdout } = await execAgentFile(resolvedBin, ['--list-models'], {
           env,
           timeout: 20_000,
           maxBuffer: 8 * 1024 * 1024,
         });
-        const parsed = parsePiModels(stderr);
+        const parsed = parsePiModels(stdout);
         if (!parsed || parsed.length === 0) return null;
         return parsed;
       } catch {
@@ -46,6 +45,7 @@ export const piAgentDef = {
       { id: 'medium', label: 'Medium' },
       { id: 'high', label: 'High' },
       { id: 'xhigh', label: 'XHigh' },
+      { id: 'max', label: 'Max' },
     ],
     // pi's RPC mode drives the entire conversation over stdio JSON-RPC.
     // The daemon sends a `prompt` command and pi streams back typed events.

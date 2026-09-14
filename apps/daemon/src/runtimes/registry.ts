@@ -13,6 +13,7 @@ import { qwenAgentDef } from './defs/qwen.js';
 import { qoderAgentDef } from './defs/qoder.js';
 import { copilotAgentDef } from './defs/copilot.js';
 import { piAgentDef } from './defs/pi.js';
+import { databricksAgentDef } from './defs/databricks.js';
 import { kiroAgentDef } from './defs/kiro.js';
 import { kiloAgentDef } from './defs/kilo.js';
 import { vibeAgentDef } from './defs/vibe.js';
@@ -39,6 +40,7 @@ const BASE_AGENT_DEFS: RuntimeAgentDef[] = [
   qoderAgentDef,
   copilotAgentDef,
   piAgentDef,
+  databricksAgentDef,
   kiroAgentDef,
   kiloAgentDef,
   vibeAgentDef,

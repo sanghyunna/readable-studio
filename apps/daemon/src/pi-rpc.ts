@@ -19,6 +19,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { homedir } from 'node:os';
 import type { ChildProcess } from 'node:child_process';
 import type { Writable } from 'node:stream';
 import { createJsonLineStream } from './acp.js';
@@ -48,6 +49,8 @@ type PiRpcSessionOptions = {
   prompt: string;
   cwd?: string;
   sessionDir?: string;
+  /** The actual launch environment when it overrides Pi's config/session home. */
+  env?: NodeJS.ProcessEnv;
   model?: string | null;
   send: SendAgentEvent;
   imagePaths?: string[];
@@ -593,6 +596,16 @@ function resolveExitFallbackSession(
   return validatePiSessionPath(changed[0]![0], rootPath, cwd, true);
 }
 
+/** Match Pi's default without relocating the direct Pi agent's existing sessions. */
+export function defaultPiSessionDirectory(cwd: string, env: NodeJS.ProcessEnv = process.env): string {
+  const expand = (input: string) => path.resolve(input.startsWith('~/') || input.startsWith('~\\')
+    ? path.join(homedir(), input.slice(2)) : input);
+  if (env.PI_CODING_AGENT_SESSION_DIR) return expand(env.PI_CODING_AGENT_SESSION_DIR);
+  const agentDir = env.PI_CODING_AGENT_DIR ? expand(env.PI_CODING_AGENT_DIR) : path.join(homedir(), '.pi', 'agent');
+  const safePath = `--${path.resolve(cwd).replace(/^[/\\]/, '').replace(/[/\\:]/g, '-')}--`;
+  return path.join(agentDir, 'sessions', safePath);
+}
+
 /**
  * Attach a pi RPC session to a spawned child process.
  *
@@ -610,7 +623,7 @@ function resolveExitFallbackSession(
  * @param {object} opts
  * @param {import('node:child_process').ChildProcess} opts.child  - spawned pi process
  * @param {string} opts.prompt   - composed user message
- * @param {string} [opts.cwd]    - working directory (used to resolve .pi/sessions/)
+ * @param {string} [opts.cwd]    - working directory (used to resolve Pi's encoded session directory)
  * @param {string} [opts.sessionDir] - daemon-owned session directory override
  * @param {string|null} [opts.model] - model id (null = default)
  * @param {string[]} [opts.imagePaths] - absolute paths to image files for multimodal input
@@ -624,6 +637,7 @@ export function attachPiRpcSession({
   prompt,
   cwd,
   sessionDir,
+  env,
   model,
   send,
   imagePaths,
@@ -642,6 +656,8 @@ export function attachPiRpcSession({
   const runStartedAt = Date.now();
   let terminal = false;
   let fatal = false;
+  // Agent failure must not stop settle/get_state or reject safe session capture.
+  let agentFailed = false;
   let aborted = false;
   let agentEnded = false;
   let agentSettled = false;
@@ -650,7 +666,7 @@ export function attachPiRpcSession({
   let expectedResumePath: string | null = null;
   let expectedResumeMetadata: PiSessionFileMetadata | null = null;
   const sessionRoot =
-    resumeSession?.root ?? sessionDir ?? (cwd ? path.join(cwd, '.pi', 'sessions') : null);
+    resumeSession?.root ?? sessionDir ?? (cwd ? defaultPiSessionDirectory(cwd, env) : null);
   let sessionFilesBeforePrompt: PiSessionFileSnapshot | null = null;
   if (sessionRoot && !resumeSession) {
     try {
@@ -901,7 +917,10 @@ export function attachPiRpcSession({
     const result = mapPiRpcEvent(
       raw,
       (channel, payload) => {
-        if (!aborted && !terminal) send(channel, payload);
+        if (!aborted && !terminal) {
+          if (payload.type === 'error') agentFailed = true;
+          send(channel, payload);
+        }
       },
       { runStartedAt, sentFirstToken },
     );
@@ -982,7 +1001,7 @@ export function attachPiRpcSession({
   return {
     ownsAbortLifecycle: true,
     hasFatalError() {
-      return fatal;
+      return fatal || agentFailed;
     },
     getLastSessionPath() {
       return capturedSessionPath;

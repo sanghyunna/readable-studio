@@ -70,7 +70,7 @@ describe('daemon composeSystemPrompt — API mode (#313)', () => {
 
     it('still allows <artifact> output', () => {
       const prompt = composeSystemPrompt({ streamFormat: 'plain' });
-      expect(prompt).toMatch(/<artifact>/);
+      expect([...prompt.matchAll(/<artifact\s+identifier="([^"]+)"\s+type="([^"]+)"/g)].map(match => [match[1], match[2]])).toEqual([['index', 'text/html']]);
     });
   });
 });

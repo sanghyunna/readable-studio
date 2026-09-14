@@ -1,0 +1,10 @@
+{
+  "model_services": [
+    {
+      "name": "model-services/app_dev.default.oai-luna-model-service"
+    },
+    {
+      "name": "model-services/app_dev.default.c-sonnet-model-service"
+    }
+  ]
+}

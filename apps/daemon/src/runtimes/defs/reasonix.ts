@@ -50,7 +50,22 @@ export const reasonixAgentDef = {
     // Kimi, Kilo, Kiro, and Vibe use. This avoids the Windows CreateProcess
     // ~32 KB command-line limit entirely: the prompt travels as a JSON-RPC
     // message body through stdin, not as a positional argv entry.
-    buildArgs: () => ['acp'],
+    // Reasonix 0.52.0 acp --effort persists the CLI preference, which the
+    // ACP session reads at creation. Its vocabulary has max, but no xhigh.
+    reasoningOptions: [
+      { id: 'default', label: 'Default' },
+      { id: 'low', label: 'Low' },
+      { id: 'medium', label: 'Medium' },
+      { id: 'high', label: 'High' },
+      { id: 'max', label: 'Max' },
+    ],
+    buildArgs: (_prompt, _imagePaths, _extra, options = {}) => {
+      const args = ['acp'];
+      if (options.reasoning && options.reasoning !== 'default') {
+        args.push('--effort', options.reasoning);
+      }
+      return args;
+    },
     streamFormat: 'acp-json-rpc',
     mcpDiscovery: 'mature-acp',
     externalMcpInjection: 'acp-merge',

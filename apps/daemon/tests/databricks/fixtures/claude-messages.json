@@ -1,0 +1,47 @@
+{
+  "request": {
+    "body": {
+      "model": "app_dev.default.c-sonnet-model-service",
+      "messages": [{
+        "role": "user",
+        "content": "Reply only OK."
+      }],
+      "max_tokens": 16,
+      "stream": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "model": "claude-sonnet-5",
+      "id": "REDACTED",
+      "type": "message",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "OK"
+        }
+      ],
+      "container": null,
+      "stop_reason": "end_turn",
+      "stop_sequence": null,
+      "stop_details": null,
+      "usage": {
+        "input_tokens": 13,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_tokens": 4,
+        "output_tokens_details": {
+          "thinking_tokens": 0
+        }
+      },
+      "service_tier": "standard",
+      "inference_geo": "global"
+    }
+  }
+}

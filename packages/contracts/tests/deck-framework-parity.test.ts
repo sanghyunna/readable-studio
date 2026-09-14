@@ -1,9 +1,32 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import {
   DECK_FRAMEWORK_DIRECTIVE,
   DECK_SKELETON_HTML,
 } from '../src/prompts/deck-framework.js';
+
+describe('deck framework chrome byte synchronization', () => {
+  const template = readFileSync(new URL('../../../templates/deck-framework.html', import.meta.url), 'utf8');
+  const daemon = readFileSync(new URL('../../../apps/daemon/src/prompts/deck-framework.ts', import.meta.url), 'utf8');
+  const blocks = [
+    /    \/\* Chrome[\s\S]*?(?=    \/\* Print \/ PDF)/,
+    /  <nav class="deck-counter"[\s\S]*?<\/nav>/,
+    /      \.deck-counter[^\n]*display: none !important; \}/,
+    /      \/\/ ---- auto-hide nav[\s\S]*?(?=      \/\/ Auto-focus body)/,
+  ];
+
+  for (const [name, source] of [['daemon', daemon], ['contracts', DECK_SKELETON_HTML]] as const) {
+    it(`${name} ships the template chrome verbatim without the retired hint`, () => {
+      for (const pattern of blocks) {
+        const expected = template.match(pattern)?.[0];
+        expect(expected).toBeDefined();
+        expect(source.match(pattern)?.[0]).toBe(expected);
+      }
+      expect(source).not.toContain('deck-hint');
+    });
+  }
+});
 
 /**
  * BYOK/API-mode deck parity (PR6 follow-up).

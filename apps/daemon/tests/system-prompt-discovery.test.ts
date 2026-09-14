@@ -21,14 +21,20 @@ describe('composeSystemPrompt discovery controls', () => {
   it('does not instruct agents to ask for a second visual-direction picker', () => {
     const out = composeSystemPrompt({
       metadata: { kind: 'prototype' },
-      designSystemBody: '# Brand\n\nUse brand tokens.',
+      designSystemBody: 'ACTIVE_DESIGN_SYSTEM_PAYLOAD_SENTINEL',
       designSystemTitle: 'Brand',
     });
 
-    expect(out).toContain('Do not emit a direction question-form');
-    expect(out).not.toContain('<question-form id="direction"');
-    expect(out).not.toContain('Pick a visual direction');
-    expect(out).toContain('if a design system is active and no new brand/reference source was provided, use it as the visual direction without asking again');
+    // The selected design-system payload survives composition, and the
+    // shipped forms do not introduce a second direction-selection control.
+    expect(out).toContain('ACTIVE_DESIGN_SYSTEM_PAYLOAD_SENTINEL');
+    const forms = [...out.matchAll(/<question-form\s+id="([^"]+)"[^>]*>\s*({[\s\S]*?})\s*<\/question-form>/g)];
+    expect(forms.length).toBeGreaterThan(0);
+    for (const form of forms) {
+      expect(form[1]).not.toBe('direction');
+      const body = JSON.parse(form[2]!);
+      expect(body.questions.some((question: { type: string }) => question.type === 'direction-cards')).toBe(false);
+    }
   });
 
 

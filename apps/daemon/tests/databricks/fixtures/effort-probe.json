@@ -1,0 +1,16 @@
+[
+  {
+    "api": "anthropic-messages",
+    "service": "app_dev.default.c-sonnet-model-service",
+    "servedModel": "claude-sonnet-5",
+    "nativeApi": "anthropic/v1/messages",
+    "statuses": { "low": 200, "medium": 200, "high": 200, "xhigh": 200, "max": 200, "minimal": 400 }
+  },
+  {
+    "api": "openai-completions",
+    "service": "app_dev.default.oai-luna-model-service",
+    "servedModel": "gpt-5.6-luna",
+    "nativeApi": "openai/v1/chat/completions",
+    "statuses": { "low": 200, "medium": 200, "high": 200, "xhigh": 200, "max": 400, "minimal": 400 }
+  }
+]

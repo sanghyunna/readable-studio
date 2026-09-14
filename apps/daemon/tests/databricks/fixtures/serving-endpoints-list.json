@@ -1,0 +1,114 @@
+{
+  "endpoints": [
+    {
+      "name": "databricks-gpt-oss-120b",
+      "endpoint_type": "FOUNDATION_MODEL_API",
+      "task": "llm/v1/chat",
+      "state": {
+        "config_update": "NOT_UPDATING",
+        "ready": "READY"
+      },
+      "permission_level": "CAN_MANAGE"
+    },
+    {
+      "name": "databricks-gpt-oss-20b",
+      "endpoint_type": "FOUNDATION_MODEL_API",
+      "task": "llm/v1/chat",
+      "state": {
+        "config_update": "NOT_UPDATING",
+        "ready": "READY"
+      },
+      "permission_level": "CAN_MANAGE"
+    },
+    {
+      "name": "databricks-qwen3-next-80b-a3b-instruct",
+      "endpoint_type": "FOUNDATION_MODEL_API",
+      "task": "llm/v1/chat",
+      "state": {
+        "config_update": "NOT_UPDATING",
+        "ready": "READY"
+      },
+      "permission_level": "CAN_MANAGE"
+    },
+    {
+      "name": "databricks-qwen35-122b-a10b",
+      "endpoint_type": "FOUNDATION_MODEL_API",
+      "task": "llm/v1/chat",
+      "state": {
+        "config_update": "NOT_UPDATING",
+        "ready": "READY"
+      },
+      "permission_level": "CAN_MANAGE"
+    },
+    {
+      "name": "databricks-llama-4-maverick",
+      "endpoint_type": "FOUNDATION_MODEL_API",
+      "task": "llm/v1/chat",
+      "state": {
+        "config_update": "NOT_UPDATING",
+        "ready": "READY"
+      },
+      "permission_level": "CAN_MANAGE"
+    },
+    {
+      "name": "databricks-gemma-3-12b",
+      "endpoint_type": "FOUNDATION_MODEL_API",
+      "task": "llm/v1/chat",
+      "state": {
+        "config_update": "NOT_UPDATING",
+        "ready": "READY"
+      },
+      "permission_level": "CAN_MANAGE"
+    },
+    {
+      "name": "databricks-gte-large-en",
+      "endpoint_type": "FOUNDATION_MODEL_API",
+      "task": "llm/v1/embeddings",
+      "state": {
+        "config_update": "NOT_UPDATING",
+        "ready": "READY"
+      },
+      "permission_level": "CAN_MANAGE"
+    },
+    {
+      "name": "databricks-bge-large-en",
+      "endpoint_type": "FOUNDATION_MODEL_API",
+      "task": "llm/v1/embeddings",
+      "state": {
+        "config_update": "NOT_UPDATING",
+        "ready": "READY"
+      },
+      "permission_level": "CAN_MANAGE"
+    },
+    {
+      "name": "databricks-meta-llama-3-1-8b-instruct",
+      "endpoint_type": "FOUNDATION_MODEL_API",
+      "task": "llm/v1/chat",
+      "state": {
+        "config_update": "NOT_UPDATING",
+        "ready": "READY"
+      },
+      "permission_level": "CAN_MANAGE"
+    },
+    {
+      "name": "databricks-meta-llama-3-3-70b-instruct",
+      "endpoint_type": "FOUNDATION_MODEL_API",
+      "task": "llm/v1/chat",
+      "state": {
+        "config_update": "NOT_UPDATING",
+        "ready": "READY"
+      },
+      "permission_level": "CAN_MANAGE"
+    },
+    {
+      "name": "databricks-qwen3-embedding-0-6b",
+      "endpoint_type": "FOUNDATION_MODEL_API",
+      "task": "llm/v1/embeddings",
+      "state": {
+        "config_update": "NOT_UPDATING",
+        "ready": "READY"
+      },
+      "permission_level": "CAN_MANAGE"
+    }
+  ]
+}

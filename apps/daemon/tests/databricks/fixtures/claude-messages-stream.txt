@@ -1,0 +1,22 @@
+event: start
+id: REDACTED
+retry: 250
+
+data: {"type":"start","message":{"id":"REDACTED","type":"message","role":"assistant","model":"claude-sonnet-5"}}
+
+
+event: text_start
+
+data: {"type":"text_start","index":0}
+
+event: text_delta
+data: {"type":"text_delta","delta":{"type":"text_delta","text":"O"}}
+
+event: text_delta
+data: {"type":"text_delta","delta":{"type":"text_delta","text":"K"}}
+
+event: text_end
+data: {"type":"text_end","index":0,"text":"OK"}
+
+event: done
+data: [DONE]

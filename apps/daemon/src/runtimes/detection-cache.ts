@@ -56,6 +56,8 @@ export function cachedSafeProbe(
   configuredEnv: Record<string, string> = {},
   options: Pick<DetectionOptions, 'refresh'> = {},
 ): Promise<DetectedAgent> {
+  // Registration changes must take effect immediately, including an empty catalogue.
+  if (def.modelManagement === 'databricks') return probe(def, configuredEnv);
   const now = Date.now();
   const key = `${def.id}:${detectionEnvFingerprint(def, configuredEnv)}`;
   const cached = detectionCache.get(key);

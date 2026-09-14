@@ -85,6 +85,18 @@ export const qoderAgentDef = {
       { id: 'performance', label: 'Performance' },
       { id: 'ultimate', label: 'Ultimate' },
     ],
+    // Qoder CLI 1.1.42's effort parser accepts these canonical values plus
+    // auto (clear the override). minimal is not accepted; off aliases none.
+    reasoningOptions: [
+      { id: 'default', label: 'Default' },
+      { id: 'auto', label: 'Auto' },
+      { id: 'none', label: 'None' },
+      { id: 'low', label: 'Low' },
+      { id: 'medium', label: 'Medium' },
+      { id: 'high', label: 'High' },
+      { id: 'xhigh', label: 'XHigh' },
+      { id: 'max', label: 'Max' },
+    ],
     // Qoder print mode exits after the turn. Deliver the composed prompt via
     // stdin to avoid argv length limits, while using stream-json so the daemon
     // can surface text and usage incrementally. `--yolo` is Qoder's documented
@@ -112,6 +124,9 @@ export const qoderAgentDef = {
       }
       if (options.model && options.model !== 'default') {
         args.push('--model', options.model);
+      }
+      if (options.reasoning && options.reasoning !== 'default') {
+        args.push('--reasoning-effort', options.reasoning);
       }
       const dirs = (extraAllowedDirs || []).filter(
         (d) => typeof d === 'string' && path.isAbsolute(d),

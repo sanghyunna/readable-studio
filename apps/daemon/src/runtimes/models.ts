@@ -83,6 +83,7 @@ export function resolveModelForAgent(
   const trimmed = requested.trim();
   if (!trimmed) return null;
   if (trimmed === DEFAULT_MODEL_OPTION.id) {
+    if (def.modelSelectionRequired) return null;
     return isKnownModel(def, trimmed, liveModelScope) && !agentHasModelChoice(def, liveModelScope)
       ? trimmed
       : null;

@@ -19,6 +19,14 @@ export const aiderAgentDef = {
       { id: 'deepseek/deepseek-chat', label: 'deepseek/deepseek-chat' },
       { id: 'gemini/gemini-2.0-flash', label: 'gemini/gemini-2.0-flash' },
     ],
+    // Aider documents low/medium/high for --reasoning-effort. This is the
+    // API effort setting, not --thinking-tokens (a separate numeric budget).
+    reasoningOptions: [
+      { id: 'default', label: 'Default' },
+      { id: 'low', label: 'Low' },
+      { id: 'medium', label: 'Medium' },
+      { id: 'high', label: 'High' },
+    ],
     // Aider's one-shot mode requires the prompt as `--message <text>` on
     // argv; neither `--message` nor `--message-file` accept `-` as a stdin
     // sentinel (it is treated as a literal filename), so we cannot pipe
@@ -52,6 +60,9 @@ export const aiderAgentDef = {
       ];
       if (options.model && options.model !== 'default') {
         args.push('--model', options.model);
+      }
+      if (options.reasoning && options.reasoning !== 'default') {
+        args.push('--reasoning-effort', options.reasoning);
       }
       args.push('--message', prompt);
       return args;

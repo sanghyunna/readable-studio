@@ -43,10 +43,13 @@ export interface AppConfigPrefs {
   defaultProjectLocationId?: string | null;
   /**
    * Canonical agent ids that should be probed by /api/agents. When absent,
-   * defaults to ['codex', 'cursor-agent']. Aliases ('agent', 'cursor') are
-   * normalized to their canonical id at write time.
+   * defaults to the live agent registry. Aliases ('agent', 'cursor') are
+   * normalized to their canonical id at write time. Newly offered ids are
+   * enabled automatically without changing opt-outs for already offered ids.
    */
   enabledAgentIds?: string[];
+  /** Daemon-owned offered-agent history. Ignored in preference updates. */
+  offeredAgentIds?: string[];
 }
 
 export interface AppConfigResponse {

@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -46,10 +46,17 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 });
 
 import { readAppConfig, writeAppConfig } from '../src/app-config.js';
+import { LEGACY_ENABLED_AGENT_IDS } from './app-config-agents.fixture.js';
 
 function signal() {
   let resolve!: () => void;
-  const promise = new Promise<void>((done) => { resolve = done; });
+  const promise = new Promise<void>((done, reject) => {
+    const timeout = setTimeout(() => reject(new Error('Config lifecycle signal timed out')), 5_000);
+    resolve = () => {
+      clearTimeout(timeout);
+      done();
+    };
+  });
   return { promise, resolve };
 }
 
@@ -106,6 +113,47 @@ it('does not block a different data directory behind an open reader', async () =
     release.resolve();
     await read;
   }
+});
+
+it('serializes migration with queued startup reads and an explicit disable', async () => {
+  await writeFile(io.file, JSON.stringify({ enabledAgentIds: LEGACY_ENABLED_AGENT_IDS }));
+  const opened = signal();
+  const release = signal();
+  io.opened = opened.resolve;
+  io.release = release.promise;
+  const first = readAppConfig(dir);
+  await opened.promise;
+  const second = readAppConfig(dir);
+  const disabled = writeAppConfig(dir, { enabledAgentIds: [] });
+  const after = readAppConfig(dir);
+  release.resolve();
+
+  const [a, b, written, latest] = await Promise.all([first, second, disabled, after]);
+  expect(a.enabledAgentIds).toContain('databricks');
+  expect(b).toEqual(a);
+  expect(written.enabledAgentIds).toEqual([]);
+  expect(latest.enabledAgentIds).toEqual([]);
+  expect(latest.offeredAgentIds).toContain('databricks');
+  expect(io.events).toEqual([
+    'read-start', 'read-close', 'rename',
+    'read-start', 'read-close',
+    'read-start', 'read-close', 'rename',
+    'read-start', 'read-close',
+  ]);
+});
+
+it('propagates a failed migration replacement and retries on the next queued read', async () => {
+  await writeFile(io.file, JSON.stringify({ enabledAgentIds: LEGACY_ENABLED_AGENT_IDS }));
+  io.failRename = true;
+  const failed = readAppConfig(dir);
+  const rejection = expect(failed).rejects.toMatchObject({ code: 'EPERM' });
+  const next = readAppConfig(dir);
+  await rejection;
+  expect((await next).enabledAgentIds).toContain('databricks');
+  expect(io.events).toEqual([
+    'read-start', 'read-close', 'rename',
+    'read-start', 'read-close', 'rename',
+  ]);
 });
 
 it('propagates replacement failures without poisoning the next queued operation', async () => {

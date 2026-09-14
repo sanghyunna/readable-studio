@@ -70,14 +70,11 @@ describe('DISCOVERY_AND_PHILOSOPHY (contracts copy) — prompt routing parity', 
     );
   });
 
-  it('keeps artifact emission conditional on writing a new canonical HTML file', () => {
-    expect(DISCOVERY_AND_PHILOSOPHY).toContain('## Artifact emission is conditional');
-    expect(DISCOVERY_AND_PHILOSOPHY).toContain(
-      'only when this turn wrote a new canonical HTML file',
-    );
-    expect(DISCOVERY_AND_PHILOSOPHY).toContain(
-      'If this turn only edited an existing HTML file',
-    );
+  it('selects exactly one delivery transport from file-tool availability', () => {
+    expect(composeSystemPrompt({}).match(/<artifact\b/g)).toBeNull();
+    const apiPrompt = composeSystemPrompt({ streamFormat: 'plain' });
+    const artifacts = [...apiPrompt.matchAll(/<artifact\s+identifier="([^"]+)"\s+type="([^"]+)"/g)];
+    expect(artifacts.map(match => [match[1], match[2]])).toEqual([['index', 'text/html']]);
   });
 });
 

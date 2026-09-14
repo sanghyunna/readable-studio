@@ -8,6 +8,7 @@ import { resolveDaemonUrl } from './daemon-url.js';
 import { DESIGN_SYSTEMS_USAGE, isDesignSystemsHelpArg } from './design-systems-cli-help.js';
 import { parseDesignSystemRenameArgs } from './design-system-rename-args.js';
 import { runProviderCli } from './provider-cli.js';
+import { runDatabricksCli } from './databricks-cli.js';
 import { SIDECAR_ENV, SIDECAR_MESSAGES } from '@readable-studio/sidecar-proto';
 import { STANDALONE_HTML_EXPORT_HEADERS } from '@readable-studio/contracts';
 import { applyBriefAssumptionToMetadata } from './brief.js';
@@ -250,6 +251,11 @@ const PLUGIN_LIST_BOOLEAN_FLAGS = new Set([
   'bundled', 'no-bundled',
 ]);
 
+async function runDatabricks(args) {
+  const { exitCode } = await runDatabricksCli(args);
+  process.exitCode = exitCode;
+}
+
 const SUBCOMMAND_MAP = {
   export: runExport,
   artifacts: runArtifacts,
@@ -282,6 +288,7 @@ const SUBCOMMAND_MAP = {
   'system-prompts': runSystemPrompts,
   agent: runAgent,
   provider: runProvider,
+  databricks: runDatabricks,
 };
 
 const first = argv.find((a) => !a.startsWith('-'));
@@ -342,6 +349,9 @@ function printRootHelp() {
   readable provider <status|set|test|clear> [options]
       Configure and verify an ephemeral hosted provider credential. Secrets are
       read only from identity/key files or stdin; use --json for automation.
+
+  readable databricks <status|profiles|probe|scan|lookup|models|enable|disable|select|verify|disconnect|client> [options]
+      Manage Databricks profiles and scanned serving endpoints through the local daemon.
 
   readable export html --project <id> --file <path> [--output <path>] [--force] [--json]
       Save a self-contained HTML artifact through the local daemon.

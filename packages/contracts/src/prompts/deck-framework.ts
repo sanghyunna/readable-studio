@@ -119,57 +119,76 @@ export const DECK_SKELETON_HTML = `<!doctype html>
        specific. The hide rule above still wins for inactive slides. */
     :where(.slide.active) { display: flex; flex-direction: column; justify-content: center; }
 
-    /* Chrome — counter + prev/next live outside the scaled stage so they
-       don't shrink with it. Do not relocate them inside .deck-stage. */
+    /* Chrome — the nav bar lives outside the scaled stage so it stays
+       legible at any viewport size. Do not move it inside .deck-stage.
+       Achromatic by design: it never inherits the deck's theme tokens.
+       Auto-hides like a taskbar (see "auto-hide nav" in the script):
+       hidden below the viewport edge, slides up when the pointer nears
+       the bottom. It stays in the tab order while hidden and
+       :focus-within reveals it, so keyboard / AT users can always
+       reach it. */
     .deck-counter {
+      --nav-h: 32px;
+      --nav-gap: 14px;
+      --nav-bg: rgba(18, 18, 18, 0.86);
+      --nav-fg: #f4f4f4;
+      --nav-fg-muted: rgba(244, 244, 244, 0.48);
+      --nav-line: rgba(255, 255, 255, 0.1);
+      --nav-hover: rgba(255, 255, 255, 0.1);
+      --nav-ease: cubic-bezier(0.2, 0, 0, 1);
       position: fixed;
-      bottom: 22px;
+      bottom: var(--nav-gap);
       left: 50%;
-      transform: translateX(-50%);
       display: inline-flex;
       align-items: center;
-      gap: 4px;
-      background: rgba(10, 14, 26, 0.92);
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
-      padding: 6px;
-      border-radius: 999px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      color: #fff;
-      font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
-      letter-spacing: 0.18em;
+      gap: 2px;
+      height: var(--nav-h);
+      padding: 0 4px;
+      border-radius: 8px;
+      background: var(--nav-bg);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--nav-line);
+      color: var(--nav-fg);
+      font: 500 12px/1 'Pretendard', 'Pretendard Variable', 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', system-ui, sans-serif;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.08em;
       z-index: 1000;
+      transform: translate3d(-50%, calc(var(--nav-h) + var(--nav-gap) + 8px), 0);
+      transition: transform 220ms var(--nav-ease);
+      will-change: transform;
     }
+    .deck-counter.is-open,
+    .deck-counter:focus-within { transform: translate3d(-50%, 0, 0); }
     .deck-counter button {
-      width: 36px; height: 36px;
+      width: 28px; height: 28px;
       background: transparent;
-      color: #fff;
+      color: var(--nav-fg);
       border: 0;
-      border-radius: 50%;
-      font-size: 18px;
+      border-radius: 6px;
+      font: inherit;
+      font-size: 16px;
       line-height: 1;
       cursor: pointer;
       display: grid;
       place-items: center;
-      transition: background 0.15s;
+      transition: background 120ms;
     }
-    .deck-counter button:hover { background: rgba(255, 255, 255, 0.12); }
+    .deck-counter button:hover { background: var(--nav-hover); }
+    .deck-counter button:focus-visible { outline: 2px solid var(--nav-fg); outline-offset: -2px; }
     .deck-counter button[disabled] { opacity: 0.3; cursor: default; }
     .deck-counter .deck-count {
-      padding: 0 14px;
-      letter-spacing: 0.22em;
+      padding: 0 10px;
+      letter-spacing: 0.12em;
     }
-    .deck-counter .deck-count .total { color: rgba(255, 255, 255, 0.5); }
-    .deck-hint {
-      position: fixed;
-      bottom: 26px;
-      right: 28px;
-      color: rgba(255, 255, 255, 0.4);
-      font: 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
-      letter-spacing: 0.2em;
-      text-transform: uppercase;
-      z-index: 999;
-      pointer-events: none;
+    .deck-counter .deck-count .total { color: var(--nav-fg-muted); }
+    /* No hover on touch-only devices, so there is no proximity to
+       detect: keep the bar visible. */
+    @media (hover: none) {
+      .deck-counter { transform: translate3d(-50%, 0, 0); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .deck-counter { transition: none; }
     }
 
     /* Print / PDF stitching — every slide stacks top-to-bottom, one per
@@ -215,14 +234,14 @@ export const DECK_SKELETON_HTML = `<!doctype html>
          it already does on screen. */
       :where(.slide) { flex-direction: column; justify-content: center; }
       .slide:last-child { page-break-after: auto; break-after: auto; }
-      .deck-counter, .deck-hint { display: none !important; }
+      .deck-counter { display: none !important; }
     }
   </style>
   <style>
     /* SLOT: per-deck styles — typography, layout helpers, slide variants.
        Add classes used by the slide content below, e.g. .title, .big-stat,
        .grid-3. Do not redefine .deck-shell / .deck-stage / .slide /
-       .deck-counter / .deck-hint or anything inside @media print. */
+       .deck-counter or anything inside @media print. */
   </style>
 </head>
 <body>
@@ -253,7 +272,6 @@ export const DECK_SKELETON_HTML = `<!doctype html>
     <span class="deck-count"><span id="deck-cur">01</span> <span class="total">/ <span id="deck-total">01</span></span></span>
     <button type="button" id="deck-next" aria-label="Next slide">›</button>
   </nav>
-  <div class="deck-hint">← / → · space</div>
 
   <script>
     (function () {
@@ -303,6 +321,10 @@ export const DECK_SKELETON_HTML = `<!doctype html>
         if (e.defaultPrevented) return;
         var t = e.target;
         if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+        // Yield trusted arrow keys to manual-edit object nudging: with a
+        // selected object (and no active inline edit session) arrows move the
+        // object, not the slide. Synthetic host-driven keys keep navigating.
+        if (e.isTrusted && (e.key === 'ArrowRight' || e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'ArrowDown') && document.documentElement.hasAttribute('data-readable-edit-mode') && document.querySelector('[data-readable-edit-selected]') && !document.querySelector('[data-readable-editing="true"]')) return;
         if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { e.preventDefault(); go(idx + 1); }
         else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); go(idx - 1); }
         else if (e.key === 'Home') { e.preventDefault(); go(0); }
@@ -317,6 +339,38 @@ export const DECK_SKELETON_HTML = `<!doctype html>
       document.addEventListener('keydown', onKey, true);
       if (prev) prev.addEventListener('click', function () { go(idx - 1); });
       if (next) next.addEventListener('click', function () { go(idx + 1); });
+
+      // ---- auto-hide nav (taskbar-style) ----------------------------------
+      // Decoration only: the bar mirrors state and never gates input — the
+      // keydown handlers above run whether it is visible or not. Reveal when
+      // the pointer enters the bottom REVEAL px band; keep it open while the
+      // pointer stays inside the wider KEEP band (hysteresis, so the edge
+      // never flickers); hide HIDE_MS after the pointer has left that band
+      // or the window. Keyboard focus reveals via CSS :focus-within.
+      var nav = document.querySelector('.deck-counter');
+      var REVEAL = 72, KEEP = 160, HIDE_MS = 900;
+      var hideTimer = 0;
+      function openNav() {
+        if (hideTimer) { clearTimeout(hideTimer); hideTimer = 0; }
+        nav.classList.add('is-open');
+      }
+      function scheduleHideNav() {
+        if (hideTimer) return;
+        hideTimer = setTimeout(function () {
+          hideTimer = 0;
+          nav.classList.remove('is-open');
+        }, HIDE_MS);
+      }
+      function onPointerNear(e) {
+        var band = nav.classList.contains('is-open') ? KEEP : REVEAL;
+        if (window.innerHeight - e.clientY <= band) openNav();
+        else scheduleHideNav();
+      }
+      if (nav) {
+        document.addEventListener('pointermove', onPointerNear, { passive: true });
+        document.addEventListener('pointerdown', onPointerNear, { passive: true });
+        document.addEventListener('pointerout', function (e) { if (!e.relatedTarget) scheduleHideNav(); });
+      }
 
       // Auto-focus body so arrow keys work without an initial click.
       document.body.setAttribute('tabindex', '-1');
@@ -353,24 +407,24 @@ When the user asks for slides, your TodoWrite plan **must** start with "copy the
 
 \`\`\`
 1.  Bind the active direction's palette + fonts to :root in the framework
-2.  Copy the canonical skeleton below as index.html (nothing else first)
+2.  Start from the canonical skeleton below (save as index.html when file tools are available)
 3.  Plan the slide arc and theme rhythm (state aloud before writing)
 4.  Add per-deck classes inside the second <style> block
 5.  Replace each <section class="slide"> SLOT with real content
 6.  Self-check (no rewriting framework chrome / @media print / nav script)
-7.  Emit single <artifact>
+7.  Finish through the selected HTML delivery channel: summarize the saved index.html with file tools; deliver the complete chat document without file tools
 \`\`\`
 
 If you find yourself writing \`<style>\` rules for \`.deck-shell\`, \`.deck-stage\`, \`.slide\`, \`.canvas\`, \`fit()\`, \`@media print\`, or a keyboard handler — STOP. The framework already has them. Re-read this directive, then keep going from "fill SLOT content".
 
 ## The contract
 
-When you start a new deck, your output is a single HTML file built from the canonical skeleton below. **Copy the skeleton verbatim**, including its first \`<style>\` block, the \`.deck-shell\` / \`.deck-stage\` / \`.deck-counter\` / \`.deck-hint\` chrome, and the entire trailing \`<script>\`.
+When you start a new deck, your output is a single HTML file built from the canonical skeleton below. **Copy the skeleton verbatim**, including its first \`<style>\` block, the \`.deck-shell\` / \`.deck-stage\` / \`.deck-counter\` chrome, and the entire trailing \`<script>\`.
 
 You may edit only inside slots marked \`SLOT:\`:
 - \`SLOT: deck title\` — the \`<title>\` element.
 - \`SLOT: theme tokens\` — the \`:root\` CSS custom properties (\`--bg\`, \`--fg\`, \`--accent\`, \`--shell\`, …). Add new tokens here if needed.
-- \`SLOT: per-deck styles\` — the second \`<style>\` block. Define classes used by your slide content (e.g. \`.title\`, \`.big-stat\`, \`.grid-3\`, custom typography). **Never redefine** \`.deck-shell\`, \`.deck-stage\`, \`.slide\`, \`.deck-counter\`, \`.deck-hint\`, or anything inside \`@media print\`.
+- \`SLOT: per-deck styles\` — the second \`<style>\` block. Define classes used by your slide content (e.g. \`.title\`, \`.big-stat\`, \`.grid-3\`, custom typography). **Never redefine** \`.deck-shell\`, \`.deck-stage\`, \`.slide\`, \`.deck-counter\`, or anything inside \`@media print\`.
 - \`SLOT: slides\` — the \`<section class="slide">\` blocks. Add as many as the brief calls for. The first slide MUST be \`<section class="slide active" …>\`; the rest are \`<section class="slide" …>\` (no \`active\`). The script auto-counts them.
 - \`SLOT: slide N content\` — content inside each \`<section>\`.
 
@@ -380,7 +434,7 @@ These are the failure patterns we just spent days debugging. Each one looks "equ
 
 - ❌ Don't write your own \`fit()\` function or \`transform: scale()\` script. The framework already does it, and ad-hoc versions drift inside the Readable Studio viewer's nested transform wrapper.
 - ❌ Don't use \`transform-origin: center center\` on the stage. The framework uses \`top left\` plus an explicit translate so scaled content lands at the same place every render.
-- ❌ Don't use \`document.addEventListener('keydown', …)\` alone, and don't drop the dedupe guard. Inside an iframe, focus is sometimes on window, so the framework adds capture-phase \`keydown\` listeners on **both** \`window\` and \`document\`. Because one physical key press then fires \`onKey\` twice (once per target), \`onKey\` MUST start with \`if (e.defaultPrevented) return;\` — the first call runs \`preventDefault()\`, so the duplicate bails and a press advances exactly one slide. Replace the dual listener with a single one and the iframe silently swallows arrow keys; drop the guard and every arrow press jumps two slides.
+- ❌ Don't use \`document.addEventListener('keydown', …)\` alone, and don't drop the dedupe guard. Inside an iframe, focus is sometimes on window, so the framework adds capture-phase \`keydown\` listeners on **both** \`window\` and \`document\`. Because one physical key press then fires \`onKey\` twice (once per target), \`onKey\` MUST start with \`if (e.defaultPrevented) return;\` — the first call runs \`preventDefault()\`, so the duplicate bails and a press advances exactly one slide. Replace the dual listener with a single one and the iframe silently swallows arrow keys; drop the guard and every arrow press jumps two slides. The manual-edit yield guard right below it (\`e.isTrusted && … data-readable-edit-mode … data-readable-edit-selected …\`) is load-bearing too: it is what lets arrow keys nudge a selected object in the Readable Studio manual-edit overlay instead of advancing slides. Removing it makes every object nudge also change the slide.
 - ❌ Don't replace the localStorage key, the slide-visibility toggle (\`.slide.active\`), or the counter element IDs (\`#deck-cur\`, \`#deck-total\`, \`#deck-prev\`, \`#deck-next\`). The framework reads them by ID.
 - ❌ Don't put the prev/next buttons or the counter **inside** \`.deck-stage\`. They must live outside the scaled element so they stay legible at any viewport size.
 - ❌ Don't redefine \`.slide\`, \`.slide.active\`, or \`.slide:not(.active)\` directly. The framework owns the visibility toggle through those exact selectors. If you want a non-flex layout on a slide, **add a variant class to the same \`<section class="slide …">\` element** (e.g. \`.s-cold\`, \`.s-magazine\`) and declare \`display: grid\` / \`display: block\` on the variant. The framework's active default is wrapped in \`:where(...)\` so it has zero specificity — your variant always wins for the active slide. Variant classes do NOT need to be more specific than \`.slide.active\`. (The inactive-hide rule still wins because it uses \`:not(.active) { display: none !important; }\`.)
@@ -414,7 +468,7 @@ Rules — non-negotiable:
 4. **Body slides: ≤ 3 paragraphs, ≤ 56ch lead text width, ≤ 12 words per line.**
 5. **One idea per slide.** Two ideas = two slides.
 
-## Pre-emit self-check — run this BEFORE writing the \`<artifact>\` tag
+## Final self-check — run this BEFORE finishing delivery
 
 For every \`<section class="slide">\`, mentally render at 1920×1080 and answer:
 
@@ -424,7 +478,7 @@ For every \`<section class="slide">\`, mentally render at 1920×1080 and answer:
 - [ ] Is the display headline ≤ 140px and ≤ 8 words?
 - [ ] Does the slide carry ≤ one big idea? (No mashed-together masthead + display headline + subtitle + absolute footer + sidebar.)
 
-If any answer is "no", redesign the slide BEFORE emitting. Decks that overflow are the most common single failure mode reported by users; the user has rejected one before and will reject one again.
+If any answer is "no", redesign the slide BEFORE finishing. Decks that overflow are the most common single failure mode reported by users; the user has rejected one before and will reject one again.
 
 ## Prefer the simple-deck skill's layout vocabulary when reachable
 
