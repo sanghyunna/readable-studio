@@ -22,11 +22,12 @@ import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import piPackage from './pi-package.json' with { type: 'json' };
+// This entry runs directly under Node's type stripping, without a compiled src tree.
+const { assertPiShutdownPatched } = await import(new URL('./pi-package.ts', import.meta.url).href) as typeof import('./pi-package.js');
 
 const repoRoot = path.resolve(import.meta.dirname, '..', '..', '..');
-const hostedPiPackageName = '@earendil-works/pi-coding-agent';
-const hostedPiVersion = '0.83.0';
-const hostedPiIntegrity = 'sha512-uYhF+FsZxogoSX/AxBcUdiY+ZklubwaXyAoEGA2eQwsHcyEAhUYIKh/WLXe/a8+k8eTCmxb+ZN2Zo9mzQtzbWw==';
+const { name: hostedPiPackageName, version: hostedPiVersion, integrity: hostedPiIntegrity } = piPackage;
 const photonVersion = '0.3.4';
 const defaultOutput = path.join(repoRoot, '.tmp', 'hosted-pi-artifact');
 const hostedPiSmokeTimeoutMs = 60_000;
@@ -208,6 +209,9 @@ function verifyPackage(stage: string): {
   }
   const entrypoint = path.join(piRoot, 'dist', 'rpc-entry.js');
   if (!lstatSync(entrypoint).isFile()) fail('staged Pi RPC entrypoint is missing');
+  // pnpm deploy carries the workspace patch; integrity below still pins the
+  // registry tarball. Reject a deploy that loses the post-install shutdown fix.
+  assertPiShutdownPatched(piRoot);
 
   const lockfile = path.join(stage, 'node_modules', '.pnpm', 'lock.yaml');
   if (!existsSync(lockfile)) fail('staged production lockfile is missing');

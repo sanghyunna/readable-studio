@@ -78,6 +78,7 @@ describe("win standalone prebundle policy", () => {
     expect(WIN_PREBUNDLE_POLICIES.webSidecar.externals).toEqual([]);
     expect(WIN_DAEMON_PREBUNDLE_ESM_REQUIRE_BANNER).toContain("createRequire");
     expect(WIN_PREBUNDLE_RUNTIME_DEPENDENCIES).toEqual({
+      "@earendil-works/pi-coding-agent": "0.83.0",
       "better-sqlite3": "12.9.0",
       "blake3-wasm": "2.1.5",
     });

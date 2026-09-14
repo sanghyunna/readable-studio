@@ -18,6 +18,7 @@ import { openValidatedDirectory } from "./open-path.js";
 import { createElectronPdfTarget, exportPdfFromHtml, savePrintReadyDocumentAsPdf } from "./pdf-export.js";
 import type { PrintReadyPdfOptions } from "./pdf-export.js";
 import { remainingSplashHoldMs, shouldFinishSplashPolling } from "./splash-reveal.js";
+import { applyDesktopBaselineZoom } from "./zoom.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -860,6 +861,7 @@ export function createSplashWindow(): SplashWindowHandle {
       sandbox: true,
     },
   });
+  applyDesktopBaselineZoom(splash.webContents);
   void splash.loadFile(resolveSplashHtmlPath());
   return { startedAt, window: splash };
 }
@@ -1018,6 +1020,7 @@ function createDesktopPetWindow(preloadPath: string, osLocale: string | undefine
       sandbox: true,
     },
   });
+  applyDesktopBaselineZoom(petWindow.webContents);
   petWindow.setAlwaysOnTop(true, "floating");
   // `skipTransformProcessType: true` is load-bearing, not an
   // optimization. By default Electron's macOS `setVisibleOnAllWorkspaces`
@@ -1464,6 +1467,7 @@ export async function createDesktopRuntime(options: DesktopRuntimeOptions): Prom
     },
     width: 1280,
   });
+  applyDesktopBaselineZoom(window.webContents);
   installWindowChromeCssHook(window);
   showWindowButtons(window);
   attachDownloadSaveAsDialog(window);
@@ -1680,6 +1684,9 @@ export async function createDesktopRuntime(options: DesktopRuntimeOptions): Prom
     if (isAllowedChildWindowUrl(url)) return { action: "allow" };
     if (isHttpUrl(url)) void shell.openExternal(url);
     return { action: "deny" };
+  });
+  window.webContents.on("did-create-window", (childWindow) => {
+    applyDesktopBaselineZoom(childWindow.webContents);
   });
 
   window.webContents.on("will-navigate", (event, url) => {

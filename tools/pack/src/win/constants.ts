@@ -1,3 +1,6 @@
+import { DATABRICKS_CLI_RELATIVE_PATH } from "../databricks-cli.js";
+import piPackage from "../pi-package.json" with { type: "json" };
+
 export { PRODUCT_NAME } from "@readable-studio/product-identity";
 export const RESOURCE_TREE_NAME = "readable-studio";
 export const DESKTOP_LOG_ECHO_ENV = "READABLE_DESKTOP_LOG_ECHO";
@@ -14,6 +17,10 @@ export const ELECTRON_REBUILD_MODE = "sequential" as const;
 export const ELECTRON_REBUILD_NATIVE_MODULES = [] as const;
 export const ELECTRON_BUILDER_FILE_PATTERNS = [
   "**/*",
+  DATABRICKS_CLI_RELATIVE_PATH,
+  "vendor/databricks/LICENSE",
+  // The daemon resolves this child entry point dynamically; keep its real package tree.
+  `node_modules/${piPackage.name}/**/*`,
   "!**/node_modules/.bin",
   "!**/node_modules/electron{,/**/*}",
   "!**/*.map",

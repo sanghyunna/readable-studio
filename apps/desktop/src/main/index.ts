@@ -42,10 +42,12 @@ import {
   type DesktopApprovalLoop,
 } from "./desktop-approval.js";
 import { attachDesktopProcessErrorFilter } from "./uncaught-exception.js";
+import { desktopCredentialDataRoot, startDesktopSecretStorage } from "./secret-storage.js";
 import {
   exportDiagnosticsToFile,
   registerDesktopDiagnosticsIpc,
 } from "./diagnostics.js";
+import { applyDesktopBaselineZoom } from "./zoom.js";
 
 // Re-export pure URL-policy helpers so the packaged workspace's
 // vitest can pin their behaviour without spinning up a full Electron
@@ -127,6 +129,8 @@ export function applyOsLocaleSwitch(electronApp: Electron.App): string {
 }
 
 export type DesktopMainOptions = {
+  /** Packaged supplies the exact daemon data root; tools-dev shares cwd/env. */
+  credentialDataRoot?: string;
   beforeShutdown?: () => Promise<void>;
   /** Pre-consumed packaged bearer; tools-dev supplies it through process env. */
   desktopApprovalToken?: string | null;
@@ -432,9 +436,19 @@ export function installDesktopMenu(
           { role: "forceReload" },
           { role: "toggleDevTools" },
           { type: "separator" },
-          { role: "resetZoom" },
-          { role: "zoomIn" },
-          { role: "zoomOut" },
+          {
+            label: "Reset Zoom",
+            accelerator: "CommandOrControl+0",
+            click: () => {
+              const focusedWindow = BrowserWindow.getFocusedWindow();
+              if (focusedWindow != null) applyDesktopBaselineZoom(focusedWindow.webContents);
+            },
+          },
+          { role: "zoomIn", accelerator: "CommandOrControl+Plus" },
+          { role: "zoomIn", accelerator: "CommandOrControl+=", visible: false },
+          { role: "zoomIn", accelerator: "CommandOrControl+numadd", visible: false },
+          { role: "zoomOut", accelerator: "CommandOrControl+-" },
+          { role: "zoomOut", accelerator: "CommandOrControl+numsub", visible: false },
           { type: "separator" },
           { role: "togglefullscreen" },
         ],
@@ -572,6 +586,7 @@ export async function runDesktopMain(
 
   await app.whenReady();
   configureAboutPanel(options);
+  const secretStorage = await startDesktopSecretStorage(options.credentialDataRoot ?? desktopCredentialDataRoot());
 
   // PR #974: mint a per-process auth secret and hand it to the daemon
   // BEFORE the BrowserWindow loads. The daemon uses it to verify the
@@ -634,6 +649,7 @@ export async function runDesktopMain(
     });
     disposeMenu();
     removeDiagnosticsIpc();
+    await secretStorage?.close();
     await ipcServer?.close().catch(() => undefined);
     await desktop?.close().catch(() => undefined);
     await approvalLoop?.done.catch(() => undefined);

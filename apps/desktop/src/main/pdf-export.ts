@@ -3,6 +3,8 @@ import { writeFile } from "node:fs/promises";
 import { BrowserWindow, dialog } from "electron";
 import type { DesktopExportPdfInput, DesktopExportPdfResult } from "@readable-studio/sidecar-proto";
 
+import { applyDesktopBaselineZoom } from "./zoom.js";
+
 type PageSize = { height: number; width: number };
 
 const DECK_PAGE_SIZE: PageSize = { width: 13.333333, height: 7.5 };
@@ -100,6 +102,8 @@ export async function exportPdfFromHtml(input: DesktopExportPdfInput): Promise<D
     },
     width: input.deck ? 1920 : 1440,
   });
+
+  applyDesktopBaselineZoom(window.webContents);
 
   try {
     await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(buildPrintableDocument(input))}`);
@@ -228,6 +232,7 @@ export function createElectronPdfTarget(): PrintReadyPdfTarget {
         width: options.deck ? 1920 : 1440,
       });
       window = printWindow;
+      applyDesktopBaselineZoom(printWindow.webContents);
       printWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
       printWindow.webContents.on("will-navigate", (event) => event.preventDefault());
       await printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);

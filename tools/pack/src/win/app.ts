@@ -9,7 +9,11 @@ import { SIDECAR_ENV } from "@readable-studio/sidecar-proto";
 
 import { hashJson, hashPath, ToolPackCache } from "../cache.js";
 import type { ToolPackConfig } from "../config.js";
+import { assertDatabricksCliOutput, stageDatabricksCli } from "../databricks-cli.js";
+import databricksCli from "../databricks-cli.json" with { type: "json" };
 import { hashPackageSourcePath } from "../package-source-hash.js";
+import { assertPiPackageIntegrity, assertPiPackageOutput, patchPiPackage, resolvePiPackagePatch } from "../pi-package.js";
+import piPackage from "../pi-package.json" with { type: "json" };
 import { electronBuilderVersionForAppVersion } from "../versions.js";
 import {
   WIN_DAEMON_PREBUNDLE_ESM_REQUIRE_BANNER,
@@ -61,7 +65,7 @@ async function runPnpm(config: ToolPackConfig, args: string[], extraEnv: NodeJS.
 
 async function runNpmInstall(appRoot: string): Promise<void> {
   const invocation = createCommandInvocation({
-    args: ["install", "--omit=dev", "--no-package-lock"],
+    args: ["install", "--omit=dev", "--package-lock"],
     command: process.platform === "win32" ? "npm.cmd" : "npm",
   });
   await execFileAsync(invocation.command, invocation.args, {
@@ -217,7 +221,7 @@ export async function collectWorkspaceTarballs(
   return { key, tarballs: manifest.payloadMetadata.tarballs };
 }
 
-function createAssembledAppDependencies(
+export function createAssembledAppDependencies(
   config: ToolPackConfig,
   paths: Pick<WinPaths, "assembledAppRoot" | "tarballsRoot">,
   packedTarballs: PackedTarballInfo[],
@@ -237,6 +241,7 @@ function createAssembledAppDependencies(
   );
   return {
     ...internalDependencies,
+    [piPackage.name]: piPackage.version,
     ...(shouldUseWinStandalonePrebundle(config.webOutputMode) ? WIN_PREBUNDLE_RUNTIME_DEPENDENCIES : {}),
   };
 }
@@ -419,7 +424,10 @@ export async function createWinPackagedAppCacheKey(
     packedTarballs,
     platform: "win32",
     prebundle: shouldUseWinStandalonePrebundle(config.webOutputMode),
-    schemaVersion: 2,
+    schemaVersion: 4,
+    piPackage,
+    piPatch: await hashPath(await resolvePiPackagePatch(config.workspaceRoot)),
+    databricksCli,
     tarballsKey,
     webOutputMode: config.webOutputMode,
   });
@@ -457,7 +465,10 @@ export async function prepareWinPackagedApp(
       if (usePrebundle) {
         await buildPrebundledStandaloneRuntime(config, appPaths);
       }
+      await stageDatabricksCli(appRoot);
       await runNpmInstall(appRoot);
+      await patchPiPackage(appRoot, config.workspaceRoot);
+      await assertPiPackageOutput(appRoot);
       const nativeValidationError = await validateNodeNativeModuleOutput(appRoot);
       if (nativeValidationError != null) throw new Error(nativeValidationError);
       return { packagedVersion };
@@ -467,6 +478,9 @@ export async function prepareWinPackagedApp(
     materialize: [],
     node,
   });
+  await assertDatabricksCliOutput(join(manifest.entryPath, "app"));
+  await assertPiPackageIntegrity(join(manifest.entryPath, "app"));
+  await assertPiPackageOutput(join(manifest.entryPath, "app"));
   await writeAssembledAppEntrypoints(
     config,
     {

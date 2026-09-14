@@ -174,6 +174,7 @@ async function main(): Promise<void> {
   const { runDesktopMain } = await import("@readable-studio/desktop/main");
   startupTiming.mark("desktop-main-handoff");
   await runDesktopMain(runtime, {
+    credentialDataRoot: paths.dataRoot,
     desktopApprovalToken,
     splashWindow: splash.window,
     splashStartedAt: splash.startedAt,

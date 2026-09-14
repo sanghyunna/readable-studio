@@ -61,13 +61,38 @@ const PACKAGED_CHILD_ENV_ALLOWLIST = [
   "no_proxy",
 ] as const;
 
+// These are daemon-only: they let Windows resolve the WinGet executable and
+// let the CLI locate its profile-based configuration without exposing either
+// concern to the web sidecar.
+const PACKAGED_DAEMON_WINDOWS_CLI_ENV_ALLOWLIST = [
+  "DATABRICKS_CONFIG_FILE",
+  "LOCALAPPDATA",
+  "PATHEXT",
+  "SYSTEMROOT",
+  "USERPROFILE",
+] as const;
+
 function shouldForwardPackagedChildEnv(key: string, includeProviderSecrets = false): boolean {
-  if (key.toUpperCase() === SIDECAR_ENV.DESKTOP_APPROVAL_TOKEN) return false;
-  return (
+  const normalizedKey = key.toUpperCase();
+  if (normalizedKey === SIDECAR_ENV.DESKTOP_APPROVAL_TOKEN) return false;
+  if (
     PACKAGED_CHILD_ENV_ALLOWLIST.includes(
       key as (typeof PACKAGED_CHILD_ENV_ALLOWLIST)[number],
-    ) ||
-    (includeProviderSecrets && (key.endsWith("_API_KEY") || key.endsWith("_TOKEN")))
+    )
+  ) {
+    return true;
+  }
+  if (!includeProviderSecrets) return false;
+  if (
+    PACKAGED_DAEMON_WINDOWS_CLI_ENV_ALLOWLIST.includes(
+      normalizedKey as (typeof PACKAGED_DAEMON_WINDOWS_CLI_ENV_ALLOWLIST)[number],
+    )
+  ) {
+    return true;
+  }
+  return (
+    !normalizedKey.startsWith("DATABRICKS_") &&
+    (key.endsWith("_API_KEY") || key.endsWith("_TOKEN"))
   );
 }
 

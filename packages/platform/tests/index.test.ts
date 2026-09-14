@@ -1044,6 +1044,38 @@ describe("wellKnownUserToolchainBins", () => {
     }
   });
 
+  it("includes the WinGet Links directory from $LOCALAPPDATA on Windows", () => {
+    const originalPlatform = process.platform;
+    const localAppData = String.raw`C:\Users\Tester\AppData\Local`;
+    Object.defineProperty(process, "platform", { configurable: true, value: "win32" });
+    try {
+      const dirs = wellKnownUserToolchainBins({
+        env: { LOCALAPPDATA: localAppData },
+        includeSystemBins: false,
+      });
+
+      expect(dirs).toContain(join(localAppData, "Microsoft", "WinGet", "Links"));
+    } finally {
+      Object.defineProperty(process, "platform", { configurable: true, value: originalPlatform });
+    }
+  });
+
+  it("does not include the WinGet Links directory outside Windows", () => {
+    const originalPlatform = process.platform;
+    const localAppData = String.raw`C:\Users\Tester\AppData\Local`;
+    Object.defineProperty(process, "platform", { configurable: true, value: "linux" });
+    try {
+      const dirs = wellKnownUserToolchainBins({
+        env: { LOCALAPPDATA: localAppData },
+        includeSystemBins: false,
+      });
+
+      expect(dirs).not.toContain(join(localAppData, "Microsoft", "WinGet", "Links"));
+    } finally {
+      Object.defineProperty(process, "platform", { configurable: true, value: originalPlatform });
+    }
+  });
+
   it("includes /opt/homebrew/bin and /usr/local/bin when includeSystemBins is true", () => {
     const home = mkdtempSync(join(tmpdir(), "wkutb-sys-"));
     try {

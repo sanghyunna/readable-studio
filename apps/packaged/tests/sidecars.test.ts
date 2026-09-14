@@ -43,6 +43,32 @@ describe('packaged child Vite+ environment forwarding', () => {
     expect(env.RANDOM_INTERNAL_FLAG).toBeUndefined();
   });
 
+  it('forwards the Windows Databricks CLI environment only to the daemon', () => {
+    const sourceEnv = {
+      DATABRICKS_CONFIG_FILE: String.raw`C:\Users\Tester\custom.databrickscfg`,
+      DATABRICKS_TOKEN: 'must-not-leak',
+      LOCALAPPDATA: String.raw`C:\Users\Tester\AppData\Local`,
+      PATHEXT: '.COM;.EXE;.BAT;.CMD',
+      SystemRoot: String.raw`C:\Windows`,
+      UNRELATED_SECRET: 'must-not-leak',
+      USERPROFILE: String.raw`C:\Users\Tester`,
+    };
+    const daemonEnv = resolvePackagedChildBaseEnv(sourceEnv, true, {}, false, 'win32');
+    const webEnv = resolvePackagedChildBaseEnv(sourceEnv, false, {}, false, 'win32');
+
+    expect(daemonEnv).toMatchObject({
+      DATABRICKS_CONFIG_FILE: sourceEnv.DATABRICKS_CONFIG_FILE,
+      LOCALAPPDATA: sourceEnv.LOCALAPPDATA,
+      PATHEXT: sourceEnv.PATHEXT,
+      SystemRoot: sourceEnv.SystemRoot,
+      USERPROFILE: sourceEnv.USERPROFILE,
+    });
+    expect(daemonEnv.DATABRICKS_TOKEN).toBeUndefined();
+    expect(daemonEnv.UNRELATED_SECRET).toBeUndefined();
+    expect(webEnv.DATABRICKS_CONFIG_FILE).toBeUndefined();
+    expect(webEnv.USERPROFILE).toBeUndefined();
+  });
+
   it('forwards standard Node proxy variables to packaged sidecars', () => {
     const env = resolvePackagedChildBaseEnv({
       ALL_PROXY: 'socks5://127.0.0.1:1080',

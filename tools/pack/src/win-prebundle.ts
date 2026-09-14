@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 
 import type { ToolPackConfig } from "./config.js";
+import piPackage from "./pi-package.json" with { type: "json" };
 
 export const WIN_PREBUNDLED_APP_DIR_NAME = "prebundled";
 export const WIN_PREBUNDLE_META_DIR_NAME = "prebundle-meta";
@@ -14,6 +15,7 @@ export const WIN_DAEMON_PREBUNDLE_ESM_REQUIRE_BANNER =
 export const WIN_PREBUNDLE_ENTRYPOINTS_DIR_NAME = "prebundle-entrypoints";
 
 export const WIN_PREBUNDLE_RUNTIME_DEPENDENCIES = {
+  [piPackage.name]: piPackage.version,
   "better-sqlite3": "12.9.0",
   "blake3-wasm": "2.1.5",
 } as const;

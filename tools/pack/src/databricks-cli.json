@@ -1,0 +1,6 @@
+{
+  "version": "1.10.0",
+  "url": "https://github.com/databricks/cli/releases/download/v1.10.0/databricks_cli_1.10.0_windows_amd64.zip",
+  "archiveSha256": "29a6c0fafd1335d54d13c7fb0433c31a5056a672ab6bb619d690a5451b7e1b0b",
+  "executableSha256": "e374d0a22faf58e0a5a048eba57b9072cef5ea5d69f9b81db7cde74b6a01758f"
+}

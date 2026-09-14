@@ -7,6 +7,8 @@ import { RUNTIME_APP_ID } from "@readable-studio/sidecar-proto";
 
 import { hashJson, hashPath, type CacheNode, ToolPackCache } from "../cache.js";
 import type { ToolPackConfig } from "../config.js";
+import { assertDatabricksCliOutput, DATABRICKS_CLI_RELATIVE_PATH } from "../databricks-cli.js";
+import { assertPiPackageOutput, PI_RPC_ENTRY_RELATIVE_PATH } from "../pi-package.js";
 import { winResources } from "../resources.js";
 import { electronBuilderVersionForAppVersion, versionCoreForAppVersion } from "../versions.js";
 import {
@@ -55,7 +57,7 @@ import type {
 
 const execFileAsync = promisify(execFile);
 const WIN_ARCHIVE_CACHE_VERSION = 3;
-const WIN_ELECTRON_BUILDER_DIR_CACHE_VERSION = 8;
+const WIN_ELECTRON_BUILDER_DIR_CACHE_VERSION = 9;
 // The portable ZIP cache key embeds the packaged config and
 // the electron-builder dir key (see buildWinPortableZipCacheKeyInput), so
 // input-driven changes — resource tree, baked config fields, version — re-key
@@ -288,6 +290,12 @@ async function runElectronBuilderRaw(
   };
 
   await build("electron-builder-raw:process");
+  await runSegment("electron-builder-raw:assert-databricks-cli", async () =>
+    assertDatabricksCliOutput(join(paths.appBuilderOutputRoot, "win-unpacked", "resources", "app"))
+  );
+  await runSegment("electron-builder-raw:assert-pi-package", async () =>
+    assertPiPackageOutput(join(paths.appBuilderOutputRoot, "win-unpacked", "resources", "app"))
+  );
   return segments;
 }
 
@@ -518,12 +526,18 @@ export async function runElectronBuilder(
   const signingCacheKey = resolveWinSigningCacheKey(config);
   const materialized = await runSegment("portable-zip:materialize-unpacked", async () => {
     const cached = await cache.readHit({
-      materialize: [{ from: "builder/win-unpacked", reuse: true, reuseRequiredPaths: [[`resources/${WEB_STANDALONE_RESOURCE_NAME}/apps/web/server.js`, `resources/${WEB_STANDALONE_RESOURCE_NAME}/server.js`]], to: paths.unpackedRoot }],
+      materialize: [{ from: "builder/win-unpacked", reuse: true, reuseRequiredPaths: [[`resources/${WEB_STANDALONE_RESOURCE_NAME}/apps/web/server.js`, `resources/${WEB_STANDALONE_RESOURCE_NAME}/server.js`], [`resources/app/${PI_RPC_ENTRY_RELATIVE_PATH}`], [`resources/app/${DATABRICKS_CLI_RELATIVE_PATH}`]], to: paths.unpackedRoot }],
       node,
     });
     if (cached == null) throw new Error("electron builder cache entry disappeared before portable zip materialization");
     return materializeCachedUnpackedForPortableZip(paths, packagedVersion);
   });
+  await runSegment("portable-zip:assert-databricks-cli", async () =>
+    assertDatabricksCliOutput(join(materialized.unpackedRoot, "resources", "app"))
+  );
+  await runSegment("portable-zip:assert-pi-package", async () =>
+    assertPiPackageOutput(join(materialized.unpackedRoot, "resources", "app"))
+  );
   await runSegment("portable-zip:write-manifest", async () => writeBuiltAppManifest(paths, materialized));
   let signedUnpacked = false;
   const ensureSignedUnpacked = async (): Promise<void> => {

@@ -6,7 +6,8 @@ import { describe, expect, it } from "vitest";
 
 import type { ToolPackConfig } from "../src/config.js";
 import { ELECTRON_REBUILD_NATIVE_MODULES, INTERNAL_PACKAGES } from "../src/win/constants.js";
-import { createWorkspaceTarballsCacheKey } from "../src/win/app.js";
+import { createWinPackagedAppCacheKey, createWorkspaceTarballsCacheKey } from "../src/win/app.js";
+import piPackage from "../src/pi-package.json" with { type: "json" };
 
 const PACKAGE_DIRS = INTERNAL_PACKAGES.map((packageInfo) => packageInfo.directory);
 
@@ -62,6 +63,24 @@ describe("createWorkspaceTarballsCacheKey", () => {
       await expect(createWorkspaceTarballsCacheKey(createConfig(root, "server"))).resolves.not.toBe(
         await createWorkspaceTarballsCacheKey(createConfig(root, "standalone")),
       );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+});
+
+describe("createWinPackagedAppCacheKey", () => {
+  it("invalidates the installed Pi tree when the declared patch changes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "readable-pi-patch-cache-"));
+    try {
+      await writeFile(join(root, "package.json"), JSON.stringify({
+        pnpm: { patchedDependencies: { [`${piPackage.name}@${piPackage.version}`]: "pi.patch" } },
+      }));
+      await writeFile(join(root, "pi.patch"), "patch-v1");
+      const config = createConfig(root, "standalone");
+      const before = await createWinPackagedAppCacheKey(config, "tarballs", []);
+      await writeFile(join(root, "pi.patch"), "patch-v2");
+      expect(await createWinPackagedAppCacheKey(config, "tarballs", [])).not.toBe(before);
     } finally {
       await rm(root, { force: true, recursive: true });
     }

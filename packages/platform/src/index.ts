@@ -6,6 +6,7 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 
 import { setTimeout as sleep } from "node:timers/promises";
 
 export * from "./isolated-process.js";
+export * from "./secret-encryption.js";
 
 export type CommandInvocation = {
   args: string[];
@@ -1035,6 +1036,10 @@ export function wellKnownUserToolchainBins(
     const appData = typeof env.APPDATA === "string" ? env.APPDATA.trim() : "";
     if (appData.length > 0) {
       dirs.push(join(appData, "npm"));
+    }
+    const localAppData = typeof env.LOCALAPPDATA === "string" ? env.LOCALAPPDATA.trim() : "";
+    if (localAppData.length > 0) {
+      dirs.push(join(localAppData, "Microsoft", "WinGet", "Links"));
     }
   }
 
