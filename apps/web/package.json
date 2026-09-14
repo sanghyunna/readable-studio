@@ -1,6 +1,6 @@
 {
   "name": "@readable-studio/web",
-  "version": "0.2.2",
+  "version": "1.0.0",
   "description": "Readable Studio web document workspace.",
   "private": true,
   "type": "module",
