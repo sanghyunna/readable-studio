@@ -1,6 +1,6 @@
 {
   "name": "@readable-studio/packaged",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Readable Studio packaged desktop and headless runtime.",
   "private": true,
   "type": "module",
