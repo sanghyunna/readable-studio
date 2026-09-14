@@ -1,6 +1,6 @@
 # Self-check · replit-deck
 
-Run this list silently before emitting `<artifact>`. Anything failing at **P0** is a regression — fix it, don't ship. P1 means the deck is emittable but will feel AI-generated to a designer; fix if you have two passes left. P2 is polish.
+Run this list silently before finishing delivery. Anything failing at **P0** is a regression — fix it, don't ship. P1 means the deck is emittable but will feel AI-generated to a designer; fix if you have two passes left. P2 is polish.
 
 Score yourself 1–5 on each block. Anything ≤ 3 means re-do that dimension.
 
@@ -88,7 +88,7 @@ grep -nE '@import|<link.*font' index.html && echo FAIL
 
 ## Five-dimension critique (silent, before emit)
 
-Before writing `<artifact>`, score this deck 1–5 in each dimension. If any is **≤ 3**, fix and re-score.
+before finishing delivery, score this deck 1–5 in each dimension. If any is **≤ 3**, fix and re-score.
 
 1. **Philosophy**: Does it look like replit.com/slides's gallery, not a generic shadcn dashboard?
 2. **Hierarchy**: Is there exactly one dominant element per slide? Can you read the deck by looking at the biggest thing on each slide only?
@@ -102,11 +102,17 @@ Two passes is normal. Three is fine. Four means you picked the wrong theme — g
 
 ## Emission contract
 
+With file tools, save or edit `index.html`; the saved file is the deliverable. Finish with a brief reference to that file and a summary of the change. Keep the user's topic in the document title.
+
+<readable-delivery channel="no-file-tools">
+Only without file tools, use this chat delivery channel with the stable identifier `index` and the user's topic in `title`:
+
 Stop after `</artifact>`. Do not add post-mortem commentary.
 
 ```
-<artifact identifier="deck-<slug>" type="text/html" title="<deck title>">
+<artifact identifier="index" type="text/html" title="<deck title>">
 <!doctype html>
 <html>…</html>
 </artifact>
 ```
+</readable-delivery>

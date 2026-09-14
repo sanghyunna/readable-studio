@@ -48,7 +48,13 @@ Produce a three-screen mobile onboarding flow on a single HTML page.
 
 ## Output contract
 
+With file tools, save or edit `index.html`; the saved file is the deliverable. Finish with a brief reference to that file and a summary of the change. Keep the user's topic in the document title.
+
+<readable-delivery channel="no-file-tools">
+Only without file tools, use this chat delivery channel with the stable identifier `index` and the user's topic in `title`:
+
 ```
-<artifact identifier="mobile-onboarding-name" type="text/html" title="Mobile Onboarding">
+<artifact identifier="index" type="text/html" title="Mobile Onboarding">
 <!doctype html>...</artifact>
 ```
+</readable-delivery>

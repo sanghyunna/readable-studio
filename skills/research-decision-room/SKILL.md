@@ -63,7 +63,7 @@ research-decision-room/
 ```
 
 Read `references/evidence-model.md` before synthesis and run
-`references/checklist.md` before emitting the artifact.
+`references/checklist.md` before finishing delivery.
 
 ## When to use this skill
 
@@ -176,16 +176,22 @@ The artifact should be interactive but durable. Simple vanilla JavaScript is
 allowed for filtering evidence, switching views, or highlighting related ids.
 No framework dependency is required.
 
-### Step 7 - Self-check and emit
+### Step 7 - Finish delivery
+
+With file tools, save or edit `index.html`; the saved file is the deliverable. Finish with a brief reference to that file and a summary of the change. Keep the user's topic in the document title.
+
+<readable-delivery channel="no-file-tools">
+Only without file tools, use this chat delivery channel with the stable identifier `index` and the user's topic in `title`:
 
 Run the checklist. Then emit one concise orientation sentence and one HTML
 artifact:
 
 ```xml
-<artifact identifier="research-decision-room" type="text/html" title="Research Decision Room">
+<artifact identifier="index" type="text/html" title="Research Decision Room">
 <!doctype html>
 <html>...</html>
 </artifact>
 ```
 
 Nothing after the closing `</artifact>`.
+</readable-delivery>

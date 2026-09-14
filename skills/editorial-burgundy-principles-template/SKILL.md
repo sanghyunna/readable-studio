@@ -61,11 +61,17 @@ editorial-burgundy-principles-template/
 
 ## Output contract
 
+With file tools, save or edit `index.html`; the saved file is the deliverable. Finish with a brief reference to that file and a summary of the change. Keep the user's topic in the document title.
+
+<readable-delivery channel="no-file-tools">
+Only without file tools, use this chat delivery channel with the stable identifier `index` and the user's topic in `title`:
+
 Emit one concise orientation sentence and one HTML artifact:
 
 ```xml
-<artifact identifier="editorial-burgundy-principles" type="text/html" title="Editorial Burgundy Principles Deck">
+<artifact identifier="index" type="text/html" title="Editorial Burgundy Principles Deck">
 <!doctype html>
 <html>...</html>
 </artifact>
 ```
+</readable-delivery>

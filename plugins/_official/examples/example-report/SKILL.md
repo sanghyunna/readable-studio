@@ -52,7 +52,8 @@ example-report/
 
 ### Step 1 - Copy the seed
 
-Copy `assets/template.html` to the output HTML file, usually `index.html`.
+With file tools, adapt `assets/template.html` into the project root `index.html`.
+Without file tools, use the seed structure for the document being composed in chat.
 Replace the document title, metadata, and placeholder copy. Keep the file
 self-contained: inline CSS, no external fonts, no remote scripts.
 
@@ -93,20 +94,29 @@ line. Tables can be wider, but they must remain legible in print.
 
 ### Step 5 - Self-check
 
-Run through `references/checklist.md` before emitting. P0 items must pass:
+Run through `references/checklist.md` before finishing. P0 items must pass:
 complete structure, clean heading hierarchy, legible tables, print pagination,
 and no external dependencies.
 
 ## Output contract
 
+With file tools, the saved `index.html` is the deliverable. Finish with a brief
+reference to that file and a summary of what changed.
+
+<readable-delivery channel="no-file-tools">
+Only in API/BYOK mode without file tools, deliver the complete report in one
+chat artifact. Keep the topic in the title and use the stable entry identifier:
+
 ```
-<artifact identifier="report-slug" type="text/html" title="Report Title">
+<artifact identifier="index" type="text/html" title="Report Title">
 <!doctype html>
 <html>...</html>
 </artifact>
 ```
 
-One sentence before the artifact. Stop after `</artifact>`.
+For that no-file-tools channel, put one sentence before the artifact and finish
+after `</artifact>`.
+</readable-delivery>
 
 ## Hard rules
 

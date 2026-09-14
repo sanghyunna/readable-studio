@@ -71,11 +71,17 @@ swiss-user-research-video-template/
 
 ## Output contract
 
+With file tools, save or edit `index.html`; the saved file is the deliverable. Finish with a brief reference to that file and a summary of the change. Keep the user's topic in the document title.
+
+<readable-delivery channel="no-file-tools">
+Only without file tools, use this chat delivery channel with the stable identifier `index` and the user's topic in `title`:
+
 Emit one concise orientation sentence and then a single HTML artifact:
 
 ```xml
-<artifact identifier="swiss-user-research-deck" type="text/html" title="Swiss User Research Synthesis">
+<artifact identifier="index" type="text/html" title="Swiss User Research Synthesis">
 <!doctype html>
 <html>...</html>
 </artifact>
 ```
+</readable-delivery>

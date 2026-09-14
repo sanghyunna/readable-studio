@@ -53,9 +53,15 @@ Produce a single-screen financial report in one self-contained HTML file.
 
 ## Output contract
 
+With file tools, save or edit `index.html`; the saved file is the deliverable. Finish with a brief reference to that file and a summary of the change. Keep the user's topic in the document title.
+
+<readable-delivery channel="no-file-tools">
+Only without file tools, use this chat delivery channel with the stable identifier `index` and the user's topic in `title`:
+
 ```
-<artifact identifier="finance-report-q3" type="text/html" title="Q3 Finance Report">
+<artifact identifier="index" type="text/html" title="Q3 Finance Report">
 <!doctype html>
 <html>...</html>
 </artifact>
 ```
+</readable-delivery>

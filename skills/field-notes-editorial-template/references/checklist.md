@@ -1,6 +1,6 @@
 # Field Notes Editorial Template Checklist
 
-## P0 (must pass before emitting `<artifact>`)
+## P0 (must pass before finishing delivery)
 
 - [ ] Single-file HTML output (`<!doctype html>`, inline CSS/JS, no build step).
 - [ ] `assets/template.html` exists and can be copied directly to `index.html`.

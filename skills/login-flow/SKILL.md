@@ -22,9 +22,9 @@ A skill for generating mobile-first login and authentication screens. Use this w
 
 1. **Read reference files first** (see below)
 2. **Clarify auth method**: phone/SMS, password, or social SSO
-3. **Checklist gate** — verify P0 items before emitting `<artifact>`
+3. **Checklist gate** — verify P0 items before finishing delivery
 4. **Build the HTML prototype** with proper states (default, loading, error)
-5. **Wrap in `<artifact>` tag** referencing the output file
+5. **Deliver once:** with file tools, save `index.html` and summarize that file; only without file tools, emit one complete HTML chat artifact with identifier `index` and the topic in its title.
 
 ## Side Files
 

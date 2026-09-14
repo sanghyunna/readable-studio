@@ -70,13 +70,19 @@ email body. Treat it like a marketing artifact: one big idea, one CTA.
 
 ## Output contract
 
+With file tools, save or edit `index.html`; the saved file is the deliverable. Finish with a brief reference to that file and a summary of the change. Keep the user's topic in the document title.
+
+<readable-delivery channel="no-file-tools">
+Only without file tools, use this chat delivery channel with the stable identifier `index` and the user's topic in `title`:
+
 Emit between `<artifact>` tags:
 
 ```
-<artifact identifier="email-slug" type="text/html" title="Email — Subject Line">
+<artifact identifier="index" type="text/html" title="Email — Subject Line">
 <!doctype html>
 <html>...</html>
 </artifact>
 ```
 
 One sentence before the artifact, nothing after.
+</readable-delivery>

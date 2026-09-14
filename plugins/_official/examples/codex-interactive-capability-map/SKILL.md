@@ -68,13 +68,19 @@ Transform a long article, social thread, memo, product essay, or launch narrativ
 
 ## Output Contract
 
+With file tools, save or edit `index.html`; the saved file is the deliverable. Finish with a brief reference to that file and a summary of the change. Keep the user's topic in the document title.
+
+<readable-delivery channel="no-file-tools">
+Only without file tools, use this chat delivery channel with the stable identifier `index` and the user's topic in `title`:
+
 Emit one single-file HTML artifact:
 
 ```html
-<artifact identifier="codex-interactive-capability-map" type="text/html" title="Codex Interactive Capability Map">
+<artifact identifier="index" type="text/html" title="Codex Interactive Capability Map">
 <!doctype html>
 <html>...</html>
 </artifact>
 ```
 
 Include all CSS and JavaScript inline. Do not use lorem ipsum. Do not leave placeholder cards. If the source does not include enough concrete details, infer a small, clearly labeled conceptual model from the source instead of inventing unrelated content.
+</readable-delivery>

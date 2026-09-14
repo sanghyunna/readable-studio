@@ -1,6 +1,6 @@
 # Clinical Case Report — Quality Checklist
 
-## P0 — Must Pass Before Emitting Artifact
+## P0 — Must Pass before finishing delivery
 
 - [ ] Chief complaint or ID line is clearly stated in the opening line
 - [ ] **SOAP / Conference format only:** HPI is written as a chronological prose narrative with at least one timeline marker (e.g. "2 hours prior to presentation"); skip for Brief Rounds

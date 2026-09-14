@@ -58,11 +58,17 @@ digits-fintech-swiss-template/
 
 ## Output contract
 
+With file tools, save or edit `index.html`; the saved file is the deliverable. Finish with a brief reference to that file and a summary of the change. Keep the user's topic in the document title.
+
+<readable-delivery channel="no-file-tools">
+Only without file tools, use this chat delivery channel with the stable identifier `index` and the user's topic in `title`:
+
 Emit one concise orientation sentence and then one HTML artifact:
 
 ```xml
-<artifact identifier="digits-fintech-swiss" type="text/html" title="Digits Fintech Swiss Deck">
+<artifact identifier="index" type="text/html" title="Digits Fintech Swiss Deck">
 <!doctype html>
 <html>...</html>
 </artifact>
 ```
+</readable-delivery>

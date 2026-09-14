@@ -45,7 +45,13 @@ Produce a single-page engineering runbook.
 
 ## Output contract
 
+With file tools, save or edit `index.html`; the saved file is the deliverable. Finish with a brief reference to that file and a summary of the change. Keep the user's topic in the document title.
+
+<readable-delivery channel="no-file-tools">
+Only without file tools, use this chat delivery channel with the stable identifier `index` and the user's topic in `title`:
+
 ```
-<artifact identifier="runbook-name" type="text/html" title="Service Runbook">
+<artifact identifier="index" type="text/html" title="Service Runbook">
 <!doctype html>...</artifact>
 ```
+</readable-delivery>

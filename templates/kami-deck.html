@@ -64,56 +64,72 @@
     }
     .slide.active { display: flex; }
 
-    /* Chrome — counter + prev/next live outside the scaled stage. */
+    /* Chrome — the nav bar lives outside the scaled stage. Achromatic by
+       design (never inherits the deck's theme tokens) and auto-hides like
+       a taskbar (see "auto-hide nav" in the script). It stays in the tab
+       order while hidden and :focus-within reveals it. */
     .deck-counter {
+      --nav-h: 32px;
+      --nav-gap: 14px;
+      --nav-bg: rgba(18, 18, 18, 0.86);
+      --nav-fg: #f4f4f4;
+      --nav-fg-muted: rgba(244, 244, 244, 0.48);
+      --nav-line: rgba(255, 255, 255, 0.1);
+      --nav-hover: rgba(255, 255, 255, 0.1);
+      --nav-ease: cubic-bezier(0.2, 0, 0, 1);
       position: fixed;
-      bottom: 22px;
+      bottom: var(--nav-gap);
       left: 50%;
-      transform: translateX(-50%);
       display: inline-flex;
       align-items: center;
-      gap: 4px;
-      background: rgba(20, 20, 19, 0.92);
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
-      padding: 6px;
-      border-radius: 999px;
-      border: 1px solid rgba(250, 249, 245, 0.08);
-      color: #faf9f5;
-      font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
-      letter-spacing: 0.18em;
+      gap: 2px;
+      height: var(--nav-h);
+      padding: 0 4px;
+      border-radius: 8px;
+      background: var(--nav-bg);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--nav-line);
+      color: var(--nav-fg);
+      font: 500 12px/1 'Pretendard', 'Pretendard Variable', 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', system-ui, sans-serif;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.08em;
       z-index: 1000;
+      transform: translate3d(-50%, calc(var(--nav-h) + var(--nav-gap) + 8px), 0);
+      transition: transform 220ms var(--nav-ease);
+      will-change: transform;
     }
+    .deck-counter.is-open,
+    .deck-counter:focus-within { transform: translate3d(-50%, 0, 0); }
     .deck-counter button {
-      width: 36px; height: 36px;
+      width: 28px; height: 28px;
       background: transparent;
-      color: #faf9f5;
+      color: var(--nav-fg);
       border: 0;
-      border-radius: 50%;
-      font-size: 18px;
+      border-radius: 6px;
+      font: inherit;
+      font-size: 16px;
       line-height: 1;
       cursor: pointer;
       display: grid;
       place-items: center;
-      transition: background 0.15s;
+      transition: background 120ms;
     }
-    .deck-counter button:hover { background: rgba(250, 249, 245, 0.12); }
+    .deck-counter button:hover { background: var(--nav-hover); }
+    .deck-counter button:focus-visible { outline: 2px solid var(--nav-fg); outline-offset: -2px; }
     .deck-counter button[disabled] { opacity: 0.3; cursor: default; }
     .deck-counter .deck-count {
-      padding: 0 14px;
-      letter-spacing: 0.22em;
+      padding: 0 10px;
+      letter-spacing: 0.12em;
     }
-    .deck-counter .deck-count .total { color: rgba(250, 249, 245, 0.5); }
-    .deck-hint {
-      position: fixed;
-      bottom: 26px;
-      right: 28px;
-      color: rgba(250, 249, 245, 0.4);
-      font: 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
-      letter-spacing: 0.2em;
-      text-transform: uppercase;
-      z-index: 999;
-      pointer-events: none;
+    .deck-counter .deck-count .total { color: var(--nav-fg-muted); }
+    /* No hover on touch-only devices, so there is no proximity to
+       detect: keep the bar visible. */
+    @media (hover: none) {
+      .deck-counter { transform: translate3d(-50%, 0, 0); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .deck-counter { transition: none; }
     }
 
     /* Print / PDF stitching — every slide stacks top-to-bottom, one per page. */
@@ -147,7 +163,7 @@
         break-after: page;
       }
       .slide:last-child { page-break-after: auto; break-after: auto; }
-      .deck-counter, .deck-hint { display: none !important; }
+      .deck-counter { display: none !important; }
     }
   </style>
   <style>
@@ -490,7 +506,6 @@
     <span class="deck-count"><span id="deck-cur">01</span> <span class="total">/ <span id="deck-total">01</span></span></span>
     <button type="button" id="deck-next" aria-label="Next slide">›</button>
   </nav>
-  <div class="deck-hint">← / → · space</div>
 
   <script>
     (function () {
@@ -543,6 +558,38 @@
       document.addEventListener('keydown', onKey, true);
       if (prev) prev.addEventListener('click', function () { go(idx - 1); });
       if (next) next.addEventListener('click', function () { go(idx + 1); });
+
+      // ---- auto-hide nav (taskbar-style) ----------------------------------
+      // Decoration only: the bar mirrors state and never gates input — the
+      // keydown handlers above run whether it is visible or not. Reveal when
+      // the pointer enters the bottom REVEAL px band; keep it open while the
+      // pointer stays inside the wider KEEP band (hysteresis, so the edge
+      // never flickers); hide HIDE_MS after the pointer has left that band
+      // or the window. Keyboard focus reveals via CSS :focus-within.
+      var nav = document.querySelector('.deck-counter');
+      var REVEAL = 72, KEEP = 160, HIDE_MS = 900;
+      var hideTimer = 0;
+      function openNav() {
+        if (hideTimer) { clearTimeout(hideTimer); hideTimer = 0; }
+        nav.classList.add('is-open');
+      }
+      function scheduleHideNav() {
+        if (hideTimer) return;
+        hideTimer = setTimeout(function () {
+          hideTimer = 0;
+          nav.classList.remove('is-open');
+        }, HIDE_MS);
+      }
+      function onPointerNear(e) {
+        var band = nav.classList.contains('is-open') ? KEEP : REVEAL;
+        if (window.innerHeight - e.clientY <= band) openNav();
+        else scheduleHideNav();
+      }
+      if (nav) {
+        document.addEventListener('pointermove', onPointerNear, { passive: true });
+        document.addEventListener('pointerdown', onPointerNear, { passive: true });
+        document.addEventListener('pointerout', function (e) { if (!e.relatedTarget) scheduleHideNav(); });
+      }
 
       document.body.setAttribute('tabindex', '-1');
       document.body.style.outline = 'none';

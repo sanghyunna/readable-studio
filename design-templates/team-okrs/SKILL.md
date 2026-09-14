@@ -41,7 +41,13 @@ Produce a single-screen OKR tracker.
 
 ## Output contract
 
+With file tools, save or edit `index.html`; the saved file is the deliverable. Finish with a brief reference to that file and a summary of the change. Keep the user's topic in the document title.
+
+<readable-delivery channel="no-file-tools">
+Only without file tools, use this chat delivery channel with the stable identifier `index` and the user's topic in `title`:
+
 ```
-<artifact identifier="okr-q4" type="text/html" title="OKRs Q4">
+<artifact identifier="index" type="text/html" title="OKRs Q4">
 <!doctype html>...</artifact>
 ```
+</readable-delivery>

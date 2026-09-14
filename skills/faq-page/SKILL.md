@@ -74,16 +74,22 @@ Produce a single FAQ page with collapsible accordion sections, search, and categ
 
 ## Output contract
 
+With file tools, save or edit `index.html`; the saved file is the deliverable. Finish with a brief reference to that file and a summary of the change. Keep the user's topic in the document title.
+
+<readable-delivery channel="no-file-tools">
+Only without file tools, use this chat delivery channel with the stable identifier `index` and the user's topic in `title`:
+
 Emit between `<artifact>` tags:
 
 ```
-<artifact identifier="faq-page" type="text/html" title="FAQ Page">
+<artifact identifier="index" type="text/html" title="FAQ Page">
 <!doctype html>
 <html>...</html>
 </artifact>
 ```
 
 One sentence before the artifact, nothing after.
+</readable-delivery>
 
 ## Example questions by category
 

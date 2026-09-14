@@ -93,15 +93,21 @@ If release version or date is missing, use `—` and label the field rather than
 
 Run `references/checklist.md`. Every P0 must pass.
 
-### Step 5 — Emit artifact
+### Step 5 — Finish delivery
+
+With file tools, save or edit `index.html`; the saved file is the deliverable. Finish with a brief reference to that file and a summary of the change. Keep the user's topic in the document title.
+
+<readable-delivery channel="no-file-tools">
+Only without file tools, use this chat delivery channel with the stable identifier `index` and the user's topic in `title`:
 
 Wrap output as:
 
 ```
-<artifact identifier="release-notes-one-pager" type="text/html" title="Release Notes">
+<artifact identifier="index" type="text/html" title="Release Notes">
 <!doctype html>
 <html>...</html>
 </artifact>
 ```
 
 One sentence before the artifact. Nothing after `</artifact>`.
+</readable-delivery>

@@ -80,14 +80,20 @@ Contexts that demand digital-native polish or playful pop — the stencil-cut di
 
 ## Output contract
 
+With file tools, save or edit `index.html`; the saved file is the deliverable. Finish with a brief reference to that file and a summary of the change. Keep the user's topic in the document title.
+
+<readable-delivery channel="no-file-tools">
+Only without file tools, use this chat delivery channel with the stable identifier `index` and the user's topic in `title`:
+
 Emit between `<artifact>` tags:
 
 ```
-<artifact identifier="zhangzara-stencil-tablet" type="text/html" title="Deck Title">
+<artifact identifier="index" type="text/html" title="Deck Title">
 <!doctype html>
 <html>...</html>
 </artifact>
 ```
+</readable-delivery>
 
 ## Source & license
 

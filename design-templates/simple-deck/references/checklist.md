@@ -1,6 +1,6 @@
 # Simple deck checklist
 
-Run before emitting `<artifact>`. P0 must pass.
+Run before finishing delivery. P0 must pass.
 
 ## P0 — must pass
 

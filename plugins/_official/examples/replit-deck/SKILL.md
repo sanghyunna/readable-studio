@@ -135,16 +135,22 @@ grep -E 'data-theme|style="--' index.html | head
 
 If any `style="--accent:..."` or theme override appears on individual slides, revert. One theme per deck.
 
-### Step 6 ??Emit artifact
+### Step 6 ??Finish delivery
+
+With file tools, save or edit `index.html`; the saved file is the deliverable. Finish with a brief reference to that file and a summary of the change. Keep the user's topic in the document title.
+
+<readable-delivery channel="no-file-tools">
+Only without file tools, use this chat delivery channel with the stable identifier `index` and the user's topic in `title`:
 
 ```
-<artifact identifier="deck-<slug>" type="text/html" title="<Deck title>">
+<artifact identifier="index" type="text/html" title="<Deck title>">
 <!doctype html>
 <html>...</html>
 </artifact>
 ```
 
 One sentence before the artifact. Stop after `</artifact>`.
+</readable-delivery>
 
 ## Hard rules
 

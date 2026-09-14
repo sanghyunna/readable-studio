@@ -69,11 +69,17 @@ after-hours-editorial-template/
 
 ## Output contract
 
+With file tools, save or edit `index.html`; the saved file is the deliverable. Finish with a brief reference to that file and a summary of the change. Keep the user's topic in the document title.
+
+<readable-delivery channel="no-file-tools">
+Only without file tools, use this chat delivery channel with the stable identifier `index` and the user's topic in `title`:
+
 One short orientation sentence, then:
 
 ```xml
-<artifact identifier="after-hours-editorial" type="text/html" title="After Hours Editorial Template">
+<artifact identifier="index" type="text/html" title="After Hours Editorial Template">
 <!doctype html>
 <html>...</html>
 </artifact>
 ```
+</readable-delivery>

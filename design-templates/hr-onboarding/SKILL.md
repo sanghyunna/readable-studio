@@ -44,7 +44,13 @@ Produce a single-screen onboarding plan in HTML.
 
 ## Output contract
 
+With file tools, save or edit `index.html`; the saved file is the deliverable. Finish with a brief reference to that file and a summary of the change. Keep the user's topic in the document title.
+
+<readable-delivery channel="no-file-tools">
+Only without file tools, use this chat delivery channel with the stable identifier `index` and the user's topic in `title`:
+
 ```
-<artifact identifier="onboarding-plan" type="text/html" title="Onboarding Plan">
+<artifact identifier="index" type="text/html" title="Onboarding Plan">
 <!doctype html>...</artifact>
 ```
+</readable-delivery>

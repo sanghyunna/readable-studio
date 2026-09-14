@@ -1,6 +1,6 @@
 # Login Flow Checklist
 
-P0 (must pass before emitting artifact):
+P0 (must pass before finishing delivery):
 
 - [ ] Labels above inputs, never placeholder-only
 - [ ] Password field has show/hide toggle

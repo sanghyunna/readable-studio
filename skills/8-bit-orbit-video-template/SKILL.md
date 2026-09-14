@@ -61,15 +61,21 @@ The rendered MP4 showcase used by `example.html` is hosted at
 4. Keep timing constraint: every scene hold should stay within 3 seconds.
 5. Preserve deterministic behavior in generated compositions (no unseeded randomness, no infinite GSAP loops).
 6. Keep all code self-contained in one HTML file with inline CSS/JS.
-7. Validate against `references/checklist.md` before emitting the artifact.
+7. Validate against `references/checklist.md` before finishing delivery.
 
 ## Output contract
+
+With file tools, save or edit `index.html`; the saved file is the deliverable. Finish with a brief reference to that file and a summary of the change. Keep the user's topic in the document title.
+
+<readable-delivery channel="no-file-tools">
+Only without file tools, use this chat delivery channel with the stable identifier `index` and the user's topic in `title`:
 
 Emit one short sentence before the artifact, then a single HTML artifact:
 
 ```xml
-<artifact identifier="8-bit-orbit-video-template" type="text/html" title="8-Bit Orbit Video Template">
+<artifact identifier="index" type="text/html" title="8-Bit Orbit Video Template">
 <!doctype html>
 <html>...</html>
 </artifact>
 ```
+</readable-delivery>

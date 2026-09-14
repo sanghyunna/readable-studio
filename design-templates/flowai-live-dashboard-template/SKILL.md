@@ -74,10 +74,15 @@ flowai-live-dashboard-template/
 
 ## Output contract
 
+With file tools, save or edit `index.html`; the saved file is the deliverable. Finish with a brief reference to that file and a summary of the change. Keep the user's topic in the document title.
+
+<readable-delivery channel="no-file-tools">
+Only without file tools, use this chat delivery channel with the stable identifier `index` and the user's topic in `title`:
+
 Emit one short orientation sentence, then the artifact:
 
 ```xml
-<artifact identifier="flowai-team-dashboard" type="text/html" title="FlowAI Team Dashboard">
+<artifact identifier="index" type="text/html" title="FlowAI Team Dashboard">
 <!doctype html>
 <html>...</html>
 </artifact>
@@ -85,3 +90,4 @@ Emit one short orientation sentence, then the artifact:
 
 The artifact must render correctly when opened directly from disk with no
 build step and no network access.
+</readable-delivery>

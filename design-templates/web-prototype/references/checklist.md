@@ -1,6 +1,6 @@
 # Web prototype checklist
 
-Run this before emitting `<artifact>`. P0 = must pass; P1 = should pass; P2 = nice to have.
+Run this before finishing delivery. P0 = must pass; P1 = should pass; P2 = nice to have.
 
 ## P0 — must pass
 

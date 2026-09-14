@@ -96,16 +96,22 @@ grep 'class="slide' index.html
 
 Read the resulting class list. If you see `light 횞 4 in a row`, swap one to `dark`. If no `hero dark` exists in an 8+ slide deck, promote one big-stat or closing slide.
 
-### Step 5 ??Emit the artifact
+### Step 5 ??Finish delivery
+
+With file tools, save or edit `index.html`; the saved file is the deliverable. Finish with a brief reference to that file and a summary of the change. Keep the user's topic in the document title.
+
+<readable-delivery channel="no-file-tools">
+Only without file tools, use this chat delivery channel with the stable identifier `index` and the user's topic in `title`:
 
 ```
-<artifact identifier="deck-slug" type="text/html" title="Deck Title">
+<artifact identifier="index" type="text/html" title="Deck Title">
 <!doctype html>
 <html>...</html>
 </artifact>
 ```
 
 One sentence before the artifact. Stop after `</artifact>`.
+</readable-delivery>
 
 ## Hard rules
 

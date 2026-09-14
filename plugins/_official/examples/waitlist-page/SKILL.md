@@ -210,12 +210,17 @@ This skill enforces a hardened, template-based workflow to ensure compliance. **
 
 ## Output
 
+With file tools, save or edit `index.html`; the saved file is the deliverable. Finish with a brief reference to that file and a summary of the change. Keep the user's topic in the document title.
+
+<readable-delivery channel="no-file-tools">
+Only without file tools, use this chat delivery channel with the stable identifier `index` and the user's topic in `title`:
+
 **Only emit after all P0 gates in `references/checklist.md` pass.**
 
 Emit the artifact between tags:
 
 ```
-<artifact identifier="waitlist-id" type="text/html" title="Coming Soon — {{PRODUCT_NAME}}">
+<artifact identifier="index" type="text/html" title="Coming Soon — {{PRODUCT_NAME}}">
 <!doctype html>
 <html lang="en">
 ...
@@ -225,4 +230,5 @@ Emit the artifact between tags:
 
 One line of description above the artifact; nothing below.
 
-**Post-emission:** If the user asks for changes, update the index.html in-place and re-run the P0 checklist gates before emitting the next version. Do not skip validation on iterations.
+**Iterations:** With file tools, update `index.html` in place and summarize the change. Without file tools, replace the document through the same chat delivery channel. Re-run the P0 checklist in either case.
+</readable-delivery>

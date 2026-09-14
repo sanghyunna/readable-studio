@@ -1,6 +1,6 @@
 # Swiss Creative Mode Template Checklist
 
-## P0 (must pass before emitting `<artifact>`)
+## P0 (must pass before finishing delivery)
 
 - [ ] `assets/template.html` exists and opens directly from disk.
 - [ ] `example.html` exists and is a complete hand-built sample.

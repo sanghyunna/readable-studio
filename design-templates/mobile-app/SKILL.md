@@ -79,16 +79,22 @@ Run through `references/checklist.md`. Pay extra attention to:
 - One accent, used ≤ 2× on the screen
 - Display headings still use `var(--font-display)` (serif)
 
-### Step 5 — Emit the artifact
+### Step 5 — Finish delivery
+
+With file tools, save or edit `index.html`; the saved file is the deliverable. Finish with a brief reference to that file and a summary of the change. Keep the user's topic in the document title.
+
+<readable-delivery channel="no-file-tools">
+Only without file tools, use this chat delivery channel with the stable identifier `index` and the user's topic in `title`:
 
 ```
-<artifact identifier="mobile-slug" type="text/html" title="Mobile — Screen Name">
+<artifact identifier="index" type="text/html" title="Mobile — Screen Name">
 <!doctype html>
 <html>...</html>
 </artifact>
 ```
 
 One sentence before describing what's there. Stop after `</artifact>`.
+</readable-delivery>
 
 ## Hard rules
 

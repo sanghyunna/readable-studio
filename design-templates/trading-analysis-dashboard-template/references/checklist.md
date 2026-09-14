@@ -1,6 +1,6 @@
 # Trading Analysis Dashboard Template Checklist
 
-## P0 (must pass before emitting `<artifact>`)
+## P0 (must pass before finishing delivery)
 
 - [ ] Single-file HTML output (`<!doctype html>`, inline CSS/JS, no build step).
 - [ ] Dense trading layout exists: left sidebar + top status + multi-panel body.

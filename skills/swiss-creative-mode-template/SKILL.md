@@ -37,7 +37,7 @@ readable:
 # Swiss Creative Mode Template
 
 Produce a premium Swiss/editorial-style HTML template with strong visual rhythm
-and meaningful interactions, then emit it as a single-file artifact.
+and meaningful interactions, then deliver it through the output contract below.
 
 ## Resource map
 
@@ -69,11 +69,17 @@ swiss-creative-mode-template/
 
 ## Output contract
 
+With file tools, save or edit `index.html`; the saved file is the deliverable. Finish with a brief reference to that file and a summary of the change. Keep the user's topic in the document title.
+
+<readable-delivery channel="no-file-tools">
+Only without file tools, use this chat delivery channel with the stable identifier `index` and the user's topic in `title`:
+
 One short sentence before artifact, then:
 
 ```xml
-<artifact identifier="swiss-creative-mode" type="text/html" title="Swiss Creative Mode Template">
+<artifact identifier="index" type="text/html" title="Swiss Creative Mode Template">
 <!doctype html>
 <html>...</html>
 </artifact>
 ```
+</readable-delivery>

@@ -68,7 +68,7 @@ Before starting, read both reference files:
 1. `references/case-formats.md` — use this to choose the correct output
    format (SOAP, Conference, or Brief Rounds) based on the user's context
 2. `references/checklist.md` — keep P0 gates in mind throughout; you
-   must pass all P0 items before emitting the final artifact
+   must pass all P0 items before finishing delivery
 
 ### Step 1 — Parse the brief
 
@@ -205,5 +205,5 @@ Requirements for the HTML output:
 
 ### Step 7 — Self-check against `references/checklist.md`
 
-Before emitting `<artifact>`, run every P0 item in `references/checklist.md`.
+before finishing delivery, run every P0 item in `references/checklist.md`.
 All P0 items must pass. Fix any failures before emitting.

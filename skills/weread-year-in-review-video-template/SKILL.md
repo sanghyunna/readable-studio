@@ -84,11 +84,17 @@ The rendered MP4 showcase used by `example.html` is hosted at
 
 ## Output Contract
 
+With file tools, save or edit `index.html`; the saved file is the deliverable. Finish with a brief reference to that file and a summary of the change. Keep the user's topic in the document title.
+
+<readable-delivery channel="no-file-tools">
+Only without file tools, use this chat delivery channel with the stable identifier `index` and the user's topic in `title`:
+
 Emit one short orientation sentence, then a single HTML artifact:
 
 ```xml
-<artifact identifier="weread-year-in-review-video-template" type="text/html" title="WeRead Year in Review Video Template">
+<artifact identifier="index" type="text/html" title="WeRead Year in Review Video Template">
 <!doctype html>
 <html>...</html>
 </artifact>
 ```
+</readable-delivery>

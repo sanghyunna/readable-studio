@@ -1,6 +1,6 @@
 # Checklist — Waitlist Page
 
-## P0 — Must pass before emitting `<artifact>`
+## P0 — Must pass before finishing delivery
 
 - [ ] Page has exactly one primary CTA (the email field + submit button)
 - [ ] No hero gradient that spans more than 20% of the viewport height

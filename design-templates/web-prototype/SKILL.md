@@ -50,9 +50,7 @@ web-prototype/
 
 ### Step 1 — Prepare the artifact from the seed
 
-Choose one kebab-case artifact slug before composing the page. Use `assets/template.html` as the seed for the final artifact HTML.
-
-Do not write a project-root HTML draft with file-write before emitting the final `<artifact>`. The artifact output is the canonical HTML file for this generation turn; an extra `index.html`, `cast.html`, or brief-derived draft can be stranded beside it as an orphan.
+Use `assets/template.html` as the seed. With file tools, adapt it into `index.html`; without file tools, compose the document directly for the output channel below.
 
 Replace the six `:root` variables with the active design system's tokens. Replace the page `<title>` and the topnav brand.
 
@@ -77,9 +75,9 @@ For each chosen layout, copy the `<section>` block from `layouts.md` into `<main
 
 Run through `references/checklist.md` top to bottom. Every P0 item must pass before you move on. P1 items should pass; P2 are bonus.
 
-### Step 5 — Emit the artifact
+### Step 5 — Finish delivery
 
-Wrap the completed HTML in `<artifact>` tags using the artifact slug as the `identifier`. One sentence before describing what's there. Stop after `</artifact>`.
+Finish through the output contract below.
 
 ## Hard rules (the seed protects most of these — don't fight it)
 
@@ -91,13 +89,17 @@ Wrap the completed HTML in `<artifact>` tags using the artifact slug as the `ide
 
 ## Output contract
 
+With file tools, save or edit `index.html`; the saved file is the deliverable. Finish with a brief reference to that file and a summary of the change. Keep the user's topic in the document title.
+
+<readable-delivery channel="no-file-tools">
+Only without file tools, use this chat delivery channel with the stable identifier `index` and the user's topic in `title`:
+
 ```
-<artifact identifier="kebab-case-slug" type="text/html" title="Human Title">
+<artifact identifier="index" type="text/html" title="Human Title">
 <!doctype html>
 <html>...</html>
 </artifact>
 ```
 
-Readable Studio derives the canonical HTML artifact from this identifier. Do not also write another root HTML file for the same generation turn.
-
 One sentence before the artifact. Nothing after.
+</readable-delivery>

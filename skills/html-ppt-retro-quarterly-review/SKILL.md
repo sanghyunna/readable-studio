@@ -65,15 +65,21 @@ html-ppt-retro-quarterly-review/
    - premium wipe transitions and staggered reveals
 5. Keep output self-contained (single HTML, inline CSS + JS, no framework runtime).
 6. If adapting copy/data, keep content realistic and internally consistent.
-7. Validate against `references/checklist.md` before emitting artifact.
+7. Validate against `references/checklist.md` before finishing delivery.
 
 ## Output contract
+
+With file tools, save or edit `index.html`; the saved file is the deliverable. Finish with a brief reference to that file and a summary of the change. Keep the user's topic in the document title.
+
+<readable-delivery channel="no-file-tools">
+Only without file tools, use this chat delivery channel with the stable identifier `index` and the user's topic in `title`:
 
 Emit one short orientation sentence and then the artifact:
 
 ```xml
-<artifact identifier="retro-quarterly-review" type="text/html" title="Retro Quarterly Review">
+<artifact identifier="index" type="text/html" title="Retro Quarterly Review">
 <!doctype html>
 <html>...</html>
 </artifact>
 ```
+</readable-delivery>

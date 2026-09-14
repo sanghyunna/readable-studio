@@ -1,6 +1,6 @@
 # Mobile app checklist
 
-Run this before emitting `<artifact>`. P0 must pass.
+Run this before finishing delivery. P0 must pass.
 
 ## P0 — must pass
 

@@ -1,6 +1,6 @@
 # Self-review checklist (IB pitch book)
 
-Use after building **`index.html`**, before emitting `<artifact>`.
+Use after building **`index.html`**, before finishing delivery.
 
 ## P0 — must pass
 

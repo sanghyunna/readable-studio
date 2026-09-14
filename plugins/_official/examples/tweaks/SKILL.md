@@ -214,8 +214,13 @@ confirm the choice persists. If a knob breaks the layout —
 
 ## Output contract
 
+With file tools, save or edit `index.html`; the saved file is the deliverable. Finish with a brief reference to that file and a summary of the change. Keep the user's topic in the document title.
+
+<readable-delivery channel="no-file-tools">
+Only without file tools, use this chat delivery channel with the stable identifier `index` and the user's topic in `title`:
+
 ```
-<artifact identifier="tweaks-<artifact-slug>" type="text/html" title="<Artifact Title> · Tweaks">
+<artifact identifier="index" type="text/html" title="<Artifact Title> · Tweaks">
 <!doctype html>
 <html>...</html>
 </artifact>
@@ -223,6 +228,7 @@ confirm the choice persists. If a knob breaks the layout —
 
 One sentence before the artifact ("Wrapped X with a 3-knob tweak
 panel — accent / scale / mode."). Stop after `</artifact>`.
+</readable-delivery>
 
 ## Hard rules
 

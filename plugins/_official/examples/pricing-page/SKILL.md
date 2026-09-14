@@ -65,13 +65,19 @@ Produce a single-screen pricing page that respects the active DESIGN.md.
 
 ## Output contract
 
+With file tools, save or edit `index.html`; the saved file is the deliverable. Finish with a brief reference to that file and a summary of the change. Keep the user's topic in the document title.
+
+<readable-delivery channel="no-file-tools">
+Only without file tools, use this chat delivery channel with the stable identifier `index` and the user's topic in `title`:
+
 Emit between `<artifact>` tags:
 
 ```
-<artifact identifier="pricing-slug" type="text/html" title="Pricing ??Product Name">
+<artifact identifier="index" type="text/html" title="Pricing ??Product Name">
 <!doctype html>
 <html>...</html>
 </artifact>
 ```
 
 One sentence before the artifact, nothing after.
+</readable-delivery>

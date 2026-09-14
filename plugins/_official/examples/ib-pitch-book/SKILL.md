@@ -63,7 +63,7 @@ ib-pitch-book/
     ├── compliance.md     ← non-reliance / not investment advice
     ├── attribution.md    ← upstream license pointer
     ├── conventions.md    ← IB layout rules (masthead, tables, football field)
-    └── checklist.md      ← P0/P1/P2 gate before <artifact>
+    └── checklist.md      ← P0/P1/P2 gate before delivery
 ```
 
 ## Workflow

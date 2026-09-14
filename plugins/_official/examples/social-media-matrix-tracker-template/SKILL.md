@@ -76,7 +76,7 @@ social-media-matrix-tracker-template/
    - touch + keyboard arrow-key support for line charts (a11y)
 4. Ensure template remains self-contained (single HTML with inline CSS/JS, no framework dependency).
 5. Keep default sample data realistic and internally consistent across cards/charts.
-6. Validate with `references/checklist.md` before emitting the artifact.
+6. Validate with `references/checklist.md` before finishing delivery.
 
 ### Adapting the sample data safely
 
@@ -91,17 +91,23 @@ social-media-matrix-tracker-template/
 
 ## Output contract
 
+With file tools, save or edit `index.html`; the saved file is the deliverable. Finish with a brief reference to that file and a summary of the change. Keep the user's topic in the document title.
+
+<readable-delivery channel="no-file-tools">
+Only without file tools, use this chat delivery channel with the stable identifier `index` and the user's topic in `title`:
+
 Emit one short sentence before the artifact (e.g. *"Cinematic social media matrix tracker — dark theme by default, all interactions live."*) and then a single self-contained HTML artifact.
 
 - The artifact **must** use the `<artifact>` wrapper exactly as shown below — the daemon parser keys on the wrapper element.
-- `identifier="social-media-matrix-tracker"` is the canonical id (don't suffix with project name).
+- `identifier="index"` is the canonical id (don't suffix with project name).
 - `type="text/html"` and `title` are required.
 - Inline CSS + JS only. No external framework / CDN. No external font imports beyond what `template.html` already declares.
-- The final document is the **adapted** `template.html` (with DESIGN.md tokens applied), not a verbatim copy and not a separate `index.html`. Do not emit both.
+- The final document is the **adapted** `template.html` with DESIGN.md tokens applied.
 
 ```xml
-<artifact identifier="social-media-matrix-tracker" type="text/html" title="Social Media Matrix Tracker">
+<artifact identifier="index" type="text/html" title="Social Media Matrix Tracker">
 <!doctype html>
 <html>...</html>
 </artifact>
 ```
+</readable-delivery>
