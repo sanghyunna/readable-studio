@@ -268,7 +268,7 @@ function mergeAmrModelsIntoAgents(
 ): AgentInfo[] {
   if (!amrModels || amrModels.models.length === 0) return agents;
   return agents.map((agent) => {
-    if (agent.id !== 'amr') return agent;
+    if (agent.id !== 'amr' || !agent.available) return agent;
     const shouldPreferAgentModels =
       amrModels.source === 'preset' &&
       Array.isArray(agent.models) &&

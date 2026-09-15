@@ -503,7 +503,7 @@ export function InlineModelSwitcher({
   // separately (`sonnet` + `claude-sonnet-4-5`) collapse into a single honest
   // entry that still executes the canonical id. Nothing is invented or dropped.
   const agentModelChoices = useMemo(
-    () => dedupeAgentModels(currentAgent?.models ?? []).filter((model) => model.id !== 'default'),
+    () => dedupeAgentModels(currentAgent?.available ? currentAgent.models ?? [] : []).filter((model) => model.id !== 'default'),
     [currentAgent],
   );
 

@@ -3448,7 +3448,7 @@ export function SettingsDialog({
                           const description = AGENT_SHORT_DESCRIPTIONS[a.id];
                           const agentName = displayAgentName(a);
                           const diagnosticHandlers = diagnosticHandlersForAgent(a);
-                          const cardLabel = `${agentName} · ${t('common.notInstalled')}`;
+                          const cardLabel = `${agentName} · ${a.path ? t('settings.codeAgentUnavailable') : t('common.notInstalled')}`;
                           return (
                             <div
                               key={a.id}

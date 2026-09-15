@@ -24,6 +24,7 @@ export function databricksProtocolDescription(endpoint: DatabricksEndpoint): str
     : endpoint.api === 'openai-completions' ? 'OpenAI-compatible Chat Completions' : 'Protocol unverified';
   const evidence = endpoint.protocolEvidence;
   if (!evidence) return `${transport}. Protocol evidence unavailable; rescan to refresh.`;
+  if (evidence.reason === 'runtime-accepted') return `${transport}. Accepted during endpoint protocol negotiation.`;
   if (evidence.reason === 'chat-task') return `${transport}. Endpoint reports task llm/v1/chat, without API types; this is a transport, not the model family.`;
   return `${transport}. Advertised: ${evidence.advertised.join(', ') || 'none'}. Native: ${evidence.native.join(', ') || 'not reported'}.${evidence.reason === 'prefer-messages' ? ' Messages preferred to preserve native thinking and tools.' : ''}`;
 }

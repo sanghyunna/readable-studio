@@ -1171,15 +1171,18 @@ function DatabricksAddModelsModalBody({
                               >
                                 {availabilityLabel(t, endpoint.availability)}
                               </span>
-                              {endpoint.capabilities.tools === 'supported' ? (
-                                <span className={styles.pill}>{t('databricks.capability.tools')}</span>
-                              ) : null}
+                              <span className={styles.pill} data-capability="tools" data-state={endpoint.capabilities.tools}>
+                                {endpoint.capabilities.tools === 'supported' ? t('databricks.capability.tools')
+                                  : endpoint.capabilities.tools === 'unsupported' ? t('databricks.capability.toolsUnavailable')
+                                    : t('databricks.capability.toolsUnknown')}
+                              </span>
                               {endpoint.capabilities.images === 'supported' ? (
                                 <span className={styles.pill}>{t('databricks.capability.images')}</span>
                               ) : null}
                             </span>
                             <small>{databricksProtocolDescription(endpoint)}</small>
                             <small>{databricksLimitDescription(endpoint)}</small>
+                            {endpoint.capabilities.tools === 'unsupported' ? <small>{t('databricks.capability.artifactDelivery')}</small> : null}
                             {issueText ? <span className={styles.rowIssue}>{issueText}</span> : null}
                             {rowErrors[endpoint.id] ? (
                               <span className={styles.rowError} role="alert">

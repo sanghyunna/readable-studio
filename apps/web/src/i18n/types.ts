@@ -1914,6 +1914,9 @@ export interface Dict {
   'databricks.availability.unavailable': string;
   'databricks.availability.stale': string;
   'databricks.capability.tools': string;
+  'databricks.capability.toolsUnavailable': string;
+  'databricks.capability.toolsUnknown': string;
+  'databricks.capability.artifactDelivery': string;
   'databricks.capability.images': string;
   'databricks.issue.installCli': string;
   'databricks.issue.chooseExecutable': string;
