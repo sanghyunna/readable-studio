@@ -1,0 +1,77 @@
+/* Body-portaled colour popover for the direct-edit inspector swatches.
+   `position: fixed` on `document.body`: the inspector's `.root`
+   (overflow: hidden) and `.scroll` (overflow-y: auto) can no longer clip it.
+   Layered above the inspector chrome (shell.css tops out at 120) and below
+   the tooltip layer (primitives.css 9000) so a swatch tooltip still wins. */
+.popover {
+  position: fixed;
+  z-index: 1000;
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border: 0;
+  border-radius: var(--radius-control);
+  color: var(--text);
+  background: var(--bg-panel);
+  box-shadow:
+    inset 0 1px 0 var(--hub-pearl-highlight),
+    0 1px 2px color-mix(in srgb, var(--shadow-color) 8%, transparent),
+    0 10px 28px -10px color-mix(in srgb, var(--shadow-color) 26%, transparent);
+  animation: manual-edit-color-pop-in var(--dur-enter) var(--ease-out) both;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(6, 22px);
+  gap: 4px;
+}
+
+.tile {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: calc(var(--radius-control) - 3px);
+  background: var(--swatch-color);
+  box-shadow: inset 0 0 0 1px var(--hub-pearl-border);
+  cursor: pointer;
+}
+
+.tile:focus-visible,
+.native:focus-visible {
+  outline: 2px solid var(--hub-accent);
+  outline-offset: 2px;
+}
+
+.native {
+  width: 100%;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: calc(var(--radius-control) - 3px);
+  background: transparent;
+  cursor: pointer;
+}
+
+/* `pointer-events` rides in the same keyframes as `opacity`: with `both` fill
+   the popover is painted at opacity 0 on its first frame, and the tiles must
+   not be hit-testable there. Pointers return at the START of the visible
+   phase (1%), not at the end. */
+@keyframes manual-edit-color-pop-in {
+  from { opacity: 0; transform: translateY(-4px); pointer-events: none; }
+  1% { pointer-events: auto; }
+  to { opacity: 1; transform: translateY(0); pointer-events: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .popover { animation: none; }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .tile { box-shadow: inset 0 0 0 1px var(--border); }
+  .popover {
+    box-shadow:
+      inset 0 0 0 1px var(--border),
+      0 10px 28px -10px color-mix(in srgb, var(--shadow-color) 26%, transparent);
+  }
+}

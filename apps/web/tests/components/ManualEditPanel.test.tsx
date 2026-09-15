@@ -249,7 +249,8 @@ describe('ManualEditPanel', () => {
     act(() => {
       bgSwatch.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
     });
-    const colorTile = host.querySelector('button[aria-label="#3b82f6"]') as HTMLButtonElement | null;
+    // The colour popover is a body portal, so the tile is outside the host.
+    const colorTile = dom.window.document.body.querySelector('button[aria-label="#3b82f6"]') as HTMLButtonElement | null;
     if (!colorTile) throw new Error('Background color tile not found');
     act(() => {
       colorTile.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));

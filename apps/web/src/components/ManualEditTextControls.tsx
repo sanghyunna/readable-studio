@@ -10,13 +10,12 @@ import type { ManualEditStyles, ManualEditTarget } from '../edit-mode/types';
 import { RemixIcon } from './RemixIcon';
 import {
   ALIGN_OPTS,
-  EDITOR_SWATCH_COLORS,
   FONT_OPTS,
   WEIGHT_OPTS,
   fontFamilyLabel,
-  normalizeColorForPicker,
   stripPxUnit,
 } from './ManualEditPanel';
+import { ManualEditColorPopover } from './ManualEditColorPopover';
 import { useSystemFonts } from './useSystemFonts';
 import { quoteFontFamily, systemFontOptions, type FontOption } from './font-options';
 import styles from './ManualEditTextControls.module.css';
@@ -561,49 +560,30 @@ function ColorControl({
   value: string;
   onChange: (value: string) => void;
 }) {
+  // The picker is a body portal (ManualEditColorPopover): the left inspector's
+  // overflow boxes clipped the in-flow version at the panel edge.
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLSpanElement | null>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDocMouseDown = (event: MouseEvent) => {
-      if (ref.current?.contains(event.target as Node)) return;
-      setOpen(false);
-    };
-    document.addEventListener('mousedown', onDocMouseDown);
-    return () => document.removeEventListener('mousedown', onDocMouseDown);
-  }, [open]);
+  const swatchRef = useRef<HTMLButtonElement | null>(null);
   return (
-    <span className={styles.colorWrap} ref={ref}>
+    <span className={styles.colorWrap}>
       <button
+        ref={swatchRef}
         type="button"
         className={`${styles.swatch} readable-tooltip`}
         style={{ '--swatch-color': value || 'transparent' } as CSSProperties}
         aria-label={label}
+        aria-expanded={open}
         data-tooltip={label}
         onClick={() => setOpen((v) => !v)}
       />
-      {open ? (
-        <div className={styles.colorPopover}>
-          <div className={styles.colorGrid}>
-            {EDITOR_SWATCH_COLORS.map((hex) => (
-              <button
-                key={hex}
-                type="button"
-                className={styles.colorTile}
-                style={{ background: hex }}
-                aria-label={hex}
-                onClick={() => { onChange(hex); setOpen(false); }}
-              />
-            ))}
-          </div>
-          <input
-            type="color"
-            className={styles.colorNative}
-            value={normalizeColorForPicker(value)}
-            onChange={(e) => onChange(e.currentTarget.value)}
-          />
-        </div>
-      ) : null}
+      <ManualEditColorPopover
+        open={open}
+        anchorRef={swatchRef}
+        label={label}
+        value={value}
+        onChange={onChange}
+        onClose={() => setOpen(false)}
+      />
     </span>
   );
 }

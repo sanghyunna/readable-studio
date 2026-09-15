@@ -10,10 +10,8 @@ import { RemixIcon } from './RemixIcon';
 import {
   BORDER_STYLE_OPTS,
   DIRECTION_OPTS,
-  EDITOR_SWATCH_COLORS,
   ITEMS_OPTS,
   JUSTIFY_OPTS,
-  normalizeColorForPicker,
   stripPxUnit,
 } from './ManualEditPanel';
 import {
@@ -24,6 +22,7 @@ import {
 } from './ManualEditInspectorRows';
 import { ManualEditAppearanceControls, isNoFill, opacityPercent, opacityValue } from './ManualEditAppearanceControls';
 import { ManualEditBoxModelControls } from './ManualEditBoxModelControls';
+import { ManualEditColorPopover } from './ManualEditColorPopover';
 import { ManualEditGeometryControls, sizeMode } from './ManualEditGeometryControls';
 import styles from './ManualEditShapeControls.module.css';
 
@@ -687,55 +686,32 @@ function SelectControl({
   );
 }
 
+// The picker is a body portal (ManualEditColorPopover): in the stack layout the
+// left inspector's overflow boxes clipped the in-flow version at the panel edge.
 function ColorControl({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLSpanElement | null>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDocMouseDown = (event: MouseEvent) => {
-      if (ref.current?.contains(event.target as Node)) return;
-      setOpen(false);
-    };
-    const onDocKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      event.stopPropagation();
-      setOpen(false);
-    };
-    document.addEventListener('mousedown', onDocMouseDown);
-    document.addEventListener('keydown', onDocKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', onDocMouseDown);
-      document.removeEventListener('keydown', onDocKeyDown);
-    };
-  }, [open]);
+  const swatchRef = useRef<HTMLButtonElement | null>(null);
   return (
-    <span className={styles.colorWrap} ref={ref}>
+    <span className={styles.colorWrap}>
       <button
+        ref={swatchRef}
         type="button"
         className={`${styles.swatch} readable-tooltip`}
         style={{ '--swatch-color': value || 'transparent' } as CSSProperties}
         aria-label={label}
+        aria-expanded={open}
         data-tooltip={label}
         title={label}
         onClick={() => setOpen((v) => !v)}
       />
-      {open ? (
-        <div className={styles.colorPopover}>
-          <div className={styles.colorGrid}>
-            {EDITOR_SWATCH_COLORS.map((hex) => (
-              <button
-                key={hex}
-                type="button"
-                className={styles.colorTile}
-                style={{ background: hex }}
-                aria-label={hex}
-                onClick={() => { onChange(hex); setOpen(false); }}
-              />
-            ))}
-          </div>
-          <input type="color" className={styles.colorNative} value={normalizeColorForPicker(value)} onChange={(event) => onChange(event.currentTarget.value)} />
-        </div>
-      ) : null}
+      <ManualEditColorPopover
+        open={open}
+        anchorRef={swatchRef}
+        label={label}
+        value={value}
+        onChange={onChange}
+        onClose={() => setOpen(false)}
+      />
     </span>
   );
 }

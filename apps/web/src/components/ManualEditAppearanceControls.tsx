@@ -10,8 +10,9 @@ import { ToggleButton } from '@readable-studio/components';
 import { useT } from '../i18n';
 import type { ManualEditStyles } from '../edit-mode/types';
 import { RemixIcon } from './RemixIcon';
-import { BORDER_STYLE_OPTS, EDITOR_SWATCH_COLORS, normalizeColorForPicker, stripPxUnit } from './ManualEditPanel';
+import { BORDER_STYLE_OPTS, normalizeColorForPicker, stripPxUnit } from './ManualEditPanel';
 import { formatSteppedNumber, isNumericInput } from './ManualEditInspectorRows';
+import { ManualEditColorPopover } from './ManualEditColorPopover';
 import styles from './ManualEditAppearanceControls.module.css';
 
 type Side = 'Top' | 'Right' | 'Bottom' | 'Left';
@@ -108,6 +109,8 @@ function PropertyGroup({ title, children }: { title: string; children: ReactNode
 }
 
 // Colour: the swatch is the value. Hex/oklch text stays editable next to it.
+// The picker itself is a body portal (ManualEditColorPopover) so the
+// inspector's overflow boxes cannot clip it.
 function ColorField({
   icon, label, value, disabled, onChange, trailing,
 }: {
@@ -119,32 +122,15 @@ function ColorField({
   trailing?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDocMouseDown = (event: MouseEvent) => {
-      if (ref.current?.contains(event.target as Node)) return;
-      setOpen(false);
-    };
-    const onDocKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      event.stopPropagation();
-      setOpen(false);
-    };
-    document.addEventListener('mousedown', onDocMouseDown);
-    document.addEventListener('keydown', onDocKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', onDocMouseDown);
-      document.removeEventListener('keydown', onDocKeyDown);
-    };
-  }, [open]);
+  const swatchRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     if (disabled) setOpen(false);
   }, [disabled]);
   return (
-    <div className={`${styles.field} ${styles.colorField}${disabled ? ` ${styles.fieldDisabled}` : ''}`} ref={ref}>
+    <div className={`${styles.field} ${styles.colorField}${disabled ? ` ${styles.fieldDisabled}` : ''}`}>
       <span className={styles.fieldIcon} title={label}><RemixIcon name={icon} size={15} /></span>
       <button
+        ref={swatchRef}
         type="button"
         className={`${styles.swatch}${disabled ? ` ${styles.swatchEmpty}` : ''}`}
         style={{ '--swatch-color': disabled ? 'transparent' : value || 'transparent' } as CSSProperties}
@@ -164,29 +150,14 @@ function ColorField({
         onChange={(event) => onChange(event.currentTarget.value)}
       />
       {trailing}
-      {open && !disabled ? (
-        <div className={styles.colorPopover} role="group" aria-label={label}>
-          <div className={styles.colorGrid}>
-            {EDITOR_SWATCH_COLORS.map((hex) => (
-              <button
-                key={hex}
-                type="button"
-                className={styles.colorTile}
-                style={{ '--swatch-color': hex } as CSSProperties}
-                aria-label={hex}
-                onClick={() => { onChange(hex); setOpen(false); }}
-              />
-            ))}
-          </div>
-          <input
-            type="color"
-            className={styles.colorNative}
-            aria-label={label}
-            value={normalizeColorForPicker(value)}
-            onChange={(event) => onChange(event.currentTarget.value)}
-          />
-        </div>
-      ) : null}
+      <ManualEditColorPopover
+        open={open && !disabled}
+        anchorRef={swatchRef}
+        label={label}
+        value={value}
+        onChange={onChange}
+        onClose={() => setOpen(false)}
+      />
     </div>
   );
 }

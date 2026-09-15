@@ -8,13 +8,12 @@ import { Button } from '@readable-studio/components';
 import { useT } from '../i18n';
 import { RemixIcon } from './RemixIcon';
 import { AnimatedCollapsible } from './AnimatedCollapsible';
+import { ManualEditColorPopover } from './ManualEditColorPopover';
 import { useSystemFonts } from './useSystemFonts';
 import { systemFontOptions } from './font-options';
 import {
-  EDITOR_SWATCH_COLORS,
   FONT_OPTS,
   fontFamilyLabel,
-  normalizeColorForPicker,
   normalizeFontFamilyForSelect,
   stripPxUnit,
 } from './ManualEditPanel';
@@ -261,6 +260,8 @@ export function ToggleRow({
 }
 
 // Color swatch + text input + popover, matching the page inspector's ColorRow.
+// The popover is a body portal (ManualEditColorPopover) because the left
+// inspector's overflow boxes clip an in-flow one.
 export function ColorRow({
   label,
   description,
@@ -277,27 +278,19 @@ export function ColorRow({
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLSpanElement | null>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDocClick = (event: MouseEvent) => {
-      if (!ref.current) return;
-      if (ref.current.contains(event.target as Node)) return;
-      setOpen(false);
-    };
-    document.addEventListener('mousedown', onDocClick);
-    return () => document.removeEventListener('mousedown', onDocClick);
-  }, [open]);
+  const swatchRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     if (disabled) setOpen(false);
   }, [disabled]);
   return (
     <label className="cc-row">
       {compact ? null : <FieldLabel label={label} description={description} />}
-      <span className={`cc-value cc-color ${compact ? 'cc-color-compact' : ''}`} ref={ref}>
+      <span className={`cc-value cc-color ${compact ? 'cc-color-compact' : ''}`}>
         <button
+          ref={swatchRef}
           type="button"
           className="cc-swatch"
+          aria-expanded={open}
           style={{ background: value || 'transparent' }}
           onClick={() => setOpen((v) => !v)}
           aria-label={`Pick ${label}`}
@@ -311,32 +304,14 @@ export function ColorRow({
           onChange={(e) => onChange(e.currentTarget.value)}
           onFocus={() => { if (!disabled) setOpen(true); }}
         />
-        {open && !disabled ? (
-          <div className="cc-color-popover">
-            <div className="cc-color-grid">
-              {EDITOR_SWATCH_COLORS.map((hex) => (
-                <button
-                  key={hex}
-                  type="button"
-                  className="cc-color-tile"
-                  style={{ background: hex }}
-                  onClick={() => {
-                    onChange(hex);
-                    setOpen(false);
-                  }}
-                  aria-label={hex}
-                />
-              ))}
-            </div>
-            <input
-              type="color"
-              className="cc-color-native"
-              value={normalizeColorForPicker(value)}
-              disabled={disabled}
-              onChange={(e) => onChange(e.currentTarget.value)}
-            />
-          </div>
-        ) : null}
+        <ManualEditColorPopover
+          open={open && !disabled}
+          anchorRef={swatchRef}
+          label={label}
+          value={value}
+          onChange={onChange}
+          onClose={() => setOpen(false)}
+        />
       </span>
     </label>
   );

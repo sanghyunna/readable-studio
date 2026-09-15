@@ -115,10 +115,9 @@ describe('ManualEditAppearanceControls', () => {
     expect(onStyleField).toHaveBeenLastCalledWith('opacity', '0.25');
   });
 
-  it('uses only semantic tokens and pairs pointer-events with opacity in its keyframes', () => {
+  it('uses only semantic tokens and owns no in-flow colour popover (that lives in the body portal)', () => {
     expect(collectCssHardcodedColorMatches(appearanceCss)).toEqual([]);
-    expect(appearanceCss).toMatch(/@keyframes appearance-pop-in\s*\{[^}]*from\s*\{[^}]*opacity:\s*0;[^}]*pointer-events:\s*none;/);
-    expect(appearanceCss).toMatch(/1%\s*\{\s*pointer-events:\s*auto;\s*\}/);
+    expect(appearanceCss).not.toMatch(/\.colorPopover/);
     expect(appearanceCss).toMatch(/@media \(prefers-reduced-motion: reduce\)/);
     expect(appearanceCss).toMatch(/@media \(prefers-reduced-transparency: reduce\)/);
     expect(appearanceCss).not.toMatch(/checkbox/);

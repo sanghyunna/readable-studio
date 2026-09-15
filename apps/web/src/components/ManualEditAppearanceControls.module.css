@@ -189,50 +189,8 @@
   color: var(--text);
 }
 
-.colorPopover {
-  position: absolute;
-  z-index: 20;
-  top: calc(100% + 6px);
-  left: 36px;
-  display: grid;
-  gap: 8px;
-  padding: 8px;
-  border: 0;
-  border-radius: var(--radius-control);
-  background: var(--bg-panel);
-  box-shadow:
-    inset 0 1px 0 var(--hub-pearl-highlight),
-    0 1px 2px color-mix(in srgb, var(--shadow-color) 8%, transparent),
-    0 10px 28px -10px color-mix(in srgb, var(--shadow-color) 26%, transparent);
-  animation: appearance-pop-in 200ms var(--ease-out) both;
-}
-
-.colorGrid {
-  display: grid;
-  grid-template-columns: repeat(6, 22px);
-  gap: 4px;
-}
-
-.colorTile {
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: 0;
-  border-radius: calc(var(--radius-control) - 3px);
-  background: var(--swatch-color);
-  box-shadow: inset 0 0 0 1px var(--hub-pearl-border);
-  cursor: pointer;
-}
-
-.colorNative {
-  width: 100%;
-  height: 26px;
-  padding: 0;
-  border: 0;
-  border-radius: calc(var(--radius-control) - 3px);
-  background: transparent;
-  cursor: pointer;
-}
+/* The colour picker popover is a body portal (ManualEditColorPopover.module.css):
+   the inspector's overflow boxes clipped the in-flow version. */
 
 /* ---------- border style ---------- */
 
@@ -549,18 +507,7 @@
   margin-top: 0;
 }
 
-/* `pointer-events` rides in the same keyframes as `opacity`: the popover is
-   painted at opacity 0 on the first frame with `both` fill, so the tiles inside
-   must not be hit-testable there. Pointers return at the START of the visible
-   phase (1%), not at the end. */
-@keyframes appearance-pop-in {
-  from { opacity: 0; transform: translateY(-4px); pointer-events: none; }
-  1% { pointer-events: auto; }
-  to { opacity: 1; transform: translateY(0); pointer-events: auto; }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .colorPopover { animation: none; }
   .field,
   .styleOption,
   .step,
@@ -572,13 +519,7 @@
   .actionZone { box-shadow: inset 0 1px 0 var(--border); }
   .widthInput { box-shadow: inset 0 0 0 1px var(--border); }
   .swatch,
-  .colorTile,
   .widthBox { box-shadow: inset 0 0 0 1px var(--border); }
-  .colorPopover {
-    box-shadow:
-      inset 0 0 0 1px var(--border),
-      0 10px 28px -10px color-mix(in srgb, var(--shadow-color) 26%, transparent);
-  }
 }
 
 @media (max-width: 360px) {
