@@ -112,7 +112,8 @@ posixTest('detectAgents emits an auth-missing diagnostic when the auth probe rep
       const agents = await detectAgents();
       const cursor = agents.find((agent) => agent.id === 'cursor-agent');
 
-      assert.equal(cursor?.available, true);
+      assert.equal(cursor?.available, false);
+      assert.deepEqual(cursor?.models, []);
       assert.equal(cursor?.authStatus, 'missing');
       const diagnostic = cursor?.diagnostics?.[0];
       assert.ok(diagnostic, 'expected an auth diagnostic');

@@ -6,6 +6,8 @@ export const kimiAgentDef = {
     name: 'Kimi CLI',
     bin: 'kimi',
     versionArgs: ['--version'],
+    // ACP session/new validates the same protocol used for execution and gates on auth.
+    modelDiscovery: 'authenticated-session',
     fetchModels: async (resolvedBin, env) =>
       detectAcpModels({
         bin: resolvedBin,
@@ -14,12 +16,9 @@ export const kimiAgentDef = {
         timeoutMs: 15_000,
         defaultModelOption: DEFAULT_MODEL_OPTION,
       }),
-    fallbackModels: [
-      DEFAULT_MODEL_OPTION,
-      { id: 'kimi-k2-turbo-preview', label: 'kimi-k2-turbo-preview' },
-      { id: 'moonshot-v1-8k', label: 'moonshot-v1-8k' },
-      { id: 'moonshot-v1-32k', label: 'moonshot-v1-32k' },
-    ],
+    // Model selectors are CLI-configured aliases, not a Moonshot API catalogue.
+    // Missing auth or failed ACP discovery must not invent selectable models.
+    fallbackModels: [DEFAULT_MODEL_OPTION],
     buildArgs: () => ['acp'],
     streamFormat: 'acp-json-rpc',
     mcpDiscovery: 'mature-acp',

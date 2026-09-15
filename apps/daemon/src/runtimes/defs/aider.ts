@@ -17,7 +17,8 @@ export const aiderAgentDef = {
       { id: 'sonnet', label: 'sonnet' },
       { id: 'gpt-4o', label: 'gpt-4o' },
       { id: 'deepseek/deepseek-chat', label: 'deepseek/deepseek-chat' },
-      { id: 'gemini/gemini-2.0-flash', label: 'gemini/gemini-2.0-flash' },
+      // Gemini 2.0 Flash shut down June 1, 2026 (Google's deprecations table).
+      { id: 'gemini/gemini-2.5-flash', label: 'gemini/gemini-2.5-flash' },
     ],
     // Aider documents low/medium/high for --reasoning-effort. This is the
     // API effort setting, not --thinking-tokens (a separate numeric budget).

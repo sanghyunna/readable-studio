@@ -118,6 +118,8 @@ for (const api of ['anthropic-messages', 'openai-completions'] as const) {
           expect(request.body.model).toBe(upstreamModel);
           expect(request.body.model).not.toBe(model);
           expect(request.body.stream).toBe(true);
+          expect(request.body.tools).toHaveLength(4);
+          expect(invocation.args).not.toContain('--no-tools');
           expect(request.path).toBe(api === 'anthropic-messages' ? '/ai-gateway/anthropic/v1/messages' : '/ai-gateway/openai/v1/responses');
           const messages = (api === 'anthropic-messages' ? request.body.messages : request.body.input)
             .filter((message) => !['system', 'developer'].includes(message.role));

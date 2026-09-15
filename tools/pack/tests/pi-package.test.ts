@@ -43,6 +43,11 @@ async function writePiFixture(appRoot: string, overrides: Record<string, unknown
   const entry = join(appRoot, PI_RPC_ENTRY_RELATIVE_PATH);
   await mkdir(dirname(entry), { recursive: true });
   await writeFile(entry, "export {};\n");
+  await writeFile(join(dirname(entry), "cli.js"), `
+if (process.argv[2] !== '--list-models' || process.env.PI_OFFLINE !== '1' || !process.env.OPENAI_API_KEY) process.exit(1);
+console.log('provider model context max-out thinking images');
+console.log('openai fixture-model 128K 16K yes yes');
+`);
   const rpcMode = join(appRoot, rpcModeRelativePath);
   await mkdir(dirname(rpcMode), { recursive: true });
   await writeFile(rpcMode, unpatchedShutdown);
@@ -91,13 +96,16 @@ describe("portable Pi package layout", () => {
     }
   });
 
-  it.each(["package", "entry", "export", "version"])("refuses output with a missing or invalid %s", async (failure) => {
+  it.each(["package", "entry", "export", "version", "cli", "launcher", "catalogue"])("refuses output with a missing or invalid %s", async (failure) => {
     const root = await mkdtemp(join(tmpdir(), "readable-pi-invalid-"));
     try {
       await writePiFixture(root, failure === "export" ? { exports: {} } : failure === "version" ? { version: "0.0.0" } : {});
       await patchPiPackage(root, workspaceRoot);
       if (failure === "package") await rm(join(root, "node_modules"), { recursive: true });
       if (failure === "entry") await rm(join(root, PI_RPC_ENTRY_RELATIVE_PATH));
+      if (failure === "cli") await rm(join(root, "node_modules", piPackage.name, "dist", "cli.js"));
+      if (failure === "launcher") await rm(join(root, "pi.cmd"));
+      if (failure === "catalogue") await writeFile(join(root, "node_modules", piPackage.name, "dist", "cli.js"), "console.log('No models available');\n");
       await expect(assertPiPackageOutput(root)).rejects.toThrow(/staged Pi RPC entry point is missing or invalid/);
     } finally {
       await rm(root, { recursive: true, force: true });

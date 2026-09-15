@@ -81,7 +81,7 @@ test('real Pi renders unknown foundation limits, negotiates its wire shape and e
   }
 }, 30000);
 
-for (const status of [400, 401, 429, 500]) test(`unrecognized rejection ${status} is not retried and diagnostics never expose private prose`, async () => {
+for (const status of [400, 401, 429, 500]) test(`tools rejection ${status} is bounded and diagnostics never expose private prose`, async () => {
   const runtime = runtimeFixture('openai-completions');
   let calls = 0;
   const relay = await createDatabricksRelay({ runtime, fetch: async () => {
@@ -92,7 +92,7 @@ for (const status of [400, 401, 429, 500]) test(`unrecognized rejection ${status
     const response = await fetch(`${relay.baseUrl}/chat/completions`, { method: 'POST', headers: { authorization: `Bearer ${relay.capabilityKey}` }, body: JSON.stringify({ model: relay.modelAlias, messages: [], tools }) });
     assert.equal(response.status, status);
     const text = await response.text();
-    assert.equal(calls, 1);
+    assert.equal(calls, status === 400 ? 5 : 1);
     for (const secret of [runtime.apiKey, runtime.model, new URL(runtime.baseUrl).hostname]) assert.equal(text.includes(secret), false);
     if (status === 400) assert.equal(JSON.parse(text).error.upstreamMessage.includes('tools'), true);
   } finally { await relay.close(); }

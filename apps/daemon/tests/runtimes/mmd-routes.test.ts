@@ -145,14 +145,10 @@ test('mmd route loader uses HOME default path and keeps Claude fallback models',
     );
     const ids = models?.map((model) => model.id);
 
-    assert.deepEqual(ids?.slice(0, 4), [
-      'default',
-      'MiniMax-M2.7',
-      'gpt-5.4',
-      'sonnet',
-    ]);
-    assert.ok(ids?.includes('opus'));
-    assert.ok(ids?.includes('claude-sonnet-4-5'));
+    assert.deepEqual(ids, [...new Set([
+      'default', 'MiniMax-M2.7', 'gpt-5.4',
+      ...claude.fallbackModels.map((model) => model.id),
+    ])]);
     assert.equal(JSON.stringify(models).includes('secret'), false);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -180,11 +176,9 @@ test('mmd route loader supports explicit file override and safe fallback on bad 
       { MMD_MODEL_ROUTES_FILE: routesFile },
       claude.fallbackModels,
     );
-    assert.deepEqual(models?.map((model) => model.id).slice(0, 3), [
-      'default',
-      'mimo-v2.5',
-      'sonnet',
-    ]);
+    assert.deepEqual(models?.map((model) => model.id), [...new Set([
+      'default', 'mimo-v2.5', ...claude.fallbackModels.map((model) => model.id),
+    ])]);
     assert.equal(JSON.stringify(models).includes('sk-secret'), false);
 
     assert.equal(
@@ -244,7 +238,7 @@ test('mmd launch env expands tilde in explicit file overrides', async () => {
   }
 });
 
-test('claude runtime fetchModels surfaces mmd route models to the picker', async () => {
+test('claude runtime fetchModels discovers configured route aliases without claiming session readiness', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'readable-claude-mmd-models-'));
   try {
     const routesFile = join(dir, 'model-routes.json');
@@ -267,11 +261,10 @@ test('claude runtime fetchModels surfaces mmd route models to the picker', async
     });
 
     assert.ok(models);
-    assert.deepEqual(models.map((model) => model.id).slice(0, 3), [
-      'default',
-      'claude-opus-4-6-thinking',
-      'sonnet',
-    ]);
+    assert.deepEqual(models.map((model) => model.id), [...new Set([
+      'default', 'claude-opus-4-6-thinking', ...claude.fallbackModels.map((model) => model.id),
+    ])]);
+    assert.notEqual(claude.modelDiscovery, 'authenticated-session');
     assert.equal(JSON.stringify(models).includes('sk-secret'), false);
   } finally {
     rmSync(dir, { recursive: true, force: true });

@@ -2,9 +2,16 @@ import { detectAcpModels } from '../../acp.js';
 import { parsePiModels } from '../../pi-rpc.js';
 import { execAgentFile } from '../invocation.js';
 import { DEFAULT_MODEL_OPTION } from '../models.js';
-import type { RuntimeModelOption } from '../types.js';
+import type { RuntimeEnv, RuntimeModelOption } from '../types.js';
 
 export { detectAcpModels, parsePiModels, execAgentFile, DEFAULT_MODEL_OPTION };
+
+/** Validate an adapter's non-interactive argv without supplying an inference prompt. */
+export async function probeAdapterCommand(bin: string, args: string[], env: RuntimeEnv): Promise<void> {
+  const pending = execAgentFile(bin, args, { env, timeout: 5000, maxBuffer: 1024 * 1024 });
+  pending.child.stdin?.end();
+  await pending;
+}
 
 export function clampCodexReasoning(
   modelId: string | null | undefined,

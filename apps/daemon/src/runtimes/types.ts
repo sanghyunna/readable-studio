@@ -121,6 +121,10 @@ export type RuntimeAgentDef = {
   eventParser?: string;
   env?: Record<string, string>;
   listModels?: RuntimeListModels;
+  /** Opt in only when discovery opens the adapter protocol and verifies authentication. */
+  modelDiscovery?: 'authenticated-session';
+  /** A non-inference invocation of the adapter command; rejection blocks availability. */
+  compatibilityProbe?: (resolvedBin: string, env: RuntimeEnv) => Promise<void>;
   fetchModels?: (
     resolvedBin: string,
     env: RuntimeEnv,
@@ -204,6 +208,8 @@ export type DetectedAgent = Omit<
   | 'env'
   | 'authProbe'
   | 'detect'
+  | 'modelDiscovery'
+  | 'compatibilityProbe'
 > & {
   models: RuntimeModelOption[];
   modelsSource: RuntimeModelSource;

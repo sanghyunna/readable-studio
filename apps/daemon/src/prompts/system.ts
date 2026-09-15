@@ -771,7 +771,7 @@ export function composeSystemPrompt({
  * precedence war and let `<todo-list>` / `[读取 X]` pseudo-tool markup
  * leak into the chat.
  */
-const API_MODE_OVERRIDE = `# API mode — no tools available (read first — overrides every rule below)
+export const API_MODE_OVERRIDE = `# API mode — no tools available (read first — overrides every rule below)
 
 You are running through a plain Messages API. **No tools are wired through to you.** \`TodoWrite\`, \`Read\`, \`Write\`, \`Edit\`, \`Bash\`, and \`WebFetch\` are unavailable — calls to them will not execute and will not render in the UI.
 

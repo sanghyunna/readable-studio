@@ -1,335 +1,151 @@
-/**
- * Regression coverage for issue #658: Readable Studio kept advertising
- * `Codex CLI` in Settings > Local CLI after the user had uninstalled
- * the binary. The probe in `apps/daemon/src/runtimes/detection.ts`
- * swallowed every `--version` failure and returned `available: true`
- * anyway, so a leftover wrapper shim made Settings think the CLI was
- * alive when its underlying interpreter was gone.
- *
- * The fix classifies the version probe's failure shape:
- *
- *   - **OS-level rejections.** `ENOENT` / `EACCES` / `ENOTDIR` from
- *     `child_process.execFile` (string `err.code`) mean the binary is
- *     not invocable at all. Reported as `available: false`.
- *
- *   - **Stale-wrapper shell exits.** Numeric `err.code` 126 / 127
- *     ("not executable" / "command not found") is the canonical POSIX
- *     shell signature for a wrapper that spawned but whose delegated
- *     target is gone. Reported as `available: false`.
- *
- *   - **Everything else.** Generic non-zero exit (1, 2, ...) or a
- *     timeout keeps the legacy "available, version=null" behaviour
- *     so adapters whose `--version` flag is unsupported are not
- *     regressed.
- *
- * Detection always probes the same launch path chat/run resolution
- * picks, so a stale configured override that shadows a working PATH
- * binary is reported as unavailable rather than swapped for the PATH
- * candidate; advertising a different path would break the invariant
- * that Settings and the chat spawn path agree on what the agent runs
- * (PR #1301 review, Siri-Ray).
+/** Issue #658: detection must probe the same selected executable as chat.
+ * Missing targets are distinct from installed CLIs whose usability is unverified.
+ * Neither version output nor a working alternative PATH binary proves readiness.
  */
-
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const execAgentFileMock = vi.fn();
 const resolveAgentLaunchMock = vi.fn();
+const discoverCodexCatalogMock = vi.fn();
 
 vi.mock('../../src/runtimes/invocation.js', () => ({
-  execAgentFile: (...args: unknown[]) =>
-    (execAgentFileMock as unknown as (...args: unknown[]) => unknown)(...args),
+  // promisified execFile exposes its child; compatibility probing closes stdin.
+  execAgentFile: (...args: unknown[]) => Object.assign(execAgentFileMock(...args), {
+    child: { stdin: { end: vi.fn() } },
+  }),
 }));
-
+vi.mock('../../src/runtimes/codex-model-discovery.js', () => ({
+  discoverCodexCatalog: (...args: unknown[]) => discoverCodexCatalogMock(...args),
+}));
 vi.mock('../../src/runtimes/launch.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/runtimes/launch.js')>();
-  return {
-    ...actual,
-    resolveAgentLaunch: (
-      ...args: Parameters<typeof actual.resolveAgentLaunch>
-    ) =>
-      (
-        resolveAgentLaunchMock as unknown as (
-          ...a: Parameters<typeof actual.resolveAgentLaunch>
-        ) => ReturnType<typeof actual.resolveAgentLaunch>
-      )(...args),
-  };
+  return { ...actual, resolveAgentLaunch: (...args: unknown[]) => resolveAgentLaunchMock(...args) };
 });
 
-function fakeCodexLaunch() {
+function fakeLaunch(def: { id: string }) {
+  const path = `/fake/bin/${def.id}`;
   return {
-    configuredOverridePath: null,
-    pathResolvedPath: '/fake/bin/codex',
-    selectedPath: '/fake/bin/codex',
-    launchPath: '/fake/bin/codex',
-    launchKind: 'selected' as const,
-    childPathPrepend: ['/fake/bin'],
-    diagnostic: null,
+    configuredOverridePath: null, pathResolvedPath: path, selectedPath: path,
+    launchPath: path, launchKind: 'selected' as const,
+    childPathPrepend: ['/fake/bin'], diagnostic: null,
   };
 }
 
-function spawnError(code: 'ENOENT' | 'EACCES' | 'ENOTDIR' | 'ETIMEDOUT'): NodeJS.ErrnoException {
-  const error = new Error(`spawn failed (${code})`) as NodeJS.ErrnoException;
-  error.code = code;
-  return error;
+function probeError(code: string | number) {
+  return Object.assign(new Error('Fixture probe failed'), { code });
 }
 
-function exitCodeError(code: number): NodeJS.ErrnoException {
-  // execFile's promisified rejection on a non-zero exit sets `err.code`
-  // to the numeric exit code (Node's documented behaviour). 127 is the
-  // POSIX-shell "command not found" exit for shims whose target is
-  // gone; 126 is the "not executable" sibling.
-  const error = new Error(`process exited with code ${code}`) as NodeJS.ErrnoException;
-  (error as { code: unknown }).code = code;
-  return error;
-}
+const liveCatalogue = JSON.stringify({ data: [{ id: 'fixture-model', displayName: 'Fixture' }] });
 
-describe('probe (issue #658) — ghost CLI after the binary is uninstalled', () => {
+describe('probe (issue #658) - ghost CLI after the binary is uninstalled', () => {
   beforeEach(async () => {
     execAgentFileMock.mockReset();
-    resolveAgentLaunchMock.mockReset();
+    resolveAgentLaunchMock.mockReset().mockImplementation(fakeLaunch);
+    discoverCodexCatalogMock.mockReset().mockRejectedValue(new Error('Discovery failed'));
+    vi.stubEnv('READABLE_AGENT_DISCOVERY_OFFLINE', '0');
     const { _resetAgentDetectionCacheForTests } = await import('../../src/runtimes/detection.js');
     _resetAgentDetectionCacheForTests();
-    // Default: pretend every agent definition resolves to a fake bin so
-    // we exercise the spawn path uniformly.
-    resolveAgentLaunchMock.mockImplementation(fakeCodexLaunch);
   });
+  afterEach(() => vi.unstubAllEnvs());
 
-  for (const failingCode of ['ENOENT', 'EACCES', 'ENOTDIR'] as const) {
-    it(`marks the agent unavailable when the version probe rejects with ${failingCode}`, async () => {
-      execAgentFileMock.mockRejectedValue(spawnError(failingCode));
+  for (const [code, reason] of [
+    ['ENOENT', 'shim-broken'], ['EACCES', 'not-executable'], ['ENOTDIR', 'shim-broken'],
+    [126, 'not-executable'], [127, 'shim-broken'],
+  ] as const) {
+    it(`marks the agent unavailable when the version probe rejects with ${code}`, async () => {
+      execAgentFileMock.mockRejectedValue(probeError(code));
       const { detectAgents } = await import('../../src/runtimes/detection.js');
-
-      const agents = await detectAgents();
-      const codex = agents.find((agent) => agent.id === 'codex');
-
-      expect(codex).toBeDefined();
-      expect(codex?.available).toBe(false);
+      const [codex] = await detectAgents({}, { enabledAgentIds: ['codex'] });
+      expect(codex).toMatchObject({ available: false, path: '/fake/bin/codex', models: [], diagnostics: [{ reason }] });
+      expect(discoverCodexCatalogMock).not.toHaveBeenCalled();
     });
   }
 
-  for (const stalenessExit of [126, 127] as const) {
-    it(`marks the agent unavailable when a wrapper shim exits ${stalenessExit} (stale interpreter / target)`, async () => {
-      // Regression for lefarcen P2: many shims (npm bin wrappers, env
-      // node, `.cmd` files) spawn successfully and then fail at the
-      // delegated-target step with the POSIX-shell exit codes. The
-      // execFile rejection carries the numeric exit code on `err.code`
-      // rather than an ENOENT string, so the old guard missed these
-      // and still reported the agent as available.
-      execAgentFileMock.mockRejectedValue(exitCodeError(stalenessExit));
+  for (const code of ['ETIMEDOUT', 1]) {
+    it(`retains installed state, not usability, after version failure ${code}`, async () => {
+      execAgentFileMock.mockRejectedValue(probeError(code));
       const { detectAgents } = await import('../../src/runtimes/detection.js');
-
-      const agents = await detectAgents();
-      const codex = agents.find((agent) => agent.id === 'codex');
-
-      expect(codex).toBeDefined();
-      expect(codex?.available).toBe(false);
+      const [codex] = await detectAgents({}, { enabledAgentIds: ['codex'] });
+      expect(codex).toMatchObject({ available: false, path: '/fake/bin/codex', version: null, models: [], diagnostics: [{ reason: 'auth-unknown' }] });
     });
   }
 
-  it('keeps available=true when the binary spawns but --version returns non-zero (timeout, unsupported flag)', async () => {
-    // Non-spawn, non-126/127 failures must NOT regress to unavailable;
-    // adapters whose --version flag is missing legitimately exit
-    // non-zero and have always shown up as "available, version=null".
-    execAgentFileMock.mockRejectedValue(spawnError('ETIMEDOUT'));
-    const { detectAgents } = await import('../../src/runtimes/detection.js');
-
-    const agents = await detectAgents();
-    const codex = agents.find((agent) => agent.id === 'codex');
-
-    expect(codex).toBeDefined();
-    expect(codex?.available).toBe(true);
-    expect(codex?.version).toBeNull();
-  });
-
-  it('keeps available=true on a generic non-zero exit (e.g. exit 1 from an adapter with no --version flag)', async () => {
-    execAgentFileMock.mockRejectedValue(exitCodeError(1));
-    const { detectAgents } = await import('../../src/runtimes/detection.js');
-
-    const agents = await detectAgents();
-    const codex = agents.find((agent) => agent.id === 'codex');
-
-    expect(codex).toBeDefined();
-    expect(codex?.available).toBe(true);
-    expect(codex?.version).toBeNull();
-  });
-
-  it('returns the parsed version on a clean --version run', async () => {
+  it('returns the parsed version without treating it as authenticated discovery', async () => {
     execAgentFileMock.mockResolvedValue({ stdout: 'codex 1.2.3\n', stderr: '' });
     const { detectAgents } = await import('../../src/runtimes/detection.js');
-
-    const agents = await detectAgents();
-    const codex = agents.find((agent) => agent.id === 'codex');
-
-    expect(codex).toBeDefined();
-    expect(codex?.available).toBe(true);
-    expect(codex?.version).toBe('codex 1.2.3');
+    const [codex] = await detectAgents({}, { enabledAgentIds: ['codex'] });
+    expect(codex).toMatchObject({ available: false, path: '/fake/bin/codex', version: 'codex 1.2.3', models: [], diagnostics: [{ reason: 'auth-unknown' }] });
+    expect(discoverCodexCatalogMock).toHaveBeenCalledWith('/fake/bin/codex', expect.any(Object));
   });
 
-  it('honors Trae CLI adapter-specific version probe timeout', async () => {
-    execAgentFileMock.mockResolvedValue({ stdout: 'agent 1.2.3\n', stderr: '' });
-    resolveAgentLaunchMock.mockImplementation((def: { id: string }) => ({
-      configuredOverridePath: null,
-      pathResolvedPath: `/fake/bin/${def.id}`,
-      selectedPath: `/fake/bin/${def.id}`,
-      launchPath: `/fake/bin/${def.id}`,
-      launchKind: 'selected' as const,
-      childPathPrepend: ['/fake/bin'],
-      diagnostic: null,
-    }));
+  it('allows a failed version flag when compatibility and authenticated discovery succeed', async () => {
+    execAgentFileMock.mockImplementation((_bin, args: string[]) => args[0] === '--version'
+      ? Promise.reject(probeError(1))
+      : Promise.resolve({ stdout: '', stderr: '' }));
+    discoverCodexCatalogMock.mockResolvedValue(liveCatalogue);
     const { detectAgents } = await import('../../src/runtimes/detection.js');
-
-    await detectAgents({}, { enabledAgentIds: ['trae-cli'] });
-
-    const traeVersionCall = execAgentFileMock.mock.calls.find(
-      ([command, args]) =>
-        command === '/fake/bin/trae-cli' &&
-        Array.isArray(args) &&
-        args.join('\0') === '--version',
-    );
-
-    expect(traeVersionCall).toBeDefined();
-    expect(traeVersionCall?.[2]).toMatchObject({ timeout: 10_000 });
+    const [codex] = await detectAgents({}, { enabledAgentIds: ['codex'] });
+    expect(codex).toMatchObject({ available: true, version: null, modelsSource: 'live', models: [{ id: 'fixture-model' }] });
+    expect(codex?.diagnostics).toBeUndefined();
   });
 
-  it('keeps the default version probe timeout for other runtimes', async () => {
-    execAgentFileMock.mockResolvedValue({ stdout: 'agent 1.2.3\n', stderr: '' });
-    resolveAgentLaunchMock.mockImplementation((def: { id: string }) => ({
-      configuredOverridePath: null,
-      pathResolvedPath: `/fake/bin/${def.id}`,
-      selectedPath: `/fake/bin/${def.id}`,
-      launchPath: `/fake/bin/${def.id}`,
-      launchKind: 'selected' as const,
-      childPathPrepend: ['/fake/bin'],
-      diagnostic: null,
-    }));
-    const { detectAgents } = await import('../../src/runtimes/detection.js');
-
-    await detectAgents();
-
-    const codexVersionCall = execAgentFileMock.mock.calls.find(
-      ([command, args]) =>
-        command === '/fake/bin/codex' &&
-        Array.isArray(args) &&
-        args.join('\0') === '--version',
-    );
-
-    expect(codexVersionCall).toBeDefined();
-    expect(codexVersionCall?.[2]).toMatchObject({ timeout: 3000 });
-  });
-
-  it('reports missing Trae CLI as unavailable without breaking full detection', async () => {
-    resolveAgentLaunchMock.mockImplementation((def: { id: string }) => {
-      if (def.id === 'trae-cli') {
-        return {
-          configuredOverridePath: null,
-          pathResolvedPath: null,
-          selectedPath: null,
-          launchPath: null,
-          launchKind: 'unresolved' as const,
-          childPathPrepend: [],
-          diagnostic: null,
-        };
-      }
-      return {
-        configuredOverridePath: null,
-        pathResolvedPath: `/fake/bin/${def.id}`,
-        selectedPath: `/fake/bin/${def.id}`,
-        launchPath: `/fake/bin/${def.id}`,
-        launchKind: 'selected' as const,
-        childPathPrepend: ['/fake/bin'],
-        diagnostic: null,
-      };
+  for (const [id, timeout] of [['trae-cli', 10_000], ['codex', 3000]] as const) {
+    it(`honors the ${id} version probe timeout`, async () => {
+      execAgentFileMock.mockResolvedValue({ stdout: 'agent 1.2.3\n', stderr: '' });
+      const { detectAgents } = await import('../../src/runtimes/detection.js');
+      await detectAgents({}, { enabledAgentIds: [id] });
+      expect(execAgentFileMock).toHaveBeenCalledWith(`/fake/bin/${id}`, ['--version'], expect.objectContaining({ timeout }));
     });
+  }
+
+  it('reports missing Trae CLI as unavailable without breaking working Codex detection', async () => {
+    resolveAgentLaunchMock.mockImplementation((def: { id: string }) => def.id === 'trae-cli'
+      ? { ...fakeLaunch(def), pathResolvedPath: null, selectedPath: null, launchPath: null }
+      : fakeLaunch(def));
     execAgentFileMock.mockResolvedValue({ stdout: 'agent 1.2.3\n', stderr: '' });
+    discoverCodexCatalogMock.mockResolvedValue(liveCatalogue);
     const { detectAgents } = await import('../../src/runtimes/detection.js');
-
     const agents = await detectAgents({}, { enabledAgentIds: ['codex', 'trae-cli'] });
-    const traeCli = agents.find((agent) => agent.id === 'trae-cli');
-    const codex = agents.find((agent) => agent.id === 'codex');
-
-    expect(traeCli).toBeDefined();
-    expect(traeCli?.available).toBe(false);
-    expect(codex).toBeDefined();
-    expect(codex?.available).toBe(true);
+    expect(agents.find(a => a.id === 'trae-cli')).toMatchObject({ available: false, models: [], diagnostics: [{ reason: 'not-on-path' }] });
+    expect(agents.find(a => a.id === 'trae-cli')?.path).toBeUndefined();
+    expect(agents.find(a => a.id === 'codex')).toMatchObject({ available: true, modelsSource: 'live', models: [{ id: 'fixture-model' }] });
   });
 
   it('reports unavailable for a stale configured override even when a different PATH binary exists', async () => {
-    // Regression for Siri-Ray's #1301 review: an earlier revision tried
-    // to fall back to a PATH candidate when the configured override
-    // failed to spawn, but that broke the invariant that detection and
-    // chat-run resolution agree on the executable. resolveAgentBin
-    // still resolves via resolveAgentLaunch (configured override
-    // wins when present and executable), so if detection adopted a
-    // different PATH binary, Settings would show "available at
-    // /usr/local/bin/codex" while every actual run would spawn the
-    // stale /stale/custom/codex and fail. The fix is to keep detection
-    // honest: probe whichever path resolveAgentLaunch picks, and
-    // report exactly that path's availability. The Settings repair
-    // flow (PR #1205) needs to derive its adopt-or-clear affordance
-    // from the resolution diagnostic — not from `available`.
-    const {
-      resolveAgentLaunch: realResolveAgentLaunch,
-    } = await vi.importActual<typeof import('../../src/runtimes/launch.js')>(
-      '../../src/runtimes/launch.js',
-    );
-    const {
-      inspectAgentExecutableResolution,
-    } = await vi.importActual<typeof import('../../src/runtimes/executables.js')>(
-      '../../src/runtimes/executables.js',
-    );
-    // Drive the resolver through its real path so a future refactor
-    // that diverges resolution from detection trips this assertion.
-    resolveAgentLaunchMock.mockImplementation(
-      (def, env) => realResolveAgentLaunch(def, env),
-    );
-    // Force a stale configured override + a working PATH candidate.
-    execAgentFileMock.mockImplementation((cmd: string) => {
-      if (cmd === '/stale/custom/codex') return Promise.reject(spawnError('ENOENT'));
-      return Promise.resolve({ stdout: 'codex 1.4.2\n', stderr: '' });
-    });
-    const configuredEnv = { codex: { CODEX_BIN: '/stale/custom/codex' } };
-
-    // The resolver tries the configured override first; we don't have
-    // a real PATH candidate on this CI host but we have a configured
-    // override that points at a non-existent file. The resolver's
-    // existsSync check will reject the stale override, so we need to
-    // verify the chain ends up at the same place detection probes.
-    const { detectAgents } = await import('../../src/runtimes/detection.js');
-    const agents = await detectAgents(configuredEnv);
-    const codex = agents.find((agent) => agent.id === 'codex');
-
-    expect(codex).toBeDefined();
-    // Detection must report unavailable rather than swap to a hypothetical
-    // PATH candidate, because resolveAgentLaunch (which chat-run
-    // resolution uses) will pick whatever the same call returns.
-    const resolvedForRun = realResolveAgentLaunch(
-      // re-run AGENT_DEFS's codex entry through the real resolver to
-      // get the executable resolveAgentBin would pick at chat time.
-      // The detection side already validated this path.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      { id: 'codex', bin: 'codex' } as any,
-      configuredEnv.codex,
-    );
-    if (resolvedForRun.selectedPath && resolvedForRun.launchPath) {
-      // If the resolver found a working PATH binary, detection must
-      // have reported available=true with the SAME path.
-      expect(codex?.available).toBe(true);
-      expect(codex?.path).toBe(resolvedForRun.selectedPath);
-    } else {
-      // Otherwise detection must report unavailable rather than invent
-      // a different path.
-      expect(codex?.available).toBe(false);
-      expect(codex?.path).toBeUndefined();
+    const { resolveAgentLaunch: realResolveAgentLaunch } = await vi.importActual<typeof import('../../src/runtimes/launch.js')>('../../src/runtimes/launch.js');
+    const { inspectAgentExecutableResolution } = await import('../../src/runtimes/executables.js');
+    const { codexAgentDef } = await import('../../src/runtimes/defs/codex.js');
+    const dir = mkdtempSync(join(tmpdir(), 'ghost-cli-'));
+    const stale = join(dir, process.platform === 'win32' ? 'stale.cmd' : 'stale');
+    const working = join(dir, process.platform === 'win32' ? 'codex.CMD' : 'codex');
+    try {
+      for (const bin of [stale, working]) {
+        writeFileSync(bin, process.platform === 'win32' ? '@echo off\r\n' : '#!/bin/sh\n');
+        if (process.platform !== 'win32') chmodSync(bin, 0o755);
+      }
+      vi.stubEnv('PATH', dir);
+      vi.stubEnv('READABLE_AGENT_HOME', dir);
+      resolveAgentLaunchMock.mockImplementation(realResolveAgentLaunch);
+      execAgentFileMock.mockImplementation((bin: string) => bin === stale
+        ? Promise.reject(probeError(127))
+        : Promise.resolve({ stdout: 'codex 1.4.2\n', stderr: '' }));
+      discoverCodexCatalogMock.mockResolvedValue(liveCatalogue);
+      const env = { CODEX_BIN: stale };
+      expect(inspectAgentExecutableResolution(codexAgentDef, env)).toEqual({ configuredOverridePath: stale, pathResolvedPath: working, selectedPath: stale });
+      expect(realResolveAgentLaunch(codexAgentDef, env).launchPath).toBe(stale);
+      const { detectAgents } = await import('../../src/runtimes/detection.js');
+      const [codex] = await detectAgents({ codex: env }, { enabledAgentIds: ['codex'] });
+      expect(codex).toMatchObject({ available: false, path: stale, models: [], diagnostics: [{ reason: 'shim-broken', detail: stale }] });
+      expect(execAgentFileMock).toHaveBeenCalledWith(stale, ['--version'], expect.any(Object));
+      expect(discoverCodexCatalogMock).not.toHaveBeenCalled();
+      // Prove the alternative is working, but only selected after clearing the override.
+      const [repaired] = await detectAgents({}, { enabledAgentIds: ['codex'], refresh: true });
+      expect(repaired).toMatchObject({ available: true, path: working, modelsSource: 'live', models: [{ id: 'fixture-model' }] });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
-    // The diagnostic field for Settings' repair flow stays available
-    // via inspectAgentExecutableResolution, which is independent of
-    // the detection result.
-    const inspection = inspectAgentExecutableResolution(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      { id: 'codex', bin: 'codex' } as any,
-      configuredEnv.codex,
-    );
-    expect(inspection.configuredOverridePath === null
-      || inspection.configuredOverridePath === '/stale/custom/codex').toBe(true);
   });
 });

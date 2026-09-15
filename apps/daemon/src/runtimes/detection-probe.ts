@@ -1,5 +1,4 @@
 import { execAgentFile } from './invocation.js';
-import { DEFAULT_MODEL_OPTION } from './models.js';
 import { applyAgentLaunchEnv, resolveAgentLaunch } from './launch.js';
 import { spawnEnvForAgent } from './env.js';
 import { probeAgentAuthStatus } from './auth.js';
@@ -11,7 +10,7 @@ import {
   buildNotInvocableDiagnostic,
   type NotInvocableCause,
 } from './diagnostics.js';
-import { fetchModels, withRememberedAmrModels } from './detection-model-fetch.js';
+import { discoveryFailure, failedModels, fetchModels, type ModelDiscoveryFailure } from './detection-model-fetch.js';
 import type {
   AgentDiagnostic,
   DetectedAgent,
@@ -60,7 +59,7 @@ function unavailableAgent(
 ): DetectedAgent {
   return {
     ...stripFns(def),
-    models: def.fallbackModels ?? [DEFAULT_MODEL_OPTION],
+    models: [],
     modelsSource: 'fallback',
     available: false,
     ...(diagnostics.length > 0 ? { diagnostics } : {}),
@@ -106,6 +105,8 @@ function stripFns(
     env,
     authProbe,
     detect,
+    modelDiscovery,
+    compatibilityProbe,
     ...rest
   } = def;
   return rest;
@@ -121,7 +122,10 @@ async function probe(
   def: RuntimeAgentDef,
   configuredEnv: Record<string, string> = {},
 ): Promise<DetectedAgent> {
-  if (def.detect) return { ...stripFns(def), ...await def.detect() };
+  if (def.detect) {
+    const managed = await def.detect();
+    return { ...stripFns(def), ...managed, models: managed.available ? managed.models : [] };
+  }
   const launch = resolveAgentLaunch(def, configuredEnv);
   if (!launch.selectedPath || !launch.launchPath) {
     return unavailableAgent(def, [buildExecutableDiagnostic(def, configuredEnv)]);
@@ -141,36 +145,61 @@ async function probe(
   );
   const outcome = await probeVersionAtPath(def, launch.launchPath, probeEnv);
   if (outcome.kind === 'not-invocable') {
-    return unavailableAgent(def, [
+    return { ...unavailableAgent(def, [
       buildNotInvocableDiagnostic(def, launch, outcome.cause),
-    ]);
+    ]), path: launch.selectedPath };
   }
-  const [caps, modelResult, auth] = shouldRunAgentNetworkDiscovery(probeEnv)
+  let compatibilityFailure: ModelDiscoveryFailure | undefined;
+  const online = shouldRunAgentNetworkDiscovery(probeEnv);
+  if (online && def.compatibilityProbe) {
+    try {
+      await def.compatibilityProbe(launch.launchPath, probeEnv);
+    } catch (error) {
+      compatibilityFailure = discoveryFailure(error);
+    }
+  }
+  const [caps, modelResult, auth] = online && !compatibilityFailure
     ? await Promise.all([
         probeCapabilities(def, launch.launchPath, probeEnv),
         fetchModels(def, launch.launchPath, probeEnv),
         probeAgentAuthStatus(def, launch.launchPath, probeEnv),
       ])
-    : [null, { models: def.fallbackModels, source: 'fallback' as const }, null] as const;
-  const surfacedModelResult = withRememberedAmrModels(def, probeEnv, modelResult);
-  if (caps) {
-    agentCapabilities.set(def.id, caps);
-  }
-  const authDiagnostic = auth ? buildAuthDiagnostic(def, auth) : null;
+    : [null, failedModels(compatibilityFailure ?? {
+        kind: 'unverified', message: 'Discovery is offline. Model usability has not been verified; rescan online.',
+      }), null] as const;
+  if (caps) agentCapabilities.set(def.id, caps);
+  // Cursor supplies a live account catalogue and a separate status command,
+  // rather than opening an ACP/app-server session. Both probes must succeed;
+  // authentication alone must never override failed or empty model discovery.
+  const failure = compatibilityFailure ?? modelResult.failure ?? (
+    def.modelDiscovery !== 'authenticated-session' && auth?.status !== 'ok'
+      ? { kind: 'unverified' as const, message: 'CLI is installed, but this adapter has not verified an authenticated execution session. Catalogue entries and static hints are not selectable.' }
+      : undefined
+  );
+  const effectiveAuth = failure?.kind === 'auth-required'
+    ? { status: 'missing' as const, message: failure.message }
+    : auth;
+  const authDiagnostic = effectiveAuth ? buildAuthDiagnostic(def, effectiveAuth) : null;
+  const available = !failure && (!effectiveAuth || effectiveAuth.status === 'ok');
+  const diagnostics: AgentDiagnostic[] = authDiagnostic ? [authDiagnostic] : failure ? [{
+    // Reuse the existing wire diagnostics: command rejection is not executable
+    // through this adapter; unknown readiness must never imply authenticated.
+    reason: failure.kind === 'adapter-incompatible' ? 'not-executable' : 'auth-unknown',
+    severity: 'error',
+    message: failure.message,
+    fixActions: [{ kind: 'openDocs' }, { kind: 'rescan' }],
+  }] : [];
   return {
     ...stripFns(def),
-    models: surfacedModelResult.models,
-    modelsSource: surfacedModelResult.source,
-    available: true,
+    models: available ? modelResult.models : [],
+    modelsSource: modelResult.source,
+    available,
+    // path + available distinguish absent, installed-unusable, and usable
+    // without a new wire contract or a second UI source of truth.
     path: launch.selectedPath,
     version: outcome.version,
-    ...(auth
-      ? {
-          authStatus: auth.status,
-          ...(auth.message ? { authMessage: auth.message } : {}),
-        }
-      : {}),
-    ...(authDiagnostic ? { diagnostics: [authDiagnostic] } : {}),
+    ...(effectiveAuth ? { authStatus: effectiveAuth.status, authMessage: effectiveAuth.message } : {}),
+    ...(diagnostics.length ? { diagnostics } : {}),
     ...installMetaForAgent(def.id),
   };
 }
@@ -182,6 +211,10 @@ export async function safeProbe(
   try {
     return await probe(def, configuredEnv);
   } catch {
-    return unavailableAgent(def);
+    return unavailableAgent(def, [{
+      reason: 'auth-unknown', severity: 'error',
+      message: 'Agent detection failed before usability could be verified. Check the executable configuration, then rescan.',
+      fixActions: [{ kind: 'rescan' }],
+    }]);
   }
 }

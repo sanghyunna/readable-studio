@@ -1,4 +1,4 @@
-import { accessSync, constants, existsSync, statSync } from 'node:fs';
+import { accessSync, constants, existsSync, readdirSync, statSync } from 'node:fs';
 import { delimiter } from 'node:path';
 import path from 'node:path';
 import { homedir } from 'node:os';
@@ -65,11 +65,20 @@ function userToolchainDirs() {
   // exported can't leak the real machine's <prefix>/bin into a sandboxed
   // detection run. Without this the agents.test.ts cases that build a
   // tmp home would be machine-environment-dependent.
-  cachedToolchainDirs = wellKnownUserToolchainBins({
-    home,
-    includeSystemBins: process.platform !== 'win32' && !homeOverride,
-    env: homeOverride ? {} : process.env,
-  });
+  cachedToolchainDirs = [
+    ...wellKnownUserToolchainBins({
+      home,
+      includeSystemBins: process.platform !== 'win32' && !homeOverride,
+      env: homeOverride ? {} : process.env,
+    }),
+    // Vendor installers conventionally use ~/.<tool>/bin. Search this bounded
+    // home-relative layout, not a growing per-vendor whitelist or other homes.
+    ...(existsSync(home) ? readdirSync(home, { withFileTypes: true }) : [])
+      .filter((entry) => entry.isDirectory() && entry.name.startsWith('.'))
+      .map((entry) => path.join(home, entry.name, 'bin'))
+      .filter((dir) => existsSync(dir) && statSync(dir).isDirectory())
+      .sort(),
+  ];
   return cachedToolchainDirs;
 }
 
@@ -229,9 +238,14 @@ function packagedBuiltInExecutable(
   def: RuntimeAgentDef,
   configuredEnv: Record<string, string> = {},
 ): string | null {
-  if (def.id !== 'amr') return null;
   const resourceRoot = process.env.READABLE_RESOURCE_ROOT?.trim();
   if (!resourceRoot) return null;
+  if (def.id === 'pi' && process.platform === 'win32') {
+    // npm's .bin shims are excluded from the portable app. Use the staged
+    // relocatable CLI launcher, not an unrelated global Pi installation.
+    return executableFilePath(path.join(resourceRoot, '..', 'app', 'pi.cmd'));
+  }
+  if (def.id !== 'amr') return null;
   if (
     !resolveAmrOpenCodeExecutable({ ...process.env, ...configuredEnv }) &&
     !packagedVelaOpenCodeCompanionTree(resourceRoot)

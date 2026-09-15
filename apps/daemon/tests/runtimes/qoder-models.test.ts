@@ -33,6 +33,7 @@ describe('Qoder model discovery', () => {
     expect(parseQoderModels('Not logged in. Run `qodercli login` to authenticate.')).toBeNull();
     const result = await fetchModels(qoderAgentDef, 'missing-qodercli', process.env);
     expect(result.source).toBe('fallback');
-    expect(result.models.map((model) => model.id)).toContain('performance');
+    expect(result.models).toEqual([]);
+    expect(result.failure?.kind).toBe('discovery-failed');
   });
 });

@@ -1,4 +1,4 @@
-import { DEFAULT_MODEL_OPTION } from './shared.js';
+import { DEFAULT_MODEL_OPTION, probeAdapterCommand } from './shared.js';
 import type { RuntimeAgentDef } from '../types.js';
 
 export const geminiAgentDef = {
@@ -6,6 +6,7 @@ export const geminiAgentDef = {
     name: 'Gemini CLI',
     bin: 'gemini',
     versionArgs: ['--version'],
+    compatibilityProbe: (bin, env): Promise<void> => probeAdapterCommand(bin, geminiAgentDef.buildArgs('', []), env),
     fallbackModels: [
       DEFAULT_MODEL_OPTION,
       // Google Gemini API "All Gemini 3 models", retrieved 2026-09-04.
@@ -33,7 +34,7 @@ export const geminiAgentDef = {
     // instead of `--skip-trust`; several Gemini CLI builds hide or reject the
     // flag even though they accept the documented environment variable.
     env: { GEMINI_CLI_TRUST_WORKSPACE: 'true' },
-    buildArgs: (_prompt, _imagePaths, _extra, options = {}) => {
+    buildArgs: (_prompt: string, _imagePaths: string[], _extra?: string[], options: { model?: string | null } = {}): string[] => {
       const args = ['--output-format', 'stream-json', '--yolo'];
       if (options.model && options.model !== 'default') {
         args.push('--model', options.model);

@@ -35,6 +35,7 @@ export type DatabricksEndpointApi = 'openai-completions' | 'anthropic-messages' 
 export type DatabricksCapabilityState = 'supported' | 'unsupported' | 'unknown';
 
 export interface DatabricksCapabilities {
+  /** Learned on tested endpoint routes; unsupported selects complete-document chat delivery, not direct file edits. */
   tools: DatabricksCapabilityState;
   images: DatabricksCapabilityState;
   /** Null means unknown, never the runtime's fallback budget. */
@@ -90,7 +91,7 @@ export interface DatabricksEndpoint {
   protocolEvidence?: {
     advertised: string[];
     native: string[];
-    reason: 'native-api' | 'advertised-api' | 'prefer-messages' | 'chat-task' | 'unresolved';
+    reason: 'native-api' | 'advertised-api' | 'prefer-messages' | 'chat-task' | 'unresolved' | 'runtime-accepted';
   };
   /** Registered with Readable, not selected or enabled remotely. */
   enabled: boolean;

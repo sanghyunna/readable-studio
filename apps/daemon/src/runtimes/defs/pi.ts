@@ -15,6 +15,9 @@ export const piAgentDef = {
           timeout: 20_000,
           maxBuffer: 8 * 1024 * 1024,
         });
+        // Pi lists only credential-available models. Its no-auth guidance is
+        // prose, not a table; never turn words or documentation paths into IDs.
+        if (String(stdout).startsWith('No models available.')) return [DEFAULT_MODEL_OPTION];
         const parsed = parsePiModels(stdout);
         if (!parsed || parsed.length === 0) return null;
         return parsed;

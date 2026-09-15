@@ -6,6 +6,13 @@ import { databricksEndpointLabel, resolveDatabricksCapabilities, resolveDatabric
 /** Daemon-private catalogue: routing and UI identities, never arbitrary upstream metadata. */
 export interface DatabricksWireCapabilities {
   responsesUnsupported: boolean;
+  /** Learned same-workspace Responses surface, never an arbitrary upstream URL. */
+  responsesPath?: string;
+  /** Accepted native protocol; fixed workspace path, not an upstream-supplied URL. */
+  api?: 'anthropic-messages';
+  /** Version of the documented surfaces exhausted before artifact fallback. */
+  toolSurfaceVersion?: 2;
+  tools?: 'supported' | 'unsupported';
   chatTokensField: 'max_completion_tokens' | 'max_tokens';
   outputLimit?: number;
   requiredOutputBudget: boolean;
@@ -18,6 +25,14 @@ export interface CatalogueEntry {
   wireCapabilities?: DatabricksWireCapabilities;
   upstreamName: string;
   basePath: string;
+}
+
+export function applyLearnedDatabricksProtocol(entry: CatalogueEntry): void {
+  if (entry.wireCapabilities?.api !== 'anthropic-messages') return;
+  entry.endpoint.api = 'anthropic-messages';
+  entry.basePath = '/ai-gateway/anthropic';
+  entry.endpoint.protocolEvidence = { advertised: entry.endpoint.protocolEvidence?.advertised ?? [],
+    native: entry.endpoint.protocolEvidence?.native ?? [], reason: 'runtime-accepted' };
 }
 
 export function opaqueId(secret: string, prefix: string, ...identity: string[]): string {
@@ -111,14 +126,19 @@ export function normalizeResource(secret: string, profileId: string, resource: D
     ...(!api ? { issue: { code: 'DATABRICKS_VERIFICATION_REQUIRED' as const, action: 'verify' as const, retryable: false } } : {}),
   };
   const configurationId = opaqueId(secret, 'dbcfg', JSON.stringify(resource.metadata));
+  if (previous?.configurationId === configurationId && previous.wireCapabilities?.tools) {
+    endpoint.capabilities.tools = previous.wireCapabilities.tools;
+  }
   if (previous?.configurationId === configurationId && previous.wireCapabilities?.outputLimit !== undefined) {
     endpoint.capabilities.maxTokens = previous.wireCapabilities.outputLimit;
     endpoint.capabilities.limitSources!.maxTokens = 'endpoint';
   }
-  return {
+  const entry: CatalogueEntry = {
     endpoint, upstreamName: resource.name, configurationId,
     ...(previous?.configurationId === configurationId && previous.wireCapabilities ? { wireCapabilities: previous.wireCapabilities } : {}),
     basePath: api === 'anthropic-messages' ? '/ai-gateway/anthropic'
       : resource.kind === 'serving-endpoint' ? '/serving-endpoints' : '/ai-gateway/openai/v1',
   };
+  applyLearnedDatabricksProtocol(entry);
+  return entry;
 }

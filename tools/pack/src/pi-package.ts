@@ -1,8 +1,9 @@
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { readFile, realpath, stat } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { isAbsolute, join, relative, sep } from "node:path";
+import { delimiter, dirname, isAbsolute, join, relative, sep } from "node:path";
+import { createCommandInvocation } from "@readable-studio/platform";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
@@ -10,6 +11,42 @@ import piPackage from "./pi-package.json" with { type: "json" };
 
 const execFileAsync = promisify(execFile);
 export const PI_RPC_ENTRY_RELATIVE_PATH = `node_modules/${piPackage.name}/dist/rpc-entry.js`;
+export const PI_CLI_LAUNCHER = "pi.cmd";
+const piCliLauncher = `@echo off\r\nnode "%~dp0node_modules\\${piPackage.name.replaceAll("/", "\\")}\\dist\\cli.js" %*\r\n`;
+
+export async function stagePiCliLauncher(appRoot: string): Promise<void> {
+  await writeFile(join(appRoot, PI_CLI_LAUNCHER), piCliLauncher);
+}
+
+// Exercise the ordinary CLI, not the RPC-only export. Offline fixture credentials
+// unlock bundled OpenAI models without reading the builder's auth or using a network.
+export async function assertPiCliModels(appRoot: string): Promise<void> {
+  if (await readFile(join(appRoot, PI_CLI_LAUNCHER), "utf8") !== piCliLauncher) {
+    throw new Error("staged Pi CLI launcher is missing or invalid");
+  }
+  const home = await mkdtemp(join(tmpdir(), "readable-pi-models-"));
+  try {
+    const env = {
+      SystemRoot: process.env.SystemRoot, ComSpec: process.env.ComSpec,
+      TEMP: home, TMP: home, HOME: home, USERPROFILE: home,
+      PATH: `${dirname(process.execPath)}${delimiter}${process.env.SystemRoot ? join(process.env.SystemRoot, "System32") : ""}`,
+      PI_CODING_AGENT_DIR: home, PI_OFFLINE: "1", OPENAI_API_KEY: "offline-build-fixture",
+    };
+    const invocation = process.platform === "win32"
+      ? createCommandInvocation({ command: join(appRoot, PI_CLI_LAUNCHER), args: ["--list-models"], env })
+      : { command: process.execPath, args: [join(appRoot, "node_modules", piPackage.name, "dist", "cli.js"), "--list-models"] };
+    const { stdout } = await execFileAsync(invocation.command, invocation.args, {
+      env, cwd: home, timeout: 20_000, maxBuffer: 8 * 1024 * 1024,
+      windowsVerbatimArguments: "windowsVerbatimArguments" in invocation ? invocation.windowsVerbatimArguments : undefined,
+    });
+    if (!/^provider\s+model\s+context\s+max-out\s+thinking\s+images\s*$/m.test(stdout)
+      || !/^openai\s+\S+\s+\S+\s+\S+\s+(yes|no)\s+(yes|no)\s*$/m.test(stdout)) {
+      throw new Error("staged Pi CLI cannot list its bundled OpenAI models");
+    }
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+}
 
 export async function resolvePiPackagePatch(workspaceRoot: string): Promise<string> {
   const manifest = JSON.parse(await readFile(join(workspaceRoot, "package.json"), "utf8")) as {
@@ -41,6 +78,7 @@ export async function patchPiPackage(appRoot: string, workspaceRoot: string): Pr
     `--directory=${packageRoot.replaceAll("\\", "/")}`, patch,
   ], { cwd: tmpdir(), timeout: 10_000 });
   assertPiShutdownPatched(packageRoot);
+  await stagePiCliLauncher(appRoot);
 }
 
 // npm verifies downloaded bytes against the integrity recorded in this lockfile.
@@ -83,6 +121,7 @@ export async function assertPiPackageOutput(appRoot: string): Promise<void> {
     if (physicalEntry !== await realpath(join(appRoot, PI_RPC_ENTRY_RELATIVE_PATH))) {
       throw new Error("RPC export does not resolve to dist/rpc-entry.js");
     }
+    await assertPiCliModels(appRoot);
   } catch (cause) {
     throw new Error(`staged Pi RPC entry point is missing or invalid under ${appRoot}`, { cause });
   }

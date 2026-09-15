@@ -10,7 +10,7 @@ import type {
 import { DatabricksClient, DatabricksServiceError, issueFor, withDeadline, type DatabricksClientOptions } from './client.js';
 import { DatabricksCredentials, type DatabricksConnectionBinding } from './credentials.js';
 import { DatabricksLogins, type DatabricksLoginOptions } from './login.js';
-import { normalizeResource, opaqueId, type CatalogueEntry, type DatabricksWireCapabilities } from './catalogue.js';
+import { applyLearnedDatabricksProtocol, normalizeResource, opaqueId, type CatalogueEntry, type DatabricksWireCapabilities } from './catalogue.js';
 import { lookupResource, objectValue, requestJson, scanWorkspace, type DatabricksFetch, type WorkspaceScanOptions } from './scan.js';
 import { DatabricksStore, type CatalogueGeneration } from './store.js';
 import { EncryptedConnectionSecretStorage, type ConnectionSecretStorage } from './secret-storage.js';
@@ -467,6 +467,14 @@ export class LocalDatabricksService implements DatabricksService {
           const current = generation.entries.find((candidate) => candidate.endpoint.id === entry.endpoint.id);
           if (!current || current.configurationId !== entry.configurationId) return;
           current.wireCapabilities = learned;
+          applyLearnedDatabricksProtocol(current);
+          if (learned.tools) current.endpoint.capabilities.tools = learned.tools;
+          for (const scan of generation.scans) {
+            scan.endpoints = scan.endpoints.map(endpoint => endpoint.id === current.endpoint.id
+              ? { ...endpoint, api: current.endpoint.api,
+                ...(current.endpoint.protocolEvidence ? { protocolEvidence: structuredClone(current.endpoint.protocolEvidence) } : {}),
+                capabilities: { ...endpoint.capabilities, tools: current.endpoint.capabilities.tools } } : endpoint);
+          }
           if (learned.outputLimit !== undefined) {
             current.endpoint.capabilities.maxTokens = learned.outputLimit;
             current.endpoint.capabilities.limitSources = {

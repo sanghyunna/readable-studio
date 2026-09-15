@@ -127,6 +127,7 @@ export async function createDatabricksPiRuntime(options: DatabricksPiRuntimeOpti
       command: process.execPath,
       args: [engine.entrypoint, '--mode', 'rpc', '--provider', 'databricks', '--model', relay.modelAlias,
         '--thinking', config.settings.defaultThinkingLevel, '--session-dir', sessionDir,
+        ...(runtime.wireCapabilities?.tools === 'unsupported' && runtime.wireCapabilities.toolSurfaceVersion === 2 ? ['--no-tools'] : []),
         '--no-extensions', '--no-skills', '--no-prompt-templates', '--no-themes', '--no-context-files', '--no-approve', '--offline'],
       cwd: options.cwd,
       env: {

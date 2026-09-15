@@ -22,7 +22,6 @@ function rememberDetectedLiveModels(
   configuredEnv: Record<string, string>,
   agent: DetectedAgent,
 ): void {
-  if (def.id === 'amr' && agent.models.length === 0) return;
   const scope = def.id === 'amr'
     ? amrModelScopeFromEnv({
         ...process.env,
@@ -30,7 +29,7 @@ function rememberDetectedLiveModels(
         ...configuredEnv,
       })
     : null;
-  rememberLiveModels(agent.id, agent.models, scope);
+  rememberLiveModels(agent.id, agent.available && agent.modelsSource === 'live' ? agent.models : [], scope);
 }
 
 export async function detectAgents(

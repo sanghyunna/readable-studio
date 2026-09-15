@@ -424,7 +424,7 @@ export async function createWinPackagedAppCacheKey(
     packedTarballs,
     platform: "win32",
     prebundle: shouldUseWinStandalonePrebundle(config.webOutputMode),
-    schemaVersion: 4,
+    schemaVersion: 5,
     piPackage,
     piPatch: await hashPath(await resolvePiPackagePatch(config.workspaceRoot)),
     databricksCli,

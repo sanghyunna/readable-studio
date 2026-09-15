@@ -167,8 +167,11 @@ function createLocalAgentDef(
   const helpArgs = normalizeStringList(profile.helpArgs);
   const defaultModel = normalizeDefaultModel(profile.defaultModel);
 
+  // A profile may change argv, routing, and authentication. The base adapter's
+  // verified-session capability is not evidence for this custom invocation.
+  const { modelDiscovery, compatibilityProbe, ...profileBase } = base;
   return {
-    ...base,
+    ...profileBase,
     id,
     name,
     bin,

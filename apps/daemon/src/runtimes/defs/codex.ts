@@ -1,7 +1,5 @@
-import { readFile } from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
-import { DEFAULT_MODEL_OPTION, clampCodexReasoning } from './shared.js';
+import { DEFAULT_MODEL_OPTION, clampCodexReasoning, probeAdapterCommand } from './shared.js';
+import { discoverCodexCatalog } from '../codex-model-discovery.js';
 import type { RuntimeModelOption } from '../types.js';
 import type { RuntimeAgentDef } from '../types.js';
 
@@ -56,19 +54,6 @@ export function parseCodexModelCatalog(stdout: string): RuntimeModelOption[] | n
   return out.length > 1 ? out : null;
 }
 
-async function loadCodexModelCache(
-  env: NodeJS.ProcessEnv,
-): Promise<RuntimeModelOption[] | null> {
-  const codexHome = env.CODEX_HOME?.trim() || path.join(os.homedir(), '.codex');
-  try {
-    return parseCodexModelCatalog(
-      await readFile(path.join(codexHome, 'models_cache.json'), 'utf8'),
-    );
-  } catch {
-    return null;
-  }
-}
-
 export function codexNeedsDangerFullAccessSandbox(
   platform: NodeJS.Platform = process.platform,
   env: NodeJS.ProcessEnv = process.env,
@@ -88,23 +73,10 @@ export const codexAgentDef = {
     name: 'Codex CLI',
     bin: 'codex',
     versionArgs: ['--version'],
-    // Codex app-server's authoritative `model/list` catalogue is persisted at
-    // `$CODEX_HOME/models_cache.json`. Reading that CLI-owned cache avoids a
-    // second long-lived app-server process during detection and tracks account-
-    // specific additions/removals. If the cache is absent or malformed, use
-    // the dated fallback snapshot below (verified against Codex CLI 0.146.0 on
-    // 2026-09-04).
-    fetchModels: async (_resolvedBin, env) => loadCodexModelCache(env),
-    fallbackModels: [
-      DEFAULT_MODEL_OPTION,
-      { id: 'gpt-5.6-sol', label: 'GPT-5.6-Sol' },
-      { id: 'gpt-5.6-terra', label: 'GPT-5.6-Terra' },
-      { id: 'gpt-5.6-luna', label: 'GPT-5.6-Luna' },
-      { id: 'gpt-5.5', label: 'GPT-5.5' },
-      { id: 'gpt-5.4', label: 'GPT-5.4' },
-      { id: 'gpt-5.4-mini', label: 'GPT-5.4-Mini' },
-      { id: 'gpt-5.3-codex-spark', label: 'GPT-5.3-Codex-Spark' },
-    ],
+    compatibilityProbe: (bin, env): Promise<void> => probeAdapterCommand(bin, [...codexAgentDef.buildArgs('', []), '--help'], env),
+    modelDiscovery: 'authenticated-session',
+    fetchModels: async (bin, env) => parseCodexModelCatalog(await discoverCodexCatalog(bin, env)),
+    fallbackModels: [],
     reasoningOptions: [
       { id: 'default', label: 'Default' },
       { id: 'none', label: 'None' },

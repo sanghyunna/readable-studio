@@ -9,14 +9,14 @@ import {
 import { readLocalAgentProfileDefs } from '../../src/runtimes/registry.js';
 
 function writeFakeCodexBin(dir: string, script: string): string {
-  const runner = join(dir, 'codex-runner.cjs');
+  const runner = join(dir, 'codex-runner.ts');
   writeFileSync(runner, script);
   const bin = join(dir, process.platform === 'win32' ? 'codex.cmd' : 'codex');
   if (process.platform === 'win32') {
-    writeFileSync(bin, `@echo off\r\n"${process.execPath}" "%~dp0codex-runner.cjs" %*\r\n`);
+    writeFileSync(bin, `@echo off\r\n"${process.execPath}" "%~dp0codex-runner.ts" %*\r\n`);
     return bin;
   }
-  writeFileSync(bin, `#!/usr/bin/env node\nrequire(${JSON.stringify(runner)});\n`);
+  writeFileSync(bin, `#!/bin/sh\nexec '${process.execPath}' '${runner}' "$@"\n`);
   chmodSync(bin, 0o755);
   return bin;
 }
@@ -323,17 +323,8 @@ test('codex args keep plugins enabled when READABLE_CODEX_DISABLE_PLUGINS is not
   });
 });
 
-test('codex model picker includes current OpenAI choices in priority order', async () => {
-  const expectedModels = [
-    'default',
-    'gpt-5.6-sol',
-    'gpt-5.6-terra',
-    'gpt-5.6-luna',
-    'gpt-5.5',
-    'gpt-5.4',
-    'gpt-5.4-mini',
-    'gpt-5.3-codex-spark',
-  ];
+test('codex has no speculative picker catalogue when live discovery fails', async () => {
+  const expectedModels: string[] = [];
 
   assert.deepEqual(codex.fallbackModels.map((m) => m.id), expectedModels);
   assert.ok(codex.reasoningOptions, 'codex must define reasoningOptions');
@@ -374,11 +365,11 @@ process.exit(0);
       process.env.CODEX_HOME = dir;
       delete process.env.CODEX_BIN;
 
-      const agents = await detectAgents({ codex: { CODEX_HOME: dir } });
+      const agents = await detectAgents({ codex: { CODEX_HOME: dir } }, { enabledAgentIds: ['codex'], refresh: true });
       const detected = agents.find((agent) => agent.id === 'codex');
 
       assert.ok(detected);
-      assert.equal(detected.available, true);
+      assert.equal(detected.available, false);
       assert.equal(detected.version, 'codex 1.0.0');
       assert.equal(detected.modelsSource, 'fallback');
       assert.deepEqual(detected.models.map((m: { id: string }) => m.id), expectedModels);
@@ -412,7 +403,7 @@ test('codex parses the CLI-owned cache and app-server model/list shapes', () => 
   ]);
 });
 
-test('codex detection surfaces the CLI-owned model cache as live discovery', async () => {
+test('codex detection does not resurrect a disk cache after adapter failure', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'readable-agents-codex-live-models-'));
   try {
     await withEnvSnapshot(['PATH', 'READABLE_AGENT_HOME', 'CODEX_BIN', 'CODEX_HOME'], async () => {
@@ -433,26 +424,21 @@ process.exit(2);
       process.env.CODEX_HOME = dir;
       delete process.env.CODEX_BIN;
 
-      const agents = await detectAgents({ codex: { CODEX_HOME: dir } });
+      const agents = await detectAgents({ codex: { CODEX_HOME: dir } }, { enabledAgentIds: ['codex'], refresh: true });
       const detected = agents.find((agent) => agent.id === 'codex');
 
       assert.ok(detected);
-      assert.equal(detected.available, true);
-      assert.equal(detected.modelsSource, 'live');
-      assert.deepEqual(detected.models.map((m: { id: string }) => m.id), [
-        'default',
-        'gpt-5.3-codex-spark',
-      ]);
+      assert.equal(detected.available, false);
+      assert.equal(detected.modelsSource, 'fallback');
+      assert.deepEqual(detected.models, []);
     });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('codex fallback keeps the verified Spark model when discovery is unavailable', () => {
-  const pickerModels = new Set(codex.fallbackModels.map((model) => model.id));
-
-  assert.equal(pickerModels.has('gpt-5.3-codex-spark'), true);
+test('codex ships no account-independent fallback snapshot', () => {
+  assert.deepEqual(codex.fallbackModels, []);
 });
 
 test('cursor-agent parses live model ids separately from display labels', () => {

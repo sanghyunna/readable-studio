@@ -7,8 +7,8 @@ export const DEFAULT_MODEL_OPTION: RuntimeModelOption = {
 
 // Daemon's /api/chat needs to validate the user's model pick against the
 // list we last surfaced to the UI. We keep a per-agent cache of the most
-// recent live list (refreshed every detectAgents() call) and additionally
-// trust any value present in the static fallback. A model that's neither
+// recent live list (refreshed every detectAgents() call). Once detection has
+// run, its result is authoritative, including an empty/unusable result. A model that's neither
 // gets rejected so a stale or hostile value can't smuggle arbitrary flags.
 const liveModelCache = new Map<string, Set<string>>();
 const liveModelOrder = new Map<string, string[]>();
@@ -50,7 +50,7 @@ export function isKnownModel(
 ) {
   if (!modelId) return false;
   const live = liveModelCache.get(liveModelCacheKey(def.id, scope));
-  if (live && live.has(modelId)) return true;
+  if (live) return live.has(modelId);
   if (Array.isArray(def.fallbackModels)) {
     return def.fallbackModels.some((m) => m.id === modelId);
   }
@@ -61,6 +61,8 @@ export function agentHasModelChoice(
   def: RuntimeAgentDef,
   liveModelScope?: string | null,
 ): boolean {
+  const remembered = liveModelOrder.get(liveModelCacheKey(def.id, liveModelScope));
+  if (remembered) return remembered.some((id) => id !== DEFAULT_MODEL_OPTION.id);
   const hasConcreteFallback = def.fallbackModels.some(
     (model) => model.id !== DEFAULT_MODEL_OPTION.id,
   );
@@ -80,6 +82,8 @@ export function resolveModelForAgent(
   liveModelScope?: string | null,
 ): string | null {
   if (typeof requested !== 'string') return null;
+  // A failed rescan revokes even custom/stale saved selections.
+  if (liveModelCache.get(liveModelCacheKey(def.id, liveModelScope))?.size === 0) return null;
   const trimmed = requested.trim();
   if (!trimmed) return null;
   if (trimmed === DEFAULT_MODEL_OPTION.id) {

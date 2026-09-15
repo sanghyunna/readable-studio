@@ -437,7 +437,7 @@ test('qoder adapter does not define static secret env', () => {
   );
 });
 
-test('detectAgents keeps qoder unavailable with fallback metadata when qodercli is missing', async () => {
+test('detectAgents keeps qoder unavailable without selectable models when qodercli is missing', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'readable-agents-empty-'));
   try {
     process.env.READABLE_AGENT_HOME = dir;
@@ -449,14 +449,9 @@ test('detectAgents keeps qoder unavailable with fallback metadata when qodercli 
     assert.ok(detected);
     assert.equal(detected.available, false);
     assert.equal(detected.bin, 'qodercli');
-    assert.deepEqual(detected.models.map((m: { id: string }) => m.id), [
-      'default',
-      'lite',
-      'efficient',
-      'auto',
-      'performance',
-      'ultimate',
-    ]);
+    assert.equal(detected.path, undefined);
+    assert.deepEqual(detected.models, []);
+    assert.equal(detected.diagnostics?.[0]?.reason, 'not-on-path');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -1,6 +1,19 @@
 import { DEFAULT_MODEL_OPTION, parseLineSeparatedModels } from './shared.js';
 import type { RuntimeAgentDef } from '../types.js';
 
+export function parseOpenCodeModels(stdout: string) {
+  const text = String(stdout || '');
+  // A successful process exit is not proof of a model table. Do not turn
+  // sign-in guidance or documentation URLs into selectable provider/model ids.
+  if (/authentication required|not authenticated|not logged in|please (?:log|sign) in/i.test(text)) {
+    return null;
+  }
+  const rows = text.split('\n').map((line) => line.trim()).filter((line) =>
+    /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._:/@-]*$/.test(line),
+  );
+  return rows.length > 0 ? parseLineSeparatedModels(rows.join('\n')) : null;
+}
+
 export const opencodeAgentDef = {
     id: 'opencode',
     name: 'OpenCode',
@@ -15,7 +28,7 @@ export const opencodeAgentDef = {
     // (devin, hermes, kiro, kilo, kimi, trae-cli, vibe, reasonix).
     listModels: {
       args: ['models'],
-      parse: parseLineSeparatedModels,
+      parse: parseOpenCodeModels,
       timeoutMs: 15_000,
     },
     fallbackModels: [
