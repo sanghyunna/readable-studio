@@ -134,6 +134,51 @@ describe("portable Pi package layout", () => {
     }
   });
 
+  it.each([0, 7])("retains child output, exit code %s and tree evidence in the build error", async (code) => {
+    const root = await mkdtemp(join(tmpdir(), "readable-pi-diagnostics-"));
+    try {
+      await writePiFixture(root);
+      await patchPiPackage(root, workspaceRoot);
+      const cli = join(root, "node_modules", piPackage.name, "dist", "cli.js");
+      const source = `console.log('CLI_STDOUT_SENTINEL'); console.error('CLI_STDERR_SENTINEL'); process.exitCode = ${code};\n`;
+      await writeFile(cli, source);
+      const error = await assertPiPackageOutput(root).then(() => {
+        throw new Error("invalid Pi unexpectedly passed");
+      }, (error: unknown) => error) as Error & { cause: { diagnostics: unknown } };
+      expect(error.cause).toMatchObject({
+        code,
+        diagnostics: {
+          appRoot: root, executable: process.execPath, args: [cli, "--version"],
+          started: true, exitCode: code, signal: null, killed: false,
+          stdout: "CLI_STDOUT_SENTINEL\n", stderr: "CLI_STDERR_SENTINEL\n",
+          tree: expect.arrayContaining([
+            expect.objectContaining({ path: cli, exists: true, size: Buffer.byteLength(source), kind: "file", pathLength: cli.length }),
+            expect.objectContaining({ path: join(root, "node_modules"), entries: ["@earendil-works"] }),
+            expect.objectContaining({ path: join(root, "node_modules", piPackage.name, "node_modules"), error: expect.stringContaining("ENOENT") }),
+          ]),
+        },
+      });
+      // The phase logger prints only message, not cause/custom properties.
+      expect(error.message).toContain(JSON.stringify(error.cause.diagnostics, null, 2));
+    } finally {
+      await realFs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reports a real missing CLI dependency without substituting a successful version check", async () => {
+    const root = await mkdtemp(join(tmpdir(), "readable-pi-missing-dep-"));
+    try {
+      await writePiFixture(root);
+      await patchPiPackage(root, workspaceRoot);
+      await writeFile(join(root, "node_modules", piPackage.name, "dist", "cli.js"), "import 'pi-missing-dependency-sentinel';\n");
+      await expect(assertPiPackageOutput(root)).rejects.toMatchObject({ cause: { diagnostics: {
+        exitCode: 1, stdout: "", stderr: expect.stringContaining("pi-missing-dependency-sentinel"),
+      } } });
+    } finally {
+      await realFs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it.each([
     { catalogue: "model table", output: "provider model context max-out thinking images\nopenrouter ~openai/gpt-latest 1.1M 128K yes yes", code: 0 },
     { catalogue: "unauthenticated notice", output: "No models available. Use /login to log into a provider via OAuth or API key.", code: 1 },

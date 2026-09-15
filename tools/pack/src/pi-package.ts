@@ -1,8 +1,8 @@
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { delimiter, dirname, isAbsolute, join, relative, sep } from "node:path";
+import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
@@ -17,14 +17,34 @@ export async function stagePiCliLauncher(appRoot: string): Promise<void> {
   await writeFile(join(appRoot, PI_CLI_LAUNCHER), piCliLauncher);
 }
 
+// Capture before a caller can clean up its staging tree. Diagnostic I/O failures
+// are evidence too, and must never replace the original child failure.
+async function describePiPath(path: string) {
+  try {
+    const metadata = await lstat(path);
+    return {
+      path, pathLength: path.length, exists: true,
+      realPath: await realpath(path), size: metadata.size,
+      kind: metadata.isSymbolicLink() ? "symlink" : metadata.isDirectory() ? "directory" : "file",
+      entries: metadata.isDirectory() ? (await readdir(path)).sort() : undefined,
+    };
+  } catch (error) {
+    return { path, pathLength: path.length, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 // Prove the ordinary CLI starts at the pinned version, without provider credentials.
 // Model availability belongs to runtime account setup, not artifact verification.
 export async function assertPiCliVersion(appRoot: string): Promise<void> {
-  if (await readFile(join(appRoot, PI_CLI_LAUNCHER), "utf8") !== piCliLauncher) {
-    throw new Error("staged Pi CLI launcher is missing or invalid");
-  }
+  appRoot = resolve(appRoot);
+  const packageRoot = join(appRoot, "node_modules", piPackage.name);
+  const cli = join(packageRoot, "dist", "cli.js");
   const home = await mkdtemp(join(tmpdir(), "readable-pi-version-"));
+  let started = false;
   try {
+    if (await readFile(join(appRoot, PI_CLI_LAUNCHER), "utf8") !== piCliLauncher) {
+      throw new Error("staged Pi CLI launcher is missing or invalid");
+    }
     const env = {
       SystemRoot: process.env.SystemRoot, ComSpec: process.env.ComSpec,
       TEMP: home, TMP: home, HOME: home, USERPROFILE: home,
@@ -33,16 +53,42 @@ export async function assertPiCliVersion(appRoot: string): Promise<void> {
     };
     // The launcher bytes are checked above. Own Node directly instead of a
     // cmd.exe wrapper so completion/timeout applies to Pi, not just its shell.
-    const execution = execFileAsync(process.execPath, [
-      join(appRoot, "node_modules", piPackage.name, "dist", "cli.js"), "--version",
-    ], { env, cwd: home, timeout: 20_000, maxBuffer: 8 * 1024 * 1024 });
+    const execution = execFileAsync(process.execPath, [cli, "--version"],
+      // Cold-start on an idle machine is already ~5s: Pi loads its bundled module
+      // graph before printing a version. Under a concurrent electron-builder pass
+      // that grew past a 20s budget and the child died on SIGTERM with empty output,
+      // which reads as a broken package rather than a starved one.
+      { env, cwd: home, timeout: 180_000, maxBuffer: 8 * 1024 * 1024 });
+    started = true;
     // Register before awaiting: even an execution error must not let cleanup
     // race the process or its stdio handles. 'exit' alone is insufficient.
     const closed = new Promise<void>((resolve) => execution.child.once("close", () => resolve()));
-    const { stdout } = await execution.finally(() => closed);
+    const { stdout, stderr } = await execution.finally(() => closed);
     if (stdout.trim() !== piPackage.version) {
-      throw new Error(`staged Pi CLI did not report pinned version ${piPackage.version}`);
+      throw Object.assign(new Error(`staged Pi CLI did not report pinned version ${piPackage.version}`), {
+        stdout, stderr, code: 0,
+      });
     }
+  } catch (cause) {
+    const failure = cause as Error & {
+      code?: string | number; signal?: string; killed?: boolean; stdout?: string; stderr?: string;
+    };
+    const diagnostics = {
+      appRoot, executable: process.execPath, nodeVersion: process.version,
+      args: [cli, "--version"], cwd: home, started,
+      exitCode: typeof failure.code === "number" ? failure.code : null,
+      code: failure.code ?? null, signal: failure.signal ?? null, killed: failure.killed ?? false,
+      stdout: failure.stdout ?? "", stderr: failure.stderr ?? "",
+      tree: await Promise.all([
+        appRoot, join(appRoot, "package.json"), join(appRoot, "package-lock.json"),
+        join(appRoot, PI_CLI_LAUNCHER), join(appRoot, "node_modules"), dirname(packageRoot),
+        packageRoot, join(packageRoot, "package.json"), join(packageRoot, "node_modules"), cli,
+      ].map(describePiPath)),
+    };
+    throw Object.assign(new Error(
+      `${cause instanceof Error ? cause.message : String(cause)}\nPi CLI diagnostics: ${JSON.stringify(diagnostics, null, 2)}`,
+      { cause },
+    ), { code: failure.code, diagnostics });
   } finally {
     try {
       // Windows scanners can briefly retain handles even after the child closes.

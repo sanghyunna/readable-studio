@@ -468,7 +468,8 @@ export async function prepareWinPackagedApp(
       await stageDatabricksCli(appRoot);
       await runNpmInstall(appRoot);
       await patchPiPackage(appRoot, config.workspaceRoot);
-      await assertPiPackageOutput(appRoot);
+      // Execute Pi only after cache finalization below: a failed cache build
+      // deletes this temporary tree, including the evidence needed to debug it.
       const nativeValidationError = await validateNodeNativeModuleOutput(appRoot);
       if (nativeValidationError != null) throw new Error(nativeValidationError);
       return { packagedVersion };
@@ -480,7 +481,6 @@ export async function prepareWinPackagedApp(
   });
   await assertDatabricksCliOutput(join(manifest.entryPath, "app"));
   await assertPiPackageIntegrity(join(manifest.entryPath, "app"));
-  await assertPiPackageOutput(join(manifest.entryPath, "app"));
   await writeAssembledAppEntrypoints(
     config,
     {
@@ -493,6 +493,9 @@ export async function prepareWinPackagedApp(
     packagedVersion,
     { usePrebundle },
   );
+  // Mandatory on both misses and hits, against the final path and entrypoints.
+  // Failure still stops packaging, but the cache payload remains inspectable.
+  await assertPiPackageOutput(join(manifest.entryPath, "app"));
   await writePackagedConfig(
     config,
     paths,
