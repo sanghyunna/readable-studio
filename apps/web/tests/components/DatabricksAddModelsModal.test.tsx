@@ -240,6 +240,54 @@ afterEach(() => {
 });
 
 describe('DatabricksAddModelsModal', () => {
+  it('registers a model then completes fresh second and third scans after reopening', async () => {
+    let nextId = 0;
+    databricksClient.startDatabricksScan.mockImplementation(async () => scanResponse({ scanId: `scan-${++nextId}` }));
+    databricksClient.streamDatabricksScanEvents.mockImplementation(async (scanId: string, handlers: { onEvent: (event: unknown) => void }) => {
+      handlers.onEvent({ type: 'done', revision: 2, scan: scanResponse({ scanId, revision: 2, state: 'complete', endpoints: [endpoint({ enabled: nextId > 1 })] }) });
+      return true;
+    });
+    await act(async () => { render(<ComposerModalHarness />); });
+    for (let pass = 1; pass <= 3; pass++) {
+      await act(async () => { fireEvent.click(screen.getByTestId('databricks-add-models-trigger')); });
+      await act(async () => { fireEvent.click(screen.getByTestId('databricks-scan-start')); });
+      expect(databricksClient.streamDatabricksScanEvents.mock.calls.at(-1)![0]).toBe(`scan-${pass}`);
+      expect(screen.queryByTestId('databricks-scan-cancel')).toBeNull();
+      expect(screen.getByTestId('databricks-scan-start').hasAttribute('disabled')).toBe(false);
+      if (pass === 1) {
+        databricksClient.fetchDatabricksModels.mockResolvedValue({ models: [registeredEndpoint()], revision: 1, issues: [] });
+        const published = new Promise<Event>(resolve => window.addEventListener(DATABRICKS_MODELS_CHANGED_EVENT, resolve, { once: true }));
+        await act(async () => { fireEvent.click(screen.getByTestId('databricks-endpoint-toggle-ep-luna')); await published; });
+      }
+      await act(async () => { fireEvent.click(screen.getByTestId('databricks-add-models-done')); });
+      expect(screen.queryByRole('dialog')).toBeNull();
+    }
+    expect(databricksClient.startDatabricksScan).toHaveBeenCalledTimes(3);
+    expect(databricksClient.enableDatabricksModel).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows an error and cancels when the stream closes while the daemon still reports running', async () => {
+    databricksClient.streamDatabricksScanEvents.mockResolvedValue(false);
+    databricksClient.fetchDatabricksScan.mockResolvedValue(scanResponse());
+    await act(async () => { renderModal(); });
+    await act(async () => { fireEvent.click(screen.getByTestId('databricks-scan-start')); });
+    expect(screen.getByTestId('databricks-scan-error').getAttribute('role')).toBe('alert');
+    expect(screen.queryByTestId('databricks-scan-cancel')).toBeNull();
+    expect(databricksClient.cancelDatabricksScan).toHaveBeenCalledWith('scan-1');
+  });
+
+  it('cancels a scan whose start response arrives after the modal closed', async () => {
+    let resolveStart!: (scan: DatabricksScanResponse) => void;
+    databricksClient.startDatabricksScan.mockImplementationOnce(() => new Promise<DatabricksScanResponse>(resolve => { resolveStart = resolve; }));
+    await act(async () => { render(<ComposerModalHarness />); });
+    await act(async () => { fireEvent.click(screen.getByTestId('databricks-add-models-trigger')); });
+    await act(async () => { fireEvent.click(screen.getByTestId('databricks-scan-start')); });
+    await act(async () => { fireEvent.click(screen.getByTestId('databricks-add-models-done')); });
+    await act(async () => { resolveStart(scanResponse()); });
+    expect(databricksClient.cancelDatabricksScan).toHaveBeenCalledWith('scan-1');
+    expect(databricksClient.streamDatabricksScanEvents).not.toHaveBeenCalled();
+  });
+
   it.each([
     { contextWindow: 131_072, maxTokens: 128_000 },
     { contextWindow: null, maxTokens: null },
@@ -310,9 +358,9 @@ describe('DatabricksAddModelsModal', () => {
       .mockRejectedValueOnce(new Error('Could not discover profiles'))
       .mockResolvedValueOnce({ profiles: [profile], issues: [] });
 
-    renderModal();
+    await act(async () => { renderModal(); });
 
-    const guided = await screen.findByTestId('databricks-guided-state');
+    const guided = screen.getByTestId('databricks-guided-state');
     expect(guided.textContent).toContain('Could not discover profiles');
 
     fireEvent.click(screen.getByTestId('databricks-check-again'));

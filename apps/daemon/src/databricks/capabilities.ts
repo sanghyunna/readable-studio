@@ -1,8 +1,9 @@
 import type { DatabricksCapabilities, DatabricksEndpoint, DatabricksEndpointApi } from '@readable-studio/contracts';
 
 /**
- * Streaming/chat maxima, checked against the linked provider specifications on
- * 2026-09-11. Decimal K/M, except GPT-OSS's explicitly documented 131,072.
+ * Streaming/chat fallback maxima from provider specifications (2026-09-11),
+ * except where live endpoint measurements are noted. Workspace learning wins.
+ * Decimal K/M, except GPT-OSS's documented 131,072 context window.
  * This is the only identity fallback table; never infer limits from a service
  * alias, provider name, or an unrecognized future model/version.
  */
@@ -23,7 +24,9 @@ const MODEL_LIMITS = [
   // https://developers.openai.com/api/docs/models/gpt-5.6-luna
   { names: ['gpt-5.6-luna'], contextWindow: 1_050_000, maxTokens: 128_000 },
   // https://developers.openai.com/api/docs/models/gpt-oss-120b
-  { names: ['gpt-oss-120b'], contextWindow: 131_072, maxTokens: 131_072 },
+  // Output measured on the live databricks-gpt-oss-120b serving endpoint,
+  // 2026-09-15: budgets above 25,000 return 400; vendor 131,072 is not its output ceiling.
+  { names: ['gpt-oss-120b'], contextWindow: 131_072, maxTokens: 25_000 },
   // https://developers.openai.com/api/docs/models/gpt-oss-20b
   { names: ['gpt-oss-20b'], contextWindow: 131_072, maxTokens: 131_072 },
 ] as const;
@@ -41,6 +44,8 @@ const UNKNOWN_LIMITS = { contextWindow: 1_000_000, maxTokens: 128_000 };
 const MODEL_EFFORTS: Array<{ name: string; api: DatabricksEndpointApi; levels: string[] }> = [
   { name: 'claude-sonnet-5', api: 'anthropic-messages', levels: ['low', 'medium', 'high', 'xhigh', 'max'] },
   { name: 'gpt-5.6-luna', api: 'openai-completions', levels: ['low', 'medium', 'high', 'xhigh'] },
+  // Live serving endpoint acceptance, 2026-09-15; not verified for gpt-oss-20b.
+  { name: 'gpt-oss-120b', api: 'openai-completions', levels: ['low', 'medium', 'high', 'xhigh', 'max'] },
 ];
 const EFFORT_LABELS: Record<string, string> = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max' };
 
@@ -50,7 +55,8 @@ export function resolveDatabricksReasoningOptions(
   models: Array<{ name?: string }>,
 ): NonNullable<DatabricksEndpoint['reasoningOptions']> {
   const recipes = models.map((model) => MODEL_EFFORTS.find((entry) => entry.api === api
-    && entry.name === model.name?.trim().toLowerCase()));
+    // system.ai is the registry qualifier in foundation_model.name, not a version or alias.
+    && entry.name === model.name?.trim().toLowerCase().replace(/^system\.ai\./, '')));
   const levels = recipes[0]?.levels ?? [];
   return levels.filter((level) => recipes.every((recipe) => recipe?.levels.includes(level)))
     .map((id) => ({ id, label: EFFORT_LABELS[id]! }));

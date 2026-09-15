@@ -99,9 +99,14 @@ function endpoint(value: DatabricksEndpoint): DatabricksEndpoint {
       maxTokens: value.capabilities.maxTokens === null ? null : number(value.capabilities.maxTokens),
       ...(value.capabilities.limitSources === undefined ? {} : { limitSources: {
         contextWindow: choice(value.capabilities.limitSources.contextWindow, ['metadata', 'model-table', 'unknown']),
-        maxTokens: choice(value.capabilities.limitSources.maxTokens, ['metadata', 'model-table', 'unknown']),
+        maxTokens: choice(value.capabilities.limitSources.maxTokens, ['metadata', 'model-table', 'unknown', 'endpoint']),
       } }),
     },
+    ...(value.protocolEvidence === undefined ? {} : { protocolEvidence: {
+      advertised: value.protocolEvidence.advertised.map((api) => choice(api, ['anthropic/v1/messages', 'openai/v1/chat/completions', 'mlflow/v1/chat/completions', 'openai/v1/responses', 'mlflow/v1/responses'])),
+      native: value.protocolEvidence.native.map((api) => choice(api, ['anthropic/v1/messages', 'openai/v1/chat/completions', 'mlflow/v1/chat/completions', 'openai/v1/responses', 'mlflow/v1/responses'])),
+      reason: choice(value.protocolEvidence.reason, ['native-api', 'advertised-api', 'prefer-messages', 'chat-task', 'unresolved', 'runtime-accepted']),
+    } }),
     evidence: choice(value.evidence, ['metadata', 'recipe', 'verified']),
     ...(value.issue === undefined ? {} : { issue: issue(value.issue) }),
   };
@@ -314,8 +319,12 @@ export function registerDatabricksRoutes(app: Express, ctx: RegisterDatabricksRo
           }
           res.write(`id: ${event.revision}\nevent: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
           if (event.type === 'done') { close(); res.end(); }
-        } catch {
-          close(); res.destroy();
+        } catch (error) {
+          // A projection failure is a terminal public error, not a dropped SSE
+          // connection that an intermediary may leave open indefinitely.
+          if (!res.headersSent) res.setHeader('Content-Type', 'text/event-stream');
+          res.write(`event: error\ndata: ${JSON.stringify(databricksFailure(error))}\n\n`);
+          close(); res.end();
         }
       });
       if (closed) close();

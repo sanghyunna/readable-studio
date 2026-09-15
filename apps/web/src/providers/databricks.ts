@@ -98,10 +98,29 @@ export function probeDatabricks(
   return request<DatabricksProfilesResponse>('/probe', jsonInit('POST', req));
 }
 
+// Bounds the complete operation, including response bodies and silent SSE.
+// The daemon allows 60s for credentials and 60s for discovery branches.
+async function withScanDeadline<T>(work: (signal: AbortSignal) => Promise<T>, parent?: AbortSignal): Promise<T> {
+  const controller = new AbortController();
+  const signal = parent ? AbortSignal.any([parent, controller.signal]) : controller.signal;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          reject(new DatabricksApiError(504, 'DATABRICKS_UPSTREAM_UNAVAILABLE', 'Databricks scan timed out. Try scanning again.', true));
+          controller.abort();
+        }, 150_000);
+      }),
+      work(signal),
+    ]);
+  } finally { clearTimeout(timer); controller.abort(); }
+}
+
 export function startDatabricksScan(
   req: DatabricksScanRequest,
 ): Promise<DatabricksScanResponse> {
-  return request<DatabricksScanResponse>('/scans', jsonInit('POST', req));
+  return withScanDeadline(signal => request<DatabricksScanResponse>('/scans', { ...jsonInit('POST', req), signal }));
 }
 
 export function fetchDatabricksScan(
@@ -113,9 +132,9 @@ export function fetchDatabricksScan(
   if (page.limit != null) query.set('limit', String(page.limit));
   const encoded = query.toString();
   const suffix = encoded ? `?${encoded}` : '';
-  return request<DatabricksScanResponse>(
-    `/scans/${encodeURIComponent(scanId)}${suffix}`,
-  );
+  return withScanDeadline(signal => request<DatabricksScanResponse>(
+    `/scans/${encodeURIComponent(scanId)}${suffix}`, { signal },
+  ));
 }
 
 export function cancelDatabricksScan(scanId: string): Promise<void> {
@@ -194,15 +213,31 @@ export async function streamDatabricksScanEvents(
   handlers: DatabricksScanEventHandlers,
   options: DatabricksScanEventsOptions = {},
 ): Promise<boolean> {
+  try {
+    return await withScanDeadline(signal => readDatabricksScanEvents(scanId, handlers, signal), options.signal);
+  } catch (error) {
+    if (options.signal?.aborted) return false;
+    throw error;
+  }
+}
+
+async function readDatabricksScanEvents(
+  scanId: string,
+  handlers: DatabricksScanEventHandlers,
+  signal: AbortSignal,
+): Promise<boolean> {
   const resp = await fetch(`${BASE}/scans/${encodeURIComponent(scanId)}/events`, {
     cache: 'no-store',
     headers: { Accept: 'text/event-stream' },
-    signal: options.signal,
+    signal,
   });
   if (!resp.ok) throw await toApiError(resp);
   if (!resp.body) return false;
 
   const reader = resp.body.getReader();
+  const cancel = () => { void reader.cancel().catch(() => undefined); };
+  signal.addEventListener('abort', cancel, { once: true });
+  if (signal.aborted) cancel();
   const decoder = new TextDecoder();
   let buffer = '';
   let done = false;
@@ -210,6 +245,10 @@ export async function streamDatabricksScanEvents(
   const consume = (frame: string) => {
     const parsed = parseSseFrame(frame);
     if (!parsed || parsed.kind !== 'event') return;
+    if (parsed.event === 'error') {
+      const error = parsed.data.error as DatabricksErrorResponse['error'] | undefined;
+      throw new DatabricksApiError(503, error?.code ?? null, error?.message ?? 'Databricks scan failed.', error?.retryable === true);
+    }
     const event = parseScanEvent(parsed.event, parsed.data);
     if (!event) return;
     handlers.onEvent(event);
@@ -230,10 +269,11 @@ export async function streamDatabricksScanEvents(
     }
     if (!done && buffer.trim()) consume(buffer);
   } catch (err) {
-    if (options.signal?.aborted) return false;
+    if (signal.aborted) return false;
     throw err;
   } finally {
-    reader.cancel().catch(() => undefined);
+    signal.removeEventListener('abort', cancel);
+    cancel();
   }
   return done;
 }

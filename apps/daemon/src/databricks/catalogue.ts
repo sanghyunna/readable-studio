@@ -97,7 +97,8 @@ function servedModels(resource: DiscoveredResource): Array<{ name?: string; meta
     if (Array.isArray(entities)) for (const raw of entities) {
       const entity = record(raw);
       const external = record(entity.external_model);
-      add(external.name ?? entity.entity_name ?? entity.model_name, { ...entity, ...external });
+      const foundation = record(entity.foundation_model);
+      add(external.name ?? foundation.name ?? entity.entity_name ?? entity.model_name, { ...entity, ...external, ...foundation });
     }
   }
   // Databricks foundation endpoint IDs are documented model IDs, unlike arbitrary

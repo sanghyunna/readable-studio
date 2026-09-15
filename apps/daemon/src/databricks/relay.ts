@@ -530,8 +530,10 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
             continue;
           }
           const limit = outputCeiling(message);
-          const requested = wire[outputField];
-          if (limit !== undefined && typeof requested === 'number' && limit < requested && correctOnce(`ceiling:${limit}`)) {
+          // The caller may already use max_tokens before field negotiation has
+          // changed chatTokensField. Inspect actual wire budgets, not that preference.
+          if (limit !== undefined && OUTPUT_FIELDS.some(field => typeof wire[field] === 'number' && wire[field] > limit)
+            && correctOnce(`ceiling:${limit}`)) {
             outputLimit = limit;
             continue;
           }

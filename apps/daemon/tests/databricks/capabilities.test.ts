@@ -25,6 +25,15 @@ describe('Databricks proven effort options', () => {
       .toEqual(Object.entries(probe.statuses).filter(([, status]) => status === 200).map(([effort]) => effort));
   });
 
+  it('advertises measured gpt-oss-120b levels only on its verified protocol', () => {
+    expect(endpoint('gpt-oss-120b').reasoningOptions?.map(({ id }) => id))
+      .toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
+    expect(endpoint('gpt-oss-120b', { supported_api_types: ['anthropic/v1/messages'] }).reasoningOptions).toEqual([]);
+    for (const model of ['gpt-oss-20b', 'gpt-oss-120b-custom', 'gpt-5.6', 'gpt-5.6-sol', 'gpt-5.6-terra']) {
+      expect(endpoint(model).reasoningOptions).toEqual([]);
+    }
+  });
+
   it('uses served identity rather than service alias or protocol alone', () => {
     const metadata = structuredClone(claude);
     metadata.config.routing.destinations[0].external_model_config.target.model = 'claude-sonnet-5-custom';
@@ -57,7 +66,7 @@ describe('Databricks model maxima', () => {
       expect(result.label).toBe(model);
       expect(result.label).not.toMatch(/\(|context|fallback|unknown/);
       expect(result.capabilities).toMatchObject(model === 'gpt-oss-120b'
-        ? { contextWindow: 131_072, maxTokens: 131_072,
+        ? { contextWindow: 131_072, maxTokens: 25_000,
             limitSources: { contextWindow: 'model-table', maxTokens: 'model-table' } }
         : { contextWindow: null, maxTokens: null,
             limitSources: { contextWindow: 'unknown', maxTokens: 'unknown' } });
@@ -93,9 +102,9 @@ describe('Databricks model maxima', () => {
     ['gpt-5.6-sol', 1_050_000, 128_000],
     ['gpt-5.6-terra', 1_050_000, 128_000],
     ['gpt-5.6-luna', 1_050_000, 128_000],
-    ['gpt-oss-120b', 131_072, 131_072],
+    ['gpt-oss-120b', 131_072, 25_000],
     ['gpt-oss-20b', 131_072, 131_072],
-  ] as const)('resolves the documented maximum for %s', (model, contextWindow, maxTokens) => {
+  ] as const)('resolves the fallback maximum for %s', (model, contextWindow, maxTokens) => {
     expect(endpoint(model).capabilities).toMatchObject({ contextWindow, maxTokens,
       limitSources: { contextWindow: 'model-table', maxTokens: 'model-table' } });
   });

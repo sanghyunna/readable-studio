@@ -100,6 +100,23 @@ describe('Databricks HTTP surface', () => {
     expect(harness.unsubscribe).toHaveBeenCalledTimes(2);
   });
 
+  it('terminates invalid completion payloads with a sanitized SSE error', async () => {
+    harness = await surfaceHarness(scan('running', 1));
+    const pending = send('GET', `/scans/${ids.scan}/events`);
+    await bounded(harness.subscribed);
+    const invalid = scan('complete', 2);
+    invalid.endpoints[0] = { ...invalid.endpoints[0]!, label: '' };
+    harness.complete(invalid);
+    const text = await (await pending).text();
+    const frames = text.split('\n\n');
+    const error = frames.find(frame => frame.startsWith('event: error'))!;
+    expect(error).toBeDefined();
+    const payload = JSON.parse(error.split('data: ')[1]!);
+    expect(payload.error.code).toBe('DATABRICKS_UPSTREAM_UNAVAILABLE');
+    noSecrets(error);
+    expect(harness.unsubscribe).toHaveBeenCalledOnce();
+  });
+
   it('streams multiple typed events without resetting sent headers', async () => {
     harness = await surfaceHarness(scan('running', 1));
     const pending = send('GET', `/scans/${ids.scan}/events`);

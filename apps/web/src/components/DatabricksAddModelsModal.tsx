@@ -466,7 +466,11 @@ function DatabricksAddModelsModalBody({
     scanAbortRef.current = controller;
     try {
       const started = await startDatabricksScan({ profileId });
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted) {
+        // Closing while POST is in flight must not orphan the newly created job.
+        void cancelDatabricksScan(started.scanId).catch(() => undefined);
+        return;
+      }
       activeScanIdRef.current = started.scanId;
       setScan(started);
       setScanEndpoints(started.endpoints);
@@ -483,9 +487,12 @@ function DatabricksAddModelsModalBody({
         const snapshot = await fetchDatabricksScan(started.scanId);
         setScan(snapshot);
         setScanEndpoints((current) => mergeEndpoints(current, snapshot.endpoints));
+        if (!isScanSettled(snapshot.state)) throw new Error(t('databricks.scan.failed'));
       }
     } catch (err) {
       if (!controller.signal.aborted) {
+        const runningScanId = activeScanIdRef.current;
+        if (runningScanId) void cancelDatabricksScan(runningScanId).catch(() => undefined);
         setScanError(errorMessage(err, t('databricks.scan.failed')));
       }
     } finally {
