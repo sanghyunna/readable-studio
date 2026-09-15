@@ -189,9 +189,11 @@ describe('ManualEditTypographyToolbar', () => {
   });
 
   it('sets text color from a swatch tile', () => {
-    const { getByLabelText, onStyleField } = renderToolbar();
-    fireEvent.click(getByLabelText('Text color'));
-    fireEvent.click(getByLabelText('#ef4444'));
+    const { getByRole, onStyleField } = renderToolbar();
+    // Role queries skip the closed (aria-hidden, inert) colour popover, which
+    // stays mounted so its exit transition can run.
+    fireEvent.click(getByRole('button', { name: 'Text color' }));
+    fireEvent.click(getByRole('button', { name: '#ef4444' }));
     expect(onStyleField).toHaveBeenCalledWith('color', '#ef4444');
   });
 

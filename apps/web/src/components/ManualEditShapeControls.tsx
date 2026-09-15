@@ -593,10 +593,17 @@ function compactSpace(elementStyles: ManualEditStyles, kind: 'padding' | 'margin
 function ToolbarPopover({ label, icon, children }: { label: string; icon: string; children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLSpanElement | null>(null);
+  // The nested colour picker (ColorControl -> ManualEditColorPopover) is a body
+  // portal, so DOM containment no longer sees a press on one of its tiles.
+  // React still bubbles synthetic events through portals to their React
+  // parent, and its body listener runs before this document listener, so a
+  // press anywhere in this group's React subtree is recorded first and is not
+  // treated as an outside press.
+  const insidePressRef = useRef<Event | null>(null);
   useEffect(() => {
     if (!open) return;
     const onDocMouseDown = (event: MouseEvent) => {
-      if (ref.current?.contains(event.target as Node)) return;
+      if (ref.current?.contains(event.target as Node) || insidePressRef.current === event) return;
       setOpen(false);
     };
     const onDocKeyDown = (event: KeyboardEvent) => {
@@ -612,7 +619,11 @@ function ToolbarPopover({ label, icon, children }: { label: string; icon: string
     };
   }, [open]);
   return (
-    <span className={styles.popoverWrap} ref={ref}>
+    <span
+      className={styles.popoverWrap}
+      ref={ref}
+      onMouseDown={(event) => { insidePressRef.current = event.nativeEvent; }}
+    >
       <Button
         variant="subtle"
         size="default"

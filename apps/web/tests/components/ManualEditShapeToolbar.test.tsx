@@ -2,8 +2,12 @@
 
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/react';
 import { ManualEditShapeToolbar } from '../../src/components/ManualEditShapeToolbar';
+import { MANUAL_EDIT_COLOR_POPOVER_TESTID } from '../../src/components/ManualEditColorPopover';
+import popoverStyles from '../../src/components/ManualEditColorPopover.module.css';
+
+const OPEN_CLASS = popoverStyles.popoverOpen as string;
 import { emptyManualEditStyles, type ManualEditPatch, type ManualEditStyles, type ManualEditTarget } from '../../src/edit-mode/types';
 
 function target(overrides: Partial<ManualEditTarget> = {}): ManualEditTarget {
@@ -61,12 +65,20 @@ afterEach(() => {
   cleanup();
 });
 
+/** Every colour swatch keeps its popover mounted; only the open one carries the class. */
+function openColorPopover(): HTMLElement {
+  const open = [...document.querySelectorAll<HTMLElement>(`[data-testid="${MANUAL_EDIT_COLOR_POPOVER_TESTID}"]`)]
+    .filter((node) => node.classList.contains(OPEN_CLASS));
+  if (open.length !== 1) throw new Error(`expected one open colour popover, found ${open.length}`);
+  return open[0]!;
+}
+
 describe('ManualEditShapeToolbar', () => {
   it('keeps the high-value fill, size, radius, and opacity controls direct', () => {
-    const { getByLabelText, onStyleField } = renderToolbar();
+    const { getByLabelText, getByRole, onStyleField } = renderToolbar();
 
-    fireEvent.click(getByLabelText('Fill'));
-    fireEvent.click(getByLabelText('#ef4444'));
+    fireEvent.click(getByRole('button', { name: 'Fill' }));
+    fireEvent.click(within(openColorPopover()).getByLabelText('#ef4444'));
     expect(onStyleField).toHaveBeenCalledWith('backgroundColor', '#ef4444');
 
     fireEvent.change(getByLabelText('Width'), { target: { value: '240' } });
@@ -98,9 +110,40 @@ describe('ManualEditShapeToolbar', () => {
     expect(onStyleField).toHaveBeenCalledWith('borderLeftWidth', '3px');
     fireEvent.change(getByLabelText('Style'), { target: { value: 'dashed' } });
     expect(onStyleField).toHaveBeenCalledWith('borderStyle', 'dashed');
-    fireEvent.click(getByLabelText('Border color'));
-    fireEvent.click(getByLabelText('#3b82f6'));
+    fireEvent.click(getByRole('button', { name: 'Border color' }));
+    fireEvent.click(within(openColorPopover()).getByLabelText('#3b82f6'));
     expect(onStyleField).toHaveBeenCalledWith('borderColor', '#3b82f6');
+  });
+
+  it('applies a border colour from a real pointer press inside the nested body-portaled picker', () => {
+    // The colour picker is a body portal, so it is no longer a DOM descendant
+    // of the Border group. The group's outside-press dismissal must still treat
+    // a tile press as inside, or the group unmounts the picker before click.
+    const { getByLabelText, getByRole, onStyleField } = renderToolbar();
+
+    fireEvent.click(getByLabelText('Border'));
+    const swatch = getByRole('button', { name: 'Border color' });
+    swatch.focus();
+    fireEvent.click(swatch);
+    const picker = openColorPopover();
+    const tile = within(picker).getByLabelText('#3b82f6');
+
+    fireEvent.mouseDown(tile);
+    expect(getByRole('group', { name: 'Border' }), 'tile press dismissed the Border group').toBeTruthy();
+    expect(tile.isConnected).toBe(true);
+    expect(picker.classList.contains(OPEN_CLASS)).toBe(true);
+    fireEvent.mouseUp(tile);
+    fireEvent.click(tile);
+
+    expect(onStyleField).toHaveBeenCalledWith('borderColor', '#3b82f6');
+    // The picker closes like the other owners (mounted, class off); the group stays open.
+    expect(picker.classList.contains(OPEN_CLASS)).toBe(false);
+    expect(getByRole('group', { name: 'Border' })).toBeTruthy();
+    expect(document.activeElement).toBe(swatch);
+
+    // A press genuinely outside both still dismisses the group.
+    fireEvent.mouseDown(document.body);
+    expect(() => getByRole('group', { name: 'Border' })).toThrow();
   });
 
   it('keeps grouped popovers trigger-relative on desktop', () => {

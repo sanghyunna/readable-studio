@@ -29,9 +29,11 @@ afterEach(cleanup);
 describe('ManualEditAppearanceControls', () => {
   it('keeps fill, no-fill, border colour, style, widths, radius, opacity and the action zone reachable', () => {
     const { getByLabelText, getByRole } = renderControls({ backgroundColor: '#ef4444', borderColor: '#111111' });
-    expect(getByLabelText('Fill')).toBeTruthy();
+    // The hex inputs; the always-mounted (inert while closed) colour popovers
+    // carry the same labels, so query the editable field explicitly.
+    expect(getByLabelText('Fill', { selector: 'input:not([type="color"])' })).toBeTruthy();
     expect(getByRole('button', { name: 'No fill' }).getAttribute('aria-pressed')).toBe('false');
-    expect(getByLabelText('Border color')).toBeTruthy();
+    expect(getByLabelText('Border color', { selector: 'input:not([type="color"])' })).toBeTruthy();
     expect(getByRole('radiogroup', { name: 'Style' })).toBeTruthy();
     expect(getByRole('group', { name: 'Border widths' })).toBeTruthy();
     expect(getByLabelText('Radius')).toBeTruthy();

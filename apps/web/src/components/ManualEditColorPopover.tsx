@@ -13,16 +13,31 @@
 // viewport gutter). It re-measures on scroll/resize so it tracks the swatch
 // while the panel scrolls.
 //
+// Presence: the portal stays mounted and `open` toggles a class
+// (apps/web/AGENTS.md: a React unmount skips the exit transition). While
+// closed the node is `inert` + `aria-hidden` so it leaves hit testing, tab
+// order and the accessibility tree the moment the exit starts.
+//
+// Single-open: a module-level registry closes whichever popover was open when
+// another one opens. Pointer activation already produced that through the
+// outside-mousedown listener, but keyboard/focus activation never does, so the
+// invariant lives here rather than in the event stream.
+//
 // Access contract: focus moves into the popover on open; Escape closes it and
 // returns focus to the trigger; a mousedown outside both the trigger and the
 // popover dismisses it.
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from 'react';
+import {
+  useEffect, useLayoutEffect, useRef, useState,
+  type CSSProperties, type MutableRefObject, type RefObject,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { EDITOR_SWATCH_COLORS, normalizeColorForPicker } from './ManualEditPanel';
 import { placePopover } from './popoverPlacement';
 import styles from './ManualEditColorPopover.module.css';
 
 export const MANUAL_EDIT_COLOR_POPOVER_TESTID = 'manual-edit-color-popover';
+
+let activeClose: MutableRefObject<() => void> | null = null;
 
 export function ManualEditColorPopover({
   open,
@@ -41,13 +56,29 @@ export function ManualEditColorPopover({
   onClose: () => void;
 }) {
   const popoverRef = useRef<HTMLDivElement | null>(null);
+  const closeRef = useRef(onClose);
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
 
+  useEffect(() => { closeRef.current = onClose; }, [onClose]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (activeClose && activeClose !== closeRef) activeClose.current();
+    activeClose = closeRef;
+    return () => {
+      if (activeClose === closeRef) activeClose = null;
+    };
+  }, [open]);
+
   useLayoutEffect(() => {
-    if (!open) {
-      setPosition(null);
-      return;
-    }
+    // React 18 cannot serialize `inert` as a boolean prop; use the DOM API.
+    // Applied before paint so the closing surface is never a live frame.
+    popoverRef.current?.toggleAttribute('inert', !open);
+  }, [open]);
+
+  useLayoutEffect(() => {
+    // The last position is kept on close so the exit fades in place.
+    if (!open) return;
     const update = () => {
       const anchor = anchorRef.current;
       const popover = popoverRef.current;
@@ -95,15 +126,17 @@ export function ManualEditColorPopover({
     };
   }, [open, anchorRef, onClose]);
 
-  if (!open || typeof document === 'undefined') return null;
+  if (typeof document === 'undefined') return null;
 
   return createPortal(
     <div
       ref={popoverRef}
-      className={styles.popover}
+      className={`${styles.popover}${open ? ` ${styles.popoverOpen}` : ''}`}
       role="group"
       aria-label={label}
+      aria-hidden={!open}
       data-testid={MANUAL_EDIT_COLOR_POPOVER_TESTID}
+      data-state={open ? 'open' : 'closed'}
       style={position ? { top: position.top, left: position.left } : { visibility: 'hidden' }}
     >
       <div className={styles.grid}>

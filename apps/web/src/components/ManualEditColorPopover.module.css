@@ -17,7 +17,34 @@
     inset 0 1px 0 var(--hub-pearl-highlight),
     0 1px 2px color-mix(in srgb, var(--shadow-color) 8%, transparent),
     0 10px 28px -10px color-mix(in srgb, var(--shadow-color) 26%, transparent);
-  animation: manual-edit-color-pop-in var(--dur-enter) var(--ease-out) both;
+  /* Closed is the default state; the node stays mounted and `.popoverOpen`
+     toggles (AGENTS.md: a React unmount skips the exit transition). Exit runs
+     opacity + transform over --dur-exit. `visibility` flips at the END of the
+     exit so the surface stays painted while it fades; `pointer-events` is
+     discrete and flips with the class, i.e. at the START of the exit, so the
+     fading surface is never transparent-but-clickable (the component also sets
+     `inert` so descendants cannot re-enable themselves). */
+  opacity: 0;
+  transform: translateY(-4px);
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity var(--dur-exit) var(--ease-out),
+    transform var(--dur-exit) var(--ease-out),
+    visibility 0s linear var(--dur-exit);
+}
+
+/* Open: pointers return at the START of the visible phase (with the class),
+   not when the fade lands. */
+.popoverOpen {
+  opacity: 1;
+  transform: translateY(0);
+  visibility: visible;
+  pointer-events: auto;
+  transition:
+    opacity var(--dur-enter) var(--ease-out),
+    transform var(--dur-enter) var(--ease-out),
+    visibility 0s linear 0s;
 }
 
 .grid {
@@ -53,18 +80,11 @@
   cursor: pointer;
 }
 
-/* `pointer-events` rides in the same keyframes as `opacity`: with `both` fill
-   the popover is painted at opacity 0 on its first frame, and the tiles must
-   not be hit-testable there. Pointers return at the START of the visible
-   phase (1%), not at the end. */
-@keyframes manual-edit-color-pop-in {
-  from { opacity: 0; transform: translateY(-4px); pointer-events: none; }
-  1% { pointer-events: auto; }
-  to { opacity: 1; transform: translateY(0); pointer-events: auto; }
-}
-
+/* Reduced motion: no fade either way; visibility and pointers still flip with
+   the class, so nothing is pinned on the wrong side of the handoff. */
 @media (prefers-reduced-motion: reduce) {
-  .popover { animation: none; }
+  .popover,
+  .popoverOpen { transition: none; }
 }
 
 @media (prefers-reduced-transparency: reduce) {
