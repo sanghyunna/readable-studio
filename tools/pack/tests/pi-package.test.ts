@@ -1,8 +1,10 @@
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { once } from "node:events";
+import { cp, mkdir, mkdtemp, readFile, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { createServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ToolPackConfig } from "../src/config.js";
 import { assertPiPackageIntegrity, assertPiPackageOutput, assertPiShutdownPatched, patchPiPackage, PI_RPC_ENTRY_RELATIVE_PATH } from "../src/pi-package.js";
@@ -10,6 +12,17 @@ import piPackage from "../src/pi-package.json" with { type: "json" };
 import { WIN_PREBUNDLE_RUNTIME_DEPENDENCIES } from "../src/win-prebundle.js";
 import { createAssembledAppDependencies } from "../src/win/app.js";
 import { ELECTRON_BUILDER_ASAR, ELECTRON_BUILDER_FILE_PATTERNS, INTERNAL_PACKAGES } from "../src/win/constants.js";
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return { ...actual, rm: vi.fn(actual.rm) };
+});
+const realFs = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+afterEach(() => {
+  vi.mocked(rm).mockReset();
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+});
 
 const workspaceRoot = resolve(import.meta.dirname, "../../..");
 const rpcModeRelativePath = `node_modules/${piPackage.name}/dist/modes/rpc/rpc-mode.js`;
@@ -44,9 +57,12 @@ async function writePiFixture(appRoot: string, overrides: Record<string, unknown
   await mkdir(dirname(entry), { recursive: true });
   await writeFile(entry, "export {};\n");
   await writeFile(join(dirname(entry), "cli.js"), `
-if (process.argv[2] !== '--list-models' || process.env.PI_OFFLINE !== '1' || !process.env.OPENAI_API_KEY) process.exit(1);
-console.log('provider model context max-out thinking images');
-console.log('openai fixture-model 128K 16K yes yes');
+import { readdirSync } from 'node:fs';
+if (process.argv[2] !== '--version' || process.env.PI_OFFLINE !== '1') process.exit(1);
+if (process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY) process.exit(2);
+if (process.env.HOME !== process.cwd() || process.env.USERPROFILE !== process.cwd()
+  || process.env.PI_CODING_AGENT_DIR !== process.cwd() || readdirSync(process.cwd()).length !== 0) process.exit(3);
+console.log(${JSON.stringify(piPackage.version)});
 `);
   const rpcMode = join(appRoot, rpcModeRelativePath);
   await mkdir(dirname(rpcMode), { recursive: true });
@@ -82,7 +98,7 @@ describe("portable Pi package layout", () => {
     const shipped = join(root, "portable", "resources", "app");
     try {
       await writePiFixture(source);
-      await expect(assertPiPackageOutput(source)).rejects.toThrow(/staged Pi RPC entry point is missing or invalid/);
+      await expect(assertPiPackageOutput(source)).rejects.toThrow(/Windows graceful shutdown patch/);
       await patchPiPackage(source, workspaceRoot);
       const staged = await readFile(join(source, rpcModeRelativePath), "utf8");
       expect(staged).toMatch(/if \(shuttingDown\)\s*\{\s*return;/);
@@ -96,17 +112,63 @@ describe("portable Pi package layout", () => {
     }
   });
 
-  it.each(["package", "entry", "export", "version", "cli", "launcher", "catalogue"])("refuses output with a missing or invalid %s", async (failure) => {
+  it.each(["package", "entry", "export", "name", "version", "cli", "launcher", "cli-version"])("refuses output with a missing or invalid %s", async (failure) => {
     const root = await mkdtemp(join(tmpdir(), "readable-pi-invalid-"));
     try {
-      await writePiFixture(root, failure === "export" ? { exports: {} } : failure === "version" ? { version: "0.0.0" } : {});
+      await writePiFixture(root, failure === "export" ? { exports: {} }
+        : failure === "version" ? { version: "0.0.0" }
+        : failure === "name" ? { name: "wrong-package" } : {});
       await patchPiPackage(root, workspaceRoot);
       if (failure === "package") await rm(join(root, "node_modules"), { recursive: true });
       if (failure === "entry") await rm(join(root, PI_RPC_ENTRY_RELATIVE_PATH));
       if (failure === "cli") await rm(join(root, "node_modules", piPackage.name, "dist", "cli.js"));
       if (failure === "launcher") await rm(join(root, "pi.cmd"));
-      if (failure === "catalogue") await writeFile(join(root, "node_modules", piPackage.name, "dist", "cli.js"), "console.log('No models available');\n");
-      await expect(assertPiPackageOutput(root)).rejects.toThrow(/staged Pi RPC entry point is missing or invalid/);
+      if (failure === "cli-version") await writeFile(join(root, "node_modules", piPackage.name, "dist", "cli.js"), "console.log('0.0.0');\n");
+      await expect(assertPiPackageOutput(root)).rejects.toThrow(
+        ["cli", "launcher", "cli-version"].includes(failure)
+          ? /Pi CLI version verification failed/
+          : /Pi RPC entry point is missing or invalid/,
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    { catalogue: "model table", output: "provider model context max-out thinking images\nopenrouter ~openai/gpt-latest 1.1M 128K yes yes", code: 0 },
+    { catalogue: "unauthenticated notice", output: "No models available. Use /login to log into a provider via OAuth or API key.", code: 1 },
+  ])("verifies an isolated CLI independently of its $catalogue", async ({ output, code }) => {
+    const root = await mkdtemp(join(tmpdir(), "readable-pi-no-auth-"));
+    try {
+      // Parent credentials must not leak into the CLI's empty HOME or environment.
+      vi.stubEnv("OPENAI_API_KEY", "test-only-parent-value");
+      vi.stubEnv("OPENROUTER_API_KEY", "test-only-parent-value");
+      await writePiFixture(root);
+      await patchPiPackage(root, workspaceRoot);
+      const cli = join(root, "node_modules", piPackage.name, "dist", "cli.js");
+      await writeFile(cli, `
+if (process.argv[2] === '--list-models') {
+  console.log(${JSON.stringify(output)});
+  process.exit(${code});
+}
+${await readFile(cli, "utf8")}`);
+      await expect(assertPiPackageOutput(root)).resolves.toBeUndefined();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects an RPC entry resolving outside the packaged app through a junction", async () => {
+    const root = await mkdtemp(join(tmpdir(), "readable-pi-escape-"));
+    const app = join(root, "app");
+    try {
+      await writePiFixture(app);
+      await patchPiPackage(app, workspaceRoot);
+      const packageRoot = join(app, "node_modules", piPackage.name);
+      const external = join(root, "external-pi");
+      await rename(packageRoot, external);
+      await symlink(external, packageRoot, "junction");
+      await expect(assertPiPackageOutput(app)).rejects.toThrow(/RPC entry point escapes the packaged app/);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -125,9 +187,84 @@ describe("portable Pi package layout", () => {
           : source.replace(/if \(shuttingDown\)\s*\{\s*return;/, "if (shuttingDown) {\n            process.exit(exitCode);"));
       }
       expect(() => assertPiShutdownPatched(join(root, "node_modules", piPackage.name))).toThrow(/Windows graceful shutdown patch/);
-      await expect(assertPiPackageOutput(root)).rejects.toThrow(/staged Pi RPC entry point is missing or invalid/);
+      await expect(assertPiPackageOutput(root)).rejects.toThrow(/Windows graceful shutdown patch/);
     } finally {
       await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("waits for a live CLI holding its temp directory until shutdown, then removes it", async () => {
+    const root = await mkdtemp(join(tmpdir(), "readable-pi-lifecycle-"));
+    const server = createServer();
+    let socket: Socket | undefined;
+    let outcome: Promise<unknown> | undefined;
+    try {
+      await writePiFixture(root);
+      await patchPiPackage(root, workspaceRoot);
+      const listening = once(server, "listening", { signal: AbortSignal.timeout(5_000) });
+      server.listen(0, "127.0.0.1");
+      await listening;
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("missing test server address");
+      const record = join(root, "child.json");
+      const cli = join(root, "node_modules", piPackage.name, "dist", "cli.js");
+      await writeFile(cli, `${await readFile(cli, "utf8")}
+import { connect } from 'node:net';
+import { openSync, closeSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+const handle = openSync(join(process.cwd(), 'held-open'), 'w');
+writeFileSync(${JSON.stringify(record)}, JSON.stringify({ home: process.cwd(), pid: process.pid }));
+const socket = connect(${address.port}, '127.0.0.1');
+socket.once('data', () => { closeSync(handle); socket.end(); });
+`);
+      // Subscribe before starting Pi. No sleeps: the connection is the child-ready signal.
+      const connected = once(server, "connection", { signal: AbortSignal.timeout(5_000) });
+      outcome = assertPiPackageOutput(root).then(() => undefined, (error: unknown) => error);
+      [socket] = await connected as [Socket];
+      const { home, pid } = JSON.parse(await readFile(record, "utf8")) as { home: string; pid: number };
+      expect(process.kill(pid, 0)).toBe(true);
+      expect(vi.mocked(rm).mock.calls.some(([path]) => path === home)).toBe(false);
+      vi.mocked(rm).mockImplementation(async (path, options) => {
+        if (path === home) expect(() => process.kill(pid, 0)).toThrow();
+        await realFs.rm(path, options);
+      });
+      socket.end("release");
+      await expect(outcome).resolves.toBeUndefined();
+      expect(vi.mocked(rm)).toHaveBeenCalledWith(home, {
+        recursive: true, force: true, maxRetries: 5, retryDelay: 100,
+      });
+      await expect(stat(home)).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      if (socket && !socket.writableEnded) socket.end("release");
+      await outcome;
+      if (server.listening) await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+      await realFs.rm(root, { recursive: true, force: true, maxRetries: 5 });
+    }
+  }, 30_000);
+
+  it.each([true, false])("keeps cleanup failure separate from CLI verification (valid=%s)", async (valid) => {
+    const root = await mkdtemp(join(tmpdir(), "readable-pi-cleanup-"));
+    const cleanupError = Object.assign(new Error("rmdir blocked by an open handle"), { code: "EBUSY", syscall: "rmdir" });
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    let home: string | undefined;
+    try {
+      await writePiFixture(root);
+      await patchPiPackage(root, workspaceRoot);
+      if (!valid) await writeFile(join(root, "node_modules", piPackage.name, "dist", "cli.js"), "process.exit(7);\n");
+      vi.mocked(rm).mockImplementation(async (path, options) => {
+        if (typeof path === "string" && basename(path).startsWith("readable-pi-version-")) {
+          home = path;
+          throw cleanupError;
+        }
+        await realFs.rm(path, options);
+      });
+      if (valid) await expect(assertPiPackageOutput(root)).resolves.toBeUndefined();
+      else await expect(assertPiPackageOutput(root)).rejects.toMatchObject({ cause: { code: 7 } });
+      expect(home).toBeDefined();
+      expect(warning).toHaveBeenCalledExactlyOnceWith("[tools-pack pi] cleanup:warning", { path: home, error: cleanupError });
+    } finally {
+      if (home) await realFs.rm(home, { recursive: true, force: true, maxRetries: 5 });
+      await realFs.rm(root, { recursive: true, force: true, maxRetries: 5 });
     }
   });
 

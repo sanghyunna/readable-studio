@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs";
 import { mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, relative, sep } from "node:path";
-import { createCommandInvocation } from "@readable-studio/platform";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
@@ -18,33 +17,40 @@ export async function stagePiCliLauncher(appRoot: string): Promise<void> {
   await writeFile(join(appRoot, PI_CLI_LAUNCHER), piCliLauncher);
 }
 
-// Exercise the ordinary CLI, not the RPC-only export. Offline fixture credentials
-// unlock bundled OpenAI models without reading the builder's auth or using a network.
-export async function assertPiCliModels(appRoot: string): Promise<void> {
+// Prove the ordinary CLI starts at the pinned version, without provider credentials.
+// Model availability belongs to runtime account setup, not artifact verification.
+export async function assertPiCliVersion(appRoot: string): Promise<void> {
   if (await readFile(join(appRoot, PI_CLI_LAUNCHER), "utf8") !== piCliLauncher) {
     throw new Error("staged Pi CLI launcher is missing or invalid");
   }
-  const home = await mkdtemp(join(tmpdir(), "readable-pi-models-"));
+  const home = await mkdtemp(join(tmpdir(), "readable-pi-version-"));
   try {
     const env = {
       SystemRoot: process.env.SystemRoot, ComSpec: process.env.ComSpec,
       TEMP: home, TMP: home, HOME: home, USERPROFILE: home,
       PATH: `${dirname(process.execPath)}${delimiter}${process.env.SystemRoot ? join(process.env.SystemRoot, "System32") : ""}`,
-      PI_CODING_AGENT_DIR: home, PI_OFFLINE: "1", OPENAI_API_KEY: "offline-build-fixture",
+      PI_CODING_AGENT_DIR: home, PI_OFFLINE: "1",
     };
-    const invocation = process.platform === "win32"
-      ? createCommandInvocation({ command: join(appRoot, PI_CLI_LAUNCHER), args: ["--list-models"], env })
-      : { command: process.execPath, args: [join(appRoot, "node_modules", piPackage.name, "dist", "cli.js"), "--list-models"] };
-    const { stdout } = await execFileAsync(invocation.command, invocation.args, {
-      env, cwd: home, timeout: 20_000, maxBuffer: 8 * 1024 * 1024,
-      windowsVerbatimArguments: "windowsVerbatimArguments" in invocation ? invocation.windowsVerbatimArguments : undefined,
-    });
-    if (!/^provider\s+model\s+context\s+max-out\s+thinking\s+images\s*$/m.test(stdout)
-      || !/^openai\s+\S+\s+\S+\s+\S+\s+(yes|no)\s+(yes|no)\s*$/m.test(stdout)) {
-      throw new Error("staged Pi CLI cannot list its bundled OpenAI models");
+    // The launcher bytes are checked above. Own Node directly instead of a
+    // cmd.exe wrapper so completion/timeout applies to Pi, not just its shell.
+    const execution = execFileAsync(process.execPath, [
+      join(appRoot, "node_modules", piPackage.name, "dist", "cli.js"), "--version",
+    ], { env, cwd: home, timeout: 20_000, maxBuffer: 8 * 1024 * 1024 });
+    // Register before awaiting: even an execution error must not let cleanup
+    // race the process or its stdio handles. 'exit' alone is insufficient.
+    const closed = new Promise<void>((resolve) => execution.child.once("close", () => resolve()));
+    const { stdout } = await execution.finally(() => closed);
+    if (stdout.trim() !== piPackage.version) {
+      throw new Error(`staged Pi CLI did not report pinned version ${piPackage.version}`);
     }
   } finally {
-    await rm(home, { recursive: true, force: true });
+    try {
+      // Windows scanners can briefly retain handles even after the child closes.
+      await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    } catch (error) {
+      // Cleanup is not a Pi validity assertion, and must not replace its result.
+      console.warn("[tools-pack pi] cleanup:warning", { path: home, error });
+    }
   }
 }
 
@@ -105,7 +111,6 @@ export async function assertPiPackageOutput(appRoot: string): Promise<void> {
     if (manifest.name !== piPackage.name || manifest.version !== piPackage.version) {
       throw new Error(`expected ${piPackage.name}@${piPackage.version}`);
     }
-    assertPiShutdownPatched(packageRoot);
     const parent = pathToFileURL(join(appRoot, "prebundled", "daemon", "daemon-cli.mjs")).href;
     const { stdout } = await execFileAsync(process.execPath, [
       "--experimental-import-meta-resolve", "--input-type=module", "--eval",
@@ -121,8 +126,13 @@ export async function assertPiPackageOutput(appRoot: string): Promise<void> {
     if (physicalEntry !== await realpath(join(appRoot, PI_RPC_ENTRY_RELATIVE_PATH))) {
       throw new Error("RPC export does not resolve to dist/rpc-entry.js");
     }
-    await assertPiCliModels(appRoot);
   } catch (cause) {
-    throw new Error(`staged Pi RPC entry point is missing or invalid under ${appRoot}`, { cause });
+    throw new Error(`staged Pi RPC entry point is missing or invalid under ${appRoot}: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+  }
+  assertPiShutdownPatched(join(appRoot, "node_modules", piPackage.name));
+  try {
+    await assertPiCliVersion(appRoot);
+  } catch (cause) {
+    throw new Error(`staged Pi CLI version verification failed under ${appRoot}: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
   }
 }

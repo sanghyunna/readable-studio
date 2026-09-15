@@ -10,6 +10,7 @@ import pin from "./databricks-cli.json" with { type: "json" };
 // Official https://github.com/databricks/cli/releases/tag/v1.10.0 Windows amd64
 // archive: digest published by GitHub Releases; executable digest from that verified ZIP.
 export const DATABRICKS_CLI_RELATIVE_PATH = "vendor/databricks/databricks.exe";
+const repoRoot = join(import.meta.dirname, "..", "..", "..");
 const execFileAsync = promisify(execFile);
 const sha256 = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const acquisition = `Acquire ${pin.url} (SHA256 ${pin.archiveSha256}) and rerun packaging; stageDatabricksCli(appRoot, archivePath) also accepts that verified ZIP offline.`;
@@ -25,13 +26,36 @@ export async function assertDatabricksCliOutput(appRoot: string): Promise<void> 
 }
 
 /** Stage a native dependency, not an npm package. Never consult the build host's CLI. */
+/** Verified-by-hash local copy, so a flaky network cannot fail an otherwise offline build. */
+function cachedArchivePath(): string {
+  return join(repoRoot, ".tmp", "databricks-cli-acquisition", `databricks_cli_${pin.version}_windows_amd64.zip`);
+}
+
+async function readVerifiedCache(): Promise<Buffer | null> {
+  try {
+    const bytes = await readFile(cachedArchivePath());
+    // A cache entry is only usable when it matches the same pin the download must satisfy.
+    return sha256(bytes) === pin.archiveSha256 ? bytes : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function stageDatabricksCli(appRoot: string, archivePath?: string): Promise<void> {
   const temporary = await mkdtemp(join(tmpdir(), "readable-databricks-"));
   try {
     const bytes = archivePath ? await readFile(archivePath) : await (async () => {
+      const cached = await readVerifiedCache();
+      if (cached) return cached;
       const response = await fetch(pin.url, { signal: AbortSignal.timeout(120_000) });
       if (!response.ok) throw new Error(`release download returned HTTP ${response.status}`);
-      return Buffer.from(await response.arrayBuffer());
+      const downloaded = Buffer.from(await response.arrayBuffer());
+      // Persist only after the pin check below would pass, so the cache never holds bad bytes.
+      if (sha256(downloaded) === pin.archiveSha256) {
+        await mkdir(dirname(cachedArchivePath()), { recursive: true });
+        await writeFile(cachedArchivePath(), downloaded);
+      }
+      return downloaded;
     })();
     if (sha256(bytes) !== pin.archiveSha256) throw new Error("release archive SHA256 mismatch");
     const zip = join(temporary, "release.zip");
