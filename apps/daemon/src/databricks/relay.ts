@@ -2,6 +2,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { once } from 'node:events';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { DatabricksRuntimeResolution } from './service.js';
+import type { DatabricksWireCapabilities } from './catalogue.js';
 import type { DatabricksFailureDetail } from '@readable-studio/contracts';
 import { failureDetail, readUpstreamError, upstreamFailure } from './failure.js';
 import { listenOnFetchCompatiblePort } from '../fetch-compatible-listener.js';
@@ -42,7 +43,7 @@ function outputCeiling(message: string): number | undefined {
 }
 const relayError = (detail: DatabricksFailureDetail) => ({ type: 'error', error: { type: 'api_error', ...detail } });
 class UpstreamStreamError extends Error {
-  constructor(readonly detail: DatabricksFailureDetail) { super(detail.message); }
+  constructor(readonly detail: DatabricksFailureDetail, readonly toolsRejected = false) { super(detail.message); }
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -210,6 +211,23 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
   let closed = false;
   let closing: Promise<void> | undefined;
 
+  const learnedCapabilities = (responses = false, messagesSurface = learnedMessages): DatabricksWireCapabilities => ({
+    responsesUnsupported, ...(responses ? { responsesPath } : {}),
+    ...(messagesSurface ? { api: 'anthropic-messages' as const } : {}),
+    tools: toolsState, toolSurfaceVersion: 2,
+    ...(toolsState === 'supported' ? { toolsCompletionVersion: 1 as const } : {}),
+    chatTokensField, ...(outputLimit === undefined ? {} : { outputLimit }), requiredOutputBudget,
+    omittedFields: [...omittedFields],
+  });
+  const invalidateTools = async () => {
+    toolsState = 'unknown';
+    await runtime.onCapabilitiesLearned?.(learnedCapabilities());
+  };
+  const streamError = (status: number, payload: unknown) => {
+    const message = record(payload) ? payload.message ?? (record(payload.error) ? payload.error.message : undefined) : undefined;
+    return new UpstreamStreamError(upstreamFailure(status, payload, privateValues), typeof message === 'string' && rejectsTools(message));
+  };
+
   async function forwardStream(upstreamResponse: Response, response: ServerResponse, signal: AbortSignal, responses = false, translatedMessages = false): Promise<void> {
     if (!upstreamResponse.body) throw new Error('Missing stream');
     signal.throwIfAborted();
@@ -244,8 +262,9 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
       const data = lines.filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trimStart()).join('\n');
       if (!data) return; // Comments and upstream ids are deliberately not forwarded.
       const event = lines.find((line) => line.startsWith('event:'))?.slice(6).trim();
-      if (event === 'error') throw new UpstreamStreamError(upstreamFailure(upstreamResponse.status, JSON.parse(data), privateValues));
+      if (event === 'error') throw streamError(upstreamResponse.status, JSON.parse(data));
       if (data === '[DONE]') {
+        if (!responses) completed = true;
         if (messagesStream) {
           for (const chunk of messagesStream.push('[DONE]')) await emit(chunk);
           return;
@@ -258,7 +277,9 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
       }
       const payload: unknown = JSON.parse(data);
       if (!record(payload)) throw new Error('Invalid upstream frame');
-      if (payload.type === 'error' || payload.error) throw new UpstreamStreamError(upstreamFailure(upstreamResponse.status, payload, privateValues));
+      if (payload.type === 'error' || payload.error) throw streamError(upstreamResponse.status, payload);
+      if (payload.type === 'message_stop' || Array.isArray(payload.choices)
+        && payload.choices.some(choice => record(choice) && typeof choice.finish_reason === 'string')) completed = true;
       if (messagesStream) {
         for (const chunk of messagesStream.push(payload)) await emit(chunk);
         return;
@@ -293,7 +314,7 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
           await emit('[DONE]');
           completed = true;
         } else if (payload.type === 'response.failed') {
-          throw new UpstreamStreamError(upstreamFailure(upstreamResponse.status, payload.response, privateValues));
+          throw streamError(upstreamResponse.status, payload.response);
         }
         return;
       }
@@ -331,9 +352,8 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
         if (done) break;
       }
       if (buffer.trim()) await frame(buffer);
-      if (responses && !completed) throw new Error('Incomplete Responses stream');
+      if (!completed && !messagesStream?.completed) throw new Error('Incomplete upstream stream');
       if (messagesStream && !messagesStream.completed) throw new Error('Incomplete Messages stream');
-      response.end();
     } finally {
       signal.removeEventListener('abort', cancel);
       try { await (cancellation ?? reader.cancel()); }
@@ -376,6 +396,7 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
       // Keep certified protocol feature negotiation, not arbitrary child headers.
       if (anthropic && typeof request.headers['anthropic-beta'] === 'string') headers['anthropic-beta'] = request.headers['anthropic-beta'];
       let result: Response;
+      let carriedTools = false;
       let rejected: unknown;
       let parameterHint: string | undefined;
       const corrections = new Set<string>();
@@ -425,6 +446,7 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
         const outputField = messagesSurface ? 'max_tokens' : responses ? 'max_output_tokens' : chatTokensField;
         if (runtime.capabilities.maxTokens === null && requiredOutputBudget) wire[outputField] = Math.min(4096, outputLimit ?? 4096);
         for (const field of omittedFields) delete wire[field];
+        carriedTools = Array.isArray(wire.tools) && wire.tools.length > 0;
         result = await upstreamFetch(new URL(route, upstream.origin), {
           method: 'POST', redirect: 'error', signal: controller.signal,
           headers: { ...headers, ...(messagesSurface ? { 'anthropic-version': '2023-06-01' } : {}) },
@@ -460,6 +482,12 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
             // Unsupported passthrough is route-local evidence, not tool support.
             break;
           }
+        }
+        // Live rejection overrides any positive metadata or persisted recipe,
+        // including when retries are exhausted or the next route fails.
+        if (wire.tools !== undefined && rejectsTools(message)) {
+          toolsRejected = true;
+          await invalidateTools();
         }
         if (attempt < 10) {
           if (!messagesSurface && !responses && /Function tools with reasoning_effort are not supported/i.test(message)
@@ -503,16 +531,17 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
         }
         break;
       }
-      if (result.ok && messagesSurface) learnedMessages = true;
-      const toolsLearned = result.ok && Array.isArray(body.tools) && body.tools.length > 0 && toolsState !== 'unsupported';
-      if (toolsLearned) toolsState = 'supported';
-      if (result.ok && (corrections.size || toolsLearned && runtime.capabilities.tools !== 'supported')) await runtime.onCapabilitiesLearned?.({
-        responsesUnsupported, ...(responses ? { responsesPath } : {}),
-        ...(messagesSurface ? { api: 'anthropic-messages' as const } : {}),
-        ...(toolsState === 'unknown' ? {} : { tools: toolsState, toolSurfaceVersion: 2 as const }),
-        chatTokensField, ...(outputLimit === undefined ? {} : { outputLimit }), requiredOutputBudget,
-        omittedFields: [...omittedFields],
-      });
+      const learnCompleted = async () => {
+        if (messagesSurface) learnedMessages = true;
+        if (carriedTools) toolsState = 'supported';
+        // A field correction on a tool-free turn is not positive tool evidence.
+        const learned = learnedCapabilities(responses, messagesSurface);
+        if (!carriedTools && toolsState === 'supported') {
+          delete learned.tools;
+          delete learned.toolsCompletionVersion;
+        }
+        if (corrections.size || carriedTools) await runtime.onCapabilitiesLearned?.(learned);
+      };
       if (!result.ok) {
         const original = upstreamFailure(result.status, rejected, privateValues);
         const detail = parameterHint ? failureDetail(original.reason, result.status, parameterHint) : original;
@@ -521,18 +550,30 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
         finally { sendError(response, result.status >= 400 && result.status <= 599 ? result.status : 502, detail); }
       } else if (result.headers.get('content-type')?.includes('text/event-stream')) {
         await forwardStream(result, response, controller.signal, responses, messagesSurface && !anthropic);
+        await learnCompleted();
+        response.end();
       } else {
         const payload: unknown = await result.json();
         controller.signal.throwIfAborted();
-        if (!record(payload) || payload.error || payload.type === 'error') throw new Error('Invalid upstream response');
+        if (record(payload) && (payload.error || payload.type === 'error')) throw streamError(result.status, payload);
+        if (!record(payload)) throw new Error('Invalid upstream response');
         const translated = messagesSurface && !anthropic ? messagesResponse(payload)
           : responses ? chatResponse(payload) : anthropic ? payload : normalizeChatContent(payload);
+        if (carriedTools && !(anthropic ? payload.type === 'message' && typeof payload.stop_reason === 'string'
+          : Array.isArray(translated.choices) && translated.choices.length > 0
+            && translated.choices.every(choice => record(choice) && record(choice.message) && typeof choice.finish_reason === 'string'))) {
+          throw new Error('Incomplete upstream response');
+        }
+        await learnCompleted();
         response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
         response.end(JSON.stringify(sanitize(translated)));
       }
     } catch (error) {
-      if (!controller.signal.aborted && !response.writableEnded) sendError(response, 502, error instanceof UpstreamStreamError ? error.detail
-        : failureDetail(upstreamStatus === null ? 'transport' : 'invalid-response', upstreamStatus));
+      try { if (error instanceof UpstreamStreamError && error.toolsRejected) await invalidateTools(); }
+      finally {
+        if (!controller.signal.aborted && !response.writableEnded) sendError(response, 502, error instanceof UpstreamStreamError ? error.detail
+          : failureDetail(upstreamStatus === null ? 'transport' : 'invalid-response', upstreamStatus));
+      }
     } finally {
       clearTimeout(timeout);
       response.off('close', abort);

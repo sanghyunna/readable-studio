@@ -12,7 +12,9 @@ export interface DatabricksWireCapabilities {
   api?: 'anthropic-messages';
   /** Version of the documented surfaces exhausted before artifact fallback. */
   toolSurfaceVersion?: 2;
-  tools?: 'supported' | 'unsupported';
+  tools?: 'supported' | 'unsupported' | 'unknown';
+  /** Positive learning was recorded after a tool-bearing response completed. */
+  toolsCompletionVersion?: 1;
   chatTokensField: 'max_completion_tokens' | 'max_tokens';
   outputLimit?: number;
   requiredOutputBudget: boolean;
@@ -126,16 +128,19 @@ export function normalizeResource(secret: string, profileId: string, resource: D
     ...(!api ? { issue: { code: 'DATABRICKS_VERIFICATION_REQUIRED' as const, action: 'verify' as const, retryable: false } } : {}),
   };
   const configurationId = opaqueId(secret, 'dbcfg', JSON.stringify(resource.metadata));
-  if (previous?.configurationId === configurationId && previous.wireCapabilities?.tools) {
-    endpoint.capabilities.tools = previous.wireCapabilities.tools;
-  }
+  const wireCapabilities = previous?.configurationId === configurationId && previous.wireCapabilities
+    ? { ...previous.wireCapabilities } : undefined;
+  // A rescan/lookup is the recovery path for registrations learned before body
+  // completion was checked, even when workspace metadata has not changed.
+  if (wireCapabilities?.tools === 'supported' && wireCapabilities.toolsCompletionVersion !== 1) delete wireCapabilities.tools;
+  if (wireCapabilities?.tools) endpoint.capabilities.tools = wireCapabilities.tools;
   if (previous?.configurationId === configurationId && previous.wireCapabilities?.outputLimit !== undefined) {
     endpoint.capabilities.maxTokens = previous.wireCapabilities.outputLimit;
     endpoint.capabilities.limitSources!.maxTokens = 'endpoint';
   }
   const entry: CatalogueEntry = {
     endpoint, upstreamName: resource.name, configurationId,
-    ...(previous?.configurationId === configurationId && previous.wireCapabilities ? { wireCapabilities: previous.wireCapabilities } : {}),
+    ...(wireCapabilities ? { wireCapabilities } : {}),
     basePath: api === 'anthropic-messages' ? '/ai-gateway/anthropic'
       : resource.kind === 'serving-endpoint' ? '/serving-endpoints' : '/ai-gateway/openai/v1',
   };
