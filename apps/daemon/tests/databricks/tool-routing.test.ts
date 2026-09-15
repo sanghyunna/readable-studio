@@ -9,13 +9,13 @@ const success = () => Response.json({ status: 'completed', output: [{ type: 'mes
 
 test('Responses unavailable -> Chat tools rejection -> alternate Responses retains tools and succeeds', async () => {
   const runtime = runtimeFixture('openai-completions');
-  runtime.baseUrl = 'https://workspace.example/serving-endpoints';
+  runtime.baseUrl = 'https://workspace.example/ai-gateway/mlflow/v1';
   const routes: string[] = [];
   runtime.onCapabilitiesLearned = async learned => { runtime.wireCapabilities = learned; };
   const relay = await createDatabricksRelay({ runtime, fetch: async (input, init) => {
     const route = new URL(String(input)).pathname; routes.push(route);
     expect(JSON.parse(String(init?.body)).tools).toHaveLength(1);
-    if (route === '/serving-endpoints/responses') return unavailable();
+    if (route === '/ai-gateway/mlflow/v1/responses') return unavailable();
     if (route.endsWith('/chat/completions') || route === '/ai-gateway/anthropic/v1/messages') return refused();
     if (route === '/ai-gateway/openai/v1/responses') return unavailable();
     return success();
@@ -23,7 +23,7 @@ test('Responses unavailable -> Chat tools rejection -> alternate Responses retai
   try {
     const result = await fetch(`${relay.baseUrl}/chat/completions`, { method: 'POST', headers: { authorization: `Bearer ${relay.capabilityKey}` }, body: JSON.stringify({ model: relay.modelAlias, messages: [], tools }) });
     expect(result.status).toBe(200); expect(await result.text()).toContain('ROUTE_OK');
-    expect(routes).toEqual(['/serving-endpoints/responses', '/serving-endpoints/chat/completions', '/ai-gateway/anthropic/v1/messages', '/ai-gateway/openai/v1/responses', '/ai-gateway/codex/v1/responses']);
+    expect(routes).toEqual(['/ai-gateway/mlflow/v1/responses', '/ai-gateway/mlflow/v1/chat/completions', '/ai-gateway/anthropic/v1/messages', '/ai-gateway/openai/v1/responses', '/ai-gateway/codex/v1/responses']);
     expect(runtime.wireCapabilities).toMatchObject({ responsesUnsupported: false, responsesPath: '/ai-gateway/codex/v1/responses', tools: 'supported' });
     const restarted = await createDatabricksRelay({ runtime, fetch: async (input, init) => {
       expect(new URL(String(input)).pathname).toBe('/ai-gateway/codex/v1/responses');

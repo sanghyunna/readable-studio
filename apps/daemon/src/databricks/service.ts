@@ -518,9 +518,10 @@ export class LocalDatabricksService implements DatabricksService {
   private async verifyCheck(runtime: DatabricksRuntimeResolution, check: keyof DatabricksVerificationResponse['checks']): Promise<boolean> {
     return withDeadline(async (signal) => {
       const anthropic = runtime.api === 'anthropic-messages';
+      const invocation = /^\/serving-endpoints\/[^/]+\/invocations$/.test(new URL(runtime.baseUrl).pathname);
       const body: Record<string, unknown> = {
-        model: runtime.model, messages: [{ role: 'user', content: check === 'tools' ? 'Call the readable_probe tool with ok true.' : 'Reply with OK.' }],
-        stream: check === 'streaming', [anthropic ? 'max_tokens' : 'max_completion_tokens']: 256,
+        ...(!invocation ? { model: runtime.model } : {}), messages: [{ role: 'user', content: check === 'tools' ? 'Call the readable_probe tool with ok true.' : 'Reply with OK.' }],
+        stream: check === 'streaming', [anthropic || invocation ? 'max_tokens' : 'max_completion_tokens']: 256,
       };
       if (check === 'tools') {
         const schema = { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'] };
@@ -532,7 +533,7 @@ export class LocalDatabricksService implements DatabricksService {
         if (anthropic) { body.thinking = { type: 'adaptive' }; body.output_config = { effort: 'high' }; }
         else body.reasoning_effort = 'high';
       }
-      const response = await this.fetch(`${runtime.baseUrl}${anthropic ? '/v1/messages' : '/chat/completions'}`, {
+      const response = await this.fetch(`${runtime.baseUrl}${invocation ? '' : anthropic ? '/v1/messages' : '/chat/completions'}`, {
         method: 'POST', signal, redirect: 'error', headers: { Authorization: `Bearer ${runtime.apiKey}`, 'Content-Type': 'application/json', ...(anthropic ? { 'anthropic-version': '2023-06-01' } : {}) }, body: JSON.stringify(body),
       });
       if (!response.ok) {

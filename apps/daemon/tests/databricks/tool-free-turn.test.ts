@@ -72,7 +72,7 @@ test('real managed Pi exhausts tool routes, emits one index artifact, and restar
       expect(learned.wireCapabilities?.tools).toBe('unsupported');
       expect((await service.listModels()).models[0]!.capabilities.tools).toBe('unsupported');
     }
-    expect(requests.map(body => Array.isArray(body.tools) ? body.tools.length : 0)).toEqual([4, 4, 4, 4, 4, 0, 0]);
+    expect(requests.map(body => Array.isArray(body.tools) ? body.tools.length : 0)).toEqual([4, 4, 0, 0]);
     expect(requests.filter(body => Array.isArray(body.tools) && body.tools.some(tool => 'input_schema' in tool))).toHaveLength(1);
   } finally { await rm(root, { recursive: true, force: true }); }
 }, 65000);

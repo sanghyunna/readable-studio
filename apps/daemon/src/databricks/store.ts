@@ -39,6 +39,10 @@ export class DatabricksStore {
       // changing IDs, registration, revisions, or performing a workspace lookup.
       for (const entry of generation.entries) {
         entry.endpoint.displayName ??= entry.upstreamName;
+        // The endpoint route name was already persisted; no rescan is needed.
+        if (entry.endpoint.kind === 'serving-endpoint' && entry.basePath === '/serving-endpoints') {
+          entry.basePath = `/serving-endpoints/${encodeURIComponent(entry.upstreamName)}/invocations`;
+        }
       }
       for (const scan of generation.scans) for (const endpoint of scan.endpoints) {
         const entry = generation.entries.find((candidate) => candidate.endpoint.id === endpoint.id);

@@ -8,7 +8,7 @@ const rejected = () => Response.json({ message: 'rejected parameter: tools' }, {
 const reply = { id: 'msg_fixture', type: 'message', role: 'assistant', model: 'fixture', content: [{ type: 'tool_use', id: 'toolu_original', name: 'read', input: { path: 'index.html' } }], stop_reason: 'tool_use', usage: { input_tokens: 11, output_tokens: 7 } };
 
 test('task-only serving Chat tools rejection tries Messages with translated tools, context, images, effort and tool history', async () => {
-  const runtime = runtimeFixture('openai-completions'); runtime.baseUrl = 'https://workspace.example/serving-endpoints';
+  const runtime = runtimeFixture('openai-completions'); runtime.baseUrl = 'https://workspace.example/serving-endpoints/task-only/invocations';
   runtime.wireCapabilities = { responsesUnsupported: true, chatTokensField: 'max_tokens', requiredOutputBudget: false, omittedFields: [] };
   const routes: string[] = [];
   const relay = await createDatabricksRelay({ runtime, fetch: async (input, init) => {
@@ -39,6 +39,6 @@ test('task-only serving Chat tools rejection tries Messages with translated tool
     const result = await response.json();
     expect(result).toMatchObject({ choices: [{ finish_reason: 'tool_calls', message: { tool_calls: [{ id: 'toolu_original', type: 'function', function: { name: 'read', arguments: '{"path":"index.html"}' } }] } }],
       usage: { prompt_tokens: 11, completion_tokens: 7, total_tokens: 18 } });
-    expect(routes).toEqual(['/serving-endpoints/chat/completions', messagesPath]);
+    expect(routes).toEqual(['/serving-endpoints/task-only/invocations', messagesPath]);
   } finally { await relay.close(); }
 });

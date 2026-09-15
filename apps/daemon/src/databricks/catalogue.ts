@@ -142,7 +142,7 @@ export function normalizeResource(secret: string, profileId: string, resource: D
     endpoint, upstreamName: resource.name, configurationId,
     ...(wireCapabilities ? { wireCapabilities } : {}),
     basePath: api === 'anthropic-messages' ? '/ai-gateway/anthropic'
-      : resource.kind === 'serving-endpoint' ? '/serving-endpoints' : '/ai-gateway/openai/v1',
+      : resource.kind === 'serving-endpoint' ? `/serving-endpoints/${encodeURIComponent(resource.name)}/invocations` : '/ai-gateway/openai/v1',
   };
   applyLearnedDatabricksProtocol(entry);
   return entry;

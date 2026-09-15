@@ -15,7 +15,7 @@ const tools = [{ type: 'function', function: { name: 'read', parameters: { type:
 test('task-only corporate foundation fixture resolves prefixed family without guessing native transport', () => {
   const { endpoint, basePath } = normalizeResource('secret', 'profile', fixture);
   expect(endpoint.api).toBe('openai-completions');
-  expect(basePath).toBe('/serving-endpoints');
+  expect(basePath).toBe(`/serving-endpoints/${fixture.name}/invocations`);
   expect(endpoint.protocolEvidence?.reason).toBe('chat-task');
   expect(endpoint.capabilities).toMatchObject({ contextWindow: 1000000, maxTokens: 128000 });
   const native = normalizeResource('secret', 'profile', { ...fixture, metadata: { ...fixture.metadata,

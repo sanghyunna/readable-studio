@@ -83,7 +83,7 @@ test('real Pi recovers to Messages, writes with a real tool, resumes natively af
         const saved = run.session.getLastSessionPath(); expect(saved).toBeTruthy();
         resumeSession = { path: saved!, root: run.runtime.invocation.sessionDir };
         expect(routes.slice(start)).toEqual(turn === 1
-          ? ['/serving-endpoints/responses', '/serving-endpoints/chat/completions', messagesPath, messagesPath]
+          ? ['/serving-endpoints/arbitrary-serving-alias/invocations', messagesPath, messagesPath]
           : [messagesPath, messagesPath]);
       } finally {
         if (run.child.exitCode === null && run.child.signalCode === null) run.child.kill();

@@ -76,7 +76,7 @@ test('a persisted poisoned registration recovers on its very next run and restar
     try {
       const response = await post(relay);
       expect(response.status).toBe(200); expect(await response.text()).toContain('MESSAGES_OK');
-      expect(routes).toEqual(['/serving-endpoints/chat/completions', messagesPath]);
+      expect(routes).toEqual(['/serving-endpoints/stale-tools-fixture/invocations', messagesPath]);
       const restarted = await fixture.makeService().resolveRuntime(fixture.enabled.appModelId);
       expect(restarted).toMatchObject({ api: 'anthropic-messages', capabilities: { tools: 'supported' },
         wireCapabilities: { tools: 'supported', toolsCompletionVersion: 1, api: 'anthropic-messages' } });
@@ -130,7 +130,7 @@ test('only a complete tool-bearing stream learns support; the next run uses dire
     } });
     try {
       expect(await (await post(relay2)).text()).toContain('CHAT_OK');
-      expect(routes).toEqual(['/serving-endpoints/chat/completions']);
+      expect(routes).toEqual(['/serving-endpoints/stale-tools-fixture/invocations']);
     } finally { await relay2.close(); }
     const lookedUp = await service.lookup({ profileId: fixture.profileId, resourceId: fixture.enabled.endpoint.id, kind: 'serving-endpoint' });
     expect(lookedUp.endpoint.capabilities.tools).toBe('supported');

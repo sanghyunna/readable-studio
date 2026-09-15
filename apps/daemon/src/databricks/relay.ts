@@ -172,7 +172,8 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
   const modelAlias = runtime.appModelId;
   const anthropic = runtime.api === 'anthropic-messages';
   const localPath = anthropic ? '/v1/messages' : '/chat/completions';
-  const upstream = new URL(`${runtime.baseUrl}${localPath}`);
+  const invocation = /^\/serving-endpoints\/[^/]+\/invocations$/.test(new URL(runtime.baseUrl).pathname);
+  const upstream = new URL(`${runtime.baseUrl}${invocation ? '' : localPath}`);
   if (upstream.protocol !== 'https:' || upstream.username || upstream.password || upstream.search || upstream.hash) {
     throw new Error('Invalid Databricks gateway URL');
   }
@@ -192,7 +193,8 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
   let responsesUnsupported = runtime.wireCapabilities?.responsesUnsupported ?? false;
   // Metadata advertises dialects, not URLs. Discover acceptance among documented
   // same-origin surfaces; never follow upstream URLs or guess from model identity.
-  const responsesPaths = [...new Set([`${upstream.pathname.replace(/\/chat\/completions$/, '')}/responses`,
+  // Serving invocations accept Chat (including function tools), not Responses.
+  const responsesPaths = invocation ? [] : [...new Set([`${upstream.pathname.replace(/\/chat\/completions$/, '')}/responses`,
     '/ai-gateway/openai/v1/responses', '/ai-gateway/codex/v1/responses'])];
   let responsesPath = responsesPaths.includes(runtime.wireCapabilities?.responsesPath ?? '')
     ? runtime.wireCapabilities!.responsesPath! : responsesPaths[0]!;
@@ -386,7 +388,7 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
       // Prefer Responses for tools + effort, but probe the actual passthrough
       // surface. Some gateways advertise MLflow Responses without OpenAI support.
       let messagesSurface = anthropic || learnedMessages;
-      let responses = !messagesSurface && !responsesUnsupported && (toolsState === 'unsupported'
+      let responses = !invocation && !messagesSurface && !responsesUnsupported && (toolsState === 'unsupported'
         ? runtime.wireCapabilities?.responsesPath !== undefined
         : Array.isArray(body.tools) && body.tools.some((tool) => record(tool) && tool.type === 'function'));
       const headers: Record<string, string> = {
@@ -447,10 +449,13 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
         if (runtime.capabilities.maxTokens === null && requiredOutputBudget) wire[outputField] = Math.min(4096, outputLimit ?? 4096);
         for (const field of omittedFields) delete wire[field];
         carriedTools = Array.isArray(wire.tools) && wire.tools.length > 0;
+        // Only an invocation URL selects the endpoint without a body model.
+        if (invocation && route === upstream.pathname) delete wire.model;
+        else wire.model = runtime.model;
         result = await upstreamFetch(new URL(route, upstream.origin), {
           method: 'POST', redirect: 'error', signal: controller.signal,
           headers: { ...headers, ...(messagesSurface ? { 'anthropic-version': '2023-06-01' } : {}) },
-          body: JSON.stringify({ ...wire, model: runtime.model }),
+          body: JSON.stringify(wire),
         });
         upstreamStatus = result.status;
         if (controller.signal.aborted) {
@@ -506,6 +511,8 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
             // never means the endpoint lacks tools.
             if (correctOnce('artifact-delivery')) {
               toolsState = 'unsupported';
+              // A rejected Messages probe did not establish a new protocol.
+              if (invocation) messagesSurface = false;
               continue;
             }
           }
