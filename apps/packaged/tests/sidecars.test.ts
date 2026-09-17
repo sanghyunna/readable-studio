@@ -309,7 +309,7 @@ describe('buildPackagedDaemonSpawnEnv', () => {
     expect(env.READABLE_DATA_DIR).toBe('/tmp/readable-pkg/data');
     expect(env.READABLE_RESOURCE_ROOT).toBe('/tmp/readable-pkg/resources');
     expect(env.READABLE_APP_VERSION).toBe('1.2.3');
-    expect(env.READABLE_AGENT_DISCOVERY_OFFLINE).toBe('1');
+    expect(env.READABLE_AGENT_DISCOVERY_OFFLINE).toBeUndefined();
     expect(env[SIDECAR_ENV.DAEMON_PORT]).toBe('7456');
   });
 

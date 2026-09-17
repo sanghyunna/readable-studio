@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../../src/App';
@@ -25,7 +25,15 @@ vi.mock('../../src/router', () => ({
 // Surface the config passed to the real entry controls without pulling their
 // unrelated UI behavior into these App-level bootstrap tests.
 vi.mock('../../src/components/EntryView', () => ({
-  EntryView: ({ config, agentsLoading }: { config: AppConfig; agentsLoading?: boolean }) => (
+  EntryView: ({
+    config,
+    agentsLoading,
+    onRefreshAgents,
+  }: {
+    config: AppConfig;
+    agentsLoading?: boolean;
+    onRefreshAgents?: () => void;
+  }) => (
     <>
       <div data-testid="agent-id">
         {config.agentId ?? (agentsLoading ? 'detecting' : 'none')}
@@ -33,6 +41,11 @@ vi.mock('../../src/components/EntryView', () => ({
       <div data-testid="onboarding-completed">
         {String(config.onboardingCompleted)}
       </div>
+      {onRefreshAgents && (
+        <button data-testid="rescan-agents" type="button" onClick={onRefreshAgents}>
+          Rescan
+        </button>
+      )}
     </>
   ),
 }));
@@ -292,5 +305,20 @@ describe('App first-run agent auto-select', () => {
         mockedSync.mock.calls.some(([config]) => wroteAgent(config, 'codex')),
       ).toBe(true);
     });
+  });
+
+  it('starts agent detection without forcing a refresh, while explicit rescan still refreshes', async () => {
+    render(<App />);
+
+    // Startup path: must not duplicate the daemon's warmup discovery pass.
+    await waitFor(() => expect(mockedFetchAgentsStream).toHaveBeenCalled());
+    const startupCall = mockedFetchAgentsStream.mock.calls[0];
+    expect(startupCall?.[0]).toMatchObject({ refresh: false });
+
+    // Explicit rescan path: still requests fresh detection.
+    fireEvent.click(screen.getByTestId('rescan-agents'));
+    await waitFor(() => expect(mockedFetchAgentsStream).toHaveBeenCalledTimes(2));
+    const rescanCall = mockedFetchAgentsStream.mock.calls[1];
+    expect(rescanCall?.[0]).not.toMatchObject({ refresh: false });
   });
 });

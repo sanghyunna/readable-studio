@@ -71,6 +71,7 @@ import {
 } from './components/databricksModels';
 import { navigate, useRoute } from './router';
 import {
+  applyPerformanceProfileToDocument,
   fetchDaemonConfig,
   DEFAULT_PET,
   loadConfig,
@@ -365,12 +366,12 @@ export function App() {
   // motion: reduce)` block covers the CSS-keyframe surfaces, but the dialogs,
   // toasts and popovers that moved to motion/react need this gate too — without
   // it they keep springing/sliding for users who asked us not to animate.
+  // The root MotionConfig now lives inside AppInner because its mode follows
+  // `config.performanceProfile`: low-spec forces `always`, full keeps `user`.
   return (
-    <MotionConfig reducedMotion="user">
-      <IframeKeepAliveProvider>
-        <AppInner />
-      </IframeKeepAliveProvider>
-    </MotionConfig>
+    <IframeKeepAliveProvider>
+      <AppInner />
+    </IframeKeepAliveProvider>
   );
 }
 
@@ -655,6 +656,17 @@ function AppInner() {
     });
   }, [config.theme, config.accentColorMode, config.accentColor]);
 
+  // Root performance stamp. `data-performance-profile="low"` is the single
+  // hook the stylesheets use to drop glass and decorative motion; the same
+  // value flips the root MotionConfig below. Layout effect so a toggle
+  // repaints without a frame of the old material, and any config change
+  // (a Hub click, Settings autosave, or the daemon reconcile on startup)
+  // restamps through this one path.
+  const performanceProfile = config.performanceProfile ?? 'full';
+  useLayoutEffect(() => {
+    applyPerformanceProfileToDocument(performanceProfile);
+  }, [performanceProfile]);
+
   // Tell the daemon what the user is currently looking at, so the MCP
   // server can surface it as `get_active_context` to a coding agent in
   // another repo. Best-effort fire-and-forget; the daemon holds it in
@@ -792,6 +804,7 @@ function AppInner() {
 
     void fetchAgentsStream({
       signal: request.controller.signal,
+      refresh: false,
       onAgent: (agent) => {
         if (request.cancelled || !isCurrentAgentStreamRequest(agentRequestId)) return;
         setAgents((current) =>
@@ -885,10 +898,9 @@ function AppInner() {
           mergeDaemonConfig(baseConfig, daemonConfig),
         );
         saveConfig(next);
-        // Migrate localStorage prefs to daemon on first boot with the new
-        // endpoint. If daemon already had values the merge above used them;
-        // writing back is idempotent and keeps both sides in sync.
-        void syncConfigToDaemon(next);
+        // Migrate older browser preferences, but never write the profile on
+        // load: the mirror is a paint hint, not an authoritative update.
+        void syncConfigToDaemon(next, { syncPerformanceProfile: false });
         latestPersistedConfigRef.current = next;
         setConfig(next);
 
@@ -1059,6 +1071,18 @@ function AppInner() {
   const handleThemeChange = useCallback(
     (theme: AppConfig['theme']) => {
       const next = { ...config, theme };
+      saveConfig(next);
+      void syncConfigToDaemon(next);
+      setConfig(next);
+    },
+    [config],
+  );
+
+  // Hub chrome low-spec toggle. Same save/sync path as the theme switch; the
+  // root stamp and MotionConfig follow `config` automatically.
+  const handlePerformanceProfileChange = useCallback(
+    (performanceProfile: AppConfig['performanceProfile']) => {
+      const next = { ...config, performanceProfile };
       saveConfig(next);
       void syncConfigToDaemon(next);
       setConfig(next);
@@ -2172,6 +2196,7 @@ function AppInner() {
         onConfigPersist={handleConfigPersist}
         onRefreshAgents={refreshAgents}
         onThemeChange={handleThemeChange}
+        onPerformanceProfileChange={handlePerformanceProfileChange}
         skillsLoading={skillsLoading}
         designSystemsLoading={dsLoading}
         projectsLoading={projectsLoading}
@@ -2190,7 +2215,15 @@ function AppInner() {
       />
     );
   }
+  // `reducedMotion="user"` makes every motion/react component honor the OS
+  // `prefers-reduced-motion` setting: transform/layout animations are zeroed
+  // out while opacity-only changes are kept. The CSS `@media (prefers-reduced-
+  // motion: reduce)` block covers the CSS-keyframe surfaces, but the dialogs,
+  // toasts and popovers that moved to motion/react need this gate too — without
+  // it they keep springing/sliding for users who asked us not to animate.
+  // Low-spec mode forces `always` regardless of the OS preference.
   return (
+    <MotionConfig reducedMotion={performanceProfile === 'low' ? 'always' : 'user'}>
     <HubRailProvider value={rail}>
       <div
         className={`workspace-shell workspace-shell--${clientType}`}
@@ -2320,5 +2353,6 @@ function AppInner() {
         />
       ) : null}
     </HubRailProvider>
+    </MotionConfig>
   );
 }

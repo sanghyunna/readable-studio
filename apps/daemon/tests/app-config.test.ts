@@ -39,6 +39,7 @@ describe('app-config', () => {
   describe('readAppConfig', () => {
     it('returns default telemetry when config file does not exist', async () => {
       expect(await readAppConfig(dataDir)).toEqual({
+        performanceProfile: 'full',
         telemetry: DEFAULT_TELEMETRY,
       });
     });
@@ -56,19 +57,19 @@ describe('app-config', () => {
     it('returns default telemetry for corrupted JSON without crashing', async () => {
       await writeFile(path.join(dataDir, 'app-config.json'), '{not valid');
       const cfg = await readAppConfig(dataDir);
-      expect(cfg).toEqual({ telemetry: DEFAULT_TELEMETRY });
+      expect(cfg).toEqual({ performanceProfile: 'full', telemetry: DEFAULT_TELEMETRY });
     });
 
     it('returns default telemetry when file contains a JSON array', async () => {
       await writeFile(path.join(dataDir, 'app-config.json'), '[1,2,3]');
       const cfg = await readAppConfig(dataDir);
-      expect(cfg).toEqual({ telemetry: DEFAULT_TELEMETRY });
+      expect(cfg).toEqual({ performanceProfile: 'full', telemetry: DEFAULT_TELEMETRY });
     });
 
     it('returns default telemetry when file contains a JSON primitive', async () => {
       await writeFile(path.join(dataDir, 'app-config.json'), '"hello"');
       const cfg = await readAppConfig(dataDir);
-      expect(cfg).toEqual({ telemetry: DEFAULT_TELEMETRY });
+      expect(cfg).toEqual({ performanceProfile: 'full', telemetry: DEFAULT_TELEMETRY });
     });
 
     it('filters out unknown keys from stored file', async () => {
@@ -77,7 +78,7 @@ describe('app-config', () => {
         JSON.stringify({ agentId: 'claude', rogue: 'value', __proto: 'x' }),
       );
       const cfg = await readAppConfig(dataDir);
-      expect(cfg).toEqual({ agentId: 'claude', telemetry: DEFAULT_TELEMETRY });
+      expect(cfg).toEqual({ performanceProfile: 'full', agentId: 'claude', telemetry: DEFAULT_TELEMETRY });
       expect(cfg).not.toHaveProperty('rogue');
       expect(cfg).not.toHaveProperty('__proto');
     });
@@ -93,7 +94,7 @@ describe('app-config', () => {
         }),
       );
       const cfg = await readAppConfig(dataDir);
-      expect(cfg).toEqual({ telemetry: DEFAULT_TELEMETRY });
+      expect(cfg).toEqual({ performanceProfile: 'full', telemetry: DEFAULT_TELEMETRY });
     });
 
     it('preserves an explicit telemetry opt-out across reads', async () => {
@@ -146,6 +147,7 @@ describe('app-config', () => {
       });
       const cfg = await readAppConfig(dataDir);
       expect(cfg).toEqual({
+        performanceProfile: 'full',
         onboardingCompleted: true,
         agentId: 'claude',
         telemetry: DEFAULT_TELEMETRY,
@@ -161,7 +163,7 @@ describe('app-config', () => {
         designSystemId: { id: 'bad' },
       });
       const cfg = await readAppConfig(dataDir);
-      expect(cfg).toEqual({ telemetry: DEFAULT_TELEMETRY });
+      expect(cfg).toEqual({ performanceProfile: 'full', telemetry: DEFAULT_TELEMETRY });
     });
 
     it('merges with existing config', async () => {

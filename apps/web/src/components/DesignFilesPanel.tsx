@@ -6,6 +6,7 @@ import { useT } from '../i18n';
 import type { Dict } from '../i18n/types';
 import { projectFileUrl, projectRawUrl } from '../providers/registry';
 import { buildSrcdoc } from '../runtime/srcdoc';
+import { useLowSpecProfile } from '../state/useLowSpecProfile';
 import type { ProjectFile, ProjectFileKind, ProjectFolder } from '../types';
 import {
   createFileSystemReadError,
@@ -185,10 +186,11 @@ function prefersReducedMotion(): boolean {
 // prefers-reduced-motion the full tip is shown immediately and just cycles.
 function RotatingTip() {
   const t = useT();
+  const lowSpec = useLowSpecProfile();
   const [index, setIndex] = useState(0);
   const [typed, setTyped] = useState('');
   // Resolve tips each render but read them through a ref so the typing effect
-  // depends only on `index` — depending on the (re-created) array would reset
+  // depends only on `index` and profile — depending on the (re-created) array would reset
   // the typewriter on every render and never advance.
   const tipsRef = useRef<string[]>([]);
   tipsRef.current = USEFUL_TIPS.map(({ key }) => t(key));
@@ -196,9 +198,9 @@ function RotatingTip() {
   useEffect(() => {
     const tips = tipsRef.current;
     const full = tips[index] ?? '';
-    if (prefersReducedMotion()) {
+    if (lowSpec || prefersReducedMotion()) {
       setTyped(full);
-      if (tips.length < 2) return;
+      if (lowSpec || tips.length < 2) return;
       const hold = window.setTimeout(
         () => setIndex((i) => (i + 1) % tips.length),
         TIP_HOLD_MS,
@@ -224,7 +226,7 @@ function RotatingTip() {
       window.clearInterval(typeTimer);
       window.clearTimeout(holdTimer);
     };
-  }, [index]);
+  }, [index, lowSpec]);
 
   return (
     <div className="df-useful-info">

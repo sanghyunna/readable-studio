@@ -64,6 +64,8 @@ interface Props {
   // user can flip light/dark/system without opening the full Settings
   // dialog. Persistence happens in `App`; this component just forwards.
   onThemeChange: (theme: AppTheme) => void;
+  /** Hub low-spec toggle. App owns persistence and the root stamp. */
+  onPerformanceProfileChange?: (profile: 'full' | 'low') => void;
   // Per-resource loading flags. Each tab gates its own content on whichever
   // flag matches the data it renders, so a slow `/api/agents` probe does
   // not block tabs that don't need agents. Templates are not gated here —
@@ -122,6 +124,7 @@ export function EntryView({
   onConfigPersist,
   onRefreshAgents,
   onThemeChange,
+  onPerformanceProfileChange,
   skillsLoading = false,
   designSystemsLoading = false,
   projectsLoading = false,
@@ -170,6 +173,7 @@ export function EntryView({
       onConfigPersist={onConfigPersist}
       onRefreshAgents={onRefreshAgents}
       onThemeChange={onThemeChange}
+      onPerformanceProfileChange={onPerformanceProfileChange}
       onCreateProject={onCreateProject}
       onCreatePluginShareProject={onCreatePluginShareProject}
       onOpenNewProject={onOpenNewProject}

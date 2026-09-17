@@ -27,7 +27,7 @@ describe("desktop BrowserWindow chrome options", () => {
     expect(browserWindowBlock).toContain("backgroundThrottling: false");
   });
 
-  test("ships the original looping video with centered cover playback", () => {
+  test("ships the original video, held on its last frame, with centered cover playback", () => {
     const videoElement = /<video(?<attributes>[\s\S]*?)><\/video>/.exec(splashSource)?.groups?.attributes ?? "";
     const videoStyles = /video \{([\s\S]*?)\}/.exec(splashSource)?.[0] ?? "";
 
@@ -35,9 +35,10 @@ describe("desktop BrowserWindow chrome options", () => {
       "52696eec8ebf9541fb892356df88b1ece5a6d0f122fc362837f66020eaba96c4",
     );
     expect(videoElement).toContain('src="splash.mp4"');
-    for (const attribute of ["autoplay", "muted", "loop", "playsinline"]) {
+    for (const attribute of ["autoplay", "muted", "playsinline"]) {
       expect(videoElement).toMatch(new RegExp(`\\s${attribute}(?:\\s|$)`));
     }
+    expect(videoElement).not.toMatch(/\sloop(?:\s|$)/);
     expect(videoStyles).toContain("height: 100%");
     expect(videoStyles).toContain("object-fit: cover");
     expect(videoStyles).toContain("object-position: center center");

@@ -1,5 +1,5 @@
 import { READABLE_STUDIO_PROJECT_LOCATION_ID } from '@readable-studio/contracts';
-import type { AppConfigPrefs } from '@readable-studio/contracts';
+import type { AppConfigPrefs, PerformanceProfile } from '@readable-studio/contracts';
 import { isOpenAICompatible } from '../providers/openai-compatible';
 import type {
   ApiProtocol,
@@ -21,6 +21,38 @@ import {
 
 const STORAGE_KEY = 'readable-studio:config';
 const CONFIG_MIGRATION_VERSION = 2;
+export const PERFORMANCE_PROFILE_ATTRIBUTE = 'data-performance-profile';
+
+// Client effects read the effective root stamp, not a second persistence source.
+export function isLowSpecProfile(): boolean {
+  return document.documentElement.getAttribute(PERFORMANCE_PROFILE_ATTRIBUTE) === 'low';
+}
+
+export function subscribePerformanceProfile(onChange: () => void): () => void {
+  const observer = new MutationObserver(onChange);
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: [PERFORMANCE_PROFILE_ATTRIBUTE],
+  });
+  return () => observer.disconnect();
+}
+
+function normalizePerformanceProfile(value: unknown): PerformanceProfile {
+  return value === 'low' ? 'low' : 'full';
+}
+
+export function applyPerformanceProfileToDocument(profile: PerformanceProfile = 'full'): void {
+  switch (profile) {
+    case 'low':
+      document.documentElement.setAttribute(PERFORMANCE_PROFILE_ATTRIBUTE, profile);
+      return;
+    case 'full':
+      document.documentElement.removeAttribute(PERFORMANCE_PROFILE_ATTRIBUTE);
+      return;
+    default:
+      return profile satisfies never;
+  }
+}
 
 // Configs saved before `accentColorMode` existed always carried an
 // `accentColor`, and unless the user picked one it was the terracotta default
@@ -85,6 +117,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   designSystemId: null,
   onboardingCompleted: false,
   theme: DEFAULT_THEME,
+  performanceProfile: 'full',
   accentColorMode: 'theme',
   accentColor: DEFAULT_ACCENT_COLOR,
   agentModels: {},
@@ -420,6 +453,7 @@ export function loadConfig(): AppConfig {
       agentModels: { ...(parsed.agentModels ?? {}) },
       agentCliEnv: { ...(parsed.agentCliEnv ?? {}) },
       theme: resolveThemeForStorage(parsed.theme),
+      performanceProfile: normalizePerformanceProfile(parsed.performanceProfile),
       accentColorMode: parsedAccentMode,
       accentColor: parsedAccentColor ?? DEFAULT_CONFIG.accentColor,
       pet: normalizePet(parsed.pet),
@@ -538,6 +572,8 @@ export function mergeDaemonConfig(
   const next = { ...localConfig };
   if (!daemonConfig) return next;
 
+  // Unlike privacy fields this daemon-owned preference is mirrored for first paint.
+  next.performanceProfile = normalizePerformanceProfile(daemonConfig.performanceProfile);
   if (daemonConfig.onboardingCompleted != null) {
     next.onboardingCompleted = daemonConfig.onboardingCompleted;
   }
@@ -626,9 +662,12 @@ export async function fetchDaemonConfig(): Promise<AppConfigPrefs | null> {
 
 export async function syncConfigToDaemon(
   config: AppConfig,
-  options?: { throwOnError?: boolean },
+  options?: { throwOnError?: boolean; syncPerformanceProfile?: boolean },
 ): Promise<void> {
   const prefs: AppConfigPrefs = {
+    ...(options?.syncPerformanceProfile === false
+      ? {}
+      : { performanceProfile: config.performanceProfile ?? 'full' }),
     onboardingCompleted: config.onboardingCompleted,
     agentId: config.agentId,
     agentModels: config.agentModels,

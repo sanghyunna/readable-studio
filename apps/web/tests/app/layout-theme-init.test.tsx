@@ -35,6 +35,9 @@ describe('RootLayout theme init script', () => {
     localStorage.clear();
     document.documentElement.removeAttribute('data-theme');
     document.documentElement.removeAttribute('data-theme-scheme');
+    document.documentElement.removeAttribute('data-performance-profile');
+    document.documentElement.removeAttribute('style');
+    vi.restoreAllMocks();
   });
 
   it('prehydrates light before paint when no theme is persisted', () => {
@@ -60,6 +63,60 @@ describe('RootLayout theme init script', () => {
       expect(document.documentElement.getAttribute('data-theme-scheme')).toBe(theme.scheme);
     },
   );
+
+  it.each([
+    [null, null],
+    ['{}', null],
+    ['{"performanceProfile":"full"}', null],
+    ['{"performanceProfile":"low"}', 'low'],
+    ['{"performanceProfile":"LOW"}', null],
+    ['{"performanceProfile":true}', null],
+    ['{"performanceProfile":null}', null],
+    ['null', null],
+    ['[]', null],
+    ['42', null],
+    ['{broken', null],
+  ] as const)('prehydrates the profile when the mirror is %s', (raw, stamp) => {
+    // Given a stale stamp and a saved, absent, or malformed mirror.
+    document.documentElement.setAttribute('data-performance-profile', 'low');
+    if (raw !== null) localStorage.setItem('readable-studio:config', raw);
+    const script = findThemeInitScript(RootLayout({ children: null }));
+    expect(script).toBeTruthy();
+    // When the exact script emitted by RootLayout executes before hydration.
+    new Function(script ?? '')();
+    // Then only an explicit low preference produces the low stamp.
+    expect(document.documentElement.getAttribute('data-performance-profile')).toBe(stamp);
+  });
+
+  it('falls back to full when pre-hydration storage access throws', () => {
+    // Given blocked storage and a stale root stamp.
+    document.documentElement.setAttribute('data-performance-profile', 'low');
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('Storage blocked', 'SecurityError');
+    });
+    const script = findThemeInitScript(RootLayout({ children: null }));
+    expect(script).toBeTruthy();
+    // When the emitted script executes.
+    new Function(script ?? '')();
+    // Then the script neither throws nor retains low mode.
+    expect(document.documentElement.getAttribute('data-performance-profile')).toBeNull();
+  });
+
+  it('preserves theme and custom accent when low mode prehydrates', () => {
+    // Given a low preference alongside existing appearance settings.
+    localStorage.setItem('readable-studio:config', JSON.stringify({
+      performanceProfile: 'low', theme: 'dark', accentColorMode: 'custom', accentColor: '#123456',
+    }));
+    const script = findThemeInitScript(RootLayout({ children: null }));
+    expect(script).toBeTruthy();
+    // When the emitted script executes.
+    new Function(script ?? '')();
+    // Then profile stamping does not replace theme or accent initialization.
+    expect(document.documentElement.getAttribute('data-performance-profile')).toBe('low');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+    expect(document.documentElement.getAttribute('data-theme-scheme')).toBe('dark');
+    expect(document.documentElement.style.getPropertyValue('--accent')).toBe('#123456');
+  });
 
   it('serializes the hosted marker before theme initialization and never reads local app config', () => {
     const previousComposition = process.env.READABLE_WEB_COMPOSITION;

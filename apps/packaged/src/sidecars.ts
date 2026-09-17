@@ -363,9 +363,6 @@ export function buildPackagedDaemonSpawnEnv(
     // it because there is no privileged shell.openPath surface and
     // no client to register a secret.
     ...(options.requireDesktopAuth ? { READABLE_REQUIRE_DESKTOP_AUTH: "1" } : {}),
-    // Discovery may execute third-party CLI auth/model commands. Keep packaged
-    // cold start offline; explicit user agent runs retain their normal network.
-    READABLE_AGENT_DISCOVERY_OFFLINE: "1",
     // Packaged daemon managed paths are deliberately delivered through
     // the sidecar launch environment. The daemon may keep its own default
     // fallback, but packaged runtime must not rely on path inference from

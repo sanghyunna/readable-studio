@@ -36,6 +36,7 @@ import type {
   ProjectDeploymentsResponse,
   ProviderTestRequest,
   PersistedAgentEvent,
+  PerformanceProfile,
   ProviderModelOption,
   ProviderModelsKind,
   ProviderModelsRequest,
@@ -290,6 +291,7 @@ export interface AppConfig {
   skillId: string | null;
   designSystemId: string | null;
   theme?: AppTheme;
+  performanceProfile?: PerformanceProfile;
   accentColorMode?: AccentColorMode;
   accentColor?: string;
   // True once the user has been through the welcome onboarding modal at

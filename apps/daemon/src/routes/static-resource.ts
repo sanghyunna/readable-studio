@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import type { DesignSystemTokenContractRebuildJobResponse } from '@readable-studio/contracts';
 import { AGENT_DEFS, detectAgents, detectAgentsStream } from '../agents.js';
+import { getStartupScanProgress } from '../runtimes/detection.js';
 import {
   SkillImportError,
   deleteUserSkill,
@@ -75,6 +76,11 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
     };
   };
 
+  app.get('/api/agents/scan', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ scan: getStartupScanProgress() });
+  });
+
   app.get('/api/agents', async (req, res) => {
     const wantsStream =
       req.query.stream === '1' || req.query.stream === 'true';
@@ -92,7 +98,10 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
 
     if (!wantsStream) {
       try {
-        const list = await detectAgents(agentCliEnv, detectOptions);
+        const list = await detectAgents(agentCliEnv, {
+          ...detectOptions,
+          ...(req.query.refresh === '1' || req.query.refresh === 'true' ? { refresh: true } : {}),
+        });
         res.json({ agents: list });
       } catch (err: any) {
         res.status(500).json({ error: String(err) });
@@ -117,7 +126,7 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
     try {
       for await (const agent of detectAgentsStream(agentCliEnv, {
         ...detectOptions,
-        refresh: true,
+        refresh: req.query.refresh !== '0' && req.query.refresh !== 'false',
       })) {
         if (aborted) break;
         res.write(`event: agent\ndata: ${JSON.stringify(agent)}\n\n`);

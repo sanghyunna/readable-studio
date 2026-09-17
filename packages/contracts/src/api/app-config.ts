@@ -1,3 +1,5 @@
+export type PerformanceProfile = 'full' | 'low';
+
 export interface AgentModelPrefs {
   model?: string;
   reasoning?: string;
@@ -17,7 +19,14 @@ export interface ProjectLocationPrefs {
   path: string;
 }
 
+export interface AgentScanCompletion {
+  readonly completedAt: string;
+  readonly agentIds: readonly string[];
+}
+
 export interface AppConfigPrefs {
+  readonly agentScan?: AgentScanCompletion;
+  readonly performanceProfile?: PerformanceProfile;
   onboardingCompleted?: boolean;
   agentId?: string | null;
   agentModels?: Record<string, AgentModelPrefs>;
@@ -56,4 +65,7 @@ export interface AppConfigResponse {
   config: AppConfigPrefs;
 }
 
-export type UpdateAppConfigRequest = Partial<AppConfigPrefs>;
+export type UpdateAppConfigRequest = Partial<Omit<AppConfigPrefs, 'performanceProfile'>> & {
+  /** Null resets the persisted profile to full. */
+  readonly performanceProfile?: PerformanceProfile | null;
+};

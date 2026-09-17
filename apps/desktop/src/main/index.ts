@@ -663,7 +663,7 @@ export async function runDesktopMain(
   desktop = await createDesktopRuntime({
     desktopAuthSecret,
     discoverUrl: options.discoverWebUrl ?? createWebDiscovery(runtime),
-    discoverDaemonUrl: options.discoverDaemonUrl,
+    discoverDaemonUrl: options.discoverDaemonUrl ?? createDaemonDiscovery(runtime),
     osLocale,
     preloadPath: options.preloadPath,
     // Round-5 (lefarcen P1, mrcfps): runtime hands this back to itself

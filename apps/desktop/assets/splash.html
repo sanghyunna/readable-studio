@@ -4,9 +4,29 @@
     <meta charset="utf-8" />
     <title>Readable Studio</title>
     <style>
+      /*
+        Token mirror. This page is a sandboxed file:// window with no access to
+        apps/web/src/styles/tokens.css, so the light-theme values it needs are
+        copied here verbatim and named after their source token. Change the
+        source token first, then this mirror.
+      */
+      :root {
+        --splash-floor: #f2f4f5; /* the media's own flat floor colour */
+        --splash-font: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR',
+          'Microsoft YaHei UI', 'Noto Sans', sans-serif; /* --sans */
+        --splash-text-muted: #63605a; /* --text-muted */
+        --splash-border-strong: rgba(16, 24, 40, 0.14); /* --border-strong */
+        --splash-border-strong-opaque: #d2d5d8; /* --border-strong flattened onto the floor */
+        --splash-accent: #2563eb; /* --accent */
+        --splash-ease-out: cubic-bezier(0.23, 1, 0.32, 1); /* --ease-out */
+        --splash-dur-quick: 120ms; /* --dur-quick */
+        --splash-space-2: 8px;
+        --splash-space-6: 24px;
+        --splash-caption: 12px;
+      }
       html,
       body {
-        background: #f2f4f5;
+        background: var(--splash-floor);
         height: 100%;
         margin: 0;
         overflow: hidden;
@@ -15,14 +35,107 @@
         align-items: center;
         display: flex;
         justify-content: center;
+        position: relative;
       }
       video {
-        background: #f2f4f5;
+        background: var(--splash-floor);
         display: block;
         height: 100%;
         object-fit: cover;
         object-position: center center;
         width: 100%;
+      }
+      /*
+        Progress strip. Lives on the media's flat floor, below the artwork's
+        focal band (the mark and wordmark sit in the vertical middle third),
+        and never overlaps it: the strip is one caption line tall, pinned to
+        the bottom edge with a 24px inset.
+      */
+      .progress {
+        align-items: center;
+        bottom: var(--splash-space-6);
+        box-sizing: border-box;
+        color: var(--splash-text-muted);
+        display: flex;
+        font-family: var(--splash-font);
+        font-size: var(--splash-caption);
+        gap: var(--splash-space-2);
+        justify-content: center;
+        left: 0;
+        letter-spacing: 0.01em;
+        line-height: 16px;
+        opacity: 0;
+        padding: 0 var(--splash-space-6);
+        pointer-events: none;
+        position: absolute;
+        right: 0;
+        transform: translateY(4px);
+        transition:
+          opacity var(--splash-dur-quick) var(--splash-ease-out),
+          transform var(--splash-dur-quick) var(--splash-ease-out);
+      }
+      .progress[data-state='active'] {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      .progress__spinner {
+        animation: splash-spin 800ms linear infinite;
+        border: 1.5px solid var(--splash-border-strong);
+        border-radius: 50%;
+        border-top-color: var(--splash-accent);
+        box-sizing: border-box;
+        flex: 0 0 auto;
+        height: 14px;
+        width: 14px;
+      }
+      .progress__text {
+        max-width: min(100%, 420px);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      @keyframes splash-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      /*
+        Reduced motion: the media is parked on its final frame by the script,
+        the strip appears without a slide, and the indicator becomes a static
+        accent-capped ring instead of a spinning one.
+      */
+      @media (prefers-reduced-motion: reduce) {
+        .progress {
+          transform: none;
+          transition: none;
+        }
+        .progress__spinner {
+          animation: none;
+          border-top-color: var(--splash-border-strong);
+          border-bottom-color: var(--splash-accent);
+        }
+      }
+      /*
+        Reduced transparency: the only translucent ingredient is the spinner
+        track, which is swapped for its opaque equivalent; the label already
+        sits on the floor colour, so it gets an explicit opaque backing to be safe.
+      */
+      @media (prefers-reduced-transparency: reduce) {
+        .progress {
+          background: var(--splash-floor);
+          padding-bottom: var(--splash-space-2);
+          padding-top: var(--splash-space-2);
+        }
+        .progress__spinner {
+          border-color: var(--splash-border-strong-opaque);
+          border-top-color: var(--splash-accent);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) and (prefers-reduced-transparency: reduce) {
+        .progress__spinner {
+          border-top-color: var(--splash-border-strong-opaque);
+          border-bottom-color: var(--splash-accent);
+        }
       }
     </style>
   </head>
@@ -31,31 +144,101 @@
       id="splash"
       autoplay
       muted
-      loop
       playsinline
       disablepictureinpicture
       src="splash.mp4"
     ></video>
+    <div id="progress" class="progress" data-state="pending" role="status" aria-live="polite">
+      <span class="progress__spinner" aria-hidden="true"></span>
+      <span id="progress-text" class="progress__text"></span>
+    </div>
     <script>
+      /*
+        Host API (called by the Electron main process through
+        webContents.executeJavaScript; the page has no preload):
+
+          window.__readableSplash.setProgress(text)
+
+        - `text` is a string naming the work in progress ("Checking Codex CLI").
+          It replaces the strip label. `null`, `undefined`, or an empty string
+          restores the default label, so the strip is never blank.
+        - Safe to call at any time: before the media ends (the text is stored
+          and revealed once the final frame is parked), repeatedly, and after
+          completion. Returns the label that is now applied.
+        - The strip reveals itself when the media reaches its last frame (or
+          fails); the host never has to call anything for the splash to look
+          finished, and the host, not this page, closes the window.
+
+        Document attributes the host already reads:
+          data-readable-splash-finished="1"  - the last frame is parked.
+          data-readable-splash-motion="reduced" - the reduced-motion path ran.
+      */
       (function () {
+        var DEFAULT_LABEL = "Starting Readable Studio";
         var video = document.getElementById("splash");
-        if (!video) return;
+        var strip = document.getElementById("progress");
+        var label = document.getElementById("progress-text");
+        var reduceMotion =
+          typeof window.matchMedia === "function" &&
+          window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        var finished = false;
+
+        var applyLabel = function (text) {
+          var next = typeof text === "string" && text.trim() ? text.trim() : DEFAULT_LABEL;
+          if (label.textContent !== next) label.textContent = next;
+          return next;
+        };
+        var revealStrip = function () {
+          strip.setAttribute("data-state", "active");
+        };
+        var markFinished = function () {
+          if (finished) return;
+          finished = true;
+          document.documentElement.setAttribute("data-readable-splash-finished", "1");
+          revealStrip();
+        };
+
+        applyLabel(null);
+        window.__readableSplash = {
+          setProgress: function (text) {
+            return applyLabel(text);
+          },
+        };
+
+        if (!video) {
+          markFinished();
+          return;
+        }
+
         var play = function () {
           var attempt = video.play();
           if (attempt && typeof attempt.catch === "function") attempt.catch(function () {});
         };
-        var markFinished = function () {
-          document.documentElement.setAttribute("data-readable-splash-finished", "1");
+        var parkOnLastFrame = function () {
+          try {
+            video.pause();
+          } catch (_error) {}
+          if (Number.isFinite(video.duration) && video.duration > 0) video.currentTime = video.duration;
         };
-        var markFirstLoopFinished = function () {
+        var markFirstPassFinished = function () {
           if (Number.isFinite(video.duration) && video.currentTime >= video.duration - 0.25) markFinished();
         };
-        video.addEventListener("loadedmetadata", function () { video.currentTime = 0; });
-        video.addEventListener("loadeddata", play);
-        video.addEventListener("timeupdate", markFirstLoopFinished);
+
+        if (reduceMotion) {
+          document.documentElement.setAttribute("data-readable-splash-motion", "reduced");
+          video.removeAttribute("autoplay");
+          video.addEventListener("loadedmetadata", function () {
+            parkOnLastFrame();
+            markFinished();
+          });
+        } else {
+          video.addEventListener("loadedmetadata", function () { video.currentTime = 0; });
+          video.addEventListener("loadeddata", play);
+          video.addEventListener("timeupdate", markFirstPassFinished);
+          play();
+        }
         video.addEventListener("ended", markFinished);
         video.addEventListener("error", markFinished);
-        play();
       })();
     </script>
   </body>

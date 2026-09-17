@@ -110,6 +110,8 @@ interface Props {
   // flip between system / light / dark without opening the full Settings
   // dialog. App owns persistence; this component just calls the callback.
   onThemeChange: (theme: AppTheme) => void;
+  /** Hub low-spec toggle. App owns persistence and the root stamp. */
+  onPerformanceProfileChange?: (profile: 'full' | 'low') => void;
   onCreateProject: (
     input: CreateInput & {
       pendingPrompt?: string;
@@ -216,6 +218,7 @@ export function EntryShell({
   onConfigPersist,
   onRefreshAgents,
   onThemeChange,
+  onPerformanceProfileChange,
   onCreateProject,
   onCreatePluginShareProject,
   onOpenNewProject,
@@ -489,6 +492,8 @@ export function EntryShell({
                    the split agent + model pair the composer footer contract
                    requires. */
                 executionSwitcher={composerAgentModelControls}
+                performanceProfile={config.performanceProfile ?? 'full'}
+                onPerformanceProfileChange={onPerformanceProfileChange}
               />
             </div>
             <div data-testid="entry-view-projects" data-active={view === 'projects' ? 'true' : 'false'} {...inactiveViewProps(view === 'projects')}>

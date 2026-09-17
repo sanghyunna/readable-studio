@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import type { PetAtlasRowDef } from '../../types';
+import { useLowSpecProfile } from '../../state/useLowSpecProfile';
 import type { ResolvedPet } from './pets';
 
 interface Props {
@@ -119,18 +120,19 @@ function AtlasSprite({
   const rowFrames = Math.max(1, def.frames);
   const fps = Math.max(1, def.fps);
 
+  const lowSpec = useLowSpecProfile();
   const [frame, setFrame] = useState(0);
   // Reset to frame 0 on row change so a freshly-triggered animation
   // (e.g. tap → waving) starts cleanly instead of mid-cycle.
   useEffect(() => {
     setFrame(0);
-    if (rowFrames <= 1) return;
+    if (rowFrames <= 1 || lowSpec) return;
     const intervalMs = Math.max(16, Math.round(1000 / fps));
     const id = window.setInterval(() => {
       setFrame((f) => (f + 1) % rowFrames);
     }, intervalMs);
     return () => window.clearInterval(id);
-  }, [def.id, def.index, rowFrames, fps]);
+  }, [def.id, def.index, rowFrames, fps, lowSpec]);
 
   // Background math:
   //   - background-size = (cols × 100%) × (rows × 100%)

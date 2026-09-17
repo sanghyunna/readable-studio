@@ -2066,6 +2066,7 @@ function injectDeckBridge(doc: string, initialSlideIndex = 0): string {
     return { active: activeIndex(list), count: list.length };
   };
   function restoreInitialSlide(){
+    if (slidesDisposed || document.hidden) return;
     if (didRestoreInitialSlide) { report(); return; }
     var list = slides();
     if (!list.length) return;
@@ -2146,9 +2147,25 @@ function injectDeckBridge(doc: string, initialSlideIndex = 0): string {
   // For class-toggle decks the deck's own keyboard handler updates classes
   // on the slide elements; an attribute observer translates that into the
   // host counter without depending on scroll events.
+  var slideRetryTimer = null;
+  var slideRetryAttempts = 0;
+  var slideObserver = null;
+  var slidesDisposed = false;
+  function stopSlideRetry(){
+    clearTimeout(slideRetryTimer);
+    slideRetryTimer = null;
+  }
   function observeSlides(){
+    stopSlideRetry();
+    if (slidesDisposed || document.hidden || slideObserver) return;
     var list = slides();
-    if (!list.length) { setTimeout(observeSlides, 150); return; }
+    if (!list.length) {
+      if (slideRetryAttempts < 20) {
+        slideRetryAttempts += 1;
+        slideRetryTimer = setTimeout(observeSlides, 150);
+      }
+      return;
+    }
     try {
       var mo = new MutationObserver(function(){
         clearTimeout(window.__readableStudioReportT2);
@@ -2157,9 +2174,21 @@ function injectDeckBridge(doc: string, initialSlideIndex = 0): string {
       for (var i = 0; i < list.length; i++) {
         mo.observe(list[i], { attributes: true, attributeFilter: ['class', 'style', 'hidden', 'aria-hidden'] });
       }
+      slideObserver = mo;
     } catch (e) {}
-    setTimeout(restoreInitialSlide, 100);
+    slideRetryTimer = setTimeout(restoreInitialSlide, 100);
   }
+  document.addEventListener('visibilitychange', function(){
+    if (document.hidden) stopSlideRetry();
+    else if (slideObserver) restoreInitialSlide();
+    else observeSlides();
+  });
+  window.addEventListener('pagehide', function(){
+    slidesDisposed = true;
+    stopSlideRetry();
+    clearTimeout(window.__readableStudioReportT2);
+    if (slideObserver) slideObserver.disconnect();
+  });
   observeSlides();
 })();</script>`;
   // Manual-edit arrow yield for EVERY deck, including ones generated before the

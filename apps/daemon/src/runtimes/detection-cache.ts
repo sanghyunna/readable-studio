@@ -25,16 +25,25 @@ type DetectionCacheEntry = {
 type DetectionProbe = (
   def: RuntimeAgentDef,
   configuredEnv: Record<string, string>,
+  policy: DiscoveryPolicy,
 ) => Promise<DetectedAgent>;
+
+export type DiscoveryPolicy = 'online' | 'offline';
+
+export function discoveryPolicy(options: DetectionOptions): DiscoveryPolicy {
+  return options.refresh ? 'online' : options.policy ?? 'online';
+}
 
 export type DetectionOptions = {
   readonly enabledAgentIds?: readonly string[];
   readonly refresh?: boolean;
+  readonly policy?: DiscoveryPolicy;
+  readonly signal?: AbortSignal;
 };
 
 const detectionCache = new Map<string, DetectionCacheEntry>();
 
-function detectionEnvFingerprint(
+export function detectionEnvFingerprint(
   def: RuntimeAgentDef,
   configuredEnv: Record<string, string>,
 ): string {
@@ -54,22 +63,24 @@ export function cachedSafeProbe(
   probe: DetectionProbe,
   def: RuntimeAgentDef,
   configuredEnv: Record<string, string> = {},
-  options: Pick<DetectionOptions, 'refresh'> = {},
+  options: DetectionOptions = {},
 ): Promise<DetectedAgent> {
-  // Registration changes must take effect immediately, including an empty catalogue.
-  if (def.modelManagement === 'databricks') return probe(def, configuredEnv);
   const now = Date.now();
-  const key = `${def.id}:${detectionEnvFingerprint(def, configuredEnv)}`;
+  const policy = discoveryPolicy(options);
+  const key = `${def.id}:${policy}:${detectionEnvFingerprint(def, configuredEnv)}`;
   const cached = detectionCache.get(key);
-  if (cached?.promise && !options.refresh) return cached.promise;
+  // Refresh bypasses settled results, never a probe already doing fresh work.
+  if (cached?.promise) return cached.promise;
   if (cached && cached.expiresAtMs > now) {
     if (!options.refresh && cached.value) return Promise.resolve(cached.value);
   }
   if (cached) detectionCache.delete(key);
 
-  const promise = probe(def, configuredEnv).then((agent) => {
+  const promise = probe(def, configuredEnv, policy).then((agent) => {
     if (detectionCache.get(key)?.promise === promise) {
-      detectionCache.set(key, {
+      // Managed registrations are only single-flight, never cached after settling.
+      if (def.modelManagement === 'databricks') detectionCache.delete(key);
+      else detectionCache.set(key, {
         expiresAtMs: Date.now() + DETECTION_CACHE_TTL_MS,
         value: agent,
       });

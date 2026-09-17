@@ -1,0 +1,74 @@
+/* Hub chrome low-spec toggle.
+   Full mode: borderless translucent glass chip, the same material family as
+   the Hub's chrome. Low mode (pressed): deliberate flat accent-tinted state
+   with a solid hairline, so the active state reads even once the glass is
+   gone. Radius sits between the pill and the control corner. Every value is
+   a token; the shared ToggleButton contract owns aria-pressed/data-state. */
+
+.toggle {
+  --hub-toggle-radius: calc((var(--radius-control) + var(--radius-surface)) / 2);
+  gap: 6px;
+  min-block-size: 30px;
+  padding: 0 10px 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--hub-toggle-radius);
+  background: var(--hub-glass-fill);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 560;
+  letter-spacing: 0.01em;
+  -webkit-backdrop-filter: var(--hub-glass-blur);
+  backdrop-filter: var(--hub-glass-blur);
+  box-shadow: none;
+}
+
+.toggle:hover:not(:disabled):not([aria-disabled='true']) {
+  border-color: var(--hub-accent-line);
+  background: var(--hub-glass-fill-strong);
+  color: var(--text);
+}
+
+.toggle[data-state='on'] {
+  border-color: var(--hub-accent-line);
+  background: var(--hub-accent-fill);
+  color: var(--hub-accent-ink);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.toggle[data-state='on']:hover:not(:disabled):not([aria-disabled='true']) {
+  background: var(--hub-accent-tint);
+}
+
+.glyph {
+  display: inline-flex;
+  flex: none;
+  color: var(--hub-accent);
+  transition: opacity var(--dur-quick) var(--ease-out);
+}
+
+/* Sparkles fade while decoration is off: the icon states what was reduced. */
+.toggle[data-state='on'] .glyph {
+  opacity: 0.55;
+}
+
+.label {
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .toggle,
+  .toggle:hover:not(:disabled):not([aria-disabled='true']) {
+    background: var(--bg-panel);
+    border-color: var(--border);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glyph {
+    transition: none;
+  }
+}

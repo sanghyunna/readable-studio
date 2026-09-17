@@ -117,14 +117,17 @@ test('no registry agent substitutes a fallback after failed discovery', async ()
   }
 });
 
-test('failed rescan revokes remembered, static, and custom selections', () => {
+test('clears verified availability but honors explicit selections when a rescan fails', () => {
+  // Given
   const def: RuntimeAgentDef = { ...kimiAgentDef, id: 'revoked-fixture', fallbackModels: [{ id: 'static', label: 'Static' }] };
   rememberLiveModels(def.id, [{ id: 'live', label: 'Live' }]);
-  expect(isKnownModel(def, 'static')).toBe(false);
+  // When
   rememberLiveModels(def.id, []);
-  expect(resolveModelForAgent(def, 'live')).toBeNull();
-  expect(resolveModelForAgent(def, 'static')).toBeNull();
-  expect(resolveModelForAgent(def, 'custom')).toBeNull();
+  // Then
+  for (const model of ['live', 'static', 'custom']) {
+    expect(isKnownModel(def, model)).toBe(false);
+    expect(resolveModelForAgent(def, model)).toBe(model);
+  }
 });
 
 test('vendor-home bins resolve with minimal PATH, preserve overrides, and do not leak homes', () => {

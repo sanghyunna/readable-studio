@@ -41,6 +41,26 @@ describe('fetchAgentsStream', () => {
     vi.unstubAllGlobals();
   });
 
+  it('requests cached detection when startup explicitly disables refresh', async () => {
+    // Given a completed SSE response.
+    const fetchMock = vi.fn(async () => agentStreamResponse('event: done\ndata: {}\n\n'));
+    vi.stubGlobal('fetch', fetchMock);
+    // When startup opts into the daemon warmup result.
+    await fetchAgentsStream({ onAgent: vi.fn(), refresh: false });
+    // Then the wire request distinguishes startup from Rescan.
+    expect(fetchMock).toHaveBeenCalledWith('/api/agents?stream=1&refresh=0', expect.any(Object));
+  });
+
+  it('requests fresh detection when a user rescans', async () => {
+    // Given a completed SSE response.
+    const fetchMock = vi.fn(async () => agentStreamResponse('event: done\ndata: {}\n\n'));
+    vi.stubGlobal('fetch', fetchMock);
+    // When the existing Rescan caller requests detection.
+    await fetchAgentsStream({ onAgent: vi.fn() });
+    // Then refresh remains explicit on the wire.
+    expect(fetchMock).toHaveBeenCalledWith('/api/agents?stream=1&refresh=1', expect.any(Object));
+  });
+
   it('collects streamed agents only after the terminal done event', async () => {
     const agent = {
       id: 'codex',

@@ -1,0 +1,122 @@
+/* Low-spec host material (G003, Lane A).
+   Everything here is keyed on `html[data-performance-profile="low"]` only:
+   the React and pre-hydration stamps set `full` explicitly, so an absent
+   attribute is never a profile and full mode is untouched by construction.
+   `prefers-reduced-transparency` blocks in the owner sheets stay independent.
+
+   Two mechanisms, chosen so this sheet never depends on import order:
+   1. `!important` for the universal backdrop kill and the bloom/loading hides
+      (they must beat (0,3,0) owner rules, CSS-module hashes and inline JSX).
+   2. Custom-property re-values on the root (tokens win by inheritance).
+   No raw colour literals: every fill is a semantic token. */
+
+/* M1: zero effective backdrop-filter on every host element, including
+   body-portalled overlays, hover-added blur and inline `style` sites.
+   Prefix-first: Lightning CSS drops an unprefixed declaration authored
+   before its `-webkit-` twin (tests/styles/backdrop-filter-order.test.ts). */
+html[data-performance-profile="low"] *,
+html[data-performance-profile="low"] *::before,
+html[data-performance-profile="low"] *::after {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+/* M2: opaque material tokens. The doubled selector out-ranks the dark
+   re-values (`[data-theme-scheme="dark"]`, (0,1,0)) and ties-but-follows the
+   system-dark `html:not([data-theme-scheme])` block, whose fills are rgba
+   literals rather than derivations. Engraved wells and glass/control shadows
+   collapse to hairline rings; `--shadow-md`/`--shadow-lg` are the wide-blur
+   stacks consumed by menus, modals and cards. */
+html[data-performance-profile="low"],
+html[data-performance-profile="low"][data-theme-scheme] {
+  --hub-glass-blur: none;
+  --hub-control-blur: none;
+  --app-window-chrome-glass: none;
+  --hub-glass-fill: var(--bg-panel);
+  --hub-glass-fill-strong: var(--bg-elevated);
+  --hub-composer-fill: var(--bg-elevated);
+  --hub-control-surface: var(--bg-elevated);
+  --hub-control-surface-hover: var(--bg-elevated);
+  --hub-control-engraved: var(--bg-elevated);
+  --hub-control-engraved-hover: var(--bg-elevated);
+  --hub-canvas-background: var(--hub-canvas-base);
+  --hub-glass-shadow: 0 1px 2px var(--hub-pearl-elevation), 0 0 0 1px var(--border);
+  --hub-glass-shadow-lg: 0 1px 2px var(--hub-pearl-elevation), 0 0 0 1px var(--border);
+  --hub-control-shadow: 0 0 0 1px var(--border);
+  --hub-control-shadow-hover: 0 0 0 1px var(--border);
+  --hub-control-engraved-shadow: inset 0 0 0 1px var(--border);
+  --hub-control-engraved-shadow-hover: inset 0 0 0 1px var(--border);
+  --shadow-md: 0 1px 2px var(--hub-pearl-elevation), 0 0 0 1px var(--border);
+  --shadow-lg: 0 1px 2px var(--hub-pearl-elevation), 0 0 0 1px var(--border);
+}
+
+/* M3: route blooms (three per route) and the Hub wash are pure atmosphere
+   painted through 80-90px blurs. Same selectors the reduced-transparency
+   blocks in shell.css / hub.css already hide. */
+html[data-performance-profile="low"] .app::before,
+html[data-performance-profile="low"] .split::before,
+html[data-performance-profile="low"] .split::after,
+html[data-performance-profile="low"] .workspace-shell:has(> .workspace-shell__body .entry-main__inner--home)::before,
+html[data-performance-profile="low"] .workspace-shell:has(> .workspace-shell__body .entry-main__inner--home)::after,
+html[data-performance-profile="low"] .workspace-shell:has(> .workspace-shell__body .entry-main__inner--home) > .workspace-shell__body::before,
+html[data-performance-profile="low"] .hub__wash {
+  display: none !important;
+}
+
+/* M4: loading shell paints four viewport gradients plus a drop-shadow logo
+   and has no reduced-preference fallback of its own. */
+html[data-performance-profile="low"] .readable-loading-shell {
+  background: var(--black) !important;
+}
+
+html[data-performance-profile="low"] .readable-loading-shell img {
+  filter: none !important;
+}
+
+/* M5: text carriers whose base rule hardcodes a translucent fill that only
+   read well through blur. Each becomes an opaque elevated surface with the
+   matching ink token. Scrims (`position: fixed; inset: 0`) are deliberately
+   NOT here: a flat translucent scrim without blur is one alpha composite and
+   keeps modal hierarchy readable (M6). `.df-reloading-overlay` is a dimming
+   overlay over a live panel, so it keeps its fill for the same reason. */
+html[data-performance-profile="low"] .plugins-home__html--fallback .plugins-home__html-chrome,
+html[data-performance-profile="low"] .plugins-home__overlay-featured,
+html[data-performance-profile="low"] .plugins-home__overlay-tag,
+html[data-performance-profile="low"] .plugins-home__action--secondary,
+html[data-performance-profile="low"] .project-ds-picker-preview-expand,
+html[data-performance-profile="low"] .ds-source-staging-status,
+html[data-performance-profile="low"] .settings-close,
+html[data-performance-profile="low"] .settings-autosave {
+  background: var(--bg-elevated) !important;
+  color: var(--text) !important;
+}
+
+html[data-performance-profile="low"] .plugins-home__action--secondary {
+  border-color: var(--border) !important;
+}
+
+/* `.entry-run-icon` reads `--hub-control-surface`, already opaque via M2;
+   its ink stays `--text-muted` for the resting state. The trust badge paints
+   through its own `--trust-*` locals, so re-value those instead of the rule. */
+html[data-performance-profile="low"] .plugin-trust-badge--overlay {
+  --trust-fg: var(--text);
+  --trust-bg: var(--bg-elevated);
+  --trust-border: var(--border);
+  --trust-dot: var(--text);
+}
+
+/* The live strip carries an accent gradient at 5% over glass; on an opaque
+   rail it needs a real surface under the gradient to stay legible. */
+html[data-performance-profile="low"] .hub__live {
+  background-color: var(--bg-elevated) !important;
+}
+
+/* M7: repeated-list card surfaces that stack a pearl highlight over an
+   elevation shadow per row. Non-`!important` and state-guarded so hover,
+   selection, validation and `:focus-visible` rings keep their own shadows;
+   the `:not()` list carries the guard rather than specificity. */
+html[data-performance-profile="low"] .design-card:not(:hover, :focus-visible, .is-selected),
+html[data-performance-profile="low"] .ds-card:not(:hover, :focus-visible, .is-selected),
+html[data-performance-profile="low"] .comment-card:not(:hover, :focus-visible, .is-selected) {
+  box-shadow: 0 0 0 1px var(--border);
+}

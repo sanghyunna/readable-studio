@@ -51,6 +51,8 @@ vi.mock('../../src/agents.js', async (importOriginal) => {
 });
 
 import { registerStaticResourceRoutes } from '../../src/routes/static-resource.js';
+import { startStartupScan } from '../../src/runtimes/detection.js';
+import type { DetectedAgent } from '../../src/runtimes/types.js';
 
 describe('GET /api/agents respects enabledAgentIds', () => {
   let server: http.Server;
@@ -223,6 +225,18 @@ describe('GET /api/agents respects enabledAgentIds', () => {
     expect(options?.enabledAgentIds).toEqual(['cursor-agent']);
   });
 
+  it('accepts warmup results when the initial stream requests cached detection', async () => {
+    // Given an initial renderer request, not a user rescan.
+    detectAgentsStreamMock.mockImplementationOnce(async function* () {
+      yield { id: 'codex', available: false };
+    });
+    // When it reaches the real HTTP surface.
+    const res = await fetch(`${baseUrl}/api/agents?stream=1&refresh=0`);
+    await res.text();
+    // Then it does not force a duplicate probe.
+    expect(detectAgentsStreamMock.mock.calls[0]?.[1]).toMatchObject({ refresh: false });
+  });
+
   it('forces a fresh probe for streamed rescans', async () => {
     detectAgentsStreamMock.mockImplementationOnce(async function* () {
       yield { id: 'codex', available: true };
@@ -234,6 +248,32 @@ describe('GET /api/agents respects enabledAgentIds', () => {
 
     const options = detectAgentsStreamMock.mock.calls[0]?.[1];
     expect(options).toMatchObject({ refresh: true });
+  });
+
+  it('reports running and terminal scan progress through HTTP', async () => {
+    // Given a session waiting for its only probe.
+    const def = AGENT_DEFS[0];
+    if (!def) throw new Error('registry is empty');
+    let finish: (agent: DetectedAgent) => void = () => {};
+    const pending = new Promise<DetectedAgent>((resolve) => { finish = resolve; });
+    const session = startStartupScan([def], () => pending);
+    // When the splash reads progress before and after completion.
+    const running = await fetch(`${baseUrl}/api/agents/scan`);
+    expect(await running.json()).toMatchObject({ scan: { phase: 'running', currentAgentId: def.id, completed: 0, total: 1 } });
+    finish({ ...def, available: false, models: [], modelsSource: 'live' });
+    await Promise.all(session.promises.values());
+    const done = await fetch(`${baseUrl}/api/agents/scan`);
+    // Then the HTTP payload exposes the terminal state without browser caching.
+    expect(done.headers.get('cache-control')).toBe('no-store');
+    expect(await done.json()).toEqual({ scan: { phase: 'done', currentAgentId: null, currentAgentName: null, completed: 1, total: 1 } });
+  });
+
+  it('forces verification when a batch request explicitly rescans', async () => {
+    // Given an explicit non-streaming rescan.
+    // When it reaches the HTTP route.
+    await fetch(`${baseUrl}/api/agents?refresh=1`);
+    // Then the shared detection boundary receives the refresh authorization.
+    expect(detectAgentsMock.mock.calls[0]?.[1]).toMatchObject({ refresh: true });
   });
 
   it('serves a static catalog at /api/agents/catalog without probing', async () => {

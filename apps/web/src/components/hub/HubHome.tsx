@@ -22,6 +22,8 @@ import { Icon } from '../Icon';
 import type { PluginLoopSubmit } from '../PluginLoopHome';
 import type { HubImportFileOutcome } from './drop-to-edit';
 import { HubDropToEdit } from './HubDropToEdit';
+import chromeStyles from './HubChrome.module.css';
+import { HubPerformanceToggle, type PerformanceProfile } from './HubPerformanceToggle';
 import { useHubRail } from './HubRailContext';
 import { relativeTimeShort } from './relativeTime';
 import type { HubDestination } from './types';
@@ -87,6 +89,13 @@ interface Props {
    * threading a dozen execution inputs through this component.
    */
   executionSwitcher?: ReactNode;
+  /**
+   * Low-spec profile mirrored from `AppConfig.performanceProfile`. The chrome
+   * toggle renders only when a host wires the change handler (EntryShell
+   * always does); it never replaces another control.
+   */
+  performanceProfile?: PerformanceProfile;
+  onPerformanceProfileChange?: (profile: PerformanceProfile) => void;
 }
 
 export function HubHome({
@@ -108,6 +117,8 @@ export function HubHome({
   designSystems = EMPTY_DESIGN_SYSTEMS,
   defaultDesignSystemId = null,
   executionSwitcher,
+  performanceProfile = 'full',
+  onPerformanceProfileChange,
 }: Props) {
   const t = useT();
   const rail = useHubRail();
@@ -138,6 +149,16 @@ export function HubHome({
       </div>
 
       <div className="hub__stage">
+        {/* Stable chrome row: sits above the start surface, away from the
+            composer's agent / model / send cluster. */}
+        {onPerformanceProfileChange ? (
+          <div className={chromeStyles.chrome} data-testid="hub-chrome">
+            <HubPerformanceToggle
+              profile={performanceProfile}
+              onProfileChange={onPerformanceProfileChange}
+            />
+          </div>
+        ) : null}
         <div className="hub__start">
           {running ? (
             <button

@@ -1,6 +1,7 @@
 import type { Express } from 'express';
 import type { RouteDeps } from './server-context.js';
 import { proxyDispatcherRequestInit } from './connectionTest.js';
+import { InvalidAppConfigError } from './app-config.js';
 
 export interface RegisterMediaRoutesDeps extends RouteDeps<'http' | 'paths' | 'appConfig' | 'nativeDialogs' | 'research'> {}
 
@@ -33,10 +34,15 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
     try {
       const config = await writeAppConfig(RUNTIME_DATA_DIR, req.body);
       res.json({ config });
-    } catch (err: any) {
+    } catch (err: unknown) {
+      if (err instanceof InvalidAppConfigError) {
+        return ctx.http.sendApiError(res, 400, err.code, err.message, {
+          details: { kind: 'validation', issues: [{ path: err.key, message: err.message }] },
+        });
+      }
       res
         .status(500)
-        .json({ error: String(err && err.message ? err.message : err) });
+        .json({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 

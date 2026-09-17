@@ -17,7 +17,8 @@ import type { ReadableStudioHostActionResult, ReadableStudioHostCaptureResult } 
 import { openValidatedDirectory } from "./open-path.js";
 import { createElectronPdfTarget, exportPdfFromHtml, savePrintReadyDocumentAsPdf } from "./pdf-export.js";
 import type { PrintReadyPdfOptions } from "./pdf-export.js";
-import { remainingSplashHoldMs, shouldFinishSplashPolling } from "./splash-reveal.js";
+import { runStartupSplash } from "./startup-splash.js";
+import { readDaemonScan } from "./scan-progress.js";
 import { applyDesktopBaselineZoom } from "./zoom.js";
 
 const execFileAsync = promisify(execFile);
@@ -221,22 +222,6 @@ export function signDesktopImportToken(
 
 const PENDING_POLL_MS = 120;
 const RUNNING_POLL_MS = 2000;
-// Minimum time the splash window stays on screen before we reveal the main
-// window. It is sized to outlast the ~6.75s clip so the brand animation always
-// plays through. The splash is shown immediately and in parallel with the
-// daemon/web boot (see the packaged entry), so this time overlaps startup rather
-// than adding to it; the <video> holds on its final frame (it does not loop)
-// while the runtime finishes coming up. See `createSplashWindow`.
-const MIN_SPLASH_MS = 6800;
-// While the splash is up, the real web app loads in a hidden main window. We
-// reveal it only once the web bundle reports it has actually mounted (it sets
-// `data-readable-app-mounted="1"` on first paint of the real UI), so the user never
-// sees the web's own "Loading Readable Studio…" shell flash between the splash and
-// the app. Poll cadence + a hard ceiling so a missing mount signal can never
-// strand the user on the splash forever.
-const WEB_MOUNT_POLL_MS = 80;
-const WEB_MOUNT_REVEAL_TIMEOUT_MS = 15000;
-
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 const MAX_CONSOLE_ENTRIES = 200;
 const DESKTOP_PET_WINDOW_WIDTH = 360;
@@ -1810,21 +1795,23 @@ export async function createDesktopRuntime(options: DesktopRuntimeOptions): Prom
     if (splash != null && !splash.isDestroyed()) splash.close();
   };
 
-  // Hold the splash until BOTH (a) the web bundle reports it has mounted and
-  // (b) the video reports ended/error through its persistent document marker.
-  // The marker matters because the minimum-hold clock starts when the window is
-  // created, before file loading and the first decoded video frame. A hard
-  // ceiling guarantees the user is never stranded if either signal never
-  // arrives; MIN_SPLASH_MS remains the visual floor on every exit path.
+  // The isolated controller holds for mount, video and scan settlement, with
+  // a 6.8-second visual floor and a hard ceiling independent of renderer/HTTP reads.
   const revealWhenReady = async (): Promise<void> => {
     if (revealing || revealed) return;
     revealing = true;
-    const deadline = Date.now() + WEB_MOUNT_REVEAL_TIMEOUT_MS;
-    while (!stopped && !window.isDestroyed()) {
-      const deadlineReached = Date.now() >= deadline;
-      const [mounted, splashFinished] = deadlineReached
-        ? [false, false]
-        : await Promise.all([
+    await runStartupSplash({
+      startedAt: splashStartedAt,
+      isStopped: () => stopped || window.isDestroyed(),
+      readScan: () => readDaemonScan(options.discoverDaemonUrl ?? options.discoverUrl),
+      executeSplash: async (script) => {
+        if (splash != null && !splash.isDestroyed()) {
+          return splash.webContents.executeJavaScript(script, true);
+        }
+      },
+      reveal: revealMainWindow,
+      readReadiness: async () => {
+        const [mounted, splashFinished] = await Promise.all([
             window.webContents
               .executeJavaScript(
                 `document.documentElement.getAttribute("data-readable-app-mounted") === "1"`,
@@ -1842,29 +1829,9 @@ export async function createDesktopRuntime(options: DesktopRuntimeOptions): Prom
                   .catch(() => false)
               : Promise.resolve(false),
           ]);
-      if (
-        shouldFinishSplashPolling({
-          appMounted: mounted === true,
-          deadlineReached,
-          splashFinished: splashFinished === true,
-        })
-      ) {
-        const timing = {
-          elapsedMs: Date.now() - splashStartedAt,
-          uptimeMs: Math.round(process.uptime() * 1000),
-        };
-        if (deadlineReached) {
-          console.warn("splash reveal deadline reached", timing);
-        } else {
-          console.info("web app and splash ready", timing);
-        }
-        break;
-      }
-      await delay(WEB_MOUNT_POLL_MS);
-    }
-    const remaining = remainingSplashHoldMs(splashStartedAt, Date.now(), MIN_SPLASH_MS);
-    if (remaining > 0) await delay(remaining);
-    revealMainWindow();
+        return { appMounted: mounted === true, splashFinished: splashFinished === true };
+      },
+    });
   };
 
   const schedule = (delayMs: number) => {

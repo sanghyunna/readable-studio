@@ -5,11 +5,9 @@ export const DEFAULT_MODEL_OPTION: RuntimeModelOption = {
   label: 'Default (CLI config)',
 };
 
-// Daemon's /api/chat needs to validate the user's model pick against the
-// list we last surfaced to the UI. We keep a per-agent cache of the most
-// recent live list (refreshed every detectAgents() call). Once detection has
-// run, its result is authoritative, including an empty/unusable result. A model that's neither
-// gets rejected so a stale or hostile value can't smuggle arbitrary flags.
+// Discovery owns verified availability, including an empty/unusable result.
+// Submission admission is separate: an empty scan must not veto an explicit
+// static or safe custom selection, nor imply that no selection is required.
 const liveModelCache = new Map<string, Set<string>>();
 const liveModelOrder = new Map<string, string[]>();
 
@@ -61,13 +59,14 @@ export function agentHasModelChoice(
   def: RuntimeAgentDef,
   liveModelScope?: string | null,
 ): boolean {
+  if (def.modelSelectionRequired) return true;
   const remembered = liveModelOrder.get(liveModelCacheKey(def.id, liveModelScope));
-  if (remembered) return remembered.some((id) => id !== DEFAULT_MODEL_OPTION.id);
-  const hasConcreteFallback = def.fallbackModels.some(
+  if (remembered?.length) return remembered.some((id) => id !== DEFAULT_MODEL_OPTION.id);
+  // Only an explicit no-choice sentinel permits a CLI-owned default. An
+  // undiscovered catalogue is not evidence that the agent has no choices.
+  return def.fallbackModels.length === 0 || def.fallbackModels.some(
     (model) => model.id !== DEFAULT_MODEL_OPTION.id,
   );
-  const liveModels = liveModelOrder.get(liveModelCacheKey(def.id, liveModelScope)) ?? [];
-  return hasConcreteFallback || liveModels.some((id) => id !== DEFAULT_MODEL_OPTION.id);
 }
 
 // Admit only a model the caller explicitly supplied. Catalog-only adapters
@@ -82,8 +81,6 @@ export function resolveModelForAgent(
   liveModelScope?: string | null,
 ): string | null {
   if (typeof requested !== 'string') return null;
-  // A failed rescan revokes even custom/stale saved selections.
-  if (liveModelCache.get(liveModelCacheKey(def.id, liveModelScope))?.size === 0) return null;
   const trimmed = requested.trim();
   if (!trimmed) return null;
   if (trimmed === DEFAULT_MODEL_OPTION.id) {
@@ -92,7 +89,7 @@ export function resolveModelForAgent(
       ? trimmed
       : null;
   }
-  if (isKnownModel(def, trimmed, liveModelScope)) return trimmed;
+  if (isKnownModel(def, trimmed, liveModelScope) || def.fallbackModels.some((model) => model.id === trimmed)) return trimmed;
   if (def.supportsCustomModel === false) return null;
   return sanitizeCustomModel(trimmed);
 }

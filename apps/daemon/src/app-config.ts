@@ -15,6 +15,7 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { createHash, randomBytes } from 'node:crypto';
 import path from 'node:path';
+import type { AgentScanCompletion, PerformanceProfile } from '@readable-studio/contracts';
 import { expandHomePrefix } from './home-expansion.js';
 import {
   AGENT_DEFS,
@@ -93,6 +94,8 @@ export interface ProjectLocationPrefs {
 }
 
 export interface AppConfigPrefs {
+  readonly agentScan?: AgentScanCompletion;
+  readonly performanceProfile?: PerformanceProfile;
   onboardingCompleted?: boolean;
   agentId?: string | null;
   agentModels?: Record<string, AgentModelPrefs>;
@@ -115,7 +118,19 @@ export interface AppConfigPrefs {
   offeredAgentIds?: string[];
 }
 
+export class InvalidAppConfigError extends Error {
+  readonly name = 'InvalidAppConfigError';
+  readonly code = 'VALIDATION_FAILED';
+  readonly key = 'performanceProfile';
+
+  constructor() {
+    super('performanceProfile must be full or low (null resets to full)');
+  }
+}
+
 const ALLOWED_KEYS: ReadonlySet<keyof AppConfigPrefs> = new Set([
+  'agentScan',
+  'performanceProfile',
   'onboardingCompleted',
   'agentId',
   'agentModels',
@@ -325,6 +340,29 @@ function applyConfigValue(
   key: keyof AppConfigPrefs,
   value: unknown,
 ): void {
+  if (key === 'agentScan') {
+    if (typeof value === 'object' && value !== null &&
+        'completedAt' in value && typeof value.completedAt === 'string' &&
+        Number.isFinite(Date.parse(value.completedAt)) &&
+        'agentIds' in value && Array.isArray(value.agentIds) &&
+        value.agentIds.every((id: unknown) => typeof id === 'string' && id.length > 0)) {
+      target[key] = { completedAt: value.completedAt, agentIds: [...value.agentIds] };
+    }
+    return;
+  }
+  if (key === 'performanceProfile') {
+    switch (value) {
+      case 'full':
+      case 'low':
+        target[key] = value;
+        return;
+      case null:
+        target[key] = 'full';
+        return;
+      default:
+        throw new InvalidAppConfigError();
+    }
+  }
   if (key === 'onboardingCompleted') {
     if (typeof value === 'boolean') target[key] = value;
     return;
@@ -459,7 +497,7 @@ export async function readAppConfig(dataDir: string): Promise<AppConfigPrefs> {
 }
 
 async function doRead(dataDir: string): Promise<AppConfigPrefs> {
-  const base = await readAppConfigFileOnly(dataDir);
+  const base: AppConfigPrefs = { performanceProfile: 'full', ...await readAppConfigFileOnly(dataDir) };
   // An absent selection already follows the live registry. Start recording
   // history once there is an explicit selection; writes record the whole
   // current catalog before any user opt-out can be mistaken for a new id.
@@ -545,6 +583,10 @@ export async function writeAppConfig(
   dataDir: string,
   partial: Record<string, unknown>,
 ): Promise<AppConfigPrefs> {
+  // Reject before doRead: legacy reads can persist agent-history migrations.
+  if (Object.prototype.hasOwnProperty.call(partial, 'performanceProfile')) {
+    applyConfigValue({}, 'performanceProfile', partial.performanceProfile);
+  }
   return withConfigLock(dataDir, () => doWrite(dataDir, partial));
 }
 

@@ -1,0 +1,71 @@
+/* Low-spec motion shutdown (G003, Lane B).
+
+   Keyed on the root stamp `html[data-performance-profile="low"]` set by
+   `App.tsx` / `layout.tsx`. The full profile stamps `"full"`, never an absent
+   attribute, so every rule here keys on `="low"` and nothing else. This sheet
+   is independent of `prefers-reduced-motion`: the OS axis keeps its own blocks
+   in `entrance.css` and `home/hub.css`; nothing here touches a media query.
+
+   Every rule is `!important` on purpose. `src/index.css` imports this folder
+   last, but `styles/home/index.css` is imported after `src/index.css` by
+   `app/layout.tsx`, so the folder cannot rely on import order and must win by
+   priority instead. Motion only: no display/visibility/opacity/pointer-events,
+   no focus or state rings. A closing overlay still settles through its own
+   exit path; `useExitPhaseInert` and `useFadingSurface` clean up as before. */
+
+/* T1 - near-zero, NOT `none` and NOT `0s`.
+   Chromium fires `animationend` / `transitionend` for a positive tiny duration
+   and fires nothing for `none` or `0s`. Three host paths depend on that event:
+   `HomeHero.tsx` (`onAnimationEnd` clears `.home-hero__attention-sheen`),
+   `useExitPhaseInert` (releases `inert` on transitionend/animationend), and
+   `useTransparentPhaseInert` (skips gating when delay + activeDuration <= 1ms,
+   so entrances become non-gating). `iteration-count: 1` stops the near-zero
+   infinite loop machinery that a duration-only reset leaves running.
+   `fill-mode: both` entrances land on their `to` keyframe after one iteration -
+   the same resting state as full mode. Accordions, rail track, chip widths and
+   gallery travel all collapse to instant through this rule alone. */
+html[data-performance-profile="low"] *,
+html[data-performance-profile="low"] *::before,
+html[data-performance-profile="low"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-delay: 0ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  transition-delay: 0ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* T2 - perpetual decorative loops with no end-event consumer.
+   `animation: none` is allowed ONLY here. Each selector is a background-position
+   sheen, a spinner, or a sprite loop; none has an `animationend` listener
+   (`tests/styles/low-spec-motion.test.ts` pins this allowlist). Finite state
+   animations (`.export-ready-nudge`, `.agent-card--amr-highlight`, the
+   attention sheen) stay on the T1 path so they still finish and fire. */
+html[data-performance-profile="low"] .icon-spin,
+html[data-performance-profile="low"] .chat-loading-lines span,
+html[data-performance-profile="low"] .recent-projects__deck-cover-loading,
+html[data-performance-profile="low"] .skeleton-block,
+html[data-performance-profile="low"] .design-card-skeleton .design-card-thumb,
+html[data-performance-profile="low"] .agent-scan-card__rows em,
+html[data-performance-profile="low"] .pet-codex-card:hover .pet-codex-thumb-preview,
+html[data-performance-profile="low"] .pet-codex-card:focus-within .pet-codex-thumb-preview {
+  animation: none !important;
+}
+
+/* Sprite loops set visible state through the keyframe (`viewer/pets.css`),
+   so pin frame 0 explicitly - mirrors that file's reduced-motion block. The
+   strip sprite's `animation` is authored inline by `PetSpriteFace`; an author
+   `!important` outranks a non-important inline declaration. The atlas sprite
+   keeps its inline `background-position-y` (row select) untouched. */
+html[data-performance-profile="low"] .pet-image.frames,
+html[data-performance-profile="low"] .pet-image.atlas {
+  animation: none !important;
+  background-position-x: 0% !important;
+}
+
+/* T3 - gallery hover auto-pan (`home/plugins-home.css`). T1 makes the 6s `top`
+   transition instant, but the 1440x2200 iframe would still jump to -404px and
+   stream a fresh viewport of pixels on every hover. Pin the offset instead. */
+html[data-performance-profile="low"] .plugins-home__card--gallery:hover .plugins-home__html-iframe {
+  top: 0 !important;
+}

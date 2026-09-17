@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { wellKnownUserToolchainBins } from '@readable-studio/platform';
 import { resolveSandboxRuntimeConfigFromEnv } from '../sandbox-mode.js';
 import { expandHomePath } from './paths.js';
+import { cachedExecutableAlternative, executableEnvironmentKey } from './detection-executable-cache.js';
 import type { RuntimeAgentDef } from './types.js';
 
 const RUNTIME_PROJECT_ROOT = path.resolve(
@@ -49,15 +50,16 @@ function userToolchainDirs() {
   const homeOverride =
     sandboxRuntime?.roots.agentHomeDir ?? process.env.READABLE_AGENT_HOME;
   const home = homeOverride || homedir();
+  const cacheKey = `${home}:${executableEnvironmentKey()}`;
   const now = Date.now();
   if (
-    cachedToolchainHome === home &&
+    cachedToolchainHome === cacheKey &&
     cachedToolchainDirs &&
     now - cachedToolchainDirsAt < TOOLCHAIN_DIR_CACHE_TTL_MS
   ) {
     return cachedToolchainDirs;
   }
-  cachedToolchainHome = home;
+  cachedToolchainHome = cacheKey;
   cachedToolchainDirsAt = now;
   // When READABLE_AGENT_HOME is set, scope the search strictly to the override
   // home: skip Homebrew / /usr/local *and* pass an empty env so that a
@@ -249,25 +251,12 @@ function packagedBuiltInExecutable(
   if (
     !resolveAmrOpenCodeExecutable({ ...process.env, ...configuredEnv }) &&
     !packagedVelaOpenCodeCompanionTree(resourceRoot)
-  ) {
-    return null;
-  }
-  const candidate = path.join(
+  ) return null;
+  return executableFilePath(path.join(
     resourceRoot,
     'bin',
     process.platform === 'win32' ? 'vela.exe' : 'vela',
-  );
-  try {
-    if (!statSync(candidate).isFile()) return null;
-    if (process.platform === 'win32') {
-      if (!looksExecutableOnWindows(candidate)) return null;
-    } else {
-      accessSync(candidate, constants.X_OK);
-    }
-    return candidate;
-  } catch {
-    return null;
-  }
+  ));
 }
 
 export function resolveAgentExecutable(
@@ -297,15 +286,21 @@ export function inspectAgentExecutableResolution(
     def.bin,
     ...(Array.isArray(def.fallbackBins) ? def.fallbackBins : []),
   ];
-  let pathResolvedPath: string | null = null;
-  for (const bin of candidates) {
-    const resolved = resolveOnPath(bin);
-    if (resolved) {
-      pathResolvedPath = resolved;
-      break;
+  const builtInPath = configuredOverridePath ? null : packagedBuiltInExecutable(def, configuredEnv);
+  const resolveAlternative = () => {
+    for (const bin of candidates) {
+      const resolved = resolveOnPath(bin);
+      if (resolved) return resolved;
     }
-  }
-  const builtInPath = packagedBuiltInExecutable(def, configuredEnv);
+    return null;
+  };
+  const authoritativePath = configuredOverridePath || builtInPath;
+  const pathResolvedPath = authoritativePath
+    ? cachedExecutableAlternative(
+        JSON.stringify([candidates, authoritativePath, configuredEnv, executableEnvironmentKey()]),
+        resolveAlternative,
+      )
+    : resolveAlternative();
   return {
     configuredOverridePath,
     pathResolvedPath,

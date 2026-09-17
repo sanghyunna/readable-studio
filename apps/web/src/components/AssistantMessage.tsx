@@ -34,6 +34,7 @@ import { NextStepActions } from "./NextStepActions";
 import type { DesignToolboxActionId } from "../runtime/design-toolbox";
 import { copyToClipboard } from "../lib/copy-to-clipboard";
 import { useT } from "../i18n";
+import { useLowSpecProfile } from "../state/useLowSpecProfile";
 import { deriveFileOps, type FileOpEntry } from "../runtime/file-ops";
 import {
   isTodoWriteToolName,
@@ -2229,12 +2230,13 @@ function useLiveElapsed(
   endedAt: number | undefined,
   fixedDurationMs: number | undefined,
 ): string {
+  const lowSpec = useLowSpecProfile();
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!streaming) return;
-    const id = window.setInterval(() => setNow(Date.now()), 200);
+    const id = window.setInterval(() => setNow(Date.now()), lowSpec ? 1000 : 200);
     return () => window.clearInterval(id);
-  }, [streaming]);
+  }, [streaming, lowSpec]);
   if (!streaming && endedAt === undefined && typeof fixedDurationMs === "number") {
     return formatElapsedMs(fixedDurationMs);
   }

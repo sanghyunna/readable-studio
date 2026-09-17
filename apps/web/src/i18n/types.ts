@@ -428,6 +428,8 @@ export interface Dict {
   'settings.languageHint': string;
   'settings.appearance': string;
   'settings.appearanceHint': string;
+  'settings.lowSpecMode': string;
+  'settings.lowSpecModeHint': string;
   'settings.themeSystem': string;
   'settings.themeLight': string;
   'settings.themeDark': string;
@@ -938,6 +940,8 @@ export interface Dict {
   'hub.noProjectsTitle': string;
   'hub.noProjectsBody': string;
   'hub.untitledSession': string;
+  'hub.lowSpecMode': string;
+  'hub.lowSpecModeHint': string;
   'hub.designSystem': string;
   'hub.starting': string;
   'hub.library': string;

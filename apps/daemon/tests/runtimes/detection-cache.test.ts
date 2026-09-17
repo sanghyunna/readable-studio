@@ -91,7 +91,7 @@ describe('agent detection cache', () => {
     expect(versionProbeCount).toBe(2);
   });
 
-  it('bypasses an in-flight cached detection when refresh is requested', async () => {
+  it('joins an in-flight cached detection when refresh is requested', async () => {
     type VersionProbeResult = { readonly stdout: string; readonly stderr: string };
     let versionProbeCount = 0;
     let finishFirstProbe: (result: VersionProbeResult) => void = (_result) => {
@@ -123,9 +123,30 @@ describe('agent detection cache', () => {
     const refreshResult = await refreshResultPromise;
 
     expect(firstResult.value?.version).toBe('codex 1.2.3');
-    expect(refreshResult.value?.version).toBe('codex 1.2.4');
-    expect(probesStartedBeforeFirstFinished).toBe(2);
-    expect(versionProbeCount).toBe(2);
+    expect(refreshResult.value?.version).toBe('codex 1.2.3');
+    expect(probesStartedBeforeFirstFinished).toBe(1);
+    expect(versionProbeCount).toBe(1);
+  });
+
+  it('joins daemon warmup when the initial renderer stream starts', async () => {
+    // Given a warmup whose version probe has not settled.
+    let finishVersion: (value: { stdout: string; stderr: string }) => void = () => {
+      throw new Error('version probe not started');
+    };
+    const version = new Promise<{ stdout: string; stderr: string }>((resolve) => { finishVersion = resolve; });
+    execAgentFileMock.mockImplementation((_command, args) =>
+      Array.isArray(args) && args.join('\0') === '--version'
+        ? version : Promise.resolve({ stdout: '', stderr: '' }));
+    const { detectAgents, detectAgentsStream } = await import('../../src/runtimes/detection.js');
+    const warmup = detectAgents({}, { enabledAgentIds: ['codex'] });
+    // When the renderer subscribes before warmup completes.
+    const stream = detectAgentsStream({}, { enabledAgentIds: ['codex'] });
+    const next = stream.next();
+    finishVersion({ stdout: 'codex 1.2.3', stderr: '' });
+    // Then both receive the same classification from one probe.
+    const [agents, event] = await Promise.all([warmup, next]);
+    expect(event.value).toEqual(agents[0]);
+    expect(codexVersionProbeCalls()).toHaveLength(1);
   });
 
   it('invalidates memoized detection when the configured environment fingerprint changes', async () => {

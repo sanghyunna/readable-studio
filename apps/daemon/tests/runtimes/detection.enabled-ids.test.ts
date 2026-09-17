@@ -5,7 +5,17 @@
 // `fallbackBins`. Unknown ids must be ignored, duplicates collapsed,
 // and aliases (`agent`, `cursor`) normalized to `cursor-agent`.
 
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
+import type { RuntimeAgentDef } from '../../src/runtimes/types.js';
+
+vi.mock('../../src/runtimes/detection-probe.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/runtimes/detection-probe.js')>();
+  return {
+    ...actual,
+    // This suite tests registry selection, not installed CLIs or network readiness.
+    safeProbe: async (def: RuntimeAgentDef) => ({ ...def, available: false, models: [], modelsSource: 'live' as const }),
+  };
+});
 
 import { detectAgents } from '../../src/runtimes/detection.js';
 import { shouldRunAgentNetworkDiscovery } from '../../src/runtimes/detection-probe.js';
@@ -19,8 +29,8 @@ function ids(agents: { id: string }[]): string[] {
 
 describe('packaged offline discovery', () => {
   test('skips only network-capable discovery probes when explicitly requested', () => {
-    expect(shouldRunAgentNetworkDiscovery({ READABLE_AGENT_DISCOVERY_OFFLINE: '1' })).toBe(false);
-    expect(shouldRunAgentNetworkDiscovery({})).toBe(true);
+    expect(shouldRunAgentNetworkDiscovery('offline')).toBe(false);
+    expect(shouldRunAgentNetworkDiscovery()).toBe(true);
   });
 });
 

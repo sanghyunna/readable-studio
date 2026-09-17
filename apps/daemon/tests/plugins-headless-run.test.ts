@@ -692,9 +692,6 @@ process.stdin.on('end', () => {
     // /api/runs (firePipelineForRun runs before design.runs.start
     // schedules the agent), so by the time we GET /api/runs/:id/events
     // the run buffer already contains pipeline_stage_started.
-    // Wait briefly for the async tail (devloop iteration log) to settle.
-    await new Promise((r) => setTimeout(r, 30));
-
     const statusResp = await fetch(`${baseUrl}/api/runs/${encodeURIComponent(runBody.runId)}`);
     const statusBody = (await statusResp.json()) as { id: string };
     expect(statusBody.id).toBe(runBody.runId);

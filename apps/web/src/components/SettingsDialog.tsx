@@ -4885,6 +4885,9 @@ function AppearanceSection({
   const accentLabel = t('pet.fieldAccent');
   const defaultAccentLabel = t('pet.fieldAccentDefault');
   const customAccentLabel = t('pet.fieldAccentCustom');
+  // Same field the Hub chrome toggle writes; the dialog autosave persists it
+  // through App, which restamps the root and flips MotionConfig.
+  const lowSpec = cfg.performanceProfile === 'low';
 
   // Apply the draft theme immediately so the user sees a live preview
   // before hitting Save. SettingsDialog's cleanup reverts this on cancel.
@@ -4994,6 +4997,18 @@ function AppearanceSection({
             onChange={(e) => setAccentColor(e.target.value)}
           />
         </div>
+      </div>
+      <div className="field">
+        <Switch
+          data-testid="settings-low-spec-switch"
+          checked={lowSpec}
+          onCheckedChange={(next: boolean) => {
+            setCfg((c) => ({ ...c, performanceProfile: next ? 'low' : 'full' }));
+          }}
+        >
+          {t('settings.lowSpecMode')}
+        </Switch>
+        <small className="hint">{t('settings.lowSpecModeHint')}</small>
       </div>
     </section>
   );

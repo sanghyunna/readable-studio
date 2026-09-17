@@ -1,4 +1,5 @@
 import { execAgentFile } from './invocation.js';
+import type { DiscoveryPolicy } from './detection-cache.js';
 import { applyAgentLaunchEnv, resolveAgentLaunch } from './launch.js';
 import { spawnEnvForAgent } from './env.js';
 import { probeAgentAuthStatus } from './auth.js';
@@ -89,7 +90,7 @@ async function probeCapabilities(
   }
 }
 
-function stripFns(
+export function stripFns(
   def: RuntimeAgentDef,
 ): Omit<DetectedAgent, 'models' | 'modelsSource' | 'available' | 'path' | 'version'> {
   const {
@@ -113,14 +114,15 @@ function stripFns(
 }
 
 export function shouldRunAgentNetworkDiscovery(
-  env: NodeJS.ProcessEnv = process.env,
+  policy: DiscoveryPolicy = 'online',
 ): boolean {
-  return env.READABLE_AGENT_DISCOVERY_OFFLINE !== '1';
+  return policy === 'online';
 }
 
 async function probe(
   def: RuntimeAgentDef,
-  configuredEnv: Record<string, string> = {},
+  configuredEnv: Record<string, string>,
+  policy: DiscoveryPolicy,
 ): Promise<DetectedAgent> {
   if (def.detect) {
     const managed = await def.detect();
@@ -150,7 +152,7 @@ async function probe(
     ]), path: launch.selectedPath };
   }
   let compatibilityFailure: ModelDiscoveryFailure | undefined;
-  const online = shouldRunAgentNetworkDiscovery(probeEnv);
+  const online = shouldRunAgentNetworkDiscovery(policy);
   if (online && def.compatibilityProbe) {
     try {
       await def.compatibilityProbe(launch.launchPath, probeEnv);
@@ -207,9 +209,10 @@ async function probe(
 export async function safeProbe(
   def: RuntimeAgentDef,
   configuredEnv: Record<string, string> = {},
+  policy: DiscoveryPolicy = 'online',
 ): Promise<DetectedAgent> {
   try {
-    return await probe(def, configuredEnv);
+    return await probe(def, configuredEnv, policy);
   } catch {
     return unavailableAgent(def, [{
       reason: 'auth-unknown', severity: 'error',

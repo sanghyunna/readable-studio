@@ -7465,7 +7465,12 @@ Common options:
       headers: { 'content-type': 'application/json' },
       body:    JSON.stringify(next),
     });
-    if (!resp.ok) return structuredHttpFailure(resp);
+    if (!resp.ok) {
+      // Keep the daemon's typed validation envelope and let Windows drain I/O.
+      process.stderr.write(JSON.stringify(await resp.json()) + '\n');
+      process.exitCode = resp.status === 400 ? 2 : 1;
+      return null;
+    }
     return (await resp.json())?.config ?? next;
   };
 
@@ -7513,9 +7518,9 @@ Common options:
         console.error('Provide a value (positional, --value, or --value-json).');
         process.exit(2);
       }
-      const cfg = await fetchConfig();
-      const next = { ...cfg, [key]: parsed };
-      const written = await writeConfig(next);
+      // PUT merges keys. A preliminary GET can mutate legacy config via migration.
+      const written = await writeConfig({ [key]: parsed });
+      if (written === null) return;
       if (flags.json) {
         process.stdout.write(JSON.stringify(written, null, 2) + '\n');
       } else {
@@ -7529,10 +7534,9 @@ Common options:
         console.error('Usage: readable config unset <key>');
         process.exit(2);
       }
-      const cfg = await fetchConfig();
-      const next = { ...cfg };
-      delete next[key];
-      const written = await writeConfig(next);
+      // PUT merges preferences, so omission cannot clear a saved key.
+      const written = await writeConfig({ [key]: null });
+      if (written === null) return;
       if (flags.json) {
         process.stdout.write(JSON.stringify(written, null, 2) + '\n');
       } else {

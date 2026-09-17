@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { applyPerformanceProfileToDocument } from '../../src/state/config';
 import { FileViewer } from '../../src/components/FileViewer';
 import { buildManualEditBridge } from '../../src/edit-mode/bridge';
 import { emptyManualEditStyles, type ManualEditTarget } from '../../src/edit-mode/types';
@@ -15,7 +16,7 @@ const target: ManualEditTarget = {
   rect: { x: 10, y: 10, width: 160, height: 48 }, fields: {}, attributes: {},
   styles: emptyManualEditStyles(), isLayoutContainer: false, outerHtml: '<p>First\nsecond</p>',
 };
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); applyPerformanceProfileToDocument('full'); });
 
 async function setup() {
   const writes: string[] = [];
@@ -52,7 +53,8 @@ async function setup() {
   return { dom, writes, saved, select, drain, dispatch, frame, posts };
 }
 
-describe('Save flushes the real contenteditable bridge before taking its source snapshot', () => {
+describe.each(['full', 'low'] as const)('Save flushes the real contenteditable bridge with %s host profile', (profile) => {
+  beforeEach(() => applyPerformanceProfileToDocument(profile));
   it.each([
     ['plain', 'save'], ['rich', 'save'], ['plain', 'toggle'], ['rich', 'toggle'],
   ] as const)('persists an active %s line-break edit together with movement and a pending style via %s', async (kind, exit) => {

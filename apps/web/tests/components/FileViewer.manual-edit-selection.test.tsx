@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { applyPerformanceProfileToDocument } from '../../src/state/config';
 import { FileViewer } from '../../src/components/FileViewer';
 import { buildManualEditBridge } from '../../src/edit-mode/bridge';
 import { JSDOM } from '../edit-mode/bridge-dom';
@@ -11,6 +12,7 @@ const source = '<!doctype html><html><body><p data-readable-id="text">Original</
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  applyPerformanceProfileToDocument('full');
 });
 
 async function mount() {
@@ -35,6 +37,9 @@ async function mount() {
   const interior = () => screen.getByLabelText('Move element').querySelector('[data-region="interior"]');
   return { dom, posts, hostPosts, interior };
 }
+
+describe.each(['full', 'low'] as const)('direct-edit selection with %s host profile', (profile) => {
+beforeEach(() => applyPerformanceProfileToDocument(profile));
 
 it.each(['text', 'link', 'structured'])('selects %s, double-clicks its real element, then Escape steps out and deselects', async (id) => {
   const { dom, posts, hostPosts, interior } = await mount();
@@ -95,4 +100,5 @@ it('carries the first native click across the newly mounted overlay and Enter co
   expect(el.hasAttribute('contenteditable')).toBe(false);
   expect(interior()).not.toBeNull();
   expect(screen.getByRole('button', { name: 'Undo' }).hasAttribute('disabled')).toBe(false);
+});
 });

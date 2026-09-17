@@ -3,6 +3,7 @@ export * from './question-form.js';
 export * from './errors.js';
 export * from './tasks.js';
 export * from './api/app-config.js';
+export * from './api/agent-scan.js';
 export * from './api/automations.js';
 export * from './api/artifacts.js';
 export * from './api/chat.js';

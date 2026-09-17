@@ -73,6 +73,7 @@ import {
   sanitizeCustomModel,
   spawnEnvForAgent,
 } from './agents.js';
+import { configureDetectionStorage } from './runtimes/detection.js';
 import {
   agentHasModelChoice,
   getRememberedLiveModels,
@@ -364,7 +365,7 @@ import {
   readAllTokens,
   setToken,
 } from './mcp-tokens.js';
-import { agentCliEnvForAgent, DEFAULT_ENABLED_AGENT_IDS, readAppConfig, readPluginEnvKnobs, writeAppConfig } from './app-config.js';
+import { agentCliEnvForAgent, DEFAULT_ENABLED_AGENT_IDS, InvalidAppConfigError, readAppConfig, readPluginEnvKnobs, writeAppConfig } from './app-config.js';
 import {
   RoutineService,
   validateSchedule as validateRoutineSchedule,
@@ -4443,6 +4444,7 @@ export async function startServer({
   // Warm agent-capability probes (e.g. whether the installed Claude Code
   // build advertises --include-partial-messages) so the first /api/chat
   // hits a populated cache even if /api/agents hasn't been called yet.
+  configureDetectionStorage(RUNTIME_DATA_DIR);
   void readAppConfig(RUNTIME_DATA_DIR)
     .then((config) => {
       return detectAgents(config.agentCliEnv ?? {}, {
@@ -8981,6 +8983,11 @@ export async function startServer({
       const config = await writeAppConfig(RUNTIME_DATA_DIR, req.body);
       res.json({ config });
     } catch (err) {
+      if (err instanceof InvalidAppConfigError) {
+        return sendApiError(res, 400, err.code, err.message, {
+          details: { kind: 'validation', issues: [{ path: err.key, message: err.message }] },
+        });
+      }
       res
         .status(500)
         .json({ error: String(err && err.message ? err.message : err) });
@@ -12720,9 +12727,10 @@ export async function startServer({
         throw err;
       }
     }
-    // MCP / SDK callers may omit agentId. Resolve it before any run-create
-    // side effects so unsupported run-scoped tool bundles can fail cleanly.
-    if (typeof meta.agentId !== 'string' || !meta.agentId) {
+    // Only tool-bundle validation needs agent selection before acceptance.
+    // Other headless runs can be queued and cancelled during cold discovery.
+    const resolveRunAgent = async () => {
+      if (typeof meta.agentId === 'string' && meta.agentId) return;
       try {
         const appCfg = await readAppConfig(RUNTIME_DATA_DIR);
         const cfgAgent = typeof appCfg.agentId === 'string' && appCfg.agentId
@@ -12743,7 +12751,8 @@ export async function startServer({
       } catch (err) {
         console.warn('[runs] agent id fallback failed', err);
       }
-    }
+    };
+    if (toolBundle.bundle.mcpServers.some((server) => server.enabled)) await resolveRunAgent();
     const toolBundleSupport = validateRunToolBundleForAgent(
       toolBundle.bundle,
       typeof meta.agentId === 'string' ? getAgentDef(meta.agentId) : null,
@@ -12904,7 +12913,11 @@ export async function startServer({
         db,
       });
     }
-    design.runs.start(run, () => startChatRun(meta, run));
+    design.runs.start(run, async () => {
+      await resolveRunAgent();
+      if (run.cancelRequested || design.runs.isTerminal(run.status)) return;
+      await startChatRun(meta, run);
+    });
 
     // Analytics v2: emit run_created (daemon-side authoritative) and
     // schedule run_finished on terminal state. The matching `chat-routes.ts`

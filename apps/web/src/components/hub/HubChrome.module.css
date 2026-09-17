@@ -1,0 +1,25 @@
+/* Hub chrome row: pinned to the top edge of the scrolling stage, right-aligned,
+   so its controls stay put while the start surface scrolls under it. Its
+   padding follows the start surface's inline gutter. */
+
+.chrome {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  width: min(66.6667vw, 960px, 100%);
+  margin: 0 auto;
+  padding: 14px clamp(36px, 2.7778vw, 40px) 0;
+  /* Zero-height row so the stage's own top padding still positions the
+     composer exactly where it did before this row existed. */
+  height: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.chrome > * {
+  pointer-events: auto;
+}
