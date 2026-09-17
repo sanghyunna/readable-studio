@@ -50,6 +50,12 @@ export async function fetchModels(
     } else {
       return failedModels({ kind: 'unverified', message: 'This adapter has no verified live model discovery. Static model hints are not selectable.' });
     }
+    // Optional discovery (for example Claude's local routes) may be absent.
+    // An empty CLI model listing is negative evidence, not optional discovery.
+    if ((!parsed || parsed.length === 0) && !def.listModels && !def.modelSelectionRequired &&
+        def.fallbackModels.some((model) => model.id !== 'default')) {
+      return { models: def.fallbackModels, source: 'fallback' };
+    }
     // Default is a synthetic routing sentinel, not evidence of a configured model.
     if (!parsed?.some((model) => model.id !== 'default')) {
       return failedModels({ kind: 'unverified', message: 'The CLI returned no configured models. Configure a model and sign in, then rescan.' });

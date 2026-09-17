@@ -79,7 +79,7 @@
         transform: translateY(0);
       }
       .progress__spinner {
-        animation: splash-spin 800ms linear infinite;
+        animation: splash-spin 2400ms linear infinite;
         border: 1.5px solid var(--splash-border-strong);
         border-radius: 50%;
         border-top-color: var(--splash-accent);
@@ -227,10 +227,10 @@
         if (reduceMotion) {
           document.documentElement.setAttribute("data-readable-splash-motion", "reduced");
           video.removeAttribute("autoplay");
-          video.addEventListener("loadedmetadata", function () {
-            parkOnLastFrame();
-            markFinished();
-          });
+          // Metadata describes the duration, not a decoded frame. Keep the
+          // host reveal gate closed until the final-frame seek has completed.
+          video.addEventListener("seeked", markFinished, { once: true });
+          video.addEventListener("loadedmetadata", parkOnLastFrame);
         } else {
           video.addEventListener("loadedmetadata", function () { video.currentTime = 0; });
           video.addEventListener("loadeddata", play);

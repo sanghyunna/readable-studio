@@ -15,7 +15,8 @@ async function layout() {
   const installed = join(root, 'user tools', 'databricks.exe');
   const override = join(root, 'custom tools', 'databricks.exe');
   for (const file of [bundled, installed, override]) { await mkdir(dirname(file), { recursive: true }); await writeFile(file, 'fixture'); }
-  const options = { env: { PATH: [dirname(installed)].join(delimiter), READABLE_RESOURCE_ROOT: join(root, 'resources', 'readable-studio') }, userToolchainBins: [] };
+  const options = { env: { PATH: [dirname(installed)].join(delimiter), READABLE_RESOURCE_ROOT: join(root, 'resources', 'readable-studio') }, userToolchainBins: [],
+    runner: async () => ({ stdout: 'Databricks CLI v1.10.0', stderr: '', exitCode: 0 }) };
   return { root, bundled, installed, override, options };
 }
 

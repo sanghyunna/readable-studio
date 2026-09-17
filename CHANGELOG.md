@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.7] - 2026-09-17
+
+### 🐛 Fixed
+
+- **Local agents stay in the picker.** Installed agents with a built-in model catalogue are detected again, so their agents and models no longer disappear when optional model discovery is unavailable.
+- **Databricks works without a separate CLI install.** The bundled CLI takes over when no usable local installation is present. Databricks no longer offers a CLI installation action; missing models point to Databricks settings, and damaged packages point to a fresh portable ZIP.
+- **Databricks rescan gets a fresh result.** Rescanning profiles re-inspects the CLI instead of holding on to a failed first inspection.
+- **Startup keeps the splash in view.** The animation plays from its first frame and holds its final frame; reduced-motion startup waits for that frame to be ready, and the progress spinner turns more slowly.
+
+### 🔁 Changed
+
+- **Low-spec mode lives in the Settings header.** Its toggle now sits beside the close button instead of on the Hub or in Appearance, keeping one consistent place to switch modes.
+
 ## [0.9.0] - 2026-05-29
 
 🎉 **310 PRs · 88 contributors · 7 days** — Meet the **install-and-create release**. No more API-key scavenger hunts. No more asking teammates to install three different CLIs before their first prompt. **Open Design AMR** is now built into the app: sign in once, pick a model, and start building. Around that zero-config first run, 0.9.0 brings a bigger agent bench, faster model picking, a more discoverable plugin marketplace, richer review workflows, smoother Studio tools, and easier installs across Windows, macOS, and Linux. 🚀

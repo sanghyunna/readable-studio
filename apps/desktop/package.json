@@ -1,6 +1,6 @@
 {
   "name": "@readable-studio/desktop",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Readable Studio desktop shell.",
   "private": true,
   "type": "module",

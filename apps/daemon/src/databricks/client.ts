@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { access, constants } from 'node:fs/promises';
 import { delimiter, isAbsolute, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { wellKnownUserToolchainBins } from '@readable-studio/platform';
 import type { DatabricksCliState, DatabricksErrorCode, DatabricksIssue } from '@readable-studio/contracts';
 
@@ -14,7 +15,7 @@ export class DatabricksServiceError extends Error {
 
 export function issueFor(error: unknown): DatabricksIssue {
   const fault = error instanceof DatabricksServiceError ? error : new DatabricksServiceError('DATABRICKS_UPSTREAM_UNAVAILABLE', true);
-  const action: DatabricksIssue['action'] = fault.code === 'DATABRICKS_CLI_MISSING' ? 'install-cli'
+  const action: DatabricksIssue['action'] = fault.code === 'DATABRICKS_CLI_MISSING' ? 'rescan'
     : fault.code === 'DATABRICKS_CLI_UNSUPPORTED' ? 'choose-executable'
     : fault.code === 'DATABRICKS_AUTH_REQUIRED' ? 'sign-in'
     : fault.code === 'DATABRICKS_PERMISSION_DENIED' ? 'check-permissions'
@@ -67,6 +68,9 @@ export interface DatabricksExecutable { path: string; source: DatabricksCliSourc
 export interface DatabricksExecutableOptions {
   env?: NodeJS.ProcessEnv;
   userToolchainBins?: string[];
+  sourceRoot?: string;
+  runner?: DatabricksSubprocessRunner;
+  timeoutMs?: number;
 }
 
 export async function resolveDatabricksCli(override?: string | null, options: DatabricksExecutableOptions = {}): Promise<DatabricksExecutable | null> {
@@ -82,17 +86,27 @@ export async function resolveDatabricksCli(override?: string | null, options: Da
     .map((dir) => ({ path: join(dir, process.platform === 'win32' ? 'databricks.exe' : 'databricks'), source: 'path' }));
   // READABLE_RESOURCE_ROOT is the packaged read-only resources/readable-studio tree.
   // Its sibling app tree is stable across prebundled and package-based daemon layouts.
-  if (process.platform === 'win32' && process.arch === 'x64' && env.READABLE_RESOURCE_ROOT) {
-    candidates.push({ path: join(env.READABLE_RESOURCE_ROOT, '..', 'app', 'vendor', 'databricks', 'databricks.exe'), source: 'bundled' });
+  if (process.platform === 'win32' && process.arch === 'x64') {
+    const appRoot = env.READABLE_RESOURCE_ROOT
+      ? join(env.READABLE_RESOURCE_ROOT, '..', 'app')
+      : join(options.sourceRoot ?? fileURLToPath(new URL('../../../../', import.meta.url)), '.tmp', 'databricks-cli-acquisition', 'app');
+    candidates.push({ path: join(appRoot, 'vendor', 'databricks', 'databricks.exe'), source: 'bundled' });
   }
+  const timeoutMs = options.timeoutMs ?? 3000;
   for (const candidate of candidates) {
     try {
       await access(candidate.path, constants.X_OK);
-      return candidate;
     } catch (error) {
-      if (!['ENOENT', 'ENOTDIR', 'EACCES'].includes((error as NodeJS.ErrnoException).code ?? '')) {
-        throw new DatabricksServiceError('DATABRICKS_UPSTREAM_UNAVAILABLE');
-      }
+      if (error instanceof Error && 'code' in error && ['ENOENT', 'ENOTDIR', 'EACCES'].includes(String(error.code))) continue;
+      throw new DatabricksServiceError('DATABRICKS_UPSTREAM_UNAVAILABLE');
+    }
+    try {
+      const result = await withDeadline((signal) => (options.runner ?? runDatabricksProcess)(candidate.path, ['--version'], { signal, timeoutMs }), timeoutMs);
+      if (result.exitCode === 0 && supportedDatabricksVersion(result.stdout)) return candidate;
+    } catch (error) {
+      // A stale local launcher must not shadow the shipped executable.
+      if (!(error instanceof DatabricksServiceError)
+        && !(error instanceof Error && 'syscall' in error && error.syscall === 'spawn')) throw error;
     }
   }
   return null;
@@ -133,6 +147,11 @@ export function classifyCliFailure(stderr: string): DatabricksServiceError {
   return new DatabricksServiceError('DATABRICKS_AUTH_REQUIRED');
 }
 
+function supportedDatabricksVersion(stdout: string): string | null {
+  const version = /(?:Databricks\s+(?:CLI\s+)?v?)(\d+\.\d+\.\d+)/i.exec(stdout)?.[1] ?? null;
+  return version && (Number(version.split('.')[0]) > 0 || Number(version.split('.')[1]) >= 205) ? version : null;
+}
+
 export interface DatabricksClientOptions {
   executablePath?: string | null;
   runner?: DatabricksSubprocessRunner;
@@ -150,7 +169,7 @@ export class DatabricksClient {
     this.executable = null;
     this.cliSource = null;
     try {
-      const resolved = await (this.options.resolveExecutable ?? resolveDatabricksCli)(this.options.executablePath);
+      const resolved = await (this.options.resolveExecutable ?? ((override) => resolveDatabricksCli(override, this.options)))(this.options.executablePath);
       this.executable = typeof resolved === 'string' ? resolved : resolved?.path ?? null;
       this.cliSource = typeof resolved === 'string' ? this.options.executablePath ? 'override' : 'path' : resolved?.source ?? null;
       if (!this.executable) { this.state = { cli: 'missing', version: null }; return this.status(); }

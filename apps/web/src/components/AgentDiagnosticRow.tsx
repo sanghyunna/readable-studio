@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useT } from '../i18n';
 import type { AgentDiagnostic, AgentFixIntent } from '../types';
 import { Icon } from './Icon';
@@ -15,10 +16,13 @@ export interface AgentFixHandlers {
   onOpenDocs?: () => void;
   onSetEnv?: (envKey: string) => void;
   onClearEnv?: (envKey: string) => void;
+  onOpenDatabricksSettings?: () => void;
+  onReDownloadPortablePackage?: () => void;
 }
 
 interface Props {
   diagnostic: AgentDiagnostic;
+  agentId?: string;
   handlers?: AgentFixHandlers;
   className?: string;
 }
@@ -86,11 +90,51 @@ function useResolveAction() {
 // The reason text is the daemon-authored message (already English, like the
 // existing auth banner), and tooltips expose the probe detail + the exact
 // directories PATH detection searched.
-export function AgentDiagnosticRow({ diagnostic, handlers = {}, className }: Props) {
+export function AgentDiagnosticRow({ diagnostic, agentId, handlers = {}, className }: Props) {
+  const t = useT();
   const resolveAction = useResolveAction();
+
+  // Databricks ships its own CLI, so the generic "Install" CTA is always
+  // wrong. Branch on agent id (not label text) and replace backend copy with
+  // Databricks-specific guidance.
+  const databricksOverride = useMemo(() => {
+    if (agentId !== 'databricks') return null;
+    const extras: ResolvedAction[] = [];
+    let message = diagnostic.message;
+    if (diagnostic.reason === 'auth-unknown') {
+      message =
+        'No Databricks models are configured. Add or configure models in Settings > Databricks.';
+      if (handlers.onOpenDatabricksSettings) {
+        extras.push({
+          key: 'openDatabricksSettings',
+          label: t('settings.databricksModels'),
+          icon: 'settings',
+          onClick: handlers.onOpenDatabricksSettings,
+        });
+      }
+    } else if (diagnostic.reason === 'not-executable') {
+      message =
+        'The bundled Databricks CLI is damaged. Re-download the complete Readable Studio portable package ZIP.';
+      if (handlers.onReDownloadPortablePackage) {
+        extras.push({
+          key: 'reDownloadPortablePackage',
+          label: t('common.exportZip'),
+          icon: 'download',
+          onClick: handlers.onReDownloadPortablePackage,
+        });
+      }
+    }
+    return { message, extras };
+  }, [agentId, diagnostic, handlers, t]);
+
+  const isDatabricks = agentId === 'databricks';
+  const message = databricksOverride?.message ?? diagnostic.message;
   const actions = (diagnostic.fixActions ?? [])
     .map((intent) => resolveAction(intent, handlers))
-    .filter((action): action is ResolvedAction => action !== null);
+    .filter((action): action is ResolvedAction => action !== null)
+    // Suppress the generic install CTA for every Databricks state.
+    .filter((action) => !(isDatabricks && action.key === 'openInstall'));
+  const allActions = [...actions, ...(databricksOverride?.extras ?? [])];
 
   const tooltip = [
     diagnostic.detail,
@@ -110,11 +154,11 @@ export function AgentDiagnosticRow({ diagnostic, handlers = {}, className }: Pro
       data-reason={diagnostic.reason}
     >
       <span className={styles.message} title={tooltip || undefined}>
-        {diagnostic.message}
+        {message}
       </span>
-      {actions.length > 0 ? (
+      {allActions.length > 0 ? (
         <div className={styles.actions}>
-          {actions.map((action) => (
+          {allActions.map((action) => (
             <button
               key={action.key}
               type="button"

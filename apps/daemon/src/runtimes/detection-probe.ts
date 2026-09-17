@@ -174,6 +174,7 @@ async function probe(
   // rather than opening an ACP/app-server session. Both probes must succeed;
   // authentication alone must never override failed or empty model discovery.
   const failure = compatibilityFailure ?? modelResult.failure ?? (
+    modelResult.source !== 'fallback' &&
     def.modelDiscovery !== 'authenticated-session' && auth?.status !== 'ok'
       ? { kind: 'unverified' as const, message: 'CLI is installed, but this adapter has not verified an authenticated execution session. Catalogue entries and static hints are not selectable.' }
       : undefined

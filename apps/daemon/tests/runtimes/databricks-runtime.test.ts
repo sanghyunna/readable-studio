@@ -22,7 +22,7 @@ async function temporaryRoot() {
   return { root, cwd, cleanup: () => rm(root, { recursive: true, force: true }) };
 }
 
-test('Databricks is unavailable with a ready CLI and no registered models', async () => {
+test('Databricks is available with a ready CLI but requires a registered model', async () => {
   const fixture = runtimeServiceFixture();
   fixture.catalogue.models = [];
   const def = createDatabricksAgentDef(() => fixture.service);
@@ -31,7 +31,8 @@ test('Databricks is unavailable with a ready CLI and no registered models', asyn
   assert.deepEqual(def.fallbackModels, []);
   assert.deepEqual(detected.models, []);
   assert.equal(detected.modelsSource, 'live');
-  assert.equal(detected.available, false);
+  assert.equal(detected.available, true);
+  assert.equal(detected.diagnostics?.length, 1);
   assert.equal(detected.version, '0.282.0');
   assert.equal(detected.authStatus, 'ok');
   assert.equal(detected.modelSelectionRequired, true);
@@ -73,7 +74,7 @@ test('Databricks detection uses registered models and bypasses stale detection c
   fixture.catalogue.models = [];
   const empty = await cachedSafeProbe(safeProbe, def);
   assert.deepEqual(empty.models, []);
-  assert.equal(empty.available, false);
+  assert.equal(empty.available, true);
   assert.equal(resolveModelForAgent(def, 'dbm_opaque_model'), null);
 });
 

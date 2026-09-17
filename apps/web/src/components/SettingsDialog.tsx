@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, Dispatch, KeyboardEvent as ReactKeyboardEvent, SetStateAction } from 'react';
-import { Button, Switch, ToggleCard } from '@readable-studio/components';
+import { Button, Switch, ToggleButton, ToggleCard } from '@readable-studio/components';
 import { validateBaseUrl } from '@readable-studio/contracts/api/connectionTest';
 import type {
   EditableSystemPrompt,
@@ -1361,14 +1361,23 @@ export function SettingsDialog({
     markAgentInstallIntent();
     void openExternalUrl(href);
   };
+  const PORTABLE_PACKAGE_DOWNLOAD_URL = 'https://github.com/sanghyunna/readable-studio/releases';
   const diagnosticHandlersForAgent = (agent: AgentInfo) => {
     const docsUrl = sanitizeHttpsUrl(agent.docsUrl);
     const installUrl = sanitizeHttpsUrl(agent.installUrl);
-    return {
+    const base = {
       onRescan: () => void handleRefreshAgents(),
       ...(docsUrl ? { onOpenDocs: () => openAgentFixUrl(docsUrl) } : {}),
       ...(installUrl ? { onOpenInstall: () => openAgentFixUrl(installUrl) } : {}),
     };
+    if (agent.id === 'databricks') {
+      return {
+        ...base,
+        onOpenDatabricksSettings: () => setActiveSection('databricksModels'),
+        onReDownloadPortablePackage: () => void openExternalUrl(PORTABLE_PACKAGE_DOWNLOAD_URL),
+      };
+    }
+    return base;
   };
   const toggleEnabledAgent = (agentId: string, nextEnabled: boolean) => {
     setCfg((current) => {
@@ -2801,6 +2810,19 @@ export function SettingsDialog({
               </>
             ) : null}
           </div>
+          <ToggleButton
+            data-testid="settings-low-spec-toggle"
+            className={styles.lowSpecToggle}
+            pressed={cfg.performanceProfile === 'low'}
+            onPressedChange={(pressed) =>
+              setCfg((c) => ({ ...c, performanceProfile: pressed ? 'low' : 'full' }))
+            }
+            aria-label={t('settings.lowSpecMode')}
+            title={t('settings.lowSpecMode')}
+          >
+            <Icon name="tweaks" size={14} aria-hidden="true" />
+            <span>{t('settings.lowSpecMode')}</span>
+          </ToggleButton>
           <button
             type="button"
             className="settings-close"
@@ -3324,6 +3346,7 @@ export function SettingsDialog({
                               {(a.diagnostics ?? []).map((diagnostic, i) => (
                                 <AgentDiagnosticRow
                                   key={`${diagnostic.reason}-${i}`}
+                                  agentId={a.id}
                                   diagnostic={diagnostic}
                                   handlers={diagnosticHandlers}
                                 />
@@ -3506,6 +3529,7 @@ export function SettingsDialog({
                               {(a.diagnostics ?? []).map((diagnostic, i) => (
                                 <AgentDiagnosticRow
                                   key={`${diagnostic.reason}-${i}`}
+                                  agentId={a.id}
                                   diagnostic={diagnostic}
                                   handlers={diagnosticHandlers}
                                 />
@@ -4885,9 +4909,6 @@ function AppearanceSection({
   const accentLabel = t('pet.fieldAccent');
   const defaultAccentLabel = t('pet.fieldAccentDefault');
   const customAccentLabel = t('pet.fieldAccentCustom');
-  // Same field the Hub chrome toggle writes; the dialog autosave persists it
-  // through App, which restamps the root and flips MotionConfig.
-  const lowSpec = cfg.performanceProfile === 'low';
 
   // Apply the draft theme immediately so the user sees a live preview
   // before hitting Save. SettingsDialog's cleanup reverts this on cancel.
@@ -4997,18 +5018,6 @@ function AppearanceSection({
             onChange={(e) => setAccentColor(e.target.value)}
           />
         </div>
-      </div>
-      <div className="field">
-        <Switch
-          data-testid="settings-low-spec-switch"
-          checked={lowSpec}
-          onCheckedChange={(next: boolean) => {
-            setCfg((c) => ({ ...c, performanceProfile: next ? 'low' : 'full' }));
-          }}
-        >
-          {t('settings.lowSpecMode')}
-        </Switch>
-        <small className="hint">{t('settings.lowSpecModeHint')}</small>
       </div>
     </section>
   );

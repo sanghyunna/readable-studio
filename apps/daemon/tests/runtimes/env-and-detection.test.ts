@@ -849,11 +849,11 @@ test('detectAgents applies configured env while probing the CLI', async () => {
       );
 
       const detected = agents.find((agent) => agent.id === 'claude');
-      assert.equal(detected?.available, false);
+      assert.equal(detected?.available, true);
       assert.equal(detected?.path, bin);
       assert.equal(detected?.version, '/tmp/claude-config-probe');
-      assert.deepEqual(detected?.models, []);
-      assert.equal(detected?.diagnostics?.[0]?.reason, 'auth-unknown');
+      assert.equal(detected?.models.length, 9);
+      assert.equal(detected?.modelsSource, 'fallback');
     });
   } finally {
     rmSync(dir, { recursive: true, force: true });

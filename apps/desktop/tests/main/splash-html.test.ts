@@ -99,6 +99,18 @@ describe('splash asset media contract', () => {
 });
 
 describe('splash asset progress strip', () => {
+  test('rotates at one third of the previous 800ms angular speed', () => {
+    // Given the shipped spinner rule and its previous revolution duration.
+    const previousDurationMs = 800;
+    const spinnerRule = /\.progress__spinner\s*\{([^}]+)\}/.exec(splashSource)?.[1] ?? '';
+
+    // When reading the machine-consumed animation duration.
+    const durationMs = Number(/animation:\s*splash-spin\s+(\d+)ms/.exec(spinnerRule)?.[1]);
+
+    // Then a revolution takes exactly three times as long.
+    expect(durationMs).toBe(previousDurationMs * 3);
+  });
+
   test('is a polite live region with a decorative spinner and a non-empty default label', () => {
     const { label, strip } = loadSplash();
     const spinner = strip.querySelector('.progress__spinner');
@@ -139,7 +151,21 @@ describe('splash asset progress strip', () => {
 });
 
 describe('splash asset reduced motion', () => {
-  test('parks the media on its last frame and finishes immediately on metadata', () => {
+  test('keeps progress pending when reduced-motion metadata starts an undecoded seek', () => {
+    // Given a reduced-motion splash whose metadata has not decoded a frame.
+    const { root, strip, video } = loadSplash({ reducedMotion: true });
+
+    // When metadata starts the final-frame seek.
+    const metadata = video.ownerDocument.createEvent('Event');
+    metadata.initEvent('loadedmetadata', false, false);
+    video.dispatchEvent(metadata);
+
+    // Then readiness and progress cannot race ahead of the decoded frame.
+    expect(root.getAttribute('data-readable-splash-finished')).toBeNull();
+    expect(strip.getAttribute('data-state')).toBe('pending');
+  });
+
+  test('parks the media on its last frame and finishes when the seek completes', () => {
     const { media, root, strip, video } = loadSplash({ reducedMotion: true });
     const window = video.ownerDocument.defaultView!;
 
@@ -151,6 +177,7 @@ describe('splash asset reduced motion', () => {
 
     expect(media.paused).toBe(true);
     expect(media.currentTime).toBe(MEDIA_DURATION);
+    video.dispatchEvent(new window.Event('seeked'));
     expect(root.getAttribute('data-readable-splash-finished')).toBe('1');
     expect(strip.getAttribute('data-state')).toBe('active');
 

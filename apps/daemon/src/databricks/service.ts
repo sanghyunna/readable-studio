@@ -34,7 +34,7 @@ export interface DatabricksRuntimeResolution {
 
 /** Routes consume only these frozen DTO methods. resolveRuntime is daemon-private. */
 export interface DatabricksService {
-  status(): Promise<DatabricksStatusResponse>;
+  status(options?: { readonly refresh?: boolean }): Promise<DatabricksStatusResponse>;
   setup(request: DatabricksSetupRequest): Promise<DatabricksSetupResponse>;
   startLogin(request: DatabricksLoginRequest): Promise<DatabricksLoginResponse>;
   getLogin(loginId: string): Promise<DatabricksLoginResponse>;
@@ -86,6 +86,7 @@ export class LocalDatabricksService implements DatabricksService {
   private readonly listeners = new Map<string, Set<(event: DatabricksScanEvent) => void>>();
   private readonly cursors = new Map<string, { scanId: string; revision: number; offset: number }>();
   private inspection: Promise<void> | undefined;
+  private inspectionExpiresAt = 0;
   private inspectionIssues: DatabricksProfilesResponse['issues'] = [];
 
   constructor(private readonly options: DatabricksServiceOptions) {
@@ -123,8 +124,18 @@ export class LocalDatabricksService implements DatabricksService {
     return binding;
   }
 
-  private inspect(): Promise<void> {
-    return this.inspection ??= this.inspectProfiles();
+  private inspect(refresh = false): Promise<void> {
+    if (refresh || !this.inspection || this.now() >= this.inspectionExpiresAt) {
+      // Share pending work; cache completed inspections briefly, including failures.
+      this.inspectionExpiresAt = Infinity;
+      const run = () => this.inspectProfiles();
+      // Explicit refresh waits for prior work so client/profile state cannot race.
+      const inspection = (this.inspection ? this.inspection.then(run, run) : run()).finally(() => {
+        if (this.inspection === inspection) this.inspectionExpiresAt = this.now() + 5_000;
+      });
+      this.inspection = inspection;
+    }
+    return this.inspection;
   }
 
   private async inspectProfiles(): Promise<void> {
@@ -194,8 +205,8 @@ export class LocalDatabricksService implements DatabricksService {
     }
   }
 
-  async status(): Promise<DatabricksStatusResponse> {
-    await this.inspect();
+  async status(options: { readonly refresh?: boolean } = {}): Promise<DatabricksStatusResponse> {
+    await this.inspect(options.refresh);
     const generation = await this.store.read();
     const restoreIssues: DatabricksStatusResponse['issues'] = [];
     for (const binding of generation.bindings) {
@@ -227,8 +238,7 @@ export class LocalDatabricksService implements DatabricksService {
   }
 
   async probe(request: DatabricksProbeRequest = {}): Promise<DatabricksProfilesResponse> {
-    this.inspection = this.inspectProfiles();
-    await this.inspection;
+    await this.inspect(true);
     const issues = [...this.inspectionIssues];
     try {
       if (request.profileId) await this.bearer(await this.binding(request.profileId));

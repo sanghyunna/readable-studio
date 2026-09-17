@@ -189,6 +189,23 @@
   color: var(--accent-strong);
 }
 
+.lowSpecToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-block-size: 28px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.lowSpecToggle > svg {
+  inline-size: 14px;
+  block-size: 14px;
+  flex: none;
+}
+
 /* ---- System prompts + workspace feature flags -------------------------
    Hub design language: borderless translucent surfaces, soft shadow +
    inset highlight instead of 1px dividers, solid primary actions. */

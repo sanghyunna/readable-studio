@@ -64,8 +64,11 @@ function durableDetection(
           if (def.modelManagement === 'databricks') return cachedSafeProbe(safeProbe, def, configuredEnvByAgent[def.id] ?? {}, options);
           const agent = stored.results.find((entry) => entry.id === def.id);
           if (!agent) throw new Error(`Incomplete stored agent scan: ${def.id}`);
-          const available = agent.available && agent.modelsSource === 'live' && agent.models.length > 0 &&
-            (def.modelDiscovery === 'authenticated-session' || agent.authStatus === 'ok');
+          const available = agent.available && agent.models.length > 0 &&
+            (agent.modelsSource === 'fallback'
+              ? !def.modelSelectionRequired && def.fallbackModels.some((model) => model.id !== 'default') &&
+                (!agent.authStatus || agent.authStatus === 'ok')
+              : def.modelDiscovery === 'authenticated-session' || agent.authStatus === 'ok');
           return { ...stripFns(def), ...agent, available, models: available ? agent.models : [] };
         }));
       }

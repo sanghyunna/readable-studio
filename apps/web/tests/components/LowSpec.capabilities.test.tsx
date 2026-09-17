@@ -33,7 +33,7 @@ describe('low-profile capabilities', () => {
       render(<TestHubHome
         projects={[{ id: 'p1', name: 'Project', skillId: null, designSystemId: null, createdAt: 1, updatedAt: 1 }]}
         projectsLoading={false} onOpenSession={vi.fn()} onOpenProject={open}
-        onSubmitPrompt={submit} onNewProject={vi.fn()} performanceProfile="low"
+        onSubmitPrompt={submit} onNewProject={vi.fn()}
         executionSwitcher={<InlineModelSwitcher
           config={{ ...DEFAULT_CONFIG, mode: 'daemon', agentId: 'codex', performanceProfile: 'low' }}
           agents={[{ id: 'codex', name: 'Codex', bin: 'codex', available: true, version: '1', models: [{ id: 'default', label: 'Default' }] }]}

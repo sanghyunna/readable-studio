@@ -2196,7 +2196,6 @@ function AppInner() {
         onConfigPersist={handleConfigPersist}
         onRefreshAgents={refreshAgents}
         onThemeChange={handleThemeChange}
-        onPerformanceProfileChange={handlePerformanceProfileChange}
         skillsLoading={skillsLoading}
         designSystemsLoading={dsLoading}
         projectsLoading={projectsLoading}
