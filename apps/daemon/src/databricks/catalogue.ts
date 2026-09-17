@@ -48,6 +48,7 @@ function strings(value: unknown): string[] { return Array.isArray(value) ? value
 
 /** Protocol is selected from wire metadata, never from a model/provider name. */
 function protocolDecision(resource: DiscoveredResource): { api: DatabricksEndpointApi; evidence: NonNullable<DatabricksEndpoint['protocolEvidence']> } {
+  if (resource.measuredApi) return { api: resource.measuredApi, evidence: { advertised: [], native: [], reason: 'measured-api' } };
   const allowed = ['anthropic/v1/messages', 'openai/v1/chat/completions', 'mlflow/v1/chat/completions', 'openai/v1/responses', 'mlflow/v1/responses'];
   const supported = strings(resource.metadata.supported_api_types).filter((api) => allowed.includes(api));
   const destinations = record(record(resource.metadata.config).routing).destinations;
@@ -84,6 +85,7 @@ function servedModels(resource: DiscoveredResource): Array<{ name?: string; meta
     models.push({ ...(typeof value === 'string' && value.trim() ? { name: value } : {}), metadata });
   };
   const config = record(resource.metadata.config);
+  if (resource.measuredApi) add(resource.name, {});
   if (resource.kind === 'uc-model-service') {
     const destinations = record(config.routing).destinations;
     if (Array.isArray(destinations)) for (const raw of destinations) {
@@ -128,7 +130,7 @@ export function normalizeResource(secret: string, profileId: string, resource: D
     reasoningOptions: resolveDatabricksReasoningOptions(api, models),
     ...(!api ? { issue: { code: 'DATABRICKS_VERIFICATION_REQUIRED' as const, action: 'verify' as const, retryable: false } } : {}),
   };
-  const configurationId = opaqueId(secret, 'dbcfg', JSON.stringify(resource.metadata));
+  const configurationId = opaqueId(secret, 'dbcfg', JSON.stringify(resource.metadata), resource.measuredApi ?? '');
   const wireCapabilities = previous?.configurationId === configurationId && previous.wireCapabilities
     ? { ...previous.wireCapabilities } : undefined;
   // A rescan/lookup is the recovery path for registrations learned before body

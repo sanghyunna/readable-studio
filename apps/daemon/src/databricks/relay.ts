@@ -8,6 +8,7 @@ import { failureDetail, readUpstreamError, upstreamFailure } from './failure.js'
 import { listenOnFetchCompatiblePort } from '../fetch-compatible-listener.js';
 import { artifactDeliveryRequest, rejectsTools } from './tool-free.js';
 import { messagesRequest, messagesResponse, MessagesChatStream } from './messages.js';
+import { gatewayChatRequest, measuredGatewayApi, nativeMessagesRequest, requestsEffort } from './gateway-surfaces.js';
 
 export interface DatabricksRelay {
   /** Child-visible connection material; neither value grants general proxy access. */
@@ -387,8 +388,11 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
       if (body.model !== modelAlias) { sendError(response, 400); return; }
       // Prefer Responses for tools + effort, but probe the actual passthrough
       // surface. Some gateways advertise MLflow Responses without OpenAI support.
-      let messagesSurface = anthropic || learnedMessages;
-      let responses = !invocation && !messagesSurface && !responsesUnsupported && (toolsState === 'unsupported'
+      const effort = requestsEffort(body);
+      const measured = measuredGatewayApi(runtime.model);
+      let messagesSurface = anthropic || learnedMessages || !invocation && effort
+        && (measured === 'anthropic-messages' || responsesUnsupported || !Array.isArray(body.tools) || !body.tools.length);
+      let responses = !invocation && !messagesSurface && !measured && !responsesUnsupported && (toolsState === 'unsupported'
         ? runtime.wireCapabilities?.responsesPath !== undefined
         : Array.isArray(body.tools) && body.tools.some((tool) => record(tool) && tool.type === 'function'));
       const headers: Record<string, string> = {
@@ -411,14 +415,14 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
       let toolsRejected = false;
       const nextToolRoute = (preferMessages = true) => {
         // Actionable tools rejection, never model identity, unlocks Messages.
-        if (preferMessages && toolsRejected && !anthropic && !triedRoutes.has(messagesPath) && correctOnce('messages-route')) {
+        if (preferMessages && (toolsRejected || effort) && !anthropic && !triedRoutes.has(messagesPath) && correctOnce('messages-route')) {
           messagesSurface = true; responses = false; return true;
         }
         const next = responsesPaths.find(candidate => !triedRoutes.has(candidate));
         if (next && correctOnce(`route:${next}`)) {
           responsesPath = next; responses = true; messagesSurface = false; responsesUnsupported = false; return true;
         }
-        if (!triedRoutes.has(upstream.pathname) && correctOnce('chat-route')) {
+        if ((!effort || invocation) && !triedRoutes.has(upstream.pathname) && correctOnce('chat-route')) {
           responses = false; messagesSurface = false; return true;
         }
         return false;
@@ -429,7 +433,8 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
       for (let attempt = 0; ; attempt++) {
         controller.signal.throwIfAborted();
         const source = toolsState === 'unsupported' ? artifactDeliveryRequest(body, anthropic) : body;
-        const wire = messagesSurface && !anthropic ? messagesRequest(source) : responses ? responsesRequest(source) : { ...source };
+        const wire = messagesSurface ? anthropic ? nativeMessagesRequest(source) : messagesRequest(source)
+          : responses ? responsesRequest(source) : invocation ? { ...source } : gatewayChatRequest(source);
         const route = messagesSurface ? messagesPath : responses ? responsesPath : upstream.pathname;
         triedRoutes.add(route);
         if (!messagesSurface && !responses) {
@@ -480,7 +485,7 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
         if (responses && /^Responses API passthrough is not supported for model /.test(message)) {
           parameterHint = 'The endpoint does not support Responses API passthrough.';
           if (attempt < 10) {
-            if (!toolsRejected && !triedRoutes.has(upstream.pathname) && correctOnce('chat-route')) {
+            if (!effort && !toolsRejected && !triedRoutes.has(upstream.pathname) && correctOnce('chat-route')) {
               responsesUnsupported = true; responses = false; continue;
             }
             if (nextToolRoute()) continue;
@@ -495,7 +500,7 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
           await invalidateTools();
         }
         if (attempt < 10) {
-          if (!messagesSurface && !responses && /Function tools with reasoning_effort are not supported/i.test(message)
+          if (!responses && /Function tools with reasoning_effort are not supported/i.test(message)
             && /(?:use|through)\s+\/?(?:v1\/)?responses\b/i.test(message)) {
             toolsRejected = true;
             if (nextToolRoute(false) || nextToolRoute()) continue;

@@ -91,7 +91,7 @@ export interface DatabricksEndpoint {
   protocolEvidence?: {
     advertised: string[];
     native: string[];
-    reason: 'native-api' | 'advertised-api' | 'prefer-messages' | 'chat-task' | 'unresolved' | 'runtime-accepted';
+    reason: 'native-api' | 'advertised-api' | 'prefer-messages' | 'chat-task' | 'unresolved' | 'runtime-accepted' | 'measured-api';
   };
   /** Registered with Readable, not selected or enabled remotely. */
   enabled: boolean;

@@ -41,15 +41,15 @@ test('measured foundation capabilities select Chat, accepted token field and cei
   try {
     for (let round = 0; round < 2; round++) {
       const response = await fetch(`${relay.baseUrl}/chat/completions`, { method: 'POST', headers: { authorization: `Bearer ${relay.capabilityKey}` },
-        body: JSON.stringify({ model: relay.modelAlias, messages: [{ role: 'user', content: 'Read the file.' }], tools, reasoning_effort: 'high', max_completion_tokens: 128000 }) });
+        body: JSON.stringify({ model: relay.modelAlias, messages: [{ role: 'user', content: 'Read the file.' }], tools, max_completion_tokens: 128000 }) });
       assert.equal(response.status, 200);
       const result = await response.json() as any;
       assert.equal(result.choices[0].message.content, 'FOUNDATION_OK');
       assert.equal(result.choices[0].message.reasoning_content, 'Checked the file.');
     }
     assert.deepEqual(requests.map(x => x.route.split('/').at(-1)), ['responses', 'completions', 'completions', 'completions', 'completions']);
-    assert.deepEqual(requests[0]!.body.reasoning, { effort: 'high' });
-    for (const request of requests.slice(1)) assert.equal(request.body.reasoning_effort, 'high');
+    assert.equal(requests[0]!.body.reasoning, undefined);
+    for (const request of requests.slice(1)) assert.equal(request.body.reasoning_effort, undefined);
     assert.equal(requests.at(-1)!.body.max_tokens, 25000);
     assert.deepEqual(requests.at(-1)!.body.tools, tools);
   } finally { await relay.close(); }

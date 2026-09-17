@@ -68,7 +68,7 @@ for (const api of ['openai-completions', 'anthropic-messages'] as const) {
   });
 }
 
-test('OpenAI function tools use Responses with every advertised effort; text-only and Anthropic stay unchanged', async () => {
+test('every advertised effort survives Responses or Messages routing without a Chat effort field', async () => {
   for (const api of ['openai-completions', 'anthropic-messages'] as const) {
     const runtime = runtimeFixture(api);
     const forwarded: Record<string, unknown>[] = [];
@@ -78,7 +78,7 @@ test('OpenAI function tools use Responses with every advertised effort; text-onl
       forwarded.push(JSON.parse(String(init?.body)));
       return new Response(JSON.stringify(String(input).endsWith('/responses')
         ? { id: 'resp_test', status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: 'OK' }] }] }
-        : protocolFixture(api).response.body));
+        : protocolFixture(String(input).endsWith('/messages') ? 'anthropic-messages' : api).response.body));
     } });
     const advertised = resolveDatabricksReasoningOptions(api, [{ name: api === 'openai-completions' ? 'gpt-5.6-luna' : 'claude-sonnet-5' }]);
     try {
@@ -95,7 +95,7 @@ test('OpenAI function tools use Responses with every advertised effort; text-onl
           });
           await response.text();
           assert.equal(response.status, 200);
-          if (api === 'openai-completions' && tools?.length) {
+          if (routes.at(-1)?.endsWith('/responses')) {
             assert.equal(routes.at(-1), `${runtime.baseUrl}/responses`);
             const wire = forwarded.at(-1)!;
             assert.equal(wire.reasoning_effort, undefined);
@@ -103,9 +103,15 @@ test('OpenAI function tools use Responses with every advertised effort; text-onl
             assert.deepEqual(wire.input, body.messages);
             assert.equal(wire.store, false);
             assert.deepEqual(wire.tools, [{ type: 'function', name: 'read', parameters: { type: 'object', properties: {} } }]);
+          } else if (routes.at(-1)?.endsWith('/messages')) {
+            const wire = forwarded.at(-1);
+            assert.equal(wire?.reasoning_effort, undefined);
+            if (effort && effort !== 'none') assert.deepEqual(wire?.output_config, { effort });
+            if (tools?.length) assert.ok(Array.isArray(wire?.tools) && wire.tools.length === tools.length);
           } else {
-            assert.equal(routes.at(-1), `${runtime.baseUrl}${api === 'anthropic-messages' ? '/v1/messages' : '/chat/completions'}`);
-            assert.deepEqual(forwarded.at(-1), { ...body, model: runtime.model });
+            assert.equal(routes.at(-1), `${runtime.baseUrl}/chat/completions`);
+            const { reasoning_effort: _effort, ...expected } = body;
+            assert.deepEqual(forwarded.at(-1), { ...expected, model: runtime.model });
           }
         }
       }

@@ -22,7 +22,7 @@ async function temporaryRoot() {
   return { root, cwd, cleanup: () => rm(root, { recursive: true, force: true }) };
 }
 
-test('Databricks is available with a ready CLI and no registered models', async () => {
+test('Databricks is unavailable with a ready CLI and no registered models', async () => {
   const fixture = runtimeServiceFixture();
   fixture.catalogue.models = [];
   const def = createDatabricksAgentDef(() => fixture.service);
@@ -31,7 +31,7 @@ test('Databricks is available with a ready CLI and no registered models', async 
   assert.deepEqual(def.fallbackModels, []);
   assert.deepEqual(detected.models, []);
   assert.equal(detected.modelsSource, 'live');
-  assert.equal(detected.available, true);
+  assert.equal(detected.available, false);
   assert.equal(detected.version, '0.282.0');
   assert.equal(detected.authStatus, 'ok');
   assert.equal(detected.modelSelectionRequired, true);
@@ -40,7 +40,7 @@ test('Databricks is available with a ready CLI and no registered models', async 
   assert.throws(() => def.buildArgs('', [], [], { model: 'arbitrary/model' }));
 });
 
-test('Databricks stays available with no credentials, models, or usable CLI', async () => {
+test('Databricks stays unavailable with no credentials, models, or usable CLI', async () => {
   const fixture = runtimeServiceFixture();
   fixture.catalogue.models = [];
   fixture.status.auth = 'auth-required';
@@ -49,7 +49,7 @@ test('Databricks stays available with no credentials, models, or usable CLI', as
   for (const cli of ['missing', 'uninvocable', 'unsupported'] as const) {
     fixture.status.cli = cli;
     const detected = await cachedSafeProbe(safeProbe, def);
-    assert.equal(detected.available, true);
+    assert.equal(detected.available, false);
     assert.equal(detected.authStatus, 'missing');
     assert.equal(detected.modelsSource, 'live');
     assert.deepEqual(detected.models, []);
@@ -73,7 +73,7 @@ test('Databricks detection uses registered models and bypasses stale detection c
   fixture.catalogue.models = [];
   const empty = await cachedSafeProbe(safeProbe, def);
   assert.deepEqual(empty.models, []);
-  assert.equal(empty.available, true);
+  assert.equal(empty.available, false);
   assert.equal(resolveModelForAgent(def, 'dbm_opaque_model'), null);
 });
 

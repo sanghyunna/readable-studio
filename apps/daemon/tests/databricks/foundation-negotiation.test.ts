@@ -69,16 +69,16 @@ test('unknown Messages budget is omitted, required-field budget negotiated, then
   } finally { await relay.close(); }
 });
 
-test('unknown optional field is dropped and the same correction is not repeated', async () => {
+test('known rejected optional field is omitted before the first Messages attempt', async () => {
   const runtime = runtimeFixture(); let calls = 0;
   const relay = await createDatabricksRelay({ runtime, fetch: async (_input, init) => {
     const body = JSON.parse(String(init?.body)); calls++;
-    if (calls > 1) expect(body.stream_options).toBeUndefined();
+    expect(body.stream_options).toBeUndefined();
     return Response.json({ error: { message: 'json: unknown field "stream_options"' } }, { status: 400 });
   } });
   try {
     const response = await fetch(`${relay.baseUrl}/v1/messages`, { method: 'POST', headers: { authorization: `Bearer ${relay.capabilityKey}` }, body: JSON.stringify({ model: relay.modelAlias, messages: [], stream_options: {} }) });
-    expect(response.status).toBe(400); expect(await response.json()).toMatchObject({ error: { reason: 'bad-request' } }); expect(calls).toBe(2);
+    expect(response.status).toBe(400); expect(await response.json()).toMatchObject({ error: { reason: 'bad-request' } }); expect(calls).toBe(1);
   } finally { await relay.close(); }
 });
 
@@ -94,7 +94,7 @@ test('unsupported combination follows explicit Responses remedy without dropping
   } });
   try {
     const response = await fetch(`${relay.baseUrl}/chat/completions`, { method: 'POST', headers: { authorization: `Bearer ${relay.capabilityKey}` }, body: JSON.stringify({ model: relay.modelAlias, messages: [], tools, reasoning_effort: 'high' }) });
-    expect(response.status).toBe(200); await response.text(); expect(routes.map(route => route.split('/').at(-1))).toEqual(['completions', 'responses']);
+    expect(response.status).toBe(200); await response.text(); expect(routes.map(route => route.split('/').at(-1))).toEqual(['messages', 'responses']);
   } finally { await relay.close(); }
 });
 

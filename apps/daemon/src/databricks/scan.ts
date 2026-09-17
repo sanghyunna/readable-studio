@@ -1,12 +1,18 @@
 import type { DatabricksEndpointKind, DatabricksIssue, DatabricksScanCompleteness, DatabricksScanCounters } from '@readable-studio/contracts';
 import { DatabricksServiceError, issueFor, withDeadline } from './client.js';
 import type { DatabricksConnectionBinding } from './credentials.js';
+import { measuredGatewayApi } from './gateway-surfaces.js';
+
+class MetadataNotFound extends DatabricksServiceError {
+  constructor() { super('DATABRICKS_UPSTREAM_UNAVAILABLE'); }
+}
 
 export type DatabricksFetch = (url: string, init: RequestInit) => Promise<Response>;
 export interface DiscoveredResource {
   kind: DatabricksEndpointKind;
   name: string;
   metadata: Record<string, unknown>;
+  measuredApi?: ReturnType<typeof measuredGatewayApi>;
 }
 export interface WorkspaceScanResult {
   resources: DiscoveredResource[];
@@ -42,6 +48,7 @@ export async function requestJson(options: WorkspaceScanOptions, path: string, s
       });
     } catch { throw new DatabricksServiceError('DATABRICKS_UPSTREAM_UNAVAILABLE', true); }
     if (!response.ok) {
+      if (response.status === 404) throw new MetadataNotFound();
       throw new DatabricksServiceError(response.status === 401 ? 'DATABRICKS_AUTH_REQUIRED'
         : response.status === 403 ? 'DATABRICKS_PERMISSION_DENIED'
         : response.status === 429 ? 'DATABRICKS_RATE_LIMITED' : 'DATABRICKS_UPSTREAM_UNAVAILABLE', response.status >= 429);
@@ -54,8 +61,16 @@ export async function requestJson(options: WorkspaceScanOptions, path: string, s
 export async function lookupResource(options: WorkspaceScanOptions, kind: DatabricksEndpointKind, name: string): Promise<DiscoveredResource> {
   const path = kind === 'uc-model-service' ? `/api/2.1/unity-catalog/model-services/${encodeURIComponent(name)}`
     : `/api/2.0/serving-endpoints/${encodeURIComponent(name)}`;
-  const metadata = await requestJson(options, path);
-  return { kind, name, metadata };
+  try {
+    const metadata = await requestJson(options, path);
+    return { kind, name, metadata };
+  } catch (error) {
+    const api = measuredGatewayApi(name);
+    if (!(error instanceof MetadataNotFound) || !api) throw error;
+    // A recorded gateway model is not a missing serving endpoint. No inference
+    // is performed by lookup, and auth/permission failures never trigger this.
+    return { kind: 'uc-model-service', name, metadata: {}, measuredApi: api };
+  }
 }
 
 export async function scanWorkspace(options: WorkspaceScanOptions): Promise<WorkspaceScanResult> {

@@ -44,7 +44,7 @@ export function messagesRequest(body: Json): Json {
     else messages.push({ role, content });
   }
   const result: Json = { model: body.model, messages, ...(system.length ? { system } : {}) };
-  for (const field of ['stream', 'temperature', 'top_p']) if (body[field] !== undefined) result[field] = body[field];
+  for (const field of ['stream', 'temperature', 'top_p', 'thinking', 'output_config']) if (body[field] !== undefined) result[field] = body[field];
   if (body.max_completion_tokens !== undefined || body.max_tokens !== undefined) result.max_tokens = body.max_completion_tokens ?? body.max_tokens;
   if (body.stop !== undefined) result.stop_sequences = Array.isArray(body.stop) ? body.stop : [body.stop];
   if (Array.isArray(body.tools) && body.tool_choice !== 'none') result.tools = body.tools.map(raw => {
@@ -61,8 +61,8 @@ export function messagesRequest(body: Json): Json {
     result.tool_choice = { ...(result.tool_choice ? object(result.tool_choice) : { type: 'auto' }), disable_parallel_tool_use: true };
   }
   if (typeof body.reasoning_effort === 'string' && !['none', 'off'].includes(body.reasoning_effort)) {
-    result.thinking = { type: 'adaptive' };
-    result.output_config = { effort: body.reasoning_effort };
+    result.thinking ??= { type: 'adaptive' };
+    result.output_config ??= { effort: body.reasoning_effort };
   }
   return result;
 }

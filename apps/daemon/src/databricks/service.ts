@@ -517,8 +517,8 @@ export class LocalDatabricksService implements DatabricksService {
 
   private async verifyCheck(runtime: DatabricksRuntimeResolution, check: keyof DatabricksVerificationResponse['checks']): Promise<boolean> {
     return withDeadline(async (signal) => {
-      const anthropic = runtime.api === 'anthropic-messages';
       const invocation = /^\/serving-endpoints\/[^/]+\/invocations$/.test(new URL(runtime.baseUrl).pathname);
+      const anthropic = runtime.api === 'anthropic-messages' || check === 'effort' && !invocation;
       const body: Record<string, unknown> = {
         ...(!invocation ? { model: runtime.model } : {}), messages: [{ role: 'user', content: check === 'tools' ? 'Call the readable_probe tool with ok true.' : 'Reply with OK.' }],
         stream: check === 'streaming', [anthropic || invocation ? 'max_tokens' : 'max_completion_tokens']: 256,
@@ -533,7 +533,9 @@ export class LocalDatabricksService implements DatabricksService {
         if (anthropic) { body.thinking = { type: 'adaptive' }; body.output_config = { effort: 'high' }; }
         else body.reasoning_effort = 'high';
       }
-      const response = await this.fetch(`${runtime.baseUrl}${invocation ? '' : anthropic ? '/v1/messages' : '/chat/completions'}`, {
+      const target = anthropic ? new URL('/ai-gateway/anthropic/v1/messages', runtime.baseUrl).toString()
+        : `${runtime.baseUrl}${invocation ? '' : '/chat/completions'}`;
+      const response = await this.fetch(target, {
         method: 'POST', signal, redirect: 'error', headers: { Authorization: `Bearer ${runtime.apiKey}`, 'Content-Type': 'application/json', ...(anthropic ? { 'anthropic-version': '2023-06-01' } : {}) }, body: JSON.stringify(body),
       });
       if (!response.ok) {

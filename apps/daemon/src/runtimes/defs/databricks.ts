@@ -54,7 +54,7 @@ export function createDatabricksAgentDef(
       rememberLiveModels('databricks', models);
       // The execution harness ships in the app; CLI/auth are setup state only.
       return {
-        available: true,
+        available: models.length > 0,
         models, modelsSource: 'live', version: status.version,
         authStatus: status.auth === 'authenticated' ? 'ok' : status.setupRequired || status.auth === 'auth-required' ? 'missing' : 'unknown',
       };

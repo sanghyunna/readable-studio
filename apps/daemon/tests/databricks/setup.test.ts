@@ -218,11 +218,11 @@ describe('CLI-free Databricks setup through real HTTP', () => {
     expect(await readdir(join(f.dataRoot, 'databricks', 'credentials'))).toEqual([]);
     expect((await restarted.status()).setupRequired).toBe(true);
   });
-  it('keeps the bundled agent available and reports setup with no CLI, credentials, or models', async () => {
+  it('keeps the bundled agent unavailable and reports setup with no CLI, credentials, or models', async () => {
     const { service, runner } = await fixture();
     expect(await service.status()).toMatchObject({ cli: 'missing', auth: 'auth-required', setupRequired: true, profiles: [], enabledCount: 0 });
     expect(await safeProbe(createDatabricksAgentDef(() => service))).toMatchObject({
-      available: true, authStatus: 'missing', models: [], modelSelectionRequired: true, modelManagement: 'databricks',
+      available: false, authStatus: 'missing', models: [], modelSelectionRequired: true, modelManagement: 'databricks',
     });
     expect(runner).not.toHaveBeenCalled();
   });
