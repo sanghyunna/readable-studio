@@ -146,6 +146,68 @@ describe('ManualEditShapeToolbar', () => {
     expect(() => getByRole('group', { name: 'Border' })).toThrow();
   });
 
+  it('keeps the nested picker mounted for its exit on an outside press and removes the group only once it settles', () => {
+    // Outside press with the picker open: the picker closes (mounted, class
+    // off, inert, aria-hidden) and the Border group must survive until that
+    // exit has settled, otherwise the unmount skips the exit. Exit lifetime is
+    // the live animation set + transitionend, modelled the way
+    // useExitPhaseInert.test does it - no duration constant, no sleep.
+    const { getByLabelText, getByRole, queryByRole } = renderToolbar();
+
+    fireEvent.click(getByLabelText('Border'));
+    const swatch = getByRole('button', { name: 'Border color' });
+    swatch.focus();
+    fireEvent.click(swatch);
+    const picker = openColorPopover();
+    let exitRunning = true;
+    picker.getAnimations = () => [{ playState: exitRunning ? 'running' : 'finished' }] as unknown as Animation[];
+
+    fireEvent.mouseDown(document.body);
+
+    expect(picker.isConnected, 'outside press unmounted the picker mid-exit').toBe(true);
+    expect(picker.classList.contains(OPEN_CLASS)).toBe(false);
+    expect(picker.hasAttribute('inert')).toBe(true);
+    expect(picker.getAttribute('aria-hidden')).toBe('true');
+    expect(getByRole('group', { name: 'Border' })).toBeTruthy();
+
+    // A per-property transitionend while another property still runs is not the end.
+    fireEvent.transitionEnd(picker);
+    expect(getByRole('group', { name: 'Border' })).toBeTruthy();
+
+    exitRunning = false;
+    fireEvent.transitionEnd(picker);
+    expect(queryByRole('group', { name: 'Border' })).toBeNull();
+  });
+
+  it('lets Escape close the nested picker first, keeping its exit surface and returning focus to the swatch', () => {
+    // Both the Border group and the picker listen for Escape on document. The
+    // group registered first, so without explicit ownership it closes first and
+    // unmounts the picker and its swatch: no 140ms exit, focus dropped on body.
+    const { getByLabelText, getByRole, queryByRole } = renderToolbar();
+
+    fireEvent.click(getByLabelText('Border'));
+    const swatch = getByRole('button', { name: 'Border color' });
+    swatch.focus();
+    fireEvent.click(swatch);
+    const picker = openColorPopover();
+    const tile = within(picker).getAllByRole('button')[0]!;
+    expect(document.activeElement).toBe(tile);
+
+    fireEvent.keyDown(tile, { key: 'Escape' });
+
+    expect(getByRole('group', { name: 'Border' }), 'Escape dismissed the Border group').toBeTruthy();
+    expect(picker.isConnected).toBe(true);
+    expect(picker.classList.contains(OPEN_CLASS)).toBe(false);
+    expect(picker.hasAttribute('inert')).toBe(true);
+    expect(picker.getAttribute('aria-hidden')).toBe('true');
+    expect(swatch.isConnected).toBe(true);
+    expect(document.activeElement).toBe(swatch);
+
+    // With the picker closed, the next Escape reaches the group.
+    fireEvent.keyDown(swatch, { key: 'Escape' });
+    expect(queryByRole('group', { name: 'Border' })).toBeNull();
+  });
+
   it('keeps grouped popovers trigger-relative on desktop', () => {
     const css = readFileSync('src/components/ManualEditShapeControls.module.css', 'utf8');
 

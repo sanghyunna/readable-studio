@@ -2,7 +2,9 @@
 // docked toolbar (`layout="bar"`) and the vertical left-panel inspector
 // (`layout="stack"`). Whole-element style edits go through onStyleField; image
 // replace and delete go through onApplyPatch.
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import {
+  createContext, useCallback, useContext, useEffect, useRef, useState, type CSSProperties, type ReactNode,
+} from 'react';
 import { Button, VisuallyHidden } from '@readable-studio/components';
 import { useT } from '../i18n';
 import type { ManualEditPatch, ManualEditResizeConstraint, ManualEditStyles, ManualEditTarget } from '../edit-mode/types';
@@ -590,9 +592,31 @@ function compactSpace(elementStyles: ManualEditStyles, kind: 'padding' | 'margin
   return values.join('·');
 }
 
+// Dismissal ownership between a ToolbarPopover group and a colour picker opened
+// inside it. Both listen for Escape and outside mousedown on `document`, and
+// the group registered first, so without this the group closes first and its
+// conditional render unmounts the picker and its swatch: the picker's 140ms
+// exit is skipped and focus falls to body. A nested ColorControl reports its
+// picker's phase so the group can
+// - yield Escape while the picker is open (the next Escape closes the group);
+// - on an outside press, let the picker close and remove itself only once the
+//   picker reports that its exit has settled (`exited`).
+// Default is a no-op for ColorControls that are not inside a group.
+type NestedPickerPhase = 'open' | 'closing' | 'exited';
+const NestedPickerContext = createContext<(phase: NestedPickerPhase) => void>(() => {});
+
 function ToolbarPopover({ label, icon, children }: { label: string; icon: string; children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLSpanElement | null>(null);
+  const nestedPickerPhaseRef = useRef<NestedPickerPhase>('exited');
+  const closeAfterPickerExitRef = useRef(false);
+  const reportNestedPicker = useCallback((phase: NestedPickerPhase) => {
+    nestedPickerPhaseRef.current = phase;
+    if (phase === 'exited' && closeAfterPickerExitRef.current) {
+      closeAfterPickerExitRef.current = false;
+      setOpen(false);
+    }
+  }, []);
   // The nested colour picker (ColorControl -> ManualEditColorPopover) is a body
   // portal, so DOM containment no longer sees a press on one of its tiles.
   // React still bubbles synthetic events through portals to their React
@@ -604,10 +628,16 @@ function ToolbarPopover({ label, icon, children }: { label: string; icon: string
     if (!open) return;
     const onDocMouseDown = (event: MouseEvent) => {
       if (ref.current?.contains(event.target as Node) || insidePressRef.current === event) return;
+      if (nestedPickerPhaseRef.current !== 'exited') {
+        // The picker's own listener closes it on this same press; the group
+        // follows once that exit has settled.
+        closeAfterPickerExitRef.current = true;
+        return;
+      }
       setOpen(false);
     };
     const onDocKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
+      if (event.key !== 'Escape' || nestedPickerPhaseRef.current === 'open') return;
       event.stopPropagation();
       setOpen(false);
     };
@@ -637,7 +667,11 @@ function ToolbarPopover({ label, icon, children }: { label: string; icon: string
         <span>{label}</span>
         <RemixIcon name="arrow-down-s-line" size={14} />
       </Button>
-      {open ? <div className={styles.popover} role="group" aria-label={label}>{children}</div> : null}
+      {open ? (
+        <div className={styles.popover} role="group" aria-label={label}>
+          <NestedPickerContext.Provider value={reportNestedPicker}>{children}</NestedPickerContext.Provider>
+        </div>
+      ) : null}
     </span>
   );
 }
@@ -702,6 +736,12 @@ function SelectControl({
 function ColorControl({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   const [open, setOpen] = useState(false);
   const swatchRef = useRef<HTMLButtonElement | null>(null);
+  const reportNestedPicker = useContext(NestedPickerContext);
+  useEffect(() => {
+    if (!open) return;
+    reportNestedPicker('open');
+    return () => reportNestedPicker('closing');
+  }, [open, reportNestedPicker]);
   return (
     <span className={styles.colorWrap}>
       <button
@@ -722,6 +762,7 @@ function ColorControl({ label, value, onChange }: { label: string; value: string
         value={value}
         onChange={onChange}
         onClose={() => setOpen(false)}
+        onExited={() => reportNestedPicker('exited')}
       />
     </span>
   );

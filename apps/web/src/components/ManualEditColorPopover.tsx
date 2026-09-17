@@ -26,6 +26,14 @@
 // Access contract: focus moves into the popover on open; Escape closes it and
 // returns focus to the trigger; a mousedown outside both the trigger and the
 // popover dismisses it.
+//
+// Exit lifetime: an owner that conditionally renders the swatch (the toolbar's
+// ToolbarPopover group) would unmount this node mid-exit. `onExited` tells such
+// an owner when a close has settled so it can remove itself afterwards. Like
+// useExitPhaseInert, settled means the live animation set reports nothing
+// running (checked on `transitionend`/`transitioncancel` and once at close):
+// there is no duration constant to drift from the stylesheet, and reduced
+// motion, which drops the transition entirely, settles on the close itself.
 import {
   useEffect, useLayoutEffect, useRef, useState,
   type CSSProperties, type MutableRefObject, type RefObject,
@@ -46,6 +54,7 @@ export function ManualEditColorPopover({
   value,
   onChange,
   onClose,
+  onExited,
 }: {
   open: boolean;
   /** The swatch button that opened the popover; focus returns here on Escape. */
@@ -54,12 +63,43 @@ export function ManualEditColorPopover({
   value: string;
   onChange: (value: string) => void;
   onClose: () => void;
+  /** Fires once per close, when the exit has settled and the node may be unmounted. */
+  onExited?: () => void;
 }) {
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const closeRef = useRef(onClose);
+  const exitedRef = useRef(onExited);
+  const wasOpenRef = useRef(false);
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
 
   useEffect(() => { closeRef.current = onClose; }, [onClose]);
+  useEffect(() => { exitedRef.current = onExited; }, [onExited]);
+
+  useEffect(() => {
+    if (open) {
+      wasOpenRef.current = true;
+      return;
+    }
+    if (!wasOpenRef.current) return;
+    wasOpenRef.current = false;
+    const node = popoverRef.current;
+    if (!node) return;
+    const events = ['transitionend', 'transitioncancel'] as const;
+    const settle = () => {
+      // A per-property transitionend must not count while opacity still fades.
+      const animations = typeof node.getAnimations === 'function' ? node.getAnimations() : [];
+      const running = animations.some((animation) => animation.playState === 'running' || animation.pending);
+      if (running) return;
+      unsubscribe();
+      exitedRef.current?.();
+    };
+    const unsubscribe = () => {
+      for (const event of events) node.removeEventListener(event, settle);
+    };
+    for (const event of events) node.addEventListener(event, settle);
+    settle();
+    return unsubscribe;
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
