@@ -16,6 +16,7 @@ import {
   applyOsLocaleSwitch,
   consumeDesktopApprovalToken,
   createSplashWindow,
+  startCrashEvidence,
 } from "@readable-studio/desktop/main";
 import { addLoopbackNoProxyEnv, readProcessStamp } from "@readable-studio/platform";
 import { join } from "node:path";
@@ -132,6 +133,7 @@ async function main(): Promise<void> {
     return;
   }
   const identity = await writePackagedDesktopIdentity({ descriptor: activeConfig.descriptor, paths, stamp });
+  const crashEvidence = startCrashEvidence(app, paths.namespaceRoot, process.env.READABLE_LOCAL_NATIVE_DUMPS === "1");
   await app.whenReady();
 
   // Show the brand splash IMMEDIATELY, before we await the daemon/web sidecars
@@ -174,6 +176,7 @@ async function main(): Promise<void> {
   const { runDesktopMain } = await import("@readable-studio/desktop/main");
   startupTiming.mark("desktop-main-handoff");
   await runDesktopMain(runtime, {
+    crashEvidence,
     credentialDataRoot: paths.dataRoot,
     desktopApprovalToken,
     splashWindow: splash.window,

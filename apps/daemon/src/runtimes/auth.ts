@@ -1,4 +1,5 @@
 import { execAgentFile } from './invocation.js';
+import { probeClaudeAuthStatus } from './claude-auth.js';
 import type { RuntimeAgentDef, RuntimeEnv } from './types.js';
 
 export type AgentAuthProbeResult = {
@@ -304,6 +305,9 @@ export async function probeAgentAuthStatus(
 ): Promise<AgentAuthProbeResult | null> {
   const probe = def.authProbe;
   if (!probe) return null;
+  if (def.id === 'claude' || probe.args.join(' ') === 'auth status --json') {
+    return probeClaudeAuthStatus(resolvedBin, env, probe);
+  }
   try {
     const { stdout, stderr } = await execAgentFile(resolvedBin, probe.args, {
       env,

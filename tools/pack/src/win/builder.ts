@@ -275,7 +275,7 @@ async function runElectronBuilderRaw(
         "--publish",
         "never",
       ], {
-        cwd: config.workspaceRoot,
+        cwd: config.workspaceRoot, windowsHide: true,
         env: {
           ...process.env,
           CSC_IDENTITY_AUTO_DISCOVERY: "false",

@@ -41,7 +41,7 @@ function main(): void {
     readFileSync(new URL('../../../.github/hosted-validation.json', import.meta.url), 'utf8'),
   ) as Record<string, unknown>;
   for (const command of resolveHostedValidationCommands(manifest, boundary)) {
-    const result = spawnSync(command, { shell: true, stdio: 'inherit' });
+    const result = spawnSync(command, { shell: true, stdio: 'inherit', windowsHide: true });
     if (result.status !== 0) process.exit(result.status ?? 1);
   }
 }

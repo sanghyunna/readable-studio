@@ -81,6 +81,7 @@ vi.mock('../../src/state/projects', async () => {
     createConversation: vi.fn(),
     listConversations: vi.fn(),
     listMessages: vi.fn(),
+    loadMessagePage: async (projectId: string, conversationId: string) => ({ messages: await listMessages(projectId, conversationId), nextPosition: null }),
     loadTabs: vi.fn(),
     patchConversation: vi.fn(),
     patchProject: vi.fn(),

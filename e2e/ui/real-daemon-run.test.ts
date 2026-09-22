@@ -1,4 +1,6 @@
 import { expect, test } from '@playwright/test';
+import { rm } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import { ensureRailOpen } from '@/playwright/rail';
 import type { Page, Request, Response } from '@playwright/test';
 import {
@@ -52,7 +54,7 @@ test.beforeEach(async ({ page }) => {
         skillId: null,
         designSystemId: null,
         onboardingCompleted: true,
-        agentModels: { codex: { model: 'default', reasoning: 'default' } },
+        agentModels: { codex: { model: 'gpt-5.4-mini', reasoning: 'default' } },
         agentCliEnv: { codex: codexEnv },
       }),
     );
@@ -63,6 +65,10 @@ test.beforeEach(async ({ page }) => {
 
 test.afterEach(async ({ page }) => {
   await resetDaemonAppConfig(page);
+});
+
+test.afterAll(async () => {
+  await rm(dirname(fakeRuntimes.codex.bin), { recursive: true, force: true });
 });
 
 test('[P0] real daemon run streams, persists, and previews an artifact', async ({ page }) => {
@@ -419,12 +425,9 @@ async function sendPrompt(page: Page, prompt: string) {
   await input.fill(prompt);
   await expect(input).toHaveText(prompt);
   await expect(sendButton).toBeEnabled();
-  const response = await Promise.race([
+  const [response] = await Promise.all([
     page.waitForResponse(isCreateRunResponse, { timeout: 10_000 }),
-    (async () => {
-      await sendButton.click();
-      return page.waitForResponse(isCreateRunResponse, { timeout: 10_000 });
-    })(),
+    sendButton.click(),
   ]);
   expect(response.ok()).toBeTruthy();
   return response;
@@ -482,7 +485,7 @@ async function configureFakeAgent(page: Page, agentId: FakeAgentId) {
     data: {
       onboardingCompleted: true,
       agentId,
-      agentModels: { [agentId]: { model: 'default', reasoning: 'default' } },
+      agentModels: { [agentId]: { model: agentId === 'codex' ? 'gpt-5.4-mini' : 'default', reasoning: 'default' } },
       agentCliEnv: { [agentId]: runtime.env },
       skillId: null,
       designSystemId: null,
@@ -517,7 +520,7 @@ function installConfig({ key, id, env }: { key: string; id: FakeAgentId; env: Re
       skillId: null,
       designSystemId: null,
       onboardingCompleted: true,
-      agentModels: { [id]: { model: 'default', reasoning: 'default' } },
+      agentModels: { [id]: { model: id === 'codex' ? 'gpt-5.4-mini' : 'default', reasoning: 'default' } },
       agentCliEnv: { [id]: env },
     }),
   );

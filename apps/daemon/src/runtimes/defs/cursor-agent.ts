@@ -27,6 +27,13 @@ export function parseCursorAgentModels(stdout: string): RuntimeModelOption[] | n
   return out.length > 1 ? out : null;
 }
 
+class CursorModelListingError extends Error {
+  readonly code = 'CURSOR_MODEL_LISTING_MALFORMED';
+  constructor() {
+    super('Cursor model listing output could not be parsed.');
+  }
+}
+
 const CURSOR_AGENT_VDI_COLD_START_TIMEOUT_MS = 90_000;
 
 export const cursorAgentDef = {
@@ -34,16 +41,17 @@ export const cursorAgentDef = {
     name: 'Cursor Agent',
     bin: 'cursor-agent',
     versionArgs: ['--version'],
-    // `cursor-agent models` prints account-bound model ids per line. When
-    // the user isn't authed it prints "No models available for this
-    // account." — that's not a model list, so we detect it and fall back.
+    // The account listing can be empty even after a successful login.
+    // Keep that explicit response distinct from malformed discovery output.
     listModels: {
       args: ['models'],
       timeoutMs: CURSOR_AGENT_VDI_COLD_START_TIMEOUT_MS,
       parse: (stdout) => {
         const trimmed = String(stdout || '').trim();
-        if (!trimmed || /no models available/i.test(trimmed)) return null;
-        return parseCursorAgentModels(trimmed);
+        if (/^No models available for this account\.$/i.test(trimmed)) return null;
+        const models = parseCursorAgentModels(trimmed);
+        if (!models) throw new CursorModelListingError();
+        return models;
       },
     },
     // `agent` is the legacy alias shipped with older Cursor installations.

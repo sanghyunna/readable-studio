@@ -5,18 +5,17 @@ export type ScanProgress = Pick<AgentScanProgress, 'phase' | 'currentAgentName' 
 export type SplashHost = {
   readonly startedAt: number;
   readonly isStopped: () => boolean;
+  /** appMounted is true only after both mount and Electron's first render. */
   readonly readReadiness: () => Promise<{ readonly appMounted: boolean; readonly splashFinished: boolean }>;
   readonly readScan: () => Promise<ScanProgress | null>;
   readonly executeSplash: (script: string) => Promise<unknown>;
   readonly reveal: () => void;
+  readonly onTimeout: () => void;
 };
 
 export async function runStartupSplash(host: SplashHost): Promise<'ready' | 'unverified' | 'stopped'> {
-  const normalDeadline = Date.now() + 15_000;
-  const scanDeadline = Math.max(normalDeadline, host.startedAt + 60_000);
-  let deadline = normalDeadline;
+  const deadline = Date.now() + 15_000;
   let settled = false;
-  let verified = false;
   let readingScan = false;
   let readingReadiness = false;
   let appMounted = false;
@@ -44,18 +43,14 @@ export async function runStartupSplash(host: SplashHost): Promise<'ready' | 'unv
       void host.readScan().then((scan) => {
         if (!active) return;
         if (scan === null) {
-          settled = true;
-          verified = true;
           return;
         }
         switch (scan.phase) {
           case 'running':
-            deadline = scanDeadline;
             label = `Checking ${scan.currentAgentName ?? 'agents'} (${scan.completed}/${scan.total})`;
             break;
           case 'done':
             settled = scan.completed === scan.total;
-            verified = settled;
             label = settled ? 'Agent scan complete' : 'Agent checks incomplete';
             break;
           case 'cancelled':
@@ -79,18 +74,20 @@ export async function runStartupSplash(host: SplashHost): Promise<'ready' | 'unv
         pushedLabel = text;
       }, () => { /* Document may still be loading; retry on the next tick. */ }).finally(() => { pushing = false; });
     }
-    if (appMounted && splashFinished && settled && now - host.startedAt >= 6800) {
+    // The painted app and parked animation own reveal, never background discovery.
+    if (appMounted && splashFinished) {
       active = false;
       host.reveal();
-      return verified ? 'ready' : 'unverified';
+      return 'ready';
     }
     await new Promise<void>((resolve) => setTimeout(resolve, Math.min(80, deadline - now)));
   }
   active = false;
   if (host.isStopped()) return 'stopped';
   // Do not await a potentially hung splash renderer on the fallback path.
-  void host.executeSplash('window.__readableSplash.setProgress("Agent checks incomplete - opening Readable Studio")')
+  void host.executeSplash('window.__readableSplash.setProgress("Display startup is taking longer than expected")')
     .catch((error: unknown) => console.warn('splash progress unavailable', { error: error instanceof Error ? error.message : String(error) }));
-  host.reveal();
+  if (appMounted) host.reveal();
+  else host.onTimeout();
   return 'unverified';
 }

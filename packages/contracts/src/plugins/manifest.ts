@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { lazyObject } from '../lazy-object.js';
 
 // `readable-studio.json` schema (v1). Mirrors docs/schemas/readable-studio.plugin.v1.json
 // with one addition: this Zod schema is permissive on the top level so adapter
@@ -11,26 +12,26 @@ export const UNSUPPORTED_LEGACY_PRODUCT_V1 = 'UNSUPPORTED_LEGACY_PRODUCT_V1';
 
 export const ReadableStudioSpecVersionSchema = z.string().min(1);
 
-export const ReferenceSchema = z.object({
+export const ReferenceSchema = lazyObject(() => ({
   ref:  z.string().optional(),
   path: z.string().optional(),
-}).passthrough();
+})).passthrough();
 
-export const RefPathSchema = z.object({
+export const RefPathSchema = lazyObject(() => ({
   path: z.string().min(1),
-}).passthrough();
+})).passthrough();
 
-export const McpServerSpecSchema = z.object({
+export const McpServerSpecSchema = lazyObject(() => ({
   name:    z.string().min(1),
   command: z.string().optional(),
   args:    z.array(z.string()).optional(),
   env:     z.record(z.string()).optional(),
   url:     z.string().optional(),
-}).passthrough();
+})).passthrough();
 
 export type McpServerSpec = z.infer<typeof McpServerSpecSchema>;
 
-export const InputFieldSchema = z.object({
+export const InputFieldSchema = lazyObject(() => ({
   name:        z.string().min(1),
   label:       z.string().optional(),
   type:        z.enum(['string', 'text', 'select', 'number', 'boolean', 'file']).optional(),
@@ -38,7 +39,7 @@ export const InputFieldSchema = z.object({
   options:     z.array(z.string()).optional(),
   placeholder: z.string().optional(),
   default:     z.unknown().optional(),
-}).passthrough();
+})).passthrough();
 
 export type InputField = z.infer<typeof InputFieldSchema>;
 
@@ -83,23 +84,23 @@ export function resolveLocalizedText(
     : '';
 }
 
-export const PipelineStageSchema = z.object({
+export const PipelineStageSchema = lazyObject(() => ({
   id:        z.string().min(1),
   atoms:     z.array(z.string()),
   repeat:    z.boolean().optional(),
   until:     z.string().optional(),
   onFailure: z.enum(['abort', 'skip', 'retry']).optional(),
-}).passthrough();
+})).passthrough();
 
 export type PipelineStage = z.infer<typeof PipelineStageSchema>;
 
-export const PluginPipelineSchema = z.object({
+export const PluginPipelineSchema = lazyObject(() => ({
   stages: z.array(PipelineStageSchema),
-}).passthrough();
+})).passthrough();
 
 export type PluginPipeline = z.infer<typeof PluginPipelineSchema>;
 
-export const GenUISurfaceSpecSchema = z.object({
+export const GenUISurfaceSpecSchema = lazyObject(() => ({
   id:      z.string().min(1),
   kind:    z.enum(['form', 'choice', 'confirmation', 'oauth-prompt']),
   persist: z.enum(['run', 'conversation', 'project']),
@@ -136,11 +137,11 @@ export const GenUISurfaceSpecSchema = z.object({
     // contract leaves room for a Phase 4 React-component sandbox.
     sandbox:  z.enum(['iframe', 'react']).optional(),
   }).passthrough().optional(),
-}).passthrough();
+})).passthrough();
 
 export type GenUISurfaceSpec = z.infer<typeof GenUISurfaceSpecSchema>;
 
-export const PluginManifestSchema = z.object({
+export const PluginManifestSchema = lazyObject(() => ({
   $schema:     z.string().optional(),
   specVersion: ReadableStudioSpecVersionSchema.optional(),
   name:        z.string().min(1).regex(/^[a-z0-9][a-z0-9._-]*$/),
@@ -213,6 +214,6 @@ export const PluginManifestSchema = z.object({
     inputs: z.array(InputFieldSchema).optional(),
     capabilities: z.array(z.string()).optional(),
   }).passthrough().optional(),
-}).passthrough();
+})).passthrough();
 
 export type PluginManifest = z.infer<typeof PluginManifestSchema>;

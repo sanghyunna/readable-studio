@@ -12,25 +12,26 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('[P1] assistant project file links open workspace tabs instead of new browser windows', async ({ page }) => {
-  const { projectId, conversationId } = await seedProjectWithAssistantFileLink(page);
+  const { projectId } = await seedProjectWithAssistantFileLink(page);
 
-  await page.goto(`/projects/${projectId}/conversations/${conversationId}`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`/projects/${projectId}/files/index.html`, { waitUntil: 'domcontentloaded' });
   await waitForWorkspaceReady(page);
   await expect(page.getByText('已完成单文件原型：')).toBeVisible();
 
   const fileTab = page.getByRole('tab', { name: /index\.html/i });
+  // Explicitly open the fixture file; conversation restoration need not
+  // choose an unvisited file before the link-routing action under test.
   await expect(fileTab).toBeVisible();
   await page.getByTestId('design-files-tab').click();
   await expect(page.getByTestId('design-files-tab')).toHaveAttribute('aria-selected', 'true');
 
   const pageCountBefore = page.context().pages().length;
-  const popupPromise = page.waitForEvent('popup', { timeout: 1_000 }).catch(() => null);
+  const popups: Page[] = [];
+  page.on('popup', popup => popups.push(popup));
   await page.locator('.msg.assistant a.md-link', { hasText: 'index.html' }).click();
-  const popup = await popupPromise;
-
-  expect(popup).toBeNull();
-  expect(page.context().pages()).toHaveLength(pageCountBefore);
   await expect(fileTab).toHaveAttribute('aria-selected', 'true');
+  expect(popups).toHaveLength(0);
+  expect(page.context().pages()).toHaveLength(pageCountBefore);
   await expect(page.frameLocator(ACTIVE_ARTIFACT_PREVIEW_SELECTOR).getByRole('heading', {
     name: 'Project file link target',
   })).toBeVisible();

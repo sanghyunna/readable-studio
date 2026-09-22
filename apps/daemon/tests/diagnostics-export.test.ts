@@ -171,6 +171,34 @@ describe('diagnostics export handler — packaged (runtime) layout', () => {
 
 });
 
+describe('diagnostics export handler — Databricks failure capture', () => {
+  it('bundles the last gateway finding under an unmistakable logical path', async () => {
+    // Given: a prior Databricks run persisted a structure-only gateway finding.
+    const root = join(tmpdir(), `readable-diag-databricks-${randomUUID()}`);
+    const capturePath = join(root, 'databricks', 'last-gateway-failure.json');
+    const capture = { schemaVersion: 1, diagnosticOutcome: 'gateway-rejection', captureStatus: 'captured' };
+    try {
+      await mkdir(dirname(capturePath), { recursive: true });
+      await writeFile(capturePath, JSON.stringify(capture), 'utf8');
+
+      // When: the existing diagnostics surface exports its bundle.
+      const handler = createDiagnosticsExportHandler({ runtime: null, projectRoot: '/tmp/test-project', dataDir: root });
+      const res = mockResponse();
+      await handler({} as never, res as never, () => undefined);
+
+      // Then: one handoff bundle contains the machine-readable finding.
+      expect(res.capturedStatus).toBe(200);
+      const zip = await JSZip.loadAsync(res.capturedPayload!);
+      const entry = zip.file('databricks/last-gateway-failure.json');
+      expect(entry).not.toBeNull();
+      if (!entry) throw new Error('Missing Databricks gateway capture');
+      expect(JSON.parse(await entry.async('string'))).toEqual(capture);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('diagnostics export handler — run event logs', () => {
   it('bundles recent per-run events.jsonl logs for agent stream forensics', async () => {
     const root = join(tmpdir(), `readable-diag-runs-${randomUUID()}`);

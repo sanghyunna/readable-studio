@@ -88,6 +88,18 @@ describe('splash asset media contract', () => {
     expect(strip.getAttribute('data-state')).toBe('active');
   });
 
+  test('keeps readiness closed during the final fraction of playback', () => {
+    // Given the first pass approaching its final frame.
+    const { media, root, video } = loadSplash();
+    media.currentTime = MEDIA_DURATION - 0.1;
+    const update = video.ownerDocument.createEvent('Event');
+    update.initEvent('timeupdate', false, false);
+    // When the browser reports progress before ended.
+    video.dispatchEvent(update);
+    // Then the host cannot cut off the animation.
+    expect(root.getAttribute('data-readable-splash-finished')).toBeNull();
+  });
+
   test('a media error still finishes the splash instead of leaving it stuck', () => {
     const { root, strip, video } = loadSplash();
 

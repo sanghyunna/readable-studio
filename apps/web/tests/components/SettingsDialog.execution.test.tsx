@@ -2,7 +2,8 @@
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { en } from '../../src/i18n/locales/en';
+import { getEn } from '../../src/i18n/locales/en';
+const en = getEn();
 
 const {
   playSoundMock,
@@ -91,7 +92,8 @@ import type { AgentRefreshOptions, SettingsSection } from '../../src/components/
 import { reconcileAmrModelChoice } from '../../src/components/SettingsDialog';
 import { reconcileAmrProfileEnv } from '../../src/components/SettingsDialog';
 import { I18nProvider } from '../../src/i18n';
-import { ko } from '../../src/i18n/locales/ko';
+import { getKo } from '../../src/i18n/locales/ko';
+const ko = getKo();
 import { LOCALE_LABEL, LOCALES } from '../../src/i18n/types';
 import { MAX_MAX_TOKENS, MIN_MAX_TOKENS } from '../../src/state/maxTokens';
 import type { AgentInfo, AppConfig, AppVersionInfo } from '../../src/types';

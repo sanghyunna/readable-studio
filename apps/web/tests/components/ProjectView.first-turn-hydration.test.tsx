@@ -29,6 +29,7 @@ vi.mock('../../src/providers/registry', async (importOriginal) => ({
 vi.mock('../../src/state/projects', async (importOriginal) => ({
   ...await importOriginal<typeof import('../../src/state/projects')>(),
   listConversations: vi.fn(), listMessages: vi.fn(),
+  loadMessagePage: async (projectId: string, conversationId: string) => ({ messages: await listMessages(projectId, conversationId), nextPosition: null }),
   loadTabs: vi.fn().mockResolvedValue({ tabs: [], active: null }), patchConversation: vi.fn(),
   patchProject: vi.fn(), saveMessage: vi.fn().mockResolvedValue(undefined), saveTabs: vi.fn(),
   persistTabsToDaemonNow: vi.fn(),

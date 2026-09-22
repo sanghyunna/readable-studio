@@ -25,8 +25,8 @@ import {
   trackPresentPopoverClick,
   trackShareOptionPopoverClick,
 } from '../analytics/events';
-import { MarkdownRenderer, artifactRendererRegistry } from '../artifacts/renderer-registry';
-import { renderMarkdownToSafeHtml } from '../artifacts/markdown';
+import { artifactRendererRegistry } from '../artifacts/renderer-registry';
+import { renderMarkdownPreview } from '../artifacts/markdown-preview';
 import { useT, useI18n } from '../i18n';
 import type { Dict, Locale } from '../i18n/types';
 import {
@@ -148,6 +148,7 @@ import {
   readManualEditOuterHtml,
   readManualEditStyles,
 } from '../edit-mode/source-patches';
+import { appendManualEditHistory } from '../edit-mode/history';
 import { MANUAL_EDIT_STYLE_PROPS, type ManualEditActivationMessage, type ManualEditBeginTextEditMessage, type ManualEditBridgeMessage, type ManualEditDuplicatePlan, type ManualEditEndTextEditMessage, type ManualEditHistoryEntry, type ManualEditHoverAtMessage, type ManualEditPatch, type ManualEditRect, type ManualEditResizeConstraint, type ManualEditResizeRequest, type ManualEditStyles, type ManualEditTarget } from '../edit-mode/types';
 import {
   isManualEditNudgeBlocked,
@@ -1218,7 +1219,7 @@ export function FileViewer({
     );
   }
   if (rendererMatch?.renderer.id === 'markdown') {
-    return <MarkdownViewer projectId={projectId} file={file} />;
+    return <MarkdownViewer key={`${projectId}\0${file.name}`} projectId={projectId} file={file} />;
   }
   if (rendererMatch?.renderer.id === 'svg') {
     return <SvgViewer projectId={projectId} file={file} />;
@@ -3922,6 +3923,10 @@ function HtmlViewer({
   const [manualEditDraft, setManualEditDraft] = useState<ManualEditDraft>(() => emptyManualEditDraft());
   const [manualEditHistory, setManualEditHistory] = useState<ManualEditHistoryEntry[]>([]);
   const [manualEditUndone, setManualEditUndone] = useState<ManualEditHistoryEntry[]>([]);
+  const manualEditHistoryRef = useRef(manualEditHistory);
+  const manualEditUndoneRef = useRef(manualEditUndone);
+  manualEditHistoryRef.current = manualEditHistory;
+  manualEditUndoneRef.current = manualEditUndone;
   const [manualEditError, setManualEditError] = useState<string | null>(null);
   const [manualEditResizeFeedback, setManualEditResizeFeedback] = useState<ManualEditResizeFeedback | null>(null);
   const [manualEditSaving, setManualEditSaving] = useState(false);
@@ -3931,10 +3936,17 @@ function HtmlViewer({
   const manualEditTextFlushSequenceRef = useRef(0);
   // Deferred-save transaction: immutable original source captured on entry.
   const manualEditOriginalSourceRef = useRef<string | null>(null);
+  const manualEditHistoryFocusRef = useRef<AbortController | null>(null);
+  useEffect(() => () => {
+    manualEditHistoryFocusRef.current?.abort();
+    manualEditHistoryFocusRef.current = null;
+  }, [projectId, file.name, manualEditMode]);
   const manualEditHistoryOperationRef = useRef(false);
   const manualEditHistoryQueueRef = useRef<Array<'undo' | 'redo'>>([]);
   const undoManualEditRef = useRef<() => Promise<void>>(async () => {});
   const redoManualEditRef = useRef<() => Promise<void>>(async () => {});
+  const manualEditSessionFlushRef = useRef(flushManualEditSession);
+  manualEditSessionFlushRef.current = flushManualEditSession;
   const manualEditPendingStyleRef = useRef<ManualEditPendingStyleSave | null>(null);
   // Drag-start snapshot for resize-handle style math. The live selected target
   // mutates per preview ack (rect + cssSize), which would shift the delta
@@ -3945,6 +3957,8 @@ function HtmlViewer({
     cssSize?: { width: string; height: string };
   } | null>(null);
   const activeManualEditMovementRef = useRef<ActiveManualEditMovement | null>(null);
+  const manualEditMoveFlushRef = useRef<(() => void) | null>(null);
+  const manualEditResizeFlushRef = useRef<(() => Promise<void>) | null>(null);
   const manualEditAltRef = useRef(false);
   const manualEditCtrlRef = useRef(false);
   const manualEditLastUpdateRef = useRef<ManualEditMoveUpdate | null>(null);
@@ -4341,7 +4355,12 @@ function HtmlViewer({
 
   useEffect(() => {
     onCloseGuardChange?.(() => {
-      if (!manualEditDirtyRef.current) return true;
+      if (!manualEditModeRef.current) return true;
+      syncManualEditDirty();
+      if (!manualEditDirtyRef.current && !hasLiveManualEdits()) return true;
+      // Keep the viewer mounted until its bridge has committed live typing.
+      // The existing Save/Discard controls own the decision, as on tab close.
+      if (hasLiveManualEdits() && !hasActiveManualEditGesture()) void manualEditSessionFlushRef.current();
       setManualEditBlockedToast(t('workspace.unsavedTabCloseBlocked'));
       return false;
     });
@@ -4349,15 +4368,29 @@ function HtmlViewer({
   }, [onCloseGuardChange, t]);
 
   useEffect(() => {
+    let cancelled = false;
+    const acceptSource = async (text: string) => {
+      if (text === sourceRef.current || text === manualEditInFlightSourceRef.current) return;
+      // A watcher is not a user-requested transition. Keep the document and
+      // gesture owned by pointerup/keyup; flushing here would end a resize or
+      // split one held-key burst into multiple history entries.
+      if (manualEditModeRef.current && hasActiveManualEditGesture()) return;
+      if (manualEditModeRef.current && hasLiveManualEdits()) {
+        if (!(await manualEditSessionFlushRef.current()) || cancelled) return;
+      }
+      syncManualEditDirty();
+      manualEditSourceRefreshPendingRef.current = false;
+      if (manualEditModeRef.current && manualEditDirtyRef.current) return;
+      dropActiveManualEditMovementForSourceRefresh(text);
+      setSource(text);
+      sourceRef.current = text;
+    };
     const sourceFileKey = `${projectId}\0${file.name}\0${liveHtml === undefined ? 'raw' : 'live'}`;
     if (liveHtml !== undefined) {
       sourceFileKeyRef.current = sourceFileKey;
       manualEditSaveGenerationRef.current = 0;
-      if (manualEditModeRef.current && manualEditDirtyRef.current) return;
-      dropActiveManualEditMovementForSourceRefresh(liveHtml);
-      setSource(liveHtml);
-      sourceRef.current = liveHtml;
-      return;
+      void acceptSource(liveHtml);
+      return () => { cancelled = true; };
     }
     const fileChanged = sourceFileKeyRef.current !== sourceFileKey;
     sourceFileKeyRef.current = sourceFileKey;
@@ -4367,7 +4400,6 @@ function HtmlViewer({
       sourceRef.current = null;
     }
     dropActiveManualEditMovementForSourceRefresh();
-    let cancelled = false;
     const saveGenerationAtRequest = manualEditSaveGenerationRef.current;
     // Cache-bust the fetch on every mtime / reload / files-refresh bump.
     // Without this, an agent edit during Comment mode (srcDoc path) gets
@@ -4397,18 +4429,7 @@ function HtmlViewer({
         if (latest == null || latest === sourceRef.current) return;
         text = latest;
       }
-      if (manualEditModeRef.current && manualEditDirtyRef.current) {
-        manualEditSourceRefreshPendingRef.current = false;
-        return;
-      }
-      if (manualEditSourceRefreshPendingRef.current) {
-        manualEditSourceRefreshPendingRef.current = false;
-        if (manualEditModeRef.current) {
-          dropActiveManualEditMovementForSourceRefresh(text);
-        }
-      }
-      setSource(text);
-      sourceRef.current = text;
+      await acceptSource(text);
     });
     return () => {
       cancelled = true;
@@ -4569,12 +4590,6 @@ function HtmlViewer({
   function manualEditDocumentEpoch(): string {
     return `${projectId}\u0000${file.name}\u0000${manualEditPreviewRevisionRef.current}`;
   }
-  const manualEditSourceRefreshKey = [
-    file.mtime,
-    liveHtml === undefined ? 'raw' : liveHtml,
-    filesRefreshKey,
-    reloadKey,
-  ].join('\u0000');
   const manualEditMovementOwnerKey = [
     projectId,
     file.name,
@@ -4582,7 +4597,7 @@ function HtmlViewer({
     manualEditMode ? 'active' : 'inactive',
     selectedManualEditTarget?.id ?? '',
   ].join('\u0000');
-  const manualEditMoveFrameKey = `${manualEditMovementOwnerKey}\u0000${manualEditSourceRefreshKey}`;
+  const manualEditMoveFrameKey = manualEditMovementOwnerKey;
   useEffect(() => () => {
     clearManualEditMovement();
     manualEditDuplicateGenerationRef.current += 1;
@@ -4990,7 +5005,7 @@ function HtmlViewer({
     clearManualEditResizeFeedback();
     setManualEditPendingStyle(null);
     clearManualEditMovement();
-  }, [file.name]);
+  }, [projectId, file.name]);
 
   // Revert any in-flight manual-edit movement if the viewer unmounts mid-drag.
   useEffect(() => () => { clearManualEditMovement(); }, []);
@@ -5520,7 +5535,7 @@ function HtmlViewer({
     setManualEditResizeFeedback(null);
   }
 
-  function inspectorManualEditStyles(target: ManualEditTarget, baseSource: string): ManualEditStyles {
+  function inspectorManualEditStyles(target: ManualEditTarget, baseSource: string | Document): ManualEditStyles {
     const inlineStyles = readManualEditStyles(baseSource, target.id);
     return mergeManualEditInspectorStyles(inlineStyles, target.styles);
   }
@@ -5530,7 +5545,8 @@ function HtmlViewer({
     savedStyles: Partial<ManualEditStyles>,
     savedSource: string,
   ) {
-    if (id !== '__body__' && !readManualEditOuterHtml(savedSource, id)) {
+    const sourceDocument = new DOMParser().parseFromString(savedSource, 'text/html');
+    if (id !== '__body__' && !readManualEditOuterHtml(sourceDocument, id)) {
       setManualEditError(t('manualEdit.error.selectedTargetMissing'));
       selectedManualEditTargetRef.current = null;
       setSelectedManualEditTarget(null);
@@ -5539,7 +5555,7 @@ function HtmlViewer({
       setReloadKey((key) => key + 1);
       return;
     }
-    const sourceStyles = readManualEditStyles(savedSource, id);
+    const sourceStyles = readManualEditStyles(sourceDocument, id);
     const supersededStyles = manualEditSupersededStyleKeys(manualEditPendingStyleRef.current, id, savedStyles);
     const repairStyles: Partial<ManualEditStyles> = {};
     for (const key of Object.keys(savedStyles) as Array<keyof ManualEditStyles>) {
@@ -6490,11 +6506,33 @@ function HtmlViewer({
     });
   }
 
+  function hasActiveManualEditGesture(): boolean {
+    return keyboardBurstRef.current !== null || activeManualEditMovementRef.current !== null
+      || manualEditResizeFlushRef.current !== null;
+  }
+
+  function hasLiveManualEdits(): boolean {
+    return manualEditTextNeedsFlushRef.current || hasActiveManualEditGesture() || manualEditSavingRef.current;
+  }
+
   async function flushManualEditSession(): Promise<boolean> {
     if (!(await flushManualEditText())) return false;
+    if (manualEditResizeFlushRef.current) await manualEditResizeFlushRef.current();
     await flushKeyboardBurst();
     if (manualEditSavingRef.current) return false;
+    manualEditMoveFlushRef.current?.();
+    const movement = activeManualEditMovementRef.current;
+    // A duplicate still awaiting bridge geometry cannot be finalized safely.
+    // Keep its document mounted rather than cancelling it on a refresh/switch.
+    if (movement?.duplicate) return false;
+    const result = movement?.latestResult;
     cancelManualEditMovement();
+    if (result && (result.appliedDelta.x !== 0 || result.appliedDelta.y !== 0)) {
+      if (!(await applyManualEdit({ id: result.targetId, kind: 'set-style', styles: result.styles }, movement!.label))) return false;
+      const invalidThrough = nextManualEditPreviewVersion();
+      manualEditPreviewAckVersionRef.current = invalidThrough;
+      manualEditResizeFeedbackInvalidThroughVersionRef.current = invalidThrough;
+    }
     iframeRef.current?.contentWindow?.postMessage({ type: 'readable-edit-click-cancel' } satisfies ManualEditActivationMessage, '*');
     return flushManualEditStyleSave();
   }
@@ -6558,6 +6596,8 @@ function HtmlViewer({
       setManualEditError(null);
       manualEditModeRef.current = false;
       setManualEditMode(false);
+      setManualEditHistory([]);
+      setManualEditUndone([]);
       try {
         await onFileSaved?.();
       } catch (error) {
@@ -6633,7 +6673,8 @@ function HtmlViewer({
     if (actionSeq !== manualEditActionSeqRef.current) return;
     setManualEditPageStylesOpen(false);
     const base = sourceRef.current ?? '';
-    const fields = readManualEditFields(base, target.id);
+    const sourceDocument = new DOMParser().parseFromString(base, 'text/html');
+    const fields = readManualEditFields(sourceDocument, target.id);
     selectedManualEditTargetIdRef.current = target.id;
     selectedManualEditTargetRef.current = target;
     setSelectedManualEditTarget(target);
@@ -6648,9 +6689,9 @@ function HtmlViewer({
       href: fields.href ?? target.fields.href ?? '',
       src: fields.src ?? target.fields.src ?? '',
       alt: fields.alt ?? target.fields.alt ?? '',
-      styles: inspectorManualEditStyles(target, base),
-      attributesText: JSON.stringify(readManualEditAttributes(base, target.id), null, 2),
-      outerHtml: readManualEditOuterHtml(base, target.id) || target.outerHtml,
+      styles: inspectorManualEditStyles(target, sourceDocument),
+      attributesText: JSON.stringify(readManualEditAttributes(sourceDocument, target.id), null, 2),
+      outerHtml: readManualEditOuterHtml(sourceDocument, target.id) || target.outerHtml,
       fullSource: base,
     });
     setManualEditError(null);
@@ -6710,7 +6751,6 @@ function HtmlViewer({
     const entry: ManualEditHistoryEntry = {
       id: `${Date.now()}-${manualEditHistory.length}`,
       label,
-      patch,
       beforeSource: baseSource,
       afterSource: result.source,
       createdAt: Date.now(),
@@ -6720,11 +6760,16 @@ function HtmlViewer({
     };
     setSource(result.source);
     sourceRef.current = result.source;
+    syncManualEditDirty();
     setInlinedSource(null);
     if (patch.kind !== 'set-style') {
       setManualEditFrozenSource(result.source);
     }
-    setManualEditHistory((current) => [entry, ...current]);
+    // Bridge flush acknowledgements can arrive before React renders the commit.
+    // Publish the source/history cursor together for a waiting Undo or Redo.
+    manualEditHistoryRef.current = appendManualEditHistory(manualEditHistoryRef.current, entry);
+    manualEditUndoneRef.current = [];
+    setManualEditHistory(manualEditHistoryRef.current);
     setManualEditUndone([]);
     setManualEditDraft((current) => ({ ...current, fullSource: result.source }));
     if (patch.kind === 'set-text') {
@@ -6771,6 +6816,27 @@ function HtmlViewer({
 
   function refreshManualEditDocument(snapshot: string) {
     capturePreviewScrollPosition();
+    const frame = iframeRef.current;
+    const restoreFocus = frame && (document.activeElement === frame || manualEditHistoryFocusRef.current !== null);
+    manualEditHistoryFocusRef.current?.abort();
+    manualEditHistoryFocusRef.current = null;
+    if (restoreFocus) {
+      // Load precedes the asynchronous mode message. Keep shortcuts in the host
+      // until this replacement document acknowledges its enabled edit bridge.
+      const controller = new AbortController();
+      manualEditHistoryFocusRef.current = controller;
+      frame.blur();
+      frame.addEventListener('load', () => {
+        window.addEventListener('message', (event: MessageEvent<ManualEditBridgeMessage | null>) => {
+          if (event.source !== frame.contentWindow || iframeRef.current !== frame) return;
+          const message = event.data;
+          if (message?.type !== 'readable-edit-targets' || message.documentEpoch !== manualEditDocumentEpoch()) return;
+          controller.abort();
+          manualEditHistoryFocusRef.current = null;
+          if (document.activeElement === document.body) frame.focus({ preventScroll: true });
+        }, { signal: controller.signal });
+      }, { once: true, signal: controller.signal });
+    }
     setManualEditFrozenSource(snapshot);
     setManualEditDocumentRevision((revision) => revision + 1);
   }
@@ -6785,12 +6851,13 @@ function HtmlViewer({
   }
 
   async function undoManualEdit() {
+    if (manualEditTextNeedsFlushRef.current && !(await flushManualEditText())) return;
     await flushKeyboardBurst();
     if (manualEditSavingRef.current) {
       if (manualEditHistoryOperationRef.current) manualEditHistoryQueueRef.current.push('undo');
       return;
     }
-    const [latest, ...rest] = manualEditHistory;
+    const [latest, ...rest] = manualEditHistoryRef.current;
     if (!latest) {
       runNextQueuedManualEditHistory();
       return;
@@ -6819,13 +6886,17 @@ function HtmlViewer({
           seq: manualEditActionSeqRef.current,
         };
       }
-      setSource(latest.beforeSource);
-      sourceRef.current = latest.beforeSource;
-      setInlinedSource(null);
-      refreshManualEditDocument(latest.beforeSource);
-      setManualEditHistory(rest);
-      setManualEditUndone((current) => [latest, ...current]);
-      setManualEditDraft((current) => ({ ...current, fullSource: latest.beforeSource }));
+      // Publish the history cursor with its source before another shortcut can
+      // observe the new source through a callback from the previous render.
+      flushSync(() => {
+        setSource(latest.beforeSource);
+        sourceRef.current = latest.beforeSource;
+        setInlinedSource(null);
+        refreshManualEditDocument(latest.beforeSource);
+        setManualEditHistory(rest);
+        setManualEditUndone((current) => [latest, ...current]);
+        setManualEditDraft((current) => ({ ...current, fullSource: latest.beforeSource }));
+      });
     } finally {
       manualEditSavingRef.current = false;
       manualEditHistoryOperationRef.current = false;
@@ -6835,12 +6906,13 @@ function HtmlViewer({
   }
 
   async function redoManualEdit() {
+    if (manualEditTextNeedsFlushRef.current && !(await flushManualEditText())) return;
     await flushKeyboardBurst();
     if (manualEditSavingRef.current) {
       if (manualEditHistoryOperationRef.current) manualEditHistoryQueueRef.current.push('redo');
       return;
     }
-    const [latest, ...rest] = manualEditUndone;
+    const [latest, ...rest] = manualEditUndoneRef.current;
     if (!latest) {
       runNextQueuedManualEditHistory();
       return;
@@ -6869,13 +6941,15 @@ function HtmlViewer({
           seq: manualEditActionSeqRef.current,
         };
       }
-      setSource(latest.afterSource);
-      sourceRef.current = latest.afterSource;
-      setInlinedSource(null);
-      refreshManualEditDocument(latest.afterSource);
-      setManualEditUndone(rest);
-      setManualEditHistory((current) => [latest, ...current]);
-      setManualEditDraft((current) => ({ ...current, fullSource: latest.afterSource }));
+      flushSync(() => {
+        setSource(latest.afterSource);
+        sourceRef.current = latest.afterSource;
+        setInlinedSource(null);
+        refreshManualEditDocument(latest.afterSource);
+        setManualEditUndone(rest);
+        setManualEditHistory((current) => [latest, ...current]);
+        setManualEditDraft((current) => ({ ...current, fullSource: latest.afterSource }));
+      });
     } finally {
       manualEditSavingRef.current = false;
       manualEditHistoryOperationRef.current = false;
@@ -7598,8 +7672,11 @@ function HtmlViewer({
     openInNewTab();
   }
 
-  function reloadHtmlPreview() {
-    if (manualEditMode) clearManualEditMovement();
+  async function reloadHtmlPreview() {
+    if (manualEditModeRef.current) {
+      if ((hasLiveManualEdits() || manualEditPendingStyleRef.current) && !(await flushManualEditSession())) return;
+      setManualEditFrozenSource(sourceRef.current);
+    }
     fireArtifactToolbarClick('reload');
     capturePreviewScrollPosition();
     imageExportSnapshotDataUrlRef.current = null;
@@ -7612,7 +7689,11 @@ function HtmlViewer({
     }
   }
 
-  function selectMode(nextMode: 'preview' | 'source') {
+  async function selectMode(nextMode: 'preview' | 'source') {
+    if (nextMode === 'source' && manualEditModeRef.current) {
+      if ((hasLiveManualEdits() || manualEditPendingStyleRef.current) && !(await flushManualEditSession())) return;
+      setManualEditFrozenSource(sourceRef.current);
+    }
     if (nextMode === 'source') setDrawOverlayOpen(false);
     setMode(nextMode);
   }
@@ -8614,6 +8695,7 @@ function HtmlViewer({
   const manualEditResizeHandles =
     manualEditResizeRect && selectedManualEditTarget ? (
       <ManualEditResizeHandles
+        flushPendingRef={manualEditResizeFlushRef}
         rect={manualEditResizeRect}
         startSize={{
           width: selectedManualEditTarget.rect.width,
@@ -8643,9 +8725,9 @@ function HtmlViewer({
             manualEditResizeRequest(direction, size),
           );
         }}
-        onResizeCommit={(direction, size, startSize) => {
-          void commitManualEditResize(selectedManualEditTarget, direction, size, startSize);
-        }}
+        onResizeCommit={(direction, size, startSize) =>
+          commitManualEditResize(selectedManualEditTarget, direction, size, startSize)
+        }
         onResizeCancel={() => {
           clearManualEditHover();
           clearManualEditResizeFeedback();
@@ -8659,6 +8741,7 @@ function HtmlViewer({
     manualEditMoveRect && selectedManualEditTarget ? (
       <ManualEditMoveFrame
         key={manualEditMoveFrameKey}
+        flushPendingRef={manualEditMoveFlushRef}
         rect={manualEditMoveRect}
         scale={overlayPreviewScale}
         mode={manualEditMoveMode}
@@ -11173,8 +11256,7 @@ function MarkdownViewer({
 
   const html = useMemo(() => {
     if (text === null) return null;
-    const renderPartial = MarkdownRenderer.renderPartial ?? renderMarkdownToSafeHtml;
-    return decorateMarkdownCodeBlocks(renderPartial(text));
+    return decorateMarkdownCodeBlocks(renderMarkdownPreview(text));
   }, [text]);
 
   useEffect(() => {

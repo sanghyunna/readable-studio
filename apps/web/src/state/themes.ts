@@ -50,7 +50,7 @@ export const THEME_SCHEME_BY_ID = Object.fromEntries(
 ) as Partial<Record<AppTheme, ThemeScheme>>;
 
 const THEME_IDS = new Set<AppTheme>(THEME_OPTIONS.map((theme) => theme.id));
-const THEME_BY_ID = new Map<AppTheme, ThemeOption>(THEME_OPTIONS.map((theme) => [theme.id, theme]));
+let themeById: Map<AppTheme, ThemeOption> | undefined;
 
 export function isAppTheme(value: unknown): value is AppTheme {
   return typeof value === 'string' && THEME_IDS.has(value as AppTheme);
@@ -76,5 +76,6 @@ export function resolveDocumentThemeScheme(): ThemeScheme {
 }
 
 export function themeLabelKey(theme: AppTheme): keyof Pick<Dict, ThemeLabelKey> {
-  return THEME_BY_ID.get(theme)?.labelKey ?? 'settings.themeSystem';
+  themeById ??= new Map(THEME_OPTIONS.map((option) => [option.id, option]));
+  return themeById.get(theme)?.labelKey ?? 'settings.themeSystem';
 }

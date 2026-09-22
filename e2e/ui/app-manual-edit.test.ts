@@ -272,13 +272,20 @@ test('[P0] manual edit direct text typing persists text-only elements', async ({
   await page.getByTestId('manual-edit-mode-toggle').click();
   await expect(frame.locator('html[data-readable-edit-mode]')).toHaveCount(1);
   await textOnlyDiv.click();
+  await expect(textOnlyDiv).toHaveAttribute('data-readable-edit-selected', 'true');
+  await expect(textOnlyDiv).not.toHaveAttribute('contenteditable');
+  await page.getByRole('group', { name: 'Move element' }).locator('[data-region="interior"]').dblclick();
   // Text-only elements open a formatting-capable (rich) contenteditable so
   // B/I/U can emit markup; only links/non-text leaves get plaintext-only.
   await expect(textOnlyDiv).toHaveAttribute('contenteditable', 'true');
 
   await page.keyboard.press('ControlOrMeta+A');
   await page.keyboard.type('Edited left panel');
-  await page.keyboard.press('Enter');
+  await page.keyboard.press('Escape');
+  await expect(textOnlyDiv).not.toHaveAttribute('contenteditable');
+  await expect(textOnlyDiv).toHaveAttribute('data-readable-edit-selected', 'true');
+  await page.keyboard.press('Escape');
+  await expect(textOnlyDiv).not.toHaveAttribute('data-readable-edit-selected');
   await expect(frame.getByText('Edited left panel')).toBeVisible();
 
   const saveResponsePromise = page.waitForResponse((response) => isProjectFileWrite(response, projectId));
@@ -393,7 +400,7 @@ test('[P1] issue 33 manual edit history preserves preview identity and focus', a
     await armFrameLoad();
     await page.keyboard.press('Enter');
     await waitForFrameLoad();
-    await expectFileSource(page, projectId, 'manual-edit.html', [text]);
+    await expectFileSource(page, projectId, 'manual-edit.html', ['Left panel']);
     await expect(textOnlyDiv).toHaveText(text);
     await expect.poll(async () => {
       try {
@@ -406,19 +413,16 @@ test('[P1] issue 33 manual edit history preserves preview identity and focus', a
     await expect(moveSurface).toBeVisible();
   };
 
-  await commitText('First edit', () => textOnlyDiv.click());
-  await commitText('Second edit', async () => {
-    await moveSurface.click();
-    await textOnlyDiv.click();
-  });
+  await commitText('First edit', () => textOnlyDiv.dblclick());
+  await commitText('Second edit', () => moveSurface.dblclick());
 
   const originalFrame = await artifactPreview(page).elementHandle();
   if (!originalFrame) throw new Error('active preview iframe has no element handle');
 
   const expectHistoryState = async (text: string, excludedText: string[]) => {
-    await expectFileSource(page, projectId, 'manual-edit.html', [text]);
-    await expectFileSourceExcludes(page, projectId, 'manual-edit.html', excludedText);
+    await expectFileSource(page, projectId, 'manual-edit.html', ['Left panel']);
     await expect(frame.locator('[data-readable-id="pair-a"]')).toHaveText(text);
+    for (const excluded of excludedText) await expect(textOnlyDiv).not.toHaveText(excluded);
     await expect(frame.locator('[data-readable-id="pair-a"][data-readable-edit-selected="true"]')).toHaveCount(1);
     await expect(page.getByRole('group', { name: 'Move element' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Resize bottom-right corner' })).toBeVisible();
@@ -444,13 +448,7 @@ test('[P1] issue 33 manual edit history preserves preview identity and focus', a
   const beforeNudge = await textOnlyDiv.boundingBox();
   if (!beforeNudge) throw new Error('selected element has no bounding box before keyboard nudge');
   await page.keyboard.press('ArrowRight');
-  await expect
-    .poll(async () => {
-      const resp = await page.request.get(`/api/projects/${projectId}/files/manual-edit.html`);
-      if (!resp.ok()) return '';
-      return resp.text();
-    })
-    .toMatch(/data-readable-id="pair-a"[^>]*style="[^"]*translate:\s*1px(?:\s+0px)?/);
+  await expect(textOnlyDiv).toHaveAttribute('style', /translate:\s*1px(?:\s+0px)?/);
   await expect
     .poll(async () => {
       const afterNudge = await textOnlyDiv.boundingBox();
@@ -469,6 +467,12 @@ test('[P1] issue 33 manual edit history preserves preview identity and focus', a
   await page.mouse.down();
   await page.mouse.move(resizeX + 20, resizeY + 20, { steps: 4 });
   await page.mouse.up();
+  await expect(textOnlyDiv).toHaveAttribute('style', /width:\s*\d+px;.*height:\s*\d+px/);
+  const saved = page.waitForResponse((response) => isProjectFileWrite(response, projectId));
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  expect((await saved).ok()).toBe(true);
+  await expectFileSource(page, projectId, 'manual-edit.html', ['Second edit']);
+  await expectFileSourceExcludes(page, projectId, 'manual-edit.html', ['First edit', 'Left panel']);
   await expect
     .poll(async () => {
       const resp = await page.request.get(`/api/projects/${projectId}/files/manual-edit.html`);
@@ -910,9 +914,7 @@ test('[P1] issue 34 selects a nested child through the selected parent move surf
   await page.keyboard.press('Escape');
   await parent.click({ position: { x: 20, y: 20 } });
   await expect(parent).toHaveAttribute('data-readable-edit-selected', 'true');
-  await expect(parent).toHaveAttribute('contenteditable', 'true');
-  await page.keyboard.press('Escape');
-  await expect(parent).not.toHaveAttribute('contenteditable', 'true');
+  await expect(parent).not.toHaveAttribute('contenteditable');
   await expect(
     page.getByRole('group', { name: 'Move element' }).locator('[data-region="interior"]'),
   ).toBeVisible();
@@ -951,8 +953,8 @@ test('[P1] issue 34 keeps dragging the selected parent when the drag starts over
   await page.getByTestId('manual-edit-mode-toggle').click();
   await expect(frame.locator('html[data-readable-edit-mode]')).toHaveCount(1);
   await parent.click({ position: { x: 40, y: 20 } });
-  await expect(parent).toHaveAttribute('contenteditable', 'true');
-  await page.keyboard.press('Escape');
+  await expect(parent).toHaveAttribute('data-readable-edit-selected', 'true');
+  await expect(parent).not.toHaveAttribute('contenteditable');
   await expect(
     page.getByRole('group', { name: 'Move element' }).locator('[data-region="interior"]'),
   ).toBeVisible();
@@ -993,7 +995,8 @@ test('[P1] issue 34 selects a nested child whose center is inside the selected r
   await page.getByTestId('manual-edit-mode-toggle').click();
   await expect(frame.locator('html[data-readable-edit-mode]')).toHaveCount(1);
   await parent.click({ position: { x: 40, y: 20 } });
-  await page.keyboard.press('Escape');
+  await expect(parent).toHaveAttribute('data-readable-edit-selected', 'true');
+  await expect(parent).not.toHaveAttribute('contenteditable');
   await expect(
     page.getByRole('group', { name: 'Move element' }).locator('[data-region="ring"]').first(),
   ).toBeVisible();
@@ -1030,7 +1033,7 @@ test('[P1] issue 39 outlines only the inline-edit nested child', async ({ page }
     .map((node) => node.getAttribute('data-readable-id')));
   await page.getByTestId('manual-edit-mode-toggle').click();
   await expect(frame.locator('html[data-readable-edit-mode]')).toHaveCount(1);
-  await child.click();
+  await child.dblclick();
   await expect(frame.locator('[data-readable-edit-selected="true"]')).toHaveCount(1);
   await expect(child).toHaveAttribute('data-readable-edit-selected', 'true');
   await expect(child).toHaveAttribute('data-readable-editing', 'true');
@@ -1147,7 +1150,7 @@ test('[P1] issue 41 keeps bridge paint only for hover and inline editing', async
       hasBridgeGlow: false,
     });
 
-  await text.click();
+  await text.dblclick();
   await expect(frame.locator('[data-readable-edit-selected="true"]')).toHaveCount(1);
   await expect(text).toHaveAttribute('data-readable-edit-selected', 'true');
   await expect(text).toHaveAttribute('data-readable-editing', 'true');
@@ -1178,7 +1181,7 @@ test('[P1] issue 41 keeps bridge paint only for hover and inline editing', async
     hasBridgeGlow: false,
   });
 
-  await authoredText.click();
+  await authoredText.dblclick();
   await expect(frame.locator('[data-readable-edit-selected="true"]')).toHaveCount(1);
   await expect(authoredText).toHaveAttribute('data-readable-edit-selected', 'true');
   await expect(authoredText).toHaveAttribute('data-readable-editing', 'true');

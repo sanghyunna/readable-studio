@@ -52,7 +52,8 @@ import { inlineMentionToken, mentionTokenPresent } from '../utils/inlineMentions
 import { smoothScrollToTop } from '../utils/smoothScrollToTop';
 import { missingRequiredInputs, pluginInputsAreValid } from '../utils/pluginRequiredInputs';
 import { visualReferenceForPlugin } from '../utils/visualPluginContext';
-import { HomeHero, type ExamplePromptInfo, type HomeHeroHandle } from './HomeHero';
+import { type ExamplePromptInfo, type HomeHeroHandle } from './HomeHero';
+import { HomeDraft, createHomeDraft } from './composer/HomeDraft';
 import { stageFiles as buildStagedFiles, type StagedFileItem } from './composer/stagedFiles';
 import { findChip, HOME_HERO_CHIPS, type HomeHeroChip } from './home-hero/chips';
 
@@ -63,7 +64,11 @@ import {
   PLUGIN_AUTHORING_PROMPT_TEMPLATE,
   type HomePromptHandoff,
 } from './home-hero/plugin-authoring';
-import { PluginDetailsModal } from './PluginDetailsModal';
+import dynamic from 'next/dynamic';
+import { CenteredLoader } from './Loading';
+const PluginDetailsModal = dynamic(() => import('./PluginDetailsModal').then((m) => m.PluginDetailsModal), {
+  loading: () => <CenteredLoader />,
+});
 import type { PluginLoopSubmit } from './PluginLoopHome';
 import { localizePluginTitle } from './plugins-home/localization';
 import type { PluginUseAction } from './plugins-home/useActions';
@@ -269,8 +274,10 @@ export function HomeView({
   const [continuingWithoutPrompt, setContinuingWithoutPrompt] = useState(false);
   const [mcpServers, setMcpServers] = useState<McpServerConfig[]>([]);
   const [mcpLoading, setMcpLoading] = useState(true);
-  const [prompt, setPrompt] = useState('');
-  const [promptEditedByUser, setPromptEditedByUser] = useState(false);
+  const [draft] = useState(createHomeDraft);
+  const setPrompt = draft.set;
+  const promptEditedByUser = useRef(false);
+  function setPromptEditedByUser(edited: boolean) { promptEditedByUser.current = edited; }
   const examplePromptInfoRef = useRef<ExamplePromptInfo | null>(null);
   const handleExamplePromptStatusChange = useCallback((info: ExamplePromptInfo | null) => {
     examplePromptInfoRef.current = info;
@@ -350,7 +357,7 @@ export function HomeView({
     if (!pendingPromptFocusEndRef.current) return;
     pendingPromptFocusEndRef.current = false;
     inputRef.current?.focusEnd();
-  }, [prompt]);
+  });
 
   useEffect(() => {
     if (!promptHandoff || consumedHandoffIdRef.current === promptHandoff.id) return;
@@ -769,6 +776,7 @@ export function HomeView({
         () => localizePluginDescription(locale, record).trim() || record.title,
       );
       const trimmedSeed = seed.text.trim();
+      const prompt = draft.getSnapshot();
       const currentDraft = prompt.trim();
       // Append, don't replace: keep the user's draft and add the seed below it.
       const combined = !trimmedSeed
@@ -815,7 +823,7 @@ export function HomeView({
     // Plain Use doesn't seed the composer; with no draft and no staged
     // files (or with required inputs still missing) the send button stays
     // disabled, and flashing a disabled button points at a dead end.
-    if (submittable && (prompt.trim().length > 0 || stagedFiles.length > 0)) {
+    if (submittable && (draft.getSnapshot().trim().length > 0 || stagedFiles.length > 0)) {
       inputRef.current?.pulseSend();
     }
   }
@@ -831,9 +839,9 @@ export function HomeView({
       pluginIds.before !== null && pluginIds.before !== pluginIds.after;
     const replacesEditedPrompt =
       replacementPrompt !== null &&
-      promptEditedByUser &&
-      prompt.trim().length > 0 &&
-      prompt.trim() !== replacementPrompt.trim();
+      promptEditedByUser.current &&
+      draft.getSnapshot().trim().length > 0 &&
+      draft.getSnapshot().trim() !== replacementPrompt.trim();
     if (replacesActivePlugin || replacesEditedPrompt) {
       setPendingReplacement({
         title,
@@ -934,7 +942,7 @@ export function HomeView({
   function handlePromptChange(nextPrompt: string) {
     if (rejectDraftMutationDuringSubmit()) return;
     setPrompt(nextPrompt);
-    setError(null);
+    if (error !== null) setError(null);
     setPromptEditedByUser(true);
     if (!active?.queryTemplate) return;
     const extracted = extractPluginInputsFromPrompt(
@@ -1005,7 +1013,7 @@ export function HomeView({
       !active.suppressPromptSync &&
       queryTemplate !== null &&
       nextRendered !== null &&
-      (prompt === active.lastRenderedPrompt || prompt.trim().length === 0)
+      (draft.getSnapshot() === active.lastRenderedPrompt || draft.getSnapshot().trim().length === 0)
     ) {
       setPrompt(nextRendered);
       setPromptEditedByUser(false);
@@ -1052,7 +1060,7 @@ export function HomeView({
     setPendingApplyId(null);
     setPendingChipId(null);
     setError(null);
-    setPromptEditedByUser(prompt.trim().length > 0);
+    setPromptEditedByUser(draft.getSnapshot().trim().length > 0);
     focusPromptAtEnd();
   }
 
@@ -1242,7 +1250,7 @@ export function HomeView({
   }, [commandChip, richDataEnabled, pluginsLoading, plugins, submitInFlight, continuingWithoutPrompt, onOpenNewProject, onCommandChipAccepted]);
 
   async function submit(autoSendFirstMessage = true): Promise<boolean> {
-    const trimmed = prompt.trim();
+    const trimmed = draft.getSnapshot().trim();
     let submittedPrompt = autoSendFirstMessage ? trimmed : '';
     const submittedAttachments = stagedFiles.map((item) => item.file);
     if (autoSendFirstMessage && !trimmed && submittedAttachments.length === 0) return false;
@@ -1476,17 +1484,16 @@ export function HomeView({
   const pluginAuthoringPending = pendingAuthoringChipId !== null;
   const blocked = phase !== 'idle' || pluginApplyPending || pluginAuthoringPending
     || (active !== null && !active.inputsValid);
-  const ready = !blocked && (prompt.trim().length > 0 || stagedFiles.length > 0);
 
   return (
     <div className={`home-view${surface === 'hub' ? ' home-view--hub' : ''}`} data-testid="home-view" ref={homeViewRef}>
-      <HomeHero
+      <HomeDraft
         ref={inputRef}
         active={isActive}
         surface={surface}
         submitting={phase === 'submitting'}
         firstRunGuide={projectsLoading ? undefined : projects.length === 0}
-        prompt={prompt}
+        draft={draft}
         onPromptChange={handlePromptChange}
         onSubmit={() => {
           void submit();
@@ -1544,7 +1551,6 @@ export function HomeView({
         pendingPluginId={pendingApplyId}
         pendingChipId={pendingChipId}
         submitDisabled={blocked}
-        submitReady={ready}
         continueDisabled={
           Boolean(pendingApplyId) ||
           Boolean(pendingAuthoringChipId) ||

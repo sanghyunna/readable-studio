@@ -581,7 +581,7 @@ function isSupportedDuplicateTranslate(value: string): boolean {
   return tokens.length <= 2 && tokens.every((token) => /^-?\d+(?:\.\d+)?px$/.test(token));
 }
 
-export function readManualEditFields(source: string, id: string): ManualEditFields {
+export function readManualEditFields(source: string | Document, id: string): ManualEditFields {
   const doc = parseSource(source);
   const el = doc ? findEditableElement(doc, id) : null;
   if (!el) return {};
@@ -601,7 +601,7 @@ export function readManualEditFields(source: string, id: string): ManualEditFiel
   return { text: el.textContent?.trim() ?? '' };
 }
 
-export function readManualEditStyles(source: string, id: string): ManualEditStyles {
+export function readManualEditStyles(source: string | Document, id: string): ManualEditStyles {
   const doc = parseSource(source);
   const el = doc ? findEditableElement(doc, id) : null;
   if (!el) return emptyManualEditStyles();
@@ -612,7 +612,7 @@ export function readManualEditStyles(source: string, id: string): ManualEditStyl
   }, {} as ManualEditStyles);
 }
 
-export function readManualEditAttributes(source: string, id: string): Record<string, string> {
+export function readManualEditAttributes(source: string | Document, id: string): Record<string, string> {
   const doc = parseSource(source);
   const el = doc ? findEditableElement(doc, id) : null;
   if (!el) return {};
@@ -624,12 +624,13 @@ export function readManualEditAttributes(source: string, id: string): Record<str
   return attrs;
 }
 
-export function readManualEditOuterHtml(source: string, id: string): string {
+export function readManualEditOuterHtml(source: string | Document, id: string): string {
   const doc = parseSource(source);
   return (doc ? findEditableElement(doc, id)?.outerHTML : '') ?? '';
 }
 
-function parseSource(source: string): Document | null {
+function parseSource(source: string | Document): Document | null {
+  if (typeof source !== 'string') return source;
   if (typeof DOMParser !== 'undefined') {
     return new DOMParser().parseFromString(source, 'text/html');
   }

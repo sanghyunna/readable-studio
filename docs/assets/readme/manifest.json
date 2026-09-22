@@ -1,0 +1,65 @@
+{
+  "hub-home.png": {
+    "caption": "Start a new document from a natural-language brief in the Hub.",
+    "surface": "Hub / home composer",
+    "readmeUse": "strong",
+    "width": 1600,
+    "height": 1000
+  },
+  "project-document-preview.png": {
+    "caption": "A seeded quarterly business review shown beside its demo conversation.",
+    "surface": "Project workspace / document preview",
+    "readmeUse": "strong",
+    "width": 1600,
+    "height": 1000
+  },
+  "direct-edit-inspector.png": {
+    "caption": "Select a headline on the page and refine its typography, color, spacing, and layout.",
+    "surface": "Direct edit / selected element and inspector",
+    "readmeUse": "strong; recommended lead image",
+    "width": 1600,
+    "height": 1000
+  },
+  "agent-picker.png": {
+    "caption": "Choose an installed local agent or switch to bring-your-own-key execution.",
+    "surface": "Hub / agent picker open",
+    "readmeUse": "supporting; picker occupies a small part of the full frame",
+    "width": 1600,
+    "height": 1000
+  },
+  "model-picker.png": {
+    "caption": "Choose the model for the selected local agent.",
+    "surface": "Hub / model picker open",
+    "readmeUse": "supporting; picker occupies a small part of the full frame",
+    "width": 1600,
+    "height": 1000
+  },
+  "settings-themes.png": {
+    "caption": "Choose an appearance from the built-in theme gallery.",
+    "surface": "Appearance settings / theme chooser",
+    "readmeUse": "supporting; last theme row is below the scroll fold",
+    "width": 1600,
+    "height": 1000
+  },
+  "hub-dark.png": {
+    "caption": "The same Hub and demo brief in the Dark theme.",
+    "surface": "Hub / Dark theme",
+    "readmeUse": "strong for theme comparison",
+    "width": 1600,
+    "height": 1000
+  },
+  "hub-catppuccin-latte.png": {
+    "caption": "The same Hub and demo brief in the Catppuccin Latte theme.",
+    "surface": "Hub / Catppuccin Latte theme",
+    "readmeUse": "strong for theme comparison",
+    "width": 1600,
+    "height": 1000
+  },
+  "theme-variety.png": {
+    "caption": "The same Hub in Light, Dark, and Catppuccin Latte, left to right.",
+    "surface": "Theme comparison / three unscaled browser captures",
+    "readmeUse": "supporting; wide montage, use individual captures for readable text",
+    "width": 4800,
+    "height": 1000
+  }
+}

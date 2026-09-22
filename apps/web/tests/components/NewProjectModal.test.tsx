@@ -66,7 +66,7 @@ beforeEach(() => {
 });
 
 describe('NewProjectModal layout', () => {
-  it('keeps the project form inside a scrollable body region', () => {
+  it('keeps the project form inside a scrollable body region', async () => {
     const { container } = render(
       <NewProjectModal
         open
@@ -78,6 +78,8 @@ describe('NewProjectModal layout', () => {
         onClose={() => {}}
       />,
     );
+
+    await screen.findByTestId('new-project-panel');
 
     const modalBody = container.querySelector('.new-project-modal__body');
     const panelBody = container.querySelector('.new-project-modal__body .newproj-body');
@@ -110,6 +112,8 @@ describe('NewProjectModal layout', () => {
         onClose={() => {}}
       />,
     );
+
+    await screen.findByTestId('new-project-panel');
 
     const trigger = screen.getByTestId('design-system-trigger');
     expect(trigger.textContent).toContain('Clay');
@@ -146,6 +150,8 @@ describe('NewProjectModal layout', () => {
         onClose={onClose}
       />,
     );
+
+    await screen.findByTestId('create-project');
 
     fireEvent.click(screen.getByTestId('create-project'));
 
@@ -184,7 +190,9 @@ describe('NewProjectModal layout', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open folder' }));
+    const openFolderButton = await screen.findByRole('button', { name: 'Open folder' });
+
+    fireEvent.click(openFolderButton);
 
     await waitFor(() => {
       expect(pickAndImportHostProject).toHaveBeenCalledWith({ skillId: 'prototype-skill' });
@@ -221,7 +229,9 @@ describe('NewProjectModal template deletion plumbing', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('tab', { name: 'From template' }));
+    const fromTemplateTab = await screen.findByRole('tab', { name: 'From template' });
+
+    fireEvent.click(fromTemplateTab);
     fireEvent.click(screen.getByLabelText(/delete template/i));
     await screen.findByRole('alertdialog');
     fireEvent.click(screen.getByRole('button', { name: 'Delete template' }));

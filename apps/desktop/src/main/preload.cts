@@ -292,6 +292,14 @@ const windowControls = {
     ipcRenderer.invoke('window:toggle-maximize') as Promise<{ maximized: boolean }>,
 };
 
+// Forward native geometry triggers without exposing IPC or native objects to the page.
+ipcRenderer.on('layout:geometry', (_event: unknown, reasons: unknown) => {
+  if (!Array.isArray(reasons)) return;
+  for (const reason of ['resize', 'maximize', 'unmaximize', 'restore', 'display-metrics-changed']) {
+    if (reasons.includes(reason)) window.dispatchEvent(new CustomEvent('readable:layout-geometry', { detail: reason }));
+  }
+});
+
 contextBridge.exposeInMainWorld('readableStudioDesktop', {
   exportDiagnostics: (): Promise<DesktopDiagnosticsExportResult> =>
     ipcRenderer.invoke(DESKTOP_DIAGNOSTICS_IPC_CHANNEL) as Promise<DesktopDiagnosticsExportResult>,

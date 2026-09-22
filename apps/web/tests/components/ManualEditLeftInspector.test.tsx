@@ -6,7 +6,8 @@ import { ManualEditLeftInspector } from '../../src/components/ManualEditLeftInsp
 import inspectorStyles from '../../src/components/ManualEditLeftInspector.module.css';
 import type { ManualEditRichFormatState } from '../../src/components/ManualEditTextControls';
 import { emptyManualEditStyles, type ManualEditStyles, type ManualEditTarget } from '../../src/edit-mode/types';
-import { en } from '../../src/i18n/locales/en';
+import { getEn } from '../../src/i18n/locales/en';
+const en = getEn();
 import type { SystemFontFamily } from '@readable-studio/contracts';
 
 const systemFontsMock = vi.hoisted(() => ({ families: [] as SystemFontFamily[] }));

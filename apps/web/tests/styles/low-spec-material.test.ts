@@ -66,12 +66,11 @@ describe('low-spec material: universal backdrop kill (M1)', () => {
     ]);
   });
 
-  // render-cost.md measured 45 base groups (44 global + SettingsDialog.module).
-  // HubPerformanceToggle.module.css landed after that measurement; it reads
-  // `--hub-glass-fill` / `--hub-glass-blur`, so M2 makes it opaque and M1
-  // kills its blur. Bump this pin only after checking the new surface's
-  // low-mode fill is opaque and readable (M5).
-  it('covers the measured base inventory: 46 active CSS groups (44 global + 2 CSS modules)', () => {
+  // HubPerformanceToggle and its CSS module were removed together in 083ffba.
+  // The remaining inventory is 44 global groups plus SettingsDialog.module.
+  // Bump this pin only after checking a new surface's low-mode fill is
+  // opaque and readable (M5).
+  it('covers the measured base inventory: 45 active CSS groups (44 global + 1 CSS module)', () => {
     const globalGroups = sourceFiles(
       (path) => path.startsWith('src/styles/') && path.endsWith('.css') && !path.startsWith('src/styles/low-spec/'),
     ).flatMap(activeBaseBackdropGroups);
@@ -80,11 +79,10 @@ describe('low-spec material: universal backdrop kill (M1)', () => {
     ).flatMap(activeBaseBackdropGroups);
 
     expect(moduleGroups).toEqual([
-      'src/components/SettingsDialog.module.css:209',
-      'src/components/hub/HubPerformanceToggle.module.css:21',
+      'src/components/SettingsDialog.module.css:226',
     ]);
     expect(globalGroups).toHaveLength(44);
-    expect(globalGroups.length + moduleGroups.length).toBe(46);
+    expect(globalGroups.length + moduleGroups.length).toBe(45);
   });
 
   it('pins the inline JSX backdropFilter sites to the four known ones', () => {

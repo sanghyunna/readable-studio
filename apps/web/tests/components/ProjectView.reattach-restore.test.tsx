@@ -81,6 +81,7 @@ vi.mock('../../src/state/projects', () => ({
   getTemplate: (...args: unknown[]) => getTemplate(...args),
   listConversations: (...args: unknown[]) => listConversations(...args),
   listMessages: (...args: unknown[]) => listMessages(...args),
+  loadMessagePage: async (projectId: string, conversationId: string) => ({ messages: await listMessages(projectId, conversationId), nextPosition: null }),
   loadTabs: (...args: unknown[]) => loadTabs(...args),
   patchConversation: (...args: unknown[]) => patchConversation(...args),
   patchProject: (...args: unknown[]) => patchProject(...args),

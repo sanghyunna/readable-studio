@@ -2,6 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { protectNativeWrites } from './run-native-writes.js';
 import {
   normalizeRunToolBundleForRun,
   summarizeRunToolBundle,
@@ -111,6 +112,14 @@ export function createChatRunService({
       signal: null,
       error: null,
       errorCode: null,
+      projectFileVersions: null as Map<string, string> | null,
+      fileWriteConflict: null as string | null,
+      userSaves: new Map(),
+      writerLedger: new Map(),
+      nativeConflicts: new Map(),
+      conflict: null,
+      nativeWrites: null,
+      finishPromise: null,
       cancelRequested: false,
       eventsLogPath: resolvedRunsLogDir ? path.join(resolvedRunsLogDir, id, 'events.jsonl') : null,
       eventsLogStream: null,
@@ -286,15 +295,64 @@ export function createChatRunService({
     signal: run.signal,
     error: run.error ?? null,
     errorCode: run.errorCode ?? null,
+    conflict: run.conflict ?? null,
+    conflicts: Array.from(run.nativeConflicts.values()),
     resumable: run.resumable ?? false,
     eventsLogPath: run.eventsLogPath ?? null,
     toolBundle: summarizeRunToolBundle(run.toolBundle),
   });
 
+  const noteFileWriteConflict = (run, error) => {
+    if (TERMINAL_RUN_STATUSES.has(run.status)) return;
+    run.fileWriteConflict = error.message;
+    emit(run, 'error', createSseErrorPayload('CONFLICT', error.message, {
+      retryable: false,
+      details: {
+        expectedContentSha256: error.expectedContentSha256,
+        actualContentSha256: error.actualContentSha256,
+      },
+    }));
+  };
+
+  const watchProjectWrites = async (run, projectsRoot, checkpoints) => {
+    run.nativeWrites = await protectNativeWrites({ run, projectsRoot, checkpoints,
+      onConflict: (conflict) => {
+        const message = `Project file "${conflict.path}" was modified outside the app.${conflict.sidecar ? ` Saved edit recovered; external version: ${conflict.sidecar}.` : ''}`;
+        run.fileWriteConflict = message;
+        emit(run, 'error', createSseErrorPayload('CONFLICT', message, { retryable: false, details: conflict }));
+      },
+      onError: (error) => {
+        run.fileWriteConflict = `Could not verify project files: ${error instanceof Error ? error.message : String(error)}`;
+        emit(run, 'error', createSseErrorPayload('CONFLICT', run.fileWriteConflict, { retryable: false }));
+      },
+    });
+    await run.nativeWrites.ready;
+  };
+
   const finish = (run, status, code: number | null = null, signal: string | null = null) => {
     if (TERMINAL_RUN_STATUSES.has(run.status)) return;
+    if (run.finishPromise) return run.finishPromise;
+    if (run.nativeWrites) {
+      const protection = run.nativeWrites;
+      run.finishPromise = protection.finish().catch((error) => {
+        run.fileWriteConflict = `Could not recover saved edit: ${error instanceof Error ? error.message : String(error)}`;
+        emit(run, 'error', createSseErrorPayload('CONFLICT', run.fileWriteConflict, { retryable: false }));
+      }).then(() => {
+        run.nativeWrites = null;
+        run.finishPromise = null;
+        finish(run, run.cancelRequested ? 'canceled' : status, code, signal);
+      });
+      return run.finishPromise;
+    }
+    // A clean adapter exit cannot turn a rejected document write into success.
+    // Keep this outside event history: that history is deliberately bounded.
+    if (status === 'succeeded' && run.fileWriteConflict) {
+      status = 'failed';
+      code = 1;
+    }
     if (run.abortFallbackTimer) clearTimeout(run.abortFallbackTimer);
     run.abortFallbackTimer = null;
+    run.projectFileVersions = null;
     run.status = status;
     run.exitCode = code;
     run.signal = signal;
@@ -453,7 +511,7 @@ export function createChatRunService({
         }
       }
       killChild(run, 'SIGTERM');
-      finish(run, 'canceled', null, 'SIGTERM');
+      await finish(run, 'canceled', null, 'SIGTERM');
       if (run.child && !(await waitForChildExit(run.child, graceMs))) {
         killChild(run, 'SIGKILL');
         await waitForChildExit(run.child, 500);
@@ -467,6 +525,7 @@ export function createChatRunService({
   };
 
   const disposeRun = (run) => {
+    if (run.nativeWrites) void run.nativeWrites.dispose();
     if (run.cleanupTimer) clearTimeout(run.cleanupTimer);
     run.cleanupTimer = null;
     if (run.abortFallbackTimer) clearTimeout(run.abortFallbackTimer);
@@ -519,6 +578,8 @@ export function createChatRunService({
     wait,
     emit,
     finish,
+    noteFileWriteConflict,
+    watchProjectWrites,
     fail,
     drop,
     dispose,

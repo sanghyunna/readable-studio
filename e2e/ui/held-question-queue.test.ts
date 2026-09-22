@@ -142,8 +142,7 @@ test('[P1] required questions queue during a held run, survive reload, and promo
       fileHydration.navigate(() => page.reload({ waitUntil: 'domcontentloaded', timeout: T.long }), T.long, 'no-artifact'),
     ]);
     await expect(page.getByTestId('chat-queued-send-strip').locator('.chat-queued-send-row')).toHaveCount(1);
-    // Reopen through the public Questions tab if reload restored another tab.
-    await page.getByRole('tab', { name: /^Questions/ }).click();
+    // The restored question remains inline in the assistant message.
     await expect(form).toBeVisible();
     await expect(form).toHaveClass(/question-form-locked/);
     await expect(target).toHaveAttribute('aria-checked', 'true');

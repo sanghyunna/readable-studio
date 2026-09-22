@@ -1,125 +1,140 @@
 # Readable Studio
 
-**Turn source text into polished, standalone HTML - then edit it directly.**
+**Turn source text into polished standalone HTML, then edit it like a slide.**
 
-Readable Studio is a Windows desktop document workspace for office workers. Bring in a brief, report, plan, meeting notes, or other company source material; use an AI coding agent to structure and design a first draft; then make ordinary revisions in the preview with PowerPoint-like direct editing. You do not have to send another prompt and wait whenever a heading, paragraph, position, size, or style needs a small change.
+Readable Studio is a Windows desktop workspace for office documents. Paste a brief, let a coding agent build the first draft, fix the details yourself in the preview, and hand off one self-contained HTML file.
+
+![The Hub, ready for a new brief](docs/assets/readme/hub-home.png)
+
+## The problem
+
+AI writes a good first draft. Then the heading is two words too long, a card needs to move, and a colour is off. Every fix means another prompt and another wait. Readable Studio ends that loop: generate once, then change what you see directly.
+
+## How it works
 
 ```text
-source text -> AI generation -> PowerPoint-like direct editing -> standalone HTML
+Source Text -> AI Generation -> Direct Editing -> Standalone HTML
 ```
 
-The result is an AI-readable company document and a self-contained HTML file that can be opened independently. This is Readable Studio's role in enterprise AI transformation: help company teams turn governed source material into documents that people can control directly and AI systems can continue to read. Readable Studio does not require a hosted page or publishing service.
+1. **Source Text.** Paste the brief, report, or notes, or import a folder of approved material. The document is grounded in what you supply, not invented.
+2. **AI Generation.** Pick a plugin, skill, and design system. Readable Studio composes them with your source and dispatches an installed local agent. The result renders in the Studio.
+3. **Direct Editing.** Select any element in the preview and change it in place. Every edit writes back to the HTML source.
+4. **Standalone HTML.** Export one file that opens anywhere. Local CSS, scripts, images, and fonts are inlined; anything unresolved is reported, not hidden.
 
-## Who it is for
+## Direct editing
 
-Readable Studio is designed for people who know the document they need but should not need to become frontend developers to produce it:
+![A selected headline with resize handles and the full inspector open](docs/assets/readme/direct-edit-inspector.png)
 
-- operations, strategy, sales, finance, HR, and other office teams;
-- subject-matter experts turning approved source material into a clear deliverable;
-- teams standardizing recurring reports, briefs, presentations, and internal documents;
-- developers and agents that need the same workflow through a CLI or HTTP API.
+Click a headline and the inspector opens beside it. Drag the handles to resize. Nudge with the keyboard. Change the copy, the font, the weight, the spacing, the colour. Swap a link or an image. Every change is a patch against the canonical HTML source, so it survives export and stays readable to the next agent run.
 
-Source-grounded work is the default. The agent should preserve facts, terminology, and constraints from the supplied material instead of inventing a generic marketing page.
+What you can change without a prompt:
 
-## The workflow
+- text, including rich text selections
+- links and images
+- typography: family, size, weight, line height
+- spacing, borders, and box model
+- position and size, by drag or keyboard
+- colours and design tokens
+- attributes and the element's own HTML
+- duplicate, move, remove, undo, redo
 
-1. **Add source text.** Paste a brief or import a folder containing the material to use.
-2. **Generate a first draft.** Choose a document or deck-oriented plugin, skill, and design system. Readable Studio dispatches the selected local agent and renders its files in the Studio.
-3. **Edit directly.** Select an element in the preview. Change text, typography, spacing, geometry, colors, borders, and HTML without restarting generation.
-4. **Use AI for substantive work.** Comments, prompts, critique, research, plugins, and automation remain available when a change benefits from an agent.
-5. **Export standalone HTML.** Local static dependencies are inlined into one portable HTML file. PDF, PPTX for decks, ZIP, and Markdown remain available where the artifact supports them.
+Direct editing sits beside the agent, not in place of it. Use the inspector for mechanical fixes. Use comments and prompts when the revision is substantive.
 
-Direct editing complements the agent; it does not remove chat, CLI, plugins, skills, design systems, or export capabilities.
+## Tour
 
-## Install on Windows
+**The workspace.** Conversation on one side, the rendered document on the other. Here, a seeded quarterly business review beside the run that produced it.
 
-The supported product artifact is a **Windows 10/11 x64 portable ZIP**. There is no installer, updater, website download flow, macOS build, Linux build, or Nix product package.
+![Project workspace with a generated business review](docs/assets/readme/project-document-preview.png)
 
-1. Open [GitHub Releases](https://github.com/sanghyunna/readable-studio/releases) in a browser.
-2. Manually download the latest `Readable Studio-<namespace>-portable.zip` asset.
-3. Extract the complete ZIP to a writable folder.
-4. Run `Readable Studio.exe` from the extracted folder.
+**Agents and models.** Pick an installed local agent, or switch to bring-your-own-key execution. Then choose the model for that agent.
 
-Do not run the executable from inside the ZIP. Keep `ReadableStudioData` beside the executable when moving the extracted application; it contains namespace-scoped projects, settings, logs, cache, and Chromium profile data.
+| | |
+| --- | --- |
+| ![Agent picker](docs/assets/readme/agent-picker.png) | ![Model picker](docs/assets/readme/model-picker.png) |
 
-The destination computer does not need Node.js, pnpm, Git, an installer, or an updater.
+## Themes and design systems
+
+The app has twelve built-in themes plus a follow-system option, from Light and Dark to Catppuccin, Nord, Gruvbox, Dracula, and Solarized.
+
+![Appearance settings with the theme gallery](docs/assets/readme/settings-themes.png)
+
+| Dark | Catppuccin Latte |
+| --- | --- |
+| ![Hub in Dark](docs/assets/readme/hub-dark.png) | ![Hub in Catppuccin Latte](docs/assets/readme/hub-catppuccin-latte.png) |
+
+![Light, Dark, and Catppuccin Latte side by side](docs/assets/readme/theme-variety.png)
+
+Documents draw from a separate library. The repository ships **150 design systems** under [`design-systems/`](design-systems), **99 design templates** under [`design-templates/`](design-templates), and **154 skills** under [`skills/`](skills). A design system sets the visual language of the generated document; a template sets its shape; a skill tells the agent how to work. Combine them per run or let a plugin choose.
+
+## Install
+
+Readable Studio ships as a **Windows 10/11 x64 portable ZIP**. Nothing to install.
+
+1. Open [GitHub Releases](https://github.com/sanghyunna/readable-studio/releases).
+2. Download the latest `Readable Studio-<namespace>-portable.zip`.
+3. Extract the whole archive to a writable folder.
+4. Run `Readable Studio.exe`.
+
+The target machine doesn't need Node.js, pnpm, or Git. Don't launch the executable from inside the ZIP view. When you move the app, move the `ReadableStudioData` folder with it; that's where projects, settings, logs, and cache live. Windows may show a SmartScreen warning for an unsigned build; confirm the file came from the Releases page before running it.
+
+For local-agent mode you need an installed, authenticated coding-agent CLI. Codex and Cursor Agent are scanned by default. Other installed adapters can be enabled in Settings.
 
 ## First document
 
-1. Open Readable Studio and create a project.
-2. Paste the source text and state the audience and purpose.
-3. Select an available agent. Codex and Cursor Agent are scanned by default; additional installed adapters can be enabled in Settings.
-4. Generate the draft.
-5. Switch to **Edit**, select content in the preview, and revise it in place.
-6. Choose **Export as standalone HTML**.
+1. Create a project.
+2. Paste the source text. State the audience and the purpose.
+3. Choose an agent, and a plugin, skill, or design system if the defaults don't fit.
+4. Generate.
+5. Open **Edit**, select anything in the preview, and revise it in place.
+6. **Export as standalone HTML**.
 
-A useful first request is:
+A request that works well:
 
-> Turn the attached quarterly review source into a concise executive document. Keep all figures and approved terminology, make decisions easy to scan, and prepare it for direct editing and standalone HTML export.
+> Turn this source into a concise quarterly operating review for department leads. Preserve all figures and approved terms. Use clear sections and scannable tables. Prepare the result for direct editing and standalone HTML export.
 
-## Capabilities that remain integrated
+## Agents, models, and the CLI
 
-### Direct editing
-
-The editor bridges the rendered preview to source-backed changes. It includes text and typography controls, box-model and geometry controls, move/resize handles, shape controls, page/section controls, snap guides, attributes, selected-element HTML, and source editing. Comment and tweak modes remain available for agent-assisted refinement.
-
-### Plugins, skills, and design systems
-
-Plugins bind an end-to-end workflow to a run. A plugin is an Agent Skills-compatible folder with `SKILL.md` and, for full Readable Studio metadata, a `readable-studio.json` sidecar. Installed plugins can contribute inputs, capabilities, pipeline stages, examples, skills, and design-system references.
-
-Use the Plugin page in the app or the same daemon APIs through the CLI:
+The UI and the `readable` CLI talk to the same local daemon through the same `/api/*` contracts. Every capability in the UI has a subcommand. Machine-consumed commands support `--json`; commands that take a prompt accept `--prompt-file <path|->`.
 
 ```powershell
-readable plugin list --json
-readable plugin search "report" --json
-readable plugin info <plugin-id> --json
-readable plugin apply <plugin-id> --project <project-id> --input brief="..."
-readable plugin validate .\my-plugin --json
-```
-
-See [`docs/plugins-spec.md`](docs/plugins-spec.md) and [`plugins/spec/SPEC.md`](plugins/spec/SPEC.md).
-
-### CLI and automation
-
-The `readable` CLI uses the same local daemon and `/api/*` contracts as the UI. Machine-consumed commands support `--json`; long prompts use `--prompt-file <path|->` where offered.
-
-```powershell
-readable project list --json
 readable project create --name "Quarterly review" --json
 readable files list --project <project-id> --json
+readable plugin search "report" --json
+readable plugin apply <plugin-id> --project <project-id> --input brief="..."
+readable design-systems list --json
 readable export html --project <project-id> --file index.html --output .\quarterly-review.html --json
-readable automation list --json
 ```
 
-The CLI also exposes runs, conversations, artifacts, plugins, skills, design systems, research, memory, MCP, UI responses, and automation. Run `readable --help` for the installed command set.
+Subcommands also cover `run`, `conversation`, `artifacts`, `skills`, `templates`, `automation`, `research`, `memory`, `mcp`, `ui`, `agent`, `provider`, `fonts`, `doctor`, and more. Run `readable --help` for the full set.
 
-### Export
+Plugins are portable workflow folders: `SKILL.md` for the agent, plus an optional `readable-studio.json` for typed inputs, capabilities, stages, and references. See [`docs/plugins-spec.md`](docs/plugins-spec.md).
 
-Standalone HTML is the product's canonical handoff. It inlines statically discoverable local HTML, CSS, JavaScript modules, images, and fonts. External URLs and missing local references are preserved and reported rather than silently downloaded. Runtime network capture and multi-page crawling are outside this export contract.
+## Exports
 
-Secondary artifact exports remain integrated:
+Standalone HTML is the canonical output. Other formats depend on the artifact:
 
-| Artifact | Available exports |
+| Artifact | Exports |
 | --- | --- |
-| HTML document or prototype | standalone HTML, PDF, ZIP |
+| HTML document | standalone HTML, PDF, ZIP |
 | Slide deck | standalone HTML, PDF, PPTX, ZIP |
 | Markdown document | Markdown, HTML, PDF, ZIP |
+| SVG | SVG, ZIP |
+
+The HTML exporter inlines statically discoverable local dependencies. External URLs and missing local files stay in place and surface as warnings. It doesn't crawl websites or capture runtime network traffic.
 
 ## Data locations
 
 | Mode | Location |
 | --- | --- |
-| Portable app | `<exeDir>\ReadableStudioData\namespaces\<namespace>\...` (daemon data is in `data\`) |
+| Portable app | `<exeDir>\ReadableStudioData\namespaces\<namespace>\...` |
 | Source checkout | `<repo>\.readable-studio\...` |
-| Explicit override | absolute directory in `READABLE_DATA_DIR` |
-| Development control-plane state | `<repo>\.tmp\tools-dev\<namespace>\...` |
-| Portable build/control-plane state | `<repo>\.tmp\tools-pack\...` |
-
-The daemon data root contains `app.sqlite`, `projects\`, `artifacts\`, installed user resources, and configuration. These are runtime files and should not be committed.
+| Override | absolute path in `READABLE_DATA_DIR` |
 
 ## Develop from source
 
-Source development is for contributors, not the normal product download path. Use Windows, Node `~24`, and pnpm `10.33.2`:
+This section is for contributors. Product users should use the portable ZIP above.
+
+Requirements: Windows 10/11 x64, Node `~24`, pnpm `10.33.2`, Visual Studio Build Tools 2022 or newer, and Python 3 for the native `better-sqlite3` build.
 
 ```powershell
 git clone https://github.com/sanghyunna/readable-studio.git
@@ -129,51 +144,31 @@ pnpm install
 pnpm tools-dev
 ```
 
-`pnpm tools-dev` is the only root development lifecycle command. There is no root `pnpm dev`, `pnpm start`, `pnpm build`, or `pnpm test` alias.
+`pnpm tools-dev` is the only root lifecycle command. There's no root `pnpm dev`, `start`, `build`, or `test`. Use `pnpm tools-dev status --json`, `logs --json`, `stop`, and `check` to control the workspace. Before opening a PR, run `pnpm guard` and `pnpm typecheck`.
 
-Build the supported portable artifact from the repository root:
+Build the portable ZIP from the repository root:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\build-portable.ps1
 ```
 
-The script selects Node 24, builds the workspace, creates `Readable Studio-<namespace>-portable.zip`, validates that artifact, and moves it to the requested drop directory.
-
-### Windows portable lifecycle (maintainers)
-
-```powershell
-pnpm tools-pack win build
-pnpm tools-pack win start
-pnpm tools-pack win inspect --expr "document.title"
-pnpm tools-pack win logs
-pnpm tools-pack win stop
-pnpm tools-pack win cleanup
-```
-
-These are local build and runtime controls, not release publishing automation.
-
-## Architecture at a glance
+Maintainers can build, start, inspect, and tear down a local portable build with `pnpm tools-pack win <build|start|inspect|logs|stop|cleanup>`. These are local controls; the repository has no release-publishing workflow.
 
 ```text
 Windows desktop shell
         |
         v
 Next.js web UI  <---- /api/* + SSE ---->  local daemon  ----> enabled agent CLI
-     |                                      |                    (Codex/Cursor/etc.)
+     |                                      |
      |                                      +---- plugins / skills / design systems
-     |                                      +---- .readable-studio data
-     v
+     v                                      +---- .readable-studio data
 sandboxed preview + direct-edit bridge
      |
      +---- standalone HTML (canonical)
      +---- PDF / PPTX / ZIP / Markdown (artifact-dependent)
 ```
 
-Read [`docs/architecture.md`](docs/architecture.md), [`docs/spec.md`](docs/spec.md), and [`QUICKSTART.md`](QUICKSTART.md) for the operating details.
-
-## Contributing
-
-Start with [`CONTRIBUTING.md`](CONTRIBUTING.md). English and Korean are the maintained product languages; translation policy is in [`TRANSLATIONS.md`](TRANSLATIONS.md). Repository history and third-party notices remain under their original names and wording.
+Read [`QUICKSTART.md`](QUICKSTART.md), [`docs/architecture.md`](docs/architecture.md), [`docs/spec.md`](docs/spec.md), and [`CONTRIBUTING.md`](CONTRIBUTING.md). English and Korean are the maintained product languages; see [`TRANSLATIONS.md`](TRANSLATIONS.md).
 
 ## License
 

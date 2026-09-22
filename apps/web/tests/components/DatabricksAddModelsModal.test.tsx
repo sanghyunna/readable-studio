@@ -20,6 +20,7 @@ import { StrictMode, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   DatabricksEndpoint,
+  DatabricksLoginResponse,
   DatabricksProfile,
   DatabricksRegisteredEndpoint,
   DatabricksScanResponse,
@@ -48,6 +49,9 @@ const databricksClient = vi.hoisted(() => ({
   disableDatabricksModel: vi.fn(),
   streamDatabricksScanEvents: vi.fn(),
   setupDatabricks: vi.fn(),
+  startDatabricksLogin: vi.fn(),
+  fetchDatabricksLogin: vi.fn(),
+  cancelDatabricksLogin: vi.fn(),
 }));
 
 vi.mock('../../src/providers/databricks', () => databricksClient);
@@ -827,6 +831,103 @@ describe('DatabricksAddModelsModal setup step', () => {
     await waitForProfiles();
     expect(screen.queryByTestId('databricks-setup-step')).toBeNull();
     expect(databricksClient.setupDatabricks).not.toHaveBeenCalled();
+  });
+
+  describe('browser sign-in', () => {
+    const loginJob = (overrides: Partial<DatabricksLoginResponse> = {}): DatabricksLoginResponse => ({
+      loginId: 'login-1',
+      state: 'waiting-for-browser',
+      createdAt: '2026-09-10T04:00:00.000Z',
+      deadlineAt: '2026-09-10T04:10:00.000Z',
+      completedAt: null,
+      profileId: null,
+      issues: [],
+      ...overrides,
+    });
+
+    beforeEach(() => {
+      databricksClient.startDatabricksLogin.mockResolvedValue(loginJob());
+      databricksClient.cancelDatabricksLogin.mockResolvedValue(loginJob({ state: 'cancelled' }));
+    });
+
+    it('runs the CLI sign-in from the footnote and makes the profile selectable without Check again', async () => {
+      databricksClient.fetchDatabricksStatus
+        .mockResolvedValueOnce(setupRequiredStatus)
+        .mockResolvedValueOnce({ ...readyStatus, setupRequired: false });
+      databricksClient.fetchDatabricksLogin.mockResolvedValue(
+        loginJob({ state: 'authenticated', completedAt: '2026-09-10T04:01:00.000Z', profileId: profile.id }),
+      );
+
+      renderModal();
+      await screen.findByTestId('databricks-setup-step');
+      fireEvent.change(hostInput(), { target: { value: 'workspace.example' } });
+      await act(async () => { fireEvent.click(screen.getByTestId('databricks-login-start')); });
+
+      expect(databricksClient.startDatabricksLogin).toHaveBeenCalledExactlyOnceWith({ host: 'https://workspace.example' });
+      expect(databricksClient.fetchDatabricksLogin).toHaveBeenCalledWith('login-1');
+      await waitForProfiles();
+      // Status was re-read by the modal itself, not by a second user action.
+      expect(databricksClient.fetchDatabricksStatus).toHaveBeenCalledTimes(2);
+      expect(screen.queryByTestId('databricks-setup-step')).toBeNull();
+      expect(screen.getByTestId('databricks-profile-prof-main').getAttribute('aria-checked')).toBe('true');
+      expect(screen.getByTestId('databricks-scan-start').hasAttribute('disabled')).toBe(false);
+      expect(databricksClient.setupDatabricks).not.toHaveBeenCalled();
+    });
+
+    it('asks for the workspace URL instead of starting a sign-in without one', async () => {
+      databricksClient.fetchDatabricksStatus.mockResolvedValue(setupRequiredStatus);
+
+      renderModal();
+      await screen.findByTestId('databricks-setup-step');
+      fireEvent.click(screen.getByTestId('databricks-login-start'));
+
+      expect(await screen.findByText('Enter the full https:// workspace URL.')).toBeTruthy();
+      expect(databricksClient.startDatabricksLogin).not.toHaveBeenCalled();
+    });
+
+    it('shows the failure inline and stays on the setup step when the CLI sign-in fails', async () => {
+      databricksClient.fetchDatabricksStatus.mockResolvedValue(setupRequiredStatus);
+      databricksClient.fetchDatabricksLogin.mockResolvedValue(
+        loginJob({
+          state: 'failed',
+          completedAt: '2026-09-10T04:01:00.000Z',
+          issues: [{ code: 'DATABRICKS_CLI_MISSING', action: 'install-cli', retryable: false }],
+        }),
+      );
+
+      renderModal();
+      await screen.findByTestId('databricks-setup-step');
+      fireEvent.change(hostInput(), { target: { value: 'https://workspace.example' } });
+      await act(async () => { fireEvent.click(screen.getByTestId('databricks-login-start')); });
+
+      const error = await screen.findByTestId('databricks-login-error');
+      expect(error.getAttribute('role')).toBe('alert');
+      expect(error.textContent).toContain('Install the Databricks CLI.');
+      expect(screen.getByTestId('databricks-setup-step')).toBeTruthy();
+      expect(screen.queryByTestId('databricks-login-progress')).toBeNull();
+      expect(databricksClient.fetchDatabricksStatus).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId('databricks-login-start').hasAttribute('disabled')).toBe(false);
+    });
+
+    it('cancels a sign-in that is waiting for the browser through the daemon', async () => {
+      databricksClient.fetchDatabricksStatus.mockResolvedValue(setupRequiredStatus);
+      databricksClient.fetchDatabricksLogin.mockImplementation(() => new Promise<DatabricksLoginResponse>(() => {}));
+
+      renderModal();
+      await screen.findByTestId('databricks-setup-step');
+      fireEvent.change(hostInput(), { target: { value: 'https://workspace.example' } });
+      await act(async () => { fireEvent.click(screen.getByTestId('databricks-login-start')); });
+
+      const progress = screen.getByTestId('databricks-login-progress');
+      expect(progress.getAttribute('role')).toBe('status');
+      expect(screen.getByTestId('databricks-login-start').hasAttribute('disabled')).toBe(true);
+      await act(async () => { fireEvent.click(screen.getByTestId('databricks-login-cancel')); });
+
+      expect(databricksClient.cancelDatabricksLogin).toHaveBeenCalledExactlyOnceWith('login-1');
+      expect(screen.queryByTestId('databricks-login-progress')).toBeNull();
+      expect(screen.getByTestId('databricks-login-start').hasAttribute('disabled')).toBe(false);
+      expect(databricksClient.fetchDatabricksStatus).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('profile row', () => {

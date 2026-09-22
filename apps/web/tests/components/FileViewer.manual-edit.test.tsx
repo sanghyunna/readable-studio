@@ -8,7 +8,8 @@ import {
   manualEditSupersededStyleKeys,
 } from '../../src/components/FileViewer';
 import { emptyManualEditStyles, type ManualEditTarget } from '../../src/edit-mode/types';
-import { en } from '../../src/i18n/locales/en';
+import { getEn } from '../../src/i18n/locales/en';
+const en = getEn();
 import type { ProjectFile } from '../../src/types';
 
 afterEach(() => {

@@ -58,7 +58,7 @@ export async function assertPiCliVersion(appRoot: string): Promise<void> {
       // graph before printing a version. Under a concurrent electron-builder pass
       // that grew past a 20s budget and the child died on SIGTERM with empty output,
       // which reads as a broken package rather than a starved one.
-      { env, cwd: home, timeout: 180_000, maxBuffer: 8 * 1024 * 1024 });
+      { env, cwd: home, timeout: 180_000, maxBuffer: 8 * 1024 * 1024, windowsHide: true });
     started = true;
     // Register before awaiting: even an execution error must not let cleanup
     // race the process or its stdio handles. 'exit' alone is insufficient.
@@ -128,7 +128,7 @@ export async function patchPiPackage(appRoot: string, workspaceRoot: string): Pr
   await execFileAsync("git", [
     "-c", "core.autocrlf=false", "apply", "--unsafe-paths",
     `--directory=${packageRoot.replaceAll("\\", "/")}`, patch,
-  ], { cwd: tmpdir(), timeout: 10_000 });
+  ], { cwd: tmpdir(), timeout: 10_000, windowsHide: true });
   assertPiShutdownPatched(packageRoot);
   await stagePiCliLauncher(appRoot);
 }
@@ -161,7 +161,7 @@ export async function assertPiPackageOutput(appRoot: string): Promise<void> {
     const { stdout } = await execFileAsync(process.execPath, [
       "--experimental-import-meta-resolve", "--input-type=module", "--eval",
       `import { fileURLToPath } from 'node:url'; console.log(fileURLToPath(import.meta.resolve(${JSON.stringify(`${piPackage.name}/rpc-entry`)}, ${JSON.stringify(parent)})));`,
-    ], { cwd: appRoot, timeout: 10_000 });
+    ], { cwd: appRoot, timeout: 10_000, windowsHide: true });
     const entry = stdout.trim();
     if (!(await stat(entry)).isFile()) throw new Error("RPC entry point is not a file");
     const physicalEntry = await realpath(entry);

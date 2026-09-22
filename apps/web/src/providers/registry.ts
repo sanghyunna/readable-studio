@@ -969,16 +969,7 @@ export async function createSocialSharePayload(
 
 // Project files — all paths are scoped under .readable-studio/projects/<id>/ on disk.
 
-export async function fetchProjectFiles(projectId: string): Promise<ProjectFile[]> {
-  try {
-    const resp = await fetch(`/api/projects/${encodeURIComponent(projectId)}/files`);
-    if (!resp.ok) return [];
-    const json = (await resp.json()) as { files: ProjectFile[] };
-    return json.files ?? [];
-  } catch {
-    return [];
-  }
-}
+export { fetchProjectFiles } from './project-files';
 
 export async function fetchProjectFolders(projectId: string): Promise<ProjectFolder[]> {
   try {

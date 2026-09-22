@@ -75,7 +75,7 @@ async function previewPdf(buffer: Buffer): Promise<PreviewSection[]> {
   await writeFile(tmpFile, buffer, { flag: 'wx' });
   try {
     const { stdout } = await execFileP('pdftotext', ['-layout', tmpFile, '-'], {
-      timeout: 5000,
+      windowsHide: true, timeout: 5000,
       maxBuffer: 2 * 1024 * 1024,
     });
     const lines = stdout

@@ -364,7 +364,7 @@ export async function spawnVelaLogin(
   const child = spawn(invocation.command, invocation.args, {
     stdio: ['ignore', 'pipe', 'pipe'],
     env,
-    detached: false,
+    detached: false, windowsHide: true,
     windowsVerbatimArguments: invocation.windowsVerbatimArguments,
   });
   if (typeof child.pid !== 'number') {

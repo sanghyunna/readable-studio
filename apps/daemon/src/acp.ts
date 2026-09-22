@@ -649,7 +649,7 @@ export async function detectAcpModels({
   const effectiveTimeoutMs = resolveAcpTimeoutMs(env, timeoutMs);
   return await new Promise<ModelOption[]>((resolve, reject) => {
     const child = spawn(bin, args, {
-      cwd,
+      windowsHide: true, cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...env },
     });

@@ -86,13 +86,7 @@ export const codexAgentDef = {
       { id: 'high', label: 'High' },
       { id: 'xhigh', label: 'XHigh' },
     ],
-    // Prompt is delivered via stdin pipe (gated by `promptViaStdin: true`
-    // below) to avoid Windows `spawn ENAMETOOLONG` while keeping Codex on
-    // its structured JSON stream. Recent Codex CLI versions reject a bare
-    // `-` argv sentinel — passing both the pipe and `-` produces
-    // `error: unexpected argument '-' found` and the agent exits with
-    // code 2 before any prompt is read (see issue #237). The pipe alone
-    // is sufficient for stdin delivery.
+    // Prompts travel over app-server JSON-RPC, never argv or batch exec.
     buildArgs: (
       _prompt,
       _imagePaths,
@@ -107,34 +101,22 @@ export const codexAgentDef = {
       // and Linux (Landlock+seccomp) keep workspace-write because their
       // sandbox enforcement permits shell while restricting writes.
       const needsDangerFullAccess = codexNeedsDangerFullAccessSandbox();
-      const args = needsDangerFullAccess
-        ? ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'danger-full-access']
-        : [
-            'exec',
-            '--json',
-            '--skip-git-repo-check',
-            '--sandbox',
-            'workspace-write',
-            '-c',
-            'sandbox_workspace_write.network_access=true',
-          ];
+      const args = ['app-server', '--listen', 'stdio://', '-c',
+        `sandbox_mode="${needsDangerFullAccess ? 'danger-full-access' : 'workspace-write'}"`];
+      if (!needsDangerFullAccess) args.push('-c', 'sandbox_workspace_write.network_access=true');
       // Newer Codex builds honor permissions config over legacy sandbox
       // flags; without this, Windows/WSL launches can stay read-only (#2834).
       args.push('-c', 'default_permissions=":workspace"');
       if (process.env.READABLE_CODEX_DISABLE_PLUGINS === '1') {
         args.push('--disable', 'plugins');
       }
-      if (runtimeContext.cwd) {
-        args.push('-C', runtimeContext.cwd);
-      }
+      // The spawn boundary and thread/start carry runtimeContext.cwd.
       const dirs = (extraAllowedDirs || []).filter(
         (d) => typeof d === 'string' && d.length > 0,
       );
-      for (const d of dirs) {
-        args.push('--add-dir', d);
-      }
+      if (dirs.length) args.push('-c', `sandbox_workspace_write.writable_roots=${JSON.stringify(dirs)}`);
       if (options.model && options.model !== 'default') {
-        args.push('--model', options.model);
+        args.push('-c', `model=${JSON.stringify(options.model)}`);
       }
       if (options.reasoning && options.reasoning !== 'default') {
         const effort = clampCodexReasoning(options.model, options.reasoning);
@@ -145,6 +127,6 @@ export const codexAgentDef = {
       return args;
     },
     promptViaStdin: true,
-    streamFormat: 'json-event-stream',
+    streamFormat: 'codex-app-server',
     eventParser: 'codex',
 } satisfies RuntimeAgentDef;

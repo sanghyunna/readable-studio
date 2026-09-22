@@ -370,10 +370,10 @@ export function bootstrapSidecarRuntime<TStamp extends SidecarStampShape>(
   }
 
   const base = resolveSidecarBase({
-    base: options.base,
+    ...(options.base === undefined ? {} : { base: options.base }),
     contract: options.contract,
     env,
-    projectRoot: options.projectRoot,
+    ...(options.projectRoot === undefined ? {} : { projectRoot: options.projectRoot }),
     source: stamp.source,
   });
   const ipc = resolveAppIpcPath({ app: stamp.app, contract: options.contract, env, namespace: stamp.namespace });

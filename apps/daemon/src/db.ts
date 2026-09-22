@@ -53,8 +53,11 @@ function assertReadableStudioDatabaseIdentity(file: string): boolean {
       FROM sqlite_schema
       WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
     `).pluck().all();
-    const hasReadableStudioSchema = ['conversations', 'messages']
-      .every((table) => userTables.includes(table));
+    const hasMessageStorage = userTables.includes('messages') || (
+      userTables.includes('message_snapshots') && userTables.includes('message_event_deltas') &&
+      Boolean(probe.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'view' AND name = 'messages'").get())
+    );
+    const hasReadableStudioSchema = userTables.includes('conversations') && hasMessageStorage;
     if (userTables.length > 0 && !hasReadableStudioSchema) {
       throw new DataIdentityError(file);
     }
@@ -139,6 +142,8 @@ export function closeDatabase() {
 }
 
 function migrate(db: SqliteDb): void {
+  const messageTable = db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'message_snapshots'").get()
+    ? 'message_snapshots' : 'messages';
   db.exec(`
     CREATE TABLE IF NOT EXISTS projects (
       id TEXT PRIMARY KEY,
@@ -183,7 +188,7 @@ function migrate(db: SqliteDb): void {
       FOREIGN KEY(conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
     );
 
-    CREATE TABLE IF NOT EXISTS messages (
+    CREATE TABLE IF NOT EXISTS ${messageTable} (
       id TEXT PRIMARY KEY,
       conversation_id TEXT NOT NULL,
       role TEXT NOT NULL,
@@ -206,7 +211,7 @@ function migrate(db: SqliteDb): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_messages_conv
-      ON messages(conversation_id, position);
+      ON ${messageTable}(conversation_id, position);
 
     CREATE TABLE IF NOT EXISTS preview_comments (
       id TEXT PRIMARY KEY,
@@ -472,6 +477,51 @@ function migrate(db: SqliteDb): void {
   }
   migrateCritique(db);
   migratePlugins(db);
+  migrateMessageEvents(db);
+}
+
+// Keep the SQL messages contract (including transcript exports) while appends
+// write only one event. Existing snapshot bytes are never rewritten by migration.
+function migrateMessageEvents(db: SqliteDb): void {
+  if (db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'message_snapshots'").get()) return;
+  db.transaction(() => {
+    db.exec(`ALTER TABLE messages RENAME TO message_snapshots;
+      CREATE TABLE message_event_deltas (
+        sequence INTEGER PRIMARY KEY,
+        message_id TEXT NOT NULL REFERENCES message_snapshots(id) ON DELETE CASCADE,
+        event_json TEXT NOT NULL
+      );
+      CREATE INDEX idx_message_event_deltas ON message_event_deltas(message_id, sequence);`);
+    const columns = db.prepare('PRAGMA table_info(message_snapshots)').all() as { name: string }[];
+    const select = columns.map(({ name }) => {
+      if (name === 'content') return `s.content || COALESCE((SELECT group_concat(text, '') FROM
+        (SELECT CASE WHEN json_extract(event_json, '$.kind') = 'text'
+          THEN json_extract(event_json, '$.text') ELSE '' END AS text
+         FROM message_event_deltas WHERE message_id = s.id ORDER BY sequence)), '') AS content`;
+      if (name === 'events_json') return `CASE WHEN EXISTS
+        (SELECT 1 FROM message_event_deltas WHERE message_id = s.id)
+        THEN (SELECT json_group_array(json(event)) FROM (
+          SELECT value AS event FROM json_each(CASE WHEN json_valid(s.events_json)
+            AND json_type(s.events_json) = 'array' THEN s.events_json ELSE '[]' END)
+          UNION ALL SELECT event_json FROM (SELECT event_json FROM message_event_deltas
+            WHERE message_id = s.id ORDER BY sequence)))
+        ELSE s.events_json END AS events_json`;
+      return `s.${name}`;
+    });
+    db.exec(`CREATE VIEW messages AS SELECT ${select.join(', ')} FROM message_snapshots s;
+      CREATE TRIGGER messages_insert INSTEAD OF INSERT ON messages BEGIN
+        INSERT INTO message_snapshots (${columns.map(c => c.name).join(',')})
+        VALUES (${columns.map(c => `NEW.${c.name}`).join(',')});
+      END;
+      CREATE TRIGGER messages_update INSTEAD OF UPDATE ON messages BEGIN
+        UPDATE message_snapshots SET ${columns.map(c => `${c.name} = NEW.${c.name}`).join(',')}
+          WHERE id = OLD.id;
+        DELETE FROM message_event_deltas WHERE message_id = OLD.id;
+      END;
+      CREATE TRIGGER messages_delete INSTEAD OF DELETE ON messages BEGIN
+        DELETE FROM message_snapshots WHERE id = OLD.id;
+      END;`);
+  })();
 }
 
 function migratePreviewCommentsSlideKey(db: SqliteDb): void {
@@ -872,16 +922,19 @@ function normalizeProjectRunStatus(status: unknown) {
 
 // ---------- templates ----------
 
-export function listTemplates(db: SqliteDb) {
-  return (db
+export function listTemplates(db: SqliteDb, { includeFiles = true }: { readonly includeFiles?: boolean } = {}) {
+  return rows(db
     .prepare(
       `SELECT id, name, description, source_project_id AS sourceProjectId,
-              files_json AS filesJson, created_at AS createdAt
+              ${includeFiles ? 'files_json AS filesJson,' : ''} created_at AS createdAt
          FROM templates
         ORDER BY created_at DESC`,
     )
-    .all() as DbRow[])
-    .map(normalizeTemplate);
+    .all())
+    .map((row) => includeFiles ? normalizeTemplate(row) : {
+      id: row.id, name: row.name, description: row.description ?? undefined,
+      sourceProjectId: row.sourceProjectId ?? undefined, createdAt: Number(row.createdAt),
+    });
 }
 
 export function getTemplate(db: SqliteDb, id: string) {
@@ -980,7 +1033,8 @@ export function listConversations(db: SqliteDb, projectId: string) {
                      m.run_status,
                      m.started_at,
                      m.ended_at,
-                     m.events_json,
+                     CASE WHEN typeof(m.started_at) = 'integer' AND typeof(m.ended_at) = 'integer'
+                          THEN NULL ELSE m.events_json END AS events_json,
                      ROW_NUMBER() OVER (
                        PARTITION BY m.conversation_id
                        ORDER BY m.position DESC
@@ -1074,7 +1128,8 @@ function latestConversationRunSummary(db: SqliteDb, conversationId: string) {
       `SELECT run_status AS runStatus,
               started_at AS startedAt,
               ended_at AS endedAt,
-              events_json AS eventsJson
+              CASE WHEN typeof(started_at) = 'integer' AND typeof(ended_at) = 'integer'
+                   THEN NULL ELSE events_json END AS eventsJson
          FROM messages
         WHERE conversation_id = ?
           AND role = 'assistant'
@@ -1134,11 +1189,11 @@ function conversationRunSummaryFromRow(row: DbRow | undefined) {
   if (!row || typeof row.runStatus !== 'string') return null;
   const startedAt = row.startedAt == null ? undefined : Number(row.startedAt);
   const endedAt = row.endedAt == null ? undefined : Number(row.endedAt);
-  const usageDurationMs = latestUsageDurationMs(row.eventsJson);
   const durationMs =
-    Number.isFinite(startedAt) && Number.isFinite(endedAt)
-      ? Math.max(0, (endedAt as number) - (startedAt as number))
-      : usageDurationMs;
+    typeof startedAt === 'number' && Number.isFinite(startedAt) &&
+    typeof endedAt === 'number' && Number.isFinite(endedAt)
+      ? Math.max(0, endedAt - startedAt)
+      : latestUsageDurationMs(row.eventsJson);
   return {
     status: row.runStatus,
     ...(Number.isFinite(startedAt) ? { startedAt } : {}),
@@ -1304,7 +1359,81 @@ export function clearAgentSessionsForConversation(
 
 // ---------- messages ----------
 
-export function listMessages(db: SqliteDb, conversationId: string) {
+/** Copy raw storage in bounded ID batches; even oversized bodies never enter JS. */
+export function copyMessagePrefix(db: SqliteDb, input: {
+  readonly sourceConversationId: string;
+  readonly targetConversationId: string;
+  readonly throughPosition: number;
+}): void {
+  const columns = db.prepare('PRAGMA table_info(message_snapshots)').all() as { name: string }[];
+  const projection = columns.map(({ name }) => {
+    if (name === 'id' || name === 'conversation_id') return '?';
+    if (name === 'run_id' || name === 'run_status' || name === 'last_run_event_id') return 'NULL';
+    return name;
+  });
+  const copy = db.prepare(`INSERT INTO message_snapshots (${columns.map(c => c.name).join(',')})
+    SELECT ${projection.join(',')} FROM message_snapshots WHERE id = ?`);
+  const deltas = db.prepare(`INSERT INTO message_event_deltas (message_id, event_json)
+    SELECT ?, event_json FROM message_event_deltas WHERE message_id = ? ORDER BY sequence`);
+  const page = db.prepare(`SELECT id, position FROM message_snapshots
+    WHERE conversation_id = ? AND position > ? AND position <= ? ORDER BY position LIMIT ?`);
+  db.transaction(() => {
+    let after = -1;
+    for (;;) {
+      const rows = page.all(input.sourceConversationId, after, input.throughPosition, 100) as { id: string; position: number }[];
+      if (rows.length === 0) break;
+      for (const row of rows) {
+        const id = randomUUID();
+        copy.run(id, input.targetConversationId, row.id);
+        deltas.run(id, row.id);
+        after = row.position;
+      }
+    }
+  })();
+}
+
+export function listMessagePage(db: SqliteDb, conversationId: string, options: {
+  readonly afterPosition: number;
+  readonly beforePosition?: number;
+  readonly maxRows: number;
+  readonly maxBytes: number;
+}) {
+  const maxRows = Math.max(1, Math.min(100, options.maxRows));
+  const maxBytes = Math.max(4096, Math.min(1024 * 1024, options.maxBytes));
+  // Size metadata crosses the boundary before any body. Six bytes per source
+  // byte covers JSON escaping; 2 KiB per row covers keys and scalar metadata.
+  const columns = db.prepare('PRAGMA table_info(message_snapshots)').all() as { name: string }[];
+  const sizeSql = columns.map(c => `COALESCE(length(CAST(s.${c.name} AS BLOB)), 0)`).join(' + ');
+  const candidates = db.prepare(`SELECT id, position, 2048 + 6 * (${sizeSql} +
+    2 * COALESCE((SELECT sum(length(CAST(event_json AS BLOB))) FROM message_event_deltas
+      WHERE message_id = s.id), 0)) AS bytes
+    FROM message_snapshots s WHERE conversation_id = ? AND position ${options.beforePosition === undefined ? '>' : '<'} ?
+    ORDER BY position ${options.beforePosition === undefined ? 'ASC' : 'DESC'} LIMIT ?`).all(conversationId, options.beforePosition ?? options.afterPosition, maxRows + 1) as { id: string; position: number; bytes: number }[];
+  let used = 512;
+  let end = options.afterPosition;
+  let count = 0;
+  let oversizedMessageId: string | undefined;
+  for (const candidate of candidates) {
+    if (count === maxRows || used + candidate.bytes > maxBytes) {
+      if (count === 0) {
+        oversizedMessageId = candidate.id;
+        end = candidate.position;
+      }
+      break;
+    }
+    used += candidate.bytes;
+    end = candidate.position;
+    count++;
+  }
+  return {
+    messages: count ? listMessages(db, conversationId, options.beforePosition === undefined
+      ? [options.afterPosition, end] : [end - 1, options.beforePosition - 1]) : [],
+    nextPosition: count < candidates.length ? end : null,
+    ...(oversizedMessageId ? { oversizedMessageId } : {}),
+  };
+}
+
+export function listMessages(db: SqliteDb, conversationId: string, range?: readonly [number, number]) {
   return (db
     .prepare(
       `SELECT id, role, content, agent_id AS agentId, agent_name AS agentName,
@@ -1322,10 +1451,10 @@ export function listMessages(db: SqliteDb, conversationId: string) {
               created_at AS createdAt, started_at AS startedAt, ended_at AS endedAt,
               position
          FROM messages
-        WHERE conversation_id = ?
+        WHERE conversation_id = ?${range ? ' AND position > ? AND position <= ?' : ''}
         ORDER BY position ASC`,
     )
-    .all(conversationId) as DbRow[])
+    .all(conversationId, ...(range ?? [])) as DbRow[])
     .map(normalizeMessage);
 }
 
@@ -1443,44 +1572,24 @@ export function appendMessageStatusEvent(db: SqliteDb, messageId: string, event:
   const label = typeof event?.label === 'string' ? event.label.trim() : '';
   const detail = typeof event?.detail === 'string' ? event.detail.trim() : '';
   if (!label) return null;
-  const row = db
-    .prepare(`SELECT events_json AS eventsJson FROM messages WHERE id = ?`)
-    .get(messageId) as DbRow | undefined;
-  if (!row) return null;
-  const parsed = parseJsonOrUndef(row.eventsJson);
-  const events = Array.isArray(parsed) ? parsed : [];
-  const last = events[events.length - 1];
-  if (last?.kind === 'status' && last.label === label && (last.detail ?? '') === detail) {
-    return events;
-  }
-  const nextEvent = detail
+  return appendMessageAgentEvent(db, messageId, detail
     ? { kind: 'status', label, detail }
-    : { kind: 'status', label };
-  const next = [...events, nextEvent];
-  db.prepare(`UPDATE messages SET events_json = ? WHERE id = ?`)
-    .run(JSON.stringify(next), messageId);
-  return next;
+    : { kind: 'status', label });
 }
 
 export function appendMessageAgentEvent(db: SqliteDb, messageId: string, event: DbRow) {
-  if (!event || typeof event !== 'object') return null;
-  const kind = typeof event.kind === 'string' ? event.kind : '';
-  if (!kind) return null;
-  const row = db
-    .prepare(`SELECT content, events_json AS eventsJson FROM messages WHERE id = ?`)
-    .get(messageId) as DbRow | undefined;
-  if (!row) return null;
-  const parsed = parseJsonOrUndef(row.eventsJson);
-  const events = Array.isArray(parsed) ? parsed : [];
-  const last = events[events.length - 1];
-  if (last && JSON.stringify(last) === JSON.stringify(event)) {
-    return events;
-  }
-  const next = [...events, event];
-  const textDelta = kind === 'text' && typeof event.text === 'string' ? event.text : '';
-  db.prepare(`UPDATE messages SET content = COALESCE(content, '') || ?, events_json = ? WHERE id = ?`)
-    .run(textDelta, JSON.stringify(next), messageId);
-  return next;
+  if (!event || typeof event.kind !== 'string' || !event.kind) return null;
+  const encoded = JSON.stringify(event);
+  // Only the last event crosses the JS boundary. The snapshot fallback runs
+  // once, before the first delta, rather than scanning the accumulated stream.
+  const last = db.prepare(`SELECT COALESCE(
+    (SELECT event_json FROM message_event_deltas WHERE message_id = ? ORDER BY sequence DESC LIMIT 1),
+    CASE WHEN json_valid(events_json) THEN json_extract(events_json, '$[#-1]') END
+    ) AS eventJson FROM message_snapshots WHERE id = ?`).get(messageId, messageId) as { eventJson: string | null } | undefined;
+  if (!last) return null;
+  if (last.eventJson && JSON.stringify(JSON.parse(last.eventJson)) === encoded) return false;
+  db.prepare('INSERT INTO message_event_deltas (message_id, event_json) VALUES (?, ?)').run(messageId, encoded);
+  return true;
 }
 
 export function getMessagePosition(

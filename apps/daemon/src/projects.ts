@@ -70,10 +70,10 @@ export class SandboxImportedProjectError extends Error {
 
 export class ProjectFileContentConflictError extends Error {
   readonly code = 'CONFLICT' as const;
-  readonly expectedContentSha256: string;
+  readonly expectedContentSha256: string | null;
   readonly actualContentSha256: string | null;
 
-  constructor(name: string, expectedContentSha256: string, actualContentSha256: string | null) {
+  constructor(name: string, expectedContentSha256: string | null, actualContentSha256: string | null) {
     super(`project file "${name}" changed since it was read`);
     this.name = 'ProjectFileContentConflictError';
     this.expectedContentSha256 = expectedContentSha256;
@@ -81,9 +81,38 @@ export class ProjectFileContentConflictError extends Error {
   }
 }
 
+export interface ProjectFileWriteGuard {
+  readonly versions: Map<string, string>;
+  readonly onConflict: (error: ProjectFileContentConflictError) => void;
+  readonly onWrite?: (write: { key: string; path: string; body: Buffer; userSave: boolean }) => Promise<void>;
+}
+
+export function projectFileWriteKey(target: string): string {
+  return process.platform === 'win32' ? path.normalize(target).toLowerCase() : path.normalize(target);
+}
+
+// Captured before launching the agent, not when its completed output arrives.
+// Missing entries mean the path did not exist, so creation races are conflicts too.
+export async function captureProjectFileVersions(projectsRoot, projectId, files, metadata?) {
+  const dir = resolveProjectDir(projectsRoot, projectId, metadata);
+  const versions = new Map<string, string>();
+  for (const file of files) {
+    const target = await resolveSafeReal(dir, file.name);
+    const key = projectFileWriteKey(target);
+    await withProjectFileWriteLock(key, async () => {
+      try {
+        versions.set(key, createHash('sha256').update(await readFile(target)).digest('hex'));
+      } catch (error) {
+        if (error?.code !== 'ENOENT') throw error;
+      }
+    });
+  }
+  return versions;
+}
+
 const projectFileWriteLocks = new Map<string, Promise<void>>();
 
-async function withProjectFileWriteLock<T>(key: string, work: () => Promise<T>): Promise<T> {
+export async function withProjectFileWriteLock<T>(key: string, work: () => Promise<T>): Promise<T> {
   const previous = projectFileWriteLocks.get(key);
   let release!: () => void;
   const current = new Promise<void>((resolve) => { release = resolve; });
@@ -793,7 +822,7 @@ export async function writeProjectFile(
 ) {
   const dir = resolveProjectDir(projectsRoot, projectId, metadata);
   const safeName = sanitizePath(name);
-  const lockKey = `${process.platform === 'win32' ? path.normalize(dir).toLowerCase() : path.normalize(dir)}\u0000${safeName}`;
+  const lockKey = projectFileWriteKey(await resolveSafeReal(dir, safeName));
   return withProjectFileWriteLock(lockKey, () => writeProjectFileUnlocked(
     projectsRoot,
     projectId,
@@ -809,26 +838,36 @@ async function writeProjectFileUnlocked(
   projectId,
   name,
   body,
-  { overwrite = true, artifactManifest = null, expectedContentSha256 } = {},
+  { overwrite = true, artifactManifest = null, expectedContentSha256, writeGuards = [] as ProjectFileWriteGuard[] } = {},
   metadata?,
 ) {
   const dir = await ensureProject(projectsRoot, projectId, metadata);
   const safeName = sanitizePath(name);
   const target = await resolveSafeReal(dir, safeName);
-  if (expectedContentSha256 !== undefined) {
+  const versionKey = projectFileWriteKey(target);
+  if (expectedContentSha256 !== undefined || (overwrite && writeGuards.length > 0)) {
     let actualContentSha256 = null;
     try {
       actualContentSha256 = createHash('sha256').update(await readFile(target)).digest('hex');
     } catch (err) {
       if (!err || err.code !== 'ENOENT') throw err;
     }
-    if (actualContentSha256 !== expectedContentSha256.toLowerCase()) {
+    if (expectedContentSha256 !== undefined && actualContentSha256 !== expectedContentSha256.toLowerCase()) {
       throw new ProjectFileContentConflictError(
         safeName,
         expectedContentSha256,
         actualContentSha256,
       );
     }
+    let conflict: ProjectFileContentConflictError | undefined;
+    for (const guard of overwrite && expectedContentSha256 === undefined ? writeGuards : []) {
+      const expected = guard.versions.get(versionKey) ?? null;
+      if (actualContentSha256 !== expected) {
+        conflict = new ProjectFileContentConflictError(safeName, expected, actualContentSha256);
+        guard.onConflict(conflict);
+      }
+    }
+    if (conflict) throw conflict;
   }
   body = normalizeArtifactRuntimeImports(safeName, body);
   if (!overwrite) {
@@ -915,6 +954,14 @@ async function writeProjectFileUnlocked(
     artifactManifest: persistedManifest,
   };
   if (stubGuardWarning) result.stubGuardWarning = stubGuardWarning;
+  // Advance within the same lock, and only after the entire write succeeded.
+  // A later user save must not be mistaken for this run's own preceding write.
+  for (const guard of writeGuards) {
+    if (expectedContentSha256 === undefined) {
+      guard.versions.set(versionKey, createHash('sha256').update(body).digest('hex'));
+    }
+    await guard.onWrite?.({ key: versionKey, path: safeName, body, userSave: expectedContentSha256 !== undefined });
+  }
   return result;
 }
 
@@ -1393,7 +1440,7 @@ function resolveSafe(dir, name) {
 // candidate (or its existing prefix, for writes that haven't created
 // the file yet) and re-validates against the realpath of dir, so
 // descendant symlinks can't reach outside the project.
-async function resolveSafeReal(dir, name) {
+export async function resolveSafeReal(dir, name) {
   const candidate = resolveSafe(dir, name);
   const rootReal = await realpath(dir).catch(() => dir);
   let real;

@@ -23,6 +23,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { Agent, EnvHttpProxyAgent, Socks5ProxyAgent } from 'undici';
 import type { Dispatcher, Pool } from 'undici';
+import { compatibleDispatchHandler } from './legacy-dispatch-handler.js';
 import {
   applyAgentLaunchEnv,
   getAgentDef,
@@ -36,6 +37,7 @@ import {
 } from '@readable-studio/platform';
 import { attachAcpSession } from './acp.js';
 import { attachPiRpcSession } from './pi-rpc.js';
+import { attachCodexAppServerSession } from './runtimes/codex-app-server.js';
 import { createClaudeStreamHandler } from './claude-stream.js';
 import { diagnoseClaudeCliFailure } from './claude-diagnostics.js';
 import { createCopilotStreamHandler } from './copilot-stream.js';
@@ -561,7 +563,12 @@ export function proxyDispatcherRequestInit(
   return {
     close: () => dispatcher.close(),
     requestInit: {
-      dispatcher: dispatcher as unknown as NonNullable<RequestInit['dispatcher']>,
+      // Node and external Undici publish distinct dispatcher/FormData types.
+      // Fetch serializes bodies before dispatch; the callback ABI is bridged here.
+      dispatcher: {
+        dispatch: (options: Dispatcher.DispatchOptions, handler: Dispatcher.DispatchHandler) =>
+          dispatcher.dispatch(options, compatibleDispatchHandler(handler)),
+      } as unknown as NonNullable<RequestInit['dispatcher']>,
     },
   };
 }
@@ -1642,6 +1649,10 @@ function attachAgentStreamHandlers(
       mcpServers: [],
       send,
     });
+  } else if (def.streamFormat === 'codex-app-server') {
+    acpSession = attachCodexAppServerSession({ child, prompt, cwd, model: model ?? '',
+      onEvent: event => send(event.type === 'error' ? 'error' : 'agent', event),
+    });
   } else if (def.streamFormat === 'json-event-stream') {
     const handler = createJsonEventStreamHandler(
       def.eventParser || def.id,
@@ -1960,7 +1971,7 @@ async function testAgentConnectionInternal(
     // 'connection_smoke_test' / 'output_parse' once we get text out.
     phase = 'spawn';
     child = spawn(invocation.command, invocation.args, {
-      env,
+      windowsHide: true, env,
       stdio: [stdinMode, 'pipe', 'pipe'],
       cwd: tempDir,
       shell: false,
@@ -2141,7 +2152,7 @@ async function testAgentConnectionInternal(
       };
     };
 
-    if (def.promptViaStdin && child.stdin && def.streamFormat !== 'pi-rpc') {
+    if (def.promptViaStdin && child.stdin && def.streamFormat !== 'pi-rpc' && def.streamFormat !== 'codex-app-server') {
       child.stdin.on('error', (err: NodeJS.ErrnoException) => {
         if (err.code !== 'EPIPE') {
           sink.send('error', {

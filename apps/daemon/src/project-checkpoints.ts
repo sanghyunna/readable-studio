@@ -206,6 +206,8 @@ interface RestorePathPreflight {
 }
 
 export interface ProjectCheckpointService {
+  storeUserSave(body: Buffer): Promise<string>;
+  readUserSave(blobRef: string, sha: string): Promise<Buffer>;
   captureCheckpoint(input: CaptureCheckpointInput): Promise<ProjectCheckpointSummary>;
   listCheckpoints(projectId: string, conversationId?: string | null): ProjectCheckpointSummary[];
   getCheckpoint(projectId: string, checkpointId: string): ProjectCheckpointSummary;
@@ -952,6 +954,21 @@ export function createProjectCheckpointService(
   }
 
   return {
+    async storeUserSave(body) {
+      const blob = blobRelativePath(prefixedHash(body));
+      await writeBlob(blob, body);
+      return blob;
+    },
+    async readUserSave(blobRef, sha) {
+      if (blobRef !== blobRelativePath(`sha256:${sha}`)) {
+        throw new ProjectCheckpointError(410, 'CHECKPOINT_UNAVAILABLE', 'checkpoint blob path mismatch');
+      }
+      const body = await readFile(blobAbsolutePath(blobRef));
+      if (prefixedHash(body) !== `sha256:${sha}`) {
+        throw new ProjectCheckpointError(410, 'CHECKPOINT_UNAVAILABLE', 'checkpoint blob hash mismatch');
+      }
+      return body;
+    },
     captureCheckpoint,
     listCheckpoints,
     getCheckpoint,

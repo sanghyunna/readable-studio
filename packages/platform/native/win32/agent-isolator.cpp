@@ -451,8 +451,10 @@ Request ParseRequest(const std::string& input) {
   return request;
 }
 
-std::wstring FullPath(const std::wstring& input) {
-  if (input.empty() || !std::filesystem::path(input).is_absolute()) throw std::runtime_error("isolated paths must be absolute");
+std::wstring FullPath(const std::wstring& input, std::string_view argument) {
+  if (input.empty() || !std::filesystem::path(input).is_absolute()) {
+    throw std::runtime_error("isolated paths must be absolute: " + std::string(argument) + "=" + WideToUtf8(input));
+  }
   DWORD size = GetFullPathNameW(input.c_str(), 0, nullptr, nullptr);
   if (size == 0) ThrowLastError("resolve isolated path");
   std::wstring output(size, L'\0');
@@ -791,7 +793,7 @@ void CopyStream(HANDLE source, HANDLE destination, bool close_destination) {
 std::wstring ModulePath();
 
 std::map<std::wstring, GrantSpec, CaseInsensitivePathLess> RequestedGrants(Request& request) {
-  request.cwd = FullPath(request.cwd);
+  request.cwd = FullPath(request.cwd, "cwd");
   const DWORD cwd_attributes = PathAttributes(request.cwd);
   RequireNoReparsePoint(request.cwd, cwd_attributes);
   if ((cwd_attributes & FILE_ATTRIBUTE_DIRECTORY) == 0) throw std::runtime_error("isolated cwd is not a directory");
@@ -800,7 +802,7 @@ std::map<std::wstring, GrantSpec, CaseInsensitivePathLess> RequestedGrants(Reque
   const GrantSpec read_execute{FILE_GENERIC_READ | FILE_GENERIC_EXECUTE, SUB_CONTAINERS_AND_OBJECTS_INHERIT};
   const GrantSpec writable{FILE_GENERIC_READ | FILE_GENERIC_WRITE | FILE_GENERIC_EXECUTE | DELETE, SUB_CONTAINERS_AND_OBJECTS_INHERIT};
   for (std::wstring& path : request.read_execute_paths) {
-    path = FullPath(path);
+    path = FullPath(path, "readExecutePaths");
     const DWORD attributes = PathAttributes(path);
     RequireNoReparsePoint(path, attributes);
     RequirePersistentAcls(path);
@@ -809,7 +811,7 @@ std::map<std::wstring, GrantSpec, CaseInsensitivePathLess> RequestedGrants(Reque
     grants[path] = grant;
   }
   for (std::wstring& path : request.writable_paths) {
-    path = FullPath(path);
+    path = FullPath(path, "writablePaths");
     const DWORD attributes = PathAttributes(path);
     RequireNoReparsePoint(path, attributes);
     if ((attributes & FILE_ATTRIBUTE_DIRECTORY) == 0) throw std::runtime_error("isolated writable path is not a directory");
@@ -817,7 +819,7 @@ std::map<std::wstring, GrantSpec, CaseInsensitivePathLess> RequestedGrants(Reque
     grants[path] = writable;
   }
   if (!request.broker_pipe_name.empty()) {
-    std::wstring helper_dir = FullPath(std::filesystem::path(ModulePath()).parent_path().wstring());
+    std::wstring helper_dir = FullPath(std::filesystem::path(ModulePath()).parent_path().wstring(), "brokerHelperDirectory");
     const DWORD attributes = PathAttributes(helper_dir);
     RequireNoReparsePoint(helper_dir, attributes);
     RequirePersistentAcls(helper_dir);
@@ -829,7 +831,7 @@ std::map<std::wstring, GrantSpec, CaseInsensitivePathLess> RequestedGrants(Reque
     throw std::runtime_error("isolated cwd must be inside a writable path");
   }
   RequirePersistentAcls(request.cwd);
-  const std::wstring command = FullPath(request.command);
+  const std::wstring command = FullPath(request.command, "command");
   RequireNoReparsePoint(command, PathAttributes(command));
   RequirePersistentAcls(command);
   request.command = command;

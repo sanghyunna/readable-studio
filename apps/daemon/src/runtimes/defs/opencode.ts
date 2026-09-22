@@ -1,5 +1,15 @@
 import { DEFAULT_MODEL_OPTION, parseLineSeparatedModels } from './shared.js';
 import type { RuntimeAgentDef } from '../types.js';
+import { execAgentFile } from '../invocation.js';
+import { stripVTControlCharacters } from 'node:util';
+
+class OpenCodeDiscoveryError extends Error {
+  constructor(readonly code: 'AUTH_MISSING' | 'AUTH_MALFORMED' | 'MODELS_MALFORMED') {
+    super(code === 'AUTH_MISSING'
+      ? 'Authentication required: OpenCode reports zero credentials.'
+      : `OpenCode discovery output could not be parsed (${code}).`);
+  }
+}
 
 export function parseOpenCodeModels(stdout: string) {
   const text = String(stdout || '');
@@ -20,6 +30,17 @@ export const opencodeAgentDef = {
     bin: 'opencode-cli',
     fallbackBins: ['opencode'],
     versionArgs: ['--version'],
+    // auth list reports configured credentials, not merely the public catalogue.
+    authProbe: { args: ['auth', 'list'], timeoutMs: 15_000 },
+    compatibilityProbe: async (resolvedBin, env) => {
+      const { stdout, stderr } = await execAgentFile(resolvedBin, ['auth', 'list'], {
+        env, timeout: 15_000, maxBuffer: 1024 * 1024,
+      });
+      const text = stripVTControlCharacters(`${stdout}\n${stderr}`);
+      const count = text.match(/(?:^|\n)\s*└\s+(\d+) credentials?\s*(?:\n|$)/)?.[1];
+      if (count === undefined) throw new OpenCodeDiscoveryError('AUTH_MALFORMED');
+      if (Number(count) === 0) throw new OpenCodeDiscoveryError('AUTH_MISSING');
+    },
     // `opencode models` prints `provider/model` per line. Real-world
     // `opencode models` calls can take >8s (network round-trip to the
     // provider registry), so the previous 8s budget timed out and fell back
@@ -28,7 +49,11 @@ export const opencodeAgentDef = {
     // (devin, hermes, kiro, kilo, kimi, trae-cli, vibe, reasonix).
     listModels: {
       args: ['models'],
-      parse: parseOpenCodeModels,
+      parse: (stdout) => {
+        const models = parseOpenCodeModels(stdout);
+        if (!models) throw new OpenCodeDiscoveryError('MODELS_MALFORMED');
+        return models;
+      },
       timeoutMs: 15_000,
     },
     fallbackModels: [

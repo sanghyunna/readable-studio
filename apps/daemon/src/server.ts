@@ -51,6 +51,7 @@ import {
   PLUGIN_PREVIEWS_ROUTE,
 } from './plugin-preview-bakes.js';
 import { userFacingAgentLabel } from './user-facing-agent-label.js';
+import { ISOLATION_FALLBACK_LABEL, isolationLaunchFailureReason, isolationRuntimeFailureReason } from './isolation-fallback.js';
 
 // @dsp func-27acb8ad
 export { resolveProjectRoot };
@@ -74,6 +75,7 @@ import {
   spawnEnvForAgent,
 } from './agents.js';
 import { configureDetectionStorage } from './runtimes/detection.js';
+import { ensureAgentCapabilities } from './runtimes/detection-probe.js';
 import {
   agentHasModelChoice,
   getRememberedLiveModels,
@@ -243,6 +245,7 @@ import {
 import { narrowProjectCritiqueOverride } from './critique/spawn-inputs.js';
 import { createCopilotStreamHandler } from './copilot-stream.js';
 import { createJsonEventStreamHandler } from './json-event-stream.js';
+import { attachCodexAppServerSession } from './runtimes/codex-app-server.js';
 import {
   antigravityAuthGuidance,
   antigravityQuotaGuidance,
@@ -381,6 +384,7 @@ import {
   decodeMultipartFilename,
   deleteProjectFile,
   assertSandboxProjectRootAvailable,
+  captureProjectFileVersions,
   deleteProjectFolder,
   detectEntryFile,
   ensureProject,
@@ -432,6 +436,9 @@ import {
   listDeployments,
   listLatestProjectRunStatuses,
   listMessages,
+  listMessagePage,
+  getMessagePosition,
+  copyMessagePrefix,
   listPreviewComments,
   listProjects,
   listRoutines,
@@ -1943,7 +1950,7 @@ async function resolveProjectChildDirectory(projectRoot, relativePath) {
 
 function execFileBuffered(command, args, opts = {}) {
   return new Promise((resolve) => {
-    execFile(command, args, { timeout: 120_000, maxBuffer: 1024 * 1024, ...opts }, (error, stdout, stderr) => {
+    execFile(command, args, { timeout: 120_000, maxBuffer: 1024 * 1024, ...opts, windowsHide: true }, (error, stdout, stderr) => {
       resolve({
         ok: !error,
         code: error?.code,
@@ -3246,7 +3253,7 @@ function openNativeFolderDialog() {
       execFile(
         'osascript',
         ['-e', 'POSIX path of (choose folder with prompt "Select a code folder to link")'],
-        { timeout: 120_000 },
+        { timeout: 120_000, windowsHide: true },
         (err, stdout) => {
           if (err) return resolve(null);
           const p = stdout.trim().replace(/\/$/, '');
@@ -3257,7 +3264,7 @@ function openNativeFolderDialog() {
       execFile(
         'zenity',
         ['--file-selection', '--directory', '--title=Select a code folder to link'],
-        { timeout: 120_000 },
+        { timeout: 120_000, windowsHide: true },
         (err, stdout) => {
           if (err) return resolve(null);
           const p = stdout.trim();
@@ -3266,7 +3273,7 @@ function openNativeFolderDialog() {
       );
     } else if (platform === 'win32') {
       const command = buildWindowsFolderDialogCommand();
-      execFile(command.command, command.args, { timeout: 120_000 }, (err, stdout) => {
+      execFile(command.command, command.args, { timeout: 120_000, windowsHide: true }, (err, stdout) => {
         resolve(parseFolderDialogStdout(err, stdout));
       });
     } else {
@@ -4441,17 +4448,9 @@ export async function startServer({
   };
   void snapshotGc; // keep handle alive for the daemon's lifetime
 
-  // Warm agent-capability probes (e.g. whether the installed Claude Code
-  // build advertises --include-partial-messages) so the first /api/chat
-  // hits a populated cache even if /api/agents hasn't been called yet.
+  // Discovery is demand-driven in every profile. Agent surfaces and explicit
+  // rescans retain full fidelity; cold chat initializes capabilities below.
   configureDetectionStorage(RUNTIME_DATA_DIR);
-  void readAppConfig(RUNTIME_DATA_DIR)
-    .then((config) => {
-      return detectAgents(config.agentCliEnv ?? {}, {
-        enabledAgentIds: config.enabledAgentIds ?? DEFAULT_ENABLED_AGENT_IDS,
-      });
-    })
-    .catch(() => detectAgents({}, { enabledAgentIds: DEFAULT_ENABLED_AGENT_IDS }).catch(() => {}));
 
   if (fs.existsSync(STATIC_DIR)) {
     app.use(express.static(STATIC_DIR));
@@ -5390,6 +5389,13 @@ export async function startServer({
     artifacts: artifactDeps,
     projectPreviewScopes,
     hostedRequestBodyGuard,
+    getFileWriteGuards: (projectId) => design.runs.list({ projectId, status: 'active' })
+      .filter((run) => run.projectFileVersions)
+      .map((run) => ({
+        versions: run.projectFileVersions,
+        onConflict: (error) => design.runs.noteFileWriteConflict(run, error),
+        onWrite: (write) => run.nativeWrites?.onWrite(write),
+      })),
   });
 
   registerMediaRoutes(app, {
@@ -5491,15 +5497,12 @@ export async function startServer({
       typeof seedFromConversationId === 'string' && seedFromConversationId
         ? getConversation(db, seedFromConversationId)
         : null;
-    let seedMessages = [];
+    let throughPosition = Number.MAX_SAFE_INTEGER;
     if (sourceConversation && sourceConversation.projectId === req.params.id) {
-      seedMessages = listMessages(db, seedFromConversationId);
       if (requestedForkMessageId) {
-        const forkIndex = seedMessages.findIndex((message) => message.id === requestedForkMessageId);
-        if (forkIndex < 0) {
-          return res.status(404).json({ error: 'fork message not found' });
-        }
-        seedMessages = seedMessages.slice(0, forkIndex + 1);
+        const fork = getMessagePosition(db, seedFromConversationId, requestedForkMessageId);
+        if (!fork) return res.status(404).json({ error: 'fork message not found' });
+        throughPosition = fork.position;
       }
     } else if (requestedForkMessageId) {
       return res.status(404).json({ error: 'fork source conversation not found' });
@@ -5518,16 +5521,9 @@ export async function startServer({
       createdAt: now,
       updatedAt: now,
     });
-    if (conv && seedMessages.length > 0) {
-      for (const m of seedMessages) {
-        upsertMessage(db, conv.id, {
-          ...m,
-          id: randomUUID(),
-          runId: undefined,
-          runStatus: undefined,
-          lastRunEventId: undefined,
-        });
-      }
+    if (conv && sourceConversation?.projectId === req.params.id) {
+      copyMessagePrefix(db, { sourceConversationId: seedFromConversationId,
+        targetConversationId: conv.id, throughPosition });
     }
     res.json({ conversation: conv });
   });
@@ -5557,7 +5553,7 @@ export async function startServer({
     if (!conv || conv.projectId !== req.params.id) {
       return res.status(404).json({ error: 'conversation not found' });
     }
-    res.json({ messages: listMessages(db, req.params.cid) });
+    res.json(listMessagePage(db, req.params.cid, { afterPosition: -1, maxRows: 100, maxBytes: 1024 * 1024 }));
   });
 
   app.put('/api/projects/:id/conversations/:cid/messages/:mid', (req, res) => {
@@ -5697,8 +5693,8 @@ export async function startServer({
   // starting point. Created via the project's Share menu (snapshots
   // every .html file in the project folder at the moment of save).
 
-  app.get('/api/templates', (_req, res) => {
-    res.json({ templates: listTemplates(db) });
+  app.get('/api/templates', (req, res) => {
+    res.json({ templates: listTemplates(db, { includeFiles: req.query.includeFiles === '1' }) });
   });
 
   app.get('/api/templates/:id', (req, res) => {
@@ -9786,6 +9782,18 @@ export async function startServer({
     }
     if (run.cancelRequested || design.runs.isTerminal(run.status)) return;
 
+    if (cwd && !run.projectFileVersions) {
+      try {
+        run.projectFileVersions = await captureProjectFileVersions(
+          PROJECTS_DIR, projectId, existingProjectFiles, getProject(db, projectId)?.metadata,
+        );
+        await design.runs.watchProjectWrites(run, PROJECTS_DIR, checkpointService);
+      } catch (error) {
+        return design.runs.fail(run, 'AGENT_EXECUTION_FAILED', `Could not capture project file versions: ${error.message}`);
+      }
+    }
+    if (run.cancelRequested || design.runs.isTerminal(run.status)) return;
+
     // Sanitise supplied image paths: must live under UPLOAD_DIR and stay
     // below the prompt-image safety cap.
     const { safeImages, oversizedImages, failedImages } =
@@ -9847,6 +9855,7 @@ export async function startServer({
       : null;
     const agentRollbackIsolationEnabled = Boolean(
       isolatedAgentSupport.supported
+      && !run.isolationFallbackReason
       && def.id === 'codex'
       && toolTokenGrant?.token
       && cwd
@@ -10183,6 +10192,9 @@ export async function startServer({
     } catch {
       configuredAgentEnv = {};
     }
+    // A headless caller may bypass /api/agents. Populate capability flags on
+    // demand before constructing argv, including after a persisted scan load.
+    await ensureAgentCapabilities(def, configuredAgentEnv);
     // Per-agent model + reasoning the user picked in the model menu.
     // Catalog-only agents accept only a model surfaced by the daemon;
     // custom-capable agents may additionally accept a sanitized free-form id.
@@ -10313,6 +10325,18 @@ export async function startServer({
       });
       return design.runs.finish(run, 'failed', 1, null);
     }
+    const recordIsolationFallback = (reason: string) => {
+      run.isolationFallbackReason = reason;
+      console.warn('[rollback] secure agent isolation unavailable; executing without sandbox isolation', { runId, agentId, reason });
+      send('agent', {
+        type: 'status',
+        label: ISOLATION_FALLBACK_LABEL,
+        detail: `Running WITHOUT sandbox isolation: ${reason}`,
+      });
+    };
+    if (desktopApprovalToken && def.id === 'codex' && !isolatedAgentSupport.supported && !run.isolationFallbackReason) {
+      recordIsolationFallback(isolatedAgentSupport.reason);
+    }
     const flushAgentRollbackText = () => agentRollbackIsolationEnabled ? rollbackDetector.flush() : '';
     const flushAgentRollbackTail = () => {
       const visible = flushAgentRollbackText();
@@ -10423,6 +10447,10 @@ export async function startServer({
       return 'unknown';
     };
     const finishWithRetryDecision = (status, code = null, signal = null) => {
+      if (status === 'succeeded' && run.fileWriteConflict) {
+        status = 'failed';
+        code = 1;
+      }
       run.analyticsTelemetry = {
         ...(run.analyticsTelemetry ?? {}),
         finalizeStartAt: run.analyticsTelemetry?.finalizeStartAt ?? Date.now(),
@@ -10456,6 +10484,7 @@ export async function startServer({
         result,
         failure,
         attemptCount: run.retryAttemptCount ?? 0,
+        ...(run.isolationFallbackReason ? { maxAttempts: 0 } : {}),
         sideEffects,
       });
       if (decision.shouldRetry && !design.runs.isTerminal(run.status)) {
@@ -11399,10 +11428,8 @@ export async function startServer({
           process.env.SystemRoot,
         ].filter((candidate) => typeof candidate === 'string' && candidate).map((candidate) => path.resolve(candidate).toLowerCase());
         const readExecutePaths = [...new Set([
-          path.dirname(process.execPath),
-          path.dirname(agentLaunch.launchPath),
-          path.dirname(resolvedBin),
-          ...agentLaunch.childPathPrepend,
+          process.execPath,
+          ...agentLaunch.readExecutePaths,
           ...isolatedToolBroker.readExecutePaths,
           ...activeSkillDirs,
           ...extraAllowedDirs,
@@ -11425,7 +11452,7 @@ export async function startServer({
         if (stdinMode === 'ignore') child.stdin.end();
       } else {
         child = spawn(invocation.command, invocation.args, {
-          env,
+          windowsHide: true, env,
           stdio: [stdinMode, 'pipe', 'pipe'],
            cwd: managedPiHandle?.invocation.cwd ?? effectiveCwd,
           shell: false,
@@ -11496,7 +11523,7 @@ export async function startServer({
           releaseOnce();
         });
       }
-      if (def.promptViaStdin && child.stdin && def.streamFormat !== 'pi-rpc') {
+      if (def.promptViaStdin && child.stdin && def.streamFormat !== 'pi-rpc' && def.streamFormat !== 'codex-app-server') {
         // EPIPE from a fast-exiting CLI (bad auth, missing model, exit on
         // launch) would otherwise surface as an unhandled stream error and
         // crash the daemon. Swallow it — the regular exit/close handlers
@@ -11525,9 +11552,20 @@ export async function startServer({
       cleanupPromptFile();
       revokeToolToken('child_exit');
       unregisterChatAgentEventSink();
+      const isolationFailed = !managedPiHandle && agentRollbackIsolationEnabled;
+      const fallbackReason = isolationFailed ? isolationLaunchFailureReason(err) : null;
+      if (fallbackReason && !run.isolationFallbackReason && !run.cancelRequested && !design.runs.isTerminal(run.status)) {
+        clearInactivityWatchdog();
+        recordIsolationFallback(fallbackReason);
+        restartSameRunAfterRetry();
+        return;
+      }
+      console.error('[agent/spawn-failed]', { runId, agentId, error: err instanceof Error ? err.stack : String(err) });
       send('error', createSseErrorPayload(
-        !managedPiHandle && agentRollbackIsolationEnabled ? 'AGENT_ISOLATION_UNAVAILABLE' : 'AGENT_EXECUTION_FAILED',
-        `spawn failed: ${err.message}`,
+        isolationFailed ? 'AGENT_ISOLATION_UNAVAILABLE' : 'AGENT_EXECUTION_FAILED',
+        isolationFailed
+          ? 'Secure agent isolation could not start. Check the daemon log for the rejected path or Windows error; repair the agent installation and retry.'
+          : `spawn failed: ${err.message}`,
         { retryable: managedPiHandle ? false : !agentRollbackIsolationEnabled },
       ));
       design.runs.finish(run, 'failed', 1, null);
@@ -12142,6 +12180,12 @@ export async function startServer({
         },
         ...(acpStageTimeoutMs !== undefined ? { stageTimeoutMs: acpStageTimeoutMs } : {}),
       });
+    } else if (def.streamFormat === 'codex-app-server') {
+      trackingSubstantiveOutput = true;
+      acpSession = attachCodexAppServerSession({
+        child, prompt: composed, cwd: effectiveCwd, model: agentOptions.model,
+        onEvent: sendAgentEvent,
+      });
     } else if (def.streamFormat === 'json-event-stream') {
       // Pipe through sendAgentEvent so the OpenCode `type:'error'` frame
       // (now emitted as a real error event by json-event-stream.ts after
@@ -12225,6 +12269,17 @@ export async function startServer({
       }
       revokeToolToken('child_exit');
       unregisterChatAgentEventSink();
+      const isolationFailure = agentRollbackIsolationEnabled && !agentStreamError
+        ? isolationRuntimeFailureReason({ agentId: def.id, exitCode: code, stdoutSeen: childStdoutSeen, stderr: agentStderrTail })
+        : null;
+      if (isolationFailure && !run.isolationFallbackReason && !run.cancelRequested && !design.runs.isTerminal(run.status)) {
+        await isolatedToolBroker?.close();
+        cleanupPromptFile();
+        if (run.cancelRequested || design.runs.isTerminal(run.status)) return;
+        recordIsolationFallback(isolationFailure);
+        restartSameRunAfterRetry();
+        return;
+      }
       if (acpSession?.hasFatalError()) {
         markRpcCloseReason('fatal_rpc_error');
         return finishWithRetryDecision('failed', code ?? 1, signal ?? null);
@@ -12933,7 +12988,7 @@ export async function startServer({
       // setup. Web-side captures inherit them from a PostHog global
       // register, but daemon-side captures (run_created/run_finished) need
       // to populate them at capture time. Best-effort derivation from
-      // `detectAgents()` + the request's `agentId`:
+      // executable resolution + the request's `agentId` (no discovery sessions):
       //   - has_available_configure_cli: any CLI on PATH appears installed
       //   - configure_type: 'local_cli' when the run targets an installed
       //     CLI, otherwise 'unknown' (BYOK keys live in the web client
@@ -12944,12 +12999,12 @@ export async function startServer({
       const appCfgForAnalytics = await readAppConfig(RUNTIME_DATA_DIR).catch(
         () => ({} as Record<string, unknown>),
       );
-      const detectedAgentsForAnalytics = await detectAgents(
-        (appCfgForAnalytics as { agentCliEnv?: Record<string, unknown> }).agentCliEnv ?? {},
-        {
-          enabledAgentIds: (appCfgForAnalytics as { enabledAgentIds?: string[] }).enabledAgentIds ?? DEFAULT_ENABLED_AGENT_IDS,
-        },
-      ).catch(() => [] as Array<{ id: string; available: boolean }>);
+      const analyticsAgentIds = appCfgForAnalytics.enabledAgentIds ?? DEFAULT_ENABLED_AGENT_IDS;
+      const detectedAgentsForAnalytics = analyticsAgentIds.map((id: string) => {
+        const def = getAgentDef(id);
+        const configuredEnv = agentCliEnvForAgent(appCfgForAnalytics.agentCliEnv, id);
+        return { id, available: Boolean(def && resolveAgentLaunch(def, configuredEnv).launchPath) };
+      });
       // BYOK credentials live in the web client (localStorage / store) and
       // are not visible to the daemon at this layer, so we pass
       // `byokConfigured: undefined` and let the helper fall back to the

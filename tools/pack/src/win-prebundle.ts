@@ -1,4 +1,5 @@
-import { readFile } from "node:fs/promises";
+import { cp, mkdir, readFile, stat } from "node:fs/promises";
+import { join } from "node:path";
 
 import type { ToolPackConfig } from "./config.js";
 import piPackage from "./pi-package.json" with { type: "json" };
@@ -13,6 +14,25 @@ export const WIN_PREBUNDLE_ESBUILD_TARGET = "node24";
 export const WIN_DAEMON_PREBUNDLE_ESM_REQUIRE_BANNER =
   'import { createRequire as __odCreateRequire } from "node:module"; const require = __odCreateRequire(import.meta.url);';
 export const WIN_PREBUNDLE_ENTRYPOINTS_DIR_NAME = "prebundle-entrypoints";
+
+// URL-loaded Pi extensions are not part of esbuild's static dependency graph.
+export const WIN_DAEMON_RUNTIME_ASSETS = ["pi-powershell-extension.js", "pi-powershell.js"] as const;
+
+export async function stageWinDaemonRuntimeAssets(workspaceRoot: string, daemonPrebundleRoot: string): Promise<void> {
+  const destination = join(daemonPrebundleRoot, "chunks");
+  await mkdir(destination, { recursive: true });
+  for (const asset of WIN_DAEMON_RUNTIME_ASSETS) {
+    await cp(join(workspaceRoot, "apps", "daemon", "dist", "runtimes", asset), join(destination, asset));
+  }
+}
+
+export async function assertWinDaemonRuntimeAssets(daemonPrebundleRoot: string): Promise<void> {
+  for (const asset of WIN_DAEMON_RUNTIME_ASSETS) {
+    const assetPath = join(daemonPrebundleRoot, "chunks", asset);
+    const metadata = await stat(assetPath);
+    if (!metadata.isFile() || metadata.size === 0) throw new Error(`Invalid Pi PowerShell runtime asset: ${assetPath}`);
+  }
+}
 
 export const WIN_PREBUNDLE_RUNTIME_DEPENDENCIES = {
   [piPackage.name]: piPackage.version,

@@ -9,6 +9,7 @@ import { listenOnFetchCompatiblePort } from '../fetch-compatible-listener.js';
 import { artifactDeliveryRequest, rejectsTools } from './tool-free.js';
 import { messagesRequest, messagesResponse, MessagesChatStream } from './messages.js';
 import { gatewayChatRequest, measuredGatewayApi, nativeMessagesRequest, requestsEffort } from './gateway-surfaces.js';
+import { capturedFailureDetail, createDatabricksFailureCapture, type DatabricksRouteKind } from './failure-capture.js';
 
 export interface DatabricksRelay {
   /** Child-visible connection material; neither value grants general proxy access. */
@@ -44,7 +45,7 @@ function outputCeiling(message: string): number | undefined {
 }
 const relayError = (detail: DatabricksFailureDetail) => ({ type: 'error', error: { type: 'api_error', ...detail } });
 class UpstreamStreamError extends Error {
-  constructor(readonly detail: DatabricksFailureDetail, readonly toolsRejected = false) { super(detail.message); }
+  constructor(readonly detail: DatabricksFailureDetail, readonly payload: unknown, readonly toolsRejected = false) { super(detail.message); }
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -228,7 +229,7 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
   };
   const streamError = (status: number, payload: unknown) => {
     const message = record(payload) ? payload.message ?? (record(payload.error) ? payload.error.message : undefined) : undefined;
-    return new UpstreamStreamError(upstreamFailure(status, payload, privateValues), typeof message === 'string' && rejectsTools(message));
+    return new UpstreamStreamError(upstreamFailure(status, payload, privateValues), payload, typeof message === 'string' && rejectsTools(message));
   };
 
   async function forwardStream(upstreamResponse: Response, response: ServerResponse, signal: AbortSignal, responses = false, translatedMessages = false): Promise<void> {
@@ -380,6 +381,25 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
     const timeout = setTimeout(abort, 10 * 60_000);
     timeout.unref();
     let upstreamStatus: number | null = null;
+    let lastAttempt: { routeKind: DatabricksRouteKind; endpoint: URL; body: Record<string, unknown> } | undefined;
+    let captureRecorded = false;
+    const captureAttempt = async (original: DatabricksFailureDetail, upstreamBody: unknown): Promise<DatabricksFailureDetail> => {
+      if (captureRecorded || !lastAttempt || controller.signal.aborted) return original;
+      const capture = createDatabricksFailureCapture({ ...lastAttempt, model: runtime.model,
+        appModelId: runtime.appModelId, endpointId: runtime.endpointId, status: original.upstreamStatus, upstreamBody,
+        privateValues: [runtime.apiKey, runtime.model, encodeURIComponent(runtime.model), lastAttempt.endpoint.href,
+          lastAttempt.endpoint.origin, lastAttempt.endpoint.hostname, lastAttempt.endpoint.pathname] });
+      let detail = capturedFailureDetail(original, capture);
+      captureRecorded = true;
+      try {
+        await runtime.captureFailure?.(capture);
+      } catch (error) {
+        if (!(error instanceof Error)) throw error;
+        detail = { ...detail, message: `${detail.message} Diagnostic capture failed; this is a local capture fault, not an upstream finding.` };
+      }
+      console.error('Databricks upstream request failed', detail);
+      return detail;
+    };
     try {
       let body: Record<string, unknown>;
       try { body = await readBody(request); }
@@ -457,10 +477,16 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
         // Only an invocation URL selects the endpoint without a body model.
         if (invocation && route === upstream.pathname) delete wire.model;
         else wire.model = runtime.model;
-        result = await upstreamFetch(new URL(route, upstream.origin), {
+        const endpoint = new URL(route, upstream.origin);
+        const serializedWire = JSON.stringify(wire);
+        const outboundBody: unknown = JSON.parse(serializedWire);
+        if (!record(outboundBody)) throw new Error('Invalid serialized request');
+        lastAttempt = { endpoint, body: outboundBody, routeKind: invocation && route === upstream.pathname ? 'serving-invocations'
+          : messagesSurface ? 'anthropic-messages' : responses ? 'openai-responses' : 'chat-completions' };
+        result = await upstreamFetch(endpoint, {
           method: 'POST', redirect: 'error', signal: controller.signal,
           headers: { ...headers, ...(messagesSurface ? { 'anthropic-version': '2023-06-01' } : {}) },
-          body: JSON.stringify(wire),
+          body: serializedWire,
         });
         upstreamStatus = result.status;
         if (controller.signal.aborted) {
@@ -558,7 +584,8 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
       };
       if (!result.ok) {
         const original = upstreamFailure(result.status, rejected, privateValues);
-        const detail = parameterHint ? failureDetail(original.reason, result.status, parameterHint) : original;
+        const captured = await captureAttempt(original, rejected);
+        const detail = !captured.upstreamMessage && parameterHint ? failureDetail(original.reason, result.status, parameterHint) : captured;
         // Report the authoritative HTTP failure even if credential invalidation fails.
         try { if (result.status === 401) await runtime.onAuthRejected?.(); }
         finally { sendError(response, result.status >= 400 && result.status <= 599 ? result.status : 502, detail); }
@@ -583,10 +610,12 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
         response.end(JSON.stringify(sanitize(translated)));
       }
     } catch (error) {
+      const original = error instanceof UpstreamStreamError ? error.detail
+        : failureDetail(upstreamStatus === null ? 'transport' : 'invalid-response', upstreamStatus);
+      const detail = await captureAttempt(original, error instanceof UpstreamStreamError ? error.payload : undefined);
       try { if (error instanceof UpstreamStreamError && error.toolsRejected) await invalidateTools(); }
       finally {
-        if (!controller.signal.aborted && !response.writableEnded) sendError(response, 502, error instanceof UpstreamStreamError ? error.detail
-          : failureDetail(upstreamStatus === null ? 'transport' : 'invalid-response', upstreamStatus));
+        if (!controller.signal.aborted && !response.writableEnded) sendError(response, 502, detail);
       }
     } finally {
       clearTimeout(timeout);

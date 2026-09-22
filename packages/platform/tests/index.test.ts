@@ -696,8 +696,7 @@ describe("createCommandInvocation", () => {
       args: ["exec", "--auto", "write hello world"],
       env: { ComSpec: "cmd.exe" } as NodeJS.ProcessEnv,
     });
-    // Pre-fix shape — adding the `%` escape must not change the line for
-    // ordinary prompts that happen not to mention env-var names.
+    // Bare PATH commands stay unquoted; argv retains its existing quoting.
     expect(invocation.args).toEqual([
       "/d",
       "/s",
@@ -777,7 +776,7 @@ describe("createPackageManagerInvocation", () => {
       "/d",
       "/s",
       "/c",
-      '"C:\\Users\\u\\setup-pnpm\\pnpm.cmd install"',
+      '""C:\\Users\\u\\setup-pnpm\\pnpm.cmd" install"',
     ]);
   });
 

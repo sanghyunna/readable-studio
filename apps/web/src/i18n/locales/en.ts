@@ -1,6 +1,10 @@
 import type { Dict } from '../types';
 
-export const en: Dict = {
+// Cache only after the first synchronous translation request.
+let en: Dict | undefined;
+
+export function getEn(): Dict {
+  return en ??= {
   'chat.amrCard.switchTitle': 'Model call failed — this run is paused',
   'chat.amrCard.switchBody': 'Switch to the configured AMR service. After you sign in, authorize, and top up, this run retries automatically.',
   'chat.amrCard.chipOfficial': 'Official hosting',
@@ -1346,6 +1350,7 @@ export const en: Dict = {
   'inlineSwitcher.agentLabel': 'Agent',
   'inlineSwitcher.providerLabel': 'Provider',
   'inlineSwitcher.modelLabel': 'Model',
+  'modelSource.builtInDefaults': 'Built-in defaults · not reported by {agent}',
   'inlineSwitcher.reasoningLabel': 'Thinking effort',
   'inlineSwitcher.reasoningDefault': 'Default',
   'inlineSwitcher.reasoningNone': 'None',
@@ -1381,7 +1386,7 @@ export const en: Dict = {
   'databricks.cli.uninvocableTitle': 'Databricks CLI cannot be invoked',
   'databricks.cli.uninvocableBody': 'The Databricks CLI was found but could not be run. Point Readable Studio at a working executable, then check again.',
   'databricks.auth.requiredTitle': 'Sign in to Databricks',
-  'databricks.auth.requiredBody': 'No signed-in CLI profile was found. Sign in from a terminal, then check again.',
+  'databricks.auth.requiredBody': 'No signed-in CLI profile was found. Choose Sign in to let the CLI open your browser, or connect a workspace with a token.',
   'databricks.auth.keyringTitle': 'Credential store unavailable',
   'databricks.auth.keyringBody': 'The Databricks CLI cannot read stored credentials. Sign in from a terminal, then check again.',
   'databricks.auth.unreachableTitle': 'Workspace unreachable',
@@ -1406,7 +1411,12 @@ export const en: Dict = {
   'databricks.setup.submitting': 'Connecting…',
   'databricks.setup.failed': 'Could not connect to the workspace.',
   'databricks.setup.retryToken': 'Re-enter the token to try again. It is not kept after a failed attempt.',
-  'databricks.setup.cliFootnote': 'Prefer the Databricks CLI? Sign in from a terminal, then choose Check again to pick that profile.',
+  'databricks.setup.cliFootnote': 'Prefer the Databricks CLI? Enter the workspace URL above and choose Sign in: the CLI opens your browser, and the profile appears here as soon as sign-in completes.',
+  'databricks.login.action': 'Sign in',
+  'databricks.login.waiting': 'Finish signing in in the browser the Databricks CLI opened…',
+  'databricks.login.cancel': 'Cancel sign-in',
+  'databricks.login.failed': 'Sign-in did not complete.',
+  'databricks.login.timedOut': 'Sign-in timed out before the browser confirmed it. Try again.',
   'databricks.setup.open': 'Connect another workspace',
   'databricks.setup.back': 'Back to profiles',
   'databricks.scan.start': 'Scan workspace',
@@ -1815,7 +1825,7 @@ export const en: Dict = {
   'workspace.focusMode': 'Focus workspace',
   'workspace.showChat': 'Show chat',
   'workspace.closeTab': 'Close tab',
-  'workspace.unsavedTabCloseBlocked': 'You have unsaved edits. Choose Save changes or Discard changes before closing this tab.',
+  'workspace.unsavedTabCloseBlocked': 'You have unsaved edits. Choose Save changes or Discard changes before leaving this tab.',
   'workspace.deleteFileConfirm': 'Delete "{name}" from the project folder?',
   'workspace.deleteSelectedFilesConfirm': 'Delete {n} selected file(s) from the project folder?',
   'workspace.deleteSelectedFilesPartial': 'Failed to delete {n} file(s).',
@@ -3124,4 +3134,5 @@ export const en: Dict = {
   'manualEdit.resize.limit': '{axis} limited by {property}: {value}',
   'manualEdit.resize.layoutLimit': '{axis} is limited by page layout',
   'manualEdit.resize.measurements': '{requested}px requested · {applied}px rendered',
-};
+  };
+}

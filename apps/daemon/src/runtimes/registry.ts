@@ -63,11 +63,9 @@ export const AGENT_DEFS: RuntimeAgentDef[] = [
   ...readLocalAgentProfileDefs(BASE_AGENT_DEFS),
 ];
 
-// Canonical cold-start selection, captured after local profiles are loaded so
-// every adapter available to this daemon process is enabled by default.
-export const DEFAULT_ENABLED_AGENT_IDS: readonly string[] = AGENT_DEFS.map(
-  (agent) => agent.id,
-);
+// Capture the complete startup catalog, including valid local profiles.
+// Persisted selections remain explicit opt-outs, separate from scan inventory.
+export const DEFAULT_ENABLED_AGENT_IDS: readonly string[] = AGENT_DEFS.map((agent) => agent.id);
 
 const ids = new Set();
 for (const def of AGENT_DEFS) {

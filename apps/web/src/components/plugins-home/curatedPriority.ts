@@ -53,17 +53,14 @@ export const CURATED_PLUGIN_IDS_BY_CHIP = {
   deck: CURATED_DECK_PLUGIN_IDS,
 };
 
-const CURATED_GLOBAL_IDS = [
-  ...CURATED_PROTOTYPE_PLUGIN_IDS,
-  ...CURATED_DECK_PLUGIN_IDS,
-];
-
-const CURATED_GLOBAL_RANK = new Map<string, number>(
-  CURATED_GLOBAL_IDS.map((id, index) => [id, index]),
-);
+let curatedGlobalRank: Map<string, number> | undefined;
 
 export function curatedPluginPriority(record: InstalledPluginRecord): number | null {
-  return CURATED_GLOBAL_RANK.get(record.id) ?? null;
+  curatedGlobalRank ??= new Map(
+    [...CURATED_PROTOTYPE_PLUGIN_IDS, ...CURATED_DECK_PLUGIN_IDS]
+      .map((id, index) => [id, index]),
+  );
+  return curatedGlobalRank.get(record.id) ?? null;
 }
 
 export function curatedPluginPriorityForChip(

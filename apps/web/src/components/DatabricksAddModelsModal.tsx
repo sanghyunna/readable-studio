@@ -37,6 +37,7 @@ import type {
   DatabricksEndpointApi,
   DatabricksEndpointKind,
   DatabricksIssue,
+  DatabricksLoginResponse,
   DatabricksProfile,
   DatabricksRegisteredEndpoint,
   DatabricksScanEvent,
@@ -45,14 +46,17 @@ import type {
 import { useT } from '../i18n';
 import { modalContent, modalOverlay, useFadingSurface } from '../motion';
 import {
+  cancelDatabricksLogin,
   cancelDatabricksScan,
   disableDatabricksModel,
   enableDatabricksModel,
+  fetchDatabricksLogin,
   fetchDatabricksModels,
   fetchDatabricksScan,
   fetchDatabricksStatus,
   probeDatabricks,
   setupDatabricks,
+  startDatabricksLogin,
   startDatabricksScan,
   streamDatabricksScanEvents,
   type DatabricksSetupResponse,
@@ -210,6 +214,14 @@ function isScanSettled(state: DatabricksScanResponse['state']): boolean {
   return state === 'complete' || state === 'partial' || state === 'failed' || state === 'cancelled';
 }
 
+function isLoginActive(state: DatabricksLoginResponse['state']): boolean {
+  return state === 'starting' || state === 'waiting-for-browser';
+}
+
+// The daemon verifies the CLI's auth state once a second; polling faster only
+// re-reads the same snapshot.
+const LOGIN_POLL_MS = 1000;
+
 function errorMessage(err: unknown, fallback: string): string {
   return err instanceof Error && err.message ? err.message : fallback;
 }
@@ -258,6 +270,13 @@ function DatabricksAddModelsModalBody({
   const [settingUp, setSettingUp] = useState(false);
   const hostRef = useRef<HTMLInputElement | null>(null);
   const mountedRef = useRef(true);
+
+  // Browser sign-in through the installed CLI. The daemon owns the CLI
+  // process; the modal only holds the opaque job id it polls and can cancel.
+  const [loggingIn, setLoggingIn] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const loginAbortRef = useRef<AbortController | null>(null);
+  const activeLoginIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -338,12 +357,16 @@ function DatabricksAddModelsModalBody({
     };
   }, [returnFocusRef]);
 
-  // Leaving the modal must not leave a discovery running in the daemon.
+  // Leaving the modal must not leave a discovery or a CLI sign-in running in
+  // the daemon.
   useEffect(
     () => () => {
       stopScanStream();
       const runningScanId = activeScanIdRef.current;
       if (runningScanId) void cancelDatabricksScan(runningScanId).catch(() => undefined);
+      loginAbortRef.current?.abort();
+      const runningLoginId = activeLoginIdRef.current;
+      if (runningLoginId) void cancelDatabricksLogin(runningLoginId).catch(() => undefined);
     },
     [stopScanStream],
   );
@@ -620,6 +643,85 @@ function DatabricksAddModelsModalBody({
     [host, runScan, settingUp, t, token],
   );
 
+  const cancelLogin = useCallback(() => {
+    const runningLoginId = activeLoginIdRef.current;
+    loginAbortRef.current?.abort();
+    loginAbortRef.current = null;
+    activeLoginIdRef.current = null;
+    setLoggingIn(false);
+    if (runningLoginId) void cancelDatabricksLogin(runningLoginId).catch(() => undefined);
+  }, []);
+
+  // Runs `databricks auth login` through the daemon for the host in the setup
+  // form, waits for the CLI to confirm the browser sign-in, then re-reads
+  // status so the new profile is selectable without a manual re-check.
+  const runLogin = useCallback(async () => {
+    if (loggingIn) return;
+    const normalizedHost = normalizeWorkspaceHost(host);
+    if (!normalizedHost) {
+      setHostError(t('databricks.setup.hostInvalid'));
+      hostRef.current?.focus();
+      return;
+    }
+    setHostError(null);
+    setLoginError(null);
+    setLoggingIn(true);
+    const controller = new AbortController();
+    loginAbortRef.current = controller;
+    try {
+      let job = await startDatabricksLogin({ host: normalizedHost });
+      if (controller.signal.aborted) {
+        void cancelDatabricksLogin(job.loginId).catch(() => undefined);
+        return;
+      }
+      activeLoginIdRef.current = job.loginId;
+      while (isLoginActive(job.state)) {
+        job = await fetchDatabricksLogin(job.loginId);
+        if (controller.signal.aborted) return;
+        if (!isLoginActive(job.state)) break;
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, LOGIN_POLL_MS);
+          controller.signal.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true });
+        });
+        if (controller.signal.aborted) return;
+      }
+      activeLoginIdRef.current = null;
+      switch (job.state) {
+        case 'authenticated': {
+          const profileId = job.profileId;
+          await loadStatus();
+          if (controller.signal.aborted) return;
+          if (profileId) setSelectedProfileId(profileId);
+          setHost('');
+          setStepOverride('scan');
+          return;
+        }
+        case 'timed-out':
+          setLoginError(t('databricks.login.timedOut'));
+          return;
+        case 'failed':
+          setLoginError(issueActionText(t, job.issues[0]) ?? t('databricks.login.failed'));
+          return;
+        case 'cancelled':
+        case 'starting':
+        case 'waiting-for-browser':
+          return;
+      }
+    } catch (err) {
+      if (!controller.signal.aborted) {
+        const runningLoginId = activeLoginIdRef.current;
+        if (runningLoginId) void cancelDatabricksLogin(runningLoginId).catch(() => undefined);
+        setLoginError(errorMessage(err, t('databricks.login.failed')));
+      }
+    } finally {
+      if (loginAbortRef.current === controller) {
+        loginAbortRef.current = null;
+        activeLoginIdRef.current = null;
+        setLoggingIn(false);
+      }
+    }
+  }, [host, loadStatus, loggingIn, t]);
+
   // One unified list: everything the latest scan returned, followed by models
   // registered earlier that this scan did not (or has not yet) reached.
   const rows = useMemo<DatabricksEndpoint[]>(() => {
@@ -868,6 +970,16 @@ function DatabricksAddModelsModalBody({
               <p className={styles.note}>
                 <Icon name="terminal" size={13} />
                 <span>{t('databricks.setup.cliFootnote')}</span>
+                <button
+                  type="button"
+                  className={styles.quietAction}
+                  disabled={loggingIn || settingUp}
+                  onClick={() => void runLogin()}
+                  data-testid="databricks-login-start"
+                >
+                  <Icon name={loggingIn ? 'spinner' : 'external-link'} size={12} />
+                  <span>{t('databricks.login.action')}</span>
+                </button>
                 {status?.cli === 'missing' && installUrl ? (
                   <button
                     type="button"
@@ -879,6 +991,39 @@ function DatabricksAddModelsModalBody({
                   </button>
                 ) : null}
               </p>
+
+              {loggingIn ? (
+                <div
+                  className={styles.status}
+                  role="status"
+                  aria-live="polite"
+                  data-testid="databricks-login-progress"
+                >
+                  <Icon name="spinner" size={14} />
+                  <span>{t('databricks.login.waiting')}</span>
+                  <span className={styles.quietActions}>
+                    <button
+                      type="button"
+                      className={styles.quietAction}
+                      onClick={cancelLogin}
+                      data-testid="databricks-login-cancel"
+                    >
+                      <Icon name="stop" size={12} />
+                      <span>{t('databricks.login.cancel')}</span>
+                    </button>
+                  </span>
+                </div>
+              ) : null}
+
+              {loginError ? (
+                <div className={styles.error} role="alert" data-testid="databricks-login-error">
+                  <Icon name="alert-triangle" size={14} />
+                  <div>
+                    <strong>{t('databricks.login.failed')}</strong>
+                    {loginError !== t('databricks.login.failed') ? <p>{loginError}</p> : null}
+                  </div>
+                </div>
+              ) : null}
             </section>
           ) : guided ? (
             <div className={styles.guided} role="status" data-testid="databricks-guided-state">
@@ -898,6 +1043,16 @@ function DatabricksAddModelsModalBody({
                 ) : null}
               </div>
               <div className={styles.guidedActions}>
+                {guided.command ? (
+                  <Button
+                    variant="subtle"
+                    onClick={() => setStepOverride('setup')}
+                    data-testid="databricks-guided-login"
+                  >
+                    <Icon name="external-link" size={13} />
+                    <span>{t('databricks.login.action')}</span>
+                  </Button>
+                ) : null}
                 {installUrl ? (
                   <Button variant="subtle" onClick={() => void openExternalUrl(installUrl)}>
                     <Icon name="download" size={13} />

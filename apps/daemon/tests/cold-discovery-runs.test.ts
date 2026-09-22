@@ -42,6 +42,7 @@ it('accepts and cancels a headless run when cold discovery is still probing', as
   });
   const started = await startTestServer();
   const beginning = performance.now();
+  const discovery = detectAgents();
   await entered.promise;
   try {
     // When acceptance is requested without waiting for verified agent selection.
@@ -58,7 +59,7 @@ it('accepts and cancels a headless run when cold discovery is still probing', as
     expect(cancelled.status).toBe(200);
     console.log(JSON.stringify({ coldAcceptanceMs: performance.now() - beginning }));
     release.resolve();
-    await detectAgents();
+    await discovery;
     const status = await fetch(`${started.url}/api/runs/${runId}`);
     expect(await status.json()).toMatchObject({ status: 'canceled' });
   } finally {
@@ -84,6 +85,7 @@ it('serves readiness while agent selection waits for verified cold results', asy
       models: [{ id: 'verified-cold-model', label: 'Verified' }], modelsSource: 'live' };
   });
   const started = await startTestServer();
+  const discovery = detectAgents();
   await entered.promise;
   try {
     // When readiness is read while model verification is pending.
@@ -93,6 +95,7 @@ it('serves readiness while agent selection waits for verified cold results', asy
     const agents = fetch(`${started.url}/api/agents?refresh=1`, { signal: AbortSignal.timeout(5000) });
     release.resolve();
     const response = await agents;
+    await discovery;
     expect(await response.json()).toMatchObject({ agents: expect.arrayContaining([
       expect.objectContaining({ available: true, modelsSource: 'live',
         models: [{ id: 'verified-cold-model', label: 'Verified' }] }),

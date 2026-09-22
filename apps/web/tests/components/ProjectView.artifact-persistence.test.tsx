@@ -31,7 +31,7 @@ vi.mock('../../src/providers/registry', async (original) => ({
 }));
 vi.mock('../../src/state/projects', () => ({
   listConversations: async () => [{ id: 'conv-1', title: 'Conversation' }],
-  listMessages: async () => state.replay ? [{ id: 'assistant-1', role: 'assistant', content: '', createdAt: 1000, startedAt: 1000, runId: 'run-1', runStatus: 'running', preTurnFileNames: state.before }] : [],
+  loadMessagePage: async () => ({ messages: state.replay ? [{ id: 'assistant-1', role: 'assistant', content: '', createdAt: 1000, startedAt: 1000, runId: 'run-1', runStatus: 'running', preTurnFileNames: state.before }] : [], nextPosition: null }),
   loadTabs: async () => ({ tabs: [], active: null }), saveTabs: async () => {},
   cacheTabsLocally: (_id: string, tabs: unknown) => tabs, persistTabsToDaemonNow: async () => {},
   saveMessage: async (_project: string, _conversation: string, message: ChatMessage) => { if (message.producedFiles) state.completed(message); },

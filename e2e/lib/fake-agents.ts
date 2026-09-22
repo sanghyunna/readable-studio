@@ -143,6 +143,21 @@ const artifactDedup = ${JSON.stringify(ARTIFACT_DEDUP_RUN)};
 if (args.includes('--version')) {
   process.stdout.write(agentId + '-e2e 0.0.0\\n');
   process.exitCode = 0;
+} else if (agentId === 'codex' && args[0] === 'app-server') {
+  const { createInterface } = require('node:readline');
+  const lines = createInterface({ input: process.stdin });
+  lines.on('line', (line) => {
+    const request = JSON.parse(line);
+    if (request.id === undefined) return;
+    let result;
+    switch (request.method) {
+      case 'initialize': result = { userAgent: 'codex-e2e' }; break;
+      case 'account/read': result = { account: { type: 'apiKey' } }; break;
+      case 'model/list': result = { data: [{ id: 'gpt-5.4-mini', displayName: 'E2E Codex' }], nextCursor: null }; break;
+      default: throw new Error('Unexpected discovery method: ' + request.method);
+    }
+    process.stdout.write(JSON.stringify({ id: request.id, result }) + '\\n');
+  });
 } else if (agentId === 'claude' && args[0] === '-p' && args.includes('--help')) {
   process.stdout.write('--add-dir --include-partial-messages\\n');
   process.exitCode = 0;

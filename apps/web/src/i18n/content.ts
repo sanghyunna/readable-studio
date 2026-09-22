@@ -95,12 +95,28 @@ export function localizeDesignSystemCategory(locale: Locale, category: string): 
   return getLocalizedContent(locale)?.designSystemCategories[category] ?? category;
 }
 
-function buildLocalizedContentIds(content: LocalizedContentBundle): LocalizedContentIds {
-  return {
-    skills: Object.keys(content.skillCopy),
-    designSystems: Object.keys(content.designSystemSummaries),
-    designSystemCategories: Object.keys(content.designSystemCategories),
-  };
-}
+// Coverage indexes are not needed to translate content on the Hub.
+let koreanSkillIds: string[] | undefined;
+let koreanDesignSystemIds: string[] | undefined;
+let koreanCategoryIds: string[] | undefined;
 
-export const KOREAN_CONTENT_IDS = buildLocalizedContentIds(LOCALIZED_CONTENT.ko!);
+export const KOREAN_CONTENT_IDS: LocalizedContentIds = {
+  get skills() {
+    return koreanSkillIds ??= Object.keys(KO_SKILL_COPY);
+  },
+  set skills(value: string[]) {
+    koreanSkillIds = value;
+  },
+  get designSystems() {
+    return koreanDesignSystemIds ??= Object.keys(KO_DESIGN_SYSTEM_SUMMARIES);
+  },
+  set designSystems(value: string[]) {
+    koreanDesignSystemIds = value;
+  },
+  get designSystemCategories() {
+    return koreanCategoryIds ??= Object.keys(KO_DESIGN_SYSTEM_CATEGORIES);
+  },
+  set designSystemCategories(value: string[]) {
+    koreanCategoryIds = value;
+  },
+};

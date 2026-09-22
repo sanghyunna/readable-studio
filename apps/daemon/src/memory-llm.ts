@@ -72,6 +72,7 @@ import {
 } from './agents.js';
 import { agentCliEnvForAgent, readAppConfig } from './app-config.js';
 import { createJsonEventStreamHandler } from './json-event-stream.js';
+import { attachCodexAppServerSession } from './runtimes/codex-app-server.js';
 
 const SYSTEM_PROMPT = `You are a memory extractor for a personal AI design assistant.
 
@@ -912,7 +913,7 @@ async function callLocalCli(provider, system, user, options) {
     let settled = false;
     let closed = false;
     const child = spawn(invocation.command, invocation.args, {
-      env,
+      windowsHide: true, env,
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd,
       shell: false,
@@ -967,7 +968,16 @@ async function callLocalCli(provider, system, user, options) {
     child.stdin.on('error', (err) => {
       if (err.code !== 'EPIPE') finish(err);
     });
-    child.stdin.end(stdinText);
+    if (def.streamFormat === 'codex-app-server') {
+      let text = '';
+      parseStdout = () => text;
+      attachCodexAppServerSession({ child, prompt, cwd, model: provider.model ?? '', onEvent(event) {
+        if (event.type === 'text_delta' && typeof event.delta === 'string') text += event.delta;
+        if (event.type === 'error') finish(new Error(String(event.message)));
+      } });
+    } else {
+      child.stdin.end(stdinText);
+    }
   });
 }
 

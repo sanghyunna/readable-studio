@@ -15,17 +15,16 @@ afterEach(() => {
 });
 
 describe('default enabled agent registry', () => {
-  it('equals the canonical registry ids in registry order', async () => {
+  it('enables the complete runtime registry by default', async () => {
     const { AGENT_DEFS, DEFAULT_ENABLED_AGENT_IDS } = await import(
       '../../src/runtimes/registry.js'
     );
 
-    expect(DEFAULT_ENABLED_AGENT_IDS).toEqual(
-      AGENT_DEFS.map((agent) => agent.id),
-    );
+    expect(DEFAULT_ENABLED_AGENT_IDS).toEqual(AGENT_DEFS.map((agent) => agent.id));
+    expect(new Set(DEFAULT_ENABLED_AGENT_IDS).size).toBe(AGENT_DEFS.length);
   });
 
-  it('includes local profiles available at daemon process startup', async () => {
+  it('includes startup local profiles in the default selection', async () => {
     const root = mkdtempSync(path.join(tmpdir(), 'readable-agent-defaults-'));
     try {
       const profilesFile = path.join(root, 'agents.local.json');
@@ -45,7 +44,7 @@ describe('default enabled agent registry', () => {
       expect(AGENT_DEFS.map((agent) => agent.id)).toContain(
         'local-startup-agent',
       );
-      expect(DEFAULT_ENABLED_AGENT_IDS).toContain('local-startup-agent');
+      expect(DEFAULT_ENABLED_AGENT_IDS).toEqual(AGENT_DEFS.map((agent) => agent.id));
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

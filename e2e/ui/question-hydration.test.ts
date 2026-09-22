@@ -39,7 +39,8 @@ for (const outcome of ['idle', 'active'] as const) {
         if (body.projectId === projectId) runRequests.push(body);
       }
       if (incoming.method() === 'GET'
-        && url.pathname === `/api/projects/${projectId}/conversations/${conversationId}/messages`) messageReads++;
+        && (url.pathname === `/api/projects/${projectId}/conversations/${conversationId}/messages`
+          || url.pathname === `/api/projects/${projectId}/conversations/${conversationId}/messages/page`)) messageReads++;
     };
     page.on('request', observe);
     const fileHydration = observeProjectFileHydration(page);
@@ -121,7 +122,7 @@ for (const outcome of ['idle', 'active'] as const) {
       const initial = await gate.next(() => outcome === 'active'
         ? fileHydration.navigate(() => page.goto(url, { timeout: T.long }), T.long, 'no-artifact')
         : page.goto(url, { timeout: T.long }));
-      await page.getByRole('tab', { name: /^Questions/ }).click();
+      // Questions are embedded in the assistant message, not a workspace tab.
       const panel = page.getByTestId('questions-panel');
       const form = panel.locator(`[data-form-id="${HELD_QUESTION_RUN.formId}"]`);
       const continueButton = panel.locator('.questions-continue');

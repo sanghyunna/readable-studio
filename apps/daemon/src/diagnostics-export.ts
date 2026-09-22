@@ -27,6 +27,7 @@ import {
 import { readCurrentAppVersionInfo } from './app-version.js';
 import { agentCliEnvForAgent, readAppConfig } from './app-config.js';
 import { spawnEnvForAgent } from './agents.js';
+import { databricksFailureCapturePath } from './databricks/failure-capture.js';
 
 interface ResolvedAgentHomes {
   amrOpenCodeHome: string | null;
@@ -161,6 +162,11 @@ export function createDiagnosticsExportHandler(options: DiagnosticsHandlerOption
           codexHome: agentHomes.codexHome,
           xdgDataHome: agentHomes.openCodeXdgDataHome ?? process.env.XDG_DATA_HOME ?? null,
         })),
+        ...(options.dataDir ? [{
+          name: 'databricks/last-gateway-failure.json',
+          absolutePath: databricksFailureCapturePath(options.dataDir),
+          kind: 'json' as const,
+        }] : []),
       ];
       const username = safeUsername();
 

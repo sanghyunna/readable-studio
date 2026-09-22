@@ -42,6 +42,7 @@ export default defineConfig({
         ['junit', { outputFile: join(reportDir, 'junit.xml') }],
       ],
   use: {
+    headless: true,
     baseURL,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',

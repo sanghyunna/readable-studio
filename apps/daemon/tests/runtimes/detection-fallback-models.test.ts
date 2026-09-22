@@ -13,15 +13,14 @@ let home: string;
 beforeEach(async () => { home = await mkdtemp(join(tmpdir(), 'fallback-models-')); });
 afterEach(async () => { await rm(home, { recursive: true, force: true }); });
 
-it('makes Claude available with nine fallback models when optional routes are absent', async () => {
+it('keeps Claude unavailable when routes are absent and live discovery fails', async () => {
   // Given the real Claude adapter with an isolated absent routes file and an invocable version command.
   const env = { CLAUDE_BIN: process.execPath, MMD_MODEL_ROUTES_FILE: join(home, 'absent.json') };
   // When detection runs through the real model-fetch and probe seams.
   const agent = await safeProbe(claudeAgentDef, env);
-  // Then the declared catalogue is available without an unverified diagnostic.
-  expect(agent).toMatchObject({ available: true, modelsSource: 'fallback', models: claudeAgentDef.fallbackModels });
-  expect(agent.models).toHaveLength(9);
-  expect(agent.diagnostics).toBeUndefined();
+  // Then missing routes cannot promote a speculative static catalogue.
+  expect(agent).toMatchObject({ available: false, modelsSource: 'fallback', models: [] });
+  expect(agent.diagnostics?.[0]?.severity).toBe('error');
 });
 
 it.each([null, [], [{ id: 'default', label: 'Default' }]])('stays unverified without concrete fallback when discovery returns %j', async (models) => {

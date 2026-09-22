@@ -1,21 +1,10 @@
 import { agentCapabilities } from '../capabilities.js';
 import { DEFAULT_MODEL_OPTION } from './shared.js';
+import { discoverClaudeCatalog, parseClaudeModelCatalog } from './claude-model-discovery.js';
 import { loadMmdRouteModels } from '../mmd-routes.js';
 import type { RuntimeAgentDef } from '../types.js';
 
-const CLAUDE_FALLBACK_MODELS = [
-  DEFAULT_MODEL_OPTION,
-  // Claude Code 2.1.258 `--help` documents both the alias and full id.
-  // Verified 2026-09-04; Claude Code does not expose a list-models command.
-  { id: 'fable', label: 'Fable (alias)' },
-  { id: 'claude-fable-5', label: 'claude-fable-5' },
-  { id: 'sonnet', label: 'Sonnet (alias)' },
-  { id: 'opus', label: 'Opus (alias)' },
-  { id: 'haiku', label: 'Haiku (alias)' },
-  { id: 'claude-opus-4-5', label: 'claude-opus-4-5' },
-  { id: 'claude-sonnet-4-5', label: 'claude-sonnet-4-5' },
-  { id: 'claude-haiku-4-5', label: 'claude-haiku-4-5' },
-];
+const CLAUDE_FALLBACK_MODELS = [DEFAULT_MODEL_OPTION];
 
 export const claudeAgentDef = {
     id: 'claude',
@@ -28,6 +17,8 @@ export const claudeAgentDef = {
     fallbackBins: ['openclaude'],
     versionArgs: ['--version'],
     helpArgs: ['-p', '--help'],
+    // Initialize reports selectors even without credentials; check sign-in separately.
+    authProbe: { args: ['auth', 'status', '--json'], timeoutMs: 5000 },
     capabilityFlags: {
       // Flag string -> capability key. After probing `--help`, we set
       // `agentCapabilities[id][key] = true` for each substring that matches.
@@ -37,9 +28,7 @@ export const claudeAgentDef = {
       '--include-partial-messages': 'partialMessages',
       '--add-dir': 'addDir',
     },
-    // `claude` has no list-models subcommand. Prefer local mmd/MMS routes
-    // when present so proxy-backed Claude-compatible models appear in the
-    // picker, then keep the built-in aliases as fallback hints.
+    // MMS aliases override the CLI selector catalogue; static ids are never detected.
     fallbackModels: CLAUDE_FALLBACK_MODELS,
     // Claude Code 2.1.258 --help: --effort (not Pi's --thinking).
     reasoningOptions: [
@@ -50,7 +39,11 @@ export const claudeAgentDef = {
       { id: 'xhigh', label: 'XHigh' },
       { id: 'max', label: 'Max' },
     ],
-    fetchModels: async (_resolvedBin, env) => loadMmdRouteModels(env, CLAUDE_FALLBACK_MODELS),
+    fetchModels: async (resolvedBin, env, signal?: AbortSignal) => {
+      signal?.throwIfAborted();
+      const routes = await loadMmdRouteModels(env, []);
+      return routes ?? parseClaudeModelCatalog(await discoverClaudeCatalog(resolvedBin, env, signal ? { signal } : {}));
+    },
     // Prompt delivered via stdin to avoid both Linux `spawn E2BIG`
     // (MAX_ARG_STRLEN caps a single argv entry at ~128 KB) and Windows
     // `spawn ENAMETOOLONG` (CreateProcess caps the full command line at

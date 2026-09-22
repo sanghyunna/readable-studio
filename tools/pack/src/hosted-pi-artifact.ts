@@ -330,7 +330,7 @@ function packageManagerCommand(): string {
 
 function runBuildCommand(args: string[]): void {
   const result = spawnSync(packageManagerCommand(), args, {
-    cwd: repoRoot,
+    cwd: repoRoot, windowsHide: true,
     stdio: 'inherit',
     shell: process.platform === 'win32',
   });
@@ -347,7 +347,7 @@ function auditHostedProductionGraph(stage: string): void {
     copyFileSync(path.join(stage, 'package.json'), path.join(auditRoot, 'package.json'));
     copyFileSync(path.join(stage, 'node_modules', '.pnpm', 'lock.yaml'), path.join(auditRoot, 'pnpm-lock.yaml'));
     const result = spawnSync(packageManagerCommand(), ['audit', '--dir', auditRoot, '--prod', '--no-optional', '--audit-level', 'high', '--json'], {
-      cwd: auditRoot,
+      cwd: auditRoot, windowsHide: true,
       encoding: 'utf8',
       shell: process.platform === 'win32',
     });
@@ -577,7 +577,7 @@ async function runSemanticResumeSmoke(options: {
     const previousGrace = process.env.PI_GRACEFUL_SHUTDOWN_MS;
     if (turnOptions.forceExitFallback) process.env.PI_GRACEFUL_SHUTDOWN_MS = '100';
     const child = spawn(options.invocation.command, options.invocation.args, {
-      cwd: options.invocation.cwd,
+      cwd: options.invocation.cwd, windowsHide: true,
       env: {
         ...options.invocation.env,
         ...(turnOptions.forceExitFallback ? { HOSTED_PI_FORCE_HANG: '1' } : {}),
@@ -713,7 +713,7 @@ async function runRejectedResumeSmoke(options: {
     const providerMarker = path.join(options.smokeRoot, `invalid-provider-${testCase.name}`);
     rmSync(providerMarker, { force: true });
     const child = spawn(options.invocation.command, options.invocation.args, {
-      cwd: options.invocation.cwd,
+      cwd: options.invocation.cwd, windowsHide: true,
       env: { ...options.invocation.env, HOSTED_PI_PROVIDER_MARKER: providerMarker },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -826,7 +826,7 @@ async function runRpcSmoke(stage: string): Promise<void> {
   invocation.env.HOSTED_PI_GUARD_MARKER = networkGuardMarker;
   invocation.env.HOSTED_PI_CONTEXT_SENTINEL = contextSentinel;
   const child = spawn(invocation.command, invocation.args, {
-    cwd: invocation.cwd,
+    cwd: invocation.cwd, windowsHide: true,
     env: invocation.env,
     stdio: ['pipe', 'pipe', 'pipe'],
   });
@@ -923,7 +923,7 @@ async function runRpcSmoke(stage: string): Promise<void> {
     if (invocation.command !== process.execPath || invocation.env.PATH !== '') fail('smoke did not use the package-local Node invocation boundary');
     for (const command of ['pi', 'npm', 'pnpm', 'npx']) {
       const unavailable = spawnSync(command, ['--version'], {
-        cwd: project,
+        cwd: project, windowsHide: true,
         env: invocation.env,
         shell: false,
         stdio: 'ignore',

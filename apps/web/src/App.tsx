@@ -27,12 +27,13 @@ import { documentProjectName, type HubImportFileOutcome } from './components/hub
 import { NewProjectModal } from './components/NewProjectModal';
 import { MemoryToast } from './components/MemoryToast';
 import { Toast } from './components/Toast';
-import { PetOverlay, type PetTaskCenter } from './components/pet/PetOverlay';
-import { buildPetTaskCenter } from './components/pet/taskCenter';
+import { PetOverlay } from './components/pet/PetOverlay';
+import { usePetTaskCenter } from './hooks/usePetTaskCenter';
 import { migrateCustomPetAtlas } from './components/pet/pets';
 import { TooltipLayer } from './components/TooltipLayer';
 import { openWorkspaceTab } from './components/workspaceTabEvents';
 import { WindowControls } from './components/WindowControls';
+import { LayoutGeometryDiagnostics } from './components/LayoutGeometryDiagnostics';
 import { HubRail } from './components/hub/HubRail';
 import { HubRailProvider } from './components/hub/HubRailContext';
 import { HubRailOverlays } from './components/hub/HubRailOverlays';
@@ -57,10 +58,8 @@ import {
   replaceProjectWorkingDir,
 } from './providers/registry';
 import {
-  RUNS_CHANGED_EVENT,
   fetchAmrModels,
   fetchVelaLoginStatus,
-  listProjectRuns,
   type VelaLoginStatus,
 } from './providers/daemon';
 import { AMR_LOGIN_STATUS_EVENT } from './components/amrLoginPolling';
@@ -436,11 +435,6 @@ function AppInner() {
     Record<string, DesignSystemGenerationJob>
   >({});
   const [projects, setProjects] = useState<Project[]>([]);
-  const [petTaskCenter, setPetTaskCenter] = useState<PetTaskCenter>({
-    running: [],
-    queued: [],
-    recent: [],
-  });
   const pendingLocalProjectIdsRef = useRef<Set<string>>(new Set());
   const locallyDeletedProjectIdsRef = useRef<Map<string, number>>(new Map());
   const projectListMutationVersionRef = useRef(0);
@@ -1639,31 +1633,11 @@ function AppInner() {
     navigate({ kind: 'project', projectId: id, fileName: null });
   }, []);
 
-  useEffect(() => {
-    if (!config.pet?.enabled || !daemonLive) {
-      setPetTaskCenter({ running: [], queued: [], recent: [] });
-      return;
-    }
-
-    let cancelled = false;
-    const refresh = async () => {
-      const runs = await listProjectRuns();
-      if (cancelled) return;
-      setPetTaskCenter(buildPetTaskCenter(projects, runs));
-    };
-    const handleRunsChanged = () => {
-      void refresh();
-    };
-
-    void refresh();
-    window.addEventListener(RUNS_CHANGED_EVENT, handleRunsChanged);
-    const id = window.setInterval(refresh, 2000);
-    return () => {
-      cancelled = true;
-      window.removeEventListener(RUNS_CHANGED_EVENT, handleRunsChanged);
-      window.clearInterval(id);
-    };
-  }, [config.pet?.enabled, daemonLive, projects]);
+  const petTaskCenter = usePetTaskCenter({
+    enabled: Boolean(clientType !== 'desktop' && config.pet?.enabled && config.pet.adopted && daemonLive),
+    lowSpec: performanceProfile === 'low',
+    projects,
+  });
 
   const handleRenameProject = useCallback(async (id: string, name: string) => {
     const trimmed = name.trim();
@@ -2229,6 +2203,7 @@ function AppInner() {
         data-client-type={clientType}
         style={{ '--hub-rail-expanded': `${rail.railWidth}px` } as CSSProperties}
       >
+        <LayoutGeometryDiagnostics />
         {/* The window has no native title bar (the desktop main window is
             frameless), so this strip is the app's own chrome: a drag region
             plus the traffic lights. The workspace tab strip that used to live

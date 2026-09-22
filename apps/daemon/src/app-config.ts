@@ -110,8 +110,8 @@ export interface AppConfigPrefs {
   customInstructions?: string | null;
   projectLocations?: ProjectLocationPrefs[];
   defaultProjectLocationId?: string | null;
-  // Canonical agent ids that /api/agents will probe. When absent, every id in
-  // the process-startup registry is enabled. Aliases are normalized on write.
+  // Canonical agent ids that /api/agents will probe. When absent, reads return
+  // DEFAULT_ENABLED_AGENT_IDS. Aliases are normalized on read and write.
   enabledAgentIds?: string[];
   // Daemon-owned history, not a writable preference. Retain ids even if an
   // adapter disappears so returning adapters do not undo explicit opt-outs.
@@ -482,14 +482,13 @@ function filterAllowedKeys(obj: Record<string, unknown>): AppConfigPrefs {
 // explicit values are still parsed for backward compatibility, but runtime
 // telemetry sinks are disabled separately so stale opted-in configs cannot
 // re-enable network egress.
-function applyTelemetryDefaults(prefs: AppConfigPrefs): AppConfigPrefs {
-  if (prefs.telemetry === undefined) {
-    return {
-      ...prefs,
-      telemetry: { metrics: false, content: false },
-    };
-  }
-  return prefs;
+function applyConfigDefaults(prefs: AppConfigPrefs): AppConfigPrefs {
+  return {
+    ...prefs,
+    // Explicit defaults prevent clients from substituting the full catalog.
+    enabledAgentIds: prefs.enabledAgentIds ?? [...DEFAULT_ENABLED_AGENT_IDS],
+    telemetry: prefs.telemetry ?? { metrics: false, content: false },
+  };
 }
 
 export async function readAppConfig(dataDir: string): Promise<AppConfigPrefs> {
@@ -498,17 +497,15 @@ export async function readAppConfig(dataDir: string): Promise<AppConfigPrefs> {
 
 async function doRead(dataDir: string): Promise<AppConfigPrefs> {
   const base: AppConfigPrefs = { performanceProfile: 'full', ...await readAppConfigFileOnly(dataDir) };
-  // An absent selection already follows the live registry. Start recording
-  // history once there is an explicit selection; writes record the whole
-  // current catalog before any user opt-out can be mistaken for a new id.
+  // Offered history is catalog metadata, never permission to probe. Preserve
+  // explicit selections even when a new adapter becomes discoverable.
   if (base.enabledAgentIds !== undefined) {
     // Legacy installs have no separate history: their saved enabled set is
     // the baseline of ids already offered to them.
     const offered = new Set(base.offeredAgentIds ?? base.enabledAgentIds);
-    const added = DEFAULT_ENABLED_AGENT_IDS.filter((id) => !offered.has(id));
+    const added = AGENT_DEFS.map((agent) => agent.id).filter((id) => !offered.has(id));
     if (base.offeredAgentIds === undefined || added.length > 0) {
-      base.enabledAgentIds = [...new Set([...base.enabledAgentIds, ...added])];
-      base.offeredAgentIds = [...new Set([...offered, ...DEFAULT_ENABLED_AGENT_IDS])];
+      base.offeredAgentIds = [...offered, ...added];
       await persistAppConfig(dataDir, base);
     }
   }
@@ -526,7 +523,7 @@ async function doRead(dataDir: string): Promise<AppConfigPrefs> {
   const installationDir = resolveInstallationDir(dataDir);
   const installation = await readInstallationFile(installationDir);
   if (typeof installation.installationId === 'string' && installation.installationId.length > 0) {
-    return applyTelemetryDefaults({ ...base, installationId: installation.installationId });
+    return applyConfigDefaults({ ...base, installationId: installation.installationId });
   }
   if (typeof base.installationId === 'string' && base.installationId.length > 0) {
     // Best-effort migration. A write failure here doesn't break the read —
@@ -538,7 +535,7 @@ async function doRead(dataDir: string): Promise<AppConfigPrefs> {
       // swallow — observability beats correctness on this path
     }
   }
-  return applyTelemetryDefaults(base);
+  return applyConfigDefaults(base);
 }
 
 async function readAppConfigFileOnly(dataDir: string): Promise<AppConfigPrefs> {
@@ -604,7 +601,7 @@ async function doWrite(
   if (next.enabledAgentIds !== undefined) {
     next.offeredAgentIds = [...new Set([
       ...(existing.offeredAgentIds ?? []),
-      ...DEFAULT_ENABLED_AGENT_IDS,
+      ...AGENT_DEFS.map((agent) => agent.id),
     ])];
   }
   await persistAppConfig(dataDir, next);

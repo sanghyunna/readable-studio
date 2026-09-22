@@ -26,8 +26,10 @@ import type {
 import { SettingsDialog } from '../../src/components/SettingsDialog';
 import type { SettingsSection } from '../../src/components/SettingsDialog';
 import { I18nProvider } from '../../src/i18n';
-import { en } from '../../src/i18n/locales/en';
-import { ko } from '../../src/i18n/locales/ko';
+import { getEn } from '../../src/i18n/locales/en';
+import { getKo } from '../../src/i18n/locales/ko';
+const en = getEn();
+const ko = getKo();
 import { DEFAULT_CONFIG, DEFAULT_FEATURE_FLAGS, loadConfig } from '../../src/state/config';
 import type { AgentInfo, AppConfig } from '../../src/types';
 

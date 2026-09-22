@@ -14,6 +14,7 @@ import { applyLearnedDatabricksProtocol, normalizeResource, opaqueId, type Catal
 import { lookupResource, objectValue, requestJson, scanWorkspace, type DatabricksFetch, type WorkspaceScanOptions } from './scan.js';
 import { DatabricksStore, type CatalogueGeneration } from './store.js';
 import { EncryptedConnectionSecretStorage, type ConnectionSecretStorage } from './secret-storage.js';
+import { writeDatabricksFailureCapture, type DatabricksFailureCapture } from './failure-capture.js';
 
 /** INTERNAL ONLY: launch-time material. Never return through HTTP, SSE, CLI, or logs. */
 export interface DatabricksRuntimeResolution {
@@ -27,6 +28,7 @@ export interface DatabricksRuntimeResolution {
   onAuthRejected?: () => Promise<void>;
   wireCapabilities?: DatabricksWireCapabilities;
   onCapabilitiesLearned?: (learned: DatabricksWireCapabilities) => Promise<void>;
+  captureFailure?: (capture: DatabricksFailureCapture) => Promise<void>;
   compat: { forceAdaptiveThinking?: true };
   capabilities: DatabricksCapabilities;
   reasoningOptions: string[];
@@ -472,6 +474,7 @@ export class LocalDatabricksService implements DatabricksService {
       api: entry.endpoint.api, baseUrl: `${binding.host}${entry.basePath}`, model: entry.upstreamName,
       apiKey,
       ...(entry.wireCapabilities ? { wireCapabilities: entry.wireCapabilities } : {}),
+      captureFailure: (capture) => writeDatabricksFailureCapture(this.options.dataRoot, capture),
       onCapabilitiesLearned: async (learned) => {
         await this.store.update((generation) => {
           const current = generation.entries.find((candidate) => candidate.endpoint.id === entry.endpoint.id);

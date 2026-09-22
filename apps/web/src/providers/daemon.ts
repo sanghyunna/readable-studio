@@ -996,6 +996,10 @@ async function consumeDaemonRun({
             const data = event.data as SseErrorPayload;
             const structuredError = daemonSseError(data);
             pendingStructuredError = structuredError;
+            // Native conflicts have a terminal update containing recovery metadata.
+            // Consume through end even if a status fetch could already see failure.
+            const details = data.error?.details;
+            if (details && typeof details === 'object' && 'kind' in details && details.kind === 'native-overwrite') continue;
             // The daemon emits this error frame from the child-close handler
             // BEFORE `finishWithRetryDecision()` runs, so a transient failure it
             // can recover via a same-run retry is reported here first and only

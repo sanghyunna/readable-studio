@@ -151,7 +151,6 @@ export type ManualEditPatch =
 export interface ManualEditHistoryEntry {
   id: string;
   label: string;
-  patch: ManualEditPatch;
   beforeSource: string;
   afterSource: string;
   createdAt: number;

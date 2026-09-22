@@ -344,7 +344,7 @@ export function FileWorkspace({
   slideNavRequest,
   designSystemActivityEvents = [],
   tabsState,
-  onTabsStateChange,
+  onTabsStateChange: notifyTabsStateChange,
   previewComments = [],
   onSavePreviewComment,
   onRemovePreviewComment,
@@ -415,9 +415,11 @@ export function FileWorkspace({
     tabsStateRef.current = tabsState;
     lastTabsStatePropRef.current = tabsState;
   }
-  const [activeTab, setActiveTab] = useState<string>(
+  const [activeTab, setActiveTabRaw] = useState<string>(
     tabsState.active ?? defaultRootTab,
   );
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
 
   const [showPasteDialog, setShowPasteDialog] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -463,6 +465,21 @@ export function FileWorkspace({
   const registerViewerCloseGuard = useCallback((guard: (() => boolean) | null) => {
     viewerCloseGuardRef.current = guard;
   }, []);
+  // All activation paths (including agent auto-open and parent hydration) use
+  // the same decision as Close. Neither local focus nor persisted focus may
+  // advance while the current viewer still owns unsaved direct edits.
+  const canActivateTab = useCallback((name: string) => (
+    name === activeTabRef.current || viewerCloseGuardRef.current?.() !== false
+  ), []);
+  const setActiveTab = useCallback((name: string) => {
+    if (!canActivateTab(name)) return;
+    activeTabRef.current = name;
+    setActiveTabRaw(name);
+  }, [canActivateTab]);
+  const onTabsStateChange = useCallback((next: OpenTabsState) => {
+    if (!canActivateTab(next.active ?? defaultRootTab)) return;
+    notifyTabsStateChange(next);
+  }, [canActivateTab, defaultRootTab, notifyTabsStateChange]);
   const draggedTabNameRef = useRef<string | null>(null);
   const browserTabSequenceRef = useRef(0);
   const designFilesNavProjectIdRef = useRef(projectId);
@@ -606,6 +623,7 @@ export function FileWorkspace({
   // Single entry point for committing tab state: mirror it into the ref so
   // async launcher actions read the freshest tabs, then notify the parent.
   function commitTabsState(next: OpenTabsState) {
+    if (!canActivateTab(next.active ?? defaultRootTab)) return;
     committedTabsStateRef.current = next;
     tabsStateRef.current = next;
     onTabsStateChange(next);

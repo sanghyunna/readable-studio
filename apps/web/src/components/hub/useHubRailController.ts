@@ -456,22 +456,17 @@ export function useHubRailController({
 
   useEffect(() => {
     const ids = projectLoadKey ? projectLoadKey.split('\u0000') : [];
+    // Missing entries already derive as loading in allNodes. Preserve cache
+    // identity unless a project was removed; materializing loading adds a commit.
+    setSessionsByProject((prev) => {
+      const currentIds = new Set(ids);
+      if (Object.keys(prev).every((id) => currentIds.has(id))) return prev;
+      return Object.fromEntries(Object.entries(prev).filter(([id]) => currentIds.has(id)));
+    });
     if (ids.length === 0) {
       generationsRef.current.clear();
-      setSessionsByProject({});
       return undefined;
     }
-
-    // Until the first response lands a project is LOADING, never "empty":
-    // inferring emptiness from an unfinished read is exactly the bug that made
-    // a dead daemon look like a user with no work.
-    setSessionsByProject((prev) => {
-      const next: Record<string, ProjectSessionsEntry> = {};
-      for (const id of ids) {
-        next[id] = prev[id] ?? { status: 'loading', sessions: EMPTY_SESSIONS };
-      }
-      return next;
-    });
     // The owner is holding reads back. The previous run's cleanup has already
     // aborted anything in flight; this run issues nothing and the effect
     // re-runs to fan out when the hold lifts.

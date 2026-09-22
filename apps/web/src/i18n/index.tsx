@@ -9,8 +9,8 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { en } from './locales/en';
-import { ko } from './locales/ko';
+import { getEn } from './locales/en';
+import { getKo } from './locales/ko';
 import { getReadableStudioHost } from '@readable-studio/host';
 import { LOCALES, type Dict, type Locale } from './types';
 
@@ -19,9 +19,9 @@ export type { Locale } from './types';
 
 type DictKey = keyof Dict;
 
-const DICTS: Record<Locale, Dict> = {
-  'en': en,
-  'ko': ko,
+const DICTS: Record<Locale, () => Dict> = {
+  'en': getEn,
+  'ko': getKo,
 };
 
 const LS_KEY = 'readable-studio:locale';
@@ -106,7 +106,7 @@ interface I18nContextValue {
 const I18nContext = createContext<I18nContextValue | null>(null);
 
 const fallbackT: I18nContextValue['t'] = (key, vars) => {
-  const raw = en[key] ?? key;
+  const raw = getEn()[key] ?? key;
   if (!vars) return raw;
   return raw.replace(/\{(\w+)\}/g, (_, n: string) => {
     const v = vars[n];
@@ -149,8 +149,8 @@ export function I18nProvider({ initial, children }: ProviderProps) {
 
   const t = useCallback(
     (key: DictKey, vars?: Record<string, string | number>): string => {
-      const dict = DICTS[locale] ?? en;
-      const raw = dict[key] ?? en[key] ?? key;
+      const dict = (DICTS[locale] ?? getEn)();
+      const raw = dict[key] ?? getEn()[key] ?? key;
       if (!vars) return raw;
       return raw.replace(/\{(\w+)\}/g, (_, name: string) => {
         const v = vars[name];

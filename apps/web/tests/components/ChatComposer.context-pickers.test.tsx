@@ -16,7 +16,8 @@ vi.mock('../../src/analytics/events', async (importOriginal) => {
 
 import { ChatComposer, type ChatComposerHandle } from '../../src/components/ChatComposer';
 import { I18nProvider } from '../../src/i18n';
-import { ko } from '../../src/i18n/locales/ko';
+import { getKo } from '../../src/i18n/locales/ko';
+const ko = getKo();
 import type { Locale } from '../../src/i18n/types';
 import type { AppliedPluginSnapshot } from '@readable-studio/contracts';
 import { composerText, flushMounts, pressEnter, typeAndSettle } from '../helpers/lexical-composer';

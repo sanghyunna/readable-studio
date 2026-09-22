@@ -5,7 +5,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { NextStepActions } from '../../src/components/NextStepActions';
 import { I18nProvider } from '../../src/i18n';
-import { en } from '../../src/i18n/locales/en';
+import { getEn } from '../../src/i18n/locales/en';
+const en = getEn();
 import type { Locale } from '../../src/i18n/types';
 import type { SkillSummary } from '../../src/types';
 

@@ -144,7 +144,11 @@ export function parsePortOption(value: number | string | null | undefined, optio
 }
 
 export function resolveToolDevConfig(options: ToolDevOptions = {}): ToolDevConfig {
-  const namespace = resolveNamespace({ namespace: options.namespace, env: process.env, contract: SIDECAR_CONTRACT });
+  const namespace = resolveNamespace({
+    env: process.env,
+    contract: SIDECAR_CONTRACT,
+    ...(options.namespace !== undefined && { namespace: options.namespace }),
+  });
   const toolsDevRoot = resolveSidecarBase({
     base: options.toolsDevRoot ?? process.env[SIDECAR_ENV.BASE] ?? resolveSourceRuntimeRoot({
       contract: SIDECAR_CONTRACT,

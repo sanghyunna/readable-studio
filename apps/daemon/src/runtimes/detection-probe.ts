@@ -90,6 +90,22 @@ async function probeCapabilities(
   }
 }
 
+/** Run preparation needs CLI flags, not authentication or model discovery. */
+export async function ensureAgentCapabilities(
+  def: RuntimeAgentDef,
+  configuredEnv: Record<string, string>,
+): Promise<void> {
+  if (!def.capabilityFlags || agentCapabilities.has(def.id)) return;
+  const launch = resolveAgentLaunch(def, configuredEnv);
+  if (!launch.selectedPath || !launch.launchPath) return;
+  const env = applyAgentLaunchEnv(spawnEnvForAgent(
+    def.id, { ...process.env, ...(def.env || {}) }, configuredEnv,
+    undefined, { resolvedBin: launch.selectedPath },
+  ), launch);
+  const caps = await probeCapabilities(def, launch.launchPath, env);
+  if (caps) agentCapabilities.set(def.id, caps);
+}
+
 export function stripFns(
   def: RuntimeAgentDef,
 ): Omit<DetectedAgent, 'models' | 'modelsSource' | 'available' | 'path' | 'version'> {
@@ -184,7 +200,9 @@ async function probe(
     : auth;
   const authDiagnostic = effectiveAuth ? buildAuthDiagnostic(def, effectiveAuth) : null;
   const available = !failure && (!effectiveAuth || effectiveAuth.status === 'ok');
-  const diagnostics: AgentDiagnostic[] = authDiagnostic ? [authDiagnostic] : failure ? [{
+  // A conclusive sign-in failure remains actionable; unknown auth must not
+  // hide a proven discovery/compatibility failure behind a warning.
+  const diagnostics: AgentDiagnostic[] = authDiagnostic && (!failure || effectiveAuth?.status === 'missing') ? [authDiagnostic] : failure ? [{
     // Reuse the existing wire diagnostics: command rejection is not executable
     // through this adapter; unknown readiness must never imply authenticated.
     reason: failure.kind === 'adapter-incompatible' ? 'not-executable' : 'auth-unknown',

@@ -206,7 +206,7 @@ function runShell(args: RunShellArgs): Promise<BuildTestCommandResult> {
     const startedAt = Date.now();
     const launcher = args.spawnFn ?? spawn;
     const child = launcher('sh', ['-c', args.command], {
-      cwd: args.cwd,
+      cwd: args.cwd, windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let buffer = '';

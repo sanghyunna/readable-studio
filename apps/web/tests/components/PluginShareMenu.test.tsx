@@ -16,8 +16,10 @@ import {
   PluginShareMenu,
 } from '../../src/components/plugin-details/PluginShareMenu';
 import { I18nProvider, type Locale } from '../../src/i18n';
-import { en } from '../../src/i18n/locales/en';
-import { ko } from '../../src/i18n/locales/ko';
+import { getEn } from '../../src/i18n/locales/en';
+import { getKo } from '../../src/i18n/locales/ko';
+const en = getEn();
+const ko = getKo();
 
 interface MakeArgs {
   id: string;

@@ -1827,6 +1827,7 @@ export interface Dict {
   'inlineSwitcher.agentLabel': string;
   'inlineSwitcher.providerLabel': string;
   'inlineSwitcher.modelLabel': string;
+  'modelSource.builtInDefaults': string;
   'inlineSwitcher.reasoningLabel': string;
   'inlineSwitcher.reasoningDefault': string;
   'inlineSwitcher.reasoningNone': string;
@@ -1888,6 +1889,11 @@ export interface Dict {
   'databricks.setup.failed': string;
   'databricks.setup.retryToken': string;
   'databricks.setup.cliFootnote': string;
+  'databricks.login.action': string;
+  'databricks.login.waiting': string;
+  'databricks.login.cancel': string;
+  'databricks.login.failed': string;
+  'databricks.login.timedOut': string;
   'databricks.setup.open': string;
   'databricks.setup.back': string;
   'databricks.scan.start': string;

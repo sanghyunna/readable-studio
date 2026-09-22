@@ -2,6 +2,8 @@
 // provider protocol and uses fake CLI bins for deterministic agent outcomes.
 
 import * as http from 'node:http';
+import { once } from 'node:events';
+import { codexAppServerFixture } from './helpers/codex-app-server.js';
 import { promises as dnsPromises } from 'node:dns';
 import { promises as fsp } from 'node:fs';
 import os from 'node:os';
@@ -78,7 +80,7 @@ async function withOnlyFakeAgent<T>(
 }
 
 async function withFakeCodex<T>(script: string, run: () => Promise<T>): Promise<T> {
-  return withFakeAgent('codex', script, run);
+  return withFakeAgent('codex', codexAppServerFixture(script), run);
 }
 
 async function withFakeClaude<T>(script: string, run: () => Promise<T>): Promise<T> {
@@ -99,32 +101,6 @@ async function withFakeCursorAgent<T>(script: string, run: () => Promise<T>): Pr
 
 async function withFakeDeepSeek<T>(script: string, run: () => Promise<T>): Promise<T> {
   return withFakeAgent('deepseek', script, run);
-}
-
-async function waitForFile(file: string, timeoutMs = 5_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      await fsp.access(file);
-      return;
-    } catch {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-  }
-  throw new Error(`Timed out waiting for ${file}`);
-}
-
-async function waitForPidToExit(pid: number, timeoutMs = 5_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      process.kill(pid, 0);
-    } catch {
-      return;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  throw new Error(`Timed out waiting for process ${pid} to exit`);
 }
 
 beforeAll(async () => {
@@ -2003,10 +1979,7 @@ describe('POST /api/test/connection agent mode', () => {
 
   it('reports success for a fake Codex agent response', async () => {
     await withFakeCodex(
-      `
-console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'ok' } }));
-setImmediate(() => process.exit(0));
-`,
+      `text('ok'); finish();`,
       async () => {
         const res = await realFetch(`${baseUrl}/api/test/connection`, {
           method: 'POST',
@@ -2038,8 +2011,7 @@ fs.writeFileSync(${JSON.stringify(envFile)}, JSON.stringify({
   CODEX_API_KEY: process.env.CODEX_API_KEY || null,
   SHOULD_NOT_PASS: process.env.READABLE_CONNECTION_TEST_SHOULD_NOT_PASS || null,
 }));
-console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'ok' } }));
-setImmediate(() => process.exit(0));
+text('ok'); finish();
 `,
         async () => {
           // CODEX_API_KEY only flows through when the user has also
@@ -2101,8 +2073,7 @@ fs.writeFileSync(${JSON.stringify(envFile)}, JSON.stringify({
   OPENAI_API_KEY: process.env.OPENAI_API_KEY || null,
   CODEX_API_KEY: process.env.CODEX_API_KEY || null,
 }));
-console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'ok' } }));
-setImmediate(() => process.exit(0));
+text('ok'); finish();
 `,
         async () => {
           // Simulates the user flow that triggered issue #2420: a stale
@@ -2150,11 +2121,8 @@ setImmediate(() => process.exit(0));
   it('waits for the Codex process before accepting early success text', async () => {
     await withFakeCodex(
       `
-console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'ok' } }));
-setTimeout(() => {
-  console.log(JSON.stringify({ type: 'error', message: 'late failure after ok' }));
-  setTimeout(() => process.exit(1), 50);
-}, 700);
+text('ok');
+fail('late failure after ok');
 `,
       async () => {
         const res = await realFetch(`${baseUrl}/api/test/connection`, {
@@ -2176,8 +2144,9 @@ setTimeout(() => {
   it('classifies split agent model-error text after buffering the full response', async () => {
     await withFakeCodex(
       `
-console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'Error:' } }));
-console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: ' model not found' } }));
+text('Error:');
+text(' model not found');
+finish();
 `,
       async () => {
         const res = await realFetch(`${baseUrl}/api/test/connection`, {
@@ -2196,9 +2165,9 @@ console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_messag
 
   it('reports structured agent stream errors without treating them as success', async () => {
     await withFakeCodex(
-      `console.log(JSON.stringify({ type: 'error', message: "The 'gpt-5.5' model requires a newer version of Codex." }));`,
+      `fail("The 'gpt-5.5' model requires a newer version of Codex.");`,
       async () => {
-        const result = await testAgentConnection({ agentId: 'codex' });
+        const result = await testAgentConnection({ agentId: 'codex', model: 'gpt-5.5' });
         expect(result).toMatchObject({
           ok: false,
           kind: 'agent_spawn_failed',
@@ -2427,7 +2396,7 @@ process.stdin.on('end', () => {
 
   it('classifies structured Codex model errors as not_found_model', async () => {
     await withFakeCodex(
-      `console.log(JSON.stringify({ type: 'error', message: "The 'dddd' model is not supported when using Codex with a ChatGPT account." }));`,
+      `fail("The 'dddd' model is not supported when using Codex with a ChatGPT account.");`,
       async () => {
         const res = await realFetch(`${baseUrl}/api/test/connection`, {
           method: 'POST',
@@ -2457,12 +2426,13 @@ process.stdin.on('end', () => {
       const bin = await writeExecutableScript(
         dir,
         'codex-next',
-        `console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'ok' } }));\n`,
+        codexAppServerFixture("text('ok'); finish();"),
       );
       process.env.PATH = oldPath ?? '';
 
       const result = await testAgentConnection({
         agentId: 'codex',
+        model: 'gpt-5.4',
         agentCliEnv: {
           codex: {
             CODEX_BIN: bin,
@@ -2487,13 +2457,14 @@ process.stdin.on('end', () => {
 
   it('surfaces when an invalid configured CODEX_BIN was ignored in favor of PATH', async () => {
     await withFakeCodex(
-      `console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'ok' } }));\n`,
+      `text('ok'); finish();`,
       async () => {
         const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'readable-conn-test-codex-invalid-'));
         try {
           const invalidBin = path.join(dir, 'codex-missing');
           const result = await testAgentConnection({
             agentId: 'codex',
+            model: 'gpt-5.4',
             agentCliEnv: {
               codex: {
                 CODEX_BIN: invalidBin,
@@ -2522,7 +2493,7 @@ process.stdin.on('end', () => {
 
   it('falls back to PATH Codex during connection tests when a configured CODEX_BIN fails', async () => {
     await withFakeCodex(
-      `console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'ok' } }));\n`,
+      `text('ok'); finish();`,
       async () => {
         const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'readable-conn-test-codex-fallback-'));
         try {
@@ -2534,6 +2505,7 @@ process.stdin.on('end', () => {
 
           const result = await testAgentConnection({
             agentId: 'codex',
+            model: 'gpt-5.4',
             agentCliEnv: {
               codex: {
                 CODEX_BIN: bin,
@@ -2563,7 +2535,7 @@ process.stdin.on('end', () => {
 
   it('falls back to PATH Codex when a configured shim spawns ENOENT', async () => {
     await withFakeCodex(
-      `console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'ok' } }));\n`,
+      `text('ok'); finish();`,
       async () => {
         const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'readable-conn-test-codex-stale-shim-'));
         try {
@@ -2576,6 +2548,7 @@ process.stdin.on('end', () => {
 
           const result = await testAgentConnection({
             agentId: 'codex',
+            model: 'gpt-5.4',
             agentCliEnv: {
               codex: {
                 CODEX_BIN: bin,
@@ -2938,7 +2911,7 @@ console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_messag
 const fs = require('node:fs');
 const args = process.argv.slice(2);
 fs.writeFileSync(${JSON.stringify(argvFile)}, JSON.stringify(args));
-console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'ok' } }));
+text('ok'); finish();
 `,
         async () => {
           const res = await realFetch(`${baseUrl}/api/test/connection`, {
@@ -2959,7 +2932,7 @@ console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_messag
           });
 
           const args = JSON.parse(await fsp.readFile(argvFile, 'utf8')) as string[];
-          expect(args).toEqual(expect.arrayContaining(['--model', 'gpt-5']));
+          expect(args).toEqual(expect.arrayContaining(['app-server', '-c', 'model="gpt-5"']));
           expect(args.some((arg) => arg.includes('model_reasoning_effort'))).toBe(false);
           expect(args.some((arg) => arg.includes('totally-invalid-effort'))).toBe(false);
         },
@@ -2971,9 +2944,9 @@ console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_messag
 
   it('reports unknown when the agent emits only raw schema-drift output', async () => {
     await withFakeCodex(
-      `console.log(JSON.stringify({ type: 'future.event', payload: { text: 'ok' } }));`,
+      `send({ method: 'future/event', params: { text: 'ok' } }); finish();`,
       async () => {
-        const result = await testAgentConnection({ agentId: 'codex' });
+        const result = await testAgentConnection({ agentId: 'codex', model: 'gpt-5.4' });
         expect(result).toMatchObject({
           ok: false,
           kind: 'unknown',
@@ -2984,56 +2957,33 @@ console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_messag
   });
 
   it('hard-cancels aborted agent probes before cleaning up', async () => {
-    const markerDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'readable-conn-test-marker-'));
-    const pidFile = path.join(markerDir, 'pid');
-    const termFile = path.join(markerDir, 'term');
+    // Given a real RPC peer that acknowledges readiness over a separate socket.
+    const readyServer = http.createServer();
+    readyServer.listen(0, '127.0.0.1');
+    await once(readyServer, 'listening');
+    const address = readyServer.address();
+    if (!address || typeof address === 'string') throw new Error('Expected TCP address');
+    const ready = once(readyServer, 'request', { signal: AbortSignal.timeout(10_000) });
     try {
       await withFakeCodex(
-        `
-const fs = require('node:fs');
-fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
-process.on('SIGTERM', () => {
-  fs.writeFileSync(${JSON.stringify(termFile)}, 'term');
-});
-setInterval(() => {}, 1000);
-`,
+        `require('node:http').get('http://127.0.0.1:${address.port}/' + process.pid);
+process.on('SIGTERM', () => {});`,
         async () => {
           const controller = new AbortController();
-          const pending = testAgentConnection({
-            agentId: 'codex',
-            signal: controller.signal,
-          });
-          await Promise.race([
-            waitForFile(pidFile, 15_000),
-            pending.then((result) => {
-              throw new Error(
-                `Agent probe finished before fake agent wrote pid: ${JSON.stringify(result)}`,
-              );
-            }),
-          ]);
+          const pending = testAgentConnection({ agentId: 'codex', model: 'gpt-5.4', signal: controller.signal });
+          const [request, response] = await ready;
+          const pid = Number(request.url.slice(1));
+          response.end();
+          // When the active probe is canceled.
           controller.abort();
-          await expect(pending).resolves.toMatchObject({
-            ok: false,
-            kind: 'timeout',
-          });
+          await expect(pending).resolves.toMatchObject({ ok: false, kind: 'timeout' });
+          // Then the owned child is gone before fixture cleanup can hide a leak.
+          expect(() => process.kill(pid, 0)).toThrow();
         },
       );
-      if (process.platform !== 'win32') {
-        await expect(fsp.readFile(termFile, 'utf8')).resolves.toBe('term');
-      }
-      const pid = Number(await fsp.readFile(pidFile, 'utf8'));
-      if (process.platform === 'win32') {
-        try {
-          process.kill(pid, 'SIGKILL');
-        } catch (err) {
-          if ((err as NodeJS.ErrnoException).code !== 'ESRCH') throw err;
-        }
-        await waitForPidToExit(pid);
-      } else {
-        expect(() => process.kill(pid, 0)).toThrow();
-      }
     } finally {
-      await fsp.rm(markerDir, { recursive: true, force: true });
+      readyServer.closeAllConnections();
+      await new Promise<void>((resolve, reject) => readyServer.close(error => error ? reject(error) : resolve()));
     }
   }, 10_000);
 

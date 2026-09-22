@@ -11,6 +11,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -67,6 +68,7 @@ import { DatabricksAddModelsRow } from './DatabricksAddModelsRow';
 import { SearchableModelSelect } from './modelOptions';
 import { dedupeAgentModels } from './modelCatalog';
 import { ListboxOptionLabel } from './DirectListbox';
+import { ModelSourceNote } from './ModelSourceNote';
 import { placePopover } from './popoverPlacement';
 import {
   mergeProviderModelOptions,
@@ -177,6 +179,7 @@ export function InlineModelSwitcher({
   onOpenSettings,
 }: Props) {
   const t = useT();
+  const modelSourceNoteId = useId();
   const analytics = useAnalytics();
   const [open, setOpen] = useState(false);
   const [databricksModalOpen, setDatabricksModalOpen] = useState(false);
@@ -1094,6 +1097,11 @@ export function InlineModelSwitcher({
                       className="inline-switcher__model-list"
                       role="listbox"
                       aria-label={t('inlineSwitcher.modelLabel')}
+                      aria-describedby={
+                        currentAgent.modelsSource === 'fallback'
+                          ? modelSourceNoteId
+                          : undefined
+                      }
                       data-testid="inline-model-switcher-model-list"
                     >
                       {agentModelChoices.map((model) => {
@@ -1144,6 +1152,11 @@ export function InlineModelSwitcher({
                       onActivate={openDatabricksAddModels}
                     />
                   ) : null}
+                  <ModelSourceNote
+                    agent={currentAgent}
+                    id={modelSourceNoteId}
+                    testId="inline-model-switcher-source-note"
+                  />
                 </>
               ) : !isAgentVariant &&
               currentAgent &&
@@ -1193,6 +1206,11 @@ export function InlineModelSwitcher({
                         />
                       ) : undefined
                     }
+                  />
+                  <ModelSourceNote
+                    agent={currentAgent}
+                    id={modelSourceNoteId}
+                    testId="inline-model-switcher-source-note"
                   />
                 </div>
               ) : isModelVariant ? (

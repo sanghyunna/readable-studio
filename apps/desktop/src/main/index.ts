@@ -48,6 +48,8 @@ import {
   registerDesktopDiagnosticsIpc,
 } from "./diagnostics.js";
 import { applyDesktopBaselineZoom } from "./zoom.js";
+import { startCrashEvidence } from "./crash-evidence.js";
+export { startCrashEvidence } from "./crash-evidence.js";
 
 // Re-export pure URL-policy helpers so the packaged workspace's
 // vitest can pin their behaviour without spinning up a full Electron
@@ -129,6 +131,8 @@ export function applyOsLocaleSwitch(electronApp: Electron.App): string {
 }
 
 export type DesktopMainOptions = {
+  /** Packaged starts capture before creating the splash or any child renderer. */
+  crashEvidence?: ReturnType<typeof startCrashEvidence>;
   /** Packaged supplies the exact daemon data root; tools-dev shares cwd/env. */
   credentialDataRoot?: string;
   beforeShutdown?: () => Promise<void>;
@@ -583,6 +587,14 @@ export async function runDesktopMain(
   // only recovers the locale string for the BrowserWindow below.
   app.setName("Readable Studio");
   const osLocale = applyOsLocaleSwitch(app);
+  const namespaceRoot = resolveRuntimeNamespaceRoot({
+    contract: SIDECAR_CONTRACT,
+    runtime,
+    runtimeMode: SIDECAR_MODES.RUNTIME,
+  });
+  const crashEvidence = options.crashEvidence ?? startCrashEvidence(
+    app, namespaceRoot, process.env.READABLE_LOCAL_NATIVE_DUMPS === "1",
+  );
 
   await app.whenReady();
   configureAboutPanel(options);
@@ -621,11 +633,6 @@ export async function runDesktopMain(
   // `<namespaceRoot>/runtime/<namespace>/logs/desktop` dir that the export
   // reader never looks in. Keeping both sides on `resolveRuntimeNamespaceRoot`
   // co-locates renderer.log with the desktop log dir AND keeps it captured.
-  const namespaceRoot = resolveRuntimeNamespaceRoot({
-    contract: SIDECAR_CONTRACT,
-    runtime,
-    runtimeMode: SIDECAR_MODES.RUNTIME,
-  });
   const desktopLogPath = resolveLogFilePath({
     app: APP_KEYS.DESKTOP,
     contract: SIDECAR_CONTRACT,
@@ -652,6 +659,7 @@ export async function runDesktopMain(
     await secretStorage?.close();
     await ipcServer?.close().catch(() => undefined);
     await desktop?.close().catch(() => undefined);
+    crashEvidence.dispose();
     await approvalLoop?.done.catch(() => undefined);
     app.quit();
   }
@@ -673,6 +681,7 @@ export async function runDesktopMain(
     // protection still works) and POSTs once more.
     registerDesktopAuthWithDaemon: () => registerDesktopAuthWithDaemon(runtime, desktopAuthSecret),
     rendererLogPath,
+    recordCrashEvidence: crashEvidence.record,
     requestQuit: shutdownAndExit,
     splashWindow: options.splashWindow,
     splashStartedAt: options.splashStartedAt,

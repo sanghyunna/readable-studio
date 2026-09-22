@@ -3,7 +3,8 @@
 import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AssistantMessage } from '../../src/components/AssistantMessage';
-import { en } from '../../src/i18n/locales/en';
+import { getEn } from '../../src/i18n/locales/en';
+const en = getEn();
 import { applyPerformanceProfileToDocument, PERFORMANCE_PROFILE_ATTRIBUTE } from '../../src/state/config';
 import type { ChatMessage } from '../../src/types';
 

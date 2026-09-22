@@ -17,8 +17,8 @@ import { tr } from './hosted-locales/tr';
 import { uk } from './hosted-locales/uk';
 import { zhCN } from './hosted-locales/zh-CN';
 import { zhTW } from './hosted-locales/zh-TW';
-import { en } from './locales/en';
-import { ko } from './locales/ko';
+import { getEn } from './locales/en';
+import { getKo } from './locales/ko';
 import type { Dict } from './types';
 
 export const HOSTED_LOCALES = [
@@ -128,17 +128,24 @@ function hostedMessagesFromGlobal(dict: Dict): HostedMessages {
   ) as HostedMessages;
 }
 
+let englishMessages: HostedMessages | undefined;
+let koreanMessages: HostedMessages | undefined;
+
 export const HOSTED_MESSAGES: Record<HostedLocale, HostedMessages> = {
   'ar': ar,
   'de': de,
-  'en': hostedMessagesFromGlobal(en),
+  get en() {
+    return englishMessages ??= hostedMessagesFromGlobal(getEn());
+  },
   'es-ES': esES,
   'fa': fa,
   'fr': fr,
   'hu': hu,
   'id': id,
   'ja': ja,
-  'ko': hostedMessagesFromGlobal(ko),
+  get ko() {
+    return koreanMessages ??= hostedMessagesFromGlobal(getKo());
+  },
   'pl': pl,
   'pt-BR': ptBR,
   'ru': ru,

@@ -466,21 +466,7 @@ export async function deleteConversation(
 
 // ---------- messages ----------
 
-export async function listMessages(
-  projectId: string,
-  conversationId: string,
-): Promise<ChatMessage[]> {
-  try {
-    const resp = await fetch(
-      `/api/projects/${encodeURIComponent(projectId)}/conversations/${encodeURIComponent(conversationId)}/messages`,
-    );
-    if (!resp.ok) return [];
-    const json = (await resp.json()) as { messages: ChatMessage[] };
-    return json.messages ?? [];
-  } catch {
-    return [];
-  }
-}
+export { loadCompleteMessageHistory as listMessages, loadMessagePage } from '../providers/message-history';
 
 export async function listProjectCheckpoints(
   projectId: string,

@@ -1,7 +1,43 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { startDatabricksScan, streamDatabricksScanEvents } from '../../src/providers/databricks';
+import {
+  cancelDatabricksLogin,
+  fetchDatabricksLogin,
+  startDatabricksLogin,
+  startDatabricksScan,
+  streamDatabricksScanEvents,
+} from '../../src/providers/databricks';
 
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+
+describe('Databricks browser sign-in transport', () => {
+  const job = { loginId: 'login-1', state: 'waiting-for-browser', createdAt: 't', deadlineAt: 't', completedAt: null, profileId: null, issues: [] };
+
+  it('starts a sign-in with the host in the JSON body and returns the login job', async () => {
+    const fetchMock = vi.fn(async () => Response.json(job, { status: 202 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(startDatabricksLogin({ host: 'https://workspace.example' })).resolves.toEqual(job);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/databricks/login');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({ host: 'https://workspace.example' });
+  });
+
+  it('polls and cancels the job by its opaque id', async () => {
+    const fetchMock = vi.fn(async () => Response.json(job));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(fetchDatabricksLogin('login 1')).resolves.toEqual(job);
+    await expect(cancelDatabricksLogin('login 1')).resolves.toEqual(job);
+    const calls = fetchMock.mock.calls as unknown as Array<[string, RequestInit]>;
+    expect(calls[0]![0]).toBe('/api/databricks/login/login%201');
+    expect(calls[1]![0]).toBe('/api/databricks/login/login%201');
+    expect(calls[1]![1].method).toBe('DELETE');
+  });
+
+  it('surfaces the sanitized daemon error when a second sign-in is already running', async () => {
+    vi.stubGlobal('fetch', async () => Response.json({ error: { code: 'DATABRICKS_STALE_REVISION', message: 'busy', retryable: true } }, { status: 409 }));
+    await expect(startDatabricksLogin({ host: 'https://workspace.example' })).rejects.toMatchObject({ status: 409, code: 'DATABRICKS_STALE_REVISION', retryable: true });
+  });
+});
 
 describe('Databricks scan transport termination', () => {
   it('reports a sanitized daemon SSE error rather than waiting for done', async () => {

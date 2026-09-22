@@ -9,7 +9,8 @@ import type { ProjectView } from '../../src/components/ProjectView';
 import { HubDropToEdit } from '../../src/components/hub/HubDropToEdit';
 import type { HubImportFileOutcome } from '../../src/components/hub/drop-to-edit';
 import { I18nProvider } from '../../src/i18n';
-import { en } from '../../src/i18n/locales/en';
+import { getEn } from '../../src/i18n/locales/en';
+const en = getEn();
 import type { AppConfig, Project } from '../../src/types';
 
 const { importSettled } = vi.hoisted(() => ({ importSettled: vi.fn() }));

@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { TerminalViewer } from '../../src/components/workspace/TerminalViewer';
 import { I18nProvider } from '../../src/i18n';
-import { en } from '../../src/i18n/locales/en';
+import { getEn } from '../../src/i18n/locales/en';
+const en = getEn();
 
 const terminalMockState = vi.hoisted(() => ({
   instances: [] as Array<{ options: { theme?: Record<string, string> } }>,

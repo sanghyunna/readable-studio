@@ -62,7 +62,7 @@ describe("supported packaged platforms", () => {
 
     // When an unsupported platform build is requested
     const result = spawnSync(process.execPath, ["--import", "tsx", entrypoint, platform, "build", "--to", target], {
-      encoding: "utf8",
+      encoding: "utf8", windowsHide: true,
     });
 
     // Then the CLI fails explicitly rather than silently succeeding
@@ -84,7 +84,7 @@ describe("supported packaged platforms", () => {
 
     // When a removed updater action is requested
     const result = spawnSync(process.execPath, ["--import", "tsx", entrypoint, ...args], {
-      encoding: "utf8",
+      encoding: "utf8", windowsHide: true,
     });
 
     // Then the CLI rejects it nonzero with an explicit boundary diagnostic
@@ -99,7 +99,7 @@ describe("supported packaged platforms", () => {
       const result = spawnSync(
         process.execPath,
         ["--import", "tsx", entrypoint, "win", "build", "--to", target],
-        { encoding: "utf8" },
+        { encoding: "utf8", windowsHide: true },
       );
 
       expect(result.status).toBe(1);
@@ -112,7 +112,7 @@ describe("supported packaged platforms", () => {
     const result = spawnSync(
       process.execPath,
       ["--import", "tsx", entrypoint, "win", "build", "--portable"],
-      { encoding: "utf8" },
+      { encoding: "utf8", windowsHide: true },
     );
 
     expect(result.status).toBe(1);

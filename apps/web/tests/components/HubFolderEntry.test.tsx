@@ -47,6 +47,7 @@ class ResizeObserverMock {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 beforeEach(() => {
@@ -56,8 +57,9 @@ beforeEach(() => {
 });
 
 describe('New Project folder entry', () => {
-  it('calls folder import once when the current folder control is clicked', () => {
+  it('calls folder import once when the current folder control is clicked', async () => {
     // Given: the live New Project modal with folder import available.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     render(
       <NewProjectModal
         open
@@ -71,7 +73,7 @@ describe('New Project folder entry', () => {
     );
 
     // When: the user selects the stable current folder import control.
-    fireEvent.click(screen.getByTestId('new-project-import-folder'));
+    fireEvent.click(await screen.findByTestId('new-project-import-folder'));
 
     // Then: the panel delegates to the folder-import hook exactly once.
     expect(folderImport.openFolder).toHaveBeenCalledTimes(1);

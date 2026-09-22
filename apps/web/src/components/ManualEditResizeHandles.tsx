@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type MutableRefObject,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
@@ -34,7 +35,8 @@ export type ManualEditResizeHandlesProps = {
   // needs the target's computed styles and rectScale, which this component
   // deliberately knows nothing about.
   onResizePreview: (direction: ResizeHandleDirection, size: Size, startSize: Size) => void;
-  onResizeCommit: (direction: ResizeHandleDirection, size: Size, startSize: Size) => void;
+  onResizeCommit: (direction: ResizeHandleDirection, size: Size, startSize: Size) => void | Promise<void>;
+  flushPendingRef?: MutableRefObject<(() => Promise<void>) | null>;
   onResizeCancel: () => void;
   // Returns true if a burst was in progress and got cancelled. The caller uses
   // this to decide whether to stop propagation of the Escape event.
@@ -75,6 +77,7 @@ export function ManualEditResizeHandles({
   bounds,
   onResizePreview,
   onResizeCommit,
+  flushPendingRef,
   onResizeCancel,
   onBurstCancel,
   onResizeStart,
@@ -93,6 +96,7 @@ export function ManualEditResizeHandles({
   const pendingSizeRef = useRef<Size | null>(null);
 
   useEffect(() => () => {
+    if (flushPendingRef) flushPendingRef.current = null;
     if (rafRef.current !== null) {
       cancelAnimationFrame(rafRef.current);
     }
@@ -129,6 +133,7 @@ export function ManualEditResizeHandles({
     const drag = dragRef.current;
     if (!drag) return;
     dragRef.current = null;
+    if (flushPendingRef) flushPendingRef.current = null;
     flushScheduledRef.current = false;
     if (rafRef.current !== null) {
       cancelAnimationFrame(rafRef.current);
@@ -164,6 +169,7 @@ export function ManualEditResizeHandles({
     if (typeof target.focus === 'function') target.focus({ preventScroll: true });
     onResizeStart?.();
     lastDirectionRef.current = direction;
+    if (flushPendingRef) flushPendingRef.current = commitPendingResize;
     dragRef.current = {
       direction,
       pointerId: event.pointerId,
@@ -189,9 +195,9 @@ export function ManualEditResizeHandles({
     scheduleFlush(size);
   };
 
-  const handlePointerUp = (event: ReactPointerEvent<HTMLButtonElement>) => {
+  async function commitPendingResize() {
     const drag = dragRef.current;
-    if (!drag || event.pointerId !== drag.pointerId) return;
+    if (!drag) return;
     const size = pendingSizeRef.current;
     const finalFrameUnsent = flushScheduledRef.current;
     endDrag();
@@ -201,10 +207,14 @@ export function ManualEditResizeHandles({
       // move dies in that queue — the element never renders the exact size
       // being committed and the iframe never acks its measurements.
       if (finalFrameUnsent) onResizePreview(drag.direction, size, drag.startSize);
-      onResizeCommit(drag.direction, size, drag.startSize);
+      await onResizeCommit(drag.direction, size, drag.startSize);
     } else {
       onResizeCancel();
     }
+  }
+
+  const handlePointerUp = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (event.pointerId === dragRef.current?.pointerId) void commitPendingResize();
   };
 
   const handlePointerCancel = (event: ReactPointerEvent<HTMLButtonElement>) => {

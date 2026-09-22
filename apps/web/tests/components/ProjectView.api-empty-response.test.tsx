@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -14,7 +14,7 @@ import {
   patchPreviewCommentStatus,
   writeProjectTextFile,
 } from '../../src/providers/registry';
-import { listMessages, saveMessage } from '../../src/state/projects';
+import { loadMessagePage, saveMessage } from '../../src/state/projects';
 import { playSound } from '../../src/utils/notifications';
 import type {
   AgentEvent,
@@ -101,7 +101,7 @@ vi.mock('../../src/state/projects', async () => {
     deleteConversation: vi.fn(),
     getTemplate: vi.fn().mockResolvedValue(null),
     listConversations: vi.fn().mockImplementation(async (projectId: string) => [mockConversation(projectId)]),
-    listMessages: vi.fn().mockResolvedValue([]),
+    loadMessagePage: vi.fn().mockResolvedValue({ messages: [], nextPosition: null }),
     loadTabs: vi.fn().mockResolvedValue({ tabs: [], active: null }),
     patchConversation: vi.fn(),
     patchProject: vi.fn(),
@@ -186,7 +186,7 @@ const mockedStreamMessage = vi.mocked(streamMessage);
 const mockedFetchProjectFilePreview = vi.mocked(fetchProjectFilePreview);
 const mockedFetchProjectFileText = vi.mocked(fetchProjectFileText);
 const mockedFetchProjectFiles = vi.mocked(fetchProjectFiles);
-const mockedListMessages = vi.mocked(listMessages);
+const mockedLoadMessagePage = vi.mocked(loadMessagePage);
 const mockedSaveMessage = vi.mocked(saveMessage);
 const mockedWriteProjectTextFile = vi.mocked(writeProjectTextFile);
 const mockedPatchPreviewCommentStatus = vi.mocked(patchPreviewCommentStatus);
@@ -262,7 +262,7 @@ describe('ProjectView API empty response handling', () => {
       size: 1,
       mtime: 1,
     });
-    mockedListMessages.mockClear();
+    mockedLoadMessagePage.mockClear();
     mockedSaveMessage.mockClear();
     mockedPatchPreviewCommentStatus.mockClear();
     mockedPlaySound.mockClear();
@@ -600,12 +600,14 @@ describe('ProjectView API empty response handling', () => {
 });
 
 async function sendTestPrompt() {
-  await waitFor(() => {
-    expect(mockedListMessages).toHaveBeenCalledWith(project.id, 'conv-project-1');
+  // Flush the resolved history fixture and React's hydration effects before sending.
+  await act(async () => {});
+  expect(mockedLoadMessagePage).toHaveBeenCalledWith(project.id, 'conv-project-1', {
+    beforePosition: Number.MAX_SAFE_INTEGER,
   });
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  await waitFor(() => expect(screen.getByRole('button', { name: 'send' })).toBeTruthy());
-  fireEvent.click(screen.getByRole('button', { name: 'send' }));
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'send' }));
+  });
 }
 
 function hasSavedAssistantMessage(predicate: (message: ChatMessage) => boolean): boolean {

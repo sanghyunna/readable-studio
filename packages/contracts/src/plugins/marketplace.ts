@@ -1,18 +1,19 @@
 import { z } from 'zod';
+import { lazyObject } from '../lazy-object.js';
 import {
   LocalizedTextSchema,
   READABLE_STUDIO_PLUGIN_SPEC_VERSION,
   ReadableStudioSpecVersionSchema,
 } from './manifest.js';
 
-const MarketplaceEntryDistSchema = z.object({
+const MarketplaceEntryDistSchema = lazyObject(() => ({
   type:           z.string().optional(),
   archive:        z.string().optional(),
   integrity:      z.string().optional(),
   manifestDigest: z.string().optional(),
-}).passthrough();
+})).passthrough();
 
-const MarketplacePluginVersionSchema = z.object({
+const MarketplacePluginVersionSchema = lazyObject(() => ({
   version:        z.string().min(1),
   source:         z.string().min(1).optional(),
   ref:            z.string().optional(),
@@ -23,7 +24,7 @@ const MarketplacePluginVersionSchema = z.object({
   yanked:         z.boolean().optional(),
   yankedAt:       z.string().optional(),
   yankReason:     z.string().optional(),
-}).passthrough();
+})).passthrough();
 
 export type MarketplacePluginVersion = z.infer<typeof MarketplacePluginVersionSchema>;
 
@@ -31,7 +32,7 @@ export type MarketplacePluginVersion = z.infer<typeof MarketplacePluginVersionSc
 // `docs/schemas/readable-studio.marketplace.v1.json`. The federated catalog
 // format is intentionally permissive so community catalogs can carry extra
 // fields without breaking Readable Studio installs.
-export const MarketplacePluginEntrySchema = z.object({
+export const MarketplacePluginEntrySchema = lazyObject(() => ({
   name:        z.string().min(1),
   source:      z.string().min(1),
   version:     z.string().min(1),
@@ -59,11 +60,11 @@ export const MarketplacePluginEntrySchema = z.object({
   description: z.string().optional(),
   description_i18n: LocalizedTextSchema.optional(),
   icon:        z.string().optional(),
-}).passthrough();
+})).passthrough();
 
 export type MarketplacePluginEntry = z.infer<typeof MarketplacePluginEntrySchema>;
 
-export const MarketplaceManifestSchema = z.object({
+export const MarketplaceManifestSchema = lazyObject(() => ({
   $schema:     z.string().optional(),
   specVersion: ReadableStudioSpecVersionSchema.default(READABLE_STUDIO_PLUGIN_SPEC_VERSION),
   name:        z.string().min(1),
@@ -77,7 +78,7 @@ export const MarketplaceManifestSchema = z.object({
     version:     z.string().optional(),
   }).passthrough().optional(),
   plugins: z.array(MarketplacePluginEntrySchema),
-}).passthrough();
+})).passthrough();
 
 export type MarketplaceManifest = z.infer<typeof MarketplaceManifestSchema>;
 

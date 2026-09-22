@@ -6,6 +6,15 @@ import type { RuntimeExecOptions } from './types.js';
 
 const execFileP = promisify(execFile);
 
+export function createAgentCommandInvocation(command: string, args: string[], env: NodeJS.ProcessEnv = process.env) {
+  // Worker environments and plain objects lose Windows' case-insensitive lookup.
+  const shell = process.platform === 'win32'
+    ? Object.entries(env).find(([key]) => key.toUpperCase() === 'COMSPEC')?.[1]
+      ?? Object.entries(process.env).find(([key]) => key.toUpperCase() === 'COMSPEC')?.[1]
+    : undefined;
+  return createCommandInvocation({ command, args, env: shell ? { ...env, ComSpec: shell } : env });
+}
+
 // Agent probes (model-list / version / help / auth-status) are short read-only
 // metadata calls that never need the caller's project files. Default them to a
 // neutral working directory instead of inheriting the daemon process cwd.
@@ -22,20 +31,10 @@ export function execAgentFile(
   args: string[],
   options: RuntimeExecOptions = {},
 ) {
-  const invocation = createCommandInvocation(
-    options.env
-      ? {
-          command,
-          args,
-          env: options.env,
-        }
-      : {
-          command,
-          args,
-        },
-  );
+  const invocation = createAgentCommandInvocation(command, args, options.env);
   return execFileP(invocation.command, invocation.args, {
     ...options,
+    windowsHide: true,
     cwd: options.cwd ?? os.tmpdir(),
     windowsVerbatimArguments: invocation.windowsVerbatimArguments,
   });

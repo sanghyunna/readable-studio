@@ -87,6 +87,7 @@ async function discoverDaemonUrlFromToolsDev(
         ? []
         : ["--silent", "exec", "tools-dev", "status", "--json"];
       child = spawn(command, args, {
+        windowsHide: true,
         cwd: REPO_ROOT,
         env: childEnv,
         stdio: ["ignore", "pipe", "ignore"],

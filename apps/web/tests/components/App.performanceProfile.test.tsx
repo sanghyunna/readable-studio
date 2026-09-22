@@ -10,8 +10,17 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../../src/App';
+import { detectClientType } from '../../src/analytics/identity';
+import { listProjectRuns } from '../../src/providers/daemon';
+
+vi.mock('../../src/analytics/identity', () => ({ detectClientType: vi.fn(() => 'web') }));
+vi.mock('../../src/providers/daemon', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../src/providers/daemon')>(),
+  listProjectRuns: vi.fn().mockResolvedValue([]),
+}));
 import type { AppConfig } from '../../src/types';
 import {
+  DEFAULT_PET,
   fetchDaemonConfig,
   loadConfig,
   mergeDaemonConfig,
@@ -142,6 +151,8 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
+  vi.restoreAllMocks();
   localStorage.clear();
   document.documentElement.removeAttribute('data-performance-profile');
   vi.unstubAllGlobals();
@@ -155,6 +166,29 @@ function motionMode(): string | null {
 }
 
 describe('App performance profile state', () => {
+  it.each([
+    { performanceProfile: 'full', client: 'desktop', adopted: true },
+    { performanceProfile: 'low', client: 'desktop', adopted: true },
+    { performanceProfile: 'full', client: 'web', adopted: true },
+    { performanceProfile: 'low', client: 'web', adopted: true },
+    { performanceProfile: 'full', client: 'web', adopted: false },
+    { performanceProfile: 'low', client: 'web', adopted: false },
+  ] as const)('requests pet state only for a consumed surface in $client/$performanceProfile', async ({ performanceProfile, client, adopted }) => {
+    // Given a main window with the pet enabled.
+    vi.useFakeTimers();
+    vi.mocked(detectClientType).mockReturnValueOnce(client);
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    vi.mocked(loadConfig).mockReturnValue({
+      ...baseConfig, performanceProfile,
+      pet: { ...DEFAULT_PET, adopted, enabled: true },
+    });
+    // When startup and multiple fallback deadlines complete.
+    await act(async () => { render(<App />); });
+    await act(async () => { vi.advanceTimersByTime(45000); });
+    // Then only the browser App, which renders the overlay, requests run state.
+    expect(vi.mocked(listProjectRuns).mock.calls.length > 0).toBe(client === 'web' && adopted);
+  });
+
   it('removes a stale low stamp when the profile defaults to full', async () => {
     // Given a stale pre-hydration stamp and the default full profile.
     document.documentElement.setAttribute('data-performance-profile', 'low');

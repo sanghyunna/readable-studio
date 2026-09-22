@@ -28,6 +28,8 @@ import {
   WIN_PREBUNDLED_PACKAGED_MAIN_RELATIVE_PATH,
   WIN_PREBUNDLED_WEB_SIDECAR_RELATIVE_PATH,
   assertWinPrebundleMetafile,
+  assertWinDaemonRuntimeAssets,
+  stageWinDaemonRuntimeAssets,
   renderWinPackagedMainEntry,
   shouldInstallInternalPackageForWinPrebundle,
   shouldUseWinStandalonePrebundle,
@@ -57,7 +59,7 @@ const execFileAsync = promisify(execFile);
 async function runPnpm(config: ToolPackConfig, args: string[], extraEnv: NodeJS.ProcessEnv = {}): Promise<void> {
   const invocation = createPackageManagerInvocation(args, process.env);
   await execFileAsync(invocation.command, invocation.args, {
-    cwd: config.workspaceRoot,
+    cwd: config.workspaceRoot, windowsHide: true,
     env: { ...process.env, ...extraEnv },
     windowsVerbatimArguments: invocation.windowsVerbatimArguments,
   });
@@ -69,7 +71,7 @@ async function runNpmInstall(appRoot: string): Promise<void> {
     command: process.platform === "win32" ? "npm.cmd" : "npm",
   });
   await execFileAsync(invocation.command, invocation.args, {
-    cwd: appRoot,
+    cwd: appRoot, windowsHide: true,
     env: process.env,
     windowsVerbatimArguments: invocation.windowsVerbatimArguments,
   });
@@ -409,6 +411,7 @@ async function buildPrebundledStandaloneRuntime(
     metafilePath: paths.daemonPrebundleMetaPath,
     policyName: "daemonCli",
   });
+  await stageWinDaemonRuntimeAssets(config.workspaceRoot, paths.daemonPrebundleRoot);
 }
 
 export async function createWinPackagedAppCacheKey(
@@ -424,7 +427,7 @@ export async function createWinPackagedAppCacheKey(
     packedTarballs,
     platform: "win32",
     prebundle: shouldUseWinStandalonePrebundle(config.webOutputMode),
-    schemaVersion: 5,
+    schemaVersion: 6,
     piPackage,
     piPatch: await hashPath(await resolvePiPackagePatch(config.workspaceRoot)),
     databricksCli,
@@ -481,6 +484,7 @@ export async function prepareWinPackagedApp(
   });
   await assertDatabricksCliOutput(join(manifest.entryPath, "app"));
   await assertPiPackageIntegrity(join(manifest.entryPath, "app"));
+  if (usePrebundle) await assertWinDaemonRuntimeAssets(join(manifest.entryPath, "app", WIN_PREBUNDLED_APP_DIR_NAME, "daemon"));
   await writeAssembledAppEntrypoints(
     config,
     {

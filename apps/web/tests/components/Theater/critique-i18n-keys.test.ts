@@ -21,7 +21,8 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { en } from '../../../src/i18n/locales/en';
+import { getEn } from '../../../src/i18n/locales/en';
+const en = getEn();
 
 // Typed against the en dictionary so a renamed/removed key fails the
 // type check immediately. lefarcen P1 on PR #1318: the previous broad

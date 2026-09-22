@@ -24,6 +24,7 @@ const defaultCodexRunner: CodexRunner = {
   run(args, opts) {
     return new Promise<CodexRunnerResult>((resolve, reject) => {
       const child = spawn('codex', args, {
+        windowsHide: true,
         env: { ...process.env, ...(opts?.env ?? {}) },
         stdio: ['ignore', 'pipe', 'pipe'],
       });

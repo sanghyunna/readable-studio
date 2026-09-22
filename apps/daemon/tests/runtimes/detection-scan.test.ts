@@ -1,62 +1,84 @@
-import { expect, it, vi } from 'vitest';
-import * as scans from '../../src/runtimes/detection.js';
+import { afterEach, expect, it, vi } from 'vitest';
+import { startStartupScan } from '../../src/runtimes/detection-scan.js';
 import { minimalAgentDef } from './helpers/test-helpers.js';
 import type { DetectedAgent } from '../../src/runtimes/types.js';
 
+vi.mock('node:os', async (original) => ({ ...await original<typeof import('node:os')>(), availableParallelism: () => 4 }));
+
 function deferred<T>() {
   let resolve: (value: T) => void = () => { throw new Error('uninitialized'); };
-  let reject: (error: Error) => void = () => { throw new Error('uninitialized'); };
-  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
-  return { promise, resolve, reject };
+  const promise = new Promise<T>((yes) => { resolve = yes; });
+  return { promise, resolve };
 }
-const defs = ['first', 'second'].map((id) => minimalAgentDef({ id, bin: id }));
+const defs = ['first', 'second', 'third'].map((id) => minimalAgentDef({ id, bin: id }));
 const result: DetectedAgent = { id: 'first', name: 'first', bin: 'first', versionArgs: [], streamFormat: 'plain', available: false, models: [], modelsSource: 'live' };
+afterEach(() => vi.restoreAllMocks());
 
-it('reports each current agent when the first-run session probes sequentially', async () => {
-  // Given a first probe held at its completion boundary.
-  const first = deferred<DetectedAgent>();
-  const secondStarted = deferred<void>();
-  const second = deferred<DetectedAgent>();
-  const probe = vi.fn((def) => { if (def.id === 'first') return first.promise; secondStarted.resolve(); return second.promise; });
-  // When the session starts and both consumers subscribe.
-  const session = scans.startStartupScan(defs, probe);
+it('starts up to the machine bound and reports monotonic progress on out-of-order completion', async () => {
+  // Given three held probes on a four-CPU machine (two workers).
+  const held = defs.map(() => deferred<DetectedAgent>());
+  const thirdStarted = deferred<void>();
+  const probe = vi.fn((def) => {
+    const index = defs.findIndex((candidate) => candidate.id === def.id);
+    if (index === 2) thirdStarted.resolve();
+    const pending = held[index];
+    if (!pending) throw new Error('unknown fixture');
+    return pending.promise;
+  });
+  // When the second probe finishes before the first.
+  const session = startStartupScan(defs, probe);
   const completion = Promise.all([...session.promises.values()]);
-  expect(session.progress).toMatchObject({ phase: 'running', currentAgentId: 'first', completed: 0, total: 2 });
-  expect(probe).toHaveBeenCalledTimes(1);
-  first.resolve(result);
-  await secondStarted.promise;
-  expect(session.progress).toMatchObject({ phase: 'running', currentAgentId: 'second', completed: 1, total: 2 });
-  second.resolve({ ...result, id: 'second' });
-  await completion;
-  // Then the completed session has a terminal state and no current agent.
-  expect(session.progress).toEqual({ phase: 'done', currentAgentId: null, currentAgentName: null, completed: 2, total: 2 });
+  try {
+    expect(probe).toHaveBeenCalledTimes(2);
+    held[1]?.resolve({ ...result, id: 'second' });
+    await thirdStarted.promise;
+    // Then only the free worker advances, with a stable oldest-active label.
+    expect(probe).toHaveBeenCalledTimes(3);
+    expect(session.progress).toMatchObject({ completed: 1, total: 3, currentAgentId: 'first' });
+  } finally {
+    held.forEach((pending) => pending.resolve(result));
+    await completion;
+  }
+  expect(session.progress).toEqual({ phase: 'done', currentAgentId: null, currentAgentName: null, completed: 3, total: 3 });
 });
 
-it('stops queued probes when a session is cancelled', async () => {
-  // Given an active first probe and a queued second probe.
-  const pending = deferred<DetectedAgent>();
-  const probe = vi.fn(() => pending.promise);
+it('settles queued consumers without launching them when cancelled', async () => {
+  // Given held work occupying both scheduler slots.
   const controller = new AbortController();
-  const session = scans.startStartupScan(defs, probe, controller.signal);
+  const held = deferred<DetectedAgent>();
+  const probe = vi.fn(() => held.promise);
+  const session = startStartupScan(defs, probe, controller.signal);
   const completion = Promise.allSettled([...session.promises.values()]);
-  // When the session owner cancels it.
+  // When the owner cancels scheduling (subprocess coverage lives in detection-cancellation).
   controller.abort();
-  await completion;
-  pending.resolve(result);
-  // Then observers see cancellation, and queued work never starts.
-  expect(session.progress).toMatchObject({ phase: 'cancelled', completed: 0, total: 2, currentAgentId: null });
-  expect(probe).toHaveBeenCalledTimes(1);
+  const settled = await completion;
+  held.resolve(result);
+  // Then queued work never starts and all consumers settle.
+  expect(settled.map((entry) => entry.status)).toEqual(['rejected', 'rejected', 'rejected']);
+  expect(probe).toHaveBeenCalledTimes(2);
+  expect(session.progress).toMatchObject({ phase: 'cancelled', completed: 0, total: 3, currentAgentId: null });
 });
 
-it('publishes a terminal error when the probe boundary rejects', async () => {
-  // Given an unexpected probe failure.
-  const error = new Error('fixture failure');
-  const probe = vi.fn(async () => { throw error; });
-  // When the session runs.
-  const session = scans.startStartupScan(defs, probe);
+it('settles consumers without starting probes when already aborted', async () => {
+  // Given an already cancelled owner.
+  const controller = new AbortController(); controller.abort();
+  const probe = vi.fn(async () => result);
+  // When the session starts.
+  const session = startStartupScan(defs, probe, controller.signal);
   const settled = await Promise.allSettled([...session.promises.values()]);
-  // Then every subscriber settles and no queued probe starts.
-  expect(session.progress).toMatchObject({ phase: 'failed', completed: 0, total: 2 });
-  expect(settled.map((entry) => entry.status)).toEqual(['rejected', 'rejected']);
-  expect(probe).toHaveBeenCalledTimes(1);
+  // Then every queued consumer rejects without work.
+  expect(settled.every((entry) => entry.status === 'rejected')).toBe(true);
+  expect(probe).not.toHaveBeenCalled();
+});
+
+it('publishes a terminal error and does not launch queued work when a probe rejects', async () => {
+  // Given a failing probe boundary.
+  const probe = vi.fn(async () => { throw new Error('fixture failure'); });
+  // When the session runs.
+  const session = startStartupScan(defs, probe);
+  const settled = await Promise.allSettled([...session.promises.values()]);
+  // Then active and queued consumers settle without starting the third probe.
+  expect(session.progress).toMatchObject({ phase: 'failed', completed: 0, total: 3 });
+  expect(settled.every((entry) => entry.status === 'rejected')).toBe(true);
+  expect(probe).toHaveBeenCalledTimes(2);
 });

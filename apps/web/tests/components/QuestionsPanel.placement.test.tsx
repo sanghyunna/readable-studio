@@ -6,8 +6,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { QuestionsPanel } from '../../src/components/QuestionsPanel';
 import { placePopover } from '../../src/components/popoverPlacement';
 import { I18nProvider } from '../../src/i18n';
-import { en } from '../../src/i18n/locales/en';
-import { ko } from '../../src/i18n/locales/ko';
+import { getEn } from '../../src/i18n/locales/en';
+import { getKo } from '../../src/i18n/locales/ko';
+const en = getEn();
+const ko = getKo();
 afterEach(cleanup);
 describe('Questions anchored placement and locale', () => {
   it.each(['en', 'ko'] as const)('preserves the summary while the localized editor is portaled in %s', locale => {

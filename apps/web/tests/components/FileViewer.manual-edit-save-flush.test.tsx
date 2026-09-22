@@ -18,7 +18,8 @@ const target: ManualEditTarget = {
 };
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); applyPerformanceProfileToDocument('full'); });
 
-async function setup() {
+async function setup(raw = false) {
+  let diskSource = html;
   const writes: string[] = [];
   let resolveSaved!: () => void;
   const saved = { promise: new Promise<void>((resolve) => { resolveSaved = resolve; }), resolve: () => resolveSaved() };
@@ -27,10 +28,11 @@ async function setup() {
       writes.push(JSON.parse(String(init.body)).content);
       return new Response(JSON.stringify({ file }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
-    return new Response(html, { status: 200 });
+    return new Response(diskSource, { status: 200 });
   }));
+  let view!: ReturnType<typeof render>;
   await act(async () => {
-    render(<FileViewer projectId="project-1" projectKind="prototype" file={file} liveHtml={html} onFileSaved={() => saved.resolve()} />);
+    view = render(<FileViewer projectId="project-1" projectKind="prototype" file={file} liveHtml={raw ? undefined : html} onFileSaved={() => saved.resolve()} />);
   });
   fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
   const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
@@ -50,7 +52,13 @@ async function setup() {
     await act(async () => { dispatch({ type: 'readable-edit-select', target: next, beginTextEdit }); });
     await drain();
   };
-  return { dom, writes, saved, select, drain, dispatch, frame, posts };
+  const refresh = () => {
+    diskSource = html.replace('First', 'Agent');
+    view.rerender(<FileViewer projectId="project-1" projectKind="prototype"
+      file={{ ...file, mtime: 2 }} liveHtml={raw ? undefined : diskSource}
+      onFileSaved={() => saved.resolve()} />);
+  };
+  return { dom, writes, saved, select, drain, dispatch, frame, posts, refresh };
 }
 
 describe.each(['full', 'low'] as const)('Save flushes the real contenteditable bridge with %s host profile', (profile) => {
@@ -86,6 +94,72 @@ describe.each(['full', 'low'] as const)('Save flushes the real contenteditable b
     expect((saved as HTMLElement).style.translate).toBe('30px 40px');
     expect(saved.querySelector('strong') !== null).toBe(kind === 'rich');
     expect(el.hasAttribute('contenteditable')).toBe(false);
+  });
+
+  it.each(['watcher', 'raw-watcher', 'reload', 'source'] as const)('records live text before %s can replace the document', async (event) => {
+    const harness = await setup(event === 'raw-watcher');
+    await harness.select({ ...target, kind: 'text' }, true);
+    harness.dom.window.document.querySelector('[data-readable-id="hero"]')!.textContent = 'Still typing';
+    await act(async () => {
+      if (event === 'watcher' || event === 'raw-watcher') harness.refresh();
+      else if (event === 'reload') fireEvent.click(screen.getByRole('button', { name: 'Reload Preview' }));
+      else fireEvent.click(screen.getByRole('tab', { name: 'Code' }));
+    });
+    await harness.drain();
+    expect(harness.posts.some((post) => post.type === 'readable-edit-text-flushed')).toBe(true);
+    if (event === 'source') await act(async () => { fireEvent.click(screen.getByRole('tab', { name: 'Preview' })); });
+    const currentFrame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
+    expect(currentFrame.srcdoc).toContain('Still typing');
+    expect(currentFrame.srcdoc).not.toContain('Agent');
+    expect((screen.getByRole('button', { name: 'Undo' }) as HTMLButtonElement).disabled).toBe(false);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save changes' })); });
+    await harness.drain();
+    await act(async () => { await harness.saved.promise; });
+    expect(harness.writes).toHaveLength(1);
+    expect(harness.writes[0]).toContain('Still typing');
+  });
+
+  it('flushes live text into history before host Undo replaces the iframe', async () => {
+    const harness = await setup();
+    await act(async () => { harness.dispatch({ type: 'readable-edit-text-commit', id: 'hero', value: 'Committed' }); });
+    await harness.select({ ...target, kind: 'text' }, true);
+    harness.dom.window.document.querySelector('[data-readable-id="hero"]')!.textContent = 'Still typing';
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Undo' })); });
+    await harness.drain();
+    expect(harness.posts.some((post) => post.type === 'readable-edit-text-flushed')).toBe(true);
+    expect(harness.frame.srcdoc).toContain('Committed');
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Redo' })); });
+    expect(harness.frame.srcdoc).toContain('Still typing');
+  });
+
+  it.each(['pointer', 'keyboard', 'resize'] as const)('preserves an open %s movement across a watcher refresh and flushes it before Reload', async (gesture) => {
+    const harness = await setup();
+    await harness.select(target);
+    const surface = screen.getByLabelText('Move element').querySelector('[data-region="interior"]')!;
+    await act(async () => {
+      if (gesture === 'pointer') {
+        fireEvent.pointerDown(surface, { pointerId: 1, clientX: 100, clientY: 100 });
+        fireEvent.pointerMove(surface, { pointerId: 1, clientX: 130, clientY: 140 });
+      } else if (gesture === 'resize') {
+        const handle = screen.getByLabelText('Resize right edge');
+        fireEvent.pointerDown(handle, { pointerId: 1, clientX: 100, clientY: 100 });
+        fireEvent.pointerMove(handle, { pointerId: 1, clientX: 130, clientY: 100 });
+      } else fireEvent.keyDown(surface, { key: 'ArrowRight' });
+    });
+    await act(async () => { harness.refresh(); });
+    await harness.drain();
+    expect((screen.getByRole('button', { name: 'Undo' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(harness.frame.srcdoc).not.toContain('Agent');
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Reload Preview' })); });
+    await harness.drain();
+    expect((screen.getByRole('button', { name: 'Undo' }) as HTMLButtonElement).disabled).toBe(false);
+    expect(harness.frame.srcdoc).not.toContain('Agent');
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save changes' })); });
+    await harness.drain();
+    await act(async () => { await harness.saved.promise; });
+    const saved = new DOMParser().parseFromString(harness.writes[0]!, 'text/html').querySelector('p')!;
+    if (gesture === 'resize') expect(saved.style.width).toBe('190px');
+    else expect(saved.style.translate).toBe(gesture === 'pointer' ? '30px 40px' : '1px 0px');
   });
 
   it('toggling off a text-only active session writes the same replacement space', async () => {

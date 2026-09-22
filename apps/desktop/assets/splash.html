@@ -220,9 +220,6 @@
           } catch (_error) {}
           if (Number.isFinite(video.duration) && video.duration > 0) video.currentTime = video.duration;
         };
-        var markFirstPassFinished = function () {
-          if (Number.isFinite(video.duration) && video.currentTime >= video.duration - 0.25) markFinished();
-        };
 
         if (reduceMotion) {
           document.documentElement.setAttribute("data-readable-splash-motion", "reduced");
@@ -234,7 +231,6 @@
         } else {
           video.addEventListener("loadedmetadata", function () { video.currentTime = 0; });
           video.addEventListener("loadeddata", play);
-          video.addEventListener("timeupdate", markFirstPassFinished);
           play();
         }
         video.addEventListener("ended", markFinished);

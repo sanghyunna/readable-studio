@@ -152,11 +152,11 @@ test('codex args disable plugins when READABLE_CODEX_DISABLE_PLUGINS is 1', () =
       const args = codex.buildArgs('', [], [], {}, { cwd: '/tmp/readable-project' });
 
       assert.deepEqual(args.slice(0, 11), [
-        'exec',
-        '--json',
-        '--skip-git-repo-check',
-        '--sandbox',
-        'workspace-write',
+        'app-server',
+        '--listen',
+        'stdio://',
+        '-c',
+        'sandbox_mode="workspace-write"',
         '-c',
         'sandbox_workspace_write.network_access=true',
         '-c',
@@ -179,11 +179,11 @@ test('codex args use workspace-write sandbox on macOS and Linux', () => {
         const args = codex.buildArgs('', [], [], {}, { cwd: '/tmp/readable-project' });
         assert.equal(args.includes('--full-auto'), false);
         assert.deepEqual(args.slice(0, 5), [
-          'exec',
-          '--json',
-          '--skip-git-repo-check',
-          '--sandbox',
-          'workspace-write',
+          'app-server',
+          '--listen',
+          'stdio://',
+          '-c',
+          'sandbox_mode="workspace-write"',
         ]);
         assert.equal(
           args.includes('-c'),
@@ -207,11 +207,7 @@ test('codex args use danger-full-access sandbox on WSL because workspace-write s
       assert.equal(codexNeedsDangerFullAccessSandbox('linux', process.env), true);
       const args = codex.buildArgs('', [], [], {}, { cwd: '/tmp/readable-project' });
       assert.deepEqual(args.slice(0, 5), [
-        'exec',
-        '--json',
-        '--skip-git-repo-check',
-        '--sandbox',
-        'danger-full-access',
+        'app-server', '--listen', 'stdio://', '-c', 'sandbox_mode="danger-full-access"',
       ]);
       assert.equal(args.includes('default_permissions=":workspace"'), true);
     });
@@ -228,11 +224,7 @@ test('codex args allow READABLE_CODEX_SANDBOX danger-full-access override on Lin
       assert.equal(codexNeedsDangerFullAccessSandbox('linux', process.env), true);
       const args = codex.buildArgs('', [], [], {}, { cwd: '/tmp/readable-project' });
       assert.deepEqual(args.slice(0, 5), [
-        'exec',
-        '--json',
-        '--skip-git-repo-check',
-        '--sandbox',
-        'danger-full-access',
+        'app-server', '--listen', 'stdio://', '-c', 'sandbox_mode="danger-full-access"',
       ]);
       assert.equal(
         args.includes('sandbox_workspace_write.network_access=true'),
@@ -252,11 +244,7 @@ test('codex args ignore unknown READABLE_CODEX_SANDBOX values', () => {
       assert.equal(codexNeedsDangerFullAccessSandbox('linux', process.env), false);
       const args = codex.buildArgs('', [], [], {}, { cwd: '/tmp/readable-project' });
       assert.deepEqual(args.slice(0, 5), [
-        'exec',
-        '--json',
-        '--skip-git-repo-check',
-        '--sandbox',
-        'workspace-write',
+        'app-server', '--listen', 'stdio://', '-c', 'sandbox_mode="workspace-write"',
       ]);
     });
   });
@@ -277,11 +265,7 @@ test('codex args use danger-full-access sandbox on Windows because workspace-wri
       const args = codex.buildArgs('', [], [], {}, { cwd: '/tmp/readable-project' });
 
       assert.deepEqual(args.slice(0, 5), [
-        'exec',
-        '--json',
-        '--skip-git-repo-check',
-        '--sandbox',
-        'danger-full-access',
+        'app-server', '--listen', 'stdio://', '-c', 'sandbox_mode="danger-full-access"',
       ]);
       // The workspace-write-scoped network override is meaningless under
       // danger-full-access and must not appear on Windows.
@@ -345,8 +329,7 @@ test('codex has no speculative picker catalogue when live discovery fails', asyn
     { model: 'gpt-5.5', reasoning: 'xhigh' },
     { cwd: '/tmp/readable-project' },
   );
-  assert.ok(args.includes('--model'));
-  assert.ok(args.includes('gpt-5.5'));
+  assert.ok(args.includes('model="gpt-5.5"'));
   assert.ok(args.includes('model_reasoning_effort="xhigh"'));
 
   const dir = mkdtempSync(join(tmpdir(), 'readable-agents-codex-models-'));
@@ -526,7 +509,7 @@ test('codex args do not include the literal `-` stdin sentinel (regression of #2
   assert.equal(withDisablePlugins.includes('-'), false);
 });
 
-test('codex args pass valid extraAllowedDirs with repeatable --add-dir flags', () => {
+test('codex args pass valid extraAllowedDirs through app-server sandbox config', () => {
   delete process.env.READABLE_CODEX_DISABLE_PLUGINS;
 
   const args = codex.buildArgs(
@@ -537,8 +520,5 @@ test('codex args pass valid extraAllowedDirs with repeatable --add-dir flags', (
     { cwd: '/tmp/readable-project' },
   );
 
-  assert.deepEqual(
-    args.filter((arg, index) => arg === '--add-dir' || args[index - 1] === '--add-dir'),
-    ['--add-dir', '/repo/skills', '--add-dir', '/tmp/codex/generated_images'],
-  );
+  assert.ok(args.includes('sandbox_workspace_write.writable_roots=["/repo/skills","/tmp/codex/generated_images"]'));
 });

@@ -4,6 +4,7 @@ import {
   useCallback,
   useDeferredValue,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -14,6 +15,7 @@ import {
   type SetStateAction,
 } from 'react';
 import { useAnalytics } from '../analytics/provider';
+import { scrollQuestionIntoView } from './scrollQuestionIntoView';
 import { trackChatPanelClick, trackMessageQueueClick, trackRunFailedToastSurfaceView } from '../analytics/events';
 import { attributedAmrUrl, recordAmrEntry } from '../analytics/amr-attribution';
 import { useT } from '../i18n';
@@ -302,6 +304,7 @@ interface Props {
   streaming: boolean;
   loading?: boolean;
   error: string | null;
+  errorRecovery?: ReactNode;
   projectId: string | null;
   sessionMode?: ChatSessionMode;
   onSessionModeChange?: (mode: ChatSessionMode) => void;
@@ -389,6 +392,8 @@ interface Props {
   // leave it undefined and fall back to the persisted `conversation.messageCount`
   // for a stable list count.
   messagesConversationId?: string | null;
+  hasOlderMessages?: boolean;
+  onLoadOlderMessages?: () => Promise<void>;
   onSelectConversation: (id: string) => void;
   onDeleteConversation: (id: string) => void;
   // Composer settings/CLI button forwards to here. The dialog lives in App
@@ -535,6 +540,7 @@ export function ChatPane({
   sendDisabled = false,
   queuedItems = [],
   error,
+  errorRecovery,
   projectId,
   sessionMode = 'design',
   onSessionModeChange,
@@ -580,6 +586,8 @@ export function ChatPane({
   conversations,
   activeConversationId,
   messagesConversationId = null,
+  hasOlderMessages = false,
+  onLoadOlderMessages,
   onSelectConversation,
   onDeleteConversation,
   onOpenSettings,
@@ -635,6 +643,24 @@ export function ChatPane({
   const composerRef = useRef<ChatComposerHandle | null>(null);
   const queuedSendStripRef = useRef<HTMLDivElement | null>(null);
   const didInitialScrollRef = useRef(false);
+  const olderAnchorRef = useRef<{ firstId: string | undefined; height: number; top: number } | null>(null);
+  const olderLoadingRef = useRef(false);
+  const requestOlderMessages = (el: HTMLDivElement) => {
+    if (el.scrollTop > 80 || !hasOlderMessages || !onLoadOlderMessages || olderLoadingRef.current) return;
+    olderAnchorRef.current = { firstId: messages[0]?.id, height: el.scrollHeight, top: el.scrollTop };
+    pinnedToBottomRef.current = false;
+    olderLoadingRef.current = true;
+    void onLoadOlderMessages().finally(() => { olderLoadingRef.current = false; });
+  };
+  useLayoutEffect(() => {
+    const anchor = olderAnchorRef.current;
+    const el = logRef.current;
+    if (!anchor || !el || messages[0]?.id === anchor.firstId) return;
+    el.scrollTop = anchor.top + el.scrollHeight - anchor.height;
+    pinnedToBottomRef.current = false;
+    olderAnchorRef.current = null;
+    el.dispatchEvent(new Event('scroll'));
+  }, [messages]);
   const runFailedToastSurfaceKeysRef = useRef<Set<string>>(new Set());
   // Tracks whether the user is glued close enough to the bottom that
   // streamed content should auto-follow. Distinct from the jump-button
@@ -645,8 +671,8 @@ export function ChatPane({
   const pinnedToBottomRef = useRef(true);
   const scrolledToFormRef = useRef<Set<string>>(new Set());
   // "Anchor the just-sent turn to the top" (ChatGPT-style). On send we pin
-  // the user's message to the top of the viewport and let the reply stream
-  // below it instead of following the bottom. `pending` is armed by the
+  // the user's message to the top of the viewport until assistant output
+  // starts, then resume following the bottom. `pending` is armed by the
   // composer's onSend; the messages effect promotes it to `active` once the
   // new user turn actually renders. A dynamic tail spacer reserves just
   // enough real, scrollable blank space below the turn so the message can
@@ -939,7 +965,7 @@ export function ChatPane({
         const formEl = lastAssistantEl?.querySelector<HTMLElement>('[data-form-id]');
         if (formEl && !scrolledToFormRef.current.has(formEl.dataset.formId!)) {
           scrolledToFormRef.current.add(formEl.dataset.formId!);
-          formEl.scrollIntoView({ block: 'start', behavior: 'smooth' });
+          scrollQuestionIntoView(el, formEl);
           pinnedToBottomRef.current = false;
           setScrolledFromBottom(true);
           return;
@@ -1008,17 +1034,26 @@ export function ChatPane({
       pinnedToBottomRef.current = false;
       setScrolledFromBottom(true);
       requestAnimationFrame(() => {
+        if (!anchorActiveRef.current) return;
         sizeAnchorSpacer();
         scrollAnchorToTop();
       });
       return;
     }
-    // While anchored, the message stays at the top on its own (nothing above
-    // it changes), so we only shrink the spacer as the reply grows — never
-    // re-scroll. This is what keeps scrolling down and the final settle smooth.
+    // The prompt reveal is temporary. Only an intact anchor may resume follow:
+    // manual scrollback and accordion expansion already clear it.
     if (anchorActiveRef.current) {
-      requestAnimationFrame(sizeAnchorSpacer);
-      return;
+      const latest = messages[messages.length - 1];
+      if (streaming && latest?.role === 'assistant' && latest.content.length > 0) {
+        anchorActiveRef.current = false;
+        resetTailSpacer();
+        pinnedToBottomRef.current = true;
+      } else {
+        requestAnimationFrame(() => {
+          if (anchorActiveRef.current) sizeAnchorSpacer();
+        });
+        return;
+      }
     }
 
     if (pinnedToBottomRef.current) {
@@ -1031,7 +1066,7 @@ export function ChatPane({
         const formEl = lastAssistantEl?.querySelector<HTMLElement>('[data-form-id]');
         if (formEl && !scrolledToFormRef.current.has(formEl.dataset.formId!)) {
           scrolledToFormRef.current.add(formEl.dataset.formId!);
-          formEl.scrollIntoView({ block: 'start', behavior: 'smooth' });
+          scrollQuestionIntoView(el, formEl);
           pinnedToBottomRef.current = false;
           setScrolledFromBottom(true);
           return;
@@ -1632,6 +1667,15 @@ export function ChatPane({
               ].filter(Boolean).join(' ')}
               ref={logRef}
               aria-busy={loading}
+              onScroll={(event) => {
+                const el = event.currentTarget;
+                if (olderAnchorRef.current) olderAnchorRef.current.top = el.scrollTop;
+                if (el.scrollHeight > el.clientHeight) requestOlderMessages(el);
+              }}
+              onWheel={(event) => { if (event.deltaY < 0) requestOlderMessages(event.currentTarget); }}
+              onKeyDown={(event) => {
+                if (event.key === 'PageUp' || event.key === 'Home' || event.key === 'ArrowUp') requestOlderMessages(event.currentTarget);
+              }}
               onClickCapture={(e) => {
                 // Expanding an accordion (tool card / thinking block) should
                 // grow downward with the clicked header staying put. While a
@@ -1770,6 +1814,7 @@ export function ChatPane({
               {displayError ? (
                 <div className="msg error">
                   <CollapsibleErrorText className="chat-error-text" text={displayError} />
+                  {errorRecovery}
                   {errorDiagnosticText || showErrorActions || (retryAssistant && onRetry && runFailureUi) ? (
                     <div className="chat-error-actions">
                       {showByokRecoveryCta ? (
@@ -2160,7 +2205,7 @@ function ChatRows({
         errorCardOwnerId={errorCardOwnerId}
         nextUserContent={nextUserContentByAssistantId.get(m.id)}
         suppressDirectionForms={hasActiveDesignSystem}
-        questionCard={questionCard}
+        questionCard={questionCard?.messageId === m.id ? questionCard : null}
         onContinueRemainingTasks={
           m.id === lastAssistantId && onContinueRemainingTasks
             ? (todos) => assistantCallbacksRef.current.onContinueRemainingTasks?.(m, todos)

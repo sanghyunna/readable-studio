@@ -178,7 +178,16 @@ const nextConfig: NextConfig = {
   // Defender's first-extract file scan, pushing the sidecar readiness probe
   // past its timeout and hanging the splash. Disable eager preloading for the
   // server output only; dev and static export keep Next.js's defaults.
-  ...(isServerOutput ? { experimental: { preloadEntriesOnStart: false } } : {}),
+  ...(isServerOutput ? {
+    experimental: { preloadEntriesOnStart: false },
+    async headers() {
+      return [{
+        source: '/app-icon.svg',
+        // The loading shell, favicon, and hero share the exact same asset.
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=86400' }],
+      }];
+    },
+  } : {}),
   ...(DEV_TSCONFIG_PATH ? { typescript: { tsconfigPath: DEV_TSCONFIG_PATH } } : {}),
   // Static exports keep Next.js's default `out/` output directory so static
   // hosts like Vercel can publish the generated site directly. Server runtimes

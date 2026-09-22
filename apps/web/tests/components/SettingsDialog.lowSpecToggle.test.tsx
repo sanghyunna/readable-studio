@@ -24,8 +24,10 @@ vi.mock('../../src/analytics/provider', () => ({
 
 import { SettingsDialog, type SettingsSection } from '../../src/components/SettingsDialog';
 import { I18nProvider } from '../../src/i18n';
-import { en } from '../../src/i18n/locales/en';
-import { ko } from '../../src/i18n/locales/ko';
+import { getEn } from '../../src/i18n/locales/en';
+import { getKo } from '../../src/i18n/locales/ko';
+const en = getEn();
+const ko = getKo();
 import type { AppConfig } from '../../src/types';
 
 const baseConfig: AppConfig = {

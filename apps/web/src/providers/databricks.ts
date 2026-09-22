@@ -10,6 +10,8 @@ import type {
   DatabricksEnableRequest,
   DatabricksEndpointResponse,
   DatabricksErrorResponse,
+  DatabricksLoginRequest,
+  DatabricksLoginResponse,
   DatabricksLookupRequest,
   DatabricksModelResponse,
   DatabricksModelsRequest,
@@ -90,6 +92,23 @@ export function fetchDatabricksStatus(): Promise<DatabricksStatusResponse> {
  */
 export function setupDatabricks(req: DatabricksSetupRequest): Promise<DatabricksSetupResponse> {
   return request<DatabricksSetupResponse>('/setup', jsonInit('POST', req));
+}
+
+/**
+ * Starts a browser (SSO) sign-in owned by the installed CLI and returns an
+ * opaque login job. Poll `fetchDatabricksLogin` until the state settles; no
+ * credential ever crosses this client.
+ */
+export function startDatabricksLogin(req: DatabricksLoginRequest): Promise<DatabricksLoginResponse> {
+  return request<DatabricksLoginResponse>('/login', jsonInit('POST', req));
+}
+
+export function fetchDatabricksLogin(loginId: string): Promise<DatabricksLoginResponse> {
+  return request<DatabricksLoginResponse>(`/login/${encodeURIComponent(loginId)}`);
+}
+
+export function cancelDatabricksLogin(loginId: string): Promise<DatabricksLoginResponse> {
+  return request<DatabricksLoginResponse>(`/login/${encodeURIComponent(loginId)}`, { method: 'DELETE' });
 }
 
 export function probeDatabricks(

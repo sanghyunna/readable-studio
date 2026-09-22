@@ -68,7 +68,10 @@ function loadManifest(dir: string): Record<string, BakeEntry> {
 }
 
 export function bakedPreviewBlock(id: string, dir: string): BakedPreviewBlock | null {
-  const entry = loadManifest(dir)[id];
+  return previewBlockFromEntry(loadManifest(dir)[id], dir);
+}
+
+function previewBlockFromEntry(entry: BakeEntry | undefined, dir: string): BakedPreviewBlock | null {
   if (!entry || !entry.video || !entry.poster) return null;
   // Resolve where the clip is fetchable from, in priority order:
   //   1. an explicit READABLE_PLUGIN_PREVIEWS_BASE_URL override;
@@ -78,7 +81,7 @@ export function bakedPreviewBlock(id: string, dir: string): BakedPreviewBlock | 
   //      web deployment, so neither needs any config: the checked-in manifest
   //      names the clips and they're served from R2's CDN.
   const envBase = process.env.READABLE_PLUGIN_PREVIEWS_BASE_URL?.replace(/\/+$/, '');
-  const onDisk =
+  const onDisk = !envBase &&
     existsSync(path.join(dir, entry.video)) && existsSync(path.join(dir, entry.poster));
   const base = envBase || (onDisk ? PLUGIN_PREVIEWS_ROUTE : DEFAULT_PUBLIC_BASE);
   return {
@@ -100,7 +103,7 @@ export function applyBakedPreviews<T extends { id: string; manifest?: unknown }>
   const previews = loadManifest(dir);
   if (Object.keys(previews).length === 0) return records;
   return records.map((rec) => {
-    const block = bakedPreviewBlock(rec.id, dir);
+    const block = previewBlockFromEntry(previews[rec.id], dir);
     if (!block) return rec;
     const manifest = { ...((rec.manifest ?? {}) as Record<string, unknown>) };
     const readable = { ...((manifest.readable ?? {}) as Record<string, unknown>) };

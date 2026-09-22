@@ -573,7 +573,9 @@ export function buildManualEditBridge(enabled: boolean): string {
     return targets;
   }
   function postTargets(){
-    if (!hasLiveLayoutDocument() || !enabled) return;
+    // Text is owned by the live contenteditable until commit. Rediscovering the
+    // entire document per keystroke cannot update canonical source or selection.
+    if (!hasLiveLayoutDocument() || !enabled || activeTextEditFinish) return;
     postManualMessage({ type: 'readable-edit-targets', targets: allTargets() });
   }
   var lastHoverId;
@@ -756,17 +758,20 @@ export function buildManualEditBridge(enabled: boolean): string {
     var el = document.querySelector('[data-readable-editing="true"]');
     return (el && el.getAttribute('contenteditable') === 'true') ? el : null;
   }
+  var lastSelectionState = null;
   function postSelectionState(){
     if (!enabled) return;
     var el = document.querySelector('[data-readable-editing="true"]');
-    if (!el) {
-      window.parent.postMessage({ type: 'readable-edit-selection-state', editing: false, hasSelection: false, bold: false, italic: false, underline: false }, '*');
-      return;
-    }
-    var range = currentSelectedRange();
+    var range = el ? currentSelectedRange() : null;
     var within = !!(range && el.contains(range.startContainer) && el.contains(range.endContainer));
     function q(cmd){ try { return !!document.queryCommandState(cmd); } catch (e) { return false; } }
-    window.parent.postMessage({ type: 'readable-edit-selection-state', editing: true, hasSelection: within, bold: q('bold'), italic: q('italic'), underline: q('underline') }, '*');
+    var state = { type: 'readable-edit-selection-state', editing: !!el, hasSelection: within,
+      bold: !!el && q('bold'), italic: !!el && q('italic'), underline: !!el && q('underline') };
+    if (lastSelectionState && state.editing === lastSelectionState.editing
+      && state.hasSelection === lastSelectionState.hasSelection && state.bold === lastSelectionState.bold
+      && state.italic === lastSelectionState.italic && state.underline === lastSelectionState.underline) return;
+    lastSelectionState = state;
+    window.parent.postMessage(state, '*');
   }
   function applyRichFormat(command){
     if (command !== 'bold' && command !== 'italic' && command !== 'underline') return;
@@ -805,10 +810,13 @@ export function buildManualEditBridge(enabled: boolean): string {
     if (rich) postSelectionState();
     function finish(commit){
       activeTextEditFinish = null;
-      el.removeAttribute('contenteditable');
-      el.removeAttribute('data-readable-editing');
+      queuePostTargets();
+      // Removing contenteditable can synchronously blur in Chromium. Detach
+      // first so a keyboard commit cannot re-enter finish and duplicate history.
       el.removeEventListener('blur', onBlur);
       el.removeEventListener('keydown', onKey);
+      el.removeAttribute('contenteditable');
+      el.removeAttribute('data-readable-editing');
       setSelectedTarget(hostSelectedTargetId);
       postSelectionState();
       if (!commit) {

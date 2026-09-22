@@ -262,9 +262,11 @@
   color: var(--accent);
 }
 
-/* The setup footnote carries an inline "Install CLI" action: it sits on the
-   note's 20px line instead of at header-control height. */
-.note .quietAction {
+/* The setup footnote carries inline "Sign in" / "Install CLI" actions and the
+   sign-in progress strip carries its cancel: they sit on the block's 20px
+   line instead of at header-control height. */
+.note .quietAction,
+.status .quietAction {
   min-height: 20px;
   padding-block: 0;
 }

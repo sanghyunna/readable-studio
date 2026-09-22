@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { withProbeLifetime } from './probe-lifetime.js';
 import type { DetectedAgent, RuntimeAgentDef } from './types.js';
 
 const DETECTION_CACHE_TTL_MS = 10_000;
@@ -42,6 +43,7 @@ export type DetectionOptions = {
 };
 
 const detectionCache = new Map<string, DetectionCacheEntry>();
+let ownedCaches = new WeakMap<AbortSignal, Map<string, DetectionCacheEntry>>();
 
 export function detectionEnvFingerprint(
   def: RuntimeAgentDef,
@@ -57,6 +59,7 @@ export function detectionEnvFingerprint(
 
 export function _resetAgentDetectionCacheForTests(): void {
   detectionCache.clear();
+  ownedCaches = new WeakMap();
 }
 
 export function cachedSafeProbe(
@@ -65,32 +68,47 @@ export function cachedSafeProbe(
   configuredEnv: Record<string, string> = {},
   options: DetectionOptions = {},
 ): Promise<DetectedAgent> {
+  options.signal?.throwIfAborted();
+  // Different cancellation owners never share cancellable in-flight work.
+  // Settled results remain shared; an aborted attempt never publishes a value.
+  let cache = detectionCache;
+  if (options.signal) {
+    cache = ownedCaches.get(options.signal) ?? new Map();
+    ownedCaches.set(options.signal, cache);
+  }
   const now = Date.now();
   const policy = discoveryPolicy(options);
   const key = `${def.id}:${policy}:${detectionEnvFingerprint(def, configuredEnv)}`;
-  const cached = detectionCache.get(key);
+  const cached = cache.get(key) ?? (detectionCache.get(key)?.value ? detectionCache.get(key) : undefined);
   // Refresh bypasses settled results, never a probe already doing fresh work.
   if (cached?.promise) return cached.promise;
   if (cached && cached.expiresAtMs > now) {
     if (!options.refresh && cached.value) return Promise.resolve(cached.value);
   }
-  if (cached) detectionCache.delete(key);
+  if (cached) cache.delete(key);
 
-  const promise = probe(def, configuredEnv, policy).then((agent) => {
-    if (detectionCache.get(key)?.promise === promise) {
+  const run = () => probe(def, configuredEnv, policy);
+  const deadline = new AbortController();
+  const signal = options.signal ? AbortSignal.any([options.signal, deadline.signal]) : deadline.signal;
+  const timer = setTimeout(() => deadline.abort(new DOMException('Agent probe budget expired', 'TimeoutError')), 60_000);
+  const pending = withProbeLifetime(signal, run).finally(() => clearTimeout(timer));
+  const promise = pending.then((agent) => {
+    options.signal?.throwIfAborted();
+    if (cache.get(key)?.promise === promise) {
+      cache.delete(key);
       // Managed registrations are only single-flight, never cached after settling.
       if (def.modelManagement === 'databricks') detectionCache.delete(key);
-      else detectionCache.set(key, {
+      else if (cache === detectionCache || !detectionCache.get(key)?.promise) detectionCache.set(key, {
         expiresAtMs: Date.now() + DETECTION_CACHE_TTL_MS,
         value: agent,
       });
     }
     return agent;
-  }, (error) => {
-    if (detectionCache.get(key)?.promise === promise) detectionCache.delete(key);
+  }).catch((error: unknown) => {
+    if (cache.get(key)?.promise === promise) cache.delete(key);
     throw error;
   });
-  detectionCache.set(key, {
+  cache.set(key, {
     expiresAtMs: now + DETECTION_CACHE_TTL_MS,
     promise,
   });

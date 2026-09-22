@@ -1,4 +1,6 @@
 import { rm } from 'node:fs/promises';
+import { copyMessagePrefix, getMessagePosition, listMessagePage } from './db.js';
+import { registerMessageHistoryRoutes } from './message-history-routes.js';
 import path from 'node:path';
 import type { Express, RequestHandler, Response } from 'express';
 import {
@@ -19,7 +21,7 @@ import {
 } from './plugins/index.js';
 import type { RouteDeps } from './server-context.js';
 import { listSkills } from './skills.js';
-import { isSafeId, ProjectFileContentConflictError } from './projects.js';
+import { isSafeId, ProjectFileContentConflictError, type ProjectFileWriteGuard } from './projects.js';
 import {
   BUILT_IN_PROJECT_LOCATION_ID,
   allProjectLocations,
@@ -795,6 +797,7 @@ function normalizeChatSessionMode(value: unknown): ChatSessionMode {
 
 export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDeps) {
   const { db, design } = ctx;
+  registerMessageHistoryRoutes(app, db);
   const { sendApiError, createSseResponse } = ctx.http;
   const { DESIGN_SYSTEMS_DIR, PROJECTS_DIR, SKILLS_DIR } = ctx.paths;
   const { readAppConfig, writeAppConfig } = ctx.appConfig;
@@ -1554,6 +1557,7 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
           (message) => message && typeof message.role === 'string',
         )
       : null;
+    let throughPosition = -1;
     let seedMessages: any[] = [];
     if (clientSeedMessages && clientSeedMessages.length > 0) {
       seedMessages = clientSeedMessages;
@@ -1565,14 +1569,19 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
           seedMessages = seedMessages.slice(0, forkIndex + 1);
         }
       }
+      // The browser may only hold the newest page. Retain the persisted prefix
+      // before its snapshot, then apply the visible (possibly partial) messages.
+      if (sourceConversation?.projectId === req.params.id) {
+        const first = seedMessages.map(message => getMessagePosition(db, seedFromConversationId, message.id))
+          .find(position => position !== null);
+        throughPosition = first ? first.position - 1 : Number.MAX_SAFE_INTEGER;
+      }
     } else if (sourceConversation && sourceConversation.projectId === req.params.id) {
-      seedMessages = listMessages(db, seedFromConversationId);
+      throughPosition = Number.MAX_SAFE_INTEGER;
       if (requestedForkMessageId) {
-        const forkIndex = seedMessages.findIndex((message) => message.id === requestedForkMessageId);
-        if (forkIndex < 0) {
-          return res.status(404).json({ error: 'fork message not found' });
-        }
-        seedMessages = seedMessages.slice(0, forkIndex + 1);
+        const fork = getMessagePosition(db, seedFromConversationId, requestedForkMessageId);
+        if (!fork) return res.status(404).json({ error: 'fork message not found' });
+        throughPosition = fork.position;
       }
     } else if (requestedForkMessageId) {
       return res.status(404).json({ error: 'fork source conversation not found' });
@@ -1591,6 +1600,10 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
       createdAt: now,
       updatedAt: now,
     });
+    if (conv && throughPosition >= 0 && sourceConversation?.projectId === req.params.id) {
+      copyMessagePrefix(db, { sourceConversationId: seedFromConversationId,
+        targetConversationId: conv.id, throughPosition });
+    }
     // Side Chat: inherit the source conversation's context by copying its
     // messages into the fresh conversation. Be defensive — a missing or
     // cross-project source id silently yields an empty conversation.
@@ -1638,7 +1651,7 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
     if (!conv || conv.projectId !== req.params.id) {
       return res.status(404).json({ error: 'conversation not found' });
     }
-    res.json({ messages: listMessages(db, req.params.cid) });
+    res.json(listMessagePage(db, req.params.cid, { afterPosition: -1, maxRows: 100, maxBytes: 1024 * 1024 }));
   });
 
   app.put('/api/projects/:id/conversations/:cid/messages/:mid', async (req, res) => {
@@ -1925,8 +1938,8 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
   // starting point. Created via the project's Share menu (snapshots
   // every .html file in the project folder at the moment of save).
 
-  app.get('/api/templates', (_req, res) => {
-    res.json({ templates: listTemplates(db) });
+  app.get('/api/templates', (req, res) => {
+    res.json({ templates: listTemplates(db, { includeFiles: req.query.includeFiles === '1' }) });
   });
 
   app.get('/api/templates/:id', (req, res) => {
@@ -2073,6 +2086,7 @@ export function registerProjectArtifactRoutes(app: Express, ctx: RegisterProject
 
 export interface RegisterProjectFileRoutesDeps extends RouteDeps<'db' | 'http' | 'paths' | 'uploads' | 'node' | 'projectStore' | 'projectFiles' | 'documents' | 'artifacts' | 'projectPreviewScopes'> {
   readonly hostedRequestBodyGuard?: RequestHandler;
+  readonly getFileWriteGuards?: (projectId: string) => ProjectFileWriteGuard[];
 }
 
 export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFileRoutesDeps) {
@@ -2615,7 +2629,7 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
             req.params.id,
             desiredName,
             buf,
-            {},
+            { writeGuards: ctx.getFileWriteGuards?.(req.params.id) ?? [] },
             uploadProject?.metadata,
           );
           if (req.file.path) fs.promises.unlink(req.file.path).catch(() => {});
@@ -2656,13 +2670,18 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
           encoding === 'base64'
             ? Buffer.from(content, 'base64')
             : Buffer.from(content, 'utf8');
+        // Direct-edit Save supplies its own read version. Legacy agent clients
+        // omit it; enforce their run baseline server-side, including creations.
+        const writeGuards = ctx.getFileWriteGuards?.(req.params.id) ?? [];
         const meta = artifact === true
           ? await createProjectArtifactFile({
               projectsRoot: PROJECTS_DIR,
               projectId: req.params.id,
               input: { name, content, encoding, artifactManifest },
               metadata: uploadProject?.metadata,
-              writeProjectFile,
+              writeProjectFile: (root, id, fileName, content, options, metadata) => writeProjectFile(
+                root, id, fileName, content, { ...options, writeGuards }, metadata,
+              ),
             })
           : await writeProjectFile(
               PROJECTS_DIR,
@@ -2671,6 +2690,7 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
               buf,
               {
                 artifactManifest,
+                writeGuards,
                 ...(expectedContentSha256 !== undefined ? { expectedContentSha256 } : {}),
                 ...(overwrite === false ? { overwrite: false } : {}),
               },

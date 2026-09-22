@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { en } from '../../src/i18n/locales/en';
-import { ko } from '../../src/i18n/locales/ko';
+import { getEn } from '../../src/i18n/locales/en';
+import { getKo } from '../../src/i18n/locales/ko';
+const en = getEn();
+const ko = getKo();
 import type { Dict } from '../../src/i18n/types';
 
 const MESSAGE_KEYS = [

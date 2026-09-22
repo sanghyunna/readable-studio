@@ -50,7 +50,7 @@ export function createBrowserOpenInvocation(
   return {
     command: platform === 'darwin' ? 'open' : 'xdg-open',
     args: [url],
-    options: { detached: true, stdio: 'ignore' },
+    options: { detached: true, stdio: 'ignore', windowsHide: true },
   };
 }
 

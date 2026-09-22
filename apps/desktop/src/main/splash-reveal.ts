@@ -5,7 +5,7 @@ export type SplashRevealReadiness = {
 };
 
 export function shouldFinishSplashPolling(readiness: SplashRevealReadiness): boolean {
-  return readiness.deadlineReached || (readiness.appMounted && readiness.splashFinished);
+  return readiness.appMounted && (readiness.deadlineReached || readiness.splashFinished);
 }
 
 export function remainingSplashHoldMs(

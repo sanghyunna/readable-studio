@@ -146,6 +146,7 @@ async function execGit(
   timeout: number,
 ): Promise<ExecGitResult> {
   return await execFileAsync(gitBin, args, {
+    windowsHide: true,
     cwd,
     timeout,
     maxBuffer: 1024 * 1024,

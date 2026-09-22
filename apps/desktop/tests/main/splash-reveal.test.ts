@@ -36,14 +36,14 @@ describe('shouldFinishSplashPolling', () => {
     ).toBe(true);
   });
 
-  test('finishes at the hard deadline when neither signal arrives', () => {
+  test('never reveals an unpainted app at the hard deadline', () => {
     expect(
       shouldFinishSplashPolling({
         appMounted: false,
         deadlineReached: true,
         splashFinished: false,
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 });
 

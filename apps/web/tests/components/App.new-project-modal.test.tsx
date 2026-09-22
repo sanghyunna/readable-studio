@@ -128,7 +128,11 @@ async function renderApp() {
 }
 
 async function click(testId: string) {
-  await act(async () => { fireEvent.click(screen.getByTestId(testId)); });
+  const target = await screen.findByTestId(testId);
+  await act(async () => { fireEvent.click(target); });
+  if (screen.queryByTestId('new-project-modal')) {
+    await screen.findByTestId('new-project-panel');
+  }
 }
 
 function expectClosed() {

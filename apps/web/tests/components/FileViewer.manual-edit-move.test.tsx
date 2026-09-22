@@ -1172,9 +1172,9 @@ describe('FileViewer manual edit move frame', () => {
     expect(resolverSpy).toHaveBeenCalledTimes(2);
   });
 
-  it('drops an active movement when the same file refreshes', async () => {
-    const fetchMock = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) =>
-      new Response(SOURCE, { status: 200, headers: { 'Content-Type': 'text/html' } }));
+  it('finalizes an active movement on explicit Reload after retaining it through a watcher refresh', async () => {
+    let savedContent = '';
+    const fetchMock = savingFetch((content) => { savedContent = content; });
     vi.stubGlobal('fetch', fetchMock);
     const file = htmlPreviewFile();
     const { rerender } = render(
@@ -1203,7 +1203,11 @@ describe('FileViewer manual edit move frame', () => {
         liveHtml={SOURCE.replace('Hero', 'Refreshed')}
       />,
     );
-    await waitFor(() => expect(manualEditMoveFrameProbe.current).not.toBe(activeFrame));
+    await act(async () => {});
+    expect(interior.isConnected).toBe(true);
+    expect(screen.getByRole('button', { name: 'Undo' })).toHaveProperty('disabled', true);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Reload Preview' })); });
+    expect(manualEditMoveFrameProbe.current).not.toBe(activeFrame);
     await waitFor(() => expect(postSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'readable-edit-preview-style',
@@ -1228,12 +1232,16 @@ describe('FileViewer manual edit move frame', () => {
 
     activeFrame.onMoveCommit({ delta: { x: 30, y: 0 }, shiftKey: false, axis: null });
     await Promise.resolve();
-    expect(fetchMock.mock.calls.filter(([, init]) => (
-      (init as RequestInit | undefined)?.method === 'POST'
-    ))).toHaveLength(0);
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
+    await act(async () => { await saveChanges(); });
+    expect(fileSaveCalls(fetchMock)).toHaveLength(1);
+    const preserved = new DOMParser().parseFromString(savedContent, 'text/html');
+    expect(preserved.querySelector('main')?.textContent).toBe('Hero');
+    expect(preserved.querySelector('img')?.getAttribute('style')).toContain('translate: 30px 0px');
   });
 
-  it('drops a movement that starts while a raw-source refresh is pending', async () => {
+  it('finalizes on explicit Reload a movement started during a pending raw-source refresh', async () => {
+    let savedContent = '';
     let rawFetches = 0;
     let resolveRefresh!: (response: Response) => void;
     const refresh = new Promise<Response>((resolve) => {
@@ -1241,11 +1249,16 @@ describe('FileViewer manual edit move frame', () => {
     });
     const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
+      if (init?.method === 'POST') {
+        const body: { content: string } = JSON.parse(String(init.body));
+        savedContent = body.content;
+        return Promise.resolve(new Response(JSON.stringify({ file: htmlPreviewFile() }), { status: 200 }));
+      }
       if (url.includes('/raw/')) {
         rawFetches += 1;
-        return rawFetches === 1
-          ? Promise.resolve(new Response(SOURCE, { status: 200, headers: { 'Content-Type': 'text/html' } }))
-          : refresh;
+        return rawFetches === 2
+          ? refresh
+          : Promise.resolve(new Response(SOURCE, { status: 200, headers: { 'Content-Type': 'text/html' } }));
       }
       return Promise.resolve(new Response(SOURCE, { status: 200, headers: { 'Content-Type': 'text/html' } }));
     });
@@ -1277,10 +1290,16 @@ describe('FileViewer manual edit move frame', () => {
     const staleVersion = (secondPreview![0] as { version: number }).version;
     postSpy.mockClear();
 
-    resolveRefresh(new Response(SOURCE.replace('Hero', 'Refreshed'), {
-      status: 200,
-      headers: { 'Content-Type': 'text/html' },
-    }));
+    await act(async () => {
+      resolveRefresh(new Response(SOURCE.replace('Hero', 'Refreshed'), {
+        status: 200,
+        headers: { 'Content-Type': 'text/html' },
+      }));
+      await refresh;
+    });
+    expect(secondInterior.isConnected).toBe(true);
+    expect(screen.getByRole('button', { name: 'Undo' })).toHaveProperty('disabled', true);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Reload Preview' })); });
     await waitFor(() => expect(postSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'readable-edit-preview-style',
@@ -1288,7 +1307,7 @@ describe('FileViewer manual edit move frame', () => {
       }),
       '*',
     ));
-    await waitFor(() => expect(manualEditMoveFrameProbe.current).not.toBe(secondFrame));
+    expect(manualEditMoveFrameProbe.current).not.toBe(secondFrame);
     const rectBeforeStaleAck = manualEditMoveFrameProbe.current!.rect;
     act(() => {
       window.dispatchEvent(new MessageEvent('message', {
@@ -1305,9 +1324,12 @@ describe('FileViewer manual edit move frame', () => {
     expect(manualEditMoveFrameProbe.current!.rect).toEqual(rectBeforeStaleAck);
     secondFrame.onMoveCommit({ delta: { x: 40, y: 0 }, shiftKey: false, axis: null });
     await Promise.resolve();
-    expect(fetchMock.mock.calls.filter(([, init]) => (
-      (init as RequestInit | undefined)?.method === 'POST'
-    ))).toHaveLength(0);
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
+    await act(async () => { await saveChanges(); });
+    expect(fileSaveCalls(fetchMock)).toHaveLength(1);
+    const preserved = new DOMParser().parseFromString(savedContent, 'text/html');
+    expect(preserved.querySelector('main')?.textContent).toBe('Hero');
+    expect(preserved.querySelector('img')?.getAttribute('style')).toContain('translate: 40px 0px');
   });
 
   it('resolves a queued final pointer preview exactly once before committing it', async () => {

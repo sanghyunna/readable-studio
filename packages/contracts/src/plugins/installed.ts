@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { lazyObject } from '../lazy-object.js';
 import { PluginManifestSchema } from './manifest.js';
 import {
   MarketplaceTrustSchema,
@@ -22,7 +23,7 @@ export const PluginSourceKindSchema = z.enum([
 
 export type PluginSourceKind = z.infer<typeof PluginSourceKindSchema>;
 
-export const InstalledPluginRecordSchema = z.object({
+export const InstalledPluginRecordSchema = lazyObject(() => ({
   id:                  z.string().min(1),
   title:               z.string(),
   version:             z.string(),
@@ -44,36 +45,36 @@ export const InstalledPluginRecordSchema = z.object({
   fsPath:              z.string(),
   installedAt:         z.number(),
   updatedAt:           z.number(),
-});
+}));
 
 export type InstalledPluginRecord = z.infer<typeof InstalledPluginRecordSchema>;
 
-export const InstalledPluginListResponseSchema = z.object({
+export const InstalledPluginListResponseSchema = lazyObject(() => ({
   plugins: z.array(InstalledPluginRecordSchema),
-});
+}));
 
 export type InstalledPluginListResponse = z.infer<typeof InstalledPluginListResponseSchema>;
 
-export const PluginInstallSourceSchema = z.object({
+export const PluginInstallSourceSchema = lazyObject(() => ({
   source: z.string().min(1),
   ref:    z.string().optional(),
-});
+}));
 
 export type PluginInstallSource = z.infer<typeof PluginInstallSourceSchema>;
 
-export const PluginInstallOutcomeSchema = z.object({
+export const PluginInstallOutcomeSchema = lazyObject(() => ({
   ok:       z.boolean(),
   plugin:   InstalledPluginRecordSchema.nullable().optional(),
   warnings: z.array(z.string()),
   message:  z.string().optional(),
   log:      z.array(z.string()),
-});
+}));
 
 export type PluginInstallOutcome = z.infer<typeof PluginInstallOutcomeSchema>;
 
-export const ProjectPluginFolderInstallRequestSchema = z.object({
+export const ProjectPluginFolderInstallRequestSchema = lazyObject(() => ({
   path: z.string().min(1),
-});
+}));
 
 export type ProjectPluginFolderInstallRequest = z.infer<typeof ProjectPluginFolderInstallRequestSchema>;
 

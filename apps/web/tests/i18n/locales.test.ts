@@ -1,8 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { resolveSystemLocale } from '../../src/i18n';
-import { en } from '../../src/i18n/locales/en';
-import { ko } from '../../src/i18n/locales/ko';
+import { getEn } from '../../src/i18n/locales/en';
+import { getKo } from '../../src/i18n/locales/ko';
+const en = getEn();
+const ko = getKo();
 import { LOCALES, LOCALE_LABEL, type Dict, type Locale } from '../../src/i18n/types';
 
 const EXPECTED_LOCALES = ['en', 'ko'];
@@ -29,15 +31,8 @@ function placeholders(value: string): string[] {
   return names.sort();
 }
 
-async function loadDict(locale: Locale): Promise<Dict> {
-  const module = await import(`../../src/i18n/locales/${locale}.ts`);
-  const dict = Object.values(module).find((value): value is Dict => {
-    return Boolean(value) && typeof value === 'object';
-  });
-  if (!dict) {
-    throw new Error(`No dictionary export found for locale ${locale}`);
-  }
-  return dict;
+function loadDict(locale: Locale): Dict {
+  return { en: getEn, ko: getKo }[locale]();
 }
 
 function explicitLocaleKeys(locale: Locale): string[] {

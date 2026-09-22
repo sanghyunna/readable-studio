@@ -9,6 +9,7 @@ import { QuestionFormView, type QuestionFormHandle } from './QuestionForm';
 import { questionForAssumption, type BriefAssumption, type ProjectBrief } from './brief-state';
 import { QuestionAssumptionEditor } from './QuestionAssumptionEditor';
 import { Icon } from './Icon';
+import { requestLayoutGeometry } from './LayoutGeometryDiagnostics';
 import './QuestionsPanel.css';
 
 const viewedFormOccurrences = new Set<string>();
@@ -55,6 +56,9 @@ export function QuestionsPanel({
   const [ready, setReady] = useState(false);
   const [draftAnswers, setDraftAnswers] = useState<QuestionFormAnswers | undefined>(() => readQuestionFormDraft(formKey));
   const answered = submittedAnswers !== undefined;
+  const hasForm = form !== null;
+  useEffect(() => { if (hasForm) requestLayoutGeometry('question-mounted'); }, [hasForm]);
+  useEffect(() => { if (answered) requestLayoutGeometry('question-answered'); }, [answered]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const editorId = useId();
   const anchorRef = useRef<HTMLButtonElement | null>(null);
@@ -193,7 +197,7 @@ export function QuestionsPanel({
     const first = root.querySelector<HTMLElement>(
       '[role="radio"][tabindex="0"], input:not([disabled]):not([type="radio"]), textarea:not([disabled]), button:not([disabled])',
     );
-    first?.focus();
+    first?.focus({ preventScroll: true });
     // Focus once per card appearance; answer edits must not re-run it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pending, formKey]);

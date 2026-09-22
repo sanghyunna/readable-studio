@@ -10,6 +10,7 @@ import { attachPiRpcSession, type PiRpcSession } from '../pi-rpc.js';
 import { getDatabricksRuntimeService, type DatabricksRuntimeService } from './defs/databricks.js';
 import { databricksChildEnv } from './env.js';
 import { resolvePiEntrypoint } from './pi-package.js';
+import { resolvePiShellExtension } from './pi-shell-assets.js';
 
 export interface DatabricksPiRuntimeOptions {
   /** Namespace-scoped daemon data root, never the project cwd or Pi's user home. */
@@ -123,11 +124,17 @@ export async function createDatabricksPiRuntime(options: DatabricksPiRuntimeOpti
       writeFile(path.join(agentDir, 'models.json'), JSON.stringify(config.models), { mode: 0o600, flag: 'wx' }),
       writeFile(path.join(agentDir, 'settings.json'), JSON.stringify(config.settings), { mode: 0o600, flag: 'wx' }),
     ]);
+    const toolsEnabled = runtime.wireCapabilities?.tools !== 'unsupported' || runtime.wireCapabilities.toolSurfaceVersion !== 2;
+    const shellArgs: string[] = [];
+    if (process.platform === 'win32' && toolsEnabled) {
+      const extension = resolvePiShellExtension(import.meta.url);
+      shellArgs.push('--extension', extension, '--tools', 'read,powershell,edit,write');
+    }
     const invocation: DatabricksPiInvocation = {
       command: process.execPath,
       args: [engine.entrypoint, '--mode', 'rpc', '--provider', 'databricks', '--model', relay.modelAlias,
         '--thinking', config.settings.defaultThinkingLevel, '--session-dir', sessionDir,
-        ...(runtime.wireCapabilities?.tools === 'unsupported' && runtime.wireCapabilities.toolSurfaceVersion === 2 ? ['--no-tools'] : []),
+        ...(toolsEnabled ? shellArgs : ['--no-tools']),
         '--no-extensions', '--no-skills', '--no-prompt-templates', '--no-themes', '--no-context-files', '--no-approve', '--offline'],
       cwd: options.cwd,
       env: {

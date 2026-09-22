@@ -202,6 +202,41 @@ describe('FileViewer manual edit undo keyboard shortcut', () => {
     expect(fileSaveCalls(fetchMock)).toHaveLength(0);
   });
 
+  it.each([false, true])('keeps shortcuts on the host while history reloads the focused iframe (redo=%s)', async (redo) => {
+    // Given a focused preview with an available history action.
+    vi.stubGlobal('fetch', buildFetchMock());
+    render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={INITIAL_SOURCE} />);
+    fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
+    await selectHero();
+    await act(async () => { await toolbarState.props?.onApplyPatch({ id: 'hero', kind: 'set-text', value: 'Edited hero' }, 'Content: Hero'); });
+    if (redo) await act(async () => { dispatchUndo(); });
+    const frame = await previewFrame();
+    frame.focus();
+
+    // When history replaces the iframe document.
+    await act(async () => { dispatchUndo(redo); });
+
+    // Then load alone cannot return focus to the still-disabled bridge.
+    expect(document.activeElement).toBe(document.body);
+    if (!frame.contentWindow) throw new Error('Missing preview window');
+    const messages = vi.spyOn(frame.contentWindow, 'postMessage');
+    fireEvent.load(frame);
+    expect(document.activeElement).toBe(document.body);
+    const activation = messages.mock.calls.map(([message]) => message).find((message: unknown) => (
+      typeof message === 'object' && message !== null && 'type' in message && message.type === 'readable-edit-mode'
+    ));
+    act(() => window.dispatchEvent(new MessageEvent('message', {
+      source: frame.contentWindow,
+      data: { type: 'readable-edit-targets', targets: [], documentEpoch: 'stale', sequence: 1 },
+    })));
+    expect(document.activeElement).toBe(document.body);
+    act(() => window.dispatchEvent(new MessageEvent('message', {
+      source: frame.contentWindow,
+      data: { type: 'readable-edit-targets', targets: [], documentEpoch: activation.documentEpoch, sequence: 1 },
+    })));
+    expect(document.activeElement).toBe(frame);
+  });
+
   it('ignores Ctrl+Z dispatched from a contentEditable host element', async () => {
     const fetchMock = buildFetchMock();
     vi.stubGlobal('fetch', fetchMock);

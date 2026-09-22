@@ -18,8 +18,11 @@ import { openValidatedDirectory } from "./open-path.js";
 import { createElectronPdfTarget, exportPdfFromHtml, savePrintReadyDocumentAsPdf } from "./pdf-export.js";
 import type { PrintReadyPdfOptions } from "./pdf-export.js";
 import { runStartupSplash } from "./startup-splash.js";
-import { readDaemonScan } from "./scan-progress.js";
+import { readDaemonScan, startDaemonScan } from "./scan-progress.js";
 import { applyDesktopBaselineZoom } from "./zoom.js";
+import { attachRendererRecovery } from "./renderer-recovery.js";
+import { attachLayoutGeometry } from "./layout-geometry.js";
+import type { CrashEvidenceEvent } from "./crash-evidence.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -344,6 +347,7 @@ export type DesktopRuntimeOptions = {
    * otherwise only live in DevTools.
    */
   rendererLogPath?: string | null;
+  recordCrashEvidence?: (event: CrashEvidenceEvent) => void;
   requestQuit?: () => void;
   /**
    * Optional pre-created splash window. The packaged entry creates the splash
@@ -1412,7 +1416,7 @@ export async function createDesktopRuntime(options: DesktopRuntimeOptions): Prom
       return await openValidatedDirectory(validated.resolved, {
         release,
         execFile: async (cmd, args) => {
-          const { stdout } = await execFileAsync(cmd, [...args]);
+          const { stdout } = await execFileAsync(cmd, [...args], { windowsHide: true });
           return { stdout };
         },
         openPath: (p) => shell.openPath(p),
@@ -1452,23 +1456,21 @@ export async function createDesktopRuntime(options: DesktopRuntimeOptions): Prom
     },
     width: 1280,
   });
+  let appPainted = false;
+  window.once('ready-to-show', () => { appPainted = true; });
   applyDesktopBaselineZoom(window.webContents);
   installWindowChromeCssHook(window);
   showWindowButtons(window);
   attachDownloadSaveAsDialog(window);
+  const disposeLayoutGeometry = attachLayoutGeometry(window, screen);
 
-  // Renderer-process crashes are completely invisible to the web bundle's
-  // own analytics surface (the renderer is dead — no JS can run, no
-  // window.error fires). The main process is the last layer that can
-  // observe them, so we forward the event to the daemon's safety-event
-  // bridge (`POST /api/observability/event`), which posts directly to
-  // PostHog with `device_id = installationId`. Best-effort: a failure to
-  // reach the daemon must not block the crash recovery flow.
-  window.webContents.on("render-process-gone", (_event, details) => {
-    void reportRendererCrash(options, {
-      reason: details.reason,
-      exit_code: typeof details.exitCode === "number" ? details.exitCode : null,
-    });
+  // Persist evidence and recover independently of the best-effort daemon bridge.
+  const rendererRecovery = attachRendererRecovery(window, {
+    record: options.recordCrashEvidence ?? ((event) => console.warn("desktop renderer recovery", event)),
+    reportCrash: (details) => {
+      void reportRendererCrash(options, { reason: details.reason, exit_code: details.exitCode });
+    },
+    quit: options.requestQuit ?? (() => app.quit()),
   });
 
   const requireMainWindowSender = (event: Electron.IpcMainInvokeEvent): void => {
@@ -1740,7 +1742,7 @@ export async function createDesktopRuntime(options: DesktopRuntimeOptions): Prom
   };
   const persistRendererEntry = async (entry: DesktopConsoleEntry): Promise<void> => {
     if (rendererLogPath == null) return;
-    if (entry.level !== "error" && entry.level !== "warn") return;
+    if (entry.level !== "error" && entry.level !== "warn" && !entry.text.startsWith('layout geometry ')) return;
     try {
       await ensureRendererLogDir();
       const line = `${JSON.stringify({ timestamp: entry.timestamp, level: entry.level, text: entry.text })}\n`;
@@ -1795,8 +1797,13 @@ export async function createDesktopRuntime(options: DesktopRuntimeOptions): Prom
     if (splash != null && !splash.isDestroyed()) splash.close();
   };
 
-  // The isolated controller holds for mount, video and scan settlement, with
-  // a 6.8-second visual floor and a hard ceiling independent of renderer/HTTP reads.
+  const executeSplash = async (script: string): Promise<unknown> => {
+    if (splash != null && !splash.isDestroyed()) {
+      return splash.webContents.executeJavaScript(script, true);
+    }
+  };
+
+  // Reveal after the app paints and the animation parks; scans remain independent.
   const revealWhenReady = async (): Promise<void> => {
     if (revealing || revealed) return;
     revealing = true;
@@ -1804,32 +1811,36 @@ export async function createDesktopRuntime(options: DesktopRuntimeOptions): Prom
       startedAt: splashStartedAt,
       isStopped: () => stopped || window.isDestroyed(),
       readScan: () => readDaemonScan(options.discoverDaemonUrl ?? options.discoverUrl),
-      executeSplash: async (script) => {
-        if (splash != null && !splash.isDestroyed()) {
-          return splash.webContents.executeJavaScript(script, true);
-        }
-      },
+      executeSplash,
       reveal: revealMainWindow,
+      onTimeout: () => {
+        // Native UI remains usable even if neither renderer can paint.
+        void dialog.showMessageBox({
+          type: 'warning', title: 'Readable Studio startup',
+          message: 'The display has not finished painting.',
+          detail: 'Retry loading the display, or quit and reopen Readable Studio.',
+          buttons: ['Retry', 'Quit Readable Studio'], defaultId: 0, cancelId: 1, noLink: true,
+        }).then(({ response }) => {
+          if (stopped || window.isDestroyed()) return;
+          if (response === 1) (options.requestQuit ?? (() => app.quit()))();
+          else {
+            revealing = false;
+            window.webContents.reload();
+            void revealWhenReady();
+          }
+        }).catch((error: unknown) => {
+          console.error('desktop startup dialog failed', { errorType: error instanceof Error ? error.name : 'unknown' });
+          (options.requestQuit ?? (() => app.quit()))();
+        });
+      },
       readReadiness: async () => {
-        const [mounted, splashFinished] = await Promise.all([
-            window.webContents
-              .executeJavaScript(
-                `document.documentElement.getAttribute("data-readable-app-mounted") === "1"`,
-                true,
-              )
-              .catch(() => false),
-            splash != null &&
-            !splash.isDestroyed() &&
-            !splash.webContents.isDestroyed()
-              ? splash.webContents
-                  .executeJavaScript(
-                    `document.documentElement.getAttribute("data-readable-splash-finished") === "1"`,
-                    true,
-                  )
-                  .catch(() => false)
-              : Promise.resolve(false),
-          ]);
-        return { appMounted: mounted === true, splashFinished: splashFinished === true };
+        const [mounted, finished] = await Promise.all([
+          window.webContents.executeJavaScript(
+            `document.documentElement.getAttribute('data-readable-app-mounted') === '1'`, true,
+          ),
+          executeSplash(`document.documentElement.getAttribute("data-readable-splash-finished") === "1"`),
+        ]);
+        return { appMounted: mounted === true && appPainted, splashFinished: finished === true };
       },
     });
   };
@@ -1841,11 +1852,31 @@ export async function createDesktopRuntime(options: DesktopRuntimeOptions): Prom
     }, delayMs);
   };
 
+  const startupScanRequest = new AbortController();
+  let scanStarted = false;
   const tick = async () => {
     if (stopped || window.isDestroyed()) return;
 
     try {
+      if (!scanStarted) {
+        const daemonUrl = await (options.discoverDaemonUrl ?? options.discoverUrl)();
+        if (stopped || window.isDestroyed()) return;
+        if (daemonUrl === null) {
+          schedule(PENDING_POLL_MS);
+          return;
+        }
+        // Start discovery while the web sidecar may still be booting. Await only
+        // the idempotent acceptance, never probes or scan completion.
+        await startDaemonScan(daemonUrl, startupScanRequest.signal);
+        scanStarted = true;
+      }
+      if (stopped || window.isDestroyed()) return;
       const url = await options.discoverUrl();
+      // A failed initial navigation must not bypass the crash recovery budget.
+      if (rendererRecovery.isBlocked()) {
+        schedule(RUNNING_POLL_MS);
+        return;
+      }
       if (url != null && url !== currentUrl) {
         pendingUrl = url;
         // Load the web app into the still-hidden main window as soon as it is
@@ -1878,6 +1909,8 @@ export async function createDesktopRuntime(options: DesktopRuntimeOptions): Prom
     }
   };
 
+  // Start the ceiling before navigation: even a stalled load gets native recovery.
+  void revealWhenReady();
   void tick();
 
   return {
@@ -1899,6 +1932,9 @@ export async function createDesktopRuntime(options: DesktopRuntimeOptions): Prom
     },
     async close() {
       stopped = true;
+      startupScanRequest.abort();
+      rendererRecovery.dispose();
+      disposeLayoutGeometry();
       if (timer != null) {
         clearTimeout(timer);
         timer = null;

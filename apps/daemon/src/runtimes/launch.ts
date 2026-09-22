@@ -9,6 +9,7 @@ export type AgentLaunchResolution = ReturnType<typeof inspectAgentExecutableReso
   launchPath: string | null;
   launchKind: AgentLaunchKind;
   childPathPrepend: string[];
+  readonly readExecutePaths: readonly string[];
   diagnostic: string | null;
 };
 
@@ -19,13 +20,13 @@ export function resolveAgentLaunch(
 ): AgentLaunchResolution {
   const resolution = inspectAgentExecutableResolution(def, configuredEnv);
   if (!resolution.selectedPath) {
-    return { ...resolution, launchPath: null, launchKind: 'selected', childPathPrepend: [], diagnostic: null };
+    return { ...resolution, launchPath: null, launchKind: 'selected', childPathPrepend: [], readExecutePaths: [], diagnostic: null };
   }
   const childPathPrepend = path.isAbsolute(resolution.selectedPath)
     ? [path.dirname(resolution.selectedPath)]
     : [];
   if (def.id !== 'codex') {
-    return { ...resolution, launchPath: resolution.selectedPath, launchKind: 'selected', childPathPrepend, diagnostic: null };
+    return { ...resolution, launchPath: resolution.selectedPath, launchKind: 'selected', childPathPrepend, readExecutePaths: childPathPrepend, diagnostic: null };
   }
   const native = tryResolveCodexNativeBinary(resolution.selectedPath);
   return {
@@ -33,6 +34,9 @@ export function resolveAgentLaunch(
     launchPath: native.path ?? resolution.selectedPath,
     launchKind: native.path ? 'codex-native' : 'selected',
     childPathPrepend: [...childPathPrepend, ...native.childPathPrepend],
+    // PATH discovery is not an ACL allowlist: granting the shim directory
+    // recursively walks every globally installed npm package before readiness.
+    readExecutePaths: native.path ? [path.dirname(native.path), ...native.childPathPrepend] : childPathPrepend,
     diagnostic: native.diagnostic,
   };
 }
@@ -128,7 +132,11 @@ function codexNativeCandidates(
   targetTriple: string,
 ): Array<{ path: string; childPathPrepend: string[] }> {
   const scoped = path.join(root, 'node_modules', '@openai');
-  const packageDirs = [path.join(scoped, `codex-${packageSuffix}`)];
+  const packageDirs = [
+    path.join(scoped, `codex-${packageSuffix}`),
+    path.join(scoped, 'codex', 'node_modules', '@openai', `codex-${packageSuffix}`),
+    path.join(scoped, 'codex'),
+  ];
   try {
     for (const entry of readdirSync(scoped, { encoding: 'utf8', withFileTypes: true })) {
       if (entry.isDirectory() && entry.name.startsWith('codex-')) packageDirs.push(path.join(scoped, entry.name));
@@ -140,6 +148,8 @@ function codexNativeCandidates(
     const vendorPathDir = path.join(dir, 'vendor', targetTriple, 'path');
     const childPathPrepend = [vendorPathDir];
     return [
+      { path: path.join(dir, 'vendor', targetTriple, 'bin', 'codex.exe'), childPathPrepend },
+      { path: path.join(dir, 'vendor', targetTriple, 'bin', 'codex'), childPathPrepend },
       { path: path.join(dir, 'vendor', targetTriple, 'codex', 'codex'), childPathPrepend },
       { path: path.join(dir, 'vendor', targetTriple, 'codex', 'codex.exe'), childPathPrepend },
       { path: path.join(dir, 'codex'), childPathPrepend },

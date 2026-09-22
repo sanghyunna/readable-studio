@@ -18,7 +18,6 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       { url: '/app-icon.svg', type: 'image/svg+xml' },
-      { url: '/app-icon.png', type: 'image/png' },
     ],
     apple: '/app-icon.png',
   },
@@ -45,6 +44,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang='en' data-readable-composition={composition} suppressHydrationWarning>
       {/* eslint-disable-next-line @next/next/no-sync-scripts */}
       <head>
+        <link rel='preload' href='/fonts/PretendardVariable.woff2' as='font' type='font/woff2' crossOrigin='anonymous' />
         {/* biome-ignore lint/security/noDangerouslySetInnerHtml: intentional theme-init inline script to prevent FOUC */}
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>

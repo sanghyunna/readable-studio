@@ -17,7 +17,7 @@ export function discoveryFailure(error: unknown): ModelDiscoveryFailure {
   const err = error as { message?: unknown; stdout?: unknown; stderr?: unknown } | null;
   const text = [err?.message, err?.stdout, err?.stderr].filter((v) => typeof v === 'string').join('\n');
   if (/unknown (?:arguments?|options?)|unrecognized (?:arguments?|options?)|unexpected argument|invalid value .*(?:output-format|stream-json)/i.test(text)) {
-    return { kind: 'adapter-incompatible', message: 'Installed CLI rejected the adapter command or its output format. Update the CLI, then rescan.' };
+    return { kind: 'adapter-incompatible', message: 'The adapter requested command arguments or an output format the installed CLI does not support. This is a Readable Studio compatibility gap, not a CLI setup problem.' };
   }
   if (/authentication required|not authenticated|not logged in|unauthenticated|unauthori[sz]ed|please (?:sign|log)[ -]?in|sign[ -]?in required|(?:missing|invalid|expired) (?:api[ _-]?key|credentials?|token)|credentials? (?:are )?(?:missing|required|invalid)/i.test(text)) {
     return { kind: 'auth-required', message: 'Sign-in required. Sign in with the CLI in a terminal, then rescan.' };
@@ -58,7 +58,7 @@ export async function fetchModels(
     }
     // Default is a synthetic routing sentinel, not evidence of a configured model.
     if (!parsed?.some((model) => model.id !== 'default')) {
-      return failedModels({ kind: 'unverified', message: 'The CLI returned no configured models. Configure a model and sign in, then rescan.' });
+      return failedModels({ kind: 'unverified', message: 'The CLI reported no models for this account. Check the CLI account and its model configuration, then rescan.' });
     }
     return { models: parsed.filter((model) => model.id !== 'default'), source: 'live' };
   } catch (error) {

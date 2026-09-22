@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { lazyObject } from '../lazy-object.js';
 
 // ContextItem union — typed chips that hydrate the ContextChipStrip above
 // the brief input. Pure shape, no runtime deps. See docs/plugins-spec.md §5.2.
@@ -20,7 +21,7 @@ export type ContextItemKind = ContextItem['kind'];
 // Resolved context — the apply-time materialization of readable.context.* refs.
 // Lives on the AppliedPluginSnapshot so prompt reconstruction is not coupled
 // to the live registry state.
-export const ResolvedContextSchema = z.object({
+export const ResolvedContextSchema = lazyObject(() => ({
   items: z.array(ContextItemSchema),
   // Materialized prompt fragments keyed by ContextItem identity. Daemon-side
   // composeSystemPrompt() reads from here when building the ## Active plugin
@@ -30,6 +31,6 @@ export const ResolvedContextSchema = z.object({
   // Atom ids the plugin asked for, preserved for chip rendering even when the
   // pipeline does not explicitly enumerate them.
   atoms: z.array(z.string()).optional(),
-});
+}));
 
 export type ResolvedContext = z.infer<typeof ResolvedContextSchema>;

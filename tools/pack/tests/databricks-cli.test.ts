@@ -23,7 +23,7 @@ beforeAll(async () => {
   archive = join(root, "fixture.zip");
   await promisify(execFile)("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
     "Compress-Archive -Path ($env:READABLE_TEST_SOURCE + '/*') -DestinationPath $env:READABLE_TEST_ZIP"], {
-    env: { ...process.env, READABLE_TEST_SOURCE: source, READABLE_TEST_ZIP: archive }, timeout: 30_000,
+    env: { ...process.env, READABLE_TEST_SOURCE: source, READABLE_TEST_ZIP: archive }, timeout: 30_000, windowsHide: true,
   });
   pin.archiveSha256 = hash(await readFile(archive));
   pin.executableSha256 = hash(await readFile(join(source, "databricks.exe")));

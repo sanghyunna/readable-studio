@@ -726,7 +726,7 @@ describe('routine prepare failure cleanup', () => {
       db.exec(`
         DROP TRIGGER IF EXISTS fail_manual_routine_message_insert;
         CREATE TRIGGER fail_manual_routine_message_insert
-        BEFORE INSERT ON messages
+        BEFORE INSERT ON message_snapshots
         WHEN NEW.id LIKE 'routine-user-%'
         BEGIN
           SELECT RAISE(ABORT, 'routine message insert failed');

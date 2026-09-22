@@ -9,36 +9,19 @@ export const piAgentDef = {
     versionArgs: ['--version'],
     // `pi --list-models` writes its model table to stdout.
     fetchModels: async (resolvedBin, env) => {
-      try {
-        const { stdout } = await execAgentFile(resolvedBin, ['--list-models'], {
-          env,
-          timeout: 20_000,
-          maxBuffer: 8 * 1024 * 1024,
-        });
-        // Pi lists only credential-available models. Its no-auth guidance is
-        // prose, not a table; never turn words or documentation paths into IDs.
-        if (String(stdout).startsWith('No models available.')) return [DEFAULT_MODEL_OPTION];
-        const parsed = parsePiModels(stdout);
-        if (!parsed || parsed.length === 0) return null;
-        return parsed;
-      } catch {
-        return null;
-      }
+      const { stdout } = await execAgentFile(resolvedBin, ['--list-models'], {
+        env,
+        timeout: 20_000,
+        maxBuffer: 8 * 1024 * 1024,
+      });
+      // Pi lists only credential-available models. Its no-auth guidance is
+      // prose, not a table; never turn words or documentation paths into IDs.
+      if (String(stdout).startsWith('No models available.')) return [DEFAULT_MODEL_OPTION];
+      return parsePiModels(stdout);
     },
-    // Fallback models — the most commonly used providers/models when
-    // `pi --list-models` fails or times out.
-    fallbackModels: [
-      DEFAULT_MODEL_OPTION,
-      {
-        id: 'anthropic/claude-sonnet-4-5',
-        label: 'Claude Sonnet 4.5 (anthropic)',
-      },
-      { id: 'anthropic/claude-opus-4-5', label: 'Claude Opus 4.5 (anthropic)' },
-      { id: 'openai/gpt-5', label: 'GPT-5 (openai)' },
-      { id: 'openai/o4-mini', label: 'o4-mini (openai)' },
-      { id: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro (google)' },
-      { id: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash (google)' },
-    ],
+    // A failed or empty listing cannot establish authenticated model usability.
+    // Let discovery failures propagate to the shared diagnostic classifier.
+    fallbackModels: [],
     // Thinking level presets mapped to pi's --thinking flag.
     reasoningOptions: [
       { id: 'default', label: 'Default' },

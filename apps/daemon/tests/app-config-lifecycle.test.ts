@@ -129,7 +129,7 @@ it('serializes migration with queued startup reads and an explicit disable', asy
   release.resolve();
 
   const [a, b, written, latest] = await Promise.all([first, second, disabled, after]);
-  expect(a.enabledAgentIds).toContain('databricks');
+  expect(a.enabledAgentIds).toEqual(LEGACY_ENABLED_AGENT_IDS);
   expect(b).toEqual(a);
   expect(written.enabledAgentIds).toEqual([]);
   expect(latest.enabledAgentIds).toEqual([]);
@@ -149,7 +149,7 @@ it('propagates a failed migration replacement and retries on the next queued rea
   const rejection = expect(failed).rejects.toMatchObject({ code: 'EPERM' });
   const next = readAppConfig(dir);
   await rejection;
-  expect((await next).enabledAgentIds).toContain('databricks');
+  expect((await next).enabledAgentIds).toEqual(LEGACY_ENABLED_AGENT_IDS);
   expect(io.events).toEqual([
     'read-start', 'read-close', 'rename',
     'read-start', 'read-close', 'rename',

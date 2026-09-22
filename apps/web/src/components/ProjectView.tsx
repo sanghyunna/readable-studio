@@ -35,6 +35,7 @@ import {
   type ProjectBrief,
 } from './brief-state';
 import { parsePartialJson } from '../runtime/partial-json';
+import { useDisplayMessages } from './useDisplayMessages';
 import { useI18n } from '../i18n';
 import { streamMessage } from '../providers/anthropic';
 import {
@@ -122,7 +123,7 @@ import {
   getTemplate,
   installGeneratedPluginFolder,
   listConversations,
-  listMessages,
+  loadMessagePage,
   loadTabs,
   patchConversation,
   patchProject,
@@ -175,6 +176,7 @@ import { DesignSystemPicker } from './DesignSystemPicker';
 import { PluginDetailsModal } from './PluginDetailsModal';
 import { DesignSystemPreviewModal } from './DesignSystemPreviewModal';
 import { ChatPane } from './ChatPane';
+import { NativeWriteConflictNotice } from './NativeWriteConflictNotice';
 import {
   ASSISTANT_ROLLBACK_EVENT,
   filterRenderableProducedFiles,
@@ -988,6 +990,26 @@ export function ProjectView({
   const [conversationLoadError, setConversationLoadError] = useState<string | null>(null);
   const [messageLoadRetryNonce, setMessageLoadRetryNonce] = useState(0);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [olderPosition, setOlderPosition] = useState<number | null>(null);
+  const olderRequestRef = useRef<symbol | null>(null);
+  const loadOlderMessages = useCallback(async () => {
+    if (olderPosition === null || !activeConversationId || olderRequestRef.current) return;
+    const request = Symbol();
+    olderRequestRef.current = request;
+    try {
+      const page = await loadMessagePage(project.id, activeConversationId, { beforePosition: olderPosition });
+      if (olderRequestRef.current !== request) return;
+      setMessages(current => {
+        const ids = new Set(current.map(message => message.id));
+        return [...page.messages.filter(message => !ids.has(message.id)), ...current];
+      });
+      setOlderPosition(page.nextPosition);
+    } catch (error) {
+      if (olderRequestRef.current === request) setError(error instanceof Error ? error.message : String(error));
+    } finally {
+      if (olderRequestRef.current === request) olderRequestRef.current = null;
+    }
+  }, [project.id, activeConversationId, olderPosition]);
   const [forkingMessageId, setForkingMessageId] = useState<string | null>(null);
   const [activePluginActionPaths, setActivePluginActionPaths] = useState<Set<string>>(() => new Set());
   const [hiddenAssistantPluginActionPaths, setHiddenAssistantPluginActionPaths] = useState<Set<string>>(() => new Set());
@@ -1056,6 +1078,7 @@ export function ProjectView({
     if (!streaming) setLiveToolInput((prev) => (Object.keys(prev).length ? {} : prev));
   }, [streaming]);
   const [error, setError] = useState<string | null>(null);
+  const [nativeRecovery, setNativeRecovery] = useState<{ error: Error; messageId: string } | null>(null);
   const [artifact, setArtifact] = useState<Artifact | null>(null);
   const [rollbackTargetMessage, setRollbackTargetMessage] = useState<ChatMessage | null>(null);
   const [rollbackModalReadOnly, setRollbackModalReadOnly] = useState(false);
@@ -1068,10 +1091,7 @@ export function ProjectView({
   // to the Design Files panel so the file list shows a loading state instead
   // of silently sitting on the old tree for the few seconds the scan takes.
   const [projectFiles, setProjectFiles] = useState<ProjectFile[]>([]);
-  const displayMessages = useMemo(
-    () => messages.map(message => projectMessageForDisplay(message, projectFiles)),
-    [messages, projectFiles],
-  );
+  const displayMessages = useDisplayMessages(messages, projectFiles, projectMessageForDisplay);
   const projectFilesRef = useRef<ProjectFile[]>([]);
   const [workspaceFocused, setWorkspaceFocused] = useState(false);
   const [commentInspectorActive, setCommentInspectorActive] = useState(false);
@@ -1531,6 +1551,8 @@ export function ProjectView({
   // conversation switches.
   useEffect(() => {
     setRunsHydratedKey(null);
+    setOlderPosition(null);
+    olderRequestRef.current = null;
     if (!activeConversationId) {
       setMessages([]);
       setMessagesInitialized(false);
@@ -1564,14 +1586,12 @@ export function ProjectView({
     }
     (async () => {
       try {
-        const [list, comments] = await Promise.all([
-          listMessages(project.id, activeConversationId),
-          fetchPreviewComments(project.id, activeConversationId),
-        ]);
+        const commentsReady = fetchPreviewComments(project.id, activeConversationId);
+        const list = await loadMessagePage(project.id, activeConversationId, { beforePosition: Number.MAX_SAFE_INTEGER });
         if (cancelled) return;
-        setMessages(list);
+        setMessages(list.messages);
+        setOlderPosition(list.nextPosition);
         setMessagesInitialized(true);
-        setPreviewComments(comments);
         setAttachedComments([]);
         setArtifact(null);
         setError(null);
@@ -1580,6 +1600,8 @@ export function ProjectView({
         messagesConversationIdRef.current = activeConversationId;
         setMessagesConversationId(activeConversationId);
         setFailedMessagesConversationId(null);
+        const comments = await commentsReady;
+        if (!cancelled) setPreviewComments(comments);
       } catch (err) {
         if (cancelled) return;
         const message = err instanceof Error ? err.message : 'Could not load messages for this conversation.';
@@ -2464,7 +2486,8 @@ export function ProjectView({
     async (conversationId: string) => {
       if (messagesConversationIdRef.current !== conversationId) return;
       try {
-        const serverMessages = await listMessages(project.id, conversationId);
+        const page = await loadMessagePage(project.id, conversationId, { beforePosition: Number.MAX_SAFE_INTEGER });
+        const serverMessages = page.messages;
         if (messagesConversationIdRef.current !== conversationId) return;
         setMessages((current) => mergeServerMessagesIntoConversation(current, serverMessages));
         setMessagesInitialized(true);
@@ -2609,12 +2632,13 @@ export function ProjectView({
       const conversationId = response.conversationId || activeConversationId;
       if (!conversationId) return;
       const [serverMessages, nextFiles] = await Promise.all([
-        listMessages(project.id, conversationId),
+        loadMessagePage(project.id, conversationId, { beforePosition: Number.MAX_SAFE_INTEGER }),
         refreshWorkspaceItems(),
         refreshPreviewComments(),
       ]);
       if (messagesConversationIdRef.current === conversationId) {
-        setMessages(serverMessages);
+        setMessages(serverMessages.messages);
+        setOlderPosition(serverMessages.nextPosition);
         setMessagesInitialized(true);
         setMessagesConversationId(conversationId);
         setFailedMessagesConversationId(null);
@@ -3017,6 +3041,7 @@ export function ProjectView({
               unregisterTextBuffer();
               if (runMayFinalize) {
                 setError(err.message);
+                setNativeRecovery({ error: err, messageId: message.id });
                 appendAssistantErrorEvent(message.id, err.message, errorCode);
                 updateMessageById(
                   message.id,
@@ -3746,6 +3771,7 @@ export function ProjectView({
           cancelSendTextBuffer();
           if (runMayFinalize) {
             setError(err.message);
+            setNativeRecovery({ error: err, messageId: assistantId });
             appendAssistantErrorEvent(assistantId, err.message, errorCode);
             updateAssistant((prev) => ({
               ...prev,
@@ -5810,12 +5836,20 @@ export function ProjectView({
               // resets internal scroll/draft state inside ChatPane and ChatComposer.
               key={`${project.id}:${activeConversationId ?? 'conversation-unavailable'}:${chatSeed?.id ?? 'ready'}`}
               messages={displayMessages}
+              hasOlderMessages={olderPosition !== null}
+              onLoadOlderMessages={loadOlderMessages}
               streaming={currentConversationStreaming}
               liveToolInput={liveToolInput}
               loading={currentConversationLoading}
               sendDisabled={currentConversationSendDisabled}
               queuedItems={currentConversationQueuedItems}
               error={conversationLoadError ?? error}
+              errorRecovery={nativeRecovery && error === nativeRecovery.error.message && activeConversationId ? (() => {
+                const message = messages.find(item => item.id === nativeRecovery.messageId);
+                return message ? <NativeWriteConflictNotice key={message.id} error={nativeRecovery.error}
+                  projectId={project.id} conversationId={activeConversationId} message={message}
+                  onRestored={() => { void refreshProjectFiles(); }} /> : null;
+              })() : null}
               projectId={project.id}
               sessionMode={activeSessionMode}
               onSessionModeChange={handleActiveConversationSessionModeChange}

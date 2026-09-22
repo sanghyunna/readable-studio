@@ -5,11 +5,15 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DESIGN_FILES_TAB, FileWorkspace } from '../../src/components/FileWorkspace';
 import { emptyManualEditStyles, type ManualEditTarget } from '../../src/edit-mode/types';
-import { en } from '../../src/i18n/locales/en';
+import { getEn } from '../../src/i18n/locales/en';
+const en = getEn();
 import { fetchProjectDeployments, fetchProjectFileText, fetchProjectFolders } from '../../src/providers/registry';
 import { killTerminal } from '../../src/state/projects';
 import type { OpenTabsState, ProjectFile } from '../../src/types';
 import { stubMissingCanvasContext } from '../helpers/canvas';
+import { buildManualEditBridge } from '../../src/edit-mode/bridge';
+import { JSDOM } from '../edit-mode/bridge-dom';
+import { deferred } from '../helpers/deferred';
 
 vi.mock('../../src/providers/registry', async (importOriginal) => ({
   ...await importOriginal<typeof import('../../src/providers/registry')>(),
@@ -174,6 +178,90 @@ describe('workspace tab dismissal', () => {
     fireEvent.click(close(en['workspace.newTerminal']));
     expect(killTerminal).toHaveBeenCalledTimes(1);
     expect(killTerminal).toHaveBeenCalledWith('tab-close', 'restarted', { keepalive: true });
+  });
+
+  it.each(['tab', 'shortcut', 'agent-open', 'share', 'download', 'root'] as const)(
+    'blocks %s file switching until the existing Save/Discard decision is made', async (path) => {
+      const initial = { tabs: ['preview.html', 'other.png'], active: 'preview.html' };
+      const files = [file('preview.html', 'html'), file('other.png')];
+      const view = render(<Workspace initial={initial} files={files} />);
+      await settleLoads();
+      fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
+      const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
+      act(() => window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow,
+        data: { type: 'readable-edit-text-commit', id: 'hero', value: 'Unsaved hero' } })));
+      const switchFile = (nonce: number) => {
+        if (path === 'tab') fireEvent.click(tab('other.png'));
+        else if (path === 'shortcut') fireEvent.keyDown(window, { key: 'Tab', ctrlKey: true });
+        else if (path === 'root') fireEvent.click(screen.getByTestId('design-files-tab'));
+        else view.rerender(<Workspace initial={initial} files={files}
+          {...(path === 'agent-open' ? { openRequest: { name: 'other.png', nonce } }
+            : path === 'share' ? { shareRequest: { name: 'other.png', nonce } }
+              : { downloadRequest: { name: 'other.png', nonce } })} />);
+      };
+      switchFile(1);
+      await settleLoads();
+      expect(tab('preview.html').getAttribute('aria-selected')).toBe('true');
+      expect(changed).not.toHaveBeenCalled();
+      expect(screen.getByTestId('artifact-preview-frame')).toBe(frame);
+      expect(frame.srcdoc).toContain('Unsaved hero');
+      expect(screen.getByRole('alert')).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: en['manualEdit.discardChanges'] }));
+      switchFile(2);
+      await settleLoads();
+      expect(tab('preview.html').getAttribute('aria-selected')).toBe('false');
+    },
+  );
+
+  it('keeps a live bridge mounted on file switch, then saves its text before allowing navigation', async () => {
+    const saved = deferred<void>();
+    const writes: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (_input: unknown, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        writes.push(JSON.parse(String(init.body)).content);
+        return new Response(JSON.stringify({ file: file('preview.html', 'html') }), {
+          status: 200, headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(source, { status: 200 });
+    }));
+    await mount({ initial: { tabs: ['preview.html', 'other.png'], active: 'preview.html' },
+      files: [file('preview.html', 'html'), file('other.png')], onRefreshFiles: () => saved.resolve() });
+    fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
+    const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
+    const dom = new JSDOM(`${source}${buildManualEditBridge(true)}`, { runScripts: 'dangerously', url: 'http://localhost' });
+    await dom.loaded;
+    const messages: unknown[] = [];
+    dom.window.parent.postMessage = (data: unknown) => { messages.push(data); };
+    vi.spyOn(frame.contentWindow!, 'postMessage').mockImplementation((data) => {
+      dom.window.dispatchEvent(new dom.window.MessageEvent('message', { data }));
+    });
+    const dispatch = (data: unknown) => window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, data }));
+    const drain = async () => { await act(async () => { while (messages.length) dispatch(messages.shift()); }); };
+    const target: ManualEditTarget = {
+      id: 'hero', kind: 'text', label: 'Hero', tagName: 'main', className: '', text: 'Hero',
+      rect: { x: 24, y: 24, width: 160, height: 48 }, fields: { text: 'Hero' },
+      attributes: {}, styles: emptyManualEditStyles(), isLayoutContainer: false, outerHtml: '<main>Hero</main>',
+    };
+    await act(async () => { dispatch({ type: 'readable-edit-select', target, beginTextEdit: true }); });
+    await drain();
+    const el = dom.window.document.querySelector('[data-readable-id="hero"]')!;
+    expect(el.getAttribute('data-readable-editing')).toBe('true');
+    el.textContent = 'Live unsaved text';
+    fireEvent.click(tab('other.png'));
+    expect(changed).not.toHaveBeenCalled();
+    expect(screen.getByTestId('artifact-preview-frame')).toBe(frame);
+    await drain();
+    expect(frame.srcdoc).toContain('Live unsaved text');
+    expect(writes).toHaveLength(0);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: en['manualEdit.saveChanges'] })); });
+    await drain();
+    await act(async () => { await saved.promise; });
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toContain('Live unsaved text');
+    fireEvent.click(tab('other.png'));
+    await settleLoads();
+    expect(tab('other.png').getAttribute('aria-selected')).toBe('true');
   });
 
   it.each(['button', 'middle', 'shortcut'] as const)('blocks %s close of real dirty direct edits without discarding source, then allows explicit discard', async (path) => {

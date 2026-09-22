@@ -5,7 +5,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AgentDiagnosticRow } from '../../src/components/AgentDiagnosticRow';
 import type { AgentDiagnostic } from '../../src/types';
-import { en } from '../../src/i18n/locales/en';
+import { getEn } from '../../src/i18n/locales/en';
+const en = getEn();
 
 afterEach(() => {
   cleanup();

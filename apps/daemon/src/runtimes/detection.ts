@@ -21,7 +21,7 @@ import { resetStartupScanProgress, startStartupScan, type StartupScanSession } f
 export { startStartupScan, getStartupScanProgress } from './detection-scan.js';
 
 const startupSessions = new Map<string, StartupScanSession>();
-const durableRuns = new Map<string, Promise<DetectedAgent[]>>();
+const durableRuns = new Map<string, Promise<DetectedAgent>[]>();
 let storageDir: string | undefined;
 export function configureDetectionStorage(dataDir: string): void { storageDir = dataDir; }
 export function _resetAgentDetectionCacheForTests(): void {
@@ -37,6 +37,7 @@ function durableDetection(
   configuredEnvByAgent: Record<string, Record<string, string>>,
   options: DetectionOptions,
 ): Promise<DetectedAgent>[] {
+  options.signal?.throwIfAborted();
   const dataDir = storageDir;
   if (!dataDir || discoveryPolicy(options) === 'offline') return detectionPromises(defs, configuredEnvByAgent, options);
   const fingerprint = createHash('sha256').update(JSON.stringify({
@@ -44,9 +45,17 @@ function durableDetection(
     enabled: defs.map((def) => detectionEnvFingerprint(def, configuredEnvByAgent[def.id] ?? {})),
   })).digest('hex');
   const key = `${dataDir}:${fingerprint}`;
-  let run = options.refresh ? undefined : durableRuns.get(key);
+  let run = options.signal ? undefined : durableRuns.get(key);
   if (!run) {
-    run = (async () => {
+    const consumers = defs.map(() => {
+      let resolve: (agent: DetectedAgent) => void = () => {};
+      let reject: (error: unknown) => void = () => {};
+      const promise = new Promise<DetectedAgent>((yes, no) => { resolve = yes; reject = no; });
+      return { promise, resolve, reject };
+    });
+    run = consumers.map(({ promise }) => promise);
+    void Promise.allSettled(run);
+    const completion = (async () => {
       const executables = await Promise.all(defs.filter((def) => def.modelManagement !== 'databricks').map(async (def) => {
         const launch = resolveAgentLaunch(def, configuredEnvByAgent[def.id] ?? {});
         return { def, launch, identity: await executableSnapshotIdentity(launch) };
@@ -79,11 +88,16 @@ function durableDetection(
       if (options.signal?.aborted) cancel();
       const timer = setTimeout(() => controller.abort(new DOMException('Agent scan budget expired', 'TimeoutError')), 60_000);
       try {
-        const probe = (def: RuntimeAgentDef) => cachedSafeProbe(safeProbe, def, configuredEnvByAgent[def.id] ?? {}, { ...options, refresh: true });
-        const fresh = options.refresh ? new Map(defs.map((def) => [def.id, probe(def)])) : null;
-        if (fresh) void Promise.allSettled(fresh.values());
-        const session = startStartupScan(defs, (def) => fresh?.get(def.id) ?? probe(def), controller.signal);
-        const results = await Promise.all([...session.promises.values()]);
+        const probe = (def: RuntimeAgentDef) => cachedSafeProbe(safeProbe, def, configuredEnvByAgent[def.id] ?? {}, { ...options, refresh: true, signal: controller.signal });
+        const session = startStartupScan(defs, probe, controller.signal);
+        let completed = 0;
+        const results = await Promise.all([...session.promises.values()].map(async (promise, index) => {
+          const agent = await promise;
+          // Stream immediately; retain only the last completion until the atomic
+          // snapshot is written so awaiting the full scan still includes storage.
+          if (++completed < defs.length) consumers[index]?.resolve(agent);
+          return agent;
+        }));
         controller.signal.throwIfAborted();
         await writeStoredAgentScan(dataDir, {
           version: 1, completedAt: new Date().toISOString(), fingerprint: snapshotFingerprint,
@@ -96,15 +110,17 @@ function durableDetection(
         options.signal?.removeEventListener('abort', cancel);
       }
     })();
-    durableRuns.set(key, run);
+    if (!options.signal) durableRuns.set(key, run);
     const release = () => { if (durableRuns.get(key) === run) durableRuns.delete(key); };
-    void run.then(release, release);
+    void completion.then((agents) => {
+      agents.forEach((agent, index) => consumers[index]?.resolve(agent));
+      release();
+    }, (error: unknown) => {
+      consumers.forEach((consumer) => consumer.reject(error));
+      release();
+    });
   }
-  return defs.map((def, index) => run.then((agents) => {
-    const agent = agents[index];
-    if (!agent) throw new Error(`Incomplete agent scan: ${def.id}`);
-    return agent;
-  }));
+  return run;
 }
 
 function detectionPromises(
@@ -112,13 +128,14 @@ function detectionPromises(
   configuredEnvByAgent: Record<string, Record<string, string>>,
   options: DetectionOptions,
 ): Promise<DetectedAgent>[] {
+  options.signal?.throwIfAborted();
   const probe = (def: RuntimeAgentDef) => cachedSafeProbe(safeProbe, def, configuredEnvByAgent[def.id] ?? {}, options);
-  if (options.refresh || discoveryPolicy(options) === 'offline') return defs.map(probe);
+  if (discoveryPolicy(options) === 'offline') return defs.map(probe);
   const key = defs.map((def) => detectionEnvFingerprint(def, configuredEnvByAgent[def.id] ?? {})).join(':');
-  let session = startupSessions.get(key);
-  if (!session) {
-    session = startStartupScan(defs, probe);
-    startupSessions.set(key, session);
+  let session = options.signal ? undefined : startupSessions.get(key);
+  if (!session || session.progress.phase !== 'running') {
+    session = startStartupScan(defs, probe, options.signal);
+    if (!options.signal) startupSessions.set(key, session);
   }
   switch (session.progress.phase) {
     case 'running': return [...session.promises.values()];
@@ -154,14 +171,15 @@ export async function detectAgents(
   options: DetectionOptions = {},
 ): Promise<DetectedAgent[]> {
   const enabledAgentIds = options.enabledAgentIds ?? DEFAULT_ENABLED_AGENT_IDS;
-  const defs = AGENT_DEFS.filter((def) => enabledAgentIds.includes(def.id));
+  // Enabled ids select capabilities, never the inventory whose availability we verify.
+  const defs = AGENT_DEFS;
   const results = await Promise.all(durableDetection(defs, configuredEnvByAgent, options));
   for (const [index, agent] of results.entries()) {
     const def = defs[index];
     if (!def) continue;
     rememberDetectedLiveModels(def, configuredEnvByAgent?.[def.id] ?? {}, agent);
   }
-  return results;
+  return results.filter((agent) => enabledAgentIds.includes(agent.id));
 }
 
 export async function* detectAgentsStream(
@@ -169,7 +187,7 @@ export async function* detectAgentsStream(
   options: DetectionOptions = {},
 ): AsyncGenerator<DetectedAgent> {
   const enabledAgentIds = options.enabledAgentIds ?? DEFAULT_ENABLED_AGENT_IDS;
-  const defs = AGENT_DEFS.filter((def) => enabledAgentIds.includes(def.id));
+  const defs = AGENT_DEFS;
   const tagged = durableDetection(defs, configuredEnvByAgent, options).map((promise, index) =>
     promise.then((agent) => {
       const def = defs[index];
@@ -183,6 +201,6 @@ export async function* detectAgentsStream(
       tagged.filter((_, i) => pending.has(i)),
     );
     pending.delete(index);
-    yield agent;
+    if (enabledAgentIds.includes(agent.id)) yield agent;
   }
 }

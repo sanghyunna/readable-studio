@@ -1,6 +1,5 @@
-// detectAgents() filters the probed registry when the user has persisted an
-// explicit `enabledAgentIds` set. With no selection, every registered agent is
-// enabled by default. The
+// detectAgents() filters capability results after scanning the complete registry.
+// With no selection, every registered agent is enabled by default. The
 // `cursor-agent` id must accept the legacy `agent` alias on disk via
 // `fallbackBins`. Unknown ids must be ignored, duplicates collapsed,
 // and aliases (`agent`, `cursor`) normalized to `cursor-agent`.
@@ -35,23 +34,24 @@ describe('packaged offline discovery', () => {
 });
 
 describe('detectAgents enabledAgentIds filter', () => {
-  test('default (no options) probes every canonical registered agent', async () => {
+  test('returns the complete registry when no selection is persisted', async () => {
+    // Given no persisted selection, when detection runs, then all adapters are offered.
     const agents = await detectAgents();
     expect(ids(agents)).toEqual(ids(AGENT_DEFS));
     expect(DEFAULT_ENABLED_AGENT_IDS).toEqual(AGENT_DEFS.map((agent) => agent.id));
   });
 
-  test('enabledAgentIds: ["codex"] probes ONLY codex', async () => {
+  test('enabledAgentIds: ["codex"] returns ONLY codex', async () => {
     const agents = await detectAgents({}, { enabledAgentIds: ['codex'] });
     expect(ids(agents)).toEqual(['codex']);
   });
 
-  test('enabledAgentIds: ["cursor-agent"] probes ONLY cursor-agent', async () => {
+  test('enabledAgentIds: ["cursor-agent"] returns ONLY cursor-agent', async () => {
     const agents = await detectAgents({}, { enabledAgentIds: ['cursor-agent'] });
     expect(ids(agents)).toEqual(['cursor-agent']);
   });
 
-  test('enabledAgentIds: ["codex", "claude"] expands probed set beyond defaults', async () => {
+  test('enabledAgentIds: ["codex", "claude"] restricts returned capabilities', async () => {
     const agents = await detectAgents({}, { enabledAgentIds: ['codex', 'claude'] });
     expect(ids(agents)).toEqual(['claude', 'codex']);
   });

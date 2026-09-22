@@ -3,7 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import type { DesignSystemTokenContractRebuildJobResponse } from '@readable-studio/contracts';
 import { AGENT_DEFS, detectAgents, detectAgentsStream } from '../agents.js';
-import { getStartupScanProgress } from '../runtimes/detection.js';
+import { registerAgentScanRoute } from './agent-scan.js';
 import {
   SkillImportError,
   deleteUserSkill,
@@ -76,10 +76,7 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
     };
   };
 
-  app.get('/api/agents/scan', (_req, res) => {
-    res.setHeader('Cache-Control', 'no-store');
-    res.json({ scan: getStartupScanProgress() });
-  });
+  registerAgentScanRoute(app, RUNTIME_DATA_DIR, ctx.http.requireLocalDaemonRequest);
 
   app.get('/api/agents', async (req, res) => {
     const wantsStream =

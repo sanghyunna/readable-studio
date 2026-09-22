@@ -1,7 +1,7 @@
 import { symlinkSync } from 'node:fs';
 import { test, vi } from 'vitest';
 import { homedir } from 'node:os';
-import { dirname, relative, resolve } from 'node:path';
+import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as platform from '@readable-studio/platform';
 import {
@@ -721,26 +721,29 @@ function codexNativeTargetTriple(): string {
 }
 
 test('resolveAgentExecutable ignores relative CODEX_BIN overrides', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'readable-codex-bin-rel-'));
-  const oldCwd = process.cwd();
+  // Keep the fixture on cwd's drive: Windows tmpdir() may be on another drive.
+  const dir = mkdtempSync(join(process.cwd(), 'readable-codex-bin-rel-'));
   try {
-    return withEnvSnapshot(['PATH', 'READABLE_AGENT_HOME'], () => {
-      const configured = 'codex-custom';
-      writeFileSync(join(dir, configured), '#!/bin/sh\nexit 0\n');
-      chmodSync(join(dir, configured), 0o755);
-      process.chdir(dir);
+    return withEnvSnapshot(['PATH', 'PATHEXT', 'READABLE_AGENT_HOME'], () => {
+      // Given an executable whose absolute override is accepted.
+      const executable = join(dir, process.platform === 'win32' ? 'codex-custom.CMD' : 'codex-custom');
+      writeFileSync(executable, process.platform === 'win32' ? '@echo off\r\nexit /b 0\r\n' : '#!/bin/sh\nexit 0\n');
+      chmodSync(executable, 0o755);
       process.env.PATH = '';
+      process.env.PATHEXT = '.EXE;.CMD;.BAT';
       process.env.READABLE_AGENT_HOME = dir;
+      const def = minimalAgentDef({ id: 'codex', bin: 'codex' });
+      assert.equal(resolveAgentExecutable(def, { CODEX_BIN: executable }), executable);
+      const configured = relative(process.cwd(), executable);
+      assert.equal(isAbsolute(configured), false);
 
-      const resolved = resolveAgentExecutable(
-        minimalAgentDef({ id: 'codex', bin: 'codex' }),
-        { CODEX_BIN: configured },
-      );
+      // When the same executable is configured using its relative path.
+      const resolved = resolveAgentExecutable(def, { CODEX_BIN: configured });
 
+      // Then relative-ness alone rejects the override.
       assert.equal(resolved, null);
     });
   } finally {
-    process.chdir(oldCwd);
     rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -849,10 +852,10 @@ test('detectAgents applies configured env while probing the CLI', async () => {
       );
 
       const detected = agents.find((agent) => agent.id === 'claude');
-      assert.equal(detected?.available, true);
+      assert.equal(detected?.available, false);
       assert.equal(detected?.path, bin);
       assert.equal(detected?.version, '/tmp/claude-config-probe');
-      assert.equal(detected?.models.length, 9);
+      assert.equal(detected?.models.length, 0);
       assert.equal(detected?.modelsSource, 'fallback');
     });
   } finally {

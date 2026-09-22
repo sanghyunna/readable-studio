@@ -140,7 +140,7 @@ describe.skipIf(process.platform !== "win32")("buildWinPortableZip portable inje
 
       const extractRoot = join(root, "extracted");
       await mkdir(extractRoot, { recursive: true });
-      await execFileAsync(winResources.sevenZipExe, ["x", setupZipPath, `-o${extractRoot}`, "-y"]);
+      await execFileAsync(winResources.sevenZipExe, ["x", setupZipPath, `-o${extractRoot}`, "-y"], { windowsHide: true });
 
       const extractedConfig = JSON.parse(
         await readFile(join(extractRoot, "resources", "readable-studio-config.json"), "utf8"),

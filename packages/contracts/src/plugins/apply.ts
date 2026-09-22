@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { lazyObject } from '../lazy-object.js';
 import { ContextItemSchema, ResolvedContextSchema, type ContextItem } from './context.js';
 import {
   GenUISurfaceSpecSchema,
@@ -14,12 +15,12 @@ import {
 // Apply-time refs to staged assets. `stageAt` defaults to `'run-start'` to
 // keep `POST /api/projects` from accidentally turning into a staging endpoint
 // (plan §5 invariant I2 / F4). Clients must never default to 'project-create'.
-export const PluginAssetRefSchema = z.object({
+export const PluginAssetRefSchema = lazyObject(() => ({
   path:    z.string(),
   src:     z.string(),
   mime:    z.string().optional(),
   stageAt: z.enum(['project-create', 'run-start']).default('run-start'),
-});
+}));
 
 export type PluginAssetRef = z.infer<typeof PluginAssetRefSchema>;
 
@@ -29,7 +30,7 @@ export type InputFieldSpec = InputField;
 // Immutable snapshot — the contract between "plugin" and "run" (spec §8.2.1).
 // Runs are addressed by snapshotId, not pluginId, so plugin upgrades never
 // pollute historical reproducibility.
-export const AppliedPluginSnapshotSchema = z.object({
+export const AppliedPluginSnapshotSchema = lazyObject(() => ({
   snapshotId:           z.string(),
   pluginId:             z.string(),
   pluginSpecVersion:    z.string().optional(),
@@ -64,23 +65,23 @@ export const AppliedPluginSnapshotSchema = z.object({
   // Apply-pipeline status — flips to 'stale' when `readable plugin doctor` detects
   // a digest drift after an upgrade. Snapshots are never rewritten in place.
   status: z.enum(['fresh', 'stale']).default('fresh'),
-});
+}));
 
 export type AppliedPluginSnapshot = z.infer<typeof AppliedPluginSnapshotSchema>;
 
 // Subset of project metadata the daemon may pre-fill from a plugin apply.
 // Intentionally narrow — the project create endpoint owns the full shape.
-export const PluginProjectMetadataPatchSchema = z.object({
+export const PluginProjectMetadataPatchSchema = lazyObject(() => ({
   name:           z.string().optional(),
   skillId:        z.string().optional(),
   designSystemId: z.string().optional(),
   craftRequires:  z.array(z.string()).optional(),
   taskKind: z.enum(['new-generation', 'code-migration', 'figma-migration', 'tune-collab']).optional(),
-}).passthrough();
+})).passthrough();
 
 export type PluginProjectMetadataPatch = z.infer<typeof PluginProjectMetadataPatchSchema>;
 
-export const ApplyResultSchema = z.object({
+export const ApplyResultSchema = lazyObject(() => ({
   query:         z.string(),
   contextItems:  z.array(ContextItemSchema),
   inputs:        z.array(InputFieldSpecSchema),
@@ -93,7 +94,7 @@ export const ApplyResultSchema = z.object({
   capabilitiesGranted:  z.array(z.string()),
   capabilitiesRequired: z.array(z.string()),
   appliedPlugin:        AppliedPluginSnapshotSchema,
-});
+}));
 
 export type ApplyResult = z.infer<typeof ApplyResultSchema>;
 

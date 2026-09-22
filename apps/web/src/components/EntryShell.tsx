@@ -37,9 +37,19 @@ import type {
   SkillSummary,
 } from '../types';
 import { CenteredLoader } from './Loading';
-import { DesignsTab } from './DesignsTab';
-import { DesignSystemPreviewModal } from './DesignSystemPreviewModal';
-import { DesignSystemsTab } from './DesignSystemsTab';
+import dynamic from 'next/dynamic';
+
+function SurfaceLoading() {
+  const t = useT();
+  return <CenteredLoader label={t('common.loading')} />;
+}
+
+const DesignsTab = dynamic(() => import('./DesignsTab').then((m) => m.DesignsTab), { loading: SurfaceLoading });
+const DesignSystemPreviewModal = dynamic(() => import('./DesignSystemPreviewModal').then((m) => m.DesignSystemPreviewModal), { loading: SurfaceLoading });
+const DesignSystemsTab = dynamic(() => import('./DesignSystemsTab').then((m) => m.DesignSystemsTab), { loading: SurfaceLoading });
+const IntegrationsView = dynamic(() => import('./IntegrationsView').then((m) => m.IntegrationsView), { loading: SurfaceLoading });
+const PluginsView = dynamic(() => import('./PluginsView').then((m) => m.PluginsView), { loading: SurfaceLoading });
+const TasksView = dynamic(() => import('./TasksView').then((m) => m.TasksView), { loading: SurfaceLoading });
 import type { EntryView as EntryViewKind } from './EntryNavRail';
 import type { HubImportFileOutcome } from './hub/drop-to-edit';
 import { HubHome } from './hub/HubHome';
@@ -50,18 +60,16 @@ import {
   type HomePromptHandoff,
 } from './home-hero/plugin-authoring';
 import type { PluginUseAction } from './plugins-home/useActions';
-import { IntegrationsView, type IntegrationTab } from './IntegrationsView';
+import type { IntegrationTab } from './IntegrationsView';
 import { InlineModelSwitcher } from './InlineModelSwitcher';
 import { composerReasoningOptions, requireModelSelection } from './agentModelSelection';
 import type { EntrySettingsSection } from './EntrySettingsMenu';
-import { PluginsView } from './PluginsView';
 import type { CreateInput, CreateTab } from './NewProjectPanel';
 import type { PluginLoopSubmit } from './PluginLoopHome';
 import type {
   PluginShareAction,
   PluginShareProjectOutcome,
 } from '../state/projects';
-import { TasksView } from './TasksView';
 import { useRuntimeUsername } from '../hooks/useRuntimeUser';
 import { AnimatePresence } from 'motion/react';
 import { smoothScrollToTop } from '../utils/smoothScrollToTop';
@@ -237,6 +245,11 @@ export function EntryShell({
   const route = useRoute();
   const username = useRuntimeUsername();
   const view: EntryViewKind = route.kind === 'home' ? route.view : 'home';
+  // Keep visited surfaces alive, but never mount an unopened surface.
+  const [visitedViews, setVisitedViews] = useState<ReadonlySet<EntryViewKind>>(() => new Set([view]));
+  useEffect(() => {
+    setVisitedViews((visited) => visited.has(view) ? visited : new Set([...visited, view]));
+  }, [view]);
   const [previewSystemId, setPreviewSystemId] = useState<string | null>(null);
   const [localProviderModelsCache, setLocalProviderModelsCache] =
     useState<ProviderModelsCache>({});
@@ -512,20 +525,20 @@ export function EntryShell({
               )}
             </div>
             <div data-testid="entry-view-tasks" data-active={view === 'tasks' ? 'true' : 'false'} {...inactiveViewProps(view === 'tasks')}>
-              <TasksView
+              {view === 'tasks' || visitedViews.has('tasks') ? <TasksView
                 skills={skills}
                 designTemplates={designTemplates}
-              />
+              /> : null}
             </div>
             <div data-testid="entry-view-plugins" data-active={view === 'plugins' ? 'true' : 'false'} {...inactiveViewProps(view === 'plugins')}>
-              <PluginsView
+              {view === 'plugins' || visitedViews.has('plugins') ? <PluginsView
                 onCreatePlugin={startPluginAuthoring}
                 onUsePlugin={usePluginFromLibrary}
                 onCreatePluginShareProject={onCreatePluginShareProject}
-              />
+              /> : null}
             </div>
             <div data-testid="entry-view-design-systems" data-active={view === 'design-systems' ? 'true' : 'false'} {...inactiveViewProps(view === 'design-systems')}>
-              {designSystemsLoading ? (
+              {view !== 'design-systems' && !visitedViews.has('design-systems') ? null : designSystemsLoading ? (
                 <CenteredLoader label={t('common.loading')} />
               ) : (
                 <div className="entry-section">

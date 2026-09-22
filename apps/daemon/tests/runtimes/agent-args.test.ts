@@ -269,52 +269,34 @@ test('pi args combine model, thinking, and extraAllowedDirs', () => {
 test('gemini args avoid version-fragile trust flags', () => {
   const args = gemini.buildArgs('', [], [], {});
 
-  assert.deepEqual(args, ['--output-format', 'stream-json', '--yolo']);
+  assert.deepEqual(args, ['--yolo']);
   assert.equal(args.includes('--skip-trust'), false);
   assert.deepEqual(gemini.env, { GEMINI_CLI_TRUST_WORKSPACE: 'true' });
 });
 
-test('claude fallback includes the documented Fable alias and full model id', () => {
-  const models = new Set(claude.fallbackModels.map((model) => model.id));
-
-  assert.equal(models.has('fable'), true);
-  assert.equal(models.has('claude-fable-5'), true);
+test('claude accepts explicit Fable selections without advertising them as verified fallback models', () => {
+  // Given a user-selected alias or full model id, not a discovered model.
+  for (const model of ['fable', 'claude-fable-5']) {
+    // When the CLI arguments are built.
+    const args = claude.buildArgs('', [], [], { model });
+    // Then the explicit selection survives without a speculative picker entry.
+    assert.equal(args[args.indexOf('--model') + 1], model);
+    assert.equal(claude.fallbackModels.some((entry) => entry.id === model), false);
+  }
 });
 
 test('gemini args preserve custom model selection', () => {
   const args = gemini.buildArgs('', [], [], { model: 'gemini-2.5-pro' });
 
-  assert.deepEqual(args, [
-    '--output-format',
-    'stream-json',
-    '--yolo',
-    '--model',
-    'gemini-2.5-pro',
-  ]);
+  assert.deepEqual(args, ['--yolo', '--model', 'gemini-2.5-pro']);
 });
 
-test('gemini picker exposes current Gemini 3 and 2.5 endpoint ids in priority order', () => {
-  // Pin the vendor-documented text models and ensure the shut-down Gemini 3
-  // Pro preview cannot silently return to the picker. Gemini also accepts
-  // arbitrary custom ids, which makes stale fallback regressions easy to miss.
-  assert.deepEqual(gemini.fallbackModels.map((m) => m.id), [
-    'default',
-    'gemini-3.1-pro-preview',
-    'gemini-3.8-flash',
-    'gemini-3.7-flash',
-    'gemini-3.6-flash',
-    'gemini-3.5-flash',
-    'gemini-3.5-flash-lite',
-    'gemini-3.1-flash-lite',
-    'gemini-3-flash-preview',
-    'gemini-2.5-pro',
-    'gemini-2.5-flash',
-    'gemini-2.5-flash-lite',
-  ]);
-  assert.equal(
-    gemini.fallbackModels.some((model) => model.id === 'gemini-3-pro-preview'),
-    false,
-  );
+test('gemini picker has no fabricated models when live listing is unsupported', () => {
+  // Given the CLI has no account-bound model listing.
+  // When the picker reads adapter fallback models.
+  const models = gemini.fallbackModels;
+  // Then no model is claimed as available.
+  assert.deepEqual(models, []);
 });
 
 test('qoder entry uses qodercli with stream-json stdin delivery and tier model hints', () => {
@@ -443,7 +425,9 @@ test('detectAgents keeps qoder unavailable without selectable models when qoderc
     process.env.READABLE_AGENT_HOME = dir;
     process.env.PATH = dir;
 
-    const agents = await detectAgents();
+    // qoder is not in the small default scan set, so ask for it explicitly;
+    // this test is about qoder's unavailable shape, not the default scope.
+    const agents = await detectAgents({}, { enabledAgentIds: ['qoder'] });
     const detected = agents.find((agent) => agent.id === 'qoder');
 
     assert.ok(detected);

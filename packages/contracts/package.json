@@ -1,6 +1,6 @@
 {
   "name": "@readable-studio/contracts",
-  "version": "1.0.7",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "description": "Shared pure TypeScript contracts for the Readable Studio web/daemon boundary.",

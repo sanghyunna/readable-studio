@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { DEFAULT_ENABLED_AGENT_IDS, readAppConfig, writeAppConfig } from '../src/app-config.js';
+import { AGENT_DEFS } from '../src/runtimes/registry.js';
 import { LEGACY_ENABLED_AGENT_IDS } from './app-config-agents.fixture.js';
 
 let dataDir: string;
@@ -19,7 +20,40 @@ afterEach(async () => {
   await rm(dataDir, { recursive: true, force: true });
 });
 
-it('enables a newly shipped agent when reading the measured 22-id legacy config', async () => {
+it('returns the complete registry selection when config is fresh', async () => {
+  // Given an empty data directory, when config is read, then every adapter is enabled.
+  const config = await readAppConfig(dataDir);
+  expect(config.enabledAgentIds).toEqual(AGENT_DEFS.map((agent) => agent.id));
+});
+
+it.each([{ enabledAgentIds: ['claude'] }, { enabledAgentIds: [] }])('preserves an explicit persisted selection $enabledAgentIds without history', async ({ enabledAgentIds }) => {
+  // Given an explicit selection with neither default agent and no offered history.
+  await writeFile(file, JSON.stringify({ enabledAgentIds }));
+  // When the config is read.
+  const config = await readAppConfig(dataDir);
+  // Then no default or newly offered adapter is added.
+  expect(config.enabledAgentIds).toEqual(enabledAgentIds);
+});
+
+it.each(['agent', 'cursor'])('normalizes the persisted %s alias without adding other agents', async (alias) => {
+  // Given a legacy Cursor alias on disk.
+  await writeFile(file, JSON.stringify({ enabledAgentIds: [alias] }));
+  // When the config is read.
+  const config = await readAppConfig(dataDir);
+  // Then only the canonical Cursor adapter is enabled.
+  expect(config.enabledAgentIds).toEqual(['cursor-agent']);
+});
+
+it('allows opting in to every catalog adapter through preference writes', async () => {
+  // Given the full catalog available to Settings.
+  const enabledAgentIds = AGENT_DEFS.map((agent) => agent.id);
+  // When Settings saves that explicit selection.
+  await writeAppConfig(dataDir, { enabledAgentIds });
+  // Then all adapters remain enableable.
+  expect((await readAppConfig(dataDir)).enabledAgentIds).toEqual(enabledAgentIds);
+});
+
+it('preserves the measured 22-id legacy selection without adding newly shipped agents', async () => {
   expect(LEGACY_ENABLED_AGENT_IDS).toHaveLength(22);
   expect(LEGACY_ENABLED_AGENT_IDS).toContain('pi');
   expect(LEGACY_ENABLED_AGENT_IDS).not.toContain('databricks');
@@ -27,19 +61,18 @@ it('enables a newly shipped agent when reading the measured 22-id legacy config'
 
   const config = await readAppConfig(dataDir);
 
-  expect(config.enabledAgentIds).toContain('databricks');
-  expect(config.enabledAgentIds).toEqual(expect.arrayContaining(LEGACY_ENABLED_AGENT_IDS));
+  expect(config.enabledAgentIds).toEqual(LEGACY_ENABLED_AGENT_IDS);
   const persisted = JSON.parse(await readFile(file, 'utf8'));
   expect(persisted.enabledAgentIds).toEqual(config.enabledAgentIds);
-  expect(persisted.offeredAgentIds).toEqual(expect.arrayContaining(config.enabledAgentIds!));
+  expect(persisted.offeredAgentIds).toEqual(expect.arrayContaining(LEGACY_ENABLED_AGENT_IDS));
 });
 
 it('keeps an explicitly disabled offered agent off across subsequent reads and a restart', async () => {
   await writeFile(file, JSON.stringify({ enabledAgentIds: LEGACY_ENABLED_AGENT_IDS }));
   const offered = await readAppConfig(dataDir);
-  expect(offered.enabledAgentIds).toContain('databricks');
+  expect(offered.offeredAgentIds).toContain('databricks');
 
-  const enabledAgentIds = offered.enabledAgentIds!.filter((id) => id !== 'databricks');
+  const enabledAgentIds = LEGACY_ENABLED_AGENT_IDS.filter((id) => id !== 'codex');
   await writeAppConfig(dataDir, { enabledAgentIds });
   expect((await readAppConfig(dataDir)).enabledAgentIds).toEqual(enabledAgentIds);
 
@@ -51,15 +84,14 @@ it('keeps an explicitly disabled offered agent off across subsequent reads and a
   expect(config.offeredAgentIds).toContain('databricks');
 });
 
-it('adds unseen ids without enabling an older offered id that was disabled', async () => {
+it('keeps unseen and explicitly disabled ids out of the selection', async () => {
   await writeFile(file, JSON.stringify({
     enabledAgentIds: LEGACY_ENABLED_AGENT_IDS.filter((id) => id !== 'codex'),
     offeredAgentIds: LEGACY_ENABLED_AGENT_IDS,
   }));
 
   const config = await readAppConfig(dataDir);
-  expect(config.enabledAgentIds).toContain('databricks');
-  expect(config.enabledAgentIds).not.toContain('codex');
+  expect(config.enabledAgentIds).toEqual(LEGACY_ENABLED_AGENT_IDS.filter((id) => id !== 'codex'));
   expect((await readAppConfig(dataDir)).enabledAgentIds).toEqual(config.enabledAgentIds);
 });
 
@@ -67,7 +99,7 @@ it('records the offered catalog on the first explicit selection, including an em
   await writeAppConfig(dataDir, { enabledAgentIds: [] });
   const config = await readAppConfig(dataDir);
   expect(config.enabledAgentIds).toEqual([]);
-  expect(config.offeredAgentIds).toEqual(DEFAULT_ENABLED_AGENT_IDS);
+  expect(config.offeredAgentIds).toEqual(AGENT_DEFS.map((agent) => agent.id));
 });
 
 it('does not let preference updates erase offered history and resurrect disabled agents', async () => {
@@ -76,7 +108,7 @@ it('does not let preference updates erase offered history and resurrect disabled
   await writeAppConfig(dataDir, { offeredAgentIds: null });
   const config = await readAppConfig(dataDir);
   expect(config.enabledAgentIds).toEqual(['codex']);
-  expect(config.offeredAgentIds).toEqual(DEFAULT_ENABLED_AGENT_IDS);
+  expect(config.offeredAgentIds).toEqual(AGENT_DEFS.map((agent) => agent.id));
   expect(config.skillId).toBe('coder');
 });
 
@@ -116,7 +148,7 @@ it('retains disabled history while an adapter is absent and after it returns', a
   expect(config.offeredAgentIds).toContain(profileId);
 });
 
-it('enables a future local adapter generically, keeping the existing selection restrictive', async () => {
+it('offers a future local adapter without widening the existing selection', async () => {
   await writeAppConfig(dataDir, { enabledAgentIds: ['codex'] });
   const profileId = 'new-release-agent';
   const profilesFile = path.join(dataDir, 'agents.local.json');
@@ -128,6 +160,6 @@ it('enables a future local adapter generically, keeping the existing selection r
   const restarted = await import('../src/app-config.js');
 
   const config = await restarted.readAppConfig(dataDir);
-  expect(config.enabledAgentIds).toEqual(['codex', profileId]);
+  expect(config.enabledAgentIds).toEqual(['codex']);
   expect(config.offeredAgentIds).toContain(profileId);
 });

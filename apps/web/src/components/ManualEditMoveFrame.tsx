@@ -1,6 +1,8 @@
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
+  type MutableRefObject,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
@@ -29,6 +31,7 @@ export type ManualEditMoveFrameProps = {
   mode: 'editing' | 'selected';
   label: string; // aria-label for the move surface
   selectBehindHint?: string; // tooltip/aria-label for z-stack cycling
+  flushPendingRef?: MutableRefObject<(() => void) | null>;
   onMoveStart: () => void; // drag threshold crossed
   onMovePreview: (update: ManualEditMoveUpdate) => void; // rect-space update, per rAF frame
   onMoveCommit: (update: ManualEditMoveUpdate) => void; // final pointerup update after a real drag
@@ -71,6 +74,7 @@ export function ManualEditMoveFrame({
   mode,
   label,
   selectBehindHint,
+  flushPendingRef,
   onMoveStart,
   onMovePreview,
   onMoveCommit,
@@ -268,6 +272,12 @@ export function ManualEditMoveFrame({
     }
     return drag;
   };
+
+  useLayoutEffect(() => {
+    if (!flushPendingRef) return;
+    flushPendingRef.current = flushPendingPreview;
+    return () => { flushPendingRef.current = null; };
+  });
 
   const movementUpdateFor = (delta: Delta, shiftKey: boolean): ManualEditMoveUpdate => {
     latestDeltaRef.current = delta;

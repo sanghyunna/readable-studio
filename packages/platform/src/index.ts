@@ -355,12 +355,12 @@ export function parseMacosScutilProxyOutput(
         inExceptions = false;
         continue;
       }
-      const match = line.match(/^\d+\s*:\s*(.+)$/);
-      if (match) exceptions.push(match[1].trim());
+      const [, exception] = line.match(/^\d+\s*:\s*(.+)$/) ?? [];
+      if (exception !== undefined) exceptions.push(exception.trim());
       continue;
     }
-    const match = line.match(/^([A-Za-z][A-Za-z0-9]*)\s*:\s*(.+)$/);
-    if (match) scalars.set(match[1], match[2].trim());
+    const [, key, value] = line.match(/^([A-Za-z][A-Za-z0-9]*)\s*:\s*(.+)$/) ?? [];
+    if (key !== undefined && value !== undefined) scalars.set(key, value.trim());
   }
 
   const httpProxy =
@@ -391,7 +391,7 @@ export function parseMacosScutilProxyOutput(
 
 function parseRegistryValue(stdout: string, valueName: string): string | null {
   const match = stdout.match(new RegExp(`^\\s*${valueName}\\s+REG_\\w+\\s+(.+)$`, "m"));
-  return match ? match[1].trim() : null;
+  return match?.[1]?.trim() ?? null;
 }
 
 // @dsp func-20d82fda
@@ -661,8 +661,8 @@ export async function removePathBestEffort(
 // into one literal arg with the `%` preserved. The two layers cancel, so the
 // child receives the original arg byte-for-byte while cmd never has a chance
 // to expand anything inside it.
-function quoteWindowsCommandArg(value: string): string {
-  if (!/[\s"&<>|^%]/.test(value)) return value;
+function quoteWindowsCommandArg(value: string, forceQuote = false): string {
+  if (!forceQuote && !/[\s"&<>|^%]/.test(value)) return value;
   const escaped = value.replace(/"/g, '""').replace(/%/g, '"^%"');
   return `"${escaped}"`;
 }
@@ -682,10 +682,12 @@ function quoteWindowsCommandArg(value: string): string {
 // get split on the first space and cmd.exe reports "not recognized as an
 // internal or external command" — see issue #315.
 function buildCmdShimInvocation(command: string, args: string[], env: NodeJS.ProcessEnv): CommandInvocation {
-  const inner = [command, ...args].map(quoteWindowsCommandArg).join(" ");
+  const inner = [quoteWindowsCommandArg(command, /[\\/]/.test(command)), ...args.map((arg) => quoteWindowsCommandArg(arg))].join(" ");
+  const shell = Object.entries(env).find(([key]) => key.toUpperCase() === "COMSPEC")?.[1]
+    ?? Object.entries(process.env).find(([key]) => key.toUpperCase() === "COMSPEC")?.[1];
   return {
     args: ["/d", "/s", "/c", `"${inner}"`],
-    command: env.ComSpec ?? process.env.ComSpec ?? "cmd.exe",
+    command: shell ?? join(env.SystemRoot ?? process.env.SystemRoot ?? "C:\\Windows", "System32", "cmd.exe"),
     windowsVerbatimArguments: true,
   };
 }
@@ -1125,7 +1127,7 @@ function compareVersionLikeDirNames(left: string, right: string): number {
   const leftSemver = parseVersionLikeDirName(left);
   const rightSemver = parseVersionLikeDirName(right);
   if (leftSemver && rightSemver) {
-    for (let index = 0; index < leftSemver.length; index += 1) {
+    for (const index of [0, 1, 2] as const) {
       const difference = rightSemver[index] - leftSemver[index];
       if (difference !== 0) return difference;
     }

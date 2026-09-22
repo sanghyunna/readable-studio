@@ -3,11 +3,11 @@
 // The static-resource route is the only HTTP entry point for the agent
 // picker. It must:
 //
-//   - Default to every canonical registry id when the saved app-config has no
+//   - Default to the complete registry when the saved app-config has no
 //     enabledAgentIds field.
 //   - Honor the override when the user has saved a custom set.
-//   - Pass that set straight through to detectAgents() so the daemon
-//     does not silently fan out to every AGENT_DEF.
+//   - Pass that set through for post-scan capability filtering; inventory
+//     coverage is tested at the real detection boundary.
 //
 // We intercept detectAgents at its module boundary and inspect the
 // options it received instead of running real probes.
@@ -165,7 +165,7 @@ describe('GET /api/agents respects enabledAgentIds', () => {
     expect(body.skills.map((skill) => skill.id)).toContain('Route Cache Skill');
   });
 
-  it('defaults enabledAgentIds to every canonical registry id when config has none', async () => {
+  it('defaults enabledAgentIds to the complete registry when config has none', async () => {
     const res = await fetch(`${baseUrl}/api/agents`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { agents: Array<{ id: string }> };
@@ -178,7 +178,7 @@ describe('GET /api/agents respects enabledAgentIds', () => {
     expect(options?.enabledAgentIds).toEqual(AGENT_DEFS.map((agent) => agent.id));
   });
 
-  it('offers a newly shipped agent to the picker from the measured legacy config', async () => {
+  it('does not enable newly shipped agents without user opt-in from legacy config', async () => {
     fs.writeFileSync(
       path.join(dataDir, 'app-config.json'),
       JSON.stringify({ enabledAgentIds: LEGACY_ENABLED_AGENT_IDS }),
@@ -193,8 +193,8 @@ describe('GET /api/agents respects enabledAgentIds', () => {
     const res = await fetch(`${baseUrl}/api/agents`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { agents: Array<{ id: string }> };
-    expect(body.agents.map((agent) => agent.id)).toContain('databricks');
-    expect(detectAgentsMock.mock.calls[0]?.[1]?.enabledAgentIds).toContain('databricks');
+    expect(body.agents.map((agent) => agent.id)).toEqual(LEGACY_ENABLED_AGENT_IDS);
+    expect(detectAgentsMock.mock.calls[0]?.[1]?.enabledAgentIds).toEqual(LEGACY_ENABLED_AGENT_IDS);
   });
 
   it('honors a saved enabledAgentIds override from app-config', async () => {
@@ -281,10 +281,7 @@ describe('GET /api/agents respects enabledAgentIds', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { agents: Array<{ id: string; name: string }> };
     expect(Array.isArray(body.agents)).toBe(true);
-    expect(body.agents.length).toBeGreaterThan(0);
-    expect(body.agents.some((a) => a.id === 'codex')).toBe(true);
-    expect(body.agents.some((a) => a.id === 'cursor-agent')).toBe(true);
-    expect(body.agents.every((a) => typeof a.id === 'string' && typeof a.name === 'string')).toBe(true);
+    expect(body.agents).toEqual(AGENT_DEFS.map(({ id, name }) => ({ id, name })));
     expect(detectAgentsMock).not.toHaveBeenCalled();
     expect(detectAgentsStreamMock).not.toHaveBeenCalled();
   });

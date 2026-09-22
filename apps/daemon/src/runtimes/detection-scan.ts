@@ -1,3 +1,4 @@
+import { availableParallelism } from 'node:os';
 import type { AgentScanProgress } from '@readable-studio/contracts';
 import type { DetectedAgent, RuntimeAgentDef } from './types.js';
 
@@ -35,31 +36,48 @@ export function startStartupScan(
   latestSession = session;
   // Observe all job rejections even if an SSE consumer disconnects early.
   void Promise.allSettled(jobs.map(({ promise }) => promise));
-  void (async () => {
+  // A probe can spawn version/help/auth/model commands. Use at most half the
+  // available CPUs, capped at four agents, to leave headroom for UI and VDI AV.
+  const concurrency = Math.max(1, Math.min(4, Math.floor(availableParallelism() / 2)));
+  const active = new Set<RuntimeAgentDef>();
+  let next = 0;
+  const fail = (error: unknown) => {
+    if (progress.phase !== 'running') return;
+    progress = { ...progress, phase: signal?.aborted ? 'cancelled' : 'failed', currentAgentId: null, currentAgentName: null };
+    for (const job of jobs) job.reject(error);
+  };
+  let onAbort = () => {};
+  const aborted = new Promise<never>((_resolve, reject) => {
+    onAbort = () => { fail(signal?.reason); reject(signal?.reason); };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+  // A pre-aborted or empty session may have no worker to observe the rejection.
+  void Promise.allSettled([aborted]);
+  if (signal?.aborted) onAbort();
+  const worker = async () => {
     try {
-      for (const job of jobs) {
-        signal?.throwIfAborted();
-        progress = { ...progress, currentAgentId: job.def.id, currentAgentName: job.def.name };
-        let onAbort = () => {};
-        const aborted = new Promise<never>((_resolve, reject) => {
-          onAbort = () => reject(signal?.reason);
-          signal?.addEventListener('abort', onAbort, { once: true });
-        });
-        let agent: DetectedAgent;
-        try {
-          agent = await Promise.race([probe(job.def), aborted]);
-        } finally {
-          signal?.removeEventListener('abort', onAbort);
-        }
-        progress = { ...progress, completed: progress.completed + 1 };
+      while (progress.phase === 'running') {
+        const job = jobs[next++];
+        if (!job) return;
+        active.add(job.def);
+        const current = active.values().next().value;
+        progress = { ...progress, currentAgentId: current?.id ?? null, currentAgentName: current?.name ?? null };
+        const agent = await Promise.race([probe(job.def), aborted]);
+        if (progress.phase !== 'running') return;
+        active.delete(job.def);
+        const oldest = active.values().next().value;
+        const completed = progress.completed + 1;
+        progress = { ...progress, completed, phase: completed === jobs.length ? 'done' : 'running',
+          currentAgentId: oldest?.id ?? null, currentAgentName: oldest?.name ?? null };
         job.resolve(agent);
       }
-      progress = { ...progress, phase: 'done', currentAgentId: null, currentAgentName: null };
     } catch (error) {
-      // Session boundary: every queued consumer must settle on cancellation/error.
-      progress = { ...progress, phase: signal?.aborted ? 'cancelled' : 'failed', currentAgentId: null, currentAgentName: null };
-      for (const job of jobs) job.reject(error);
+      // Session boundary: active and queued consumers all settle on failure.
+      fail(error);
     }
-  })();
+  };
+  if (jobs.length === 0 && progress.phase === 'running') progress = { ...progress, phase: 'done' };
+  void Promise.all(Array.from({ length: Math.min(concurrency, jobs.length) }, worker))
+    .finally(() => signal?.removeEventListener('abort', onAbort));
   return session;
 }

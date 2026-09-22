@@ -97,6 +97,7 @@ async function runCli(
       {
         cwd: DAEMON_ROOT,
         env,
+        windowsHide: true,
         timeout: 15_000,
         maxBuffer: 4 * 1024 * 1024,
       },
@@ -202,7 +203,7 @@ describe('readable templates CLI', () => {
 
   it('emits the raw GET /api/templates body under --json', async () => {
     const payload = {
-      templates: [{ id: 't-1', name: 'Cards', sourceProjectId: 'proj-1', files: [] }],
+      templates: [{ id: 't-1', name: 'Cards', sourceProjectId: 'proj-1', files: [{ name: 'index.html', content: '<html>saved</html>' }] }],
     };
     stub.setResponder(() => ({ status: 200, body: payload }));
 
@@ -216,6 +217,7 @@ describe('readable templates CLI', () => {
 
     expect(result.code).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual(payload);
+    expect(stub.requests[0]?.url).toBe('/api/templates?includeFiles=1');
   });
 
   it('POSTs /api/templates with name + sourceProjectId on `templates save`', async () => {

@@ -820,7 +820,7 @@ async function runMcpInstall(args) {
     }
     const { spawn } = await import('node:child_process');
     const code = await new Promise((resolve) => {
-      const child = spawn(plan.bin, argv, { stdio: 'inherit' });
+      const child = spawn(plan.bin, argv, { stdio: 'inherit', windowsHide: true });
       child.on('error', (err) => {
         console.error(`✗ failed to run ${plan.bin}: ${err.message}`);
         resolve(127);
@@ -1364,7 +1364,7 @@ async function execFileBuffered(command, args, opts = {}) {
     execFile(command, args, {
       timeout: 30_000,
       maxBuffer: 1024 * 1024,
-      ...opts,
+      ...opts, windowsHide: true,
     }, (error, stdout, stderr) => {
       resolve({
         ok: !error,
@@ -1406,7 +1406,7 @@ async function execGhBuffered(args, opts = {}) {
 async function spawnPassthrough(command, args, opts = {}) {
   const { spawn } = await import('node:child_process');
   return await new Promise((resolve) => {
-    const child = spawn(command, args, { stdio: 'inherit', ...opts });
+    const child = spawn(command, args, { stdio: 'inherit', ...opts, windowsHide: true });
     child.on('error', (error) => resolve({ code: 1, error }));
     child.on('close', (code) => resolve({ code }));
   });
@@ -3261,7 +3261,7 @@ publish from a frozen run snapshot rather than the live installed copy.`);
       : process.platform === 'win32' ? 'start'
       : 'xdg-open';
     const { spawn } = await import('node:child_process');
-    spawn(opener, [link.url], { detached: true, stdio: 'ignore' }).unref();
+    spawn(opener, [link.url], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
   }
 }
 
@@ -3851,7 +3851,7 @@ marks a version unresolvable for new installs while preserving lockfile replay.`
       : process.platform === 'win32' ? 'start'
       : 'xdg-open';
     const { spawn } = await import('node:child_process');
-    spawn(opener, [payload.url], { detached: true, stdio: 'ignore' }).unref();
+    spawn(opener, [payload.url], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
   }
 }
 
@@ -6011,7 +6011,7 @@ Common options:
       // (runAutomation, the project verbs, runResearch).
       let resp;
       try {
-        resp = await fetch(`${base}/api/templates`);
+        resp = await fetch(`${base}/api/templates${flags.json ? '?includeFiles=1' : ''}`);
       } catch (err) {
         surfaceFetchError(err, base);
         process.exit(3);
@@ -7229,9 +7229,9 @@ async function runDiagnostics(args) {
     console.log(`Usage:
   readable diagnostics export [<path>] [--output <path>] [--json] [--daemon-url <url>]
 
-Bundles daemon/web/desktop logs, machine info, and recent crash reports
-into a zip. The bundle is the same one Settings → About → Export
-diagnostics produces.
+Bundles daemon/web/desktop logs, machine info, recent crash reports, and
+the last redacted Databricks gateway failure capture into a zip. The bundle
+is the same one Settings → About → Export diagnostics produces.
 
   <path>                 Where to write the zip. Defaults to
                          ./readable-studio-diagnostics-<timestamp>.zip in the

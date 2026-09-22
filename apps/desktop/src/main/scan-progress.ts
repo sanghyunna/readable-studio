@@ -1,4 +1,4 @@
-import { get } from 'node:http';
+import { request, type RequestOptions } from 'node:http';
 import type { ScanProgress } from './startup-splash.js';
 
 export class ScanProgressUnavailable extends Error {
@@ -27,8 +27,17 @@ function parseScanProgress(payload: unknown): ScanProgress | null {
 export async function readDaemonScan(discoverDaemonUrl: () => Promise<string | null>): Promise<ScanProgress | null> {
   const base = await discoverDaemonUrl();
   if (base === null) throw new ScanProgressUnavailable('daemon is not reachable');
+  return requestScan(base, { signal: AbortSignal.timeout(1000) });
+}
+
+/** Acknowledges shared scan ownership, not completion; progress remains a GET. */
+export function startDaemonScan(base: string, signal: AbortSignal): Promise<ScanProgress | null> {
+  return requestScan(base, { method: 'POST', signal: AbortSignal.any([signal, AbortSignal.timeout(1000)]) });
+}
+
+function requestScan(base: string, options: RequestOptions): Promise<ScanProgress | null> {
   return new Promise((resolve, reject) => {
-    const request = get(new URL('/api/agents/scan', base), { signal: AbortSignal.timeout(1000) }, (response) => {
+    const req = request(new URL('/api/agents/scan', base), options, (response) => {
       if (response.statusCode !== 200) {
         response.resume();
         reject(new ScanProgressUnavailable(`HTTP ${response.statusCode}`));
@@ -43,6 +52,7 @@ export async function readDaemonScan(discoverDaemonUrl: () => Promise<string | n
         catch (error) { reject(error); }
       });
     });
-    request.on('error', reject);
+    req.on('error', reject);
+    req.end();
   });
 }

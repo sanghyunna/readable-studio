@@ -652,6 +652,7 @@ function AssistantMessageImpl({
           <div className="assistant-completion-row">
             <AssistantFooter
               streaming={streaming}
+              runStatus={message.runStatus}
               startedAt={message.startedAt}
               endedAt={message.endedAt}
               usage={usage}
@@ -852,6 +853,7 @@ function appendRoleModel(label: string, model: string | null): string {
 
 interface AssistantFooterProps {
   streaming: boolean;
+  runStatus: ChatMessage['runStatus'];
   startedAt: number | undefined;
   endedAt: number | undefined;
   usage: Extract<AgentEvent, { kind: "usage" }> | undefined;
@@ -872,6 +874,7 @@ interface AssistantFooterProps {
 
 function AssistantFooter({
   streaming,
+  runStatus,
   startedAt,
   endedAt,
   usage,
@@ -919,6 +922,8 @@ function AssistantFooter({
           ? preparing
             ? t("assistant.statusPreparing")
             : t("assistant.workingLabel")
+          : runStatus === "failed" || runStatus === "canceled"
+          ? t(`designs.status.${runStatus}`)
           : hasEmptyResponse
           ? t("assistant.emptyResponseLabel")
           : hasUnfinishedTodos

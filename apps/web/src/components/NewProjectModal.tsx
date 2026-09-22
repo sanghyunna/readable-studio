@@ -17,12 +17,13 @@ import type {
   SkillSummary,
 } from '../types';
 import { Icon } from './Icon';
-import {
-  NewProjectPanel,
-  type CreateInput,
-  type CreateTab,
-  type ImportClaudeDesignOutcome,
-} from './NewProjectPanel';
+import dynamic from 'next/dynamic';
+import { CenteredLoader } from './Loading';
+import type { CreateInput, CreateTab, ImportClaudeDesignOutcome } from './NewProjectPanel';
+
+const NewProjectPanel = dynamic(() => import('./NewProjectPanel').then((m) => m.NewProjectPanel), {
+  loading: () => <CenteredLoader />,
+});
 
 interface Props {
   open: boolean;

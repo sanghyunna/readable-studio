@@ -1,6 +1,10 @@
 import type { Dict } from '../types';
 
-export const ko: Dict = {
+// Cache only after the first synchronous translation request.
+let ko: Dict | undefined;
+
+export function getKo(): Dict {
+  return ko ??= {
   'chat.amrCard.switchTitle': '모델 호출 실패 — 이 작업이 일시중지되었습니다',
   'chat.amrCard.switchBody': 'Readable Studio 공식 AMR 모델 서비스로 전환하세요 — API 키 설정이 필요 없습니다. 로그인・인증・충전이 완료되면 이 작업이 자동으로 재시도됩니다.',
   'chat.amrCard.chipOfficial': '공식 호스팅',
@@ -1346,6 +1350,7 @@ export const ko: Dict = {
   'inlineSwitcher.agentLabel': '에이전트',
   'inlineSwitcher.providerLabel': '제공자',
   'inlineSwitcher.modelLabel': '모델',
+  'modelSource.builtInDefaults': '내장 기본 목록 · {agent}에서 확인된 목록이 아닙니다',
   'inlineSwitcher.reasoningLabel': '생각 깊이',
   'inlineSwitcher.reasoningDefault': '기본',
   'inlineSwitcher.reasoningNone': '없음',
@@ -1381,7 +1386,7 @@ export const ko: Dict = {
   'databricks.cli.uninvocableTitle': 'Databricks CLI를 실행할 수 없습니다',
   'databricks.cli.uninvocableBody': 'Databricks CLI를 찾았지만 실행할 수 없습니다. 동작하는 실행 파일을 지정한 뒤 다시 확인하세요.',
   'databricks.auth.requiredTitle': 'Databricks에 로그인하세요',
-  'databricks.auth.requiredBody': '로그인된 CLI 프로필이 없습니다. 터미널에서 로그인한 뒤 다시 확인하세요.',
+  'databricks.auth.requiredBody': '로그인된 CLI 프로필이 없습니다. 로그인하기를 누르면 CLI가 브라우저를 열어 로그인을 진행합니다. 토큰으로 워크스페이스를 직접 연결할 수도 있습니다.',
   'databricks.auth.keyringTitle': '자격 증명 저장소를 사용할 수 없습니다',
   'databricks.auth.keyringBody': 'Databricks CLI가 저장된 자격 증명을 읽을 수 없습니다. 터미널에서 로그인한 뒤 다시 확인하세요.',
   'databricks.auth.unreachableTitle': '워크스페이스에 연결할 수 없습니다',
@@ -1406,7 +1411,12 @@ export const ko: Dict = {
   'databricks.setup.submitting': '연결 중…',
   'databricks.setup.failed': '워크스페이스에 연결할 수 없습니다.',
   'databricks.setup.retryToken': '다시 시도하려면 토큰을 다시 입력하세요. 실패한 시도의 토큰은 보관되지 않습니다.',
-  'databricks.setup.cliFootnote': 'Databricks CLI를 선호하시나요? 터미널에서 로그인한 뒤 다시 확인을 눌러 해당 프로필을 선택하세요.',
+  'databricks.setup.cliFootnote': 'Databricks CLI를 선호하시나요? 위에 워크스페이스 URL을 입력하고 로그인하기를 누르면 CLI가 브라우저를 열어 로그인을 진행하고, 완료되는 즉시 프로필이 여기에 나타납니다.',
+  'databricks.login.action': '로그인하기',
+  'databricks.login.waiting': 'Databricks CLI가 연 브라우저에서 로그인을 완료해 주세요…',
+  'databricks.login.cancel': '로그인 취소',
+  'databricks.login.failed': '로그인을 완료하지 못했습니다.',
+  'databricks.login.timedOut': '브라우저에서 로그인이 확인되기 전에 시간이 초과되었습니다. 다시 시도해 주세요.',
   'databricks.setup.open': '다른 워크스페이스 연결',
   'databricks.setup.back': '프로필로 돌아가기',
   'databricks.scan.start': '워크스페이스 스캔',
@@ -1815,7 +1825,7 @@ export const ko: Dict = {
   'workspace.focusMode': '워크스페이스 집중',
   'workspace.showChat': '채팅 표시',
   'workspace.closeTab': '탭 닫기',
-  'workspace.unsavedTabCloseBlocked': '저장하지 않은 편집이 있습니다. 저장하기 또는 저장 안함을 선택한 뒤 탭을 닫으세요.',
+  'workspace.unsavedTabCloseBlocked': '저장하지 않은 편집이 있습니다. 저장하기 또는 저장 안함을 선택한 뒤 다른 탭으로 이동하거나 탭을 닫으세요.',
   'workspace.deleteFileConfirm': '프로젝트 폴더에서 "{name}" 파일을 삭제하시겠습니까?',
   'workspace.deleteSelectedFilesConfirm': '프로젝트 폴더에서 선택한 {n}개 파일을 삭제하시겠습니까?',
   'workspace.deleteSelectedFilesPartial': '{n}개 파일을 삭제하지 못했습니다.',
@@ -3123,4 +3133,5 @@ export const ko: Dict = {
   'manualEdit.resize.limit': '{axis}가 {property}: {value}에 의해 제한됨',
   'manualEdit.resize.layoutLimit': '{axis}가 페이지 레이아웃에 의해 제한됨',
   'manualEdit.resize.measurements': '{requested}px 요청 · {applied}px 렌더링',
-};
+  };
+}

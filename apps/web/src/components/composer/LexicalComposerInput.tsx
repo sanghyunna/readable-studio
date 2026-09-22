@@ -4,13 +4,12 @@ import {
   forwardRef,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
 } from 'react';
 import { LexicalComposer } from '@lexical/react/LexicalComposer';
 import type { InitialConfigType } from '@lexical/react/LexicalComposer';
-import { PlainTextPlugin } from '@lexical/react/LexicalPlainTextPlugin';
-import { ContentEditable } from '@lexical/react/LexicalContentEditable';
-import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary';
+import { ComposerEditable } from './ComposerEditable';
 import { HistoryPlugin } from '@lexical/react/LexicalHistoryPlugin';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import { mergeRegister } from '@lexical/utils';
@@ -723,12 +722,7 @@ export const LexicalComposerInput = forwardRef<
   const {
     placeholder,
     knownEntities,
-    onChange,
-    onTrigger,
-    onEnterSend,
-    onPasteFiles,
     popoverOpen,
-    onPopoverKey,
     comboboxAria,
     draft,
     editable = true,
@@ -746,6 +740,25 @@ export const LexicalComposerInput = forwardRef<
   // SeedingPlugin so it can recognize a re-render driven by the user's own
   // keystroke and skip a redundant serializeComposer of the whole editor.
   const lastEmittedTextRef = useRef<string | null>(null);
+  const liveProps = useRef(props);
+  liveProps.current = props;
+  // Command/listener registrations do not depend on the draft. Keep this
+  // subtree stable while callbacks read the latest host state at event time.
+  const behaviorPlugins = useMemo(() => <>
+    <HistoryPlugin />
+    <EditorRefPlugin editorRef={editorRef} />
+    <OnChangePlugin
+      onChange={(text, present) => liveProps.current.onChange(text, present)}
+      knownEntities={knownEntities}
+      lastEmittedTextRef={lastEmittedTextRef}
+    />
+    <TriggerPlugin onTrigger={(state) => liveProps.current.onTrigger(state)} />
+    <MentionAtomicNavigationPlugin />
+    <KeyboardPlugin popoverOpen={popoverOpen}
+      onEnterSend={() => liveProps.current.onEnterSend()}
+      onPopoverKey={(key) => liveProps.current.onPopoverKey(key)} />
+    <PastePlugin onPasteFiles={(files) => liveProps.current.onPasteFiles?.(files)} />
+  </>, [knownEntities, popoverOpen]);
 
   const initialConfig: InitialConfigType = {
     namespace: 'chat-composer',
@@ -846,48 +859,16 @@ export const LexicalComposerInput = forwardRef<
 
   return (
     <LexicalComposer initialConfig={initialConfig}>
-      <div className="composer-input-editor">
-        <PlainTextPlugin
-          contentEditable={
-            <ContentEditable
-              data-testid={testId}
-              className="ph-no-capture composer-editable"
-              aria-placeholder={placeholder}
-              title={title}
-              role="combobox"
-              aria-expanded={comboboxAria?.expanded ? 'true' : 'false'}
-              aria-invalid={invalid ? 'true' : undefined}
-              aria-controls="mention-listbox"
-              {...(comboboxAria?.activeId
-                ? { 'aria-activedescendant': comboboxAria.activeId }
-                : {})}
-              placeholder={
-                <div className="composer-input-placeholder">{placeholder}</div>
-              }
-            />
-          }
-          placeholder={
-            <div className="composer-input-placeholder">{placeholder}</div>
-          }
-          ErrorBoundary={LexicalErrorBoundary}
-        />
-      </div>
-      <HistoryPlugin />
-      <EditorRefPlugin editorRef={editorRef} />
+      <ComposerEditable
+        testId={testId}
+        placeholder={placeholder}
+        title={title}
+        expanded={comboboxAria?.expanded ?? false}
+        activeId={comboboxAria?.activeId ?? null}
+        invalid={invalid}
+      />
+      {behaviorPlugins}
       <EditablePlugin editable={editable} />
-      <OnChangePlugin
-        onChange={onChange}
-        knownEntities={knownEntities}
-        lastEmittedTextRef={lastEmittedTextRef}
-      />
-      <TriggerPlugin onTrigger={onTrigger} />
-      <MentionAtomicNavigationPlugin />
-      <KeyboardPlugin
-        popoverOpen={popoverOpen}
-        onEnterSend={onEnterSend}
-        onPopoverKey={onPopoverKey}
-      />
-      <PastePlugin onPasteFiles={onPasteFiles} />
       <SeedingPlugin
         draft={draft}
         entities={knownEntities}

@@ -5,7 +5,7 @@
 // an empty array. The UI then showed only the cloud/BYOK fallback even
 // though every other CLI was healthy. These tests pin the per-probe
 // isolation invariant: one broken adapter must not blank the picker.
-import { afterEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 vi.mock('../../src/runtimes/launch.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/runtimes/launch.js')>();
@@ -17,7 +17,7 @@ vi.mock('../../src/runtimes/launch.js', async (importOriginal) => {
 });
 
 import * as launchModule from '../../src/runtimes/launch.js';
-import { detectAgents } from '../../src/runtimes/detection.js';
+import { detectAgents, _resetAgentDetectionCacheForTests } from '../../src/runtimes/detection.js';
 import { AGENT_DEFS } from '../../src/runtimes/registry.js';
 
 const mockedResolveAgentLaunch = vi.mocked(launchModule.resolveAgentLaunch);
@@ -25,7 +25,16 @@ const mockedApplyAgentLaunchEnv = vi.mocked(launchModule.applyAgentLaunchEnv);
 const originalResolveImpl = mockedResolveAgentLaunch.getMockImplementation()!;
 const originalApplyImpl = mockedApplyAgentLaunchEnv.getMockImplementation()!;
 
+beforeEach(() => {
+  _resetAgentDetectionCacheForTests();
+  // Fault isolation does not depend on installed CLIs or remote providers.
+  mockedResolveAgentLaunch.mockImplementation((def, env) => ({
+    ...originalResolveImpl(def, env), selectedPath: process.execPath, launchPath: process.execPath,
+  }));
+});
+
 afterEach(() => {
+  _resetAgentDetectionCacheForTests();
   mockedResolveAgentLaunch.mockImplementation(originalResolveImpl);
   mockedApplyAgentLaunchEnv.mockImplementation(originalApplyImpl);
 });
@@ -42,13 +51,13 @@ test('detectAgents isolates a single agent probe throw so the picker still lists
     if (def.id === 'claude') {
       throw new Error('synthetic FS throw during PATH walk');
     }
-    return originalResolveImpl(def, env);
+    return { ...originalResolveImpl(def, env), selectedPath: process.execPath, launchPath: process.execPath };
   });
 
   // ponytail: DEFAULT_ENABLED_AGENT_IDS is now limited to the two most
   // common agents; enable the full registry so fault isolation is checked
   // across every adapter, not just the cold-start default set.
-  const agents = await detectAgents({}, { enabledAgentIds: AGENT_DEFS.map((d) => d.id) });
+  const agents = await detectAgents({}, { enabledAgentIds: AGENT_DEFS.map((d) => d.id), policy: 'offline' });
 
   // Every adapter from the registry must still appear, including the
   // one whose probe blew up — it just gets surfaced as unavailable so
@@ -84,8 +93,9 @@ test('detectAgents isolates a probe throw from applyAgentLaunchEnv just like res
     return originalApplyImpl(env, launch, nodeBinDir);
   });
 
-  const agents = await detectAgents({}, { enabledAgentIds: AGENT_DEFS.map((d) => d.id) });
+  const agents = await detectAgents({}, { enabledAgentIds: AGENT_DEFS.map((d) => d.id), policy: 'offline' });
 
+  expect(thrown).toBe(true);
   expect(agents.length).toBe(AGENT_DEFS.length);
   // At least one adapter is marked unavailable because of the throw;
   // every other adapter keeps its real availability.

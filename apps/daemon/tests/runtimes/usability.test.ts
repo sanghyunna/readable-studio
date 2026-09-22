@@ -18,8 +18,8 @@ const runner = path.join(home, 'fixture.ts');
 writeFileSync(runner, `import { createInterface } from 'node:readline';
 const args = process.argv.slice(2);
 if (args.includes('--version')) { console.log('fixture 1.0'); process.exit(0); }
-if (args.includes('--output-format')) {
-  console.error('Unknown arguments: output-format, outputFormat'); process.exit(1);
+if (args.includes('--yolo') && process.env.FIXTURE_REJECT_YOLO === '1') {
+  console.error('Unknown argument: yolo'); process.exit(1);
 }
 if (args.includes('--help')) process.exit(0);
 const lines = createInterface({ input: process.stdin });
@@ -60,7 +60,10 @@ test('absent CLI has no path and no selectable models', async () => {
 });
 
 test('Gemini actual adapter flags rejected by a present CLI make it unusable', async () => {
-  const result = await safeProbe(geminiAgentDef, { ...baseEnv, GEMINI_BIN: bin });
+  // Given a CLI that rejects a flag the adapter actually sends.
+  // When the compatibility probe runs against that CLI.
+  const result = await safeProbe(geminiAgentDef, { ...baseEnv, GEMINI_BIN: bin, FIXTURE_REJECT_YOLO: '1' });
+  // Then the proven incompatibility blocks availability.
   expect(result.available).toBe(false);
   expect(result.path).toBe(bin);
   expect(result.models).toEqual([]);

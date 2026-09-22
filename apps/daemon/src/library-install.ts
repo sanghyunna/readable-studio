@@ -66,7 +66,7 @@ async function installFromGithub(url, userDir, manifest) {
   try {
     await new Promise((resolve, reject) => {
       const cp = execFile('git', ['clone', '--depth', '1', url, dest], {
-        timeout: 60_000,
+        windowsHide: true, timeout: 60_000,
       }, (err, _stdout, stderr) => {
         if (err) {
           // Clean up partial clone

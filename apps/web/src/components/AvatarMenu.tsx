@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { useT } from '../i18n';
 import { AgentIcon } from './AgentIcon';
 import { RemixIcon } from './RemixIcon';
 import { SearchableModelSelect } from './modelOptions';
+import { ModelSourceNote } from './ModelSourceNote';
 import type { AgentInfo, AppConfig, ExecMode, ProviderModelOption } from '../types';
 import { SUGGESTED_MODELS_BY_PROTOCOL } from '../state/apiProtocols';
 import { KNOWN_PROVIDERS } from '../state/config';
@@ -57,6 +58,7 @@ export function AvatarMenu({
   onOpen,
 }: Props) {
   const t = useT();
+  const modelSourceNoteId = useId();
   const [open, setOpen] = useState(false);
   // Toggle that reports the closed→open transition (for analytics) without
   // firing on close.
@@ -412,6 +414,11 @@ export function AvatarMenu({
                         searchInputTestId="avatar-model-search"
                         popoverTestId="avatar-model-popover"
                         minSearchableOptions={5}
+                      />
+                      <ModelSourceNote
+                        agent={currentAgent}
+                        id={modelSourceNoteId}
+                        testId="avatar-model-source-note"
                       />
                     </label>
                   ) : null}

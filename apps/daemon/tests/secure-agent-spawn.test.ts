@@ -8,6 +8,7 @@ import { closeHttpServer } from '../src/daemon-startup.js';
 import { closeDatabase } from '../src/db.js';
 import { startServer } from '../src/server.js';
 import { withFakeAgent } from './helpers/fake-agent.js';
+import { codexAppServerFixture } from './helpers/codex-app-server.js';
 
 const TOKEN_ENV = 'READABLE_DESKTOP_APPROVAL_TOKEN';
 const servers: http.Server[] = [];
@@ -30,14 +31,12 @@ process.stdin.on('end', () => {
 
 const fakeCodex = `
 if (process.argv.includes('--version')) { console.log('codex 1.0.0'); process.exit(0); }
-let prompt = '';
-process.stdin.on('data', (chunk) => { prompt += chunk; });
-process.stdin.on('end', () => {
-  const text = 'CAPABILITY:' + (prompt.includes('<readable-rollback-request') ? 'yes' : 'no') + '\\n' +
-    '<readable-rollback-request mode="files_only" reason="undo the edit" />';
-  console.log(JSON.stringify({ type: 'item.completed', item: { id: 'item-1', type: 'agent_message', text } }));
-  console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 1, output_tokens: 1, cached_input_tokens: 0 } }));
-});
+${codexAppServerFixture(`
+  const prompt = message.params.input.map(item => item.text ?? '').join('');
+  text('CAPABILITY:' + (prompt.includes('<readable-rollback-request') ? 'yes' : 'no') + '\\n' +
+    '<readable-rollback-request mode="files_only" reason="undo the edit" />');
+  finish();
+`)}
 `;
 
 async function createProject(baseUrl: string): Promise<{ conversationId: string; projectId: string }> {
@@ -69,15 +68,43 @@ async function runAgent(
   });
   expect(response.status).toBe(202);
   const { runId } = await response.json() as { runId: string };
-  for (let attempt = 0; attempt < 200; attempt += 1) {
-    const status = await fetch(`${baseUrl}/api/runs/${runId}`).then((item) => item.json()) as { status: string };
-    if (!['queued', 'running'].includes(status.status)) break;
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-  return await fetch(`${baseUrl}/api/runs/${runId}/events`).then((item) => item.text());
+  // The replayable SSE stream closes on the exact terminal event, including
+  // runs that finished before this subscription. No timing-based polling.
+  return await fetch(`${baseUrl}/api/runs/${runId}/events`, {
+    signal: AbortSignal.timeout(15_000),
+  }).then((item) => item.text());
 }
 
 describe('secure rollback agent spawn selection', () => {
+  it('logs rejected isolation paths without exposing them in the failed run stream', async () => {
+    // Given: a native launch failure containing a private path.
+    process.env[TOKEN_ENV] = 'desktop-secret';
+    const privatePath = 'C:\\Users\\private-owner\\bad-path';
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      await withFakeAgent('codex', fakeCodex, async () => {
+        const started = await startServer({
+          port: 0, returnServer: true,
+          isolatedAgentProbe: async () => ({
+            supported: true,
+            capabilities: { appContainer: true, filesystemAcl: true, internetClient: true, killOnJobClose: true, loopbackDenied: true },
+          }),
+          isolatedAgentSpawn: async () => { throw new Error(`isolated paths must be absolute: command=${privatePath}`); },
+        }) as { url: string; server: http.Server };
+        servers.push(started.server);
+        // When: the daemon handles the failed spawn through its real HTTP API.
+        const events = await runAgent(started.url, await createProject(started.url));
+        // Then: failure is truthful, diagnostics stay in the private daemon log.
+        expect(events).toContain('AGENT_ISOLATION_UNAVAILABLE');
+        expect(events).toContain('"status":"failed"');
+        expect(events).not.toContain(privatePath.replaceAll('\\', '\\\\'));
+        expect(log.mock.calls.some((call) => JSON.stringify(call).includes(privatePath.replaceAll('\\', '\\\\')))).toBe(true);
+      });
+    } finally {
+      log.mockRestore();
+    }
+  }, 20_000);
+
   it('selects the isolated spawn, strips privileged env, and keeps tool wrappers brokered', async () => {
     process.env[TOKEN_ENV] = 'desktop-secret';
     const spawnCalls: any[] = [];
@@ -86,6 +113,7 @@ describe('secure rollback agent spawn selection', () => {
       const invocation = createCommandInvocation({ command: options.command, args: options.args, env: options.env });
       const child = spawn(invocation.command, invocation.args, {
         cwd: options.cwd,
+        windowsHide: true,
         env: options.env,
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsVerbatimArguments: invocation.windowsVerbatimArguments,

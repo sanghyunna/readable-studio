@@ -5,8 +5,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { QuestionsPanel } from '../../src/components/QuestionsPanel';
 import { QuestionFormView, type QuestionFormHandle } from '../../src/components/QuestionForm';
 import { I18nProvider } from '../../src/i18n';
-import { en } from '../../src/i18n/locales/en';
-import { ko } from '../../src/i18n/locales/ko';
+import { getEn } from '../../src/i18n/locales/en';
+import { getKo } from '../../src/i18n/locales/ko';
+const en = getEn();
+const ko = getKo();
 import type { QuestionForm } from '../../src/artifacts/question-form';
 
 const form: QuestionForm = { id: 'hydration', title: 'Scope', questions: [
