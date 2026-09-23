@@ -253,6 +253,7 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
     let created: unknown;
     let completed = false;
     const toolIndexes = new Map<unknown, number>();
+    const reasoningDialects = new Map<unknown, string>();
     const messagesStream = translatedMessages ? new MessagesChatStream() : undefined;
     async function emit(value: unknown, event?: string): Promise<void> {
       signal.throwIfAborted();
@@ -299,7 +300,14 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
           await chunk({ role: 'assistant', content: '' });
         } else if (payload.type === 'response.output_text.delta' || payload.type === 'response.refusal.delta') {
           await chunk({ content: payload.delta });
-        } else if (payload.type === 'response.reasoning_summary_text.delta') {
+        } else if (payload.type === 'response.reasoning_summary_text.delta' || payload.type === 'response.reasoning_text.delta') {
+          if (typeof payload.delta !== 'string' || !payload.delta) return;
+          // Stream the first dialect per item; its alternate is a second view of
+          // the same reasoning. Never buffer thoughts past intervening prose.
+          const item = payload.item_id ?? payload.output_index;
+          const dialect = reasoningDialects.get(item);
+          if (dialect && dialect !== payload.type) return;
+          reasoningDialects.set(item, payload.type);
           await chunk({ reasoning_content: payload.delta });
         } else if (payload.type === 'response.output_item.added' && record(payload.item) && payload.item.type === 'function_call') {
           const toolIndex = toolIndexes.size;
