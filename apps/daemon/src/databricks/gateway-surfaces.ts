@@ -33,6 +33,12 @@ function chatSchema(value: unknown): unknown {
     }));
 }
 
+/** Shared by Chat and Responses: the gateway rejects these keys even when false. */
+export function gatewayFunctionTool(tool: Json): Json {
+  const { strict: _strict, ...fn } = tool;
+  return { ...fn, parameters: chatSchema(fn.parameters) };
+}
+
 export function gatewayChatRequest(body: Json): Json {
   const { reasoning_effort, parallel_tool_calls: _parallel, ...result } = body;
   // GPT-OSS Chat has measured effort support in some workspaces. Preserve active
@@ -40,8 +46,7 @@ export function gatewayChatRequest(body: Json): Json {
   if (requestsEffort(body) && reasoning_effort !== undefined) result.reasoning_effort = reasoning_effort;
   if (Array.isArray(body.tools)) result.tools = body.tools.map((tool: unknown) => {
     if (!record(tool) || !record(tool.function)) return tool;
-    const { strict: _strict, ...fn } = tool.function;
-    return { ...tool, function: { ...fn, parameters: chatSchema(fn.parameters) } };
+    return { ...tool, function: gatewayFunctionTool(tool.function) };
   });
   return result;
 }

@@ -2,17 +2,19 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { rootCertificates } from "node:tls";
 
 import {
   APP_KEYS,
   createRuntimeDescriptor,
   SIDECAR_CONTRACT,
+  SIDECAR_ENV,
   SIDECAR_MODES,
   SIDECAR_SOURCES,
   type SidecarStamp,
 } from "@readable-studio/sidecar-proto";
 import { resolveAppIpcPath, type SidecarRuntimeContext } from "@readable-studio/sidecar";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { PackagedNamespacePaths } from "../src/paths.js";
 import { startPackagedSidecars, type PackagedSidecarHandle } from "../src/sidecars.js";
@@ -41,6 +43,12 @@ const tracePath = join(root, "trace.log");
 const isPipe = ipcPath.startsWith("\\\\\\\\.\\\\pipe\\\\");
 const trace = (event) => appendFileSync(tracePath, event + "\\n", "utf8");
 
+writeFileSync(join(root, app + ".env.json"), JSON.stringify(Object.fromEntries([
+  "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE",
+  "CURL_CA_BUNDLE", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
+  "READABLE_DESKTOP_APPROVAL_TOKEN", "DATABRICKS_TOKEN", "DATABRICKS_API_KEY",
+  "NODE_OPTIONS", "NODE_TLS_REJECT_UNAUTHORIZED", "UNRELATED_SECRET",
+].map((key) => [key, process.env[key]]))), "utf8");
 trace(app + ":spawned:" + (process.env.READABLE_PORT ?? ""));
 if (behavior === "fail") {
   console.error(app + " fixture startup failed");
@@ -191,6 +199,46 @@ function createFixtureHarness(
 }
 
 describe("startPackagedSidecars", () => {
+  it("forwards corporate CA paths but strips inherited privileges when launching the packaged daemon", async () => {
+    // Given: real child fixtures and corporate trust settings in the desktop parent.
+    const fixture = createFixtureHarness("ready", "ready");
+    const certPath = join(fixture.fixturesRoot, "corporate ca.pem");
+    writeFileSync(certPath, rootCertificates.join("\n"), "utf8");
+    const caEnv = {
+      NODE_EXTRA_CA_CERTS: certPath,
+      SSL_CERT_FILE: certPath,
+      SSL_CERT_DIR: fixture.fixturesRoot,
+      REQUESTS_CA_BUNDLE: certPath,
+      CURL_CA_BUNDLE: certPath,
+    };
+    const blockedEnv = {
+      DATABRICKS_TOKEN: "inherited-databricks-token",
+      DATABRICKS_API_KEY: "inherited-databricks-key",
+      NODE_OPTIONS: "--require=untrusted-loader",
+      NODE_TLS_REJECT_UNAUTHORIZED: "0",
+      UNRELATED_SECRET: "inherited-secret",
+    };
+    let sidecars: PackagedSidecarHandle | null = null;
+    try {
+      for (const [key, value] of Object.entries({ ...caEnv, ...blockedEnv })) vi.stubEnv(key, value);
+      vi.stubEnv(SIDECAR_ENV.DESKTOP_APPROVAL_TOKEN, "inherited-bearer");
+      // When: the real packaged launcher spawns its daemon and receives ready status.
+      sidecars = await fixture.start();
+      // Then: read what the actual daemon child received, not an assembled expectation.
+      const received: unknown = JSON.parse(readFileSync(join(fixture.fixturesRoot, "daemon.env.json"), "utf8"));
+      expect(received).toMatchObject(caEnv);
+      for (const key of Object.keys(blockedEnv)) expect(received).not.toHaveProperty(key);
+      expect(received).toHaveProperty(SIDECAR_ENV.DESKTOP_APPROVAL_TOKEN, "approval-token");
+    } finally {
+      vi.unstubAllEnvs();
+      try {
+        await sidecars?.close();
+      } finally {
+        rmSync(fixture.root, { force: true, recursive: true });
+      }
+    }
+  });
+
   it("starts web before daemon readiness and polls both statuses concurrently", async () => {
     const fixture = createFixtureHarness("concurrent", "concurrent");
     let sidecars: PackagedSidecarHandle | null = null;

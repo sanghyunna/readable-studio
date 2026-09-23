@@ -444,6 +444,17 @@
 :lang(zh), :lang(zh-CN), :lang(zh-TW), :lang(ja), :lang(ko) {
   --sans: "Inter", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Hiragino Sans GB", "Source Han Sans SC", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
+/* Korean wraps at word (eojeol) boundaries: the UA default `word-break: normal`
+   allows a break between any two Hangul syllables, so copy like 진행합니다
+   split as 진 / 행합니다. `keep-all` restricts breaks to spaces/punctuation;
+   `overflow-wrap: break-word` keeps genuinely unbreakable strings (model ids,
+   URLs, paths) wrapping instead of overflowing, without changing min-content
+   sizing the way `anywhere` would. zh/ja stay on `normal` — they have no
+   inter-word spaces to break at. */
+:lang(ko) {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
 
 /* --- Arabic & Persian Comfort Pass --- */
 [dir="rtl"] {

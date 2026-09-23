@@ -18,7 +18,7 @@ test('Responses translates message history, images, tool choice, budgets and JSO
     assert.equal(String(url), `${runtime.baseUrl}/responses`);
     assert.deepEqual(JSON.parse(String(init?.body)), {
       model: runtime.model, stream: false, store: false, reasoning: { effort: 'xhigh' }, max_output_tokens: 4096,
-      tools: [{ type: 'function', name: 'read', parameters: { type: 'object', properties: {} }, strict: false }],
+      tools: [{ type: 'function', name: 'read', parameters: { type: 'object', properties: {} } }],
       tool_choice: { type: 'function', name: 'read' },
       input: [{ role: 'developer', content: 'system' }, { role: 'user', content: [
         { type: 'input_text', text: 'read it' }, { type: 'input_image', image_url: 'data:image/png;base64,AA==', detail: 'auto' },

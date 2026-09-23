@@ -273,10 +273,18 @@ export function mergeServerMessagesIntoConversation(
 ): ChatMessage[] {
   const currentById = new Map(current.map((message) => [message.id, message]));
   const serverIds = new Set(serverMessages.map((message) => message.id));
-  const merged = serverMessages.map((message) =>
-    mergeServerMessageWithLocal(message, currentById.get(message.id)),
-  );
-  for (const message of current) {
+  // The server returns a newest page, not the entire transcript. Keep the
+  // loaded older prefix before its first shared row; unmatched newer local
+  // rows still belong after the page (including server-created trailing rows).
+  const firstSharedIndex = current.findIndex((message) => serverIds.has(message.id));
+  const prefixLength = firstSharedIndex < 0 ? current.length : firstSharedIndex;
+  const merged = [
+    ...current.slice(0, prefixLength),
+    ...serverMessages.map((message) =>
+      mergeServerMessageWithLocal(message, currentById.get(message.id)),
+    ),
+  ];
+  for (const message of current.slice(prefixLength)) {
     if (!serverIds.has(message.id)) merged.push(message);
   }
   return merged;

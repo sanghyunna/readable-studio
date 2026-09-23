@@ -52,8 +52,11 @@ for (const surface of ['response.failed', 'event:error', 'json', 'http', 'gatewa
   });
 }
 
-test('redacts secrets and request content in real Pi run errors, saved sessions and daemon logs', async () => {
-  // Given: a real managed Pi child and an upstream error echoing sensitive material.
+for (const surface of ['stream', 'strict-http-400'] as const) test(`retains diagnostics and redacts secrets in real Pi errors, sessions and logs when ${surface} rejects`, async () => {
+  // Given: a real managed Pi child and either a stream error or the exact VDI rejection.
+  const reason = surface === 'strict-http-400' ? 'tools.0.custom.strict: Extra inputs are not permitted' : 'Context limit exceeded';
+  const code = surface === 'strict-http-400' ? 'BAD_REQUEST' : 'context_length_exceeded';
+  const param = surface === 'strict-http-400' ? 'tools.0.custom.strict' : 'max_output_tokens';
   const root = await mkdtemp(join(tmpdir(), 'databricks-diagnostic-turn-'));
   const runtime = runtimeFixture('openai-completions');
   const { service } = runtimeServiceFixture(runtime);
@@ -65,13 +68,15 @@ test('redacts secrets and request content in real Pi run errors, saved sessions 
   const events: Array<{ channel: string; payload: Record<string, unknown> }> = [];
   const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
   try {
-    // When: the Responses stream fails (capture persistence is intentionally not configured).
+    // When: Responses rejects the turn (capture persistence is intentionally not configured).
     const turn = await startDatabricksPiSession({ dataRoot: root, cwd: root, sessionKey: 'diagnostic',
       model: runtime.appModelId, service, prompt,
       send: (channel, payload) => events.push({ channel, payload }),
-      fetch: async () => new Response(`data: ${JSON.stringify({ type: 'response.failed', response: { error: {
-        ...error, message: `${reason}; ${secrets.slice(0, -2).join(' ')}; api_key=${foreignKey}; password=${foreignPassword}`,
-      }, output: [{ content: prompt }] } })}\n\n`, { headers: { 'content-type': 'text/event-stream' } }),
+      fetch: async () => surface === 'strict-http-400'
+        ? Response.json({ message: reason, error_code: code }, { status: 400 })
+        : new Response(`data: ${JSON.stringify({ type: 'response.failed', response: { error: {
+          ...error, message: `${reason}; ${secrets.slice(0, -2).join(' ')}; api_key=${foreignKey}; password=${foreignPassword}`,
+        }, output: [{ content: prompt }] } })}\n\n`, { headers: { 'content-type': 'text/event-stream' } }),
     });
     try {
       await withDeadline(() => turn.completed, 25_000);
@@ -83,6 +88,7 @@ test('redacts secrets and request content in real Pi run errors, saved sessions 
       const saved = (await readFile(savedPath, 'utf8')).split('\n').filter(line => line.includes('errorMessage')).join('\n');
       for (const sink of [JSON.stringify(failures), saved, JSON.stringify(log.mock.calls)]) {
         for (const detail of [reason, code, param]) expect(sink).toContain(detail);
+        if (surface === 'strict-http-400') expect(sink).toContain('HTTP 400');
         for (const secret of secrets) expect(sink).not.toContain(secret);
       }
       expect(log).toHaveBeenCalledTimes(1);

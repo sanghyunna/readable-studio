@@ -8,7 +8,7 @@ import { failureDetail, readUpstreamError, upstreamFailure } from './failure.js'
 import { listenOnFetchCompatiblePort } from '../fetch-compatible-listener.js';
 import { artifactDeliveryRequest, rejectsTools } from './tool-free.js';
 import { messagesRequest, messagesResponse, MessagesChatStream } from './messages.js';
-import { gatewayChatRequest, measuredGatewayApi, nativeMessagesRequest, requestsEffort } from './gateway-surfaces.js';
+import { gatewayChatRequest, gatewayFunctionTool, measuredGatewayApi, nativeMessagesRequest, requestsEffort } from './gateway-surfaces.js';
 import { capturedFailureDetail, createDatabricksFailureCapture, type DatabricksRouteKind } from './failure-capture.js';
 
 export interface DatabricksRelay {
@@ -83,7 +83,7 @@ function responsesRequest(body: Record<string, unknown>): Record<string, unknown
     ...rest, store: false, input,
     ...(Array.isArray(tools) ? { tools: tools.map((tool: unknown) => {
       if (!record(tool) || tool.type !== 'function' || !record(tool.function)) throw new Error('Unsupported tool');
-      return { type: 'function', ...tool.function };
+      return { type: 'function', ...gatewayFunctionTool(tool.function) };
     }) } : {}),
     ...(reasoning_effort === undefined ? {} : { reasoning: { effort: reasoning_effort } }),
     ...(max_completion_tokens === undefined && max_tokens === undefined ? {} : { max_output_tokens: max_completion_tokens ?? max_tokens }),

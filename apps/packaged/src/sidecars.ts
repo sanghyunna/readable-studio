@@ -43,6 +43,11 @@ import {
 
 const require = createRequire(import.meta.url);
 const PACKAGED_CHILD_ENV_ALLOWLIST = [
+  "NODE_EXTRA_CA_CERTS",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+  "REQUESTS_CA_BUNDLE",
+  "CURL_CA_BUNDLE",
   "HOME",
   "HTTP_PROXY",
   "HTTPS_PROXY",
@@ -75,11 +80,7 @@ const PACKAGED_DAEMON_WINDOWS_CLI_ENV_ALLOWLIST = [
 function shouldForwardPackagedChildEnv(key: string, includeProviderSecrets = false): boolean {
   const normalizedKey = key.toUpperCase();
   if (normalizedKey === SIDECAR_ENV.DESKTOP_APPROVAL_TOKEN) return false;
-  if (
-    PACKAGED_CHILD_ENV_ALLOWLIST.includes(
-      key as (typeof PACKAGED_CHILD_ENV_ALLOWLIST)[number],
-    )
-  ) {
+  if (PACKAGED_CHILD_ENV_ALLOWLIST.some((allowedKey) => allowedKey === normalizedKey)) {
     return true;
   }
   if (!includeProviderSecrets) return false;
