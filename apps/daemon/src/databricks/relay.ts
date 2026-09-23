@@ -477,6 +477,9 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
         // Only an invocation URL selects the endpoint without a body model.
         if (invocation && route === upstream.pathname) delete wire.model;
         else wire.model = runtime.model;
+        // Normalize after surface translation so no route (including serving
+        // invocations and native/translated Messages) can bypass tool sanitation.
+        if (Array.isArray(wire.tools)) wire.tools = wire.tools.map(tool => record(tool) ? gatewayFunctionTool(tool) : tool);
         const endpoint = new URL(route, upstream.origin);
         const serializedWire = JSON.stringify(wire);
         const outboundBody: unknown = JSON.parse(serializedWire);

@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from 'vitest';
-import { databricksFailureCapturePath, writeDatabricksFailureCapture } from '../../src/databricks/failure-capture.js';
+import { createDatabricksFailureCapture, databricksFailureCapturePath, writeDatabricksFailureCapture } from '../../src/databricks/failure-capture.js';
 import { createDatabricksRelay } from '../../src/databricks/relay.js';
 import { runtimeFixture } from './runtime-fixture.js';
 
@@ -38,10 +38,14 @@ test('failed gateway request captures the final route, structure-only body, and 
     ...base,
     captureFailure: (capture: Parameters<typeof writeDatabricksFailureCapture>[1]) => writeDatabricksFailureCapture(root, capture),
   };
-  const relay = await createDatabricksRelay({ runtime, fetch: async () => Response.json({
-    error: { type: 'invalid_request_error', message: `Rejected strict additionalProperties at ${base.baseUrl} with ${base.apiKey}` },
-    echoed_prompt: privatePrompt,
-  }, { status: 400 }) });
+  const transmitted: unknown[] = [];
+  const relay = await createDatabricksRelay({ runtime, fetch: async (_url, init) => {
+    transmitted.push(JSON.parse(String(init?.body)));
+    return Response.json({
+      error: { type: 'invalid_request_error', message: `Rejected strict additionalProperties at ${base.baseUrl} with ${base.apiKey}` },
+      echoed_prompt: privatePrompt,
+    }, { status: 400 });
+  } });
 
   try {
     // When: the gateway rejects the exact outbound shape.
@@ -51,7 +55,20 @@ test('failed gateway request captures the final route, structure-only body, and 
     // Then: the existing typed failure still surfaces once, and one decisive capture exists.
     expect(response.status).toBe(400);
     expect(failure).toMatchObject({ type: 'error', error: { reason: 'bad-request', upstreamStatus: 400 } });
+    // The saved diagnostic must describe the actual post-sanitization request,
+    // not the caller's input. Compare against the body seen by upstream fetch.
+    expect(transmitted).toHaveLength(1);
+    expect(JSON.stringify(transmitted[0])).not.toContain('"strict":');
+    expect(JSON.stringify(transmitted[0])).not.toContain('"additionalProperties":');
+    expect(requestBody.tools[0]!.function.strict).toBe(true);
     const capture: unknown = JSON.parse(await readFile(databricksFailureCapturePath(root), 'utf8'));
+    if (!record(transmitted[0]) || !record(capture)) throw new Error('Missing observed request or capture');
+    const observedCapture = createDatabricksFailureCapture({
+      body: transmitted[0], endpoint: new URL(base.baseUrl), routeKind: 'serving-invocations',
+      model: base.model, appModelId: base.appModelId, endpointId: base.endpointId,
+      status: 400, upstreamBody: {},
+    });
+    expect(capture.request).toEqual(observedCapture.request);
     expect(capture).toMatchObject({
       schemaVersion: 1,
       diagnosticOutcome: 'gateway-rejection',
@@ -65,8 +82,8 @@ test('failed gateway request captures the final route, structure-only body, and 
         body: {
           messages: [{ role: '[redacted:string]', content: '[redacted:string]' }],
           tools: [{ type: '[redacted:string]', function: {
-            name: '[redacted:string]', strict: '[redacted:boolean]', parameters: {
-              type: '[redacted:string]', additionalProperties: '[redacted:boolean]',
+            name: '[redacted:string]', parameters: {
+              type: '[redacted:string]',
               properties: { document: { type: '[redacted:string]' } },
             },
           } }],
@@ -77,7 +94,7 @@ test('failed gateway request captures the final route, structure-only body, and 
           output_config: { effort: '[redacted:string]' },
         },
         indicators: {
-          tools: { present: true, envelope: 'openai-function', strict: true, additionalProperties: true },
+          tools: { present: true, envelope: 'openai-function', strict: false, additionalProperties: false },
           fields: {
             reasoning_effort: true, parallel_tool_calls: true, max_completion_tokens: true,
             stream_options: true, output_config: true,
@@ -98,6 +115,19 @@ test('failed gateway request captures the final route, structure-only body, and 
     await relay.close();
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test('failure diagnostics still detect rejected keywords when an observed request contains them', () => {
+  const runtime = runtimeFixture('openai-completions');
+  const capture = createDatabricksFailureCapture({
+    body: requestBody, endpoint: new URL(runtime.baseUrl), routeKind: 'chat-completions',
+    model: runtime.model, appModelId: runtime.appModelId, endpointId: runtime.endpointId,
+    status: 400, upstreamBody: { error: { message: 'strict additionalProperties' } },
+  });
+  expect(capture.request.indicators.tools).toMatchObject({ strict: true, additionalProperties: true });
+  expect(capture.request.body).toMatchObject({ tools: [{ function: {
+    strict: '[redacted:boolean]', parameters: { additionalProperties: '[redacted:boolean]' },
+  } }] });
 });
 
 test('capture writer fault is explicit without replacing the typed upstream failure', async () => {

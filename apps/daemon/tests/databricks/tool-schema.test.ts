@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
 import { createDatabricksRelay } from '../../src/databricks/relay.js';
+import { gatewayFunctionTool } from '../../src/databricks/gateway-surfaces.js';
 import { runtimeFixture } from './runtime-fixture.js';
 
 const names = ['read', 'powershell', 'edit', 'write'] as const;
@@ -23,6 +24,22 @@ const cleanParameters = {
   required: ['path'],
   $defs: { entry: { type: 'object' } },
 };
+
+// Supplemental envelope coverage; the real managed-child guard is strict-origin.test.ts.
+for (const envelope of ['flat', 'function', 'custom', 'messages'] as const) {
+  test(`shared sanitation removes rejected keywords from the ${envelope} envelope`, () => {
+    const definition = { name: 'probe', strict: false, parameters };
+    const clean = { name: 'probe', parameters: cleanParameters };
+    const tool = envelope === 'flat' ? { type: 'function', ...definition }
+      : envelope === 'messages' ? { name: 'probe', strict: false, input_schema: parameters }
+        : { type: envelope, strict: true, [envelope]: definition };
+    const expected = envelope === 'flat' ? { type: 'function', ...clean }
+      : envelope === 'messages' ? { name: 'probe', input_schema: cleanParameters }
+        : { type: envelope, [envelope]: clean };
+    expect(gatewayFunctionTool(tool)).toEqual(expected);
+    expect(tool).toHaveProperty('strict');
+  });
+}
 
 for (const surface of ['Responses', 'Chat'] as const) {
   test(`strips rejected keywords from every outgoing tool when ${surface} receives strict tools`, async () => {

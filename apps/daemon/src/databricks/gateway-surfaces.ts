@@ -33,10 +33,10 @@ function chatSchema(value: unknown): unknown {
     }));
 }
 
-/** Shared by Chat and Responses: the gateway rejects these keys even when false. */
+/** Normalize the complete tool envelope on every gateway surface, including
+ * flat, function/custom-nested, and native Messages input_schema definitions. */
 export function gatewayFunctionTool(tool: Json): Json {
-  const { strict: _strict, ...fn } = tool;
-  return { ...fn, parameters: chatSchema(fn.parameters) };
+  return chatSchema(tool) as Json;
 }
 
 export function gatewayChatRequest(body: Json): Json {
@@ -45,8 +45,7 @@ export function gatewayChatRequest(body: Json): Json {
   // effort so other gateways reject it honestly rather than silently downgrading.
   if (requestsEffort(body) && reasoning_effort !== undefined) result.reasoning_effort = reasoning_effort;
   if (Array.isArray(body.tools)) result.tools = body.tools.map((tool: unknown) => {
-    if (!record(tool) || !record(tool.function)) return tool;
-    return { ...tool, function: gatewayFunctionTool(tool.function) };
+    return record(tool) ? gatewayFunctionTool(tool) : tool;
   });
   return result;
 }
