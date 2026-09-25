@@ -74,6 +74,10 @@ cursor-agent --version
 
 Then use Rescan in Settings. Enable another registered adapter before expecting Readable Studio to probe it.
 
+### Codex sandbox isolation
+
+On Windows, Codex can continue without AppContainer sandbox isolation because its own `CODEX_HOME` canonicalization requires DOS volume/device-name resolution that AppContainer denies (`os error 5`); creating, reading, and writing the home still work. This is a known upstream Codex limitation, not a user configuration issue, and other agents are unaffected. Ancestor ACL grants, `\\?\` paths, and relocating `CODEX_HOME` (including to another fixed NTFS volume) do not fix it.
+
 ### Port or stale process problem
 
 Use the control plane rather than starting packages independently:

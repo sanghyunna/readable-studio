@@ -103,10 +103,12 @@ export const codexAgentDef = {
       const needsDangerFullAccess = codexNeedsDangerFullAccessSandbox();
       const args = ['app-server', '--listen', 'stdio://', '-c',
         `sandbox_mode="${needsDangerFullAccess ? 'danger-full-access' : 'workspace-write'}"`];
-      if (!needsDangerFullAccess) args.push('-c', 'sandbox_workspace_write.network_access=true');
-      // Newer Codex builds honor permissions config over legacy sandbox
-      // flags; without this, Windows/WSL launches can stay read-only (#2834).
-      args.push('-c', 'default_permissions=":workspace"');
+      if (!needsDangerFullAccess) {
+        args.push('-c', 'sandbox_workspace_write.network_access=true');
+        // Keep workspace-write launches writable on newer Codex builds (#2834).
+        // This permission override takes precedence over danger-full-access.
+        args.push('-c', 'default_permissions=":workspace"');
+      }
       if (process.env.READABLE_CODEX_DISABLE_PLUGINS === '1') {
         args.push('--disable', 'plugins');
       }

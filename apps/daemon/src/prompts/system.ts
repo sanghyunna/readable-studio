@@ -119,6 +119,19 @@ function renderReadabilityPrompt(locale: string | undefined): string {
     : READABILITY_RULE_BASE;
 }
 
+// Always-on file-encoding rule. Daemon agents write real files, often via
+// PowerShell on Windows, where the console code page (cp949 / cp1252) is
+// the usual source of Korean mojibake. Kept separate from the readability
+// block above so that block stays byte-identical to the contracts mirror.
+// Pushed before discovery / skill / DESIGN.md so it wins on conflict.
+const FILE_ENCODING_RULE = `## File encoding: UTF-8, always
+
+Every file you create or edit is read and written as UTF-8, on every run:
+
+- **Never depend on the OS code page or locale.** Read, edit, and write with UTF-8 explicitly. Non-ASCII text, Korean in particular, must survive every read/edit/write round-trip byte-for-byte. If a file reads back as mojibake (\`?\`, \`占쏙옙\`, \`Ã«\`), stop and fix the encoding before touching the content.
+- **Declare it in the document.** Every HTML artifact keeps \`<meta charset="utf-8">\` as the first element in \`<head>\`.
+- **Shell writes count too.** Prefer the Write / Edit file tools. If you must write from PowerShell or cmd, pass \`-Encoding utf8\` to \`Set-Content\` / \`Out-File\` and never pipe text into a file with bare \`>\` or \`echo\`.`;
+
 type ProjectMetadata = {
   kind?: string;
   brief?: {
@@ -546,6 +559,11 @@ export function composeSystemPrompt({
   // for every surface so generated layouts stop shipping cramped "div box"
   // text; the Korean clause only appears when `locale` is `ko`.
   parts.push(renderReadabilityPrompt(locale));
+  parts.push('\n\n---\n\n');
+
+  // UTF-8 file I/O rule. Always on, and binding for both generation and
+  // edits; see the constant's comment for why it is not in the mirror.
+  parts.push(FILE_ENCODING_RULE);
   parts.push('\n\n---\n\n');
 
   parts.push(editablePromptBodies?.['discovery-workflow'] ?? DISCOVERY_AND_PHILOSOPHY, '\n\n---\n\n');

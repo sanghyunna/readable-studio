@@ -270,6 +270,17 @@ describe('composeSystemPrompt', () => {
     });
   });
 
+  describe('UTF-8 file encoding rule', () => {
+    it('always injects the encoding section, before the discovery layer', () => {
+      for (const input of [{}, { locale: 'ko' }, { skillMode: 'deck' as const }, { streamFormat: 'plain' }]) {
+        const prompt = composeSystemPrompt(input);
+        const at = prompt.indexOf('## File encoding: UTF-8, always');
+        expect(at).toBeGreaterThan(prompt.indexOf('## Readability & CJK wrapping'));
+        expect(at).toBeLessThan(prompt.indexOf('# Identity and workflow charter (background)'));
+      }
+    });
+  });
+
   describe('connectedExternalMcp directive', () => {
     it('omits the directive when no servers are passed', () => {
       const prompt = composeSystemPrompt({});

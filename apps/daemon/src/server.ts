@@ -51,7 +51,13 @@ import {
   PLUGIN_PREVIEWS_ROUTE,
 } from './plugin-preview-bakes.js';
 import { userFacingAgentLabel } from './user-facing-agent-label.js';
-import { ISOLATION_FALLBACK_LABEL, isolationLaunchFailureReason, isolationRuntimeFailureReason } from './isolation-fallback.js';
+import {
+  CODEX_WINDOWS_APPCONTAINER_LIMITATION_DETAIL,
+  CODEX_WINDOWS_APPCONTAINER_LIMITATION_REASON,
+  ISOLATION_FALLBACK_LABEL,
+  isolationLaunchFailureReason,
+  isolationRuntimeFailureReason,
+} from './isolation-fallback.js';
 
 // @dsp func-27acb8ad
 export { resolveProjectRoot };
@@ -10331,7 +10337,9 @@ export async function startServer({
       send('agent', {
         type: 'status',
         label: ISOLATION_FALLBACK_LABEL,
-        detail: `Running WITHOUT sandbox isolation: ${reason}`,
+        detail: reason === CODEX_WINDOWS_APPCONTAINER_LIMITATION_REASON
+          ? CODEX_WINDOWS_APPCONTAINER_LIMITATION_DETAIL
+          : `Running WITHOUT sandbox isolation: ${reason}`,
       });
     };
     if (desktopApprovalToken && def.id === 'codex' && !isolatedAgentSupport.supported && !run.isolationFallbackReason) {

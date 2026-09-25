@@ -143,6 +143,27 @@ test('sandbox mode ignores implicit and host explicit local agent profiles', asy
   }
 });
 
+test('codex argv keeps danger-full-access free of permissions overrides while workspace-write retains them', () => {
+  withEnvSnapshot(['READABLE_CODEX_DISABLE_PLUGINS', 'READABLE_CODEX_SANDBOX', 'WSL_DISTRO_NAME'], () => {
+    delete process.env.READABLE_CODEX_DISABLE_PLUGINS;
+    delete process.env.READABLE_CODEX_SANDBOX;
+    delete process.env.WSL_DISTRO_NAME;
+
+    withPlatform('win32', () => {
+      assert.deepEqual(codex.buildArgs('', [], [], {}, {}), [
+        'app-server', '--listen', 'stdio://', '-c', 'sandbox_mode="danger-full-access"',
+      ]);
+    });
+    withPlatform('darwin', () => {
+      assert.deepEqual(codex.buildArgs('', [], [], {}, {}), [
+        'app-server', '--listen', 'stdio://', '-c', 'sandbox_mode="workspace-write"',
+        '-c', 'sandbox_workspace_write.network_access=true',
+        '-c', 'default_permissions=":workspace"',
+      ]);
+    });
+  });
+});
+
 test('codex args disable plugins when READABLE_CODEX_DISABLE_PLUGINS is 1', () => {
   withEnvSnapshot(['READABLE_CODEX_DISABLE_PLUGINS', 'READABLE_CODEX_SANDBOX'], () => {
     process.env.READABLE_CODEX_DISABLE_PLUGINS = '1';
@@ -209,7 +230,7 @@ test('codex args use danger-full-access sandbox on WSL because workspace-write s
       assert.deepEqual(args.slice(0, 5), [
         'app-server', '--listen', 'stdio://', '-c', 'sandbox_mode="danger-full-access"',
       ]);
-      assert.equal(args.includes('default_permissions=":workspace"'), true);
+      assert.equal(args.some((arg) => arg.startsWith('default_permissions=')), false);
     });
   });
 });
@@ -230,6 +251,7 @@ test('codex args allow READABLE_CODEX_SANDBOX danger-full-access override on Lin
         args.includes('sandbox_workspace_write.network_access=true'),
         false,
       );
+      assert.equal(args.some((arg) => arg.startsWith('default_permissions=')), false);
     });
   });
 });
@@ -274,7 +296,7 @@ test('codex args use danger-full-access sandbox on Windows because workspace-wri
         args.includes('sandbox_workspace_write.network_access=true'),
         false,
       );
-      assert.equal(args.includes('default_permissions=":workspace"'), true);
+      assert.equal(args.some((arg) => arg.startsWith('default_permissions=')), false);
     });
   });
 });

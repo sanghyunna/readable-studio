@@ -1,4 +1,6 @@
 export const ISOLATION_FALLBACK_LABEL = 'sandbox_isolation_unavailable';
+export const CODEX_WINDOWS_APPCONTAINER_LIMITATION_REASON = 'Codex cannot resolve CODEX_HOME DOS volume paths inside Windows AppContainer (os error 5).';
+export const CODEX_WINDOWS_APPCONTAINER_LIMITATION_DETAIL = 'This Codex run continues without sandbox isolation (so it has its usual access to your files). This is a known upstream Codex limitation on Windows, not a setting you can fix; other agents are unaffected.';
 
 /** Only native helper readiness failures qualify; validation/policy rejections do not. */
 export function isolationLaunchFailureReason(error: unknown): string | null {
@@ -28,7 +30,7 @@ export function isolationRuntimeFailureReason(input: {
     && (fatal?.startsWith('Error finding codex home: failed to canonicalize CODEX_HOME ')
       || fatal?.startsWith('Error: '))
     && fatal.endsWith('(os error 5)')) {
-    return 'Codex cannot resolve CODEX_HOME DOS volume paths inside Windows AppContainer (os error 5).';
+    return CODEX_WINDOWS_APPCONTAINER_LIMITATION_REASON;
   }
   return null;
 }
