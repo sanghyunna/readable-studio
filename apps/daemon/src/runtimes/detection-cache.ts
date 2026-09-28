@@ -1,8 +1,13 @@
 import { createHash } from 'node:crypto';
 import { withProbeLifetime } from './probe-lifetime.js';
+import { stripFns } from './detection-probe.js';
+import { installMetaForAgent } from './metadata.js';
 import type { DetectedAgent, RuntimeAgentDef } from './types.js';
 
 const DETECTION_CACHE_TTL_MS = 10_000;
+// Cold Pi has taken 20s; Cursor allows a 90s model command. Leave room for
+// additional auth/version work without letting one agent block its peers.
+const PROBE_BUDGET_MS = 120_000;
 const DETECTION_PROCESS_ENV_KEYS = [
   'PATH',
   'Path',
@@ -90,7 +95,7 @@ export function cachedSafeProbe(
   const run = () => probe(def, configuredEnv, policy);
   const deadline = new AbortController();
   const signal = options.signal ? AbortSignal.any([options.signal, deadline.signal]) : deadline.signal;
-  const timer = setTimeout(() => deadline.abort(new DOMException('Agent probe budget expired', 'TimeoutError')), 60_000);
+  const timer = setTimeout(() => deadline.abort(new DOMException('Agent probe budget expired', 'TimeoutError')), PROBE_BUDGET_MS);
   const pending = withProbeLifetime(signal, run).finally(() => clearTimeout(timer));
   const promise = pending.then((agent) => {
     options.signal?.throwIfAborted();
@@ -106,6 +111,12 @@ export function cachedSafeProbe(
     return agent;
   }).catch((error: unknown) => {
     if (cache.get(key)?.promise === promise) cache.delete(key);
+    if (deadline.signal.aborted && !options.signal?.aborted && error instanceof DOMException && error.name === 'TimeoutError') {
+      return { ...stripFns(def), ...installMetaForAgent(def.id), available: false, models: [], modelsSource: 'fallback' as const,
+        diagnostics: [{ reason: 'probe-timeout' as const, severity: 'error' as const,
+          message: `Agent verification timed out after ${PROBE_BUDGET_MS / 1000} seconds. Rescan to retry.`,
+          fixActions: [{ kind: 'rescan' as const }] }] };
+    }
     throw error;
   });
   cache.set(key, {

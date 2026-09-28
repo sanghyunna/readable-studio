@@ -23,7 +23,7 @@ export const storedAgentScanSchema = lazyObject(() => {
       path: z.string().optional(), version: z.string().nullable().optional(),
       authStatus: z.enum(['ok', 'missing', 'unknown']).optional(), authMessage: z.string().optional(),
       diagnostics: z.array(z.object({
-        reason: z.enum(['not-on-path', 'not-executable', 'shim-broken', 'configured-bin-invalid', 'auth-missing', 'auth-unknown']),
+        reason: z.enum(['not-on-path', 'not-executable', 'shim-broken', 'configured-bin-invalid', 'auth-missing', 'auth-unknown', 'probe-timeout']),
         severity: z.enum(['error', 'warning', 'info']), message: z.string(),
         detail: z.string().optional(), searchedDirs: z.array(z.string()).optional(),
         fixActions: z.array(fix).optional(),

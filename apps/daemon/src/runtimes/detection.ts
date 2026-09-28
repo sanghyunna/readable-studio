@@ -67,12 +67,14 @@ function durableDetection(
       const stored = options.refresh ? null : await readStoredAgentScan(dataDir);
       if (stored?.fingerprint === snapshotFingerprint &&
           JSON.stringify(stored.agentIds) === JSON.stringify(defs.map((def) => def.id)) &&
-          executables.every(({ def, launch, identity }) => stored.results.some((agent) => agent.id === def.id &&
-            (!agent.available || (identity !== null && launch.selectedPath === agent.path))))) {
-        return Promise.all(defs.map(async (def) => {
+          executables.every(({ def, launch, identity }) => {
+            const agent = stored.results.find((entry) => entry.id === def.id);
+            return !agent || !agent.available || (identity !== null && launch.selectedPath === agent.path);
+          })) {
+        const results = await Promise.all(defs.map(async (def) => {
           if (def.modelManagement === 'databricks') return cachedSafeProbe(safeProbe, def, configuredEnvByAgent[def.id] ?? {}, options);
           const agent = stored.results.find((entry) => entry.id === def.id);
-          if (!agent) throw new Error(`Incomplete stored agent scan: ${def.id}`);
+          if (!agent) return cachedSafeProbe(safeProbe, def, configuredEnvByAgent[def.id] ?? {}, { ...options, refresh: true });
           const available = agent.available && agent.models.length > 0 &&
             (agent.modelsSource === 'fallback'
               ? !def.modelSelectionRequired && def.fallbackModels.some((model) => model.id !== 'default') &&
@@ -80,35 +82,32 @@ function durableDetection(
               : def.modelDiscovery === 'authenticated-session' || agent.authStatus === 'ok');
           return { ...stripFns(def), ...agent, available, models: available ? agent.models : [] };
         }));
+        if (stored.results.length < defs.filter((def) => def.modelManagement !== 'databricks').length) {
+          await writeStoredAgentScan(dataDir, { ...stored, completedAt: new Date().toISOString(),
+            results: results.filter((agent) => defs.find((def) => def.id === agent.id)?.modelManagement !== 'databricks' &&
+              !agent.diagnostics?.some((diagnostic) => diagnostic.reason === 'probe-timeout')) }, options.signal ?? new AbortController().signal);
+        }
+        return results;
       }
       await clearStoredAgentScan(dataDir);
-      const controller = new AbortController();
-      const cancel = () => controller.abort(options.signal?.reason);
-      options.signal?.addEventListener('abort', cancel, { once: true });
-      if (options.signal?.aborted) cancel();
-      const timer = setTimeout(() => controller.abort(new DOMException('Agent scan budget expired', 'TimeoutError')), 60_000);
-      try {
-        const probe = (def: RuntimeAgentDef) => cachedSafeProbe(safeProbe, def, configuredEnvByAgent[def.id] ?? {}, { ...options, refresh: true, signal: controller.signal });
-        const session = startStartupScan(defs, probe, controller.signal);
-        let completed = 0;
-        const results = await Promise.all([...session.promises.values()].map(async (promise, index) => {
-          const agent = await promise;
-          // Stream immediately; retain only the last completion until the atomic
-          // snapshot is written so awaiting the full scan still includes storage.
-          if (++completed < defs.length) consumers[index]?.resolve(agent);
-          return agent;
-        }));
-        controller.signal.throwIfAborted();
-        await writeStoredAgentScan(dataDir, {
-          version: 1, completedAt: new Date().toISOString(), fingerprint: snapshotFingerprint,
-          agentIds: defs.map((def) => def.id),
-          results: results.filter((agent) => defs.find((def) => def.id === agent.id)?.modelManagement !== 'databricks'),
-        }, controller.signal);
-        return results;
-      } finally {
-        clearTimeout(timer);
-        options.signal?.removeEventListener('abort', cancel);
-      }
+      const probe = (def: RuntimeAgentDef) => cachedSafeProbe(safeProbe, def, configuredEnvByAgent[def.id] ?? {}, { ...options, refresh: true });
+      const session = startStartupScan(defs, probe, options.signal);
+      let completed = 0;
+      const results = await Promise.all([...session.promises.values()].map(async (promise, index) => {
+        const agent = await promise;
+        // Stream immediately; retain only the last completion until the atomic
+        // snapshot is written so awaiting the full scan still includes storage.
+        if (++completed < defs.length) consumers[index]?.resolve(agent);
+        return agent;
+      }));
+      options.signal?.throwIfAborted();
+      await writeStoredAgentScan(dataDir, {
+        version: 1, completedAt: new Date().toISOString(), fingerprint: snapshotFingerprint,
+        agentIds: defs.map((def) => def.id),
+        results: results.filter((agent) => defs.find((def) => def.id === agent.id)?.modelManagement !== 'databricks' &&
+          !agent.diagnostics?.some((diagnostic) => diagnostic.reason === 'probe-timeout')),
+      }, options.signal ?? new AbortController().signal);
+      return results;
     })();
     if (!options.signal) durableRuns.set(key, run);
     const release = () => { if (durableRuns.get(key) === run) durableRuns.delete(key); };

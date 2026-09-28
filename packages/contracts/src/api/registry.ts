@@ -73,7 +73,9 @@ export type AgentDiagnosticReason =
   /** Installed and invocable, but the CLI is not authenticated. */
   | 'auth-missing'
   /** Installed, but auth status could not be verified. */
-  | 'auth-unknown';
+  | 'auth-unknown'
+  /** Verification exceeded its per-agent time budget; retry on the next launch. */
+  | 'probe-timeout';
 
 export type AgentDiagnosticSeverity = 'error' | 'warning' | 'info';
 

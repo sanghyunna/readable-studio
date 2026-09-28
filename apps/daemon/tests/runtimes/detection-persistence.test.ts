@@ -256,19 +256,35 @@ it('leaves completion unset when the scan owner cancels', async () => {
   await expect(run).rejects.toMatchObject({ name: 'AbortError' });
   await expect(readFile(path.join(root, 'agent-scan.json'))).rejects.toMatchObject({ code: 'ENOENT' });
 });
-it('leaves completion unset even when a timed-out probe resolves late', async () => {
-  // Given a probe held beyond the startup budget.
+it('finishes the inventory without durably caching a timed-out probe', async () => {
+  // Given one probe that never returns while the rest complete normally.
   vi.useFakeTimers();
   const started = deferred<void>();
-  const pending = deferred<void>();
-  vi.mocked(safeProbe).mockImplementation(async (def) => { started.resolve(); await pending.promise; return result(def); });
-  const run = detection.detectAgents(env, options);
-  const rejected = expect(run).rejects.toMatchObject({ name: 'TimeoutError' });
+  vi.mocked(safeProbe).mockImplementation(async (def) => {
+    if (def.id === 'pi') { started.resolve(); return new Promise<DetectedAgent>(() => {}); }
+    return result(def);
+  });
+  const run = detection.detectAgents(env, inventoryOptions);
+  const settled = Promise.allSettled([run]);
   await started.promise;
-  // When the scan deadline expires before completion.
-  await vi.advanceTimersByTimeAsync(60_000);
-  await rejected;
-  pending.resolve();
-  // Then late completion cannot commit a snapshot.
-  await expect(readFile(path.join(root, 'agent-scan.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+  // When the hung agent exceeds its own budget.
+  await vi.advanceTimersByTimeAsync(120_000);
+  const [outcome] = await settled;
+  expect(outcome?.status).toBe('fulfilled');
+  if (outcome?.status !== 'fulfilled') return;
+  // Then every agent reports, fast agents survive, and progress reaches the full inventory.
+  expect(outcome.value).toHaveLength(AGENT_DEFS.length);
+  expect(outcome.value.find(({ id }) => id === 'codex')).toMatchObject({ available: true });
+  expect(outcome.value.find(({ id }) => id === 'cursor-agent')).toMatchObject({ available: true });
+  expect(outcome.value.find(({ id }) => id === 'pi')).toMatchObject({ available: false,
+    diagnostics: [expect.objectContaining({ reason: 'probe-timeout' })] });
+  expect(detection.getStartupScanProgress()).toMatchObject({ phase: 'done', completed: AGENT_DEFS.length, total: AGENT_DEFS.length });
+  const stored = await storedScan();
+  expect(stored.agentIds).toEqual(inventoryOptions.enabledAgentIds);
+  expect(stored.results.some(({ id }) => id === 'pi')).toBe(false);
+  await restart();
+  vi.mocked(safeProbe).mockImplementation(async (def) => result(def));
+  const next = await detection.detectAgents(env, inventoryOptions);
+  expect(next.find(({ id }) => id === 'pi')).toMatchObject({ available: true });
+  expect(vi.mocked(safeProbe).mock.calls.map(([def]) => def.id).sort()).toEqual(['databricks', 'pi'].sort());
 });

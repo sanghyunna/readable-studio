@@ -81,8 +81,8 @@ for (const stage of ['version', 'help', 'auth', 'models', 'custom', 'tree'] as c
   }, 10_000);
 }
 
-it('terminates the real child when the durable scan deadline expires', async () => {
-  // Given a held subprocess under the production sixty-second deadline.
+it('terminates the real child when its probe budget expires', async () => {
+  // Given a held subprocess under the per-agent deadline.
   const h = await harness();
   const dir = await mkdtemp(join(tmpdir(), 'scan-cancel-'));
   configureDetectionStorage(dir);
@@ -92,8 +92,11 @@ it('terminates the real child when the durable scan deadline expires', async () 
     await h.started;
     const closed = h.closed();
     // When time itself crosses the configured deadline.
-    await vi.advanceTimersByTimeAsync(60_000);
-    expect((await settled)[0]?.status).toBe('rejected');
+    await vi.advanceTimersByTimeAsync(120_000);
+    const [outcome] = await settled;
+    expect(outcome?.status).toBe('fulfilled');
+    if (outcome?.status === 'fulfilled') expect(outcome.value[0]).toMatchObject({ available: false,
+      diagnostics: [expect.objectContaining({ reason: 'probe-timeout' })] });
     await closed;
     expect(h.pids.filter((pid) => { try { process.kill(pid, 0); return true; } catch { return false; } })).toEqual([]);
   } finally { vi.useRealTimers(); await h.cleanup(); await settled; await rm(dir, { recursive: true, force: true }); }
