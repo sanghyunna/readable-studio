@@ -305,8 +305,10 @@ describe('DatabricksAddModelsModal', () => {
     await act(async () => { renderModal(); });
 
     const row = screen.getByTestId(`databricks-endpoint-${model.id}`);
+    // The identity keeps the full name as its title and renders the split parts.
     const title = within(row).getByTitle(model.label);
-    expect(title.textContent).toBe(model.label);
+    expect(within(title).getByTestId('databricks-endpoint-model-name').textContent).toBe('gpt-oss-120b');
+    expect(within(title).getByTestId('databricks-endpoint-uc-path').textContent).toBe('system.ai');
     for (const field of ['contextWindow', 'maxTokens'] as const) {
       const detail = row.querySelector(`[data-limit="${field}"]`)!;
       expect(detail).not.toBeNull();
@@ -544,6 +546,64 @@ describe('DatabricksAddModelsModal', () => {
     } finally {
       window.removeEventListener(DATABRICKS_MODELS_CHANGED_EVENT, onChanged);
     }
+  });
+
+  it('shows the model name with its UC path secondary and filters the list without shortening the id it registers', async () => {
+    const samples = [
+      endpoint({ id: 'ep-oss', label: 'system.ai.gpt-oss-120b', displayName: 'system.ai.gpt-oss-120b' }),
+      endpoint({ id: 'ep-luna-uc', label: 'app_dev.default.oai-luna-model-service', displayName: 'app_dev.default.oai-luna-model-service' }),
+      endpoint({ id: 'ep-llama', label: 'system.ai.llama-3.1-70b', displayName: 'system.ai.llama-3.1-70b' }),
+      endpoint({ id: 'ep-gpt56', label: 'gpt-5.6-luna', displayName: 'gpt-5.6-luna', kind: 'serving-endpoint' }),
+    ];
+    databricksClient.startDatabricksScan.mockResolvedValue(
+      scanResponse({ state: 'complete', completedAt: '2026-09-10T04:00:05.000Z', endpoints: samples, revision: 7 }),
+    );
+    databricksClient.enableDatabricksModel.mockResolvedValue({
+      endpoint: registeredEndpoint({ id: 'ep-luna-uc', label: 'app_dev.default.oai-luna-model-service', appModelId: 'dbx-luna-uc' }),
+      appModelId: 'dbx-luna-uc',
+      revision: 8,
+    });
+
+    renderModal();
+    await waitForProfiles();
+    fireEvent.click(screen.getByTestId('databricks-scan-start'));
+    await screen.findByTestId('databricks-endpoint-toggle-ep-gpt56');
+
+    const rowText = (id: string) => {
+      const row = screen.getByTestId(`databricks-endpoint-${id}`);
+      return {
+        model: within(row).getByTestId('databricks-endpoint-model-name').textContent,
+        path: within(row).queryByTestId('databricks-endpoint-uc-path')?.textContent ?? null,
+      };
+    };
+    expect(rowText('ep-oss')).toEqual({ model: 'gpt-oss-120b', path: 'system.ai' });
+    expect(rowText('ep-luna-uc')).toEqual({ model: 'oai-luna-model-service', path: 'app_dev.default' });
+    expect(rowText('ep-llama')).toEqual({ model: 'llama-3.1-70b', path: 'system.ai' });
+    expect(rowText('ep-gpt56')).toEqual({ model: 'gpt-5.6-luna', path: null });
+    // The full original name stays discoverable on the row.
+    expect(screen.getByTitle('system.ai.gpt-oss-120b')).toBeTruthy();
+
+    const search = screen.getByTestId('databricks-endpoint-search') as HTMLInputElement;
+    fireEvent.change(search, { target: { value: 'APP_DEV.default' } });
+    expect(screen.queryByTestId('databricks-endpoint-ep-oss')).toBeNull();
+    expect(screen.getByTestId('databricks-endpoint-ep-luna-uc')).toBeTruthy();
+
+    fireEvent.change(screen.getByTestId('databricks-endpoint-search'), { target: { value: 'luna' } });
+    expect(screen.getByTestId('databricks-endpoint-ep-luna-uc')).toBeTruthy();
+    expect(screen.getByTestId('databricks-endpoint-ep-gpt56')).toBeTruthy();
+    expect(screen.queryByTestId('databricks-endpoint-ep-llama')).toBeNull();
+
+    // Registering from a filtered list sends the full endpoint id, never the shortened display name.
+    fireEvent.click(screen.getByTestId('databricks-endpoint-toggle-ep-luna-uc'));
+    await waitFor(() =>
+      expect(databricksClient.enableDatabricksModel).toHaveBeenCalledWith('ep-luna-uc', { scanId: 'scan-1', expectedRevision: 7 }),
+    );
+
+    fireEvent.change(screen.getByTestId('databricks-endpoint-search'), { target: { value: 'nothing-here' } });
+    expect(screen.getByTestId('databricks-endpoint-search-empty').textContent).toContain('4 total');
+    fireEvent.click(screen.getByTestId('databricks-endpoint-search-clear'));
+    expect((screen.getByTestId('databricks-endpoint-search') as HTMLInputElement).value).toBe('');
+    expect(screen.getByTestId('databricks-endpoint-ep-llama')).toBeTruthy();
   });
 
   it('blocks scanning until a signed-in profile is selected', async () => {

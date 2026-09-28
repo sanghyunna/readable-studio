@@ -43,6 +43,7 @@ import {
   fetchVelaLoginStatus,
   listActiveChatRuns,
   listProjectRuns,
+  RUNS_CHANGED_EVENT,
   reattachDaemonRun,
   streamViaDaemon,
 } from '../providers/daemon';
@@ -5013,6 +5014,8 @@ export function ProjectView({
         setFailedMessagesConversationId(null);
         setConversations((curr) => [fresh, ...curr.filter((c) => c.id !== fresh.id)]);
         setActiveConversationId(fresh.id);
+        // The project list refresh does not refresh the rail's per-project sessions.
+        window.dispatchEvent(new Event(RUNS_CHANGED_EVENT));
         navigate(
           {
             kind: 'project',

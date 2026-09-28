@@ -6,6 +6,7 @@ import type { DatabricksWireCapabilities } from './catalogue.js';
 import type { DatabricksFailureDetail } from '@readable-studio/contracts';
 import { failureDetail, readUpstreamError, upstreamFailure } from './failure.js';
 import { listenOnFetchCompatiblePort } from '../fetch-compatible-listener.js';
+import { formatStreamFailure } from '../stream-failure.js';
 import { artifactDeliveryRequest, rejectsTools } from './tool-free.js';
 import { messagesRequest, messagesResponse, MessagesChatStream } from './messages.js';
 import { gatewayChatRequest, gatewayFunctionTool, measuredGatewayApi, nativeMessagesRequest, requestsEffort } from './gateway-surfaces.js';
@@ -623,7 +624,10 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
     } catch (error) {
       const original = error instanceof UpstreamStreamError ? error.detail
         : failureDetail(upstreamStatus === null ? 'transport' : 'invalid-response', upstreamStatus);
-      const detail = await captureAttempt(original, error instanceof UpstreamStreamError ? error.payload : undefined);
+      const diagnostic = error instanceof UpstreamStreamError ? undefined
+        : formatStreamFailure(error, upstreamStatus === null ? 'connecting' : 'reading', lastAttempt?.endpoint.hostname ?? upstream.hostname);
+      const detail = await captureAttempt(diagnostic ? failureDetail(original.reason, original.upstreamStatus, diagnostic) : original,
+        error instanceof UpstreamStreamError ? error.payload : undefined);
       try { if (error instanceof UpstreamStreamError && error.toolsRejected) await invalidateTools(); }
       finally {
         if (!controller.signal.aborted && !response.writableEnded) sendError(response, 502, detail);

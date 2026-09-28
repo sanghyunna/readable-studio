@@ -137,6 +137,8 @@
   color: var(--text-muted);
   font-size: 12px;
   line-height: 1.5;
+  /* Korean copy wraps at word boundaries; no effect on Latin text. */
+  word-break: keep-all;
 }
 
 /* Actions keep the trailing edge even when a narrow head wraps them onto
@@ -599,15 +601,103 @@
   gap: var(--dbx-tight);
 }
 
+/* Display-only filter over a long discovered list. Frames like the rows it
+   filters (same border, panel fill, block inset) so it reads as the list's
+   header; the shared Input drops its own chrome inside the frame. */
+.search {
+  display: flex;
+  min-height: var(--dbx-control);
+  align-items: center;
+  gap: var(--dbx-cluster);
+  padding-inline: var(--dbx-block) var(--dbx-tight);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--text-muted);
+}
+
+.search:focus-within {
+  border-color: var(--border-control);
+}
+
+.search svg {
+  flex: none;
+}
+
+.searchInput {
+  min-width: 0;
+  flex: 1 1 auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.searchInput:focus,
+.searchInput:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.searchInput::-webkit-search-cancel-button {
+  display: none;
+}
+
+.searchClear {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.searchClear:hover {
+  background: var(--bg-subtle);
+  color: var(--text-strong);
+}
+
+.searchClear:focus-visible {
+  outline: 2px solid var(--hub-accent);
+  outline-offset: 1px;
+}
+
+/* Model name primary, Unity Catalog path secondary on the same line; the
+   path drops under the name when the row is too narrow for both. Names are
+   long unbreakable strings, so both wrap anywhere rather than overflow. */
+.rowName {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--dbx-cluster);
+  row-gap: 0;
+}
+
 .rowLabel {
   min-width: 0;
   color: var(--text-strong);
   font-size: 13px;
   font-weight: 600;
   line-height: 18px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+}
+
+.rowPath {
+  min-width: 0;
+  color: var(--text-faint);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  overflow-wrap: anywhere;
 }
 
 .pills {

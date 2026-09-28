@@ -315,3 +315,35 @@ export interface DatabricksError extends Pick<ApiError, 'message' | 'retryable' 
 export interface DatabricksErrorResponse {
   error: DatabricksError;
 }
+
+/**
+ * Display-only split of a workspace model name. Unity Catalog nudges model
+ * services into `catalog.schema.name`, so a name with at least two periods is
+ * split at the FIRST two: `path` is `catalog.schema`, `model` is the whole
+ * remainder (which may itself contain periods, e.g. `llama-3.1-70b`). Fewer
+ * than two periods (`gpt-5.6-luna`) is not a UC path and stays whole.
+ * The full original name remains the identifier everywhere; never send the
+ * split `model` upstream.
+ */
+export interface DatabricksModelNameParts {
+  readonly model: string;
+  readonly path: string | null;
+}
+
+export function splitDatabricksModelName(name: string): DatabricksModelNameParts {
+  const first = name.indexOf('.');
+  const second = first > 0 ? name.indexOf('.', first + 1) : -1;
+  if (second === -1 || second === first + 1 || second === name.length - 1) return { model: name, path: null };
+  return { model: name.slice(second + 1), path: name.slice(0, second) };
+}
+
+/** Case-insensitive match against the display label, UC service name and served model name (full names include the UC path and the split model name). */
+export function matchesDatabricksModelSearch(
+  endpoint: Pick<DatabricksEndpoint, 'label' | 'displayName' | 'servedModelName'>,
+  query: string,
+): boolean {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  return [endpoint.label, endpoint.displayName, endpoint.servedModelName]
+    .some((name) => name !== undefined && name.toLowerCase().includes(needle));
+}

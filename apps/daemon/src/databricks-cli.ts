@@ -5,6 +5,7 @@ import {
   type DatabricksModelResponse, type DatabricksModelsResponse, type DatabricksProbeRequest,
   type DatabricksScanEvent, type DatabricksScanRequest, type DatabricksScanResponse,
   type DatabricksVerifyRequest,
+  matchesDatabricksModelSearch,
 } from '@readable-studio/contracts';
 import { resolveDaemonUrl } from './daemon-url.js';
 import { DatabricksServiceError } from './databricks/client.js';
@@ -22,7 +23,7 @@ export const DATABRICKS_CLI_USAGE = `Usage:
   readable databricks scan status <scan-id> [--cursor <id>] [--limit <1-1000>] [--json]
   readable databricks scan cancel <scan-id> [--json]
   readable databricks lookup <resource-id> --profile <id> --kind serving-endpoint|uc-model-service [--json]
-  readable databricks models [--profile <id>] [--json]
+  readable databricks models [--profile <id>] [--search <text>] [--json]
   readable databricks enable <endpoint-id> --scan <id> --revision <n> [--json]
   readable databricks disable|remove <endpoint-id> --revision <n> [--json]
   readable databricks select <endpoint-id> [--json]
@@ -62,7 +63,7 @@ function parse(args: string[]) {
   const allowed: Record<string, string[]> = {
     status: [], profiles: [], probe: ['profile'], scan: ['profile', 'scopes', 'follow'],
     login: ['host'], 'login status': [], 'login cancel': [],
-    'scan status': ['cursor', 'limit'], 'scan cancel': [], lookup: ['profile', 'kind'], models: ['profile'],
+    'scan status': ['cursor', 'limit'], 'scan cancel': [], lookup: ['profile', 'kind'], models: ['profile', 'search'],
     enable: ['scan', 'revision'], disable: ['revision'], remove: ['revision'], select: [], verify: ['scan', 'revision', 'allow-inference'],
     disconnect: [], client: ['executable', 'clear'], setup: ['mode', 'host', 'profile', 'token-stdin'],
   };
@@ -238,7 +239,13 @@ export async function runDatabricksCli(args: string[], dependencies: DatabricksC
         const body: DatabricksLookupRequest = { profileId: options.id('profile'), resourceId: options.target!, kind: options.text('kind') as DatabricksLookupRequest['kind'] };
         result = await call('/lookup', 'POST', databricksPublic.lookup, body); break;
       }
-      case 'models': result = await call(`/models${profile.profileId ? `?profileId=${profile.profileId}` : ''}`, 'GET', databricksPublic.models); break;
+      case 'models': {
+        const models: DatabricksModelsResponse = await call(`/models${profile.profileId ? `?profileId=${profile.profileId}` : ''}`, 'GET', databricksPublic.models);
+        // Same display-only filter as the web list: model name, UC path and full name.
+        const search = options.text('search');
+        result = search ? { ...models, models: models.models.filter((model) => matchesDatabricksModelSearch(model, search)) } : models;
+        break;
+      }
       case 'enable': {
         const body: DatabricksEnableRequest = { scanId: options.id('scan'), expectedRevision: options.revision() };
         result = await call(`/models/${options.target}`, 'PUT', databricksPublic.model, body); break;

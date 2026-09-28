@@ -43,6 +43,7 @@ import type {
   DatabricksScanEvent,
   DatabricksScanResponse,
 } from '@readable-studio/contracts';
+import { matchesDatabricksModelSearch, splitDatabricksModelName } from '@readable-studio/contracts';
 import { useT } from '../i18n';
 import { modalContent, modalOverlay, useFadingSurface } from '../motion';
 import {
@@ -257,6 +258,9 @@ function DatabricksAddModelsModalBody({
 
   const [pendingIds, setPendingIds] = useState<ReadonlySet<string>>(() => new Set());
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
+  // Display-only filter over the discovered list; never part of any request.
+  const [search, setSearch] = useState('');
+  const searchRef = useRef<HTMLInputElement | null>(null);
 
   // Setup step. `stepOverride` is the user's deliberate choice (open the form
   // from the profile step, go back, or the post-setup jump to scanning); null
@@ -730,6 +734,10 @@ function DatabricksAddModelsModalBody({
     return [...scanEndpoints, ...leftovers];
   }, [registered, scanEndpoints]);
   const registeredCount = rows.filter((row) => row.enabled).length;
+  const visibleRows = useMemo(
+    () => rows.filter((row) => matchesDatabricksModelSearch(row, search)),
+    [rows, search],
+  );
 
   const partial =
     scan && !scanning
@@ -1296,9 +1304,56 @@ function DatabricksAddModelsModalBody({
                     </p>
                   ) : null
                 ) : (
-                  <ul className={styles.rows} data-testid="databricks-endpoint-list">
-                    {rows.map((endpoint) => {
+                  <>
+                    <div className={styles.search} role="search">
+                      <Icon name="search" size={13} />
+                      <Input
+                        ref={searchRef}
+                        type="search"
+                        className={styles.searchInput}
+                        autoComplete="off"
+                        spellCheck={false}
+                        placeholder={t('databricks.results.searchPlaceholder')}
+                        aria-label={t('databricks.results.searchLabel')}
+                        value={search}
+                        onChange={(event) => setSearch(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Escape' && search) {
+                            event.stopPropagation();
+                            setSearch('');
+                          }
+                        }}
+                        data-testid="databricks-endpoint-search"
+                      />
+                      {search ? (
+                        <button
+                          type="button"
+                          className={styles.searchClear}
+                          onClick={() => {
+                            setSearch('');
+                            searchRef.current?.focus();
+                          }}
+                          aria-label={t('databricks.results.searchClear')}
+                          title={t('databricks.results.searchClear')}
+                          data-testid="databricks-endpoint-search-clear"
+                        >
+                          <Icon name="close" size={12} />
+                        </button>
+                      ) : null}
+                    </div>
+                    {visibleRows.length === 0 ? (
+                      <p
+                        className={styles.hint}
+                        role="status"
+                        data-testid="databricks-endpoint-search-empty"
+                      >
+                        {t('databricks.results.searchEmpty', { total: rows.length })}
+                      </p>
+                    ) : null}
+                  <ul className={styles.rows} data-testid="databricks-endpoint-list" hidden={visibleRows.length === 0}>
+                    {visibleRows.map((endpoint) => {
                       const pending = pendingIds.has(endpoint.id);
+                      const name = splitDatabricksModelName(endpoint.label);
                       const inScan = scanEndpoints.some((item) => item.id === endpoint.id);
                       const registrable =
                         endpoint.availability !== 'unavailable' && (endpoint.enabled || (inScan && Boolean(scan)));
@@ -1310,8 +1365,19 @@ function DatabricksAddModelsModalBody({
                           data-testid={`databricks-endpoint-${endpoint.id}`}
                         >
                           <div className={styles.rowMain}>
-                            <span className={styles.rowLabel} title={endpoint.label}>
-                              {endpoint.label}
+                            <span className={styles.rowName} title={endpoint.label}>
+                              <span className={styles.rowLabel} data-testid="databricks-endpoint-model-name">
+                                {name.model}
+                              </span>
+                              {name.path ? (
+                                <span
+                                  className={styles.rowPath}
+                                  aria-label={`${t('databricks.results.ucPath')}: ${name.path}`}
+                                  data-testid="databricks-endpoint-uc-path"
+                                >
+                                  {name.path}
+                                </span>
+                              ) : null}
                             </span>
                             <span className={styles.pills}>
                               <span className={styles.pill}>{kindLabel(t, endpoint.kind)}</span>
@@ -1372,6 +1438,7 @@ function DatabricksAddModelsModalBody({
                       );
                     })}
                   </ul>
+                  </>
                 )}
               </section>
 

@@ -90,6 +90,22 @@ describe('readable databricks CLI', () => {
     noSecrets(JSON.stringify(harness.saveConfig.mock.calls));
   });
 
+  it('models --search filters by model name, UC path or full name and keeps the full endpoint identity', async () => {
+    harness = await surfaceHarness();
+    const { servedModelName: _served, ...base } = models.models[0]!;
+    const second = { ...base, id: `dbe_${'d'.repeat(32)}`, label: 'system.ai.gpt-oss-120b', displayName: 'system.ai.gpt-oss-120b', appModelId: `dbm_${'e'.repeat(32)}` };
+    harness.service.listModels.mockResolvedValue({ ...models, models: [models.models[0]!, second] });
+    const byModel = cli(['models', '--search', 'GPT-OSS']);
+    expect(await byModel.finished).toEqual({ exitCode: 0 });
+    expect(JSON.parse(byModel.output()).models.map((entry: { id: string; label: string }) => [entry.id, entry.label])).toEqual([[`dbe_${'d'.repeat(32)}`, 'system.ai.gpt-oss-120b']]);
+    const byPath = cli(['models', '--search', 'system.ai']);
+    expect(await byPath.finished).toEqual({ exitCode: 0 });
+    expect(JSON.parse(byPath.output()).models).toHaveLength(1);
+    const none = cli(['models', '--search', 'nomatch']);
+    expect(await none.finished).toEqual({ exitCode: 0 });
+    expect(JSON.parse(none.output()).models).toEqual([]);
+  });
+
   it('select refuses unregistered models without saving a default', async () => {
     harness = await surfaceHarness();
     harness.service.listModels.mockResolvedValueOnce({ ...models, models: [] });

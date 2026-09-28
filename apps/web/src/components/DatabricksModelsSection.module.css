@@ -93,8 +93,25 @@
   min-width: 0;
 }
 
+/* Model name primary, Unity Catalog path secondary beside it; the path
+   drops to its own line when the row is narrow. */
+.rowName {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 8px;
+}
+
 .rowTitle {
   font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.rowPath {
+  color: var(--text-faint);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11px;
   overflow-wrap: anywhere;
 }
 

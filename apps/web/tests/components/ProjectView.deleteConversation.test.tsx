@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, render, waitFor } from '@testing-library/react';
+import { act, cleanup, render, renderHook, waitFor } from '@testing-library/react';
+import { useHubRailController } from '../../src/components/hub/useHubRailController';
+import type { Project } from '../../src/types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectView } from '../../src/components/ProjectView';
 
 const listConversations = vi.fn();
+const readConversations = vi.fn();
 const listMessages = vi.fn();
 const fetchPreviewComments = vi.fn();
 const loadTabs = vi.fn();
@@ -35,6 +38,7 @@ const chatPaneProps: {
   activeConversationId?: string | null;
   conversations?: Array<{ id: string; title?: string | null }>;
   messages?: Array<{ id: string; content?: string }>;
+  onForkFromMessage?: (message: { id: string; content: string; role: 'assistant' }) => void;
 } = {};
 
 vi.mock('../../src/i18n', () => ({
@@ -56,6 +60,7 @@ vi.mock('../../src/providers/daemon', () => ({
   listProjectRuns: (...args: unknown[]) => listProjectRuns(...args),
   reattachDaemonRun: (...args: unknown[]) => reattachDaemonRun(...args),
   streamViaDaemon: vi.fn(),
+  RUNS_CHANGED_EVENT: 'readable-studio:runs-changed',
 }));
 
 vi.mock('../../src/providers/registry', () => ({
@@ -79,6 +84,7 @@ vi.mock('../../src/state/projects', () => ({
   deleteConversation: (...args: unknown[]) => deleteConversation(...args),
   getTemplate: (...args: unknown[]) => getTemplate(...args),
   listConversations: (...args: unknown[]) => listConversations(...args),
+  readConversations: (...args: unknown[]) => readConversations(...args),
   listMessages: (...args: unknown[]) => listMessages(...args),
   loadMessagePage: async (projectId: string, conversationId: string) => ({ messages: await listMessages(projectId, conversationId), nextPosition: null }),
   loadTabs: (...args: unknown[]) => loadTabs(...args),
@@ -102,11 +108,13 @@ vi.mock('../../src/components/ChatPane', () => ({
     activeConversationId?: string | null;
     conversations?: Array<{ id: string; title?: string | null }>;
     messages?: Array<{ id: string; content?: string }>;
+    onForkFromMessage?: (message: { id: string; content: string; role: 'assistant' }) => void;
   }) => {
     chatPaneProps.onDeleteConversation = props.onDeleteConversation;
     chatPaneProps.activeConversationId = props.activeConversationId;
     chatPaneProps.conversations = props.conversations;
     chatPaneProps.messages = props.messages;
+    chatPaneProps.onForkFromMessage = props.onForkFromMessage;
     return null;
   },
 }));
@@ -157,6 +165,7 @@ describe('ProjectView conversation delete', () => {
     chatPaneProps.activeConversationId = undefined;
     chatPaneProps.conversations = undefined;
     chatPaneProps.messages = undefined;
+    chatPaneProps.onForkFromMessage = undefined;
   });
 
   // Issue #1202: the home `Needs input` badge is rendered from the
@@ -167,6 +176,61 @@ describe('ProjectView conversation delete', () => {
   // reload. All the other state-changing branches in ProjectView
   // already call onProjectsRefresh (run end, live artifact events,
   // etc.) — this pins that the delete-conversation branch joins them.
+  it.each(['fork', 'original'] as const)('keeps the sibling in the rail when deleting the %s after forking the last message', async (deletedSide) => {
+    // Given: the workspace and the rail initially share the original conversation.
+    const original = { id: 'original', projectId: 'project-1', title: 'Original', createdAt: 1, updatedAt: 1 };
+    const fork = { ...original, id: 'fork', title: 'Original fork', updatedAt: 2 };
+    const message = { id: 'last-message', role: 'assistant' as const, content: 'Last response' };
+    let stored = [original];
+    listConversations.mockImplementation(async () => stored);
+    listMessages.mockResolvedValue([message]);
+    readConversations.mockImplementation(async () => ({ ok: true, conversations: stored }));
+    createConversation.mockImplementation(async () => { stored = [fork, original]; return fork; });
+    deleteConversation.mockImplementation(async (_projectId: string, id: string) => {
+      stored = stored.filter((row) => row.id !== id);
+      return true;
+    });
+    fetchPreviewComments.mockResolvedValue([]);
+    loadTabs.mockResolvedValue({ tabs: [], activeTabId: null });
+    fetchProjectFiles.mockResolvedValue([]);
+    fetchLiveArtifacts.mockResolvedValue([]);
+    fetchSkill.mockResolvedValue(null);
+    fetchDesignSystem.mockResolvedValue(null);
+    getTemplate.mockResolvedValue(null);
+    fetchChatRunStatus.mockResolvedValue(null);
+    listActiveChatRuns.mockResolvedValue([]);
+    reattachDaemonRun.mockResolvedValue(undefined);
+    const railProject: Project = { id: 'project-1', name: 'Project', skillId: null, designSystemId: null, createdAt: 1, updatedAt: 1 };
+    const { result: rail, rerender } = renderHook(({ currentSessionId }: { currentSessionId: string }) =>
+      useHubRailController({ projects: [railProject], currentSessionId, onOpenSession: vi.fn(), onNewProject: vi.fn() }),
+      { initialProps: { currentSessionId: 'original' } },
+    );
+    renderProjectView(vi.fn(), 'original');
+    await waitFor(() => expect(rail.current.allNodes[0]?.sessions.map((row) => row.id)).toEqual(['original']));
+    await waitFor(() => expect(chatPaneProps.onForkFromMessage).toBeDefined());
+    await waitFor(() => expect(chatPaneProps.messages?.some((row) => row.id === message.id)).toBe(true));
+
+    // When: Fork is invoked on the last message, before any remount or reload.
+    await act(async () => { chatPaneProps.onForkFromMessage?.(message); });
+    await waitFor(() => expect(createConversation).toHaveBeenCalled());
+    await waitFor(() => expect(chatPaneProps.activeConversationId).toBe('fork'));
+    rerender({ currentSessionId: 'fork' });
+    await waitFor(() => expect(rail.current.allNodes[0]?.sessions.map((row) => row.id)).toEqual(['fork', 'original']));
+    expect(rail.current.currentSessionId).toBe('fork');
+    expect(createConversation).toHaveBeenCalledWith('project-1', expect.anything(), expect.objectContaining({
+      seedFromConversationId: 'original', forkAfterMessageId: message.id, seedMessages: [message],
+    }));
+
+    // Then: the actual rail action removes only the selected id; the sibling survives.
+    const victim = rail.current.allNodes[0]?.sessions.find((row) => row.id === deletedSide);
+    if (!victim) throw new Error('Fixture victim absent from rail');
+    act(() => rail.current.deleteSession(victim));
+    await act(async () => { rail.current.commitPendingSessionDeletion(); });
+    const survivor = deletedSide === 'fork' ? 'original' : 'fork';
+    expect(deleteConversation).toHaveBeenCalledExactlyOnceWith('project-1', deletedSide);
+    expect(rail.current.allNodes[0]?.sessions.map((row) => row.id)).toEqual([survivor]);
+  });
+
   it('triggers onProjectsRefresh after deleting a conversation', async () => {
     listConversations.mockResolvedValue([
       { id: 'conv-1', title: 'Conversation 1' },

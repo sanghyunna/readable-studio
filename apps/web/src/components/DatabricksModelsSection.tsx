@@ -6,9 +6,10 @@
 // `notifyDatabricksModelsChanged` so the model picker updates without a
 // restart, and every failure is shown next to the row that caused it.
 import { useCallback, useEffect, useState } from 'react';
-import type {
-  DatabricksProfile,
-  DatabricksRegisteredEndpoint,
+import {
+  splitDatabricksModelName,
+  type DatabricksProfile,
+  type DatabricksRegisteredEndpoint,
 } from '@readable-studio/contracts';
 import { Button } from '@readable-studio/components';
 import { useI18n } from '../i18n';
@@ -218,10 +219,21 @@ export function DatabricksModelsSection() {
                 const context = formatTokens(model.capabilities.contextWindow);
                 const output = formatTokens(model.capabilities.maxTokens);
                 const title = modelTitle(model);
+                const name = splitDatabricksModelName(title);
                 return (
                   <li key={model.id} className={styles.row} data-testid="databricks-model-row">
                     <div className={styles.rowMain}>
-                      <strong className={styles.rowTitle}>{title}</strong>
+                      <span className={styles.rowName} title={title}>
+                        <strong className={styles.rowTitle}>{name.model}</strong>
+                        {name.path ? (
+                          <span
+                            className={styles.rowPath}
+                            aria-label={`${t('databricks.results.ucPath')}: ${name.path}`}
+                          >
+                            {name.path}
+                          </span>
+                        ) : null}
+                      </span>
                       {model.displayName && model.displayName !== title ? (
                         <code className={styles.rowIdentity}>{model.displayName}</code>
                       ) : null}

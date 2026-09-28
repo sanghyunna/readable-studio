@@ -23,6 +23,7 @@ import { homedir } from 'node:os';
 import type { ChildProcess } from 'node:child_process';
 import type { Writable } from 'node:stream';
 import { createJsonLineStream } from './acp.js';
+import { formatStreamFailure } from './stream-failure.js';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -80,7 +81,7 @@ function isRecord(value: unknown): value is JsonRecord {
 }
 
 function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  return formatStreamFailure(err, 'reading', 'the Pi model connection') ?? (err instanceof Error ? err.message : String(err));
 }
 
 function errorCode(err: unknown): string | undefined {
@@ -201,7 +202,8 @@ export function mapPiRpcEvent(
         typeof message.errorMessage === 'string' && message.errorMessage.length > 0
           ? message.errorMessage
           : 'Pi agent error';
-      send('agent', { type: 'error', message: messageText, raw });
+      const diagnostic = formatStreamFailure(messageText, 'reading', 'the Pi model connection');
+      send('agent', { type: 'error', message: diagnostic ?? messageText, ...(diagnostic ? { retryable: true } : {}), raw });
     }
     return null;
   }
@@ -249,7 +251,8 @@ export function mapPiRpcEvent(
           : typeof ev.delta === 'string' && ev.delta.length > 0
             ? ev.delta
             : 'Agent error';
-      send('agent', { type: 'error', message, raw });
+      const diagnostic = formatStreamFailure(message, 'reading', 'the Pi model connection');
+      send('agent', { type: 'error', message: diagnostic ?? message, ...(diagnostic ? { retryable: true } : {}), raw });
       return null;
     }
 
@@ -305,7 +308,8 @@ export function mapPiRpcEvent(
       typeof raw.error === 'string' && raw.error.length > 0
         ? raw.error
         : 'Extension error';
-    send('agent', { type: 'error', message, raw });
+    const diagnostic = formatStreamFailure(message, 'reading', 'the Pi model connection');
+    send('agent', { type: 'error', message: diagnostic ?? message, ...(diagnostic ? { retryable: true } : {}), raw });
     return null;
   }
 
@@ -326,7 +330,8 @@ export function mapPiRpcEvent(
       typeof raw.finalError === 'string' && raw.finalError.length > 0
         ? raw.finalError
         : 'Auto-retry exhausted';
-    send('agent', { type: 'error', message, raw });
+    const diagnostic = formatStreamFailure(message, 'reading', 'the Pi model connection');
+    send('agent', { type: 'error', message: diagnostic ?? message, ...(diagnostic ? { retryable: true } : {}), raw });
     return null;
   }
 

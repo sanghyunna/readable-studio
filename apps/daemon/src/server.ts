@@ -216,6 +216,7 @@ import {
 import { composeMemoryBody, extractFromMessage } from './memory.js';
 import { attachAcpSession } from './acp.js';
 import { attachPiRpcSession } from './pi-rpc.js';
+import { formatStreamFailure } from './stream-failure.js';
 import type { HostedPiRuntimeAdapter } from './runtimes/hosted-pi-runtime.js';
 import { stageAmrImagePaths } from './amr-image-staging.js';
 import {
@@ -11739,7 +11740,9 @@ export async function startServer({
         });
         child.on('error', (err) => {
           flushVisibleAgentStderr();
-          send('error', createSseErrorPayload('AGENT_EXECUTION_FAILED', err.message));
+          const diagnostic = formatStreamFailure(err, 'connecting', 'the agent process');
+          send('error', createSseErrorPayload('AGENT_EXECUTION_FAILED', diagnostic ?? err.message,
+            { retryable: Boolean(diagnostic) }));
         });
 
         // Wrap the child's close event so the orchestrator can race child
@@ -11946,9 +11949,10 @@ export async function startServer({
           agentStdoutTail,
           agentStderrTail,
         ].join('\n');
+        const streamDiagnostic = formatStreamFailure(ev.message, 'reading', 'the model connection');
         agentStreamError = rewriteKnownAgentStreamError(
           agentId,
-          String(ev.message || 'Agent stream error'),
+          streamDiagnostic ?? String(ev.message || 'Agent stream error'),
           failureText,
         );
         clearInactivityWatchdog();
@@ -11975,7 +11979,7 @@ export async function startServer({
         }
         send('error', createSseErrorPayload('AGENT_EXECUTION_FAILED', agentStreamError, {
           details: ev.raw ? { raw: ev.raw } : undefined,
-          retryable: false,
+          retryable: Boolean(streamDiagnostic || ev.retryable === true),
         }));
         return;
       }
@@ -12122,7 +12126,8 @@ export async function startServer({
           } else if (channel === 'error') {
             if (agentStreamError) return;
             flushVisibleAgentStderr();
-            agentStreamError = String(payload?.message || 'Pi session error');
+            const streamDiagnostic = formatStreamFailure(payload?.message, 'reading', 'the Pi model connection');
+            agentStreamError = streamDiagnostic ?? String(payload?.message || 'Pi session error');
             const piErrorCode = typeof payload?.code === 'string' ? payload.code : null;
             if (piErrorCode) {
               run.errorCode = piErrorCode;
@@ -12138,7 +12143,7 @@ export async function startServer({
             send('error', createSseErrorPayload(
               'AGENT_EXECUTION_FAILED',
               agentStreamError,
-              { retryable: false },
+              { retryable: Boolean(streamDiagnostic) },
             ));
           } else {
             noteAgentActivity();
@@ -12256,7 +12261,9 @@ export async function startServer({
       flushVisibleAgentStderr();
       revokeToolToken('child_exit');
       unregisterChatAgentEventSink();
-      send('error', createSseErrorPayload('AGENT_EXECUTION_FAILED', err.message));
+      const diagnostic = formatStreamFailure(err, 'connecting', 'the agent process');
+      send('error', createSseErrorPayload('AGENT_EXECUTION_FAILED', diagnostic ?? err.message,
+        { retryable: Boolean(diagnostic) }));
       finishWithRetryDecision('failed', 1, null);
     });
     child.on('close', async (code, signal) => {
@@ -12548,9 +12555,11 @@ export async function startServer({
               { retryable: true },
             ));
           } else {
+            const tail = (agentStderrTail || agentStdoutTail || '').trim();
+            const streamDiagnostic = formatStreamFailure(tail, 'reading', 'the model connection');
             const rewritten = rewriteKnownAgentStreamError(
               def.id,
-              (agentStderrTail || agentStdoutTail || '').trim(),
+              streamDiagnostic ?? tail,
               `${agentStderrTail}\n${agentStdoutTail}`,
             );
             if (rewritten !== 'Agent stream error') {

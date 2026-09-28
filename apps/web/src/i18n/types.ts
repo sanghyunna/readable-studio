@@ -1914,6 +1914,11 @@ export interface Dict {
   'databricks.results.register': string;
   'databricks.results.registered': string;
   'databricks.results.pending': string;
+  'databricks.results.searchLabel': string;
+  'databricks.results.searchPlaceholder': string;
+  'databricks.results.searchClear': string;
+  'databricks.results.searchEmpty': string;
+  'databricks.results.ucPath': string;
   'databricks.kind.serving': string;
   'databricks.kind.modelService': string;
   'databricks.api.openai': string;
