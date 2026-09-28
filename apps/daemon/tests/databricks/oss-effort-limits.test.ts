@@ -16,6 +16,69 @@ const resource = { kind: 'serving-endpoint' as const, name: 'databricks-gpt-oss-
 const efforts = ['low', 'medium', 'high', 'xhigh', 'max'];
 const completion = { choices: [{ message: { content: 'RECOVERED' }, finish_reason: 'stop' }] };
 
+test('an effort-parameter 400 surfaces the error and suppresses effort across restart and rescan', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'effort-negative-'));
+  const candidate = { ...resource, name: 'custom-o3-endpoint', metadata: {
+    task: 'llm/v1/chat', config: { served_entities: [{ external_model: { name: 'o3' } }] },
+  } };
+  try {
+    const store = new DatabricksStore(root);
+    const secret = (await store.read()).secret;
+    const entry = normalizeResource(secret, 'profile', candidate);
+    expect(entry.endpoint.reasoningOptions?.map(option => option.id)).toEqual(['low', 'medium', 'high']);
+    entry.endpoint.enabled = true;
+    await store.update(generation => {
+      generation.entries = [entry];
+      generation.bindings = [{ id: 'profile', profileName: 'Fixture profile with spaces', host: upstreamHost, isDefault: true }];
+    });
+    const makeService = () => createDatabricksService({ dataRoot: root, now: () => fixtureNow,
+      fetch: async () => Response.json(candidate.metadata),
+      clientOptions: { runner: fixtureCliRunner, resolveExecutable: async () => 'C:\\fixture\\databricks.exe' } });
+    expect((await makeService().listModels()).models[0]!.reasoningOptions?.map(option => option.id))
+      .toEqual(['low', 'medium', 'high']);
+    const runtime = await makeService().resolveRuntime(entry.endpoint.appModelId!);
+    const relay = await createDatabricksRelay({ runtime, fetch: async (_input, init) => {
+      expect(JSON.parse(String(init?.body)).reasoning_effort).toBe('high');
+      return Response.json({
+        error: { code: 'INVALID_PARAMETER', param: 'reasoning_effort', message: 'Unsupported parameter: reasoning_effort' },
+      }, { status: 400 });
+    } });
+    try {
+      const response = await fetch(`${relay.baseUrl}/chat/completions`, { method: 'POST',
+        headers: { authorization: `Bearer ${relay.capabilityKey}` },
+        body: JSON.stringify({ model: relay.modelAlias, messages: [], reasoning_effort: 'high' }) });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ error: { reason: 'bad-request', upstreamStatus: 400,
+        upstreamMessage: 'Unsupported parameter: reasoning_effort' } });
+    } finally { await relay.close(); }
+    const restarted = makeService();
+    expect((await restarted.listModels()).models[0]!.reasoningOptions).toEqual([]);
+    expect((await restarted.resolveRuntime(entry.endpoint.appModelId!)).wireCapabilities?.effortUnsupported).toBe(true);
+    const saved = (await new DatabricksStore(root).read()).entries[0]!;
+    expect(normalizeResource(secret, 'profile', candidate, saved).endpoint.reasoningOptions).toEqual([]);
+    const lookedUp = await restarted.lookup({ profileId: 'profile', resourceId: entry.endpoint.id, kind: 'serving-endpoint' });
+    expect((await new DatabricksStore(root).read()).entries[0]).toMatchObject({
+      configurationId: saved.configurationId, wireCapabilities: { effortUnsupported: true },
+    });
+    expect(lookedUp.endpoint.id).toBe(entry.endpoint.id);
+    expect(lookedUp.endpoint.reasoningOptions).toEqual([]);
+    expect((await restarted.listModels()).models[0]!.reasoningOptions).toEqual([]);
+    expect(normalizeResource(secret, 'profile', { ...candidate, metadata: { ...candidate.metadata, revision: 2 } }, saved)
+      .endpoint.reasoningOptions?.map(option => option.id)).toEqual(['low', 'medium', 'high']);
+    const next = await createDatabricksRelay({ runtime: await restarted.resolveRuntime(entry.endpoint.appModelId!),
+      fetch: async (_input, init) => {
+        expect(JSON.parse(String(init?.body)).reasoning_effort).toBeUndefined();
+        return Response.json(completion);
+      } });
+    try {
+      const response = await fetch(`${next.baseUrl}/chat/completions`, { method: 'POST',
+        headers: { authorization: `Bearer ${next.capabilityKey}` },
+        body: JSON.stringify({ model: next.modelAlias, messages: [], reasoning_effort: 'high' }) });
+      expect(response.status).toBe(200);
+    } finally { await next.close(); }
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 for (const [field, ceiling] of [['max_tokens', 25000], ['max_completion_tokens', 25000], ['max_tokens', 20000]] as const) {
   test(`gpt-oss ${field}: learns ${ceiling} from actual invocation, persists and clamps the next turn`, async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'oss-ceiling-'));

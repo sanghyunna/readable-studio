@@ -14,6 +14,16 @@ function endpoint(model: string, metadata: Record<string, unknown> = {}) {
 }
 
 describe('Databricks proven effort options', () => {
+  it.each([
+    ['claude-opus-4-1', 'anthropic/v1/messages'],
+    ['o3', 'openai/v1/chat/completions'],
+    ['gpt-5', 'openai/v1/chat/completions'],
+  ])('registers reasoning family %s behind a custom endpoint', (model, nativeApi) => {
+    const result = endpoint(model, { supported_api_types: [nativeApi] });
+    expect(result.servedModelName).toBe(model);
+    expect(result.reasoningOptions?.map(({ id }) => id)).toEqual(['low', 'medium', 'high']);
+  });
+
   it.each(effortProbes)('advertises exactly the accepted candidate set for $api / $servedModel', (probe) => {
     const metadata = structuredClone(claude);
     metadata.supported_api_types = [probe.nativeApi];
@@ -29,9 +39,10 @@ describe('Databricks proven effort options', () => {
     expect(endpoint('gpt-oss-120b').reasoningOptions?.map(({ id }) => id))
       .toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
     expect(endpoint('gpt-oss-120b', { supported_api_types: ['anthropic/v1/messages'] }).reasoningOptions).toEqual([]);
-    for (const model of ['gpt-oss-20b', 'gpt-oss-120b-custom', 'gpt-5.6', 'gpt-5.6-sol', 'gpt-5.6-terra']) {
-      expect(endpoint(model).reasoningOptions).toEqual([]);
+    for (const model of ['gpt-oss-20b', 'gpt-5.6', 'gpt-5.6-sol', 'gpt-5.6-terra']) {
+      expect(endpoint(model).reasoningOptions?.map(({ id }) => id)).toEqual(['low', 'medium', 'high']);
     }
+    expect(endpoint('gpt-oss-120b-custom').reasoningOptions).toEqual([]);
   });
 
   it('uses served identity rather than service alias or protocol alone', () => {
@@ -40,6 +51,9 @@ describe('Databricks proven effort options', () => {
     expect(normalizeResource('secret', 'profile', { kind: 'uc-model-service', name: 'claude-sonnet-5', metadata })
       .endpoint.reasoningOptions).toEqual([]);
     expect(endpoint('gpt-5.6-luna').reasoningOptions?.map(({ id }) => id)).toEqual(['low', 'medium', 'high', 'xhigh']);
+    for (const model of ['llama-3.3-70b-instruct', 'qwen3-32b-instruct', 'gemma-3', 'text-embedding-3-large']) {
+      expect(endpoint(model).reasoningOptions).toEqual([]);
+    }
     expect(endpoint('claude-sonnet-5').reasoningOptions).toEqual([]); // Unprobed OpenAI translation.
     expect(normalizeResource('secret', 'profile', { kind: 'uc-model-service', name: 'claude-sonnet-5', metadata: {} })
       .endpoint.reasoningOptions).toEqual([]);

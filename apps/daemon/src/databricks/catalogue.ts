@@ -6,6 +6,8 @@ import { databricksEndpointLabel, resolveDatabricksCapabilities, resolveDatabric
 /** Daemon-private catalogue: routing and UI identities, never arbitrary upstream metadata. */
 export interface DatabricksWireCapabilities {
   responsesUnsupported: boolean;
+  /** Upstream rejected an effort parameter for this endpoint configuration. */
+  effortUnsupported?: true;
   /** Learned same-workspace Responses surface, never an arbitrary upstream URL. */
   responsesPath?: string;
   /** Accepted native protocol; fixed workspace path, not an upstream-supplied URL. */
@@ -32,6 +34,9 @@ export interface CatalogueEntry {
 export function applyLearnedDatabricksProtocol(entry: CatalogueEntry): void {
   if (entry.wireCapabilities?.api !== 'anthropic-messages') return;
   entry.endpoint.api = 'anthropic-messages';
+  entry.endpoint.reasoningOptions = entry.wireCapabilities.effortUnsupported ? []
+    : resolveDatabricksReasoningOptions(entry.endpoint.api,
+      (entry.endpoint.servedModelName?.split(', ') ?? []).map((name) => ({ name })));
   entry.basePath = '/ai-gateway/anthropic';
   entry.endpoint.protocolEvidence = { advertised: entry.endpoint.protocolEvidence?.advertised ?? [],
     native: entry.endpoint.protocolEvidence?.native ?? [], reason: 'runtime-accepted' };
@@ -148,5 +153,6 @@ export function normalizeResource(secret: string, profileId: string, resource: D
       : resource.kind === 'serving-endpoint' ? `/serving-endpoints/${encodeURIComponent(resource.name)}/invocations` : '/ai-gateway/openai/v1',
   };
   applyLearnedDatabricksProtocol(entry);
+  if (wireCapabilities?.effortUnsupported) endpoint.reasoningOptions = [];
   return entry;
 }

@@ -481,10 +481,12 @@ export class LocalDatabricksService implements DatabricksService {
           if (!current || current.configurationId !== entry.configurationId) return;
           current.wireCapabilities = learned;
           applyLearnedDatabricksProtocol(current);
+          if (learned.effortUnsupported) current.endpoint.reasoningOptions = [];
           if (learned.tools) current.endpoint.capabilities.tools = learned.tools;
           for (const scan of generation.scans) {
             scan.endpoints = scan.endpoints.map(endpoint => endpoint.id === current.endpoint.id
               ? { ...endpoint, api: current.endpoint.api,
+                ...(current.endpoint.reasoningOptions ? { reasoningOptions: structuredClone(current.endpoint.reasoningOptions) } : {}),
                 ...(current.endpoint.protocolEvidence ? { protocolEvidence: structuredClone(current.endpoint.protocolEvidence) } : {}),
                 capabilities: { ...endpoint.capabilities, tools: current.endpoint.capabilities.tools } } : endpoint);
           }

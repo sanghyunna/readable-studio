@@ -194,6 +194,7 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
   // rejections. Never infer OpenAI passthrough support from MLflow API metadata.
   // Persisted beside registration; fresh metadata invalidates the learned recipe.
   let responsesUnsupported = runtime.wireCapabilities?.responsesUnsupported ?? false;
+  let effortUnsupported = runtime.wireCapabilities?.effortUnsupported ?? false;
   // Metadata advertises dialects, not URLs. Discover acceptance among documented
   // same-origin surfaces; never follow upstream URLs or guess from model identity.
   // Serving invocations accept Chat (including function tools), not Responses.
@@ -217,7 +218,7 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
   let closing: Promise<void> | undefined;
 
   const learnedCapabilities = (responses = false, messagesSurface = learnedMessages): DatabricksWireCapabilities => ({
-    responsesUnsupported, ...(responses ? { responsesPath } : {}),
+    responsesUnsupported, ...(effortUnsupported ? { effortUnsupported: true as const } : {}), ...(responses ? { responsesPath } : {}),
     ...(messagesSurface ? { api: 'anthropic-messages' as const } : {}),
     tools: toolsState, toolSurfaceVersion: 2,
     ...(toolsState === 'supported' ? { toolsCompletionVersion: 1 as const } : {}),
@@ -417,6 +418,11 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
       if (body.model !== modelAlias) { sendError(response, 400); return; }
       // Prefer Responses for tools + effort, but probe the actual passthrough
       // surface. Some gateways advertise MLflow Responses without OpenAI support.
+      if (effortUnsupported) {
+        delete body.reasoning_effort;
+        delete body.output_config;
+        delete body.thinking;
+      }
       const effort = requestsEffort(body);
       const measured = measuredGatewayApi(runtime.model);
       let messagesSurface = anthropic || learnedMessages || !invocation && effort
@@ -516,6 +522,16 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
           break;
         }
         if (result.status !== 400 || typeof message !== 'string') break;
+        const detail = record(rejected) && record(rejected.error) ? rejected.error : rejected;
+        const parameter = record(detail) ? detail.param ?? detail.parameter : undefined;
+        const rejectedEffort = typeof parameter === 'string' && /^(?:reasoning_effort|reasoning\.effort|output_config\.effort|thinking|thinking\.type)$/.test(parameter)
+          || /(?:unknown|unrecognized|unsupported|not supported|invalid|not allowed|unexpected)\s+(?:request\s+)?(?:field|parameter|argument)\s*:?\s*["']?(?:reasoning_effort|reasoning\.effort|output_config\.effort|thinking(?:\.type)?)/i.test(message)
+          || /(?:reasoning_effort|reasoning\.effort|output_config\.effort|thinking(?:\.type)?)\s*["']?\s+(?:is\s+)?(?:not supported|unsupported|not allowed|unknown|unrecognized)/i.test(message);
+        if (effort && rejectedEffort && (wire.reasoning_effort !== undefined || wire.reasoning !== undefined
+          || wire.output_config !== undefined || wire.thinking !== undefined)) {
+          effortUnsupported = true;
+          await runtime.onCapabilitiesLearned?.(learnedCapabilities());
+        }
         // Only fixed parameter names cross the privacy boundary, never provider prose.
         const fields = ['max_completion_tokens', 'max_tokens', 'max_output_tokens', 'max_new_tokens', 'reasoning_effort', 'tools', 'tool_choice', 'stream_options'];
         const named = fields.filter((field) => new RegExp(`\\b${field}\\b`).test(message));

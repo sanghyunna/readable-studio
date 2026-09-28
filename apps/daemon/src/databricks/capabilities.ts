@@ -39,8 +39,8 @@ const MODEL_LIMITS = [
 const UNKNOWN_LIMITS = { contextWindow: 1_000_000, maxTokens: 128_000 };
 
 // Live gateway acceptance, 2026-09-13: .omo/evidence/databricks-effort/probe.md.
-// Effort is model-specific, not a guarantee of either wire protocol. Do not
-// extend these recipes to aliases, other versions, or unprobed models.
+// These exact recipes retain their measured levels; other reasoning-family
+// members start with only the common low/medium/high levels.
 const MODEL_EFFORTS: Array<{ name: string; api: DatabricksEndpointApi; levels: string[] }> = [
   { name: 'claude-sonnet-5', api: 'anthropic-messages', levels: ['low', 'medium', 'high', 'xhigh', 'max'] },
   { name: 'gpt-5.6-luna', api: 'openai-completions', levels: ['low', 'medium', 'high', 'xhigh'] },
@@ -54,9 +54,19 @@ export function resolveDatabricksReasoningOptions(
   api: DatabricksEndpointApi,
   models: Array<{ name?: string }>,
 ): NonNullable<DatabricksEndpoint['reasoningOptions']> {
-  const recipes = models.map((model) => MODEL_EFFORTS.find((entry) => entry.api === api
-    // system.ai is the registry qualifier in foundation_model.name, not a version or alias.
-    && entry.name === model.name?.trim().toLowerCase().replace(/^system\.ai\./, '')));
+  const recipes = models.map((model) => {
+    // Preserve measured recipes before normalizing vendor-qualified identities.
+    const exactName = model.name?.trim().toLowerCase().replace(/^system\.ai\./, '');
+    const exact = MODEL_EFFORTS.find((entry) => entry.api === api && entry.name === exactName);
+    if (exact) return exact;
+    const name = model.name ? normalizeDatabricksModelIdentity(model.name) : '';
+    const family = api === 'anthropic-messages'
+      ? /^claude-(?:sonnet|opus|haiku)-(?:[4-9]|[1-9]\d)(?:[-.][0-9]+)?$/.test(name)
+      : api === 'openai-completions' && (/^o[1-9](?:-mini|-preview)?$/.test(name)
+        || /^gpt-5(?:\.[0-9]+)?(?:-(?:mini|nano|sol|terra|luna))?$/.test(name)
+        || /^gpt-oss-[0-9]+b$/.test(name));
+    return family ? { levels: ['low', 'medium', 'high'] } : undefined;
+  });
   const levels = recipes[0]?.levels ?? [];
   return levels.filter((level) => recipes.every((recipe) => recipe?.levels.includes(level)))
     .map((id) => ({ id, label: EFFORT_LABELS[id]! }));
