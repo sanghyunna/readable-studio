@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { ensureRailOpen } from '@/playwright/rail';
 import type { Page } from '@playwright/test';
 import { applyStandardMocks } from '@/playwright/mock-factory';
-import { openNewProjectModal } from '@/playwright/new-project-modal';
+import { createEmptyProjectFromHub } from '@/playwright/new-project-modal';
 import { T } from '@/timeouts';
 
 test.describe.configure({ timeout: 30_000 });
@@ -44,10 +44,7 @@ test('[P0] @critical settings dialog is reachable from home', async ({ page }) =
 
 test('[P0] @critical prototype project creation reaches the workspace shell', async ({ page }) => {
   await gotoEntryHome(page);
-  await prepareAndOpenNewProjectModal(page);
-  await page.getByTestId('new-project-tab-prototype').click();
-  await page.getByTestId('new-project-name').fill('Critical smoke project');
-  await page.getByTestId('create-project').click();
+  await createEmptyProjectFromHub(page, { name: 'Critical smoke project', kind: 'prototype' });
 
   await expectWorkspaceReady(page);
 });
@@ -62,11 +59,6 @@ async function gotoEntryHome(page: Page) {
   }
   await expect(page.getByTestId('home-hero')).toBeVisible();
   await expect(page.getByTestId('home-hero-input')).toBeVisible();
-}
-
-async function prepareAndOpenNewProjectModal(page: Page) {
-  await openNewProjectModal(page);
-  await expect(page.getByTestId('new-project-panel')).toBeVisible();
 }
 
 async function expectWorkspaceReady(page: Page) {

@@ -80,11 +80,12 @@ function RailReadout() {
 function ShellWithHub({
   showHub = true,
   controllerInputs = {},
-  onOpenNewProject,
+  onCreateFromTemplate,
 }: {
   showHub?: boolean;
   controllerInputs?: Partial<HubRailControllerInputs>;
-  onOpenNewProject?: (tab: 'template') => void;
+  /** Presence = the composer can accept the template command ("+" menu list). */
+  onCreateFromTemplate?: () => void;
 }) {
   const rail = useHubRailController({
     projects: PROJECTS,
@@ -105,7 +106,7 @@ function ShellWithHub({
             onOpenSession={() => undefined}
             onSubmit={() => undefined}
             onNewProject={() => undefined}
-            onOpenNewProject={onOpenNewProject}
+            {...(onCreateFromTemplate ? { projectImportHandlers: { onCreateFromTemplate } } : {})}
           />
         </div>
       ) : <div key="workspace" data-testid="workspace-stand-in" />}
@@ -284,17 +285,19 @@ describe('hub rail boundary', () => {
 
   it('delivers a template command once when the composer mounts on a later surface', async () => {
     seedSessions();
-    const onOpenNewProject = vi.fn();
-    const view = render(<ShellWithHub showHub={false} onOpenNewProject={onOpenNewProject} />);
+    const onCreateFromTemplate = vi.fn();
+    const view = render(<ShellWithHub showHub={false} onCreateFromTemplate={onCreateFromTemplate} />);
     await act(async () => { await Promise.all(listConversations.mock.results.map((result) => result.value)); });
     pickCommand('template');
-    expect(onOpenNewProject).not.toHaveBeenCalled();
-    await act(async () => { view.rerender(<ShellWithHub onOpenNewProject={onOpenNewProject} />); });
-    expect(onOpenNewProject).toHaveBeenCalledExactlyOnceWith('template');
+    expect(screen.queryByTestId('composer-plus-templates-list')).toBeNull();
+    await act(async () => { view.rerender(<ShellWithHub onCreateFromTemplate={onCreateFromTemplate} />); });
+    expect(screen.getByTestId('composer-plus-templates-list')).toBeTruthy();
     expect(screen.getByTestId('pending-chip').textContent).toBe('');
-    view.rerender(<ShellWithHub showHub={false} onOpenNewProject={onOpenNewProject} />);
-    await act(async () => { view.rerender(<ShellWithHub onOpenNewProject={onOpenNewProject} />); });
-    expect(onOpenNewProject).toHaveBeenCalledTimes(1);
+    view.rerender(<ShellWithHub showHub={false} onCreateFromTemplate={onCreateFromTemplate} />);
+    expect(screen.queryByTestId('composer-plus-templates-list')).toBeNull();
+    await act(async () => { view.rerender(<ShellWithHub onCreateFromTemplate={onCreateFromTemplate} />); });
+    // A consumed nonce is not replayed: the list does not reopen on remount.
+    expect(screen.queryByTestId('composer-plus-templates-list')).toBeNull();
   });
 
   it('hands a palette plugin command across a surface swap to the real composer', async () => {
@@ -362,9 +365,10 @@ describe('hub rail boundary', () => {
     const view = render(<ShellWithHub />);
     pickCommand('template');
     expect(screen.getByTestId('pending-chip').textContent).toBe('1');
-    const onOpenNewProject = vi.fn();
-    await act(async () => { view.rerender(<ShellWithHub onOpenNewProject={onOpenNewProject} />); });
-    expect(onOpenNewProject).toHaveBeenCalledExactlyOnceWith('template');
+    expect(screen.queryByTestId('composer-plus-templates-list')).toBeNull();
+    const onCreateFromTemplate = vi.fn();
+    await act(async () => { view.rerender(<ShellWithHub onCreateFromTemplate={onCreateFromTemplate} />); });
+    expect(screen.getByTestId('composer-plus-templates-list')).toBeTruthy();
     expect(screen.getByTestId('pending-chip').textContent).toBe('');
   });
 
@@ -372,7 +376,7 @@ describe('hub rail boundary', () => {
     seedSessions();
     listPlugins.mockResolvedValue(PLUGINS);
     const onCommandChipAccepted = vi.fn();
-    const onOpenNewProject = vi.fn();
+    const onCreateFromTemplate = vi.fn();
     const onSubmit = vi.fn();
     const home = () => (
       <StrictMode>
@@ -381,7 +385,7 @@ describe('hub rail boundary', () => {
           onSubmit={onSubmit}
           onOpenProject={() => undefined}
           onViewAllProjects={() => undefined}
-          onOpenNewProject={onOpenNewProject}
+          projectImportHandlers={{ onCreateFromTemplate }}
           commandChip={{ id, nonce: 7 }}
           onCommandChipAccepted={onCommandChipAccepted}
         />
@@ -397,7 +401,7 @@ describe('hub rail boundary', () => {
     });
     expect(onCommandChipAccepted).toHaveBeenCalledExactlyOnceWith(7);
     expect(screen.queryByTestId('home-hero-active-type-chip')).toBeNull();
-    expect(onOpenNewProject).toHaveBeenCalledTimes(id === 'template' ? 1 : 0);
+    expect(screen.queryByTestId('composer-plus-templates-list') !== null).toBe(id === 'template');
     expect(onSubmit).toHaveBeenCalledTimes(id === 'continue' ? 1 : 0);
   });
 });

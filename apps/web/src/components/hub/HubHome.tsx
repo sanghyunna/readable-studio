@@ -1,8 +1,10 @@
 // Entry hub: the surface that replaced the welcome/hero screen.
 //
 // Left panel owns navigation (project -> session tree). The center is a calm
-// start surface: a live-work strip when something is running, the composer,
-// and the New Project modal launcher. Past work is never dumped into the center canvas.
+// start surface: a live-work strip when something is running and the composer.
+// The composer IS how a project starts ("새 프로젝트" lands the caret here);
+// its "+" menu carries the folder / ZIP imports and the saved-template start.
+// Past work is never dumped into the center canvas.
 //
 // AppInner owns the persistent rail, controller and overlays. This component
 // renders only the stage from that ancestor context. Tests must supply an
@@ -14,12 +16,14 @@ import { useT } from '../../i18n';
 import type {
   DesignSystemSummary,
   Project,
+  ProjectTemplate,
   SkillSummary,
 } from '../../types';
 import { HomeView } from '../HomeView';
 import type { HomePromptHandoff } from '../home-hero/plugin-authoring';
 import { Icon } from '../Icon';
 import type { PluginLoopSubmit } from '../PluginLoopHome';
+import type { ProjectImportHandlers } from '../project-create';
 import type { HubImportFileOutcome } from './drop-to-edit';
 import { HubDropToEdit } from './HubDropToEdit';
 import { useHubRail } from './HubRailContext';
@@ -50,7 +54,10 @@ interface Props {
   onViewAllProjects?: () => void;
   onBrowseRegistry?: () => void;
   onOpenMcp?: () => void;
-  onOpenNewProject?: (tab: 'template') => void;
+  /** Saved templates listed under the composer "+" menu's "From template". */
+  templates?: ProjectTemplate[];
+  /** App-owned handlers for the "+" menu's folder / ZIP / template starts. */
+  projectImportHandlers?: ProjectImportHandlers;
   /**
    * Drop-to-edit: route ONE existing document through the import path and
    * land in the workspace with it open. The zone below the composer only
@@ -100,7 +107,8 @@ export function HubHome({
   onViewAllProjects,
   onBrowseRegistry,
   onOpenMcp,
-  onOpenNewProject,
+  templates,
+  projectImportHandlers,
   onImportFile,
   promptHandoff,
   skills,
@@ -175,7 +183,8 @@ export function HubHome({
             onViewAllProjects={onViewAllProjects ?? (() => undefined)}
             onBrowseRegistry={onBrowseRegistry}
             onOpenMcp={onOpenMcp}
-            onOpenNewProject={onOpenNewProject}
+            {...(templates ? { templates } : {})}
+            {...(projectImportHandlers ? { projectImportHandlers } : {})}
             promptHandoff={promptHandoff}
             skills={skills}
             skillsLoading={skillsLoading}

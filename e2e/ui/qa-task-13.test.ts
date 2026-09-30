@@ -328,18 +328,17 @@ test('canonical start proves R1-R11 and R14 from rendered paint and geometry', a
   await expect(page.getByTestId('hub-command-palette')).toBeVisible();
   await page.getByTestId('hub-palette-item-command-create-template').click();
   await expect(page.getByTestId('new-project-advanced'), 'the Advanced / Import disclosure must not exist').toHaveCount(0);
-  const newProjectModal = page.getByTestId('new-project-modal'); await expect(newProjectModal).toBeVisible();
-  const newProjectPanel = newProjectModal.getByTestId('new-project-panel'); await expect(newProjectPanel).toBeVisible();
-  await expect(newProjectPanel.getByTestId('new-project-tab-template')).toHaveAttribute('aria-selected', 'true');
-  const modePicker = newProjectPanel.getByTestId('newproj-mode-picker'); await expect(modePicker).toBeVisible();
-  const designMode = modePicker.getByTestId('newproj-mode-design'); const chatMode = modePicker.getByTestId('newproj-mode-chat');
-  await expect(designMode).toHaveAttribute('aria-checked', 'true'); await expect(chatMode).toHaveAttribute('aria-checked', 'false');
-  await chatMode.click(); await expect(chatMode).toHaveAttribute('aria-checked', 'true'); await expect(designMode).toHaveAttribute('aria-checked', 'false');
-  const relocatedModeAvailable = await modePicker.isVisible() && await chatMode.getAttribute('aria-checked') === 'true';
-  await designMode.click(); await expect(designMode).toHaveAttribute('aria-checked', 'true'); await expect(chatMode).toHaveAttribute('aria-checked', 'false');
+  // The palette's "From template" opens the composer "+" menu template list;
+  // there is no New Project modal and no creation-time mode picker any more
+  // (the Hub always starts in design mode; the workspace composer switches).
+  const newProjectModal = page.getByTestId('new-project-modal'); await expect(newProjectModal).toHaveCount(0);
+  const templateList = page.getByTestId('composer-plus-templates-list'); await expect(templateList).toBeVisible();
+  await expect(page.getByTestId('newproj-mode-picker')).toHaveCount(0);
+  const relocatedModeAvailable = await templateList.isVisible();
   // Escape returns the canonical start surface to its expected state.
   await page.keyboard.press('Escape');
-  await expect(newProjectModal).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(templateList).toHaveCount(0);
   await expect(page.getByTestId('hub-live-time')).toBeVisible(); await expect(page.getByTestId('hub-live-strip').locator('svg')).toBeVisible();
   const brandHome = page.locator('.hub__brand-home'); await expect(brandHome).toHaveCSS('opacity', '0');
   // hub.css raises the Home label to opacity 1 only under `.hub__brand:hover` /
@@ -415,7 +414,7 @@ test('canonical start proves R1-R11 and R14 from rendered paint and geometry', a
     ['R8', composerAndSendPainted, `composer=${JSON.stringify(composerBounds)}; background=${composerBackground}; send=${JSON.stringify(sendBounds)}; contained=${sendContained}; sendVisible=${sendVisible}; actionVisible=${sendActionVisible}`, 'finite painted composer bounds contain a visible send action'],
     ['R10', brandHomeRestOpacity === '0' && brandHomeHoverOpacity === '1' && brandHomeFocusOpacity === '1', `restOpacity=${brandHomeRestOpacity}; hoverOpacity=${brandHomeHoverOpacity}; focusOpacity=${brandHomeFocusOpacity}`, 'brand Home label responds to pointer and keyboard'],
     ['R11', liveLift >= 0.75 && liveLift <= 1.25 && arrowShift >= 1.75 && arrowShift <= 2.25 && liveAfter.shadow !== liveBefore.shadow && liveBefore.shadow.includes('0px 2px 10px') && liveAfter.shadow.includes('0px 6px 18px'), `liveLift=${liveLift.toFixed(2)}px; arrowShift=${arrowShift.toFixed(2)}px; restShadow=${liveBefore.shadow}; hoverShadow=${liveAfter.shadow}`, 'settled live strip lifts 1px, arrow advances 2px, and hover material strengthens'],
-    ['R14', await footerButtons.count() === 1 && await modeTrigger.count() === 0 && relocatedModeAvailable && agentModelAvailable, `footerButtons=${await footerButtons.count()}; hubModeCount=${await modeTrigger.count()}; relocatedModeAvailable=${relocatedModeAvailable}; agentModelAvailable=${agentModelAvailable}`, 'Hub omits the mode chip while New Project exposes both creation-mode cards alongside context and agent-model controls'],
+    ['R14', await footerButtons.count() === 1 && await modeTrigger.count() === 0 && relocatedModeAvailable && agentModelAvailable, `footerButtons=${await footerButtons.count()}; hubModeCount=${await modeTrigger.count()}; relocatedModeAvailable=${relocatedModeAvailable}; agentModelAvailable=${agentModelAvailable}`, 'Hub omits the mode chip; the palette template command opens the composer "+" template list alongside context and agent-model controls'],
 
   ] as const) recordRegion({ region, state: 'start', pass, anchor, observation });
   // Project creation supplies one baseline conversation before this fixture's

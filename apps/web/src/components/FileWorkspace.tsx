@@ -92,6 +92,10 @@ interface Props {
   rootDirName?: string;
   // True while a working-dir replace is reindexing; shows a loading state.
   reloading?: boolean;
+  /** Re-point this project at another folder (per-project override of the
+   * default project location). Rendered in the Design Files toolbar. */
+  onChangeProjectFolder?: () => void;
+  projectFolderBusy?: boolean;
   /** Absolute on-disk project directory (from GET /api/projects/:id). Used by
    * the Design Files panel's "copy absolute path" action. */
   resolvedDir?: string | null;
@@ -330,6 +334,8 @@ export function FileWorkspace({
   projectKind,
   rootDirName,
   reloading,
+  onChangeProjectFolder,
+  projectFolderBusy = false,
   resolvedDir,
   files,
   filesRefreshKey = 0,
@@ -2027,6 +2033,7 @@ export function FileWorkspace({
             projectId={projectId}
             rootDirName={rootDirName}
             reloading={reloading}
+            {...(onChangeProjectFolder ? { onChangeProjectFolder, projectFolderBusy } : {})}
             running={Boolean(streaming)}
             files={visibleFiles}
             folders={projectFolders}

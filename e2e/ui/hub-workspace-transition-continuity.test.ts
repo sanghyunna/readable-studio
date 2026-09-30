@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
-import { openNewProjectModal } from '@/playwright/new-project-modal';
+import { pressNewProject } from '@/playwright/new-project-modal';
 
 /**
  * Hub -> workspace transition continuity, measured on painted frames.
@@ -249,11 +249,14 @@ interface SwapCapture {
  */
 async function captureCreateProjectSwap(page: Page, theme: Theme, name: string): Promise<SwapCapture> {
   await gotoHub(page);
-  await openNewProjectModal(page);
-  await page.getByTestId('new-project-name').fill(name);
+  await pressNewProject(page, `swap-${name}`);
+  await page.getByTestId('hub-open-palette').click();
+  const continueCommand = page.getByTestId('hub-palette-item-command-create-continue');
+  await expect(continueCommand).toBeVisible({ timeout: 20_000 });
 
   const { samples, fps } = await captureCanvasStackPerFrame(page, async () => {
-    await page.getByTestId('create-project').click();
+    // No modal: the palette's "continue without prompt" is the create.
+    await continueCommand.click();
     await expect(page).toHaveURL(/\/projects\//, { timeout: 20_000 });
     // The swap is complete once the workspace surface itself is mounted, not
     // merely once the URL changed: the interstitial lives between those two.

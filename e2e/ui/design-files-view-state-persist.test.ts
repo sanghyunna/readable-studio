@@ -2,8 +2,8 @@ import { expect, test } from '@playwright/test';
 import { addStorageInitScript } from '@/playwright/storage-init';
 import type { Page } from '@playwright/test';
 import { routeAgents } from '@/playwright/mock-factory';
-import { ensureRailOpen } from '@/playwright/rail';
 import { T } from '@/timeouts';
+import { createEmptyProjectFromHub } from '@/playwright/new-project-modal';
 
 const CONFIG_STORAGE_KEY = 'readable-studio:config';
 
@@ -70,11 +70,7 @@ async function gotoEntryHome(page: Page): Promise<void> {
 }
 
 async function createBlankProject(page: Page): Promise<string> {
-  await ensureRailOpen(page);
-  await page.getByTestId('hub-new-project').click();
-  await expect(page.getByTestId('new-project-modal')).toBeVisible();
-  await page.getByTestId('new-project-name').fill('folder-view-state-test');
-  await page.getByTestId('create-project').click();
+  await createEmptyProjectFromHub(page, { name: 'folder-view-state-test' });
   await waitForLoadingToClear(page);
   await expect(page).toHaveURL(/\/projects\//);
 

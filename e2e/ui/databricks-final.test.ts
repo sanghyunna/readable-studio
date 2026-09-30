@@ -14,8 +14,8 @@ import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { addStorageInitScript } from '@/playwright/storage-init';
 import { enterHomeFirstTurnPrompt } from '@/playwright/home-first-turn';
-import { ensureRailOpen } from '@/playwright/rail';
 import { T } from '@/timeouts';
+import { createEmptyProjectFromHub } from '@/playwright/new-project-modal';
 
 const evidence = fileURLToPath(new URL('../../.omo/evidence/databricks-impl/final-ui5/', import.meta.url));
 test.use({ trace: 'on' });
@@ -337,15 +337,10 @@ test('Databricks complete live GUI contract: Hub, discovery, registration, works
 
     activeState = 6;
     await test.step('6. Native blank project creation opens workspace with both agents and model', async () => {
-      await ensureRailOpen(page);
-      await page.getByTestId('hub-new-project').click();
-      const modal = page.getByTestId('new-project-modal');
-      await expect(modal).toBeVisible();
-      await modal.getByTestId('new-project-tab-other').click();
-      await modal.getByTestId('new-project-name').fill('Databricks GUI final - no inference');
-      await modal.getByTestId('newproj-mode-chat').click();
+      // No New Project modal: the Hub composer creates the project without a
+      // first message (so no inference runs); mode lives in the workspace.
       const projectPending = page.waitForResponse(r => new URL(r.url()).pathname === '/api/projects' && r.request().method() === 'POST', { timeout: T.long });
-      await modal.getByTestId('create-project').click();
+      await createEmptyProjectFromHub(page, { name: 'Databricks GUI final - no inference', kind: 'other' });
       const projectResponse = await projectPending;
       expect(projectResponse.ok(), await projectResponse.text()).toBe(true);
       await expect(page).toHaveURL(/\/projects\//, { timeout: T.xlong });

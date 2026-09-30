@@ -7,16 +7,19 @@ import {
 } from '@/playwright/visual';
 import { gotoVisualDestination } from '@/playwright/visual-home';
 
-test('[P2] captures the new project modal surface', async ({ page }) => {
+test('[P2] captures the new project surface (Hub composer focused, "+" menu open)', async ({ page }) => {
   await configureVisualPage(page);
   await gotoVisualHome(page);
 
+  // No modal: New project focuses the Hub composer; its "+" menu carries the
+  // relocated folder / ZIP / template starts.
   await page.getByTestId('hub-new-project').click();
-  await expect(page.getByTestId('new-project-modal')).toBeVisible();
-  await expect(page.getByTestId('new-project-panel')).toBeVisible();
-  await expect(page.getByTestId('new-project-name')).toBeVisible();
+  await expect(page.getByTestId('new-project-modal')).toHaveCount(0);
+  await expect(page.getByTestId('home-hero-input')).toBeFocused();
+  await page.getByTestId('home-hero-plus-trigger').click();
+  await expect(page.getByTestId('composer-plus-templates')).toBeVisible();
 
-  await captureVisual(page, 'visual-new-project-modal');
+  await captureVisual(page, 'visual-new-project-hub-plus-menu');
 });
 
 test('[P2] captures the projects page surface', async ({ page }) => {

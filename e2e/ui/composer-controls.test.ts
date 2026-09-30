@@ -5,8 +5,8 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { addStorageInitScript } from '@/playwright/storage-init';
-import { ensureRailOpen } from '@/playwright/rail';
 import { T } from '@/timeouts';
+import { createEmptyProjectFromHub } from '@/playwright/new-project-modal';
 
 const evidence = fileURLToPath(new URL('../../.omo/evidence/composer-controls/', import.meta.url));
 const captures: { id: string; title: string; values: unknown }[] = [];
@@ -194,15 +194,10 @@ test('[P1] live composer controls: chevrons, ordering, narrow Send, effort persi
     stage = 'f';
     await page.setViewportSize({ width: 1440, height: 1000 });
     await selectAgent(page, hub, claude.id);
-    await ensureRailOpen(page);
-    await page.getByTestId('hub-new-project').click();
-    const modal = page.getByTestId('new-project-modal');
-    await expect(modal).toBeVisible();
-    await modal.getByTestId('new-project-tab-other').click();
-    await modal.getByTestId('new-project-name').fill('Composer controls QA - no inference');
-    await modal.getByTestId('newproj-mode-chat').click();
+    // No New Project modal: the Hub composer creates the project (no first
+    // message) and the workspace composer owns the session-mode switch.
     const created = page.waitForResponse(r => new URL(r.url()).pathname === '/api/projects' && r.request().method() === 'POST', { timeout: T.long });
-    await modal.getByTestId('create-project').click();
+    await createEmptyProjectFromHub(page, { name: 'Composer controls QA - no inference', kind: 'other' });
     expect((await created).ok()).toBe(true);
     await expect(page).toHaveURL(/\/projects\//, { timeout: T.xlong });
     const workspace = page.getByTestId('chat-composer');

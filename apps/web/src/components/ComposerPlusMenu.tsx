@@ -1,5 +1,7 @@
 import {
+  forwardRef,
   useEffect,
+  useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -17,6 +19,7 @@ import { ComposerPluginPreview } from './ComposerPluginPreview';
 import { localizePluginTitle } from './plugins-home/localization';
 import { resolveFlyoutSide } from './composer-flyout-placement';
 import { Icon, type IconName } from './Icon';
+import type { ComposerProjectImports } from './project-create';
 
 const PLUS_MENU_MARGIN = 12;
 const PLUS_MENU_GAP = 8;
@@ -122,6 +125,13 @@ export interface ComposerPlusMenuProps {
   attachLoading?: boolean;
 
   /**
+   * Hub-only project starts that used to live in the New Project modal: open
+   * an existing folder, import a Claude design ZIP, start from a saved
+   * template. The project composer omits this (a project already exists).
+   */
+  projectImports?: ComposerProjectImports;
+
+  /**
    * Optional "Design toolbox" row, rendered LAST. Only the project composer
    * passes this; the home composer omits it. The returned node is shown in a
    * right-side flyout reusing the same submenu styling.
@@ -140,6 +150,11 @@ export interface ComposerPlusMenuProps {
    * the "+" menu is the first thing clicked on a cold composer.
    */
   onOpen?: () => void;
+}
+
+export interface ComposerPlusMenuHandle {
+  /** Open the menu with the saved-template list expanded (Hub "From template"). */
+  openTemplates(): void;
 }
 
 function pluginMatches(
@@ -164,7 +179,7 @@ function mcpMatches(server: McpServerConfig, needle: string): boolean {
  * data lists and pick/add handlers. Pass `renderToolbox` to append the
  * project-only design-toolbox row.
  */
-export function ComposerPlusMenu({
+export const ComposerPlusMenu = forwardRef<ComposerPlusMenuHandle, ComposerPlusMenuProps>(function ComposerPlusMenu({
   plugins,
   onPickPlugin,
   onAddPlugin,
@@ -173,17 +188,18 @@ export function ComposerPlusMenu({
   onAddMcp,
   onAttachFiles,
   attachLoading,
+  projectImports,
   renderToolbox,
   toolboxLabel,
   triggerTestId,
   disabled = false,
   onOpen,
-}: ComposerPlusMenuProps) {
+}, ref) {
   const t = useT();
   const { locale } = useI18n();
   const [open, setOpen] = useState(false);
   const [submenu, setSubmenu] = useState<
-    'plugins' | 'mcp' | 'toolbox' | null
+    'plugins' | 'mcp' | 'templates' | 'toolbox' | null
   >(null);
   const [query, setQuery] = useState('');
   // Id of the plugin row the preview column is mirroring. Defaults to the
@@ -261,13 +277,28 @@ export function ComposerPlusMenu({
   }
 
   function openSubmenu(
-    next: 'plugins' | 'mcp' | 'toolbox',
+    next: 'plugins' | 'mcp' | 'templates' | 'toolbox',
     row: HTMLDivElement | null,
   ) {
     cancelSubmenuClose();
     updateFlyoutGeometry(row);
     setSubmenu(next);
   }
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      openTemplates() {
+        if (disabled || !projectImports) return;
+        onOpen?.();
+        setOpen(true);
+        // The row does not exist until the popup renders; the layout effect
+        // below re-measures the open row once it does.
+        openSubmenu('templates', null);
+      },
+    }),
+    [disabled, projectImports, onOpen],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -397,6 +428,55 @@ export function ComposerPlusMenu({
             />
             <span>{t('chat.attachAria')}</span>
           </button>
+          {projectImports?.openFolder.available ? (
+            <button
+              type="button"
+              role="menuitem"
+              className="plus-menu__item"
+              data-testid="composer-plus-open-folder"
+              disabled={projectImports.openFolder.busy}
+              onClick={() => {
+                close();
+                projectImports.openFolder.run();
+              }}
+            >
+              <Icon
+                name={projectImports.openFolder.busy ? 'spinner' : 'folder'}
+                size={15}
+                className="plus-menu__item-icon"
+              />
+              <span>
+                {projectImports.openFolder.busy
+                  ? t('hubImport.openFolderBusy')
+                  : t('hubImport.openFolder')}
+              </span>
+            </button>
+          ) : null}
+          {projectImports?.claudeZip.available ? (
+            <button
+              type="button"
+              role="menuitem"
+              className="plus-menu__item"
+              data-testid="composer-plus-import-claude-zip"
+              disabled={projectImports.claudeZip.busy}
+              onClick={() => {
+                close();
+                projectImports.claudeZip.pick();
+              }}
+            >
+              <Icon
+                name={projectImports.claudeZip.busy ? 'spinner' : 'import'}
+                size={15}
+                className="plus-menu__item-icon"
+              />
+              <span>
+                {projectImports.claudeZip.busy
+                  ? t('hubImport.claudeZipBusy')
+                  : t('hubImport.claudeZip')}
+              </span>
+            </button>
+          ) : null}
+          {projectImports ? <div className="plus-menu__divider" /> : null}
           <PlusSubmenuRow
             label={t('entry.navPlugins')}
             icon="sparkles"
@@ -523,6 +603,43 @@ export function ComposerPlusMenu({
               </>
             ) : null}
           </PlusSubmenuRow>
+          {projectImports ? (
+            <PlusSubmenuRow
+              label={t('hubImport.fromTemplate')}
+              icon="file-code"
+              testId="composer-plus-templates"
+              open={submenu === 'templates'}
+              onOpen={(row) => openSubmenu('templates', row)}
+              onClose={scheduleCloseSubmenu}
+            >
+              <div className="plus-menu__list" data-testid="composer-plus-templates-list">
+                {projectImports.templates.items.length === 0 ? (
+                  <div className="plus-menu__empty plus-menu__empty--wrap" data-testid="composer-plus-templates-empty">
+                    {t('hubImport.noTemplates')}
+                  </div>
+                ) : (
+                  projectImports.templates.items.map((template) => (
+                    <button
+                      key={template.id}
+                      type="button"
+                      role="menuitem"
+                      className="plus-menu__item"
+                      data-testid={`composer-plus-template-${template.id}`}
+                      disabled={projectImports.templates.busy}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        close();
+                        projectImports.templates.pick(template);
+                      }}
+                    >
+                      <Icon name="file-code" size={15} className="plus-menu__item-icon" />
+                      <span>{template.name}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </PlusSubmenuRow>
+          ) : null}
           {renderToolbox ? (
             <PlusSubmenuRow
               label={toolboxLabel ?? t('chat.designToolbox.tooltip')}
@@ -539,7 +656,7 @@ export function ComposerPlusMenu({
       ) : null}
     </div>
   );
-}
+});
 
 function PlusSubmenuRow({
   label,
@@ -548,6 +665,7 @@ function PlusSubmenuRow({
   onOpen,
   onClose,
   flyoutClassName,
+  testId,
   children,
 }: {
   label: string;
@@ -557,6 +675,7 @@ function PlusSubmenuRow({
   onClose: () => void;
   /** Extra class on the flyout, e.g. the wide plugins-preview variant. */
   flyoutClassName?: string;
+  testId?: string;
   children: ReactNode;
 }) {
   const rowRef = useRef<HTMLDivElement | null>(null);
@@ -571,6 +690,7 @@ function PlusSubmenuRow({
         type="button"
         role="menuitem"
         className="plus-menu__item plus-menu__parent"
+        data-testid={testId}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => (open ? onClose() : onOpen(rowRef.current))}

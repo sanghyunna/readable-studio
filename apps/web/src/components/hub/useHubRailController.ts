@@ -135,6 +135,11 @@ export interface HubRailControllerInputs {
   currentSessionId: string | null;
   /** Open an existing session directly in the workspace. */
   onOpenSession: (projectId: string, conversationId: string) => void;
+  /**
+   * Land on the Hub. The controller follows it with the `new-project` command
+   * chip, which the Hub composer consumes by focusing its editor - so the
+   * owner only navigates; it never focuses.
+   */
   onNewProject: () => void;
   /** Open a project itself, including projects with no sessions. */
   onOpenProject?: ((projectId: string) => void) | undefined;
@@ -592,6 +597,18 @@ export function useHubRailController({
     onCommandChip?.(chip);
   }, [onCommandChip]);
 
+  // "New project" everywhere (rail button, Ctrl/Cmd+N, Projects empty state):
+  // navigate to the Hub, then hand the composer a chip it answers by taking
+  // focus. Issuing the chip on an already-open Hub still focuses; nothing here
+  // is a no-op.
+  const newProject = useCallback(() => {
+    onNewProject();
+    // Not `issueCommandChip`: the owner already navigated above, so the chip
+    // must not also fire the palette's "go home" hook (a second navigation and
+    // a spurious nav analytics click).
+    setCommandChip({ id: 'new-project', nonce: ++commandChipNonceRef.current });
+  }, [onNewProject]);
+
   const consumeCommandChip = useCallback((nonce: number) => {
     setCommandChip((current) => (current?.nonce === nonce ? null : current));
   }, []);
@@ -613,7 +630,7 @@ export function useHubRailController({
         if (project) void createSession(project);
       } else if (primary && !event.shiftKey && key === 'n') {
         event.preventDefault();
-        onNewProject();
+        newProject();
       } else if (primary && !event.shiftKey && key === 'i') {
         event.preventDefault();
         // Todo 11 owns the inspector. This event is its stable integration seam.
@@ -625,7 +642,7 @@ export function useHubRailController({
     };
     window.addEventListener('keydown', onKeyDown, { capture: true });
     return () => window.removeEventListener('keydown', onKeyDown, { capture: true });
-  }, [closePalette, createSession, onNewProject, openPalette, paletteOpen]);
+  }, [closePalette, createSession, newProject, openPalette, paletteOpen]);
 
   const paletteEntries = useMemo<HubPaletteEntry[]>(() => {
     const projectEntries = allNodes.map((project) => ({
@@ -989,7 +1006,7 @@ export function useHubRailController({
     openPeekedSession,
     closeInspector,
     creatingSessionFor,
-    newProject: onNewProject,
+    newProject,
     newSession,
     retrySessions,
     renameSession,

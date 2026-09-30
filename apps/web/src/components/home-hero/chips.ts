@@ -4,8 +4,8 @@
 // users frequently type a request without knowing which scenario
 // plugin to apply, which lands them in the generic agent path and
 // stretches the convergence loop. This chip rail exposes high-signal
-// NewProjectModal categories plus a small set of lower-row shortcuts
-// (plugin authoring / Figma / template), so the same Enter
+// project-kind categories plus a small set of lower-row shortcuts
+// (plugin authoring / Figma / saved template via the composer "+" menu), so the same Enter
 // keystroke can hit a scenario-bound run. The generic "other" path stays
 // in the free-form prompt instead of becoming a redundant chip.
 //

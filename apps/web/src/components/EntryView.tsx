@@ -20,7 +20,7 @@ import type {
 import { EntryShell } from './EntryShell';
 import type { HubImportFileOutcome } from './hub/drop-to-edit';
 import type { IntegrationTab } from './IntegrationsView';
-import type { CreateInput, CreateTab } from './NewProjectPanel';
+import type { CreateInput, ProjectImportHandlers } from './project-create';
 import type { EntrySettingsSection } from './EntrySettingsMenu';
 import type {
   PluginShareAction,
@@ -29,7 +29,7 @@ import type {
 
 interface Props {
   // Union of functional skills + design templates — used for id-based
-  // lookups (DesignsTab project chips, NewProjectPanel skill picker).
+  // lookups (DesignsTab project chips).
   // The Templates gallery itself reads `designTemplates` instead so it
   // doesn't accidentally show functional skills as renderable cards.
   skills: SkillSummary[];
@@ -67,7 +67,7 @@ interface Props {
   // Per-resource loading flags. Each tab gates its own content on whichever
   // flag matches the data it renders, so a slow `/api/agents` probe does
   // not block tabs that don't need agents. Templates are not gated here —
-  // the New project modal renders an empty state until they arrive (fast
+  // the composer "+" menu renders an empty state until they arrive (fast
   // fetch), which keeps the prop surface narrower.
   skillsLoading?: boolean;
   designSystemsLoading?: boolean;
@@ -87,7 +87,8 @@ interface Props {
     action: PluginShareAction,
     locale?: string,
   ) => Promise<PluginShareProjectOutcome>;
-  onOpenNewProject: (tab: CreateTab) => void;
+  /** Composer "+" menu project starts: saved template, folder, Claude ZIP. */
+  projectImportHandlers?: ProjectImportHandlers;
   /** Hub drop-to-edit: one existing document -> project -> workspace with it open. */
   onImportFile?: (file: File) => Promise<HubImportFileOutcome> | HubImportFileOutcome;
   onOpenProject: (id: string) => void;
@@ -97,6 +98,8 @@ interface Props {
   onCreateDesignSystem?: () => void;
   onOpenDesignSystem?: (id: string) => void;
   onDesignSystemsRefresh?: () => Promise<void> | void;
+  /** Library: delete a saved template (the list lives in the Design Systems tab). */
+  onDeleteTemplate?: (id: string) => Promise<boolean>;
   onOpenSettings: (section?: 'execution' | 'integrations' | 'mcpClient' | 'language' | 'appearance' | 'notifications' | 'pet' | 'projectLocations' | 'library' | 'about' | 'memory' | 'designSystems') => void;
 }
 
@@ -127,7 +130,7 @@ export function EntryView({
   projectsLoading = false,
   onCreateProject,
   onCreatePluginShareProject,
-  onOpenNewProject,
+  projectImportHandlers,
   onImportFile,
   onOpenProject,
   onDeleteProject,
@@ -136,6 +139,7 @@ export function EntryView({
   onCreateDesignSystem,
   onOpenDesignSystem,
   onDesignSystemsRefresh,
+  onDeleteTemplate,
   onOpenSettings,
 }: Props) {
   void useCallback;
@@ -172,7 +176,7 @@ export function EntryView({
       onThemeChange={onThemeChange}
       onCreateProject={onCreateProject}
       onCreatePluginShareProject={onCreatePluginShareProject}
-      onOpenNewProject={onOpenNewProject}
+      projectImportHandlers={projectImportHandlers}
       onImportFile={onImportFile}
       onOpenProject={onOpenProject}
       onDeleteProject={onDeleteProject}
@@ -181,6 +185,7 @@ export function EntryView({
       onCreateDesignSystem={onCreateDesignSystem}
       onOpenDesignSystem={onOpenDesignSystem}
       onDesignSystemsRefresh={onDesignSystemsRefresh}
+      onDeleteTemplate={onDeleteTemplate}
       onOpenSettings={openSettings}
     />
   );
@@ -194,8 +199,8 @@ export function EntryView({
 // readable.animations) override the defaults so each example reproduces the
 // shipped example.html — e.g. wireframe-sketch declares fidelity:wireframe.
 //
-// Kept exported (and the kindForSkill helper too) so the New project modal
-// and any future skill-driven creation surface can share the mapping.
+// Kept exported (and the kindForSkill helper too) so any skill-driven
+// creation surface can share the mapping.
 export function metadataForSkill(skill: SkillSummary): ProjectMetadata {
   const kind = kindForSkill(skill);
   if (kind === 'prototype') {

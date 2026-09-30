@@ -721,7 +721,7 @@
 
 /* PluginLoopHome — the minimum-closed-loop Home entry: a single prompt
    textarea + plugin grid with "Use example query" affordance. Replaces
-   the tabbed NewProjectPanel on Home until the plugin-first UX matures. */
+   the old tabbed New Project panel on Home until the plugin-first UX matured. */
 .plugin-loop-home {
   display: flex;
   flex-direction: column;

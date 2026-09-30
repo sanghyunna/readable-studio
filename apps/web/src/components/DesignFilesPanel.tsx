@@ -37,6 +37,10 @@ interface Props {
   // True while the host is reindexing a freshly replaced working dir. Drives
   // a loading overlay so the panel doesn't sit silently on the stale tree.
   reloading?: boolean;
+  /** Per-project folder override; the toolbar shows the control only when the
+   * host wires it (the workspace does, embedded previews do not). */
+  onChangeProjectFolder?: () => void;
+  projectFolderBusy?: boolean;
   // True while the chat agent is generating. The footer swaps its idle
   // drop/upload hint for the typewriter "tip" line while a run is in flight.
   running?: boolean;
@@ -260,6 +264,8 @@ export function DesignFilesPanel({
   projectId,
   rootDirName,
   reloading,
+  onChangeProjectFolder,
+  projectFolderBusy = false,
   running = false,
   files,
   folders,
@@ -780,6 +786,18 @@ export function DesignFilesPanel({
 
   const fileActions = (
     <div className="df-actions">
+      {onChangeProjectFolder ? (
+        <button
+          type="button"
+          data-testid="design-files-project-folder"
+          onClick={onChangeProjectFolder}
+          disabled={projectFolderBusy}
+          title={t('projectFolderPicker.workspaceTitle')}
+        >
+          <Icon name={projectFolderBusy ? 'spinner' : 'folder'} size={13} />
+          <span>{projectFolderBusy ? t('projectFolderPicker.processing') : t('projectFolderPicker.select')}</span>
+        </button>
+      ) : null}
       <button type="button" onClick={onNewSketch} title={t('designFiles.newSketch')}>
         <Icon name="pencil" size={13} />
         <span>{t('designFiles.newSketch')}</span>

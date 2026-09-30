@@ -9,7 +9,6 @@ import type {
   PageViewProps,
   HelpPopoverSurfaceViewProps,
   SettingsPopoverSurfaceViewProps,
-  NewProjectModalSurfaceViewProps,
   PluginReplacementModalSurfaceViewProps,
   PluginDetailModalSurfaceViewProps,
   PluginImportModalSurfaceViewProps,
@@ -22,8 +21,6 @@ import type {
   ExecutionSettingsPopoverClickProps,
   SettingsPopoverClickProps,
   HomeChatComposerClickProps,
-  NewProjectModalTabClickProps,
-  NewProjectModalElementClickProps,
   PluginReplacementModalClickProps,
   PrivacyModalClickProps,
   RecentProjectsClickProps,
@@ -151,13 +148,6 @@ export function trackSettingsPopoverSurfaceView(
   send(track, 'surface_view', props);
 }
 
-export function trackNewProjectModalSurfaceView(
-  track: Track,
-  props: NewProjectModalSurfaceViewProps,
-): void {
-  send(track, 'surface_view', props);
-}
-
 export function trackPluginReplacementModalSurfaceView(
   track: Track,
   props: PluginReplacementModalSurfaceViewProps,
@@ -267,21 +257,6 @@ export function trackHomeChatComposerClick(
   props: HomeChatComposerClickProps,
 ): void {
   send(track, 'ui_click', props);
-}
-
-export function trackNewProjectModalTabClick(
-  track: Track,
-  props: NewProjectModalTabClickProps,
-): void {
-  send(track, 'ui_click', props);
-}
-
-export function trackNewProjectModalElementClick(
-  track: Track,
-  props: NewProjectModalElementClickProps,
-  options?: { requestId?: string },
-): void {
-  send(track, 'ui_click', props, options);
 }
 
 export function trackPluginReplacementModalClick(

@@ -260,12 +260,16 @@ for (const { theme, viewport } of SURFACE_MATRIX) {
     await auditTransition(page, testInfo);
 
     await clearReachabilityHistory(page);
+    // New project is the Hub composer (no modal); audit the focused Hub and
+    // the composer "+" menu that now carries the imports.
     await page.getByTestId('hub-new-project').click();
-    const newProject = page.getByTestId('new-project-modal');
-    await expect(newProject).toBeVisible();
+    await expect(page.getByTestId('new-project-modal')).toHaveCount(0);
+    await expect(page.getByTestId('home-hero-input')).toBeFocused();
+    await page.getByTestId('home-hero-plus-trigger').click();
+    await expect(page.getByTestId('composer-plus-templates')).toBeVisible();
     await expectPageInteractivesReachable(page, { phase: 'settled', testInfo });
     await page.keyboard.press('Escape');
-    await expect(newProject).toHaveCount(0);
+    await expect(page.getByTestId('composer-plus-templates')).toHaveCount(0);
     await auditTransition(page, testInfo);
 
     // On the narrow case this also puts the Settings close chrome into the

@@ -843,7 +843,7 @@ export async function persistTabsToDaemonNow(
 // Plan §3.C1 — plugin discovery + apply.
 //
 // applyPlugin() is the canonical entry point for both the inline rail
-// (NewProjectPanel + ChatComposer) and the marketplace detail page. It
+// (Home composer + ChatComposer) and the marketplace detail page. It
 // hits POST /api/plugins/:id/apply, which is the same pure resolver
 // the daemon uses; the response carries everything the composer needs:
 //   - query (pre-filled brief)

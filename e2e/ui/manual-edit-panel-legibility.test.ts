@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
-import { openNewProjectModal } from '@/playwright/new-project-modal';
+import { createEmptyProjectFromHub } from '@/playwright/new-project-modal';
 
 /**
  * Direct-edit left panel legibility, measured on RENDERED pixels.
@@ -207,9 +207,7 @@ function editorHtml(): string {
 async function openInspectorWithSelection(page: Page, name: string): Promise<void> {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('home-hero')).toBeVisible();
-  await openNewProjectModal(page);
-  await page.getByTestId('new-project-name').fill(name);
-  await page.getByTestId('create-project').click();
+  await createEmptyProjectFromHub(page, { name: name });
   await expect(page).toHaveURL(/\/projects\//, { timeout: 20_000 });
   const projectId = new URL(page.url()).pathname.split('/')[2] ?? '';
   expect(projectId).not.toBe('');

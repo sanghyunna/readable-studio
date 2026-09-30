@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { addStorageInitScript } from '@/playwright/storage-init';
-import { openNewProjectModal } from '@/playwright/new-project-modal';
+import { createEmptyProjectFromHub } from '@/playwright/new-project-modal';
 import { routeAgents } from '@/playwright/mock-factory';
 import type { Dialog, Locator, Page, Request, Response } from '@playwright/test';
 import { automatedUiScenarios } from '@/playwright/resources';
@@ -2264,9 +2264,7 @@ async function routeMockAgents(page: Page) {
 
 async function createEmptyProject(page: Page, name: string): Promise<string> {
   await gotoEntryHome(page);
-  await openNewProjectModal(page);
-  await page.getByTestId('new-project-name').fill(name);
-  await page.getByTestId('create-project').click();
+  await createEmptyProjectFromHub(page, { name: name });
   await expect(page).toHaveURL(/\/projects\//);
   const current = new URL(page.url());
   const [, projects, projectId] = current.pathname.split('/');
@@ -2368,12 +2366,11 @@ function deckHtml(): string {
 </html>`;
 }
 
-async function createProject(
-  page: Page,
-  entry: UiScenario,
-) {
-  await createProjectNameOnly(page, entry);
-  await page.getByTestId('create-project').click();
+async function createProject(page: Page, entry: UiScenario) {
+  await createEmptyProjectFromHub(page, {
+    name: entry.create.projectName,
+    ...(entry.create.tab ? { kind: entry.create.tab } : {}),
+  });
 }
 
 async function expectWorkspaceReady(page: Page) {
@@ -2430,15 +2427,15 @@ async function runDesignSystemSelectionFlow(
   page: Page,
   entry: UiScenario,
 ) {
-  await createProjectNameOnly(page, entry);
-  await page.getByTestId('design-system-trigger').click();
-  await expect(page.getByTestId('design-system-search')).toBeVisible();
-  await page.getByTestId('design-system-search').fill('Nexu');
-  await page.getByRole('option', { name: /Nexu Soft Tech/i }).click();
-  await expect(page.getByTestId('design-system-trigger')).toContainText('Nexu Soft Tech');
-  await page.getByTestId('create-project').click();
-
+  // The design system is chosen on the project itself now (the Hub creates
+  // with the workspace default); the workspace picker is the same control the
+  // mid-chat switch uses.
+  await createProject(page, entry);
   await expect(page).toHaveURL(/\/projects\//);
+  await page.getByTestId('project-ds-picker-trigger').click();
+  await expect(page.getByTestId('project-ds-picker-search')).toBeVisible();
+  await page.getByTestId('project-ds-picker-search').fill('Nexu');
+  await page.getByRole('option', { name: /Nexu Soft Tech/i }).click();
   await expect(page.getByTestId('project-meta')).toContainText('Nexu Soft Tech');
   await expect(page.getByTestId('chat-composer')).toBeVisible();
 }
@@ -2746,17 +2743,6 @@ async function seedProjectFile(
   expect(response.ok()).toBeTruthy();
 }
 
-async function createProjectNameOnly(
-  page: Page,
-  entry: UiScenario,
-) {
-  await openNewProjectModal(page);
-  if (entry.create.tab) {
-    await page.getByTestId(`new-project-tab-${entry.create.tab}`).click();
-  }
-  await page.getByTestId('new-project-name').fill(entry.create.projectName);
-}
-
 async function gotoEntryHome(page: Page) {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await waitForLoadingToClear(page);
@@ -2775,10 +2761,7 @@ async function gotoProjectRoute(page: Page, path: string) {
 }
 
 async function createPrototypeProject(page: Page, projectName: string) {
-  await openNewProjectModal(page);
-  await page.getByTestId('new-project-tab-prototype').click();
-  await page.getByTestId('new-project-name').fill(projectName);
-  await page.getByTestId('create-project').click();
+  await createEmptyProjectFromHub(page, { name: projectName, kind: 'prototype' });
 }
 
 async function expectProjectsView(page: Page) {

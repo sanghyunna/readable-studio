@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { evaluateStorageSeed } from '@/playwright/storage-init';
 import type { Locator, Page, Response } from '@playwright/test';
 import { applyStandardMocks } from '@/playwright/mock-factory';
-import { openNewProjectModal } from '@/playwright/new-project-modal';
+import { createEmptyProjectFromHub } from '@/playwright/new-project-modal';
 
 const CHAT_PANEL_WIDTH_STORAGE_KEY = 'readable-studio.project.chatPanelWidth';
 
@@ -392,10 +392,7 @@ async function createProject(
   page: Page,
   projectName: string,
 ) {
-  await openNewProjectModal(page);
-  await page.getByTestId('new-project-tab-prototype').click();
-  await page.getByTestId('new-project-name').fill(projectName);
-  await page.getByTestId('create-project').click();
+  await createEmptyProjectFromHub(page, { name: projectName, kind: 'prototype' });
 }
 
 async function gotoEntryHome(page: Page) {

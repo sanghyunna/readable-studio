@@ -1648,7 +1648,7 @@
 }
 /* Accent CTA used by plugin detail wrappers to surface a "Use plugin"
    action without forking the whole modal layout. Sits before the
-   ghost actions, mirroring the accent button used in NewProjectModal
+   ghost actions, mirroring the accent button used in the old New Project modal
    so the affordance reads consistently across surfaces. */
 .ds-modal-primary-action {
   appearance: none;
@@ -1725,8 +1725,8 @@
   color: var(--text-muted);
 }
 /* Dedicated icon-button shape for the modal close affordance. Matches the
-   visual language used by plugin-media-detail__close and
-   new-project-modal__close so every modal closes with the same control. */
+   visual language used by plugin-media-detail__close so every modal closes
+   with the same control. */
 .ds-modal-close {
   appearance: none;
   width: 32px;

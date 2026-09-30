@@ -797,7 +797,14 @@ export const LexicalComposerInput = forwardRef<
         setComposerFromText(editor, '', knownEntitiesRef.current);
       },
       focus() {
-        editorRef.current?.focus();
+        const editor = editorRef.current;
+        if (!editor) return;
+        // Lexical's focus() moves the DOM selection into the root and lets the
+        // browser derive focus from it. Focus the root explicitly first so the
+        // caret lands even where selection alone does not move focus (an
+        // inert-released subtree, a fresh mount, jsdom).
+        editor.getRootElement()?.focus({ preventScroll: true });
+        editor.focus();
       },
       insertText(text: string) {
         const editor = editorRef.current;

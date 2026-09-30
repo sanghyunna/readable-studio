@@ -34,6 +34,8 @@ interface Props {
   onOpenSystem?: (id: string) => void;
   onSystemsRefresh?: () => Promise<void> | void;
   templates?: ProjectTemplate[];
+  /** Deletes a saved template; resolves false when the daemon refused. */
+  onDeleteTemplate?: (id: string) => Promise<boolean>;
 }
 
 const CATEGORY_ORDER = [
@@ -110,9 +112,38 @@ export function DesignSystemsTab({
   onOpenSystem,
   onSystemsRefresh,
   templates = [],
+  onDeleteTemplate,
 }: Props) {
   const { locale, t } = useI18n();
   const analytics = useAnalytics();
+  // Saved-template deletion lives here, next to the list (it used to sit in
+  // the New Project modal's Template tab). Same confirm-then-delete contract:
+  // a refused delete keeps the dialog open with an inline error.
+  const [confirmTemplate, setConfirmTemplate] = useState<{ id: string; name: string } | null>(null);
+  const [templateDeleting, setTemplateDeleting] = useState(false);
+  const [templateDeleteError, setTemplateDeleteError] = useState(false);
+  function closeTemplateConfirm() {
+    setConfirmTemplate(null);
+    setTemplateDeleting(false);
+    setTemplateDeleteError(false);
+  }
+  async function runTemplateDelete() {
+    if (!confirmTemplate || !onDeleteTemplate) return;
+    setTemplateDeleting(true);
+    setTemplateDeleteError(false);
+    let ok = false;
+    try {
+      ok = await onDeleteTemplate(confirmTemplate.id);
+    } catch {
+      ok = false;
+    }
+    if (ok) {
+      closeTemplateConfirm();
+    } else {
+      setTemplateDeleting(false);
+      setTemplateDeleteError(true);
+    }
+  }
   const designSystemsPageViewFiredRef = useRef(false);
   useEffect(() => {
     if (designSystemsPageViewFiredRef.current) return;
@@ -712,17 +743,68 @@ export function DesignSystemsTab({
           ) : (
             <div className="ds-template-list">
               {templates.map((template) => (
-                <div className="ds-template-row" key={template.id}>
+                <div className="ds-template-row" key={template.id} data-testid={`library-template-${template.id}`}>
                   <div>
                     <strong>{template.name}</strong>
                     <span>{template.description?.trim() || t('dsManager.templateDescFallback')}</span>
                   </div>
-                  <small>{formatShortDate(template.createdAt)}</small>
+                  <div className="ds-user-row__actions">
+                    <small>{formatShortDate(template.createdAt)}</small>
+                    {onDeleteTemplate ? (
+                      <button
+                        type="button"
+                        className="icon-btn danger"
+                        data-testid={`library-template-delete-${template.id}`}
+                        aria-label={t('dsManager.deleteTemplateAria', { name: template.name })}
+                        onClick={() => setConfirmTemplate({ id: template.id, name: template.name })}
+                      >
+                        <Icon name="close" />
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               ))}
             </div>
           )}
         </section>
+      ) : null}
+      {confirmTemplate ? (
+        <div
+          className="modal-backdrop"
+          onClick={templateDeleting ? undefined : closeTemplateConfirm}
+        >
+          <div
+            className="modal modal-confirm"
+            onClick={(e) => e.stopPropagation()}
+            role="alertdialog"
+            aria-modal="true"
+            data-testid="library-template-delete-confirm"
+          >
+            <h2>{t('dsManager.deleteTemplateTitle')}</h2>
+            <p className="modal-confirm-message">
+              {t('dsManager.deleteTemplateConfirm', { name: confirmTemplate.name })}
+            </p>
+            {templateDeleteError ? (
+              <p className="modal-confirm-error" role="alert">
+                {t('dsManager.deleteTemplateError')}
+              </p>
+            ) : null}
+            <div className="row">
+              <button type="button" onClick={closeTemplateConfirm} disabled={templateDeleting}>
+                {t('common.cancel')}
+              </button>
+              <button
+                type="button"
+                className="primary danger"
+                autoFocus
+                disabled={templateDeleting}
+                onClick={() => void runTemplateDelete()}
+              >
+                {t('dsManager.deleteTemplateConfirmCta')}
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
 
       {primaryCollection === 'template' && templateCollection === 'enterprise' ? (

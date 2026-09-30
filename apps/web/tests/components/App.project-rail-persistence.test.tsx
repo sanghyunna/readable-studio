@@ -212,6 +212,9 @@ function conversation(id: string, projectId: string, title: string) {
 
 beforeEach(() => {
   currentRoute = HOME_ROUTE;
+  // The first-run welcome (1.2.0) captures Escape while open; these tests
+  // exercise the rail's own Escape owners, so mark it already shown.
+  window.localStorage.setItem('readable-studio:welcome-modal-shown', '1');
   vi.mocked(daemonIsLive).mockResolvedValue(true);
   vi.mocked(fetchAgents).mockResolvedValue([]);
   vi.mocked(fetchSkills).mockResolvedValue([]);
@@ -429,7 +432,8 @@ describe('Project rail persistence across Hub -> workspace -> Hub', () => {
     expect(track).toHaveBeenCalledTimes(1);
     expect(screen.queryByTestId('hub-command-palette')).toBeNull();
     expect(palette.isConnected).toBe(false);
-    expect(screen.getAllByTestId('new-project-modal')).toHaveLength(1);
+    // The template command lands in the Hub composer's "+" menu; no modal.
+    expect(screen.queryByTestId('new-project-modal')).toBeNull();
     expect(theRail()).toBe(rail);
     railToggle();
   });
@@ -448,7 +452,7 @@ describe('Project rail persistence across Hub -> workspace -> Hub', () => {
       fireEvent.click(screen.getByTestId('hub-palette-item-command-create-template'));
     });
     expect(currentRoute).toEqual(HOME_ROUTE);
-    expect(screen.getAllByTestId('new-project-modal')).toHaveLength(1);
+    expect(screen.queryByTestId('new-project-modal')).toBeNull();
     expect(theRail()).toBe(rail);
   });
 
@@ -535,9 +539,11 @@ describe('Project rail persistence across Hub -> workspace -> Hub', () => {
     fireEvent.change(search, { target: { value: '' } });
     within(rail).getByTestId('hub-project-project-1');
 
-    // New Project from the workspace opens the real creation surface.
+    // New Project from the workspace is a plain navigation to the Hub (the
+    // composer takes focus there); it never opens a modal.
     await act(async () => fireEvent.click(newProject));
-    screen.getByTestId('new-project-modal');
+    expect(currentRoute).toEqual(HOME_ROUTE);
+    expect(screen.queryByTestId('new-project-modal')).toBeNull();
 
     await returnToHub();
     const railOnHub = theRail();

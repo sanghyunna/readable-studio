@@ -69,7 +69,7 @@ describe('hub composer design system', () => {
 
   it('connects the remaining zero-plugin composer controls to context and template actions', async () => {
     listConversations.mockResolvedValue([]);
-    const onOpenNewProject = vi.fn();
+    const onCreateFromTemplate = vi.fn();
     render(
       <HubHome
         projects={PROJECTS}
@@ -77,22 +77,21 @@ describe('hub composer design system', () => {
         onOpenSession={vi.fn()}
         onSubmitPrompt={vi.fn()}
         onNewProject={vi.fn()}
-        onOpenNewProject={onOpenNewProject}
+        projectImportHandlers={{ onCreateFromTemplate }}
       />,
     );
     await screen.findByTestId('home-hero-input');
     const controls = screen.getByTestId('home-hero-footer-options').querySelectorAll('button');
-    // The template control was removed from the composer footer: it duplicated
-    // the New Project modal's Template tab, which stays reachable from the hub
-    // command palette. Context is the only remaining footer-options button.
+    // The footer carries no template control: saved templates live in the
+    // composer "+" menu ("From template"), reachable from the hub command
+    // palette too. Context is the only footer-options button.
     expect(Array.from(controls, (control) => control.dataset.testid)).toEqual([
       'home-hero-context-control',
     ]);
     // The 디자인/질문 mode chip was deliberately removed from the HUB composer;
-    // mode selection now lives in the New Project flow as two selectable cards
-    // (`newproj-mode-design` / `newproj-mode-chat`), and `SessionModeToggle`
-    // remains only in the PROJECT chat composer. The hub must therefore render
-    // no mode affordance at all — neither the toggle nor either mode label.
+    // the Hub always starts in design mode and `SessionModeToggle` lives only
+    // in the PROJECT chat composer. The hub must therefore render no mode
+    // affordance at all — neither the toggle nor either mode label.
     expect(screen.queryByTestId('session-mode-trigger')).toBeNull();
     for (const label of ['Design mode', 'Design', 'Chat', 'Ask']) {
       expect(screen.queryByRole('button', { name: label })).toBeNull();
@@ -102,7 +101,7 @@ describe('hub composer design system', () => {
     expect(await screen.findByTestId('home-hero-plugin-picker')).toBeTruthy();
 
     expect(screen.queryByTestId('home-hero-template-control')).toBeNull();
-    expect(onOpenNewProject).not.toHaveBeenCalledWith('template');
+    expect(onCreateFromTemplate).not.toHaveBeenCalled();
     expect(screen.queryByTestId('hub-design-system')).toBeNull();
     expect(screen.queryAllByTestId('home-hero-footer-option-designSystem')).toHaveLength(0);
   });

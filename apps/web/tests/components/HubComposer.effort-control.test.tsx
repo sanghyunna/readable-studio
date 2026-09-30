@@ -236,7 +236,6 @@ function Shell({
         onThemeChange={vi.fn()}
         onCreateProject={vi.fn(() => true)}
         onCreatePluginShareProject={vi.fn()}
-        onOpenNewProject={vi.fn()}
         onOpenProject={vi.fn()}
         onDeleteProject={vi.fn()}
         onRenameProject={vi.fn()}

@@ -83,7 +83,7 @@ for (const surface of ['hub', 'workspace'] as const) {
             skills={[]} designTemplates={[]} designSystems={[]} projects={[]} templates={[]}
             defaultDesignSystemId={null} onConfigPersist={vi.fn()} onRefreshAgents={vi.fn(() => [])}
             onThemeChange={vi.fn()} onCreateProject={onAccepted} onCreatePluginShareProject={vi.fn()}
-            onOpenNewProject={vi.fn()} onOpenProject={vi.fn()} onDeleteProject={vi.fn()}
+            onOpenProject={vi.fn()} onDeleteProject={vi.fn()}
             onRenameProject={vi.fn()} onChangeDefaultDesignSystem={vi.fn()}
           /></HubTestHost> : <ChatPane {...execution}
             conversations={[]} activeConversationId={null} onSelectConversation={vi.fn()} onDeleteConversation={vi.fn()}

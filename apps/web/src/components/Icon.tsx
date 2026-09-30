@@ -195,7 +195,7 @@ export function Icon({ name, size = 14, strokeWidth = 1.6, ...rest }: Props) {
       // Close buttons read as a small dot inside their container at typical
       // 14-18px icon sizes. Extending the strokes to 4→20 lifts the visible
       // extent to ~67% so the X feels balanced inside compact modal close
-      // buttons (PluginMediaDetail / NewProjectModal / PreviewModal) without
+      // buttons (PluginMediaDetail / PreviewModal) without
       // overpowering chip-sized close icons (ChatComposer / SettingsDialog).
       return (
         <svg {...common}>

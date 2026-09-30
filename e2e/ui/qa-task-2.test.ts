@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import type { Page, Request } from '@playwright/test';
 import { applyStandardMocks } from '@/playwright/mock-factory';
-import { openNewProjectModal } from '@/playwright/new-project-modal';
+import { openComposerPlusMenu } from '@/playwright/new-project-modal';
 
 test.describe.configure({ timeout: 90_000 });
 
@@ -115,9 +115,10 @@ test('[P1] the New Project modal folder import runs the real folder import inste
   });
 
   await gotoHub(page);
-  await openNewProjectModal(page);
+  // Folder import lives in the Hub composer "+" menu now.
+  await openComposerPlusMenu(page);
 
-  const starter = page.getByTestId('new-project-import-folder');
+  const starter = page.getByTestId('composer-plus-open-folder');
   await expect(starter).toBeVisible();
   await starter.click();
 
@@ -144,9 +145,9 @@ test('[P1] the New Project modal folder import runs the real folder import inste
   await expect.poll(() => page.url(), { timeout: 20_000 }).toContain(importBody.project!.id!);
 });
 
-test('[P1] the New Project modal exposes the Claude ZIP import and surfaces its failure', async ({ page }) => {
+test('[P1] the Hub composer "+" menu exposes the Claude ZIP import and surfaces its failure', async ({ page }) => {
   await gotoHub(page);
-  await openNewProjectModal(page);
+  await openComposerPlusMenu(page);
 
   // The controller must surface a REJECTED import instead of silently doing
   // nothing - the failure mode the shared picker was extracted to prevent.
@@ -163,7 +164,7 @@ test('[P1] the New Project modal exposes the Claude ZIP import and surfaces its 
     return url.pathname === '/api/import/claude-design' && response.request().method() === 'POST';
   });
   const fileChooserPromise = page.waitForEvent('filechooser');
-  const starter = page.getByTestId('new-project-import-claude-zip');
+  const starter = page.getByTestId('composer-plus-import-claude-zip');
   await expect(starter).toBeVisible();
   await starter.click();
   const fileChooser = await fileChooserPromise;
@@ -179,7 +180,7 @@ test('[P1] the New Project modal exposes the Claude ZIP import and surfaces its 
   expect(importRequest.postData() ?? '').toContain('design.zip');
   expect(importResponse.status()).toBe(400);
 
-  const alert = page.getByTestId('new-project-modal').locator('.readable-toast');
+  const alert = page.locator('.readable-toast');
   await expect(alert).toBeVisible({ timeout: 20_000 });
   await expect(alert).toContainText('Import failed');
 });

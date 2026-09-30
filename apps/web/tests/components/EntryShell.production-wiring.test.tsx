@@ -121,14 +121,15 @@ const skills: SkillSummary[] = [{
 function renderEntryShell(projects: Project[] = [project]) {
   const onCreateProject = vi.fn(() => true);
   const onOpenSettings = vi.fn();
-  const onOpenNewProject = vi.fn();
+  const onNewProject = vi.fn();
+  const onCreateFromTemplate = vi.fn(() => true);
 
   function ShellWithPersistentRail() {
     const rail = useHubRailController({
       projects,
       currentSessionId: null,
       onOpenSession: vi.fn(),
-      onNewProject: () => onOpenNewProject('prototype'),
+      onNewProject,
       onOpenProject: vi.fn(),
       onNavigateDestination: vi.fn(),
     });
@@ -164,7 +165,7 @@ function renderEntryShell(projects: Project[] = [project]) {
           onThemeChange={vi.fn()}
           onCreateProject={onCreateProject}
           onCreatePluginShareProject={vi.fn()}
-          onOpenNewProject={onOpenNewProject}
+          projectImportHandlers={{ onCreateFromTemplate }}
           onOpenProject={vi.fn()}
           onDeleteProject={vi.fn()}
           onRenameProject={vi.fn()}
@@ -177,7 +178,7 @@ function renderEntryShell(projects: Project[] = [project]) {
   }
 
   render(<ShellWithPersistentRail />);
-  return { onCreateProject, onOpenSettings, onOpenNewProject };
+  return { onCreateProject, onOpenSettings, onNewProject, onCreateFromTemplate };
 }
 
 beforeEach(() => {
@@ -295,23 +296,25 @@ describe('EntryShell production hub wiring', () => {
     );
   });
 
-  // Form normalization and relocated controls are exercised through the real
-  // App owner in App.new-project-modal.test.tsx, not a duplicate shell modal.
-  it('delegates Home New Project to App with the prototype tab and owns no modal', async () => {
-    const { onOpenNewProject, onCreateProject } = renderEntryShell();
+  // The end-to-end navigate + focus contract is exercised through the real
+  // App owner in App.new-project-navigates.test.tsx; the shell owns no modal.
+  it('routes Home New Project through the rail controller and focuses the composer', async () => {
+    const { onNewProject, onCreateProject } = renderEntryShell();
     await act(async () => { fireEvent.click(screen.getByTestId('hub-new-project')); });
-    expect(onOpenNewProject).toHaveBeenCalledExactlyOnceWith('prototype');
+    expect(onNewProject).toHaveBeenCalledOnce();
     expect(onCreateProject).not.toHaveBeenCalled();
     expect(screen.queryByTestId('new-project-modal')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(screen.getByTestId('home-hero-input'));
   });
 
-  it('delegates the command palette template path to App with the template tab', async () => {
-    const { onOpenNewProject } = renderEntryShell();
+  it('routes the command palette template path to the composer "+" menu template list', async () => {
+    renderEntryShell();
     await act(async () => { fireEvent.click(screen.getByTestId('hub-open-palette')); });
     await act(async () => {
       fireEvent.click(screen.getByTestId('hub-palette-item-command-create-template'));
     });
-    expect(onOpenNewProject).toHaveBeenCalledExactlyOnceWith('template');
+    expect(await screen.findByTestId('composer-plus-templates-list')).toBeTruthy();
     expect(screen.queryByTestId('new-project-modal')).toBeNull();
   });
 

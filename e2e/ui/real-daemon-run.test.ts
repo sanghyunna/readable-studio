@@ -1,7 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { rm } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { ensureRailOpen } from '@/playwright/rail';
 import type { Page, Request, Response } from '@playwright/test';
 import {
   createFakeAgentRuntimes,
@@ -10,6 +9,7 @@ import {
 import type { FakeAgentId } from '@/playwright/fake-agents';
 import { T } from '@/timeouts';
 import { addStorageInitScript, evaluateStorageSeed } from '@/playwright/storage-init';
+import { createEmptyProjectFromHub } from '@/playwright/new-project-modal';
 
 const STORAGE_KEY = 'readable-studio:config';
 const ACTIVE_ARTIFACT_PREVIEW_SELECTOR = '[data-testid="artifact-preview-frame"]:visible, [data-testid="artifact-preview-frame-url-load"]:visible, [data-testid="artifact-preview-frame-srcdoc"]:visible';
@@ -366,13 +366,7 @@ async function createProject(page: Page, name: string, agentId: FakeAgentId = 'c
   await configureFakeAgent(page, agentId);
   await expectBrowserAgentConfig(page, agentId);
   await dismissPrivacyDialog(page);
-  await ensureRailOpen(page);
-  await page.getByTestId('hub-new-project').click();
-  await expect(page.getByTestId('new-project-modal')).toBeVisible();
-  await expect(page.getByTestId('new-project-panel')).toBeVisible();
-  await page.getByTestId('new-project-tab-prototype').click();
-  await page.getByTestId('new-project-name').fill(name);
-  await page.getByTestId('create-project').click();
+  await createEmptyProjectFromHub(page, { name, kind: 'prototype' });
 }
 
 async function createProjectViaApi(page: Page, projectId: string, name: string) {

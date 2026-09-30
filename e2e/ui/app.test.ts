@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { addStorageInitScript } from '@/playwright/storage-init';
-import { openNewProjectModal } from '@/playwright/new-project-modal';
+import { createEmptyProjectFromHub } from '@/playwright/new-project-modal';
 import { routeAgents } from '@/playwright/mock-factory';
 import type { Dialog, Locator, Page, Request, Response } from '@playwright/test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -653,9 +653,7 @@ async function routeMockSuccessfulRun(page: Page, runId: string) {
 
 async function createEmptyProject(page: Page, name: string): Promise<string> {
   await gotoEntryHome(page);
-  await openNewProjectModal(page);
-  await page.getByTestId('new-project-name').fill(name);
-  await page.getByTestId('create-project').click();
+  await createEmptyProjectFromHub(page, { name: name });
   await expect(page).toHaveURL(/\/projects\//);
   const current = new URL(page.url());
   const [, projects, projectId] = current.pathname.split('/');
@@ -758,12 +756,11 @@ function deckHtml(): string {
 </html>`;
 }
 
-async function createProject(
-  page: Page,
-  entry: UiScenario,
-) {
-  await createProjectNameOnly(page, entry);
-  await page.getByTestId('create-project').click();
+async function createProject(page: Page, entry: UiScenario) {
+  await createEmptyProjectFromHub(page, {
+    name: entry.create.projectName,
+    ...(entry.create.tab ? { kind: entry.create.tab } : {}),
+  });
 }
 
 async function expectWorkspaceReady(page: Page) {
@@ -1081,18 +1078,6 @@ async function seedProjectFile(
     },
   });
   expect(response.ok()).toBeTruthy();
-}
-
-async function createProjectNameOnly(
-  page: Page,
-  entry: UiScenario,
-) {
-  await openNewProjectModal(page);
-  await expect(page.getByTestId('new-project-panel')).toBeVisible();
-  if (entry.create.tab) {
-    await page.getByTestId(`new-project-tab-${entry.create.tab}`).click();
-  }
-  await page.getByTestId('new-project-name').fill(entry.create.projectName);
 }
 
 async function gotoEntryHome(page: Page) {

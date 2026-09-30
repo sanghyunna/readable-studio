@@ -56,11 +56,14 @@ import {
   fetchProjectFiles,
   fetchSkill,
   patchPreviewCommentStatus,
+  openFolderDialog,
   projectRawUrl,
+  replaceProjectWorkingDir,
   uploadProjectFiles,
   upsertPreviewComment,
   writeProjectTextFile,
 } from '../providers/registry';
+import { isReadableStudioHostAvailable, pickHostWorkingDir } from '@readable-studio/host';
 import { useProjectFileEvents, type ProjectEvent } from '../providers/project-events';
 import { useCoalescedCallback } from '../hooks/useCoalescedCallback';
 import {
@@ -5111,11 +5114,54 @@ export function ProjectView({
     ],
   );
 
+  // Per-project folder override. It used to be a creation-time pick in the
+  // New Project modal; the project is the thing being pointed at a folder, so
+  // it lives with the project now. Same picker split (desktop host dialog +
+  // token vs. daemon-owned dialog) and the same `working-dir` endpoint App
+  // used at create time; the detail refetch is what re-reads the new tree.
+  const [projectFolderBusy, setProjectFolderBusy] = useState(false);
+  const handleChangeProjectFolder = useCallback(async () => {
+    if (projectFolderBusy) return;
+    setProjectFolderBusy(true);
+    try {
+      let baseDir: string | null = null;
+      let token: string | undefined;
+      if (isReadableStudioHostAvailable()) {
+        const picked = await pickHostWorkingDir();
+        if (!picked.ok) {
+          if ('canceled' in picked && picked.canceled) return;
+          setProjectActionsToast({
+            message: t('projectFolderPicker.pickerUnavailable', {
+              reason: 'reason' in picked ? picked.reason : 'host unavailable',
+            }),
+            details: null,
+          });
+          return;
+        }
+        baseDir = picked.baseDir;
+        token = picked.token;
+      } else {
+        baseDir = await openFolderDialog();
+      }
+      if (!baseDir) return;
+      const result = await replaceProjectWorkingDir(project.id, baseDir, token);
+      onProjectChange({ ...project, ...result.project, updatedAt: Date.now() });
+      await Promise.all([projectDetail.refresh(), refreshWorkspaceItems()]);
+    } catch (err) {
+      setProjectActionsToast({
+        message: t('projectFolderPicker.applyFailed'),
+        details: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setProjectFolderBusy(false);
+    }
+  }, [onProjectChange, project, projectDetail, projectFolderBusy, refreshWorkspaceItems, t]);
+
   const handleChangeDesignSystemId = useCallback(
     (nextId: string | null) => {
       if ((project.designSystemId ?? null) === nextId) return;
       // `design_system_apply_result` studio variant. The existing
-      // NewProjectPanel picker fires the same event under
+      // Hub composer footer picker fires the same event under
       // `page_name=home`; this in-project header picker fires under
       // `page_name=studio` so the funnel sees applies from both
       // surfaces. `target_project_kind` derives from
@@ -6036,6 +6082,8 @@ export function ProjectView({
           })()}
           reloading={false}
           resolvedDir={projectDetail.resolvedDir}
+          onChangeProjectFolder={() => { void handleChangeProjectFolder(); }}
+          projectFolderBusy={projectFolderBusy}
           files={projectFiles}
           filesRefreshKey={filesRefresh}
           onRefreshFiles={() => {

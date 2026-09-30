@@ -1,9 +1,10 @@
 import { expect, test } from '@playwright/test';
-import type { Locator, Page, Request, Route } from '@playwright/test';
+import type { Locator, Page, Route } from '@playwright/test';
 import { openSettingsDialog } from '../lib/playwright/amr.js';
 import { routeAgents } from '../lib/playwright/mock-factory.js';
 
 import { addStorageInitScript } from '@/playwright/storage-init';
+import { openComposerPlusMenu, pressNewProject } from '@/playwright/new-project-modal';
 
 const STORAGE_KEY = 'readable-studio:config';
 const ACTIVE_ARTIFACT_PREVIEW_SELECTOR = '[data-testid="artifact-preview-frame"]:visible, [data-testid="artifact-preview-frame-url-load"]:visible, [data-testid="artifact-preview-frame-srcdoc"]:visible';
@@ -124,44 +125,24 @@ function artifactPreviewFrame(page: Page) {
   return page.frameLocator(ACTIVE_ARTIFACT_PREVIEW_SELECTOR);
 }
 
-test('[P1] new project tabs switch visible form sections and preserve drafts', async ({ page }) => {
+test('[P1] new project lands in the Hub composer and the kind chips replace the modal tabs', async ({ page }) => {
   await page.route('**/api/skills', async (route) => {
     await route.fulfill({ json: { skills: TAB_SKILLS } });
   });
 
   await page.goto('/');
-  await openNewProjectPanel(page);
-  await expect(page.locator('.newproj-tabs').getByRole('tab')).toHaveText([
-    'Prototype',
-    'Slide deck',
-    'From template',
-    'Other',
-  ]);
-  await expect(page.getByTestId('new-project-tab-prototype')).toHaveAttribute('aria-selected', 'true');
-  await expect(page.locator('.newproj-title')).toContainText('New prototype');
-  await expect(page.getByTestId('design-system-trigger')).toBeVisible();
-  await expect(page.getByText('Fidelity', { exact: true })).toBeVisible();
-  await page.getByTestId('new-project-name').fill('Prototype draft survives');
-
-  await page.getByTestId('new-project-tab-deck').click();
-  await expect(page.getByTestId('new-project-tab-deck')).toHaveAttribute('aria-selected', 'true');
-  await expect(page.locator('.newproj-title')).toContainText('New slide deck');
-  await expect(page.getByTestId('design-system-trigger')).toBeVisible();
-  await expect(page.getByText('Use speaker notes')).toBeVisible();
-
-  await page.getByTestId('new-project-tab-prototype').click();
-  await expect(page.getByTestId('new-project-tab-prototype')).toHaveAttribute('aria-selected', 'true');
-  await expect(page.locator('.newproj-title')).toContainText('New prototype');
-  await expect(page.getByTestId('new-project-name')).toHaveValue('Prototype draft survives');
-
-  await page.getByTestId('new-project-tab-other').click();
-  await expect(page.getByTestId('new-project-tab-other')).toHaveAttribute('aria-selected', 'true');
-  await expect(page.locator('.newproj-title')).toContainText('New project');
-  await expect(page.getByTestId('design-system-trigger')).toBeVisible();
-  await expect(page.getByText('Target platforms', { exact: true })).toBeVisible();
+  await pressNewProject(page, 'project-management');
+  // The modal's Prototype / Slide deck tabs are the Hub's kind commands
+  // (palette, Ctrl K); the free-form ("Other") path is the bare composer.
+  for (const kind of ['prototype', 'deck'] as const) {
+    await page.getByTestId('hub-open-palette').click();
+    await page.getByTestId(`hub-palette-item-command-create-${kind}`).click();
+    await expect(page.getByTestId('home-hero-active-type-chip')).toHaveAttribute('data-chip-id', kind);
+  }
+  await expect(page.getByTestId('new-project-modal')).toHaveCount(0);
 });
 
-test('[P0] projects empty state create action opens the new project flow', async ({ page }) => {
+test('[P0] projects empty state create action lands in the Hub composer', async ({ page }) => {
   await page.route('**/api/skills', async (route) => {
     await route.fulfill({ json: { skills: TAB_SKILLS } });
   });
@@ -177,18 +158,14 @@ test('[P0] projects empty state create action opens the new project flow', async
   await expect(page.locator('.designs-empty-state')).toBeVisible();
   await page.locator('.designs-empty-cta').click();
 
-  await expect(page.getByTestId('new-project-modal')).toBeVisible();
-  await expect(page.getByTestId('new-project-panel')).toBeVisible();
-  await expect(page.getByTestId('new-project-tab-prototype')).toHaveAttribute('aria-selected', 'true');
-  await expect(page.locator('.newproj-title')).toContainText('New prototype');
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByTestId('new-project-modal')).toHaveCount(0);
+  await expect(page.getByTestId('home-hero-input')).toBeFocused();
 });
 
-test('[P1] new project dropdown popovers use viewport-safe body portals', async ({ page }) => {
+test('[P1] the Hub composer "+" menu uses a viewport-safe body portal', async ({ page }) => {
   await page.route('**/api/skills', async (route) => {
     await route.fulfill({ json: { skills: TAB_SKILLS } });
-  });
-  await page.route('**/api/design-systems', async (route) => {
-    await route.fulfill({ json: { designSystems: DESIGN_SYSTEMS } });
   });
   await page.route('**/api/projects', async (route) => {
     if (route.request().method() === 'GET') {
@@ -200,95 +177,22 @@ test('[P1] new project dropdown popovers use viewport-safe body portals', async 
 
   await page.goto('/projects');
   await page.locator('.designs-empty-cta').click();
-  await expect(page.getByTestId('new-project-modal')).toBeVisible();
-  await expect(page.getByTestId('new-project-panel')).toBeVisible();
-  await page.getByTestId('new-project-tab-prototype').click();
+  await expect(page.getByTestId('home-hero-input')).toBeFocused();
 
-  await page.getByTestId('design-system-trigger').click();
-  const designSystemPopover = page.getByTestId('design-system-picker-popover');
-  await expect(designSystemPopover).toBeVisible();
-  await expectViewportSafePortaledPopover(designSystemPopover);
-
-  await page.getByTestId('design-system-trigger').click();
-  await expect(designSystemPopover).toHaveCount(0);
-
-  await page.locator('.platform-picker .ds-picker-trigger').click();
-  const platformPopover = page.getByTestId('platform-picker-popover');
-  await expect(platformPopover).toBeVisible();
-  await expectViewportSafePortaledPopover(platformPopover);
+  await openComposerPlusMenu(page);
+  const popup = page.locator('.plus-menu__popup');
+  await expect(popup).toBeVisible();
+  await expectViewportSafePortaledPopover(popup);
+  await expect(page.getByTestId('composer-plus-open-folder')).toBeVisible();
+  await expect(page.getByTestId('composer-plus-import-claude-zip')).toBeVisible();
+  await expect(page.getByTestId('composer-plus-templates')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(popup).toHaveCount(0);
 });
 
-test('[P1] design system multi-select stores primary and inspiration metadata', async ({ page }) => {
-  await page.route('**/api/design-systems', async (route) => {
-    await route.fulfill({ json: { designSystems: DESIGN_SYSTEMS } });
-  });
-
-  await page.goto('/');
-  await openNewProjectPanel(page);
-  await page.getByTestId('new-project-tab-prototype').click();
-  await page.getByTestId('new-project-name').fill('Design system multi select metadata');
-  await expect(page.getByTestId('design-system-trigger')).toContainText('Nexu Soft Tech');
-
-  await page.getByTestId('design-system-trigger').click();
-  const multiTab = page.getByRole('tab', { name: /multi/i });
-  await multiTab.click();
-  await expect(multiTab).toHaveAttribute('aria-selected', 'true');
-  await page.getByRole('option', { name: /Editorial Noir/i }).click();
-  await page.getByRole('option', { name: /Data Mist/i }).click();
-
-  await expect(page.getByTestId('design-system-trigger')).toContainText('Nexu Soft Tech');
-  await expect(page.getByTestId('design-system-trigger')).toContainText('+2');
-  await page.getByTestId('design-system-trigger').click();
-  await expect(page.locator('.ds-picker-popover')).toHaveCount(0);
-  const createProjectRequest = page.waitForRequest(isCreateProjectRequest);
-  await expect(page.getByTestId('create-project')).toBeEnabled();
-  await page.getByTestId('create-project').click({ force: true });
-  const request = await createProjectRequest;
-  const body = request.postDataJSON() as {
-    designSystemId?: string | null;
-    metadata?: {
-      inspirationDesignSystemIds?: string[];
-    };
-  };
-  expect(body.designSystemId).toBe('nexu-soft-tech');
-  expect(body.metadata?.inspirationDesignSystemIds).toEqual([
-    'editorial-noir',
-    'data-mist',
-  ]);
-});
-
-test('[P1] design system picker searches and switches the single selected system', async ({ page }) => {
-  await page.route('**/api/design-systems', async (route) => {
-    await route.fulfill({ json: { designSystems: DESIGN_SYSTEMS } });
-  });
-
-  await page.goto('/');
-  await openNewProjectPanel(page);
-  await page.getByTestId('new-project-tab-prototype').click();
-  await page.getByTestId('new-project-name').fill('Design system single switch flow');
-  await expect(page.getByTestId('design-system-trigger')).toBeVisible();
-
-  await page.getByTestId('design-system-trigger').click();
-  await page.getByTestId('design-system-search').fill('mist');
-  await expect(page.getByRole('option', { name: /Data Mist/i })).toBeVisible();
-  await expect(page.getByRole('option', { name: /Nexu Soft Tech/i })).toHaveCount(0);
-  await page.getByRole('option', { name: /Data Mist/i }).click();
-
-  await expect(page.getByTestId('design-system-trigger')).toContainText('Data Mist');
-  await expect(page.getByTestId('design-system-trigger')).toContainText('Analytics');
-  const createProjectRequest = page.waitForRequest(isCreateProjectRequest);
-  await expect(page.getByTestId('create-project')).toBeEnabled();
-  await page.getByTestId('create-project').click({ force: true });
-  const request = await createProjectRequest;
-  const body = request.postDataJSON() as {
-    designSystemId?: string | null;
-    metadata?: {
-      inspirationDesignSystemIds?: string[];
-    };
-  };
-  expect(body.designSystemId).toBe('data-mist');
-  expect(body.metadata?.inspirationDesignSystemIds).toBeUndefined();
-});
+// The modal's design-system picker (single + multi "inspirations") is gone.
+// Single selection lives on the project (see the project-detail header picker
+// tests below); the multi-select inspirations were an accepted loss.
 
 test('[P2] project detail chat header keeps navigation, title, and history aligned on one row', async ({ page }) => {
   await page.goto('/');
@@ -1302,15 +1206,6 @@ async function createProject(
   await page.goto(`/projects/${body.project.id}/conversations/${body.conversationId}`);
 }
 
-async function openNewProjectPanel(page: Page) {
-  if (await page.getByTestId('new-project-panel').isVisible()) return;
-  const hubNewProject = page.getByTestId('hub-new-project');
-  await expect(hubNewProject).toBeVisible();
-  await hubNewProject.click();
-  await expect(page.getByTestId('new-project-modal')).toBeVisible();
-  await expect(page.getByTestId('new-project-panel')).toBeVisible();
-}
-
 async function expectViewportSafePortaledPopover(popover: Locator) {
   const placement = await popover.evaluate((popoverElement) => {
     const rect = popoverElement.getBoundingClientRect();
@@ -1535,11 +1430,6 @@ async function listProjectFiles(page: Page, projectId: string) {
   expect(response.ok()).toBeTruthy();
   const body = (await response.json()) as { files: Array<{ name: string }> };
   return body.files;
-}
-
-function isCreateProjectRequest(request: Request): boolean {
-  const url = new URL(request.url());
-  return url.pathname === '/api/projects' && request.method() === 'POST';
 }
 
 function getProjectContextFromUrl(page: Page) {

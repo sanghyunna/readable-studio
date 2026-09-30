@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 import { addStorageInitScript, evaluateStorageSeed } from '@/playwright/storage-init';
 import type { Locator, Page } from '@playwright/test';
 import { routeAgents } from '@/playwright/mock-factory';
-import { openNewProjectModal } from '@/playwright/new-project-modal';
+import { createEmptyProjectFromHub, openComposerPlusMenu } from '@/playwright/new-project-modal';
 
 test.describe.configure({ timeout: 30_000 });
 
@@ -40,14 +40,14 @@ export const CONTROLS = [
   { id: 'audit-A-17', label: 'Active plugin chip clear', i18nKey: 'homeHero.clearActivePlugin', howToReach: 'Pick the seeded plugin and clear its active chip.', expect: 'present' },
   { id: 'audit-A-18', label: 'Active skill chip clear', i18nKey: 'homeHero.clearActiveSkill', howToReach: 'Pick the seeded skill and clear its active chip.', expect: 'present' },
   { id: 'audit-A-19', label: 'Context plugin/MCP chip remove', i18nKey: 'common.close', howToReach: 'Pick a context item and remove its chip.', expect: 'present' },
-  { id: 'audit-A-20', label: 'New Project design-system picker', i18nKey: 'newproj.designSystem', howToReach: 'Open New project, choose a design system, and create with that selection.', expect: 'present' },
+  { id: 'audit-A-20', label: 'Project design-system picker (workspace)', i18nKey: 'designSystemPicker.select', howToReach: 'New project lands in the Hub composer; create, then switch the design system in the workspace picker.', expect: 'present' },
   { id: 'audit-A-21', label: 'Footer speaker-notes toggle', i18nKey: 'homeHero.footer.speakerNotes', howToReach: 'Choose Deck and change speaker notes.', expect: 'present' },
   { id: 'audit-A-22', label: 'Footer fidelity select', i18nKey: 'newproj.fidelityLabel', howToReach: 'Choose Prototype and change fidelity.', expect: 'present' },
   { id: 'audit-A-23', label: 'Footer model select', i18nKey: 'newproj.modelLabel', howToReach: 'Choose a creation type and change model.', expect: 'present' },
   { id: 'audit-A-24', label: 'Footer ratio select', i18nKey: 'homeHero.footer.ratio', howToReach: 'Choose a compatible type and change ratio.', expect: 'present' },
   { id: 'audit-A-25', label: 'Footer duration select', i18nKey: 'homeHero.footer.duration', howToReach: 'Choose a compatible type and change duration.', expect: 'present' },
   { id: 'audit-A-26', label: 'Footer resolution select', i18nKey: 'homeHero.footer.resolution', howToReach: 'Choose a compatible type and change resolution.', expect: 'present' },
-  { id: 'audit-A-27', label: 'Session mode toggle (Chat / Design)', i18nKey: 'chat.mode.chat.* / chat.mode.design.*', howToReach: 'Toggle the home composer session mode.', expect: 'present' },
+  { id: 'audit-A-27', label: 'Session mode toggle (Chat / Design)', i18nKey: 'chat.mode.chat.* / chat.mode.design.*', howToReach: 'Not on the Hub composer (design by default); toggle it in the workspace composer after creating.', expect: 'present' },
   { id: 'audit-A-28', label: 'Submit / Send button', i18nKey: 'homeHero.run / chat.send', howToReach: 'Enter a prompt and submit it from home.', expect: 'present' },
   { id: 'audit-A-29', label: 'Continue without a prompt', i18nKey: 'homeHero.continueWithoutPrompt', howToReach: 'Activate Continue without a prompt.', expect: 'present' },
   { id: 'audit-A-30', label: 'Type chip: Prototype', i18nKey: 'homeHero.chip.prototype', howToReach: 'Activate the Prototype type chip.', expect: 'present' },
@@ -302,19 +302,22 @@ async function visible(locator: Locator, id: string) {
   await expect(locator, `[${id}] control must be visible on the real home surface`).toBeVisible({ timeout: 2_000 });
 }
 
-// The Advanced / Import disclosure is gone; the pre-creation controls (working
-// folder, ZIP / folder import, template picker, design-system picker) ship
-// through the New Project modal, which runs the identical handleCreate.
-async function openProjectCreationPanel(page: Page, id: string) {
+// The Advanced / Import disclosure and the New Project modal are both gone.
+// Folder / ZIP / template starts live in the Hub composer "+" menu; the
+// design system and session mode are switched on the project itself.
+async function openHubPlusMenu(page: Page, id: string) {
   await expect(
     page.getByTestId('new-project-advanced'),
     `[${id}] the Advanced / Import disclosure must not exist`,
   ).toHaveCount(0);
-  await openNewProjectModal(page, id);
-  const modal = page.getByTestId('new-project-modal');
-  const panel = modal.getByTestId('new-project-panel');
-  await visible(panel, id);
-  return panel;
+  await expect(page.getByTestId('new-project-modal'), `[${id}] the New Project modal must not exist`).toHaveCount(0);
+  await openComposerPlusMenu(page);
+}
+
+async function openWorkspaceFromHub(page: Page, id: string) {
+  await expect(page.getByTestId('new-project-modal'), `[${id}] the New Project modal must not exist`).toHaveCount(0);
+  await createEmptyProjectFromHub(page, { context: id });
+  await visible(page.getByTestId('chat-composer'), id);
 }
 
 async function writeEvidence(page: Page, name: string, details: unknown) {
@@ -532,25 +535,23 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
   switch (kind) {
     case 'composer': { const input = composer(page); await visible(input, id); await replaceComposerText(page, 'operable composer'); await expect(input).toContainText('operable composer'); return; }
     case 'design-system': {
-      const panel = await openProjectCreationPanel(page, id);
-      const picker = panel.getByTestId('design-system-trigger');
+      await openWorkspaceFromHub(page, id);
+      const picker = page.getByTestId('project-ds-picker-trigger');
       await visible(picker, id);
-      await expect(picker).toContainText('Agentic');
       await picker.click();
-      const designSystemListbox = page.getByRole('listbox', { name: /Design system/i });
-      await visible(designSystemListbox, id);
-      const airbnb = designSystemListbox.getByRole('option', { name: /Airbnb/i });
+      const search = page.getByTestId('project-ds-picker-search');
+      await visible(search, id);
+      await search.fill('Airbnb');
+      const airbnb = page.getByTestId('project-ds-picker-option-airbnb');
       await visible(airbnb, id);
+      const request = page.waitForRequest(candidate => candidate.method() === 'PATCH' && /\/api\/projects\/[^/]+$/.test(new URL(candidate.url()).pathname));
       await airbnb.click();
-      await expect(picker).toContainText('Airbnb');
-      await expect(picker).toHaveAttribute('aria-expanded', 'false');
-      await writeEvidence(page, 'design-system-new-project-path', {
-        selectedDesignSystem: (await picker.innerText()).trim(),
-        path: ['+ New project', 'Design system', 'Airbnb', 'Create project'],
-      });
-      const request = page.waitForRequest(candidate => candidate.method() === 'POST' && new URL(candidate.url()).pathname === '/api/projects');
-      await panel.getByTestId('create-project').click();
       expect((await request).postDataJSON()).toMatchObject({ designSystemId: 'airbnb' });
+      await expect(picker).toContainText('Airbnb');
+      await writeEvidence(page, 'design-system-workspace-path', {
+        selectedDesignSystem: (await picker.innerText()).trim(),
+        path: ['+ New project', 'Continue without prompt', 'Workspace design-system picker', 'Airbnb'],
+      });
       return;
     }
     case 'submit': { const input = composer(page); await visible(input, id); await replaceComposerText(page, 'reachability submit'); const button = page.getByTestId('hub-send').or(page.getByTestId('home-hero-submit')).first(); await expect(button).toBeEnabled(); const request = page.waitForRequest(r => r.method() === 'POST' && new URL(r.url()).pathname === '/api/projects'); await button.click(); expect((await request).postDataJSON()).toMatchObject({ pendingPrompt: 'reachability submit' }); return; }
@@ -616,11 +617,11 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
     // Session mode is a creation-time choice, so it lives in the New Project
     // flow rather than the Hub composer footer. The capability being pinned is
     // unchanged: picking Ask must reach POST /api/projects as chat mode.
-    case 'mode': case 'mode-route': { await expect(page.getByTestId('home-hero-agent-model').getByTestId('session-mode-trigger')).toHaveCount(0); const panel = await openProjectCreationPanel(page, id); const picker = panel.getByTestId('newproj-mode-picker'); await visible(picker, id); const ask = panel.getByTestId('newproj-mode-chat'); await visible(ask, id); await ask.click(); await expect(ask).toHaveAttribute('aria-checked', 'true'); await expect(panel.getByTestId('newproj-mode-design')).toHaveAttribute('aria-checked', 'false'); if (kind === 'mode-route') { await panel.getByTestId('new-project-name').fill('mode routed creation'); const request = page.waitForRequest(candidate => candidate.method() === 'POST' && new URL(candidate.url()).pathname === '/api/projects'); await panel.getByTestId('create-project').click(); expect((await request).postDataJSON()).toMatchObject({ conversationMode: 'chat', name: 'mode routed creation' }); } return; }
+    case 'mode': case 'mode-route': { await expect(page.getByTestId('home-hero-agent-model').getByTestId('session-mode-trigger')).toHaveCount(0); await expect(page.getByTestId('newproj-mode-picker')).toHaveCount(0); await openWorkspaceFromHub(page, id); const trigger = page.getByTestId('chat-composer').getByTestId('session-mode-trigger'); await visible(trigger, id); await trigger.click(); const popover = page.getByTestId('session-mode-popover'); await visible(popover, id); const ask = popover.getByRole('menuitemradio', { name: /Chat|Ask|질문/i }); await visible(ask, id); const request = page.waitForRequest(candidate => candidate.method() === 'PATCH' && /\/conversations\//.test(new URL(candidate.url()).pathname)); await ask.click(); expect((await request).postDataJSON()).toMatchObject({ sessionMode: 'chat' }); if (kind === 'mode-route') { await trigger.click(); await expect(page.getByTestId('session-mode-popover').getByRole('menuitemradio', { name: /Chat|Ask|질문/i })).toHaveAttribute('aria-checked', 'true'); } return; }
     case 'continue': { await page.getByTestId('hub-open-palette').click(); const input = page.getByTestId('hub-palette-input'); await input.fill('Continue without'); const command = page.getByTestId('hub-palette-item-command-create-continue'); await visible(command, id); const req = page.waitForRequest(r => r.method() === 'POST' && new URL(r.url()).pathname === '/api/projects'); await command.click(); await req; return; }
     case 'prototype': case 'deck': case 'report': await chooseType(page, kind); return;
     case 'more': { await page.getByTestId('hub-open-palette').click(); await visible(page.getByTestId('hub-command-palette'), id); await visible(page.getByTestId('hub-palette-item-command-create-create-plugin'), id); return; }
-    case 'create-plugin': case 'figma': case 'template': { await page.getByTestId('hub-open-palette').click(); const input = page.getByTestId('hub-palette-input'); const label = kind === 'create-plugin' ? 'Create plugin' : kind === 'figma' ? 'From Figma' : 'From template'; await input.fill(label); const command = page.getByTestId(`hub-palette-item-command-create-${kind}`); await visible(command, id); await command.click(); if (kind === 'template') { await expect(page.getByTestId('new-project-advanced')).toHaveCount(0); const panel = page.getByTestId('new-project-modal').getByTestId('new-project-panel'); await visible(panel, id); await expect(panel.getByTestId('new-project-tab-template')).toHaveAttribute('aria-selected', 'true'); } else if (kind === 'create-plugin') await expect(composer(page)).toContainText(/plugin/i); else await visible(page.getByRole('alert'), id); return; }
+    case 'create-plugin': case 'figma': case 'template': { await page.getByTestId('hub-open-palette').click(); const input = page.getByTestId('hub-palette-input'); const label = kind === 'create-plugin' ? 'Create plugin' : kind === 'figma' ? 'From Figma' : 'From template'; await input.fill(label); const command = page.getByTestId(`hub-palette-item-command-create-${kind}`); await visible(command, id); await command.click(); if (kind === 'template') { await expect(page.getByTestId('new-project-advanced')).toHaveCount(0); await expect(page.getByTestId('new-project-modal')).toHaveCount(0); await visible(page.getByTestId('composer-plus-templates-list'), id); } else if (kind === 'create-plugin') await expect(composer(page)).toContainText(/plugin/i); else await visible(page.getByRole('alert'), id); return; }
     case 'subtype-all': await operateSubtypes(page, true, id); return;
     case 'subtype-category': await operateSubtypes(page, false, id); return;
     case 'type-clear': await chooseType(page, 'prototype'); { const chip = page.getByTestId('home-hero-active-type-chip'); await visible(chip, id); await chip.click(); await expect(chip).toHaveCount(0); } return;
@@ -650,7 +651,7 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
     case 'nav-projects': case 'nav-tasks': case 'nav-plugins': case 'nav-design-systems': case 'nav-integrations': { const suffix = kind.replace('nav-', ''); const routeSuffix = suffix === 'tasks' ? 'automations' : suffix; const library = page.getByTestId('hub-library'); await visible(library, id); await library.click(); const nav = page.getByTestId(`hub-library-${suffix}`); await visible(nav, id); await nav.click(); await expect(page).toHaveURL(new RegExp(`/${routeSuffix}$`)); return; }
     case 'help': { expect(control.expect).toBe('absent'); await expect(page.getByTestId('entry-help-trigger')).toHaveCount(0); await expect(page.getByTestId('entry-help-menu')).toHaveCount(0); await expect(page.getByRole('button', { name: /Help/i })).toHaveCount(0); return; }
     case 'first-run-guide': { await evaluateStorageSeed(page, () => window.localStorage.removeItem('readable-studio:home-first-run-guide'), undefined); await page.route('**/api/projects', async route => { if (route.request().method() === 'GET') await route.fulfill({ json: { projects: [] } }); else await route.fulfill({ json: { project: PROJECTS[0], conversationId: 'created-session' } }); }); await page.reload({ waitUntil: 'domcontentloaded' }); await visible(page.getByTestId('entry-view-home'), id); await expect(page.locator('.home-hero__guide-sheen, [data-guide-active="true"]').first()).toBeVisible({ timeout: 2_000 }); return; }
-    case 'import-folder': { const panel = await openProjectCreationPanel(page, id); const button = panel.getByRole('button', { name: /Open folder/i }); await visible(button, id); const response = page.waitForResponse(r => new URL(r.url()).pathname === '/api/dialog/open-folder' && r.status() === 200); await Promise.all([response, button.click()]); return; }
+    case 'import-folder': { await openHubPlusMenu(page, id); const button = page.getByTestId('composer-plus-open-folder'); await visible(button, id); const response = page.waitForResponse(r => new URL(r.url()).pathname === '/api/dialog/open-folder' && r.status() === 200); await Promise.all([response, button.click()]); return; }
     case 'onboarding-absent': { await addStorageInitScript(page, ({ key, value }) => window.localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: { ...HOME_CONFIG, onboardingCompleted: false } }); await page.route('**/api/app-config', async route => route.fulfill({ json: { config: { ...HOME_CONFIG, onboardingCompleted: false } } })); await page.goto('/onboarding', { waitUntil: 'domcontentloaded' }); await expect(page.locator('.onboarding-view'), `[${id}] onboarding must not render`).toHaveCount(0); await visible(page.getByTestId('entry-view-home'), id); return; }
     case 'c-hierarchy': { const project = page.getByTestId('hub-project-qa-running'); await visible(project, id); await expect(project).toHaveAttribute('aria-expanded', 'true'); await project.evaluate(element => (element as HTMLElement).click()); await expect(project).toHaveAttribute('aria-expanded', 'false'); await project.evaluate(element => (element as HTMLElement).click()); await expect(project).toHaveAttribute('aria-expanded', 'true'); return; }
     case 'c-status': { await visible(page.getByTestId('hub-session-qa-session-1'), id); await expect(page.getByTestId('hub-session-qa-session-1')).toHaveAttribute('data-state', 'running'); await expect(page.getByTestId('hub-session-qa-session-2')).toHaveAttribute('data-state', 'failed'); await expect(page.getByTestId('hub-project-qa-attention')).toHaveAttribute('data-state', 'awaiting'); return; }
@@ -660,7 +661,7 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
     case 'c-empty': { await page.getByTestId('hub-search').fill('no deterministic match'); await page.getByTestId('hub-filter-running').click(); const empty = page.getByTestId('hub-tree-empty'); await visible(empty, id); await empty.getByRole('button').click(); await expect(page.getByTestId('hub-filter-all')).toHaveAttribute('aria-pressed', 'true'); return; }
     case 'c-sort': { const body = page.locator('.hub-tree__body'); await expect(body.getByRole('treeitem', { level: 1 }).first()).toContainText('Zulu'); await page.getByTestId('hub-sort').click(); const menu = page.getByTestId('hub-sort-menu'); await visible(menu, id); const nameItem = page.getByTestId('hub-sort-menu-name'); await visible(nameItem, id); await expect(nameItem).toHaveRole('menuitemradio'); const geometry = await nameItem.evaluate((element) => { const rect = element.getBoundingClientRect(); const style = getComputedStyle(element); return { role: element.getAttribute('role'), accessibleText: element.textContent?.trim(), rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }, display: style.display, visibility: style.visibility, overflow: style.overflow }; }); await writeEvidence(page, 'sort-menu-diagnosis', geometry); await nameItem.click(); await expect(body.getByRole('treeitem', { level: 1 }).first()).toContainText('Alpha'); return; }
     case 'c-keyboard': { const first = page.getByTestId('hub-project-qa-running'); await visible(first, id); await first.focus(); await first.press('ArrowDown'); await expect(page.getByTestId('hub-session-qa-session-1')).toBeFocused(); await page.keyboard.press('Home'); await expect(first).toBeFocused(); return; }
-    case 'c-claude': { const panel = await openProjectCreationPanel(page, id); const button = panel.getByRole('button', { name: /Import Claude Design ZIP/i }); await visible(button, id); const chooser = page.waitForEvent('filechooser'); await button.click(); await chooser; return; }
+    case 'c-claude': { await openHubPlusMenu(page, id); const button = page.getByTestId('composer-plus-import-claude-zip'); await visible(button, id); const chooser = page.waitForEvent('filechooser'); await button.click(); await chooser; return; }
     // The rail is glass now, not a painted gradient: assert the material that
     // actually makes it glass - a real backdrop blur over a translucent fill -
     // plus the rounded surface the mockup keeps.

@@ -288,9 +288,10 @@ test('the more-shortcuts overflow exposes Create plugin, From Figma and From tem
   await expect(menu.getByTestId('home-hero-rail-template')).toContainText('From template');
   await menu.screenshot({ path: EVIDENCE('more-shortcuts-menu.png') });
 
-  // The template shortcut opens the New Project modal on its template tab.
+  // The template shortcut opens the composer "+" menu's saved-template list.
   await menu.getByTestId('home-hero-rail-template').click();
-  await expect(page.getByTestId('new-project-tab-template')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByTestId('new-project-modal')).toHaveCount(0);
+  await expect(page.getByTestId('composer-plus-templates-list')).toBeVisible();
 });
 
 // (c) Subcategory tabs with counts under Prototype and Deck.

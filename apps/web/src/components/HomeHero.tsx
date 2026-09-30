@@ -71,7 +71,8 @@ import { sortByVisualAppeal } from './plugins-home/visualScore';
 import { applyFacetSelection } from './plugins-home/facets';
 import { inferPluginPreview } from './plugins-home/preview';
 import { pluginSubfacetLabel } from './plugins-home/subfacetLabel';
-import { ComposerPlusMenu } from './ComposerPlusMenu';
+import { ComposerPlusMenu, type ComposerPlusMenuHandle } from './ComposerPlusMenu';
+import type { ComposerProjectImports } from './project-create';
 import {
   LexicalComposerInput,
   type LexicalComposerInputHandle,
@@ -95,6 +96,8 @@ export interface HomeHeroHandle {
   // Flash the send button twice — fired after a plugin Use action or an
   // example-prompt card seeds the composer, to pull the eye to the next step.
   pulseSend(): void;
+  // Hub "From template": open the "+" menu with the saved-template list shown.
+  openTemplatePicker(): void;
 }
 
 export interface ExamplePromptInfo {
@@ -116,11 +119,9 @@ interface Props {
   onPromptChange: (value: string) => void;
   onSubmit: HomeHeroSubmitHandler;
   onContinueWithoutPrompt?: () => void;
-  /** Retained for the caller's prop contract only. The composer footer no
-   *  longer renders a template control: it duplicated the New Project modal's
-   *  Template tab (reachable from the hub command palette, `From template`),
-   *  and a chevron pill that opened a full modal read as a dropdown. */
-  onOpenTemplate?: () => void;
+  /** Hub-only project starts in the "+" menu (open folder, Claude ZIP, saved
+   *  template). The project composer never passes this. */
+  projectImports?: ComposerProjectImports;
   activePluginTitle: string | null;
   // True when the active plugin chip shows a user-picked plugin (Community card
   // or example-prompt preset) rather than a task-type chip's default plugin —
@@ -272,6 +273,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     onAddFiles = () => undefined,
     onRemoveFile = () => undefined,
     onPreviewUrlsChange = NOOP_PREVIEW_URLS_CHANGE,
+    projectImports,
     pluginOptions,
     pluginsLoading,
     skillOptions = EMPTY_SKILLS,
@@ -327,6 +329,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   const contextControlRef = useRef<HTMLButtonElement | null>(null);
   const [contextControlAnchored, setContextControlAnchored] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const plusMenuRef = useRef<ComposerPlusMenuHandle | null>(null);
   const shortcutsMenuRef = useRef<HTMLDivElement>(null);
   // Submission readiness includes validation owned above this component (such
   // as an explicit model choice), but a missing model must reach that existing
@@ -742,6 +745,9 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
       },
       pulseSend() {
         triggerSendAttention();
+      },
+      openTemplatePicker() {
+        plusMenuRef.current?.openTemplates();
       },
     }),
     [],
@@ -1411,9 +1417,21 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
               event.target.value = '';
             }}
           />
+          {projectImports?.claudeZip.available ? (
+            <input
+              ref={projectImports.claudeZip.inputRef}
+              data-testid="composer-plus-import-claude-zip-input"
+              type="file"
+              accept=".zip,application/zip"
+              hidden
+              onChange={projectImports.claudeZip.onChange}
+            />
+          ) : null}
           <div className="home-hero__foot-left">
             <ComposerPlusMenu
+              ref={plusMenuRef}
               triggerTestId="home-hero-plus-trigger"
+              {...(projectImports ? { projectImports } : {})}
               onOpen={() =>
                 trackHomeChatComposerClick(analytics.track, {
                   page_name: 'home',

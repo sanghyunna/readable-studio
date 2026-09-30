@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { addStorageInitScript } from '@/playwright/storage-init';
-import { openNewProjectModal } from '@/playwright/new-project-modal';
+import { createEmptyProjectFromHub } from '@/playwright/new-project-modal';
 import type { Page } from '@playwright/test';
 import { T } from '@/timeouts';
 
@@ -73,10 +73,7 @@ test('[P0] @critical API empty stream shows No output instead of Done', async ({
 });
 
 async function createProject(page: Page, name: string) {
-  await openNewProjectModal(page);
-  await page.getByTestId('new-project-tab-prototype').click();
-  await page.getByTestId('new-project-name').fill(name);
-  await page.getByTestId('create-project').click();
+  await createEmptyProjectFromHub(page, { name: name, kind: 'prototype' });
 }
 
 async function gotoEntryHome(page: Page) {

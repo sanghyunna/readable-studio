@@ -54,7 +54,13 @@ export async function applyStandardMocks(page: Page): Promise<void> {
 export async function applyStorageConfig(page: Page): Promise<void> {
   const configJson = JSON.stringify(STANDARD_CONFIG);
   await addStorageInitScript(page,
-    ({ key, value }: { key: string; value: string }) => window.localStorage.setItem(key, value),
+    ({ key, value }: { key: string; value: string }) => {
+      window.localStorage.setItem(key, value);
+      // The 1.2.0 first-run welcome is a full-shell modal backdrop; the
+      // standard fixture is not a first run, so it must not intercept the
+      // rail, palette or composer these specs drive.
+      window.localStorage.setItem('readable-studio:welcome-modal-shown', '1');
+    },
     { key: STORAGE_KEY, value: configJson },
   );
 }

@@ -40,7 +40,6 @@ vi.mock('../../src/components/ProjectView', () => ({
     <main data-testid="project-view">{project.id}</main>
   ),
 }));
-vi.mock('../../src/components/NewProjectModal', () => ({ NewProjectModal: () => null }));
 vi.mock('../../src/components/pet/PetOverlay', () => ({ PetOverlay: () => null }));
 vi.mock('../../src/components/pet/pets', () => ({ migrateCustomPetAtlas: async () => null }));
 vi.mock('../../src/components/SettingsDialog', () => ({

@@ -4,6 +4,7 @@ import { expect, test } from '@playwright/test';
 import { addStorageInitScript } from '@/playwright/storage-init';
 import type { Page, Request } from '@playwright/test';
 import { applyStandardMocks, fulfillAgentsRoute, STORAGE_KEY } from '@/playwright/mock-factory';
+import { pressNewProject } from '@/playwright/new-project-modal';
 
 const DESIGN_SYSTEMS = [
   { id: 'agentic', title: 'Agentic', category: 'Productivity & SaaS', summary: 'Conversational AI-first interface.', surface: 'web', swatches: ['#ff5a1f', '#111827'] },
@@ -60,18 +61,12 @@ test('[P0] @critical entry chrome exposes the Hub composer, navigation, and sett
   await expect(heroModelSwitcher(page)).toBeVisible();
   await expect(page.getByTestId('home-hero-submit')).toBeDisabled();
 
-  // Mode is a creation-time choice now. Pin both its removal from the Hub
-  // composer and its new, operable home so this cannot pass vacuously.
+  // Mode is not a Hub control (the Hub always starts in design mode; the
+  // workspace composer owns the switch). "New project" is the Hub composer
+  // itself: pressing it must land the caret there and open no modal.
   await expect(page.getByTestId('new-project-advanced')).toHaveCount(0);
-  await page.getByTestId('hub-new-project').click();
-  const modal = page.getByTestId('new-project-modal');
-  await expect(modal).toBeVisible();
-  const modePicker = modal.getByTestId('newproj-mode-picker');
-  await expect(modePicker).toBeVisible();
-  await expect(modePicker.getByTestId('newproj-mode-design')).toBeVisible();
-  await expect(modePicker.getByTestId('newproj-mode-chat')).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(modal).toHaveCount(0);
+  await pressNewProject(page, 'entry-chrome');
+  await expect(page.getByTestId('newproj-mode-picker')).toHaveCount(0);
 
   const settings = page.getByTestId('hub-footer-settings');
   await expect(settings).toBeVisible();
@@ -99,9 +94,10 @@ test('[P1] template creation remains reachable through the Hub command palette',
   await expect(command).toBeVisible();
   await command.click();
   await expect(page.getByTestId('new-project-advanced')).toHaveCount(0);
-  const templateModal = page.getByTestId('new-project-modal');
-  await expect(templateModal).toBeVisible();
-  await expect(templateModal.getByTestId('new-project-tab-template')).toHaveAttribute('aria-selected', 'true');
+  // The template start lives in the composer "+" menu now; the palette
+  // command opens that list directly.
+  await expect(page.getByTestId('new-project-modal')).toHaveCount(0);
+  await expect(page.getByTestId('composer-plus-templates-list')).toBeVisible();
 });
 
 test('[P0] @critical Hub palette opens projects and Library reaches the projects index', async ({ page, request }) => {

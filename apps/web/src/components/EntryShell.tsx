@@ -64,8 +64,9 @@ import type { IntegrationTab } from './IntegrationsView';
 import { InlineModelSwitcher } from './InlineModelSwitcher';
 import { composerReasoningOptions, requireModelSelection } from './agentModelSelection';
 import type { EntrySettingsSection } from './EntrySettingsMenu';
-import type { CreateInput, CreateTab } from './NewProjectPanel';
+import type { CreateInput, ProjectImportHandlers } from './project-create';
 import type { PluginLoopSubmit } from './PluginLoopHome';
+import { useHubRail } from './hub/HubRailContext';
 import type {
   PluginShareAction,
   PluginShareProjectOutcome,
@@ -134,7 +135,8 @@ interface Props {
     action: PluginShareAction,
     locale?: string,
   ) => Promise<PluginShareProjectOutcome>;
-  onOpenNewProject: (tab: CreateTab) => void;
+  /** Composer "+" menu project starts: saved template, folder, Claude ZIP. */
+  projectImportHandlers?: ProjectImportHandlers;
   /** Hub drop-to-edit: one existing document -> project -> workspace with it open. */
   onImportFile?: (file: File) => Promise<HubImportFileOutcome> | HubImportFileOutcome;
   onOpenProject: (id: string) => void;
@@ -149,6 +151,8 @@ interface Props {
   // tab; do not re-thread an onboarding renderer here.
   onOpenDesignSystem?: (id: string) => void;
   onDesignSystemsRefresh?: () => Promise<void> | void;
+  /** Library: delete a saved template from the Design Systems tab list. */
+  onDeleteTemplate?: (id: string) => Promise<boolean>;
   onOpenSettings: (section?: EntrySettingsSection) => void;
 }
 
@@ -226,7 +230,7 @@ export function EntryShell({
   onThemeChange,
   onCreateProject,
   onCreatePluginShareProject,
-  onOpenNewProject,
+  projectImportHandlers,
   onImportFile,
   onOpenProject,
   onDeleteProject,
@@ -235,9 +239,13 @@ export function EntryShell({
   onCreateDesignSystem,
   onOpenDesignSystem,
   onDesignSystemsRefresh,
+  onDeleteTemplate,
   onOpenSettings,
 }: Props) {
   const t = useT();
+  // "New project" is one action app-wide: the rail controller lands on the Hub and
+  // focuses the composer. The Projects empty-state CTA reuses it verbatim.
+  const { newProject } = useHubRail();
   // Each entry sub-view (home / projects / design-systems) is its own
   // URL now, so the browser back/forward buttons work and a deep link
   // to /design-systems lands on that section. We derive the active
@@ -313,10 +321,6 @@ export function EntryShell({
   function openIntegrationTab(tab: IntegrationTab) {
     setIntegrationTab(tab);
     changeView('integrations');
-  }
-
-  function openNewProject(tab: CreateTab = 'prototype') {
-    onOpenNewProject(tab);
   }
 
   const previewSystem = useMemo(
@@ -488,12 +492,13 @@ export function EntryShell({
                 onViewAllProjects={() => changeView('projects')}
                 onBrowseRegistry={() => changeView('plugins')}
                 onOpenMcp={() => openIntegrationTab('mcp')}
-                onOpenNewProject={(tab) => openNewProject(tab)}
+                templates={templates}
+                {...(projectImportHandlers ? { projectImportHandlers } : {})}
                 onImportFile={onImportFile}
                 promptHandoff={homePromptHandoff}
                 skills={skills}
                 skillsLoading={skillsLoading}
-                onNewProject={() => openNewProject()}
+                onNewProject={newProject}
                 onRenameProject={onRenameProject}
                 onDeleteProject={(projectId) => { void onDeleteProject(projectId); }}
                 onNavigateDestination={changeView}
@@ -519,7 +524,7 @@ export function EntryShell({
                     onOpen={onOpenProject}
                     onDelete={onDeleteProject}
                     onRename={onRenameProject}
-                    onNewProject={() => openNewProject()}
+                    onNewProject={newProject}
                   />
                 </div>
               )}
@@ -553,6 +558,7 @@ export function EntryShell({
                     onCreate={onCreateDesignSystem}
                     onOpenSystem={onOpenDesignSystem}
                     onSystemsRefresh={onDesignSystemsRefresh}
+                    {...(onDeleteTemplate ? { onDeleteTemplate } : {})}
                     onPreview={(id) => setPreviewSystemId(id)}
                   />
                 </div>

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { addStorageInitScript } from '@/playwright/storage-init';
-import { openNewProjectModal } from '@/playwright/new-project-modal';
+import { createEmptyProjectFromHub } from '@/playwright/new-project-modal';
 import { routeAgents } from '@/playwright/mock-factory';
 import type { Locator, Page, Request, Response } from '@playwright/test';
 import { automatedUiScenarios } from '@/playwright/resources';
@@ -111,16 +111,10 @@ for (const entry of automatedUiScenarios().filter((scenario) => designFileFlows.
 }
 
 async function createProject(page: Page, entry: UiScenario) {
-  await createProjectNameOnly(page, entry);
-  await page.getByTestId('create-project').click();
-}
-
-async function createProjectNameOnly(page: Page, entry: UiScenario) {
-  await openNewProjectModal(page);
-  if (entry.create.tab) {
-    await page.getByTestId(`new-project-tab-${entry.create.tab}`).click();
-  }
-  await page.getByTestId('new-project-name').fill(entry.create.projectName);
+  await createEmptyProjectFromHub(page, {
+    name: entry.create.projectName,
+    ...(entry.create.tab ? { kind: entry.create.tab } : {}),
+  });
 }
 
 async function gotoEntryHome(page: Page) {
@@ -433,9 +427,7 @@ test('design files batch delete removes only the selected files and clears the b
   });
 
   await gotoEntryHome(page);
-  await openNewProjectModal(page);
-  await page.getByTestId('new-project-name').fill('Design files batch delete flow');
-  await page.getByTestId('create-project').click();
+  await createEmptyProjectFromHub(page, { name: 'Design files batch delete flow' });
   await expectWorkspaceReady(page);
 
   const { projectId } = await getCurrentProjectContext(page);
@@ -553,9 +545,7 @@ async function runDesignFilesTabPersistenceFlow(page: Page) {
 test('[P1]@regression preview-desktop-viewport-height: html preview iframe renders at a non-zero height', async ({ page }) => {
   await routeMockAgents(page);
   await gotoEntryHome(page);
-  await openNewProjectModal(page);
-  await page.getByTestId('new-project-name').fill('Preview Height Regression');
-  await page.getByTestId('create-project').click();
+  await createEmptyProjectFromHub(page, { name: 'Preview Height Regression' });
   await expectWorkspaceReady(page);
 
   const { projectId } = await getCurrentProjectContext(page);

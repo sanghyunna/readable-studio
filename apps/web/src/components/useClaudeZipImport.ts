@@ -1,13 +1,13 @@
-// New Project modal Claude Design ZIP picker.
+// Claude Design ZIP picker controller for the Hub composer's "+" menu.
 //
-// The New Project modal needs exactly the same three behaviours: reset the
-// input so re-picking the same file still fires `change`, refuse a second import
-// while one is in flight, and surface the failure whether the callback RETURNS `{ok:false}`
-// or THROWS. Keeping one controller keeps those from drifting apart.
+// Three behaviours live here so they cannot drift apart: reset the input so
+// re-picking the same file still fires `change`, refuse a second import while
+// one is in flight, and surface the failure whether the callback RETURNS
+// `{ok:false}` or THROWS.
 
 import { useCallback, useRef, useState, type ChangeEvent } from 'react';
 
-import type { ImportClaudeDesignOutcome } from './NewProjectPanel';
+import type { ImportClaudeDesignOutcome } from './project-create';
 
 export interface ClaudeZipImportError {
   message: string;

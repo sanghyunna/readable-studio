@@ -116,9 +116,9 @@ test('todo 10 command palette, global shortcuts, and tree shortcuts', async ({ p
 
   // Global shortcuts: new project, new session, rail collapse, inspector seam.
   await page.keyboard.press('Control+N');
-  await expect(page.getByTestId('new-project-modal')).toBeVisible();
-  await page.keyboard.press('Escape');
+  // Ctrl+N is "new project": the Hub composer takes the caret, no modal.
   await expect(page.getByTestId('new-project-modal')).toHaveCount(0);
+  await expect(page.getByTestId('home-hero-input')).toBeFocused();
 
   const projectRow = page.getByTestId(`hub-project-${alpha.id}`);
   await projectRow.focus();

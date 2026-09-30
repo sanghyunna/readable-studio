@@ -46,6 +46,7 @@ import type {
   DesignSystemSummary,
   Project,
   ProjectMetadata,
+  ProjectTemplate,
   SkillSummary,
 } from '../types';
 import { inlineMentionToken, mentionTokenPresent } from '../utils/inlineMentions';
@@ -56,6 +57,10 @@ import { type ExamplePromptInfo, type HomeHeroHandle } from './HomeHero';
 import { HomeDraft, createHomeDraft } from './composer/HomeDraft';
 import { stageFiles as buildStagedFiles, type StagedFileItem } from './composer/stagedFiles';
 import { findChip, HOME_HERO_CHIPS, type HomeHeroChip } from './home-hero/chips';
+import type { ComposerProjectImports, ProjectImportHandlers } from './project-create';
+import { useClaudeZipImport } from './useClaudeZipImport';
+import { useOpenFolderImport } from './useOpenFolderImport';
+import { Toast } from './Toast';
 
 import {
   buildPluginAuthoringInputs,
@@ -87,6 +92,34 @@ export function focusComposerWhenUnowned(focus: () => void): void {
     if (currentOwner !== ownerAtSchedule && currentOwner !== document.body) return;
     focus();
   });
+}
+
+// New-project focus: an explicit request, so it always lands, but only once
+// the surface can take it. A Hub entered from a project animates in under
+// `inert` gates (the routed surface, then the composer card itself - see
+// useTransparentPhaseInert); focusing inside an inert subtree is a no-op, so
+// wait for each gate to lift, nearest first, instead of guessing a delay.
+export function focusComposerWhenInteractive(
+  target: HTMLElement | null,
+  focus: () => void,
+): () => void {
+  const gate = target?.closest<HTMLElement>('[inert]') ?? null;
+  if (!gate) {
+    focus();
+    return () => undefined;
+  }
+  let cancelInner: () => void = () => undefined;
+  const observer = new MutationObserver(() => {
+    if (gate.hasAttribute('inert')) return;
+    observer.disconnect();
+    // An outer gate may still be closed; re-check from the target.
+    cancelInner = focusComposerWhenInteractive(target, focus);
+  });
+  observer.observe(gate, { attributes: true, attributeFilter: ['inert'] });
+  return () => {
+    observer.disconnect();
+    cancelInner();
+  };
 }
 
 export interface ActivePlugin {
@@ -195,10 +228,10 @@ interface Props {
   onViewAllProjects: () => void;
   onBrowseRegistry?: () => void;
   onOpenMcp?: () => void;
-  // Stage B: optional callbacks the rail's migration chips need.
-  // HomeView itself never imports them; EntryShell threads them
-  // through so the dispatcher can stay declarative.
-  onOpenNewProject?: (tab: 'template') => void;
+  /** Saved templates for the "+" menu's "From template" list. */
+  templates?: ProjectTemplate[];
+  /** App-owned import / template-start handlers for the "+" menu rows. */
+  projectImportHandlers?: ProjectImportHandlers;
   promptHandoff?: HomePromptHandoff | null;
   skills?: SkillSummary[];
   skillsLoading?: boolean;
@@ -211,6 +244,8 @@ interface Props {
 
 const EMPTY_DESIGN_SYSTEMS: DesignSystemSummary[] = [];
 const EMPTY_SKILLS: SkillSummary[] = [];
+const EMPTY_TEMPLATES: ProjectTemplate[] = [];
+const EMPTY_IMPORT_HANDLERS: ProjectImportHandlers = {};
 
 export function HomeView({
   isActive = true,
@@ -226,7 +261,8 @@ export function HomeView({
   onViewAllProjects,
   onBrowseRegistry,
   onOpenMcp,
-  onOpenNewProject,
+  templates = EMPTY_TEMPLATES,
+  projectImportHandlers = EMPTY_IMPORT_HANDLERS,
   promptHandoff,
   skills = EMPTY_SKILLS,
   skillsLoading = false,
@@ -1217,13 +1253,13 @@ export function HomeView({
       }
       case 'open-template-picker': {
         // The template picker seeds the initial file set, so it stays
-        // pre-creation: it lives in the New Project modal alongside the working
-        // folder picker and the imports.
-        if (!onOpenNewProject) {
-          setError('Template picker is not available in this shell.');
+        // pre-creation: it is the "From template" list in the composer's "+"
+        // menu, next to the folder and ZIP imports.
+        if (!projectImportHandlers.onCreateFromTemplate) {
+          setError(t('hubImport.templatesUnavailable'));
           return false;
         }
-        onOpenNewProject('template');
+        inputRef.current?.openTemplatePicker();
         return true;
       }
     }
@@ -1233,7 +1269,13 @@ export function HomeView({
   useEffect(() => {
     if (!commandChip || acceptedCommandChipNonceRef.current === commandChip.nonce) return;
     if (submitInFlightRef.current || continuingWithoutPrompt) return;
-    if (commandChip.id === 'continue') {
+    if (commandChip.id === 'new-project') {
+      // New project (rail button, Ctrl/Cmd+N, Projects empty state): the
+      // Hub composer IS the new-project surface now, so land the caret in it.
+      const editorHost = homeViewRef.current?.querySelector<HTMLElement>('[data-testid="home-hero-input"]')
+        ?? homeViewRef.current;
+      focusComposerWhenInteractive(editorHost, () => inputRef.current?.focusEnd());
+    } else if (commandChip.id === 'continue') {
       void continueWithoutPrompt();
     } else {
       const chip = findChip(commandChip.id);
@@ -1247,7 +1289,64 @@ export function HomeView({
     // not apply the same nonce again, even if the owner has not cleared it yet.
     acceptedCommandChipNonceRef.current = commandChip.nonce;
     onCommandChipAccepted?.(commandChip.nonce);
-  }, [commandChip, richDataEnabled, pluginsLoading, plugins, submitInFlight, continuingWithoutPrompt, onOpenNewProject, onCommandChipAccepted]);
+  }, [commandChip, richDataEnabled, pluginsLoading, plugins, submitInFlight, continuingWithoutPrompt, onCommandChipAccepted]);
+
+  // "+" menu project starts relocated from the New Project modal. Same hooks,
+  // same App handlers, same endpoints; only the launcher moved.
+  const claudeZipImport = useClaudeZipImport({
+    ...(projectImportHandlers.onImportClaudeDesign
+      ? { onImportClaudeDesign: projectImportHandlers.onImportClaudeDesign }
+      : {}),
+  });
+  const folderImport = useOpenFolderImport({
+    skillId: null,
+    ...(projectImportHandlers.onImportFolder
+      ? { onImportFolder: projectImportHandlers.onImportFolder }
+      : {}),
+    ...(projectImportHandlers.onImportFolderResponse
+      ? { onImportFolderResponse: projectImportHandlers.onImportFolderResponse }
+      : {}),
+  });
+  const [templateCreating, setTemplateCreating] = useState(false);
+  const templateCreatingRef = useRef(false);
+  const onCreateFromTemplate = projectImportHandlers.onCreateFromTemplate;
+  const pickTemplate = useCallback(async (template: ProjectTemplate) => {
+    if (!onCreateFromTemplate || templateCreatingRef.current) return;
+    templateCreatingRef.current = true;
+    setTemplateCreating(true);
+    setError(null);
+    try {
+      const ok = await onCreateFromTemplate(template);
+      if (ok === false) setError(t('hubImport.templateCreateFailed'));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('hubImport.templateCreateFailed'));
+    } finally {
+      templateCreatingRef.current = false;
+      setTemplateCreating(false);
+    }
+  }, [onCreateFromTemplate, t]);
+  const projectImports = useMemo<ComposerProjectImports | undefined>(() => {
+    if (!onCreateFromTemplate && !claudeZipImport.available && !folderImport.available) return undefined;
+    return {
+      openFolder: {
+        available: folderImport.available,
+        busy: folderImport.importing,
+        run: () => { void folderImport.openFolder(); },
+      },
+      claudeZip: {
+        available: claudeZipImport.available,
+        busy: claudeZipImport.importing,
+        pick: claudeZipImport.pickFile,
+        inputRef: claudeZipImport.inputRef,
+        onChange: (event) => { void claudeZipImport.handleChange(event); },
+      },
+      templates: {
+        items: templates,
+        busy: templateCreating,
+        pick: (template) => { void pickTemplate(template); },
+      },
+    };
+  }, [onCreateFromTemplate, claudeZipImport, folderImport, templates, templateCreating, pickTemplate]);
 
   async function submit(autoSendFirstMessage = true): Promise<boolean> {
     const trimmed = draft.getSnapshot().trim();
@@ -1501,7 +1600,7 @@ export function HomeView({
         onContinueWithoutPrompt={() => {
           void continueWithoutPrompt();
         }}
-        onOpenTemplate={() => onOpenNewProject?.('template')}
+        {...(projectImports ? { projectImports } : {})}
         activePluginTitle={activeBadgeTitle}
         activePluginIsExplicit={activePluginIsExplicit}
         activePluginRecord={active?.record ?? null}
@@ -1638,6 +1737,24 @@ export function HomeView({
           />
         ) : null}
       </AnimatePresence>
+      {claudeZipImport.error ? (
+        <Toast
+          message={claudeZipImport.error.message}
+          details={claudeZipImport.error.details ?? null}
+          role="alert"
+          ttlMs={6000}
+          onDismiss={claudeZipImport.clearError}
+        />
+      ) : null}
+      {folderImport.error ? (
+        <Toast
+          message={folderImport.error.message}
+          details={folderImport.error.details ?? null}
+          role="alert"
+          ttlMs={6000}
+          onDismiss={folderImport.clearError}
+        />
+      ) : null}
       {pendingReplacement ? (
         <div className="home-hero-confirm__backdrop" role="presentation">
           <div

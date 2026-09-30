@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { addStorageInitScript } from '@/playwright/storage-init';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { openNewProjectModal } from '@/playwright/new-project-modal';
+import { createEmptyProjectFromHub } from '@/playwright/new-project-modal';
 import { routeAgents } from '@/playwright/mock-factory';
 import type { Locator, Page, Response } from '@playwright/test';
 import { T } from '@/timeouts';
@@ -2148,9 +2148,7 @@ async function routeMockAgents(page: Page) {
 
 async function createEmptyProject(page: Page, name: string): Promise<string> {
   await gotoEntryHome(page);
-  await openNewProjectModal(page);
-  await page.getByTestId('new-project-name').fill(name);
-  await page.getByTestId('create-project').click();
+  await createEmptyProjectFromHub(page, { name: name });
   await waitForLoadingToClear(page);
   await expect(page).toHaveURL(/\/projects\//);
   const current = new URL(page.url());

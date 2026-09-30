@@ -212,8 +212,10 @@ function assertRailOwnership(asts: ts.SourceFile[]) {
   expect(owner(controller)).toBe('AppInner');
   expect(ts.isVariableDeclaration(controller.parent)).toBe(true);
   expect((controller.parent as ts.VariableDeclaration).name.getText()).toBe('rail');
+  // EntryShell consumes the controller for "New project" (Hub + composer
+  // focus) so its Projects empty-state CTA is the same action as the rail's.
   expect(asts.flatMap((ast) => calls(ast, 'useHubRail')).map(owner).sort()).toEqual([
-    'HubHome', 'HubRail', 'HubRailOverlays',
+    'EntryShell', 'HubHome', 'HubRail', 'HubRailOverlays',
   ]);
   for (const consumer of ['HubHome', 'HubRail', 'HubRailOverlays']) {
     const declaration = one(asts.flatMap((ast) => nodes(ast, ts.isFunctionDeclaration))
@@ -237,38 +239,28 @@ function assertRailOwnership(asts: ts.SourceFile[]) {
     .toEqual([surface.parent]);
 }
 
-function assertModalOwnership(asts: ts.SourceFile[]) {
-  const modal = one(asts.flatMap((ast) => jsxOpenings('NewProjectModal', ast)));
-  expect(owner(modal)).toBe('AppInner');
-  // Direct provider child: route keys and hidden entry views cannot own it.
-  expect(ts.isJsxElement(jsxChildrenParent(modal)!)).toBe(true);
-  expect((jsxChildrenParent(modal) as ts.JsxElement).openingElement.tagName.getText()).toBe('HubRailProvider');
-  expect(hasExpressionAttribute(modal, 'open', 'newProjectTab !== null')).toBe(true);
-  expect(hasExpressionAttribute(modal, 'initialTab', "newProjectTab ?? 'prototype'")).toBe(true);
-  expect(hasExpressionAttribute(modal, 'onClose', '() => setNewProjectTab(null)')).toBe(true);
-  expect(hasExpressionAttribute(modal, 'onCreate', 'handleCreateFromModal')).toBe(true);
-  const state = one(asts.flatMap((ast) => nodes(ast, ts.isVariableDeclaration)).filter((node) =>
-    ts.isArrayBindingPattern(node.name) && node.name.elements.some((element) =>
-      ts.isBindingElement(element) && element.name.getText() === 'newProjectTab'),
-  ));
-  expect(owner(state)).toBe('AppInner');
-  expect(state.name.getText()).toBe('[newProjectTab, setNewProjectTab]');
-  expect(one(calls(state, 'useState')).arguments[0]?.kind).toBe(ts.SyntaxKind.NullKeyword);
+function assertNewProjectOwnership(asts: ts.SourceFile[]) {
+  // No New Project modal exists anywhere in the shell composition.
+  expect(asts.flatMap((ast) => jsxOpenings('NewProjectModal', ast))).toEqual([]);
+  expect(asts.flatMap((ast) => nodes(ast, ts.isImportDeclaration))
+    .filter((node) => /NewProject(Modal|Panel)/.test(node.moduleSpecifier.getText()))).toEqual([]);
+  // One path: the rail controller's onNewProject is App's navigate-to-Hub; the
+  // controller itself pairs it with the composer focus chip.
   const app = asts[0]!;
-  const opener = one(nodes(app, ts.isVariableDeclaration).filter((node) => node.name.getText() === 'openNewProject'));
-  expect(one(calls(opener, 'setNewProjectTab')).arguments.map((node) => node.getText())).toEqual(['tab']);
   const railOpener = one(nodes(app, ts.isVariableDeclaration).filter((node) => node.name.getText() === 'newRailProject'));
-  expect(one(calls(railOpener, 'openNewProject')).arguments.map((node) => node.getText())).toEqual(["'prototype'"]);
+  expect(one(calls(railOpener, 'navigate')).arguments.map((node) => node.getText())).toEqual(["{ kind: 'home', view: 'home' }"]);
   const controller = one(calls(app, 'useHubRailController'));
   expect(one(nodes(controller.arguments[0]!, ts.isPropertyAssignment).filter((node) => node.name.getText() === 'onNewProject'))
     .initializer.getText()).toBe('newRailProject');
-  expect(hasExpressionAttribute(one(jsxOpenings('EntryView', app)), 'onOpenNewProject', 'openNewProject')).toBe(true);
-  expect(hasExpressionAttribute(one(jsxOpenings('EntryShell', asts[1]!)), 'onOpenNewProject', 'onOpenNewProject')).toBe(true);
-  const entryOpener = one(nodes(asts[2]!, ts.isFunctionDeclaration).filter((node) => node.name?.text === 'openNewProject'));
-  expect(one(calls(entryOpener, 'onOpenNewProject')).arguments.map((node) => node.getText())).toEqual(['tab']);
-  expect(hasExpressionAttribute(one(jsxOpenings('HubHome', asts[2]!)), 'onOpenNewProject', '(tab) => openNewProject(tab)')).toBe(true);
-  expect(hasExpressionAttribute(one(jsxOpenings('DesignsTab', asts[2]!)), 'onNewProject', '() => openNewProject()')).toBe(true);
-  expect(hasExpressionAttribute(one(jsxOpenings('HomeView', asts[3]!)), 'onOpenNewProject', 'onOpenNewProject')).toBe(true);
+  // The relocated imports reach the Hub composer through one handler bundle.
+  expect(hasExpressionAttribute(one(jsxOpenings('EntryView', app)), 'projectImportHandlers', 'projectImportHandlers')).toBe(true);
+  expect(hasExpressionAttribute(one(jsxOpenings('EntryShell', asts[1]!)), 'projectImportHandlers', 'projectImportHandlers')).toBe(true);
+  // Every launcher inside the entry shell is the controller's newProject.
+  const entryShell = asts[2]!;
+  const consumer = one(nodes(entryShell, ts.isVariableDeclaration).filter((node) => node.name.getText() === '{ newProject }'));
+  expect(one(calls(consumer, 'useHubRail'))).toBeTruthy();
+  expect(hasExpressionAttribute(one(jsxOpenings('HubHome', entryShell)), 'onNewProject', 'newProject')).toBe(true);
+  expect(hasExpressionAttribute(one(jsxOpenings('DesignsTab', entryShell)), 'onNewProject', 'newProject')).toBe(true);
 }
 
 describe('4. unified shell ownership', () => {
@@ -280,8 +272,8 @@ describe('4. unified shell ownership', () => {
     expect(hasExpressionAttribute(one(jsxOpenings('HubSessionTree', shellAsts[4]!)), 'projects', 'rail.tree')).toBe(true);
   });
 
-  it('routes rail, Home and Projects launchers to one AppInner modal state and callback path', () => {
-    assertModalOwnership(shellAsts);
+  it('routes rail, Home and Projects launchers to one navigate-to-Hub path and owns no modal', () => {
+    assertNewProjectOwnership(shellAsts);
   });
 
   // In-memory negative controls exercise the same contract as production.
@@ -310,12 +302,12 @@ describe('4. unified shell ownership', () => {
   });
 
   it.each([
-    ['duplicate modal', '<TooltipLayer />', '<NewProjectModal /><TooltipLayer />'],
-    ['disconnected entry opener', 'onOpenNewProject={openNewProject}', 'onOpenNewProject={() => undefined}'],
+    ['resurrected modal', '<TooltipLayer />', '<NewProjectModal /><TooltipLayer />'],
+    ['disconnected import handlers', 'projectImportHandlers={projectImportHandlers}', 'projectImportHandlers={{}}'],
     ['disconnected rail opener', 'onNewProject: newRailProject', 'onNewProject: () => undefined'],
   ])('rejects %s', (_name, before, after) => {
     const mutated = parse(appSource.replace(before, after));
-    expect(() => assertModalOwnership([mutated, ...shellAsts.slice(1)])).toThrow();
+    expect(() => assertNewProjectOwnership([mutated, ...shellAsts.slice(1)])).toThrow();
   });
 });
 

@@ -2,8 +2,7 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ComponentProps } from 'react';
-import type { NewProjectModal } from '../../src/components/NewProjectModal';
+import type { ProjectImportHandlers } from '../../src/components/project-create';
 
 import { App } from '../../src/App';
 import type { AgentInfo, AppConfig, Project } from '../../src/types';
@@ -37,7 +36,7 @@ vi.mock('../../src/components/EntryView', () => ({
   EntryView: ({
     onCreateProject,
     onDeleteProject,
-    onOpenNewProject,
+    projectImportHandlers,
     onOpenProject,
     onRefreshAgents,
     agents,
@@ -45,7 +44,7 @@ vi.mock('../../src/components/EntryView', () => ({
   }: {
     onCreateProject: (input: unknown) => void;
     onDeleteProject: (id: string) => void;
-    onOpenNewProject: (tab: 'prototype') => void;
+    projectImportHandlers: ProjectImportHandlers;
     onOpenProject: (id: string) => void;
     onRefreshAgents: () => void | Promise<void>;
     agents: AgentInfo[];
@@ -83,11 +82,14 @@ vi.mock('../../src/components/EntryView', () => ({
       >
         Create project with project folder
       </button>
+      {/* The Hub composer's "+" menu "Open folder" row ends in this handler. */}
       <button
         type="button"
-        onClick={() => onOpenNewProject('prototype')}
+        onClick={() => void projectImportHandlers.onImportFolderResponse?.({
+          conversationId: 'conv-import', entryFile: null, ok: true, projectId: 'project-new',
+        })}
       >
-        Open New Project
+        Host import folder
       </button>
       <button type="button" onClick={() => void onRefreshAgents()}>
         Refresh agents
@@ -112,16 +114,6 @@ vi.mock('../../src/components/EntryView', () => ({
       ))}
     </main>
   ),
-}));
-
-vi.mock('../../src/components/NewProjectModal', () => ({
-  NewProjectModal: ({ open, onImportFolderResponse }: ComponentProps<typeof NewProjectModal>) => open ? (
-    <button type="button" onClick={() => void onImportFolderResponse?.({
-      conversationId: 'conv-import', entryFile: null, ok: true, projectId: 'project-new',
-    })}>
-      Host import folder
-    </button>
-  ) : null,
 }));
 
 vi.mock('../../src/components/ProjectView', () => ({
@@ -845,7 +837,6 @@ describe('App project creation routing', () => {
     mockedGetProject.mockResolvedValue(null);
 
     await act(async () => { render(<App />); });
-    fireEvent.click(screen.getByRole('button', { name: 'Open New Project' }));
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Host import folder' }));
     });
@@ -877,7 +868,6 @@ describe('App project creation routing', () => {
     mockedGetProject.mockResolvedValue(null);
 
     await act(async () => { render(<App />); });
-    fireEvent.click(screen.getByRole('button', { name: 'Open New Project' }));
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Host import folder' }));
     });
@@ -910,7 +900,6 @@ describe('App project creation routing', () => {
     mockedGetProject.mockResolvedValue(null);
 
     await act(async () => { render(<App />); });
-    fireEvent.click(screen.getByRole('button', { name: 'Open New Project' }));
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Host import folder' }));
     });

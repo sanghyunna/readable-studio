@@ -1,7 +1,7 @@
 // Plan §3.C2 / spec §8 — inline plugins rail.
 //
 // Compact card strip rendered directly under the input box on
-// NewProjectPanel and inside ChatComposer (Phase 2B follow-up).
+// the Home composer and inside ChatComposer (Phase 2B follow-up).
 // Clicking a card calls applyPlugin() and pushes the resulting
 // ApplyResult upstream; the parent decides what to do with it
 // (hydrate the brief, show the input form, etc.).
@@ -20,7 +20,7 @@ interface Props {
   // pre-create flow); ChatComposer passes the current project id so
   // the snapshot is bound to that scope.
   projectId?: string | null;
-  // Variant: 'wide' for Home / NewProjectPanel; 'strip' for the slim
+  // Variant: 'wide' for Home; 'strip' for the slim
   // ChatComposer overflow row.
   variant?: 'wide' | 'strip';
   // Filter the rail to a specific taskKind / mode (Phase 2B). When

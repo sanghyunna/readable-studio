@@ -2,7 +2,7 @@
 //
 // Bundles the Phase 2A primitives (InlinePluginsRail, ContextChipStrip,
 // the renderPluginBriefTemplate helper) into one
-// reusable widget. NewProjectPanel and ChatComposer can drop this in
+// reusable widget. Home and ChatComposer can drop this in
 // with one line and treat the rest of the composer state as untouched.
 //
 // API contract:
@@ -15,7 +15,7 @@
 //   - `onValidityChange(valid)` mirrors the inputs-form validity so the
 //     host can disable Send while required inputs are missing.
 //   - `showRail` controls whether the in-section InlinePluginsRail is
-//     rendered. Defaults to true (NewProjectPanel keeps the wide rail).
+//     rendered. Defaults to true (Home keeps the wide rail).
 //     ChatComposer passes `false` because plugins moved to the
 //     composer's tools-menu and the @-mention picker — leaving the
 //     section as a pure context-bar that hosts the active plugin chip.

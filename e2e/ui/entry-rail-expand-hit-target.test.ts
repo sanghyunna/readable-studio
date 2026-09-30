@@ -197,6 +197,8 @@ test('[P0] expanded rail keeps both controls independently hit-testable', async 
 
   // New project must remain independently clickable in the expanded panel.
   await page.mouse.click(geometry.probes.newProject.centre.x, geometry.probes.newProject.centre.y);
-  await expect(page.getByTestId('new-project-modal')).toBeVisible();
+  // No modal: the action lands the caret in the Hub composer.
+  await expect(page.getByTestId('new-project-modal')).toHaveCount(0);
+  await expect(page.getByTestId('home-hero-input')).toBeFocused();
   await expect(page.locator(RAIL_SELECTOR)).toHaveAttribute('data-project-rail-state', 'expanded');
 });

@@ -219,8 +219,9 @@ describe('observability/white-screen', () => {
     expect(fetchAppVersionInfo).not.toHaveBeenCalled();
   });
 
-  it('opens one App-owned modal from the single persistent rail before registries settle', () => {
-    // Only geometry is stubbed: the rail, controller and modal stay real.
+  it('routes New project from the single persistent rail to the Hub before registries settle', async () => {
+    // Only geometry is stubbed: the rail and controller stay real.
+    const { navigate } = await import('../../src/router');
     vi.stubGlobal('ResizeObserver', class {
       observe() {}
       disconnect() {}
@@ -237,18 +238,17 @@ describe('observability/white-screen', () => {
     expect(action.closest('[inert], [hidden], [aria-hidden="true"]')).toBeNull();
     expect(screen.queryByRole('dialog')).toBeNull();
 
+    // No modal anywhere: the action is a plain navigation to the Hub (the
+    // composer focus rides on the controller's command chip), and pressing it
+    // twice is two navigations, never a dialog.
     for (let opening = 0; opening < 2; opening++) {
       fireEvent.click(action);
-      const modal = screen.getByRole('dialog', { name: 'New project' });
-      expect(modal).toBe(screen.getByTestId('new-project-modal'));
-      expect(screen.getByTestId('home-ready').contains(modal)).toBe(false);
-      expect(screen.getByRole('navigation')).toBe(rail);
-      expect(screen.getByRole('button', { name: 'New project' })).toBe(action);
-      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close' }));
-      fireEvent.keyDown(document, { key: 'Escape' });
       expect(screen.queryByRole('dialog')).toBeNull();
       expect(screen.queryByTestId('new-project-modal')).toBeNull();
+      expect(screen.getByRole('navigation')).toBe(rail);
+      expect(screen.getByRole('button', { name: 'New project' })).toBe(action);
     }
+    expect(vi.mocked(navigate).mock.calls.filter(([route]) => route.kind === 'home' && route.view === 'home')).toHaveLength(2);
 
     expect(fetchDesignTemplates).not.toHaveBeenCalled();
     expect(fetchAppVersionInfo).not.toHaveBeenCalled();

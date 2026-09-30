@@ -402,3 +402,12 @@
   padding: 0;
   background: transparent;
 }
+/* Hub "+" menu: the saved-template empty hint is a sentence, not a name, so
+   it wraps (natural Korean breaks) instead of truncating like item labels. */
+.plus-menu__empty--wrap {
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+  max-width: 240px;
+}

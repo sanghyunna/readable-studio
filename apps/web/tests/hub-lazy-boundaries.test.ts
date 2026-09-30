@@ -5,7 +5,6 @@ import { describe, expect, it } from 'vitest';
 describe('Hub module boundaries', () => {
   it.each([
     ['EntryShell', ['./DesignsTab', './DesignSystemsTab', './DesignSystemPreviewModal', './IntegrationsView', './PluginsView', './TasksView']],
-    ['NewProjectModal', ['./NewProjectPanel']],
     ['HomeView', ['./PluginDetailsModal']],
   ] as const)('defers unopened surfaces from %s', (entry, deferred) => {
     // Given the real entry module, parse imports rather than pinning prose.

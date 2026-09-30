@@ -22,9 +22,13 @@ import {
 } from '@readable-studio/contracts';
 import { EntryView } from './components/EntryView';
 import type { IntegrationTab } from './components/IntegrationsView';
-import type { CreateInput, CreateTab, ImportClaudeDesignOutcome } from './components/NewProjectPanel';
+import {
+  buildTemplateCreateInput,
+  type CreateInput,
+  type ImportClaudeDesignOutcome,
+  type ProjectImportHandlers,
+} from './components/project-create';
 import { documentProjectName, type HubImportFileOutcome } from './components/hub/drop-to-edit';
-import { NewProjectModal } from './components/NewProjectModal';
 import { MemoryToast } from './components/MemoryToast';
 import { WelcomeModal } from './components/WelcomeModal';
 import { Toast } from './components/Toast';
@@ -398,9 +402,6 @@ function AppInner() {
   const latestPersistedConfigRef = useRef(config);
   latestPersistedConfigRef.current = config;
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // One modal across entry and workspace surfaces; null means closed.
-  const [newProjectTab, setNewProjectTab] = useState<CreateTab | null>(null);
-  const openNewProject = useCallback((tab: CreateTab) => setNewProjectTab(tab), []);
   // Surfaced when a picked project folder could not be applied to a freshly
   // created project (expired/invalid desktop token, daemon rejection). Without
   // this the failure was swallowed and the user believed their folder was in
@@ -1451,19 +1452,25 @@ function AppInner() {
     [analytics.track, rememberLocalProject],
   );
 
-  const handleCreateFromModal = useCallback((input: CreateInput & { requestId?: string }) => {
-    // Artifact projects use the shared scenario mapping; Ask/chat projects
-    // are not artifact pipelines and must remain unbound.
-    const pluginId = input.conversationMode === 'chat'
-      ? null
-      : defaultScenarioPluginIdForProjectMetadata(input.metadata);
+  // "From template" in the Hub composer's "+" menu. Sends exactly what the
+  // removed New Project modal's Template tab sent with its defaults: the
+  // shared scenario mapping picks the plugin, `defaultPluginInputsForCreate`
+  // the inputs, and the request id correlates click and result like before.
+  const handleCreateFromTemplate = useCallback((template: ProjectTemplate) => {
+    const input = buildTemplateCreateInput(
+      template,
+      configRef.current.designSystemId,
+      `${t('hubImport.templateProjectName')} \u00b7 ${new Date().toLocaleDateString()}`,
+    );
+    const pluginId = defaultScenarioPluginIdForProjectMetadata(input.metadata);
     const pluginInputs = defaultPluginInputsForCreate(input, pluginId);
     return handleCreateProject({
       ...input,
       ...(pluginId ? { pluginId } : {}),
       ...(pluginInputs ? { pluginInputs } : {}),
+      requestId: analytics.newRequestId(),
     });
-  }, [handleCreateProject]);
+  }, [analytics, handleCreateProject, t]);
 
   const handleCreatePluginShareProject = useCallback(
     async (
@@ -1513,7 +1520,6 @@ function AppInner() {
         result.project,
         ...curr.filter((p) => p.id !== result.project.id),
       ]);
-      setNewProjectTab(null);
       navigate({
         kind: 'project',
         projectId: result.project.id,
@@ -1595,7 +1601,6 @@ function AppInner() {
     const result = await importFolderProject({ baseDir });
     rememberLocalProject(result.project.id);
     setProjects((curr) => [result.project, ...curr.filter((p) => p.id !== result.project.id)]);
-    setNewProjectTab(null);
     navigate({
       kind: 'project',
       projectId: result.project.id,
@@ -1639,7 +1644,6 @@ function AppInner() {
         return;
       }
     }
-    setNewProjectTab(null);
     navigate({
       kind: 'project',
       projectId: result.projectId,
@@ -1948,7 +1952,7 @@ function AppInner() {
     void refreshTemplates();
   }, [route.kind, refreshTemplates, startupDeferredReady]);
 
-  // Existing card grids (DesignsTab, ProjectView), pickers (NewProjectPanel,
+  // Existing card grids (DesignsTab, ProjectView), pickers (DesignSystemPicker,
   // ChatComposer mention) all look skills up by id without caring whether
   // the id resolves to a functional skill or a design template. Pass them
   // the union so the post-split refactor stays invisible to those callers.
@@ -2052,7 +2056,16 @@ function AppInner() {
     navigate({ kind: 'home', view: destination });
   }, [analytics.track]);
   const goHome = useCallback(() => navigateHub('home'), [navigateHub]);
-  const newRailProject = useCallback(() => openNewProject('prototype'), [openNewProject]);
+  // "New project" = the Hub composer. The rail controller follows this with
+  // the `new-project` command chip that focuses the composer, so leaving an
+  // open workspace is the same plain navigation the rail's Home brand does.
+  const newRailProject = useCallback(() => navigate({ kind: 'home', view: 'home' }), []);
+  const projectImportHandlers = useMemo<ProjectImportHandlers>(() => ({
+    onCreateFromTemplate: handleCreateFromTemplate,
+    onImportClaudeDesign: handleImportClaudeDesign,
+    onImportFolder: handleImportFolder,
+    onImportFolderResponse: handleImportFolderResponse,
+  }), [handleCreateFromTemplate, handleImportClaudeDesign, handleImportFolder, handleImportFolderResponse]);
   const rail = useHubRailController({
     projects,
     currentSessionId: route.kind === 'project' ? route.conversationId ?? null : null,
@@ -2199,7 +2212,7 @@ function AppInner() {
         projectsLoading={projectsLoading}
         onCreateProject={handleCreateProject}
         onCreatePluginShareProject={handleCreatePluginShareProject}
-        onOpenNewProject={openNewProject}
+        projectImportHandlers={projectImportHandlers}
         onImportFile={handleImportFile}
         onOpenProject={handleOpenProject}
         onDeleteProject={handleDeleteProject}
@@ -2208,6 +2221,7 @@ function AppInner() {
         onCreateDesignSystem={() => navigate({ kind: 'design-system-create' })}
         onOpenDesignSystem={(id: string) => navigate({ kind: 'design-system-detail', designSystemId: id })}
         onDesignSystemsRefresh={refreshDesignSystems}
+        onDeleteTemplate={handleDeleteTemplate}
         onOpenSettings={openSettings}
       />
     );
@@ -2298,21 +2312,6 @@ function AppInner() {
           onOpenProject={handleOpenProject}
         />
       )}
-      <NewProjectModal
-        open={newProjectTab !== null}
-        initialTab={newProjectTab ?? 'prototype'}
-        skills={enabledSkills}
-        designSystems={enabledDS}
-        defaultDesignSystemId={config.designSystemId}
-        templates={templates}
-        onDeleteTemplate={handleDeleteTemplate}
-        loading={skillsLoading}
-        onCreate={handleCreateFromModal}
-        onImportClaudeDesign={handleImportClaudeDesign}
-        onImportFolder={handleImportFolder}
-        onImportFolderResponse={handleImportFolderResponse}
-        onClose={() => setNewProjectTab(null)}
-      />
       <TooltipLayer />
       <AnimatePresence>
       {settingsOpen ? (
