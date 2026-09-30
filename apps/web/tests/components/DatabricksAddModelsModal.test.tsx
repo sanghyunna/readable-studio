@@ -216,6 +216,12 @@ async function waitForProfiles() {
   );
 }
 
+/** Add-by-name lives behind a quiet action; the entry field only exists once its dialog is open. */
+async function openNamedDialog() {
+  await act(async () => { fireEvent.click(screen.getByTestId('databricks-names-open')); });
+  return screen.getByTestId('databricks-names-dialog');
+}
+
 beforeEach(() => {
   databricksClient.fetchDatabricksStatus.mockResolvedValue(readyStatus);
   databricksClient.fetchDatabricksModels.mockResolvedValue({
@@ -250,6 +256,7 @@ describe('DatabricksAddModelsModal', () => {
     try {
       await act(async () => { renderModal(); });
       await waitForProfiles();
+      await openNamedDialog();
       fireEvent.change(screen.getByTestId('databricks-names'), { target: { value: 'alpha, beta\r\nalpha,,\ngamma' } });
       await act(async () => { fireEvent.click(screen.getByTestId('databricks-names-submit')); });
       expect(JSON.parse(fetchMock.mock.calls[0]![1].body).names).toBe('alpha,beta,gamma');
@@ -278,6 +285,7 @@ describe('DatabricksAddModelsModal', () => {
     try {
       await act(async () => { renderModal(); });
       await waitForProfiles();
+      await openNamedDialog();
       fireEvent.change(screen.getByTestId('databricks-names'), { target: { value: inputResults.map(result => result.displayName).join(',') } });
       await act(async () => { fireEvent.click(screen.getByTestId('databricks-names-submit')); });
       expect(databricksClient.enableDatabricksModel).toHaveBeenCalledWith('ep-luna', { scanId: 'scan-1', expectedRevision: 4 });
@@ -286,6 +294,65 @@ describe('DatabricksAddModelsModal', () => {
       const messages = reasons.map((_, i) => screen.getByTestId(`databricks-name-result-bad-${i}`).textContent);
       expect(new Set(messages.map(text => text?.replace(/bad-\d+/, ''))).size).toBe(reasons.length);
       for (const message of messages) expect(message!.length).toBeGreaterThan('bad-0'.length);
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it('keeps add-by-name off the main surface in a nested dialog that closes on its own', async () => {
+    await act(async () => { renderModal(); });
+    await waitForProfiles();
+    // No entry control on the scan-and-pick surface.
+    expect(screen.queryByTestId('databricks-names')).toBeNull();
+    expect(screen.queryByTestId('databricks-names-dialog')).toBeNull();
+
+    const trigger = screen.getByTestId('databricks-names-open');
+    trigger.focus();
+    const dialog = await openNamedDialog();
+    expect(dialog.getAttribute('aria-modal')).toBe('true');
+    expect(screen.getAllByRole('dialog')).toHaveLength(2);
+    // Focus moves into the field on open.
+    const field = screen.getByTestId('databricks-names') as HTMLTextAreaElement;
+    expect(document.activeElement).toBe(field);
+    expect(field.tagName).toBe('TEXTAREA');
+    expect(field.rows).toBe(1);
+    // Both facts survive in the dialog copy: add-by-name and the cost of verification.
+    expect(dialog.textContent).toMatch(/not in the list|보이지 않는/);
+    expect(dialog.textContent).toMatch(/charges may apply|요금이 발생할 수/);
+
+    // Escape closes only the nested dialog; the modal underneath stays. Query
+    // again after the change: the motion mock re-creates nodes per render.
+    fireEvent.change(field, { target: { value: 'alpha' } });
+    fireEvent.keyDown(screen.getByTestId('databricks-names'), { key: 'Escape' });
+    expect(screen.queryByTestId('databricks-names-dialog')).toBeNull();
+    expect(screen.getByTestId('databricks-add-models-modal')).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByTestId('databricks-names-open'));
+
+    // Reopening starts clean; the scrim and Cancel close it too.
+    await openNamedDialog();
+    expect((screen.getByTestId('databricks-names') as HTMLTextAreaElement).value).toBe('');
+    fireEvent.mouseDown(screen.getByTestId('databricks-names-dialog-backdrop'));
+    expect(screen.queryByTestId('databricks-names-dialog')).toBeNull();
+    await openNamedDialog();
+    fireEvent.click(screen.getByTestId('databricks-names-cancel'));
+    expect(screen.queryByTestId('databricks-names-dialog')).toBeNull();
+    expect(screen.getByTestId('databricks-add-models-modal')).toBeTruthy();
+  });
+
+  it('submits a single name with Enter and keeps a newline list intact', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 202, json: async () => scanResponse({ state: 'complete', inputResults: [] }) });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      await act(async () => { renderModal(); });
+      await waitForProfiles();
+      await openNamedDialog();
+      fireEvent.change(screen.getByTestId('databricks-names'), { target: { value: 'alpha\nbeta' } });
+      const field = screen.getByTestId('databricks-names') as HTMLTextAreaElement;
+      // jsdom's requestSubmit does not dispatch through React; route it to a submit event.
+      field.form!.requestSubmit = () => fireEvent.submit(field.form!);
+      await act(async () => { fireEvent.keyDown(field, { key: 'Enter' }); });
+      expect(JSON.parse(fetchMock.mock.calls[0]![1].body).names).toBe('alpha,beta');
+      // The dialog stays open with the outcome; the modal underneath is untouched.
+      expect(screen.getByTestId('databricks-names-dialog')).toBeTruthy();
+      expect(screen.getByTestId('databricks-add-models-modal')).toBeTruthy();
     } finally { vi.unstubAllGlobals(); }
   });
 

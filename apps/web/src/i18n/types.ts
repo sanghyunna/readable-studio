@@ -1853,6 +1853,7 @@ export interface Dict {
   'databricks.addModels': string;
   'databricks.named.title': string;
   'databricks.named.label': string;
+  'databricks.named.intro': string;
   'databricks.named.help': string;
   'databricks.named.consent': string;
   'databricks.named.add': string;

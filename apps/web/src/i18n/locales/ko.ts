@@ -1374,11 +1374,12 @@ export function getKo(): Dict {
 
   // Databricks agent: model dropdown action row + Add Models registration modal
   'databricks.addModels': '모델 추가',
-  'databricks.named.title': '이름으로 추가',
+  'databricks.named.title': '이름으로 직접 추가',
+  'databricks.named.intro': '목록에 보이지 않는 모델도 이름을 알면 추가할 수 있어요.',
   'databricks.named.label': '모델 또는 엔드포인트 이름',
-  'databricks.named.help': '목록에 보이지 않아도 이름을 알고 있다면 추가할 수 있어요. 여러 개는 쉼표나 줄바꿈으로 구분해 주세요 (최대 20개).',
-  'databricks.named.consent': '추가하면 모델에 짧은 확인 요청을 보냅니다. 사용량에 따라 요금이 발생할 수 있어요.',
-  'databricks.named.add': '이름 확인하고 추가',
+  'databricks.named.help': '여러 개는 쉼표나 줄바꿈으로 구분해요 (최대 20개).',
+  'databricks.named.consent': '확인 요청을 보내며 요금이 발생할 수 있어요.',
+  'databricks.named.add': '확인하고 추가',
   'databricks.named.checking': '확인 중…',
   'databricks.named.empty': '모델 이름을 하나 이상 입력해 주세요.',
   'databricks.named.tooMany': '한 번에 고유한 이름 20개까지 입력할 수 있어요.',

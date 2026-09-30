@@ -30,7 +30,7 @@ import {
 } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { createPortal } from 'react-dom';
-import { Button, Input, Switch, ToggleCard } from '@readable-studio/components';
+import { Button, Input, Switch, Textarea, ToggleCard } from '@readable-studio/components';
 import type {
   DatabricksAvailability,
   DatabricksEndpoint,
@@ -247,6 +247,32 @@ function errorMessage(err: unknown, fallback: string): string {
   return err instanceof Error && err.message ? err.message : fallback;
 }
 
+/**
+ * Keeps Tab / Shift+Tab inside the dialog the event is bound to. Shared by
+ * the modal and the nested add-by-name dialog so both trap the same way.
+ */
+function trapTabWithin(event: ReactKeyboardEvent<HTMLElement>): void {
+  const focusable = Array.from(
+    event.currentTarget.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  );
+  if (focusable.length === 0) return;
+
+  const first = focusable[0]!;
+  const last = focusable[focusable.length - 1]!;
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  } else if (!event.currentTarget.contains(document.activeElement)) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
 function DatabricksAddModelsModalBody({
   onClose,
   installUrl,
@@ -276,6 +302,10 @@ function DatabricksAddModelsModalBody({
   const scanAbortRef = useRef<AbortController | null>(null);
   const activeScanIdRef = useRef<string | null>(null);
 
+  // Add-by-name is the exception to scan-and-pick, so it lives in a small
+  // nested dialog behind one quiet action instead of on the main surface.
+  const [namedOpen, setNamedOpen] = useState(false);
+  const namedTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [names, setNames] = useState('');
   const [namesError, setNamesError] = useState<string | null>(null);
   const [namedBusy, setNamedBusy] = useState(false);
@@ -409,45 +439,48 @@ function DatabricksAddModelsModalBody({
     onClose();
   }, [onClose]);
 
+  // Closing the nested dialog abandons an in-flight verification the same way
+  // closing the modal does, and leaves nothing behind for the next open.
+  const closeNamed = useCallback(() => {
+    namedAbortRef.current?.abort();
+    if (namedScanIdRef.current) void cancelDatabricksScan(namedScanIdRef.current).catch(() => undefined);
+    setNamedOpen(false);
+    setNames('');
+    setNamesError(null);
+    setNamedResults([]);
+    setNamedRowErrors({});
+    setNamedAdded(new Set());
+  }, []);
+
+  // Focus returns to the quiet action once the dialog is gone from the tree.
+  const namedWasOpenRef = useRef(false);
+  useEffect(() => {
+    if (namedWasOpenRef.current && !namedOpen) namedTriggerRef.current?.focus();
+    namedWasOpenRef.current = namedOpen;
+  }, [namedOpen]);
+
   const handleDialogKeyDown = useCallback((event: ReactKeyboardEvent<HTMLElement>) => {
     if (event.key === 'Escape') {
       event.stopPropagation();
       handleClose();
       return;
     }
-    if (event.key !== 'Tab') return;
-
-    const focusable = Array.from(
-      event.currentTarget.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      ),
-    );
-    if (focusable.length === 0) return;
-
-    const first = focusable[0]!;
-    const last = focusable[focusable.length - 1]!;
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    } else if (!event.currentTarget.contains(document.activeElement)) {
-      event.preventDefault();
-      first.focus();
-    }
+    if (event.key === 'Tab') trapTabWithin(event);
   }, [handleClose]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.stopPropagation();
-        handleClose();
+        // Escape peels one layer: while the add-by-name dialog is open it is
+        // the layer that closes, wherever focus happens to sit.
+        if (namedOpen) closeNamed();
+        else handleClose();
       }
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [handleClose]);
+  }, [closeNamed, handleClose, namedOpen]);
 
   const selectedProfile = useMemo(
     () => profiles.find((profile) => profile.id === selectedProfileId) ?? null,
@@ -1318,49 +1351,6 @@ function DatabricksAddModelsModalBody({
                 )}
               </section>
 
-              <section className={styles.section} aria-labelledby="databricks-names-label">
-                <span id="databricks-names-label" className={styles.label}>{t('databricks.named.title')}</span>
-                <form className={styles.namedForm} onSubmit={(event) => void submitNames(event)}>
-                  <label className={styles.field}>
-                    <span className={styles.fieldLabel}>{t('databricks.named.label')}</span>
-                    <textarea
-                      className={styles.namesInput}
-                      value={names}
-                      onChange={(event) => { setNames(event.target.value); setNamesError(null); }}
-                      disabled={namedBusy}
-                      spellCheck={false}
-                      autoComplete="off"
-                      rows={3}
-                      data-testid="databricks-names"
-                    />
-                    <span className={styles.fieldHint}>{t('databricks.named.help')}</span>
-                  </label>
-                  <p className={styles.hint}>{t('databricks.named.consent')}</p>
-                  {namesError ? <p className={styles.fieldError} role="alert" data-testid="databricks-names-error">{namesError}</p> : null}
-                  <Button type="submit" variant="primary" disabled={namedBusy || !canScan} data-testid="databricks-names-submit">
-                    {namedBusy ? t('databricks.named.checking') : t('databricks.named.add')}
-                  </Button>
-                </form>
-                {namedResults.length > 0 ? (
-                  <ul className={styles.namedResults} aria-live="polite">
-                    {namedResults.map(result => (
-                      <li key={result.inputIndex} className={styles.namedResult} data-testid={`databricks-name-result-${result.displayName}`}>
-                        <strong className={styles.namedIdentity}>{result.displayName}</strong>
-                        <span className={result.failure || namedRowErrors[result.inputIndex] ? styles.fieldError : styles.hint}>
-                          {namedRowErrors[result.inputIndex] ?? (namedAdded.has(result.inputIndex)
-                            ? result.state === 'chat-only' ? t('databricks.named.addedChatOnly') : t('databricks.named.added')
-                            : result.failure ? t(namedFailureKeys[result.failure.reason])
-                              : result.state === 'already-registered' ? t('databricks.named.alreadyRegistered')
-                                : result.state === 'inconclusive' ? t('databricks.named.inconclusive')
-                                  : result.state === 'pending' ? t('databricks.named.checking')
-                                    : t('databricks.named.addFailed'))}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-              </section>
-
               <section className={styles.section} aria-labelledby="databricks-results-label">
                 <div className={styles.sectionHead}>
                   <span id="databricks-results-label" className={styles.label}>
@@ -1370,6 +1360,18 @@ function DatabricksAddModelsModalBody({
                     </span>
                   </span>
                   <div className={styles.scanControls}>
+                    <button
+                      ref={namedTriggerRef}
+                      type="button"
+                      className={styles.quietAction}
+                      disabled={!canScan}
+                      title={!canScan && !scanning ? t('databricks.scan.signInFirst') : undefined}
+                      onClick={() => setNamedOpen(true)}
+                      data-testid="databricks-names-open"
+                    >
+                      <Icon name="plus" size={12} />
+                      <span>{t('databricks.named.title')}</span>
+                    </button>
                     {scanning ? (
                       <Button
                         variant="ghost"
@@ -1635,6 +1637,191 @@ function DatabricksAddModelsModalBody({
           </Button>
         </footer>
       </motion.section>
+
+      <AnimatePresence>
+        {namedOpen ? (
+          <NamedEntryDialog
+            t={t}
+            names={names}
+            error={namesError}
+            busy={namedBusy}
+            canSubmit={canScan}
+            results={namedResults}
+            rowErrors={namedRowErrors}
+            added={namedAdded}
+            onChange={(value) => { setNames(value); setNamesError(null); }}
+            onSubmit={(event) => void submitNames(event)}
+            onClose={closeNamed}
+          />
+        ) : null}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
+// Technical example stays untranslated on purpose.
+const NAME_PLACEHOLDER = 'databricks-claude-sonnet-4';
+
+interface NamedEntryDialogProps {
+  t: Translate;
+  names: string;
+  error: string | null;
+  busy: boolean;
+  canSubmit: boolean;
+  results: DatabricksNamedInputResult[];
+  rowErrors: Record<number, string>;
+  added: ReadonlySet<number>;
+  onChange: (value: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onClose: () => void;
+}
+
+/**
+ * Small dialog stacked on the Add Models modal for the add-by-name exception.
+ * Rendered inside the modal's own backdrop (the app's stacked-dialog idiom:
+ * Settings > Design systems renders its rename/confirm dialogs the same way)
+ * so it needs no z-index of its own. Escape and the scrim close only this
+ * dialog; the modal underneath keeps its state.
+ */
+function NamedEntryDialog({
+  t,
+  names,
+  error,
+  busy,
+  canSubmit,
+  results,
+  rowErrors,
+  added,
+  onChange,
+  onSubmit,
+  onClose,
+}: NamedEntryDialogProps) {
+  const backdropMotion = useFadingSurface(modalOverlay);
+  const contentMotion = useFadingSurface(modalContent);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Focus lands in the field on open and stays there through verification:
+  // the field is read-only rather than disabled while busy so the disabled
+  // submit button cannot drop focus out of the dialog.
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, [busy]);
+
+  const handleKeyDown = useCallback((event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.key === 'Escape') {
+      // Stop here: the modal's document-level Escape handler must not close
+      // the modal underneath as well.
+      event.stopPropagation();
+      onClose();
+      return;
+    }
+    if (event.key === 'Tab') trapTabWithin(event);
+  }, [onClose]);
+
+  const resultText = (result: DatabricksNamedInputResult): string =>
+    rowErrors[result.inputIndex] ?? (added.has(result.inputIndex)
+      ? result.state === 'chat-only' ? t('databricks.named.addedChatOnly') : t('databricks.named.added')
+      : result.failure ? t(namedFailureKeys[result.failure.reason])
+        : result.state === 'already-registered' ? t('databricks.named.alreadyRegistered')
+          : result.state === 'inconclusive' ? t('databricks.named.inconclusive')
+            : result.state === 'pending' ? t('databricks.named.checking')
+              : t('databricks.named.addFailed'));
+
+  return (
+    <motion.div
+      className={`modal-backdrop ${styles.namedBackdrop}`}
+      role="presentation"
+      data-testid="databricks-names-dialog-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+      {...backdropMotion}
+    >
+      <motion.form
+        className={`modal ${styles.namedModal}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="databricks-names-title"
+        data-testid="databricks-names-dialog"
+        onKeyDown={handleKeyDown}
+        onSubmit={onSubmit}
+        {...contentMotion}
+      >
+        <header className={styles.head}>
+          <div className={styles.titles}>
+            <h2 id="databricks-names-title">{t('databricks.named.title')}</h2>
+            <p>{t('databricks.named.intro')}</p>
+          </div>
+          <button
+            type="button"
+            className={styles.close}
+            onClick={onClose}
+            aria-label={t('common.close')}
+            title={t('common.close')}
+          >
+            <Icon name="close" size={14} />
+          </button>
+        </header>
+
+        <div className={styles.body}>
+          <label className={styles.field}>
+            <span className={styles.fieldLabel}>{t('databricks.named.label')}</span>
+            {/* One visual line that grows only when several names arrive
+                (typed with Shift+Enter or pasted as a list). Enter submits. */}
+            <Textarea
+              ref={inputRef}
+              className={styles.namesInput}
+              value={names}
+              rows={1}
+              placeholder={NAME_PLACEHOLDER}
+              readOnly={busy}
+              aria-busy={busy || undefined}
+              spellCheck={false}
+              autoComplete="off"
+              aria-invalid={error ? true : undefined}
+              onChange={(event) => onChange(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  event.currentTarget.form?.requestSubmit();
+                }
+              }}
+              data-testid="databricks-names"
+            />
+            {error ? (
+              <span className={styles.fieldError} role="alert" data-testid="databricks-names-error">{error}</span>
+            ) : (
+              <span className={styles.fieldHint}>{t('databricks.named.help')}</span>
+            )}
+          </label>
+
+          {results.length > 0 ? (
+            <ul className={styles.namedResults} aria-live="polite">
+              {results.map((result) => (
+                <li key={result.inputIndex} className={styles.namedResult} data-testid={`databricks-name-result-${result.displayName}`}>
+                  <strong className={styles.namedIdentity}>{result.displayName}</strong>
+                  <span className={result.failure || rowErrors[result.inputIndex] ? styles.fieldError : styles.hint}>
+                    {resultText(result)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+
+        <footer className={`${styles.foot} ${styles.namedFoot}`}>
+          <span className={styles.namedConsent}>
+            <Icon name="info" size={12} />
+            <span>{t('databricks.named.consent')}</span>
+          </span>
+          <Button onClick={onClose} data-testid="databricks-names-cancel">
+            {t('common.cancel')}
+          </Button>
+          <Button type="submit" variant="primary" disabled={busy || !canSubmit} data-testid="databricks-names-submit">
+            {busy ? t('databricks.named.checking') : t('databricks.named.add')}
+          </Button>
+        </footer>
+      </motion.form>
     </motion.div>
   );
 }
