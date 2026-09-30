@@ -502,7 +502,7 @@ describe('DatabricksAddModelsModal', () => {
     const guided = await screen.findByTestId('databricks-guided-state');
     expect(guided.textContent).toContain('Sign in to Databricks');
     expect(guided.textContent).toContain('databricks auth login');
-    expect(screen.queryByTestId('databricks-scan-start')).toBeNull();
+    expect(screen.getByTestId('databricks-scan-start').hasAttribute('disabled')).toBe(true);
   });
 
   it('recovers from the guided state through Check again', async () => {
@@ -749,13 +749,32 @@ describe('DatabricksAddModelsModal setup step', () => {
     databricksClient.setupDatabricks.mockResolvedValue(setupResponse);
   });
 
+  it('keeps discovered profiles visible when authentication requires recovery', async () => {
+    databricksClient.fetchDatabricksStatus.mockResolvedValue({ ...readyStatus, setupRequired: true,
+      auth: 'auth-required', profiles: [{ ...profile, auth: 'auth-required' }],
+      issues: [{ code: 'DATABRICKS_AUTH_REQUIRED', action: 'sign-in', retryable: false }] });
+    renderModal();
+    await act(async () => {});
+    expect(screen.queryByTestId('databricks-profile-prof-main')).not.toBeNull();
+    expect(screen.queryByTestId('databricks-guided-state')).not.toBeNull();
+    expect(screen.queryByTestId('databricks-setup-form')).toBeNull();
+  });
+
+  it('explains CLI discovery failure alongside manual setup', async () => {
+    databricksClient.fetchDatabricksStatus.mockResolvedValue({ ...setupRequiredStatus, cli: 'uninvocable' });
+    renderModal();
+    await act(async () => {});
+    expect(screen.queryByTestId('databricks-setup-form')).not.toBeNull();
+    expect(screen.queryByTestId('databricks-guided-state')).not.toBeNull();
+  });
+
   it('opens on the setup step instead of a dead end when status reports setup is required', async () => {
     databricksClient.fetchDatabricksStatus.mockResolvedValue(setupRequiredStatus);
 
     renderModal({ installUrl: 'https://docs.databricks.com/en/dev-tools/cli/install.html' });
 
     const step = await screen.findByTestId('databricks-setup-step');
-    expect(screen.queryByTestId('databricks-guided-state')).toBeNull();
+    expect(screen.queryByTestId('databricks-guided-state')).not.toBeNull();
     expect(screen.queryByTestId('databricks-scan-start')).toBeNull();
     // URL field, credential field, a clear submit, and what the token is for.
     expect(hostInput().type).toBe('url');

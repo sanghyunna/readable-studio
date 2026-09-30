@@ -707,7 +707,9 @@ function DatabricksAddModelsModalBody({
   // record for scanning; the daemon owns whether the CLI is involved at all.
   const canScan = selectedProfile?.auth === 'authenticated' && !scanning;
 
-  const setupRequired = status?.setupRequired === true && authenticatedProfiles.length === 0;
+  // Discovery and authentication are separate: a failed token refresh must not
+  // make an existing CLI profile disappear behind the new-connection form.
+  const setupRequired = status?.setupRequired === true && profiles.length === 0;
   const step: Step = stepOverride ?? (setupRequired ? 'setup' : 'scan');
   const canLeaveSetup = !setupRequired;
 
@@ -926,6 +928,17 @@ function DatabricksAddModelsModalBody({
     .map((issue) => issueActionText(t, issue))
     .filter((text): text is string => text !== null);
 
+  const recoveryNotice = guided ? (
+    <div className={styles.guided} role="status" data-testid="databricks-guided-state">
+      <div className={styles.guidedText}>
+        <strong>{guided.title}</strong>
+        <p>{guided.body}</p>
+        {guided.command ? <code className={styles.command}>{guided.command}</code> : null}
+        {statusIssueTexts.map((text, index) => <p key={index}>{text}</p>)}
+      </div>
+    </div>
+  ) : null;
+
   return (
     <motion.div
       className={`modal-backdrop ${styles.backdrop}`}
@@ -974,6 +987,7 @@ function DatabricksAddModelsModalBody({
               aria-labelledby="databricks-setup-label"
               data-testid="databricks-setup-step"
             >
+              {recoveryNotice}
               <div className={styles.sectionHead}>
                 <span id="databricks-setup-label" className={styles.label}>
                   {t('databricks.setup.label')}
@@ -1148,7 +1162,7 @@ function DatabricksAddModelsModalBody({
                 </div>
               ) : null}
             </section>
-          ) : guided ? (
+          ) : guided && profiles.length === 0 ? (
             <div className={styles.guided} role="status" data-testid="databricks-guided-state">
               <span className={styles.guidedGlyph} aria-hidden="true">
                 <Icon name="terminal" size={18} />
@@ -1201,6 +1215,7 @@ function DatabricksAddModelsModalBody({
             </div>
           ) : (
             <>
+              {recoveryNotice}
               <section className={styles.section} aria-labelledby="databricks-profiles-label">
                 <div className={styles.sectionHead}>
                   <span id="databricks-profiles-label" className={styles.label}>
