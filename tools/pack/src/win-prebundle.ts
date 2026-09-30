@@ -18,6 +18,15 @@ export const WIN_PREBUNDLE_ENTRYPOINTS_DIR_NAME = "prebundle-entrypoints";
 // URL-loaded Pi extensions are not part of esbuild's static dependency graph.
 export const WIN_DAEMON_RUNTIME_ASSETS = ["pi-powershell-extension.js", "pi-powershell.js"] as const;
 
+// css-tree loads these with createRequire(import.meta.url), outside esbuild's
+// static graph. Keep the complete npm package closure, not relocated JSON copies.
+export const WIN_DAEMON_RUNTIME_DATA_FILES = [
+  "css-tree/data/patch.json",
+  "mdn-data/css/at-rules.json",
+  "mdn-data/css/properties.json",
+  "mdn-data/css/syntaxes.json",
+] as const;
+
 export async function stageWinDaemonRuntimeAssets(workspaceRoot: string, daemonPrebundleRoot: string): Promise<void> {
   const destination = join(daemonPrebundleRoot, "chunks");
   await mkdir(destination, { recursive: true });
@@ -32,12 +41,19 @@ export async function assertWinDaemonRuntimeAssets(daemonPrebundleRoot: string):
     const metadata = await stat(assetPath);
     if (!metadata.isFile() || metadata.size === 0) throw new Error(`Invalid Pi PowerShell runtime asset: ${assetPath}`);
   }
+  for (const asset of WIN_DAEMON_RUNTIME_DATA_FILES) {
+    const assetPath = join(daemonPrebundleRoot, "..", "..", "node_modules", asset);
+    const metadata = await stat(assetPath);
+    if (!metadata.isFile() || metadata.size === 0) throw new Error(`Invalid daemon runtime data: ${assetPath}`);
+    JSON.parse(await readFile(assetPath, "utf8"));
+  }
 }
 
 export const WIN_PREBUNDLE_RUNTIME_DEPENDENCIES = {
   [piPackage.name]: piPackage.version,
   "better-sqlite3": "12.9.0",
   "blake3-wasm": "2.1.5",
+  "css-tree": "3.2.1",
 } as const;
 
 export const WIN_STANDALONE_PREBUNDLE_EXCLUDED_INTERNAL_PACKAGES = [
@@ -63,8 +79,9 @@ export const WIN_PREBUNDLE_POLICIES = {
     label: "packaged main",
   },
   daemonCli: {
-    externals: ["better-sqlite3", "blake3-wasm"],
+    externals: ["better-sqlite3", "blake3-wasm", "css-tree"],
     forbiddenInputs: [
+      "/node_modules/css-tree/",
       "/node_modules/@readable-studio/daemon/",
       "/node_modules/better-sqlite3/",
       "/node_modules/blake3-wasm/",
@@ -77,8 +94,9 @@ export const WIN_PREBUNDLE_POLICIES = {
     label: "daemon cli",
   },
   daemonSidecar: {
-    externals: ["better-sqlite3", "blake3-wasm"],
+    externals: ["better-sqlite3", "blake3-wasm", "css-tree"],
     forbiddenInputs: [
+      "/node_modules/css-tree/",
       "/node_modules/@readable-studio/daemon/",
       "/node_modules/better-sqlite3/",
       "/node_modules/blake3-wasm/",

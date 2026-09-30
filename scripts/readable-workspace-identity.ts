@@ -21,6 +21,7 @@ const expectedManifestNames = new Map([
   ["packages/diagnostics/package.json", "@readable-studio/diagnostics"],
   ["packages/download/package.json", "@readable-studio/download"],
   ["packages/host/package.json", "@readable-studio/host"],
+  ["packages/html-edit/package.json", "@readable-studio/html-edit"],
   ["packages/metatool/package.json", "@readable-studio/metatool"],
   ["packages/platform/package.json", "@readable-studio/platform"],
   ["packages/plugin-runtime/package.json", "@readable-studio/plugin-runtime"],

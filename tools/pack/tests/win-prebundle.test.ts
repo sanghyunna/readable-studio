@@ -73,14 +73,15 @@ describe("win standalone prebundle policy", () => {
   it("documents the explicit code-level bundle boundaries", () => {
     expect(WIN_PREBUNDLE_ESBUILD_TARGET).toBe("node24");
     expect(WIN_PREBUNDLE_POLICIES.packagedMain.externals).toEqual(["electron"]);
-    expect(WIN_PREBUNDLE_POLICIES.daemonCli.externals).toEqual(["better-sqlite3", "blake3-wasm"]);
-    expect(WIN_PREBUNDLE_POLICIES.daemonSidecar.externals).toEqual(["better-sqlite3", "blake3-wasm"]);
+    expect(WIN_PREBUNDLE_POLICIES.daemonCli.externals).toEqual(["better-sqlite3", "blake3-wasm", "css-tree"]);
+    expect(WIN_PREBUNDLE_POLICIES.daemonSidecar.externals).toEqual(["better-sqlite3", "blake3-wasm", "css-tree"]);
     expect(WIN_PREBUNDLE_POLICIES.webSidecar.externals).toEqual([]);
     expect(WIN_DAEMON_PREBUNDLE_ESM_REQUIRE_BANNER).toContain("createRequire");
     expect(WIN_PREBUNDLE_RUNTIME_DEPENDENCIES).toEqual({
       "@earendil-works/pi-coding-agent": "0.83.0",
       "better-sqlite3": "12.9.0",
       "blake3-wasm": "2.1.5",
+      "css-tree": "3.2.1",
     });
     expect(WIN_PREBUNDLED_DAEMON_CLI_RELATIVE_PATH).toBe("app/prebundled/daemon/daemon-cli.mjs");
     expect(WIN_PREBUNDLED_DAEMON_SIDECAR_RELATIVE_PATH).toBe("app/prebundled/daemon/daemon-sidecar.mjs");

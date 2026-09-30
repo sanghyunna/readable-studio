@@ -1,8 +1,8 @@
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { expect, test } from 'vitest';
-import { assertWinDaemonRuntimeAssets, stageWinDaemonRuntimeAssets, WIN_DAEMON_RUNTIME_ASSETS } from '../src/win-prebundle.js';
+import { assertWinDaemonRuntimeAssets, stageWinDaemonRuntimeAssets, WIN_DAEMON_RUNTIME_ASSETS, WIN_DAEMON_RUNTIME_DATA_FILES } from '../src/win-prebundle.js';
 
 const assets = ['pi-powershell-extension.js', 'pi-powershell.js'] as const;
 
@@ -20,6 +20,11 @@ test('stages both Pi shell assets beside the packaged daemon chunks', async () =
     expect(WIN_DAEMON_RUNTIME_ASSETS).toEqual(assets);
     for (const asset of assets) {
       expect(await readFile(join(output, 'chunks', asset))).toEqual(await readFile(join(source, asset)));
+    }
+    for (const asset of WIN_DAEMON_RUNTIME_DATA_FILES) {
+      const target = join(root, 'resources', 'app', 'node_modules', asset);
+      await mkdir(dirname(target), { recursive: true });
+      await writeFile(target, '{}');
     }
     await expect(assertWinDaemonRuntimeAssets(output)).resolves.toBeUndefined();
   } finally {

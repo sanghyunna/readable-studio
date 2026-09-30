@@ -442,6 +442,8 @@ export async function createWinPackagedAppCacheKey(
     packedTarballs,
     platform: "win32",
     prebundle: shouldUseWinStandalonePrebundle(config.webOutputMode),
+    prebundlePolicies: WIN_PREBUNDLE_POLICIES,
+    prebundleRuntimeDependencies: WIN_PREBUNDLE_RUNTIME_DEPENDENCIES,
     schemaVersion: 6,
     piPackage,
     piPatch: await hashPath(await resolvePiPackagePatch(config.workspaceRoot)),

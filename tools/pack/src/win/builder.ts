@@ -16,6 +16,7 @@ import {
   WIN_PREBUNDLED_DAEMON_CLI_RELATIVE_PATH,
   WIN_PREBUNDLED_DAEMON_SIDECAR_RELATIVE_PATH,
   WIN_PREBUNDLED_WEB_SIDECAR_RELATIVE_PATH,
+  assertWinDaemonRuntimeAssets,
   shouldUseWinStandalonePrebundle,
 } from "../win-prebundle.js";
 import {
@@ -554,6 +555,11 @@ export async function runElectronBuilder(
   await runSegment("portable-zip:assert-pi-package", async () =>
     assertPiPackageOutput(join(materialized.unpackedRoot, "resources", "app"))
   );
+  if (usePrebundle) {
+    await runSegment("portable-zip:assert-daemon-runtime-assets", async () =>
+      assertWinDaemonRuntimeAssets(join(materialized.unpackedRoot, "resources", "app", "prebundled", "daemon"))
+    );
+  }
   await runSegment("portable-zip:write-manifest", async () => writeBuiltAppManifest(paths, materialized));
   let signedUnpacked = false;
   const ensureSignedUnpacked = async (): Promise<void> => {
