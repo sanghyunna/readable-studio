@@ -23,6 +23,7 @@ export type ToolPackCliOptions = {
   cacheDir?: string;
   dir?: string;
   expr?: string;
+  readonly fastBuild?: boolean;
   json?: boolean;
   namespace?: string;
   path?: string;
@@ -54,6 +55,7 @@ export type ToolPackConfig = {
   electronBuilderCliPath: string;
   electronDistPath: string;
   electronVersion: string;
+  readonly fastBuild?: boolean;
   namespace: string;
   platform: ToolPackPlatform;
   removeData: boolean;
@@ -146,6 +148,7 @@ export function resolveToolPackConfig(
 
   return {
     appVersion,
+    ...(options.fastBuild === true ? { fastBuild: true } : {}),
     electronBuilderCliPath: resolveElectronBuilderCliPath(),
     electronDistPath: resolveElectronDistPath(WORKSPACE_ROOT),
     electronVersion: resolveElectronVersion(WORKSPACE_ROOT),

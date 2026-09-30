@@ -37,9 +37,17 @@ for (const { id, flag, model, levels } of supported) {
       const at = args.indexOf(value);
       assert.ok(at > 0);
       assert.equal(args[at - 1], flag);
-      // Removing exactly the selected flag/value must recover the entire base
-      // invocation, including stdin/ACP mode, model, and positional prompt.
-      assert.deepEqual([...args.slice(0, at - 1), ...args.slice(at + 1)], base);
+      // Removing the effort recovers the base invocation, except that Codex
+      // explicitly disables summary requests when the user selects no reasoning.
+      const expectedBase = [...base];
+      if (id === 'codex' && level === 'none') {
+        const summary = expectedBase.indexOf('model_reasoning_summary="auto"');
+        assert.ok(summary > 0);
+        assert.equal(expectedBase[summary - 1], '-c');
+        assert.equal(args.includes('model_reasoning_summary="auto"'), false);
+        expectedBase.splice(summary - 1, 2);
+      }
+      assert.deepEqual([...args.slice(0, at - 1), ...args.slice(at + 1)], expectedBase);
     });
   }
 

@@ -1,4 +1,6 @@
 import type { ApiError, DatabricksErrorCode } from '../errors.js';
+import type { DatabricksNamedInputResult } from './databricks-named.js';
+export * from './databricks-named.js';
 import type { AgentModelOption } from './registry.js';
 
 /**
@@ -43,8 +45,8 @@ export interface DatabricksCapabilities {
   maxTokens: number | null;
   /** Optional only for catalogues/clients predating automatic limit discovery. */
   limitSources?: {
-    contextWindow: 'metadata' | 'model-table' | 'unknown';
-    maxTokens: 'metadata' | 'model-table' | 'unknown' | 'endpoint';
+    contextWindow: 'metadata' | 'model-table' | 'unknown' | 'advertised' | 'default';
+    maxTokens: 'metadata' | 'model-table' | 'unknown' | 'endpoint' | 'probed' | 'default';
   };
 }
 
@@ -192,6 +194,8 @@ export interface DatabricksScanCompleteness {
 }
 
 export interface DatabricksScanResponse {
+  /** Present only for explicit named preflight. Successful candidates still require enable. */
+  inputResults?: DatabricksNamedInputResult[];
   scanId: string;
   profileId: string;
   revision: number;

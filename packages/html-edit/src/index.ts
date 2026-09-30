@@ -1,0 +1,15 @@
+export {
+  editWidthRelease,
+  WIDTH_RELEASE_SCHEMA,
+  type WidthReleaseCause,
+  type WidthReleaseConflict,
+  type WidthReleaseDeclaration,
+  type WidthReleaseFamily,
+  type WidthReleaseOperation,
+  type WidthReleaseProvenance,
+  type WidthReleaseRecord,
+  type WidthReleaseResult,
+  type WidthReleaseSelection,
+  type WidthReleaseSuccess,
+  type WidthReleaseTarget,
+} from './width-release.js';

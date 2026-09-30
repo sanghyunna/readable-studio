@@ -55,7 +55,12 @@ export function createDatabricksAgentDef(
       const diagnostics: AgentDiagnostic[] = [];
       if (status.cli !== 'ready') diagnostics.push({
         reason: 'not-executable', severity: 'error',
-        message: 'The bundled Databricks CLI is missing or unusable. Repair the Readable Studio package, then rescan.',
+        message: status.cli === 'missing'
+          ? 'No usable Databricks CLI was found. Check the configured executable; if the bundled file is missing, re-download the portable package, then rescan.'
+          : status.cli === 'unsupported'
+            ? 'The Databricks CLI version is unsupported. Select a supported executable, then rescan.'
+            : 'The Databricks CLI version probe failed. Check the configured executable and its permissions, then rescan.',
+        detail: `cli=${status.cli}`,
         fixActions: [{ kind: 'rescan' }],
       });
       if (models.length === 0) diagnostics.push({

@@ -1,5 +1,6 @@
 import { join } from "node:path";
 
+import { isBuildProfilingEnabled } from "../build-profile.js";
 import { ToolPackCache } from "../cache.js";
 import type { ToolPackConfig } from "../config.js";
 import {
@@ -21,7 +22,8 @@ function logWinBuildProgress(message: string, fields: Record<string, unknown> = 
   const suffix = Object.entries(fields)
     .map(([key, value]) => `${key}=${String(value)}`)
     .join(" ");
-  process.stderr.write(`[tools-pack win] ${message}${suffix.length === 0 ? "" : ` ${suffix}`}\n`);
+  const timestamp = isBuildProfilingEnabled() ? ` timestampMs=${Date.now()} pid=${process.pid}` : "";
+  process.stderr.write(`[tools-pack win] ${message}${suffix.length === 0 ? "" : ` ${suffix}`}${timestamp}\n`);
 }
 
 export async function packWin(config: ToolPackConfig): Promise<WinPackResult> {
@@ -51,17 +53,30 @@ export async function packWin(config: ToolPackConfig): Promise<WinPackResult> {
   await runPhase("workspace-build", async () => {
     await ensureWinWorkspaceBuild(config, cache);
   });
-  const resourceTree = await runPhase("resource-tree", async () =>
-    prepareResourceTree(config, paths, cache, { materialize: false })
-  );
-  await runPhase("win-icon", async () => {
-    await copyWinIcon(paths);
-  });
-  const tarballs = await runPhase("workspace-tarballs", async () => collectWorkspaceTarballs(config, paths, cache));
-  const packagedAppKey = await createWinPackagedAppCacheKey(config, tarballs.key, tarballs.tarballs);
-  const packagedApp = await runPhase("packaged-app", async () =>
-    prepareWinPackagedApp(config, paths, tarballs, cache)
-  );
+  const prepareResources = async () => {
+    const resourceTree = await runPhase("resource-tree", async () =>
+      prepareResourceTree(config, paths, cache, { materialize: false })
+    );
+    await runPhase("win-icon", async () => { await copyWinIcon(paths); });
+    return resourceTree;
+  };
+  const prepareApp = async () => {
+    const tarballs = await runPhase("workspace-tarballs", async () => collectWorkspaceTarballs(config, paths, cache));
+    const packagedAppKey = await createWinPackagedAppCacheKey(config, tarballs.key, tarballs.tarballs);
+    const packagedApp = await runPhase("packaged-app", async () => prepareWinPackagedApp(config, paths, tarballs, cache));
+    return { packagedAppKey, packagedApp };
+  };
+  const prepareInputs = async () => {
+    if (config.fastBuild === true) {
+      // Both branches depend on workspace outputs, but write separate cache nodes
+      // and paths. Drain both on failure before returning control to the caller.
+      const tasks = [prepareResources(), prepareApp()] as const;
+      await Promise.allSettled(tasks);
+      return Promise.all(tasks);
+    }
+    return [await prepareResources(), await prepareApp()] as const;
+  };
+  const [resourceTree, { packagedAppKey, packagedApp }] = await prepareInputs();
   await runPhase("electron-builder", async () => {
     const builderSegments = await runElectronBuilder(
       config,

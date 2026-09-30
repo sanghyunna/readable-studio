@@ -113,6 +113,9 @@ export function ManualEditGeometryControls({
                 />
                 <em>px</em>
               </label>
+              {axis === 'width' && target.attributes['data-readable-width-release'] ? (
+                <output>{t('manualEdit.resize.measurements', { requested: fixedAxisDisplayValue(target, elementStyles, axis), applied: stripPxUnit(target.cssSize?.width ?? `${target.rect.width}px`) })}</output>
+              ) : null}
               <div className={styles.segment} role="group" aria-label={`${label} ${t('manualEdit.geometry.modes')}`}>
                 {(['auto', 'fixed', 'fill'] as const).map((option) => {
                   const optionLabel = t(`manualEdit.geometry.${option}`);
@@ -272,6 +275,10 @@ function parseNumericPx(value: string): number | undefined {
 }
 
 function fixedAxisValue(target: ManualEditTarget, styles: ManualEditStyles, axis: Axis): string {
+  if (axis === 'width' && target.attributes['data-readable-width-release']) {
+    const preferred = /^min\(\s*(\d+(?:\.\d+)?)px\s*,\s*100%\s*\)$/.exec(target.authoredSize?.width ?? styles.width);
+    if (preferred?.[1]) return `${preferred[1]}px`;
+  }
   if (parseNumericPx(styles[axis]) !== undefined) return styles[axis];
   const computed = target.cssSize?.[axis];
   if (computed && parseNumericPx(computed) !== undefined) return computed;

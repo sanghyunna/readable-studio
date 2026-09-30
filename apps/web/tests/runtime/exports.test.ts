@@ -19,6 +19,8 @@ import {
   openSandboxedPreviewInNewTab,
   prepareImageExportTarget,
   requestPreviewSnapshot,
+  requestPreviewSnapshotResult,
+  captureHostIframeSnapshot,
 } from '../../src/runtime/exports';
 
 function mockResponse(headers: Record<string, string>): Response {
@@ -180,6 +182,34 @@ const FLEX_COLUMN_DECK_HTML =
   + '<section class="slide active">One</section>'
   + '<section class="slide">Two</section>'
   + '</body></html>';
+
+describe('full-document host image capture', () => {
+  it('requests the iframe clip with fullDocument for HTML and preserves fixed-size captures', async () => {
+    const capture = vi.fn().mockResolvedValue({ ok: true, dataUrl: 'data:image/png;base64,eA==', w: 600, h: 924 });
+    const restore = installMockReadableStudioHost({ host: { capture: { page: capture } } });
+    const iframe = { getBoundingClientRect: () => ({ left: 12, top: 24, width: 400, height: 250 }) } as HTMLIFrameElement;
+    try {
+      await captureHostIframeSnapshot(iframe, { fullDocument: true });
+      expect(capture).toHaveBeenCalledWith({ clip: { x: 12, y: 24, width: 400, height: 250 }, fullDocument: true });
+      await captureHostIframeSnapshot(iframe);
+      expect(capture).toHaveBeenLastCalledWith({ clip: { x: 12, y: 24, width: 400, height: 250 } });
+    } finally {
+      restore();
+    }
+  });
+
+  it('surfaces an over-tall host failure instead of falling back to a viewport image', async () => {
+    const capture = vi.fn().mockResolvedValue({ ok: false, code: 'CAPTURE_TOO_LARGE', reason: 'Document is too tall to capture.' });
+    const restore = installMockReadableStudioHost({ host: { capture: { page: capture } } });
+    try {
+      const iframe = { getBoundingClientRect: () => ({ left: 0, top: 0, width: 400, height: 250 }) } as HTMLIFrameElement;
+      await expect(captureHostIframeSnapshot(iframe, { fullDocument: true })).rejects.toThrow('Document is too tall to capture.');
+      expect(capture).toHaveBeenCalledTimes(1);
+    } finally {
+      restore();
+    }
+  });
+});
 
 describe('archiveRootFromFilePath', () => {
   it('returns the top-level directory name when present', () => {
@@ -942,6 +972,44 @@ describe('requestPreviewSnapshot', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it('posts full-document intent to the fallback bridge', async () => {
+    const postMessage = vi.fn();
+    const contentWindow = { postMessage };
+    const iframe = { contentWindow } as unknown as HTMLIFrameElement;
+    const result = requestPreviewSnapshotResult(iframe, 8000, { fullDocument: true });
+    expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'readable-studio:snapshot', fullDocument: true }), '*');
+    const { id } = postMessage.mock.calls[0]![0] as { id: string };
+    window.dispatchEvent({ type: 'message', source: contentWindow, data: { type: 'readable-studio:snapshot:result', id, dataUrl: 'data:image/png;base64,eA==', w: 400, h: 616 } } as unknown as Event);
+    await expect(result).resolves.toEqual({ ok: true, snapshot: { dataUrl: 'data:image/png;base64,eA==', w: 400, h: 616 } });
+  });
+
+  it('routes full-document requests away from the viewport-only URL bridge', async () => {
+    const postMessage = vi.fn();
+    const iframe = {
+      contentWindow: { postMessage },
+      src: 'https://studio.example/api/projects/p/raw/report.html?odPreviewBridge=snapshot',
+    } as unknown as HTMLIFrameElement;
+    await expect(requestPreviewSnapshotResult(iframe, 8000, { fullDocument: true }))
+      .resolves.toEqual({ ok: false, reason: 'render-unavailable' });
+    expect(postMessage).not.toHaveBeenCalled();
+  });
+
+  it('does not expose the internal empty-render token from an older bridge', async () => {
+    const postMessage = vi.fn();
+    const contentWindow = { postMessage };
+    const iframe = { contentWindow } as unknown as HTMLIFrameElement;
+    const result = requestPreviewSnapshotResult(iframe);
+    const { id } = postMessage.mock.calls[0]![0] as { id: string };
+    window.dispatchEvent({ type: 'message', source: contentWindow, data: { type: 'readable-studio:snapshot:result', id, error: 'empty-render' } } as unknown as Event);
+    const response = await result;
+    expect(response.ok).toBe(false);
+    if (!response.ok) {
+      expect(response.reason).toBe('render-unavailable');
+      expect(response.error).toBeTruthy();
+      expect(response.error).not.toBe('empty-render');
+    }
   });
 
   it('returns null when the iframe has no contentWindow', async () => {

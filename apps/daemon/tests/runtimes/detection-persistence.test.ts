@@ -31,6 +31,10 @@ function result(def: RuntimeAgentDef, executable = process.execPath): DetectedAg
   return { ...def, available: true, path: def.id === 'codex' ? executable : process.execPath, modelsSource: 'live',
     authStatus: 'ok', models: [{ id: 'verified', label: 'Verified' }] };
 }
+function kimiResult(def: RuntimeAgentDef): DetectedAgent {
+  const { authStatus: _authStatus, ...agent } = result(def);
+  return agent;
+}
 function deferred<T>() {
   let resolve: (value: T) => void = () => { throw new Error('not initialized'); };
   const promise = new Promise<T>((done) => { resolve = done; });
@@ -97,6 +101,77 @@ it('reuses persisted results without scanning when a later process starts', asyn
   expect(await storedScan()).toEqual(stored);
   expect(detection.getStartupScanProgress()).toBeNull();
 });
+it('retains verified authenticated-session models when a later discovery fails', async () => {
+  // Given Kimi's authenticated-session capability (no separate auth probe), previously verified live.
+  const kimi = AGENT_DEFS.find((def) => def.id === 'kimi');
+  if (!kimi) throw new Error('Kimi definition missing');
+  expect(kimi.modelDiscovery).toBe('authenticated-session');
+  expect(kimi.authProbe).toBeUndefined();
+  vi.mocked(safeProbe).mockImplementation(async (def) => def.id === 'kimi' ? kimiResult(def) : result(def));
+  await detection.detectAgents(env, { enabledAgentIds: ['kimi'] });
+  await restart();
+  vi.mocked(safeProbe).mockImplementation(async (def) => def.id === 'kimi'
+    ? { ...kimiResult(def), available: false, models: [], modelsSource: 'fallback',
+        diagnostics: [{ reason: 'discovery-failed', severity: 'error', message: 'Live model discovery failed.', fixActions: [{ kind: 'rescan' }] }] }
+    : result(def));
+  // When a new scan sees a transient discovery error.
+  const [agent] = await detection.detectAgents(env, { enabledAgentIds: ['kimi'], refresh: true });
+  // Then the last authenticated session remains usable, including after restart.
+  expect(agent).toMatchObject({ available: true, modelsSource: 'live', models: [{ id: 'verified' }],
+    diagnostics: [{ severity: 'warning', fixActions: expect.arrayContaining([{ kind: 'rescan' }]) }] });
+  await restart();
+  const [replayed] = await detection.detectAgents(env, { enabledAgentIds: ['kimi'] });
+  expect(replayed).toMatchObject({ available: true, models: [{ id: 'verified' }] });
+  // A second failed verification cannot extend the same unverified catalogue indefinitely.
+  const [expired] = await detection.detectAgents(env, { enabledAgentIds: ['kimi'], refresh: true });
+  expect(expired).toMatchObject({ available: false, models: [] });
+  expect((await storedScan()).results.find(({ id }) => id === 'kimi')).toMatchObject({ available: false });
+});
+
+it.each([
+  { name: 'never verified', previous: false, reason: 'discovery-failed', path: process.execPath, authStatus: undefined },
+  { name: 'auth required', previous: true, reason: 'discovery-failed', path: process.execPath, authStatus: 'missing' },
+  { name: 'binary missing', previous: true, reason: 'not-on-path', path: undefined, authStatus: undefined },
+] as const)('blocks $name after a discovery attempt', async ({ previous, reason, path: executable, authStatus }) => {
+  // Given either no authenticated history, a real sign-in failure, or a missing executable.
+  if (previous) {
+    await detection.detectAgents(env, { enabledAgentIds: ['kimi'] });
+    await restart();
+  }
+  vi.mocked(safeProbe).mockImplementation(async (def) => def.id === 'kimi'
+    ? { ...kimiResult(def), ...(executable ? { path: executable } : {}),
+        ...(authStatus ? { authStatus } : {}), available: false, models: [], modelsSource: 'fallback',
+        diagnostics: [{ reason, severity: 'error', message: 'Discovery failed.', fixActions: [{ kind: 'rescan' }] }] }
+    : result(def));
+  // When the scan completes.
+  const [agent] = await detection.detectAgents(env, { enabledAgentIds: ['kimi'], refresh: true });
+  // Then prior availability never overrides a genuine blocker.
+  expect(agent).toMatchObject({ available: false, models: [] });
+});
+
+it('does not inherit Kimi models after an executable replacement at the same path', async () => {
+  // Given a verified Kimi executable whose identity changes without changing its configured path.
+  const executable = path.join(root, 'kimi.exe');
+  await writeFile(executable, 'original');
+  const configured = { kimi: { CODEX_BIN: executable } };
+  vi.mocked(safeProbe).mockImplementation(async (def) => def.id === 'kimi'
+    ? { ...kimiResult(def), path: executable }
+    : result(def));
+  await detection.detectAgents(configured, { enabledAgentIds: ['kimi'] });
+  const replacement = path.join(root, 'replacement.exe');
+  await writeFile(replacement, 'different');
+  await rename(replacement, executable);
+  await restart();
+  vi.mocked(safeProbe).mockImplementation(async (def) => def.id === 'kimi'
+    ? { ...kimiResult(def), path: executable, available: false, models: [], modelsSource: 'fallback',
+        diagnostics: [{ reason: 'discovery-failed', severity: 'error', message: 'Discovery failed.', fixActions: [{ kind: 'rescan' }] }] }
+    : result(def));
+  // When the replacement fails discovery at the same launch path.
+  const [agent] = await detection.detectAgents(configured, { enabledAgentIds: ['kimi'], refresh: true });
+  // Then the old executable's proof cannot authorize the replacement.
+  expect(agent).toMatchObject({ available: false, models: [] });
+});
+
 it('verifies fresh and replaces storage when explicitly rescanned', async () => {
   // Given an old persisted model.
   await detection.detectAgents(env, options);

@@ -1,10 +1,39 @@
 import { agentCapabilities } from '../capabilities.js';
+import { spawnEnvForAgent } from '../env.js';
+import { execAgentFile } from '../invocation.js';
+import { applyAgentLaunchEnv, resolveAgentLaunch } from '../launch.js';
 import { DEFAULT_MODEL_OPTION } from './shared.js';
 import { discoverClaudeCatalog, parseClaudeModelCatalog } from './claude-model-discovery.js';
 import { loadMmdRouteModels } from '../mmd-routes.js';
 import type { RuntimeAgentDef } from '../types.js';
 
 const CLAUDE_FALLBACK_MODELS = [DEFAULT_MODEL_OPTION];
+const thinkingDisplayProbes = new Map<string, Promise<boolean>>();
+
+// --version and --help ignore unknown options. An invalid display value must
+// instead produce the CLI's recognized-option validation error before inference.
+export async function probeClaudeThinkingDisplaySupport(bin: string, env: NodeJS.ProcessEnv): Promise<boolean> {
+  try {
+    await execAgentFile(bin, ['--thinking-display', '__readable_capability_probe__', '-p'], { env, timeout: 5000 });
+    return false;
+  } catch (error) {
+    const stderr = error instanceof Error && 'stderr' in error ? error.stderr : null;
+    return typeof stderr === 'string' && stderr.includes("option '--thinking-display") && stderr.includes('argument') && stderr.includes('is invalid');
+  }
+}
+
+export async function ensureClaudeThinkingDisplayCapability(configuredEnv: Record<string, string>): Promise<void> {
+  const launch = resolveAgentLaunch(claudeAgentDef, configuredEnv);
+  if (!launch.launchPath) return;
+  const env = applyAgentLaunchEnv(spawnEnvForAgent('claude', process.env, configuredEnv, undefined, { resolvedBin: launch.selectedPath }), launch);
+  let probe = thinkingDisplayProbes.get(launch.launchPath);
+  if (!probe) {
+    probe = probeClaudeThinkingDisplaySupport(launch.launchPath, env);
+    thinkingDisplayProbes.set(launch.launchPath, probe);
+  }
+  const thinkingDisplay = await probe;
+  agentCapabilities.set('claude', { ...agentCapabilities.get('claude'), thinkingDisplay });
+}
 
 export const claudeAgentDef = {
     id: 'claude',
@@ -71,6 +100,8 @@ export const claudeAgentDef = {
       if (options.reasoning && options.reasoning !== 'default') {
         args.push('--effort', options.reasoning);
       }
+      // Display does not change the model's selected/default reasoning effort.
+      if (caps.thinkingDisplay) args.push('--thinking-display', 'summarized');
       const dirs = (extraAllowedDirs || []).filter(
         (d) => typeof d === 'string' && d.length > 0,
       );

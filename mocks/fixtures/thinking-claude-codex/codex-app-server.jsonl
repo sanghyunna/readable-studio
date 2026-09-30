@@ -1,0 +1,161 @@
+{"method":"item/reasoning/summaryPartAdded","params":{"itemId":"rs_05a9d8f2784bc8b0016aba2ebfce6087d0970eac3e84aac039","summaryIndex":0}}
+{"method":"item/reasoning/summaryTextDelta","params":{"itemId":"rs_05a9d8f2784bc8b0016aba2ebfce6087d0970eac3e84aac039","delta":"**Determining correct box labels**","summaryIndex":0}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"Pick"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" one"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" fruit"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" from"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" the"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" box"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" labeled"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" **"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"Mixed"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"**"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":".\n\n"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"Because"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" every"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" label"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" is"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" wrong"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":","}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" the"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" box"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" labeled"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" **"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"Mixed"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"**"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" cannot"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" actually"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" be"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" mixed"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"."}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" It"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" must"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" contain"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" only"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" apples"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" or"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" only"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" oranges"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":".\n\n"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"-"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" If"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" you"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" draw"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" an"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" **"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"apple"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"**"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":":\n"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" "}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" -"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" Box"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" labeled"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" **"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"Mixed"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"**"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" is"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" actually"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" **"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"Ap"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"ples"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"**\n"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" "}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" -"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" Box"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" labeled"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" **"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"Or"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"anges"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"**"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" must"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" be"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" **"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"Mixed"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"**\n"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" "}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" -"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" Box"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" labeled"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" **"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"Ap"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"ples"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"**"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" must"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" be"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" **"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"Or"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"anges"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"**\n\n"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"-"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" If"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" you"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" draw"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" an"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" **"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"orange"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"**"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":":\n"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" "}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" -"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" Box"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" labeled"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" **"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"Mixed"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"**"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" is"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" actually"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" **"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"Or"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"anges"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"**\n"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" "}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" -"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" Box"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" labeled"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" **"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"Ap"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"ples"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"**"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" must"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" be"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" **"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"Mixed"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"**\n"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" "}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" -"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" Box"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" labeled"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" **"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"Or"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"anges"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"**"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" must"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" be"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" **"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"Ap"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"ples"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"**\n\n"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"So"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" the"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" answer"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":":"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" **"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"pick"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" from"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" the"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" box"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" labeled"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" Mixed"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"**,"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" then"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" use"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" the"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" fruit"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" you"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" draw"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" to"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" determine"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" the"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":" rest"}}
+{"method":"item/agentMessage/delta","params":{"itemId":"msg_05a9d8f2784bc8b0016aba2ec2ccb887d0ac0d3c6165acf9e4","delta":"."}}
+{"method":"turn/completed","params":{"turn":{"status":"completed"}}}

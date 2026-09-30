@@ -64,8 +64,8 @@ function durableDetection(
       const snapshotFingerprint = createHash('sha256').update(JSON.stringify({
         fingerprint, executables: executables.map(({ def, identity }) => [def.id, identity]),
       })).digest('hex');
-      const stored = options.refresh ? null : await readStoredAgentScan(dataDir);
-      if (stored?.fingerprint === snapshotFingerprint &&
+      const stored = await readStoredAgentScan(dataDir);
+      if (!options.refresh && stored?.fingerprint === snapshotFingerprint &&
           JSON.stringify(stored.agentIds) === JSON.stringify(defs.map((def) => def.id)) &&
           executables.every(({ def, launch, identity }) => {
             const agent = stored.results.find((entry) => entry.id === def.id);
@@ -77,7 +77,10 @@ function durableDetection(
           if (!agent) return cachedSafeProbe(safeProbe, def, configuredEnvByAgent[def.id] ?? {}, { ...options, refresh: true });
           const available = agent.available && agent.models.length > 0 &&
             (agent.modelsSource === 'fallback'
-              ? !def.modelSelectionRequired && def.fallbackModels.some((model) => model.id !== 'default') &&
+              ? !def.modelSelectionRequired &&
+                (def.fallbackModels.some((model) => model.id !== 'default') ||
+                  (def.fallbackModels.some((model) => model.id === 'default') &&
+                    agent.authStatus === 'ok')) &&
                 (!agent.authStatus || agent.authStatus === 'ok')
               : def.modelDiscovery === 'authenticated-session' || agent.authStatus === 'ok');
           return { ...stripFns(def), ...agent, available, models: available ? agent.models : [] };
@@ -89,8 +92,27 @@ function durableDetection(
         }
         return results;
       }
+      const prior = stored?.fingerprint === snapshotFingerprint ? stored.results : [];
       await clearStoredAgentScan(dataDir);
-      const probe = (def: RuntimeAgentDef) => cachedSafeProbe(safeProbe, def, configuredEnvByAgent[def.id] ?? {}, { ...options, refresh: true });
+      const probe = async (def: RuntimeAgentDef): Promise<DetectedAgent> => {
+        const agent = await cachedSafeProbe(safeProbe, def, configuredEnvByAgent[def.id] ?? {}, { ...options, refresh: true });
+        const previous = prior.find((entry) => entry.id === def.id);
+        const executable = executables.find((entry) => entry.def.id === def.id);
+        // A failed catalogue request cannot revoke a previously authenticated
+        // executable. A changed/missing binary or a real auth failure can.
+        if (!agent.available && agent.path && executable?.identity &&
+            agent.path === executable.launch.selectedPath && previous?.available &&
+            previous.path === agent.path && previous.models.length > 0 &&
+            !previous.diagnostics?.some((diagnostic) => diagnostic.reason === 'discovery-failed') &&
+            (previous.modelsSource === 'live' || previous.authStatus === 'ok') &&
+            agent.authStatus !== 'missing' && agent.authStatus !== 'unknown' &&
+            agent.diagnostics?.length === 1 && agent.diagnostics[0]?.reason === 'discovery-failed') {
+          return { ...agent, available: true, models: previous.models, modelsSource: previous.modelsSource,
+            ...(previous.authStatus === 'ok' ? { authStatus: 'ok' as const } : {}),
+            diagnostics: agent.diagnostics.map((diagnostic) => ({ ...diagnostic, severity: 'warning' as const })) };
+        }
+        return agent;
+      };
       const session = startStartupScan(defs, probe, options.signal);
       let completed = 0;
       const results = await Promise.all([...session.promises.values()].map(async (promise, index) => {

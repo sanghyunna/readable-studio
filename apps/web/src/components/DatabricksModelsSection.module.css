@@ -109,7 +109,9 @@
 }
 
 .rowPath {
-  color: var(--text-faint);
+  /* --text-faint is 1.85:1 on the dark row surface; muted stays de-emphasized
+     next to the 13px/700 title but reads in both schemes (>= 4.5:1). */
+  color: var(--text-muted);
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-size: 11px;
   overflow-wrap: anywhere;

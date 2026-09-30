@@ -1,6 +1,6 @@
 import type { Express, Request, RequestHandler } from 'express';
 import {
-  API_ERROR_CODES,
+  API_ERROR_CODES, DatabricksNamesError,
   type ApiErrorResponse, type DatabricksClientRequest, type DatabricksDisableRequest,
   type DatabricksEnableRequest, type DatabricksEndpoint, type DatabricksEndpointResponse,
   type DatabricksErrorResponse, type DatabricksIssue, type DatabricksLookupRequest,
@@ -12,6 +12,7 @@ import {
   type DatabricksVerifyRequest,
 } from '@readable-studio/contracts';
 import type { DatabricksService } from './databricks/service.js';
+import { databricksNamedRequest, publicNamedResult } from './databricks-named-http.js';
 import { databricksWorkspaceOrigin, issueFor } from './databricks/client.js';
 import { DatabricksRuntimeError, serviceFailureDetail } from './databricks/failure.js';
 
@@ -98,14 +99,14 @@ function endpoint(value: DatabricksEndpoint): DatabricksEndpoint {
       contextWindow: value.capabilities.contextWindow === null ? null : number(value.capabilities.contextWindow),
       maxTokens: value.capabilities.maxTokens === null ? null : number(value.capabilities.maxTokens),
       ...(value.capabilities.limitSources === undefined ? {} : { limitSources: {
-        contextWindow: choice(value.capabilities.limitSources.contextWindow, ['metadata', 'model-table', 'unknown']),
-        maxTokens: choice(value.capabilities.limitSources.maxTokens, ['metadata', 'model-table', 'unknown', 'endpoint']),
+        contextWindow: choice(value.capabilities.limitSources.contextWindow, ['metadata', 'model-table', 'unknown', 'advertised', 'default']),
+        maxTokens: choice(value.capabilities.limitSources.maxTokens, ['metadata', 'model-table', 'unknown', 'endpoint', 'probed', 'default']),
       } }),
     },
     ...(value.protocolEvidence === undefined ? {} : { protocolEvidence: {
       advertised: value.protocolEvidence.advertised.map((api) => choice(api, ['anthropic/v1/messages', 'openai/v1/chat/completions', 'mlflow/v1/chat/completions', 'openai/v1/responses', 'mlflow/v1/responses'])),
       native: value.protocolEvidence.native.map((api) => choice(api, ['anthropic/v1/messages', 'openai/v1/chat/completions', 'mlflow/v1/chat/completions', 'openai/v1/responses', 'mlflow/v1/responses'])),
-      reason: choice(value.protocolEvidence.reason, ['native-api', 'advertised-api', 'prefer-messages', 'chat-task', 'unresolved', 'runtime-accepted']),
+      reason: choice(value.protocolEvidence.reason, ['native-api', 'advertised-api', 'prefer-messages', 'chat-task', 'unresolved', 'runtime-accepted', 'measured-api']),
     } }),
     evidence: choice(value.evidence, ['metadata', 'recipe', 'verified']),
     ...(value.issue === undefined ? {} : { issue: issue(value.issue) }),
@@ -159,6 +160,7 @@ export const databricksPublic = {
     return {
       scanId: publicId(value.scanId), profileId: publicId(value.profileId), revision: number(value.revision), state: state(value.state),
       createdAt, startedAt: timestamp(value.startedAt), completedAt: timestamp(value.completedAt), endpoints: value.endpoints.map(endpoint),
+      ...(value.inputResults ? { inputResults: value.inputResults.map(publicNamedResult) } : {}),
       cursor: value.cursor === null ? null : publicId(value.cursor), counters: counters(value.counters), completeness: completeness(value.completeness), issues: value.issues.map(issue),
     };
   },
@@ -189,7 +191,7 @@ export const databricksPublic = {
 };
 
 export function databricksFailure(error: unknown): DatabricksErrorResponse | ApiErrorResponse {
-  if (error instanceof DatabricksInputError) return { error: { code: 'BAD_REQUEST', message: 'Invalid Databricks request', retryable: false } };
+  if (error instanceof DatabricksInputError || error instanceof DatabricksNamesError) return { error: { code: 'BAD_REQUEST', message: 'Invalid Databricks request', retryable: false } };
   const fault = issueFor(error);
   const detail = error instanceof DatabricksRuntimeError ? error.detail : serviceFailureDetail(fault.code);
   return { error: { code: fault.code, ...detail, retryable: error instanceof DatabricksRuntimeError ? detail.retryable : fault.retryable } };
@@ -246,7 +248,7 @@ export function registerDatabricksRoutes(app: Express, ctx: RegisterDatabricksRo
       catch (error) {
         const failure = databricksFailure(error);
         const code = failure.error.code;
-        res.status(error instanceof DatabricksInputError ? 400 : code === 'DATABRICKS_AUTH_REQUIRED' ? 401
+        res.status(error instanceof DatabricksInputError || error instanceof DatabricksNamesError ? 400 : code === 'DATABRICKS_AUTH_REQUIRED' ? 401
           : code === 'DATABRICKS_PERMISSION_DENIED' ? 403 : code === 'DATABRICKS_SCAN_EXPIRED' ? 404
           : code === 'DATABRICKS_STALE_REVISION' ? 409 : 503).json(failure);
       }
@@ -263,6 +265,7 @@ export function registerDatabricksRoutes(app: Express, ctx: RegisterDatabricksRo
     const request: DatabricksClientRequest = { executableId: body.executableId === null ? null : databricksInputId(body.executableId) };
     return ctx.setClient(request);
   }, databricksPublic.status);
+  route('post', '/scans/named', (req) => service.startNamedScan(databricksNamedRequest(req.body)), databricksPublic.scan, 202);
   route('post', '/scans', (req) => {
     const body = input(req.body, ['profileId', 'scopeIds']);
     if (body.scopeIds !== undefined && !Array.isArray(body.scopeIds)) return invalid();

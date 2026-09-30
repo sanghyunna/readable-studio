@@ -15,6 +15,7 @@ import {
 import type { ReadableStudioHostActionResult, ReadableStudioHostCaptureResult } from "@readable-studio/host";
 
 import { openValidatedDirectory } from "./open-path.js";
+import { captureFullDocument, electronCaptureSurface, routeCaptureRequest } from "./full-document-capture.js";
 import { createElectronPdfTarget, exportPdfFromHtml, savePrintReadyDocumentAsPdf } from "./pdf-export.js";
 import type { PrintReadyPdfOptions } from "./pdf-export.js";
 import { runStartupSplash } from "./startup-splash.js";
@@ -1620,11 +1621,20 @@ export async function createDesktopRuntime(options: DesktopRuntimeOptions): Prom
     }
     try {
       const clip = parseCaptureClip(rawOptions);
-      const image = clip
-        ? await window.webContents.capturePage(clip)
-        : await window.webContents.capturePage();
-      const size = image.getSize();
-      return { ok: true, dataUrl: image.toDataURL(), w: size.width, h: size.height };
+      const fullDocument = rawOptions != null && typeof rawOptions === 'object' && !Array.isArray(rawOptions) &&
+        (rawOptions as { fullDocument?: unknown }).fullDocument === true;
+      return await routeCaptureRequest(fullDocument,
+        async () => {
+          const image = clip
+            ? await window.webContents.capturePage(clip)
+            : await window.webContents.capturePage();
+          const size = image.getSize();
+          return { ok: true, dataUrl: image.toDataURL(), w: size.width, h: size.height };
+        },
+        async () => clip
+          ? captureFullDocument(electronCaptureSurface(window.webContents, clip), clip)
+          : { ok: false, reason: 'Full-document capture requires a valid preview iframe clip' },
+      );
     } catch (error) {
       return { ok: false, reason: error instanceof Error ? error.message : String(error) };
     }

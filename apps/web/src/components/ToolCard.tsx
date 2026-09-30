@@ -548,11 +548,14 @@ function GenericCard({
   );
 }
 
+// Tool-call outcomes are the agent's concern: an errored call still settles
+// as done (its output stays readable in the expanded detail), and a call the
+// run abandoned reads as interrupted, never as an error. Run-level failure is
+// surfaced by the message footer and ChatPane's error card instead.
 function ResultBadge({ result, runStreaming, runSucceeded }: { result?: Props['result']; runStreaming: boolean; runSucceeded: boolean }) {
   const t = useT();
   if (!result && runStreaming) return <span className="op-status op-status-running" title={t('tool.running')}><Icon name="spinner" size={14} /></span>;
-  if (!result && !runSucceeded) return <span className="op-status op-status-error" title={t('tool.error')}><Icon name="close" size={14} /></span>;
-  if (result?.isError) return <span className="op-status op-status-error" title={result.content || t('tool.error')}><Icon name="close" size={14} /></span>;
+  if (!result && !runSucceeded) return <span className="op-status op-status-interrupted" title={t('tool.interrupted')}><Icon name="minus" size={14} /></span>;
   return <span className="op-status op-status-ok" title={t('tool.done')}><Icon name="check" size={14} /></span>;
 }
 

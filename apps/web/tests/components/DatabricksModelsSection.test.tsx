@@ -103,10 +103,33 @@ describe('DatabricksModelsSection', () => {
     expect(within(group).getByText(profile.workspaceDisplayLabel!)).toBeTruthy();
     const first = rows[0]!;
     expect(within(first).getByText('alpha-70b').tagName).toBe('STRONG');
-    expect(within(first).getByText('catalog.schema.alpha-70b').tagName).toBe('CODE');
+    expect(within(first).getByText('catalog.schema').textContent).toBe('catalog.schema');
+    expect(within(first).getByTitle('catalog.schema.alpha-70b').getAttribute('aria-label')).toBe('catalog.schema.alpha-70b');
     // Limits never leak into the title.
     expect(within(first).getByText('alpha-70b').textContent).not.toMatch(/128/);
     expect(within(first).getByText(/128,000/).tagName).toBe('SMALL');
+  });
+
+  it('marks advertised and default limits as unconfirmed in settings', async () => {
+    databricksClient.fetchDatabricksModels.mockResolvedValue({
+      models: [{ ...alpha, capabilities: { ...alpha.capabilities, limitSources: { contextWindow: 'advertised', maxTokens: 'default' } } }],
+      revision: 7, issues: [],
+    });
+    renderSection();
+    const row = await screen.findByTestId('databricks-model-row');
+    expect(within(row).getByText(/128,000/).textContent).toContain('limit not confirmed');
+    expect(within(row).getByText(/8,192/).textContent).toContain('limit not confirmed');
+  });
+
+  it('shows the custom endpoint identity and its served model separately', async () => {
+    databricksClient.fetchDatabricksModels.mockResolvedValue({
+      models: [{ ...alpha, kind: 'serving-endpoint', label: 'claude-opus-4-1', displayName: 'corp-claude-endpoint', servedModelName: 'claude-opus-4-1' }],
+      revision: 7, issues: [],
+    });
+    renderSection();
+    const row = await screen.findByTestId('databricks-model-row');
+    expect(within(row).getByTitle('corp-claude-endpoint').textContent).toBe('corp-claude-endpoint');
+    expect(within(row).getByText('claude-opus-4-1').tagName).toBe('CODE');
   });
 
   it('removes a model only after confirmation and republishes the catalogue', async () => {

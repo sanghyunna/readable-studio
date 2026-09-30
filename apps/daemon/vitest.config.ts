@@ -1,6 +1,13 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  resolve: {
+    alias: [
+      { find: /^@readable-studio\/contracts$/, replacement: fileURLToPath(new URL('../../packages/contracts/src/index.ts', import.meta.url)) },
+      { find: '@readable-studio/html-edit', replacement: fileURLToPath(new URL('../../packages/html-edit/src/index.ts', import.meta.url)) },
+    ],
+  },
   test: {
     environment: 'node',
     // These suites mutate process-wide env/PATH and bind real local servers.

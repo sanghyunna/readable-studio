@@ -132,6 +132,18 @@ describe('ManualEditGeometryControls', () => {
     expect(onStyleField).toHaveBeenLastCalledWith('width', '262.4px');
   });
 
+  it('shows the preferred width rather than the narrow used width for a release', () => {
+    // Given
+    const target = { ...geometryTarget(), attributes: { 'data-readable-width-release': '{}' },
+      authoredSize: { width: 'min(720px, 100%)', height: 'auto' }, cssSize: { width: '272px', height: '160px' } };
+    // When
+    render(<ManualEditGeometryControls target={target} styles={{ ...geometryStyles(), width: 'min(720px, 100%)' }} onStyleField={vi.fn()} />);
+    // Then
+    const input = screen.getByRole('textbox', { name: 'Width' });
+    if (!(input instanceof HTMLInputElement)) throw new Error('Expected width input');
+    expect(input.value).toBe('720');
+  });
+
   it('turns direct movement into the existing translate style', () => {
     const onStyleField = vi.fn<(key: keyof ManualEditStyles, value: string) => void>();
     render(

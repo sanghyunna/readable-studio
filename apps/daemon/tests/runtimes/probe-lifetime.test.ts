@@ -73,11 +73,17 @@ test.each([false, true])('bounds cached probes without cooperative cancellation 
   let outcome: unknown = 'pending';
   const options = owned ? { signal: new AbortController().signal } : {};
   const result = cachedSafeProbe(() => new Promise(() => {}), piAgentDef, {}, options);
-  void result.catch((error: unknown) => { outcome = error; });
-  // When the probe's own budget expires.
-  await vi.advanceTimersByTimeAsync(60_000);
-  // Then it rejects even without an owner-provided deadline.
-  expect(outcome).toMatchObject({ name: 'TimeoutError' });
+  void result.then((agent) => { outcome = agent; }, (error: unknown) => { outcome = error; });
+  expect(outcome).toBe('pending');
+  // When the actual probe budget timer fires, not an assumed 60s deadline.
+  await vi.advanceTimersToNextTimerAsync();
+  // Then internal timeout settles as an actionable unavailable-agent result;
+  // an external owner's presence must not change that public contract.
+  expect(outcome).toMatchObject({
+    available: false, models: [], modelsSource: 'fallback',
+    diagnostics: [{ reason: 'probe-timeout', severity: 'error', fixActions: [{ kind: 'rescan' }] }],
+  });
+  expect(vi.getTimerCount()).toBe(0);
 });
 
 test('settles a real failed spawn without waiting for its deadline', async () => {

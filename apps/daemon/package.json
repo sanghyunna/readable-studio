@@ -1,6 +1,6 @@
 {
   "name": "@readable-studio/daemon",
-  "version": "1.1.5",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "main": "./dist/cli.js",
@@ -45,6 +45,7 @@
     "@readable-studio/agui-adapter": "workspace:*",
     "@readable-studio/contracts": "workspace:*",
     "@readable-studio/diagnostics": "workspace:*",
+    "@readable-studio/html-edit": "workspace:*",
     "@readable-studio/platform": "workspace:*",
     "@readable-studio/plugin-runtime": "workspace:*",
     "@readable-studio/registry-protocol": "workspace:*",

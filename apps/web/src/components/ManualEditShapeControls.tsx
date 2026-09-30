@@ -36,6 +36,7 @@ export interface ManualEditShapeControlsProps {
   error?: string | null;
   resizeConstraints?: readonly ManualEditResizeConstraint[];
   announceResizeConstraints?: boolean;
+  onRequestWidthAgentDraft?: () => void;
   busy?: boolean;
   canUndo: boolean;
   canRedo: boolean;
@@ -62,6 +63,7 @@ function ShapeBar({
   error,
   resizeConstraints,
   announceResizeConstraints,
+  onRequestWidthAgentDraft,
   busy,
   canUndo,
   canRedo,
@@ -85,7 +87,8 @@ function ShapeBar({
 
   return (
     <>
-      <ResizeFeedback constraints={resizeConstraints} layout="bar" announce={announceResizeConstraints} />
+      <WidthReleaseFeedback target={target} onApplyPatch={onApplyPatch} busy={busy} />
+      <ResizeFeedback constraints={resizeConstraints} layout="bar" announce={announceResizeConstraints} onRequest={onRequestWidthAgentDraft} />
       <div className={styles.group}>
         <Button variant="subtle" size="icon" aria-label={t('manualEdit.undo')} title={t('manualEdit.undo')} disabled={busy || !canUndo} onClick={onUndo}>
           <RemixIcon name="arrow-go-back-line" size={15} />
@@ -246,6 +249,7 @@ function ShapeStack({
   draftAlt,
   resizeConstraints,
   announceResizeConstraints,
+  onRequestWidthAgentDraft,
   busy,
   getActiveTarget,
   onStyleField,
@@ -314,7 +318,8 @@ function ShapeStack({
         </section>
       ) : null}
 
-      <ResizeFeedback constraints={resizeConstraints} layout="stack" announce={announceResizeConstraints} />
+      <WidthReleaseFeedback target={target} onApplyPatch={onApplyPatch} busy={busy} />
+      <ResizeFeedback constraints={resizeConstraints} layout="stack" announce={announceResizeConstraints} onRequest={onRequestWidthAgentDraft} />
 
       <DisclosureSection
         title={t('manualEdit.sizePosition')}
@@ -461,25 +466,47 @@ function ShapeStack({
   );
 }
 
+function WidthReleaseFeedback({ target, onApplyPatch, busy }: Pick<ManualEditShapeControlsProps, 'target' | 'onApplyPatch' | 'busy'>) {
+  const t = useT();
+  if (!target.attributes['data-readable-width-release']) return null;
+  return <div className={styles.resizeFeedback} role="status">
+    <span>{t('manualEdit.resize.released')}</span>
+    <span className={styles.resizeFeedbackMeasure}>{t('manualEdit.resize.releaseRisk')}</span>
+    <Button variant="subtle" disabled={busy} onClick={() => onApplyPatch({ kind: 'restore-width-release', id: target.id }, t('manualEdit.resize.restore'))}>{t('manualEdit.resize.restore')}</Button>
+  </div>;
+}
+
 function ResizeFeedback({
   constraints,
   layout,
   announce,
+  onRequest,
 }: {
   constraints?: readonly ManualEditResizeConstraint[];
   layout: 'bar' | 'stack';
   announce?: boolean;
+  onRequest?: () => void;
 }) {
   const t = useT();
   if (!constraints?.length) return null;
   const messages = constraints.map((constraint) => {
     const axis = t(constraint.axis === 'width' ? 'manualEdit.shape.width' : 'manualEdit.shape.height');
-    const hasNamedLimit = constraint.reason !== 'layout' && constraint.property && constraint.value;
+    const hasNamedLimit = constraint.confidence !== 'unknown' && constraint.property && constraint.value;
     return {
       axis: constraint.axis,
-      limit: hasNamedLimit
-        ? t('manualEdit.resize.limit', { axis, property: constraint.property!, value: constraint.value! })
-        : t('manualEdit.resize.layoutLimit', { axis }),
+      limit: constraint.causes?.some((cause) => cause.code === 'shared-style-width')
+        ? t('manualEdit.resize.sharedStyleLimit')
+        : hasNamedLimit
+        ? [t('manualEdit.resize.limit', { axis, property: constraint.property!, value: constraint.value! }),
+          ...(constraint.causes?.some((cause) => cause.code === 'ancestor-content-limit') ? [t('manualEdit.resize.contentLimit', { axis })] : []),
+        ].join(' · ')
+        : t(constraint.causes?.some((cause) => cause.code === 'parent-flex-allocation' && cause.confidence === 'confirmed')
+          ? 'manualEdit.resize.flexLimit'
+          : constraint.causes?.some((cause) => cause.code === 'parent-grid-allocation' && cause.confidence === 'confirmed')
+            ? 'manualEdit.resize.gridLimit'
+            : constraint.causes?.some((cause) => cause.code === 'ancestor-content-limit')
+              ? 'manualEdit.resize.contentLimit'
+              : constraint.confidence === 'unknown' ? 'manualEdit.resize.unknownLimit' : 'manualEdit.resize.layoutLimit', { axis }),
       measurements: t('manualEdit.resize.measurements', {
         requested: Math.round(constraint.requested),
         applied: Math.round(constraint.applied),
@@ -495,6 +522,7 @@ function ResizeFeedback({
             <span className={styles.resizeFeedbackMeasure}>{message.measurements}</span>
           </div>
         ))}
+        {onRequest ? <Button variant="subtle" onClick={onRequest}>{t('manualEdit.resize.requestAgent')}</Button> : null}
       </div>
       {announce ? (
         <VisuallyHidden role="status" aria-live="polite">

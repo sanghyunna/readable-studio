@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { createCommandInvocation, createPackageManagerInvocation } from "@readable-studio/platform";
 import { SIDECAR_ENV } from "@readable-studio/sidecar-proto";
 
+import { forwardPnpmProfile, isBuildProfilingEnabled, measureBuildStep } from "../build-profile.js";
 import { hashJson, hashPath, ToolPackCache } from "../cache.js";
 import type { ToolPackConfig } from "../config.js";
 import { assertDatabricksCliOutput, stageDatabricksCli } from "../databricks-cli.js";
@@ -57,12 +58,22 @@ import type {
 const execFileAsync = promisify(execFile);
 
 async function runPnpm(config: ToolPackConfig, args: string[], extraEnv: NodeJS.ProcessEnv = {}): Promise<void> {
-  const invocation = createPackageManagerInvocation(args, process.env);
-  await execFileAsync(invocation.command, invocation.args, {
-    cwd: config.workspaceRoot, windowsHide: true,
-    env: { ...process.env, ...extraEnv },
-    windowsVerbatimArguments: invocation.windowsVerbatimArguments,
-  });
+  const profiling = isBuildProfilingEnabled() && args.includes("-r");
+  const invocation = createPackageManagerInvocation(profiling ? ["--reporter=ndjson", ...args] : args, process.env);
+  try {
+    const result = await execFileAsync(invocation.command, invocation.args, {
+      cwd: config.workspaceRoot, windowsHide: true,
+      env: { ...process.env, ...extraEnv },
+      ...(profiling ? { maxBuffer: 16 * 1024 * 1024 } : {}),
+      windowsVerbatimArguments: invocation.windowsVerbatimArguments,
+    });
+    if (profiling) forwardPnpmProfile(result.stdout);
+  } catch (error) {
+    if (profiling && error instanceof Error && "stdout" in error && typeof error.stdout === "string") {
+      forwardPnpmProfile(error.stdout);
+    }
+    throw error;
+  }
 }
 
 async function runNpmInstall(appRoot: string): Promise<void> {
@@ -70,15 +81,16 @@ async function runNpmInstall(appRoot: string): Promise<void> {
     args: ["install", "--omit=dev", "--package-lock"],
     command: process.platform === "win32" ? "npm.cmd" : "npm",
   });
-  await execFileAsync(invocation.command, invocation.args, {
+  await measureBuildStep("packaged-app:npm-install", () => execFileAsync(invocation.command, invocation.args, {
     cwd: appRoot, windowsHide: true,
     env: process.env,
     windowsVerbatimArguments: invocation.windowsVerbatimArguments,
-  });
+  }));
 }
 
 async function runEsbuild(config: ToolPackConfig, args: string[]): Promise<void> {
-  await runPnpm(config, ["--filter", "@readable-studio/packaged", "exec", "esbuild", ...args]);
+  await measureBuildStep("prebundle:esbuild", () =>
+    runPnpm(config, ["--filter", "@readable-studio/packaged", "exec", "esbuild", ...args]), { args });
 }
 
 function nodeNativeModuleOutputPath(appRoot: string): string {
@@ -116,6 +128,7 @@ const WORKSPACE_BUILD_FILTER_PACKAGES = [
   "@readable-studio/plugin-runtime",
   "@readable-studio/download",
   "@readable-studio/host",
+  "@readable-studio/html-edit",
   "@readable-studio/diagnostics",
   "@readable-studio/components",
   "@readable-studio/daemon",
@@ -138,16 +151,18 @@ async function buildWorkspaceArtifacts(config: ToolPackConfig): Promise<void> {
     // One recursive invocation builds every workspace package in dependency
     // order with up to `workspaceConcurrency` running at once. READABLE_WEB_OUTPUT_MODE
     // is consumed only by the web build; it is inert for the other packages.
-    await runPnpm(
+    await measureBuildStep("workspace:recursive-build", () => runPnpm(
       config,
       ["-r", `--workspace-concurrency=${workspaceConcurrency}`, ...filterArgs, "run", "build"],
       { READABLE_WEB_OUTPUT_MODE: config.webOutputMode },
-    );
-    await runPnpm(config, ["--filter", "@readable-studio/platform", "build:native:win32"]);
-    await runPnpm(config, ["--filter", "@readable-studio/web", "build:sidecar"]);
+    ));
+    await measureBuildStep("workspace:native-isolator", () =>
+      runPnpm(config, ["--filter", "@readable-studio/platform", "build:native:win32"]));
+    await measureBuildStep("workspace:web-sidecar", () =>
+      runPnpm(config, ["--filter", "@readable-studio/web", "build:sidecar"]));
     // Strip browser sourcemaps before any packaging step copies the web
     // output into the Electron resources.
-    await processWebSourcemaps(config);
+    await measureBuildStep("workspace:web-sourcemaps", () => processWebSourcemaps(config));
   } finally {
     if (previousWebNextEnv == null) await rm(webNextEnvPath, { force: true });
     else await writeFile(webNextEnvPath, previousWebNextEnv, "utf8");
@@ -470,7 +485,7 @@ export async function prepareWinPackagedApp(
       }
       await stageDatabricksCli(appRoot);
       await runNpmInstall(appRoot);
-      await patchPiPackage(appRoot, config.workspaceRoot);
+      await measureBuildStep("packaged-app:patch-pi", () => patchPiPackage(appRoot, config.workspaceRoot));
       // Execute Pi only after cache finalization below: a failed cache build
       // deletes this temporary tree, including the evidence needed to debug it.
       const nativeValidationError = await validateNodeNativeModuleOutput(appRoot);
@@ -499,7 +514,7 @@ export async function prepareWinPackagedApp(
   );
   // Mandatory on both misses and hits, against the final path and entrypoints.
   // Failure still stops packaging, but the cache payload remains inspectable.
-  await assertPiPackageOutput(join(manifest.entryPath, "app"));
+  await measureBuildStep("packaged-app:assert-pi", () => assertPiPackageOutput(join(manifest.entryPath, "app")));
   await writePackagedConfig(
     config,
     paths,

@@ -26,6 +26,7 @@ import type { CreateInput, CreateTab, ImportClaudeDesignOutcome } from './compon
 import { documentProjectName, type HubImportFileOutcome } from './components/hub/drop-to-edit';
 import { NewProjectModal } from './components/NewProjectModal';
 import { MemoryToast } from './components/MemoryToast';
+import { WelcomeModal } from './components/WelcomeModal';
 import { Toast } from './components/Toast';
 import { PetOverlay } from './components/pet/PetOverlay';
 import { usePetTaskCenter } from './hooks/usePetTaskCenter';
@@ -410,6 +411,8 @@ function AppInner() {
   const [settingsHighlight, setSettingsHighlight] = useState<SettingsHighlight>(null);
   const [integrationInitialTab, setIntegrationInitialTab] = useState<IntegrationTab>('mcp');
   const [daemonLive, setDaemonLive] = useState(false);
+  const [daemonHealthChecked, setDaemonHealthChecked] = useState(false);
+  const [startupRetry, setStartupRetry] = useState(0);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const amrModelsRef = useRef<AmrModelsResponse | null>(null);
   const amrPollGenerationRef = useRef(0);
@@ -849,9 +852,9 @@ function AppInner() {
       const alive = await daemonIsLive();
       if (cancelled) return;
       setDaemonLive(alive);
+      setDaemonHealthChecked(true);
       if (!alive) {
-        // No daemon — clear every loading flag so empty states render
-        // instead of the entry view sitting on indefinite spinners.
+        // No daemon — stop loading but never show empty data as a valid project list.
         setAgentsLoading(false);
         setSkillsLoading(false);
         setDsLoading(false);
@@ -874,9 +877,13 @@ function AppInner() {
       });
 
       const request = beginProjectListRequest();
-      void listProjects().then((list) => {
+      void listProjects({ strict: true }).then((list) => {
         if (cancelled) return;
         reconcileFetchedProjects(list, request);
+        setProjectsLoading(false);
+      }).catch(() => {
+        if (cancelled) return;
+        setDaemonLive(false);
         setProjectsLoading(false);
       });
 
@@ -931,6 +938,7 @@ function AppInner() {
   }, [
     beginProjectListRequest,
     reconcileFetchedProjects,
+    startupRetry,
     t,
   ]);
 
@@ -1002,8 +1010,12 @@ function AppInner() {
 
   const refreshProjects = useCallback(async () => {
     const request = beginProjectListRequest();
-    const list = await listProjects();
-    reconcileFetchedProjects(list, request);
+    try {
+      const list = await listProjects({ strict: true });
+      reconcileFetchedProjects(list, request);
+    } catch {
+      setDaemonLive(false);
+    }
   }, [beginProjectListRequest, reconcileFetchedProjects]);
 
   const refreshDesignSystems = useCallback(async () => {
@@ -1148,7 +1160,7 @@ function AppInner() {
   );
 
   const refreshAgents = useCallback(
-    async (options?: { throwOnError?: boolean; agentCliEnv?: AppConfig['agentCliEnv'] }) => {
+    async (options?: { throwOnError?: boolean; agentCliEnv?: AppConfig['agentCliEnv']; refresh?: boolean }) => {
       if (options && Object.prototype.hasOwnProperty.call(options, 'agentCliEnv')) {
         const nextConfig = clearStaleAmrModelChoiceOnProfileChange(config, {
           ...config,
@@ -1163,6 +1175,7 @@ function AppInner() {
       setAgentsLoading(true);
       try {
         const next = await fetchAgentsStream({
+          refresh: options?.refresh === true,
           onAgent: (agent) => {
             if (!isCurrentAgentStreamRequest(agentRequestId)) return;
             setAgents((current) =>
@@ -1618,8 +1631,13 @@ function AppInner() {
       };
       setProjects((curr) => [stub, ...curr.filter((p) => p.id !== stub.id)]);
       const request = beginProjectListRequest();
-      const list = await listProjects();
-      reconcileFetchedProjects(list, request);
+      try {
+        const list = await listProjects({ strict: true });
+        reconcileFetchedProjects(list, request);
+      } catch {
+        setDaemonLive(false);
+        return;
+      }
     }
     setNewProjectTab(null);
     navigate({
@@ -1788,7 +1806,13 @@ function AppInner() {
       }
       if (projectsLoading) return;
       const request = beginProjectListRequest();
-      const list = await listProjects();
+      let list: Project[];
+      try {
+        list = await listProjects({ strict: true });
+      } catch {
+        if (!cancelled) setDaemonLive(false);
+        return;
+      }
       if (cancelled) return;
       const applied = reconcileFetchedProjects(list, request);
       if (!applied) return;
@@ -2118,7 +2142,7 @@ function AppInner() {
         onModeChange={handleModeChange}
         onAgentChange={handleAgentChange}
         onAgentModelChange={handleAgentModelChange}
-        onRefreshAgents={refreshAgents}
+        onRefreshAgents={() => refreshAgents({ refresh: true })}
         onThemeChange={handleThemeChange}
         onOpenSettings={openSettings}
         onOpenAmrSettings={openAmrSettings}
@@ -2168,7 +2192,7 @@ function AppInner() {
         onApiProtocolChange={handleApiProtocolChange}
         onApiModelChange={handleApiModelChange}
         onConfigPersist={handleConfigPersist}
-        onRefreshAgents={refreshAgents}
+        onRefreshAgents={() => refreshAgents({ refresh: true })}
         onThemeChange={handleThemeChange}
         skillsLoading={skillsLoading}
         designSystemsLoading={dsLoading}
@@ -2195,6 +2219,17 @@ function AppInner() {
   // toasts and popovers that moved to motion/react need this gate too — without
   // it they keep springing/sliding for users who asked us not to animate.
   // Low-spec mode forces `always` regardless of the OS preference.
+  if (daemonHealthChecked && !daemonLive) {
+    appMain = projectsLoading ? <ProjectRouteLoading /> : (
+      <main role="alert" className="readable-loading-shell readable-loading-shell--surface">
+        <p>{t('entry.databaseUnavailable')}</p>
+        <button type="button" onClick={() => {
+          setProjectsLoading(true);
+          setStartupRetry((current) => current + 1);
+        }}>{t('entry.retryDatabase')}</button>
+      </main>
+    );
+  }
   return (
     <MotionConfig reducedMotion={performanceProfile === 'low' ? 'always' : 'user'}>
     <HubRailProvider value={rail}>
@@ -2319,6 +2354,7 @@ function AppInner() {
       ) : null}
       </AnimatePresence>
       <MemoryToast onOpenMemory={() => openSettings('memory')} />
+      <WelcomeModal />
       {workingDirError ? (
         <Toast
           message={workingDirError}

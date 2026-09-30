@@ -220,6 +220,8 @@ function injectSnapshotBridge(doc: string): string {
       copyComputedStyle(originals[i], clones[i]);
       syncElementState(originals[i], clones[i]);
     }
+  }
+  function removeSnapshotDependencies(cloneRoot){
     var scripts = cloneRoot.querySelectorAll('script');
     for (var s = scripts.length - 1; s >= 0; s--) scripts[s].remove();
     var links = cloneRoot.querySelectorAll('link[rel~="stylesheet"], link[rel~="preload"], link[rel~="preconnect"]');
@@ -297,26 +299,37 @@ function injectSnapshotBridge(doc: string): string {
       return samples > 8;
     } catch (_) { return false; }
   }
-  function renderSnapshot(id){
+  function renderSnapshot(id, fullDocument){
     var w = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
-    var h = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
+    var viewportH = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
     var dpr = window.devicePixelRatio || 1;
     var bgColor = snapshotBackgroundColor();
     var docW = Math.max(w, document.documentElement.scrollWidth || 0, document.body ? document.body.scrollWidth : 0);
-    var docH = Math.max(h, document.documentElement.scrollHeight || 0, document.body ? document.body.scrollHeight : 0);
+    var docH = Math.max(viewportH, document.documentElement.scrollHeight || 0, document.body ? document.body.scrollHeight : 0);
+    var h = fullDocument ? docH : viewportH;
+    if (fullDocument && (w * dpr > 16384 || h * dpr > 16384 || w * h * dpr * dpr > 100000000)) {
+      window.parent.postMessage({ type: 'readable-studio:snapshot:result', id: id, error: 'Document is too tall to export as an image. Export a shorter document or reduce display scaling.' }, '*');
+      return;
+    }
     var clone = document.documentElement.cloneNode(true);
     clone.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
+    // Both parallel walks require identical node ordering. Strip dependencies
+    // only after hidden-node pruning; removing head scripts first shifts every
+    // body index and can prune the entire visible document as if it were hidden.
     inlineSnapshotStyles(document.documentElement, clone);
     pruneHiddenSnapshotNodes(document.documentElement, clone);
+    removeSnapshotDependencies(clone);
     var scroll = scrollOffset();
     var cloneBody = clone.querySelector('body');
     var rootStyle = clone.getAttribute('style') || '';
     var bodyStyle = cloneBody ? cloneBody.getAttribute('style') || '' : '';
     var bodyContent = cloneBody ? cloneBody.innerHTML : clone.innerHTML;
     var wrapperStyle = rootStyle + bodyStyle +
-      'margin:0;position:relative;left:' + (-scroll.x) + 'px;top:' + (-scroll.y) + 'px;' +
-      'width:' + docW + 'px;height:' + docH + 'px;overflow:visible;';
-    var html = '<div xmlns="http://www.w3.org/1999/xhtml" style="' + escapeAttribute(wrapperStyle) + '">' + bodyContent + '</div>';
+      'margin:0;position:relative;left:' + (fullDocument ? 0 : -scroll.x) + 'px;top:' + (fullDocument ? 0 : -scroll.y) + 'px;' +
+      'width:' + (fullDocument ? document.documentElement.clientWidth || w : docW) + 'px;height:' + docH + 'px;overflow:visible;';
+    // Transparent paint preserves the width of classic scrollbar gutters.
+    var scrollbarStyle = fullDocument ? '<style>*{scrollbar-color:transparent transparent!important}*::-webkit-scrollbar,*::-webkit-scrollbar-thumb,*::-webkit-scrollbar-track,*::-webkit-scrollbar-button,*::-webkit-scrollbar-corner{background:transparent!important}</style>' : '';
+    var html = '<div xmlns="http://www.w3.org/1999/xhtml" style="' + escapeAttribute(wrapperStyle) + '">' + scrollbarStyle + bodyContent + '</div>';
     var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +
       '<foreignObject x="0" y="0" width="' + docW + '" height="' + docH + '">' +
       html +
@@ -336,7 +349,7 @@ function injectSnapshotBridge(doc: string): string {
         ctx.fillRect(0, 0, w, h);
         ctx.drawImage(img, 0, 0, w, h);
         if (canvasLooksBlank(ctx, canvas.width, canvas.height)) {
-          window.parent.postMessage({ type: 'readable-studio:snapshot:result', id: id, error: 'empty-render' }, '*');
+          window.parent.postMessage({ type: 'readable-studio:snapshot:result', id: id, error: '미리보기를 이미지로 렌더링하지 못했습니다. 다시 시도하거나 HTML 또는 PDF로 내보내 주세요.' }, '*');
           return;
         }
         window.parent.postMessage({ type: 'readable-studio:snapshot:result', id: id, dataUrl: canvas.toDataURL('image/png'), w: canvas.width, h: canvas.height }, '*');
@@ -356,7 +369,7 @@ function injectSnapshotBridge(doc: string): string {
   window.addEventListener('message', function(ev){
     var data = ev && ev.data;
     if (!data || data.type !== 'readable-studio:snapshot' || !data.id) return;
-    waitForImages().then(function(){ renderSnapshot(String(data.id)); });
+    waitForImages().then(function(){ renderSnapshot(String(data.id), data.fullDocument === true); });
   });
 })();</script>`;
   return injectBeforeBodyEnd(doc, script);

@@ -594,9 +594,6 @@ function AssistantMessageImpl({
             // this no longer the last assistant message — keep their pill so
             // the error detail still survives reload / history review.
             if (b.label === "error" && message.id === errorCardOwnerId) return null;
-            // The pre-output "initializing" status is surfaced by the footer's
-            // shimmering "Preparing…" label instead of its own pill.
-            if (b.label === "initializing") return null;
             return <StatusPill key={i} label={b.label} detail={b.detail} />;
           }
           return null;
@@ -1684,14 +1681,15 @@ function StatusPill({
   label: string;
   detail?: string | undefined;
 }) {
-  const variant =
-    label === "error" ? "error" : label === "warning" ? "warning" : undefined;
+  const t = useT();
+  const notice = STATUS_NOTICES[label];
+  const variant = notice?.variant;
   return (
     <div
       className={`status-pill${variant ? ` is-${variant}` : ""}`}
       data-status={label}
     >
-      <span className="status-label">{label}</span>
+      <span className="status-label">{notice?.labelKey ? t(notice.labelKey) : label}</span>
       {detail ? (
         <CollapsibleErrorText className="status-detail" text={detail} />
       ) : null}
@@ -1919,9 +1917,11 @@ function ToolGroupCard({
     );
   }
 
-  const summary = summarizeGroup(items, t, runStreaming, runSucceeded);
+  // Tool-call errors are the agent's to handle, not the reader's: the
+  // collapsed row never reads as an error. The run-level failure (footer +
+  // ChatPane's error card) is the only failure surface in the log.
   const running = runStreaming && items.some((it) => !it.result);
-  const hasError = items.some((it) => it.result?.isError);
+  const summary = summarizeGroup(items, t, running);
   return (
     <div className="action-card">
       <button
@@ -1930,11 +1930,9 @@ function ToolGroupCard({
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
       >
-        <span className={`action-card-status ${running ? 'op-status-running' : hasError ? 'op-status-error' : 'op-status-ok'}`} aria-hidden>
+        <span className={`action-card-status ${running ? 'op-status-running' : 'op-status-ok'}`} aria-hidden>
           {running
             ? <Icon name="spinner" size={14} />
-            : hasError
-            ? <Icon name="close" size={14} />
             : <Icon name="check" size={14} />
           }
         </span>
@@ -1966,26 +1964,63 @@ function ToolGroupCard({
   );
 }
 
+// One collapsed row summarizes every consecutive tool call, across families,
+// in order of first appearance. While the group is still running the row
+// reads as progress ("Running ×4, Reading ×2"); once settled it reads as a
+// past-tense summary ("Ran ×4, Read ×2 · done" / "실행 4건, 읽기 4건 완료").
 function summarizeGroup(
   items: ToolItem[],
   t: (k: keyof Dict, vars?: Record<string, string | number>) => string,
-  runStreaming: boolean,
-  runSucceeded: boolean
-): { label: string; icon: string } {
-  // All items share a tool family because the grouper only merges by name.
-  const name = items[0]?.use.name ?? "";
-  const family = toolFamily(name);
-  const icon = familyIcon(family);
-  const verbs = items.map((it) =>
-    verbForState(it, t, runStreaming, runSucceeded)
-  );
-  // Roll the verbs into a comma-list with deduplicated last-state. So three
-  // edits whose results are all 'Done' render as "Editing ×3, Done"; mixed
-  // states render as "Editing, Reading, Done".
-  const head = countLabel(family, items.length, t);
-  const tail = lastStateLabel(verbs, t);
-  return { label: tail ? `${head}, ${tail}` : head, icon };
+  running: boolean,
+): { label: string } {
+  const countByBucket = new Map<SummaryBucket, number>();
+  for (const it of items) {
+    const bucket = summaryBucket(toolFamily(it.use.name));
+    countByBucket.set(bucket, (countByBucket.get(bucket) ?? 0) + 1);
+  }
+  const buckets = Array.from(countByBucket.entries());
+  if (running) {
+    return { label: buckets.map(([bucket, n]) => countLabel(bucket, n, t)).join(", ") };
+  }
+  const parts = buckets.map(([bucket, n]) => t(DONE_COUNT_KEY[bucket], { n })).join(", ");
+  return { label: t("assistant.toolGroupDone", { parts }) };
 }
+
+// Display buckets for the collapsed summary. Every unknown tool (MCP servers,
+// agent-specific names) lands in `call` so a group never lists the same verb
+// twice.
+type SummaryBucket = "edit" | "write" | "read" | "search" | "bash" | "todo" | "fetch" | "call";
+
+function summaryBucket(family: string): SummaryBucket {
+  if (family === "glob" || family === "grep" || family === "search") return "search";
+  if (
+    family === "edit" || family === "write" || family === "read" ||
+    family === "bash" || family === "todo" || family === "fetch"
+  ) return family;
+  return "call";
+}
+
+const DONE_COUNT_KEY: Record<SummaryBucket, keyof Dict> = {
+  edit: "assistant.toolDoneEdited",
+  write: "assistant.toolDoneWritten",
+  read: "assistant.toolDoneRead",
+  search: "assistant.toolDoneSearched",
+  bash: "assistant.toolDoneRan",
+  todo: "assistant.toolDoneTodos",
+  fetch: "assistant.toolDoneFetched",
+  call: "assistant.toolDoneCalled",
+};
+
+const PROGRESS_VERB_KEY: Record<SummaryBucket, keyof Dict> = {
+  edit: "assistant.verbEditing",
+  write: "assistant.verbWriting",
+  read: "assistant.verbReading",
+  search: "assistant.verbSearching",
+  bash: "assistant.verbRunning",
+  todo: "assistant.verbTodos",
+  fetch: "assistant.verbFetching",
+  call: "assistant.verbCalling",
+};
 
 function toolFamily(name: string): string {
   if (name === "Edit" || name === "str_replace_edit") return "edit";
@@ -2000,60 +2035,31 @@ function toolFamily(name: string): string {
   return name.toLowerCase();
 }
 
-function familyIcon(family: string): string {
-  if (family === "edit") return "✎";
-  if (family === "write") return "+";
-  if (family === "read") return "↗";
-  if (family === "glob" || family === "grep" || family === "search") return "⌕";
-  if (family === "bash") return "$";
-  if (family === "todo") return "·";
-  if (family === "fetch") return "↬";
-  return "·";
-}
-
 function countLabel(
-  family: string,
+  bucket: SummaryBucket,
   n: number,
   t: (k: keyof Dict) => string
 ): string {
-  const verb =
-    family === "edit"
-      ? t("assistant.verbEditing")
-      : family === "write"
-      ? t("assistant.verbWriting")
-      : family === "read"
-      ? t("assistant.verbReading")
-      : family === "glob" || family === "grep" || family === "search"
-      ? t("assistant.verbSearching")
-      : family === "bash"
-      ? t("assistant.verbRunning")
-      : family === "todo"
-      ? t("assistant.verbTodos")
-      : family === "fetch"
-      ? t("assistant.verbFetching")
-      : t("assistant.verbCalling");
+  const verb = t(PROGRESS_VERB_KEY[bucket]);
   return n > 1 ? `${verb} ×${n}` : verb;
 }
 
-function verbForState(
-  it: ToolItem,
-  t: (k: keyof Dict) => string,
-  runStreaming = false,
-  runSucceeded = false
-): string {
-  if (!it.result && runStreaming) return t("assistant.verbRunning");
-  if (!it.result && !runSucceeded) return t("tool.error");
-  if (it.result?.isError) return t("tool.error");
-  return t("tool.done");
-}
+// Status events that are chat content: severity notices, plus reports on the
+// outcome of something the user asked for (a rollback request), which render
+// with translated copy instead of the raw event name. Everything else the
+// daemon labels as `status` is a lifecycle / protocol signal (`initializing`,
+// `model`, `thread_started`, ACP `*_update` notifications, sandbox fallbacks,
+// ...) that other surfaces consume - the footer, the role label, the
+// conversation header, analytics - and must never render as a row in the log.
+const STATUS_NOTICES: Readonly<Record<string, { labelKey: keyof Dict | null; variant?: "error" | "warning" }>> = {
+  error: { labelKey: null, variant: "error" },
+  warning: { labelKey: null, variant: "warning" },
+  rollback_request_failed: { labelKey: "status.rollbackRequestFailed", variant: "warning" },
+  rollback_request_ignored: { labelKey: "status.rollbackRequestIgnored" },
+};
 
-function lastStateLabel(verbs: string[], t: (k: keyof Dict) => string): string {
-  const set = new Set(verbs);
-  if (set.size === 1) return verbs[verbs.length - 1] ?? "";
-  // Mixed states: surface error first, else running, else any.
-  if (set.has(t("tool.error"))) return t("tool.error");
-  if (set.has(t("assistant.verbRunning"))) return t("assistant.verbRunning");
-  return verbs[verbs.length - 1] ?? "";
+function isStatusNotice(label: string): boolean {
+  return Object.hasOwn(STATUS_NOTICES, label);
 }
 
 type Block =
@@ -2063,12 +2069,6 @@ type Block =
   | { kind: "live-tool"; id: string; name: string; raw: string }
   | { kind: "status"; label: string; detail?: string | undefined };
 
-/**
- * Walk the event stream and build the rendering layout list. We additionally
- * collapse runs of consecutive tool_uses sharing the same tool family into a
- * single tool-group block so the chat surface stays compact during chains
- * of edits / reads.
- */
 function placeConversationTodoCard(
   blocks: Block[],
   options: { show: boolean; input: unknown | null },
@@ -2126,6 +2126,12 @@ function suppressDuplicateQuestionForms(blocks: Block[]): Block[] {
   });
 }
 
+/**
+ * Walk the event stream and build the rendering layout list. Consecutive
+ * tool_uses with nothing between them collapse into ONE tool-group block
+ * regardless of tool family, so a long chain of Bash / Read / Edit calls is
+ * a single expandable row; prose or thinking between calls starts a new group.
+ */
 function buildBlocks(events: AgentEvent[]): Block[] {
   const out: Block[] = [];
   const resultByToolId = new Map<
@@ -2152,12 +2158,7 @@ function buildBlocks(events: AgentEvent[]): Block[] {
       const result = resultByToolId.get(ev.id);
       const item: ToolItem = result ? { use: ev, result } : { use: ev };
       const last = out[out.length - 1];
-      const fam = toolFamily(ev.name);
-      if (
-        last &&
-        last.kind === "tool-group" &&
-        toolFamily(last.items[last.items.length - 1]!.use.name) === fam
-      ) {
+      if (last && last.kind === "tool-group") {
         last.items.push(item);
       } else {
         out.push({ kind: "tool-group", items: [item] });
@@ -2166,25 +2167,10 @@ function buildBlocks(events: AgentEvent[]): Block[] {
     }
     if (ev.kind === "tool_result") continue;
     if (ev.kind === "status") {
-      if (
-        ev.label === "streaming" ||
-        ev.label === "starting" ||
-        ev.label === "running" ||
-        ev.label === "requesting" ||
-        ev.label === "thinking" ||
-        ev.label === "empty_response"
-      )
-        continue;
+      if (!isStatusNotice(ev.label)) continue;
       const last = out[out.length - 1];
       if (last && last.kind === "status" && last.label === ev.label) {
-        // Update detail to the latest value rather than skip. When an agent
-        // emits multiple status events with the same label (notably
-        // `label: 'model'` — fired once after `session/new` with the agent's
-        // initial default, then again after the explicit model-selection
-        // call completes), the badge UI must reflect the most recent detail,
-        // not the first one. Without this update the post-selection model
-        // (e.g. `claude-opus-4-7-high`) is silently replaced in the badge
-        // by the stale initial default (`swe-1-6-fast`).
+        // Same notice repeated back to back: keep one row, latest detail.
         last.detail = ev.detail;
         continue;
       }

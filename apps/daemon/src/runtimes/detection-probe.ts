@@ -199,20 +199,25 @@ async function probe(
     ? { status: 'missing' as const, message: failure.message }
     : auth;
   const authDiagnostic = effectiveAuth ? buildAuthDiagnostic(def, effectiveAuth) : null;
-  const available = !failure && (!effectiveAuth || effectiveAuth.status === 'ok');
+  // A verified sign-in and a declared CLI-owned default make catalogue
+  // discovery optional; neither can substitute for a failed auth probe.
+  const usableDefault = failure?.kind === 'discovery-failed' &&
+    effectiveAuth?.status === 'ok' && !def.modelSelectionRequired &&
+    def.fallbackModels.some((model) => model.id === 'default');
+  const available = (usableDefault || !failure) && (!effectiveAuth || effectiveAuth.status === 'ok');
   // A conclusive sign-in failure remains actionable; unknown auth must not
   // hide a proven discovery/compatibility failure behind a warning.
   const diagnostics: AgentDiagnostic[] = authDiagnostic && (!failure || effectiveAuth?.status === 'missing') ? [authDiagnostic] : failure ? [{
-    // Reuse the existing wire diagnostics: command rejection is not executable
-    // through this adapter; unknown readiness must never imply authenticated.
-    reason: failure.kind === 'adapter-incompatible' ? 'not-executable' : 'auth-unknown',
-    severity: 'error',
+    // Reuse the existing wire diagnostics: unsupported arguments block this
+    // adapter; an authenticated CLI default treats catalogue failure as a warning.
+    reason: failure.kind === 'adapter-incompatible' ? 'not-executable' : usableDefault ? 'discovery-failed' : 'auth-unknown',
+    severity: usableDefault ? 'warning' : 'error',
     message: failure.message,
     fixActions: [{ kind: 'openDocs' }, { kind: 'rescan' }],
   }] : [];
   return {
     ...stripFns(def),
-    models: available ? modelResult.models : [],
+    models: usableDefault ? [def.fallbackModels.find((model) => model.id === 'default')!] : available ? modelResult.models : [],
     modelsSource: modelResult.source,
     available,
     // path + available distinguish absent, installed-unusable, and usable

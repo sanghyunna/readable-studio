@@ -9,10 +9,11 @@ import type { HubHome } from '../../src/components/hub/HubHome';
 import type { Project, ProjectTemplate, SkillSummary } from '../../src/types';
 import { navigate } from '../../src/router';
 import { trackProjectCreateResult } from '../../src/analytics/events';
+import { daemonIsLive } from '../../src/providers/registry';
 import { isReadableStudioHostAvailable, pickAndImportHostProject } from '@readable-studio/host';
 import {
   createProject, deleteTemplate, getProject, importClaudeDesignZip,
-  importFolderProject, listTemplates, pickLocalFolderPath,
+  importFolderProject, listProjects, listTemplates, pickLocalFolderPath,
 } from '../../src/state/projects';
 
 vi.mock('../../src/components/hub/HubHome', () => ({
@@ -50,7 +51,7 @@ vi.mock('@readable-studio/host', async (importOriginal) => ({
 }));
 vi.mock('../../src/providers/registry', async (importOriginal) => ({
   ...await importOriginal<typeof import('../../src/providers/registry')>(),
-  daemonIsLive: async () => true,
+  daemonIsLive: vi.fn(async () => true),
   fetchAgentsStream: async () => [],
   fetchSkills: async () => skills,
   fetchDesignTemplates: async () => [],
@@ -69,7 +70,7 @@ vi.mock('../../src/state/config', async (importOriginal) => ({
 }));
 vi.mock('../../src/state/projects', async (importOriginal) => ({
   ...await importOriginal<typeof import('../../src/state/projects')>(),
-  listProjects: async () => [project],
+  listProjects: vi.fn(async () => [project]),
   listTemplates: vi.fn(),
   createProject: vi.fn(),
   deleteTemplate: vi.fn(),
@@ -98,6 +99,7 @@ const skills: SkillSummary[] = [{
 beforeEach(() => {
   window.history.replaceState(null, '', '/');
   window.localStorage.clear();
+  window.localStorage.setItem('readable-studio:welcome-modal-shown', '1');
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} unobserve() {} });
   vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => {});
   // Execute deferred bootstrap at a microtask boundary, not by elapsed time.
@@ -109,6 +111,8 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', {
     status: 200, headers: { 'content-type': 'application/json' },
   })));
+  vi.mocked(daemonIsLive).mockResolvedValue(true);
+  vi.mocked(listProjects).mockResolvedValue([project]);
   vi.mocked(listTemplates).mockResolvedValue([template]);
   vi.mocked(createProject).mockResolvedValue({ project: createdProject, conversationId: 'conversation' });
   vi.mocked(getProject).mockResolvedValue(project);
@@ -141,6 +145,31 @@ function expectClosed() {
 }
 
 describe('App-owned New Project modal', () => {
+  it('does not treat failed project listing as an empty workspace when health was briefly available', async () => {
+    // Given: daemon health responds before the DB-backed projects request fails.
+    vi.mocked(listProjects).mockRejectedValueOnce(new TypeError('connection refused'));
+
+    // When: bootstrap attempts to fetch the project list.
+    await renderApp();
+
+    // Then: no empty project UI is shown as authoritative data.
+    expect(screen.getByRole('alert').textContent).toMatch(/data|데이터/i);
+    expect(screen.queryByTestId('entry-view-home')).toBeNull();
+  });
+
+  it('shows a data-safe startup error with retry instead of an empty project list when daemon is unreachable', async () => {
+    // Given: the packaged web runtime remains reachable after daemon startup fails.
+    vi.mocked(daemonIsLive).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+
+    // When: the app opens and then the user retries after the daemon recovers.
+    await renderApp();
+    expect(screen.getByRole('alert').textContent).toMatch(/data|데이터/i);
+    expect(screen.queryByTestId('entry-view-home')).toBeNull();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /retry|다시 시도/i })); });
+
+    // Then: the normal home is available only after a successful connection.
+    expect(await screen.findByTestId('entry-view-home')).toBeTruthy();
+  });
   it('keeps only inactive mounted entry views inert across route changes', async () => {
     await renderApp();
     const home = screen.getByTestId('entry-view-home');

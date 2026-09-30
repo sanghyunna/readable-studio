@@ -1862,6 +1862,54 @@ describe('manual edit bridge target normalization', () => {
     dom.window.close();
   });
 
+  it.each([null, '', 'width: 120px !important; margin: 3px !important; color: red;'])('cancels to the exact inline declaration snapshot: %s', (inline) => {
+    const dom = new JSDOM(`<main data-readable-id="hero">Hero</main>${buildManualEditBridge(true)}`, { runScripts: 'dangerously' });
+    const hero = dom.window.document.querySelector('main')!;
+    if (inline !== null) hero.setAttribute('style', inline);
+    const send = (data: object) => dom.window.dispatchEvent(new dom.window.MessageEvent('message', { data }));
+    send({ type: 'readable-edit-mode', enabled: true, documentEpoch: 'epoch-1' });
+    const identity = { targetId: 'hero', documentEpoch: 'epoch-1', transactionId: 'resize-1', sourceRevision: 1, axes: ['width'], requested: { width: 200, height: 80 } };
+    send({ type: 'readable-edit-preview-style', id: 'hero', version: 1, styles: { width: '200px', marginLeft: '10px' }, resize: { ...identity, sequence: 1, stage: 'preview' } });
+    send({ type: 'readable-edit-preview-style', id: 'hero', version: 2, styles: {}, resize: { ...identity, sequence: 2, stage: 'cancel' } });
+    expect(hero.getAttribute('style')).toBe(inline);
+    dom.window.close();
+  });
+
+  it('rejects stale resize epochs before mutation and echoes transaction identity', () => {
+    const dom = new JSDOM(`<main data-readable-id="hero" style="width:120px !important">Hero</main>${buildManualEditBridge(true)}`, { runScripts: 'dangerously' });
+    const hero = dom.window.document.querySelector('main') as HTMLElement;
+    const post = vi.spyOn(dom.window.parent, 'postMessage');
+    const send = (data: object) => dom.window.dispatchEvent(new dom.window.MessageEvent('message', { data }));
+    send({ type: 'readable-edit-mode', enabled: true, documentEpoch: 'epoch-2' });
+    const resize = { targetId: 'hero', documentEpoch: 'epoch-1', transactionId: 'resize-1', sourceRevision: 7, sequence: 1, stage: 'preview', axes: ['width'], requested: { width: 200, height: 80 } };
+    send({ type: 'readable-edit-preview-style', id: 'hero', version: 1, styles: { width: '200px' }, resize });
+    expect(hero.style.getPropertyValue('width')).toBe('120px');
+    send({ type: 'readable-edit-preview-style', id: 'hero', version: 2, styles: { width: '200px' }, resize: { ...resize, documentEpoch: 'epoch-2', sequence: 2 } });
+    expect(post).toHaveBeenLastCalledWith(expect.objectContaining({ documentEpoch: 'epoch-2', transactionId: 'resize-1', sequence: 2, sourceRevision: 7 }), '*');
+    dom.window.close();
+  });
+
+  it('serializes independent own-cap and parent-content facts with authored priority', () => {
+    const dom = new JSDOM(`<main style="width:792px;padding:0 64px"><p data-readable-id="hero" style="max-width:200px !important; width:200px">Hero</p></main>${buildManualEditBridge(true)}`, { runScripts: 'dangerously' });
+    const parent = dom.window.document.querySelector('main') as HTMLElement;
+    const hero = dom.window.document.querySelector('p') as HTMLElement;
+    const rect = (x: number, width: number) => ({ x, y: 0, width, height: 80, left: x, right: x + width, top: 0, bottom: 80, toJSON: () => ({}) } as DOMRect);
+    parent.getBoundingClientRect = () => rect(0, 920);
+    hero.getBoundingClientRect = () => rect(64, 200);
+    Object.defineProperty(parent, 'clientWidth', { value: 920 });
+    Object.defineProperty(parent, 'offsetWidth', { value: 920 });
+    Object.defineProperty(hero, 'offsetWidth', { value: 200 });
+    const post = vi.spyOn(dom.window.parent, 'postMessage');
+    dom.window.dispatchEvent(new dom.window.MessageEvent('message', { data: { type: 'readable-edit-preview-style', id: 'hero', styles: {}, version: 1, resize: { axes: ['width'], requested: { width: 850, height: 80 }, includeDetails: true } } }));
+    const result = JSON.parse(JSON.stringify(post.mock.calls.at(-1)?.[0])).resize;
+    expect(result.availableContentWidth).toBe(792);
+    expect(result.causes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'own-max-width', declaration: expect.objectContaining({ value: '200px', priority: 'important', origin: 'inline' }) }),
+      expect.objectContaining({ code: 'ancestor-content-limit' }),
+    ]));
+    dom.window.close();
+  });
+
   it('includes the freshly measured target rect in preview-style acks', () => {
     // During a drag the host renders the resize handles from the element's REAL
     // box, not the mouse-implied one: flex/grid/min-content constraints can
@@ -1937,15 +1985,12 @@ describe('manual edit bridge target normalization', () => {
     expect(postMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'readable-edit-preview-style-applied',
-        resize: {
+        resize: expect.objectContaining({
           announce: false,
-          constraints: [{
-            axis: 'width',
-            requested: 741,
-            applied: 560.625,
-            reason: 'layout',
-          }],
-        },
+          constraints: [expect.objectContaining({
+            axis: 'width', requested: 741, applied: 560.625, reason: 'layout', confidence: 'unknown',
+          })],
+        }),
       }),
       '*',
     );
@@ -1984,7 +2029,7 @@ describe('manual edit bridge target normalization', () => {
     expect(postMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'readable-edit-preview-style-applied',
-        resize: { constraints: [], announce: true },
+        resize: expect.objectContaining({ constraints: [], announce: true }),
       }),
       '*',
     );
@@ -2022,19 +2067,19 @@ describe('manual edit bridge target normalization', () => {
     expect(postMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'readable-edit-preview-style-applied',
-        resize: {
+        resize: expect.objectContaining({
           announce: true,
           constraints: [
-            {
+            expect.objectContaining({
               axis: 'width', requested: 500, applied: 320, reason: 'max',
               property: 'max-width', value: '320px',
-            },
-            {
+            }),
+            expect.objectContaining({
               axis: 'height', requested: 60, applied: 90, reason: 'min',
               property: 'min-height', value: '90px',
-            },
+            }),
           ],
-        },
+        }),
       }),
       '*',
     );
@@ -2042,7 +2087,7 @@ describe('manual edit bridge target normalization', () => {
     dom.window.close();
   });
 
-  it('keeps unprovable detailed constraints generic without probing authored CSS', () => {
+  it('reports unknown when mocked layout cannot establish percentage causality', () => {
     const dom = new JSDOM(
       `<style>.hero { max-width: 50%; }</style><main><h1 class="hero" data-readable-id="hero">Title</h1></main>${buildManualEditBridge(true)}`,
       { runScripts: 'dangerously', url: 'http://localhost' },
@@ -2072,16 +2117,19 @@ describe('manual edit bridge target normalization', () => {
 
     expect(postMessage).toHaveBeenCalledWith(
       expect.objectContaining({
-        resize: {
+        resize: expect.objectContaining({
           announce: true,
-          constraints: [{
-            axis: 'width', requested: 500, applied: 320, reason: 'layout',
-          }],
-        },
+          constraints: [expect.objectContaining({
+            axis: 'width', requested: 500, applied: 320, reason: 'layout', confidence: 'unknown',
+          })],
+        }),
       }),
       '*',
     );
-    expect(createElement.mock.calls.filter(([tag]) => tag === 'style')).toHaveLength(0);
+    const reply = postMessage.mock.calls.at(-1)?.[0];
+    expect(reply.resize).toMatchObject({ confidence: 'unknown', classification: 'unknown' });
+    expect(reply.resize.causes).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'unknown-cascade' })]));
+    expect(createElement.mock.calls.filter(([tag]) => tag === 'style').length).toBeGreaterThan(0);
 
     dom.window.close();
   });

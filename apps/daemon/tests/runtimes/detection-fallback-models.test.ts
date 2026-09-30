@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { claudeAgentDef } from '../../src/runtimes/defs/claude.js';
+import { cursorAgentDef } from '../../src/runtimes/defs/cursor-agent.js';
 import { createDatabricksAgentDef } from '../../src/runtimes/defs/databricks.js';
 import { fetchModels } from '../../src/runtimes/detection-model-fetch.js';
 import { safeProbe } from '../../src/runtimes/detection-probe.js';
@@ -51,6 +52,31 @@ it.each(['Authentication required', 'Unknown option --output-format', 'Connectio
   // Then the catalogue does not override the failure.
   expect(agent).toMatchObject({ available: false, models: [] });
   expect(agent.diagnostics?.[0]?.severity).toBe('error');
+});
+
+it.each(['claude', 'cursor-agent'])('keeps authenticated %s usable on its CLI default when discovery fails', async (id) => {
+  const def: RuntimeAgentDef = {
+    ...(id === 'claude' ? claudeAgentDef : cursorAgentDef),
+    authProbe: { args: ['-e', id === 'claude' ? 'console.log(JSON.stringify({ loggedIn: true }))' : 'console.log("Authenticated")'] },
+    fetchModels: async () => { throw new Error('Connection refused'); },
+  };
+  const agent = await safeProbe(def, { [id === 'claude' ? 'CLAUDE_BIN' : 'CURSOR_AGENT_BIN']: process.execPath });
+  expect(agent).toMatchObject({ available: true, authStatus: 'ok', modelsSource: 'fallback', models: [{ id: 'default' }] });
+  expect(agent.diagnostics).toEqual([expect.objectContaining({ reason: 'discovery-failed', severity: 'warning', fixActions: expect.arrayContaining([{ kind: 'rescan' }]) })]);
+});
+
+it.each([
+  { name: 'explicit selection required', modelSelectionRequired: true, fallbackModels: claudeAgentDef.fallbackModels, auth: true },
+  { name: 'no declared default', modelSelectionRequired: false, fallbackModels: [], auth: true },
+  { name: 'authentication missing', modelSelectionRequired: false, fallbackModels: claudeAgentDef.fallbackModels, auth: false },
+])('blocks a discovery failure when $name', async ({ modelSelectionRequired, fallbackModels, auth }) => {
+  const def: RuntimeAgentDef = {
+    ...cursorAgentDef, modelSelectionRequired, fallbackModels,
+    authProbe: { args: ['-e', `console.log(${JSON.stringify(auth ? 'Authenticated' : 'Not authenticated')})`] },
+    fetchModels: async () => { throw new Error('Connection refused'); },
+  };
+  const agent = await safeProbe(def, { CURSOR_AGENT_BIN: process.execPath });
+  expect(agent).toMatchObject({ available: false, models: [] });
 });
 
 it('keeps Databricks available but empty when its CLI is ready and registration is empty', async () => {

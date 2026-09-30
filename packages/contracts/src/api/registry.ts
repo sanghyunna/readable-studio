@@ -74,6 +74,8 @@ export type AgentDiagnosticReason =
   | 'auth-missing'
   /** Installed, but auth status could not be verified. */
   | 'auth-unknown'
+  /** Authentication succeeded, but the model catalogue could not be fetched. */
+  | 'discovery-failed'
   /** Verification exceeded its per-agent time budget; retry on the next launch. */
   | 'probe-timeout';
 

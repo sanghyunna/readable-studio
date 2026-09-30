@@ -74,13 +74,15 @@ export class RollbackPlanChangedError extends Error {
     this.name = 'RollbackPlanChangedError';
   }
 }
-export async function listProjects(): Promise<Project[]> {
+export async function listProjects(options: { strict?: boolean } = {}): Promise<Project[]> {
   try {
     const resp = await fetch('/api/projects');
-    if (!resp.ok) return [];
+    if (!resp.ok) throw new Error(`project listing failed (HTTP ${resp.status})`);
     const json = (await resp.json()) as { projects: Project[] };
-    return json.projects ?? [];
-  } catch {
+    if (!Array.isArray(json.projects)) throw new Error('project listing response is invalid');
+    return json.projects;
+  } catch (error) {
+    if (options.strict) throw error;
     return [];
   }
 }

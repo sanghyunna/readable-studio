@@ -65,8 +65,12 @@ vi.mock('../../src/components/SettingsDialog', () => ({
   SettingsDialog: ({
     onRefreshAgents,
     onAmrLoginStatusChange,
+    onPersist,
+    initial,
   }: {
-    onRefreshAgents: (options?: { agentCliEnv?: AppConfig['agentCliEnv'] }) => void | Promise<void>;
+    onRefreshAgents: (options?: { agentCliEnv?: AppConfig['agentCliEnv']; refresh?: boolean }) => void | Promise<void>;
+    onPersist: (config: AppConfig) => void;
+    initial: AppConfig;
     onAmrLoginStatusChange?: (status: {
       loggedIn: boolean;
       loginInFlight?: boolean;
@@ -76,9 +80,11 @@ vi.mock('../../src/components/SettingsDialog', () => ({
     } | null) => void;
   }) => (
     <div role="dialog" aria-label="Settings">
+      <button onClick={() => onPersist({ ...initial, agentId: 'codex' })}>select Codex</button>
       <button
         onClick={() =>
           void onRefreshAgents({
+            refresh: true,
             agentCliEnv: {
               amr: { READABLE_AMR_PROFILE: 'next-profile' },
             },
@@ -210,6 +216,7 @@ describe('App AMR polling', () => {
     mockedLoadConfig.mockReturnValue({ ...baseConfig });
     mockedMergeDaemonConfig.mockImplementation((local) => local);
     mockedFetchDaemonConfig.mockResolvedValue({});
+    mockedFetchAmrModels.mockReset();
     mockedFetchAmrModels
       .mockResolvedValueOnce({
         source: 'preset',
@@ -241,21 +248,33 @@ describe('App AMR polling', () => {
     vi.clearAllMocks();
   });
 
-  it('opens Settings offline without starting another unavailable agent scan', async () => {
+  it('shows a data-safe offline error without starting another unavailable agent scan', async () => {
     mockedDaemonIsLive.mockResolvedValue(false);
     mockedFetchAgentsStream.mockReturnValue(new Promise(() => undefined));
 
     render(<App />);
 
-    await waitFor(() => {
-      expect(screen.getByTestId('daemon-status').textContent).toBe('offline');
-    });
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(screen.queryByTestId('daemon-status')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'open settings' })).toBeNull();
+    expect(screen.getByRole('button', { name: /retry|다시 시도/i })).toBeTruthy();
     expect(mockedFetchAgentsStream).toHaveBeenCalledTimes(1);
+  });
 
+  it('reads cached agents after changing the selected agent but rescans on explicit Rescan', async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByTestId('daemon-status').textContent).toBe('online'));
     fireEvent.click(screen.getByRole('button', { name: 'open settings' }));
+    await screen.findByRole('dialog', { name: 'Settings' });
+    await waitFor(() => expect(mockedFetchAgentsStream).toHaveBeenCalledTimes(2));
 
-    expect(await screen.findByRole('dialog', { name: 'Settings' })).toBeTruthy();
-    expect(mockedFetchAgentsStream).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'select Codex' }));
+    expect(mockedFetchAgentsStream).toHaveBeenCalledTimes(2);
+    expect(mockedFetchAgentsStream.mock.calls.map(([args]) => args.refresh)).toEqual([false, false]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'rescan agents' }));
+    await waitFor(() => expect(mockedFetchAgentsStream).toHaveBeenCalledTimes(3));
+    expect(mockedFetchAgentsStream.mock.calls[2]?.[0].refresh).toBe(true);
   });
 
   it('keeps polling AMR models until the remote catalog replaces the preset list', { timeout: 10_000 }, async () => {

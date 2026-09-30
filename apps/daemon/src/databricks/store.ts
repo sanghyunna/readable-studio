@@ -52,7 +52,8 @@ export class DatabricksStore {
       // a rescan may have changed the model behind the same endpoint ID.
       for (const endpoint of [...generation.entries.map((entry) => entry.endpoint), ...generation.scans.flatMap((scan) => scan.endpoints)]) {
         const entry = generation.entries.find((candidate) => candidate.endpoint.id === endpoint.id);
-        endpoint.reasoningOptions = entry?.wireCapabilities?.effortUnsupported ? [] : resolveDatabricksReasoningOptions(endpoint.api,
+        endpoint.reasoningOptions = entry?.wireCapabilities?.namedProfile ? entry.wireCapabilities.namedProfile.reasoning.map(id => ({ id, label: id }))
+          : entry?.wireCapabilities?.effortUnsupported ? [] : resolveDatabricksReasoningOptions(endpoint.api,
           (endpoint.servedModelName?.split(', ') ?? []).map((name) => ({ name })));
         if (!endpoint.capabilities.limitSources || endpoint.capabilities.contextWindow === null || endpoint.capabilities.maxTokens === null) {
           const resolved = resolveDatabricksCapabilities({}, (endpoint.servedModelName?.split(', ') ?? []).map((name) => ({ name, metadata: {} })));

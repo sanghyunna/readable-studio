@@ -52,9 +52,7 @@ import {
 } from './plugin-preview-bakes.js';
 import { userFacingAgentLabel } from './user-facing-agent-label.js';
 import {
-  CODEX_WINDOWS_APPCONTAINER_LIMITATION_DETAIL,
   CODEX_WINDOWS_APPCONTAINER_LIMITATION_REASON,
-  ISOLATION_FALLBACK_LABEL,
   isolationLaunchFailureReason,
   isolationRuntimeFailureReason,
 } from './isolation-fallback.js';
@@ -82,6 +80,7 @@ import {
 } from './agents.js';
 import { configureDetectionStorage } from './runtimes/detection.js';
 import { ensureAgentCapabilities } from './runtimes/detection-probe.js';
+import { ensureClaudeThinkingDisplayCapability } from './runtimes/defs/claude.js';
 import {
   agentHasModelChoice,
   getRememberedLiveModels,
@@ -490,6 +489,7 @@ import { registerDesignSystemToolRoutes } from './routes/design-system-tool.js';
 import { registerDeployRoutes, registerDeploymentCheckRoutes } from './routes/deploy.js';
 import { registerMediaRoutes } from './media-routes.js';
 import { registerProjectRoutes, registerProjectArtifactRoutes, registerProjectFileRoutes, registerProjectUploadRoutes } from './project-routes.js';
+import { registerShortcutRoutes } from './shortcut-routes.js';
 import { registerFinalizeRoutes, registerImportRoutes, registerProjectExportRoutes } from './import-export-routes.js';
 import { registerStandaloneHtmlRoutes } from './routes/standalone-html.js';
 import { PluginHtmlTooLargeError, resolvePluginHtml } from './plugin-html-source.js';
@@ -5272,6 +5272,7 @@ export async function startServer({
     validation: validationDeps,
   });
   registerDesktopApprovalRoutes(app, desktopApprovalBroker, sendDesktopApprovalError);
+  registerShortcutRoutes(app, desktopApprovalToken);
   registerTerminalRoutes(app, {
     db,
     http: httpDeps,
@@ -10202,6 +10203,7 @@ export async function startServer({
     // A headless caller may bypass /api/agents. Populate capability flags on
     // demand before constructing argv, including after a persisted scan load.
     await ensureAgentCapabilities(def, configuredAgentEnv);
+    if (def.id === 'claude') await ensureClaudeThinkingDisplayCapability(configuredAgentEnv);
     // Per-agent model + reasoning the user picked in the model menu.
     // Catalog-only agents accept only a model surfaced by the daemon;
     // custom-capable agents may additionally accept a sanitized free-form id.
@@ -10335,13 +10337,6 @@ export async function startServer({
     const recordIsolationFallback = (reason: string) => {
       run.isolationFallbackReason = reason;
       console.warn('[rollback] secure agent isolation unavailable; executing without sandbox isolation', { runId, agentId, reason });
-      send('agent', {
-        type: 'status',
-        label: ISOLATION_FALLBACK_LABEL,
-        detail: reason === CODEX_WINDOWS_APPCONTAINER_LIMITATION_REASON
-          ? CODEX_WINDOWS_APPCONTAINER_LIMITATION_DETAIL
-          : `Running WITHOUT sandbox isolation: ${reason}`,
-      });
     };
     if (desktopApprovalToken && def.id === 'codex' && !isolatedAgentSupport.supported && !run.isolationFallbackReason) {
       recordIsolationFallback(isolatedAgentSupport.reason);

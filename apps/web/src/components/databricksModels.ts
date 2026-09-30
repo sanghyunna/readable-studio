@@ -12,12 +12,26 @@
 //    the new catalogue through `DATABRICKS_MODELS_CHANGED_EVENT`; the app merges
 //    it into the agent's `models` and nothing touches the active choice.
 
+import { splitDatabricksModelName } from '@readable-studio/contracts';
 import type {
   AgentInfo,
   AgentModelOption,
   DatabricksRegisteredEndpoint,
   DatabricksEndpoint,
 } from '@readable-studio/contracts';
+
+/**
+ * Display rule shared with the `readable databricks models` CLI: the UC name
+ * (`displayName`, else `label`) is the full title; `catalog.schema` is the
+ * de-emphasized path and the remainder is the prominent model name. A served
+ * model that differs from that name is secondary information, never the title.
+ */
+export function displayDatabricksModelName(endpoint: Pick<DatabricksEndpoint, 'label' | 'displayName' | 'servedModelName'>) {
+  const title = endpoint.displayName ?? endpoint.label;
+  const split = splitDatabricksModelName(title);
+  const secondary = endpoint.servedModelName && endpoint.servedModelName !== split.model ? endpoint.servedModelName : null;
+  return { model: split.model, path: split.path, title, secondary };
+}
 
 export function databricksProtocolDescription(endpoint: DatabricksEndpoint): string {
   const transport = endpoint.api === 'anthropic-messages' ? 'Anthropic Messages'

@@ -10,6 +10,7 @@ import {
   type PluginManifest,
 } from '@readable-studio/contracts';
 import { createProjectArtifactFile } from './artifact-create.js';
+import { inspectFileWidthReleases, isWidthReleaseRestoreRequest, restoreFileWidthReleases, WidthReleaseFileConflictError, widthReleaseContentHash } from './width-release-files.js';
 import { ArtifactPublicationBlockedError } from './artifact-publication-guard.js';
 import { ArtifactRegressionError } from './artifact-stub-guard.js';
 import { listDesignSystems } from './design-systems.js';
@@ -2585,8 +2586,18 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
         fileSplat,
         project?.metadata,
       );
+      if (req.query.widthRelease !== undefined) {
+        if (req.query.widthRelease !== 'inspect') return sendApiError(res, 400, 'BAD_REQUEST', 'widthRelease must be inspect');
+        if (!file.mime.startsWith('text/html')) return sendApiError(res, 415, 'UNSUPPORTED_MEDIA_TYPE', 'width releases require an HTML file');
+        const result = inspectFileWidthReleases(file.buffer.toString('utf8'));
+        const body: import('@readable-studio/contracts').ProjectFileWidthReleaseResponse = {
+          name: file.name, contentSha256: widthReleaseContentHash(file.buffer), records: result.records,
+        };
+        return res.json(body);
+      }
       res.type(file.mime).send(file.buffer);
     } catch (err: any) {
+      if (err instanceof WidthReleaseFileConflictError) return sendApiError(res, 409, 'WIDTH_RELEASE_CONFLICT', err.message, { details: err.conflict });
       const status = err && err.code === 'ENOENT' ? 404 : 400;
       sendApiError(
         res,
@@ -2635,6 +2646,27 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
           if (req.file.path) fs.promises.unlink(req.file.path).catch(() => {});
           /** @type {import('@readable-studio/contracts').ProjectFileResponse} */
           const body = { file: meta };
+          return res.json(body);
+        }
+        if (req.body?.widthRelease !== undefined) {
+          if (!isWidthReleaseRestoreRequest(req.body)) return sendApiError(res, 400, 'BAD_REQUEST', 'Width restore requires only name, expectedContentSha256 and widthRelease with kind restore and either target or all:true');
+          const { name, expectedContentSha256, widthRelease } = req.body;
+          const file = await readProjectFile(PROJECTS_DIR, req.params.id, name, uploadProject?.metadata);
+          if (!file.mime.startsWith('text/html')) return sendApiError(res, 415, 'UNSUPPORTED_MEDIA_TYPE', 'width releases require an HTML file');
+          const actualContentSha256 = widthReleaseContentHash(file.buffer);
+          if (actualContentSha256 !== expectedContentSha256.toLowerCase()) throw new ProjectFileContentConflictError(name, expectedContentSha256, actualContentSha256);
+          const result = restoreFileWidthReleases(file.buffer.toString('utf8'), widthRelease);
+          const meta = await writeProjectFile(PROJECTS_DIR, req.params.id, name, Buffer.from(result.source), {
+            expectedContentSha256, writeGuards: ctx.getFileWriteGuards?.(req.params.id) ?? [],
+          }, uploadProject?.metadata);
+          const body: import('@readable-studio/contracts').RestoreProjectFileWidthReleaseResponse = {
+            file: meta,
+            widthRelease: {
+              records: result.records, restoredTargetIds: result.restoredTargetIds,
+              contentSha256: widthReleaseContentHash(result.source),
+              ...(result.selection ? { selection: result.selection } : {}),
+            },
+          };
           return res.json(body);
         }
         const { name, content, encoding, artifactManifest, artifact, overwrite, expectedContentSha256 } = req.body || {};
@@ -2700,6 +2732,8 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
         const body = { file: meta };
         res.json(body);
       } catch (err: any) {
+        if (err instanceof WidthReleaseFileConflictError) return sendApiError(res, 409, 'WIDTH_RELEASE_CONFLICT', err.message, { details: err.conflict });
+        if (req.body?.widthRelease !== undefined && err?.code === 'ENOENT') return sendApiError(res, 404, 'FILE_NOT_FOUND', 'HTML file not found; reload the project before restoring');
         if (err instanceof ArtifactRegressionError) {
           return sendApiError(res, 422, 'ARTIFACT_REGRESSION', err.message, {
             details: {

@@ -1,0 +1,194 @@
+[
+  {
+    "id": "dbe_17fe400309f70ac8a921a96b0b0188c1",
+    "profileId": "dbc_6a424b37ffef97bb6a815c22b33b37b2",
+    "kind": "serving-endpoint",
+    "label": "claude-opus-4-1",
+    "displayName": "corp-claude-endpoint",
+    "servedModelName": "claude-opus-4-1",
+    "availability": "compatible",
+    "api": "anthropic-messages",
+    "enabled": true,
+    "appModelId": "dbm_dc33e9bc8c874f860b6a3e90e2472106",
+    "reasoningOptions": [
+      {
+        "id": "low",
+        "label": "Low"
+      },
+      {
+        "id": "medium",
+        "label": "Medium"
+      },
+      {
+        "id": "high",
+        "label": "High"
+      }
+    ],
+    "capabilities": {
+      "tools": "unknown",
+      "images": "unknown",
+      "contextWindow": null,
+      "maxTokens": null,
+      "limitSources": {
+        "contextWindow": "unknown",
+        "maxTokens": "unknown"
+      }
+    },
+    "protocolEvidence": {
+      "advertised": [
+        "anthropic/v1/messages"
+      ],
+      "native": [],
+      "reason": "advertised-api"
+    },
+    "evidence": "metadata"
+  },
+  {
+    "id": "dbe_9366133a178493225ecae319ea004921",
+    "profileId": "dbc_6a424b37ffef97bb6a815c22b33b37b2",
+    "kind": "serving-endpoint",
+    "label": "gpt-5.6-luna",
+    "displayName": "gpt-5.6-luna",
+    "servedModelName": "gpt-5.6-luna",
+    "availability": "compatible",
+    "api": "openai-completions",
+    "enabled": true,
+    "appModelId": "dbm_f013206ade06c0346a0c42e5f9bd2929",
+    "reasoningOptions": [
+      {
+        "id": "low",
+        "label": "Low"
+      },
+      {
+        "id": "medium",
+        "label": "Medium"
+      },
+      {
+        "id": "high",
+        "label": "High"
+      },
+      {
+        "id": "xhigh",
+        "label": "Extra high"
+      }
+    ],
+    "capabilities": {
+      "tools": "unknown",
+      "images": "unknown",
+      "contextWindow": 1050000,
+      "maxTokens": 128000,
+      "limitSources": {
+        "contextWindow": "model-table",
+        "maxTokens": "model-table"
+      }
+    },
+    "protocolEvidence": {
+      "advertised": [
+        "openai/v1/chat/completions"
+      ],
+      "native": [],
+      "reason": "advertised-api"
+    },
+    "evidence": "recipe"
+  },
+  {
+    "id": "dbe_25ed60eccf43ae33c751badc24d98628",
+    "profileId": "dbc_6a424b37ffef97bb6a815c22b33b37b2",
+    "kind": "uc-model-service",
+    "label": "gpt-oss-120b",
+    "displayName": "system.ai.gpt-oss-120b",
+    "servedModelName": "gpt-oss-120b",
+    "availability": "compatible",
+    "api": "openai-completions",
+    "enabled": true,
+    "appModelId": "dbm_b0f226e6b0868eca83ccea1ed2b45f05",
+    "reasoningOptions": [
+      {
+        "id": "low",
+        "label": "Low"
+      },
+      {
+        "id": "medium",
+        "label": "Medium"
+      },
+      {
+        "id": "high",
+        "label": "High"
+      },
+      {
+        "id": "xhigh",
+        "label": "Extra high"
+      },
+      {
+        "id": "max",
+        "label": "Max"
+      }
+    ],
+    "capabilities": {
+      "tools": "unknown",
+      "images": "unknown",
+      "contextWindow": 131072,
+      "maxTokens": 25000,
+      "limitSources": {
+        "contextWindow": "model-table",
+        "maxTokens": "model-table"
+      }
+    },
+    "protocolEvidence": {
+      "advertised": [
+        "openai/v1/chat/completions"
+      ],
+      "native": [],
+      "reason": "advertised-api"
+    },
+    "evidence": "recipe"
+  },
+  {
+    "id": "dbe_a1df1cd1ca68e0b741baf8f98e9ba0a2",
+    "profileId": "dbc_6a424b37ffef97bb6a815c22b33b37b2",
+    "kind": "uc-model-service",
+    "label": "gpt-5.6-luna",
+    "displayName": "app_dev.default.oai-luna-model-service",
+    "servedModelName": "gpt-5.6-luna",
+    "availability": "compatible",
+    "api": "openai-completions",
+    "enabled": true,
+    "appModelId": "dbm_22971d1b94dff8d87bdb2d47ff56c5ce",
+    "reasoningOptions": [
+      {
+        "id": "low",
+        "label": "Low"
+      },
+      {
+        "id": "medium",
+        "label": "Medium"
+      },
+      {
+        "id": "high",
+        "label": "High"
+      },
+      {
+        "id": "xhigh",
+        "label": "Extra high"
+      }
+    ],
+    "capabilities": {
+      "tools": "unknown",
+      "images": "unknown",
+      "contextWindow": 1050000,
+      "maxTokens": 128000,
+      "limitSources": {
+        "contextWindow": "model-table",
+        "maxTokens": "model-table"
+      }
+    },
+    "protocolEvidence": {
+      "advertised": [
+        "openai/v1/chat/completions"
+      ],
+      "native": [],
+      "reason": "advertised-api"
+    },
+    "evidence": "recipe"
+  }
+]

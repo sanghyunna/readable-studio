@@ -29,6 +29,7 @@
 .op-status-running { color: var(--purple); }
 .op-status-ok { color: var(--green); }
 .op-status-error { color: var(--red); }
+.op-status-interrupted { color: var(--text-muted); }
 .op-toggle {
   font-size: 10.5px;
   padding: 2px 8px;

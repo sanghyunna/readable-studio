@@ -41,6 +41,7 @@ export const INTERNAL_PACKAGES = [
   { directory: "packages/platform", name: "@readable-studio/platform" },
   { directory: "packages/download", name: "@readable-studio/download" },
   { directory: "packages/host", name: "@readable-studio/host" },
+  { directory: "packages/html-edit", name: "@readable-studio/html-edit" },
   { directory: "packages/agui-adapter", name: "@readable-studio/agui-adapter" },
   { directory: "packages/plugin-runtime", name: "@readable-studio/plugin-runtime" },
   { directory: "packages/product-identity", name: "@readable-studio/product-identity" },

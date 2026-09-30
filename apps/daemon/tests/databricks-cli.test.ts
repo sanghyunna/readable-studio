@@ -1,4 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { DatabricksRegisteredEndpoint } from '@readable-studio/contracts';
 import { runDatabricksCli } from '../src/databricks-cli.js';
 import { DatabricksServiceError } from '../src/databricks/service.js';
 import { bounded, ids, login, lookup, model, models, scan, secrets, status, surfaceHarness, verification } from './databricks-surface-fixtures.js';
@@ -90,20 +93,34 @@ describe('readable databricks CLI', () => {
     noSecrets(JSON.stringify(harness.saveConfig.mock.calls));
   });
 
-  it('models --search filters by model name, UC path or full name and keeps the full endpoint identity', async () => {
+  it('models --search matches all real identity fields without changing JSON or registered ids', async () => {
     harness = await surfaceHarness();
-    const { servedModelName: _served, ...base } = models.models[0]!;
-    const second = { ...base, id: `dbe_${'d'.repeat(32)}`, label: 'system.ai.gpt-oss-120b', displayName: 'system.ai.gpt-oss-120b', appModelId: `dbm_${'e'.repeat(32)}` };
-    harness.service.listModels.mockResolvedValue({ ...models, models: [models.models[0]!, second] });
-    const byModel = cli(['models', '--search', 'GPT-OSS']);
-    expect(await byModel.finished).toEqual({ exitCode: 0 });
-    expect(JSON.parse(byModel.output()).models.map((entry: { id: string; label: string }) => [entry.id, entry.label])).toEqual([[`dbe_${'d'.repeat(32)}`, 'system.ai.gpt-oss-120b']]);
-    const byPath = cli(['models', '--search', 'system.ai']);
-    expect(await byPath.finished).toEqual({ exitCode: 0 });
-    expect(JSON.parse(byPath.output()).models).toHaveLength(1);
+    const endpoints: DatabricksRegisteredEndpoint[] = JSON.parse(readFileSync(resolve(process.cwd(), 'tests/fixtures/databricks-real-scan.json'), 'utf8'));
+    harness.service.listModels.mockResolvedValue({ ...models, models: endpoints });
+    for (const [query, expected] of [['GPT-OSS', endpoints[2]], ['system.ai', endpoints[2]], ['claude-opus', endpoints[0]], ['corp-claude', endpoints[0]]] as const) {
+      const invocation = cli(['models', '--search', query]);
+      expect(await invocation.finished).toEqual({ exitCode: 0 });
+      expect(JSON.parse(invocation.output()).models).toEqual([expected]);
+    }
     const none = cli(['models', '--search', 'nomatch']);
     expect(await none.finished).toEqual({ exitCode: 0 });
     expect(JSON.parse(none.output()).models).toEqual([]);
+  });
+
+  it('prints the readable name, UC path and custom endpoint with served model in text mode', async () => {
+    harness = await surfaceHarness();
+    const endpoints: DatabricksRegisteredEndpoint[] = JSON.parse(readFileSync(resolve(process.cwd(), 'tests/fixtures/databricks-real-scan.json'), 'utf8'));
+    harness.service.listModels.mockResolvedValue({ ...models, models: endpoints });
+    let output = '';
+    expect(await runDatabricksCli(['models'], {
+      resolveDaemonUrl: async () => harness!.url, stdout: text => { output += text; }, stderr: () => {},
+    })).toEqual({ exitCode: 0 });
+    expect(output.trim().split('\n')).toEqual([
+      'corp-claude-endpoint  (claude-opus-4-1)', 'gpt-5.6-luna',
+      // UC remainder is the name, catalog.schema the path, differing served model secondary
+      // (same rule as the web display helper).
+      'gpt-oss-120b  [system.ai]', 'oai-luna-model-service  [app_dev.default]  (gpt-5.6-luna)',
+    ]);
   });
 
   it('select refuses unregistered models without saving a default', async () => {

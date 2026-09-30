@@ -5229,13 +5229,19 @@ export function ProjectView({
   );
 
   // Signal that pushes a draft into the chat composer (e.g. a browser-use prompt).
-  const [composerDraftSignal, setComposerDraftSignal] = useState<{ text: string; nonce: number }>();
+  const [composerDraftSignal, setComposerDraftSignal] = useState<{ text: string; nonce: number; mode?: 'replace' | 'append' }>();
+  const composerDraftNonceRef = useRef(0);
+  const handleRequestAgentDraft = useCallback((text: string) => {
+    setWorkspaceFocused(false);
+    setManualEditInspectorActive(false);
+    setComposerDraftSignal({ text, nonce: ++composerDraftNonceRef.current, mode: 'append' });
+  }, []);
 
   const handleBrowserUsePrompt = useCallback((text: string) => {
     setWorkspaceFocused(false);
     setComposerDraftSignal({
       text,
-      nonce: Date.now(),
+      nonce: ++composerDraftNonceRef.current,
     });
   }, []);
 
@@ -5841,8 +5847,10 @@ export function ProjectView({
               className="comment-left-host"
               aria-label="Comments"
             />
-          ) : activeConversationId || conversationLoadError ? (
+          ) : null}
+          {activeConversationId || conversationLoadError ? (
             <ChatPane
+              hidden={leftInspectorActive}
               // The conversation id is part of the key so switching conversations
               // resets internal scroll/draft state inside ChatPane and ChatComposer.
               key={`${project.id}:${activeConversationId ?? 'conversation-unavailable'}:${chatSeed?.id ?? 'ready'}`}
@@ -6050,6 +6058,7 @@ export function ProjectView({
           onRemovePreviewComment={removePreviewComment}
           onSendBoardCommentAttachments={handleSendBoardCommentAttachments}
           onRequestBrowserUsePrompt={handleBrowserUsePrompt}
+          onRequestAgentDraft={handleRequestAgentDraft}
           onPluginFolderAgentAction={handlePluginFolderAgentAction}
           activePluginActionPaths={activePluginActionPaths}
           preferredPreviewFile={project.metadata?.entryFile ?? null}

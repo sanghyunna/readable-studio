@@ -186,14 +186,10 @@ export function resizeCssCommitStyles(args: {
       if (marginBottom) styles.marginBottom = `${Math.round(marginBottom)}px`;
     }
   }
-  // A main-axis size on a flex item is only a suggestion: flex-grow/shrink win
-  // and the drag result silently snaps back. Pin the item (flex: none — the
-  // Figma "fill → fixed" semantic) so the written size actually holds. Cross
-  // axis needs no pin: an explicit size already beats align-items stretch.
-  if (
-    (flexItemAxis === 'row' && styles.width !== undefined) ||
-    (flexItemAxis === 'column' && styles.height !== undefined)
-  ) {
+  // Horizontal allocation belongs to the parent; never detach a row item.
+  // Preserve the existing pure vertical behavior. Width-containing corners
+  // must be assessed atomically rather than changing allocation for one axis.
+  if (flexItemAxis === 'column' && styles.height !== undefined && styles.width === undefined) {
     styles.flex = 'none';
   }
   return styles;

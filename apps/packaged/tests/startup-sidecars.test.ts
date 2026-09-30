@@ -19,7 +19,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { PackagedNamespacePaths } from "../src/paths.js";
 import { startPackagedSidecars, type PackagedSidecarHandle } from "../src/sidecars.js";
 
-type FixtureBehavior = "concurrent" | "fail" | "port-conflict-once" | "ready";
+type FixtureBehavior = "concurrent" | "fail" | "no-http" | "port-conflict-once" | "ready" | "stale";
 
 function fixtureSource(
   app: "daemon" | "web",
@@ -31,6 +31,7 @@ function fixtureSource(
   return `
 import { appendFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
+import { createServer as createHttpServer } from "node:http";
 import { dirname, join } from "node:path";
 
 const app = ${JSON.stringify(app)};
@@ -83,12 +84,12 @@ const server = createServer((socket) => {
         ok: true,
         result: {
           descriptor: ${JSON.stringify(descriptor)},
-          pid: process.pid,
+          pid: behavior === "stale" ? process.pid + 1 : process.pid,
           state: "running",
           updatedAt: new Date().toISOString(),
           url: ready ? "http://127.0.0.1:" + port : null,
         },
-      }) + "\\n");
+      }) + "\\n", () => { if (behavior === "stale") process.exit(3); });
       return;
     }
     socket.end(JSON.stringify({ ok: true, result: { accepted: true } }) + "\\n");
@@ -100,7 +101,7 @@ const server = createServer((socket) => {
   });
 });
 
-server.listen(ipcPath, () => {
+const listenIpc = () => server.listen(ipcPath, () => {
   trace(app + ":listening");
   if (behavior !== "concurrent") return;
   setTimeout(() => {
@@ -112,6 +113,12 @@ server.listen(ipcPath, () => {
     });
   }, 750);
 });
+if (app === "daemon" && behavior !== "no-http") {
+  createHttpServer((_req, res) => {
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ ok: true }));
+  }).listen(Number(process.env.READABLE_PORT), "127.0.0.1", listenIpc);
+} else listenIpc();
 `;
 }
 
@@ -258,6 +265,26 @@ describe("startPackagedSidecars", () => {
       expect(readFileSync(join(fixture.fixturesRoot, "trace.log"), "utf8")).toContain("web:listening");
     } finally {
       await sidecars?.close();
+      rmSync(fixture.root, { force: true, recursive: true });
+    }
+  });
+
+  it("never reports ready from a different daemon on the namespace IPC endpoint", async () => {
+    const fixture = createFixtureHarness("stale", "ready");
+    try {
+      await expect(fixture.start()).rejects.toThrow(/daemon.*pid|status.*pid/i);
+      expect(fixture.phases).not.toContain("daemon-status-ready");
+    } finally {
+      rmSync(fixture.root, { force: true, recursive: true });
+    }
+  });
+
+  it("does not report ready when daemon IPC reports a URL but HTTP is not serving", async () => {
+    const fixture = createFixtureHarness("no-http", "ready");
+    try {
+      await expect(fixture.start()).rejects.toThrow(/daemon.*health/i);
+      expect(fixture.phases).not.toContain("daemon-status-ready");
+    } finally {
       rmSync(fixture.root, { force: true, recursive: true });
     }
   });

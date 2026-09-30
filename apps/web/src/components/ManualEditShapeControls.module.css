@@ -247,6 +247,7 @@
 }
 
 .resizeFeedback {
+  word-break: keep-all;
   display: grid;
   gap: 4px;
   margin: 0 0 8px;

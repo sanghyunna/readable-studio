@@ -1,7 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import { cp, lstat, mkdir, readFile, readdir, readlink, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative } from "node:path";
+import { performance } from "node:perf_hooks";
 
+import { isBuildProfilingEnabled, measureBuildStep, writeBuildProfile } from "./build-profile.js";
 import { withDirectoryLock } from "./lock.js";
 
 export const CACHE_SCHEMA_VERSION = 1;
@@ -287,11 +289,17 @@ export class ToolPackCache {
       if ((await node.invalidate({ entryRoot: alias.entryPath, manifest })) != null) return false;
 
       for (const target of source.materialize) {
-        await copyFromEntry(alias.entryPath, target, {});
+        await measureBuildStep("cache:seed-copy", () => copyFromEntry(alias.entryPath, target, {}),
+          { nodeId: node.id, artifact: target.from });
       }
       return true;
     };
+    const profiling = isBuildProfilingEnabled();
+    const lockWaitStartedAt = profiling ? performance.now() : 0;
     const manifest = await withDirectoryLock(join(this.root, "locks"), "global", async () => {
+      if (profiling) writeBuildProfile("cache:lock-wait", {
+        nodeId: node.id, startedAt: performance.timeOrigin + lockWaitStartedAt, durationMs: performance.now() - lockWaitStartedAt,
+      });
       await mkdir(dirname(entryPath), { recursive: true });
       const existingManifest = await readManifest<TMetadata>(manifestPath);
       const manifestMissing = existingManifest == null;
@@ -329,7 +337,8 @@ export class ToolPackCache {
         await rm(stagingPath, { force: true, recursive: true });
         await mkdir(stagingPath, { recursive: true });
         try {
-          const payloadMetadata = await node.build({ entryRoot: stagingPath });
+          const payloadMetadata = await measureBuildStep("cache:node-build", () => node.build({ entryRoot: stagingPath }),
+            { nodeId: node.id });
           const missingOutput = await assertOutputsExist(stagingPath, outputs);
           if (missingOutput != null) throw new Error(`cache node ${node.id} build did not produce ${missingOutput.reason}`);
           const builtManifest: CacheManifest<TMetadata> = {
@@ -363,12 +372,13 @@ export class ToolPackCache {
       })();
 
       for (const target of materialize) {
-        await materializeTarget(target);
+        await measureBuildStep("cache:materialize", () => materializeTarget(target), { nodeId: node.id, artifact: target.from });
       }
 
       return nextManifest;
     });
 
+    writeBuildProfile("cache:result", { nodeId: node.id, key: node.key, status, reason, materialized });
     this.#entries.push({
       durationMs: Date.now() - startedAt,
       entryPath,
@@ -438,7 +448,12 @@ export class ToolPackCache {
       });
     };
 
+    const profiling = isBuildProfilingEnabled();
+    const lockWaitStartedAt = profiling ? performance.now() : 0;
     const manifest = await withDirectoryLock(join(this.root, "locks"), "global", async () => {
+      if (profiling) writeBuildProfile("cache:lock-wait", {
+        nodeId: node.id, startedAt: performance.timeOrigin + lockWaitStartedAt, durationMs: performance.now() - lockWaitStartedAt,
+      });
       const existingManifest = await readManifest<TMetadata>(manifestPath);
       if (existingManifest == null) return null;
       if (existingManifest.schemaVersion !== CACHE_SCHEMA_VERSION) return null;
@@ -448,7 +463,7 @@ export class ToolPackCache {
       if ((await node.invalidate({ entryRoot: entryPath, manifest: existingManifest })) != null) return null;
 
       for (const target of materialize) {
-        await materializeTarget(target);
+        await measureBuildStep("cache:materialize", () => materializeTarget(target), { nodeId: node.id, artifact: target.from });
       }
 
       return existingManifest;

@@ -1,6 +1,6 @@
 {
   "name": "@readable-studio/web",
-  "version": "1.1.5",
+  "version": "1.2.0",
   "description": "Readable Studio web document workspace.",
   "private": true,
   "type": "module",
@@ -25,7 +25,7 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "build:sidecar": "tsc -p tsconfig.sidecar.json",
-    "typecheck": "tsc -b --noEmit",
+    "typecheck": "pnpm --filter @readable-studio/html-edit typecheck && tsc -b --noEmit",
     "test": "vitest run -c vitest.config.ts"
   },
   "dependencies": {
@@ -35,6 +35,7 @@
     "@readable-studio/components": "workspace:*",
     "@readable-studio/contracts": "workspace:*",
     "@readable-studio/host": "workspace:*",
+    "@readable-studio/html-edit": "workspace:*",
     "@readable-studio/platform": "workspace:*",
     "@readable-studio/sidecar": "workspace:*",
     "@readable-studio/sidecar-proto": "workspace:*",

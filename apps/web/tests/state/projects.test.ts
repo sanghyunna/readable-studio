@@ -9,11 +9,25 @@ import {
   importFolderProject,
   installGeneratedPluginFolder,
   listProjectCheckpoints,
+  listProjects,
   listPlugins,
   pickLocalFolderPath,
   publishGeneratedPluginToGitHub,
   rollbackConversation,
 } from '../../src/state/projects';
+
+describe('project listing availability', () => {
+  it('distinguishes an unavailable daemon from a genuinely empty project list during startup', async () => {
+    // Given: the daemon API cannot be reached.
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => { throw new TypeError('connection refused'); }));
+    try {
+      // When: bootstrap requests authoritative project data.
+      await expect(listProjects({ strict: true })).rejects.toThrow('connection refused');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
 
 describe('project checkpoints', () => {
   afterEach(() => {

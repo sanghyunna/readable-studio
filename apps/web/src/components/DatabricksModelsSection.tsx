@@ -7,7 +7,6 @@
 // restart, and every failure is shown next to the row that caused it.
 import { useCallback, useEffect, useState } from 'react';
 import {
-  splitDatabricksModelName,
   type DatabricksProfile,
   type DatabricksRegisteredEndpoint,
 } from '@readable-studio/contracts';
@@ -19,7 +18,7 @@ import {
   fetchDatabricksModels,
   fetchDatabricksStatus,
 } from '../providers/databricks';
-import { notifyDatabricksModelsChanged, registeredEndpointToModelOption, databricksProtocolDescription, databricksLimitDescription } from './databricksModels';
+import { notifyDatabricksModelsChanged, registeredEndpointToModelOption, databricksProtocolDescription, databricksLimitDescription, displayDatabricksModelName } from './databricksModels';
 import { Icon } from './Icon';
 import styles from './DatabricksModelsSection.module.css';
 
@@ -53,10 +52,6 @@ function groupByWorkspace(
     group.models.push(model);
   }
   return [...groups.values()];
-}
-
-function modelTitle(model: DatabricksRegisteredEndpoint): string {
-  return model.servedModelName ?? model.displayName ?? model.label;
 }
 
 function formatTokens(value: number | null): string | null {
@@ -218,12 +213,11 @@ export function DatabricksModelsSection() {
                 const modelBusy = busyId === model.id;
                 const context = formatTokens(model.capabilities.contextWindow);
                 const output = formatTokens(model.capabilities.maxTokens);
-                const title = modelTitle(model);
-                const name = splitDatabricksModelName(title);
+                const name = displayDatabricksModelName(model);
                 return (
                   <li key={model.id} className={styles.row} data-testid="databricks-model-row">
                     <div className={styles.rowMain}>
-                      <span className={styles.rowName} title={title}>
+                      <span className={styles.rowName} title={name.title} aria-label={name.secondary ? `${name.title}, ${name.secondary}` : name.title}>
                         <strong className={styles.rowTitle}>{name.model}</strong>
                         {name.path ? (
                           <span
@@ -234,17 +228,17 @@ export function DatabricksModelsSection() {
                           </span>
                         ) : null}
                       </span>
-                      {model.displayName && model.displayName !== title ? (
-                        <code className={styles.rowIdentity}>{model.displayName}</code>
-                      ) : null}
+                      {name.secondary ? <code className={styles.rowIdentity}>{name.secondary}</code> : null}
                       <small className={styles.rowMeta}>
                         {context
                           ? t('settings.databricksModelsContext', { value: context })
                           : t('settings.databricksModelsLimitUnknown')}
+                        {context && (model.capabilities.limitSources?.contextWindow === 'advertised' || model.capabilities.limitSources?.contextWindow === 'default') ? ` ${t('databricks.named.limitUnconfirmed')}` : ''}
                         <span aria-hidden> · </span>
                         {output
                           ? t('settings.databricksModelsOutput', { value: output })
                           : t('settings.databricksModelsLimitUnknown')}
+                        {output && model.capabilities.limitSources?.maxTokens === 'default' ? ` ${t('databricks.named.limitUnconfirmed')}` : ''}
                       </small>
                       <small className={styles.rowMeta}>{databricksProtocolDescription(model)}</small>
                       <small className={styles.rowMeta}>{databricksLimitDescription(model)}</small>
@@ -281,7 +275,7 @@ export function DatabricksModelsSection() {
                             setRowError(null);
                             setPending({ kind: 'model', id: model.id });
                           }}
-                          aria-label={`${t('settings.databricksRemove')}: ${title}`}
+                          aria-label={`${t('settings.databricksRemove')}: ${name.title}`}
                           data-testid="databricks-remove"
                         >
                           {t('settings.databricksRemove')}

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { createPortal, flushSync } from 'react-dom';
+import { preflightWidthRelease } from '../edit-mode/width-release-preflight';
+import type { WidthReleaseCause } from '@readable-studio/contracts';
 import { Button, Input, Select, VisuallyHidden } from '@readable-studio/components';
 import { APP_CHROME_FILE_ACTIONS_ID, APP_CHROME_FILE_ACTIONS_SELECTOR } from './AppChromeHeader';
 import {
@@ -69,7 +71,7 @@ import {
   imageDataUrlToBlob,
   openSandboxedPreviewInNewTab,
   prepareImageExportTarget,
-  requestPreviewSnapshot,
+  requestPreviewSnapshotResult,
   type ImageExportFormat,
 } from '../runtime/exports';
 import { copyToClipboard } from '../lib/copy-to-clipboard';
@@ -160,6 +162,8 @@ import {
   type ManualEditMoveAnnouncementSegment,
 } from '../edit-mode/keyboard-move';
 import { isRenderableSketchJson, SketchPreview } from './SketchPreview';
+import { buildWidthAgentRequest, formatWidthAgentRequest } from '../edit-mode/width-agent-request';
+import type { ManualEditResizeOutcome, ManualEditPreviewAppliedMessage } from '../edit-mode/types';
 
 function resolveChromeActionsHost(): HTMLElement | null {
   return document.querySelector<HTMLElement>(APP_CHROME_FILE_ACTIONS_SELECTOR)
@@ -174,6 +178,7 @@ type ManualEditResizeFeedback = {
   targetId: string;
   constraints: ManualEditResizeConstraint[];
   announce: boolean;
+  outcome?: ManualEditResizeOutcome;
 };
 type ActiveManualEditMovement = {
   readonly session: ManualEditMovementSession;
@@ -862,7 +867,7 @@ function manualEditResizeRequest(
   const axes: ManualEditResizeRequest['axes'] = [];
   if (direction.includes('e') || direction.includes('w')) axes.push('width');
   if (direction.includes('n') || direction.includes('s')) axes.push('height');
-  return { axes, requested: size, ...(includeDetails ? { includeDetails: true } : {}) };
+  return { axes, direction, requested: size, ...(includeDetails ? { includeDetails: true } : {}) };
 }
 
 export function cancelManualEditPendingStyleSnapshot(
@@ -1002,11 +1007,12 @@ function temporarilyExposeIframeForSnapshot(iframe: HTMLIFrameElement): () => vo
   };
 }
 
-async function requestPreviewSnapshotWithRetry(iframe: HTMLIFrameElement): Promise<Awaited<ReturnType<typeof requestPreviewSnapshot>>> {
+async function requestPreviewSnapshotWithRetry(iframe: HTMLIFrameElement, fullDocument: boolean): Promise<{ dataUrl: string; w: number; h: number } | null> {
   const timeouts = [1500, 3000, 6000];
   for (const timeout of timeouts) {
-    const snapshot = await requestPreviewSnapshot(iframe, timeout);
-    if (snapshot) return snapshot;
+    const result = await requestPreviewSnapshotResult(iframe, timeout, { fullDocument });
+    if (result.ok) return result.snapshot;
+    if (result.reason === 'render-error') throw new Error(result.error || 'Image snapshot failed');
     await waitForAnimationFrame();
   }
   return null;
@@ -1112,6 +1118,7 @@ interface Props {
   onSavePreviewComment?: (target: PreviewCommentTarget, note: string, attachAfterSave: boolean, images?: File[]) => Promise<PreviewComment | null>;
   onRemovePreviewComment?: (commentId: string) => Promise<void>;
   onSendBoardCommentAttachments?: (attachments: ChatCommentAttachment[], images?: File[]) => Promise<boolean | void> | boolean | void;
+  onRequestAgentDraft?: (text: string) => void;
   onFileSaved?: () => Promise<void> | void;
   // Open `openName` as a tab (focusing it) and close `closeName` in one
   // atomic tab-state update. The React module pointer uses this to jump to the
@@ -1149,6 +1156,7 @@ export function FileViewer({
   onSavePreviewComment,
   onRemovePreviewComment,
   onSendBoardCommentAttachments,
+  onRequestAgentDraft,
   onFileSaved,
   onOpenFileReplacing,
   onCloseGuardChange,
@@ -1197,6 +1205,7 @@ export function FileViewer({
         onSavePreviewComment={onSavePreviewComment}
         onRemovePreviewComment={onRemovePreviewComment}
         onSendBoardCommentAttachments={onSendBoardCommentAttachments}
+        onRequestAgentDraft={onRequestAgentDraft}
         onFileSaved={onFileSaved}
         commentPortalId={commentPortalId}
         onCommentModeChange={onCommentModeChange}
@@ -3443,6 +3452,7 @@ function HtmlViewer({
   onSavePreviewComment,
   onRemovePreviewComment,
   onSendBoardCommentAttachments,
+  onRequestAgentDraft,
   onFileSaved,
   commentPortalId,
   onCommentModeChange,
@@ -3467,6 +3477,7 @@ function HtmlViewer({
   onSavePreviewComment?: (target: PreviewCommentTarget, note: string, attachAfterSave: boolean, images?: File[]) => Promise<PreviewComment | null>;
   onRemovePreviewComment?: (commentId: string) => Promise<void>;
   onSendBoardCommentAttachments?: (attachments: ChatCommentAttachment[], images?: File[]) => Promise<boolean | void> | boolean | void;
+  onRequestAgentDraft?: (text: string) => void;
   onFileSaved?: () => Promise<void> | void;
   commentPortalId?: string;
   onCommentModeChange?: (active: boolean) => void;
@@ -3955,7 +3966,32 @@ function HtmlViewer({
     id: string;
     styles: Partial<ManualEditStyles>;
     cssSize?: { width: string; height: string };
+    documentEpoch: string;
+    transactionId: string;
+    sourceRevision: number;
+    source: string | null;
+    startRect: ManualEditRect;
+    closed?: boolean;
+    previewed?: boolean;
+    lastSafeSize?: { width: number; height: number };
   } | null>(null);
+  const manualEditResizeTransactionRef = useRef(0);
+  const manualEditResizeFinalizingRef = useRef<Promise<boolean> | null>(null);
+  const [manualEditResizeFinalizing, setManualEditResizeFinalizing] = useState(false);
+  const manualEditResizeFailedRef = useRef(false);
+  const pendingWidthAgentRequestRef = useRef<{ target: ManualEditTarget; outcome: ManualEditResizeOutcome; filePath: string } | null>(null);
+  useEffect(() => {
+    if (!manualEditMode) {
+      manualEditResizeFailedRef.current = false;
+      pendingWidthAgentRequestRef.current = null;
+    }
+  }, [manualEditMode, projectId, file.name]);
+  const manualEditResizeCancelTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (manualEditResizeCancelTimeoutRef.current !== null) clearTimeout(manualEditResizeCancelTimeoutRef.current);
+    manualEditResizeCancelTimeoutRef.current = null;
+  }, [projectId, file.name, manualEditMode]);
+  const manualEditResizeRepliesRef = useRef(new Map<number, { request: ManualEditResizeRequest; source: string | null }>());
   const activeManualEditMovementRef = useRef<ActiveManualEditMovement | null>(null);
   const manualEditMoveFlushRef = useRef<(() => void) | null>(null);
   const manualEditResizeFlushRef = useRef<(() => Promise<void>) | null>(null);
@@ -4322,8 +4358,11 @@ function HtmlViewer({
   // The transaction compares all later edits against this snapshot.
   useEffect(() => {
     if (manualEditMode) {
-      if (manualEditOriginalSourceRef.current === null) {
-        manualEditOriginalSourceRef.current = sourceRef.current ?? '';
+      // Edit mode can open while the canonical file read is still loading.
+      // Null is not an empty authored file: wait for that read before taking
+      // the immutable Save/CAS baseline.
+      if (manualEditOriginalSourceRef.current === null && sourceRef.current !== null) {
+        manualEditOriginalSourceRef.current = sourceRef.current;
       }
     } else {
       manualEditOriginalSourceRef.current = null;
@@ -4514,6 +4553,7 @@ function HtmlViewer({
     commentMode: boardMode,
     urlCommentBridge: urlSelectionBridgeReady,
     editMode: manualEditMode,
+    widthResizeAssessment: manualEditMode,
     urlModeBridge,
     inspectMode,
     drawMode: drawOverlayOpen,
@@ -4856,14 +4896,14 @@ function HtmlViewer({
     // Bump the revision only when the preview document actually changes (a
     // different file, an srcDoc reload, or a render-mode flip) — never on a plain
     // selection re-sync — so the bridge and host never drift out of sync.
-    const docKey = `${file.name}\u0000${useUrlLoadPreview ? 'url' : 'srcdoc'}\u0000${srcDoc ?? ''}`;
+    const docKey = `${file.name}\u0000${useUrlLoadPreview ? 'url' : 'srcdoc'}\u0000${manualEditDocumentRevision}\u0000${srcDoc ?? ''}`;
     if (manualEditPreviewDocRef.current !== docKey) {
       manualEditPreviewRevisionRef.current += 1;
       manualEditPreviewDocRef.current = docKey;
     }
     win.postMessage({ type: 'readable-edit-mode', enabled: manualEditMode, documentEpoch: manualEditDocumentEpoch() }, '*');
     postSelectedManualEditTargetToIframe(manualEditMode ? selectedManualEditTarget?.id ?? null : null);
-  }, [manualEditMode, selectedManualEditTarget?.id, srcDoc, useUrlLoadPreview, file.name]);
+  }, [manualEditMode, selectedManualEditTarget?.id, srcDoc, useUrlLoadPreview, file.name, manualEditDocumentRevision]);
 
   const previewStyleToIframe = useCallback((
     id: string,
@@ -4874,6 +4914,21 @@ function HtmlViewer({
   ) => {
     const win = iframeRef.current?.contentWindow;
     if (!win) return false;
+    const baseline = manualEditResizeBaselineRef.current;
+    if (resize && baseline?.id === id) {
+      resize = {
+        ...resize,
+        targetId: id,
+        documentEpoch: baseline.documentEpoch,
+        transactionId: baseline.transactionId,
+        sourceRevision: baseline.sourceRevision,
+        startRect: baseline.startRect,
+        sequence: version,
+        stage: resize.stage ?? (includeAuthoredSize ? 'finalize' : 'preview'),
+      };
+      if (resize.stage === 'preview') baseline.previewed = true;
+      manualEditResizeRepliesRef.current.set(version, { request: resize, source: sourceRef.current });
+    }
     win.postMessage({ type: 'readable-edit-preview-style', id, styles, version, includeAuthoredSize, ...(resize ? { resize } : {}) }, '*');
     return true;
   }, []);
@@ -5438,6 +5493,29 @@ function HtmlViewer({
       if (data.type === 'readable-edit-preview-style-applied') {
         if (!isActivePreviewIframeSource(ev.source)) return;
         const version = typeof data.version === 'number' ? data.version : 0;
+        if (data.documentEpoch !== undefined && data.documentEpoch !== manualEditDocumentEpoch()) return;
+        const pendingResize = manualEditResizeRepliesRef.current.get(version);
+        if (data.transactionId !== undefined) {
+          if (!pendingResize || data.id !== selectedManualEditTargetIdRef.current
+            || data.documentEpoch !== pendingResize.request.documentEpoch
+            || data.transactionId !== pendingResize.request.transactionId
+            || data.sequence !== pendingResize.request.sequence
+            || data.sourceRevision !== pendingResize.request.sourceRevision
+            || pendingResize.source !== sourceRef.current
+            || data.transactionId !== manualEditResizeBaselineRef.current?.transactionId) return;
+          if (manualEditResizeBaselineRef.current?.closed && data.stage !== 'cancel' && data.stage !== 'finalize') return;
+          if (data.stage === 'preview' && data.ok && data.resize
+            && (data.resize.decision === 'ordinary' || data.resize.decision === 'release-own')
+            && !data.resize.safetyFailures?.length && manualEditResizeBaselineRef.current) {
+            manualEditResizeBaselineRef.current.lastSafeSize = pendingResize.request.requested;
+          }
+          if (data.stage === 'cancel') {
+            if (manualEditResizeCancelTimeoutRef.current !== null) clearTimeout(manualEditResizeCancelTimeoutRef.current);
+            manualEditResizeCancelTimeoutRef.current = null;
+            if (!data.ok) recoverManualEditResizePreview();
+          }
+          for (const key of manualEditResizeRepliesRef.current.keys()) if (key <= version) manualEditResizeRepliesRef.current.delete(key);
+        }
         // Drop only out-of-order stragglers; every newer ack is applied even if
         // a later preview is already in flight (see manualEditPreviewAckVersionRef).
         if (version < manualEditPreviewAckVersionRef.current) return;
@@ -5470,6 +5548,7 @@ function HtmlViewer({
             targetId: data.id,
             constraints: data.resize.constraints,
             announce: data.resize.announce === true,
+            outcome: data.resize,
           });
         }
         if (!data.ok && version === manualEditPreviewVersionRef.current) {
@@ -5581,6 +5660,19 @@ function HtmlViewer({
 
   async function handleManualEditStyleChange(id: string, styles: Partial<ManualEditStyles>, label: string) {
     clearManualEditResizeFeedback();
+    const target = selectedManualEditTarget;
+    const numericWidth = styles.width && /^\d+(?:\.\d+)?px$/.test(styles.width) ? Number.parseFloat(styles.width) : undefined;
+    const releasedMode = target?.attributes['data-readable-width-release'] && (styles.width === 'auto' || styles.width === '100%');
+    if (target?.id === id && (numericWidth !== undefined || releasedMode)) {
+      if (manualEditResizeFinalizingRef.current || !(await flushManualEditStyleSave())) return;
+      beginManualEditResizeBaseline(target);
+      const usedWidth = Number.parseFloat(target.cssSize?.width ?? '') || target.rect.width;
+      const usedHeight = Number.parseFloat(target.cssSize?.height ?? '') || target.rect.height;
+      const width = target.rect.width + ((numericWidth ?? usedWidth) - usedWidth) * (target.rectScale?.x ?? 1);
+      const height = styles.height ? target.rect.height + (Number.parseFloat(styles.height) - usedHeight) * (target.rectScale?.y ?? 1) : target.rect.height;
+      await commitManualEditResize(target, styles.height ? 'se' : 'e', { width, height, styles }, target.rect);
+      return;
+    }
     const version = nextManualEditPreviewVersion();
     const currentPending = manualEditPendingStyleRef.current;
     const pendingStyles = currentPending?.id === id
@@ -5606,7 +5698,16 @@ function HtmlViewer({
     const pending = manualEditPendingStyleRef.current;
     const base: Partial<ManualEditStyles> = { ...target.styles };
     if (pending?.id === target.id) Object.assign(base, pending.styles);
-    manualEditResizeBaselineRef.current = { id: target.id, styles: base, cssSize: target.cssSize };
+    if (manualEditResizeCancelTimeoutRef.current !== null) clearTimeout(manualEditResizeCancelTimeoutRef.current);
+    manualEditResizeCancelTimeoutRef.current = null;
+    const revision = ++manualEditResizeTransactionRef.current;
+    manualEditResizeFailedRef.current = false;
+    manualEditResizeRepliesRef.current.clear();
+    manualEditResizeBaselineRef.current = {
+      id: target.id, styles: base, cssSize: target.cssSize,
+      documentEpoch: manualEditDocumentEpoch(), transactionId: `resize-${revision}`,
+      sourceRevision: revision, source: sourceRef.current, startRect: target.rect,
+    };
   }
 
   function manualEditResizeStyles(
@@ -5643,12 +5744,100 @@ function HtmlViewer({
   async function commitManualEditResize(
     target: ManualEditTarget,
     direction: ResizeHandleDirection,
-    size: { width: number; height: number },
+    size: { width: number; height: number; styles?: Partial<ManualEditStyles> },
     startSize: { width: number; height: number },
   ) {
-    const styles = manualEditResizeStyles(target, direction, size, startSize);
-    const ok = await applyManualEdit({ id: target.id, kind: 'set-style', styles }, `Style: ${target.label}`);
-    if (!ok) return;
+    const styles = size.styles ?? manualEditResizeStyles(target, direction, size, startSize);
+    const baseline = manualEditResizeBaselineRef.current;
+    if (!baseline || baseline.documentEpoch !== manualEditDocumentEpoch() || baseline.source !== sourceRef.current) {
+      revertManualEditResizePreview(target);
+      return;
+    }
+    baseline.closed = true;
+    let finish!: (ok: boolean) => void;
+    const finalizing = new Promise<boolean>((resolve) => { finish = resolve; });
+    manualEditResizeFinalizingRef.current = finalizing;
+    setManualEditResizeFinalizing(true);
+    const version = nextManualEditPreviewVersion();
+    const reply = await new Promise<ManualEditPreviewAppliedMessage | null>((resolve) => {
+      const settle = (value: ManualEditPreviewAppliedMessage | null) => {
+        clearTimeout(timeout);
+        window.removeEventListener('message', onFinal);
+        resolve(value);
+      };
+      const onFinal = (event: MessageEvent<ManualEditPreviewAppliedMessage>) => {
+        const data = event.data;
+        if (event.source !== iframeRef.current?.contentWindow || data?.type !== 'readable-edit-preview-style-applied'
+          || data.id !== target.id || data.version !== version || data.stage !== 'finalize'
+          || data.documentEpoch !== baseline.documentEpoch || data.transactionId !== baseline.transactionId
+          || data.sourceRevision !== baseline.sourceRevision || data.sequence !== version) return;
+        settle(data);
+      };
+      const timeout = setTimeout(() => settle(null), 1500);
+      window.addEventListener('message', onFinal);
+      const request = manualEditResizeRequest(direction, size, true);
+      if (size.styles && target.attributes['data-readable-width-release']) {
+        if (styles.width === 'auto') request.sizeMode = 'auto';
+        if (styles.width === '100%') request.sizeMode = 'fill';
+      }
+      if (!previewStyleToIframe(target.id, styles, version, true, request)) settle(null);
+    });
+    if (reply?.ok && reply.resize?.decision === 'release-own') {
+      const fit = reply.resize.preflight && reply.resize.proposedDeclarations?.length
+        ? await preflightWidthRelease(reply.resize.preflight) : { ok: false as const, reason: 'missing-release-evidence' };
+      if (!fit.ok) {
+        reply.resize.decision = 'refused';
+        reply.resize.actual = baseline.startRect;
+        const cause = { code: 'ancestor-content-limit' as const, axis: 'width' as const, confidence: 'unknown' as const, facts: { reason: fit.reason } };
+        reply.resize.causes = [...(reply.resize.causes ?? []), cause];
+        reply.resize.safetyFailures = [{ code: cause.code, facts: cause.facts }];
+        reply.resize.constraints = [{ axis: 'width', requested: size.width, applied: baseline.startRect.width, reason: 'layout', confidence: 'unknown', causes: reply.resize.causes }];
+        setSelectedManualEditTarget((current) => current?.id === target.id ? { ...current, rect: baseline.startRect } : current);
+        setManualEditResizeFeedback({ targetId: target.id, constraints: reply.resize.constraints, outcome: reply.resize, announce: true });
+      } else reply.resize.responsiveWidths = fit.widths;
+    }
+    setManualEditResizeFinalizing(false);
+    if (!reply?.ok || !reply.resize || baseline.source !== sourceRef.current
+      || manualEditResizeBaselineRef.current !== baseline
+      || baseline.documentEpoch !== manualEditDocumentEpoch() || selectedManualEditTargetIdRef.current !== target.id) {
+      manualEditResizeFailedRef.current = true;
+      recoverManualEditResizePreview();
+      setManualEditError(t('manualEdit.error.previewStyleFailed'));
+      finish(false);
+      if (manualEditResizeFinalizingRef.current === finalizing) manualEditResizeFinalizingRef.current = null;
+      return;
+    }
+    if (styles.width !== undefined && (reply.resize.decision === 'parent-owned' || reply.resize.decision === 'refused')) {
+      // The bridge already restored the whole corner transaction. No draft,
+      // history entry, ineffective width, or west/north margin is committed.
+      const lastSafe = baseline.lastSafeSize;
+      baseline.lastSafeSize = undefined;
+      if (lastSafe && (lastSafe.width !== size.width || lastSafe.height !== size.height)) {
+        await commitManualEditResize(target, direction, lastSafe, startSize);
+      }
+      finish(!manualEditResizeFailedRef.current);
+      if (manualEditResizeFinalizingRef.current === finalizing) manualEditResizeFinalizingRef.current = null;
+      return;
+    }
+    const outcome = reply.resize;
+    const release = outcome.decision === 'release-own';
+    const ok = await applyManualEdit(release ? {
+      id: target.id, kind: 'set-width-release', expectedSource: baseline.source!,
+      preferredCssPx: outcome.preferredCssPx!, declarations: outcome.proposedDeclarations!, mode: outcome.mode,
+      causes: (outcome.causes ?? []).filter(cause => cause.code.startsWith('own-')).map(cause => cause.code as WidthReleaseCause),
+      provenance: (outcome.causes ?? []).flatMap(cause => cause.declaration ? [{ property: cause.declaration.property, value: cause.declaration.value, priority: cause.declaration.priority, selector: cause.declaration.selector, href: cause.declaration.href, conditions: cause.declaration.conditions, complete: cause.declaration.complete }] : []),
+    } : { id: target.id, kind: 'set-style', styles }, `Style: ${target.label}`);
+    finish(ok);
+    if (manualEditResizeFinalizingRef.current === finalizing) manualEditResizeFinalizingRef.current = null;
+    if (!ok) {
+      recoverManualEditResizePreview();
+      return;
+    }
+    if (release) {
+      clearManualEditResizeFeedback();
+      cancelManualEditPendingStyles(target.id, Object.keys(styles) as Array<keyof ManualEditStyles>);
+      return;
+    }
     // Drop the just-committed props from any staged panel draft so a later
     // panel flush can't overwrite the drag result with stale width/height.
     cancelManualEditPendingStyles(target.id, Object.keys(styles) as Array<keyof ManualEditStyles>);
@@ -5668,35 +5857,35 @@ function HtmlViewer({
         styles: { ...current.styles, ...styles },
       }));
     }
-    previewStyleToIframe(
-      target.id,
-      styles,
-      nextManualEditPreviewVersion(),
-      true,
-      manualEditResizeRequest(direction, size, true),
-    );
   }
 
-  // Escape / pointercancel: repaint the iframe with the width/height that were
-  // in effect before the drag — the target's selection-time styles overlaid by
-  // any unsaved panel draft for the same element. For flex items the drag
-  // preview may also have pinned `flex: none`; restore the pre-drag flex too.
+  // The bridge owns the exact pre-preview inline snapshot (including shorthand
+  // order, priority, and an absent style attribute). Computed values cannot restore it.
   function revertManualEditResizePreview(target: ManualEditTarget) {
-    const pending = manualEditPendingStyleRef.current;
-    const base: Partial<ManualEditStyles> = { ...target.styles };
-    if (pending?.id === target.id) Object.assign(base, pending.styles);
-    // Margins revert too: a west/north drag preview shifts the box via
-    // marginLeft/marginTop (and may pin the opposite side).
-    const revert: Partial<ManualEditStyles> = {
-      width: base.width ?? '',
-      height: base.height ?? '',
-      marginLeft: base.marginLeft ?? '',
-      marginRight: base.marginRight ?? '',
-      marginTop: base.marginTop ?? '',
-      marginBottom: base.marginBottom ?? '',
-    };
-    if (target.flexItemAxis) revert.flex = base.flex ?? '';
-    previewStyleToIframe(target.id, revert, nextManualEditPreviewVersion());
+    const baseline = manualEditResizeBaselineRef.current;
+    if (!baseline || baseline.id !== target.id || !baseline.previewed) return;
+    baseline.closed = true;
+    if (manualEditResizeCancelTimeoutRef.current !== null) clearTimeout(manualEditResizeCancelTimeoutRef.current);
+    // Subscribe before posting: even a synchronous bridge reply must clear this.
+    manualEditResizeCancelTimeoutRef.current = setTimeout(() => {
+      manualEditResizeCancelTimeoutRef.current = null;
+      if (manualEditResizeBaselineRef.current === baseline) recoverManualEditResizePreview();
+    }, 1500);
+    if (!previewStyleToIframe(target.id, {}, nextManualEditPreviewVersion(), false, {
+      axes: [], requested: baseline.startRect, stage: 'cancel',
+    })) recoverManualEditResizePreview();
+  }
+
+  function recoverManualEditResizePreview() {
+    if (manualEditResizeCancelTimeoutRef.current !== null) clearTimeout(manualEditResizeCancelTimeoutRef.current);
+    manualEditResizeCancelTimeoutRef.current = null;
+    manualEditResizeRepliesRef.current.clear();
+    clearManualEditResizeFeedback();
+    setManualEditError(t('manualEdit.error.previewStyleFailed'));
+    // Canonical source was never changed by cancellation. Rebuild from it rather
+    // than leaving an unacknowledged transient width visible in the iframe.
+    setManualEditFrozenSource(sourceRef.current);
+    setManualEditDocumentRevision((revision) => revision + 1);
   }
 
   function baseTranslateFor(target: ManualEditTarget): string {
@@ -6512,12 +6701,14 @@ function HtmlViewer({
   }
 
   function hasLiveManualEdits(): boolean {
-    return manualEditTextNeedsFlushRef.current || hasActiveManualEditGesture() || manualEditSavingRef.current;
+    return manualEditTextNeedsFlushRef.current || hasActiveManualEditGesture() || manualEditSavingRef.current || manualEditResizeFinalizingRef.current !== null;
   }
 
   async function flushManualEditSession(): Promise<boolean> {
     if (!(await flushManualEditText())) return false;
     if (manualEditResizeFlushRef.current) await manualEditResizeFlushRef.current();
+    if (manualEditResizeFinalizingRef.current && !(await manualEditResizeFinalizingRef.current)) return false;
+    if (manualEditResizeFailedRef.current) return false;
     await flushKeyboardBurst();
     if (manualEditSavingRef.current) return false;
     manualEditMoveFlushRef.current?.();
@@ -6548,6 +6739,43 @@ function HtmlViewer({
     return true;
   }
 
+  async function completeWidthAgentRequest(savedSource: string): Promise<boolean> {
+    const pending = pendingWidthAgentRequestRef.current;
+    if (!pending || !onRequestAgentDraft) return true;
+    const html = readManualEditOuterHtml(savedSource, pending.target.id);
+    const element = new DOMParser().parseFromString(html, 'text/html').body.firstElementChild;
+    if (pending.filePath !== file.name || !element || element.tagName.toLowerCase() !== pending.target.tagName.toLowerCase()) {
+      setManualEditError(t('manualEdit.resize.requestStale'));
+      return false;
+    }
+    const sourceSha256 = await sha256Hex(savedSource);
+    if (pendingWidthAgentRequestRef.current !== pending || sourceRef.current !== savedSource) return false;
+    const request = buildWidthAgentRequest({ filePath: pending.filePath, sourceSha256,
+      target: { ...pending.target, outerHtml: html }, outcome: pending.outcome });
+    pendingWidthAgentRequestRef.current = null;
+    setManualEditMode(false);
+    onRequestAgentDraft(formatWidthAgentRequest(request,
+      request.causes.some((cause) => cause.code === 'shared-style-width') ? t('manualEdit.resize.sharedStyleLimit') : undefined));
+    return true;
+  }
+
+  async function requestWidthAgentDraft() {
+    // A refusal can be painted before the final ACK/text-blur bookkeeping
+    // settles. Finish those local acknowledgements, not a source Save, before
+    // deciding whether the user actually has edits that require a decision.
+    if (!(await flushManualEditText())) return;
+    if (manualEditResizeFinalizingRef.current && !(await manualEditResizeFinalizingRef.current)) return;
+    const target = selectedManualEditTargetRef.current;
+    const outcome = manualEditResizeFeedback?.outcome;
+    if (!target || !outcome || !onRequestAgentDraft) return;
+    pendingWidthAgentRequestRef.current = { target, outcome, filePath: file.name };
+    if (sourceRef.current !== manualEditOriginalSourceRef.current || manualEditPendingStyleRef.current || hasLiveManualEdits() || manualEditResizeFinalizingRef.current) {
+      setManualEditError(t('manualEdit.resize.requestSaveFirst'));
+      return;
+    }
+    if (sourceRef.current !== null) await completeWidthAgentRequest(sourceRef.current);
+  }
+
   async function saveManualEditChanges(): Promise<boolean> {
     if (!manualEditModeRef.current) return false;
     if (!(await flushManualEditSession())) return false;
@@ -6557,6 +6785,7 @@ function HtmlViewer({
     if (finalSource === null) return false;
     const originalSource = manualEditOriginalSourceRef.current ?? finalSource;
     if (finalSource === originalSource && !manualEditPendingStyleRef.current) {
+      if (!(await completeWidthAgentRequest(finalSource))) return false;
       setManualEditMode(false);
       return true;
     }
@@ -6594,8 +6823,9 @@ function HtmlViewer({
       manualEditDirtyRef.current = false;
       setManualEditDirty(false);
       setManualEditError(null);
-      manualEditModeRef.current = false;
-      setManualEditMode(false);
+      const requestReady = await completeWidthAgentRequest(finalSource);
+      manualEditModeRef.current = !requestReady;
+      setManualEditMode(!requestReady);
       setManualEditHistory([]);
       setManualEditUndone([]);
       try {
@@ -6615,6 +6845,7 @@ function HtmlViewer({
   }
 
   function discardManualEditChanges() {
+    manualEditResizeFailedRef.current = false;
     const originalSource = manualEditOriginalSourceRef.current ?? sourceRef.current ?? '';
     setSource(originalSource);
     sourceRef.current = originalSource;
@@ -6631,7 +6862,8 @@ function HtmlViewer({
     selectedManualEditTargetRef.current = null;
     setSelectedManualEditTarget(null);
     postSelectedManualEditTargetToIframe(null);
-    setManualEditMode(false);
+    if (pendingWidthAgentRequestRef.current) void completeWidthAgentRequest(originalSource);
+    else setManualEditMode(false);
   }
 
   // Clears the hover affordance and re-arms the iframe's per-element hover
@@ -6756,7 +6988,9 @@ function HtmlViewer({
       createdAt: Date.now(),
       ...(patch.kind === 'duplicate-and-move'
         ? { selectionIntent: { beforeId: patch.id, afterId: patch.plan.duplicateRootId } }
-        : {}),
+        : patch.kind === 'set-width-release' && result.selection
+          ? { selectionIntent: { beforeId: patch.id, afterId: result.selection.targetId } }
+          : {}),
     };
     setSource(result.source);
     sourceRef.current = result.source;
@@ -6772,6 +7006,13 @@ function HtmlViewer({
     setManualEditHistory(manualEditHistoryRef.current);
     setManualEditUndone([]);
     setManualEditDraft((current) => ({ ...current, fullSource: result.source }));
+    if (result.selection && 'id' in patch) {
+      const nextId = result.selection.targetId;
+      selectedManualEditTargetIdRef.current = nextId;
+      setSelectedManualEditTarget((current) => current?.id === patch.id ? { ...current, id: nextId } : current);
+      if (selectedManualEditTargetRef.current?.id === patch.id) selectedManualEditTargetRef.current = { ...selectedManualEditTargetRef.current, id: nextId };
+      postSelectedManualEditTargetToIframe(nextId);
+    }
     if (patch.kind === 'set-text') {
       setSelectedManualEditTarget((current) => current?.id === patch.id
         ? { ...current, text: patch.value, fields: { ...current.fields, text: patch.value } }
@@ -8123,7 +8364,7 @@ function HtmlViewer({
     // the in-iframe SVG-foreignObject bridge does. Works for both srcDoc and
     // URL-load previews. Falls through to the bridge on pure web (no host).
     const visibleIframe = iframeRef.current ?? srcDocPreviewIframeRef.current;
-    const hostSnapshot = await captureHostIframeSnapshot(visibleIframe);
+    const hostSnapshot = await captureHostIframeSnapshot(visibleIframe, isDeck ? undefined : { fullDocument: true });
     if (hostSnapshot) return hostSnapshot;
 
     if (!useUrlLoadPreview) {
@@ -8131,14 +8372,14 @@ function HtmlViewer({
       if (!activeIframe) return null;
       await waitForIframeLoadOrTimeout(activeIframe, 250);
       await waitForAnimationFrame();
-      return requestPreviewSnapshotWithRetry(activeIframe);
+      return requestPreviewSnapshotWithRetry(activeIframe, !isDeck);
     }
 
     const urlIframe = iframeRef.current ?? urlPreviewIframeRef.current;
     if (urlIframe) {
       await waitForIframeLoadOrTimeout(urlIframe, 250);
       await waitForAnimationFrame();
-      const urlSnapshot = await requestPreviewSnapshotWithRetry(urlIframe);
+      const urlSnapshot = await requestPreviewSnapshotWithRetry(urlIframe, !isDeck);
       if (urlSnapshot) return urlSnapshot;
     }
 
@@ -8146,7 +8387,7 @@ function HtmlViewer({
     if (!srcDocIframe) {
       const activeIframe = iframeRef.current;
       if (!activeIframe) return null;
-      return requestPreviewSnapshotWithRetry(activeIframe);
+      return requestPreviewSnapshotWithRetry(activeIframe, !isDeck);
     }
 
     if (useLazySrcDocTransport && !srcDocShellReady) {
@@ -8158,12 +8399,13 @@ function HtmlViewer({
     const restoreVisibility = temporarilyExposeIframeForSnapshot(srcDocIframe);
     try {
       await waitForAnimationFrame();
-      return requestPreviewSnapshotWithRetry(srcDocIframe);
+      return requestPreviewSnapshotWithRetry(srcDocIframe, !isDeck);
     } finally {
       restoreVisibility();
     }
   }, [
     activateSrcDocSnapshotTransport,
+    isDeck,
     srcDocShellReady,
     useLazySrcDocTransport,
     useUrlLoadPreview,
@@ -8205,7 +8447,7 @@ function HtmlViewer({
       );
     } catch (err) {
       console.warn('[handleCopyScreenshot] failed:', err);
-      setExportToast({ message: t('fileViewer.screenshotCaptureFailed'), tone: 'error' });
+      setExportToast({ message: err instanceof Error && err.message ? err.message : t('fileViewer.screenshotCaptureFailed'), tone: 'error' });
     } finally {
       screenshotInFlightRef.current = false;
     }
@@ -8233,7 +8475,7 @@ function HtmlViewer({
     } catch (err) {
       console.warn('[exportAsImage] failed to prepare snapshot:', err);
       if (imageExportPrepareIdRef.current === prepareId) {
-        setImageExportError(t('fileViewer.exportImageFailed'));
+        setImageExportError(err instanceof Error && err.message ? err.message : t('fileViewer.exportImageFailed'));
       }
     } finally {
       if (imageExportPrepareIdRef.current === prepareId) {
@@ -8643,15 +8885,26 @@ function HtmlViewer({
     && manualEditResizeFeedback.constraints.length
       ? manualEditResizeFeedback
       : null;
+  const widthAgentAction = onRequestAgentDraft && selectedManualEditResizeFeedback
+    && ['parent-owned', 'refused'].includes(selectedManualEditResizeFeedback.outcome?.decision ?? '')
+      ? () => { void requestWidthAgentDraft(); } : undefined;
   const manualEditResizeCanvasFeedback = selectedManualEditResizeFeedback?.constraints.map((constraint) => {
     const axis = t(constraint.axis === 'width' ? 'manualEdit.shape.width' : 'manualEdit.shape.height');
     const hasNamedLimit = selectedManualEditResizeFeedback.announce
-      && constraint.reason !== 'layout'
+      && constraint.confidence !== 'unknown'
       && constraint.property
       && constraint.value;
-    const limit = hasNamedLimit
-      ? t('manualEdit.resize.limit', { axis, property: constraint.property!, value: constraint.value! })
-      : t('manualEdit.resize.layoutLimit', { axis });
+    const limit = constraint.causes?.some((cause) => cause.code === 'shared-style-width')
+      ? t('manualEdit.resize.sharedStyleLimit')
+      : hasNamedLimit
+      ? [t('manualEdit.resize.limit', { axis, property: constraint.property!, value: constraint.value! }),
+        ...(constraint.causes?.some((cause) => cause.code === 'ancestor-content-limit') ? [t('manualEdit.resize.contentLimit', { axis })] : []),
+      ].join(' · ')
+      : t(constraint.causes?.some((cause) => cause.code === 'parent-flex-allocation' && cause.confidence === 'confirmed')
+        ? 'manualEdit.resize.flexLimit'
+        : constraint.causes?.some((cause) => cause.code === 'ancestor-content-limit')
+          ? 'manualEdit.resize.contentLimit'
+          : constraint.confidence === 'unknown' ? 'manualEdit.resize.unknownLimit' : 'manualEdit.resize.layoutLimit', { axis });
     return `${limit} · ${Math.round(constraint.applied)}px`;
   }).join('\n');
   // Resize handles ride the same iframe→canvas transform as the hover
@@ -8702,7 +8955,7 @@ function HtmlViewer({
           height: selectedManualEditTarget.rect.height,
         }}
         scale={overlayPreviewScale}
-        disabled={manualEditSaving}
+        disabled={manualEditSaving || manualEditResizeFinalizing}
         labels={manualEditResizeLabels}
         frameLabel={t('manualEdit.resize.frameLabel')}
         resizeConstraints={selectedManualEditResizeFeedback?.constraints}
@@ -9243,6 +9496,7 @@ function HtmlViewer({
           resizeConstraints={manualEditResizeFeedback?.targetId === selectedManualEditTarget.id
             ? manualEditResizeFeedback.constraints
             : undefined}
+          onRequestWidthAgentDraft={widthAgentAction}
           announceResizeConstraints={manualEditResizeFeedback?.targetId === selectedManualEditTarget.id
             && manualEditResizeFeedback.announce}
           busy={manualEditSaving}
@@ -9270,7 +9524,7 @@ function HtmlViewer({
       {manualEditError && !manualEditMode ? (
         <p className="manual-edit-error" role="alert">{manualEditError}</p>
       ) : null}
-      {manualEditMode && manualEditDirty && !manualEditPortalHost ? (
+      {manualEditMode && (manualEditDirty || manualEditResizeFailedRef.current || pendingWidthAgentRequestRef.current) && !manualEditPortalHost ? (
         <div className="manual-edit-footer" aria-busy={manualEditSaving}>
           <div className="manual-edit-footer-actions">
             <div className="manual-edit-footer-left" />
@@ -9310,6 +9564,7 @@ function HtmlViewer({
               resizeConstraints={selectedManualEditTarget && manualEditResizeFeedback?.targetId === selectedManualEditTarget.id
                 ? manualEditResizeFeedback.constraints
                 : undefined}
+              onRequestWidthAgentDraft={widthAgentAction}
               announceResizeConstraints={!!selectedManualEditTarget
                 && manualEditResizeFeedback?.targetId === selectedManualEditTarget.id
                 && manualEditResizeFeedback.announce}
@@ -9317,7 +9572,7 @@ function HtmlViewer({
               canUndo={manualEditHistory.length > 0}
               canRedo={manualEditUndone.length > 0}
               pageStylesEnabled={manualEditPageStylesEnabled}
-              dirty={manualEditDirty}
+              dirty={manualEditDirty || manualEditResizeFailedRef.current || !!pendingWidthAgentRequestRef.current}
               saving={manualEditSaving}
               getActiveTarget={() => selectedManualEditTargetRef.current}
               onStyleField={(key, value) => {

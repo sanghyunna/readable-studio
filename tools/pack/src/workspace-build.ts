@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { access, cp, lstat, mkdir, readdir, readFile, stat, symlink, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 
+import { measureBuildStep, writeBuildProfile } from "./build-profile.js";
 import { hashJson, hashPath, ToolPackCache } from "./cache.js";
 import type { ToolPackConfig } from "./config.js";
 import { hashPackageSourcePath } from "./package-source-hash.js";
@@ -86,11 +87,12 @@ async function readPackageManager(workspaceRoot: string): Promise<unknown> {
 async function createWorkspaceBuildCacheKey(config: ToolPackConfig): Promise<string> {
   const packageHashes: Record<string, string> = {};
   for (const packageInfo of WORKSPACE_BUILD_PACKAGES) {
-    packageHashes[packageInfo.name] = await hashPackageSourcePath(join(config.workspaceRoot, packageInfo.directory));
+    packageHashes[packageInfo.name] = await measureBuildStep("workspace:hash-package", () =>
+      hashPackageSourcePath(join(config.workspaceRoot, packageInfo.directory)), { package: packageInfo.name });
   }
   const nodeId = `${config.platform}.workspace-build`;
 
-  return hashJson({
+  const keyInput = {
     buildCommands: BUILD_COMMANDS,
     node: nodeId,
     nodeVersion: process.version,
@@ -103,7 +105,10 @@ async function createWorkspaceBuildCacheKey(config: ToolPackConfig): Promise<str
     pnpmLock: await hashPath(join(config.workspaceRoot, "pnpm-lock.yaml")),
     schemaVersion: 8,
     webOutputMode: config.webOutputMode,
-  });
+  };
+  const key = hashJson(keyInput);
+  writeBuildProfile("workspace:cache-key", { key, ...keyInput });
+  return key;
 }
 
 function workspaceBuildOutputFiles(config: ToolPackConfig): string[] {
@@ -272,13 +277,14 @@ async function copyWorkspaceBuildArtifactsToCache(config: ToolPackConfig, entryR
     // previous build whose target moved (e.g. a renamed `.pnpm/<pkg>@<ver>`
     // after a dependency bump), so the subsequent hoist step starts
     // from a clean slot and can safely (re-)create its symlinks.
-    await stripBrokenSymlinks(sourcePath);
+    await measureBuildStep("workspace:clean-symlinks", () => stripBrokenSymlinks(sourcePath), { artifact: artifact.workspacePath });
     if (artifact.workspacePath === WEB_STANDALONE_ARTIFACT) {
-      await hoistStandaloneNextPeerDeps(sourcePath);
+      await measureBuildStep("workspace:hoist-next-peers", () => hoistStandaloneNextPeerDeps(sourcePath));
     }
     const targetPath = join(entryRoot, artifact.cachePath);
     await mkdir(dirname(targetPath), { recursive: true });
-    await cp(sourcePath, targetPath, { dereference: true, recursive: true });
+    await measureBuildStep("workspace:cache-copy", () => cp(sourcePath, targetPath, { dereference: true, recursive: true }),
+      { artifact: artifact.workspacePath });
   }
 }
 
@@ -301,7 +307,7 @@ export async function ensureWorkspaceBuildArtifacts(
   cache: ToolPackCache,
   build: () => Promise<void>,
 ): Promise<void> {
-  const key = await createWorkspaceBuildCacheKey(config);
+  const key = await measureBuildStep("workspace:cache-key-inputs", () => createWorkspaceBuildCacheKey(config));
   const nodeId = `${config.platform}.workspace-build`;
   const artifacts = workspaceBuildArtifacts(config);
   const versionFamily = await resolveWorkspaceBuildVersionFamily(config);
@@ -332,11 +338,11 @@ export async function ensureWorkspaceBuildArtifacts(
       invalidate: async () => null,
       build: async ({ entryRoot }) => {
         await build();
-        const missingOutput = await missingWorkspaceBuildOutput(config);
+        const missingOutput = await measureBuildStep("workspace:validate-outputs", () => missingWorkspaceBuildOutput(config));
         if (missingOutput != null) {
           throw new Error(`workspace build completed but output is missing: ${missingOutput}`);
         }
-        await copyWorkspaceBuildArtifactsToCache(config, entryRoot);
+        await measureBuildStep("workspace:cache-snapshot", () => copyWorkspaceBuildArtifactsToCache(config, entryRoot));
         const outputFiles = workspaceBuildOutputFiles(config);
         await mkdir(entryRoot, { recursive: true });
         await writeFile(

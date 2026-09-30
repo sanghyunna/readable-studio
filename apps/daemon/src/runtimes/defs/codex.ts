@@ -126,6 +126,11 @@ export const codexAgentDef = {
         // is exposed as `model_reasoning_effort`.
         args.push('-c', `model_reasoning_effort="${effort}"`);
       }
+      // App-server omits reasoning summaries by default, even when the model
+      // reasons. Request the summary stream without changing the chosen effort.
+      if (options.reasoning !== 'none') {
+        args.push('-c', 'model_reasoning_summary="auto"');
+      }
       return args;
     },
     promptViaStdin: true,

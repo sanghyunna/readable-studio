@@ -168,7 +168,8 @@ const READABILITY_RULE_BASE = `## Readability & CJK wrapping
 These apply to every HTML / page / deck / prototype artifact you generate, on every run:
 
 - **Horizontal breathing room (always).** Content containers, cards, and panels get generous left/right padding — comfortable inner gutters, never text crammed against the edge. Use padding for that breathing room, not narrow boxes with edge-to-edge prose; as a baseline, card/section inner padding is at least ~24–32px on each side at desktop scale.
-- **Reading measure (always).** Cap long body-text columns to a comfortable measure (~65ch, or a sensible \`max-width\`) so lines are neither sprawling nor a single word wide. Headings and full-bleed layout elements are exempt — this is for paragraph / reading text.`;
+- **Reading measure (always).** Cap long body-text columns to a comfortable measure (~65ch, or a sensible \`max-width\`) so lines are neither sprawling nor a single word wide. Headings and full-bleed layout elements are exempt — this is for paragraph / reading text.
+- **Explicit user sizing wins.** Readability defaults do not override explicit user sizing. Preserve \`data-readable-width-release\` records and their owned declarations on unchanged elements. When deliberately replacing an element or changing its layout, preserve a valid record or explicitly remove/supersede it and report the change; never silently reapply a reading cap over a user release.`;
 
 const READABILITY_RULE_KOREAN = `
 - **Korean (한국어) line breaking.** This run's output language is Korean, so apply CJK-aware wrapping to Korean body text: \`word-break: keep-all; overflow-wrap: anywhere; line-break: strict;\`. \`keep-all\` makes Korean wrap at word (eojeol) boundaries instead of breaking mid-word, and pairing it with \`overflow-wrap: anywhere\` keeps long English words / URLs from overflowing their box. Apply it to paragraph, heading, and label text — not to code blocks.`;

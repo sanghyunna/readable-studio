@@ -1,3 +1,5 @@
+import { editWidthRelease } from '@readable-studio/html-edit';
+import { rewriteClonedWidthReleases } from './duplicate-width-release';
 import { moveCssCommitStyles } from './resize-geometry';
 import { emptyManualEditStyles, MANUAL_EDIT_STYLE_PROPS, type ManualEditDuplicatePlan, type ManualEditFields, type ManualEditPatch, type ManualEditStyles } from './types';
 
@@ -5,6 +7,7 @@ export interface ManualEditPatchResult {
   ok: boolean;
   source: string;
   error?: string;
+  selection?: { targetId: string; tag: string };
 }
 
 const INLINE_TEXT_WRAPPER_TAGS = new Set([
@@ -120,13 +123,33 @@ export function planManualEditDuplicate(
 }
 
 export function applyManualEditPatch(source: string, patch: ManualEditPatch): ManualEditPatchResult {
-  if (patch.kind === 'set-full-source') return { ok: true, source: patch.source };
+  if (patch.kind === 'set-width-release' || patch.kind === 'restore-width-release') {
+    const doc = parseSource(source);
+    const el = doc && findEditableElement(doc, patch.id);
+    if (!el) return { ok: false, source, error: 'WIDTH_RELEASE_CONFLICT: target-missing' };
+    const targetId = el.getAttribute('data-readable-id');
+    const target = targetId ? { targetId, tag: el.tagName.toLowerCase() } : { sourcePath: patch.id, tag: el.tagName.toLowerCase() };
+    const result = patch.kind === 'restore-width-release'
+      ? editWidthRelease(source, { kind: 'restore', target: { targetId: targetId ?? patch.id }, expectedSource: source })
+      : editWidthRelease(source, el.hasAttribute('data-readable-width-release')
+        ? { ...patch, kind: 'update', target: { targetId: targetId ?? patch.id } }
+        : { ...patch, kind: 'apply', target });
+    return result.ok ? { ok: true, source: result.source, selection: result.selection }
+      : { ok: false, source, error: `${result.conflict.code}: ${result.conflict.reason}` };
+  }
+  if (patch.kind === 'set-full-source') {
+    const validation = editWidthRelease(patch.source, { kind: 'inspect' });
+    return validation.ok ? { ok: true, source: patch.source } : { ok: false, source, error: validation.conflict.code };
+  }
 
   const doc = parseSource(source);
   if (!doc) return { ok: false, source, error: 'Could not parse source.' };
 
   if (patch.kind === 'duplicate-and-move') {
-    return applyDuplicateAndMovePatch(doc, source, patch);
+    const result = applyDuplicateAndMovePatch(doc, source, patch);
+    if (!result.ok) return result;
+    const validation = editWidthRelease(result.source, { kind: 'inspect' });
+    return validation.ok ? result : { ok: false, source, error: validation.conflict.code };
   }
 
   if (patch.kind === 'set-token') {
@@ -163,7 +186,23 @@ export function applyManualEditPatch(source: string, patch: ManualEditPatch): Ma
     el.setAttribute('src', patch.src);
     el.setAttribute('alt', patch.alt);
   } else if (patch.kind === 'set-style') {
+    if (el.hasAttribute('data-readable-width-release') && Object.keys(patch.styles).some((key) => /^(width|height|minHeight|margin|display)/.test(key))) {
+      return { ok: false, source, error: 'WIDTH_RELEASE_CONFLICT: sizing requires a measured release transaction' };
+    }
+    // Validate the original source before CSSOM can discard unsupported or
+    // duplicate declarations. A stale record must never repair an external edit.
+    const ownership = el.hasAttribute('data-readable-width-release')
+      ? editWidthRelease(source, { kind: 'inspect', target: { targetId: patch.id } }) : undefined;
+    if (ownership && !ownership.ok) return { ok: false, source, error: ownership.conflict.code };
+    const record = ownership?.ok ? ownership.record : undefined;
     setInlineStyles(el as HTMLElement, patch.styles);
+    if (record) {
+      const styled = el as HTMLElement;
+      for (const declaration of record.after) styled.style.removeProperty(declaration.property);
+      // Attribute writes, unlike CSSOM writes, preserve the cross-browser cascade.
+      const owned = record.after.map(({ property, value, priority }) => `${property}: ${value}${priority ? ' !important' : ''};`).join(' ');
+      el.setAttribute('style', `${styled.getAttribute('style') ?? ''} ${owned}`.trim());
+    }
   } else if (patch.kind === 'set-attributes') {
     setAttributes(el, patch.attributes);
   } else if (patch.kind === 'set-inner-html') {
@@ -187,7 +226,9 @@ export function applyManualEditPatch(source: string, patch: ManualEditPatch): Ma
     el.remove();
   }
 
-  return { ok: true, source: serializeSource(doc, source) };
+  const next = serializeSource(doc, source);
+  const validation = editWidthRelease(next, { kind: 'inspect' });
+  return validation.ok ? { ok: true, source: next } : { ok: false, source, error: validation.conflict.code };
 }
 
 function applyDuplicateAndMovePatch(
@@ -517,7 +558,7 @@ function rewriteDuplicateElement(
   const rootStyle = (root as HTMLElement).style;
   if (translate.trim()) rootStyle.setProperty('translate', translate.trim());
   else rootStyle.removeProperty('translate');
-  return null;
+  return rewriteClonedWidthReleases(root, plan);
 }
 
 function isDuplicateRuntimeAttribute(name: string): boolean {
@@ -737,7 +778,7 @@ function setInlineStyles(el: HTMLElement, styles: Partial<ManualEditStyles>): vo
 }
 
 function setAttributes(el: Element, attributes: Record<string, string>): void {
-  const protectedAttrs = new Set(['data-readable-id', 'data-readable-edit', 'data-readable-label', 'data-readable-runtime-id']);
+  const protectedAttrs = new Set(['data-readable-id', 'data-readable-width-release', 'data-readable-edit', 'data-readable-label', 'data-readable-runtime-id']);
   for (const [name, value] of Object.entries(attributes)) {
     if (!isSafeAttributeName(name) || protectedAttrs.has(name)) continue;
     if (value.trim() === '') el.removeAttribute(name);

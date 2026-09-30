@@ -38,12 +38,15 @@ import type {
   DatabricksEndpointKind,
   DatabricksIssue,
   DatabricksLoginResponse,
+  DatabricksNamedInputResult,
+  DatabricksNamedReason,
+  DatabricksNamedScanRequest,
   DatabricksProfile,
   DatabricksRegisteredEndpoint,
   DatabricksScanEvent,
   DatabricksScanResponse,
 } from '@readable-studio/contracts';
-import { matchesDatabricksModelSearch, splitDatabricksModelName } from '@readable-studio/contracts';
+import { DatabricksNamesError, matchesDatabricksModelSearch, parseDatabricksNames } from '@readable-studio/contracts';
 import { useT } from '../i18n';
 import { modalContent, modalOverlay, useFadingSurface } from '../motion';
 import {
@@ -69,6 +72,7 @@ import {
   registeredEndpointToModelOption,
   databricksProtocolDescription,
   databricksLimitDescription,
+  displayDatabricksModelName,
 } from './databricksModels';
 import { Icon } from './Icon';
 import styles from './DatabricksAddModelsModal.module.css';
@@ -211,6 +215,22 @@ function mergeEndpoints(
   return incoming.reduce(upsertEndpoint, list);
 }
 
+const namedFailureKeys: Record<DatabricksNamedReason, Parameters<Translate>[0]> = {
+  'name-not-found': 'databricks.named.nameNotFound',
+  'not-found-or-hidden': 'databricks.named.nameHidden',
+  'not-entitled': 'databricks.named.notEntitled',
+  'not-invocable': 'databricks.named.notInvocable',
+  'permission-denied': 'databricks.named.permissionDenied',
+  'workspace-unreachable': 'databricks.named.workspaceUnreachable',
+  'auth-failed': 'databricks.named.authFailed',
+  'unsupported-task': 'databricks.named.unsupportedTask',
+  'request-incompatible': 'databricks.named.requestIncompatible',
+  'rate-limited': 'databricks.named.rateLimited',
+  'upstream-failed': 'databricks.named.upstreamFailed',
+  'incomplete-response': 'databricks.named.incompleteResponse',
+  'cancelled': 'databricks.named.cancelled',
+};
+
 function isScanSettled(state: DatabricksScanResponse['state']): boolean {
   return state === 'complete' || state === 'partial' || state === 'failed' || state === 'cancelled';
 }
@@ -256,6 +276,14 @@ function DatabricksAddModelsModalBody({
   const scanAbortRef = useRef<AbortController | null>(null);
   const activeScanIdRef = useRef<string | null>(null);
 
+  const [names, setNames] = useState('');
+  const [namesError, setNamesError] = useState<string | null>(null);
+  const [namedBusy, setNamedBusy] = useState(false);
+  const [namedResults, setNamedResults] = useState<DatabricksNamedInputResult[]>([]);
+  const [namedRowErrors, setNamedRowErrors] = useState<Record<number, string>>({});
+  const [namedAdded, setNamedAdded] = useState<ReadonlySet<number>>(() => new Set());
+  const namedAbortRef = useRef<AbortController | null>(null);
+  const namedScanIdRef = useRef<string | null>(null);
   const [pendingIds, setPendingIds] = useState<ReadonlySet<string>>(() => new Set());
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
   // Display-only filter over the discovered list; never part of any request.
@@ -366,6 +394,8 @@ function DatabricksAddModelsModalBody({
   useEffect(
     () => () => {
       stopScanStream();
+      namedAbortRef.current?.abort();
+      if (namedScanIdRef.current) void cancelDatabricksScan(namedScanIdRef.current).catch(() => undefined);
       const runningScanId = activeScanIdRef.current;
       if (runningScanId) void cancelDatabricksScan(runningScanId).catch(() => undefined);
       loginAbortRef.current?.abort();
@@ -530,6 +560,91 @@ function DatabricksAddModelsModalBody({
       }
     }
   }, [applyScanEvent, selectedProfileId, stopScanStream, t]);
+
+  const submitNames = useCallback(async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (namedBusy || selectedProfile?.auth !== 'authenticated') return;
+    let parsed: string[];
+    try {
+      parsed = parseDatabricksNames(names);
+      if (names.length > 100_000) throw new DatabricksNamesError('too-many');
+    } catch (error) {
+      setNamesError(t(error instanceof DatabricksNamesError ?
+        error.reason === 'empty' ? 'databricks.named.empty' : error.reason === 'too-many' ? 'databricks.named.tooMany' : 'databricks.named.invalid'
+        : 'databricks.named.invalid'));
+      return;
+    }
+    setNamesError(null);
+    setNamedResults([]);
+    setNamedRowErrors({});
+    setNamedAdded(new Set());
+    setNamedBusy(true);
+    const controller = new AbortController();
+    namedAbortRef.current = controller;
+    try {
+      const body: DatabricksNamedScanRequest = { profileId: selectedProfile.id, names: parsed.join(','), allowInference: true };
+      const response = await fetch('/api/databricks/scans/named', {
+        method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body), signal: controller.signal,
+      });
+      if (!response.ok) throw new Error(t('databricks.named.startFailed'));
+      let final = await response.json() as DatabricksScanResponse;
+      if (controller.signal.aborted) { void cancelDatabricksScan(final.scanId).catch(() => undefined); return; }
+      namedScanIdRef.current = final.scanId;
+      setNamedResults(final.inputResults ?? []);
+      if (!isScanSettled(final.state)) {
+        const done = await streamDatabricksScanEvents(final.scanId, {
+          onEvent: (event) => {
+            if (event.type === 'snapshot' || event.type === 'done') {
+              final = { ...event.scan, revision: Math.max(event.scan.revision, event.revision) };
+              setNamedResults(final.inputResults ?? []);
+            } else if (event.type === 'progress') {
+              // Input states are snapshot-owned; progress has no per-name result.
+            }
+          },
+        }, { signal: controller.signal });
+        if (controller.signal.aborted) return;
+        if (!done) final = await fetchDatabricksScan(final.scanId);
+      }
+      // Named jobs are paginated like discovery jobs; keep the terminal revision
+      // and all result rows before enabling any candidate.
+      const results = [...(final.inputResults ?? [])];
+      let cursor = final.cursor;
+      while (cursor && !controller.signal.aborted) {
+        const page = await fetchDatabricksScan(final.scanId, { cursor });
+        if (page.revision !== final.revision) throw new Error(t('databricks.named.startFailed'));
+        results.push(...(page.inputResults ?? []));
+        cursor = page.cursor;
+      }
+      if (controller.signal.aborted) return;
+      if (!isScanSettled(final.state)) throw new Error(t('databricks.named.startFailed'));
+      setNamedResults(results.sort((a, b) => a.inputIndex - b.inputIndex));
+      let added = false;
+      for (const result of results) {
+        if (controller.signal.aborted) return;
+        if ((result.state !== 'verified' && result.state !== 'chat-only') || !result.endpointId) continue;
+        try {
+          await enableDatabricksModel(result.endpointId, { scanId: final.scanId, expectedRevision: final.revision });
+          setNamedAdded(current => new Set(current).add(result.inputIndex));
+          added = true;
+        } catch (error) {
+          setNamedRowErrors(current => ({ ...current, [result.inputIndex]: errorMessage(error, t('databricks.named.addFailed')) }));
+        }
+      }
+      if (added) {
+        const updated = await loadRegistered();
+        notifyDatabricksModelsChanged(updated.models.map(registeredEndpointToModelOption));
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) setNamesError(errorMessage(error, t('databricks.named.startFailed')));
+    } finally {
+      if (namedAbortRef.current === controller) {
+        namedAbortRef.current = null;
+        namedScanIdRef.current = null;
+        setNamedBusy(false);
+      }
+    }
+  }, [loadRegistered, namedBusy, names, selectedProfile, t]);
 
   const cancelScan = useCallback(() => {
     const runningScanId = activeScanIdRef.current;
@@ -1188,6 +1303,49 @@ function DatabricksAddModelsModalBody({
                 )}
               </section>
 
+              <section className={styles.section} aria-labelledby="databricks-names-label">
+                <span id="databricks-names-label" className={styles.label}>{t('databricks.named.title')}</span>
+                <form className={styles.namedForm} onSubmit={(event) => void submitNames(event)}>
+                  <label className={styles.field}>
+                    <span className={styles.fieldLabel}>{t('databricks.named.label')}</span>
+                    <textarea
+                      className={styles.namesInput}
+                      value={names}
+                      onChange={(event) => { setNames(event.target.value); setNamesError(null); }}
+                      disabled={namedBusy}
+                      spellCheck={false}
+                      autoComplete="off"
+                      rows={3}
+                      data-testid="databricks-names"
+                    />
+                    <span className={styles.fieldHint}>{t('databricks.named.help')}</span>
+                  </label>
+                  <p className={styles.hint}>{t('databricks.named.consent')}</p>
+                  {namesError ? <p className={styles.fieldError} role="alert" data-testid="databricks-names-error">{namesError}</p> : null}
+                  <Button type="submit" variant="primary" disabled={namedBusy || !canScan} data-testid="databricks-names-submit">
+                    {namedBusy ? t('databricks.named.checking') : t('databricks.named.add')}
+                  </Button>
+                </form>
+                {namedResults.length > 0 ? (
+                  <ul className={styles.namedResults} aria-live="polite">
+                    {namedResults.map(result => (
+                      <li key={result.inputIndex} className={styles.namedResult} data-testid={`databricks-name-result-${result.displayName}`}>
+                        <strong className={styles.namedIdentity}>{result.displayName}</strong>
+                        <span className={result.failure || namedRowErrors[result.inputIndex] ? styles.fieldError : styles.hint}>
+                          {namedRowErrors[result.inputIndex] ?? (namedAdded.has(result.inputIndex)
+                            ? result.state === 'chat-only' ? t('databricks.named.addedChatOnly') : t('databricks.named.added')
+                            : result.failure ? t(namedFailureKeys[result.failure.reason])
+                              : result.state === 'already-registered' ? t('databricks.named.alreadyRegistered')
+                                : result.state === 'inconclusive' ? t('databricks.named.inconclusive')
+                                  : result.state === 'pending' ? t('databricks.named.checking')
+                                    : t('databricks.named.addFailed'))}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </section>
+
               <section className={styles.section} aria-labelledby="databricks-results-label">
                 <div className={styles.sectionHead}>
                   <span id="databricks-results-label" className={styles.label}>
@@ -1353,7 +1511,7 @@ function DatabricksAddModelsModalBody({
                   <ul className={styles.rows} data-testid="databricks-endpoint-list" hidden={visibleRows.length === 0}>
                     {visibleRows.map((endpoint) => {
                       const pending = pendingIds.has(endpoint.id);
-                      const name = splitDatabricksModelName(endpoint.label);
+                      const name = displayDatabricksModelName(endpoint);
                       const inScan = scanEndpoints.some((item) => item.id === endpoint.id);
                       const registrable =
                         endpoint.availability !== 'unavailable' && (endpoint.enabled || (inScan && Boolean(scan)));
@@ -1365,7 +1523,7 @@ function DatabricksAddModelsModalBody({
                           data-testid={`databricks-endpoint-${endpoint.id}`}
                         >
                           <div className={styles.rowMain}>
-                            <span className={styles.rowName} title={endpoint.label}>
+                            <span className={styles.rowName} title={name.title} aria-label={name.secondary ? `${name.title}, ${name.secondary}` : name.title}>
                               <span className={styles.rowLabel} data-testid="databricks-endpoint-model-name">
                                 {name.model}
                               </span>
@@ -1378,15 +1536,16 @@ function DatabricksAddModelsModalBody({
                                   {name.path}
                                 </span>
                               ) : null}
+                              {name.secondary ? <span className={styles.rowPath}>{name.secondary}</span> : null}
                             </span>
                             <span className={styles.pills}>
                               <span className={styles.pill}>{kindLabel(t, endpoint.kind)}</span>
                               <span className={styles.pill}>{apiLabel(t, endpoint.api)}</span>
                               <span className={styles.pill} data-limit="contextWindow" data-limit-state={endpoint.capabilities.contextWindow === null ? 'unknown' : 'known'}>
-                                Context {endpoint.capabilities.contextWindow?.toLocaleString() ?? 'unknown'}
+                                Context {endpoint.capabilities.contextWindow?.toLocaleString() ?? 'unknown'} {endpoint.capabilities.limitSources?.contextWindow === 'advertised' || endpoint.capabilities.limitSources?.contextWindow === 'default' ? t('databricks.named.limitUnconfirmed') : ''}
                               </span>
                               <span className={styles.pill} data-limit="maxTokens" data-limit-state={endpoint.capabilities.maxTokens === null ? 'unknown' : 'known'}>
-                                Output {endpoint.capabilities.maxTokens?.toLocaleString() ?? 'unknown'}
+                                Output {endpoint.capabilities.maxTokens?.toLocaleString() ?? 'unknown'} {endpoint.capabilities.limitSources?.maxTokens === 'default' ? t('databricks.named.limitUnconfirmed') : ''}
                               </span>
                               <span
                                 className={

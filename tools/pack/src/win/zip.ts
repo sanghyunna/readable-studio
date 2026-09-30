@@ -1,8 +1,10 @@
 import { execFile } from "node:child_process";
 import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { availableParallelism } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 
+import { isBuildProfilingEnabled } from "../build-profile.js";
 import type { ToolPackConfig } from "../config.js";
 import { winResources } from "../resources.js";
 import type { WinBuiltAppManifest, WinPackTiming, WinPaths } from "./types.js";
@@ -76,11 +78,16 @@ export function resolvePortableZipCompression(value = process.env[PORTABLE_ZIP_C
   return parsed;
 }
 
+export function resolvePortableZipThreads(fastBuild = false): number | undefined {
+  return fastBuild ? Math.min(20, availableParallelism()) : undefined;
+}
+
 function logWinZipProgress(message: string, fields: Record<string, unknown> = {}): void {
   const suffix = Object.entries(fields)
     .map(([key, value]) => `${key}=${String(value)}`)
     .join(" ");
-  process.stderr.write(`[tools-pack win] ${message}${suffix.length === 0 ? "" : ` ${suffix}`}\n`);
+  const timestamp = isBuildProfilingEnabled() ? ` timestampMs=${Date.now()} pid=${process.pid}` : "";
+  process.stderr.write(`[tools-pack win] ${message}${suffix.length === 0 ? "" : ` ${suffix}`}${timestamp}\n`);
 }
 
 // Produces a portable ZIP from the extracted Electron build. Files are flat at
@@ -92,6 +99,7 @@ export async function buildWinPortableZip(
 ): Promise<WinPackTiming[]> {
   if (process.platform !== "win32") throw new Error("Windows portable zip build must run on Windows");
   const portableZipCompression = resolvePortableZipCompression();
+  const portableZipThreads = resolvePortableZipThreads(config.fastBuild);
   const timings: WinPackTiming[] = [];
   const runSegment = async <T>(phase: string, task: () => Promise<T>): Promise<T> => {
     const startedAt = Date.now();
@@ -171,6 +179,8 @@ export async function buildWinPortableZip(
           "a",
           "-tzip",
           `-mx=${portableZipCompression}`,
+          ...(portableZipThreads == null ? [] : [`-mmt=${portableZipThreads}`]),
+          ...(portableZipThreads != null || isBuildProfilingEnabled() ? ["-bt"] : []),
           ...PORTABLE_ZIP_METADATA_ARGS,
           "-scsUTF-8",
           paths.setupZipPath,

@@ -55,6 +55,7 @@ it.each(['ready', 'missing', 'uninvocable', 'unsupported'] as const)('exposes di
   expect(detected.models).toEqual([]);
   expect(detected.diagnostics?.length).toBeGreaterThan(0);
   expect(detected.diagnostics?.[0]?.reason).toBe(cli === 'ready' ? 'auth-unknown' : 'not-executable');
+  if (cli !== 'ready') expect(detected.diagnostics?.[0]?.detail).toBe(`cli=${cli}`);
   expect(detected.installUrl).toBeUndefined();
   expect(detected.diagnostics?.flatMap((diagnostic) => diagnostic.fixActions ?? []).some((action) => action.kind === 'openInstall')).toBe(false);
 });

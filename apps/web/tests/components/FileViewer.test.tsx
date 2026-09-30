@@ -7,6 +7,7 @@ import { act, cleanup, createEvent, fireEvent, render, screen, waitFor, within }
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ANNOTATION_EVENT } from '../../src/components/PreviewDrawOverlay';
+import { installMockReadableStudioHost } from '@readable-studio/host/testing';
 
 const { saveTemplateMock } = vi.hoisted(() => ({
   saveTemplateMock: vi.fn(),
@@ -267,7 +268,7 @@ describe('FileViewer manual edit document key', () => {
 
     // Then
     expect(docKeyLine?.trim()).toBe(
-      "const docKey = `${file.name}\\u0000${useUrlLoadPreview ? 'url' : 'srcdoc'}\\u0000${srcDoc ?? ''}`;",
+      "const docKey = `${file.name}\\u0000${useUrlLoadPreview ? 'url' : 'srcdoc'}\\u0000${manualEditDocumentRevision}\\u0000${srcDoc ?? ''}`;",
     );
     expect(docKeyLine).not.toMatch(/[\u0000-\u001f\u007f]/);
   });
@@ -2962,6 +2963,43 @@ describe('FileViewer tweaks toolbar', () => {
       ...overrides,
     });
   }
+
+  it('exports HTML through full-document host capture, not a viewport clip', async () => {
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { cb(0); return 1; });
+    const capture = vi.fn().mockResolvedValue({ ok: true, dataUrl: TEST_SNAPSHOT_DATA_URL, w: 400, h: 616 });
+    const restore = installMockReadableStudioHost({ host: { capture: { page: capture } } });
+    try {
+      render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()}
+        liveHtml='<html><body><main>Hero</main></body></html>' />);
+      const iframe = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
+      vi.spyOn(iframe, 'getBoundingClientRect').mockReturnValue(testRect(12, 24, 400, 250));
+      fireEvent.click(screen.getByRole('button', { name: /download/i }));
+      fireEvent.click(screen.getByRole('menuitem', { name: /export as image/i }));
+      await waitFor(() => expect(capture).toHaveBeenCalledWith({
+        clip: { x: 12, y: 24, width: 400, height: 250 }, fullDocument: true,
+      }));
+    } finally {
+      restore();
+    }
+  });
+
+  it('shows an over-tall host capture error instead of downloading a clipped image', async () => {
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { cb(0); return 1; });
+    const capture = vi.fn().mockResolvedValue({ ok: false, code: 'CAPTURE_TOO_LARGE', reason: 'Document is too tall to capture.' });
+    const restore = installMockReadableStudioHost({ host: { capture: { page: capture } } });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()}
+        liveHtml='<html><body><main>Hero</main></body></html>' />);
+      fireEvent.click(screen.getByRole('button', { name: /download/i }));
+      fireEvent.click(screen.getByRole('menuitem', { name: /export as image/i }));
+      expect((await screen.findByRole('alert')).textContent).toBe('Document is too tall to capture.');
+      expect(capture).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+      restore();
+    }
+  });
 
   it('groups preview tools by LLM handoff and direct editing in source order', () => {
     // Screenshot is gated behind `previewScreenshot` (default OFF); this case

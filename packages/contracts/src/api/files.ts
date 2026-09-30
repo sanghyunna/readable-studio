@@ -1,3 +1,5 @@
+import type { WidthReleaseRecord, WidthReleaseSelection } from '@readable-studio/html-edit';
+export type { WidthReleaseCause, WidthReleaseConflict, WidthReleaseDeclaration, WidthReleaseFamily, WidthReleaseProvenance, WidthReleaseRecord, WidthReleaseSelection } from '@readable-studio/html-edit';
 import type { OkResponse } from '../common.js';
 import type { ArtifactKind, ArtifactManifest } from './artifacts.js';
 
@@ -106,6 +108,33 @@ export interface ProjectPreviewUrlResponse {
 
 export interface ProjectFileResponse {
   file: ProjectFile;
+}
+
+/** GET /api/projects/:id/files/:relpath?widthRelease=inspect */
+export interface ProjectFileWidthReleaseResponse {
+  name: string;
+  contentSha256: string;
+  records: WidthReleaseRecord[];
+}
+
+export type RestoreProjectFileWidthReleaseOperation =
+  | { kind: 'restore'; target: { targetId: string; tag?: string; releaseId?: string }; all?: never }
+  | { kind: 'restore'; all: true; target?: never };
+
+/** POST /api/projects/:id/files. Mutually exclusive with content/upload fields. */
+export interface RestoreProjectFileWidthReleaseRequest {
+  name: string;
+  expectedContentSha256: string;
+  widthRelease: RestoreProjectFileWidthReleaseOperation;
+}
+
+export interface RestoreProjectFileWidthReleaseResponse extends ProjectFileResponse {
+  widthRelease: {
+    records: WidthReleaseRecord[];
+    restoredTargetIds: string[];
+    contentSha256: string;
+    selection?: WidthReleaseSelection;
+  };
 }
 
 export interface ProjectFolderResponse {

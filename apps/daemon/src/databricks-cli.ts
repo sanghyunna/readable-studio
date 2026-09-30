@@ -1,13 +1,15 @@
+import { readFile } from 'node:fs/promises';
 import {
-  API_ERROR_CODES,
+  API_ERROR_CODES, DatabricksNamesError,
   type AppConfigResponse, type UpdateAppConfigRequest, type DatabricksClientRequest,
   type DatabricksDisableRequest, type DatabricksEnableRequest, type DatabricksLookupRequest,
   type DatabricksModelResponse, type DatabricksModelsResponse, type DatabricksProbeRequest,
   type DatabricksScanEvent, type DatabricksScanRequest, type DatabricksScanResponse,
   type DatabricksVerifyRequest,
-  matchesDatabricksModelSearch,
+  splitDatabricksModelName, matchesDatabricksModelSearch,
 } from '@readable-studio/contracts';
 import { resolveDaemonUrl } from './daemon-url.js';
+import { databricksNamedRequest } from './databricks-named-http.js';
 import { DatabricksServiceError } from './databricks/client.js';
 import { databricksFailure, databricksInputId, DatabricksInputError, databricksPublic, databricksSetupRequest, databricksLoginRequest } from './databricks-routes.js';
 
@@ -24,6 +26,7 @@ export const DATABRICKS_CLI_USAGE = `Usage:
   readable databricks scan cancel <scan-id> [--json]
   readable databricks lookup <resource-id> --profile <id> --kind serving-endpoint|uc-model-service [--json]
   readable databricks models [--profile <id>] [--search <text>] [--json]
+  readable databricks add [names] --profile <id> [--names <text>|--prompt-file <path|->] --allow-inference [--check-only] [--check-reasoning] [--kind auto|serving-endpoint|uc-model-service] [--api auto|openai-completions|anthropic-messages] [--json]
   readable databricks enable <endpoint-id> --scan <id> --revision <n> [--json]
   readable databricks disable|remove <endpoint-id> --revision <n> [--json]
   readable databricks select <endpoint-id> [--json]
@@ -62,6 +65,7 @@ function parse(args: string[]) {
   if (['scan', 'login'].includes(command) && (args[1] === 'status' || args[1] === 'cancel')) { command += ` ${args[1]}`; offset++; }
   const allowed: Record<string, string[]> = {
     status: [], profiles: [], probe: ['profile'], scan: ['profile', 'scopes', 'follow'],
+    add: ['profile', 'names', 'prompt-file', 'allow-inference', 'check-only', 'check-reasoning', 'kind', 'api'],
     login: ['host'], 'login status': [], 'login cancel': [],
     'scan status': ['cursor', 'limit'], 'scan cancel': [], lookup: ['profile', 'kind'], models: ['profile', 'search'],
     enable: ['scan', 'revision'], disable: ['revision'], remove: ['revision'], select: [], verify: ['scan', 'revision', 'allow-inference'],
@@ -72,16 +76,16 @@ function parse(args: string[]) {
   const positional: string[] = [];
   for (let index = offset; index < args.length; index++) {
     const arg = args[index]!;
-    if (!arg.startsWith('--')) { positional.push(databricksInputId(arg)); continue; }
+    if (!arg.startsWith('--')) { positional.push(command === 'add' ? arg : databricksInputId(arg)); continue; }
     const key = arg.slice(2);
     if (!['json', 'daemon-url', ...allowed[command]!].includes(key) || flags.has(key)) return usage();
-    if (['json', 'follow', 'allow-inference', 'clear', 'token-stdin'].includes(key)) { flags.set(key, true); continue; }
+    if (['json', 'follow', 'allow-inference', 'clear', 'token-stdin', 'check-only', 'check-reasoning'].includes(key)) { flags.set(key, true); continue; }
     const value = args[++index];
-    if (!value || value.startsWith('-')) return usage();
+    if (!value || value.startsWith('-') && !(key === 'prompt-file' && value === '-')) return usage();
     flags.set(key, value);
   }
   const needsId = ['login status', 'login cancel', 'scan status', 'scan cancel', 'lookup', 'enable', 'disable', 'remove', 'select', 'verify', 'disconnect'].includes(command);
-  if (positional.length !== (needsId ? 1 : 0)) return usage();
+  if (command === 'add' ? positional.length > 1 : positional.length !== (needsId ? 1 : 0)) return usage();
   const text = (key: string): string | undefined => { const value = flags.get(key); return typeof value === 'string' ? value : undefined; };
   const id = (key: string): string => databricksInputId(text(key));
   const revision = (): number => {
@@ -90,7 +94,8 @@ function parse(args: string[]) {
     return Number(value);
   };
   // Validate all input before resolving the daemon or performing any mutation.
-  if (['scan', 'lookup'].includes(command)) id('profile');
+  if (['scan', 'lookup', 'add'].includes(command)) id('profile');
+  if (command === 'add' && (!flags.has('allow-inference') || Number(flags.has('names')) + Number(flags.has('prompt-file')) + positional.length !== 1)) return usage();
   if (text('profile')) id('profile');
   if (text('scopes')) text('scopes')!.split(',').forEach(databricksInputId);
   if (text('cursor')) id('cursor');
@@ -141,6 +146,7 @@ export async function runDatabricksCli(args: string[], dependencies: DatabricksC
   else if (dependencies.signal.aborted) interrupt();
   else dependencies.signal.addEventListener('abort', interrupt, { once: true });
   let activeScan: string | undefined;
+  let daemonUnavailable = false;
   let follow = false;
   let request: (<T>(path: string, method: string, body?: unknown) => Promise<T>) | undefined;
   const print = (value: unknown) => stdout(`${JSON.stringify(value)}\n`);
@@ -152,12 +158,15 @@ export async function runDatabricksCli(args: string[], dependencies: DatabricksC
       || base.username || base.password || base.pathname !== '/' || base.search || base.hash) return usage();
     const fetchImpl = dependencies.fetch ?? fetch;
     const send = async (path: string, method: string, body?: unknown, stream = false): Promise<Response> => {
-      const response = await fetchImpl(`${base.origin}${path}`, {
-        method, redirect: 'error',
-        headers: { 'Content-Type': 'application/json', Accept: stream ? 'text/event-stream' : 'application/json', Origin: base.origin },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-        signal: stream ? AbortSignal.any([controller.signal, AbortSignal.timeout(600_000)]) : AbortSignal.timeout(30_000),
-      });
+      let response: Response;
+      try {
+        response = await fetchImpl(`${base.origin}${path}`, {
+          method, redirect: 'error',
+          headers: { 'Content-Type': 'application/json', Accept: stream ? 'text/event-stream' : 'application/json', Origin: base.origin },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+          signal: stream ? AbortSignal.any([controller.signal, AbortSignal.timeout(600_000)]) : AbortSignal.timeout(30_000),
+        });
+      } catch (error) { daemonUnavailable = true; throw error; }
       if (!response.ok) {
         const payload = await response.json() as { error?: { code?: unknown } };
         const code = payload.error?.code;
@@ -191,9 +200,12 @@ export async function runDatabricksCli(args: string[], dependencies: DatabricksC
         const body: DatabricksClientRequest = { executableId: options.flags.has('clear') ? null : options.id('executable') };
         result = await call('/client', 'PUT', databricksPublic.status, body); break;
       }
-      case 'scan': {
-        const body: DatabricksScanRequest = { profileId: options.id('profile'), ...(options.text('scopes') ? { scopeIds: options.text('scopes')!.split(',') } : {}) };
-        result = await call('/scans', 'POST', databricksPublic.scan, body);
+      case 'add': case 'scan': {
+        const named = options.command === 'add';
+        const body: DatabricksScanRequest = named ? databricksNamedRequest({ profileId: options.id('profile'),
+          names: options.text('prompt-file') ? options.text('prompt-file') === '-' ? await (dependencies.readStdin ?? readTokenStdin)() : await readFile(options.text('prompt-file')!, 'utf8') : options.text('names') ?? options.target,
+          allowInference: true, checkReasoning: options.flags.has('check-reasoning'), kindHint: options.text('kind') ?? 'auto', apiHint: options.text('api') ?? 'auto' }) : { profileId: options.id('profile'), ...(options.text('scopes') ? { scopeIds: options.text('scopes')!.split(',') } : {}) };
+        result = await call(named ? '/scans/named' : '/scans', 'POST', databricksPublic.scan, body);
         activeScan = result.scanId;
         stderr(`Databricks scan ${result.state}\n`);
         if (!['queued', 'running'].includes(result.state)) {
@@ -275,7 +287,32 @@ export async function runDatabricksCli(args: string[], dependencies: DatabricksC
       }
       default: return usage();
     }
-    if (!follow) print(result);
+    if ('cursor' in result) {
+      const scan = result;
+      while (scan.cursor) {
+        const page = await call(`/scans/${scan.scanId}?cursor=${encodeURIComponent(scan.cursor)}`, 'GET', databricksPublic.scan);
+        if (page.revision !== scan.revision) throw new DatabricksServiceError('DATABRICKS_STALE_REVISION');
+        scan.endpoints.push(...page.endpoints); scan.cursor = page.cursor;
+      }
+      if (options.command === 'add' && !options.flags.has('check-only') && scan.state !== 'cancelled') {
+        for (const row of scan.inputResults ?? []) {
+          if (!row.endpointId || !['verified', 'chat-only'].includes(row.state)) continue;
+          const saved = await call(`/models/${row.endpointId}`, 'PUT', databricksPublic.model, { scanId: scan.scanId, expectedRevision: scan.revision });
+          scan.endpoints = scan.endpoints.map(endpoint => endpoint.id === saved.endpoint.id ? saved.endpoint : endpoint);
+        }
+      }
+    }
+    if (!follow) {
+      if (options.command === 'models' && !options.flags.has('json') && 'models' in result) {
+        for (const endpoint of result.models) {
+          // Same rule as the web `displayDatabricksModelName`: UC remainder is the
+          // name, `catalog.schema` the path, a differing served model is secondary.
+          const name = splitDatabricksModelName(endpoint.displayName ?? endpoint.label);
+          const secondary = endpoint.servedModelName && endpoint.servedModelName !== name.model ? endpoint.servedModelName : null;
+          stdout(`${name.model}${name.path ? `  [${name.path}]` : ''}${secondary ? `  (${secondary})` : ''}\n`);
+        }
+      } else print(result);
+    }
     return { exitCode: databricksExitCode(result) };
   } catch (error) {
     if (controller.signal.aborted) {
@@ -288,9 +325,16 @@ export async function runDatabricksCli(args: string[], dependencies: DatabricksC
       } else print(databricksFailure(error));
       return { exitCode: 130 };
     }
+    if (daemonUnavailable) {
+      // Match the root CLI's local-daemon recovery code, not an upstream gateway fault.
+      const message = 'Cannot reach the local Readable daemon. Start Readable Studio or run readable daemon start --headless; use --daemon-url for a nondefault daemon.';
+      print({ error: { code: 'daemon-not-running', message, retryable: true } });
+      stderr(`${message}\n`);
+      return { exitCode: 64 };
+    }
     print(databricksFailure(error));
     stderr(error instanceof DatabricksInputError ? DATABRICKS_CLI_USAGE : 'Databricks command failed\n');
-    return { exitCode: error instanceof DatabricksInputError ? 2 : 1 };
+    return { exitCode: error instanceof DatabricksInputError || error instanceof DatabricksNamesError ? 2 : 1 };
   } finally {
     process.removeListener('SIGINT', interrupt);
     dependencies.signal?.removeEventListener('abort', interrupt);

@@ -112,7 +112,9 @@
      the same value for the same element, so the two cannot disagree, and the
      reduced-transparency fallback keyed to that selector still applies. */
   background: var(--hub-canvas-background);
-  overflow: hidden;
+  /* Hidden clips visually but still creates a scroll container: descendant
+     scrollIntoView can move the entire window chrome. */
+  overflow: clip;
 }
 .workspace-shell__body {
   /* The content row only: the rail and every surface begin BELOW the
@@ -130,7 +132,7 @@
   transition: grid-template-columns var(--dur-enter) var(--ease-out);
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
+  overflow: clip;
 }
 .workspace-shell__body:has(> [data-project-rail-state='collapsed']) {
   grid-template-columns: var(--project-rail-collapsed) minmax(0, 1fr);

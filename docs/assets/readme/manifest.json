@@ -41,6 +41,20 @@
     "width": 1600,
     "height": 1000
   },
+  "chat-log.png": {
+    "caption": "A turn in the chat log: files produced, the agent's reasoning, and one summary row per burst of tool calls.",
+    "surface": "Project workspace / chat log (cropped)",
+    "readmeUse": "strong; crop, use at ~720px",
+    "width": 920,
+    "height": 1448
+  },
+  "databricks-models.png": {
+    "caption": "Models served by a registered Databricks workspace, with Unity Catalog paths shown beside the model names.",
+    "surface": "Settings / Databricks models (fake workspace)",
+    "readmeUse": "supporting",
+    "width": 1600,
+    "height": 1000
+  },
   "hub-dark.png": {
     "caption": "The same Hub and demo brief in the Dark theme.",
     "surface": "Hub / Dark theme",

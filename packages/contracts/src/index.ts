@@ -28,6 +28,7 @@ export * from './api/runtime-user.js';
 export * from './api/registry.js';
 export * from './api/research.js';
 export * from './api/social-share.js';
+export * from './api/shortcuts.js';
 export * from './api/standalone-html.js';
 export * from './api/system-prompts.js';
 export * from './api/terminals.js';

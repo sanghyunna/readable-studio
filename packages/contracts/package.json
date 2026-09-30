@@ -1,6 +1,6 @@
 {
   "name": "@readable-studio/contracts",
-  "version": "1.1.5",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "description": "Shared pure TypeScript contracts for the Readable Studio web/daemon boundary.",
@@ -61,6 +61,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json --noEmit"
   },
   "dependencies": {
+    "@readable-studio/html-edit": "workspace:*",
     "zod": "3.25.76"
   },
   "devDependencies": {

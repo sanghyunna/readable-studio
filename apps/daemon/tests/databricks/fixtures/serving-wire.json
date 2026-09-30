@@ -1,0 +1,1296 @@
+{
+  "documented": [
+    {
+      "config": {
+        "config_version": 1,
+        "served_entities": [
+          {
+            "foundation_model": {
+              "description": "Llama 3.1 is a state-of-the-art 70B parameter dense language model trained and released by Meta. The model supports a context length of 128K tokens. The model is optimized for multilingual dialogue use cases and aligned with human preferences for helpfulness and safety. It is not intended for use in languages other than English. Meta Llama 3.1 is licensed under the Meta Llama 3.1 Community License, Copyright © Meta Platforms, Inc. All Rights Reserved. Customers are responsible for ensuring compliance with applicable model licenses.",
+              "display_name": "Meta Llama 3.1 70B Instruct",
+              "docs": "https://docs.databricks.com/machine-learning/foundation-models/supported-models.html#meta-llama-31-70b-instruct",
+              "name": "meta-llama-3-1-70b-instruct",
+              "task": "llm/v1/chat"
+            },
+            "name": "databricks-meta-llama-3-1-70b-instruct",
+            "state": {
+              "deployment": "DEPLOYMENT_READY",
+              "deployment_state_message": ""
+            }
+          }
+        ]
+      },
+      "name": "databricks-meta-llama-3-1-70b-instruct",
+      "route_optimized": false,
+      "state": {
+        "ready": "READY"
+      }
+    },
+    {
+      "config": {
+        "config_version": 1,
+        "served_entities": [
+          {
+            "creation_timestamp": 1700089760000,
+            "creator": "user@email.com",
+            "entity_name": "myCatalog.mySchema.my-ads-model",
+            "entity_version": "10",
+            "name": "my-ads-model-10",
+            "scale_to_zero_enabled": true,
+            "state": {
+              "deployment": "DEPLOYMENT_READY",
+              "deployment_state_message": ""
+            },
+            "workload_size": "Small",
+            "workload_type": "CPU"
+          }
+        ],
+        "traffic_config": {
+          "routes": [
+            {
+              "served_model_name": "my-ads-model-10",
+              "traffic_percentage": 100
+            }
+          ]
+        }
+      },
+      "creation_timestamp": 1700089637000,
+      "creator": "user@email.com",
+      "id": "e3bd3e471d6045d6b75f384279e4b6ab",
+      "last_updated_timestamp": 1700089760000,
+      "name": "uc-model-endpoint",
+      "permission_level": "CAN_MANAGE",
+      "route_optimized": false,
+      "state": {
+        "config_update": "NOT_UPDATING",
+        "ready": "READY"
+      },
+      "tags": [
+        {
+          "key": "team",
+          "value": "data science"
+        }
+      ]
+    }
+  ],
+  "observedList": {
+    "endpoints": [
+      {
+        "capabilities": {
+          "anthropic_reasoning": false,
+          "audio_input_translation": false,
+          "function_calling": true,
+          "image_input": false,
+          "image_output": false,
+          "long_context": false,
+          "openai_reasoning": true,
+          "priority_processing": false,
+          "video_input_translation": false
+        },
+        "config": {
+          "served_entities": [
+            {
+              "entity_name": "system.ai.gpt-oss-120b",
+              "foundation_model": {
+                "ai_gateway_model_profile": {
+                  "cost": 0.26,
+                  "quality": 33,
+                  "speed": 266.5
+                },
+                "ai_gateway_v2_supported": true,
+                "api_types": [
+                  "mlflow/v1/chat/completions",
+                  "mlflow/v1/responses"
+                ],
+                "description": "<REDACTED_TEXT> It is OpenAI's flagship open-weight model that features a 128K token context window. <REDACTED_TEXT>",
+                "display_name": "<REDACTED_TEXT>",
+                "docs": "<REDACTED_URL>",
+                "input_price": "2.143",
+                "model_class": "<REDACTED_TEXT>",
+                "name": "system.ai.gpt-oss-120b",
+                "price": "8.571",
+                "price_unit": "<REDACTED_TEXT>",
+                "pricing_model": "<REDACTED_TEXT>"
+              },
+              "name": "<ENDPOINT_1>",
+              "type": "FOUNDATION_MODEL"
+            }
+          ]
+        },
+        "creation_timestamp": 1754179200000,
+        "endpoint_type": "FOUNDATION_MODEL_API",
+        "last_updated_timestamp": 1754179200000,
+        "name": "<ENDPOINT_1>",
+        "permission_level": "CAN_MANAGE",
+        "state": {
+          "config_update": "NOT_UPDATING",
+          "ready": "READY"
+        },
+        "task": "llm/v1/chat"
+      },
+      {
+        "capabilities": {
+          "anthropic_reasoning": false,
+          "audio_input_translation": false,
+          "function_calling": true,
+          "image_input": false,
+          "image_output": false,
+          "long_context": false,
+          "openai_reasoning": true,
+          "priority_processing": false,
+          "video_input_translation": false
+        },
+        "config": {
+          "served_entities": [
+            {
+              "entity_name": "system.ai.gpt-oss-20b",
+              "foundation_model": {
+                "ai_gateway_model_profile": {
+                  "cost": 0.09,
+                  "quality": 24,
+                  "speed": 263.7
+                },
+                "ai_gateway_v2_supported": true,
+                "api_types": [
+                  "mlflow/v1/chat/completions",
+                  "mlflow/v1/responses"
+                ],
+                "description": "<REDACTED_TEXT> This model also has a 128K token context window and excels at real-time copilots and batch inference tasks. <REDACTED_TEXT>",
+                "display_name": "<REDACTED_TEXT>",
+                "docs": "<REDACTED_URL>",
+                "input_price": "1.0",
+                "model_class": "<REDACTED_TEXT>",
+                "name": "system.ai.gpt-oss-20b",
+                "price": "4.286",
+                "price_unit": "<REDACTED_TEXT>",
+                "pricing_model": "<REDACTED_TEXT>"
+              },
+              "name": "<ENDPOINT_2>",
+              "type": "FOUNDATION_MODEL"
+            }
+          ]
+        },
+        "creation_timestamp": 1754179200000,
+        "endpoint_type": "FOUNDATION_MODEL_API",
+        "last_updated_timestamp": 1754179200000,
+        "name": "<ENDPOINT_2>",
+        "permission_level": "CAN_MANAGE",
+        "state": {
+          "config_update": "NOT_UPDATING",
+          "ready": "READY"
+        },
+        "task": "llm/v1/chat"
+      },
+      {
+        "capabilities": {
+          "anthropic_reasoning": false,
+          "audio_input_translation": false,
+          "function_calling": true,
+          "image_input": false,
+          "image_output": false,
+          "long_context": false,
+          "openai_reasoning": false,
+          "priority_processing": false,
+          "video_input_translation": false
+        },
+        "config": {
+          "served_entities": [
+            {
+              "entity_name": "system.ai.qwen3-next-80b-a3b-instruct",
+              "foundation_model": {
+                "ai_gateway_model_profile": {
+                  "cost": 0.88,
+                  "quality": 20,
+                  "speed": 152
+                },
+                "ai_gateway_v2_supported": true,
+                "api_types": [
+                  "mlflow/v1/chat/completions",
+                  "mlflow/v1/responses"
+                ],
+                "description": "<REDACTED_TEXT>",
+                "display_name": "<REDACTED_TEXT>",
+                "docs": "<REDACTED_URL>",
+                "input_price": "2.143",
+                "model_class": "<REDACTED_TEXT>",
+                "name": "system.ai.qwen3-next-80b-a3b-instruct",
+                "price": "17.143",
+                "price_unit": "<REDACTED_TEXT>",
+                "pricing_model": "<REDACTED_TEXT>"
+              },
+              "name": "<ENDPOINT_3>",
+              "type": "FOUNDATION_MODEL"
+            }
+          ]
+        },
+        "creation_timestamp": 1699610000000,
+        "endpoint_type": "FOUNDATION_MODEL_API",
+        "last_updated_timestamp": 1699610000000,
+        "name": "<ENDPOINT_3>",
+        "permission_level": "CAN_MANAGE",
+        "state": {
+          "config_update": "NOT_UPDATING",
+          "ready": "READY"
+        },
+        "task": "llm/v1/chat"
+      },
+      {
+        "capabilities": {
+          "anthropic_reasoning": false,
+          "audio_input_translation": false,
+          "function_calling": true,
+          "image_input": false,
+          "image_output": false,
+          "long_context": false,
+          "openai_reasoning": true,
+          "priority_processing": true,
+          "video_input_translation": false
+        },
+        "config": {
+          "served_entities": [
+            {
+              "entity_name": "system.ai.databricks-qwen35-122b-a10b",
+              "foundation_model": {
+                "ai_gateway_model_profile": {
+                  "cost": 1.1,
+                  "quality": 42,
+                  "speed": 150
+                },
+                "ai_gateway_v2_supported": true,
+                "api_types": [
+                  "mlflow/v1/chat/completions",
+                  "mlflow/v1/responses"
+                ],
+                "description": "<REDACTED_TEXT>",
+                "display_name": "<REDACTED_TEXT>",
+                "docs": "<REDACTED_URL>",
+                "input_price": "3.14285",
+                "model_class": "<REDACTED_TEXT>",
+                "name": "system.ai.databricks-qwen35-122b-a10b",
+                "price": "31.4285",
+                "price_unit": "<REDACTED_TEXT>",
+                "pricing_model": "<REDACTED_TEXT>"
+              },
+              "name": "<ENDPOINT_4>",
+              "type": "FOUNDATION_MODEL"
+            }
+          ]
+        },
+        "creation_timestamp": 1776902400000,
+        "endpoint_type": "FOUNDATION_MODEL_API",
+        "last_updated_timestamp": 1776902400000,
+        "name": "<ENDPOINT_4>",
+        "permission_level": "CAN_MANAGE",
+        "state": {
+          "config_update": "NOT_UPDATING",
+          "ready": "READY"
+        },
+        "task": "llm/v1/chat"
+      },
+      {
+        "capabilities": {
+          "anthropic_reasoning": false,
+          "audio_input_translation": false,
+          "function_calling": true,
+          "image_input": true,
+          "image_output": false,
+          "long_context": false,
+          "openai_reasoning": false,
+          "priority_processing": false,
+          "video_input_translation": false
+        },
+        "config": {
+          "served_entities": [
+            {
+              "entity_name": "system.ai.llama-4-maverick",
+              "foundation_model": {
+                "ai_gateway_model_profile": {
+                  "cost": 0.49,
+                  "quality": 18,
+                  "speed": 123.5
+                },
+                "ai_gateway_v2_supported": true,
+                "api_types": [
+                  "mlflow/v1/chat/completions",
+                  "mlflow/v1/responses"
+                ],
+                "description": "<REDACTED_TEXT> The model supports a context length of 128K tokens. <REDACTED_TEXT>",
+                "display_name": "<REDACTED_TEXT>",
+                "docs": "<REDACTED_URL>",
+                "input_price": "7.143",
+                "model_class": "<REDACTED_TEXT>",
+                "name": "system.ai.llama-4-maverick",
+                "price": "21.429",
+                "price_unit": "<REDACTED_TEXT>",
+                "pricing_model": "<REDACTED_TEXT>"
+              },
+              "name": "<ENDPOINT_5>",
+              "type": "FOUNDATION_MODEL"
+            }
+          ]
+        },
+        "creation_timestamp": 1699610000000,
+        "endpoint_type": "FOUNDATION_MODEL_API",
+        "last_updated_timestamp": 1699610000000,
+        "name": "<ENDPOINT_5>",
+        "permission_level": "CAN_MANAGE",
+        "state": {
+          "config_update": "NOT_UPDATING",
+          "ready": "READY"
+        },
+        "task": "llm/v1/chat"
+      },
+      {
+        "capabilities": {
+          "anthropic_reasoning": false,
+          "audio_input_translation": false,
+          "function_calling": true,
+          "image_input": true,
+          "image_output": false,
+          "long_context": false,
+          "openai_reasoning": false,
+          "priority_processing": false,
+          "video_input_translation": false
+        },
+        "config": {
+          "served_entities": [
+            {
+              "entity_name": "system.ai.gemma-3-12b-it",
+              "foundation_model": {
+                "ai_gateway_model_profile": {
+                  "cost": 0,
+                  "quality": 9,
+                  "speed": 29.2
+                },
+                "ai_gateway_v2_supported": true,
+                "api_types": [
+                  "mlflow/v1/chat/completions",
+                  "mlflow/v1/responses"
+                ],
+                "description": "<REDACTED_TEXT> The model supports a context length of 128K tokens and can analyze images and text. <REDACTED_TEXT>",
+                "display_name": "<REDACTED_TEXT>",
+                "docs": "<REDACTED_URL>",
+                "input_price": "2.143",
+                "model_class": "<REDACTED_TEXT>",
+                "name": "system.ai.gemma-3-12b-it",
+                "price": "7.143",
+                "price_unit": "<REDACTED_TEXT>",
+                "pricing_model": "<REDACTED_TEXT>"
+              },
+              "name": "<ENDPOINT_6>",
+              "type": "FOUNDATION_MODEL"
+            }
+          ]
+        },
+        "creation_timestamp": 1699610000000,
+        "endpoint_type": "FOUNDATION_MODEL_API",
+        "last_updated_timestamp": 1699610000000,
+        "name": "<ENDPOINT_6>",
+        "permission_level": "CAN_MANAGE",
+        "state": {
+          "config_update": "NOT_UPDATING",
+          "ready": "READY"
+        },
+        "task": "llm/v1/chat"
+      },
+      {
+        "capabilities": {
+          "anthropic_reasoning": false,
+          "audio_input_translation": false,
+          "function_calling": false,
+          "image_input": false,
+          "image_output": false,
+          "long_context": false,
+          "openai_reasoning": false,
+          "priority_processing": false,
+          "video_input_translation": false
+        },
+        "config": {
+          "served_entities": [
+            {
+              "entity_name": "system.ai.gte_large_en_v1_5",
+              "foundation_model": {
+                "ai_gateway_v2_supported": true,
+                "api_types": [
+                  "mlflow/v1/embeddings"
+                ],
+                "description": "<REDACTED_TEXT>",
+                "display_name": "<REDACTED_TEXT>",
+                "docs": "<REDACTED_URL>",
+                "input_price": "1.857",
+                "model_class": "<REDACTED_TEXT>",
+                "name": "system.ai.gte_large_en_v1_5",
+                "price": "1.857",
+                "price_unit": "<REDACTED_TEXT>",
+                "pricing_model": "<REDACTED_TEXT>"
+              },
+              "name": "<ENDPOINT_7>",
+              "type": "FOUNDATION_MODEL"
+            }
+          ]
+        },
+        "creation_timestamp": 1699610000000,
+        "endpoint_type": "FOUNDATION_MODEL_API",
+        "last_updated_timestamp": 1699610000000,
+        "name": "<ENDPOINT_7>",
+        "permission_level": "CAN_MANAGE",
+        "state": {
+          "config_update": "NOT_UPDATING",
+          "ready": "READY"
+        },
+        "task": "llm/v1/embeddings"
+      },
+      {
+        "capabilities": {
+          "anthropic_reasoning": false,
+          "audio_input_translation": false,
+          "function_calling": false,
+          "image_input": false,
+          "image_output": false,
+          "long_context": false,
+          "openai_reasoning": false,
+          "priority_processing": false,
+          "video_input_translation": false
+        },
+        "config": {
+          "served_entities": [
+            {
+              "entity_name": "system.ai.bge_large_en_v1_5",
+              "foundation_model": {
+                "ai_gateway_v2_supported": true,
+                "api_types": [
+                  "mlflow/v1/embeddings"
+                ],
+                "description": "<REDACTED_TEXT>",
+                "display_name": "<REDACTED_TEXT>",
+                "docs": "<REDACTED_URL>",
+                "input_price": "1.429",
+                "model_class": "<REDACTED_TEXT>",
+                "name": "system.ai.bge_large_en_v1_5",
+                "price": "1.429",
+                "price_unit": "<REDACTED_TEXT>",
+                "pricing_model": "<REDACTED_TEXT>"
+              },
+              "name": "<ENDPOINT_8>",
+              "type": "FOUNDATION_MODEL"
+            }
+          ]
+        },
+        "creation_timestamp": 1699610000000,
+        "endpoint_type": "FOUNDATION_MODEL_API",
+        "last_updated_timestamp": 1699610000000,
+        "name": "<ENDPOINT_8>",
+        "permission_level": "CAN_MANAGE",
+        "state": {
+          "config_update": "NOT_UPDATING",
+          "ready": "READY"
+        },
+        "task": "llm/v1/embeddings"
+      },
+      {
+        "capabilities": {
+          "anthropic_reasoning": false,
+          "audio_input_translation": false,
+          "function_calling": false,
+          "image_input": false,
+          "image_output": false,
+          "long_context": false,
+          "openai_reasoning": false,
+          "priority_processing": false,
+          "video_input_translation": false
+        },
+        "config": {
+          "served_entities": [
+            {
+              "entity_name": "system.ai.meta_llama_v3_1_8b_instruct",
+              "foundation_model": {
+                "ai_gateway_model_profile": {
+                  "cost": 0.1,
+                  "quality": 12,
+                  "speed": 156.4
+                },
+                "ai_gateway_v2_supported": true,
+                "api_types": [
+                  "mlflow/v1/chat/completions"
+                ],
+                "description": "<REDACTED_TEXT> The model supports a context length of 128K tokens. <REDACTED_TEXT>",
+                "display_name": "<REDACTED_TEXT>",
+                "docs": "<REDACTED_URL>",
+                "input_price": "2.143",
+                "model_class": "<REDACTED_TEXT>",
+                "name": "system.ai.meta_llama_v3_1_8b_instruct",
+                "price": "6.429",
+                "price_unit": "<REDACTED_TEXT>",
+                "pricing_model": "<REDACTED_TEXT>"
+              },
+              "name": "<ENDPOINT_9>",
+              "type": "FOUNDATION_MODEL"
+            }
+          ]
+        },
+        "creation_timestamp": 1699610000000,
+        "endpoint_type": "FOUNDATION_MODEL_API",
+        "last_updated_timestamp": 1699610000000,
+        "name": "<ENDPOINT_9>",
+        "permission_level": "CAN_MANAGE",
+        "state": {
+          "config_update": "NOT_UPDATING",
+          "ready": "READY"
+        },
+        "task": "llm/v1/chat"
+      },
+      {
+        "capabilities": {
+          "anthropic_reasoning": false,
+          "audio_input_translation": false,
+          "function_calling": true,
+          "image_input": false,
+          "image_output": false,
+          "long_context": false,
+          "openai_reasoning": false,
+          "priority_processing": false,
+          "video_input_translation": false
+        },
+        "config": {
+          "served_entities": [
+            {
+              "entity_name": "system.ai.llama_v3_3_70b_instruct",
+              "foundation_model": {
+                "ai_gateway_model_profile": {
+                  "cost": 0.64,
+                  "quality": 14,
+                  "speed": 86
+                },
+                "ai_gateway_v2_supported": true,
+                "api_types": [
+                  "mlflow/v1/chat/completions"
+                ],
+                "description": "<REDACTED_TEXT> The model supports a context length of 128K tokens. <REDACTED_TEXT>",
+                "display_name": "<REDACTED_TEXT>",
+                "docs": "<REDACTED_URL>",
+                "input_price": "7.143",
+                "model_class": "<REDACTED_TEXT>",
+                "name": "system.ai.llama_v3_3_70b_instruct",
+                "price": "21.429",
+                "price_unit": "<REDACTED_TEXT>",
+                "pricing_model": "<REDACTED_TEXT>"
+              },
+              "name": "<ENDPOINT_10>",
+              "type": "FOUNDATION_MODEL"
+            }
+          ]
+        },
+        "creation_timestamp": 1699610000000,
+        "endpoint_type": "FOUNDATION_MODEL_API",
+        "last_updated_timestamp": 1699610000000,
+        "name": "<ENDPOINT_10>",
+        "permission_level": "CAN_MANAGE",
+        "state": {
+          "config_update": "NOT_UPDATING",
+          "ready": "READY"
+        },
+        "task": "llm/v1/chat"
+      },
+      {
+        "capabilities": {
+          "anthropic_reasoning": false,
+          "audio_input_translation": false,
+          "function_calling": false,
+          "image_input": false,
+          "image_output": false,
+          "long_context": false,
+          "openai_reasoning": false,
+          "priority_processing": false,
+          "video_input_translation": false
+        },
+        "config": {
+          "served_entities": [
+            {
+              "entity_name": "system.ai.qwen3-embedding-0-6b",
+              "foundation_model": {
+                "ai_gateway_v2_supported": true,
+                "api_types": [
+                  "mlflow/v1/embeddings"
+                ],
+                "description": "<REDACTED_TEXT>",
+                "display_name": "<REDACTED_TEXT>",
+                "docs": "<REDACTED_URL>",
+                "input_price": "0.286",
+                "model_class": "<REDACTED_TEXT>",
+                "name": "system.ai.qwen3-embedding-0-6b",
+                "price": "0.286",
+                "price_unit": "<REDACTED_TEXT>",
+                "pricing_model": "<REDACTED_TEXT>"
+              },
+              "name": "<ENDPOINT_11>",
+              "type": "FOUNDATION_MODEL"
+            }
+          ]
+        },
+        "creation_timestamp": 1699610000000,
+        "endpoint_type": "FOUNDATION_MODEL_API",
+        "last_updated_timestamp": 1699610000000,
+        "name": "<ENDPOINT_11>",
+        "permission_level": "CAN_MANAGE",
+        "state": {
+          "config_update": "NOT_UPDATING",
+          "ready": "READY"
+        },
+        "task": "llm/v1/embeddings"
+      }
+    ]
+  },
+  "observedDetails": [
+    {
+      "ai_gateway": {
+        "usage_tracking_config": {
+          "enabled": true
+        }
+      },
+      "capabilities": {
+        "anthropic_reasoning": false,
+        "audio_input_translation": false,
+        "function_calling": true,
+        "image_input": false,
+        "image_output": false,
+        "long_context": false,
+        "openai_reasoning": true,
+        "priority_processing": false,
+        "video_input_translation": false
+      },
+      "config": {
+        "config_version": 1,
+        "served_entities": [
+          {
+            "foundation_model": {
+              "ai_gateway_model_profile": {
+                "cost": 0.26,
+                "quality": 33,
+                "speed": 266.5
+              },
+              "ai_gateway_v2_supported": true,
+              "api_types": [
+                "mlflow/v1/chat/completions",
+                "mlflow/v1/responses"
+              ],
+              "description": "<REDACTED_TEXT> It is OpenAI's flagship open-weight model that features a 128K token context window. <REDACTED_TEXT>",
+              "display_name": "<REDACTED_TEXT>",
+              "docs": "<REDACTED_URL>",
+              "input_price": "2.143",
+              "model_class": "<REDACTED_TEXT>",
+              "name": "system.ai.gpt-oss-120b",
+              "price": "8.571",
+              "price_unit": "<REDACTED_TEXT>",
+              "pricing_model": "<REDACTED_TEXT>"
+            },
+            "name": "<ENDPOINT_1>",
+            "type": "FOUNDATION_MODEL"
+          }
+        ]
+      },
+      "creation_timestamp": 1754179200000,
+      "description": "<REDACTED_TEXT>",
+      "endpoint_type": "FOUNDATION_MODEL_API",
+      "last_updated_timestamp": 1754179200000,
+      "name": "<ENDPOINT_1>",
+      "permission_level": "CAN_MANAGE",
+      "resource_credential_strategy": "<REDACTED_SECRET>",
+      "route_optimized": false,
+      "state": {
+        "config_update": "NOT_UPDATING",
+        "ready": "READY"
+      },
+      "task": "llm/v1/chat"
+    },
+    {
+      "ai_gateway": {
+        "usage_tracking_config": {
+          "enabled": true
+        }
+      },
+      "capabilities": {
+        "anthropic_reasoning": false,
+        "audio_input_translation": false,
+        "function_calling": true,
+        "image_input": false,
+        "image_output": false,
+        "long_context": false,
+        "openai_reasoning": true,
+        "priority_processing": false,
+        "video_input_translation": false
+      },
+      "config": {
+        "config_version": 1,
+        "served_entities": [
+          {
+            "foundation_model": {
+              "ai_gateway_model_profile": {
+                "cost": 0.09,
+                "quality": 24,
+                "speed": 263.7
+              },
+              "ai_gateway_v2_supported": true,
+              "api_types": [
+                "mlflow/v1/chat/completions",
+                "mlflow/v1/responses"
+              ],
+              "description": "<REDACTED_TEXT> This model also has a 128K token context window and excels at real-time copilots and batch inference tasks. <REDACTED_TEXT>",
+              "display_name": "<REDACTED_TEXT>",
+              "docs": "<REDACTED_URL>",
+              "input_price": "1.0",
+              "model_class": "<REDACTED_TEXT>",
+              "name": "system.ai.gpt-oss-20b",
+              "price": "4.286",
+              "price_unit": "<REDACTED_TEXT>",
+              "pricing_model": "<REDACTED_TEXT>"
+            },
+            "name": "<ENDPOINT_2>",
+            "type": "FOUNDATION_MODEL"
+          }
+        ]
+      },
+      "creation_timestamp": 1754179200000,
+      "description": "<REDACTED_TEXT>",
+      "endpoint_type": "FOUNDATION_MODEL_API",
+      "last_updated_timestamp": 1754179200000,
+      "name": "<ENDPOINT_2>",
+      "permission_level": "CAN_MANAGE",
+      "resource_credential_strategy": "<REDACTED_SECRET>",
+      "route_optimized": false,
+      "state": {
+        "config_update": "NOT_UPDATING",
+        "ready": "READY"
+      },
+      "task": "llm/v1/chat"
+    },
+    {
+      "ai_gateway": {
+        "usage_tracking_config": {
+          "enabled": true
+        }
+      },
+      "capabilities": {
+        "anthropic_reasoning": false,
+        "audio_input_translation": false,
+        "function_calling": true,
+        "image_input": false,
+        "image_output": false,
+        "long_context": false,
+        "openai_reasoning": false,
+        "priority_processing": false,
+        "video_input_translation": false
+      },
+      "config": {
+        "config_version": 1,
+        "served_entities": [
+          {
+            "foundation_model": {
+              "ai_gateway_model_profile": {
+                "cost": 0.88,
+                "quality": 20,
+                "speed": 152
+              },
+              "ai_gateway_v2_supported": true,
+              "api_types": [
+                "mlflow/v1/chat/completions",
+                "mlflow/v1/responses"
+              ],
+              "description": "<REDACTED_TEXT>",
+              "display_name": "<REDACTED_TEXT>",
+              "docs": "<REDACTED_URL>",
+              "input_price": "2.143",
+              "model_class": "<REDACTED_TEXT>",
+              "name": "system.ai.qwen3-next-80b-a3b-instruct",
+              "price": "17.143",
+              "price_unit": "<REDACTED_TEXT>",
+              "pricing_model": "<REDACTED_TEXT>"
+            },
+            "name": "<ENDPOINT_3>",
+            "type": "FOUNDATION_MODEL"
+          }
+        ]
+      },
+      "creation_timestamp": 1699610000000,
+      "description": "<REDACTED_TEXT>",
+      "endpoint_type": "FOUNDATION_MODEL_API",
+      "last_updated_timestamp": 1699610000000,
+      "name": "<ENDPOINT_3>",
+      "permission_level": "CAN_MANAGE",
+      "resource_credential_strategy": "<REDACTED_SECRET>",
+      "route_optimized": false,
+      "state": {
+        "config_update": "NOT_UPDATING",
+        "ready": "READY"
+      },
+      "task": "llm/v1/chat"
+    },
+    {
+      "ai_gateway": {
+        "usage_tracking_config": {
+          "enabled": true
+        }
+      },
+      "capabilities": {
+        "anthropic_reasoning": false,
+        "audio_input_translation": false,
+        "function_calling": true,
+        "image_input": false,
+        "image_output": false,
+        "long_context": false,
+        "openai_reasoning": true,
+        "priority_processing": true,
+        "video_input_translation": false
+      },
+      "config": {
+        "config_version": 1,
+        "served_entities": [
+          {
+            "foundation_model": {
+              "ai_gateway_model_profile": {
+                "cost": 1.1,
+                "quality": 42,
+                "speed": 150
+              },
+              "ai_gateway_v2_supported": true,
+              "api_types": [
+                "mlflow/v1/chat/completions",
+                "mlflow/v1/responses"
+              ],
+              "description": "<REDACTED_TEXT>",
+              "display_name": "<REDACTED_TEXT>",
+              "docs": "<REDACTED_URL>",
+              "input_price": "3.14285",
+              "model_class": "<REDACTED_TEXT>",
+              "name": "system.ai.databricks-qwen35-122b-a10b",
+              "price": "31.4285",
+              "price_unit": "<REDACTED_TEXT>",
+              "pricing_model": "<REDACTED_TEXT>"
+            },
+            "name": "<ENDPOINT_4>",
+            "type": "FOUNDATION_MODEL"
+          }
+        ]
+      },
+      "creation_timestamp": 1776902400000,
+      "description": "<REDACTED_TEXT>",
+      "endpoint_type": "FOUNDATION_MODEL_API",
+      "last_updated_timestamp": 1776902400000,
+      "name": "<ENDPOINT_4>",
+      "permission_level": "CAN_MANAGE",
+      "resource_credential_strategy": "<REDACTED_SECRET>",
+      "route_optimized": false,
+      "state": {
+        "config_update": "NOT_UPDATING",
+        "ready": "READY"
+      },
+      "task": "llm/v1/chat"
+    },
+    {
+      "ai_gateway": {
+        "usage_tracking_config": {
+          "enabled": true
+        }
+      },
+      "capabilities": {
+        "anthropic_reasoning": false,
+        "audio_input_translation": false,
+        "function_calling": true,
+        "image_input": true,
+        "image_output": false,
+        "long_context": false,
+        "openai_reasoning": false,
+        "priority_processing": false,
+        "video_input_translation": false
+      },
+      "config": {
+        "config_version": 1,
+        "served_entities": [
+          {
+            "foundation_model": {
+              "ai_gateway_model_profile": {
+                "cost": 0.49,
+                "quality": 18,
+                "speed": 123.5
+              },
+              "ai_gateway_v2_supported": true,
+              "api_types": [
+                "mlflow/v1/chat/completions",
+                "mlflow/v1/responses"
+              ],
+              "description": "<REDACTED_TEXT> The model supports a context length of 128K tokens. <REDACTED_TEXT>",
+              "display_name": "<REDACTED_TEXT>",
+              "docs": "<REDACTED_URL>",
+              "input_price": "7.143",
+              "model_class": "<REDACTED_TEXT>",
+              "name": "system.ai.llama-4-maverick",
+              "price": "21.429",
+              "price_unit": "<REDACTED_TEXT>",
+              "pricing_model": "<REDACTED_TEXT>"
+            },
+            "name": "<ENDPOINT_5>",
+            "type": "FOUNDATION_MODEL"
+          }
+        ]
+      },
+      "creation_timestamp": 1699610000000,
+      "description": "<REDACTED_TEXT>",
+      "endpoint_type": "FOUNDATION_MODEL_API",
+      "last_updated_timestamp": 1699610000000,
+      "name": "<ENDPOINT_5>",
+      "permission_level": "CAN_MANAGE",
+      "resource_credential_strategy": "<REDACTED_SECRET>",
+      "route_optimized": false,
+      "state": {
+        "config_update": "NOT_UPDATING",
+        "ready": "READY"
+      },
+      "task": "llm/v1/chat"
+    },
+    {
+      "ai_gateway": {
+        "usage_tracking_config": {
+          "enabled": true
+        }
+      },
+      "capabilities": {
+        "anthropic_reasoning": false,
+        "audio_input_translation": false,
+        "function_calling": true,
+        "image_input": true,
+        "image_output": false,
+        "long_context": false,
+        "openai_reasoning": false,
+        "priority_processing": false,
+        "video_input_translation": false
+      },
+      "config": {
+        "config_version": 1,
+        "served_entities": [
+          {
+            "foundation_model": {
+              "ai_gateway_model_profile": {
+                "cost": 0,
+                "quality": 9,
+                "speed": 29.2
+              },
+              "ai_gateway_v2_supported": true,
+              "api_types": [
+                "mlflow/v1/chat/completions",
+                "mlflow/v1/responses"
+              ],
+              "description": "<REDACTED_TEXT> The model supports a context length of 128K tokens and can analyze images and text. <REDACTED_TEXT>",
+              "display_name": "<REDACTED_TEXT>",
+              "docs": "<REDACTED_URL>",
+              "input_price": "2.143",
+              "model_class": "<REDACTED_TEXT>",
+              "name": "system.ai.gemma-3-12b-it",
+              "price": "7.143",
+              "price_unit": "<REDACTED_TEXT>",
+              "pricing_model": "<REDACTED_TEXT>"
+            },
+            "name": "<ENDPOINT_6>",
+            "type": "FOUNDATION_MODEL"
+          }
+        ]
+      },
+      "creation_timestamp": 1699610000000,
+      "description": "<REDACTED_TEXT>",
+      "endpoint_type": "FOUNDATION_MODEL_API",
+      "last_updated_timestamp": 1699610000000,
+      "name": "<ENDPOINT_6>",
+      "permission_level": "CAN_MANAGE",
+      "resource_credential_strategy": "<REDACTED_SECRET>",
+      "route_optimized": false,
+      "state": {
+        "config_update": "NOT_UPDATING",
+        "ready": "READY"
+      },
+      "task": "llm/v1/chat"
+    },
+    {
+      "ai_gateway": {
+        "usage_tracking_config": {
+          "enabled": true
+        }
+      },
+      "capabilities": {
+        "anthropic_reasoning": false,
+        "audio_input_translation": false,
+        "function_calling": false,
+        "image_input": false,
+        "image_output": false,
+        "long_context": false,
+        "openai_reasoning": false,
+        "priority_processing": false,
+        "video_input_translation": false
+      },
+      "config": {
+        "config_version": 1,
+        "served_entities": [
+          {
+            "foundation_model": {
+              "ai_gateway_v2_supported": true,
+              "api_types": [
+                "mlflow/v1/embeddings"
+              ],
+              "description": "<REDACTED_TEXT>",
+              "display_name": "<REDACTED_TEXT>",
+              "docs": "<REDACTED_URL>",
+              "input_price": "1.857",
+              "model_class": "<REDACTED_TEXT>",
+              "name": "system.ai.gte_large_en_v1_5",
+              "price": "1.857",
+              "price_unit": "<REDACTED_TEXT>",
+              "pricing_model": "<REDACTED_TEXT>"
+            },
+            "name": "<ENDPOINT_7>",
+            "type": "FOUNDATION_MODEL"
+          }
+        ]
+      },
+      "creation_timestamp": 1699610000000,
+      "description": "<REDACTED_TEXT>",
+      "endpoint_type": "FOUNDATION_MODEL_API",
+      "last_updated_timestamp": 1699610000000,
+      "name": "<ENDPOINT_7>",
+      "permission_level": "CAN_MANAGE",
+      "resource_credential_strategy": "<REDACTED_SECRET>",
+      "route_optimized": false,
+      "state": {
+        "config_update": "NOT_UPDATING",
+        "ready": "READY"
+      },
+      "task": "llm/v1/embeddings"
+    },
+    {
+      "ai_gateway": {
+        "usage_tracking_config": {
+          "enabled": true
+        }
+      },
+      "capabilities": {
+        "anthropic_reasoning": false,
+        "audio_input_translation": false,
+        "function_calling": false,
+        "image_input": false,
+        "image_output": false,
+        "long_context": false,
+        "openai_reasoning": false,
+        "priority_processing": false,
+        "video_input_translation": false
+      },
+      "config": {
+        "config_version": 1,
+        "served_entities": [
+          {
+            "foundation_model": {
+              "ai_gateway_v2_supported": true,
+              "api_types": [
+                "mlflow/v1/embeddings"
+              ],
+              "description": "<REDACTED_TEXT>",
+              "display_name": "<REDACTED_TEXT>",
+              "docs": "<REDACTED_URL>",
+              "input_price": "1.429",
+              "model_class": "<REDACTED_TEXT>",
+              "name": "system.ai.bge_large_en_v1_5",
+              "price": "1.429",
+              "price_unit": "<REDACTED_TEXT>",
+              "pricing_model": "<REDACTED_TEXT>"
+            },
+            "name": "<ENDPOINT_8>",
+            "type": "FOUNDATION_MODEL"
+          }
+        ]
+      },
+      "creation_timestamp": 1699610000000,
+      "description": "<REDACTED_TEXT>",
+      "endpoint_type": "FOUNDATION_MODEL_API",
+      "last_updated_timestamp": 1699610000000,
+      "name": "<ENDPOINT_8>",
+      "permission_level": "CAN_MANAGE",
+      "resource_credential_strategy": "<REDACTED_SECRET>",
+      "route_optimized": false,
+      "state": {
+        "config_update": "NOT_UPDATING",
+        "ready": "READY"
+      },
+      "task": "llm/v1/embeddings"
+    },
+    {
+      "ai_gateway": {
+        "usage_tracking_config": {
+          "enabled": true
+        }
+      },
+      "capabilities": {
+        "anthropic_reasoning": false,
+        "audio_input_translation": false,
+        "function_calling": false,
+        "image_input": false,
+        "image_output": false,
+        "long_context": false,
+        "openai_reasoning": false,
+        "priority_processing": false,
+        "video_input_translation": false
+      },
+      "config": {
+        "config_version": 1,
+        "served_entities": [
+          {
+            "foundation_model": {
+              "ai_gateway_model_profile": {
+                "cost": 0.1,
+                "quality": 12,
+                "speed": 156.4
+              },
+              "ai_gateway_v2_supported": true,
+              "api_types": [
+                "mlflow/v1/chat/completions"
+              ],
+              "description": "<REDACTED_TEXT> The model supports a context length of 128K tokens. <REDACTED_TEXT>",
+              "display_name": "<REDACTED_TEXT>",
+              "docs": "<REDACTED_URL>",
+              "input_price": "2.143",
+              "model_class": "<REDACTED_TEXT>",
+              "name": "system.ai.meta_llama_v3_1_8b_instruct",
+              "price": "6.429",
+              "price_unit": "<REDACTED_TEXT>",
+              "pricing_model": "<REDACTED_TEXT>"
+            },
+            "name": "<ENDPOINT_9>",
+            "type": "FOUNDATION_MODEL"
+          }
+        ]
+      },
+      "creation_timestamp": 1699610000000,
+      "description": "<REDACTED_TEXT>",
+      "endpoint_type": "FOUNDATION_MODEL_API",
+      "last_updated_timestamp": 1699610000000,
+      "name": "<ENDPOINT_9>",
+      "permission_level": "CAN_MANAGE",
+      "resource_credential_strategy": "<REDACTED_SECRET>",
+      "route_optimized": false,
+      "state": {
+        "config_update": "NOT_UPDATING",
+        "ready": "READY"
+      },
+      "task": "llm/v1/chat"
+    },
+    {
+      "ai_gateway": {
+        "usage_tracking_config": {
+          "enabled": true
+        }
+      },
+      "capabilities": {
+        "anthropic_reasoning": false,
+        "audio_input_translation": false,
+        "function_calling": true,
+        "image_input": false,
+        "image_output": false,
+        "long_context": false,
+        "openai_reasoning": false,
+        "priority_processing": false,
+        "video_input_translation": false
+      },
+      "config": {
+        "config_version": 1,
+        "served_entities": [
+          {
+            "foundation_model": {
+              "ai_gateway_model_profile": {
+                "cost": 0.64,
+                "quality": 14,
+                "speed": 86
+              },
+              "ai_gateway_v2_supported": true,
+              "api_types": [
+                "mlflow/v1/chat/completions"
+              ],
+              "description": "<REDACTED_TEXT> The model supports a context length of 128K tokens. <REDACTED_TEXT>",
+              "display_name": "<REDACTED_TEXT>",
+              "docs": "<REDACTED_URL>",
+              "input_price": "7.143",
+              "model_class": "<REDACTED_TEXT>",
+              "name": "system.ai.llama_v3_3_70b_instruct",
+              "price": "21.429",
+              "price_unit": "<REDACTED_TEXT>",
+              "pricing_model": "<REDACTED_TEXT>"
+            },
+            "name": "<ENDPOINT_10>",
+            "type": "FOUNDATION_MODEL"
+          }
+        ]
+      },
+      "creation_timestamp": 1699610000000,
+      "description": "<REDACTED_TEXT>",
+      "endpoint_type": "FOUNDATION_MODEL_API",
+      "last_updated_timestamp": 1699610000000,
+      "name": "<ENDPOINT_10>",
+      "permission_level": "CAN_MANAGE",
+      "resource_credential_strategy": "<REDACTED_SECRET>",
+      "route_optimized": false,
+      "state": {
+        "config_update": "NOT_UPDATING",
+        "ready": "READY"
+      },
+      "task": "llm/v1/chat"
+    },
+    {
+      "ai_gateway": {
+        "usage_tracking_config": {
+          "enabled": true
+        }
+      },
+      "capabilities": {
+        "anthropic_reasoning": false,
+        "audio_input_translation": false,
+        "function_calling": false,
+        "image_input": false,
+        "image_output": false,
+        "long_context": false,
+        "openai_reasoning": false,
+        "priority_processing": false,
+        "video_input_translation": false
+      },
+      "config": {
+        "config_version": 1,
+        "served_entities": [
+          {
+            "foundation_model": {
+              "ai_gateway_v2_supported": true,
+              "api_types": [
+                "mlflow/v1/embeddings"
+              ],
+              "description": "<REDACTED_TEXT>",
+              "display_name": "<REDACTED_TEXT>",
+              "docs": "<REDACTED_URL>",
+              "input_price": "0.286",
+              "model_class": "<REDACTED_TEXT>",
+              "name": "system.ai.qwen3-embedding-0-6b",
+              "price": "0.286",
+              "price_unit": "<REDACTED_TEXT>",
+              "pricing_model": "<REDACTED_TEXT>"
+            },
+            "name": "<ENDPOINT_11>",
+            "type": "FOUNDATION_MODEL"
+          }
+        ]
+      },
+      "creation_timestamp": 1699610000000,
+      "description": "<REDACTED_TEXT>",
+      "endpoint_type": "FOUNDATION_MODEL_API",
+      "last_updated_timestamp": 1699610000000,
+      "name": "<ENDPOINT_11>",
+      "permission_level": "CAN_MANAGE",
+      "resource_credential_strategy": "<REDACTED_SECRET>",
+      "route_optimized": false,
+      "state": {
+        "config_update": "NOT_UPDATING",
+        "ready": "READY"
+      },
+      "task": "llm/v1/embeddings"
+    }
+  ]
+}

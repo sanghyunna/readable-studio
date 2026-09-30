@@ -15,6 +15,7 @@ import {
   type ResizeHandleDirection,
 } from '../edit-mode/resize-geometry';
 import type { ManualEditResizeConstraint } from '../edit-mode/types';
+import { createPointerDragShield } from '../edit-mode/pointer-drag-shield';
 import styles from './ManualEditResizeHandles.module.css';
 
 type Rect = { left: number; top: number; width: number; height: number };
@@ -58,6 +59,7 @@ type DragState = {
   // scroll), which would jump the delta baseline and snap the dragged size.
   startSize: Size;
   target: HTMLButtonElement;
+  shield: HTMLDivElement;
 };
 
 // Handles always render from the `rect` prop — the element's measured box, fed
@@ -96,6 +98,7 @@ export function ManualEditResizeHandles({
   const pendingSizeRef = useRef<Size | null>(null);
 
   useEffect(() => () => {
+    dragRef.current?.shield.remove();
     if (flushPendingRef) flushPendingRef.current = null;
     if (rafRef.current !== null) {
       cancelAnimationFrame(rafRef.current);
@@ -133,6 +136,7 @@ export function ManualEditResizeHandles({
     const drag = dragRef.current;
     if (!drag) return;
     dragRef.current = null;
+    drag.shield.remove();
     if (flushPendingRef) flushPendingRef.current = null;
     flushScheduledRef.current = false;
     if (rafRef.current !== null) {
@@ -151,7 +155,7 @@ export function ManualEditResizeHandles({
   };
 
   const handlePointerDown = (direction: ResizeHandleDirection) => (event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (disabled) return;
+    if (disabled || dragRef.current) return;
     event.preventDefault();
     event.stopPropagation();
     onHoverClear?.();
@@ -177,6 +181,7 @@ export function ManualEditResizeHandles({
       startY: event.clientY,
       startSize,
       target,
+      shield: createPointerDragShield(target),
     };
   };
 
@@ -327,6 +332,7 @@ export function ManualEditResizeHandles({
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onPointerCancel={handlePointerCancel}
+            onLostPointerCapture={handlePointerCancel}
           />
         );
       })}

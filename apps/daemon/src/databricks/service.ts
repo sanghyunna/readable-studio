@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { parseDatabricksNames, type DatabricksNamedScanRequest } from '@readable-studio/contracts';
+import { runNamedScan } from './named-scan.js';
 import type {
   DatabricksAuthState, DatabricksCapabilities, DatabricksDisableRequest, DatabricksEnableRequest,
   DatabricksLoginRequest, DatabricksLoginResponse,
@@ -43,6 +45,7 @@ export interface DatabricksService {
   cancelLogin(loginId: string): Promise<DatabricksLoginResponse>;
   probe(request?: DatabricksProbeRequest): Promise<DatabricksProfilesResponse>;
   startScan(request: DatabricksScanRequest): Promise<DatabricksScanResponse>;
+  startNamedScan(request: DatabricksNamedScanRequest): Promise<DatabricksScanResponse>;
   getScan(scanId: string, page?: DatabricksScanPageRequest): Promise<DatabricksScanResponse>;
   subscribeScan(scanId: string, listener: (event: DatabricksScanEvent) => void): Promise<() => void>;
   cancelScan(scanId: string): Promise<DatabricksScanResponse>;
@@ -301,6 +304,24 @@ export class LocalDatabricksService implements DatabricksService {
     for (const listener of this.listeners.get(snapshot.scanId) ?? []) listener(structuredClone(event));
   }
 
+  async startNamedScan(request: DatabricksNamedScanRequest): Promise<DatabricksScanResponse> {
+    parseDatabricksNames(request.names);
+    if (request.allowInference !== true) throw new DatabricksServiceError('DATABRICKS_VERIFICATION_REQUIRED');
+    const binding = await this.binding(request.profileId);
+    const snapshot = this.snapshot(binding.id);
+    const job: ScanJob = { snapshot, controller: new AbortController(), finished: Promise.resolve() };
+    this.jobs.set(snapshot.scanId, job);
+    job.finished = runNamedScan(request, { store: this.store, snapshot, signal: job.controller.signal,
+      workspace: async () => ({ binding, bearer: await this.bearer(binding), fetch: this.fetch }),
+      emit: () => this.emit(snapshot) }).catch((error: unknown) => {
+      snapshot.state = job.controller.signal.aborted ? 'cancelled' : 'failed';
+      snapshot.completedAt = new Date(this.now()).toISOString(); snapshot.revision++;
+      snapshot.issues = [issueFor(error)];
+      this.emit(snapshot);
+    });
+    return structuredClone(snapshot);
+  }
+
   async startScan(request: DatabricksScanRequest): Promise<DatabricksScanResponse> {
     const generation = await this.store.read();
     const binding = await this.binding(request.profileId, generation);
@@ -342,7 +363,7 @@ export class LocalDatabricksService implements DatabricksService {
           }
           if (snapshot.state === 'complete' && !scopeNames) {
             for (const entry of generation.entries) {
-              if (entry.endpoint.profileId === binding.id && !candidates.some((candidate) => candidate.endpoint.id === entry.endpoint.id)) entry.endpoint.availability = 'stale';
+              if (entry.provenance !== 'manual' && entry.endpoint.profileId === binding.id && !candidates.some((candidate) => candidate.endpoint.id === entry.endpoint.id)) entry.endpoint.availability = 'stale';
             }
           }
           for (const name of result.scopes) {

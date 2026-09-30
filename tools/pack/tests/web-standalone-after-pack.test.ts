@@ -3,7 +3,9 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path, { join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+import { profileWebStandaloneAfterPack } from "../src/profile-after-pack.js";
 
 const require = createRequire(import.meta.url);
 const runWebStandaloneAfterPack = require("../resources/web-standalone-after-pack.cjs") as (context: unknown) => Promise<void>;
@@ -86,6 +88,7 @@ async function writeStandaloneFixture(
 }
 
 async function runFixture(options: {
+  profile?: boolean;
   includeHoistedNext?: boolean;
   includeWebNext: boolean;
   omitRootWebPackage?: boolean;
@@ -140,7 +143,8 @@ async function runFixture(options: {
 
   process.env[CONFIG_ENV] = configPath;
   try {
-    await runWebStandaloneAfterPack({
+    const hook = options.profile ? profileWebStandaloneAfterPack : runWebStandaloneAfterPack;
+    await hook({
       appOutDir,
       electronPlatformName: "win32",
       packager: { appInfo: { productFilename: "Readable Studio" } },
@@ -165,6 +169,36 @@ async function runFixture(options: {
 }
 
 describe("web standalone afterPack hook", () => {
+  it("preserves the actual hook audit when profiling its copies and audits", async () => {
+    // Given the original hook's output on an independent tiny filesystem fixture
+    const baseline = await runFixture({ includeWebNext: true });
+    const normalize = async (fixture: { root: string; auditReportPath: string }) => {
+      const text = await readFile(fixture.auditReportPath, "utf8");
+      const report: Record<string, unknown> = JSON.parse(text.replaceAll(JSON.stringify(fixture.root).slice(1, -1), "<fixture>"));
+      delete report.generatedAt;
+      return report;
+    };
+    vi.stubEnv("READABLE_TOOLS_PACK_PROFILE", "1");
+    const output = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    try {
+      // When the profiling hook processes the same fixture contents
+      const profiled = await runFixture({ includeWebNext: true, profile: true });
+      try {
+        // Then real closure/content audits match, and nested stage timings are recorded
+        expect(await normalize(profiled)).toEqual(await normalize(baseline));
+        const records = output.mock.calls.map(([line]) => JSON.parse(String(line).replace("[tools-pack profile] ", "")));
+        expect(records).toContainEqual(expect.objectContaining({ phase: "after-pack:copyRequired", status: "done" }));
+        expect(records).toContainEqual(expect.objectContaining({ phase: "after-pack:auditCopiedStandalone", status: "done" }));
+      } finally {
+        await rm(profiled.root, { recursive: true, force: true });
+      }
+    } finally {
+      vi.unstubAllEnvs();
+      output.mockRestore();
+      await rm(baseline.root, { recursive: true, force: true });
+    }
+  });
+
   it("deduplicates win32 copied standalone Next while retaining the app-local Next package", async () => {
     const fixture = await runFixture({ includeWebNext: true });
 

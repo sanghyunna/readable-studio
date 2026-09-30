@@ -219,7 +219,7 @@ export async function waitForStatus<T extends object>(
   ipcPath: string,
   isReady: (status: T) => boolean,
   timeoutMs = DAEMON_STATUS_TIMEOUT_MS,
-  watch: { child: { exitCode: number | null; signalCode: NodeJS.Signals | null; once: (event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void) => void; off: (event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void) => void }; logPath: string; label?: string } | null = null,
+  watch: { child: { pid?: number; exitCode: number | null; signalCode: NodeJS.Signals | null; once: (event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void) => void; off: (event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void) => void }; logPath: string; label?: string } | null = null,
 ): Promise<T> {
   const startedAt = Date.now();
   let lastError: unknown;
@@ -251,9 +251,17 @@ export async function waitForStatus<T extends object>(
           { timeoutMs: 800 },
         );
         normalizeRuntimeDescriptor(Reflect.get(status, "descriptor"));
-        if (isReady(status)) return status;
+        if (isReady(status)) {
+          if (watch?.child.pid != null && Reflect.get(status, 'pid') !== watch.child.pid) {
+            throw new Error(`${watch.label ?? 'daemon'} status pid does not match spawned child pid`);
+          }
+          if (childExited !== null || watch?.child.exitCode != null || watch?.child.signalCode != null) {
+            throw new Error(`${watch?.label ?? 'daemon'} exited while reporting ready status`);
+          }
+          return status;
+        }
       } catch (error) {
-        if (error instanceof RuntimeDescriptorError) throw error;
+        if (error instanceof RuntimeDescriptorError || (error instanceof Error && /status pid does not match|exited while reporting ready/.test(error.message))) throw error;
         lastError = error;
       }
       await sleep(150);
@@ -565,7 +573,23 @@ export async function startPackagedSidecars(
           // this, a daemon that throws at startup leaves the packaged app
           // waiting for the full status budget after the process already died.
           { child: daemon.child, logPath: logPathFor(paths, APP_KEYS.DAEMON) },
-        ).then((status) => {
+        ).then(async (status) => {
+          if (status.url == null) throw new Error('daemon status has no URL');
+          try {
+            const response = await fetch(new URL('/api/health', status.url), {
+              signal: AbortSignal.timeout(1_500),
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const health: unknown = await response.json();
+            if (typeof health !== 'object' || health === null || Reflect.get(health, 'ok') !== true) {
+              throw new Error('invalid health response');
+            }
+          } catch (error) {
+            throw new Error(`daemon health check failed at ${status.url}`, { cause: error });
+          }
+          if (daemon.child.exitCode != null || daemon.child.signalCode != null) {
+            throw new Error('daemon exited after reporting ready status');
+          }
           logStartupPhase("daemon-status-ready");
           return status;
         }),

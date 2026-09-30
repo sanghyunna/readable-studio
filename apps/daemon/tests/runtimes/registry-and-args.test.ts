@@ -152,6 +152,7 @@ test('codex argv keeps danger-full-access free of permissions overrides while wo
     withPlatform('win32', () => {
       assert.deepEqual(codex.buildArgs('', [], [], {}, {}), [
         'app-server', '--listen', 'stdio://', '-c', 'sandbox_mode="danger-full-access"',
+        '-c', 'model_reasoning_summary="auto"',
       ]);
     });
     withPlatform('darwin', () => {
@@ -159,6 +160,7 @@ test('codex argv keeps danger-full-access free of permissions overrides while wo
         'app-server', '--listen', 'stdio://', '-c', 'sandbox_mode="workspace-write"',
         '-c', 'sandbox_workspace_write.network_access=true',
         '-c', 'default_permissions=":workspace"',
+        '-c', 'model_reasoning_summary="auto"',
       ]);
     });
   });

@@ -1,4 +1,12 @@
 import path from 'node:path';
+import { load } from 'cheerio';
+
+export class WidthReleaseExportUnsupportedError extends Error {
+  readonly code = 'WIDTH_RELEASE_EXPORT_UNSUPPORTED';
+  constructor() {
+    super('This HTML contains saved width releases, but export would substitute a Vite dist entry. Export the edited standalone HTML directly; the dist build cannot preserve these source edits.');
+  }
+}
 
 import { MAX_STANDALONE_HTML_SOURCE_BYTES, StandaloneHtmlLimitError, StandaloneHtmlResolutionError } from './standalone-html.js';
 
@@ -29,12 +37,13 @@ export async function resolveHtmlExportSource({
     if (meta.size > MAX_STANDALONE_HTML_SOURCE_BYTES) throw new StandaloneHtmlLimitError('Vite dist HTML is too large');
     if (!meta.mime.startsWith('text/html')) return { html, relPath };
     const file = await readProjectFile(projectsRoot, projectId, distRelPath, metadata);
+    if (load(html)('[data-readable-width-release]').length > 0) throw new WidthReleaseExportUnsupportedError();
     return {
       html: file.buffer.toString('utf8').replace(/\b(href|src)\s*=\s*(["'])\/assets\//gi, (_match, attr: string, quote: string) => `${attr}=${quote}assets/`),
       relPath: distRelPath,
     };
   } catch (error) {
-    if (error instanceof StandaloneHtmlLimitError || error instanceof StandaloneHtmlResolutionError) throw error;
+    if (error instanceof StandaloneHtmlLimitError || error instanceof StandaloneHtmlResolutionError || error instanceof WidthReleaseExportUnsupportedError) throw error;
     return { html, relPath };
   }
 }

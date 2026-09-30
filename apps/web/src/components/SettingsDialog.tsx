@@ -230,6 +230,7 @@ interface Props {
 }
 
 export interface AgentRefreshOptions {
+  refresh?: boolean;
   throwOnError?: boolean;
   agentCliEnv?: AppConfig['agentCliEnv'];
 }
@@ -1343,7 +1344,7 @@ export function SettingsDialog({
     setAgentRescanRunning(true);
     setAgentRescanNotice(null);
     try {
-      const refreshed = await onRefreshAgents(agentRefreshOptionsForConfig(cfg));
+      const refreshed = await onRefreshAgents({ ...agentRefreshOptionsForConfig(cfg), refresh: true });
       const nextAgents = Array.isArray(refreshed) ? refreshed : agents;
       setAgentRescanNotice({
         kind: 'success',

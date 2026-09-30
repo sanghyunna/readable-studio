@@ -366,14 +366,11 @@ describe('resizeCssCommitStyles flex pinning', () => {
     baseStyles: { width: '200px', height: '100px' },
   };
 
-  it('pins flex on a main-axis width commit for flex-row items', () => {
-    // A bare width on a flex-row item is a suggestion: flex-grow/shrink win.
-    // The commit must also detach the item (flex: none) or the drag result
-    // silently snaps back to whatever the flex algorithm decides.
+  it('never changes parent-owned row allocation for a width request', () => {
     const styles = resizeCssCommitStyles({ ...drag, direction: 'e', flexItemAxis: 'row' });
     expect(styles.width).toBe('250px');
     expect(styles.height).toBeUndefined();
-    expect(styles.flex).toBe('none');
+    expect(styles.flex).toBeUndefined();
   });
 
   it('does not pin flex on a cross-axis commit', () => {
@@ -391,11 +388,11 @@ describe('resizeCssCommitStyles flex pinning', () => {
     expect(styles.flex).toBe('none');
   });
 
-  it('pins flex on corner commits for flex items', () => {
+  it('leaves row allocation unchanged for width-containing corners', () => {
     const styles = resizeCssCommitStyles({ ...drag, direction: 'se', flexItemAxis: 'row' });
     expect(styles.width).toBe('250px');
     expect(styles.height).toBe('120px');
-    expect(styles.flex).toBe('none');
+    expect(styles.flex).toBeUndefined();
   });
 
   it('leaves non-flex items unpinned', () => {

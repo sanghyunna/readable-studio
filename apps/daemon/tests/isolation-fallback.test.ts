@@ -93,17 +93,12 @@ it.each([
     const events = await fetch(`${started.url}/api/runs/${run.runId}/events`, { signal: AbortSignal.timeout(15_000) }).then(response => response.text());
     const status = await fetch(`${started.url}/api/runs/${run.runId}`).then(response => response.json());
     if (!status || typeof status !== 'object' || !('status' in status) || !('eventsLogPath' in status) || typeof status.eventsLogPath !== 'string') throw new Error('Missing run status');
-    // Then: at most one downgrade, with an honest terminal status and durable event.
+    // Then: the fallback preserves an honest terminal status without adding a chat notice.
     const persisted = await readFile(status.eventsLogPath, 'utf8');
-    expect(persisted.match(/"label":"sandbox_isolation_unavailable"/g) ?? []).toHaveLength(fallback ? 1 : 0);
-    if (fallback) {
-      const rollback = persisted.split('\n').filter(Boolean).map(line => JSON.parse(line)).find(event => event.data?.label === 'sandbox_isolation_unavailable');
-      expect(rollback?.data.detail).toEqual(expect.any(String));
-      expect(rollback?.data.detail.length).toBeGreaterThan(0);
-    }
+    expect(persisted).not.toContain('sandbox_isolation_unavailable');
     expect(status.status).toBe(fallback && !legacyFails ? 'succeeded' : 'failed');
     expect(isolatedAgentSpawn).toHaveBeenCalledTimes(1);
-    expect(events.match(/"label":"sandbox_isolation_unavailable"/g) ?? []).toHaveLength(fallback ? 1 : 0);
+    expect(events).not.toContain('sandbox_isolation_unavailable');
     expect(events.match(/event: start\n/g) ?? []).toHaveLength(fallback ? 2 : 1);
     expect(events.match(/event: end\n/g) ?? []).toHaveLength(1);
     if (fallback && !legacyFails) expect(events).toContain('fallback-response');

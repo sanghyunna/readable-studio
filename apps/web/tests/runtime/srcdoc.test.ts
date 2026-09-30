@@ -27,6 +27,52 @@ describe('buildSrcdoc', () => {
     expect(doc).toContain('var initialSlideIndex = 0;');
   });
 
+  it('requests full document height without changing the classic scrollbar gutter; decks remain fixed-size', async () => {
+    for (const deck of [false, true]) {
+      const markup = buildSrcdoc('<main>Hero</main>', { deck });
+      const script = markup.match(/<script data-readable-snapshot-bridge>([\s\S]*?)<\/script>/)?.[1];
+      expect(script).toBeTruthy();
+      // Head dependencies precede visible body nodes in both parallel walks.
+      const dom = new JSDOM('<!doctype html><html><head><script>window.artifact = true</script><style>main { color: red }</style><link rel="stylesheet" href="app.css"></head><body><main>Hero</main><aside style="display:none">Hidden</aside></body></html>', { runScripts: 'outside-only' });
+      const { window } = dom;
+      Object.defineProperty(window, 'innerWidth', { value: 400 });
+      Object.defineProperty(window, 'innerHeight', { value: 250 });
+      Object.defineProperty(window.document.documentElement, 'scrollHeight', { value: 616 });
+      Object.defineProperty(window.document.documentElement, 'clientWidth', { value: 385 });
+      const images: string[] = [];
+      class MockImage {
+        onload: (() => void) | null = null;
+        set src(value: string) { images.push(decodeURIComponent(value)); this.onload?.(); }
+      }
+      window.Image = MockImage as unknown as typeof window.Image;
+      const canvas = window.HTMLCanvasElement.prototype;
+      canvas.getContext = (() => ({
+        scale() {}, fillRect() {}, drawImage() {},
+        getImageData: () => ({ data: new Uint8ClampedArray([0, 0, 0, 255, 255, 255, 255, 255]) }),
+      })) as unknown as typeof canvas.getContext;
+      canvas.toDataURL = () => 'data:image/png;base64,eA==';
+      const results: unknown[] = [];
+      Object.defineProperty(window, 'parent', { value: { postMessage: (value: unknown) => results.push(value) } });
+      window.eval(script!);
+      window.dispatchEvent(new window.MessageEvent('message', {
+        data: { type: 'readable-studio:snapshot', id: 'test', fullDocument: !deck },
+      }));
+      await Promise.resolve();
+      const height = deck ? 250 : 616;
+      expect(images[0]).toContain(`height="${height}"`);
+      const svg = new window.DOMParser().parseFromString(images[0]!.replace(/^data:image\/svg\+xml;charset=utf-8,/, ''), 'image/svg+xml');
+      expect(svg.querySelector('main')?.textContent).toBe('Hero');
+      expect(svg.querySelector('aside')).toBeNull();
+      expect(svg.querySelector('script, link')).toBeNull();
+      expect(results).toEqual([expect.objectContaining({ w: 400, h: height })]);
+      if (!deck) {
+        expect(images[0]).toContain('width:385px');
+        expect(images[0]).toContain('scrollbar-color:transparent transparent');
+      }
+      dom.window.close();
+    }
+  });
+
   it('injects the snapshot bridge used by draw annotations', () => {
     const srcdoc = buildSrcdoc('<main style="color:red">Hero</main>');
 
@@ -53,14 +99,14 @@ describe('buildSrcdoc', () => {
     expect(drawIdx).toBeGreaterThan(fillIdx);
   });
 
-  it('reports an empty-render error instead of shipping a blank capture', () => {
+  it('rejects blank captures without exposing the internal empty-render token', () => {
     const srcdoc = buildSrcdoc('<main style="color:red">Hero</main>');
 
     // When the foreignObject paints nothing the canvas is uniform; the bridge
     // must surface that as an honest failure so the host can fall back / show
     // an error rather than copy a (now white-filled but still empty) frame.
     expect(srcdoc).toContain('function canvasLooksBlank(');
-    expect(srcdoc).toContain("error: 'empty-render'");
+    expect(srcdoc).not.toContain("error: 'empty-render'");
   });
 
   it('renders snapshot SVGs through data URLs so canvas export stays origin-clean', () => {
@@ -76,7 +122,7 @@ describe('buildSrcdoc', () => {
     const srcdoc = buildSrcdoc('<main style="color:red">Hero</main>');
 
     expect(srcdoc).toContain('function scrollOffset()');
-    expect(srcdoc).toContain('left:\' + (-scroll.x) + \'px;top:\' + (-scroll.y) + \'px;');
+    expect(srcdoc).toContain('left:\' + (fullDocument ? 0 : -scroll.x) + \'px;top:\' + (fullDocument ? 0 : -scroll.y) + \'px;');
     expect(srcdoc).toContain('<foreignObject x="0" y="0"');
     expect(srcdoc).not.toContain('<foreignObject x="\' + (-window.scrollX || 0)');
   });

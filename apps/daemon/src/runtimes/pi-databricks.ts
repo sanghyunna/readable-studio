@@ -124,7 +124,8 @@ export async function createDatabricksPiRuntime(options: DatabricksPiRuntimeOpti
       writeFile(path.join(agentDir, 'models.json'), JSON.stringify(config.models), { mode: 0o600, flag: 'wx' }),
       writeFile(path.join(agentDir, 'settings.json'), JSON.stringify(config.settings), { mode: 0o600, flag: 'wx' }),
     ]);
-    const toolsEnabled = runtime.wireCapabilities?.tools !== 'unsupported' || runtime.wireCapabilities.toolSurfaceVersion !== 2;
+    const toolsEnabled = runtime.wireCapabilities?.namedProfile ? runtime.wireCapabilities.namedProfile.tools === 'enabled'
+      : runtime.wireCapabilities?.tools !== 'unsupported' || runtime.wireCapabilities.toolSurfaceVersion !== 2;
     const shellArgs: string[] = [];
     if (process.platform === 'win32' && toolsEnabled) {
       const extension = resolvePiShellExtension(import.meta.url);

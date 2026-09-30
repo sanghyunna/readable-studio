@@ -26,9 +26,11 @@ for (const [auth, catalogue, available, reason] of [
   ['ok', 'live', true, undefined],
   ['missing', 'live', false, 'auth-missing'],
   ['unknown', 'live', false, 'auth-unknown'],
-  ['ok', 'empty', false, 'auth-unknown'],
-  ['ok', 'failed', false, 'auth-unknown'],
-  ['ok', 'default', false, 'auth-unknown'],
+  // These outputs fail parsing, unlike Cursor's explicit empty-account response.
+  // Verified auth keeps the CLI-owned default selectable, not static model hints.
+  ['ok', 'empty', true, 'discovery-failed'],
+  ['ok', 'failed', true, 'discovery-failed'],
+  ['ok', 'default', true, 'discovery-failed'],
 ] as const) {
   test(`separate auth ${auth} and catalogue ${catalogue} produce available=${available}`, async () => {
     const result = await safeProbe({
@@ -44,7 +46,16 @@ for (const [auth, catalogue, available, reason] of [
     expect(result.available).toBe(available);
     expect(result.authStatus).toBe(auth);
     expect(result.diagnostics?.[0]?.reason).toBe(reason);
-    expect(result.models).toEqual(available ? [{ id: 'fixture-model', label: 'Fixture Model' }] : []);
-    if (available) expect(result.modelsSource).toBe('live');
+    const usingDefault = reason === 'discovery-failed';
+    expect(result.models).toEqual(usingDefault
+      ? [{ id: 'default', label: 'Default (CLI config)' }]
+      : available ? [{ id: 'fixture-model', label: 'Fixture Model' }] : []);
+    expect(result.modelsSource).toBe(catalogue === 'live' ? 'live' : 'fallback');
+    if (usingDefault) {
+      expect(result.diagnostics).toEqual([expect.objectContaining({
+        reason: 'discovery-failed', severity: 'warning',
+        fixActions: expect.arrayContaining([{ kind: 'rescan' }]),
+      })]);
+    }
   });
 }

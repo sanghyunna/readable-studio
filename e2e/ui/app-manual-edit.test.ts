@@ -1,11 +1,12 @@
 import { expect, test } from '@playwright/test';
 import { addStorageInitScript } from '@/playwright/storage-init';
-import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { openNewProjectModal } from '@/playwright/new-project-modal';
 import { routeAgents } from '@/playwright/mock-factory';
 import type { Locator, Page, Response } from '@playwright/test';
 import { T } from '@/timeouts';
+import { waitForSaveResponse } from '@/playwright/manual-edit-events';
 import { issue41SelectionPaintHtml, magneticEdgeAlignmentHtml, semanticSvgDeckVisualHtml } from '../resources/manual-edit.ts';
 
 const STORAGE_KEY = 'readable-studio:config';
@@ -39,6 +40,7 @@ function isProjectFileWrite(response: Response, projectId: string): boolean {
 
 test.beforeEach(async ({ page }) => {
   await addStorageInitScript(page, (key) => {
+    window.localStorage.setItem('readable-studio:welcome-modal-shown', '1');
     window.localStorage.setItem(
       key,
       JSON.stringify({
@@ -379,8 +381,13 @@ test('[P1] issue 33 manual edit history preserves preview identity and focus', a
   const armFrameLoad = async () => {
     await artifactPreview(page).evaluate((node) => {
       const frameNode = node as HTMLIFrameElement & { __readableStudioIssue33NextLoad?: Promise<void> };
-      frameNode.__readableStudioIssue33NextLoad = new Promise((resolve) => {
-        frameNode.addEventListener('load', () => resolve(), { once: true });
+      frameNode.__readableStudioIssue33NextLoad = new Promise((resolve, reject) => {
+        const loaded = () => { clearTimeout(timer); resolve(); };
+        const timer = setTimeout(() => {
+          frameNode.removeEventListener('load', loaded);
+          reject(new Error('Issue 33 preview load timed out'));
+        }, 10_000);
+        frameNode.addEventListener('load', loaded, { once: true });
       });
     });
   };
@@ -389,11 +396,10 @@ test('[P1] issue 33 manual edit history preserves preview identity and focus', a
     return frameNode.__readableStudioIssue33NextLoad;
   });
   const commitText = async (text: string, beginInlineEdit: () => Promise<void>) => {
-    const previousElement = await textOnlyDiv.elementHandle();
-    if (!previousElement) throw new Error('pair-a has no element handle before inline edit');
+    await textOnlyDiv.evaluate(node => Object.defineProperty(node, '__issue33Original', { value: true }));
     await beginInlineEdit();
     await expect(textOnlyDiv).toHaveAttribute('contenteditable', 'true');
-    await expect.poll(() => textOnlyDiv.evaluate((node) => document.activeElement === node)).toBe(true);
+    await expect(textOnlyDiv).toBeFocused();
     await page.keyboard.press('ControlOrMeta+A');
     await page.keyboard.type(text);
     await expect(textOnlyDiv).toHaveText(text);
@@ -402,13 +408,9 @@ test('[P1] issue 33 manual edit history preserves preview identity and focus', a
     await waitForFrameLoad();
     await expectFileSource(page, projectId, 'manual-edit.html', ['Left panel']);
     await expect(textOnlyDiv).toHaveText(text);
-    await expect.poll(async () => {
-      try {
-        return await previousElement.evaluate((node) => node.isConnected);
-      } catch {
-        return false;
-      }
-    }).toBe(false);
+    // The old DOM instance carried an expando, not source markup. Rebuilt
+    // content must be a new instance without relying on a destroyed JS handle.
+    expect(await textOnlyDiv.evaluate(node => '__issue33Original' in node)).toBe(false);
     await expect(frame.locator('[data-readable-id="pair-a"][data-readable-edit-selected="true"]')).toHaveCount(1);
     await expect(moveSurface).toBeVisible();
   };
@@ -426,9 +428,9 @@ test('[P1] issue 33 manual edit history preserves preview identity and focus', a
     await expect(frame.locator('[data-readable-id="pair-a"][data-readable-edit-selected="true"]')).toHaveCount(1);
     await expect(page.getByRole('group', { name: 'Move element' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Resize bottom-right corner' })).toBeVisible();
-    await expect.poll(() => originalFrame.evaluate((node) => node.isConnected)).toBe(true);
-    await expect.poll(() => artifactPreview(page).evaluate((node, expected) => node === expected, originalFrame)).toBe(true);
-    await expect.poll(() => page.evaluate((expected) => document.activeElement === expected, originalFrame)).toBe(true);
+    expect(await originalFrame.evaluate((node) => node.isConnected)).toBe(true);
+    expect(await artifactPreview(page).evaluate((node, expected) => node === expected, originalFrame)).toBe(true);
+    await expect(artifactPreview(page)).toBeFocused();
   };
 
   await expectHistoryState('Second edit', ['First edit', 'Left panel']);
@@ -449,38 +451,30 @@ test('[P1] issue 33 manual edit history preserves preview identity and focus', a
   if (!beforeNudge) throw new Error('selected element has no bounding box before keyboard nudge');
   await page.keyboard.press('ArrowRight');
   await expect(textOnlyDiv).toHaveAttribute('style', /translate:\s*1px(?:\s+0px)?/);
-  await expect
-    .poll(async () => {
-      const afterNudge = await textOnlyDiv.boundingBox();
-      return afterNudge ? Math.abs((afterNudge.x - beforeNudge.x) - 1) < 0.5 : false;
-    })
-    .toBe(true);
-  await expect.poll(() => page.evaluate((expected) => document.activeElement === expected, originalFrame)).toBe(true);
+  const afterNudge = await textOnlyDiv.boundingBox();
+  expect(Math.abs((afterNudge!.x - beforeNudge.x) - 1)).toBeLessThan(0.5);
+  await expect(artifactPreview(page)).toBeFocused();
   await expect(frame.locator('[data-readable-id="pair-a"][data-readable-edit-selected="true"]')).toHaveCount(1);
 
-  const resizeHandle = page.getByRole('button', { name: 'Resize bottom-right corner' });
-  const resizeBox = await resizeHandle.boundingBox();
-  if (!resizeBox) throw new Error('resize handle has no bounding box after history');
-  const resizeX = resizeBox.x + resizeBox.width / 2;
-  const resizeY = resizeBox.y + resizeBox.height / 2;
-  await page.mouse.move(resizeX, resizeY);
-  await page.mouse.down();
-  await page.mouse.move(resizeX + 20, resizeY + 20, { steps: 4 });
-  await page.mouse.up();
-  await expect(textOnlyDiv).toHaveAttribute('style', /width:\s*\d+px;.*height:\s*\d+px/);
+  const beforeResize = await textOnlyDiv.boundingBox();
+  // This full-width column item has no room for +20px. Refuse the whole
+  // corner transaction without losing the earlier text/history/nudge edits.
+  const refusal = await dragWidthAndObserveFinal(page, 'pair-a', 20, 'se');
+  expect(refusal.decision).toBe('refused');
+  expect(refusal.causes).toContainEqual(expect.objectContaining({ code: 'ancestor-content-limit' }));
+  expect(refusal.safetyFailures).toContainEqual(expect.objectContaining({ code: 'ancestor-content-limit' }));
+  expect(await textOnlyDiv.boundingBox()).toEqual(beforeResize);
+  await expect(textOnlyDiv).toHaveAttribute('style', /translate:\s*1px(?:\s+0px)?/);
+  await expect(textOnlyDiv).not.toHaveAttribute('style', /(?:width|height):/);
   const saved = page.waitForResponse((response) => isProjectFileWrite(response, projectId));
   await page.getByRole('button', { name: 'Save changes' }).click();
   expect((await saved).ok()).toBe(true);
   await expectFileSource(page, projectId, 'manual-edit.html', ['Second edit']);
   await expectFileSourceExcludes(page, projectId, 'manual-edit.html', ['First edit', 'Left panel']);
-  await expect
-    .poll(async () => {
-      const resp = await page.request.get(`/api/projects/${projectId}/files/manual-edit.html`);
-      if (!resp.ok()) return '';
-      const source = await resp.text();
-      return source.match(/data-readable-id="pair-a"[^>]*style="([^"]*)"/)?.[1] ?? '';
-    })
-    .toMatch(/width:\s*\d+px;.*height:\s*\d+px/);
+  const persisted = await (await page.request.get(`/api/projects/${projectId}/files/manual-edit.html`)).text();
+  const persistedStyle = persisted.match(/data-readable-id="pair-a"[^>]*style="([^"]*)"/)?.[1] ?? '';
+  expect(persistedStyle).toMatch(/translate:\s*1px(?:\s+0px)?/);
+  expect(persistedStyle).not.toMatch(/(?:width|height):/);
 });
 
 test('[P0] manual edit mode preserves preview actions after style edits', async ({ page }) => {
@@ -565,10 +559,15 @@ test('[P1] manual edit resize handle drag grows selected element and persists wi
   await expect(page.locator('.manual-edit-error')).toHaveCount(0);
 });
 
-test('[P1] constrained resize explains the applied max-width while preserving the authored request', async ({ page }) => {
+test('[P1] constrained resize releases its own max-width while preserving the authored rule', async ({ page }) => {
   await routeMockAgents(page);
   const projectId = await createEmptyProject(page, 'Manual edit constrained resize');
-  await seedHtmlArtifact(page, projectId, 'manual-edit.html', manualEditHtml());
+  // The safety preflight needs a completely loadable document, not /hero.png 404.
+  const baselineSource = manualEditHtml()
+    .replace('src="/hero.png"', 'src="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2264%22 height=%2264%22/%3E"')
+    .replace('</main>', '<p data-readable-id="measure-peer" class="constrained-copy">Unchanged peer</p></main>');
+  await seedHtmlArtifact(page, projectId, 'manual-edit.html', baselineSource);
+  const rendererWrites = captureRendererFileWrites(page, projectId);
   await page.goto(`/projects/${projectId}/files/manual-edit.html`);
   await openDesignFile(page, 'manual-edit.html');
 
@@ -583,55 +582,57 @@ test('[P1] constrained resize explains the applied max-width while preserving th
     return { width: rect.width, maxWidth: getComputedStyle(element).maxWidth };
   });
   expect(Math.abs(before.width - Number.parseFloat(before.maxWidth))).toBeLessThan(1);
+  const peer = frame.locator('[data-readable-id="measure-peer"]');
+  const peerBefore = await peer.boundingBox();
 
-  const eastHandle = page.getByRole('button', { name: 'Resize right edge' });
-  const handleBox = await eastHandle.boundingBox();
-  if (!handleBox) throw new Error('resize handle has no bounding box');
-  const startX = handleBox.x + handleBox.width / 2;
-  const startY = handleBox.y + handleBox.height / 2;
   const requestedWidth = Math.round(before.width + 160);
+  const outcome = await dragWidthAndObserveFinal(page, 'constrained-copy', 160);
+  expect(outcome.decision).toBe('release-own');
+  await expect(constrainedCopy).toHaveAttribute('data-readable-width-release', new RegExp(`"preferredCssPx":${requestedWidth}`));
+  expect((await constrainedCopy.boundingBox())!.width).toBeCloseTo(requestedWidth, 0);
+  expect((await peer.boundingBox())!.width).toBe(peerBefore!.width);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Make this widenable' })).toHaveCount(0);
+  const handle = await page.getByRole('button', { name: 'Resize right edge' }).boundingBox();
+  const element = await constrainedCopy.boundingBox();
+  expect(Math.abs(handle!.x + handle!.width / 2 - element!.x - element!.width)).toBeLessThan(4);
 
-  await page.mouse.move(startX, startY);
-  await page.mouse.down();
-  await page.mouse.move(startX + 160, startY, { steps: 8 });
-
-  await expect
-    .poll(async () => {
-      const current = await constrainedCopy.boundingBox();
-      return current ? Math.abs(current.width - before.width) : Number.POSITIVE_INFINITY;
-    })
-    .toBeLessThan(2);
-  await expect
-    .poll(async () => {
-      const handle = await eastHandle.boundingBox();
-      const element = await constrainedCopy.boundingBox();
-      if (!handle || !element) return Number.POSITIVE_INFINITY;
-      return Math.abs((handle.x + handle.width / 2) - (element.x + element.width));
-    })
-    .toBeLessThan(4);
-
-  await page.mouse.up();
-
-  const status = page.getByRole('status');
-  await expect(status).toContainText('Width limited by max-width: 30ch');
-  await expect(status).toContainText(`${requestedWidth}px requested`);
-  await expect(status).toContainText(`${Math.round(before.width)}px rendered`);
-
-  await expect
-    .poll(async () => {
-      const resp = await page.request.get(`/api/projects/${projectId}/files/manual-edit.html`);
-      if (!resp.ok()) return '';
-      const source = await resp.text();
-      const inlineStyle = source.match(/data-readable-id="constrained-copy"[^>]*style="([^"]*)"/)?.[1] ?? '';
-      return `${inlineStyle}\n${source.includes('max-width: 30ch')}`;
-    })
-    .toMatch(new RegExp(`width:\\s*${requestedWidth}px[\\s\\S]*true`));
-  await expect(constrainedCopy).toHaveCSS('max-width', before.maxWidth);
+  expect(rendererWrites).toHaveLength(0);
+  const beforeSave = await page.request.get(`/api/projects/${projectId}/files/manual-edit.html`);
+  expect(await beforeSave.text()).toBe(baselineSource);
+  const save = waitForSaveResponse(page, projectId);
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  expect((await save).status()).toBe(200);
+  expect(rendererWrites).toHaveLength(1);
+  const write = JSON.parse(rendererWrites[0]!) as { content: string; expectedSha256?: string };
+  expect(JSON.stringify(write)).toContain(createHash('sha256').update(baselineSource).digest('hex'));
+  expect(write.content).toContain(`width: min(${requestedWidth}px, 100%)`);
+  expect(write.content).toContain('.constrained-copy { width: 420px; max-width: 30ch; }');
+  expect(write.content).toContain('data-readable-width-release');
+  const saved = await page.request.get(`/api/projects/${projectId}/files/manual-edit.html`);
+  expect(await saved.text()).toBe(write.content);
+  const record = await constrainedCopy.evaluate(node => JSON.parse(node.getAttribute('data-readable-width-release')!));
+  expect(record.after.filter((d: { property: string }) => d.property === 'max-width').map((d: { value: string }) => d.value)).toEqual(['100%', '-moz-available', 'stretch']);
+  expect(record.causes).toContain('own-max-width');
+  await page.reload();
+  await page.getByTestId('manual-edit-mode-toggle').click();
+  await selectPreviewElementThroughBridge(page, frame, '[data-readable-id="constrained-copy"]', 'Shape');
+  await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Restore authored sizing', exact: true }).click();
+  await expect(constrainedCopy).not.toHaveAttribute('data-readable-width-release');
+  expect((await constrainedCopy.boundingBox())!.width).toBeCloseTo(before.width, 0);
+  expect((await peer.boundingBox())!.width).toBe(peerBefore!.width);
+  const restoreSave = waitForSaveResponse(page, projectId);
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  expect((await restoreSave).ok()).toBe(true);
+  expect(rendererWrites).toHaveLength(2);
+  expect(await (await page.request.get(`/api/projects/${projectId}/files/manual-edit.html`)).text()).not.toContain('data-readable-width-release');
 });
 
 test('[P1] constrained resize callout remains readable on an 8px target', async ({ page }) => {
   await routeMockAgents(page);
-  const projectId = await createEmptyProject(page, 'Tiny constrained resize feedback');
+  const projectId = `tiny-resize-${randomUUID()}`;
+  expect((await page.request.post('/api/projects', { data: { id: projectId, name: 'Tiny constrained resize feedback', metadata: { kind: 'prototype' }, skipDiscoveryBrief: true } })).ok()).toBe(true);
   await seedHtmlArtifact(
     page,
     projectId,
@@ -654,12 +655,9 @@ test('[P1] constrained resize callout remains readable on an 8px target', async 
   if (!handleBox) throw new Error('resize handle has no bounding box');
   const startX = handleBox.x + handleBox.width / 2;
   const startY = handleBox.y + handleBox.height / 2;
-  await westHandle.dispatchEvent('pointerdown', {
-    pointerId: 1, clientX: startX, clientY: startY, button: 0,
-  });
-  await westHandle.dispatchEvent('pointermove', {
-    pointerId: 1, clientX: startX - 160, clientY: startY, buttons: 1,
-  });
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX - 160, startY, { steps: 5 });
 
   const callout = page.getByTestId('manual-edit-resize-callout');
   await expect(callout).toBeVisible();
@@ -681,9 +679,7 @@ test('[P1] constrained resize callout remains readable on an 8px target', async 
     workspaceBox.y + workspaceBox.height - 12,
   );
 
-  await westHandle.dispatchEvent('pointerup', {
-    pointerId: 1, clientX: startX - 160, clientY: startY, button: 0,
-  });
+  await page.mouse.up();
 });
 
 test('[P1] Desktop manual edit iframe follows the live canvas width', async ({ page }) => {
@@ -1357,79 +1353,210 @@ test('[P1] manual edit resize handles track the selected element through layout 
     .toBeLessThan(4);
 });
 
-test('[P1] manual edit resize pins flex-fill items so a width drag holds and handles track the element', async ({ page }) => {
+// The former pin test ran at a 480px iframe width: its media query made the
+// parent column, so width was cross-axis and no pin was ever generated. These
+// fixtures deliberately keep row/grid allocation at every viewport width.
+for (const scenario of [
+  { name: 'parent-owned flex allocation refuses shrinking and prepares a request', layout: 'flex', delta: -60 },
+  { name: 'parent-owned flex allocation refuses 600px to 711px widening overflow', layout: 'flex', delta: 160 },
+  { name: 'parent-owned grid allocation preserves the fixed sibling', layout: 'grid', delta: 160 },
+] as const) {
+  test(`[P1] ${scenario.name}`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1800, height: 1000 });
+    await routeMockAgents(page);
+    const projectId = await createEmptyProject(page, scenario.name);
+    const parentStyle = scenario.layout === 'flex' ? 'display:flex;width:600px;gap:8px' : 'display:grid;width:600px;grid-template-columns:280px 312px;gap:8px';
+    const baselineSource = `<!doctype html><html><body><section data-readable-id="row" style="${parentStyle}"><div data-readable-id="target" style="${scenario.layout === 'flex' ? 'flex:1 1 0' : 'grid-column:1'};height:80px">Target</div><div data-readable-id="sibling" style="${scenario.layout === 'flex' ? 'width:41px;flex:none' : 'grid-column:2'}">Sibling</div></section><div data-readable-id="ordinary" style="width:100px;height:40px">Ordinary</div></body></html>`;
+    await seedHtmlArtifact(page, projectId, 'manual-edit.html', baselineSource);
+    const writes = captureRendererFileWrites(page, projectId);
+    let sends = 0;
+    // Exercise the real explicit Send boundary without starting an agent.
+    await page.route('**/api/runs', async (route) => {
+      if (route.request().method() !== 'POST') return route.continue();
+      sends++;
+      await route.fulfill({ status: 503, json: { error: 'Isolated test agent is unavailable' } });
+    });
+    await page.goto(`/projects/${projectId}/files/manual-edit.html`);
+    await openDesignFile(page, 'manual-edit.html');
+    await page.getByTestId('chat-composer-input').fill('Keep my draft');
+    const frame = artifactPreviewFrame(page);
+    await page.getByTestId('manual-edit-mode-toggle').click();
+    await selectPreviewElementThroughBridge(page, frame, '[data-readable-id="target"]', 'Shape');
+    const target = frame.locator('[data-readable-id="target"]');
+    const sibling = frame.locator('[data-readable-id="sibling"]');
+    const before = await target.boundingBox();
+    const siblingBefore = await sibling.boundingBox();
+    if (!before) throw new Error('Missing target box');
+    if (scenario.layout === 'flex' && scenario.delta === 160) {
+      // Characterize the removed intervention separately from the cross-axis
+      // baseline: detaching this real row item produces the measured overflow.
+      const pin = await target.evaluate((el) => {
+        const node = el as HTMLElement;
+        const original = node.getAttribute('style');
+        try {
+          node.style.width = '711px'; node.style.flex = 'none';
+          return { width: node.getBoundingClientRect().width, parent: node.parentElement!.getBoundingClientRect().width };
+        } finally { if (original === null) node.removeAttribute('style'); else node.setAttribute('style', original); }
+      });
+      expect(pin).toEqual({ width: 711, parent: 600 });
+    }
+    const outcome = await dragWidthAndObserveFinal(page, 'target', scenario.delta);
+    // Refusal preserves allocation, rather than pinning the item to the cursor.
+    expect(outcome.decision).toBe('parent-owned');
+    expect(outcome.requested.width).toBeCloseTo(before.width + scenario.delta, 0);
+    expect(await target.boundingBox()).toEqual(before);
+    expect(await sibling.boundingBox()).toEqual(siblingBefore);
+    const handle = await page.getByRole('button', { name: 'Resize right edge' }).boundingBox();
+    expect(Math.abs(handle!.x + handle!.width / 2 - before.x - before.width)).toBeLessThan(4);
+    expect(await target.evaluate((el) => el.getBoundingClientRect().right <= el.parentElement!.getBoundingClientRect().right)).toBe(true);
+    await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled();
+    expect(writes).toHaveLength(0);
+    expect(await (await page.request.get(`/api/projects/${projectId}/files/manual-edit.html`)).text()).toBe(baselineSource);
+
+    // An unrelated ordinary resize is still accepted and requires explicit Save.
+    await selectPreviewElementThroughBridge(page, frame, '[data-readable-id="ordinary"]', 'Shape');
+    expect((await dragWidthAndObserveFinal(page, 'ordinary', 20)).decision).toBe('ordinary');
+    await selectPreviewElementThroughBridge(page, frame, '[data-readable-id="target"]', 'Shape');
+    await dragWidthAndObserveFinal(page, 'target', scenario.delta);
+    await page.getByRole('button', { name: 'Make this widenable', exact: true }).click();
+    expect(sends).toBe(0);
+    const save = waitForSaveResponse(page, projectId);
+    await page.getByRole('button', { name: 'Save changes' }).click();
+    expect((await save).status()).toBe(200);
+    const input = page.getByTestId('chat-composer-input');
+    await expect(input).toBeFocused();
+    const text = await input.innerText();
+    expect(text).toContain('Keep my draft');
+    const payload = JSON.parse(text.split('<readable-width-request>')[1]!.split('</readable-width-request>')[0]!);
+    expect(payload).toMatchObject({ schema: 'readable.width-request.v1', filePath: 'manual-edit.html', target: { id: 'target' }, parent: { id: 'row' }, requestedRectWidth: before.width + scenario.delta, actualRectWidth: before.width, availableContentWidth: 600 });
+    const savedSource = await (await page.request.get(`/api/projects/${projectId}/files/manual-edit.html`)).text();
+    expect(payload.sourceSha256).toBe(createHash('sha256').update(savedSource).digest('hex'));
+    const saved = await page.evaluate((source) => {
+      const doc = new DOMParser().parseFromString(source, 'text/html');
+      const el = doc.querySelector<HTMLElement>('[data-readable-id="target"]')!;
+      return { width: el.style.width, flex: el.style.flex, release: el.hasAttribute('data-readable-width-release'), ordinary: doc.querySelector<HTMLElement>('[data-readable-id="ordinary"]')!.style.width };
+    }, savedSource);
+    // Original flex/track ownership survives Save. Only the ordinary edit writes.
+    expect(saved).toEqual({ width: '', flex: scenario.layout === 'flex' ? '1 1 0px' : '', release: false, ordinary: '120px' });
+    expect(writes).toHaveLength(1);
+    expect(sends).toBe(0);
+    if (scenario.layout === 'flex' && scenario.delta === 160) {
+      await page.screenshot({ path: testInfo.outputPath('composer-request.png'), fullPage: true });
+      writeFileSync(testInfo.outputPath('request.json'), JSON.stringify({ payload, savedSource, saved, before, outcome }, null, 2));
+    }
+    const sent = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/runs' && response.request().method() === 'POST');
+    await page.getByTestId('chat-send').click();
+    expect((await sent).request().postData()).toContain('readable.width-request.v1');
+    expect(sends).toBe(1);
+    console.log('WIDTH_REQUEST_PAYLOAD', JSON.stringify(payload));
+  });
+}
+
+test('[P1] fixed grid own cap releases without worsening existing viewport overflow', async ({ page }) => {
+  await page.setViewportSize({ width: 1800, height: 1000 });
   await routeMockAgents(page);
-  const projectId = await createEmptyProject(page, 'Manual edit resize flex pin');
-  await seedHtmlArtifact(page, projectId, 'manual-edit.html', manualEditHtml());
+  const projectId = await createEmptyProject(page, 'Grid own cap');
+  const source = '<!doctype html><html><body><section style="display:grid;width:600px;grid-template-columns:280px 312px;gap:8px"><div data-readable-id="target" style="grid-column:1;width:100px;max-width:100px;height:80px">Target</div><div data-readable-id="sibling" style="grid-column:2">Sibling</div></section></body></html>';
+  await seedHtmlArtifact(page, projectId, 'manual-edit.html', source);
   await page.goto(`/projects/${projectId}/files/manual-edit.html`);
   await openDesignFile(page, 'manual-edit.html');
-
   const frame = artifactPreviewFrame(page);
-  await expect(frame.getByRole('heading', { name: 'Original Hero' })).toBeVisible();
-
   await page.getByTestId('manual-edit-mode-toggle').click();
-  await selectPreviewElementThroughBridge(page, frame, '[data-readable-id="pair-b"]', 'Shape');
-
-  const pairB = frame.locator('[data-readable-id="pair-b"]');
-  const before = await pairB.boundingBox();
-  if (!before) throw new Error('flex item has no bounding box');
-
-  const eHandle = page.getByRole('button', { name: 'Resize right edge' });
-  await expect(eHandle).toBeVisible();
-  const box = await eHandle.boundingBox();
-  if (!box) throw new Error('resize handle has no bounding box');
-
-  const startX = box.x + box.width / 2;
-  const startY = box.y + box.height / 2;
-  await page.mouse.move(startX, startY);
-  await page.mouse.down();
-  await page.mouse.move(startX - 60, startY, { steps: 6 });
-
-  // `flex: 1 1 0` normally ignores a bare width; the drag preview pins the
-  // item (flex: none), so the element's REAL box must follow the pointer…
-  await expect
-    .poll(async () => {
-      const current = await pairB.boundingBox();
-      return current ? Math.abs(current.width - (before.width - 60)) : Number.POSITIVE_INFINITY;
-    })
-    .toBeLessThan(6);
-  // …and the handle must track the element's measured edge (fed back through
-  // the per-frame preview acks), not the raw cursor position.
-  await expect
-    .poll(async () => {
-      const handleBox = await eHandle.boundingBox();
-      const elementBox = await pairB.boundingBox();
-      if (!handleBox || !elementBox) return Number.POSITIVE_INFINITY;
-      return Math.abs((handleBox.x + handleBox.width / 2) - (elementBox.x + elementBox.width));
-    })
-    .toBeLessThan(4);
-  await page.mouse.up();
-
-  // The commit persists the width together with the flex pin, so the saved
-  // file reproduces what the user saw on release.
-  await expect
-    .poll(async () => {
-      const resp = await page.request.get(`/api/projects/${projectId}/files/manual-edit.html`);
-      if (!resp.ok()) return '';
-      const source = await resp.text();
-      const match = source.match(/data-readable-id="pair-b"[^>]*style="([^"]*)"/);
-      return match?.[1] ?? '';
-    })
-    // Chromium serializes the `flex: none` shorthand as its longhand
-    // equivalent `0 0 auto` when the style attribute round-trips.
-    .toMatch(/width:\s*\d+px[^"]*flex:\s*(?:none|0 0 auto)|flex:\s*(?:none|0 0 auto)[^"]*width:\s*\d+px/);
-
-  // Handles settle exactly on the element after release — no residual offset.
-  await expect
-    .poll(async () => {
-      const handleBox = await eHandle.boundingBox();
-      const elementBox = await pairB.boundingBox();
-      if (!handleBox || !elementBox) return Number.POSITIVE_INFINITY;
-      return Math.abs((handleBox.x + handleBox.width / 2) - (elementBox.x + elementBox.width));
-    })
-    .toBeLessThan(4);
-  await expect(page.locator('.manual-edit-error')).toHaveCount(0);
+  await selectPreviewElementThroughBridge(page, frame, '[data-readable-id="target"]', 'Shape');
+  const sibling = await frame.locator('[data-readable-id="sibling"]').boundingBox();
+  const outcome = await dragWidthAndObserveFinal(page, 'target', 80);
+  // The released target fits even at 320px; the parent's pre-existing 600px
+  // width is not damage caused by releasing this element's own cap.
+  expect(outcome.decision).toBe('release-own');
+  const target = frame.locator('[data-readable-id="target"]');
+  await expect(target).toHaveAttribute('data-readable-width-release', /readable.width-release.v1/);
+  expect((await target.boundingBox())!.width).toBe(180);
+  expect(await frame.locator('[data-readable-id="sibling"]').boundingBox()).toEqual(sibling);
+  await expect(page.getByRole('button', { name: 'Make this widenable' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeEnabled();
+  expect(await (await page.request.get(`/api/projects/${projectId}/files/manual-edit.html`)).text()).toBe(source);
 });
+
+test('[P1] responsive grid own cap releases by hand inside an unchanged area', async ({ page, browser }) => {
+  await page.setViewportSize({ width: 1800, height: 1000 });
+  await routeMockAgents(page);
+  const projectId = await createEmptyProject(page, 'Responsive grid own cap');
+  const source = '<!doctype html><html><body><section style="display:grid;width:min(600px,100%);grid-template-columns:minmax(0,280px) minmax(0,312px);gap:8px"><div data-readable-id="target" style="grid-column:1;width:100px;max-width:100px;height:80px">Target</div><div data-readable-id="sibling" style="grid-column:2">Sibling</div></section></body></html>';
+  await seedHtmlArtifact(page, projectId, 'manual-edit.html', source);
+  const writes = captureRendererFileWrites(page, projectId);
+  await page.goto(`/projects/${projectId}/files/manual-edit.html`);
+  await openDesignFile(page, 'manual-edit.html');
+  const frame = artifactPreviewFrame(page);
+  await page.getByTestId('manual-edit-mode-toggle').click();
+  await selectPreviewElementThroughBridge(page, frame, '[data-readable-id="target"]', 'Shape');
+  const target = frame.locator('[data-readable-id="target"]');
+  const sibling = await frame.locator('[data-readable-id="sibling"]').boundingBox();
+  const tracks = await target.evaluate(node => getComputedStyle(node.parentElement!).gridTemplateColumns);
+  const outcome = await dragWidthAndObserveFinal(page, 'target', 80);
+  expect(outcome.decision).toBe('release-own');
+  await expect(target).toHaveAttribute('data-readable-width-release', /"preferredCssPx":180/);
+  expect((await target.boundingBox())!.width).toBe(180);
+  expect(await frame.locator('[data-readable-id="sibling"]').boundingBox()).toEqual(sibling);
+  expect(await target.evaluate(node => getComputedStyle(node.parentElement!).gridTemplateColumns)).toBe(tracks);
+  await expect(page.getByRole('button', { name: 'Make this widenable' })).toHaveCount(0);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(writes).toHaveLength(0);
+  const save = waitForSaveResponse(page, projectId);
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  expect((await save).ok()).toBe(true);
+  expect(writes).toHaveLength(1);
+  const persisted = await (await page.request.get(`/api/projects/${projectId}/files/manual-edit.html`)).text();
+  const offline = await browser.newContext({ offline: true, viewport: { width: 320, height: 700 } });
+  try {
+    const offlinePage = await offline.newPage();
+    await offlinePage.setContent(persisted);
+    const narrow = await offlinePage.locator('[data-readable-id="target"]').evaluate(node => {
+      const target = node as HTMLElement;
+      target.style.maxWidth = '100%'; // Force the conservative exported-browser fallback.
+      const box = target.getBoundingClientRect();
+      const sibling = target.parentElement!.querySelector('[data-readable-id="sibling"]')!.getBoundingClientRect();
+      return { width: box.width, right: box.right, siblingLeft: sibling.left, scroll: document.documentElement.scrollWidth, viewport: window.innerWidth };
+    });
+    expect(narrow.width).toBeLessThan(180);
+    expect(narrow.right).toBeLessThanOrEqual(narrow.siblingLeft - 8 + 1);
+    expect(narrow.scroll).toBeLessThanOrEqual(narrow.viewport);
+  } finally { await offline.close(); }
+  await page.reload();
+  await page.getByTestId('manual-edit-mode-toggle').click();
+  await selectPreviewElementThroughBridge(page, frame, '[data-readable-id="target"]', 'Shape');
+  await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Restore authored sizing' }).click();
+  await expect(target).not.toHaveAttribute('data-readable-width-release');
+  expect((await target.boundingBox())!.width).toBe(100);
+});
+
+type WidthFinal = { decision: string; requested: { width: number }; causes: { code: string }[]; safetyFailures: { code: string }[] };
+
+async function dragWidthAndObserveFinal(page: Page, id: string, delta: number, direction: 'e' | 'se' = 'e') {
+  // Subscribe before pointerdown; await the exact active-frame final ACK, not
+  // elapsed time or a polled DOM size. Every gesture has its own one-shot listener.
+  await page.evaluate(({ id, timeout }) => {
+    const host = window as unknown as { widthFinal: Promise<WidthFinal> };
+    host.widthFinal = new Promise((resolve, reject) => {
+      const cleanup = () => { clearTimeout(timer); window.removeEventListener('message', listener); };
+      const listener = (event: MessageEvent) => {
+        const frame = document.querySelector<HTMLIFrameElement>('iframe[data-readable-active="true"]');
+        const data = event.data;
+        if (event.source !== frame?.contentWindow || data?.type !== 'readable-edit-preview-style-applied' || data.id !== id || data.stage !== 'finalize' || !data.transactionId || data.sequence !== data.version) return;
+        cleanup(); resolve(data.resize);
+      };
+      const timer = setTimeout(() => { cleanup(); reject(new Error('Final width ACK timed out')); }, timeout);
+      window.addEventListener('message', listener);
+    });
+  }, { id, timeout: T.medium });
+  const box = await page.getByRole('button', { name: direction === 'se' ? 'Resize bottom-right corner' : 'Resize right edge' }).boundingBox();
+  if (!box) throw new Error('Missing resize handle');
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + delta, box.y + box.height / 2 + (direction === 'se' ? delta : 0), { steps: 4 });
+  await page.mouse.up();
+  return page.evaluate(() => (window as unknown as { widthFinal: Promise<WidthFinal> }).widthFinal);
+}
 
 test('[P1] magnetic edge alignment shows a guide while dragging and hides it with Alt', async ({ page }) => {
   await routeMockAgents(page);

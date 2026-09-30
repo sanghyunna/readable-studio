@@ -243,6 +243,7 @@ interface Props {
 // push text into the composer without owning its draft state.
 export interface ChatComposerHandle {
   setDraft: (text: string) => void;
+  appendDraft: (text: string) => void;
   restoreDraft: (draft: {
     text: string;
     attachments?: ChatAttachment[];
@@ -776,12 +777,17 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       ref,
       () => ({
         setDraft: (text: string) => {
-          setDraft(text);
-          editorRef.current?.setText(text);
+          replaceEditorDraft(text);
+          editorRef.current?.focus();
+          seededRef.current = true;
+        },
+        appendDraft: (text: string) => {
+          replaceEditorDraft(draftRef.current ? `${draftRef.current}\n\n${text}` : text);
           editorRef.current?.focus();
           seededRef.current = true;
         },
         restoreDraft: ({ text, attachments = [], commentAttachments = [], meta }) => {
+          draftRef.current = text;
           setDraft(text);
           const orderedAttachments = normalizeChatAttachmentOrders(attachments);
           setStaged(orderedAttachments);

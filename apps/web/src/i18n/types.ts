@@ -851,6 +851,8 @@ export interface Dict {
   'newsletter.placeholder': string;
 
   // Entry view / tabs
+  'entry.databaseUnavailable': string;
+  'entry.retryDatabase': string;
   'entry.tabDesigns': string;
   'entry.tabTemplates': string;
   'entry.tabDesignSystems': string;
@@ -1849,6 +1851,35 @@ export interface Dict {
 
   // Databricks agent: model dropdown action row + Add Models registration modal
   'databricks.addModels': string;
+  'databricks.named.title': string;
+  'databricks.named.label': string;
+  'databricks.named.help': string;
+  'databricks.named.consent': string;
+  'databricks.named.add': string;
+  'databricks.named.checking': string;
+  'databricks.named.empty': string;
+  'databricks.named.tooMany': string;
+  'databricks.named.invalid': string;
+  'databricks.named.startFailed': string;
+  'databricks.named.addFailed': string;
+  'databricks.named.added': string;
+  'databricks.named.addedChatOnly': string;
+  'databricks.named.alreadyRegistered': string;
+  'databricks.named.inconclusive': string;
+  'databricks.named.limitUnconfirmed': string;
+  'databricks.named.nameNotFound': string;
+  'databricks.named.nameHidden': string;
+  'databricks.named.notEntitled': string;
+  'databricks.named.notInvocable': string;
+  'databricks.named.permissionDenied': string;
+  'databricks.named.workspaceUnreachable': string;
+  'databricks.named.authFailed': string;
+  'databricks.named.unsupportedTask': string;
+  'databricks.named.requestIncompatible': string;
+  'databricks.named.rateLimited': string;
+  'databricks.named.upstreamFailed': string;
+  'databricks.named.incompleteResponse': string;
+  'databricks.named.cancelled': string;
   'databricks.modal.title': string;
   'databricks.modal.subtitle': string;
   'databricks.modal.done': string;
@@ -2738,6 +2769,17 @@ export interface Dict {
   'manualEdit.resize.w': string;
   'manualEdit.resize.limit': string;
   'manualEdit.resize.layoutLimit': string;
+  'manualEdit.resize.flexLimit': string;
+  'manualEdit.resize.sharedStyleLimit': string;
+  'manualEdit.resize.requestAgent': string;
+  'manualEdit.resize.released': string;
+  'manualEdit.resize.restore': string;
+  'manualEdit.resize.releaseRisk': string;
+  'manualEdit.resize.requestSaveFirst': string;
+  'manualEdit.resize.requestStale': string;
+  'manualEdit.resize.gridLimit': string;
+  'manualEdit.resize.contentLimit': string;
+  'manualEdit.resize.unknownLimit': string;
   'manualEdit.resize.measurements': string;
   'manualEdit.resize.frameLabel': string;
   'manualEdit.move.frame': string;
@@ -2933,6 +2975,10 @@ export interface Dict {
   'tool.running': string;
   'tool.error': string;
   'tool.done': string;
+  'tool.interrupted': string;
+  // Outcome of a rollback request; rendered as a chat notice.
+  'status.rollbackRequestFailed': string;
+  'status.rollbackRequestIgnored': string;
 
   // Assistant message scaffolding
   'assistant.role': string;
@@ -3020,6 +3066,17 @@ export interface Dict {
   'assistant.verbTodos': string;
   'assistant.verbFetching': string;
   'assistant.verbCalling': string;
+  // Settled tool-group summary: one "{n}" count per tool family, joined into
+  // `assistant.toolGroupDone`'s "{parts}" slot.
+  'assistant.toolDoneEdited': string;
+  'assistant.toolDoneWritten': string;
+  'assistant.toolDoneRead': string;
+  'assistant.toolDoneSearched': string;
+  'assistant.toolDoneRan': string;
+  'assistant.toolDoneTodos': string;
+  'assistant.toolDoneFetched': string;
+  'assistant.toolDoneCalled': string;
+  'assistant.toolGroupDone': string;
 
   // Question form labels
   'qf.answered': string;
@@ -3245,4 +3302,23 @@ export interface Dict {
   'diagnostics.exporting': string;
   'diagnostics.exportSuccess': string;
   'diagnostics.exportFailed': string;
+
+  // First-run welcome modal
+  'welcome.title': string;
+  'welcome.intro': string;
+  'welcome.shortcutsHeading': string;
+  'welcome.desktop': string;
+  'welcome.startMenu': string;
+  'welcome.taskbarHint': string;
+  'welcome.apply': string;
+  'welcome.applying': string;
+  'welcome.skip': string;
+  'welcome.done': string;
+  'welcome.result.created': string;
+  'welcome.result.alreadyExisted': string;
+  'welcome.result.failed': string;
+  'welcome.reason.unsupported': string;
+  'welcome.reason.desktopUnavailable': string;
+  'welcome.reason.conflict': string;
+  'welcome.reason.writeFailed': string;
 }

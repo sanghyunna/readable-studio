@@ -3,7 +3,14 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ComponentProps } from 'react';
+import { createHash } from 'node:crypto';
 import { FileViewer as ActualFileViewer } from '../../src/components/FileViewer';
+
+// jsdom checks transaction ordering only. Real fallback geometry is covered by
+// e2e/ui/width-resize-release.test.ts, never by these transport acknowledgements.
+vi.mock('../../src/edit-mode/width-release-preflight', () => ({
+  preflightWidthRelease: vi.fn(async () => ({ ok: true, widths: [800, 768, 375, 320] })),
+}));
 
 function FileViewer(props: ComponentProps<typeof ActualFileViewer>) {
   return <ActualFileViewer {...props} manualEditPortalId="manual-edit-test-host" />;
@@ -51,6 +58,16 @@ describe('FileViewer manual edit resize handles', () => {
 
   async function selectManualEditTarget(target = heroTarget()) {
     const frame = await previewFrame();
+    // jsdom has no iframe renderer. Echo final transport identity only; layout
+    // decisions are injected explicitly by refusal tests and covered in Chromium.
+    vi.spyOn(frame.contentWindow as Window, 'postMessage').mockImplementation((message) => {
+      if (message.resize?.stage !== 'finalize') return;
+      queueMicrotask(() => window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, data: {
+        ...message.resize, type: 'readable-edit-preview-style-applied', id: target.id, version: message.version, ok: true,
+        rect: { ...target.rect, ...message.resize.requested },
+        resize: { ...message.resize, constraints: [], causes: [], decision: 'ordinary', announce: true },
+      } })));
+    });
     act(() => {
       window.dispatchEvent(new MessageEvent('message', {
         data: { type: 'readable-edit-select', target },
@@ -77,6 +94,81 @@ describe('FileViewer manual edit resize handles', () => {
       && (init as RequestInit | undefined)?.method === 'POST'
     ));
   }
+
+  it.each(['parent-owned', 'release-own'] as const)('respects %s for a width corner, including an own cap in an unchanged grid area', async (decision) => {
+    const fetchMock = vi.fn(async () => new Response(SOURCE));
+    vi.stubGlobal('fetch', fetchMock);
+    render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={SOURCE} />);
+    fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
+    await selectManualEditTarget();
+    const frame = await previewFrame();
+    vi.spyOn(frame.contentWindow as Window, 'postMessage').mockImplementation((message) => {
+      if (message.resize?.stage !== 'finalize') return;
+      queueMicrotask(() => window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, data: {
+        ...message.resize, type: 'readable-edit-preview-style-applied', id: 'hero', version: message.version, ok: true,
+        rect: heroTarget().rect, resize: { ...message.resize, decision, confidence: 'confirmed', announce: true,
+          constraints: [{ axis: 'width', requested: 200, applied: 160, reason: 'layout', classification: 'parent-owned' }],
+          causes: [{ code: decision === 'parent-owned' ? 'parent-flex-allocation' : 'own-max-width', axis: 'width', confidence: 'confirmed', facts: { allocatedWidth: 280 } }],
+          preferredCssPx: 200,
+          proposedDeclarations: [{ property: 'width', value: 'min(200px, 100%)', priority: '' }, ...['100%', '-moz-available', 'stretch'].map(value => ({ property: 'max-width', value, priority: '' }))],
+          preflight: { source: SOURCE, targetId: 'hero', viewportWidth: 800, viewportHeight: 600, baselineRect: heroTarget().rect, declarations: [] } },
+      } })));
+    });
+    const handle = seHandle();
+    await act(async () => {
+      fireEvent.pointerDown(handle, { pointerId: 101, clientX: 300, clientY: 150 });
+      fireEvent.pointerMove(handle, { pointerId: 101, clientX: 340, clientY: 170 });
+      fireEvent.pointerUp(handle, { pointerId: 101, clientX: 340, clientY: 170 });
+    });
+    expect((screen.getByRole('button', { name: 'Undo' }) as HTMLButtonElement).disabled).toBe(decision === 'parent-owned');
+    if (decision === 'parent-owned') {
+      expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull();
+      await act(async () => { fireEvent.click(screen.getByTestId('manual-edit-mode-toggle')); });
+      expect(fileSaveCalls(fetchMock)).toHaveLength(0);
+    } else {
+      // A confirmed, measured own cap commits through the shared record engine.
+      await act(async () => { await saveChanges(); });
+      expect(fileSaveCalls(fetchMock)).toHaveLength(1);
+      const content = JSON.parse(String(fileSaveCalls(fetchMock)[0]![1].body)).content;
+      const element = new DOMParser().parseFromString(content, 'text/html').querySelector('[data-readable-id="hero"]')!;
+      const record = JSON.parse(element.getAttribute('data-readable-width-release')!);
+      expect(record.preferredCssPx).toBe(200);
+      expect(record.before).toEqual([]);
+      expect(content).not.toContain('flex:');
+      expect(content).not.toContain('!important');
+    }
+  });
+
+  it('Save waits for the exact pending final assessment and cannot persist a refused corner', async () => {
+    const fetchMock = vi.fn(async (_input, init?: RequestInit) => init?.method === 'POST'
+      ? new Response(JSON.stringify({ file: htmlPreviewFile() }), { headers: { 'content-type': 'application/json' } })
+      : new Response(SOURCE));
+    vi.stubGlobal('fetch', fetchMock);
+    render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={SOURCE} />);
+    fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
+    await selectManualEditTarget();
+    const frame = await previewFrame();
+    await act(async () => window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow,
+      data: { type: 'readable-edit-text-commit', id: 'hero', value: 'Changed' } })));
+    const post = vi.spyOn(frame.contentWindow as Window, 'postMessage').mockImplementation(() => {});
+    const handle = seHandle();
+    fireEvent.pointerDown(handle, { pointerId: 102, clientX: 300, clientY: 150 });
+    fireEvent.pointerMove(handle, { pointerId: 102, clientX: 340, clientY: 170 });
+    fireEvent.pointerUp(handle, { pointerId: 102, clientX: 340, clientY: 170 });
+    const final = post.mock.calls.map(([message]) => message).find((message) => message.resize?.stage === 'finalize');
+    expect(final).toBeTruthy();
+    await act(async () => { await saveChanges(); });
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
+    await act(async () => window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, data: {
+      ...final.resize, type: 'readable-edit-preview-style-applied', id: 'hero', version: final.version, ok: true,
+      rect: heroTarget().rect, resize: { decision: 'parent-owned', constraints: [], announce: true },
+    } })));
+    expect(fileSaveCalls(fetchMock)).toHaveLength(1);
+    const content = JSON.parse(String(fileSaveCalls(fetchMock)[0]![1].body)).content;
+    expect(content).toContain('Changed');
+    expect(content).not.toContain('width:');
+    expect(content).not.toContain('height:');
+  });
 
   it('renders the 8 resize handles once a target is selected in edit mode', async () => {
     const fetchMock = vi.fn(async () =>
@@ -192,10 +284,10 @@ describe('FileViewer manual edit resize handles', () => {
     await waitFor(() => {
       expect(postSpy).toHaveBeenCalledWith(
         expect.objectContaining({
-          resize: {
+          resize: expect.objectContaining({
             axes: ['width'],
             requested: { width: 200, height: 48 },
-          },
+          }),
         }),
         '*',
       );
@@ -227,10 +319,10 @@ describe('FileViewer manual edit resize handles', () => {
         expect.objectContaining({
           type: 'readable-edit-preview-style',
           id: 'hero',
-          resize: {
+          resize: expect.objectContaining({
             axes: ['width', 'height'],
             requested: { width: 200, height: 68 },
-          },
+          }),
         }),
         '*',
       );
@@ -408,6 +500,105 @@ describe('FileViewer manual edit resize handles', () => {
     expect(screen.queryByRole('status')).toBeNull();
   });
 
+  it('rejects an active-frame resize reply from a stale document epoch', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(SOURCE)));
+    render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={SOURCE} />);
+    fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
+    await selectManualEditTarget();
+    const frame = await previewFrame();
+    const se = seHandle();
+    fireEvent.pointerDown(se, { pointerId: 91, clientX: 300, clientY: 150 });
+    fireEvent.pointerMove(se, { pointerId: 91, clientX: 340, clientY: 170 });
+    act(() => window.dispatchEvent(new MessageEvent('message', {
+      source: frame.contentWindow,
+      data: { type: 'readable-edit-preview-style-applied', id: 'hero', version: 999, ok: true, documentEpoch: 'stale', rect: { x: 24, y: 24, width: 999, height: 999 }, resize: { announce: true, constraints: [{ axis: 'width', requested: 200, applied: 999, reason: 'layout' }] } },
+    })));
+    expect(screen.queryByTestId('manual-edit-resize-callout')).toBeNull();
+    fireEvent.keyDown(se, { key: 'Escape' });
+  });
+
+  it.each(['inactive', 'source-revision', 'transaction', 'sequence'] as const)('rejects a resize acknowledgement with a mismatched %s', async (mismatch) => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(SOURCE)));
+    render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={SOURCE} />);
+    fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
+    await selectManualEditTarget();
+    const frame = await previewFrame();
+    const post = vi.spyOn(frame.contentWindow as Window, 'postMessage');
+    const se = seHandle();
+    fireEvent.pointerDown(se, { pointerId: 95, clientX: 300, clientY: 150 });
+    fireEvent.pointerMove(se, { pointerId: 95, clientX: 340, clientY: 170 });
+    const command = post.mock.calls.map(([message]) => message).find((message) => message.type === 'readable-edit-preview-style');
+    expect(command.resize.transactionId).toBeTruthy();
+    const reply = { ...command.resize, type: 'readable-edit-preview-style-applied', id: 'hero', version: command.version, ok: true, rect: { x: 24, y: 24, width: 199, height: 67 } };
+    const invalid = { ...reply,
+      ...(mismatch === 'source-revision' ? { sourceRevision: -1 } : {}),
+      ...(mismatch === 'transaction' ? { transactionId: 'old' } : {}),
+      ...(mismatch === 'sequence' ? { sequence: -1 } : {}),
+    };
+    const inactive = screen.getByTestId('artifact-preview-frame-url-load') as HTMLIFrameElement;
+    act(() => window.dispatchEvent(new MessageEvent('message', { source: mismatch === 'inactive' ? inactive.contentWindow : frame.contentWindow, data: invalid })));
+    expect(seHandle().style.left).not.toBe('199px');
+    act(() => window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, data: reply })));
+    expect(seHandle().style.left).toBe('199px');
+    fireEvent.keyDown(se, { key: 'Escape' });
+  });
+
+  it('ignores an old-source preview after a resize commits canonical source', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(SOURCE)));
+    render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={SOURCE} />);
+    fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
+    await selectManualEditTarget();
+    const frame = await previewFrame();
+    const post = vi.spyOn(frame.contentWindow as Window, 'postMessage');
+    const se = seHandle();
+    fireEvent.pointerDown(se, { pointerId: 96, clientX: 300, clientY: 150 });
+    fireEvent.pointerMove(se, { pointerId: 96, clientX: 340, clientY: 170 });
+    const command = post.mock.calls.map(([message]) => message).find((message) => message.type === 'readable-edit-preview-style');
+    await act(async () => { fireEvent.pointerUp(se, { pointerId: 96, clientX: 340, clientY: 170 }); });
+    act(() => window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, data: { ...command.resize, type: 'readable-edit-preview-style-applied', id: 'hero', version: command.version, ok: true, rect: { x: 24, y: 24, width: 999, height: 999 } } })));
+    expect(seHandle().style.left).not.toBe('999px');
+  });
+
+  it.each([true, false])('recovers only when exact cancellation is not acknowledged: %s', async (acknowledged) => {
+    const fetchMock = vi.fn(async () => new Response(SOURCE));
+    vi.stubGlobal('fetch', fetchMock);
+    render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={SOURCE} />);
+    fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
+    await selectManualEditTarget();
+    const frame = await previewFrame();
+    const post = vi.spyOn(frame.contentWindow as Window, 'postMessage');
+    const se = seHandle();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      fireEvent.pointerDown(se, { pointerId: 97, clientX: 300, clientY: 150 });
+      fireEvent.pointerMove(se, { pointerId: 97, clientX: 340, clientY: 170 });
+      fireEvent.keyDown(se, { key: 'Escape' });
+      const cancel = post.mock.calls.map(([message]) => message).find((message) => message.resize?.stage === 'cancel');
+      expect(cancel).toBeTruthy();
+      const before = frame.srcdoc;
+      if (acknowledged) act(() => window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, data: { ...cancel.resize, type: 'readable-edit-preview-style-applied', id: 'hero', version: cancel.version, ok: true, rect: heroTarget().rect } })));
+      await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
+      expect(frame.srcdoc === before).toBe(acknowledged);
+      expect(fileSaveCalls(fetchMock)).toHaveLength(0);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('delegates cancellation to the bridge snapshot instead of computed style strings', async () => {
+    const fetchMock = vi.fn(async () => new Response(SOURCE));
+    vi.stubGlobal('fetch', fetchMock);
+    render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={SOURCE} />);
+    fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
+    await selectManualEditTarget();
+    const frame = await previewFrame();
+    const post = vi.spyOn(frame.contentWindow as Window, 'postMessage');
+    const se = seHandle();
+    fireEvent.pointerDown(se, { pointerId: 92, clientX: 300, clientY: 150 });
+    fireEvent.pointerMove(se, { pointerId: 92, clientX: 340, clientY: 170 });
+    fireEvent.keyDown(se, { key: 'Escape' });
+    expect(post).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'readable-edit-preview-style', styles: {}, resize: expect.objectContaining({ stage: 'cancel', targetId: 'hero', documentEpoch: expect.any(String), transactionId: expect.any(String), sourceRevision: expect.any(Number) }) }), '*');
+    expect(fileSaveCalls(fetchMock)).toHaveLength(0);
+  });
+
   it('ignores resize acknowledgements from the inactive preview iframe', async () => {
     vi.stubGlobal('fetch', vi.fn(async () =>
       new Response(SOURCE, { status: 200, headers: { 'Content-Type': 'text/html' } })));
@@ -568,11 +759,11 @@ describe('FileViewer manual edit resize handles', () => {
           type: 'readable-edit-preview-style',
           id: 'hero',
           includeAuthoredSize: true,
-          resize: {
+          resize: expect.objectContaining({
             axes: ['width', 'height'],
             requested: { width: 200, height: 68 },
             includeDetails: true,
-          },
+          }),
         }),
         '*',
       );
@@ -580,6 +771,33 @@ describe('FileViewer manual edit resize handles', () => {
     expect(savedContent).toMatch(/data-readable-id="hero"[^>]*style="[^"]*width:\s*200px/);
     expect(savedContent).toMatch(/height:\s*68px/);
 
+  });
+
+  it('captures the loaded source, not an empty file, when edit mode opens before the file read', async () => {
+    let resolveRead!: (response: Response) => void;
+    const read = new Promise<Response>((resolve) => { resolveRead = resolve; });
+    let resolveSaved!: (body: { expectedContentSha256: string }) => void;
+    const saved = new Promise<{ expectedContentSha256: string }>((resolve) => { resolveSaved = resolve; });
+    vi.stubGlobal('fetch', vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/projects/project-1/files') && init?.method === 'POST') {
+        resolveSaved(JSON.parse(String(init.body)));
+        return Promise.resolve(new Response(JSON.stringify({ file: htmlPreviewFile() }), { headers: { 'Content-Type': 'application/json' } }));
+      }
+      if (url.includes('/api/projects/project-1/raw/')) return read;
+      return Promise.resolve(new Response(SOURCE));
+    }));
+    render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} />);
+    fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
+    await act(async () => { resolveRead(new Response(SOURCE)); await read; });
+    await selectManualEditTarget();
+    await act(async () => {
+      fireEvent.pointerDown(seHandle(), { pointerId: 22, clientX: 300, clientY: 150 });
+      fireEvent.pointerMove(seHandle(), { pointerId: 22, clientX: 340, clientY: 170 });
+      fireEvent.pointerUp(seHandle(), { pointerId: 22, clientX: 340, clientY: 170 });
+    });
+    await saveChanges();
+    expect((await saved).expectedContentSha256).toBe(createHash('sha256').update(SOURCE).digest('hex'));
   });
 
   it('does not rebuild manual-edit srcDoc for matching saved-source refreshes, but rebuilds it for an external change', async () => {
@@ -924,16 +1142,16 @@ describe('FileViewer manual edit resize handles', () => {
     const se = seHandle();
     fireEvent.pointerDown(se, { pointerId: 62, clientX: 300, clientY: 150 });
     fireEvent.pointerMove(se, { pointerId: 62, clientX: 340, clientY: 170 });
-    fireEvent.pointerUp(se, { pointerId: 62, clientX: 340, clientY: 170 });
+    await act(async () => { fireEvent.pointerUp(se, { pointerId: 62, clientX: 340, clientY: 170 }); });
     fireEvent.pointerDown(se, { pointerId: 63, clientX: 340, clientY: 170 });
     fireEvent.pointerMove(se, { pointerId: 63, clientX: 380, clientY: 190 });
-    fireEvent.pointerUp(se, { pointerId: 63, clientX: 380, clientY: 190 });
+    await act(async () => { fireEvent.pointerUp(se, { pointerId: 63, clientX: 380, clientY: 190 }); });
 
     expect(fileSaveCalls(fetchMock)).toHaveLength(0);
-    await saveChanges();
-    await waitFor(() => expect(fileSaveCalls(fetchMock)).toHaveLength(1));
-    expect(savedContent).toMatch(/width:\s*200px/);
-    expect(savedContent).toMatch(/height:\s*68px/);
+    await act(async () => { await saveChanges(); });
+    expect(fileSaveCalls(fetchMock)).toHaveLength(1);
+    expect(savedContent).toMatch(/width:\s*240px/);
+    expect(savedContent).toMatch(/height:\s*88px/);
   });
 
   it('commits CSS-space px, not rect-space px, for targets under an ancestor transform', async () => {
@@ -1086,7 +1304,12 @@ describe('FileViewer manual edit resize handles', () => {
         '*',
       );
     });
-    fireEvent.pointerUp(se, { pointerId: 51, clientX: 340, clientY: 170 });
+    await act(async () => { fireEvent.pointerUp(se, { pointerId: 51, clientX: 340, clientY: 170 }); });
+    // Model the final measured box, not the unconstrained transport echo.
+    act(() => window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, data: {
+      type: 'readable-edit-preview-style-applied', id: 'hero', version: 4, ok: true,
+      rect: { x: 24, y: 24, width: 180, height: 60 }, cssSize: { width: '180px', height: '60px' },
+    } })));
     expect(fileSaveCalls(fetchMock)).toHaveLength(0);
 
     // Drag 2: 20px inward from the measured 180px box must preview 160px
@@ -1134,7 +1357,7 @@ describe('FileViewer manual edit resize handles', () => {
     // First drag: commit a new size.
     fireEvent.pointerDown(se, { pointerId: 20, clientX: 300, clientY: 150 });
     fireEvent.pointerMove(se, { pointerId: 20, clientX: 340, clientY: 170 });
-    fireEvent.pointerUp(se, { pointerId: 20, clientX: 340, clientY: 170 });
+    await act(async () => { fireEvent.pointerUp(se, { pointerId: 20, clientX: 340, clientY: 170 }); });
     expect(fileSaveCalls(fetchMock)).toHaveLength(0);
 
     // Second drag on the still-selected element, cancelled via Escape.
@@ -1153,16 +1376,9 @@ describe('FileViewer manual edit resize handles', () => {
     const revertCall = postSpy.mock.calls.find((call) => (
       (call[0] as { type?: string }).type === 'readable-edit-preview-style'
     ));
-    // Revert restores the committed size (non-empty), not the pre-first-drag empty styles.
-    // Margins revert too: a west/north drag preview may have shifted them.
-    expect((revertCall?.[0] as { styles?: Record<string, string> }).styles).toEqual({
-      width: '',
-      height: '',
-      marginLeft: '',
-      marginRight: '',
-      marginTop: '',
-      marginBottom: '',
-    });
+    // The second bridge transaction captured the just-committed declarations;
+    // the host must not fabricate a baseline from stale selection-time strings.
+    expect(revertCall?.[0]).toMatchObject({ styles: {}, resize: { stage: 'cancel', transactionId: 'resize-2' } });
   });
 
   it('tracks the element measured box from preview acks while dragging', async () => {
@@ -1292,9 +1508,7 @@ describe('FileViewer manual edit resize handles', () => {
     const revertCall = postSpy.mock.calls.find((call) => (
       (call[0] as { type?: string }).type === 'readable-edit-preview-style'
     ));
-    expect((revertCall?.[0] as { styles?: Record<string, unknown> }).styles).toEqual({
-      width: '', height: '', marginLeft: '', marginRight: '', marginTop: '', marginBottom: '',
-    });
+    expect(revertCall?.[0]).toMatchObject({ styles: {}, resize: { stage: 'cancel' } });
 
     expect(fetchMock).not.toHaveBeenCalledWith(
       '/api/projects/project-1/files',

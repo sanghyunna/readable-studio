@@ -53,6 +53,20 @@ afterEach(() => {
 });
 
 describe('ManualEditResizeHandles', () => {
+  it.each(['up', 'cancel', 'lost-capture', 'escape', 'unmount'])('releases the iframe drag shield on %s', (ending) => {
+    const { getByLabelText, unmount, onResizeCancel } = renderHandles();
+    const handle = getByLabelText(labels.e);
+    fireEvent.pointerDown(handle, { pointerId: 21, clientX: 300, clientY: 100 });
+    expect(document.querySelectorAll('[data-readable-pointer-drag-shield]')).toHaveLength(1);
+    if (ending === 'up') fireEvent.pointerUp(handle, { pointerId: 21 });
+    if (ending === 'cancel') fireEvent.pointerCancel(handle, { pointerId: 21 });
+    if (ending === 'lost-capture') fireEvent.lostPointerCapture(handle, { pointerId: 21 });
+    if (ending === 'escape') fireEvent.keyDown(handle, { key: 'Escape' });
+    if (ending === 'unmount') unmount();
+    expect(document.querySelectorAll('[data-readable-pointer-drag-shield]')).toHaveLength(0);
+    if (ending !== 'unmount') expect(onResizeCancel).toHaveBeenCalledTimes(1);
+  });
+
   it('clears hover on handle entry and pointer ownership', () => {
     const { getByLabelText, onHoverClear } = renderHandles();
     const se = getByLabelText(labels.se);

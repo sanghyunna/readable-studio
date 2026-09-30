@@ -33,6 +33,8 @@ export interface UrlLoadDecision {
   editMode?: boolean;
   /** The artifact has its own script that listens for edit postMessages while URL-loaded. */
   urlModeBridge?: boolean;
+  /** Width finalization needs the current host-owned assessment protocol. */
+  widthResizeAssessment?: boolean;
   /** The URL-loaded artifact response includes the comment/selection bridge. */
   urlCommentBridge?: boolean;
   /** Tweaks palette popover open or palette committed — needs the palette bridge. */
@@ -87,6 +89,7 @@ export function shouldUrlLoadHtmlPreview(d: UrlLoadDecision): boolean {
   // URL-loaded iframe has no listener to apply per-element overrides.
   if (d.inspectMode) return false;
   if (d.editMode && !d.urlModeBridge) return false;
+  if (d.widthResizeAssessment) return false;
   // Palette tweaks need the srcDoc-side bridge — `<iframe src=URL>` has
   // no parent-injected listener to recolor against.
   if (d.paletteActive) return false;

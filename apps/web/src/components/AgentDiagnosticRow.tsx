@@ -113,8 +113,8 @@ export function AgentDiagnosticRow({ diagnostic, agentId, handlers = {}, classNa
         });
       }
     } else if (diagnostic.reason === 'not-executable') {
-      message =
-        'The bundled Databricks CLI is damaged. Re-download the complete Readable Studio portable package ZIP.';
+      // Preserve the daemon's observed CLI state; package damage is only one
+      // possible explanation for a missing or unsuccessful version probe.
       if (handlers.onReDownloadPortablePackage) {
         extras.push({
           key: 'reDownloadPortablePackage',

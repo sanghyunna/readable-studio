@@ -3,7 +3,9 @@ import type { DatabricksCapabilities, DatabricksEndpoint, DatabricksEndpointApi 
 /**
  * Streaming/chat fallback maxima from provider specifications (2026-09-11),
  * except where live endpoint measurements are noted. Workspace learning wins.
- * Decimal K/M, except GPT-OSS's documented 131,072 context window.
+ * Decimal K/M for prose; GPT-OSS's 131,072 table context was also reported by
+ * both live serving endpoints' exceeded-context errors (2026-09-29). A generic
+ * recipe is still subordinate to this workspace's advertised budget.
  * This is the only identity fallback table; never infer limits from a service
  * alias, provider name, or an unrecognized future model/version.
  */
@@ -80,10 +82,23 @@ export function normalizeDatabricksModelIdentity(name: string): string {
 }
 
 type Limits = Pick<DatabricksCapabilities, 'contextWindow' | 'maxTokens'>;
-type Source = NonNullable<DatabricksCapabilities['limitSources']>['contextWindow'];
+type Sources = NonNullable<DatabricksCapabilities['limitSources']>;
+type ContextSource = Sources['contextWindow'];
+type OutputSource = Sources['maxTokens'];
 
 function record(value: unknown): Record<string, unknown> {
   return value != null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+function advertisedFoundationContext(value: unknown): number | null {
+  if (typeof value !== 'string') return null;
+  // Both forms occur in captured Foundation GETs (2026-09-29). K is a safe
+  // decimal budget, not a claim that rounded prose specifies an exact ceiling.
+  const match = /\bsupports a context length of ([1-9]\d{0,6})(K)? tokens\b/i.exec(value)
+    ?? /\ba ([1-9]\d{0,6})(K)? token context window\b/i.exec(value);
+  if (!match) return null;
+  const amount = Number(match[1]) * (match[2] ? 1_000 : 1);
+  // Never expand Pi's existing unknown-context planning budget from unverified prose.
+  return Number.isSafeInteger(amount) && amount >= 1_024 && amount <= UNKNOWN_LIMITS.contextWindow ? amount : null;
 }
 function positive(value: unknown): number | null {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null;
@@ -110,22 +125,39 @@ export function resolveDatabricksCapabilities(
   models: Array<{ name?: string; metadata: Record<string, unknown> }>,
 ): DatabricksCapabilities {
   const reported = metadataLimits(metadata);
+  const config = record(metadata.config);
+  const entities = config.served_entities ?? config.served_models;
+  const foundation = Array.isArray(entities) && entities.length > 0 && entities.every(entity => Object.hasOwn(record(entity), 'foundation_model'));
+  const contexts = foundation && Array.isArray(entities)
+    ? entities.map(entity => advertisedFoundationContext(record(record(entity).foundation_model).description)) : [];
+  const advertisedContext = contexts.length > 0 && contexts.every(value => value !== null) ? Math.min(...contexts.filter(value => value !== null)) : null;
   const resolved = models.map((model) => {
     const limits = metadataLimits(model.metadata);
     const known = MODEL_LIMITS.find((entry) => entry.names.some((name) => name === (model.name ? normalizeDatabricksModelIdentity(model.name) : undefined)));
     return { limits, known };
   });
-  const field = (key: keyof Limits): { value: number | null; source: Source } => {
+  function field(key: 'contextWindow'): { value: number | null; source: ContextSource };
+  function field(key: 'maxTokens'): { value: number | null; source: OutputSource };
+  function field(key: keyof Limits): { value: number | null; source: ContextSource | OutputSource } {
     if (reported[key] !== null) return { value: reported[key], source: 'metadata' };
+    if (key === 'contextWindow' && advertisedContext !== null) return { value: advertisedContext, source: 'advertised' };
     const values = resolved.map(({ limits, known }) => ({ value: limits[key] ?? known?.[key] ?? null,
       source: limits[key] !== null ? 'metadata' as const : known ? 'model-table' as const : 'unknown' as const }));
     // A routed endpoint must accept the budget on EVERY live destination.
-    if (!values.length || values.some((entry) => entry.value === null)) return { value: null, source: 'unknown' };
+    if (!values.length || values.some((entry) => entry.value === null)) return { value: null, source: foundation ? 'default' : 'unknown' };
     return { value: Math.min(...values.map((entry) => entry.value!)),
       source: values.some((entry) => entry.source === 'model-table') ? 'model-table' : 'metadata' };
-  };
+  }
   const contextWindow = field('contextWindow');
   const maxTokens = field('maxTokens');
+  // Explicit workspace numbers win, then advertised prose, then the generic
+  // identity recipe. Never silently substitute a larger table context for prose.
+  const tableContexts = resolved.flatMap(({ known }) => known ? [known.contextWindow] : []);
+  const modelTable = tableContexts.length === resolved.length && tableContexts.length ? Math.min(...tableContexts) : null;
+  if (modelTable !== null && contextWindow.value !== null && contextWindow.source !== 'model-table' && contextWindow.value !== modelTable) {
+    console.warn('Databricks context limit disagreement', { field: 'contextWindow', selected: contextWindow.value,
+      selectedSource: contextWindow.source, modelTable });
+  }
   return { tools: 'unknown', images: 'unknown', contextWindow: contextWindow.value, maxTokens: maxTokens.value,
     limitSources: { contextWindow: contextWindow.source, maxTokens: maxTokens.source } };
 }

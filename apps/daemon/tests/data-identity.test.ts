@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import Database from 'better-sqlite3';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   closeDatabase,
@@ -56,10 +56,49 @@ function fixtureHashes(root: string): Readonly<Record<string, string>> {
 
 afterEach(async () => {
   closeDatabase();
+  vi.restoreAllMocks();
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
 describe('Readable Studio data identity', () => {
+  it('retries transient identity-probe I/O failures without changing persisted database bytes', async () => {
+    const root = await fixtureRoot();
+    const file = path.join(root, '.readable-studio', 'app.sqlite');
+    const first = openDatabase(root);
+    insertProject(first, { id: 'saved', name: 'Saved', createdAt: 1, updatedAt: 1 });
+    closeDatabase();
+    const before = readFileSync(file);
+    const pragma = Database.prototype.pragma;
+    let failures = 2;
+    vi.spyOn(Database.prototype, 'pragma').mockImplementation(function (this: Database.Database, ...args: Parameters<typeof pragma>) {
+      if (args[0] === 'application_id' && failures > 0) {
+        failures -= 1;
+        throw Object.assign(new Error('disk I/O error'), { code: 'SQLITE_IOERR' });
+      }
+      return pragma.apply(this, args);
+    });
+
+    const reopened = openDatabase(root);
+
+    expect(getProject(reopened, 'saved')?.name).toBe('Saved');
+    expect(failures).toBe(0);
+    expect(readFileSync(file)).toEqual(before);
+  });
+
+  it('reports a persistent SQLite error with its file and code without changing bytes', async () => {
+    const root = await fixtureRoot();
+    const file = path.join(root, '.readable-studio', 'app.sqlite');
+    openDatabase(root);
+    closeDatabase();
+    const before = readFileSync(file);
+    vi.spyOn(Database.prototype, 'pragma').mockImplementation(() => {
+      throw Object.assign(new Error('disk I/O error'), { code: 'SQLITE_IOERR' });
+    });
+
+    expect(() => openDatabase(root)).toThrow(new RegExp(`app\\.sqlite.*SQLITE_IOERR`));
+    expect(readFileSync(file)).toEqual(before);
+  });
+
   it('adopts and back-stamps an unstamped Readable Studio database', async () => {
     const projectRoot = await fixtureRoot();
     const dataRoot = path.join(projectRoot, '.readable-studio');

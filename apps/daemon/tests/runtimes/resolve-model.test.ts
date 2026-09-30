@@ -115,6 +115,12 @@ describe('resolveModelForAgent', () => {
     expect(resolveModelForAgent(def, null)).toBe(null);
   });
 
+  it('accepts a declared CLI default after failed discovery clears the live catalogue', () => {
+    const def = defWithId('failed-catalog-default', ['default', 'sonnet']);
+    rememberLiveModels(def.id, []);
+    expect(resolveModelForAgent(def, 'default')).toBe('default');
+  });
+
   it('accepts a sanitized uncatalogued id when custom models are supported', () => {
     const def = defWith(['gpt-5.4-mini']);
     expect(resolveModelForAgent(def, 'vendor/gpt-5.4-fast')).toBe('vendor/gpt-5.4-fast');
@@ -139,6 +145,7 @@ describe('resolveModelForAgent', () => {
   it('keeps a no-model CLI sendable through its surfaced default sentinel', () => {
     const def = defWith(['default']);
     expect(agentHasModelChoice(def)).toBe(false);
+    rememberLiveModels(def.id, []);
     expect(resolveModelForAgent(def, 'default')).toBe('default');
     expect(def.buildArgs('prompt', [], [], { model: 'default' })).toEqual([]);
   });

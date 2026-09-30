@@ -5,11 +5,12 @@ import { promisify } from "node:util";
 
 import { RUNTIME_APP_ID } from "@readable-studio/sidecar-proto";
 
+import { forwardBuildProfile, isBuildProfilingEnabled } from "../build-profile.js";
 import { hashJson, hashPath, type CacheNode, ToolPackCache } from "../cache.js";
 import type { ToolPackConfig } from "../config.js";
 import { assertDatabricksCliOutput, DATABRICKS_CLI_RELATIVE_PATH } from "../databricks-cli.js";
 import { assertPiPackageOutput, PI_RPC_ENTRY_RELATIVE_PATH } from "../pi-package.js";
-import { winResources } from "../resources.js";
+import { toolsPackRoot, winResources } from "../resources.js";
 import { electronBuilderVersionForAppVersion, versionCoreForAppVersion } from "../versions.js";
 import {
   WIN_PREBUNDLED_DAEMON_CLI_RELATIVE_PATH,
@@ -47,6 +48,7 @@ import {
 import {
   buildWinPortableZip,
   resolvePortableZipCompression,
+  resolvePortableZipThreads,
 } from "./zip.js";
 import type {
   ElectronBuilderDirCacheMetadata,
@@ -77,6 +79,7 @@ export function buildWinPortableZipCacheKeyInput(input: {
   electronBuilderDirKey: string;
   packagedConfig: string;
   portableZipCompression: number;
+  readonly portableZipThreads?: number;
   namespace: string;
   packagedAppKey: string;
   packagedVersion: string;
@@ -90,6 +93,7 @@ export function buildWinPortableZipCacheKeyInput(input: {
     packagedAppKey: input.packagedAppKey,
     packagedVersion: input.packagedVersion,
     portableZipCompression: input.portableZipCompression,
+    ...(input.portableZipThreads == null ? {} : { portableZipThreads: input.portableZipThreads }),
     portableZipCacheVersion: WIN_PORTABLE_ZIP_CACHE_VERSION,
     signing: input.signing,
     target: "portable-zip",
@@ -108,6 +112,7 @@ function createWinPortableZipNode(input: {
   packagedAppKey: string;
   packagedVersion: string;
   portableZipCompression: number;
+  readonly portableZipThreads?: number;
   signingCacheKey: unknown;
 }): CacheNode<{ createdAt: string; portableZipPath: string }> {
   return {
@@ -122,6 +127,7 @@ function createWinPortableZipNode(input: {
         packagedAppKey: input.packagedAppKey,
         packagedVersion: input.packagedVersion,
         portableZipCompression: input.portableZipCompression,
+        portableZipThreads: input.portableZipThreads,
         signing: input.signingCacheKey,
       }),
     ),
@@ -133,7 +139,8 @@ function logWinBuildProgress(message: string, fields: Record<string, unknown> = 
   const suffix = Object.entries(fields)
     .map(([key, value]) => `${key}=${String(value)}`)
     .join(" ");
-  process.stderr.write(`[tools-pack win] ${message}${suffix.length === 0 ? "" : ` ${suffix}`}\n`);
+  const timestamp = isBuildProfilingEnabled() ? ` timestampMs=${Date.now()} pid=${process.pid}` : "";
+  process.stderr.write(`[tools-pack win] ${message}${suffix.length === 0 ? "" : ` ${suffix}`}${timestamp}\n`);
 }
 
 async function assertWebStandaloneOutput(config: ToolPackConfig): Promise<void> {
@@ -221,7 +228,9 @@ async function runElectronBuilderRaw(
     : null;
   const builderConfig = {
     appId: RUNTIME_APP_ID,
-    afterPack: webStandaloneHookConfigPath == null ? undefined : winResources.webStandaloneAfterPackHook,
+    afterPack: webStandaloneHookConfigPath == null ? undefined : isBuildProfilingEnabled()
+      ? join(toolsPackRoot, "dist", "profile-after-pack.cjs")
+      : winResources.webStandaloneAfterPackHook,
     asar: ELECTRON_BUILDER_ASAR,
     buildDependenciesFromSource: ELECTRON_BUILDER_BUILD_DEPENDENCIES_FROM_SOURCE,
     compression: "maximum",
@@ -265,7 +274,7 @@ async function runElectronBuilderRaw(
 
   const build = async (phase: string) => {
     await runSegment(phase, async () => {
-      await execFileAsync(process.execPath, [
+      const result = await execFileAsync(process.execPath, [
         config.electronBuilderCliPath,
         "--win",
         "--projectDir",
@@ -276,12 +285,19 @@ async function runElectronBuilderRaw(
         "never",
       ], {
         cwd: config.workspaceRoot, windowsHide: true,
+        ...(isBuildProfilingEnabled() ? { maxBuffer: 16 * 1024 * 1024 } : {}),
         env: {
           ...process.env,
           CSC_IDENTITY_AUTO_DISCOVERY: "false",
           ...(webStandaloneHookConfigPath == null ? {} : { [WEB_STANDALONE_HOOK_CONFIG_ENV]: webStandaloneHookConfigPath }),
         },
+      }).catch((error: unknown) => {
+        if (error instanceof Error && "stderr" in error && typeof error.stderr === "string") {
+          forwardBuildProfile(error.stderr);
+        }
+        throw error;
       });
+      forwardBuildProfile(result.stderr);
     }, {
       electronBuilderCliPath: config.electronBuilderCliPath,
       projectDir,
@@ -560,6 +576,7 @@ export async function runElectronBuilder(
       packagedAppKey,
       packagedVersion,
       portableZipCompression: resolvePortableZipCompression(),
+      portableZipThreads: resolvePortableZipThreads(config.fastBuild),
       signingCacheKey,
     });
     await cache.acquire({ materialize: [{ from: "portable.zip", reuse: true, to: paths.setupZipPath }], node: portableZipNode });

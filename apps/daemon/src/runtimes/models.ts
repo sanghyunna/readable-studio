@@ -48,7 +48,10 @@ export function isKnownModel(
 ) {
   if (!modelId) return false;
   const live = liveModelCache.get(liveModelCacheKey(def.id, scope));
-  if (live) return live.has(modelId);
+  if (live) {
+    if (live.has(modelId)) return true;
+    if (live.size || modelId !== DEFAULT_MODEL_OPTION.id) return false;
+  }
   if (Array.isArray(def.fallbackModels)) {
     return def.fallbackModels.some((m) => m.id === modelId);
   }
@@ -62,6 +65,7 @@ export function agentHasModelChoice(
   if (def.modelSelectionRequired) return true;
   const remembered = liveModelOrder.get(liveModelCacheKey(def.id, liveModelScope));
   if (remembered?.length) return remembered.some((id) => id !== DEFAULT_MODEL_OPTION.id);
+  if (remembered && def.fallbackModels.some((model) => model.id === DEFAULT_MODEL_OPTION.id)) return false;
   // Only an explicit no-choice sentinel permits a CLI-owned default. An
   // undiscovered catalogue is not evidence that the agent has no choices.
   return def.fallbackModels.length === 0 || def.fallbackModels.some(

@@ -5,6 +5,7 @@ import type { RouteDeps } from './server-context.js';
 import { isSandboxModeEnabled } from './sandbox-mode.js';
 import { StandaloneHtmlBundleError, StandaloneHtmlLimitError, StandaloneHtmlResolutionError } from './standalone-html.js';
 import { bundleProjectStandaloneHtml, StandaloneHtmlSourceError } from './routes/standalone-html.js';
+import { WidthReleaseExportUnsupportedError } from './html-export-source.js';
 
 export interface RegisterImportRoutesDeps extends RouteDeps<'db' | 'http' | 'uploads' | 'node' | 'ids' | 'paths' | 'imports' | 'auth' | 'projectStore' | 'conversations' | 'projectFiles' | 'validation'> {}
 
@@ -549,6 +550,7 @@ export function registerProjectExportRoutes(app: Express, ctx: RegisterProjectEx
       res.setHeader(STANDALONE_HTML_EXPORT_HEADERS.skippedSystemFontCount, String(report.skippedSystemFonts.length));
       return res.type('text/html').send(report.html);
     } catch (err: any) {
+      if (err instanceof WidthReleaseExportUnsupportedError) return sendApiError(res, 422, err.code, err.message);
       if (err instanceof StandaloneHtmlSourceError) {
         return sendApiError(res, err.status, err.code, err.message);
       }

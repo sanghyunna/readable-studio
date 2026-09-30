@@ -39,7 +39,7 @@ import {
 } from "./logging.js";
 import { resolvePackagedNamespacePaths } from "./paths.js";
 import { packagedEntryUrl, registerReadableStudioProtocol } from "./protocol.js";
-import { startPackagedSidecars } from "./sidecars.js";
+import { startPackagedSidecars, type PackagedSidecarHandle } from "./sidecars.js";
 import { createPackagedStartupPhaseTimer } from "./startup-timing.js";
 
 const startupArgvStamp = readProcessStamp(process.argv.slice(1), SIDECAR_CONTRACT);
@@ -153,24 +153,44 @@ async function main(): Promise<void> {
     contract: SIDECAR_CONTRACT,
   });
 
-  const sidecars = await startPackagedSidecars(runtime, paths, {
-    appVersion: activeConfig.appVersion,
-    amrProfile: activeConfig.amrProfile,
-    daemonCliEntry: activeConfig.daemonCliEntry,
-    daemonSidecarEntry: activeConfig.daemonSidecarEntry,
-    desktopApprovalToken,
-    nodeCommand: activeConfig.nodeCommand,
-    pathsAlreadyEnsured: true,
-    // PR #974 round-5 (lefarcen P2): the Electron entry runs desktop
-    // main alongside the daemon, so the import-folder gate must be
-    // pinned ON from request 0. See `apps/packaged/src/headless.ts` for
-    // the daemon+web-only counterpart that passes `false`.
-    requireDesktopAuth: true,
-    webSidecarEntry: activeConfig.webSidecarEntry,
-    webStandaloneRoot: activeConfig.webStandaloneRoot,
-    webOutputMode: activeConfig.webOutputMode,
-    logStartupPhase: startupTiming.mark,
-  });
+  let sidecars: PackagedSidecarHandle;
+  for (;;) {
+    try {
+      sidecars = await startPackagedSidecars(runtime, paths, {
+        appVersion: activeConfig.appVersion,
+        amrProfile: activeConfig.amrProfile,
+        daemonCliEntry: activeConfig.daemonCliEntry,
+        daemonSidecarEntry: activeConfig.daemonSidecarEntry,
+        desktopApprovalToken,
+        nodeCommand: activeConfig.nodeCommand,
+        pathsAlreadyEnsured: true,
+        requireDesktopAuth: true,
+        webSidecarEntry: activeConfig.webSidecarEntry,
+        webStandaloneRoot: activeConfig.webStandaloneRoot,
+        webOutputMode: activeConfig.webOutputMode,
+        logStartupPhase: startupTiming.mark,
+      });
+      break;
+    } catch (error) {
+      packagedLogger?.error('sidecar startup failed', { error });
+      const korean = app.getLocale().toLowerCase().startsWith('ko');
+      const { response } = await dialog.showMessageBox(splash.window, {
+        type: 'error',
+        title: 'Readable Studio',
+        message: korean
+          ? '데이터를 여는 중 문제가 발생했습니다. 데이터는 안전합니다.'
+          : 'There was a problem opening your data. Your data is safe.',
+        detail: korean
+          ? `데몬을 시작하지 못했습니다. 다시 시도하거나 로그를 확인하세요: ${paths.logsRoot}`
+          : `The daemon could not start. Retry or check the logs: ${paths.logsRoot}`,
+        buttons: korean ? ['다시 시도', '종료'] : ['Retry', 'Quit'],
+        defaultId: 0,
+        cancelId: 1,
+        noLink: true,
+      });
+      if (response !== 0) throw error;
+    }
+  }
   registerReadableStudioProtocol(sidecars.web.url ?? "http://127.0.0.1:0");
 
   const { runDesktopMain } = await import("@readable-studio/desktop/main");

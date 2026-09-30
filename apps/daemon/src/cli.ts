@@ -95,6 +95,9 @@ const PLUGIN_BOOLEAN_FLAGS = new Set([
   'strict',
 ]);
 
+const SHORTCUT_STRING_FLAGS = new Set(['daemon-url', 'prompt-file']);
+const SHORTCUT_BOOLEAN_FLAGS = new Set(['json', 'help', 'h']);
+
 const UI_STRING_FLAGS = new Set([
   'daemon-url',
   'run',
@@ -149,6 +152,8 @@ const PROJECT_STRING_FLAGS = new Set([
   'title', 'against', 'seed-from', 'fork-after', 'mode',
 ]);
 const PROJECT_BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'follow']);
+const WIDTH_RELEASE_STRING_FLAGS = new Set([...PROJECT_STRING_FLAGS, 'target', 'expected-content-sha256']);
+const WIDTH_RELEASE_BOOLEAN_FLAGS = new Set([...PROJECT_BOOLEAN_FLAGS, 'all']);
 const HOSTED_ARTIFACT_STRING_FLAGS = new Set([
   'daemon-url', 'identity-token-file', 'html-file', 'identifier', 'title',
 ]);
@@ -263,6 +268,7 @@ const SUBCOMMAND_MAP = {
   research: runResearch,
   plugin: runPlugin,
   ui: runUi,
+  shortcut: runShortcut,
   marketplace: runMarketplace,
   share: runShare,
   project: runProject,
@@ -350,7 +356,7 @@ function printRootHelp() {
       Configure and verify an ephemeral hosted provider credential. Secrets are
       read only from identity/key files or stdin; use --json for automation.
 
-  readable databricks <status|profiles|probe|scan|lookup|models|enable|disable|select|verify|disconnect|client> [options]
+  readable databricks <status|profiles|probe|scan|lookup|models|add|enable|disable|select|verify|disconnect|client> [options]
       Manage Databricks profiles and scanned serving endpoints through the local daemon.
 
   readable export html --project <id> --file <path> [--output <path>] [--force] [--json]
@@ -393,6 +399,9 @@ function printRootHelp() {
 
   readable ui <list|show|respond|revoke|prefill> [args]
       Read and answer GenUI surfaces (form / choice / confirmation / oauth-prompt) headlessly.
+
+  readable shortcut <capabilities|create> [desktop|startMenu] [--json]
+      Query portable shortcut support or create a Desktop/Start Menu shortcut.
 
   readable chat new --project <id> [--seed-from <cid>] [--fork-after <mid>] [--title "<t>"] [--json]
       Create a Side Chat: a new conversation that inherits another
@@ -3998,6 +4007,45 @@ async function runPluginTrust(rest) {
 }
 
 // ---------------------------------------------------------------------------
+// Subcommand: readable shortcut
+// ---------------------------------------------------------------------------
+
+async function runShortcut(args) {
+  if (!args.length || args.includes('--help') || args.includes('-h') || args[0] === 'help') {
+    console.log('Usage: readable shortcut capabilities|create [desktop|startMenu] [--json] [--prompt-file <path|->] [--daemon-url <url>]');
+    process.exitCode = args.length ? 0 : 2;
+    return;
+  }
+  let flags;
+  try { flags = parseFlags(args, { string: SHORTCUT_STRING_FLAGS, boolean: SHORTCUT_BOOLEAN_FLAGS }); }
+  catch (error) { console.error(error.message); process.exitCode = 2; return; }
+  const sub = args[0];
+  let location = positionalArgs(args.slice(1), SHORTCUT_STRING_FLAGS)[0];
+  if (flags['prompt-file']) {
+    try {
+      const input = readFileSync(flags['prompt-file'] === '-' ? 0 : flags['prompt-file'], 'utf8');
+      const parsed = JSON.parse(input);
+      location = parsed.location;
+    } catch (error) { console.error(`invalid --prompt-file: ${error.message}`); process.exitCode = 2; return; }
+  }
+  if (sub !== 'capabilities' && (sub !== 'create' || !['desktop', 'startMenu'].includes(location))) {
+    console.error('Usage: readable shortcut capabilities|create [desktop|startMenu]');
+    process.exitCode = 2; return;
+  }
+  const url = `${await cliDaemonBaseUrl(flags)}/api/shortcuts`;
+  try {
+    const response = await fetch(url, sub === 'create' ? {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ location }),
+    } : undefined);
+    const result = await response.json();
+    if (!response.ok) { console.error(JSON.stringify(result)); process.exitCode = 1; return; }
+    if (flags.json) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    else console.log(sub === 'create' ? `${location}: ${result.status}${result.reason ? ` (${result.reason})` : ''}`
+      : `Desktop: ${result.desktop ? 'available' : 'unavailable'}; Start Menu: ${result.startMenu ? 'available' : 'unavailable'}; taskbar and Start pins require manual action.`);
+  } catch (error) { surfaceFetchError(error, url); process.exitCode = 3; }
+}
+
+// ---------------------------------------------------------------------------
 // Subcommand: readable ui …  (spec §10.3.4 headless GenUI surface inbox)
 // ---------------------------------------------------------------------------
 
@@ -5551,6 +5599,51 @@ Common options:
   );
 }
 
+async function runFilesWidthRelease(args) {
+  const flags = parseFlags(args, { string: WIDTH_RELEASE_STRING_FLAGS, boolean: WIDTH_RELEASE_BOOLEAN_FLAGS });
+  const [action, id, rel, extra] = positionalArgs(args, WIDTH_RELEASE_STRING_FLAGS);
+  const usage = () => {
+    console.error('Usage: readable files width-release inspect|restore <projectId> <relpath> [--target <id> | --all] [--expected-content-sha256 <hash>] [--prompt-file <path|->] [--json]');
+    process.exit(2);
+  };
+  if (!['inspect', 'restore'].includes(action) || !id || !rel || extra) return usage();
+  const name = canonicalCliRelativePath(rel);
+  let body;
+  if (action === 'restore') {
+    if (flags['prompt-file'] !== undefined) {
+      if (flags.target !== undefined || flags.all || flags['expected-content-sha256'] !== undefined) return usage();
+      try {
+        const operation = JSON.parse(await readPromptFromFlags({ 'prompt-file': flags['prompt-file'] }));
+        if (!operation || typeof operation !== 'object' || Array.isArray(operation)
+          || Object.keys(operation).some((key) => !['expectedContentSha256', 'widthRelease'].includes(key))) return usage();
+        body = { name, ...operation };
+      } catch { return usage(); }
+    } else {
+      if (Boolean(flags.target) === Boolean(flags.all)) return usage();
+      body = { name, expectedContentSha256: flags['expected-content-sha256'], widthRelease: flags.all
+        ? { kind: 'restore', all: true } : { kind: 'restore', target: { targetId: flags.target } } };
+    }
+    if (typeof body.expectedContentSha256 !== 'string' || !/^[0-9a-f]{64}$/iu.test(body.expectedContentSha256)
+      || body.widthRelease?.kind !== 'restore') return usage();
+  } else if (flags.target !== undefined || flags.all || flags['expected-content-sha256'] !== undefined || flags['prompt-file'] !== undefined) return usage();
+  const client = await createContentCliClient(flags, { stdinInUse: flags['prompt-file'] === '-' });
+  const endpoint = `/api/projects/${encodeURIComponent(id)}/files`;
+  const response = action === 'inspect'
+    ? await client.request(`${endpoint}/${encodeProjectRelpath(name)}?widthRelease=inspect`)
+    : await client.request(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }, true);
+  if (!response.ok) {
+    // Keep the API's typed conflict intact instead of mapping it to daemon-not-running.
+    const error = await response.json();
+    process.stderr.write(`${JSON.stringify(error)}\n`);
+    process.exitCode = 1;
+    return;
+  }
+  const data = await response.json();
+  printContentResult(flags, data, action === 'inspect'
+    ? `${data.contentSha256}\n${data.records.map((record) => `${record.targetId}\t${record.id}\t${record.preferredCssPx}px`).join('\n')}`
+    : `[files] restored ${data.widthRelease.restoredTargetIds.length} width release(s) in ${name}`);
+}
+
 async function runFiles(args) {
   if (args.length === 0 || args[0] === 'help' || args.includes('--help') || args.includes('-h')) {
     console.log(`Usage:
@@ -5560,6 +5653,10 @@ async function runFiles(args) {
                                                Write content from stdin.
   readable files upload <projectId> <localpath> [--as <relpath>]
                                                Upload a local file.
+  readable files width-release inspect <projectId> <relpath> [--json]
+  readable files width-release restore <projectId> <relpath>
+      <--target <id> | --all> --expected-content-sha256 <hash> [--json]
+      Or --prompt-file <path|-> containing {expectedContentSha256,widthRelease}.
   readable files rename <projectId> <from> <to>       Rename a project file.
   readable files delete <projectId> <relpath>         Delete a project file.
   readable files search <projectId> --query <text> [--pattern <glob>] [--max <n>]
@@ -5581,6 +5678,7 @@ Common options:
   }
   const sub = args[0];
   const rest = args.slice(1);
+  if (sub === 'width-release') return runFilesWidthRelease(rest);
   const flags = parseFlags(rest, { string: PROJECT_STRING_FLAGS, boolean: PROJECT_BOOLEAN_FLAGS });
   const stdinInUse = sub === 'write'
     || (sub === 'diff' && flags.against === '-');

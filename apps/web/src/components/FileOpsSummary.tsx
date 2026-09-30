@@ -1,5 +1,5 @@
 /**
- * "Files this turn" disclosure pinned to the top of an assistant message.
+ * Successfully saved/edited files disclosure pinned to an assistant message.
  *
  * While the run streams, the row appears as a compact pill with live
  * counters (Write 1 · Edit 2 · Read 3). Once the run finishes, the row
@@ -63,9 +63,14 @@ export function FileOpsSummary({
     if (!userToggled && !streaming) setOpen(true);
   }, [streaming, userToggled]);
 
-  if (entries.length === 0) return null;
+  // A read, an unfinished call, or an error is not a saved file. Keep those
+  // in the existing tool activity rows, not in this output disclosure.
+  const savedEntries = entries.filter((entry) =>
+    entry.status === 'done' && (entry.opCounts.write > 0 || entry.opCounts.edit > 0),
+  );
+  if (savedEntries.length === 0) return null;
 
-  const counts = countFileOps(entries);
+  const counts = countFileOps(savedEntries);
   const summaryParts: string[] = [];
   if (counts.write > 0) summaryParts.push(`${t('tool.write')} ${counts.write}`);
   if (counts.edit > 0) summaryParts.push(`${t('tool.edit')} ${counts.edit}`);
@@ -91,14 +96,14 @@ export function FileOpsSummary({
         </span>
         <span className="file-ops-label">{t('assistant.producedFiles')}</span>
         <span className="file-ops-summary-line">{summaryParts.join(' · ')}</span>
-        <span className="file-ops-count">{entries.length}</span>
+        <span className="file-ops-count">{savedEntries.length}</span>
         <span className="file-ops-chev" aria-hidden>
           <Icon name={open ? 'chevron-down' : 'chevron-right'} size={11} />
         </span>
       </button>
       {open ? (
         <ul className="file-ops-list" role="list">
-          {entries.map((entry) => (
+          {savedEntries.map((entry) => (
             <FileOpRow
               key={entry.fullPath}
               entry={entry}

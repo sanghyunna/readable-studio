@@ -1,4 +1,6 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { namedPath, namedRequest } from './named-profile.js';
+import { outputCeiling } from './request-limits.js';
 import { once } from 'node:events';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { DatabricksRuntimeResolution } from './service.js';
@@ -29,21 +31,6 @@ const MAX_BODY_BYTES = 32 * 1024 * 1024;
 const MAX_FRAME_BYTES = 4 * 1024 * 1024;
 const OUTPUT_FIELDS = ['max_completion_tokens', 'max_tokens', 'max_output_tokens', 'max_new_tokens'] as const;
 
-/** Recognize validation grammar, not arbitrary numbers in upstream prose. */
-function outputCeiling(message: string): number | undefined {
-  const field = '(?:max_new_tokens|max_output_tokens|max_completion_tokens|max_tokens)';
-  const patterns = [
-    new RegExp(`\\b${field}\\s+\\d+\\s+cannot be greater than\\s+${field}\\s+(\\d+)`, 'i'),
-    new RegExp(`\\b${field}\\s*:?\\s*(?:\\d+\\s*)?(?:must be|must be less than|cannot be|should be)?\\s*(?:less than or equal to|at most|<=)\\s*(\\d+)`, 'i'),
-    new RegExp(`\\b${field}\\s*:\\s*\\d+\\s*>\\s*(\\d+)(?:\\s*[,.;]|\\s*$)`, 'i'),
-  ];
-  for (const pattern of patterns) {
-    const match = pattern.exec(message);
-    const limit = match ? Number(match[1]) : NaN;
-    if (Number.isSafeInteger(limit) && limit > 0) return limit;
-  }
-  return undefined;
-}
 const relayError = (detail: DatabricksFailureDetail) => ({ type: 'error', error: { type: 'api_error', ...detail } });
 class UpstreamStreamError extends Error {
   constructor(readonly detail: DatabricksFailureDetail, readonly payload: unknown, readonly toolsRejected = false) { super(detail.message); }
@@ -169,6 +156,7 @@ function sendError(response: ServerResponse, status: number, detail = failureDet
 /** No upstream headers, raw exceptions, error bodies, or resource selectors cross this boundary. */
 export async function createDatabricksRelay(options: DatabricksRelayOptions): Promise<DatabricksRelay> {
   const { runtime } = options;
+  const namedProfile = runtime.wireCapabilities?.namedProfile;
   const upstreamFetch = options.fetch ?? fetch;
   const capabilityKey = `dbr_${randomBytes(32).toString('base64url')}`;
   const expectedKey = Buffer.from(capabilityKey);
@@ -218,6 +206,7 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
   let closing: Promise<void> | undefined;
 
   const learnedCapabilities = (responses = false, messagesSurface = learnedMessages): DatabricksWireCapabilities => ({
+    ...(namedProfile ? { namedProfile: { ...namedProfile, tools: toolsState === 'supported' ? 'enabled' as const : 'disabled' as const } } : {}),
     responsesUnsupported, ...(effortUnsupported ? { effortUnsupported: true as const } : {}), ...(responses ? { responsesPath } : {}),
     ...(messagesSurface ? { api: 'anthropic-messages' as const } : {}),
     tools: toolsState, toolSurfaceVersion: 2,
@@ -425,9 +414,9 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
       }
       const effort = requestsEffort(body);
       const measured = measuredGatewayApi(runtime.model);
-      let messagesSurface = anthropic || learnedMessages || !invocation && effort
+      let messagesSurface = anthropic || learnedMessages || !namedProfile && !invocation && effort
         && (measured === 'anthropic-messages' || responsesUnsupported || !Array.isArray(body.tools) || !body.tools.length);
-      let responses = !invocation && !messagesSurface && !measured && !responsesUnsupported && (toolsState === 'unsupported'
+      let responses = !namedProfile && !invocation && !messagesSurface && !measured && !responsesUnsupported && (toolsState === 'unsupported'
         ? runtime.wireCapabilities?.responsesPath !== undefined
         : Array.isArray(body.tools) && body.tools.some((tool) => record(tool) && tool.type === 'function'));
       const headers: Record<string, string> = {
@@ -495,8 +484,8 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
         // Normalize after surface translation so no route (including serving
         // invocations and native/translated Messages) can bypass tool sanitation.
         if (Array.isArray(wire.tools)) wire.tools = wire.tools.map(tool => record(tool) ? gatewayFunctionTool(tool) : tool);
-        const endpoint = new URL(route, upstream.origin);
-        const serializedWire = JSON.stringify(wire);
+        const endpoint = new URL(namedProfile ? namedPath(namedProfile, runtime.model) : route, upstream.origin);
+        const serializedWire = JSON.stringify(namedProfile ? namedRequest(namedProfile, runtime.model, body) : wire);
         const outboundBody: unknown = JSON.parse(serializedWire);
         if (!record(outboundBody)) throw new Error('Invalid serialized request');
         lastAttempt = { endpoint, body: outboundBody, routeKind: invocation && route === upstream.pathname ? 'serving-invocations'
@@ -513,6 +502,7 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
         }
         if (result.ok) break;
         rejected = await readUpstreamError(result);
+        if (namedProfile) break; // Never renegotiate a proven named profile on a user's turn.
         const message = record(rejected) ? rejected.message ?? (record(rejected.error) ? rejected.error.message : undefined) : undefined;
         parameterHint = undefined;
         // A missing route is safe to probe elsewhere, but auth/transport/server
@@ -600,6 +590,7 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
         break;
       }
       const learnCompleted = async () => {
+        if (namedProfile) return; // Preflight requires actual parsed calls; parameter acceptance is weaker evidence.
         if (messagesSurface) learnedMessages = true;
         if (carriedTools) toolsState = 'supported';
         // A field correction on a tool-free turn is not positive tool evidence.

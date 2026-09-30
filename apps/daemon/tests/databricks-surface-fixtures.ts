@@ -87,6 +87,7 @@ export async function surfaceHarness(initial = scan()): Promise<SurfaceHarness> 
     cancelLogin: vi.fn(async () => contaminated(login('cancelled'))),
     probe: vi.fn(async () => contaminated({ profiles: status.profiles, issues: [] })),
     startScan: vi.fn(async () => contaminated(snapshot)),
+    startNamedScan: vi.fn(async () => contaminated(snapshot)),
     getScan: vi.fn(async () => contaminated(snapshot)),
     subscribeScan: vi.fn(async (_id: string, listener: (event: DatabricksScanEvent) => void) => {
       listeners.add(listener);

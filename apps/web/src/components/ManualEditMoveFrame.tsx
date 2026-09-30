@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { selectManualEditMovementAxis, type ManualEditMovementAxis } from '../edit-mode/movement-session';
 import styles from './ManualEditMoveFrame.module.css';
+import { createPointerDragShield } from '../edit-mode/pointer-drag-shield';
 
 type Rect = { left: number; top: number; width: number; height: number };
 type Delta = { x: number; y: number };
@@ -66,6 +67,7 @@ type DragState = {
   startY: number;
   dragging: boolean;
   target: HTMLElement;
+  shield: HTMLDivElement;
 };
 
 export function ManualEditMoveFrame({
@@ -143,6 +145,7 @@ export function ManualEditMoveFrame({
   };
 
   useEffect(() => () => {
+    dragRef.current?.shield.remove();
     if (rafRef.current !== null) {
       cancelAnimationFrame(rafRef.current);
     }
@@ -252,6 +255,7 @@ export function ManualEditMoveFrame({
     const drag = dragRef.current;
     if (!drag) return;
     dragRef.current = null;
+    drag.shield.remove();
     flushScheduledRef.current = false;
     if (rafRef.current !== null) {
       cancelAnimationFrame(rafRef.current);
@@ -333,6 +337,7 @@ export function ManualEditMoveFrame({
       startY: event.clientY,
       dragging: false,
       target,
+      shield: createPointerDragShield(target),
     };
   };
 
@@ -435,6 +440,7 @@ export function ManualEditMoveFrame({
     onPointerMove: handlePointerMove,
     onPointerUp: handlePointerUp,
     onPointerCancel: handlePointerCancel,
+    onLostPointerCapture: handlePointerCancel,
     onDoubleClick: (event: ReactMouseEvent<HTMLDivElement>) => handleDoubleClick(event, region),
   });
 

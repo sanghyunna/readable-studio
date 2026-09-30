@@ -11,7 +11,7 @@ import type { Express } from 'express';
 
 import { renderDesignSystemPreview } from '../design-system-preview.js';
 import { renderDesignSystemShowcase } from '../design-system-showcase.js';
-import { resolveHtmlExportSource } from '../html-export-source.js';
+import { resolveHtmlExportSource, WidthReleaseExportUnsupportedError } from '../html-export-source.js';
 import { PluginHtmlTooLargeError, resolvePluginHtml, resolvePluginSourceFile } from '../plugin-html-source.js';
 import { getInstalledPlugin } from '../plugins/registry.js';
 import { isSafeId, mimeFor, resolveProjectDir } from '../projects.js';
@@ -276,6 +276,7 @@ export function registerStandaloneHtmlRoutes(app: Express, deps: StandaloneRoute
       const source = assertSource(request?.source);
       sendHtml(res, await bundleStandaloneHtml(await createSource(deps, source)));
     } catch (error) {
+      if (error instanceof WidthReleaseExportUnsupportedError) return deps.http.sendApiError(res, 422, error.code, error.message);
       if (error instanceof StandaloneHtmlSourceError) return deps.http.sendApiError(res, error.status, error.code, error.message);
       if (error instanceof StandaloneHtmlResolutionError) return deps.http.sendApiError(res, 400, 'BAD_REQUEST', error.message);
       if (error instanceof StandaloneHtmlLimitError) return deps.http.sendApiError(res, 413, 'PAYLOAD_TOO_LARGE', error.message);

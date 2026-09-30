@@ -35,6 +35,7 @@ function addOptions(command: CacCommand): CacCommand {
     .option("--cache-dir <path>", "tools-pack cache directory")
     .option("--dir <path>", "tools-pack root directory")
     .option("--expr <expression>", "desktop inspect eval expression")
+    .option("--fast-build", "opt in to parallel packaging (post-v1.2.0; compression remains level 5)")
     .option("--json", "print JSON")
     .option("--namespace <name>", "runtime namespace")
     .option("--path <path>", "desktop inspect screenshot path")

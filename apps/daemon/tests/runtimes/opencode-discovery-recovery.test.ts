@@ -41,8 +41,14 @@ test('OpenCode rejects malformed listing instead of claiming no configured model
   outputs(credentials, '{"unexpected": true}');
   // When
   const agent = await safeProbe(opencodeAgentDef, { OPENCODE_BIN: process.execPath });
-  // Then
-  expect(agent).toMatchObject({ available: false, models: [] });
+  // Then: valid credentials permit only the CLI-owned default. Malformed
+  // catalogue output remains a warning, never a fabricated provider catalogue.
+  expect(agent).toMatchObject({ available: true, authStatus: 'ok', modelsSource: 'fallback' });
+  expect(agent.models).toEqual([{ id: 'default', label: 'Default (CLI config)' }]);
+  expect(agent.diagnostics).toEqual([expect.objectContaining({
+    reason: 'discovery-failed', severity: 'warning',
+    fixActions: expect.arrayContaining([{ kind: 'rescan' }]),
+  })]);
   expect(opencodeAgentDef.listModels.parse.bind(null, '{"unexpected": true}')).toThrow();
 });
 

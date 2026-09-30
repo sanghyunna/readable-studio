@@ -244,6 +244,58 @@ afterEach(() => {
 });
 
 describe('DatabricksAddModelsModal', () => {
+  it('parses comma/newline names once, rejects 21 unique names and overlong names before paid requests', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 202, json: async () => scanResponse({ state: 'complete', inputResults: [] }) });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      await act(async () => { renderModal(); });
+      await waitForProfiles();
+      fireEvent.change(screen.getByTestId('databricks-names'), { target: { value: 'alpha, beta\r\nalpha,,\ngamma' } });
+      await act(async () => { fireEvent.click(screen.getByTestId('databricks-names-submit')); });
+      expect(JSON.parse(fetchMock.mock.calls[0]![1].body).names).toBe('alpha,beta,gamma');
+      for (const invalid of [Array.from({ length: 21 }, (_, i) => `name-${i}`).join(','), 'x'.repeat(257)]) {
+        fireEvent.change(screen.getByTestId('databricks-names'), { target: { value: invalid } });
+        await act(async () => { fireEvent.click(screen.getByTestId('databricks-names-submit')); });
+        expect(screen.getByTestId('databricks-names-error')).toBeTruthy();
+      }
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it('registers verified names and displays individual success, duplicate and every distinct failure', async () => {
+    const reasons = [
+      'name-not-found', 'not-found-or-hidden', 'not-entitled', 'not-invocable', 'permission-denied',
+      'workspace-unreachable', 'auth-failed', 'unsupported-task', 'request-incompatible',
+      'rate-limited', 'upstream-failed', 'incomplete-response', 'cancelled',
+    ] as const;
+    const inputResults: NonNullable<DatabricksScanResponse['inputResults']> = [
+      { inputIndex: 0, displayName: 'good', state: 'verified', endpointId: 'ep-luna', attempts: 1 },
+      { inputIndex: 1, displayName: 'existing', state: 'already-registered', attempts: 0 },
+      ...reasons.map((reason, index) => ({ inputIndex: index + 2, displayName: `bad-${index}`, state: 'failed' as const, attempts: 1, failure: { reason, upstreamStatus: null, action: 'retry' as const } })),
+    ];
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 202, json: async () => scanResponse({ state: 'complete', revision: 4, endpoints: [endpoint()], inputResults }) });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      await act(async () => { renderModal(); });
+      await waitForProfiles();
+      fireEvent.change(screen.getByTestId('databricks-names'), { target: { value: inputResults.map(result => result.displayName).join(',') } });
+      await act(async () => { fireEvent.click(screen.getByTestId('databricks-names-submit')); });
+      expect(databricksClient.enableDatabricksModel).toHaveBeenCalledWith('ep-luna', { scanId: 'scan-1', expectedRevision: 4 });
+      expect(within(screen.getByTestId('databricks-name-result-good')).getByText(/추가됨|Added/)).toBeTruthy();
+      expect(within(screen.getByTestId('databricks-name-result-existing')).getByText(/이미 추가됨|Already/)).toBeTruthy();
+      const messages = reasons.map((_, i) => screen.getByTestId(`databricks-name-result-bad-${i}`).textContent);
+      expect(new Set(messages.map(text => text?.replace(/bad-\d+/, ''))).size).toBe(reasons.length);
+      for (const message of messages) expect(message!.length).toBeGreaterThan('bad-0'.length);
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it('marks advertised and default numeric limits as unconfirmed', async () => {
+    databricksClient.fetchDatabricksModels.mockResolvedValue({ models: [registeredEndpoint({ capabilities: { tools: 'unknown', images: 'unknown', contextWindow: 128000, maxTokens: 256, limitSources: { contextWindow: 'advertised', maxTokens: 'default' } } })], revision: 1, issues: [] });
+    await act(async () => { renderModal(); });
+    const row = screen.getByTestId('databricks-endpoint-ep-luna');
+    expect(row.querySelector('[data-limit="contextWindow"]')?.textContent).toMatch(/미확인|not confirmed/i);
+    expect(row.querySelector('[data-limit="maxTokens"]')?.textContent).toMatch(/미확인|not confirmed/i);
+  });
   it('registers a model then completes fresh second and third scans after reopening', async () => {
     let nextId = 0;
     databricksClient.startDatabricksScan.mockImplementation(async () => scanResponse({ scanId: `scan-${++nextId}` }));
@@ -298,7 +350,7 @@ describe('DatabricksAddModelsModal', () => {
     { contextWindow: 200_000, maxTokens: null },
   ])('renders structured limits outside the identity: %j', async (limits) => {
     const model = registeredEndpoint({
-      label: 'system.ai.gpt-oss-120b',
+      label: 'gpt-oss-120b', displayName: 'system.ai.gpt-oss-120b',
       capabilities: { tools: 'unknown', images: 'unknown', ...limits },
     });
     databricksClient.fetchDatabricksModels.mockResolvedValue({ models: [model], revision: 1, issues: [] });
@@ -306,7 +358,7 @@ describe('DatabricksAddModelsModal', () => {
 
     const row = screen.getByTestId(`databricks-endpoint-${model.id}`);
     // The identity keeps the full name as its title and renders the split parts.
-    const title = within(row).getByTitle(model.label);
+    const title = within(row).getByTitle(model.displayName!);
     expect(within(title).getByTestId('databricks-endpoint-model-name').textContent).toBe('gpt-oss-120b');
     expect(within(title).getByTestId('databricks-endpoint-uc-path').textContent).toBe('system.ai');
     for (const field of ['contextWindow', 'maxTokens'] as const) {
@@ -548,26 +600,16 @@ describe('DatabricksAddModelsModal', () => {
     }
   });
 
-  it('shows the model name with its UC path secondary and filters the list without shortening the id it registers', async () => {
-    const samples = [
-      endpoint({ id: 'ep-oss', label: 'system.ai.gpt-oss-120b', displayName: 'system.ai.gpt-oss-120b' }),
-      endpoint({ id: 'ep-luna-uc', label: 'app_dev.default.oai-luna-model-service', displayName: 'app_dev.default.oai-luna-model-service' }),
-      endpoint({ id: 'ep-llama', label: 'system.ai.llama-3.1-70b', displayName: 'system.ai.llama-3.1-70b' }),
-      endpoint({ id: 'ep-gpt56', label: 'gpt-5.6-luna', displayName: 'gpt-5.6-luna', kind: 'serving-endpoint' }),
-    ];
+  it('shows the real endpoint identities and searches every name field', async () => {
+    // Captured endpoint objects copied verbatim from packaged-verify-115/scan.json.
+    const samples: DatabricksEndpoint[] = JSON.parse(readFileSync(resolve(process.cwd(), 'tests/fixtures/databricks-real-scan.json'), 'utf8'));
     databricksClient.startDatabricksScan.mockResolvedValue(
       scanResponse({ state: 'complete', completedAt: '2026-09-10T04:00:05.000Z', endpoints: samples, revision: 7 }),
     );
-    databricksClient.enableDatabricksModel.mockResolvedValue({
-      endpoint: registeredEndpoint({ id: 'ep-luna-uc', label: 'app_dev.default.oai-luna-model-service', appModelId: 'dbx-luna-uc' }),
-      appModelId: 'dbx-luna-uc',
-      revision: 8,
-    });
-
     renderModal();
     await waitForProfiles();
     fireEvent.click(screen.getByTestId('databricks-scan-start'));
-    await screen.findByTestId('databricks-endpoint-toggle-ep-gpt56');
+    await screen.findByTestId(`databricks-endpoint-toggle-${samples[0]?.id}`);
 
     const rowText = (id: string) => {
       const row = screen.getByTestId(`databricks-endpoint-${id}`);
@@ -576,34 +618,30 @@ describe('DatabricksAddModelsModal', () => {
         path: within(row).queryByTestId('databricks-endpoint-uc-path')?.textContent ?? null,
       };
     };
-    expect(rowText('ep-oss')).toEqual({ model: 'gpt-oss-120b', path: 'system.ai' });
-    expect(rowText('ep-luna-uc')).toEqual({ model: 'oai-luna-model-service', path: 'app_dev.default' });
-    expect(rowText('ep-llama')).toEqual({ model: 'llama-3.1-70b', path: 'system.ai' });
-    expect(rowText('ep-gpt56')).toEqual({ model: 'gpt-5.6-luna', path: null });
-    // The full original name stays discoverable on the row.
-    expect(screen.getByTitle('system.ai.gpt-oss-120b')).toBeTruthy();
+    expect(rowText(samples[2]!.id)).toEqual({ model: 'gpt-oss-120b', path: 'system.ai' });
+    // UC remainder is the title; the differing served model (gpt-5.6-luna) is secondary.
+    expect(rowText(samples[3]!.id)).toEqual({ model: 'oai-luna-model-service', path: 'app_dev.default' });
+    expect(within(screen.getByTestId(`databricks-endpoint-${samples[3]!.id}`)).getByText('gpt-5.6-luna')).toBeTruthy();
+    expect(rowText(samples[0]!.id)).toEqual({ model: 'corp-claude-endpoint', path: null });
+    expect(within(screen.getByTestId(`databricks-endpoint-${samples[0]!.id}`)).getByText('claude-opus-4-1')).toBeTruthy();
+    expect(rowText(samples[1]!.id)).toEqual({ model: 'gpt-5.6-luna', path: null });
+    expect(screen.getByTitle('system.ai.gpt-oss-120b').getAttribute('aria-label')).toContain('system.ai.gpt-oss-120b');
 
     const search = screen.getByTestId('databricks-endpoint-search') as HTMLInputElement;
     fireEvent.change(search, { target: { value: 'APP_DEV.default' } });
-    expect(screen.queryByTestId('databricks-endpoint-ep-oss')).toBeNull();
-    expect(screen.getByTestId('databricks-endpoint-ep-luna-uc')).toBeTruthy();
+    expect(screen.queryByTestId(`databricks-endpoint-${samples[2]!.id}`)).toBeNull();
+    expect(screen.getByTestId(`databricks-endpoint-${samples[3]!.id}`)).toBeTruthy();
 
     fireEvent.change(screen.getByTestId('databricks-endpoint-search'), { target: { value: 'luna' } });
-    expect(screen.getByTestId('databricks-endpoint-ep-luna-uc')).toBeTruthy();
-    expect(screen.getByTestId('databricks-endpoint-ep-gpt56')).toBeTruthy();
-    expect(screen.queryByTestId('databricks-endpoint-ep-llama')).toBeNull();
-
-    // Registering from a filtered list sends the full endpoint id, never the shortened display name.
-    fireEvent.click(screen.getByTestId('databricks-endpoint-toggle-ep-luna-uc'));
-    await waitFor(() =>
-      expect(databricksClient.enableDatabricksModel).toHaveBeenCalledWith('ep-luna-uc', { scanId: 'scan-1', expectedRevision: 7 }),
-    );
+    expect(screen.getByTestId(`databricks-endpoint-${samples[3]!.id}`)).toBeTruthy();
+    expect(screen.getByTestId(`databricks-endpoint-${samples[1]!.id}`)).toBeTruthy();
+    expect(screen.queryByTestId(`databricks-endpoint-${samples[0]!.id}`)).toBeNull();
 
     fireEvent.change(screen.getByTestId('databricks-endpoint-search'), { target: { value: 'nothing-here' } });
     expect(screen.getByTestId('databricks-endpoint-search-empty').textContent).toContain('4 total');
     fireEvent.click(screen.getByTestId('databricks-endpoint-search-clear'));
     expect((screen.getByTestId('databricks-endpoint-search') as HTMLInputElement).value).toBe('');
-    expect(screen.getByTestId('databricks-endpoint-ep-llama')).toBeTruthy();
+    expect(screen.getByTestId(`databricks-endpoint-${samples[0]!.id}`)).toBeTruthy();
   });
 
   it('blocks scanning until a signed-in profile is selected', async () => {

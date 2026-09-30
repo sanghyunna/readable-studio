@@ -30,8 +30,14 @@ test('Cursor reports discovery failure when listing output is malformed', async 
   outputs('{"unexpected": true}');
   // When
   const agent = await safeProbe(cursorAgentDef, { CURSOR_AGENT_BIN: process.execPath });
-  // Then: malformed output is a parse failure, not evidence of an empty account.
-  expect(agent).toMatchObject({ available: false, models: [] });
+  // Then: malformed output is not an empty account. Verified sign-in permits
+  // only the CLI-owned default while the discovery failure stays actionable.
+  expect(agent).toMatchObject({ available: true, authStatus: 'ok', modelsSource: 'fallback' });
+  expect(agent.models).toEqual([{ id: 'default', label: 'Default (CLI config)' }]);
+  expect(agent.diagnostics).toEqual([expect.objectContaining({
+    reason: 'discovery-failed', severity: 'warning',
+    fixActions: expect.arrayContaining([{ kind: 'rescan' }]),
+  })]);
   expect(cursorAgentDef.listModels.parse.bind(null, '{"unexpected": true}')).toThrow();
 });
 

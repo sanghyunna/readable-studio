@@ -388,7 +388,7 @@ export function exportAsMd(source: string, title: string): void {
 // ---------------------------------------------------------------------------
 
 /**
- * Request a PNG screenshot of the current viewport from the snapshot bridge
+ * Request a PNG screenshot from the snapshot bridge
  * injected into a srcdoc preview iframe. Returns null if the bridge is not
  * present (e.g. URL-load mode) or the capture times out.
  */
@@ -396,15 +396,22 @@ export type PreviewSnapshot = { dataUrl: string; w: number; h: number };
 
 export type PreviewSnapshotResult =
   | { ok: true; snapshot: PreviewSnapshot }
-  | { ok: false; reason: 'loading' | 'post-message-error' | 'render-error' | 'timeout'; error?: string };
+  | { ok: false; reason: 'loading' | 'post-message-error' | 'render-error' | 'render-unavailable' | 'timeout'; error?: string };
 
 // @dsp func-cfc5f271
 export function requestPreviewSnapshotResult(
   iframe: HTMLIFrameElement,
   timeout = 8000,
+  options: { fullDocument?: boolean } = {},
 ): Promise<PreviewSnapshotResult> {
   const win = iframe.contentWindow;
   if (!win) return Promise.resolve({ ok: false, reason: 'loading' });
+  // The daemon's legacy URL snapshot bridge only supports viewport capture.
+  // Full-document callers already have a srcdoc transport fallback; do not
+  // accept a cropped viewport PNG as a successful whole-document export.
+  if (options.fullDocument && iframe.src?.includes('odPreviewBridge=snapshot')) {
+    return Promise.resolve({ ok: false, reason: 'render-unavailable' });
+  }
   const id = `snap-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   return new Promise((resolve) => {
     let done = false;
@@ -423,11 +430,20 @@ export function requestPreviewSnapshotResult(
       done = true;
       window.removeEventListener('message', onMsg);
       if (d.dataUrl && d.w && d.h) resolve({ ok: true, snapshot: { dataUrl: d.dataUrl, w: d.w, h: d.h } });
-      else resolve({ ok: false, reason: 'render-error', error: d.error });
+      else resolve({
+        ok: false,
+        // A legacy URL bridge cannot paint its clone. Treat it as unavailable,
+        // not a fatal render error, so URL-mode callers can use srcdoc transport.
+        reason: d.error === 'empty-render' ? 'render-unavailable' : 'render-error',
+        // Older URL-loaded bridges may still send the internal diagnostic token.
+        error: d.error === 'empty-render'
+          ? '미리보기를 이미지로 렌더링하지 못했습니다. 다시 시도하거나 HTML 또는 PDF로 내보내 주세요.'
+          : d.error,
+      });
     }
     window.addEventListener('message', onMsg);
     try {
-      win.postMessage({ type: 'readable-studio:snapshot', id }, '*');
+      win.postMessage({ type: 'readable-studio:snapshot', id, ...options }, '*');
     } catch {
       done = true;
       window.removeEventListener('message', onMsg);
@@ -447,8 +463,9 @@ export function requestPreviewSnapshotResult(
 export async function requestPreviewSnapshot(
   iframe: HTMLIFrameElement,
   timeout = 8000,
+  options: { fullDocument?: boolean } = {},
 ): Promise<PreviewSnapshot | null> {
-  const result = await requestPreviewSnapshotResult(iframe, timeout);
+  const result = await requestPreviewSnapshotResult(iframe, timeout, options);
   return result.ok ? result.snapshot : null;
 }
 
@@ -468,6 +485,7 @@ export async function requestPreviewSnapshot(
 // @dsp func-2dc75904
 export async function captureHostRegionSnapshot(
   clipRect: { left: number; top: number; width: number; height: number } | null,
+  options: { fullDocument?: boolean } = {},
 ): Promise<PreviewSnapshot | null> {
   if (!isReadableStudioHostAvailable()) return null;
   const clip = clipRect && clipRect.width >= 1 && clipRect.height >= 1
@@ -479,11 +497,14 @@ export async function captureHostRegionSnapshot(
       }
     : undefined;
   try {
-    const result = await captureHostPage(clip ? { clip } : undefined);
+    // The installed host type only declares clip; preload forwards fullDocument unchanged.
+    const result = await captureHostPage(clip ? { clip, ...options } : undefined);
     if (result.ok && result.dataUrl && result.w >= 1 && result.h >= 1) {
       return { dataUrl: result.dataUrl, w: result.w, h: result.h };
     }
-  } catch {
+    if (options.fullDocument && !result.ok) throw new Error(result.reason);
+  } catch (err) {
+    if (options.fullDocument) throw err;
     /* fall through to null so the caller can use the bridge */
   }
   return null;
@@ -497,6 +518,7 @@ export async function captureHostRegionSnapshot(
 // @dsp func-94e46ba0
 export async function captureHostIframeSnapshot(
   iframe: HTMLIFrameElement | null,
+  options: { fullDocument?: boolean } = {},
 ): Promise<PreviewSnapshot | null> {
   if (!iframe) return null;
   const rect = iframe.getBoundingClientRect();
@@ -505,7 +527,7 @@ export async function captureHostIframeSnapshot(
     top: rect.top,
     width: rect.width,
     height: rect.height,
-  });
+  }, options);
 }
 
 /** Convert a data-URL to a Blob without re-encoding through canvas. */

@@ -427,7 +427,8 @@ interface Props {
   onConnectRepo?: () => void;
   // Bumped by the parent to push a draft into the composer (used by the
   // "Import repo" CTA). The nonce lets the same text fire more than once.
-  composerDraftSignal?: { text: string; nonce: number };
+  composerDraftSignal?: { text: string; nonce: number; mode?: 'replace' | 'append' };
+  hidden?: boolean;
   // Optional pet wiring forwarded straight through to ChatComposer's
   // /pet button. When omitted the composer hides the button entirely.
   petConfig?: AppConfig['pet'];
@@ -602,6 +603,7 @@ export function ChatPane({
   githubConnected,
   onConnectRepo,
   composerDraftSignal,
+  hidden = false,
   petConfig,
   onAdoptPet,
   onTogglePet,
@@ -929,11 +931,13 @@ export function ChatPane({
   // re-applying the same signal on unrelated re-renders.
   const lastDraftSignalNonceRef = useRef<number | null>(null);
   useEffect(() => {
-    if (!composerDraftSignal) return;
+    if (!composerDraftSignal || hidden) return;
     if (lastDraftSignalNonceRef.current === composerDraftSignal.nonce) return;
+    if (!composerRef.current) return;
     lastDraftSignalNonceRef.current = composerDraftSignal.nonce;
-    composerRef.current?.setDraft(composerDraftSignal.text);
-  }, [composerDraftSignal]);
+    if (composerDraftSignal.mode === 'append') composerRef.current.appendDraft(composerDraftSignal.text);
+    else composerRef.current.setDraft(composerDraftSignal.text);
+  }, [composerDraftSignal, hidden]);
 
   useEffect(() => {
     if (!editingQueuedSendId) return;
@@ -1517,7 +1521,7 @@ export function ChatPane({
     />
   );
   return (
-    <div className="pane">
+    <div className="pane" hidden={hidden} style={hidden ? { display: 'none' } : undefined}>
       <div className="chat-project-header">
         {onBack ? (
           <button

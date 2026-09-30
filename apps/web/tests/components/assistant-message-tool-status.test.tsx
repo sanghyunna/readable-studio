@@ -136,7 +136,9 @@ describe('AssistantMessage tool status', () => {
       />,
     );
 
-    expect(container.querySelector('.op-status-error')).not.toBeNull();
+    // Abandoned by a non-successful run: neither Done nor a red error mark.
+    expect(container.querySelector('.op-status-interrupted')).not.toBeNull();
+    expect(container.querySelector('.op-status-error')).toBeNull();
     expect(container.querySelector('.op-status-ok')).toBeNull();
   });
 
@@ -160,7 +162,9 @@ describe('AssistantMessage tool status', () => {
       />,
     );
 
-    expect(container.querySelector('.op-status-error')).not.toBeNull();
+    // Abandoned by a non-successful run: neither Done nor a red error mark.
+    expect(container.querySelector('.op-status-interrupted')).not.toBeNull();
+    expect(container.querySelector('.op-status-error')).toBeNull();
     expect(container.querySelector('.op-status-ok')).toBeNull();
   });
 
@@ -196,7 +200,7 @@ describe('AssistantMessage tool status', () => {
         message={messageWithEvents([
           {
             kind: 'status',
-            label: 'publish repo',
+            label: 'warning',
             detail: '{"url":"https://github.com/nexu-io/example-plugin","nameWithOwner":"nexu-io/example-plugin"}',
           },
         ])}

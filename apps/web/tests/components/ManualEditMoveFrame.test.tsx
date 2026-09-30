@@ -48,6 +48,20 @@ afterEach(() => {
 });
 
 describe('ManualEditMoveFrame', () => {
+  it.each(['up', 'cancel', 'lost-capture', 'escape', 'unmount'])('releases the iframe drag shield on %s', (ending) => {
+    const { interior, unmount, onMoveCancel } = renderFrame();
+    fireEvent.pointerDown(interior!, { pointerId: 21, clientX: 200, clientY: 100 });
+    fireEvent.pointerMove(interior!, { pointerId: 21, clientX: 220, clientY: 100 });
+    expect(document.querySelectorAll('[data-readable-pointer-drag-shield]')).toHaveLength(1);
+    if (ending === 'up') fireEvent.pointerUp(interior!, { pointerId: 21, clientX: 220, clientY: 100 });
+    if (ending === 'cancel') fireEvent.pointerCancel(interior!, { pointerId: 21 });
+    if (ending === 'lost-capture') fireEvent.lostPointerCapture(interior!, { pointerId: 21 });
+    if (ending === 'escape') fireEvent.keyDown(interior!, { key: 'Escape' });
+    if (ending === 'unmount') unmount();
+    expect(document.querySelectorAll('[data-readable-pointer-drag-shield]')).toHaveLength(0);
+    if (['cancel', 'lost-capture', 'escape'].includes(ending)) expect(onMoveCancel).toHaveBeenCalledTimes(1);
+  });
+
   it('forwards idle pointer coordinates but not drag coordinates', () => {
     const { interior, onHoverAt } = renderFrame();
 

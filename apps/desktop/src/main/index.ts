@@ -42,6 +42,7 @@ import {
   type DesktopApprovalLoop,
 } from "./desktop-approval.js";
 import { attachDesktopProcessErrorFilter } from "./uncaught-exception.js";
+import { startShortcutLoop } from "./shortcut-loop.js";
 import { desktopCredentialDataRoot, startDesktopSecretStorage } from "./secret-storage.js";
 import {
   exportDiagnosticsToFile,
@@ -642,6 +643,12 @@ export async function runDesktopMain(
 
   let desktop: DesktopRuntime | null = null;
   let approvalLoop: DesktopApprovalLoop | null = null;
+  const shortcutLoop: ReturnType<typeof startShortcutLoop> | null = desktopApprovalToken
+    ? startShortcutLoop({
+        discoverDaemonUrl: options.discoverDaemonUrl ?? createDaemonDiscovery(runtime),
+        token: desktopApprovalToken,
+      })
+    : null;
   let disposeMenu: () => void = () => undefined;
   let removeDiagnosticsIpc: () => void = () => undefined;
   let ipcServer: JsonIpcServerHandle | null = null;
@@ -651,6 +658,7 @@ export async function runDesktopMain(
     if (shuttingDown) return;
     shuttingDown = true;
     approvalLoop?.abort();
+    shortcutLoop?.abort();
     await options.beforeShutdown?.().catch((error: unknown) => {
       console.error("desktop beforeShutdown failed", error);
     });
@@ -661,6 +669,7 @@ export async function runDesktopMain(
     await desktop?.close().catch(() => undefined);
     crashEvidence.dispose();
     await approvalLoop?.done.catch(() => undefined);
+    await shortcutLoop?.done.catch(() => undefined);
     app.quit();
   }
 

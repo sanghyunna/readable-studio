@@ -20,6 +20,7 @@ export interface ManualEditLeftInspectorProps {
   error?: string | null;
   resizeConstraints?: readonly ManualEditResizeConstraint[];
   announceResizeConstraints?: boolean;
+  onRequestWidthAgentDraft?: () => void;
   busy?: boolean;
   canUndo: boolean;
   canRedo: boolean;
@@ -50,6 +51,7 @@ export function ManualEditLeftInspector({
   error,
   resizeConstraints,
   announceResizeConstraints,
+  onRequestWidthAgentDraft,
   busy,
   canUndo,
   canRedo,
@@ -154,6 +156,7 @@ export function ManualEditLeftInspector({
               error={error}
               resizeConstraints={resizeConstraints}
               announceResizeConstraints={announceResizeConstraints}
+              onRequestWidthAgentDraft={onRequestWidthAgentDraft}
               busy={busy}
               canUndo={canUndo}
               canRedo={canRedo}

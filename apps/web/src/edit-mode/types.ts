@@ -1,3 +1,5 @@
+import type { WidthReleaseCause, WidthReleaseDeclaration, WidthReleaseProvenance } from '@readable-studio/contracts';
+
 export type ManualEditKind = 'text' | 'link' | 'image' | 'container' | 'token';
 
 export interface ManualEditRect {
@@ -93,11 +95,13 @@ export interface ManualEditTarget {
    * and an explicitly sized element without mistaking a used px value for an
    * authored fixed size. */
   authoredSize?: { width: string; height: string };
+  /** Selection-only exact declarations; absence is an empty list, not computed CSS. */
+  inlineDeclarations?: ManualEditDeclaration[];
+  hasInlineStyle?: boolean;
   /**
    * Main axis of the parent flex container when the element is a flex item
-   * ('row' → width is the main axis, 'column' → height), else null. Main-axis
-   * drag commits must pin the item (flex: none) or the flex algorithm
-   * overrides the written width/height.
+   * ('row' → width is the main axis, 'column' → height), else null.
+   * This describes allocation, not permission to change flex behavior.
    */
   flexItemAxis?: 'row' | 'column' | null;
   textEditTargetId?: string;
@@ -136,6 +140,8 @@ export type ManualEditPatch =
   | { id: string; kind: 'remove-element' }
   | { kind: 'set-token'; token: string; value: string }
   | { id: string; kind: 'set-style'; styles: Partial<ManualEditStyles> }
+  | { id: string; kind: 'set-width-release'; expectedSource: string; preferredCssPx: number; declarations: WidthReleaseDeclaration[]; causes: WidthReleaseCause[]; provenance: WidthReleaseProvenance[]; mode?: 'auto' | 'fill' }
+  | { id: string; kind: 'restore-width-release' }
   | { id: string; kind: 'set-attributes'; attributes: Record<string, string> }
   | { id: string; kind: 'set-inner-html'; html: string }
   | { id: string; kind: 'set-outer-html'; html: string }
@@ -199,8 +205,51 @@ export interface ManualEditBackgroundMessage {
 
 export type ManualEditResizeAxis = 'width' | 'height';
 
-/** Rect-space size requested by a resize drag. */
-export interface ManualEditResizeRequest {
+export interface ManualEditDeclaration {
+  property: string;
+  value: string;
+  priority: '' | 'important';
+}
+
+export interface ManualEditCssProvenance extends ManualEditDeclaration {
+  origin: 'inline' | 'stylesheet' | 'unknown';
+  href?: string;
+  sheetIndex?: number;
+  selector?: string;
+  ruleOrder?: number;
+  conditions: string[];
+  complete: boolean;
+}
+
+export type ManualEditResizeCauseCode =
+  | 'own-max-width' | 'own-max-inline-size' | 'own-inline-display' | 'own-width-cascade'
+  | 'shared-style-width'
+  | 'parent-flex-allocation' | 'parent-grid-allocation' | 'ancestor-content-limit'
+  | 'clip' | 'sibling-overlap' | 'intrinsic-minimum' | 'unsupported-geometry' | 'unknown-cascade';
+
+export interface ManualEditResizeCause {
+  code: ManualEditResizeCauseCode;
+  axis: ManualEditResizeAxis;
+  confidence: 'confirmed' | 'unknown';
+  declaration?: ManualEditCssProvenance;
+  facts: Record<string, number | string | boolean>;
+}
+
+export interface ManualEditResizeIdentity {
+  targetId: string;
+  documentEpoch: string;
+  transactionId: string;
+  sequence: number;
+  sourceRevision: number;
+  stage: 'begin' | 'preview' | 'finalize' | 'cancel';
+}
+
+/** Rect-space size requested by a resize drag. Identity is supplied by the host,
+ * not geometry helpers (which also serve pure vertical sizing). */
+export interface ManualEditResizeRequest extends Partial<ManualEditResizeIdentity> {
+  sizeMode?: 'auto' | 'fill';
+  direction?: string;
+  startRect?: ManualEditRect;
   axes: ManualEditResizeAxis[];
   requested: Pick<ManualEditRect, 'width' | 'height'>;
   /** Opts the low-frequency final frame into authored constraint diagnosis. */
@@ -212,17 +261,38 @@ export interface ManualEditResizeConstraint {
   requested: number;
   applied: number;
   reason: 'min' | 'max' | 'layout';
-  property?: 'min-width' | 'max-width' | 'min-height' | 'max-height';
+  property?: string;
   value?: string;
+  /** Structured diagnosis is authoritative; reason is legacy display compatibility. */
+  causes?: ManualEditResizeCause[];
+  confidence?: 'confirmed' | 'unknown';
+  classification?: 'own-cap' | 'parent-owned' | 'shared-style' | 'responsive-or-important' | 'unknown';
 }
 
-export interface ManualEditResizeOutcome {
+export interface ManualEditResizeOutcome extends Partial<ManualEditResizeIdentity> {
   constraints: ManualEditResizeConstraint[];
+  requested?: Pick<ManualEditRect, 'width' | 'height'>;
+  actual?: ManualEditRect;
+  usedCssWidth?: string;
+  conversion?: { x: number; y: number; boxSizing: string; horizontalEdges: number; verticalEdges: number };
+  availableContentWidth?: number;
+  parentContentRect?: ManualEditRect;
+  causes?: ManualEditResizeCause[];
+  confidence?: 'confirmed' | 'unknown';
+  classification?: 'own-cap' | 'parent-owned' | 'shared-style' | 'responsive-or-important' | 'unknown';
+  /** release-own commits only with accepted responsive evidence and declarations. */
+  decision?: 'ordinary' | 'release-own' | 'parent-owned' | 'refused';
+  safetyFailures?: Array<{ code: ManualEditResizeCauseCode; facts: Record<string, number | string | boolean> }>;
+  proposedDeclarations?: ManualEditDeclaration[];
+  preferredCssPx?: number;
+  mode?: 'auto' | 'fill';
+  responsiveWidths?: number[];
+  preflight?: import('./width-release-preflight').WidthReleasePreflight;
   /** True only for the low-frequency final result that should be announced. */
   announce: boolean;
 }
 
-export interface ManualEditPreviewAppliedMessage {
+export interface ManualEditPreviewAppliedMessage extends Partial<ManualEditResizeIdentity> {
   type: 'readable-edit-preview-style-applied';
   id: string;
   version: number;

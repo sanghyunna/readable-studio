@@ -42,7 +42,7 @@ export class DataIdentityError extends Error {
 
 function assertReadableStudioDatabaseIdentity(file: string): boolean {
   if (!fs.existsSync(file)) return true;
-  const probe = new Database(file, { fileMustExist: true, readonly: true });
+  const probe = new Database(file, { fileMustExist: true, readonly: true, timeout: 500 });
   try {
     const applicationId = probe.pragma('application_id', { simple: true });
     if (applicationId === READABLE_STUDIO_SQLITE_APPLICATION_ID) return false;
@@ -75,21 +75,42 @@ function rows(value: unknown[]): DbRow[] {
   return value.map((item) => row(item) ?? {});
 }
 
+export class DatabaseOpenError extends Error {
+  constructor(readonly file: string, readonly code: string, cause: unknown) {
+    super(`could not open Readable Studio database ${file} (${code})`, { cause });
+    this.name = 'DatabaseOpenError';
+  }
+}
+
 export function openDatabase(projectRoot: string, { dataDir }: { dataDir?: string } = {}): SqliteDb {
   const dir = dataDir ? path.resolve(dataDir) : path.join(projectRoot, '.readable-studio');
   const file = path.join(dir, 'app.sqlite');
   if (dbInstance && dbFile === file) return dbInstance;
   if (dbInstance) closeDatabase();
   fs.mkdirSync(dir, { recursive: true });
-  const shouldStampIdentity = assertReadableStudioDatabaseIdentity(file);
-  const db = new Database(file);
-  if (shouldStampIdentity) db.pragma(`application_id = ${READABLE_STUDIO_SQLITE_APPLICATION_ID}`);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  migrate(db);
-  dbInstance = db;
-  dbFile = file;
-  return db;
+  const delays = [75, 150, 300, 600, 900] as const;
+  for (let attempt = 0; ; attempt += 1) {
+    let db: SqliteDb | null = null;
+    try {
+      const shouldStampIdentity = assertReadableStudioDatabaseIdentity(file);
+      db = new Database(file, { timeout: 500 });
+      if (shouldStampIdentity) db.pragma(`application_id = ${READABLE_STUDIO_SQLITE_APPLICATION_ID}`);
+      db.pragma('journal_mode = WAL');
+      db.pragma('foreign_keys = ON');
+      migrate(db);
+      dbInstance = db;
+      dbFile = file;
+      return db;
+    } catch (error) {
+      db?.close();
+      if (error instanceof DataIdentityError) throw error;
+      const code = error instanceof Error && 'code' in error && typeof error.code === 'string'
+        ? error.code : 'UNKNOWN';
+      const transient = /^(SQLITE_IOERR(?:_\w+)?|SQLITE_BUSY(?:_\w+)?|SQLITE_LOCKED(?:_\w+)?|SQLITE_CANTOPEN(?:_\w+)?)$/.test(code);
+      if (!transient || attempt >= delays.length) throw new DatabaseOpenError(file, code, error);
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delays[attempt]);
+    }
+  }
 }
 
 /**

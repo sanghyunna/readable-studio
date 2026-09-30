@@ -2,7 +2,9 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 
 import { ToolPackCache } from "../src/cache.js";
 import type { ToolPackConfig } from "../src/config.js";
@@ -142,6 +144,54 @@ describe("ensureWorkspaceBuildArtifacts", () => {
       expect(await readFile(join(root, "apps/packaged/dist/index.mjs"), "utf8")).toBe("build-1\n");
     } finally {
       await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it.each(["src/index.ts", "tests/cache.test.ts", "README.md"])("invalidates all workspace outputs when package %s changes", async (changedPath) => {
+    // Given a populated cache for a workspace
+    const root = await mkdtemp(join(tmpdir(), "readable-workspace-key-input-"));
+    const cache = new ToolPackCache(join(root, ".cache"));
+    const config = createConfig(root, cache.root);
+    let builds = 0;
+    const build = async () => { builds += 1; await writeOutputs(root, String(builds)); };
+    try {
+      await writeWorkspace(root);
+      await ensureWorkspaceBuildArtifacts(config, cache, build);
+      const input = join(root, "packages/contracts", changedPath);
+      await mkdir(join(input, ".."), { recursive: true });
+      await writeFile(input, "changed input\n");
+      // When the workspace is requested after one package input changes
+      await ensureWorkspaceBuildArtifacts(config, cache, build);
+      // Then the whole-workspace node misses, including for tests and docs
+      expect(builds).toBe(2);
+      expect(cache.report().entries.map(({ status }) => status)).toEqual(["miss", "miss"]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps cache keys and output reuse unchanged when profiling is enabled", async () => {
+    // Given an ordinary cached workspace build
+    const root = await mkdtemp(join(tmpdir(), "readable-workspace-profile-key-"));
+    const cache = new ToolPackCache(join(root, ".cache"));
+    const config = createConfig(root, cache.root);
+    let builds = 0;
+    const build = async () => { builds += 1; await writeOutputs(root, String(builds)); };
+    try {
+      await writeWorkspace(root);
+      await ensureWorkspaceBuildArtifacts(config, cache, build);
+      vi.stubEnv("READABLE_TOOLS_PACK_PROFILE", "1");
+      const output = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+      // When only instrumentation is enabled
+      await ensureWorkspaceBuildArtifacts(config, cache, build);
+      // Then the existing key still hits, and profiling emits machine-readable records
+      expect(builds).toBe(1);
+      expect(cache.report().entries.map(({ status }) => status)).toEqual(["miss", "hit"]);
+      const records = output.mock.calls.map(([line]) => JSON.parse(String(line).replace("[tools-pack profile] ", "")));
+      expect(records).toContainEqual(expect.objectContaining({ phase: "workspace:cache-key" }));
+      expect(records).toContainEqual(expect.objectContaining({ phase: "cache:result", status: "hit" }));
+    } finally {
+      await rm(root, { recursive: true, force: true });
     }
   });
 

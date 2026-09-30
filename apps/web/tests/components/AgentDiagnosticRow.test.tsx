@@ -101,7 +101,7 @@ describe('AgentDiagnosticRow', () => {
     expect(onOpenDatabricksSettings).toHaveBeenCalledTimes(1);
   });
 
-  it('maps Databricks package corruption to a re-download portable ZIP action', () => {
+  it('preserves the Databricks probe diagnostic while offering package repair as an optional action', () => {
     const onReDownloadPortablePackage = vi.fn();
     render(
       <AgentDiagnosticRow
@@ -110,7 +110,7 @@ describe('AgentDiagnosticRow', () => {
         handlers={{ onReDownloadPortablePackage }}
       />,
     );
-    expect(screen.getByText(/Re-download.*portable package ZIP/)).toBeTruthy();
+    expect(screen.getByText(databricksPackageDamaged.message)).toBeTruthy();
     const btn = screen.getByRole('button', { name: en['common.exportZip'] });
     fireEvent.click(btn);
     expect(onReDownloadPortablePackage).toHaveBeenCalledTimes(1);

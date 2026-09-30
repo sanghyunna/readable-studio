@@ -1,10 +1,13 @@
 import { createHmac } from 'node:crypto';
+import { servingTask } from './serving-task.js';
+import type { DatabricksNamedProfile } from './named-profile.js';
 import type { DatabricksEndpoint, DatabricksEndpointApi } from '@readable-studio/contracts';
 import type { DiscoveredResource } from './scan.js';
 import { databricksEndpointLabel, resolveDatabricksCapabilities, resolveDatabricksReasoningOptions } from './capabilities.js';
 
 /** Daemon-private catalogue: routing and UI identities, never arbitrary upstream metadata. */
 export interface DatabricksWireCapabilities {
+  namedProfile?: DatabricksNamedProfile;
   responsesUnsupported: boolean;
   /** Upstream rejected an effort parameter for this endpoint configuration. */
   effortUnsupported?: true;
@@ -24,6 +27,7 @@ export interface DatabricksWireCapabilities {
 }
 
 export interface CatalogueEntry {
+  provenance?: 'manual';
   endpoint: DatabricksEndpoint;
   configurationId?: string;
   wireCapabilities?: DatabricksWireCapabilities;
@@ -75,7 +79,7 @@ function protocolDecision(resource: DiscoveredResource): { api: DatabricksEndpoi
   if (openai && !anthropic) return decision('openai-completions', 'advertised-api');
   // Both surfaces are advertised: avoid translating native thinking/tool blocks.
   if (anthropic && openai && !native.length) return decision('anthropic-messages', 'prefer-messages');
-  if (!strings(resource.metadata.supported_api_types).length && resource.kind === 'serving-endpoint' && resource.metadata.task === 'llm/v1/chat') return decision('openai-completions', 'chat-task');
+  if (!strings(resource.metadata.supported_api_types).length && resource.kind === 'serving-endpoint' && servingTask(resource.metadata) === 'llm/v1/chat') return decision('openai-completions', 'chat-task');
   return decision(null, 'unresolved');
 }
 
@@ -117,6 +121,8 @@ function servedModels(resource: DiscoveredResource): Array<{ name?: string; meta
 }
 
 export function normalizeResource(secret: string, profileId: string, resource: DiscoveredResource, previous?: CatalogueEntry): CatalogueEntry {
+  // Enumeration is not revalidation of a permission-limited named invocation.
+  if (previous?.provenance === 'manual') return structuredClone(previous);
   const id = opaqueId(secret, 'dbe', profileId, resource.kind, resource.name);
   const { api, evidence: protocolEvidence } = protocolDecision(resource);
   const ready = record(resource.metadata.state).ready;

@@ -128,7 +128,12 @@ describe('Databricks contracts', () => {
     const unknown: Capabilities = { tools: 'unknown', images: 'unknown', contextWindow: null, maxTokens: null,
       limitSources: { contextWindow: 'unknown', maxTokens: 'unknown' } };
     expect(JSON.parse(JSON.stringify([known, unknown]))).toEqual([known, unknown]);
-    expectTypeOf<NonNullable<Capabilities['limitSources']>['contextWindow']>().toEqualTypeOf<'metadata' | 'model-table' | 'unknown'>();
+    expectTypeOf<NonNullable<Capabilities['limitSources']>['contextWindow']>().toEqualTypeOf<
+      'metadata' | 'model-table' | 'unknown' | 'advertised' | 'default'
+    >();
+    expectTypeOf<NonNullable<Capabilities['limitSources']>['maxTokens']>().toEqualTypeOf<
+      'metadata' | 'model-table' | 'unknown' | 'endpoint' | 'probed' | 'default'
+    >();
   });
 
   it('requires registration identity and explicit inference consent', () => {

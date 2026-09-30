@@ -2,6 +2,8 @@ import type { DatabricksEndpointKind, DatabricksIssue, DatabricksScanCompletenes
 import { DatabricksServiceError, issueFor, withDeadline } from './client.js';
 import type { DatabricksConnectionBinding } from './credentials.js';
 import { measuredGatewayApi } from './gateway-surfaces.js';
+import { classifyProtocol } from './catalogue.js';
+import { servingTask } from './serving-task.js';
 
 class MetadataNotFound extends DatabricksServiceError {
   constructor() { super('DATABRICKS_UPSTREAM_UNAVAILABLE'); }
@@ -96,7 +98,7 @@ export async function scanWorkspace(options: WorkspaceScanOptions): Promise<Work
       throw new DatabricksServiceError('DATABRICKS_UPSTREAM_UNAVAILABLE', true);
     }
     result.counters.candidates++;
-    if (resource.metadata.task === 'llm/v1/embeddings' || resource.metadata.task === 'llm/v1/completions') result.counters.excluded++;
+    if (['llm/v1/embeddings', 'llm/v1/completions'].includes(servingTask(resource.metadata) ?? '')) result.counters.excluded++;
     else if (!result.resources.some((entry) => entry.kind === resource.kind && entry.name === resource.name)) result.resources.push(resource);
   };
   const pages = async (path: string, field: string, signal: AbortSignal, visit: (record: Record<string, unknown>) => Promise<void>) => {
@@ -132,9 +134,30 @@ export async function scanWorkspace(options: WorkspaceScanOptions): Promise<Work
   await Promise.all([
     branch(async (signal) => {
       result.counters.scopesChecked++;
+      const unresolved: DiscoveredResource[] = [];
       await pages('/api/2.0/serving-endpoints', 'endpoints', signal, async (metadata) => {
-        add({ kind: 'serving-endpoint', name: resourceName(metadata), metadata }, signal);
+        const resource: DiscoveredResource = { kind: 'serving-endpoint', name: resourceName(metadata), metadata };
+        add(resource, signal);
+        if (!classifyProtocol(resource) && !servingTask(metadata)) unresolved.push(resource);
       });
+      // Collect every list row first. Optional detail work cannot hide later rows
+      // when the branch deadline expires. At most two GETs, never inference, in flight.
+      const enrich = async () => {
+        for (;;) {
+          const resource = unresolved.shift(); if (!resource) return;
+          check(signal);
+          try {
+            const detailed = await lookupResource({ ...options, signal }, resource.kind, resource.name);
+            check(signal);
+            const index = result.resources.findIndex(row => row.kind === resource.kind && row.name === resource.name);
+            if (index < 0) continue;
+            if (['llm/v1/embeddings', 'llm/v1/completions'].includes(servingTask(detailed.metadata) ?? '')) {
+              result.resources.splice(index, 1); result.counters.excluded++;
+            } else result.resources[index] = detailed;
+          } catch (error) { check(signal); recordIssue(error); }
+        }
+      };
+      await Promise.all([enrich(), enrich()]);
       check(signal);
       result.completeness.serving = true;
     }),

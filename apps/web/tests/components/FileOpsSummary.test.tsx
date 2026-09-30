@@ -9,8 +9,8 @@ import type { FileOpEntry } from '../../src/runtime/file-ops';
 function entry(partial: Partial<FileOpEntry> & { path: string }): FileOpEntry {
   return {
     fullPath: `/repo/${partial.path}`,
-    ops: ['read'],
-    opCounts: { read: 1, write: 0, edit: 0 },
+    ops: ['write'],
+    opCounts: { read: 0, write: 1, edit: 0 },
     total: 1,
     status: 'done',
     ...partial,
@@ -27,7 +27,21 @@ describe('FileOpsSummary', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('starts collapsed while streaming and surfaces per-op totals in the header', () => {
+  it('does not claim read-only, pending, or failed operations produced files', () => {
+    const { container } = render(
+      <FileOpsSummary
+        entries={[
+          entry({ path: 'report.html', ops: ['read'], opCounts: { read: 2, write: 0, edit: 0 }, total: 2 }),
+          entry({ path: 'pending.html', status: 'running' }),
+          entry({ path: 'failed.html', status: 'error' }),
+        ]}
+        streaming={false}
+      />,
+    );
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('starts collapsed while streaming and surfaces only completed mutation totals', () => {
     render(
       <FileOpsSummary
         entries={[
@@ -41,7 +55,10 @@ describe('FileOpsSummary', () => {
 
     expect(screen.getByText(/Write 1/)).toBeTruthy();
     expect(screen.getByText(/Edit 3/)).toBeTruthy();
-    expect(screen.getByText(/Read 2/)).toBeTruthy();
+    expect(screen.queryByText(/Read 2/)).toBeNull();
+    fireEvent.click(screen.getByTestId('file-ops-toggle'));
+    expect(screen.queryByTestId('file-ops-row-a.ts')).toBeNull();
+    fireEvent.click(screen.getByTestId('file-ops-toggle'));
     // While streaming we collapse the file list so the running pill stays compact.
     expect(screen.queryByTestId('file-ops-row-a.ts')).toBeNull();
     const toggle = screen.getByTestId('file-ops-toggle');
@@ -103,10 +120,11 @@ describe('FileOpsSummary', () => {
     expect(onRequestOpenFile).toHaveBeenCalledWith('a.ts');
   });
 
-  it('flags a row as running when its status is running and as error when isError', () => {
+  it('keeps completed files while excluding pending and failed mutations', () => {
     render(
       <FileOpsSummary
         entries={[
+          entry({ path: 'saved.ts' }),
           entry({ path: 'pending.ts', status: 'running' }),
           entry({ path: 'broken.ts', status: 'error' }),
         ]}
@@ -115,9 +133,8 @@ describe('FileOpsSummary', () => {
     );
     fireEvent.click(screen.getByTestId('file-ops-toggle'));
 
-    const pending = screen.getByTestId('file-ops-row-pending.ts');
-    const broken = screen.getByTestId('file-ops-row-broken.ts');
-    expect(pending.className).toContain('file-ops-row--running');
-    expect(broken.className).toContain('file-ops-row--error');
+    expect(screen.getByTestId('file-ops-row-saved.ts')).toBeTruthy();
+    expect(screen.queryByTestId('file-ops-row-pending.ts')).toBeNull();
+    expect(screen.queryByTestId('file-ops-row-broken.ts')).toBeNull();
   });
 });
