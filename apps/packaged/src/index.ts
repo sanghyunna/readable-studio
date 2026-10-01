@@ -22,8 +22,9 @@ import { addLoopbackNoProxyEnv, readProcessStamp } from "@readable-studio/platfo
 import { join } from "node:path";
 import { app, dialog, session } from "electron";
 
-import { readPackagedConfig, resolveEarlyPackagedElectronPaths } from "./config.js";
+import { readPackagedConfig, resolveEarlyPackagedElectronPaths, resolvePortableTopFolder } from "./config.js";
 import { acquireDataLock, PackagedDataLockAccessError, PackagedDataLockError } from './data-lock.js';
+import { runPendingDataImport } from './data-import.js';
 import { createStartupNoticeState, detectOneDriveLocation, readOneDriveKnownFolder } from './onedrive.js';
 import { writePackagedDesktopIdentity } from "./identity.js";
 import { PackagedNetworkingRestoreError, PackagedPathAccessError } from "./errors.js";
@@ -148,6 +149,21 @@ async function main(): Promise<void> {
     dataLock.release();
     return;
   }
+  // One-time import of an older extract folder's data. It must finish before
+  // the daemon opens the database, and only once this instance is known to be
+  // the sole owner of the data root. Unexpected rollback errors propagate on
+  // purpose: continuing would initialise a blank root over a half-imported one.
+  const dataImport = await runPendingDataImport({
+    dataRoot: paths.dataRoot,
+    appRoot: resolvePortableTopFolder(),
+    resourceRoot: paths.resourceRoot,
+    onRestartRequested: () => {
+      app.relaunch({ execPath: join(resolvePortableTopFolder(), "Readable Studio.exe") });
+      app.quit();
+    },
+  });
+  app.once("will-quit", dataImport.stopWatching);
+  if (dataImport.status !== "none") console.info(`Data import on startup: ${dataImport.status}`);
   const identity = await writePackagedDesktopIdentity({ descriptor: activeConfig.descriptor, paths, stamp });
   const crashEvidence = startCrashEvidence(app, paths.namespaceRoot, process.env.READABLE_LOCAL_NATIVE_DUMPS === "1");
   await app.whenReady();
