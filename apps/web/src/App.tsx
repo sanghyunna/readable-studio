@@ -30,8 +30,9 @@ import {
 } from './components/project-create';
 import { documentProjectName, type HubImportFileOutcome } from './components/hub/drop-to-edit';
 import { MemoryToast } from './components/MemoryToast';
-import { WelcomeModal } from './components/WelcomeModal';
+import { SHOW_DELAY_MS as HUB_SETTLED_MS, WelcomeModal } from './components/WelcomeModal';
 import { OneDriveNotice } from './components/OneDriveNotice';
+import { UpdateLaunchBanner } from './components/UpdateSection';
 import { Toast } from './components/Toast';
 import { PetOverlay } from './components/pet/PetOverlay';
 import { usePetTaskCenter } from './hooks/usePetTaskCenter';
@@ -428,6 +429,13 @@ function AppInner() {
   const [providerModelsCache, setProviderModelsCache] = useState<
     Record<string, ProviderModelOption[]>
   >({});
+  // The silent update check must never add boot cost: it waits until the Hub
+  // has settled, using the same deferral the welcome modal already relies on.
+  const [hubSettled, setHubSettled] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setHubSettled(true), HUB_SETTLED_MS);
+    return () => window.clearTimeout(timer);
+  }, []);
   // Functional skills (capabilities the agent invokes mid-task) — stays
   // small and lives under the Settings → Skills surface.
   const [skills, setSkills] = useState<SkillSummary[]>([]);
@@ -2356,6 +2364,7 @@ function AppInner() {
       <MemoryToast onOpenMemory={() => openSettings('memory')} />
       <WelcomeModal />
       <OneDriveNotice />
+      <UpdateLaunchBanner ready={hubSettled} />
       {workingDirError ? (
         <Toast
           message={workingDirError}
