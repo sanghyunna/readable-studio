@@ -25,7 +25,6 @@ import { Icon } from '../Icon';
 import type { PluginLoopSubmit } from '../PluginLoopHome';
 import type { ProjectImportHandlers } from '../project-create';
 import type { HubImportFileOutcome } from './drop-to-edit';
-import { HubDropToEdit } from './HubDropToEdit';
 import { useHubRail } from './HubRailContext';
 import { relativeTimeShort } from './relativeTime';
 import type { HubDestination } from './types';
@@ -59,9 +58,10 @@ interface Props {
   /** App-owned handlers for the "+" menu's folder / ZIP / template starts. */
   projectImportHandlers?: ProjectImportHandlers;
   /**
-   * Drop-to-edit: route ONE existing document through the import path and
-   * land in the workspace with it open. The zone below the composer only
-   * renders when a host wires this; the entry shell always does.
+   * Open-to-edit: ONE existing HTML/Markdown document -> project -> workspace
+   * with it open, no agent run. The Hub no longer has a separate drop zone for
+   * this (the template carousel owns that slot); the composer drives it when
+   * the user submits an empty prompt with that one document staged.
    */
   onImportFile?: (file: File) => Promise<HubImportFileOutcome> | HubImportFileOutcome;
   /** Plugin/authoring selection handed back from a Library destination. */
@@ -185,6 +185,7 @@ export function HubHome({
             onOpenMcp={onOpenMcp}
             {...(templates ? { templates } : {})}
             {...(projectImportHandlers ? { projectImportHandlers } : {})}
+            {...(onImportFile ? { onOpenDocument: onImportFile } : {})}
             promptHandoff={promptHandoff}
             skills={skills}
             skillsLoading={skillsLoading}
@@ -198,10 +199,6 @@ export function HubHome({
               <strong>{t('hub.noProjectsTitle')}</strong> {t('hub.noProjectsBody')}
             </p>
           ) : null}
-          {/* Editing an existing document is its own way in. The zone is a
-              sibling of the composer, so the composer's attachment drop keeps
-              its own files; the left panel and Ctrl K need no hint line. */}
-          {onImportFile ? <HubDropToEdit onImportFile={onImportFile} /> : null}
         </div>
       </div>
     </div>

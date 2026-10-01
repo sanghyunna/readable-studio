@@ -39,7 +39,6 @@ function renderHub() {
         onOpenSession={vi.fn()}
         onSubmitPrompt={vi.fn()}
         onNewProject={vi.fn()}
-        onImportFile={vi.fn()}
         executionSwitcher={<div data-testid="execution-switcher-probe" />}
       />
     </I18nProvider>,
@@ -61,7 +60,8 @@ describe('Hub has no low-spec toggle', () => {
     renderHub();
     expect(screen.getByTestId('home-view')).not.toBeNull();
     expect(screen.getByTestId('execution-switcher-probe')).not.toBeNull();
-    expect(screen.getByTestId('hub-drop-to-edit')).not.toBeNull();
+    // The drop-to-edit zone left with the template carousel taking its slot.
+    expect(screen.queryByTestId('hub-drop-to-edit')).toBeNull();
     expect(screen.getByTestId('hub-new-project')).not.toBeNull();
     expect(screen.getByTestId('hub-search')).not.toBeNull();
   });

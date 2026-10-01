@@ -10,6 +10,7 @@
 import {
   forwardRef,
   useEffect,
+  useId,
   useImperativeHandle,
   useMemo,
   useRef,
@@ -19,6 +20,7 @@ import { createPortal } from 'react-dom';
 import type {
   CSSProperties,
   DragEvent as ReactDragEvent,
+  KeyboardEvent as ReactKeyboardEvent,
   ReactNode,
   RefObject,
 } from 'react';
@@ -66,6 +68,12 @@ import {
 } from '../i18n/content';
 import { PreviewSurface } from './plugins-home/cards/PreviewSurface';
 import { readHomeGuideStage, writeHomeGuideStage } from './home-hero/firstRunGuide';
+import {
+  mixHubTemplateCarouselItems,
+  readTemplateCarouselCollapsed,
+  writeTemplateCarouselCollapsed,
+  type HubTemplateCarouselItem,
+} from './home-hero/templateCarousel';
 import { curatedPluginPriorityForChip } from './plugins-home/curatedPriority';
 import { sortByVisualAppeal } from './plugins-home/visualScore';
 import { applyFacetSelection } from './plugins-home/facets';
@@ -81,6 +89,7 @@ import {
 import type { StagedFileItem } from './composer/stagedFiles';
 import { CaretFloatingLayer } from './composer/CaretFloatingLayer';
 import { pluginsWithVisualReferences } from '../utils/visualPluginContext';
+import { isHubEditableDocumentName } from './hub/drop-to-edit';
 
 export interface HomeHeroSubmitHandler {
   (): void;
@@ -317,6 +326,8 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   // binds a plugin or stamps an active badge.
   const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null);
   const [selectedPromptExample, setSelectedPromptExample] = useState<SelectedPromptExample | null>(null);
+  // Hub template rail: collapsed is a persisted opt-out (see templateCarousel.ts).
+  const [templateRailCollapsed, setTemplateRailCollapsed] = useState(readTemplateCarouselCollapsed);
   const [previewHomeFileKey, setPreviewHomeFileKey] = useState<string | null>(null);
   const stagedFilePreviewsRef = useRef<Map<string, { file: File; url: string }>>(new Map());
   // Lexical-driven @-trigger state (replaces the old end-anchored
@@ -344,9 +355,17 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     return stagedFiles.find((item) => item.id === previewHomeFileKey) ?? null;
   }, [previewHomeFileKey, stagedFiles]);
   const previewHomeFileUrl = previewHomeFile?.previewUrl ?? null;
-  const placeholder = activePluginTitle || activeSkillTitle
-    ? t('homeHero.placeholderActive')
-    : t(surface === 'hub' ? 'hub.composerPlaceholder' : 'homeHero.placeholder');
+  // Hub open-to-edit is otherwise invisible: with exactly one editable
+  // document staged and nothing typed, the placeholder says what Enter does.
+  const stagedEditableDocument =
+    surface === 'hub' && stagedFiles.length === 1 && isHubEditableDocumentName(stagedFiles[0]!.file.name)
+      ? stagedFiles[0]!
+      : null;
+  const placeholder = stagedEditableDocument
+    ? t('homeHero.placeholderOpenDocument', { name: stagedEditableDocument.uploadName })
+    : activePluginTitle || activeSkillTitle
+      ? t('homeHero.placeholderActive')
+      : t(surface === 'hub' ? 'hub.composerPlaceholder' : 'homeHero.placeholder');
   const mentionActive = Boolean(mentionTrigger);
   const mentionQuery = mentionTrigger?.query ?? '';
   const fileMatches = useMemo(
@@ -552,6 +571,22 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
       applyFacetSelection(pool, { category: activeChipId, subcategory: selectedSubcategory }),
     );
   }, [activeExamplePlugins, activeChipId, selectedSubcategory, pluginOptions]);
+
+  // Hub template rail contents. With a chip active it mirrors that chip's
+  // filtered presets (same records, same order as the default surface shows);
+  // with no chip it is a bounded round-robin mix across every creation type.
+  const hubTemplateItems = useMemo<HubTemplateCarouselItem[]>(() => {
+    if (surface !== 'hub') return [];
+    if (activeChipId) {
+      return filteredExamplePlugins.map((record) => ({ record, chipId: activeChipId }));
+    }
+    return mixHubTemplateCarouselItems(
+      chipsForGroup('create').map((chip) => ({
+        chipId: chip.id,
+        plugins: homeHeroExamplePluginsForChip(chip.id, pluginOptions, locale),
+      })),
+    );
+  }, [surface, activeChipId, filteredExamplePlugins, pluginOptions, locale]);
 
   // First-run guide, beat 1: pulse the Prototype chip for brand-new users.
   // The settle delay lets the hero finish its entrance before the sheen.
@@ -1646,7 +1681,23 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
         </Button>
       </div>
 
-      {filteredExamplePlugins.length > 0 && activeChipId ? (
+      {surface === 'hub' && hubTemplateItems.length > 0 ? (
+        <HubTemplateCarousel
+          items={hubTemplateItems}
+          collapsed={templateRailCollapsed}
+          onToggle={() => {
+            setTemplateRailCollapsed((current) => {
+              writeTemplateCarouselCollapsed(!current);
+              return !current;
+            });
+          }}
+          activePluginId={activePluginRecord?.id ?? null}
+          pendingPluginId={interactionLocked ? '__locked__' : pendingPluginId}
+          locale={locale}
+          onPick={pickExamplePluginPreset}
+          pulseFirstPreset={guidePulseFirstPreset}
+        />
+      ) : filteredExamplePlugins.length > 0 && activeChipId ? (
         <PluginPromptPresets
           chipId={activeChipId}
           plugins={filteredExamplePlugins}
@@ -1757,6 +1808,180 @@ function PluginPromptPresets({
         ))}
       </div>
     </div>
+  );
+}
+
+// The Hub's horizontal template rail: a collapsible header plus a scroll-snap
+// row of compact cards (thumbnail left, sparkle + title, one description line).
+// Arrow keys walk the cards with a roving tabindex so the rail is one Tab stop.
+function HubTemplateCarousel({
+  activePluginId,
+  collapsed,
+  items,
+  locale,
+  onPick,
+  onToggle,
+  pendingPluginId,
+  pulseFirstPreset = false,
+}: {
+  activePluginId: string | null;
+  collapsed: boolean;
+  items: HubTemplateCarouselItem[];
+  locale: Locale;
+  onPick: (record: InstalledPluginRecord, chipId: string, promptText: string) => void;
+  onToggle: () => void;
+  pendingPluginId: string | null;
+  pulseFirstPreset?: boolean;
+}) {
+  const { t } = useI18n();
+  const railId = useId();
+  const railRef = useRef<HTMLDivElement | null>(null);
+  const [focusIndex, setFocusIndex] = useState(0);
+  useEffect(() => {
+    if (focusIndex >= items.length) setFocusIndex(0);
+  }, [focusIndex, items.length]);
+
+  function moveFocus(next: number) {
+    const clamped = Math.max(0, Math.min(items.length - 1, next));
+    setFocusIndex(clamped);
+    const card = railRef.current?.querySelectorAll<HTMLButtonElement>(
+      '[data-testid="hub-template-card"]',
+    )[clamped];
+    card?.focus();
+    card?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
+
+  function handleRailKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      moveFocus(focusIndex + 1);
+    } else if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      moveFocus(focusIndex - 1);
+    } else if (event.key === 'Home') {
+      event.preventDefault();
+      moveFocus(0);
+    } else if (event.key === 'End') {
+      event.preventDefault();
+      moveFocus(items.length - 1);
+    }
+  }
+
+  return (
+    <section
+      className={`home-hero__templates${collapsed ? ' is-collapsed' : ''}`}
+      data-testid="hub-template-carousel"
+      data-collapsed={collapsed ? 'true' : 'false'}
+      aria-label={t('homeHero.templateCarouselTitle')}
+    >
+      <div className="home-hero__templates-head">
+        <span className="home-hero__templates-title">
+          <Icon name="sparkles" size={14} />
+          <span>{t('homeHero.templateCarouselTitle')}</span>
+        </span>
+        <button
+          type="button"
+          className="home-hero__templates-toggle"
+          data-testid="hub-template-carousel-toggle"
+          aria-expanded={!collapsed}
+          aria-controls={railId}
+          onClick={onToggle}
+        >
+          <span>{t(collapsed ? 'homeHero.templateCarouselShow' : 'homeHero.templateCarouselHide')}</span>
+          <Icon name="chevron-down" size={13} />
+        </button>
+      </div>
+      {collapsed ? null : (
+        <div
+          ref={railRef}
+          id={railId}
+          className="home-hero__templates-rail"
+          data-testid="hub-template-carousel-rail"
+          role="list"
+          onKeyDown={handleRailKeyDown}
+        >
+          {items.map((item, index) => (
+            <HubTemplateCard
+              key={item.record.id}
+              item={item}
+              locale={locale}
+              active={activePluginId === item.record.id}
+              pending={pendingPluginId === item.record.id}
+              disabled={pendingPluginId !== null}
+              pulse={pulseFirstPreset && index === 0}
+              tabIndex={index === focusIndex ? 0 : -1}
+              onFocus={() => setFocusIndex(index)}
+              onPick={onPick}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function HubTemplateCard({
+  active,
+  disabled,
+  item,
+  locale,
+  onFocus,
+  onPick,
+  pending,
+  pulse,
+  tabIndex,
+}: {
+  active: boolean;
+  disabled: boolean;
+  item: HubTemplateCarouselItem;
+  locale: Locale;
+  onFocus: () => void;
+  onPick: (record: InstalledPluginRecord, chipId: string, promptText: string) => void;
+  pending: boolean;
+  pulse: boolean;
+  tabIndex: 0 | -1;
+}) {
+  const { record, chipId } = item;
+  // Same preview mechanism as the chip-scoped preset tiles: baked poster/clip
+  // when the manifest has one, otherwise the live scaled-down example page.
+  const preview = useMemo(() => inferPluginPreview(record, { preferBaked: true }), [record]);
+  const title = localizePluginTitle(locale, record);
+  const description = localizePluginDescription(locale, record);
+  const seedPrompt = examplePresetSeedPrompt(record, locale, () =>
+    pluginPresetPromptPreview(record, locale, chipId),
+  ).text;
+  return (
+    <button
+      type="button"
+      role="listitem"
+      className={`home-hero__template-card${active ? ' is-active' : ''}${pending ? ' is-pending' : ''}${pulse ? ' home-hero__attention-sheen' : ''}`}
+      data-testid="hub-template-card"
+      data-plugin-id={record.id}
+      data-chip-id={chipId}
+      disabled={disabled}
+      tabIndex={tabIndex}
+      onFocus={onFocus}
+      onClick={() => onPick(record, chipId, seedPrompt)}
+      title={description ? `${title} · ${description}` : title}
+    >
+      <span className="home-hero__template-thumb" aria-hidden>
+        <PreviewSurface pluginId={record.id} pluginTitle={title} preview={preview} />
+        {active ? (
+          <span className="home-hero__plugin-preset-check" aria-hidden>
+            <Icon name="check" size={12} />
+          </span>
+        ) : null}
+      </span>
+      <span className="home-hero__template-body">
+        <span className="home-hero__template-title">
+          <Icon name="sparkles" size={13} />
+          <span>{title}</span>
+        </span>
+        {description ? (
+          <span className="home-hero__template-desc">{description}</span>
+        ) : null}
+      </span>
+    </button>
   );
 }
 

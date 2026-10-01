@@ -61,6 +61,7 @@ import type { ComposerProjectImports, ProjectImportHandlers } from './project-cr
 import { useClaudeZipImport } from './useClaudeZipImport';
 import { useOpenFolderImport } from './useOpenFolderImport';
 import { Toast } from './Toast';
+import { classifyHubDrop, type HubImportFileOutcome } from './hub/drop-to-edit';
 
 import {
   buildPluginAuthoringInputs,
@@ -224,6 +225,12 @@ interface Props {
   onSubmit: (payload: PluginLoopSubmit) => Promise<boolean> | boolean | void;
   /** Reject before submission can consume draft state or apply plugin context. */
   modelSelectionGuard?: () => boolean;
+  /**
+   * Hub open-to-edit: submitting an EMPTY prompt with exactly one HTML/Markdown
+   * file staged hands that file here instead of starting an agent run. No
+   * model is needed, so this runs before `modelSelectionGuard`.
+   */
+  onOpenDocument?: (file: File) => Promise<HubImportFileOutcome> | HubImportFileOutcome;
   onOpenProject: (id: string) => void;
   onViewAllProjects: () => void;
   onBrowseRegistry?: () => void;
@@ -257,6 +264,7 @@ export function HomeView({
   defaultDesignSystemId = null,
   onSubmit,
   modelSelectionGuard,
+  onOpenDocument,
   onOpenProject,
   onViewAllProjects,
   onBrowseRegistry,
@@ -319,6 +327,7 @@ export function HomeView({
     examplePromptInfoRef.current = info;
   }, []);
   const [error, setError] = useState<string | null>(null);
+  const [openDocumentError, setOpenDocumentError] = useState<{ message: string; details: string | null } | null>(null);
   const [detailsRecord, setDetailsRecord] = useState<InstalledPluginRecord | null>(null);
   const [pendingReplacement, setPendingReplacement] = useState<PendingReplacement | null>(null);
   // Surface_view fires when the replacement modal becomes visible. Tied
@@ -1348,11 +1357,55 @@ export function HomeView({
     };
   }, [onCreateFromTemplate, claudeZipImport, folderImport, templates, templateCreating, pickTemplate]);
 
+  // Empty prompt + staged document(s) on the Hub: open to edit, no agent.
+  // Refusals (several files, non-document) use the composer's inline error
+  // with the import gate's own messages; a failed import keeps the file
+  // staged and reports through the failure toast, exactly as the old zone did.
+  async function openStagedDocument(files: File[]): Promise<boolean> {
+    if (!onOpenDocument) return false;
+    const decision = classifyHubDrop(files);
+    if (decision.kind === 'empty') return false;
+    if (decision.kind === 'multiple') {
+      setError(t('hub.dropOneAtATime', { count: decision.count }));
+      return false;
+    }
+    if (decision.kind === 'unsupported') {
+      setError(t('hub.dropUnsupported', { name: decision.name }));
+      return false;
+    }
+    if (submitInFlightRef.current) return false;
+    submitInFlightRef.current = true;
+    setSubmitInFlight(true);
+    setError(null);
+    setOpenDocumentError(null);
+    try {
+      const outcome = await onOpenDocument(decision.file);
+      if (outcome.ok === false) {
+        setOpenDocumentError({ message: t('hub.dropImportFailed'), details: outcome.message ?? null });
+        return false;
+      }
+      setStagedFiles([]);
+      return true;
+    } catch (cause) {
+      setOpenDocumentError({
+        message: t('hub.dropImportFailed'),
+        details: cause instanceof Error ? cause.message : null,
+      });
+      return false;
+    } finally {
+      submitInFlightRef.current = false;
+      setSubmitInFlight(false);
+    }
+  }
+
   async function submit(autoSendFirstMessage = true): Promise<boolean> {
     const trimmed = draft.getSnapshot().trim();
     let submittedPrompt = autoSendFirstMessage ? trimmed : '';
     const submittedAttachments = stagedFiles.map((item) => item.file);
     if (autoSendFirstMessage && !trimmed && submittedAttachments.length === 0) return false;
+    if (surface === 'hub' && autoSendFirstMessage && !trimmed && onOpenDocument) {
+      return openStagedDocument(submittedAttachments);
+    }
     if (
       surface === 'hub'
       && autoSendFirstMessage
@@ -1753,6 +1806,15 @@ export function HomeView({
           role="alert"
           ttlMs={6000}
           onDismiss={folderImport.clearError}
+        />
+      ) : null}
+      {openDocumentError ? (
+        <Toast
+          message={openDocumentError.message}
+          details={openDocumentError.details}
+          role="alert"
+          tone="error"
+          onDismiss={() => setOpenDocumentError(null)}
         />
       ) : null}
       {pendingReplacement ? (

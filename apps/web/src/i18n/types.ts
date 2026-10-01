@@ -968,10 +968,12 @@ export interface Dict {
 
   // Entry home
   'homeHero.title': string;
-  'homeHero.templatesScrollHint': string;
-  'homeHero.templatesCollapse': string;
+  'homeHero.templateCarouselTitle': string;
+  'homeHero.templateCarouselShow': string;
+  'homeHero.templateCarouselHide': string;
   'homeHero.subtitlePrefix': string;
   'homeHero.placeholder': string;
+  'homeHero.placeholderOpenDocument': string;
   'homeHero.placeholderActive': string;
   'homeHero.skills': string;
   'homeHero.addMenu': string;
@@ -3244,6 +3246,13 @@ export interface Dict {
   'diagnostics.exporting': string;
   'diagnostics.exportSuccess': string;
   'diagnostics.exportFailed': string;
+
+  // Packaged startup notice: data folder inside a OneDrive sync path
+  'startup.oneDriveTitle': string;
+  'startup.oneDriveExplanation': string;
+  'startup.oneDriveMove': string;
+  'startup.oneDriveDismiss': string;
+  'startup.oneDriveDismissFailed': string;
 
   // First-run welcome modal
   'welcome.title': string;

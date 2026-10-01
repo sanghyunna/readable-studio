@@ -6,25 +6,48 @@ import type { ComponentProps } from 'react';
 import { App } from '../../src/App';
 import type { EntryView } from '../../src/components/EntryView';
 import type { ProjectView } from '../../src/components/ProjectView';
-import { HubDropToEdit } from '../../src/components/hub/HubDropToEdit';
+import { useRef, useState } from 'react';
 import type { HubImportFileOutcome } from '../../src/components/hub/drop-to-edit';
 import { I18nProvider } from '../../src/i18n';
-import { getEn } from '../../src/i18n/locales/en';
-const en = getEn();
 import type { AppConfig, Project } from '../../src/types';
 
 const { importSettled } = vi.hoisted(() => ({ importSettled: vi.fn() }));
 
-// Keep the actual drop surface, App callbacks, reconciliation and HTTP adapters.
-// Only unrelated entry/workspace contents and startup probes are replaced.
+// The Hub no longer renders a drop-to-edit zone (the template carousel owns
+// that slot), but App still exposes the import seam to its hosts. This probe
+// is the smallest host: one drop target that forwards the file to
+// `onImportFile`, refuses a second drop while one is pending, and reports
+// idle/busy so the rollback path's end state stays observable.
+function ImportProbe({ onImportFile }: { onImportFile: (file: File) => Promise<HubImportFileOutcome> | HubImportFileOutcome }) {
+  const busyRef = useRef(false);
+  const [busy, setBusy] = useState(false);
+  return (
+    <button
+      type="button"
+      data-testid="import-probe"
+      data-state={busy ? 'busy' : 'idle'}
+      onDrop={(event) => {
+        if (busyRef.current) return;
+        const file = Array.from(event.dataTransfer.files)[0];
+        if (!file) return;
+        busyRef.current = true;
+        setBusy(true);
+        void Promise.resolve(onImportFile(file)).then((outcome) => {
+          importSettled(outcome);
+          busyRef.current = false;
+          setBusy(false);
+        });
+      }}
+    />
+  );
+}
+
+// Keep the App callbacks, reconciliation and HTTP adapters real. Only
+// unrelated entry/workspace contents and startup probes are replaced.
 vi.mock('../../src/components/EntryView', () => ({
   EntryView: ({ onImportFile, projects, onDeleteProject }: ComponentProps<typeof EntryView>) => (
     <main>
-      <HubDropToEdit onImportFile={async (file) => {
-        const outcome = await onImportFile!(file);
-        importSettled(outcome);
-        return outcome;
-      }} />
+      <ImportProbe onImportFile={onImportFile!} />
       {projects.map((project) => (
         <div key={project.id} data-testid={`project-${project.id}`}>
           {project.name}
@@ -148,7 +171,7 @@ async function startImport(h: Harness, name = 'report.html') {
   });
   const file = new File(['document'], name, { type: name.endsWith('.md') ? 'text/markdown' : 'text/html' });
   await act(async () => {
-    fireEvent.drop(screen.getByTestId('hub-drop-to-edit'), {
+    fireEvent.drop(screen.getByTestId('import-probe'), {
       dataTransfer: { files: [file], types: ['Files'] },
     });
     await signal(h.createStarted.promise);
@@ -163,7 +186,7 @@ async function failUpload(h: Harness) {
     h.uploadReply.resolve(Response.json({ error: 'injected-upload-503' }, { status: 503 }));
     await signal(h.deleteStarted.promise);
   });
-  expect(screen.getByTestId('hub-drop-to-edit').getAttribute('data-state')).toBe('busy');
+  expect(screen.getByTestId('import-probe').getAttribute('data-state')).toBe('busy');
   expect(importSettled).not.toHaveBeenCalled();
 }
 
@@ -211,8 +234,7 @@ describe('App drop-to-edit rollback', () => {
     expect(screen.queryByTestId(`project-${project.id}`)).toBeNull();
     expect(screen.queryByTestId('project-view')).toBeNull();
     expect(window.location.pathname).toBe('/');
-    expect(screen.getByRole('alert').querySelector('.readable-toast-message')?.textContent).toBe(en['hub.dropImportFailed']);
-    expect(screen.getByTestId('hub-drop-to-edit').getAttribute('data-state')).toBe('idle');
+    expect(screen.getByTestId('import-probe').getAttribute('data-state')).toBe('idle');
     expectExactlyOnce(h, file, 1);
   });
 
@@ -233,9 +255,6 @@ describe('App drop-to-edit rollback', () => {
     await deliverStaleList(h);
     expect(screen.getByTestId(`project-${project.id}`)).toBeTruthy();
     expect(screen.getByRole('button', { name: `Delete ${project.id}` })).toBeTruthy();
-    const alert = screen.getByRole('alert');
-    expect(alert.querySelector('.readable-toast-message')?.textContent).toBe(en['hub.dropImportFailed']);
-    expect(alert.querySelector('.readable-toast-details')?.textContent).toContain(project.id);
     expect(window.location.pathname).toBe('/');
     expectExactlyOnce(h, file, 1);
   });
@@ -244,7 +263,7 @@ describe('App drop-to-edit rollback', () => {
     const h = harness();
     const file = await startImport(h, name);
     // A repeated drop while the upload is pending must not create a second project.
-    fireEvent.drop(screen.getByTestId('hub-drop-to-edit'), {
+    fireEvent.drop(screen.getByTestId('import-probe'), {
       dataTransfer: { files: [file], types: ['Files'] },
     });
     await act(async () => {
@@ -253,7 +272,6 @@ describe('App drop-to-edit rollback', () => {
     });
     await deliverStaleList(h);
     expect(window.location.pathname).toBe(`/projects/${project.id}/files/${name}`);
-    expect(screen.queryByRole('alert')).toBeNull();
     expectExactlyOnce(h, file, 0);
   });
 });

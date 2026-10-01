@@ -1,0 +1,24 @@
+.notice {
+  position: fixed;
+  inset-inline-end: var(--radius-surface);
+  inset-block-end: var(--radius-surface);
+  width: min(calc(var(--inline-switcher-model-menu-width) * 2), calc(100vw - var(--radius-surface) * 2));
+  padding: var(--radius-surface);
+  border: thin solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-panel);
+  color: var(--text-strong);
+  box-shadow: var(--shadow-lg);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.notice h2 {
+  margin: 0 0 var(--radius-control);
+  font-size: var(--prose-font-size);
+}
+.notice p {
+  margin: 0 0 var(--radius-control);
+  color: var(--text-muted);
+  font-size: var(--code-font-size);
+  line-height: var(--prose-line-height);
+}

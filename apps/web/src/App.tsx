@@ -31,6 +31,7 @@ import {
 import { documentProjectName, type HubImportFileOutcome } from './components/hub/drop-to-edit';
 import { MemoryToast } from './components/MemoryToast';
 import { WelcomeModal } from './components/WelcomeModal';
+import { OneDriveNotice } from './components/OneDriveNotice';
 import { Toast } from './components/Toast';
 import { PetOverlay } from './components/pet/PetOverlay';
 import { usePetTaskCenter } from './hooks/usePetTaskCenter';
@@ -2354,6 +2355,7 @@ function AppInner() {
       </AnimatePresence>
       <MemoryToast onOpenMemory={() => openSettings('memory')} />
       <WelcomeModal />
+      <OneDriveNotice />
       {workingDirError ? (
         <Toast
           message={workingDirError}
