@@ -214,7 +214,11 @@ import {
 } from './genui/index.js';
 import { composeMemoryBody, extractFromMessage } from './memory.js';
 import { attachAcpSession } from './acp.js';
-import { attachPiRpcSession } from './pi-rpc.js';
+import {
+  attachPiRpcSession,
+  makePortablePiSessionPath,
+  resolvePortablePiSessionPath,
+} from './pi-rpc.js';
 import { formatStreamFailure } from './stream-failure.js';
 import type { HostedPiRuntimeAdapter } from './runtimes/hosted-pi-runtime.js';
 import { stageAmrImagePaths } from './amr-image-staging.js';
@@ -12095,6 +12099,11 @@ export async function startServer({
       //   - 'error' channel → route through the daemon's error path
       //     (createSseErrorPayload + send SSE + set agentStreamError)
       trackingSubstantiveOutput = true;
+      const piSessionRoot = def.id === 'databricks'
+        ? managedPiHandle.invocation.sessionDir
+        : managedPiHandle?.invocation.sessionDir
+          ? path.dirname(managedPiHandle.invocation.sessionDir)
+          : path.join(effectiveCwd, '.pi', 'sessions');
       acpSession = attachPiRpcSession({
         child,
         prompt: composed,
@@ -12106,12 +12115,8 @@ export async function startServer({
         ...(agentResumeCtx.isResuming && agentResumeCtx.resumeSessionId
           ? {
               resumeSession: {
-                path: agentResumeCtx.resumeSessionId,
-                root: def.id === 'databricks'
-                  ? managedPiHandle.invocation.sessionDir
-                  : managedPiHandle?.invocation.sessionDir
-                    ? path.dirname(managedPiHandle.invocation.sessionDir)
-                    : path.join(effectiveCwd, '.pi', 'sessions'),
+                path: resolvePortablePiSessionPath(agentResumeCtx.resumeSessionId, piSessionRoot),
+                root: piSessionRoot,
               },
             }
           : {}),
@@ -12617,13 +12622,17 @@ export async function startServer({
       // Persist only the authoritative session path returned by Pi get_state
       // after agent_end and agent_settled. Scoping it to the conversation and
       // agent prevents another conversation in the same cwd inheriting it.
+      // Store the path relative to the owner root so the reference survives
+      // moves of the app/data directory; legacy absolute entries are still
+      // accepted on read.
       if (acpSession && typeof acpSession.getLastSessionPath === 'function') {
         const sessionPath = acpSession.getLastSessionPath();
         if (status === 'succeeded' && def.streamFormat === 'pi-rpc') {
           persistCapturedAgentSession(db, {
             conversationId: run.conversationId,
             agentId: def.id,
-            sessionId: sessionPath,
+            sessionId:
+              sessionPath ? makePortablePiSessionPath(sessionPath, piSessionRoot) : sessionPath,
             stablePromptHash: currentStableHash,
           });
         }

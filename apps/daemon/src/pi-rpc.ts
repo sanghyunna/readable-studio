@@ -548,7 +548,12 @@ function validatePiSessionPath(
     } catch {
       throw new Error('session cwd does not exist');
     }
-    if (pathKey(headerCwd) !== pathKey(canonicalCwd)) {
+    // Absolute paths in the header become stale when the session root or
+    // project directory moves. Compare their relationship to the owner root
+    // instead, which is stable across moves of the root+cwd tree.
+    const headerCwdRel = path.relative(canonicalRoot, headerCwd);
+    const currentCwdRel = path.relative(canonicalRoot, canonicalCwd);
+    if (headerCwdRel !== currentCwdRel) {
       throw new Error('session cwd does not match the requested project');
     }
     if (!header.parentSession) {
@@ -571,6 +576,33 @@ function validatePiSessionPath(
   }
 
   throw new Error('session parent chain exceeds the depth limit');
+}
+
+/**
+ * Convert an absolute session file path into a portable reference. When the
+ * session lives inside the owner root, store a path relative to that root so
+ * the reference survives moves of the root directory. Falls back to the
+ * absolute path for sessions outside the root (which should not happen for
+ * daemon-owned sessions).
+ */
+export function makePortablePiSessionPath(sessionPath: string, root: string): string {
+  const canonicalRoot = fs.realpathSync(root);
+  const canonicalPath = fs.realpathSync(sessionPath);
+  const relative = path.relative(canonicalRoot, canonicalPath);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    return canonicalPath;
+  }
+  return relative;
+}
+
+/**
+ * Resolve a stored Pi session reference for the current root. Absolute stored
+ * paths are returned unchanged so legacy entries keep working when the root
+ * has not moved. Relative stored paths are resolved against the supplied root.
+ */
+export function resolvePortablePiSessionPath(storedPath: string, root: string): string {
+  if (path.isAbsolute(storedPath)) return storedPath;
+  return path.resolve(root, storedPath);
 }
 
 function resolveExitFallbackSession(
