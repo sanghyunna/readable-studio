@@ -35,7 +35,6 @@ import {
   writeBuiltAppManifest,
   writePackagedConfig,
 } from "./manifest.js";
-import { sanitizeNamespace } from "./paths.js";
 import type { ResourceTreeResult } from "./resources.js";
 import {
   resolveWinSigningCacheKey,
@@ -217,7 +216,6 @@ async function runElectronBuilderRaw(
     }
   };
 
-  const namespaceToken = sanitizeNamespace(config.namespace);
   const packagedVersion = await runSegment("electron-builder-raw:read-packaged-version", async () =>
     readPackagedVersion(config)
   );
@@ -261,7 +259,7 @@ async function runElectronBuilderRaw(
     npmRebuild: ELECTRON_BUILDER_NPM_REBUILD,
     productName: PRODUCT_NAME,
     win: {
-      artifactName: `${PRODUCT_NAME}-${namespaceToken}.\${ext}`,
+      artifactName: "Readable-Studio-win-x64-portable.${ext}",
       icon: paths.winIconPath,
       target: [{ arch: ["x64"], target: "dir" }],
     },

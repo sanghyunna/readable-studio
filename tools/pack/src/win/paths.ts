@@ -18,7 +18,6 @@ export function sanitizeNamespace(value: string): string {
 }
 
 export function resolveWinPaths(config: ToolPackConfig): WinPaths {
-  const namespaceToken = sanitizeNamespace(config.namespace);
   const namespaceRoot = config.roots.output.namespaceRoot;
   return {
     appBuilderConfigPath: join(namespaceRoot, "builder-config.json"),
@@ -38,7 +37,7 @@ export function resolveWinPaths(config: ToolPackConfig): WinPaths {
     packagedMainPrebundleMetaPath: join(namespaceRoot, WIN_PREBUNDLE_META_DIR_NAME, "packaged-main.meta.json"),
     packagedMainPrebundlePath: join(namespaceRoot, "assembled", WIN_PREBUNDLED_PACKAGED_MAIN_RELATIVE_PATH),
     resourceRoot: join(namespaceRoot, "resources", RESOURCE_TREE_NAME),
-    setupZipPath: join(namespaceRoot, "builder", `${PRODUCT_NAME}-${namespaceToken}-portable.zip`),
+    setupZipPath: join(namespaceRoot, "builder", "Readable-Studio-win-x64-portable.zip"),
     tarballsRoot: join(namespaceRoot, "tarballs"),
     webStandaloneHookAuditPath: join(namespaceRoot, "web-standalone-after-pack-audit.json"),
     webStandaloneHookConfigPath: join(namespaceRoot, "web-standalone-after-pack-config.json"),

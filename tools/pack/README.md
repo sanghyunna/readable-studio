@@ -16,7 +16,11 @@ Build artifacts are namespace-scoped under
 namespace-scoped under
 `.tmp/tools-pack/runtime/win/namespaces/<namespace>/`.
 
-Extract the portable ZIP anywhere on Windows and run the executable directly.
+The ZIP is named `Readable-Studio-win-x64-portable.zip` in every namespace and
+release. It has no enclosing folder; extract it into a writable folder such as
+`Readable Studio` on Windows and run `Readable Studio.exe` directly. The GitHub
+release tag carries the version and the release asset body carries the SHA-256;
+the stable filename does not replace packaged version metadata.
 The build always produces that portable artifact; tools-pack has no installer,
 updater, alternate target, or compatibility mode.
 
@@ -54,9 +58,9 @@ time series under `.omo/evidence/build-perf/utilization-<run-id>.log`: normalize
 system/build-tree CPU, physical-disk bytes/sec, IOPS, queue depth, process/child
 counts, top CPU consumers, and recorder overhead. The recorder confirms readiness
 before any build command. It is stopped in `finally`; only its own PID can be killed.
-It does not enable `-FastBuild`. The final comparison ZIP uses a unique
-`Readable-Studio-build-perf-<run-id>-<namespace>-portable.zip` filename in the drop
-directory (`D:\` on this machine); an existing comparison file is never replaced.
+It does not enable `-FastBuild`. The final comparison ZIP keeps the canonical
+`Readable-Studio-win-x64-portable.zip` filename. Use a separate `-DropDir` for each
+comparison run; an existing comparison file is never replaced.
 Published 1.1.5 and hotfix ZIPs must never be used as output destinations.
 `-CacheDir` forwards the existing tools-pack cache option. After explicit measurement
 clearance, use a new private cache for a full cache-miss trace without deleting the

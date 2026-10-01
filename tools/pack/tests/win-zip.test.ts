@@ -123,7 +123,7 @@ describe.skipIf(process.platform !== "win32")("buildWinPortableZip portable inje
       await mkdir(join(unpackedRoot, "resources", "app", "i18n", "locales"), { recursive: true });
       await writeFile(join(unpackedRoot, "resources", "app", "i18n", "locales", "ja.ts"), "app i18n", "utf8");
 
-      const setupZipPath = join(root, "builder", "Readable Studio-rg-portable.zip");
+      const setupZipPath = join(root, "builder", "Readable-Studio-win-x64-portable.zip");
       const paths = fakePaths(root, setupZipPath, unpackedRoot);
       const builtApp: WinBuiltAppManifest = {
         appBuilderOutputRoot: paths.appBuilderOutputRoot,
@@ -141,6 +141,9 @@ describe.skipIf(process.platform !== "win32")("buildWinPortableZip portable inje
       const extractRoot = join(root, "extracted");
       await mkdir(extractRoot, { recursive: true });
       await execFileAsync(winResources.sevenZipExe, ["x", setupZipPath, `-o${extractRoot}`, "-y"], { windowsHide: true });
+
+      expect(await readFile(join(extractRoot, "Readable Studio.exe"), "utf8")).toBe("fake-exe");
+      expect((await readdir(extractRoot)).sort()).toEqual(["Readable Studio.exe", "locales", "resources"]);
 
       const extractedConfig = JSON.parse(
         await readFile(join(extractRoot, "resources", "readable-studio-config.json"), "utf8"),
@@ -208,7 +211,7 @@ describe.skipIf(process.platform !== "win32")("buildWinPortableZip portable inje
   it("produces identical bytes after source timestamps change", async () => {
     const root = await mkdtemp(join(tmpdir(), "readable-tools-pack-deterministic-"));
     const unpackedRoot = join(root, "win-unpacked");
-    const setupZipPath = join(root, "builder", "Readable Studio-rg-portable.zip");
+    const setupZipPath = join(root, "builder", "Readable-Studio-win-x64-portable.zip");
     const paths = fakePaths(root, setupZipPath, unpackedRoot);
     const builtApp: WinBuiltAppManifest = {
       appBuilderOutputRoot: paths.appBuilderOutputRoot,

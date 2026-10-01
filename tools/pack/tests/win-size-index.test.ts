@@ -29,7 +29,7 @@ function createPaths(root: string): WinPaths {
     packagedMainPrebundleMetaPath: join(namespaceRoot, "prebundle-meta", "packaged-main.meta.json"),
     packagedMainPrebundlePath: join(namespaceRoot, "assembled", "app", "prebundled", "packaged-main.mjs"),
     resourceRoot: join(namespaceRoot, "resources", "readable-studio"),
-    setupZipPath: join(namespaceRoot, "builder", "Readable Studio-second-portable.zip"),
+    setupZipPath: join(namespaceRoot, "builder", "Readable-Studio-win-x64-portable.zip"),
     tarballsRoot: join(namespaceRoot, "tarballs"),
     webStandaloneHookAuditPath: join(namespaceRoot, "web-standalone-after-pack-audit.json"),
     webStandaloneHookConfigPath: join(namespaceRoot, "web-standalone-after-pack-config.json"),

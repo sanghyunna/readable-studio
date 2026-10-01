@@ -15,7 +15,7 @@ The portable app itself does not require Node.js, pnpm, Git, an installer, or an
 ### Download and start
 
 1. Open [GitHub Releases](https://github.com/sanghyunna/readable-studio/releases).
-2. Manually download `Readable Studio-<namespace>-portable.zip` from the release assets.
+2. Manually download `Readable-Studio-win-x64-portable.zip` from the release assets.
 3. Extract the entire archive, for example to `C:\Tools\Readable Studio`.
 4. Run `Readable Studio.exe` from the extracted directory.
 
@@ -134,7 +134,7 @@ From the repository root:
 powershell -ExecutionPolicy Bypass -File .\build-portable.ps1
 ```
 
-Optional parameters include `-Namespace`, `-DropDir`, `-PortableZipCompression 0..9`, and `-AppVersion`. The script requires Node 24, builds the workspace, produces `Readable Studio-<namespace>-portable.zip`, verifies that the expected file exists, and moves it to the drop directory.
+Optional parameters include `-Namespace`, `-DropDir`, `-PortableZipCompression 0..9`, and `-AppVersion`. The script requires Node 24, builds the workspace, produces `Readable-Studio-win-x64-portable.zip`, verifies that the expected file exists, and moves it to the drop directory.
 
 For local packaging diagnosis, these are the complete six-command Windows lifecycle:
 

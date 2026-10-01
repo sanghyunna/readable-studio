@@ -33,8 +33,8 @@ Readable Studio splits the work. An installed coding agent drafts the document f
 
 ## Download and run
 
-1. Open [Releases](https://github.com/sanghyunna/readable-studio/releases/latest) and download the portable ZIP.
-2. Extract the **whole** archive to a writable folder. Don't run it from inside the ZIP viewer.
+1. Open [Releases](https://github.com/sanghyunna/readable-studio/releases/latest) and download `Readable-Studio-win-x64-portable.zip`.
+2. Extract the **whole** archive to a writable folder such as `Readable Studio` (the ZIP has no enclosing folder). Don't run it from inside the ZIP viewer.
 3. Run `Readable Studio.exe`.
 
 Windows 10/11 x64 only. The machine needs no Node.js, pnpm, or Git. Windows may show a SmartScreen warning for an unsigned build. When you move the app, move the `ReadableStudioData` folder with it — projects, settings, logs, and cache live there.

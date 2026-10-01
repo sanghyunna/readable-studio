@@ -6,7 +6,7 @@ Readable Studio supports Windows 10/11 x64. Normal users should run the extracte
 
 ### Download and extraction
 
-Manually download `Readable Studio-<namespace>-portable.zip` from [GitHub Releases](https://github.com/sanghyunna/readable-studio/releases), extract the complete archive to a writable directory, and run `Readable Studio.exe`. Do not run it from the compressed-folder view.
+Manually download `Readable-Studio-win-x64-portable.zip` from [GitHub Releases](https://github.com/sanghyunna/readable-studio/releases), extract the complete archive to a writable directory, and run `Readable Studio.exe`. Do not run it from the compressed-folder view.
 
 ### SmartScreen warning
 

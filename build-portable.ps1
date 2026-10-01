@@ -15,7 +15,7 @@
     Runtime namespace embedded in the artifact. Default: rg.
 
 .PARAMETER DropDir
-    Directory that receives Readable Studio-<namespace>-portable.zip.
+    Directory that receives Readable-Studio-win-x64-portable.zip.
 
 .PARAMETER PortableZipCompression
     Optional 7-Zip compression level from 0 through 9. Default: 5.
@@ -29,7 +29,7 @@
 
 .PARAMETER ProfileBuild
     Record phase timings and Windows CPU/disk/process utilization. Off by
-    default. Comparison archives receive unique build-perf filenames.
+    default. Use a separate DropDir for each comparison archive.
 
 .PARAMETER CacheDir
     Optional tools-pack cache root. Use a new private directory for a cache-miss
@@ -63,8 +63,7 @@ if ([string]::IsNullOrWhiteSpace($AppVersion)) {
     throw "package.json does not contain a packaged app version."
 }
 
-$NamespaceToken = $Namespace -replace '[^A-Za-z0-9._-]+', '-'
-$ArtifactName = "Readable Studio-$NamespaceToken-portable.zip"
+$ArtifactName = "Readable-Studio-win-x64-portable.zip"
 $ExpectedZip = Join-Path $ProjectRoot ".tmp\tools-pack\out\win\namespaces\$Namespace\builder\$ArtifactName"
 
 if ([string]::IsNullOrWhiteSpace($PortableZipCompression)) {
@@ -218,8 +217,7 @@ if (Test-Path -LiteralPath $DropDir -PathType Container) {
 } else {
     $dropDirRoot = (New-Item -ItemType Directory -Path $DropDir -Force).FullName
 }
-$DropArtifactName = if ($ProfileBuild) { "Readable-Studio-build-perf-$profileRunId-$NamespaceToken-portable.zip" } else { $ArtifactName }
-$DropPath = Join-Path $dropDirRoot $DropArtifactName
+$DropPath = Join-Path $dropDirRoot $ArtifactName
 if (-not [string]::Equals($ExpectedZip, $DropPath, [StringComparison]::OrdinalIgnoreCase)) {
     if (Test-Path -LiteralPath $DropPath) {
         if ($ProfileBuild) { throw "Refusing to replace an existing comparison archive: $DropPath" }
