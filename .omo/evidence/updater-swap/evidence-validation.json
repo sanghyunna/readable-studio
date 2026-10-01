@@ -1,0 +1,12 @@
+{
+  "timestamp": "2026-10-01T05:06:19.614Z",
+  "dataFiles": 83,
+  "dataHashesEqual": true,
+  "journalMoveCount": 20,
+  "exeLast": true,
+  "dataExcludedFromMoves": true,
+  "electronSurvival": true,
+  "consoleHiddenAtCapture": true,
+  "progressNotForegroundAtCapture": true,
+  "lingeringSidecarDetected": true
+}

@@ -1,0 +1,8 @@
+System.Management.Automation.MethodInvocationException: "1"개의 인수가 있는 "GetProcessById"을(를) 호출하는 동안 예외가 발생했습니다. "ID가 1인 프로세스가 실행되고 있지 않습니다." ---> System.ArgumentException: ID가 1인 프로세스가 실행되고 있지 않습니다.
+   위치: System.Diagnostics.Process.GetProcessById(Int32 processId, String machineName)
+   위치: CallSite.Target(Closure , CallSite , Type , Object )
+   --- 내부 예외 스택 추적의 끝 ---
+   위치: System.Management.Automation.ExceptionHandlingOps.CheckActionPreference(FunctionContext funcContext, Exception exception)
+   위치: System.Management.Automation.Interpreter.ActionCallInstruction`2.Run(InterpretedFrame frame)
+   위치: System.Management.Automation.Interpreter.EnterTryCatchFinallyInstruction.Run(InterpretedFrame frame)
+   위치: System.Management.Automation.Interpreter.EnterTryCatchFinallyInstruction.Run(InterpretedFrame frame)

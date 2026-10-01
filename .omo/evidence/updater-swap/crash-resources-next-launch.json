@@ -1,0 +1,12 @@
+﻿{
+    "exeExists":  true,
+    "resourcesExist":  false,
+    "startupRecoveryRan":  false,
+    "helperPid":  42252,
+    "helperKilled":  true,
+    "pid":  26880,
+    "dialogSignaled":  false,
+    "checkpoint":  "resources",
+    "exited":  true,
+    "exitCode":  1
+}

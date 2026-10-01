@@ -1,0 +1,21 @@
+﻿{
+    "snapshot":  {
+                     "timestamp":  "2026-10-01T13:58:11.4878816+09:00",
+                     "images":  [
+
+                                ],
+                     "cim":  [
+
+                             ],
+                     "restartManager":  [
+
+                                        ],
+                     "pathMs":  117.24380000000001,
+                     "cimMs":  321.58590000000004,
+                     "rmMs":  69.875,
+                     "registeredFiles":  19
+                 },
+    "rounds":  1,
+    "elapsedMs":  513.6438,
+    "empty":  true
+}

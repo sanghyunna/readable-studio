@@ -1,0 +1,19 @@
+﻿{
+    "ok":  true,
+    "result":  {
+                   "pid":  16632,
+                   "state":  "running",
+                   "title":  "Readable Studio",
+                   "updatedAt":  "2026-10-01T05:00:12.899Z",
+                   "url":  null,
+                   "windowVisible":  false,
+                   "descriptor":  {
+                                      "appId":  "studio.readable.desktop",
+                                      "appVersion":  "1.2.1",
+                                      "descriptorHash":  "9d1181594e3733ae67c685c6e1529baa1f095a19d93ec9739445a15643ab0c3a",
+                                      "productId":  "readable-studio",
+                                      "protocolVersion":  1,
+                                      "runtimeVersion":  1
+                                  }
+               }
+}

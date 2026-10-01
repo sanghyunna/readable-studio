@@ -1,0 +1,17 @@
+{
+    "targetVersion":  "1.2.1-swap-probe",
+    "oldDir":  "D:\\readable-studio\\.tmp\\updater-swap\\app.old",
+    "state":  "swapping",
+    "schema":  1,
+    "helperPid":  39112,
+    "steps":  [
+                  {
+                      "from":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\resources",
+                      "step":  0,
+                      "to":  "D:\\readable-studio\\.tmp\\updater-swap\\app.old\\resources",
+                      "done":  false
+                  }
+              ],
+    "exeDir":  "D:\\readable-studio\\.tmp\\updater-swap\\app",
+    "stageDir":  "D:\\readable-studio\\.tmp\\updater-swap\\stage"
+}

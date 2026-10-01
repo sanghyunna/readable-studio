@@ -1,0 +1,36 @@
+﻿{
+    "mainPid":  31968,
+    "sidecarAlive":  true,
+    "snapshot":  {
+                     "timestamp":  "2026-10-01T13:58:10.9292959+09:00",
+                     "images":  [
+                                    {
+                                        "Id":  39736,
+                                        "Path":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\resources\\readable-studio\\bin\\node.exe"
+                                    }
+                                ],
+                     "cim":  [
+                                 {
+                                     "ProcessId":  39736,
+                                     "ParentProcessId":  31968,
+                                     "ExecutablePath":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\resources\\readable-studio\\bin\\node.exe",
+                                     "CommandLine":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\resources\\readable-studio\\bin\\node.exe D:\\readable-studio\\.tmp\\updater-swap\\linger-sidecar.cjs"
+                                 }
+                             ],
+                     "restartManager":  [
+                                            {
+                                                "pid":  39736,
+                                                "name":  "Node.js JavaScript Runtime",
+                                                "type":  5
+                                            }
+                                        ],
+                     "pathMs":  838.2441,
+                     "cimMs":  330.6415,
+                     "rmMs":  231.85240000000002,
+                     "registeredFiles":  19
+                 },
+    "restartManagerDetected":  true,
+    "elapsedMs":  1537.237,
+    "sidecarPid":  39736,
+    "imageDetected":  true
+}

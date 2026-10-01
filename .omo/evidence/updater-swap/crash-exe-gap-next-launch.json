@@ -1,0 +1,10 @@
+﻿{
+    "exeExists":  false,
+    "resourcesExist":  false,
+    "startupRecoveryRan":  false,
+    "helperPid":  42548,
+    "dialogText":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\Readable Studio.exe\nD:\\readable-studio\\.tmp\\updater-swap\\app\\Readable Studio.exe\nMainInstructionIcon\n\u0027D:\\readable-studio\\.tmp\\updater-swap\\app\\Readable Studio.exe\u0027을(를) 찾을 수 없습니다. 이름을 올바르게 입력했는지 확인하고 다시 시도하십시오.\n확인\nD:\\readable-studio\\.tmp\\updater-swap\\app\\Readable Studio.exe\n시스템 메뉴 모음\n시스템\n닫기",
+    "helperKilled":  true,
+    "dialogSignaled":  true,
+    "checkpoint":  "exe-gap"
+}

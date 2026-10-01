@@ -1,0 +1,131 @@
+{
+    "targetVersion":  "1.2.1-swap-probe",
+    "oldDir":  "D:\\readable-studio\\.tmp\\updater-swap\\app.old",
+    "state":  "swapping",
+    "schema":  1,
+    "helperPid":  42548,
+    "steps":  [
+                  {
+                      "from":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\LICENSE.electron.txt",
+                      "step":  0,
+                      "to":  "D:\\readable-studio\\.tmp\\updater-swap\\app.old\\LICENSE.electron.txt",
+                      "done":  true
+                  },
+                  {
+                      "from":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\LICENSES.chromium.html",
+                      "step":  1,
+                      "to":  "D:\\readable-studio\\.tmp\\updater-swap\\app.old\\LICENSES.chromium.html",
+                      "done":  true
+                  },
+                  {
+                      "from":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\chrome_100_percent.pak",
+                      "step":  2,
+                      "to":  "D:\\readable-studio\\.tmp\\updater-swap\\app.old\\chrome_100_percent.pak",
+                      "done":  true
+                  },
+                  {
+                      "from":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\chrome_200_percent.pak",
+                      "step":  3,
+                      "to":  "D:\\readable-studio\\.tmp\\updater-swap\\app.old\\chrome_200_percent.pak",
+                      "done":  true
+                  },
+                  {
+                      "from":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\d3dcompiler_47.dll",
+                      "step":  4,
+                      "to":  "D:\\readable-studio\\.tmp\\updater-swap\\app.old\\d3dcompiler_47.dll",
+                      "done":  true
+                  },
+                  {
+                      "from":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\dxcompiler.dll",
+                      "step":  5,
+                      "to":  "D:\\readable-studio\\.tmp\\updater-swap\\app.old\\dxcompiler.dll",
+                      "done":  true
+                  },
+                  {
+                      "from":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\dxil.dll",
+                      "step":  6,
+                      "to":  "D:\\readable-studio\\.tmp\\updater-swap\\app.old\\dxil.dll",
+                      "done":  true
+                  },
+                  {
+                      "from":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\ffmpeg.dll",
+                      "step":  7,
+                      "to":  "D:\\readable-studio\\.tmp\\updater-swap\\app.old\\ffmpeg.dll",
+                      "done":  true
+                  },
+                  {
+                      "from":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\icudtl.dat",
+                      "step":  8,
+                      "to":  "D:\\readable-studio\\.tmp\\updater-swap\\app.old\\icudtl.dat",
+                      "done":  true
+                  },
+                  {
+                      "from":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\libEGL.dll",
+                      "step":  9,
+                      "to":  "D:\\readable-studio\\.tmp\\updater-swap\\app.old\\libEGL.dll",
+                      "done":  true
+                  },
+                  {
+                      "from":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\libGLESv2.dll",
+                      "step":  10,
+                      "to":  "D:\\readable-studio\\.tmp\\updater-swap\\app.old\\libGLESv2.dll",
+                      "done":  true
+                  },
+                  {
+                      "from":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\locales",
+                      "step":  11,
+                      "to":  "D:\\readable-studio\\.tmp\\updater-swap\\app.old\\locales",
+                      "done":  true
+                  },
+                  {
+                      "from":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\resources",
+                      "step":  12,
+                      "to":  "D:\\readable-studio\\.tmp\\updater-swap\\app.old\\resources",
+                      "done":  true
+                  },
+                  {
+                      "from":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\resources.pak",
+                      "step":  13,
+                      "to":  "D:\\readable-studio\\.tmp\\updater-swap\\app.old\\resources.pak",
+                      "done":  true
+                  },
+                  {
+                      "from":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\snapshot_blob.bin",
+                      "step":  14,
+                      "to":  "D:\\readable-studio\\.tmp\\updater-swap\\app.old\\snapshot_blob.bin",
+                      "done":  true
+                  },
+                  {
+                      "from":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\v8_context_snapshot.bin",
+                      "step":  15,
+                      "to":  "D:\\readable-studio\\.tmp\\updater-swap\\app.old\\v8_context_snapshot.bin",
+                      "done":  true
+                  },
+                  {
+                      "from":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\vk_swiftshader.dll",
+                      "step":  16,
+                      "to":  "D:\\readable-studio\\.tmp\\updater-swap\\app.old\\vk_swiftshader.dll",
+                      "done":  true
+                  },
+                  {
+                      "from":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\vk_swiftshader_icd.json",
+                      "step":  17,
+                      "to":  "D:\\readable-studio\\.tmp\\updater-swap\\app.old\\vk_swiftshader_icd.json",
+                      "done":  true
+                  },
+                  {
+                      "from":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\vulkan-1.dll",
+                      "step":  18,
+                      "to":  "D:\\readable-studio\\.tmp\\updater-swap\\app.old\\vulkan-1.dll",
+                      "done":  true
+                  },
+                  {
+                      "from":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\Readable Studio.exe",
+                      "step":  19,
+                      "to":  "D:\\readable-studio\\.tmp\\updater-swap\\app.old\\Readable Studio.exe",
+                      "done":  true
+                  }
+              ],
+    "exeDir":  "D:\\readable-studio\\.tmp\\updater-swap\\app",
+    "stageDir":  "D:\\readable-studio\\.tmp\\updater-swap\\stage"
+}

@@ -1,0 +1,152 @@
+﻿{
+    "snapshot":  {
+                     "timestamp":  "2026-10-01T13:58:09.3937830+09:00",
+                     "images":  [
+                                    {
+                                        "Id":  25612,
+                                        "Path":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\resources\\readable-studio\\bin\\node.exe"
+                                    },
+                                    {
+                                        "Id":  29524,
+                                        "Path":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\resources\\readable-studio\\bin\\node.exe"
+                                    },
+                                    {
+                                        "Id":  39736,
+                                        "Path":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\resources\\readable-studio\\bin\\node.exe"
+                                    },
+                                    {
+                                        "Id":  43724,
+                                        "Path":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\resources\\readable-studio\\bin\\node.exe"
+                                    },
+                                    {
+                                        "Id":  9312,
+                                        "Path":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\Readable Studio.exe"
+                                    },
+                                    {
+                                        "Id":  18792,
+                                        "Path":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\Readable Studio.exe"
+                                    },
+                                    {
+                                        "Id":  23212,
+                                        "Path":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\Readable Studio.exe"
+                                    },
+                                    {
+                                        "Id":  31968,
+                                        "Path":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\Readable Studio.exe"
+                                    }
+                                ],
+                     "cim":  [
+                                 {
+                                     "ProcessId":  31968,
+                                     "ParentProcessId":  24256,
+                                     "ExecutablePath":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\Readable Studio.exe",
+                                     "CommandLine":  "\"D:\\readable-studio\\.tmp\\updater-swap\\app\\Readable Studio.exe\""
+                                 },
+                                 {
+                                     "ProcessId":  18792,
+                                     "ParentProcessId":  31968,
+                                     "ExecutablePath":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\Readable Studio.exe",
+                                     "CommandLine":  "\"D:\\readable-studio\\.tmp\\updater-swap\\app\\Readable Studio.exe\" --type=gpu-process --disable-breakpad --user-data-dir=\"D:\\readable-studio\\.tmp\\updater-swap\\app\\ReadableStudioData\\namespaces\\updater-swap\\user-data\" --gpu-preferences=SAAAAAAAAADgAAAEAAAAAAAAAAAAAGAAAQAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAQAAAAAAAAABAAAAAAAAAACAAAAAAAAAAIAAAAAAAAAA== --field-trial-handle=1888,i,13846331257711444412,10024726467718983413,262144 --enable-features=EnableTransparentHwndEnlargement,PdfUseShowSaveFilePicker --disable-features=AutofillServerCommunication,CertificateTransparencyComponentUpdater,DropInputEventsWhilePaintHolding,LocalNetworkAccessChecks,MediaRouter,NetworkServiceSandbox,OptimizationHints,ScreenAIOCREnabled,SpareRendererForSitePerProcess,TraceSiteInstanceGetProcessCreation,Translate --variations-seed-version --pseudonymization-salt-handle=1904,i,10042968094965714860,5727077573111548360,4 --trace-process-track-uuid=3190708988185955192 --mojo-platform-channel-handle=1900 /prefetch:2"
+                                 },
+                                 {
+                                     "ProcessId":  9312,
+                                     "ParentProcessId":  31968,
+                                     "ExecutablePath":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\Readable Studio.exe",
+                                     "CommandLine":  "\"D:\\readable-studio\\.tmp\\updater-swap\\app\\Readable Studio.exe\" --type=utility --utility-sub-type=network.mojom.NetworkService --lang=ko --service-sandbox-type=none --user-data-dir=\"D:\\readable-studio\\.tmp\\updater-swap\\app\\ReadableStudioData\\namespaces\\updater-swap\\user-data\" --standard-schemes=readable-studio --secure-schemes=readable-studio --cors-schemes=readable-studio --fetch-schemes=readable-studio --streaming-schemes=readable-studio --field-trial-handle=1888,i,13846331257711444412,10024726467718983413,262144 --enable-features=EnableTransparentHwndEnlargement,PdfUseShowSaveFilePicker --disable-features=AutofillServerCommunication,CertificateTransparencyComponentUpdater,DropInputEventsWhilePaintHolding,LocalNetworkAccessChecks,MediaRouter,NetworkServiceSandbox,OptimizationHints,ScreenAIOCREnabled,SpareRendererForSitePerProcess,TraceSiteInstanceGetProcessCreation,Translate --variations-seed-version --pseudonymization-salt-handle=1904,i,10042968094965714860,5727077573111548360,4 --trace-process-track-uuid=3190708989122997041 --mojo-platform-channel-handle=2084 /prefetch:11"
+                                 },
+                                 {
+                                     "ProcessId":  23212,
+                                     "ParentProcessId":  31968,
+                                     "ExecutablePath":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\Readable Studio.exe",
+                                     "CommandLine":  "\"D:\\readable-studio\\.tmp\\updater-swap\\app\\Readable Studio.exe\" --type=renderer --user-data-dir=\"D:\\readable-studio\\.tmp\\updater-swap\\app\\ReadableStudioData\\namespaces\\updater-swap\\user-data\" --standard-schemes=readable-studio --secure-schemes=readable-studio --cors-schemes=readable-studio --fetch-schemes=readable-studio --streaming-schemes=readable-studio --app-path=\"D:\\readable-studio\\.tmp\\updater-swap\\app\\resources\\app\" --enable-sandbox --disable-breakpad --video-capture-use-gpu-memory-buffer --lang=ko --device-scale-factor=1.5 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=4 --time-ticks-at-unix-epoch=-1790727081409550 --launch-time-ticks=103601972932 --field-trial-handle=1888,i,13846331257711444412,10024726467718983413,262144 --enable-features=EnableTransparentHwndEnlargement,PdfUseShowSaveFilePicker --disable-features=AutofillServerCommunication,CertificateTransparencyComponentUpdater,DropInputEventsWhilePaintHolding,LocalNetworkAccessChecks,MediaRouter,NetworkServiceSandbox,OptimizationHints,ScreenAIOCREnabled,SpareRendererForSitePerProcess,TraceSiteInstanceGetProcessCreation,Translate --variations-seed-version --pseudonymization-salt-handle=1904,i,10042968094965714860,5727077573111548360,4 --trace-process-track-uuid=3190708990060038890 --mojo-platform-channel-handle=3192 /prefetch:1"
+                                 },
+                                 {
+                                     "ProcessId":  43724,
+                                     "ParentProcessId":  31968,
+                                     "ExecutablePath":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\resources\\readable-studio\\bin\\node.exe",
+                                     "CommandLine":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\resources\\readable-studio\\bin\\node.exe D:\\readable-studio\\.tmp\\updater-swap\\app\\resources\\app\\prebundled\\daemon\\daemon-sidecar.mjs --readable-studio-stamp-app=daemon --readable-studio-stamp-mode=runtime --readable-studio-stamp-namespace=updater-swap --readable-studio-stamp-ipc=\\\\.\\pipe\\readable-studio-updater-swap-daemon --readable-studio-stamp-source=packaged"
+                                 },
+                                 {
+                                     "ProcessId":  29524,
+                                     "ParentProcessId":  31968,
+                                     "ExecutablePath":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\resources\\readable-studio\\bin\\node.exe",
+                                     "CommandLine":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\resources\\readable-studio\\bin\\node.exe D:\\readable-studio\\.tmp\\updater-swap\\app\\resources\\app\\prebundled\\web-sidecar.mjs --readable-studio-stamp-app=web --readable-studio-stamp-mode=runtime --readable-studio-stamp-namespace=updater-swap --readable-studio-stamp-ipc=\\\\.\\pipe\\readable-studio-updater-swap-web --readable-studio-stamp-source=packaged"
+                                 },
+                                 {
+                                     "ProcessId":  25612,
+                                     "ParentProcessId":  29524,
+                                     "ExecutablePath":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\resources\\readable-studio\\bin\\node.exe",
+                                     "CommandLine":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\resources\\readable-studio\\bin\\node.exe --import data:text/javascript,%0Aconst%20parentPid%20%3D%20Number(process.env%5B%22READABLE_STANDALONE_PARENT_PID%22%5D)%3B%0Aif%20(Number.isInteger(parentPid)%20%26%26%20parentPid%20%3E%200)%20%7B%0A%20%20const%20isParentAlive%20%3D%20()%20%3D%3E%20%7B%0A%20%20%20%20try%20%7B%0A%20%20%20%20%20%20process.kill(parentPid%2C%200)%3B%0A%20%20%20%20%20%20return%20true%3B%0A%20%20%20%20%7D%20catch%20%7B%0A%20%20%20%20%20%20return%20false%3B%0A%20%20%20%20%7D%0A%20%20%7D%3B%0A%20%20const%20timer%20%3D%20setInterval(()%20%3D%3E%20%7B%0A%20%20%20%20if%20(process.ppid%20%3D%3D%3D%20parentPid%20%26%26%20isParentAlive())%20return%3B%0A%20%20%20%20process.exit(0)%3B%0A%20%20%7D%2C%201000)%3B%0A%20%20timer.unref%3F.()%3B%0A%7D%0A D:\\readable-studio\\.tmp\\updater-swap\\app\\resources\\readable-studio-web-standalone\\apps\\web\\server.js"
+                                 },
+                                 {
+                                     "ProcessId":  39736,
+                                     "ParentProcessId":  31968,
+                                     "ExecutablePath":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\resources\\readable-studio\\bin\\node.exe",
+                                     "CommandLine":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\resources\\readable-studio\\bin\\node.exe D:\\readable-studio\\.tmp\\updater-swap\\linger-sidecar.cjs"
+                                 },
+                                 {
+                                     "ProcessId":  40788,
+                                     "ParentProcessId":  31968,
+                                     "ExecutablePath":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\Readable Studio.exe",
+                                     "CommandLine":  "\"D:\\readable-studio\\.tmp\\updater-swap\\app\\Readable Studio.exe\" --type=renderer --user-data-dir=\"D:\\readable-studio\\.tmp\\updater-swap\\app\\ReadableStudioData\\namespaces\\updater-swap\\user-data\" --standard-schemes=readable-studio --secure-schemes=readable-studio --cors-schemes=readable-studio --fetch-schemes=readable-studio --streaming-schemes=readable-studio --app-path=\"D:\\readable-studio\\.tmp\\updater-swap\\app\\resources\\app\" --enable-sandbox --disable-breakpad --video-capture-use-gpu-memory-buffer --lang=ko --device-scale-factor=1.5 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=5 --time-ticks-at-unix-epoch=-1790727081409550 --launch-time-ticks=103605752497 --field-trial-handle=1888,i,13846331257711444412,10024726467718983413,262144 --enable-features=EnableTransparentHwndEnlargement,PdfUseShowSaveFilePicker --disable-features=AutofillServerCommunication,CertificateTransparencyComponentUpdater,DropInputEventsWhilePaintHolding,LocalNetworkAccessChecks,MediaRouter,NetworkServiceSandbox,OptimizationHints,ScreenAIOCREnabled,SpareRendererForSitePerProcess,TraceSiteInstanceGetProcessCreation,Translate --variations-seed-version --pseudonymization-salt-handle=1904,i,10042968094965714860,5727077573111548360,4 --trace-process-track-uuid=3190708990997080739 --mojo-platform-channel-handle=3440 --readable-studio-os-locale=ko /prefetch:1"
+                                 }
+                             ],
+                     "restartManager":  [
+                                            {
+                                                "pid":  18792,
+                                                "name":  "Readable Studio",
+                                                "type":  2
+                                            },
+                                            {
+                                                "pid":  31968,
+                                                "name":  "Readable Studio",
+                                                "type":  1
+                                            },
+                                            {
+                                                "pid":  9312,
+                                                "name":  "Readable Studio",
+                                                "type":  0
+                                            },
+                                            {
+                                                "pid":  23212,
+                                                "name":  "Readable Studio",
+                                                "type":  0
+                                            },
+                                            {
+                                                "pid":  40788,
+                                                "name":  "Readable Studio",
+                                                "type":  0
+                                            },
+                                            {
+                                                "pid":  39736,
+                                                "name":  "Node.js JavaScript Runtime",
+                                                "type":  5
+                                            },
+                                            {
+                                                "pid":  43724,
+                                                "name":  "Node.js JavaScript Runtime",
+                                                "type":  5
+                                            },
+                                            {
+                                                "pid":  29524,
+                                                "name":  "Node.js JavaScript Runtime",
+                                                "type":  5
+                                            },
+                                            {
+                                                "pid":  25612,
+                                                "name":  "Node.js JavaScript Runtime",
+                                                "type":  5
+                                            }
+                                        ],
+                     "pathMs":  367.0174,
+                     "cimMs":  512.9864,
+                     "rmMs":  1996.3737,
+                     "registeredFiles":  19
+                 },
+    "sidecar":  {
+                    "pid":  39736,
+                    "execPath":  "D:\\readable-studio\\.tmp\\updater-swap\\app\\resources\\readable-studio\\bin\\node.exe",
+                    "parentPid":  31968
+                },
+    "mainPid":  31968
+}

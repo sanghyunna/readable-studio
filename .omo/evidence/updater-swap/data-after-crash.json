@@ -1,0 +1,334 @@
+﻿[
+    {
+        "sha256":  "50063AF67EE959C5FD6B9A06F1544C6ABDA3AC26BC5228A09B23CF7C5D49E531",
+        "path":  "namespaces/updater-swap/data/agent-scan.json"
+    },
+    {
+        "sha256":  "A1748528CD5AC5A876F85EF0DAA8BC772940F3B7047A360471A447B2ED93DD13",
+        "path":  "namespaces/updater-swap/data/app.sqlite"
+    },
+    {
+        "sha256":  "A878F10697009EC2B0DF05319BAF8C3BF7FD7FBCB24465BFA65120F16DF0E862",
+        "path":  "namespaces/updater-swap/data/app.sqlite-shm"
+    },
+    {
+        "sha256":  "2BCC80C9D76D72C6AEB447A154DC55206E3DE0A0A95DA6C495FB2CBEF08B1AD2",
+        "path":  "namespaces/updater-swap/data/app.sqlite-wal"
+    },
+    {
+        "sha256":  "B36356D785D7D673BC23B51A40692280A72FF8053F23957188B6C2BF3DD29129",
+        "path":  "namespaces/updater-swap/data/app-config.json"
+    },
+    {
+        "sha256":  "DD9EF4197DC438BE1AC78A06527902F8ED5A65E138BD6119850EE515CA02F5AB",
+        "path":  "namespaces/updater-swap/data/databricks/current.json"
+    },
+    {
+        "sha256":  "6CC11D3712B3FED800B09FECDEF5B9B23E87DCE15F1A7B84E77A19AF414512E2",
+        "path":  "namespaces/updater-swap/data/databricks/generation-07bc158d-f4eb-4724-91be-1da256a677f4.json"
+    },
+    {
+        "sha256":  "8256F07326BA8D7EDBA7A1112A93A83DCE495CB92E8A74E378765778DC474118",
+        "path":  "namespaces/updater-swap/data/databricks/generation-5094ee62-2647-4494-b0aa-0d1d43e084e7.json"
+    },
+    {
+        "sha256":  "C5537F8654FB2AA18969151CA54F24377D234AEBBDCBC14A19D83B3C81971A9D",
+        "path":  "namespaces/updater-swap/data/databricks/generation-5aae524b-1744-414f-9020-326f95fb8cde.json"
+    },
+    {
+        "sha256":  "EBB7155643E3EC934EC1D4DBA9DD5C809331089B27DDB752EED496343E10BBF7",
+        "path":  "namespaces/updater-swap/data/databricks/generation-5f8e553f-ec7b-443f-b8ff-137b2dc5d109.json"
+    },
+    {
+        "sha256":  "24BB7D39F364FD80F4C1286A3A669B7778610CDE2D2296E49EC8FAF917914977",
+        "path":  "namespaces/updater-swap/data/databricks/generation-708423d1-3cae-4b72-8fcc-4ce6bf512618.json"
+    },
+    {
+        "sha256":  "5CA8BD775A04B244D7B82B150F61EAAF6D0B63B00BA384DFAE0E578D8B66CB29",
+        "path":  "namespaces/updater-swap/data/databricks/generation-b348c3a9-40b5-4aed-8386-49d6f41e9efe.json"
+    },
+    {
+        "sha256":  "06BD06C600D68BAA656CF2BD4DA0372CFBAF95AF1423416ECA2BD4A6F01D2FD3",
+        "path":  "namespaces/updater-swap/data/databricks/generation-d9c98f50-9065-4419-bd71-32ec615907c0.json"
+    },
+    {
+        "sha256":  "86AEEF161A9A4D3A072756490D6DDB16546B3680B57DA3EC683C945582227ABB",
+        "path":  "namespaces/updater-swap/logs/daemon/latest.log"
+    },
+    {
+        "sha256":  "047EB9B5AEF0A9F57C1D7621F313678BB14CBF3AE289617FA1552D966334BE26",
+        "path":  "namespaces/updater-swap/logs/desktop/crashes.jsonl"
+    },
+    {
+        "sha256":  "93EE2CA11B5BE11E1C6D6EC64FA574488CA856C90300DDC416B6DD3859EEF724",
+        "path":  "namespaces/updater-swap/logs/desktop/latest.log"
+    },
+    {
+        "sha256":  "F764FE6F495A2AFE19B7E423CBBE4421F78B6AFDCE6CE32E6979F6DEB938FF78",
+        "path":  "namespaces/updater-swap/logs/desktop/renderer.log"
+    },
+    {
+        "sha256":  "35A5751170FE13B73900AD42548EF47D21EB46D5D59A5F5873FDE81BC82E8CB2",
+        "path":  "namespaces/updater-swap/logs/desktop/startup.log"
+    },
+    {
+        "sha256":  "D8C6E3734111B0019588009ED9C53F2057871E49193E529BE114AD1DEED26944",
+        "path":  "namespaces/updater-swap/logs/web/latest.log"
+    },
+    {
+        "sha256":  "468456974FD86B33647942820DCE7284879ACFAB9E9E6ECA008E1FDCF9006FB5",
+        "path":  "namespaces/updater-swap/user-data/session/Cache/Cache_Data/data_0"
+    },
+    {
+        "sha256":  "407F742F2436B51B0CBFCCFBA85757C16F46F21FB4F1428AF5E75A942AC921FF",
+        "path":  "namespaces/updater-swap/user-data/session/Cache/Cache_Data/data_1"
+    },
+    {
+        "sha256":  "EC1702806F4CC7C42A82FC2B38E89835FDE7C64BB32060E0823C9077CA92EFB7",
+        "path":  "namespaces/updater-swap/user-data/session/Cache/Cache_Data/data_2"
+    },
+    {
+        "sha256":  "E09F42C398D688DCE168570291F1F92D079987DEDA3099A34ADB9E8C0522B30C",
+        "path":  "namespaces/updater-swap/user-data/session/Cache/Cache_Data/data_3"
+    },
+    {
+        "sha256":  "2CC376B1D5B6C5C38852EFBD504E631456A0323CE28C4DA4D0656909C61F5F00",
+        "path":  "namespaces/updater-swap/user-data/session/Cache/Cache_Data/index"
+    },
+    {
+        "sha256":  "9C169428D852E25BD59B27652ED533D2A1F09F96E4C329FA5E06F47E16731543",
+        "path":  "namespaces/updater-swap/user-data/session/Cache/No_Vary_Search/journal.baj"
+    },
+    {
+        "sha256":  "0C2DD377ED0CC66161E9DB8F89F7D8BCB3AD8C06C4A054BDCBA214AB05F58C9A",
+        "path":  "namespaces/updater-swap/user-data/session/Cache/No_Vary_Search/snapshot.baf"
+    },
+    {
+        "sha256":  "FBCFE23A2ECB82B7100C50811691DDE0A33AA3DA8D176BE9882A9DB485DC0F2D",
+        "path":  "namespaces/updater-swap/user-data/session/Code Cache/js/index"
+    },
+    {
+        "sha256":  "C9336FC08643AB85004BB71B51D3E713CFBB38019F1742E8669FB5276E72CBF8",
+        "path":  "namespaces/updater-swap/user-data/session/Code Cache/js/index-dir/the-real-index"
+    },
+    {
+        "sha256":  "FBCFE23A2ECB82B7100C50811691DDE0A33AA3DA8D176BE9882A9DB485DC0F2D",
+        "path":  "namespaces/updater-swap/user-data/session/Code Cache/wasm/index"
+    },
+    {
+        "sha256":  "C9336FC08643AB85004BB71B51D3E713CFBB38019F1742E8669FB5276E72CBF8",
+        "path":  "namespaces/updater-swap/user-data/session/Code Cache/wasm/index-dir/the-real-index"
+    },
+    {
+        "sha256":  "D6A5FE39CD672781B256E0E3102F7022635F1D4BB7CFCC90A80FFFE4D0F3877E",
+        "path":  "namespaces/updater-swap/user-data/session/DawnGraphiteCache/data_0"
+    },
+    {
+        "sha256":  "B1E963D702392FB7224786E7D56D43973E9B9EFD1B89C17814D7C558FFC0CDEC",
+        "path":  "namespaces/updater-swap/user-data/session/DawnGraphiteCache/data_1"
+    },
+    {
+        "sha256":  "EC1702806F4CC7C42A82FC2B38E89835FDE7C64BB32060E0823C9077CA92EFB7",
+        "path":  "namespaces/updater-swap/user-data/session/DawnGraphiteCache/data_2"
+    },
+    {
+        "sha256":  "E09F42C398D688DCE168570291F1F92D079987DEDA3099A34ADB9E8C0522B30C",
+        "path":  "namespaces/updater-swap/user-data/session/DawnGraphiteCache/data_3"
+    },
+    {
+        "sha256":  "E5B50E4E84B18F7ED81587B8817860BFDFF9CB874C5E7EA3E1BE606045005C6B",
+        "path":  "namespaces/updater-swap/user-data/session/DawnGraphiteCache/index"
+    },
+    {
+        "sha256":  "D6A5FE39CD672781B256E0E3102F7022635F1D4BB7CFCC90A80FFFE4D0F3877E",
+        "path":  "namespaces/updater-swap/user-data/session/DawnWebGPUCache/data_0"
+    },
+    {
+        "sha256":  "B1E963D702392FB7224786E7D56D43973E9B9EFD1B89C17814D7C558FFC0CDEC",
+        "path":  "namespaces/updater-swap/user-data/session/DawnWebGPUCache/data_1"
+    },
+    {
+        "sha256":  "EC1702806F4CC7C42A82FC2B38E89835FDE7C64BB32060E0823C9077CA92EFB7",
+        "path":  "namespaces/updater-swap/user-data/session/DawnWebGPUCache/data_2"
+    },
+    {
+        "sha256":  "E09F42C398D688DCE168570291F1F92D079987DEDA3099A34ADB9E8C0522B30C",
+        "path":  "namespaces/updater-swap/user-data/session/DawnWebGPUCache/data_3"
+    },
+    {
+        "sha256":  "605C3C231DD1C7C9AF2D13EDDF8750002446B9E17CA9BDD18A7D06ABD30ACCCA",
+        "path":  "namespaces/updater-swap/user-data/session/DawnWebGPUCache/index"
+    },
+    {
+        "sha256":  "AEE7D5ACB0A777001CF6A95217FA5EA99A5EF16248BE01A7260AC5E7EE198221",
+        "path":  "namespaces/updater-swap/user-data/session/DIPS"
+    },
+    {
+        "sha256":  "5A530EA510BFE9D83E9F2E58CA1F4139FA06F8EDEA2BEDD4C717B0EBC709BF2C",
+        "path":  "namespaces/updater-swap/user-data/session/GPUCache/data_0"
+    },
+    {
+        "sha256":  "8554C7A03B8841CA8B252E17CB35580A3C44A1F4931443374B9BBEE0A42CE011",
+        "path":  "namespaces/updater-swap/user-data/session/GPUCache/data_1"
+    },
+    {
+        "sha256":  "81AD052A0C24DA96A08B6DA5DF0DDA727C480C20508278F38B29E9D2979902A9",
+        "path":  "namespaces/updater-swap/user-data/session/GPUCache/data_2"
+    },
+    {
+        "sha256":  "E09F42C398D688DCE168570291F1F92D079987DEDA3099A34ADB9E8C0522B30C",
+        "path":  "namespaces/updater-swap/user-data/session/GPUCache/data_3"
+    },
+    {
+        "sha256":  "A4602FAE77AD9078104481C183B3D0B8E75372537C811E61214B727293CC67A0",
+        "path":  "namespaces/updater-swap/user-data/session/GPUCache/index"
+    },
+    {
+        "sha256":  "99459B1A91C9148D8625CF6665A22DCABAC3F50D4746D2685AFA28E2F593A012",
+        "path":  "namespaces/updater-swap/user-data/session/Local State"
+    },
+    {
+        "sha256":  "E8C6436D44CC71C47CDDDAB3D41D7EECA259F64BA486E9EC41529F1B20BA630B",
+        "path":  "namespaces/updater-swap/user-data/session/Local Storage/leveldb/000003.log"
+    },
+    {
+        "sha256":  "0F1BAD70C7BD1E0A69562853EC529355462FCD0423263A3D39D6D0D70B780443",
+        "path":  "namespaces/updater-swap/user-data/session/Local Storage/leveldb/CURRENT"
+    },
+    {
+        "sha256":  "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+        "path":  "namespaces/updater-swap/user-data/session/Local Storage/leveldb/LOCK"
+    },
+    {
+        "sha256":  "FD2BA3707045653D7B3B59B9BCF202E0EA56249C253A4E7B417913A51B90F3CE",
+        "path":  "namespaces/updater-swap/user-data/session/Local Storage/leveldb/LOG"
+    },
+    {
+        "sha256":  "14B9DAA9A20F5E4AECD725F452FFFC605725202AA3892B68FBE85357CB2ECCB6",
+        "path":  "namespaces/updater-swap/user-data/session/Local Storage/leveldb/LOG.old"
+    },
+    {
+        "sha256":  "F9D31B278E215EB0D0E9CD709EDFA037E828F36214AB7906F612160FEAD4B2B4",
+        "path":  "namespaces/updater-swap/user-data/session/Local Storage/leveldb/MANIFEST-000001"
+    },
+    {
+        "sha256":  "88C9590388D22BB0BD8DA3F7D50389311957024EE5C2DFE562E2649AD427FD7D",
+        "path":  "namespaces/updater-swap/user-data/session/Network/Network Persistent State"
+    },
+    {
+        "sha256":  "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+        "path":  "namespaces/updater-swap/user-data/session/Network/NetworkDataMigrated"
+    },
+    {
+        "sha256":  "FE03FB82CFE74A64C7094C810F9E8167C3B61C254C27569CC6B7DB5ED84B0B18",
+        "path":  "namespaces/updater-swap/user-data/session/Network/Trust Tokens"
+    },
+    {
+        "sha256":  "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+        "path":  "namespaces/updater-swap/user-data/session/Network/Trust Tokens-journal"
+    },
+    {
+        "sha256":  "4AA0D6A41DA67A30E6170480DB25FA6DE0D8ABCD9CE9F6B70F946DA5D2B491D5",
+        "path":  "namespaces/updater-swap/user-data/session/Preferences"
+    },
+    {
+        "sha256":  "6B9608281A2181B24A8346C90230E6019D233007DB40CAE97731D813D78DE507",
+        "path":  "namespaces/updater-swap/user-data/session/Session Storage/000003.log"
+    },
+    {
+        "sha256":  "0F1BAD70C7BD1E0A69562853EC529355462FCD0423263A3D39D6D0D70B780443",
+        "path":  "namespaces/updater-swap/user-data/session/Session Storage/CURRENT"
+    },
+    {
+        "sha256":  "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+        "path":  "namespaces/updater-swap/user-data/session/Session Storage/LOCK"
+    },
+    {
+        "sha256":  "B747C395165ED46694EB21A8B7201C194CEF66751EC7AF6BDE8164509AEA44A4",
+        "path":  "namespaces/updater-swap/user-data/session/Session Storage/LOG"
+    },
+    {
+        "sha256":  "0060F6D4C261F8DF91D37FAF794F610A1DAADD5F6E60DD9A55BBA7FF1A382BDE",
+        "path":  "namespaces/updater-swap/user-data/session/Session Storage/LOG.old"
+    },
+    {
+        "sha256":  "F9D31B278E215EB0D0E9CD709EDFA037E828F36214AB7906F612160FEAD4B2B4",
+        "path":  "namespaces/updater-swap/user-data/session/Session Storage/MANIFEST-000001"
+    },
+    {
+        "sha256":  "FBCFE23A2ECB82B7100C50811691DDE0A33AA3DA8D176BE9882A9DB485DC0F2D",
+        "path":  "namespaces/updater-swap/user-data/session/Shared Dictionary/cache/index"
+    },
+    {
+        "sha256":  "2626626BF0F30B5C52DA6E541CC1ABAE312FC06321B4E58CA3BB42A3D597B164",
+        "path":  "namespaces/updater-swap/user-data/session/Shared Dictionary/cache/index-dir/the-real-index"
+    },
+    {
+        "sha256":  "9DFBA1D139C9933668E58E9C7777804C8AE01B2942DCC2DFAAA65AC139853A59",
+        "path":  "namespaces/updater-swap/user-data/session/Shared Dictionary/db"
+    },
+    {
+        "sha256":  "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+        "path":  "namespaces/updater-swap/user-data/session/Shared Dictionary/db-journal"
+    },
+    {
+        "sha256":  "09FC662F9190BA83EC034C4AC700F36F28DB2EA7D42EAB4A22F9650B5C8D0D24",
+        "path":  "namespaces/updater-swap/user-data/session/shared_proto_db/000003.log"
+    },
+    {
+        "sha256":  "0F1BAD70C7BD1E0A69562853EC529355462FCD0423263A3D39D6D0D70B780443",
+        "path":  "namespaces/updater-swap/user-data/session/shared_proto_db/CURRENT"
+    },
+    {
+        "sha256":  "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+        "path":  "namespaces/updater-swap/user-data/session/shared_proto_db/LOCK"
+    },
+    {
+        "sha256":  "CB157786FCF1F478639259A7A8F4C9F57604A2AA9DE068D760441631647C522D",
+        "path":  "namespaces/updater-swap/user-data/session/shared_proto_db/LOG"
+    },
+    {
+        "sha256":  "BA224C164071085CF7112133E47C6DE1B1CCDB23B143F71E4B68FC1DFA159271",
+        "path":  "namespaces/updater-swap/user-data/session/shared_proto_db/LOG.old"
+    },
+    {
+        "sha256":  "F9D31B278E215EB0D0E9CD709EDFA037E828F36214AB7906F612160FEAD4B2B4",
+        "path":  "namespaces/updater-swap/user-data/session/shared_proto_db/MANIFEST-000001"
+    },
+    {
+        "sha256":  "A33DD96348BCA2A185CFCAA8CD43DE1D8E5A52661E3BBA84DA7FBA17290FEB2D",
+        "path":  "namespaces/updater-swap/user-data/session/shared_proto_db/metadata/000003.log"
+    },
+    {
+        "sha256":  "0F1BAD70C7BD1E0A69562853EC529355462FCD0423263A3D39D6D0D70B780443",
+        "path":  "namespaces/updater-swap/user-data/session/shared_proto_db/metadata/CURRENT"
+    },
+    {
+        "sha256":  "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+        "path":  "namespaces/updater-swap/user-data/session/shared_proto_db/metadata/LOCK"
+    },
+    {
+        "sha256":  "A048F371D6C072F18FBAF381C8AD9ED326D22ED24A2544F2D7022E5652FE0D43",
+        "path":  "namespaces/updater-swap/user-data/session/shared_proto_db/metadata/LOG"
+    },
+    {
+        "sha256":  "9AD32CB588697BB5CF3191D6317A6647B4A8B7E554B0F1488380721ABECF30CE",
+        "path":  "namespaces/updater-swap/user-data/session/shared_proto_db/metadata/LOG.old"
+    },
+    {
+        "sha256":  "F9D31B278E215EB0D0E9CD709EDFA037E828F36214AB7906F612160FEAD4B2B4",
+        "path":  "namespaces/updater-swap/user-data/session/shared_proto_db/metadata/MANIFEST-000001"
+    },
+    {
+        "sha256":  "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+        "path":  "namespaces/updater-swap/user-data/session/VideoDecodeStats/LOCK"
+    },
+    {
+        "sha256":  "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+        "path":  "namespaces/updater-swap/user-data/session/VideoDecodeStats/LOG"
+    },
+    {
+        "sha256":  "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+        "path":  "namespaces/updater-swap/user-data/session/VideoDecodeStats/LOG.old"
+    }
+]
