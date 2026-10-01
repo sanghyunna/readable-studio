@@ -18,6 +18,7 @@ import { bootstrapSidecarRuntime, createJsonIpcServer, resolveAppIpcPath } from 
 import { addLoopbackNoProxyEnv } from "@readable-studio/platform";
 
 import { PACKAGED_NAMESPACE_ENV, type PackagedConfig } from "./config.js";
+import { acquireDataLock } from './data-lock.js';
 import { writePackagedDesktopIdentity, writePackagedWebIdentity } from "./identity.js";
 import { resolvePackagedNamespacePaths } from "./paths.js";
 import { startPackagedSidecars } from "./sidecars.js";
@@ -110,6 +111,7 @@ async function main(): Promise<void> {
   startupTiming.mark("config-read-complete");
   const activeConfig = config;
   const paths = resolvePackagedNamespacePaths(config);
+  acquireDataLock(paths.dataRoot, { pid: process.pid, appVersion: config.appVersion, exePath: process.execPath, startedAt: new Date().toISOString() });
   startupTiming.mark("packaged-paths-resolved");
   const stamp = createHeadlessStamp(config.namespace);
 

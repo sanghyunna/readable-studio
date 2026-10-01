@@ -1,4 +1,5 @@
 import { protocol } from "electron";
+import type { StartupNoticeState } from './onedrive.js';
 
 const READABLE_STUDIO_SCHEME = "readable-studio";
 const READABLE_STUDIO_AUTHORITY = "app";
@@ -85,6 +86,7 @@ export async function handleReadableStudioRequest(
   request: Request,
   webRuntimeUrl: string,
   fetchImpl: typeof fetch = fetch,
+  startupState?: StartupNoticeState,
 ): Promise<Response> {
   const incoming = new URL(request.url);
   if (incoming.protocol !== `${READABLE_STUDIO_SCHEME}:` || incoming.hostname !== READABLE_STUDIO_AUTHORITY) {
@@ -92,6 +94,18 @@ export async function handleReadableStudioRequest(
       JSON.stringify({ error: "READABLE_STUDIO_PROTOCOL_REQUEST_INVALID" }),
       { status: 400, headers: { "content-type": "application/json" } },
     );
+  }
+  if (incoming.pathname === '/__packaged/startup-state' && startupState) {
+    if (request.method === 'POST') {
+      const origin = request.headers.get('origin');
+      if (origin !== null && origin !== 'readable-studio://app') return new Response(null, { status: 403 });
+      try { await startupState.dismiss(); }
+      catch (error) {
+        console.error('Could not persist OneDrive notice dismissal', error);
+        return new Response(null, { status: 500 });
+      }
+    } else if (request.method !== 'GET') return new Response(null, { status: 405 });
+    return new Response(JSON.stringify(startupState.snapshot()), { headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
   }
   const target = toWebRuntimeUrl(webRuntimeUrl, request.url);
   try {
@@ -109,8 +123,8 @@ export function packagedEntryUrl(): string {
 }
 
 // @dsp func-97bde04f
-export function registerReadableStudioProtocol(webRuntimeUrl: string): void {
+export function registerReadableStudioProtocol(webRuntimeUrl: string, startupState?: StartupNoticeState): void {
   protocol.handle(READABLE_STUDIO_SCHEME, async (request) => {
-    return await handleReadableStudioRequest(request, webRuntimeUrl);
+    return await handleReadableStudioRequest(request, webRuntimeUrl, fetch, startupState);
   });
 }

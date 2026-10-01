@@ -23,6 +23,8 @@ import { join } from "node:path";
 import { app, dialog, session } from "electron";
 
 import { readPackagedConfig, resolveEarlyPackagedElectronPaths } from "./config.js";
+import { acquireDataLock, PackagedDataLockAccessError, PackagedDataLockError } from './data-lock.js';
+import { createStartupNoticeState, detectOneDriveLocation, readOneDriveKnownFolder } from './onedrive.js';
 import { writePackagedDesktopIdentity } from "./identity.js";
 import { PackagedNetworkingRestoreError, PackagedPathAccessError } from "./errors.js";
 import {
@@ -102,11 +104,23 @@ async function main(): Promise<void> {
   const paths = resolvePackagedNamespacePaths(activeConfig, namespace, process.env);
   if (earlyElectronPaths == null) applyPackagedElectronPathOverrides(paths);
   await ensurePackagedNamespacePaths(paths);
+  const dataLock = acquireDataLock(paths.dataRoot, {
+    pid: process.pid, appVersion: activeConfig.appVersion, exePath: process.execPath, startedAt: new Date().toISOString(),
+  });
+  app.once('quit', dataLock.release);
+  let oneDrive = detectOneDriveLocation(process.execPath, process.env);
+  if (!oneDrive) {
+    try { oneDrive = detectOneDriveLocation(process.execPath, process.env, readOneDriveKnownFolder()); }
+    catch (error) { console.warn('OneDrive known-folder detection failed; startup will continue', error); }
+  }
+  if (oneDrive) console.info(`OneDrive startup detection: source=${oneDrive.source} root=${oneDrive.root}`);
+  const startupNotice = createStartupNoticeState(paths.dataRoot, oneDrive);
   const existingDesktop = await inspectExistingPackagedDesktop(namespace, {
     logger: console,
     paths,
   });
   if (existingDesktop.action === "exit") {
+    dataLock.release();
     startupTiming.flush();
     flushStartupTimingOnFailure = null;
     return;
@@ -130,6 +144,7 @@ async function main(): Promise<void> {
     }
     showExistingDesktop();
   })) {
+    dataLock.release();
     return;
   }
   const identity = await writePackagedDesktopIdentity({ descriptor: activeConfig.descriptor, paths, stamp });
@@ -191,7 +206,7 @@ async function main(): Promise<void> {
       if (response !== 0) throw error;
     }
   }
-  registerReadableStudioProtocol(sidecars.web.url ?? "http://127.0.0.1:0");
+  registerReadableStudioProtocol(sidecars.web.url ?? "http://127.0.0.1:0", startupNotice);
 
   const { runDesktopMain } = await import("@readable-studio/desktop/main");
   startupTiming.mark("desktop-main-handoff");
@@ -233,11 +248,11 @@ async function main(): Promise<void> {
 void main().catch((error: unknown) => {
   flushStartupTimingOnFailure?.();
   flushStartupTimingOnFailure = null;
-  if (error instanceof PackagedPathAccessError || error instanceof PackagedNetworkingRestoreError) {
+  if (error instanceof PackagedPathAccessError || error instanceof PackagedNetworkingRestoreError || error instanceof PackagedDataLockError || error instanceof PackagedDataLockAccessError) {
     try {
       dialog.showErrorBox(error.title, error.message);
-    } catch {
-      // Fall through to console logging + process exit.
+    } catch (dialogError) {
+      console.error('Could not display packaged startup failure', dialogError);
     }
   }
   packagedLogger?.error("packaged runtime failed", { error });
