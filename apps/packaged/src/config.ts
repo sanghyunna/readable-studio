@@ -87,14 +87,20 @@ export type PackagedConfig = {
   webOutputMode: PackagedWebOutputMode;
 };
 
+/**
+ * True only for the self-updating layout: the Electron exe lives in an `app`
+ * payload folder AND the immutable launcher stub sits beside that folder. A
+ * legacy flat extraction can itself be named `app`, so the name alone is never
+ * enough. Every updater decision must go through this single predicate.
+ */
+export function isPortableAppLayout(exePath = process.execPath): boolean {
+  const exeDir = dirname(exePath);
+  return basename(exeDir).toLowerCase() === "app" && existsSync(join(dirname(exeDir), "Readable Studio.exe"));
+}
+
 export function resolvePortableTopFolder(exePath = process.execPath): string {
   const exeDir = dirname(exePath);
-  const parent = dirname(exeDir);
-  // A legacy flat extraction can itself be named app. Only the adjacent
-  // immutable launcher identifies the replaceable payload layout.
-  return basename(exeDir).toLowerCase() === "app" && existsSync(join(parent, "Readable Studio.exe"))
-    ? parent
-    : exeDir;
+  return isPortableAppLayout(exePath) ? dirname(exeDir) : exeDir;
 }
 
 export function isInsidePortableDataContainer(candidate: string): boolean {

@@ -34,7 +34,7 @@ import {
   wellKnownUserToolchainBins,
 } from "@readable-studio/platform";
 
-import { resolvePortableTopFolder, type PackagedWebOutputMode } from "./config.js";
+import { isPortableAppLayout, resolvePortableTopFolder, type PackagedWebOutputMode } from "./config.js";
 import type { PackagedNamespacePaths } from "./paths.js";
 import {
   createPackagedStartupPhaseTimer,
@@ -373,7 +373,7 @@ export function buildPackagedDaemonSpawnEnv(
     // no client to register a secret.
     ...(options.requireDesktopAuth ? {
       READABLE_REQUIRE_DESKTOP_AUTH: "1",
-      ...(basename(dirname(process.execPath)).toLowerCase() === "app" ? {
+      ...(isPortableAppLayout() ? {
         READABLE_UPDATE_ROOT: resolvePortableTopFolder(),
         READABLE_ELECTRON_MAIN_PID: String(process.pid),
       } : {}),

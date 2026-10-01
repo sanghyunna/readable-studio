@@ -20,7 +20,13 @@ export function createShortcut(location: ShortcutLocation, deps: Dependencies): 
     return { status: 'failed', location, reason: 'unsupported' };
   }
   const exeDir = path.dirname(deps.exe);
-  const top = path.basename(exeDir).toLowerCase() === 'app' ? path.dirname(exeDir) : exeDir;
+  // Target the immutable launcher only in the self-updating layout: an `app`
+  // payload folder WITH the stub beside it. A legacy flat extraction may itself
+  // be named `app`, and pointing above it would create a dangling shortcut.
+  // Mirrors isPortableAppLayout in apps/packaged (apps may not import each other).
+  const parent = path.dirname(exeDir);
+  const launcher = path.join(parent, path.basename(deps.exe));
+  const top = path.basename(exeDir).toLowerCase() === 'app' && deps.fs.existsSync(launcher) ? parent : exeDir;
   const target = path.join(top, path.basename(deps.exe));
   const file = path.join(deps.paths[location], 'Readable Studio.lnk');
   try {
