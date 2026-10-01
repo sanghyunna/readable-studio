@@ -13,8 +13,18 @@
 //    collapse the rail once; the choice is persisted in localStorage next to
 //    the first-run guide stage, so it survives restarts. Visible by default
 //    - the user opts out, never in.
+//  - Which preview a card paints. The rail exists so templates appear
+//    VISUALLY, so a thumbnail must never depend on a remote host: the daemon
+//    attaches a baked poster/clip whose URL falls back to a CDN when the bake
+//    files are not on disk, and offline / locked-down machines turn that into
+//    a rail of letter glyphs. `hubTemplateCardPreview` keeps the baked media
+//    only when it is served by our own daemon and otherwise renders the
+//    bundled example page itself (`/api/plugins/<id>/preview`, sandboxed and
+//    scaled down), leaving the glyph as the rare last resort.
 
 import type { InstalledPluginRecord } from '@readable-studio/contracts';
+
+import { inferPluginPreview, type PluginPreviewSpec } from '../plugins-home/preview';
 
 export interface HubTemplateCarouselItem {
   record: InstalledPluginRecord;
@@ -45,6 +55,28 @@ export function mixHubTemplateCarouselItems(
     }
   }
   return items;
+}
+
+// Same-origin daemon path ("/api/..."), as opposed to an absolute or
+// protocol-relative URL on another host.
+function isDaemonServedUrl(url: string | null): boolean {
+  return typeof url === 'string' && url.startsWith('/') && !url.startsWith('//');
+}
+
+export function hubTemplateCardPreview(record: InstalledPluginRecord): PluginPreviewSpec {
+  const baked = inferPluginPreview(record, { preferBaked: true });
+  if (baked.kind !== 'media') return baked;
+  if (isDaemonServedUrl(baked.poster) && (baked.videoUrl === null || isDaemonServedUrl(baked.videoUrl))) {
+    return baked;
+  }
+  // Remote poster: drop the bake and read the manifest's own `readable.preview`
+  // (the example page for bundled templates). A manifest-declared remote
+  // poster is still rejected the same way so the rail stays network-free.
+  const local = inferPluginPreview(record);
+  if (local.kind === 'media' && !isDaemonServedUrl(local.poster)) {
+    return { kind: 'text' };
+  }
+  return local;
 }
 
 const STORAGE_KEY = 'readable-studio:hub-template-carousel';

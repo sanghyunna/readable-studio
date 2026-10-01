@@ -69,6 +69,7 @@ import {
 import { PreviewSurface } from './plugins-home/cards/PreviewSurface';
 import { readHomeGuideStage, writeHomeGuideStage } from './home-hero/firstRunGuide';
 import {
+  hubTemplateCardPreview,
   mixHubTemplateCarouselItems,
   readTemplateCarouselCollapsed,
   writeTemplateCarouselCollapsed,
@@ -1942,9 +1943,10 @@ function HubTemplateCard({
   tabIndex: 0 | -1;
 }) {
   const { record, chipId } = item;
-  // Same preview mechanism as the chip-scoped preset tiles: baked poster/clip
-  // when the manifest has one, otherwise the live scaled-down example page.
-  const preview = useMemo(() => inferPluginPreview(record, { preferBaked: true }), [record]);
+  // Local-only thumbnail: a daemon-served baked poster when the bake is on
+  // disk, otherwise the bundled example page rendered in a sandboxed, scaled
+  // iframe. Never a remote host (see hubTemplateCardPreview).
+  const preview = useMemo(() => hubTemplateCardPreview(record), [record]);
   const title = localizePluginTitle(locale, record);
   const description = localizePluginDescription(locale, record);
   const seedPrompt = examplePresetSeedPrompt(record, locale, () =>
@@ -1965,7 +1967,10 @@ function HubTemplateCard({
       title={description ? `${title} · ${description}` : title}
     >
       <span className="home-hero__template-thumb" aria-hidden>
-        <PreviewSurface pluginId={record.id} pluginTitle={title} preview={preview} />
+        {/* eager: mount the page as soon as the card is near the viewport
+            instead of after the gallery's hover/linger gate - the rail is
+            glanced at, not lingered on, and the thumb must be a picture. */}
+        <PreviewSurface pluginId={record.id} pluginTitle={title} preview={preview} eager />
         {active ? (
           <span className="home-hero__plugin-preset-check" aria-hidden>
             <Icon name="check" size={12} />

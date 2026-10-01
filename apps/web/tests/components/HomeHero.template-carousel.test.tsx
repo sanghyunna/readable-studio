@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InstalledPluginRecord } from '@readable-studio/contracts';
 
 import { HomeHero } from '../../src/components/HomeHero';
+import { __resetHtmlSurfaceProbeCacheForTests } from '../../src/components/plugins-home/cards/HtmlSurface';
 import { I18nProvider } from '../../src/i18n';
 import { getKo } from '../../src/i18n/locales/ko';
 import { getEn } from '../../src/i18n/locales/en';
@@ -168,6 +169,55 @@ describe('Hub template carousel', () => {
     const cards = screen.getAllByTestId('hub-template-card');
     expect(cards.map((card) => card.getAttribute('data-plugin-id'))).toEqual(['example-guizang-ppt']);
     expect(screen.queryByTestId('home-hero-plugin-presets')).toBeNull();
+  });
+
+  it('renders card thumbnails from the local example page, never from a remote host', async () => {
+    // The daemon decorates records with a baked poster/clip that, when the
+    // bake files are not on disk, points at a CDN. Offline / locked-down
+    // machines cannot resolve that host, so the thumb must come from the
+    // local sandboxed example page instead (daemon-served, same origin).
+    const remote = 'https://repo-assets.readable-studio.ai/plugin-previews';
+    const decorated = CATALOGUE.map((record) => ({
+      ...record,
+      manifest: {
+        ...record.manifest,
+        readable: {
+          ...record.manifest.readable,
+          bakedPreview: {
+            poster: `${remote}/${record.id}.poster.jpg`,
+            video: `${remote}/${record.id}.mp4`,
+            holdMs: 2500,
+          },
+        },
+      },
+    })) as InstalledPluginRecord[];
+    const requested: string[] = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      requested.push(url);
+      if (/^https?:/i.test(url)) throw new TypeError('getaddrinfo ENOTFOUND');
+      return new Response('<!doctype html>', { status: 200 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    __resetHtmlSurfaceProbeCacheForTests();
+    try {
+      renderHub({ pluginOptions: decorated });
+      const card = screen.getAllByTestId('hub-template-card')
+        .find((node) => node.getAttribute('data-plugin-id') === 'example-pricing-page')!;
+      const thumb = card.querySelector('.home-hero__template-thumb')!;
+      const iframe = await screen.findByTitle(`${CATALOGUE[0]!.manifest.title_i18n?.ko} preview`);
+      expect(thumb.contains(iframe)).toBe(true);
+      expect(iframe.getAttribute('src')).toBe('/api/plugins/example-pricing-page/preview');
+      expect(iframe.getAttribute('sandbox')).not.toBeNull();
+      // No card paints a letter glyph and nothing was asked of a remote host.
+      expect(document.querySelector('.plugins-home__media-fallback')).toBeNull();
+      expect(document.querySelector('[data-testid="plugins-home-html-fallback"]')).toBeNull();
+      expect(document.querySelector('.home-hero__template-thumb img[src^="http"]')).toBeNull();
+      expect(requested.filter((url) => /^https?:/i.test(url))).toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+      __resetHtmlSurfaceProbeCacheForTests();
+    }
   });
 
   it('no longer renders the separate drop-to-edit zone', () => {
