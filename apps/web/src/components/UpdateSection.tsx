@@ -91,8 +91,8 @@ export function UpdateSection({ currentVersion, onApply }: UpdateSectionProps) {
       <button type="button" className="btn" disabled={applying || !result || 'unavailable' in result || !result.isNewer} onClick={() => setConfirming(true)}>{t('update.apply')}</button>
     </div>
     {confirming ? <div role="dialog" aria-modal="true" aria-label={t('update.apply')}>
-      <button type="button" className="btn" onClick={() => void apply()}>지금 종료 후 업데이트</button>
-      <button type="button" className="btn" onClick={() => setConfirming(false)}>나중에</button>
+      <button type="button" className="btn" onClick={() => void apply()}>{t('update.applyNow')}</button>
+      <button type="button" className="btn" onClick={() => setConfirming(false)}>{t('update.applyLater')}</button>
     </div> : null}
     {applyError ? <div role="alert">{applyError}</div> : null}
     {result ? <div role="status" className={styles.result}>

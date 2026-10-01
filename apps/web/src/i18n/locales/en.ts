@@ -26,6 +26,8 @@ export function getEn(): Dict {
   'update.check': 'Check for updates',
   'update.checking': 'Checking...',
   'update.apply': 'Apply update',
+  'update.applyNow': 'Quit now and update',
+  'update.applyLater': 'Later',
   'update.applyUnavailable': 'Applying updates is not available yet.',
   'update.upToDate': 'Up to date',
   'update.newVersion': 'New version {version} available',

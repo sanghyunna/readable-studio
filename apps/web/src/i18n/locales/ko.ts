@@ -26,6 +26,8 @@ export function getKo(): Dict {
   'update.check': '업데이트 확인',
   'update.checking': '확인 중...',
   'update.apply': '업데이트 적용',
+  'update.applyNow': '지금 종료 후 업데이트',
+  'update.applyLater': '나중에',
   'update.applyUnavailable': '업데이트 적용 기능은 아직 사용할 수 없습니다.',
   'update.upToDate': '최신입니다',
   'update.newVersion': '새 버전 {version} 있음',

@@ -34,6 +34,8 @@ export interface Dict {
   'update.check': string;
   'update.checking': string;
   'update.apply': string;
+  'update.applyNow': string;
+  'update.applyLater': string;
   'update.applyUnavailable': string;
   'update.upToDate': string;
   'update.newVersion': string;
