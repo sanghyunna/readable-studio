@@ -491,7 +491,7 @@ function snapshotPiSessionFiles(rootPath: string): PiSessionFileSnapshot {
 }
 
 /** Validate the complete lineage before allowing Pi to read or reuse a session file. */
-function validatePiSessionPath(
+export function validatePiSessionPath(
   sessionPath: string,
   rootPath: string,
   cwd: string,

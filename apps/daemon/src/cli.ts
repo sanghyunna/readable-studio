@@ -290,6 +290,7 @@ const SUBCOMMAND_MAP = {
   diagnostics: runDiagnostics,
   status: runStatus,
   version: runVersion,
+  data: runDataImport,
   update: runUpdate,
   doctor: runDoctor,
   config: runConfig,
@@ -7389,6 +7390,40 @@ is the same one Settings → About → Export diagnostics produces.
     return;
   }
   console.log(`Wrote diagnostics bundle to ${targetPath} (${buf.length} bytes).`);
+}
+
+async function runDataImport(args) {
+  const strings = new Set(['daemon-url', 'from', 'prompt-file']);
+  const flags = parseFlags(args, { string: strings, boolean: new Set(['json', 'help', 'h']) });
+  if (flags.help || flags.h || positionalArgs(args, strings)[0] !== 'import') {
+    console.log('Usage: readable data import [--from <folder>] [--json]');
+    return;
+  }
+  const base = await cliDaemonBaseUrl(flags);
+  const candidatesResponse = await fetch(`${base}/api/data-import/candidates`);
+  if (!candidatesResponse.ok) return structuredHttpFailure(candidatesResponse);
+  const candidates = await candidatesResponse.json();
+  let from = flags.from;
+  if (!from && flags['prompt-file']) {
+    const fs = await import('node:fs/promises');
+    from = flags['prompt-file'] === '-'
+      ? (await new Promise((resolve, reject) => { let text = ''; process.stdin.setEncoding('utf8'); process.stdin.on('data', chunk => { text += chunk; }); process.stdin.once('end', () => resolve(text)); process.stdin.once('error', reject); })).trim()
+      : (await fs.readFile(flags['prompt-file'], 'utf8')).trim();
+  }
+  // Without an explicit source this command discovers, never silently chooses
+  // between divergent extracts of the same projects.
+  if (!from) {
+    if (flags.json) return process.stdout.write(JSON.stringify(candidates) + '\n');
+    for (const item of candidates.candidates) console.log(`${item.sourceRoot} (${item.projectCount} projects, ${item.modifiedAt})`);
+    if (!candidates.candidates.length) console.log(`Import: ${candidates.state}${candidates.error ? ` - ${candidates.error}` : ''}`);
+    else console.log('Select a folder with: readable data import --from <folder>');
+    return;
+  }
+  const response = await fetch(`${base}/api/data-import/request`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'import', from }) });
+  if (!response.ok) return structuredHttpFailure(response);
+  const result = await response.json();
+  if (flags.json) return process.stdout.write(JSON.stringify(result) + '\n');
+  console.log('Import requested. Readable Studio will restart to copy and verify your work.');
 }
 
 async function runVersion(args) {

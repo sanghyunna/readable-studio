@@ -13,6 +13,19 @@ export const LOCALE_LABEL: Record<Locale, string> = {
 // flat (not deeply nested) so missing-key TS errors point straight at the
 // offending string instead of a generic object mismatch.
 export interface Dict {
+  'dataImport.checking': string;
+  'dataImport.title': string;
+  'dataImport.description': string;
+  'dataImport.folders': string;
+  'dataImport.projects': string;
+  'dataImport.import': string;
+  'dataImport.startFresh': string;
+  'dataImport.requesting': string;
+  'dataImport.restarting': string;
+  'dataImport.restartHint': string;
+  'dataImport.failed': string;
+  'dataImport.safeFailure': string;
+  'dataImport.unreadable': string;
   'update.title': string;
   'update.subtitle': string;
   'update.current': string;

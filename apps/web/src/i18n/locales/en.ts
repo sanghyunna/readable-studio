@@ -5,6 +5,19 @@ let en: Dict | undefined;
 
 export function getEn(): Dict {
   return en ??= {
+  'dataImport.checking': 'Checking for your earlier work',
+  'dataImport.title': 'Bring your work from an earlier version?',
+  'dataImport.description': 'Copy projects, conversations, and saved history into this folder. The original stays untouched. Future updates keep your work here, so this is only needed once.',
+  'dataImport.folders': 'Earlier work folders',
+  'dataImport.projects': '{count} projects',
+  'dataImport.import': 'Import',
+  'dataImport.startFresh': 'Start fresh',
+  'dataImport.requesting': 'Preparing...',
+  'dataImport.restarting': 'Restarting to import your work',
+  'dataImport.restartHint': 'The app will copy and verify your work on restart. If it does not restart automatically, fully close and reopen it.',
+  'dataImport.failed': 'Your work could not be imported',
+  'dataImport.safeFailure': 'Your original work is still in place. Check the details below.',
+  'dataImport.unreadable': 'Some earlier folders could not be inspected.',
   'update.title': 'Updates',
   'update.subtitle': 'Check for a new portable version.',
   'update.current': 'Current version',

@@ -5,6 +5,19 @@ let ko: Dict | undefined;
 
 export function getKo(): Dict {
   return ko ??= {
+  'dataImport.checking': '이전 작업 내역을 확인하고 있습니다',
+  'dataImport.title': '이전 버전의 작업 내역을 가져올까요?',
+  'dataImport.description': '이전 폴더의 프로젝트와 대화, 저장된 작업 내역을 이 폴더로 복사합니다. 원본은 그대로 남고, 앞으로 업데이트할 때는 다시 가져올 필요가 없습니다.',
+  'dataImport.folders': '이전 작업 폴더',
+  'dataImport.projects': '프로젝트 {count}개',
+  'dataImport.import': '가져오기',
+  'dataImport.startFresh': '새로 시작',
+  'dataImport.requesting': '준비 중...',
+  'dataImport.restarting': '작업 내역을 가져오기 위해 다시 시작합니다',
+  'dataImport.restartHint': '앱을 다시 시작하면 작업 내역을 복사하고 확인합니다. 자동으로 다시 시작되지 않으면 앱을 완전히 종료한 뒤 다시 열어 주세요.',
+  'dataImport.failed': '작업 내역을 가져오지 못했습니다',
+  'dataImport.safeFailure': '원본 작업 내역은 그대로 있습니다. 아래 내용을 확인해 주세요.',
+  'dataImport.unreadable': '일부 이전 폴더를 확인하지 못했습니다.',
   'update.title': '업데이트',
   'update.subtitle': '새 포터블 버전이 있는지 확인합니다.',
   'update.current': '현재 버전',

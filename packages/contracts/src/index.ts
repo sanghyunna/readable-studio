@@ -34,6 +34,7 @@ export * from './api/system-prompts.js';
 export * from './api/terminals.js';
 export * from './api/version.js';
 export * from './api/update.js';
+export * from './api/data-import.js';
 export * from './examples.js';
 export * from './design-systems/components-manifest.js';
 export * from './design-systems/derived-token-outputs.js';

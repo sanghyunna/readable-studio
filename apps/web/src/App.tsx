@@ -32,6 +32,7 @@ import { documentProjectName, type HubImportFileOutcome } from './components/hub
 import { MemoryToast } from './components/MemoryToast';
 import { SHOW_DELAY_MS as HUB_SETTLED_MS, WelcomeModal } from './components/WelcomeModal';
 import { OneDriveNotice } from './components/OneDriveNotice';
+import { DataImportModal } from './components/DataImportModal';
 import { UpdateLaunchBanner } from './components/UpdateSection';
 import { Toast } from './components/Toast';
 import { PetOverlay } from './components/pet/PetOverlay';
@@ -383,6 +384,8 @@ export function App() {
 
 function AppInner() {
   const { t } = useI18n();
+  const [dataImportResolved, setDataImportResolved] = useState(false);
+  const resolveDataImport = useCallback(() => setDataImportResolved(true), []);
   const iframeKeepAlivePool = useIframeKeepAlivePool();
   const clientType = useMemo(() => detectClientType(), []);
   useModalWindowDragGuard();
@@ -2362,7 +2365,7 @@ function AppInner() {
       ) : null}
       </AnimatePresence>
       <MemoryToast onOpenMemory={() => openSettings('memory')} />
-      <WelcomeModal />
+      {!dataImportResolved ? <DataImportModal onResolved={resolveDataImport} /> : <WelcomeModal />}
       <OneDriveNotice />
       <UpdateLaunchBanner ready={hubSettled} />
       {workingDirError ? (
