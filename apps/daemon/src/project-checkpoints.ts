@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
+import type Database from 'better-sqlite3';
 import {
   copyFile,
   lstat,
@@ -43,7 +44,7 @@ import {
 import { isIgnoredProjectDirName } from './project-ignored-dirs.js';
 import { resolveProjectDir } from './projects.js';
 
-type SqliteDb = any;
+type SqliteDb = Database.Database;
 type ProjectRecord = { id: string; metadata?: unknown };
 
 const CHECKPOINTS_DIR_NAME = 'checkpoints';
@@ -162,7 +163,7 @@ interface SnapshotExcludedEntry {
 }
 
 interface CheckpointManifest {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   checkpointId: string;
   projectId: string;
   conversationId: string | null;
@@ -318,6 +319,7 @@ export function createProjectCheckpointService(
       const project = requireProject(projectId);
       const checkpoint = requireCheckpoint(projectId, checkpointId);
       const target = await readManifest(checkpoint);
+      await assertManifestRootMatchesProject(project, target);
       const current = await snapshotTransient(project, target);
       const baseline = await selectBaselineManifest(projectId, checkpoint);
       const maps = makeFileMaps(target, current, baseline);
@@ -661,7 +663,6 @@ export function createProjectCheckpointService(
     snapshotOptions: SnapshotOptions = {},
   ): Promise<SnapshotResult> {
     const root = resolveProjectDir(options.projectsRoot, project.id, project.metadata);
-    const rootReal = await realpath(root).catch(() => root);
     const files: SnapshotFileEntry[] = [];
     const excluded: SnapshotExcludedEntry[] = [];
     await walkProject(
@@ -674,16 +675,19 @@ export function createProjectCheckpointService(
     files.sort((a, b) => a.path.localeCompare(b.path));
     excluded.sort((a, b) => a.path.localeCompare(b.path));
     const manifest: CheckpointManifest = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       ...metadata,
-      rootPathHash: prefixedHash(rootReal),
+      rootPathHash: prefixedHash(`project:${project.id}`),
       files,
       excluded,
     };
     const snapshot = {
       manifest,
       manifestHash: prefixedHash(JSON.stringify(manifest, null, 2)),
-      manifestPath: path.join(checkpointDir(project.id, metadata.checkpointId), 'manifest.json'),
+      manifestPath: path.relative(
+        options.dataDir,
+        path.join(checkpointDir(project.id, metadata.checkpointId), 'manifest.json'),
+      ),
       totalBytes: files.reduce((sum, item) => sum + item.size, 0),
     };
     if (snapshotOptions.persistManifest !== false) await writeSnapshotManifest(snapshot);
@@ -691,10 +695,11 @@ export function createProjectCheckpointService(
   }
 
   async function writeSnapshotManifest(snapshot: SnapshotResult): Promise<void> {
-    await mkdir(path.dirname(snapshot.manifestPath), { recursive: true });
-    const temp = `${snapshot.manifestPath}.${randomUUID()}.tmp`;
+    const manifestPath = path.resolve(options.dataDir, snapshot.manifestPath);
+    await mkdir(path.dirname(manifestPath), { recursive: true });
+    const temp = `${manifestPath}.${randomUUID()}.tmp`;
     await writeFile(temp, JSON.stringify(snapshot.manifest, null, 2), 'utf8');
-    await rename(temp, snapshot.manifestPath);
+    await rename(temp, manifestPath);
   }
 
   async function snapshotTransient(
@@ -703,14 +708,13 @@ export function createProjectCheckpointService(
   ): Promise<CheckpointManifest> {
     const checkpointId = `transient-${randomUUID()}`;
     const root = resolveProjectDir(options.projectsRoot, project.id, project.metadata);
-    const rootReal = await realpath(root).catch(() => root);
     const files: SnapshotFileEntry[] = [];
     const excluded: SnapshotExcludedEntry[] = [];
     await walkProject(root, '', files, excluded, { writeBlobs: false });
     files.sort((a, b) => a.path.localeCompare(b.path));
     excluded.sort((a, b) => a.path.localeCompare(b.path));
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       checkpointId,
       projectId: project.id,
       conversationId: source.conversationId,
@@ -718,7 +722,7 @@ export function createProjectCheckpointService(
       runId: source.runId,
       kind: 'manual',
       createdAt: Date.now(),
-      rootPathHash: prefixedHash(rootReal),
+      rootPathHash: prefixedHash(`project:${project.id}`),
       files,
       excluded,
     };
@@ -877,13 +881,21 @@ export function createProjectCheckpointService(
     project: ProjectRecord,
     manifest: CheckpointManifest,
   ): Promise<void> {
-    const root = resolveProjectDir(options.projectsRoot, project.id, project.metadata);
-    const rootReal = await realpath(root).catch(() => root);
-    if (prefixedHash(rootReal) !== manifest.rootPathHash) {
+    // Version 1 binds to the physical root; version 2 binds to the persisted
+    // project primary key, which survives renames and moves with the database.
+    let expectedHash = prefixedHash(`project:${project.id}`);
+    if (manifest.schemaVersion === 1) {
+      const root = resolveProjectDir(options.projectsRoot, project.id, project.metadata);
+      const rootReal = await realpath(root).catch(() => root);
+      expectedHash = prefixedHash(rootReal);
+    }
+    if (expectedHash !== manifest.rootPathHash) {
       throw new ProjectCheckpointError(
         409,
         'CHECKPOINT_ROOT_MISMATCH',
-        'checkpoint belongs to a different project root',
+        manifest.schemaVersion === 1
+          ? 'legacy checkpoint project root has moved; restore requires the original project root path'
+          : 'checkpoint belongs to a different project identity',
       );
     }
   }
@@ -906,7 +918,13 @@ export function createProjectCheckpointService(
     let text: string;
     let parsed: unknown;
     try {
-      text = await readFile(checkpoint.manifestPath, 'utf8');
+      // Legacy absolute paths used this same layout. Resolve them in the
+      // current data root so a moved legacy manifest reaches the typed root
+      // check instead of disappearing behind its obsolete stored location.
+      const manifestPath = path.isAbsolute(checkpoint.manifestPath)
+        ? path.join(checkpointDir(checkpoint.projectId, checkpoint.id), 'manifest.json')
+        : path.resolve(options.dataDir, checkpoint.manifestPath);
+      text = await readFile(manifestPath, 'utf8');
       parsed = JSON.parse(text);
     } catch {
       throw new ProjectCheckpointError(410, 'CHECKPOINT_UNAVAILABLE', 'checkpoint manifest unavailable');
@@ -982,7 +1000,7 @@ function validateManifest(value: unknown, checkpoint: DbProjectCheckpointRow): C
   const raw = value && typeof value === 'object' ? value as Record<string, unknown> : null;
   if (
     !raw ||
-    raw.schemaVersion !== 1 ||
+    (raw.schemaVersion !== 1 && raw.schemaVersion !== 2) ||
     raw.checkpointId !== checkpoint.id ||
     raw.projectId !== checkpoint.projectId ||
     nullableString(raw.conversationId) !== checkpoint.conversationId ||
@@ -998,7 +1016,7 @@ function validateManifest(value: unknown, checkpoint: DbProjectCheckpointRow): C
     ? raw.excluded.map(validateExcludedEntry).filter(Boolean) as SnapshotExcludedEntry[]
     : [];
   return {
-    schemaVersion: 1,
+    schemaVersion: raw.schemaVersion,
     checkpointId: checkpoint.id,
     projectId: checkpoint.projectId,
     conversationId: checkpoint.conversationId,

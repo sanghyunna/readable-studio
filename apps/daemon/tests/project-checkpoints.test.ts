@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 
 import {
@@ -16,6 +16,7 @@ import {
 import { createProjectCheckpointService } from '../src/project-checkpoints.js';
 
 const tempRoots: string[] = [];
+const fixtureRoot = path.resolve('../../.tmp/checkpoint-paths');
 
 afterEach(async () => {
   closeDatabase();
@@ -23,7 +24,8 @@ afterEach(async () => {
 });
 
 async function makeFixture() {
-  const root = await mkdtemp(path.join(tmpdir(), 'readable-project-checkpoints-'));
+  await mkdir(fixtureRoot, { recursive: true });
+  const root = await mkdtemp(path.join(fixtureRoot, 'readable-project-checkpoints-'));
   tempRoots.push(root);
   const dataDir = path.join(root, 'data');
   const projectsRoot = path.join(root, 'projects');
@@ -69,8 +71,8 @@ function seedConversationMessages(db: ReturnType<typeof openDatabase>) {
 async function readManifest(db: ReturnType<typeof openDatabase>, checkpointId: string) {
   const row = getProjectCheckpoint(db, checkpointId);
   if (!row) throw new Error(`missing checkpoint ${checkpointId}`);
-  return JSON.parse(await readFile(row.manifestPath, 'utf8')) as {
-    schemaVersion: 1;
+  return JSON.parse(await readFile(path.resolve(path.dirname(db.name), row.manifestPath), 'utf8')) as {
+    schemaVersion: 1 | 2;
     projectId: string;
     checkpointId: string;
     files: Array<{ path: string; hash: string; blob: string }>;
@@ -106,7 +108,7 @@ describe('project checkpoint capture', () => {
       fileCount: 3,
     });
     expect(manifest).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       projectId,
       checkpointId: checkpoint.id,
     });
@@ -131,7 +133,7 @@ describe('project checkpoint capture', () => {
 
   it('does not follow a symlinked directory outside the project root', async () => {
     const { db, service, projectId, projectDir } = await makeFixture();
-    const outside = await mkdtemp(path.join(tmpdir(), 'readable-checkpoint-outside-'));
+    const outside = await mkdtemp(path.join(fixtureRoot, 'readable-checkpoint-outside-'));
     tempRoots.push(outside);
     await writeFixtureFile(outside, 'secret.txt', 'outside');
     await fsSymlinkDir(outside, path.join(projectDir, 'linked-outside'));
@@ -734,7 +736,7 @@ describe('project checkpoint restore', () => {
   });
 
   it('refuses to restore when the manifest hash no longer matches checkpoint metadata', async () => {
-    const { db, service, projectId, projectDir } = await makeFixture();
+    const { db, service, dataDir, projectId, projectDir } = await makeFixture();
     seedConversationMessages(db);
     await writeFixtureFile(projectDir, 'index.html', '<h1>target</h1>');
     const target = await service.captureCheckpoint({
@@ -745,7 +747,8 @@ describe('project checkpoint restore', () => {
     });
     const row = getProjectCheckpoint(db, target.id);
     if (!row) throw new Error('missing checkpoint row');
-    await writeFile(row.manifestPath, `${await readFile(row.manifestPath, 'utf8')}\n`);
+    const manifestPath = path.resolve(dataDir, row.manifestPath);
+    await writeFile(manifestPath, `${await readFile(manifestPath, 'utf8')}\n`);
     await writeFixtureFile(projectDir, 'index.html', '<h1>current</h1>');
 
     await expect(
@@ -891,7 +894,7 @@ describe('project checkpoint restore', () => {
     expect(await readFile(path.join(projectDir, 'z-dir'), 'utf8')).toBe('current parent file');
   });
 
-  it('rejects restore when the checkpoint root hash does not match the current project root', async () => {
+  it('rejects a legacy checkpoint when its root hash does not match the current project root', async () => {
     const { db, service, projectId, projectDir } = await makeFixture();
     seedConversationMessages(db);
     await writeFixtureFile(projectDir, 'index.html', '<h1>target</h1>');
@@ -901,8 +904,17 @@ describe('project checkpoint restore', () => {
       messageId: 'assistant-1',
       kind: 'after_message',
     });
+    const row = getProjectCheckpoint(db, target.id);
+    if (!row) throw new Error('missing checkpoint row');
+    const manifestPath = path.resolve(path.dirname(db.name), row.manifestPath);
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as Record<string, unknown>;
+    const rootPathHash = `sha256:${createHash('sha256').update(await realpath(projectDir)).digest('hex')}`;
+    const legacyText = JSON.stringify({ ...manifest, schemaVersion: 1, rootPathHash }, null, 2);
+    await writeFile(manifestPath, legacyText);
+    db.prepare('UPDATE project_checkpoints SET manifest_path = ?, manifest_hash = ?, root_path_hash = ? WHERE id = ?')
+      .run(manifestPath, `sha256:${createHash('sha256').update(legacyText).digest('hex')}`, rootPathHash, target.id);
     await writeFixtureFile(projectDir, 'index.html', '<h1>old root current</h1>');
-    const otherRoot = await mkdtemp(path.join(tmpdir(), 'readable-checkpoint-other-root-'));
+    const otherRoot = await mkdtemp(path.join(fixtureRoot, 'readable-checkpoint-other-root-'));
     tempRoots.push(otherRoot);
     await writeFixtureFile(otherRoot, 'index.html', '<h1>other root current</h1>');
     updateProject(db, projectId, { metadata: { baseDir: otherRoot } });
