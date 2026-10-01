@@ -30,6 +30,7 @@ import {
   WEB_STANDALONE_RESOURCE_NAME,
 } from "./constants.js";
 import { pathExists, removeTree } from "./fs.js";
+import { assertUpdateLayout, prepareUpdateLayout, UPDATE_HELPER_FILES } from "./update-layout.js";
 import {
   readPackagedVersion,
   writeBuiltAppManifest,
@@ -65,7 +66,7 @@ const WIN_ELECTRON_BUILDER_DIR_CACHE_VERSION = 9;
 // input-driven changes — resource tree, baked config fields, version — re-key
 // automatically; this constant covers logic changes whose output happens to be
 // byte-identical for the current config.
-const WIN_PORTABLE_ZIP_CACHE_VERSION = 6;
+const WIN_PORTABLE_ZIP_CACHE_VERSION = 7;
 
 // Pure key-input assembly for the portable-zip cache node, exported for tests.
 // The zip's true inputs are the materialized unpacked tree and the exact
@@ -558,11 +559,17 @@ export async function runElectronBuilder(
       assertWinDaemonRuntimeAssets(join(materialized.unpackedRoot, "resources", "app", "prebundled", "daemon"))
     );
   }
-  await runSegment("portable-zip:write-manifest", async () => writeBuiltAppManifest(paths, materialized));
+  const top = dirname(materialized.unpackedRoot);
+  await runSegment("portable-zip:launcher-layout", async () => prepareUpdateLayout(config.workspaceRoot, top));
+  const layout = { ...materialized, unpackedRoot: top, executablePath: join(top, `${PRODUCT_NAME}.exe`) };
+  await runSegment("portable-zip:write-manifest", async () => writeBuiltAppManifest(paths, layout));
   let signedUnpacked = false;
   const ensureSignedUnpacked = async (): Promise<void> => {
     if (!config.signed || signedUnpacked) return;
-    await runSegment("windows-sign:unpacked-exe", async () => { await signAndVerifyWinFile(materialized.executablePath, { verify: false }); });
+    await runSegment("windows-sign:unpacked-exe", async () => {
+      await signAndVerifyWinFile(materialized.executablePath, { verify: false });
+      await signAndVerifyWinFile(layout.executablePath, { verify: false });
+    });
     signedUnpacked = true;
   };
   const archiveSegments: WinPackTiming[] = [];
@@ -570,11 +577,12 @@ export async function runElectronBuilder(
     const portableZipNode = createWinPortableZipNode({
       build: async ({ entryRoot }) => {
         await ensureSignedUnpacked();
-        archiveSegments.push(...await buildWinPortableZip(config, paths, materialized));
+        await assertUpdateLayout(top);
+        archiveSegments.push(...await buildWinPortableZip(config, paths, layout));
         await cp(paths.setupZipPath, join(entryRoot, "portable.zip"));
         return { createdAt: new Date().toISOString(), portableZipPath: paths.setupZipPath };
       },
-      electronBuilderDirKey: key,
+      electronBuilderDirKey: hashJson({ key, launcher: await hashPath(join(config.workspaceRoot, 'apps', 'packaged', 'launcher', 'ReadableStudioLauncher.cs')), helpers: await Promise.all(UPDATE_HELPER_FILES.map((name) => hashPath(join(config.workspaceRoot, 'apps', 'packaged', 'launcher', name)))) }),
       packagedConfig: await readFile(materialized.configPath, "utf8"),
       namespace: config.namespace,
       packagedAppKey,

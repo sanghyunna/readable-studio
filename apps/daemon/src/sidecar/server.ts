@@ -22,6 +22,7 @@ import {
 } from "@readable-studio/sidecar";
 
 import { readCurrentAppVersionInfo } from "../app-version.js";
+import { setUpdateQuitHandler } from '../update-apply-routes.js';
 import { startDaemonRuntime, type StartedDaemonRuntime } from "../daemon-startup.js";
 import {
   getDesktopAuthSecret,
@@ -118,6 +119,9 @@ export function mintImportTokenForCli(baseDir: string): MintImportTokenResult {
 }
 
 export async function startDaemonSidecar(runtime: SidecarRuntimeContext<SidecarStamp>): Promise<DaemonSidecarHandle> {
+  setUpdateQuitHandler(async () => {
+    await requestJsonIpc(resolveAppIpcPath({ app: APP_KEYS.DESKTOP, contract: SIDECAR_CONTRACT, namespace: runtime.namespace }), { type: SIDECAR_MESSAGES.SHUTDOWN }, { timeoutMs: 5_000 });
+  });
   const serverHandle: StartedDaemonRuntime = await startDaemonRuntime({
     desktopPdfExporter: async (input: DesktopExportPdfInput): Promise<DesktopExportPdfResult> => {
       const desktopIpc = resolveAppIpcPath({

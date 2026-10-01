@@ -103,13 +103,14 @@ export async function collectWinSizeReport(
 
   const sizeIndex = await PathSizeIndex.create(unpackedRoot);
   const namespaceSizeIndex = await PathSizeIndex.create(config.roots.output.namespaceRoot);
-  const appResourcesRoot = join(unpackedRoot, "resources");
+  const payloadRoot = await pathExists(join(unpackedRoot, "app", "Readable Studio.exe")) ? join(unpackedRoot, "app") : unpackedRoot;
+  const appResourcesRoot = join(payloadRoot, "resources");
   const bundledResourceRoot = join(appResourcesRoot, "readable-studio");
   const appNodeModulesRoot = join(appResourcesRoot, "app", "node_modules");
   const copiedStandaloneRoot = join(appResourcesRoot, WEB_STANDALONE_RESOURCE_NAME);
   const copiedStandaloneNodeModulesRoot = join(copiedStandaloneRoot, "node_modules");
   const copiedStandaloneWebNodeModulesRoot = join(copiedStandaloneRoot, "apps", "web", "node_modules");
-  const electronLocalesRoot = join(unpackedRoot, "locales");
+  const electronLocalesRoot = join(payloadRoot, "locales");
   const rootWebPackageRoot = join(appNodeModulesRoot, "@readable-studio", "web");
   return {
     builder: {

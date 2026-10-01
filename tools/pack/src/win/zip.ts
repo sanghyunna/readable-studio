@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { isBuildProfilingEnabled } from "../build-profile.js";
 import type { ToolPackConfig } from "../config.js";
 import { winResources } from "../resources.js";
+import { pathExists } from './fs.js';
 import type { WinBuiltAppManifest, WinPackTiming, WinPaths } from "./types.js";
 
 const execFileAsync = promisify(execFile);
@@ -48,7 +49,8 @@ export async function resolveWinPortableZipLocalePruneEntries(input: {
   unpackedRoot: string;
 }): Promise<string[]> {
   if (!shouldPruneWinPortableZipLocales(input.config)) return [];
-  const localeRoot = join(input.unpackedRoot, CHROMIUM_LOCALES_ARCHIVE_RELATIVE_DIR);
+  const prefix = await pathExists(join(input.unpackedRoot, 'app', 'Readable Studio.exe')) ? 'app/' : '';
+  const localeRoot = join(input.unpackedRoot, prefix, CHROMIUM_LOCALES_ARCHIVE_RELATIVE_DIR);
   const allowed = new Set<string>(WIN_PORTABLE_CHROMIUM_LOCALE_PAKS);
   let entries: string[];
   try {
@@ -59,7 +61,7 @@ export async function resolveWinPortableZipLocalePruneEntries(input: {
   return entries
     .filter((entry) => entry.endsWith(".pak") && !allowed.has(entry))
     .sort()
-    .map((entry) => `${CHROMIUM_LOCALES_ARCHIVE_RELATIVE_DIR}/${entry}`);
+    .map((entry) => `${prefix}${CHROMIUM_LOCALES_ARCHIVE_RELATIVE_DIR}/${entry}`);
 }
 
 export function resolvePortableZipCompression(value = process.env[PORTABLE_ZIP_COMPRESSION_ENV]): number {
@@ -90,8 +92,8 @@ function logWinZipProgress(message: string, fields: Record<string, unknown> = {}
   process.stderr.write(`[tools-pack win] ${message}${suffix.length === 0 ? "" : ` ${suffix}`}${timestamp}\n`);
 }
 
-// Produces a portable ZIP from the extracted Electron build. Files are flat at
-// the archive root so users can extract it anywhere and run the app.
+// Archive only the immutable stub and app/ payload. Never ship runtime user data
+// or stale flat-layout files left in a reused build namespace.
 export async function buildWinPortableZip(
   config: ToolPackConfig,
   paths: WinPaths,
@@ -167,7 +169,10 @@ export async function buildWinPortableZip(
     await mkdir(dirname(paths.setupZipPath), { recursive: true });
     await rm(paths.setupZipPath, { force: true });
     const pruneEntries = await resolveWinPortableZipLocalePruneEntries({ config, unpackedRoot: builtApp.unpackedRoot });
-    const files = await collectPortableArchiveFiles(builtApp.unpackedRoot, new Set(pruneEntries));
+    const layout = await pathExists(join(builtApp.unpackedRoot, 'app', 'Readable Studio.exe'));
+    const files = layout
+      ? ['Readable Studio.exe', ...await collectPortableArchiveFiles(builtApp.unpackedRoot, new Set(pruneEntries), 'app')]
+      : await collectPortableArchiveFiles(builtApp.unpackedRoot, new Set(pruneEntries));
     await writeFile(archiveListPath, `${files.join("\n")}\n`, "utf8");
   });
   try {

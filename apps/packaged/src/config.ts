@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { access, readFile } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 import {
   SIDECAR_DEFAULTS,
@@ -87,8 +87,13 @@ export type PackagedConfig = {
   webOutputMode: PackagedWebOutputMode;
 };
 
+export function resolvePortableTopFolder(exePath = process.execPath): string {
+  const exeDir = dirname(exePath);
+  return basename(exeDir).toLowerCase() === "app" ? dirname(exeDir) : exeDir;
+}
+
 export function isInsidePortableDataContainer(candidate: string): boolean {
-  const container = join(dirname(process.execPath), "ReadableStudioData");
+  const container = join(resolvePortableTopFolder(), "ReadableStudioData");
   const containedPath = relative(container, candidate);
   const parentPrefix = process.platform === "win32" ? "..\\" : "../";
   return containedPath === "" || (
@@ -147,7 +152,7 @@ export function resolveEarlyPackagedElectronPaths(
     const namespace = normalizeNamespace(
       namespaceOverride ?? process.env[PACKAGED_NAMESPACE_ENV] ?? raw.namespace ?? SIDECAR_DEFAULTS.namespace,
     );
-    const namespaceBaseRoot = configuredRoot ?? join(dirname(process.execPath), "ReadableStudioData", "namespaces");
+    const namespaceBaseRoot = configuredRoot ?? join(resolvePortableTopFolder(), "ReadableStudioData", "namespaces");
     const namespaceRoot = join(namespaceBaseRoot, namespace);
     return {
       cacheRoot: join(namespaceRoot, "cache"),
@@ -293,13 +298,9 @@ export async function readPackagedConfig(): Promise<PackagedConfig> {
   const arch = resolvePortableTarget(portable, "arch", raw.arch, "x64");
   const artifact = resolvePortableTarget(portable, "artifact", raw.artifact, "portable-zip");
   const platform = resolvePortableTarget(portable, "platform", raw.platform, "win32");
-  // Portable invariant: a portable extraction keeps ALL runtime data beside the
-  // extracted exe (`<exeDir>/ReadableStudioData/namespaces`) so nothing lands in
-  // %APPDATA% or the registry. In the win-unpacked/zip layout
-  // `dirname(process.execPath)` IS the extraction root (resources/ sits beside
-  // the exe), and everything else — daemon dataRoot, Chromium profile, logs,
-  // and runtime state — derives from this single root (apps/packaged/src/paths.ts), so
-  // branching only the fallback here relocates the whole tree.
+  // Portable data belongs to the immutable top folder, never the replaceable
+  // app/ payload. Legacy flat extractions keep their exe-adjacent root. Daemon
+  // data, Chromium profiles, logs and runtime state all derive from this root.
   //
   // Portable roots may be customized only within the extraction-adjacent
   // ReadableStudioData container. This keeps every portable write out of the
@@ -307,7 +308,7 @@ export async function readPackagedConfig(): Promise<PackagedConfig> {
   const namespaceBaseRoot =
     resolveNamespaceBaseRoot(portable, raw.namespaceBaseRoot) ??
     (portable
-      ? join(dirname(process.execPath), "ReadableStudioData", "namespaces")
+      ? join(resolvePortableTopFolder(), "ReadableStudioData", "namespaces")
       : join(dirname(electronApp.getPath("userData")), "Readable Studio", "namespaces"));
   const resourceRoot = resolveOptionalPath(raw.resourceRoot, "resourceRoot") ?? join(process.resourcesPath, "readable-studio");
   const relativeNodeCommand =

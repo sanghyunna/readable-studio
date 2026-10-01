@@ -26,6 +26,12 @@ describe('portable shortcut', () => {
     expect(f.write).toHaveBeenCalledWith(path.join(desktop, 'Readable Studio.lnk'), 'create', expect.objectContaining({ target: exe, cwd: path.dirname(exe), icon: exe }));
     expect(path.join(f.write.mock.calls[0]![2]!.cwd!, 'ReadableStudioData')).toBe(path.join(path.dirname(exe), 'ReadableStudioData'));
   });
+  it('targets the immutable top-level stub when Electron runs in app', () => {
+    const f = fixture();
+    const payloadExe = path.join(path.dirname(exe), 'app', 'Readable Studio.exe');
+    expect(createShortcut('desktop', { packaged: true, exe: payloadExe, paths: { desktop, startMenu: start }, ...f })).toMatchObject({ status: 'created' });
+    expect(f.write).toHaveBeenCalledWith(path.join(desktop, 'Readable Studio.lnk'), 'create', expect.objectContaining({ target: exe, cwd: path.dirname(exe), icon: exe }));
+  });
   it('does not replace an unrelated shortcut and recognizes the same target and cwd', () => {
     const f = fixture({ target: exe, cwd: path.dirname(exe) });
     expect(createShortcut('startMenu', { packaged: true, exe, paths: { desktop, startMenu: start }, ...f })).toMatchObject({ status: 'already-existed' });

@@ -78,13 +78,11 @@ describe("opt-in portable compression", () => {
     expect(threads).toBeUndefined();
   });
 
-  it("preserves the existing ZIP cache key when threads are omitted", () => {
-    // Given the key captured from the pre-change implementation
-    const baseline = "e5a0b1a239cb7807c9373360437334385d3052b1c9ebf56538b0203fcc280352";
-    // When the default path builds its key
-    const key = hashJson(buildWinPortableZipCacheKeyInput(legacyKeyInput));
-    // Then existing caches remain valid, byte-for-byte
-    expect(key).toBe(baseline);
+  it("invalidates flat-layout ZIPs while omitted threads remain absent", () => {
+    const input = buildWinPortableZipCacheKeyInput(legacyKeyInput);
+    expect(input).not.toHaveProperty('portableZipThreads');
+    expect(input.portableZipCacheVersion).toBe(7);
+    expect(hashJson(input)).not.toBe('e5a0b1a239cb7807c9373360437334385d3052b1c9ebf56538b0203fcc280352');
   });
 
   it("isolates explicitly threaded ZIPs even with the same compression", () => {

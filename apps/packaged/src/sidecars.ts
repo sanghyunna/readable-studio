@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { access, appendFile, mkdir, open, readFile, type FileHandle } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { delimiter, dirname, join } from "node:path";
+import { basename, delimiter, dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import {
@@ -34,7 +34,7 @@ import {
   wellKnownUserToolchainBins,
 } from "@readable-studio/platform";
 
-import type { PackagedWebOutputMode } from "./config.js";
+import { resolvePortableTopFolder, type PackagedWebOutputMode } from "./config.js";
 import type { PackagedNamespacePaths } from "./paths.js";
 import {
   createPackagedStartupPhaseTimer,
@@ -371,7 +371,13 @@ export function buildPackagedDaemonSpawnEnv(
     // bypass that a runtime-only handshake left open. Headless skips
     // it because there is no privileged shell.openPath surface and
     // no client to register a secret.
-    ...(options.requireDesktopAuth ? { READABLE_REQUIRE_DESKTOP_AUTH: "1" } : {}),
+    ...(options.requireDesktopAuth ? {
+      READABLE_REQUIRE_DESKTOP_AUTH: "1",
+      ...(basename(dirname(process.execPath)).toLowerCase() === "app" ? {
+        READABLE_UPDATE_ROOT: resolvePortableTopFolder(),
+        READABLE_ELECTRON_MAIN_PID: String(process.pid),
+      } : {}),
+    } : {}),
     // Packaged daemon managed paths are deliberately delivered through
     // the sidecar launch environment. The daemon may keep its own default
     // fallback, but packaged runtime must not rely on path inference from

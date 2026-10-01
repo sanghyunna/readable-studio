@@ -19,6 +19,9 @@ export function createShortcut(location: ShortcutLocation, deps: Dependencies): 
   if (!deps.packaged || process.platform !== 'win32') {
     return { status: 'failed', location, reason: 'unsupported' };
   }
+  const exeDir = path.dirname(deps.exe);
+  const top = path.basename(exeDir).toLowerCase() === 'app' ? path.dirname(exeDir) : exeDir;
+  const target = path.join(top, path.basename(deps.exe));
   const file = path.join(deps.paths[location], 'Readable Studio.lnk');
   try {
     if (deps.fs.existsSync(file)) {
@@ -28,7 +31,7 @@ export function createShortcut(location: ShortcutLocation, deps: Dependencies): 
       try { link = deps.shell.readShortcutLink(file); }
       catch { return { status: 'failed', location, reason: 'conflict' }; }
       const equal = (a: string, b: string) => path.normalize(a).toLowerCase() === path.normalize(b).toLowerCase();
-      return equal(link.target, deps.exe) && typeof link.cwd === 'string' && equal(link.cwd, path.dirname(deps.exe))
+      return equal(link.target, target) && typeof link.cwd === 'string' && equal(link.cwd, top)
         ? { status: 'already-existed', location }
         : { status: 'failed', location, reason: 'conflict' };
     }
@@ -39,7 +42,7 @@ export function createShortcut(location: ShortcutLocation, deps: Dependencies): 
     let created = false;
     try {
       created = deps.shell.writeShortcutLink(file, 'create', {
-        target: deps.exe, cwd: path.dirname(deps.exe), icon: deps.exe, iconIndex: 0, description: 'Readable Studio',
+        target, cwd: top, icon: target, iconIndex: 0, description: 'Readable Studio',
       });
     } finally {
       // Only remove our empty reservation; never remove a populated link.

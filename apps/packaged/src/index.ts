@@ -43,6 +43,7 @@ import { resolvePackagedNamespacePaths } from "./paths.js";
 import { packagedEntryUrl, registerReadableStudioProtocol } from "./protocol.js";
 import { startPackagedSidecars, type PackagedSidecarHandle } from "./sidecars.js";
 import { createPackagedStartupPhaseTimer } from "./startup-timing.js";
+import { writeUpdateReadyReceipt } from './update-ready.js';
 
 const startupArgvStamp = readProcessStamp(process.argv.slice(1), SIDECAR_CONTRACT);
 const earlyElectronPaths = resolveEarlyPackagedElectronPaths(startupArgvStamp?.namespace);
@@ -235,6 +236,7 @@ async function main(): Promise<void> {
     },
     async onDesktopReady(controls) {
       await releasePackagedElectronNetworking(session.defaultSession);
+      await writeUpdateReadyReceipt(activeConfig.appVersion);
       showExistingDesktop = controls.show;
       if (!pendingSecondInstanceFocus) return;
       pendingSecondInstanceFocus = false;

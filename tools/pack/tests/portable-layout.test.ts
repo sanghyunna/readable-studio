@@ -27,6 +27,12 @@ describe("Windows portable layout", () => {
     },
   );
 
+  it("materializes Electron under app while the archive launch target is top-level", () => {
+    const paths = resolveWinPaths(resolveToolPackConfig('win', { namespace: 'layout' }));
+    expect(paths.unpackedRoot).toBe(join(paths.appBuilderOutputRoot, 'win-unpacked', 'app'));
+    expect(paths.unpackedExePath).toBe(join(paths.unpackedRoot, 'Readable Studio.exe'));
+  });
+
   it("keeps the root build entrypoint on the canonical artifact identity", () => {
     const source = readFileSync(join(REPOSITORY_ROOT, "build-portable.ps1"), "utf8");
 

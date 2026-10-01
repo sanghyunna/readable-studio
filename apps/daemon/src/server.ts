@@ -507,6 +507,7 @@ import { registerSocialShareRoutes } from './social-share-routes.js';
 import { registerMemoryRoutes } from './routes/memory.js';
 import { registerSystemPromptRoutes } from './system-prompt-routes.js';
 import { registerUpdateRoutes } from './update-routes.js';
+import { registerUpdateApplyRoutes } from './update-apply-routes.js';
 import { registerStaticResourceRoutes } from './routes/static-resource.js';
 import { registerRoutineRoutes, routineDbRowToContract } from './routes/routine.js';
 import { installRouteRegistrationGuard } from './route-registration-guard.js';
@@ -5230,6 +5231,7 @@ export async function startServer({
 
   // External services
   registerUpdateRoutes(app);
+  registerUpdateApplyRoutes(app);
   registerSystemPromptRoutes(app, { paths: pathDeps });
   registerMcpRoutes(app, {
     http: httpDeps,

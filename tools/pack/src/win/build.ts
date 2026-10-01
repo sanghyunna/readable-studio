@@ -96,7 +96,7 @@ export async function packWin(config: ToolPackConfig): Promise<WinPackResult> {
   return {
     outputRoot: config.roots.output.namespaceRoot,
     portableZipPath: paths.setupZipPath,
-    resourceRoot: builtApp == null ? paths.resourceRoot : join(builtApp.unpackedRoot, "resources", "readable-studio"),
+    resourceRoot: builtApp == null ? paths.resourceRoot : join(builtApp.unpackedRoot, "app", "resources", "readable-studio"),
     runtimeNamespaceRoot: config.roots.runtime.namespaceRoot,
     cacheReport: cache.report(),
     segments,

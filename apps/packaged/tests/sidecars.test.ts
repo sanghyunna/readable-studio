@@ -298,6 +298,19 @@ describe('buildPackagedDaemonSpawnEnv', () => {
     };
   }
 
+  it('passes the top folder and Electron main pid only for app-layout desktop launches', () => {
+    const original = process.execPath;
+    const top = join('D:', 'Portable', 'Readable Studio');
+    Object.defineProperty(process, 'execPath', { configurable: true, value: join(top, 'app', 'Readable Studio.exe') });
+    try {
+      const options = { appVersion: '1.2.3', daemonCliEntry: null, daemonPort: 7456, requireDesktopAuth: true };
+      expect(buildPackagedDaemonSpawnEnv(fakePaths(), options)).toMatchObject({ READABLE_UPDATE_ROOT: top, READABLE_ELECTRON_MAIN_PID: String(process.pid) });
+      expect(buildPackagedDaemonSpawnEnv(fakePaths(), { ...options, requireDesktopAuth: false }).READABLE_UPDATE_ROOT).toBeUndefined();
+      Object.defineProperty(process, 'execPath', { configurable: true, value: join(top, 'Readable Studio.exe') });
+      expect(buildPackagedDaemonSpawnEnv(fakePaths(), options).READABLE_UPDATE_ROOT).toBeUndefined();
+    } finally { Object.defineProperty(process, 'execPath', { configurable: true, value: original }); }
+  });
+
   it('sets READABLE_REQUIRE_DESKTOP_AUTH=1 when requireDesktopAuth=true (Electron entry)', () => {
     const env = buildPackagedDaemonSpawnEnv(fakePaths(), {
       appVersion: '1.2.3',

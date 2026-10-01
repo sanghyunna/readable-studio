@@ -14,6 +14,10 @@ export interface UpdateCheckAvailable {
 export interface UpdateCheckUnavailable { unavailable: UpdateUnavailableReason }
 export type UpdateCheckResult = UpdateCheckAvailable | UpdateCheckUnavailable;
 
+export interface UpdateApplyAccepted { status: 'applying'; targetVersion: string }
+export interface UpdateApplyError { error: string }
+export type UpdateApplyResult = UpdateApplyAccepted | UpdateApplyError | UpdateCheckUnavailable;
+
 const SEMVER = /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
 
 /** SemVer 2.0 precedence (build metadata ignored); null means invalid input. */

@@ -44,7 +44,7 @@ export function resolveWinPaths(config: ToolPackConfig): WinPaths {
     webSidecarPrebundleMetaPath: join(namespaceRoot, WIN_PREBUNDLE_META_DIR_NAME, "web-sidecar.meta.json"),
     webSidecarPrebundlePath: join(namespaceRoot, "assembled", WIN_PREBUNDLED_WEB_SIDECAR_RELATIVE_PATH),
     winIconPath: join(namespaceRoot, "resources", "win", "icon.ico"),
-    unpackedExePath: join(namespaceRoot, "builder", "win-unpacked", `${PRODUCT_NAME}.exe`),
-    unpackedRoot: join(namespaceRoot, "builder", "win-unpacked"),
+    unpackedExePath: join(namespaceRoot, "builder", "win-unpacked", "app", `${PRODUCT_NAME}.exe`),
+    unpackedRoot: join(namespaceRoot, "builder", "win-unpacked", "app"),
   };
 }

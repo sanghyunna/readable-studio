@@ -7400,13 +7400,25 @@ async function runVersion(args) {
 
 async function runUpdate(args) {
   const flags = parseFlags(args, { string: new Set(['daemon-url']), boolean: new Set(['json', 'help', 'h']) });
-  if (flags.help || flags.h) return console.log('Usage: readable update check [--json]');
-  if (positionalArgs(args, new Set(['daemon-url']))[0] !== 'check') {
-    console.error('Usage: readable update check [--json]');
+  if (flags.help || flags.h) return console.log('Usage: readable update check|apply [--json]');
+  const action = positionalArgs(args, new Set(['daemon-url']))[0];
+  if (action !== 'check' && action !== 'apply') {
+    console.error('Usage: readable update check|apply [--json]');
     process.exitCode = 2;
     return;
   }
   const base = await cliDaemonBaseUrl(flags);
+  if (action === 'apply') {
+    const url = `${base}/api/update/apply`;
+    try {
+      const response = await fetch(url, { method: 'POST' });
+      const result = await response.json();
+      if (flags.json) process.stdout.write(JSON.stringify(result) + '\n');
+      else console.log(response.ok ? `Applying ${result.targetVersion}; Readable Studio will quit.` : result.error ?? result.unavailable);
+      if (!response.ok) process.exitCode = 1;
+    } catch (error) { surfaceFetchError(error, url); process.exitCode = 3; }
+    return;
+  }
   let data;
   try {
     const response = await fetch(`${base}/api/update/check`, { signal: AbortSignal.timeout(6000) });

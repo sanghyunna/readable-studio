@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { UpdateCheckAvailable, UpdateCheckResult, UpdateUnavailableReason } from '@readable-studio/contracts';
+import type { UpdateApplyResult, UpdateCheckAvailable, UpdateCheckResult, UpdateUnavailableReason } from '@readable-studio/contracts';
 import { useI18n } from '../i18n';
 import styles from './UpdateSection.module.css';
 
@@ -46,7 +46,7 @@ async function fetchUpdateCheck(automatic = false): Promise<UpdateCheckResult> {
 
 export interface UpdateSectionProps {
   currentVersion: string | null;
-  /** Apply lane owns the action. This check-only surface remains disabled. */
+  /** Optional host override; the default action calls the daemon apply route. */
   onApply?: (update: UpdateCheckAvailable) => void;
 }
 
@@ -55,6 +55,22 @@ export function UpdateSection({ currentVersion, onApply }: UpdateSectionProps) {
   const [result, setResult] = useState(lastCheck);
   const [checkedAt, setCheckedAt] = useState(lastCheckedAt);
   const [checking, setChecking] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [applyError, setApplyError] = useState<string | null>(null);
+  const apply = async () => {
+    if (!result || 'unavailable' in result || !result.isNewer) return;
+    setConfirming(false); setApplying(true); setApplyError(null);
+    try {
+      if (onApply) { await onApply(result); return; }
+      const response = await fetch('/api/update/apply', { method: 'POST' });
+      const body: UpdateApplyResult = await response.json();
+      if (!response.ok) throw new Error('error' in body ? body.error : 'unavailable' in body ? body.unavailable : `HTTP ${response.status}`);
+    } catch (error) {
+      setApplyError(error instanceof Error ? error.message : String(error));
+      setApplying(false);
+    }
+  };
   useEffect(() => {
     const sync = () => { setResult(lastCheck); setCheckedAt(lastCheckedAt); };
     checkListeners.add(sync);
@@ -72,8 +88,13 @@ export function UpdateSection({ currentVersion, onApply }: UpdateSectionProps) {
     </dl>
     <div className={styles.actions}>
       <button type="button" className="btn" disabled={checking} onClick={() => void check()}>{t(checking ? 'update.checking' : 'update.check')}</button>
-      <span title={t('update.applyUnavailable')}><button type="button" className="btn" disabled title={t('update.applyUnavailable')} onClick={() => { if (result && !('unavailable' in result)) onApply?.(result); }}>{t('update.apply')}</button></span>
+      <button type="button" className="btn" disabled={applying || !result || 'unavailable' in result || !result.isNewer} onClick={() => setConfirming(true)}>{t('update.apply')}</button>
     </div>
+    {confirming ? <div role="dialog" aria-modal="true" aria-label={t('update.apply')}>
+      <button type="button" className="btn" onClick={() => void apply()}>지금 종료 후 업데이트</button>
+      <button type="button" className="btn" onClick={() => setConfirming(false)}>나중에</button>
+    </div> : null}
+    {applyError ? <div role="alert">{applyError}</div> : null}
     {result ? <div role="status" className={styles.result}>
       {'unavailable' in result ? t('update.failed', { reason: t(`update.reason.${result.unavailable}`) })
         : result.isNewer ? <><span>{t('update.newVersion', { version: result.latest })}</span>{' '}<a href={result.releaseUrl} target="_blank" rel="noreferrer">{t('update.releaseNotes')}</a></>

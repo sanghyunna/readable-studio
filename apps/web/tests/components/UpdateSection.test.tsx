@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { UpdateLaunchBanner, UpdateSection } from '../../src/components/UpdateSection';
 
@@ -27,7 +27,7 @@ it.each([
   [{ ...result, isNewer: false }, 'update.upToDate'],
   [result, 'update.newVersion:1.3.0'],
   [{ unavailable: 'offline' }, 'update.failed:update.reason.offline'],
-])('Settings renders result %# and disabled apply seam', async (data, expected) => {
+])('Settings renders result %# and enables apply only for newer versions', async (data, expected) => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(data)));
   const onApply = vi.fn();
   render(<UpdateSection currentVersion="1.2.1" onApply={onApply} />);
@@ -35,11 +35,23 @@ it.each([
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'update.check' })));
   expect(screen.getByText(expected)).toBeTruthy();
   const button = screen.getByRole('button', { name: 'update.apply' }) as HTMLButtonElement;
-  expect(button.disabled).toBe(true);
-  expect(button.title).toBeTruthy();
+  expect(button.disabled).toBe('isNewer' in data && data.isNewer ? false : true);
   expect(onApply).not.toHaveBeenCalled();
   if ('current' in data) expect(screen.getByRole('time').getAttribute('dateTime')).toBe(result.checkedAt);
   if ('isNewer' in data && data.isNewer) expect(screen.getByRole('link').getAttribute('href')).toBe(result.releaseUrl);
+});
+it('dismisses later without applying, and applies only after owner confirmation', async () => {
+  const fetcher = vi.fn().mockResolvedValueOnce(Response.json(result)).mockResolvedValueOnce(Response.json({ status: 'applying', targetVersion: '1.3.0' }, { status: 202 }));
+  vi.stubGlobal('fetch', fetcher);
+  render(<UpdateSection currentVersion="1.2.1" />);
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'update.check' })));
+  fireEvent.click(screen.getByRole('button', { name: 'update.apply' }));
+  fireEvent.click(within(screen.getByRole('dialog')).getAllByRole('button')[1]!);
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole('button', { name: 'update.apply' }));
+  await act(async () => fireEvent.click(within(screen.getByRole('dialog')).getAllByRole('button')[0]!));
+  expect(fetcher).toHaveBeenLastCalledWith('/api/update/apply', { method: 'POST' });
 });
 it('Settings reflects a launch check completing while it is open', async () => {
   let resolve!: (response: Response) => void;

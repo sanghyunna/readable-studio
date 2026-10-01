@@ -83,8 +83,9 @@ async function resolveStartTarget(config: ToolPackConfig): Promise<{ configPath:
   if (builtManifest != null) {
     return { configPath: builtManifest.configPath, executablePath: builtManifest.executablePath, source: "built" };
   }
-  if (await pathExists(paths.unpackedExePath)) {
-    return { configPath: null, executablePath: paths.unpackedExePath, source: "built" };
+  const launcher = join(dirname(paths.unpackedRoot), 'Readable Studio.exe');
+  if (await pathExists(launcher)) {
+    return { configPath: null, executablePath: launcher, source: "built" };
   }
   throw new Error(`no extracted Windows portable runtime found for namespace=${config.namespace}; run tools-pack win build first`);
 }

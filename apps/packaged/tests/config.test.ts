@@ -201,6 +201,14 @@ describe("readPackagedConfig namespaceBaseRoot resolution", () => {
     expect(dirname(dirname(config.namespaceBaseRoot))).toBe(exeDir);
   });
 
+  it("keeps data outside the replaceable app payload in both early and full config", async () => {
+    const top = join("D:", "Portable", "Readable Studio");
+    stubExecPath(join(top, "app", "Readable Studio.exe"));
+    writeConfig({ namespace: "rg", portable: true });
+    expect((await readPackagedConfig()).namespaceBaseRoot).toBe(join(top, "ReadableStudioData", "namespaces"));
+    expect(resolveEarlyPackagedElectronPaths()?.electronUserDataRoot).toBe(join(top, "ReadableStudioData", "namespaces", "rg", "user-data"));
+  });
+
   it("falls back to the Readable Studio userData root when not portable", async () => {
     stubExecPath(join("D:", "Portable", "Readable Studio", "Readable Studio.exe"));
     writeConfig({ namespace: "rg" });
