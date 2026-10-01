@@ -118,6 +118,7 @@ import { DatabricksModelsSection } from './DatabricksModelsSection';
 import { RoutinesSection } from './RoutinesSection';
 import { MemoryModelInline } from './MemoryModelInline';
 import { MemorySection } from './MemorySection';
+import { UpdateSection } from './UpdateSection';
 import { ByokConnectionTestControl } from './byok/ByokConnectionTestControl';
 import { ByokKeyField } from './byok/ByokKeyField';
 import { ByokModelField } from './byok/ByokModelField';
@@ -181,6 +182,7 @@ export type SettingsSection =
   // section. Reconcile follow-up: route library through a dedicated
   // navigate() call so openSettings only owns dialog-bound sections.
   | 'library'
+  | 'update'
   | 'about';
 
 // One-shot focus hint when opening the dialog. `'amr'` scrolls the AMR agent
@@ -2533,6 +2535,7 @@ export function SettingsDialog({
     // 'library' is opened via EntryShell route — SettingsDialog doesn't
     // render it but SettingsSection must accept the token (see type def).
     library: { title: '', subtitle: '' },
+    update: { title: t('update.title'), subtitle: t('update.subtitle') },
     about: { title: t('settings.about'), subtitle: t('settings.aboutHint') },
   };
   const activeHeader = sectionHeader[activeSection];
@@ -3039,6 +3042,17 @@ export function SettingsDialog({
               <span>
                 <strong>{t('settings.databricksModels')}</strong>
                 <small>{t('settings.databricksModelsHint')}</small>
+              </span>
+            </button>
+            <button
+              type="button"
+              className={`settings-nav-item${activeSection === 'update' ? ' active' : ''}`}
+              onClick={() => setActiveSection('update')}
+            >
+              <Icon name="settings" size={18} />
+              <span>
+                <strong>{t('update.title')}</strong>
+                <small>{t('update.subtitle')}</small>
               </span>
             </button>
             <button
@@ -4183,6 +4197,10 @@ export function SettingsDialog({
               chatAgentId={cfg.mode === 'daemon' ? cfg.agentId ?? null : null}
               chatModel={selectedMemoryChatModel}
             />
+          ) : null}
+
+          {activeSection === 'update' ? (
+            <UpdateSection currentVersion={appVersionInfo?.version ?? null} />
           ) : null}
 
           {activeSection === 'about' ? (

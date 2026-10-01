@@ -5,6 +5,7 @@ import path from 'node:path';
 import { runDaemonCliStartup, startDaemonRuntime } from './daemon-startup.js';
 import { splitResearchSubcommand } from './research/cli-args.js';
 import { resolveDaemonUrl } from './daemon-url.js';
+import { readCurrentAppVersionInfo } from './app-version.js';
 import { DESIGN_SYSTEMS_USAGE, isDesignSystemsHelpArg } from './design-systems-cli-help.js';
 import { parseDesignSystemRenameArgs } from './design-system-rename-args.js';
 import { runProviderCli } from './provider-cli.js';
@@ -289,6 +290,7 @@ const SUBCOMMAND_MAP = {
   diagnostics: runDiagnostics,
   status: runStatus,
   version: runVersion,
+  update: runUpdate,
   doctor: runDoctor,
   config: runConfig,
   'system-prompts': runSystemPrompts,
@@ -299,6 +301,11 @@ const SUBCOMMAND_MAP = {
 
 const first = argv.find((a) => !a.startsWith('-'));
 await (async () => {
+  if (!first && argv.includes('--version')) {
+    await runVersion(argv.filter((arg) => arg !== '--version'));
+    process.exitCode ??= 0;
+    return;
+  }
   if (first && SUBCOMMAND_MAP[first]) {
     const idx = argv.indexOf(first);
     const rest = [...argv.slice(0, idx), ...argv.slice(idx + 1)];
@@ -7386,23 +7393,30 @@ is the same one Settings → About → Export diagnostics produces.
 
 async function runVersion(args) {
   const flags = parseFlags(args, { string: LIBRARY_STRING_FLAGS, boolean: LIBRARY_BOOLEAN_FLAGS });
-  const base = (await libraryDaemonUrl(flags)).replace(/\/$/, '');
-  let resp;
-  try {
-    resp = await fetch(`${base}/api/version`);
-  } catch (err) {
-    return exitWithStructuredError({
-      code:    'daemon-not-running',
-      message: `Cannot reach daemon at ${base}: ${err?.message ?? err}`,
-    });
-  }
-  if (!resp.ok) return structuredHttpFailure(resp);
-  const data = await resp.json();
-  if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
-  const version = typeof data?.version === 'string'
-    ? data.version
-    : (data?.version?.version ?? JSON.stringify(data));
+  const { version } = await readCurrentAppVersionInfo();
+  if (flags.json) return process.stdout.write(JSON.stringify({ version }) + '\n');
   console.log(version);
+}
+
+async function runUpdate(args) {
+  const flags = parseFlags(args, { string: new Set(['daemon-url']), boolean: new Set(['json', 'help', 'h']) });
+  if (flags.help || flags.h) return console.log('Usage: readable update check [--json]');
+  if (positionalArgs(args, new Set(['daemon-url']))[0] !== 'check') {
+    console.error('Usage: readable update check [--json]');
+    process.exitCode = 2;
+    return;
+  }
+  const base = await cliDaemonBaseUrl(flags);
+  let data;
+  try {
+    const response = await fetch(`${base}/api/update/check`, { signal: AbortSignal.timeout(6000) });
+    data = response.ok ? await response.json() : { unavailable: 'offline' };
+  } catch (error) {
+    data = { unavailable: error?.name === 'TimeoutError' ? 'timeout' : 'offline' };
+  }
+  if (flags.json) return process.stdout.write(JSON.stringify(data) + '\n');
+  if ('unavailable' in data) return console.log(`Update check unavailable: ${data.unavailable}`);
+  console.log(data.isNewer ? `New version ${data.latest}: ${data.releaseUrl}` : `Up to date (${data.current}).`);
 }
 
 // ---------------------------------------------------------------------------
