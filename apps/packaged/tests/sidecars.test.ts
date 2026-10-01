@@ -300,15 +300,43 @@ describe('buildPackagedDaemonSpawnEnv', () => {
 
   it('passes the top folder and Electron main pid only for app-layout desktop launches', () => {
     const original = process.execPath;
-    const top = join('D:', 'Portable', 'Readable Studio');
+    const top = mkdtempSync(join(tmpdir(), 'readable-spawn-layout-'));
+    mkdirSync(join(top, 'app'));
+    writeFileSync(join(top, 'Readable Studio.exe'), 'launcher stub');
+    writeFileSync(join(top, 'app', 'Readable Studio.exe'), 'Electron payload');
     Object.defineProperty(process, 'execPath', { configurable: true, value: join(top, 'app', 'Readable Studio.exe') });
     try {
       const options = { appVersion: '1.2.3', daemonCliEntry: null, daemonPort: 7456, requireDesktopAuth: true };
       expect(buildPackagedDaemonSpawnEnv(fakePaths(), options)).toMatchObject({ READABLE_UPDATE_ROOT: top, READABLE_ELECTRON_MAIN_PID: String(process.pid) });
-      expect(buildPackagedDaemonSpawnEnv(fakePaths(), { ...options, requireDesktopAuth: false }).READABLE_UPDATE_ROOT).toBeUndefined();
+      const headless = buildPackagedDaemonSpawnEnv(fakePaths(), { ...options, requireDesktopAuth: false });
+      expect(headless.READABLE_UPDATE_ROOT).toBeUndefined();
+      expect(headless.READABLE_ELECTRON_MAIN_PID).toBeUndefined();
       Object.defineProperty(process, 'execPath', { configurable: true, value: join(top, 'Readable Studio.exe') });
-      expect(buildPackagedDaemonSpawnEnv(fakePaths(), options).READABLE_UPDATE_ROOT).toBeUndefined();
-    } finally { Object.defineProperty(process, 'execPath', { configurable: true, value: original }); }
+      const flat = buildPackagedDaemonSpawnEnv(fakePaths(), options);
+      expect(flat.READABLE_UPDATE_ROOT).toBeUndefined();
+      expect(flat.READABLE_ELECTRON_MAIN_PID).toBeUndefined();
+    } finally {
+      Object.defineProperty(process, 'execPath', { configurable: true, value: original });
+      rmSync(top, { recursive: true, force: true });
+    }
+  });
+
+  it('omits update root and Electron pid for a legacy folder named app without a launcher stub', () => {
+    const original = process.execPath;
+    const top = mkdtempSync(join(tmpdir(), 'readable-spawn-legacy-'));
+    mkdirSync(join(top, 'app'));
+    writeFileSync(join(top, 'app', 'Readable Studio.exe'), 'legacy executable');
+    Object.defineProperty(process, 'execPath', { configurable: true, value: join(top, 'app', 'Readable Studio.exe') });
+    try {
+      const env = buildPackagedDaemonSpawnEnv(fakePaths(), {
+        appVersion: '1.2.3', daemonCliEntry: null, daemonPort: 7456, requireDesktopAuth: true,
+      });
+      expect(env).not.toHaveProperty('READABLE_UPDATE_ROOT');
+      expect(env).not.toHaveProperty('READABLE_ELECTRON_MAIN_PID');
+    } finally {
+      Object.defineProperty(process, 'execPath', { configurable: true, value: original });
+      rmSync(top, { recursive: true, force: true });
+    }
   });
 
   it('sets READABLE_REQUIRE_DESKTOP_AUTH=1 when requireDesktopAuth=true (Electron entry)', () => {
@@ -395,7 +423,9 @@ describe('waitForStatus child-exit fast-fail', () => {
     // Simulate the daemon throwing in its startup migrator and exiting
     // immediately. With the old code, the wait would have blocked for
     // the full 30-minute budget; with the fix it must reject fast.
-    setTimeout(() => child.fireExit(1, null), 50);
+    // waitForStatus installs its exit listener synchronously before returning.
+    expect(child.listenerCount('exit')).toBeGreaterThan(0);
+    child.fireExit(1, null);
 
     let captured: unknown;
     try {

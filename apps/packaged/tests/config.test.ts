@@ -20,10 +20,30 @@ vi.mock("electron", () => ({
 
 import {
   PACKAGED_CONFIG_PATH_ENV,
+  isPortableAppLayout,
   readPackagedConfig,
   resolveDefaultPackagedNodeCommandRelativePath,
   resolveEarlyPackagedElectronPaths,
 } from "../src/config.js";
+
+describe("isPortableAppLayout", () => {
+  it.each([
+    { layout: "new launcher layout", folder: "app", stub: true, expected: true },
+    { layout: "legacy flat layout", folder: "portable", stub: false, expected: false },
+    { layout: "legacy folder named app", folder: "app", stub: false, expected: false },
+  ])("recognizes $layout", ({ folder, stub, expected }) => {
+    const top = mkdtempSync(join(tmpdir(), "readable-layout-predicate-"));
+    try {
+      const exePath = join(top, folder, "Readable Studio.exe");
+      mkdirSync(dirname(exePath));
+      writeFileSync(exePath, "Electron executable");
+      if (stub) writeFileSync(join(top, "Readable Studio.exe"), "launcher stub");
+      expect(isPortableAppLayout(exePath)).toBe(expected);
+    } finally {
+      rmSync(top, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("resolveDefaultPackagedNodeCommandRelativePath", () => {
   it("uses the bundled node.exe path on Windows", () => {
