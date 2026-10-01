@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { access, readFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
@@ -89,7 +89,12 @@ export type PackagedConfig = {
 
 export function resolvePortableTopFolder(exePath = process.execPath): string {
   const exeDir = dirname(exePath);
-  return basename(exeDir).toLowerCase() === "app" ? dirname(exeDir) : exeDir;
+  const parent = dirname(exeDir);
+  // A legacy flat extraction can itself be named app. Only the adjacent
+  // immutable launcher identifies the replaceable payload layout.
+  return basename(exeDir).toLowerCase() === "app" && existsSync(join(parent, "Readable Studio.exe"))
+    ? parent
+    : exeDir;
 }
 
 export function isInsidePortableDataContainer(candidate: string): boolean {

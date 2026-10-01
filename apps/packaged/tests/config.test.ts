@@ -202,11 +202,24 @@ describe("readPackagedConfig namespaceBaseRoot resolution", () => {
   });
 
   it("keeps data outside the replaceable app payload in both early and full config", async () => {
-    const top = join("D:", "Portable", "Readable Studio");
+    const top = configDir;
+    writeFileSync(join(top, "Readable Studio.exe"), "launcher fixture");
     stubExecPath(join(top, "app", "Readable Studio.exe"));
     writeConfig({ namespace: "rg", portable: true });
     expect((await readPackagedConfig()).namespaceBaseRoot).toBe(join(top, "ReadableStudioData", "namespaces"));
     expect(resolveEarlyPackagedElectronPaths()?.electronUserDataRoot).toBe(join(top, "ReadableStudioData", "namespaces", "rg", "user-data"));
+  });
+
+  it("keeps legacy flat data beside the exe when its folder is named app without a parent launcher", async () => {
+    const exeDir = join(configDir, "app");
+    stubExecPath(join(exeDir, "Readable Studio.exe"));
+    writeConfig({ namespace: "rg", portable: true });
+    const namespaceBaseRoot = join(exeDir, "ReadableStudioData", "namespaces");
+    expect((await readPackagedConfig()).namespaceBaseRoot).toBe(namespaceBaseRoot);
+    expect(resolveEarlyPackagedElectronPaths()?.electronUserDataRoot).toBe(join(namespaceBaseRoot, "rg", "user-data"));
+    writeConfig({ namespace: "rg", portable: true, namespaceBaseRoot });
+    expect((await readPackagedConfig()).namespaceBaseRoot).toBe(namespaceBaseRoot);
+    expect(resolveEarlyPackagedElectronPaths()?.electronUserDataRoot).toBe(join(namespaceBaseRoot, "rg", "user-data"));
   });
 
   it("falls back to the Readable Studio userData root when not portable", async () => {
