@@ -2,7 +2,7 @@
 
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { WelcomeModal } from '../../src/components/WelcomeModal';
+import { SHOW_DELAY_MS, WelcomeModal } from '../../src/components/WelcomeModal';
 
 type Caps = { desktop: boolean; startMenu: boolean; taskbar: false; startPinned: false; reason?: string };
 
@@ -24,24 +24,68 @@ function mockFetch(caps: Caps, post?: (location: string) => unknown) {
 
 const fullCaps: Caps = { desktop: true, startMenu: true, taskbar: false, startPinned: false };
 
-async function renderModal() {
-  render(<WelcomeModal />);
+// The modal defers its capability probe by SHOW_DELAY_MS from mount, so every
+// render goes through fake timers: `settle` drains pending microtasks only,
+// `elapse` moves the faked clock and flushes whatever the timers scheduled.
+async function settle() {
   await act(async () => {
     await Promise.resolve();
     await Promise.resolve();
   });
 }
 
+async function elapse(ms: number) {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+  await settle();
+}
+
+async function renderModal() {
+  render(<WelcomeModal />);
+  await elapse(SHOW_DELAY_MS);
+}
+
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   window.localStorage.clear();
 });
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
   window.localStorage.clear();
 });
 
 describe('WelcomeModal', () => {
+  it('stays hidden until SHOW_DELAY_MS has elapsed, then opens', async () => {
+    const fetchFn = mockFetch(fullCaps);
+    render(<WelcomeModal />);
+    await settle();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(fetchFn).not.toHaveBeenCalled();
+
+    await elapse(SHOW_DELAY_MS - 1);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(fetchFn).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem('readable-studio:welcome-modal-shown')).toBeNull();
+
+    await elapse(1);
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(window.localStorage.getItem('readable-studio:welcome-modal-shown')).toBe('1');
+  });
+
+  it('does not probe or mark shown when unmounted during the delay', async () => {
+    const fetchFn = mockFetch(fullCaps);
+    const view = render(<WelcomeModal />);
+    await elapse(SHOW_DELAY_MS - 1);
+    view.unmount();
+    await elapse(SHOW_DELAY_MS);
+    expect(fetchFn).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem('readable-studio:welcome-modal-shown')).toBeNull();
+  });
+
   it('renders on first run and not on the second', async () => {
     mockFetch(fullCaps);
     await renderModal();

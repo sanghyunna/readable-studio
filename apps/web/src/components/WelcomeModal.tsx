@@ -3,6 +3,13 @@
 // Home first-run guide). The shortcut section is driven entirely by the
 // daemon's GET /api/shortcuts capability report: an unsupported target renders
 // no control, and a failed capability call renders no modal at all.
+//
+// The modal is mounted in the same commit as the Hub shell, so without a
+// delay it would land on the Hub's very first frame (mount + one localhost
+// round-trip) and the user never gets to see the Hub behind it. The capability
+// probe is therefore deferred by SHOW_DELAY_MS from mount; the shown flag is
+// written only when the modal actually opens, so closing the window during
+// the delay does not burn the one-time showing.
 import { useEffect, useState } from 'react';
 import { Button, Switch } from '@readable-studio/components';
 import type { ShortcutCapabilities, ShortcutCreateResult, ShortcutLocation } from '@readable-studio/contracts';
@@ -11,6 +18,7 @@ import { useEscapeDismiss } from '../hooks/useEscapeDismiss';
 import styles from './WelcomeModal.module.css';
 
 const STORAGE_KEY = 'readable-studio:welcome-modal-shown';
+export const SHOW_DELAY_MS = 2000;
 const LOCATIONS: ShortcutLocation[] = ['desktop', 'startMenu'];
 
 function readShown(): boolean {
@@ -69,18 +77,21 @@ export function WelcomeModal() {
   useEffect(() => {
     if (readShown()) return;
     let cancelled = false;
-    fetchCapabilities()
-      .then((next) => {
-        if (cancelled || !next) return;
-        markShown();
-        setCaps(next);
-        setOpen(true);
-      })
-      .catch(() => {
-        // Capability probe failed: degrade to no modal, never block startup.
-      });
+    const timer = window.setTimeout(() => {
+      fetchCapabilities()
+        .then((next) => {
+          if (cancelled || !next) return;
+          markShown();
+          setCaps(next);
+          setOpen(true);
+        })
+        .catch(() => {
+          // Capability probe failed: degrade to no modal, never block startup.
+        });
+    }, SHOW_DELAY_MS);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, []);
 
