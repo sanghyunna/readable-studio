@@ -30,6 +30,11 @@ let dbFile: string | null = null;
 
 export const HOSTED_DATABASE_OPEN_TIMEOUT_MS = 30_000;
 export const READABLE_STUDIO_SQLITE_APPLICATION_ID = 0x52535444;
+// Increment whenever the persisted schema changes. Version 0 is the legacy,
+// unstamped schema; the version commits atomically with all migration steps.
+export const DATABASE_SCHEMA_VERSION = 1;
+// Retain three schema generations without unbounded full-database disk growth.
+export const PRE_MIGRATION_SNAPSHOT_LIMIT = 3;
 
 export class DataIdentityError extends Error {
   readonly code = 'foreign_data_identity';
@@ -82,6 +87,82 @@ export class DatabaseOpenError extends Error {
   }
 }
 
+export class DatabaseSchemaVersionError extends DatabaseOpenError {
+  constructor(file: string, readonly databaseVersion: number, readonly supportedVersion: number) {
+    super(file, 'SCHEMA_VERSION_NEWER', undefined);
+    this.name = 'DatabaseSchemaVersionError';
+    this.message = `Cannot open database ${file}: schema version ${databaseVersion} is newer than this build supports (${supportedVersion}). Use a newer build; the database has not been migrated.`;
+  }
+}
+
+export class DatabaseSnapshotError extends DatabaseOpenError {
+  constructor(file: string, readonly snapshotFile: string, cause: unknown) {
+    super(file, 'PRE_MIGRATION_SNAPSHOT_FAILED', cause);
+    this.name = 'DatabaseSnapshotError';
+    this.message = `Cannot create or retain pre-migration snapshot ${snapshotFile} for database ${file}. Migration was not started.`;
+  }
+}
+
+function assertSupportedSchema(db: SqliteDb, file: string): number {
+  const version = db.pragma('user_version', { simple: true }) as number;
+  if (version > DATABASE_SCHEMA_VERSION) {
+    throw new DatabaseSchemaVersionError(file, version, DATABASE_SCHEMA_VERSION);
+  }
+  return version;
+}
+
+function snapshotBeforeMigration(db: SqliteDb, file: string, fromVersion: number): void {
+  const snapshotFile = `${file}.pre-${fromVersion}`;
+  // Publish only a completed VACUUM: a failed/partial output must never be
+  // mistaken for an existing same-version snapshot on the next attempt.
+  const pendingFile = `${snapshotFile}.pending-${randomUUID()}`;
+  try {
+    if (!fs.existsSync(snapshotFile)) {
+      db.prepare('VACUUM INTO ?').run(pendingFile);
+      fs.renameSync(pendingFile, snapshotFile);
+    } else {
+      const snapshot = new Database(snapshotFile, { readonly: true, fileMustExist: true });
+      try {
+        if (snapshot.pragma('user_version', { simple: true }) !== fromVersion ||
+            snapshot.pragma('integrity_check', { simple: true }) !== 'ok') {
+          throw new Error('existing pre-migration snapshot is invalid');
+        }
+      } finally {
+        snapshot.close();
+      }
+    }
+    const prefix = `${path.basename(file)}.pre-`;
+    // Always retain this attempt's rollback point, even if snapshots from a
+    // newer build remain after the user restored an older database generation.
+    const snapshots = fs.readdirSync(path.dirname(file))
+      .filter((name) => name.startsWith(prefix) && /^\d+$/.test(name.slice(prefix.length)) &&
+        name !== path.basename(snapshotFile))
+      .sort((a, b) => Number(b.slice(prefix.length)) - Number(a.slice(prefix.length)));
+    for (const name of snapshots.slice(PRE_MIGRATION_SNAPSHOT_LIMIT - 1)) {
+      fs.unlinkSync(path.join(path.dirname(file), name));
+    }
+  } catch (error) {
+    try {
+      fs.rmSync(pendingFile, { force: true });
+    } catch (cleanupError) {
+      throw new DatabaseSnapshotError(file, snapshotFile,
+        new AggregateError([error, cleanupError], 'snapshot cleanup failed'));
+    }
+    throw new DatabaseSnapshotError(file, snapshotFile, error);
+  }
+}
+
+function migrateSafely(db: SqliteDb, file: string, fromVersion: number, shouldStampIdentity: boolean): void {
+  if (fromVersion < DATABASE_SCHEMA_VERSION) snapshotBeforeMigration(db, file, fromVersion);
+  db.transaction(() => {
+    if (shouldStampIdentity) db.pragma(`application_id = ${READABLE_STUDIO_SQLITE_APPLICATION_ID}`);
+    if (fromVersion < DATABASE_SCHEMA_VERSION) {
+      migrate(db);
+      db.pragma(`user_version = ${DATABASE_SCHEMA_VERSION}`);
+    }
+  })();
+}
+
 export function openDatabase(projectRoot: string, { dataDir }: { dataDir?: string } = {}): SqliteDb {
   const dir = dataDir ? path.resolve(dataDir) : path.join(projectRoot, '.readable-studio');
   const file = path.join(dir, 'app.sqlite');
@@ -94,16 +175,16 @@ export function openDatabase(projectRoot: string, { dataDir }: { dataDir?: strin
     try {
       const shouldStampIdentity = assertReadableStudioDatabaseIdentity(file);
       db = new Database(file, { timeout: 500 });
-      if (shouldStampIdentity) db.pragma(`application_id = ${READABLE_STUDIO_SQLITE_APPLICATION_ID}`);
+      const fromVersion = assertSupportedSchema(db, file);
       db.pragma('journal_mode = WAL');
       db.pragma('foreign_keys = ON');
-      migrate(db);
+      migrateSafely(db, file, fromVersion, shouldStampIdentity);
       dbInstance = db;
       dbFile = file;
       return db;
     } catch (error) {
       db?.close();
-      if (error instanceof DataIdentityError) throw error;
+      if (error instanceof DataIdentityError || error instanceof DatabaseOpenError) throw error;
       const code = error instanceof Error && 'code' in error && typeof error.code === 'string'
         ? error.code : 'UNKNOWN';
       const transient = /^(SQLITE_IOERR(?:_\w+)?|SQLITE_BUSY(?:_\w+)?|SQLITE_LOCKED(?:_\w+)?|SQLITE_CANTOPEN(?:_\w+)?)$/.test(code);
@@ -135,10 +216,10 @@ export function openHostedDatabaseAtPath(file: string): SqliteDb {
   const startedAt = performance.now();
   try {
     db = new Database(file, { timeout: HOSTED_DATABASE_OPEN_TIMEOUT_MS });
-    if (shouldStampIdentity) db.pragma(`application_id = ${READABLE_STUDIO_SQLITE_APPLICATION_ID}`);
+    const fromVersion = assertSupportedSchema(db, file);
     db.pragma('journal_mode = WAL');
     db.pragma('foreign_keys = ON');
-    migrate(db);
+    migrateSafely(db, file, fromVersion, shouldStampIdentity);
     if (performance.now() - startedAt > HOSTED_DATABASE_OPEN_TIMEOUT_MS) {
       throw new Error('hosted database open or migration timed out');
     }
@@ -555,7 +636,8 @@ function migratePreviewCommentsSlideKey(db: SqliteDb): void {
     .test(tableSql);
   if (hasSlideKey && !hasLegacyUnique) return;
 
-  db.exec(`
+  db.transaction(() => {
+    db.exec(`
     CREATE TABLE preview_comments_next (
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL,
@@ -596,7 +678,8 @@ function migratePreviewCommentsSlideKey(db: SqliteDb): void {
     ALTER TABLE preview_comments_next RENAME TO preview_comments;
     CREATE INDEX IF NOT EXISTS idx_preview_comments_conversation
       ON preview_comments(project_id, conversation_id, updated_at DESC);
-  `);
+    `);
+  })();
 }
 
 // ---------- deployments ----------
