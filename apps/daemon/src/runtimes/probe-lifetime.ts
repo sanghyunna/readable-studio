@@ -11,8 +11,8 @@ export function terminateProbeTree(child: ChildProcess, kill = child.kill.bind(c
     if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return;
     if (process.platform === 'win32') {
       await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new DOMException('Probe process-tree cleanup timed out', 'TimeoutError')), 5500);
-        execFile('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, timeout: 5000 }, (error) => {
+        const timer = setTimeout(() => reject(new DOMException('Probe process-tree cleanup timed out', 'TimeoutError')), 2250);
+        execFile('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, timeout: 2000 }, (error) => {
           clearTimeout(timer);
           if (!error || child.exitCode !== null || child.signalCode !== null) resolve();
           else reject(error);
@@ -21,8 +21,8 @@ export function terminateProbeTree(child: ChildProcess, kill = child.kill.bind(c
     } else {
       // Walk descendants before killing the parent, while ancestry is intact.
       const listing = await new Promise<string>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new DOMException('Probe process-tree cleanup timed out', 'TimeoutError')), 5500);
-        execFile('ps', ['-eo', 'pid=,ppid='], { timeout: 5000 }, (error, stdout) => {
+        const timer = setTimeout(() => reject(new DOMException('Probe process-tree cleanup timed out', 'TimeoutError')), 2250);
+        execFile('ps', ['-eo', 'pid=,ppid='], { timeout: 2000 }, (error, stdout) => {
           clearTimeout(timer);
           if (error) reject(error);
           else resolve(stdout);
