@@ -178,7 +178,21 @@ async function openLog(path: string): Promise<FileHandle> {
   return await open(path, "w");
 }
 
-const DAEMON_STATUS_TIMEOUT_MS = 35_000;
+const DAEMON_STATUS_TIMEOUT_MS = 180_000;
+
+/**
+ * Cold extraction/antivirus scans and loaded warm relaunches can delay the
+ * daemon before IPC exists. Match the web's bounded three-minute splash budget;
+ * an exited child still fails immediately. Invalid overrides use the default.
+ */
+export function resolveDaemonStatusTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.READABLE_DAEMON_STATUS_TIMEOUT_MS;
+  if (raw != null && raw.length > 0) {
+    const parsed = Number(raw);
+    if (Number.isInteger(parsed) && parsed > 0) return parsed;
+  }
+  return DAEMON_STATUS_TIMEOUT_MS;
+}
 
 const WEB_STATUS_TIMEOUT_MS = 180_000;
 
@@ -574,7 +588,7 @@ export async function startPackagedSidecars(
         waitForStatus<DaemonStatusSnapshot>(
           daemon.ipcPath,
           (status) => status.url != null,
-          DAEMON_STATUS_TIMEOUT_MS,
+          resolveDaemonStatusTimeoutMs(),
           // Race the IPC polling against the daemon child's exit. Without
           // this, a daemon that throws at startup leaves the packaged app
           // waiting for the full status budget after the process already died.
