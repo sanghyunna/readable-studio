@@ -25,6 +25,11 @@ it('does not show a modal or re-offer after import is done',async()=>{
   await act(async()=>{render(<DataImportModal onResolved={resolved}/>);});
   expect(screen.queryByRole('dialog')).toBeNull();expect(resolved).toHaveBeenCalledOnce();
 });
+it('stays invisible while the check is still in flight',async()=>{
+  const resolved=vi.fn();vi.stubGlobal('fetch',vi.fn(()=>new Promise(()=>undefined)));
+  await act(async()=>{render(<DataImportModal onResolved={resolved}/>);});
+  expect(screen.queryByRole('dialog')).toBeNull();expect(resolved).not.toHaveBeenCalled();
+});
 it('resolves instead of trapping the user when the body has no recognized state or candidates',async()=>{
   const resolved=vi.fn();vi.stubGlobal('fetch',vi.fn(async()=>reply({})));
   await act(async()=>{render(<DataImportModal onResolved={resolved}/>);});

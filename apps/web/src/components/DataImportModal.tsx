@@ -43,6 +43,9 @@ export function DataImportModal({ onResolved }: { onResolved: () => void }) {
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setBusy(false); }
   }
+  // The check itself is invisible: the Hub stays usable until there is
+  // actually something to offer, a failure to report, or a pending restart.
+  if (!result && !error) return null;
   if (result && !['offered', 'failed', 'pending'].includes(result.state) && !error) return null;
   return <div className={`modal-backdrop ${styles.backdrop}`}>
     <section ref={dialog} tabIndex={-1} className={`modal ${styles.modal}`} role="dialog" aria-modal="true" aria-labelledby="data-import-title" data-testid="data-import-modal"
@@ -55,7 +58,7 @@ export function DataImportModal({ onResolved }: { onResolved: () => void }) {
         else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
       }}>
       <header className={styles.head}>
-        <h2 id="data-import-title">{t(!result && !error ? 'dataImport.checking' : pending ? 'dataImport.restarting' : result?.state === 'failed' ? 'dataImport.failed' : 'dataImport.title')}</h2>
+        <h2 id="data-import-title">{t(pending ? 'dataImport.restarting' : result?.state === 'failed' ? 'dataImport.failed' : 'dataImport.title')}</h2>
         <p>{t(pending ? 'dataImport.restartHint' : 'dataImport.description')}</p>
       </header>
       {!pending && result?.candidates.length ? <div className={styles.candidates} role="group" aria-label={t('dataImport.folders')}>
