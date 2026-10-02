@@ -369,6 +369,8 @@ export interface Dict {
   'settings.testAgentMissing': string;
   'settings.testAgentSpawn': string;
   'settings.testUnknown': string;
+  'settings.testRequestFailed': string;
+  'settings.modelListRequestFailed': string;
   'settings.agentDiagnostic.not-on-path': string;
   'settings.agentDiagnostic.not-executable': string;
   'settings.agentDiagnostic.shim-broken': string;
@@ -1082,6 +1084,7 @@ export interface Dict {
   'hubImport.claudeZipBusy': string;
   'hubImport.claudeZipInvalid': string;
   'hubImport.claudeZipFailed': string;
+  'hubImport.folderFailed': string;
   'hubImport.fromTemplate': string;
   'hubImport.noTemplates': string;
   'hubImport.templatesUnavailable': string;

@@ -1537,7 +1537,7 @@ export function SettingsDialog({
           kind: 'unknown',
           latencyMs: 0,
           model: choice.model || 'default',
-          detail: err instanceof Error ? err.message : 'Test request failed',
+          detail: err instanceof Error ? err.message : t('settings.testRequestFailed'),
         },
       });
       trackSettingsCliTestResult(analytics.track, {
@@ -1667,7 +1667,7 @@ export function SettingsDialog({
           kind: 'unknown',
           latencyMs: 0,
           model: cfg.model,
-          detail: err instanceof Error ? err.message : 'Test request failed',
+          detail: err instanceof Error ? err.message : t('settings.testRequestFailed'),
         },
       });
       const byokProviderId = byokProtocolToTracking(apiProtocol);
@@ -1872,7 +1872,7 @@ export function SettingsDialog({
           ok: false,
           kind: 'unknown',
           latencyMs: 0,
-          detail: err instanceof Error ? err.message : 'Model list request failed',
+          detail: err instanceof Error ? err.message : t('settings.modelListRequestFailed'),
         },
       });
       trackModelsFetchResult({
@@ -2774,6 +2774,7 @@ export function SettingsDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="settings-dialog-title"
+        style={{ wordBreak: 'keep-all' }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top-right chrome strip — anchored to the modal corner so the

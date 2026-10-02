@@ -1327,8 +1327,8 @@ export function HomeView({
     try {
       const ok = await onCreateFromTemplate(template);
       if (ok === false) setError(t('hubImport.templateCreateFailed'));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t('hubImport.templateCreateFailed'));
+    } catch {
+      setError(t('hubImport.templateCreateFailed'));
     } finally {
       templateCreatingRef.current = false;
       setTemplateCreating(false);
@@ -1638,7 +1638,7 @@ export function HomeView({
     || (active !== null && !active.inputsValid);
 
   return (
-    <div className={`home-view${surface === 'hub' ? ' home-view--hub' : ''}`} data-testid="home-view" ref={homeViewRef}>
+    <div className={`home-view${surface === 'hub' ? ' home-view--hub' : ''}`} data-testid="home-view" ref={homeViewRef} style={{ wordBreak: 'keep-all' }}>
       <HomeDraft
         ref={inputRef}
         active={isActive}

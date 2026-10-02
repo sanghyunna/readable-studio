@@ -5,6 +5,7 @@ import {
   type ReadableStudioHostProjectImportSuccess,
 } from '@readable-studio/host';
 import { pickLocalFolderPath } from '../state/projects';
+import { useI18n } from '../i18n';
 import { formatPickAndImportFailure } from '../utils/pickAndImportError';
 
 interface UseOpenFolderImportArgs {
@@ -18,6 +19,7 @@ export function useOpenFolderImport({
   onImportFolder,
   onImportFolderResponse,
 }: UseOpenFolderImportArgs) {
+  const { t } = useI18n();
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<{ message: string; details?: string } | null>(null);
   const hasHostPickAndImport = isReadableStudioHostAvailable();
@@ -38,7 +40,16 @@ export function useOpenFolderImport({
           return;
         }
         if ('canceled' in result && result.canceled === true) return;
-        setError(formatPickAndImportFailure(result));
+        const failure = formatPickAndImportFailure(result);
+        setError({
+          message: t('hubImport.folderFailed'),
+          details: [failure.message, failure.details].filter(Boolean).join('\n'),
+        });
+      } catch (err) {
+        setError({
+          message: t('hubImport.folderFailed'),
+          details: err instanceof Error ? err.message : undefined,
+        });
       } finally {
         setImporting(false);
       }
@@ -54,12 +65,13 @@ export function useOpenFolderImport({
       await onImportFolder(selectedPath);
     } catch (err) {
       setError({
-        message: err instanceof Error ? err.message : 'Failed to import folder',
+        message: t('hubImport.folderFailed'),
+        details: err instanceof Error ? err.message : undefined,
       });
     } finally {
       setImporting(false);
     }
-  }, [hasHostPickAndImport, onImportFolder, onImportFolderResponse, skillId]);
+  }, [hasHostPickAndImport, onImportFolder, onImportFolderResponse, skillId, t]);
 
   return {
     available,
