@@ -1,6 +1,7 @@
 import type { Express } from 'express';
 import { compareUpdateVersions, type UpdateCheckResult, type UpdateUnavailableReason } from '@readable-studio/contracts';
 import { readCurrentAppVersionInfo } from './app-version.js';
+import { createUpdateHttpClient } from './update-http.js';
 
 export const UPDATE_RELEASE_API = 'https://api.github.com/repos/sanghyunna/readable-studio/releases/latest';
 const RELEASE_ROOT = 'https://github.com/sanghyunna/readable-studio/releases/';
@@ -47,11 +48,13 @@ export async function checkForUpdate(deps: UpdateCheckDependencies = {}, automat
   const timeout = new Promise<UpdateCheckResult>((resolve) => {
     timer = setTimeout(() => { controller.abort(); resolve({ unavailable: 'timeout' }); }, deps.timeoutMs ?? TIMEOUT_MS);
   });
+  let client: ReturnType<typeof createUpdateHttpClient> | undefined;
   const run = async (): Promise<UpdateCheckResult> => {
     try {
+      if (!deps.fetch) client = createUpdateHttpClient(deps.env);
       const current = await (deps.currentVersion ?? (async () => (await readCurrentAppVersionInfo()).version))();
       const get = async (url: string) => {
-        const response = await (deps.fetch ?? fetch)(url, { signal: controller.signal, headers: { Accept: 'application/vnd.github+json' } });
+        const response = await (deps.fetch ?? client!.fetch)(url, { signal: controller.signal, headers: { Accept: 'application/vnd.github+json' } });
         if (response.status === 403 && response.headers.get('x-ratelimit-remaining') === '0') throw new Unavailable('rate-limited');
         if (!response.ok) throw new Unavailable('offline');
         return response;
@@ -86,7 +89,7 @@ export async function checkForUpdate(deps: UpdateCheckDependencies = {}, automat
     }
   };
   try { return await Promise.race([run(), timeout]); }
-  finally { clearTimeout(timer); }
+  finally { clearTimeout(timer); await client?.destroy(); }
 }
 
 export function registerUpdateRoutes(app: Express, deps: UpdateCheckDependencies = {}): void {

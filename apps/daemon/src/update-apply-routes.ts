@@ -9,6 +9,7 @@ import { promisify } from 'node:util';
 import type { Express } from 'express';
 import type { UpdateCheckResult } from '@readable-studio/contracts';
 import { checkForUpdate } from './update-routes.js';
+import { createUpdateHttpClient } from './update-http.js';
 
 let desktopQuit: (() => Promise<void>) | undefined;
 export function setUpdateQuitHandler(handler: () => Promise<void>): void { desktopQuit = handler; }
@@ -63,6 +64,7 @@ export function registerUpdateApplyRoutes(app: Express, deps: UpdateApplyDepende
     let temp: string | undefined;
     let launched = false;
     let ownedStaging: string | undefined;
+    let client: ReturnType<typeof createUpdateHttpClient> | undefined;
     try {
       const update = await (deps.check ?? checkForUpdate)();
       if ('unavailable' in update) { res.status(503).json(update); return; }
@@ -70,7 +72,8 @@ export function registerUpdateApplyRoutes(app: Express, deps: UpdateApplyDepende
       temp = await mkdtemp(join(root, '.update-download-'));
       const zip = join(temp, 'update.zip');
       const url = `${update.releaseUrl.replace('/tag/', '/download/')}/${encodeURIComponent(update.assetName)}`;
-      const response = await (deps.fetch ?? fetch)(url, { signal: AbortSignal.timeout(30 * 60_000) });
+      if (!deps.fetch) client = createUpdateHttpClient();
+      const response = await (deps.fetch ?? client!.fetch)(url, { signal: AbortSignal.timeout(30 * 60_000) });
       if (!response.ok || !response.body) throw new Error(`download failed: HTTP ${response.status}`);
       const hash = createHash('sha256');
       let size = 0;
@@ -96,6 +99,7 @@ export function registerUpdateApplyRoutes(app: Express, deps: UpdateApplyDepende
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
     } finally {
+      await client?.destroy();
       if (temp) await rm(temp, { recursive: true, force: true }).catch((error: unknown) => console.error('Update temp cleanup failed:', error));
       if (!launched) {
         if (ownedStaging) await rm(ownedStaging, { recursive: true, force: true }).catch((error: unknown) => console.error('Update staging cleanup failed:', error));

@@ -4,16 +4,14 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { expect, it } from 'vitest';
 
-it('prints the local runtime version for flag and subcommand, without a daemon', async () => {
+it.each([['--version'], ['version'], ['--version', '--json'], ['version', '--json']].map((args) => ({ args })))('prints the local runtime version for $args, without a daemon', async ({ args }) => {
   const env: NodeJS.ProcessEnv = { ...process.env, READABLE_APP_VERSION: '1.9.3' }; delete env.NODE_OPTIONS;
-  for (const args of [['--version'], ['version'], ['--version', '--json'], ['version', '--json']]) {
-    const { stdout } = await promisify(execFile)(process.execPath, [
-      fileURLToPath(new URL('../../../node_modules/tsx/dist/cli.mjs', import.meta.url)),
-      fileURLToPath(new URL('../src/cli.ts', import.meta.url)), ...args,
-    ], { env, windowsHide: true, timeout: 15000 });
-    if (args.includes('--json')) expect(JSON.parse(stdout)).toEqual({ version: '1.9.3' });
-    else expect(stdout.trim()).toBe('1.9.3');
-  }
+  const { stdout } = await promisify(execFile)(process.execPath, [
+    fileURLToPath(new URL('../../../node_modules/tsx/dist/cli.mjs', import.meta.url)),
+    fileURLToPath(new URL('../src/cli.ts', import.meta.url)), ...args,
+  ], { env, windowsHide: true, timeout: 15000 });
+  if (args.includes('--json')) expect(JSON.parse(stdout)).toEqual({ version: '1.9.3' });
+  else expect(stdout.trim()).toBe('1.9.3');
 }, 20000);
 
 it('dispatches update apply --json through the runnable CLI', async () => {

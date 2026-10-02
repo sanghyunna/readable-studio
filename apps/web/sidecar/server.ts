@@ -567,6 +567,8 @@ async function proxyHttpRequest(
       {
         headers,
         method: request.method,
+        // These targets are internal services, never an outbound proxy hop.
+        agent: false,
       },
       (proxyResponse) => {
         response.writeHead(proxyResponse.statusCode ?? 502, proxyResponse.headers);
@@ -664,7 +666,7 @@ async function stopStandaloneChild(child: ChildProcess): Promise<void> {
 
 async function probeStandaloneBackend(origin: string): Promise<boolean> {
   return await new Promise<boolean>((resolveProbe) => {
-    const request = createHttpRequest(new URL("/", origin), { method: "HEAD", timeout: 800 }, (response) => {
+    const request = createHttpRequest(new URL("/", origin), { method: "HEAD", timeout: 800, agent: false }, (response) => {
       response.resume();
       resolveProbe(true);
     });

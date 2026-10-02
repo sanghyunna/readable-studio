@@ -1,0 +1,2 @@
+# Preserve the verified upstream bytes, including original line endings.
+* -text
