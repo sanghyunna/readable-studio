@@ -53,8 +53,8 @@ function Stop-PayloadProcesses([string]$Root) {
         throw $failure
     } finally { foreach ($process in $owned) { $process.Dispose() } }
 }
-function Get-UpdateArguments([string]$Script, [string]$Root, [string]$Staging, [string]$TargetVersion, [int]$WaitPid) {
+function Get-UpdateArguments([string]$Script, [string]$Root, [string]$Staging, [string]$TargetVersion, [int]$WaitPid, [string]$Namespace = 'rg') {
     $values = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', $Script,
-        '-Root', $Root, '-Staging', $Staging, '-TargetVersion', $TargetVersion, '-WaitPid', [string]$WaitPid)
+        '-Root', $Root, '-Staging', $Staging, '-TargetVersion', $TargetVersion, '-WaitPid', [string]$WaitPid, '-Namespace', $Namespace)
     return (($values | ForEach-Object { [ReadableStudio.Launcher.Program]::Quote($_) }) -join ' ')
 }

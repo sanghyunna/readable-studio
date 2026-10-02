@@ -2,18 +2,19 @@
     [Parameter(Mandatory=$true)][string]$Root,
     [Parameter(Mandatory=$true)][string]$Staging,
     [Parameter(Mandatory=$true)][string]$TargetVersion,
-    [Parameter(Mandatory=$true)][int]$WaitPid
+    [Parameter(Mandatory=$true)][int]$WaitPid,
+    [string]$Namespace = 'rg'
 )
 $ErrorActionPreference = 'Stop'
 try {
-    [IO.File]::AppendAllText((Join-Path $Root 'update-broker.log'), "broker started pid=$PID handoff=$env:READABLE_UPDATE_HANDOFF_ID`n")
+    [IO.File]::AppendAllText((Join-Path $Root 'update-broker.log'), "broker started pid=$PID handoff=$env:READABLE_UPDATE_HANDOFF_ID namespace=$Namespace`n")
     . (Join-Path $PSScriptRoot 'common.ps1')
     Import-Launcher $Root
     Assert-UpdatePaths $Root $Staging
-    $arguments = Get-UpdateArguments (Join-Path $PSScriptRoot 'update-helper.ps1') $Root $Staging $TargetVersion $WaitPid
+    $arguments = Get-UpdateArguments (Join-Path $PSScriptRoot 'update-helper.ps1') $Root $Staging $TargetVersion $WaitPid $Namespace
     # Start-Process detaches the helper from the Electron/broker lifetime.
     $helper = Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -ArgumentList $arguments -WindowStyle Hidden -PassThru
-    [IO.File]::AppendAllText((Join-Path $Root 'update-broker.log'), "helper spawned pid=$($helper.Id)`n")
+    [IO.File]::AppendAllText((Join-Path $Root 'update-broker.log'), "helper spawned pid=$($helper.Id) namespace=$Namespace`n")
     $helper.Dispose()
     exit 0
 } catch {

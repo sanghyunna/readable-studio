@@ -21,6 +21,7 @@ namespace ReadableStudio.Launcher {
         public int schema = 1;
         public string id;
         public string target;
+        public string launchNamespace = "rg";
         public int pid;
         public long started;
         public string step = "prepared";
@@ -156,6 +157,14 @@ namespace ReadableStudio.Launcher {
             Receipt receipt = Json.Deserialize<Receipt>(File.ReadAllText(path));
             return receipt != null && receipt.id == State.id && receipt.version == State.target;
         }
+        public ProcessStartInfo CreateStartInfo(string executable, string arguments, bool restoreNamespace) {
+            var start = new ProcessStartInfo(executable, arguments) { UseShellExecute = false, WorkingDirectory = Root };
+            if (restoreNamespace) {
+                start.EnvironmentVariables["READABLE_PACKAGED_NAMESPACE"] = State.launchNamespace;
+                File.AppendAllText(FileAt("update-broker.log"), "launcher relaunch namespace=" + State.launchNamespace + " image=" + executable + "\n");
+            }
+            return start;
+        }
         public bool LaunchAndWaitReady(int timeout) {
             using (var signal = new ManualResetEventSlim(false))
             using (var watcher = new FileSystemWatcher(Root, "update-ready.json")) {
@@ -164,7 +173,7 @@ namespace ReadableStudio.Launcher {
                 watcher.Renamed += delegate { signal.Set(); };
                 watcher.EnableRaisingEvents = true;
                 Unlock();
-                var start = new ProcessStartInfo(FileAt("Readable Studio.exe"), "--readable-update-start=" + State.id) { UseShellExecute = false, WorkingDirectory = Root };
+                var start = CreateStartInfo(FileAt("Readable Studio.exe"), "--readable-update-start=" + State.id, true);
                 using (var child = Process.Start(start)) { }
                 var deadline = Stopwatch.StartNew();
                 while (true) {
@@ -363,6 +372,7 @@ namespace ReadableStudio.Launcher {
                     if (!tx.TryLock()) { Show("업데이트 진행 중\n완료되면 앱이 다시 시작됩니다.", true); return 0; }
                     Journal state = tx.Read();
                     bool internalStart = state != null && state.step == "complete" && args.Length > 0 && args[0] == "--readable-update-start=" + state.id && Transaction.Alive(state);
+                    bool restoreNamespace = internalStart;
                     if (internalStart) args = args.Skip(1).ToArray();
                     else {
                         // A valid ready receipt can precede BeginCleanup's durable
@@ -371,8 +381,9 @@ namespace ReadableStudio.Launcher {
                         string decision = Transaction.Decision(state, File.Exists(tx.FileAt("app\\Readable Studio.exe")), tx.Exists("app.old"), tx.Exists("app.staging"));
                         if (decision == "active") { tx.Unlock(); Show("업데이트 진행 중\n완료되면 앱이 다시 시작됩니다.", true); return 0; }
                         if (decision == "invalid") throw new UpdateFailure("invalid-layout", "업데이트 상태: " + (state == null ? "기록 없음" : state.step) + ". 앱 폴더를 보존하고 지원팀에 문의해 주세요.");
-                        if (decision == "cleanup") { tx.Claim(); tx.BeginCleanup(); tx.Cleanup(); }
+                        if (decision == "cleanup") { restoreNamespace = true; tx.Claim(); tx.BeginCleanup(); tx.Cleanup(); }
                         else if (decision != "launch") {
+                            restoreNamespace = true;
                             if (Barrier.Holders(tx.FileAt("app")).Length != 0 || Barrier.Holders(tx.FileAt("app.old")).Length != 0)
                                 throw new UpdateFailure("running-incomplete", "업데이트 상태: " + state.step + ". 실행 중인 Readable Studio를 닫고 다시 실행해 주세요.");
                             tx.RequireEmpty(45000);
@@ -383,7 +394,8 @@ namespace ReadableStudio.Launcher {
                     }
                     string exe = tx.FileAt("app\\Readable Studio.exe");
                     if (!File.Exists(exe)) throw new UpdateFailure("missing-exe", "app 폴더에서 실행 파일을 찾을 수 없습니다.");
-                    var start = new ProcessStartInfo(exe, String.Join(" ", args.Select(Quote))) { UseShellExecute = false, WorkingDirectory = Environment.CurrentDirectory };
+                    var start = tx.CreateStartInfo(exe, String.Join(" ", args.Select(Quote)), restoreNamespace);
+                    start.WorkingDirectory = Environment.CurrentDirectory;
                     if (internalStart) { start.EnvironmentVariables["READABLE_UPDATE_TRANSACTION"] = state.id; start.EnvironmentVariables["READABLE_UPDATE_TARGET"] = state.target; }
                     using (var child = Process.Start(start)) { }
                 }

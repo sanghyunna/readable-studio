@@ -467,6 +467,8 @@ async function spawnSidecarChild(options: {
         options.app !== APP_KEYS.DAEMON,
       ),
       ...options.env,
+      // Carry the resolved desktop stamp, not the filtered ambient environment.
+      READABLE_PACKAGED_NAMESPACE: options.runtime.namespace,
       NODE_ENV: "production",
       PATH: resolvePackagedPathEnv(),
       ...(options.nodeCommand == null ? { ELECTRON_RUN_AS_NODE: "1" } : {}),

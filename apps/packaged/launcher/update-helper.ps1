@@ -2,10 +2,11 @@
     [Parameter(Mandatory=$true)][string]$Root,
     [Parameter(Mandatory=$true)][string]$Staging,
     [Parameter(Mandatory=$true)][string]$TargetVersion,
-    [Parameter(Mandatory=$true)][int]$WaitPid
+    [Parameter(Mandatory=$true)][int]$WaitPid,
+    [string]$Namespace = 'rg'
 )
 $ErrorActionPreference = 'Stop'
-[IO.File]::AppendAllText((Join-Path $Root 'update-broker.log'), "helper started pid=$PID handoff=$env:READABLE_UPDATE_HANDOFF_ID`n")
+[IO.File]::AppendAllText((Join-Path $Root 'update-broker.log'), "helper started pid=$PID handoff=$env:READABLE_UPDATE_HANDOFF_ID namespace=$Namespace`n")
 . (Join-Path $PSScriptRoot 'common.ps1')
 Add-Type -AssemblyName System.Windows.Forms,System.Drawing
 Import-Launcher $Root
@@ -13,7 +14,7 @@ Import-Launcher $Root
 $form = [ReadableStudio.Launcher.Notice]::new("업데이트 진행 중`n앱을 종료하고 새 버전을 준비하고 있습니다.", $true)
 $worker = [PowerShell]::Create()
 [void]$worker.AddScript({
-    param($Root, $Staging, $TargetVersion, $WaitPid, $Common)
+    param($Root, $Staging, $TargetVersion, $WaitPid, $Common, $Namespace)
     $ErrorActionPreference = 'Stop'
     . $Common
     function Stop-At([string]$Point) {
@@ -37,11 +38,12 @@ $worker = [PowerShell]::Create()
         $tx.State.id = [Guid]::NewGuid().ToString()
         if ($env:READABLE_UPDATE_TEST_ID) { $tx.State.id = $env:READABLE_UPDATE_TEST_ID }
         $tx.State.target = $TargetVersion
+        $tx.State.launchNamespace = $Namespace
         $tx.Claim()
         if ($env:READABLE_UPDATE_HANDOFF_ID) {
             $ready = Join-Path $Root 'update-helper-ready.json'
             $temporary = $ready + '.tmp'
-            [IO.File]::WriteAllText($temporary, (@{id=$env:READABLE_UPDATE_HANDOFF_ID;pid=$PID} | ConvertTo-Json -Compress))
+            [IO.File]::WriteAllText($temporary, (@{id=$env:READABLE_UPDATE_HANDOFF_ID;pid=$PID;namespace=$Namespace} | ConvertTo-Json -Compress))
             if ([IO.File]::Exists($ready)) { [IO.File]::Replace($temporary, $ready, $null) }
             else { [IO.File]::Move($temporary, $ready) }
         }
@@ -61,6 +63,7 @@ $worker = [PowerShell]::Create()
         $tx.Move('new-move', 'app.staging', 'app')
         Stop-At 'new-move'
         $tx.State.step = 'complete'; $tx.State.done = $true; $tx.Save()
+        [IO.File]::AppendAllText((Join-Path $Root 'update-broker.log'), "helper relaunch namespace=$Namespace`n")
         if (-not $tx.LaunchAndWaitReady(180000)) { throw '새 버전 시작을 확인하지 못했습니다. 앱을 닫고 다시 실행해 주세요.' }
         if (-not $tx.TryLock()) { throw 'Could not reclaim update mutex.' }
         [void]$tx.Read()
@@ -82,7 +85,7 @@ $worker = [PowerShell]::Create()
         }
         throw $failure
     } finally { $tx.Dispose() }
-}).AddArgument($Root).AddArgument($Staging).AddArgument($TargetVersion).AddArgument($WaitPid).AddArgument((Join-Path $PSScriptRoot 'common.ps1'))
+}).AddArgument($Root).AddArgument($Staging).AddArgument($TargetVersion).AddArgument($WaitPid).AddArgument((Join-Path $PSScriptRoot 'common.ps1')).AddArgument($Namespace)
 $operation = $worker.BeginInvoke()
 $script:exitCode = 0
 $timer = [Windows.Forms.Timer]::new(); $timer.Interval = 100
