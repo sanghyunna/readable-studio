@@ -2445,8 +2445,10 @@
    Hub template carousel. Lives under the Hub composer in the slot the
    drop-to-edit zone used to hold. Same material as the Hub's raised
    controls (pearl fill + inset highlight, no border line), one horizontal
-   scroll-snap rail of compact row cards: thumbnail left, sparkle + title,
-   one description line. Collapsed keeps only the header so the opt-out
+   scroll-snap rail of poster cards: a large rendered preview on top, one
+   sparkle + title line below (the description stays in the tooltip only).
+   Collapse animates through the shared accordion pair; the rail stays
+   mounted so the exit plays. Collapsed keeps only the header so the opt-out
    costs one line, never zero affordance. */
 .home-hero__templates {
   width: 100%;
@@ -2527,6 +2529,21 @@
   outline-offset: 2px;
 }
 
+/* Asymmetric accordion timing on top of the shared pair: the rail enters
+   considered (200ms) and leaves decisively (140ms), both on the product
+   ease-out. The shared rule's reduced-motion block already zeroes both. */
+.home-hero__templates-body.accordion-collapsible {
+  transition:
+    grid-template-rows var(--dur-exit) var(--ease-out),
+    opacity var(--dur-exit) var(--ease-out);
+}
+
+.home-hero__templates-body.accordion-collapsible.open {
+  transition:
+    grid-template-rows var(--dur-enter) var(--ease-out),
+    opacity var(--dur-enter) var(--ease-out);
+}
+
 .home-hero__templates-rail {
   display: flex;
   gap: 10px;
@@ -2539,12 +2556,12 @@
 
 .home-hero__template-card {
   appearance: none;
-  flex: 0 0 272px;
+  flex: 0 0 216px;
   min-width: 0;
-  display: grid;
-  grid-template-columns: 96px minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
   padding: 8px;
   border: 0;
   border-radius: var(--radius-lg);
@@ -2595,8 +2612,9 @@
 
 .home-hero__template-thumb {
   position: relative;
-  width: 96px;
-  height: 72px;
+  display: block;
+  width: 100%;
+  aspect-ratio: 10 / 9;
   overflow: hidden;
   border-radius: var(--radius);
   background: var(--bg-subtle);
@@ -2621,9 +2639,12 @@
   display: none;
 }
 
-/* 1440px live page into a 96px thumb; height follows (1080 * 0.0667 = 72). */
+/* 1440px live page into a 200px thumb (216 card - 2 * 8 padding); the frame
+   is taller than the shared 1080 so the hero plus the section under it
+   fill the 10:9 box (1296 * 0.1389 = 180). */
 .home-hero__template-thumb .plugins-home__html-iframe {
-  transform: scale(0.0667);
+  height: 1296px;
+  transform: scale(0.1389);
 }
 
 .home-hero__template-thumb .plugins-home__media-video,
@@ -2631,18 +2652,12 @@
   object-position: top center;
 }
 
-.home-hero__template-body {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
 .home-hero__template-title {
   display: flex;
   align-items: center;
   gap: 5px;
   min-width: 0;
+  padding: 0 2px;
   font-size: 12.5px;
   font-weight: 650;
   line-height: 1.3;
@@ -2659,16 +2674,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.home-hero__template-desc {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--text-muted);
   word-break: keep-all;
 }
 

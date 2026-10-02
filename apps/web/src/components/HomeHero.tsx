@@ -1813,8 +1813,12 @@ function PluginPromptPresets({
 }
 
 // The Hub's horizontal template rail: a collapsible header plus a scroll-snap
-// row of compact cards (thumbnail left, sparkle + title, one description line).
-// Arrow keys walk the cards with a roving tabindex so the rail is one Tab stop.
+// row of poster cards (preview on top, sparkle + one-line title below; the
+// description lives only in the native tooltip). Arrow keys walk the cards
+// with a roving tabindex so the rail is one Tab stop. Collapse animates via
+// the shared accordion pair (grid-template-rows 0fr -> 1fr) so the rail stays
+// mounted and the exit transition can play; `inert` keeps the hidden cards
+// out of the tab order and the accessibility tree while collapsed.
 function HubTemplateCarousel({
   activePluginId,
   collapsed,
@@ -1892,31 +1896,41 @@ function HubTemplateCarousel({
           <Icon name="chevron-down" size={13} />
         </button>
       </div>
-      {collapsed ? null : (
-        <div
-          ref={railRef}
-          id={railId}
-          className="home-hero__templates-rail"
-          data-testid="hub-template-carousel-rail"
-          role="list"
-          onKeyDown={handleRailKeyDown}
-        >
-          {items.map((item, index) => (
-            <HubTemplateCard
-              key={item.record.id}
-              item={item}
-              locale={locale}
-              active={activePluginId === item.record.id}
-              pending={pendingPluginId === item.record.id}
-              disabled={pendingPluginId !== null}
-              pulse={pulseFirstPreset && index === 0}
-              tabIndex={index === focusIndex ? 0 : -1}
-              onFocus={() => setFocusIndex(index)}
-              onPick={onPick}
-            />
-          ))}
+      <div
+        id={railId}
+        className={`home-hero__templates-body accordion-collapsible${collapsed ? '' : ' open'}`}
+        data-testid="hub-template-carousel-body"
+        // React 18 cannot serialize inert as a boolean prop; use the DOM boolean API.
+        ref={(node) => {
+          node?.toggleAttribute('inert', collapsed);
+        }}
+        aria-hidden={collapsed}
+      >
+        <div className="accordion-collapsible-inner">
+          <div
+            ref={railRef}
+            className="home-hero__templates-rail"
+            data-testid="hub-template-carousel-rail"
+            role="list"
+            onKeyDown={handleRailKeyDown}
+          >
+            {items.map((item, index) => (
+              <HubTemplateCard
+                key={item.record.id}
+                item={item}
+                locale={locale}
+                active={activePluginId === item.record.id}
+                pending={pendingPluginId === item.record.id}
+                disabled={pendingPluginId !== null}
+                pulse={pulseFirstPreset && index === 0}
+                tabIndex={index === focusIndex ? 0 : -1}
+                onFocus={() => setFocusIndex(index)}
+                onPick={onPick}
+              />
+            ))}
+          </div>
         </div>
-      )}
+      </div>
     </section>
   );
 }
@@ -1977,14 +1991,9 @@ function HubTemplateCard({
           </span>
         ) : null}
       </span>
-      <span className="home-hero__template-body">
-        <span className="home-hero__template-title">
-          <Icon name="sparkles" size={13} />
-          <span>{title}</span>
-        </span>
-        {description ? (
-          <span className="home-hero__template-desc">{description}</span>
-        ) : null}
+      <span className="home-hero__template-title">
+        <Icon name="sparkles" size={13} />
+        <span>{title}</span>
       </span>
     </button>
   );

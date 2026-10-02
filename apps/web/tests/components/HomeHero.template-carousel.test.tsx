@@ -2,10 +2,13 @@
 
 // The Hub's template carousel: the horizontal template rail under the Hub
 // composer, in the slot the drop-to-edit zone used to occupy. Cards come
-// from the bundled example catalogue (readable-studio.json manifests), the
-// rail is collapsible with the collapsed state persisted across remounts,
-// the old drop zone is gone, and dropping a file on the prompt still
-// attaches it (that path is the reason the separate zone was redundant).
+// from the bundled example catalogue (readable-studio.json manifests), each
+// card is a poster (preview on top, title-only line below, description in
+// the tooltip), the rail is collapsible through the shared accordion pair
+// (stays mounted, toggles a class) with the collapsed state persisted across
+// remounts, the old drop zone is gone, and dropping a file on the prompt
+// still attaches it (that path is the reason the separate zone was
+// redundant).
 
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -92,7 +95,7 @@ function renderHub(overrides: Partial<React.ComponentProps<typeof HomeHero>> = {
 }
 
 describe('Hub template carousel', () => {
-  it('renders catalogue templates as row cards with localized title and description', () => {
+  it('renders catalogue templates as poster cards: preview plus a title-only line', () => {
     renderHub();
     const carousel = screen.getByTestId('hub-template-carousel');
     expect(carousel.getAttribute('data-collapsed')).toBe('false');
@@ -105,8 +108,15 @@ describe('Hub template carousel', () => {
     const pricing = cards.find((card) => card.getAttribute('data-plugin-id') === 'example-pricing-page')!;
     const manifest = CATALOGUE[0]!.manifest;
     expect(pricing.querySelector('.home-hero__template-title')?.textContent).toBe(manifest.title_i18n?.ko);
-    expect(pricing.querySelector('.home-hero__template-desc')?.textContent).toBe(manifest.description_i18n?.ko);
-    expect(pricing.querySelector('.home-hero__template-thumb')).not.toBeNull();
+    // Visible text is the title only; the description is not rendered as
+    // text (it would wrap the narrow poster card) and survives in the tooltip.
+    expect(pricing.querySelector('.home-hero__template-desc')).toBeNull();
+    expect(pricing.textContent).toBe(manifest.title_i18n?.ko);
+    expect(pricing.getAttribute('title')).toBe(`${manifest.title_i18n?.ko} · ${manifest.description_i18n?.ko}`);
+    const thumb = pricing.querySelector('.home-hero__template-thumb')!;
+    expect(thumb).not.toBeNull();
+    // Preview above the title in DOM order (the card is a column).
+    expect(thumb.compareDocumentPosition(pricing.querySelector('.home-hero__template-title')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // Mixed rail: a deck template rides next to the prototype ones, filed
     // under its own chip so a pick binds the right creation type.
     const deck = cards.find((card) => card.getAttribute('data-plugin-id') === 'example-guizang-ppt')!;
@@ -139,13 +149,27 @@ describe('Hub template carousel', () => {
     expect(document.activeElement).toBe(cards[0]);
   });
 
-  it('collapses on the toggle and stays collapsed across a remount', () => {
+  it('collapses on the toggle through the shared accordion pair and stays collapsed across a remount', () => {
     const first = renderHub();
     const toggle = screen.getByTestId('hub-template-carousel-toggle');
+    const body = screen.getByTestId('hub-template-carousel-body');
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(toggle.getAttribute('aria-controls')).toBe(body.id);
     expect(toggle.textContent).toBe(ko['homeHero.templateCarouselHide']);
+    expect(body.classList.contains('accordion-collapsible')).toBe(true);
+    expect(body.classList.contains('open')).toBe(true);
+    expect(body.hasAttribute('inert')).toBe(false);
+    expect(body.querySelector('.accordion-collapsible-inner > .home-hero__templates-rail')).not.toBeNull();
     fireEvent.click(toggle);
-    expect(screen.queryByTestId('hub-template-carousel-rail')).toBeNull();
+    // Collapse toggles the class and keeps the rail mounted so the exit
+    // transition can play (an unmount would snap); the hidden cards leave
+    // the tab order and the accessibility tree through `inert`.
+    expect(screen.getByTestId('hub-template-carousel-body')).toBe(body);
+    expect(body.classList.contains('open')).toBe(false);
+    expect(body.hasAttribute('inert')).toBe(true);
+    expect(body.getAttribute('aria-hidden')).toBe('true');
+    expect(screen.getByTestId('hub-template-carousel-rail')).not.toBeNull();
+    expect(screen.getAllByTestId('hub-template-card').length).toBeGreaterThan(0);
     expect(screen.getByTestId('hub-template-carousel').getAttribute('data-collapsed')).toBe('true');
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(toggle.textContent).toBe(ko['homeHero.templateCarouselShow']);
@@ -154,10 +178,14 @@ describe('Hub template carousel', () => {
     // A fresh mount (next launch) reads the persisted opt-out.
     renderHub();
     expect(screen.getByTestId('hub-template-carousel').getAttribute('data-collapsed')).toBe('true');
-    expect(screen.queryByTestId('hub-template-card')).toBeNull();
+    const remounted = screen.getByTestId('hub-template-carousel-body');
+    expect(remounted.classList.contains('open')).toBe(false);
+    expect(remounted.hasAttribute('inert')).toBe(true);
     // ...and the opt-out is reversible from the same control.
     fireEvent.click(screen.getByTestId('hub-template-carousel-toggle'));
-    expect(screen.getAllByTestId('hub-template-card').length).toBeGreaterThan(0);
+    expect(remounted.classList.contains('open')).toBe(true);
+    expect(remounted.hasAttribute('inert')).toBe(false);
+    expect(screen.getByTestId('hub-template-carousel').getAttribute('data-collapsed')).toBe('false');
     cleanup();
     renderHub(undefined, 'en');
     expect(screen.getByTestId('hub-template-carousel').getAttribute('data-collapsed')).toBe('false');
