@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AgentDiagnosticRow } from '../../src/components/AgentDiagnosticRow';
 import type { AgentDiagnostic } from '../../src/types';
 import { getEn } from '../../src/i18n/locales/en';
+import { getKo } from '../../src/i18n/locales/ko';
+import { I18nProvider } from '../../src/i18n';
 const en = getEn();
 
 afterEach(() => {
@@ -36,16 +38,42 @@ const databricksPackageDamaged: AgentDiagnostic = {
 };
 
 describe('AgentDiagnosticRow', () => {
-  it('renders the daemon message and tags the reason', () => {
+  const reasons: AgentDiagnostic['reason'][] = [
+    'not-on-path', 'not-executable', 'shim-broken', 'configured-bin-invalid',
+    'auth-missing', 'auth-unknown', 'discovery-failed', 'probe-timeout',
+  ];
+  it.each(reasons)('renders Korean shipped copy for %s, with raw diagnostics only in the tooltip', (reason) => {
+    const diagnostic: AgentDiagnostic = {
+      reason, severity: 'error',
+      message: 'Live model discovery failed. Check the CLI configuration and connection, then rescan.',
+      detail: 'stderr: connection refused',
+    };
+    render(<I18nProvider initial="ko"><AgentDiagnosticRow diagnostic={diagnostic} /></I18nProvider>);
+    const group = screen.getByRole('group');
+    const copy = getKo()[`settings.agentDiagnostic.${reason}`];
+    expect(group.textContent).toBe(copy);
+    expect(group.textContent).not.toContain(diagnostic.message);
+    expect(screen.getByText(copy).getAttribute('title')).toContain(diagnostic.detail);
+    if (reason === 'discovery-failed') {
+      expect(screen.getByText(copy).getAttribute('title')).not.toContain(diagnostic.message);
+    }
+  });
+
+  it('renders Korean Databricks setup guidance', () => {
+    render(<I18nProvider initial="ko"><AgentDiagnosticRow agentId="databricks" diagnostic={databricksNoModels} /></I18nProvider>);
+    expect(screen.getByRole('group').textContent).toBe(getKo()['settings.agentDiagnostic.databricks-no-models']);
+    expect(screen.getByRole('group').textContent).not.toContain(databricksNoModels.message);
+  });
+  it('renders localized copy and tags the reason', () => {
     render(<AgentDiagnosticRow diagnostic={notOnPath} />);
     const group = screen.getByRole('group');
     expect(group.getAttribute('data-reason')).toBe('not-on-path');
-    expect(screen.getByText(notOnPath.message)).toBeTruthy();
+    expect(screen.getByText(en['settings.agentDiagnostic.not-on-path'])).toBeTruthy();
   });
 
   it('exposes searched dirs via the message tooltip', () => {
     render(<AgentDiagnosticRow diagnostic={notOnPath} />);
-    const title = screen.getByText(notOnPath.message).getAttribute('title') ?? '';
+    const title = screen.getByText(en['settings.agentDiagnostic.not-on-path']).getAttribute('title') ?? '';
     expect(title).toContain('/usr/bin');
     expect(title).toContain('/opt/homebrew/bin');
   });
@@ -95,7 +123,7 @@ describe('AgentDiagnosticRow', () => {
         handlers={{ onOpenDatabricksSettings }}
       />,
     );
-    expect(screen.getByText(/Settings > Databricks/)).toBeTruthy();
+    expect(screen.getByText(en['settings.agentDiagnostic.databricks-no-models'])).toBeTruthy();
     const btn = screen.getByRole('button', { name: en['settings.databricksModels'] });
     fireEvent.click(btn);
     expect(onOpenDatabricksSettings).toHaveBeenCalledTimes(1);
@@ -110,7 +138,8 @@ describe('AgentDiagnosticRow', () => {
         handlers={{ onReDownloadPortablePackage }}
       />,
     );
-    expect(screen.getByText(databricksPackageDamaged.message)).toBeTruthy();
+    expect(screen.getByText(en['settings.agentDiagnostic.not-executable'])).toBeTruthy();
+    expect(screen.getByText(en['settings.agentDiagnostic.not-executable']).getAttribute('title')).toContain(databricksPackageDamaged.message);
     const btn = screen.getByRole('button', { name: en['common.exportZip'] });
     fireEvent.click(btn);
     expect(onReDownloadPortablePackage).toHaveBeenCalledTimes(1);

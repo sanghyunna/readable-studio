@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useT } from '../i18n';
+import { getEn } from '../i18n/locales/en';
 import type { AgentDiagnostic, AgentFixIntent } from '../types';
 import { Icon } from './Icon';
 import type { IconName } from './Icon';
@@ -87,9 +88,8 @@ function useResolveAction() {
 }
 
 // Presents a single agent diagnostic as "one-line reason + fix button(s)".
-// The reason text is the daemon-authored message (already English, like the
-// existing auth banner), and tooltips expose the probe detail + the exact
-// directories PATH detection searched.
+// The wire reason selects localized guidance; raw daemon context and the exact
+// directories PATH detection searched remain available in the tooltip.
 export function AgentDiagnosticRow({ diagnostic, agentId, handlers = {}, className }: Props) {
   const t = useT();
   const resolveAction = useResolveAction();
@@ -100,10 +100,9 @@ export function AgentDiagnosticRow({ diagnostic, agentId, handlers = {}, classNa
   const databricksOverride = useMemo(() => {
     if (agentId !== 'databricks') return null;
     const extras: ResolvedAction[] = [];
-    let message = diagnostic.message;
+    let message = t(`settings.agentDiagnostic.${diagnostic.reason}`);
     if (diagnostic.reason === 'auth-unknown') {
-      message =
-        'No Databricks models are configured. Add or configure models in Settings > Databricks.';
+      message = t('settings.agentDiagnostic.databricks-no-models');
       if (handlers.onOpenDatabricksSettings) {
         extras.push({
           key: 'openDatabricksSettings',
@@ -128,7 +127,7 @@ export function AgentDiagnosticRow({ diagnostic, agentId, handlers = {}, classNa
   }, [agentId, diagnostic, handlers, t]);
 
   const isDatabricks = agentId === 'databricks';
-  const message = databricksOverride?.message ?? diagnostic.message;
+  const message = databricksOverride?.message ?? t(`settings.agentDiagnostic.${diagnostic.reason}`);
   const actions = (diagnostic.fixActions ?? [])
     .map((intent) => resolveAction(intent, handlers))
     .filter((action): action is ResolvedAction => action !== null)
@@ -136,7 +135,14 @@ export function AgentDiagnosticRow({ diagnostic, agentId, handlers = {}, classNa
     .filter((action) => !(isDatabricks && action.key === 'openInstall'));
   const allActions = [...actions, ...(databricksOverride?.extras ?? [])];
 
+  // An exact English equivalent adds no context to the translated headline.
+  const englishKey = isDatabricks && diagnostic.reason === 'auth-unknown'
+    ? 'settings.agentDiagnostic.databricks-no-models'
+    : `settings.agentDiagnostic.${diagnostic.reason}` as const;
+  const englishMessage = getEn()[englishKey];
   const tooltip = [
+    diagnostic.message !== message && diagnostic.message !== englishMessage
+      ? diagnostic.message : undefined,
     diagnostic.detail,
     ...(diagnostic.searchedDirs && diagnostic.searchedDirs.length > 0
       ? diagnostic.searchedDirs

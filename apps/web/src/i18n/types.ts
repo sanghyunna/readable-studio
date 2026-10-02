@@ -369,6 +369,15 @@ export interface Dict {
   'settings.testAgentMissing': string;
   'settings.testAgentSpawn': string;
   'settings.testUnknown': string;
+  'settings.agentDiagnostic.not-on-path': string;
+  'settings.agentDiagnostic.not-executable': string;
+  'settings.agentDiagnostic.shim-broken': string;
+  'settings.agentDiagnostic.configured-bin-invalid': string;
+  'settings.agentDiagnostic.auth-missing': string;
+  'settings.agentDiagnostic.auth-unknown': string;
+  'settings.agentDiagnostic.discovery-failed': string;
+  'settings.agentDiagnostic.probe-timeout': string;
+  'settings.agentDiagnostic.databricks-no-models': string;
   'settings.agentInstall.install': string;
   'settings.agentInstall.docs': string;
   'settings.agentInstall.pathHint': string;
@@ -1071,6 +1080,8 @@ export interface Dict {
   'hubImport.openFolderBusy': string;
   'hubImport.claudeZip': string;
   'hubImport.claudeZipBusy': string;
+  'hubImport.claudeZipInvalid': string;
+  'hubImport.claudeZipFailed': string;
   'hubImport.fromTemplate': string;
   'hubImport.noTemplates': string;
   'hubImport.templatesUnavailable': string;

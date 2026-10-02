@@ -1860,6 +1860,7 @@
 
 .readable-toast-message {
   min-width: 0;
+  word-break: keep-all;
   overflow-wrap: anywhere;
 }
 

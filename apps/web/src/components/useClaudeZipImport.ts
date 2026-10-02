@@ -8,6 +8,7 @@
 import { useCallback, useRef, useState, type ChangeEvent } from 'react';
 
 import type { ImportClaudeDesignOutcome } from './project-create';
+import { useT } from '../i18n';
 
 export interface ClaudeZipImportError {
   message: string;
@@ -21,6 +22,7 @@ interface UseClaudeZipImportArgs {
 }
 
 export function useClaudeZipImport({ onImportClaudeDesign }: UseClaudeZipImportArgs) {
+  const t = useT();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<ClaudeZipImportError | null>(null);
@@ -48,21 +50,26 @@ export function useClaudeZipImport({ onImportClaudeDesign }: UseClaudeZipImportA
       try {
         const result = await onImportClaudeDesign(file);
         if (result?.ok === false) {
+          const details = [result.message, result.details].filter(Boolean).join('\n');
           setError({
-            message: result.message ? `Import failed: ${result.message}` : 'Import failed',
-            ...(result.details === undefined ? {} : { details: result.details }),
+            message: t(/invalid zip|not a (?:valid )?zip|missing central directory/i.test(details)
+              ? 'hubImport.claudeZipInvalid' : 'hubImport.claudeZipFailed'),
+            ...(details ? { details } : {}),
           });
         }
       } catch (err) {
+        const details = err instanceof Error ? err.message : String(err);
         setError({
-          message: err instanceof Error ? `Import failed: ${err.message}` : 'Import failed',
+          message: t(/invalid zip|not a (?:valid )?zip|missing central directory/i.test(details)
+            ? 'hubImport.claudeZipInvalid' : 'hubImport.claudeZipFailed'),
+          details,
         });
       } finally {
         importingRef.current = false;
         setImporting(false);
       }
     },
-    [onImportClaudeDesign],
+    [onImportClaudeDesign, t],
   );
 
   return {

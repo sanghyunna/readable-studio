@@ -30,6 +30,8 @@
 .message {
   flex: 1 1 auto;
   min-width: 0;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
   color: var(--text-muted, var(--text));
 }
 
