@@ -13,9 +13,9 @@ import { registerUpdateApplyRoutes, extractUpdatePayload } from '../src/update-a
 const bytes = Buffer.from('download fixture');
 const update = { current: '1.2.1', latest: '1.3.0', isNewer: true, assetName: 'Readable-Studio-win-x64-portable.zip', assetSize: bytes.length,
  sha256: createHash('sha256').update(bytes).digest('hex'), releaseUrl: 'https://github.com/sanghyunna/readable-studio/releases/tag/v1.3.0', notes: '', checkedAt: new Date().toISOString() };
-async function fixture(hash: string, assetSize = bytes.length) {
+async function fixture(hash: string, assetSize = bytes.length, brokerFails = false) {
  const root = await mkdtemp(join(tmpdir(), 'apply-'));
- const spawn = vi.fn(() => { const child = Object.assign(new EventEmitter(), { unref: vi.fn() }); queueMicrotask(() => child.emit('spawn')); return child; });
+ const spawn = vi.fn((_command, _args, options) => { const child = Object.assign(new EventEmitter(), { unref: vi.fn() }); queueMicrotask(() => { child.emit('spawn'); setImmediate(() => { if (brokerFails) child.emit('exit', 1); else void writeFile(join(root, 'update-helper-ready.json'), JSON.stringify({ id: options.env?.READABLE_UPDATE_HANDOFF_ID, pid: 54321 })).catch(error => child.emit('error', error)); }); }); return child; });
  const quit = vi.fn(async () => {});
  const extract = vi.fn(async (_zip: string, staging: string) => { await mkdir(staging, { recursive: true }); await writeFile(join(staging, 'Readable Studio.exe'), 'payload'); });
  const app = express();
@@ -29,6 +29,10 @@ async function fixture(hash: string, assetSize = bytes.length) {
  return { root, spawn, quit, extract, async request() { const done = once(completed, 'completed', { signal: AbortSignal.timeout(5000) }); const response = await fetch(`http://127.0.0.1:${(server.address() as { port: number }).port}/api/update/apply`, { method: 'POST' }); const body = await response.json(); await done; return { status: response.status, body }; }, async close() { await new Promise<void>((resolve) => server.close(() => resolve())); await rm(root, { recursive: true, force: true }); } };
 }
 describe('update apply route', () => {
+ it('keeps the desktop running when a spawned broker fails before helper acknowledgment', async () => {
+  const f = await fixture(update.sha256, bytes.length, true);
+  try { expect(await f.request()).toMatchObject({ status: 500 }); expect(f.quit).not.toHaveBeenCalled(); } finally { await f.close(); }
+ });
  it('extracts only app entries through real PowerShell and rejects traversal', async () => {
   const root = await mkdtemp(join(tmpdir(), 'extract-update-'));
   const zip = join(root, 'update.zip');
@@ -63,7 +67,8 @@ describe('update apply route', () => {
  it('streams verified asset, stages payload and launches the exact broker contract', async () => {
   const f = await fixture(update.sha256);
   try { expect(await f.request()).toMatchObject({ status: 202, body: { status: 'applying', targetVersion: '1.3.0' } });
-   expect(f.spawn).toHaveBeenCalledWith('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', join(f.root, 'app', 'resources', 'update-helper', 'update-broker.ps1'), '-Root', f.root, '-Staging', join(f.root, 'app.staging'), '-TargetVersion', '1.3.0', '-WaitPid', '12345'], expect.objectContaining({ detached: true, windowsHide: true, stdio: 'ignore', cwd: f.root }));
+   expect(f.spawn).toHaveBeenCalledWith('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', join(f.root, 'app', 'resources', 'update-helper', 'update-broker.ps1'), '-Root', f.root, '-Staging', join(f.root, 'app.staging'), '-TargetVersion', '1.3.0', '-WaitPid', '12345'], expect.objectContaining({ windowsHide: true, stdio: 'ignore', cwd: f.root }));
+   expect(f.spawn.mock.calls[0]?.[2]?.detached).not.toBe(true);
    expect(f.quit).toHaveBeenCalledOnce();
   } finally { await f.close(); }
  });

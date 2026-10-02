@@ -1,5 +1,5 @@
 import { execFile, spawn as spawnProcess } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import { access, mkdir, mkdtemp, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -10,6 +10,7 @@ import type { Express } from 'express';
 import type { UpdateCheckResult } from '@readable-studio/contracts';
 import { checkForUpdate } from './update-routes.js';
 import { createUpdateHttpClient } from './update-http.js';
+import { waitForUpdateHelper } from './update-handoff.js';
 
 let desktopQuit: (() => Promise<void>) | undefined;
 export function setUpdateQuitHandler(handler: () => Promise<void>): void { desktopQuit = handler; }
@@ -61,6 +62,7 @@ export function registerUpdateApplyRoutes(app: Express, deps: UpdateApplyDepende
     if (!root || !Number.isSafeInteger(mainPid) || mainPid <= 0 || !quit) { res.status(409).json({ error: 'unsupported-layout' }); return; }
     if (applying) { res.status(409).json({ error: 'update-in-progress' }); return; }
     applying = true;
+    console.info('[update-apply] start', { root, mainPid, namespace: process.env.READABLE_PACKAGED_NAMESPACE });
     let temp: string | undefined;
     let launched = false;
     let ownedStaging: string | undefined;
@@ -83,6 +85,7 @@ export function registerUpdateApplyRoutes(app: Express, deps: UpdateApplyDepende
         hash.update(chunk); callback(null, chunk);
       } }), createWriteStream(zip, { flags: 'wx' }));
       if (hash.digest('hex') !== update.sha256 || size !== update.assetSize) { res.status(422).json({ error: 'checksum-mismatch' }); return; }
+      console.info('[update-apply] download verified', { size, target: update.latest });
       const payload = join(temp, 'payload');
       await mkdir(payload);
       await (deps.extract ?? extractUpdatePayload)(zip, payload);
@@ -90,13 +93,21 @@ export function registerUpdateApplyRoutes(app: Express, deps: UpdateApplyDepende
       // Never replace another updater's staging directory (or recovery state).
       await rename(payload, staging);
       ownedStaging = staging;
-      const child = (deps.spawn ?? spawnProcess)('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', join(root, 'app', 'resources', 'update-helper', 'update-broker.ps1'), '-Root', root, '-Staging', staging, '-TargetVersion', update.latest, '-WaitPid', String(mainPid)], { detached: true, windowsHide: true, stdio: 'ignore', cwd: root });
+      const handoffId = randomUUID();
+      console.info('[update-apply] payload staged', { staging, target: update.latest, handoffId });
+      // Windows PowerShell silently exits in Node's detached/no-console mode.
+      // The broker independently Start-Process launches the helper; acknowledge that helper before quitting.
+      const child = (deps.spawn ?? spawnProcess)('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', join(root, 'app', 'resources', 'update-helper', 'update-broker.ps1'), '-Root', root, '-Staging', staging, '-TargetVersion', update.latest, '-WaitPid', String(mainPid)], { windowsHide: true, stdio: 'ignore', cwd: root, env: { ...process.env, READABLE_UPDATE_HANDOFF_ID: handoffId } });
       await new Promise<void>((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject); });
       child.unref();
+      console.info('[update-apply] broker spawned', { pid: child.pid, handoffId });
+      const helperPid = await waitForUpdateHelper(root, handoffId, child);
+      console.info('[update-apply] helper acknowledged', { helperPid, handoffId });
       launched = true;
-      res.once('finish', () => { void quit().catch((error: unknown) => console.error('Update broker started but desktop quit failed:', error)); });
+      res.once('finish', () => { console.info('[update-apply] desktop quit requested', { mainPid, helperPid }); void quit().catch((error: unknown) => console.error('Update broker started but desktop quit failed:', error)); });
       res.status(202).json({ status: 'applying', targetVersion: update.latest });
     } catch (error) {
+      console.error('[update-apply] handoff failed; desktop remains running', error);
       res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
     } finally {
       await client?.destroy();

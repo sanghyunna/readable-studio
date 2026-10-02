@@ -5,6 +5,7 @@
     [Parameter(Mandatory=$true)][int]$WaitPid
 )
 $ErrorActionPreference = 'Stop'
+[IO.File]::AppendAllText((Join-Path $Root 'update-broker.log'), "helper started pid=$PID handoff=$env:READABLE_UPDATE_HANDOFF_ID`n")
 . (Join-Path $PSScriptRoot 'common.ps1')
 Add-Type -AssemblyName System.Windows.Forms,System.Drawing
 Import-Launcher $Root
@@ -37,6 +38,13 @@ $worker = [PowerShell]::Create()
         if ($env:READABLE_UPDATE_TEST_ID) { $tx.State.id = $env:READABLE_UPDATE_TEST_ID }
         $tx.State.target = $TargetVersion
         $tx.Claim()
+        if ($env:READABLE_UPDATE_HANDOFF_ID) {
+            $ready = Join-Path $Root 'update-helper-ready.json'
+            $temporary = $ready + '.tmp'
+            [IO.File]::WriteAllText($temporary, (@{id=$env:READABLE_UPDATE_HANDOFF_ID;pid=$PID} | ConvertTo-Json -Compress))
+            if ([IO.File]::Exists($ready)) { [IO.File]::Replace($temporary, $ready, $null) }
+            else { [IO.File]::Move($temporary, $ready) }
+        }
         Stop-At 'prepared'
         if ($WaitPid -gt 0) {
             try { $parent = [Diagnostics.Process]::GetProcessById($WaitPid) }
@@ -84,6 +92,7 @@ $timer.add_Tick({
         [void]$worker.EndInvoke($operation)
         if ($worker.HadErrors) { throw $worker.Streams.Error[0].Exception }
     } catch {
+        [IO.File]::WriteAllText((Join-Path $Root 'update-error.log'), $_.Exception.ToString())
         $script:exitCode = 1
         $form.Hide()
         [ReadableStudio.Launcher.Program]::Show("업데이트가 중단되었습니다. 앱을 닫고 Readable Studio를 다시 실행하면 복구합니다.`n" + $_.Exception.Message, $false)
