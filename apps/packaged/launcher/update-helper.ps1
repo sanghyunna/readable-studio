@@ -54,6 +54,7 @@ $worker = [PowerShell]::Create()
                 finally { $parent.Dispose() }
             }
         }
+        Stop-PayloadProcesses $Root
         $tx.RequireEmpty(50000)
         $tx.Move('old-move', 'app', 'app.old')
         Stop-At 'old-move'
