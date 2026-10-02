@@ -3,6 +3,7 @@ import os from 'node:os';
 import { promisify } from 'node:util';
 import { createCommandInvocation } from '@readable-studio/platform';
 import type { RuntimeExecOptions } from './types.js';
+import { terminateProbeTree } from './probe-lifetime.js';
 
 const execFileP = promisify(execFile);
 
@@ -32,10 +33,30 @@ export function execAgentFile(
   options: RuntimeExecOptions = {},
 ) {
   const invocation = createAgentCommandInvocation(command, args, options.env);
-  return execFileP(invocation.command, invocation.args, {
+  const pending = execFileP(invocation.command, invocation.args, {
     ...options,
+    timeout: options.timeout && options.timeout > 0 ? options.timeout : 5000,
     windowsHide: true,
     cwd: options.cwd ?? os.tmpdir(),
     windowsVerbatimArguments: invocation.windowsVerbatimArguments,
   });
+  const child = pending.child;
+  const kill = child.kill.bind(child);
+  let stopping: Promise<void> | undefined;
+  // execFile uses child.kill for timeout, abort and output-limit failures. Do
+  // not kill the wrapper first: taskkill needs its intact ancestry to find CLI
+  // grandchildren. Join cleanup even when AbortError settles execFile early.
+  child.kill = () => {
+    stopping ??= terminateProbeTree(child, kill);
+    void stopping.catch(() => undefined); // joined by the returned promise
+    return true;
+  };
+  child.stdin?.end();
+  return Object.assign(pending.then(async result => {
+    await stopping;
+    return result;
+  }, async error => {
+    await stopping;
+    throw error;
+  }), { child });
 }

@@ -2,8 +2,43 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { ChildProcess, execFile } from 'node:child_process';
 import { subscribe } from 'node:diagnostics_channel';
 
-type ProbeLifetime = { readonly signal: AbortSignal; readonly children: Set<Promise<void>> };
+type ProbeLifetime = { readonly signal: AbortSignal; readonly children: Set<Promise<void>>; readonly cleanup: Set<Promise<void>> };
 const lifetimes = new AsyncLocalStorage<ProbeLifetime>();
+
+export function terminateProbeTree(child: ChildProcess, kill = child.kill.bind(child)): Promise<void> {
+  // Cleanup commands must not become children of the probe they are cleaning up.
+  return lifetimes.exit(async () => {
+    if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return;
+    if (process.platform === 'win32') {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new DOMException('Probe process-tree cleanup timed out', 'TimeoutError')), 5500);
+        execFile('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, timeout: 5000 }, (error) => {
+          clearTimeout(timer);
+          if (!error || child.exitCode !== null || child.signalCode !== null) resolve();
+          else reject(error);
+        });
+      });
+    } else {
+      // Walk descendants before killing the parent, while ancestry is intact.
+      const listing = await new Promise<string>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new DOMException('Probe process-tree cleanup timed out', 'TimeoutError')), 5500);
+        execFile('ps', ['-eo', 'pid=,ppid='], { timeout: 5000 }, (error, stdout) => {
+          clearTimeout(timer);
+          if (error) reject(error);
+          else resolve(stdout);
+        });
+      });
+      const rows = listing.trim().split('\n').map(line => line.trim().split(/\s+/).map(Number));
+      const descendants = (pid: number): number[] => rows.filter(row => row[1] === pid).flatMap(row => [...descendants(row[0]!), row[0]!]);
+      for (const pid of descendants(child.pid)) {
+        try { process.kill(pid, 'SIGKILL'); } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+        }
+      }
+      kill('SIGKILL');
+    }
+  });
+}
 
 // Node publishes this built-in channel before spawn. Scoping at this boundary
 // covers custom adapter transports (including ACP), not only execAgentFile.
@@ -14,19 +49,8 @@ subscribe('child_process', (message: unknown) => {
   let stopping: Promise<void> | undefined;
   const stop = () => {
     if (stopping || child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return;
-    // Leave the async scope so taskkill is not itself owned by this probe.
-    stopping = lifetimes.exit(async () => {
-      if (process.platform === 'win32') {
-        await new Promise<void>((resolve, reject) => {
-          execFile('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, timeout: 2000 }, (error) => {
-            if (!error || child.exitCode !== null || child.signalCode !== null) resolve();
-            else reject(error);
-          });
-        });
-      } else {
-        child.kill('SIGKILL');
-      }
-    });
+    stopping = terminateProbeTree(child);
+    lifetime.cleanup.add(stopping);
     // The lifetime joins cleanup errors below, even when a consumer disconnects.
     void stopping.catch(() => undefined);
   };
@@ -48,7 +72,7 @@ subscribe('child_process', (message: unknown) => {
 
 export async function withProbeLifetime<T>(signal: AbortSignal, probe: () => Promise<T>): Promise<T> {
   signal.throwIfAborted();
-  const lifetime: ProbeLifetime = { signal, children: new Set() };
+  const lifetime: ProbeLifetime = { signal, children: new Set(), cleanup: new Set() };
   let onAbort = () => {};
   const aborted = new Promise<never>((_resolve, reject) => {
     onAbort = () => reject(signal.reason);
@@ -64,10 +88,11 @@ export async function withProbeLifetime<T>(signal: AbortSignal, probe: () => Pro
     }
   });
   try {
-    // Cancellation must not depend on close, the adapter, or taskkill's callback.
-    // Child abort/spawn listeners still terminate owned processes independently.
+    // Cancellation does not depend on close or adapter cooperation. Cleanup
+    // itself is bounded and joined before returning to the scan owner.
     return await Promise.race([completed, aborted]);
   } finally {
     signal.removeEventListener('abort', onAbort);
+    await Promise.all(lifetime.cleanup);
   }
 }

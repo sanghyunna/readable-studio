@@ -63,8 +63,11 @@ test('settles on abort even when the tree-kill callback never arrives', async ()
   // When the deadline aborts while the child never closes.
   controller.abort();
   await vi.advanceTimersByTimeAsync(0);
-  // Then the cleanup callback cannot keep the probe pending.
-  expect(outcome).toBe(controller.signal.reason);
+  // The probe must join cleanup, but a broken callback cannot hang it forever.
+  expect(outcome).toBe('pending');
+  await vi.advanceTimersToNextTimerAsync();
+  expect(outcome).toMatchObject({ name: 'TimeoutError' });
+  expect(vi.getTimerCount()).toBe(0);
 });
 
 test.each([false, true])('bounds cached probes without cooperative cancellation (owner=%s)', async (owned) => {
