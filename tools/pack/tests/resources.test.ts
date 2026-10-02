@@ -65,6 +65,7 @@ describe("copyBundledResourceTrees", () => {
         recursive: true,
       });
       await mkdir(join(workspaceRoot, "assets", "frames"), { recursive: true });
+      await mkdir(join(workspaceRoot, "vendor", "offline-cdn"), { recursive: true });
       await mkdir(join(workspaceRoot, "assets", "community-pets", "sample"), {
         recursive: true,
       });
@@ -158,6 +159,7 @@ describe("copyBundledResourceTrees", () => {
       await mkdir(join(workspaceRoot, "plugins", "_official", "sample"), { recursive: true });
       await mkdir(join(workspaceRoot, "plugins", "registry", "community"), { recursive: true });
       await mkdir(join(workspaceRoot, "assets", "frames"), { recursive: true });
+      await mkdir(join(workspaceRoot, "vendor", "offline-cdn"), { recursive: true });
       await mkdir(join(workspaceRoot, "assets", "community-pets", "clippit"), { recursive: true });
       await mkdir(join(workspaceRoot, "assets", "community-pets", "dario"), { recursive: true });
       await mkdir(join(workspaceRoot, "data", "plugin-previews"), { recursive: true });

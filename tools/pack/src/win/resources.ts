@@ -7,7 +7,7 @@ import { copyBundledResourceTrees, winResources } from "../resources.js";
 import { RESOURCE_TREE_NAME } from "./constants.js";
 import type { WinPaths, ResourceTreeCacheMetadata } from "./types.js";
 
-const RESOURCE_TREE_CACHE_SCHEMA_VERSION = 11;
+const RESOURCE_TREE_CACHE_SCHEMA_VERSION = 12;
 
 function nativeIsolatorPaths(workspaceRoot: string): {
   binary: string;
@@ -27,6 +27,7 @@ async function createResourceTreeCacheKey(config: ToolPackConfig): Promise<strin
   return hashJson({
     assetsCommunityPets: await hashPath(join(config.workspaceRoot, "assets", "community-pets")),
     assetsFrames: await hashPath(join(config.workspaceRoot, "assets", "frames")),
+    offlineCdn: await hashPath(join(config.workspaceRoot, "vendor", "offline-cdn")),
     craft: await hashPath(join(config.workspaceRoot, "craft")),
     designSystems: await hashPath(join(config.workspaceRoot, "design-systems")),
     designTemplates: await hashPath(join(config.workspaceRoot, "design-templates")),

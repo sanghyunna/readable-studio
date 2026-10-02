@@ -52,6 +52,7 @@ async function createWorkspaceFixture(workspaceRoot: string): Promise<void> {
     "utf8",
   );
   await mkdir(join(workspaceRoot, "assets", "frames"), { recursive: true });
+  await mkdir(join(workspaceRoot, "vendor", "offline-cdn"), { recursive: true });
   await mkdir(join(workspaceRoot, "assets", "community-pets", "clippit"), {
     recursive: true,
   });
@@ -74,6 +75,30 @@ async function createWorkspaceFixture(workspaceRoot: string): Promise<void> {
 }
 
 describe("prepareResourceTree", () => {
+  it("invalidates cached offline CDN assets when their content changes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "readable-studio-win-offline-cdn-"));
+    const workspaceRoot = join(root, "workspace");
+    const resourceRoot = join(root, "app", "resources", "readable-studio");
+    const cache = new ToolPackCache(join(root, "cache"));
+    const config = { workspaceRoot } as ToolPackConfig;
+    const paths = { resourceRoot } as WinPaths;
+    try {
+      await createWorkspaceFixture(workspaceRoot);
+      const source = join(workspaceRoot, "vendor", "offline-cdn", "manifest.json");
+      const packaged = join(resourceRoot, "offline-cdn", "manifest.json");
+      await writeFile(source, JSON.stringify({ libraries: [] }));
+      const first = await prepareResourceTree(config, paths, cache, { materialize: true });
+      expect(await readFile(packaged, "utf8")).toBe(await readFile(source, "utf8"));
+      await writeFile(source, JSON.stringify({ libraries: [{ lib: "chartjs", major: 4 }] }));
+      const second = await prepareResourceTree(config, paths, cache, { materialize: true });
+      expect(second.key).not.toBe(first.key);
+      expect(await readFile(packaged, "utf8")).toBe(await readFile(source, "utf8"));
+      expect(cache.report().entries.map((entry) => entry.status)).toEqual(["miss", "miss"]);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("keeps pure portable zip resource packaging on the cache tree", async () => {
     const root = await mkdtemp(join(tmpdir(), "readable-studio-win-resources-cache-"));
     const workspaceRoot = join(root, "workspace");
