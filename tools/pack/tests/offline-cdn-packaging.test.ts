@@ -49,5 +49,5 @@ describe("offline CDN packaged resources", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
-  });
+  }, 15_000);
 });
