@@ -2621,6 +2621,7 @@ export interface Dict {
   'manualEdit.error.duplicatePreviewUnavailable': string;
   'manualEdit.error.duplicatePreviewChanged': string;
   'manualEdit.error.fileChangedBeforeSave': string;
+  'manualEdit.error.textFlushFailed': string;
   'manualEdit.error.saveFailed': string;
   'manualEdit.error.saveFailedWithStatus': string;
   'manualEdit.error.savedPreviewRefreshFailed': string;

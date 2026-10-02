@@ -2111,6 +2111,7 @@ export function getEn(): Dict {
   'manualEdit.error.duplicatePreviewUnavailable': 'The duplicate preview is no longer available. The original element was not changed.',
   'manualEdit.error.duplicatePreviewChanged': 'The duplicate preview changed before it could be saved. The original element was not changed.',
   'manualEdit.error.fileChangedBeforeSave': 'The file changed outside Manual Edit. Refresh the preview before saving.',
+  'manualEdit.error.textFlushFailed': 'The preview did not respond while finishing the text edit. Your file has not been saved. Try again.',
   'manualEdit.error.saveFailed': 'Could not save the edited file. Try again.',
   'manualEdit.error.saveFailedWithStatus': 'Could not save the edited file (status {status}). Try again.',
   'manualEdit.error.savedPreviewRefreshFailed': 'Your changes were saved, but the preview could not be refreshed.',

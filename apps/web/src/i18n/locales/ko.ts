@@ -2111,6 +2111,7 @@ export function getKo(): Dict {
   'manualEdit.error.duplicatePreviewUnavailable': '복제 미리보기를 더 이상 사용할 수 없습니다. 원본 요소는 변경되지 않았습니다.',
   'manualEdit.error.duplicatePreviewChanged': '저장하기 전에 복제 미리보기가 변경되었습니다. 원본 요소는 변경되지 않았습니다.',
   'manualEdit.error.fileChangedBeforeSave': '수동 편집 밖에서 파일이 변경되었습니다. 저장하기 전에 미리보기를 새로 고쳐 주세요.',
+  'manualEdit.error.textFlushFailed': '텍스트 편집을 마치는 동안 미리보기가 응답하지 않았습니다. 파일은 아직 저장되지 않았습니다. 다시 시도해 주세요.',
   'manualEdit.error.saveFailed': '편집한 파일을 저장하지 못했습니다. 다시 시도해 주세요.',
   'manualEdit.error.saveFailedWithStatus': '편집한 파일을 저장하지 못했습니다(상태 {status}). 다시 시도해 주세요.',
   'manualEdit.error.savedPreviewRefreshFailed': '변경 사항은 저장되었지만 미리보기를 새로 고치지 못했습니다.',

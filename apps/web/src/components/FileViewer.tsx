@@ -6676,11 +6676,13 @@ function HtmlViewer({
     if (!win) return false;
     const requestId = ++manualEditTextFlushSequenceRef.current;
     return new Promise<boolean>((resolve) => {
+      let timeout: number | undefined;
       const finish = (ok: boolean) => {
         window.clearTimeout(timeout);
         window.removeEventListener('message', onFlushed);
+        document.removeEventListener('visibilitychange', onVisibilityChange);
         if (ok) manualEditTextNeedsFlushRef.current = false;
-        else setManualEditError(t('manualEdit.error.saveFailed'));
+        else setManualEditError(t('manualEdit.error.textFlushFailed'));
         resolve(ok);
       };
       const onFlushed = (event: MessageEvent) => {
@@ -6689,9 +6691,23 @@ function HtmlViewer({
         // Same-sender message ordering puts all source commits before this ack.
         finish(true);
       };
-      const timeout = window.setTimeout(() => finish(false), 3000);
+      const requestFlush = () => {
+        // A minimized window can suspend its iframe. Keep the edit and pending
+        // action intact; only bound the acknowledgement while it is visible.
+        if (document.visibilityState !== 'hidden') {
+          timeout = window.setTimeout(() => {
+            if (document.visibilityState !== 'hidden') finish(false);
+          }, 3000);
+        }
+        win.postMessage({ type: 'readable-edit-end-text-edit', requestId } satisfies ManualEditEndTextEditMessage, '*');
+      };
+      const onVisibilityChange = () => {
+        window.clearTimeout(timeout);
+        if (document.visibilityState !== 'hidden') requestFlush();
+      };
       window.addEventListener('message', onFlushed);
-      win.postMessage({ type: 'readable-edit-end-text-edit', requestId } satisfies ManualEditEndTextEditMessage, '*');
+      document.addEventListener('visibilitychange', onVisibilityChange);
+      requestFlush();
     });
   }
 
