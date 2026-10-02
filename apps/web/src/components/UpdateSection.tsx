@@ -1,12 +1,41 @@
 import { useEffect, useRef, useState } from 'react';
 import type { UpdateApplyResult, UpdateCheckAvailable, UpdateCheckResult, UpdateUnavailableReason } from '@readable-studio/contracts';
 import { useI18n } from '../i18n';
+import type { Dict } from '../i18n/types';
 import styles from './UpdateSection.module.css';
 
 let lastCheck: UpdateCheckResult | null = null;
 let lastCheckedAt: string | null = null;
 const checkListeners = new Set<() => void>();
-const reasons: UpdateUnavailableReason[] = ['offline', 'rate-limited', 'malformed', 'timeout', 'disabled'];
+type UpdateReasonKey = Extract<keyof Dict, `update.reason.${string}`>;
+const checkReasonKeys = {
+  offline: 'update.reason.offline',
+  'rate-limited': 'update.reason.rate-limited',
+  malformed: 'update.reason.malformed',
+  timeout: 'update.reason.timeout',
+  disabled: 'update.reason.disabled',
+} satisfies Record<UpdateUnavailableReason, UpdateReasonKey>;
+const applyReasonKeys: Record<string, UpdateReasonKey> = {
+  ...checkReasonKeys,
+  'unsupported-layout': 'update.reason.unsupported-layout',
+  'update-in-progress': 'update.reason.update-in-progress',
+  'already-current': 'update.reason.already-current',
+  'checksum-mismatch': 'update.reason.checksum-mismatch',
+  'size-mismatch': 'update.reason.size-mismatch',
+  'download-failed': 'update.reason.download-failed',
+  'helper-not-acknowledged': 'update.reason.helper-not-acknowledged',
+};
+function updateReasonKey(reason: string): UpdateReasonKey {
+  if (Object.hasOwn(applyReasonKeys, reason)) return applyReasonKeys[reason]!;
+  if (/terminated|ECONNRESET|ETIMEDOUT|aborted|AbortError|TimeoutError|fetch failed/i.test(reason)) return 'update.reason.download-interrupted';
+  if (/^download failed: HTTP \d+$/.test(reason)) return 'update.reason.download-failed';
+  if (reason === 'download exceeds expected size') return 'update.reason.size-mismatch';
+  if (reason === 'Invalid ZIP path' || reason === 'ZIP path escaped payload') return 'update.reason.invalid-payload';
+  if (reason === '업데이트 준비를 확인하지 못했습니다. 앱을 종료하지 않고 다시 시도해 주세요.'
+    || /^업데이트 준비 프로세스가 종료되었습니다 \(.+\)\.$/.test(reason)) return 'update.reason.helper-not-acknowledged';
+  if (reason === '업데이트 시작 환경을 확인하지 못했습니다. 앱을 종료하지 않고 다시 시도해 주세요.') return 'update.reason.helper-environment';
+  return 'update.reason.unknown';
+}
 
 async function fetchUpdateCheck(automatic = false): Promise<UpdateCheckResult> {
   const controller = new AbortController();
@@ -21,7 +50,8 @@ async function fetchUpdateCheck(automatic = false): Promise<UpdateCheckResult> {
       let value: unknown;
       try { value = await response.json(); } catch { return { unavailable: 'malformed' }; }
       if (!value || typeof value !== 'object') return { unavailable: 'malformed' };
-      if ('unavailable' in value) return reasons.includes(value.unavailable as UpdateUnavailableReason)
+      // Preserve future reason strings for localized fallback and secondary diagnostics.
+      if ('unavailable' in value) return typeof value.unavailable === 'string'
         ? value as UpdateCheckResult : { unavailable: 'malformed' };
       const data = value as UpdateCheckAvailable;
       if (typeof data.current !== 'string' || typeof data.latest !== 'string' || typeof data.isNewer !== 'boolean'
@@ -65,7 +95,9 @@ export function UpdateSection({ currentVersion, onApply }: UpdateSectionProps) {
       if (onApply) { await onApply(result); return; }
       const response = await fetch('/api/update/apply', { method: 'POST' });
       const body: UpdateApplyResult = await response.json();
-      if (!response.ok) throw new Error('error' in body ? body.error : 'unavailable' in body ? body.unavailable : `HTTP ${response.status}`);
+      if ('error' in body) throw new Error(body.error);
+      if ('unavailable' in body) throw new Error(body.unavailable);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
     } catch (error) {
       setApplyError(error instanceof Error ? error.message : String(error));
       setApplying(false);
@@ -94,9 +126,16 @@ export function UpdateSection({ currentVersion, onApply }: UpdateSectionProps) {
       <button type="button" className="btn" onClick={() => void apply()}>{t('update.applyNow')}</button>
       <button type="button" className="btn" onClick={() => setConfirming(false)}>{t('update.applyLater')}</button>
     </div> : null}
-    {applyError ? <div role="alert">{applyError}</div> : null}
+    {applyError !== null ? <div role="alert" className={styles.result}>
+      <span data-update-message>{t(updateReasonKey(applyError))}</span>
+      <details><summary>{t('update.errorDetails')}</summary><code>{applyError}</code></details>
+    </div> : null}
     {result ? <div role="status" className={styles.result}>
-      {'unavailable' in result ? t('update.failed', { reason: t(`update.reason.${result.unavailable}`) })
+      {'unavailable' in result ? <>
+        <span data-update-message>{t(updateReasonKey(result.unavailable))}</span>
+        {updateReasonKey(result.unavailable) === 'update.reason.unknown'
+          ? <details><summary>{t('update.errorDetails')}</summary><code>{result.unavailable}</code></details> : null}
+      </>
         : result.isNewer ? <><span>{t('update.newVersion', { version: result.latest })}</span>{' '}<a href={result.releaseUrl} target="_blank" rel="noreferrer">{t('update.releaseNotes')}</a></>
           : t('update.upToDate')}
     </div> : null}

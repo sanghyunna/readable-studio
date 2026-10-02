@@ -26,7 +26,7 @@ it.each(['offline', 'disabled', 'rate-limited', 'malformed', 'timeout'])('launch
 it.each([
   [{ ...result, isNewer: false }, 'update.upToDate'],
   [result, 'update.newVersion:1.3.0'],
-  [{ unavailable: 'offline' }, 'update.failed:update.reason.offline'],
+  [{ unavailable: 'offline' }, 'update.reason.offline'],
 ])('Settings renders result %# and enables apply only for newer versions', async (data, expected) => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(data)));
   const onApply = vi.fn();
@@ -65,5 +65,5 @@ it('Settings converts transport failure into an inline typed result', async () =
   vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('network')));
   render(<UpdateSection currentVersion="1.2.1" />);
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'update.check' })));
-  expect(screen.getByText('update.failed:update.reason.offline')).toBeTruthy();
+  expect(screen.getByText('update.reason.offline')).toBeTruthy();
 });

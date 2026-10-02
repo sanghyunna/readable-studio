@@ -46,6 +46,18 @@ export interface Dict {
   'update.reason.malformed': string;
   'update.reason.timeout': string;
   'update.reason.disabled': string;
+  'update.errorDetails': string;
+  'update.reason.unsupported-layout': string;
+  'update.reason.update-in-progress': string;
+  'update.reason.already-current': string;
+  'update.reason.checksum-mismatch': string;
+  'update.reason.size-mismatch': string;
+  'update.reason.download-failed': string;
+  'update.reason.download-interrupted': string;
+  'update.reason.helper-not-acknowledged': string;
+  'update.reason.helper-environment': string;
+  'update.reason.invalid-payload': string;
+  'update.reason.unknown': string;
   // Common
   'common.cancel': string;
   'common.save': string;
