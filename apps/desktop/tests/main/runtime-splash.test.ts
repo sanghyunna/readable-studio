@@ -3,6 +3,7 @@ import { createServer } from 'node:http';
 import { runInNewContext } from 'node:vm';
 import { afterEach, expect, it, vi } from 'vitest';
 import * as scanProgress from '../../src/main/scan-progress.js';
+import * as startupSplash from '../../src/main/startup-splash.js';
 
 class TestWindow extends EventEmitter {
   static readonly instances: TestWindow[] = [];
@@ -30,8 +31,13 @@ class TestWindow extends EventEmitter {
   isVisible(): boolean { return this.show.mock.calls.length > 0; }
   close(): void { this.emit('closed'); }
 }
+const getLocale = vi.fn(() => 'en-US');
+const showMessageBox = vi.fn(() => {
+  TestWindow.events.emit('dialog');
+  return new Promise<{ response: number }>(() => {});
+});
 vi.mock('electron', () => ({
-  BrowserWindow: TestWindow, app: { quit: vi.fn() }, dialog: {},
+  BrowserWindow: TestWindow, app: { quit: vi.fn(), getLocale }, dialog: { showMessageBox },
   ipcMain: { removeHandler: vi.fn(), handle: vi.fn(), removeAllListeners: vi.fn(), on: vi.fn() },
   nativeImage: {}, screen: new EventEmitter(), session: {
     defaultSession: { webRequest: { onBeforeRequest: vi.fn() } },
@@ -43,8 +49,36 @@ afterEach(() => {
   vi.clearAllTimers();
   vi.useRealTimers();
   vi.restoreAllMocks();
+  vi.clearAllMocks();
   TestWindow.instances.length = 0;
   TestWindow.events.removeAllListeners();
+  getLocale.mockReset().mockReturnValue('en-US');
+  showMessageBox.mockClear();
+});
+
+it.each([{ locale: 'ko-KR', korean: true }, { locale: 'KO', korean: true }, { locale: 'en-US', korean: false }, { locale: 'de-DE', korean: false }])('localizes native startup recovery using the app locale $locale', async ({ locale, korean }) => {
+  getLocale.mockReturnValue(locale);
+  vi.spyOn(scanProgress, 'startDaemonScan').mockResolvedValue(null);
+  vi.spyOn(startupSplash, 'runStartupSplash').mockImplementation(async (host) => {
+    host.onTimeout();
+    return 'unverified';
+  });
+  const shown = once(TestWindow.events, 'dialog', { signal: AbortSignal.timeout(2000) });
+  const { createDesktopRuntime } = await import('../../src/main/runtime.js');
+  const runtime = await createDesktopRuntime({ discoverUrl: async () => 'http://127.0.0.1:3000', discoverDaemonUrl: async () => 'http://127.0.0.1:3001' });
+  try {
+    await shown;
+    expect(getLocale).toHaveBeenCalledOnce();
+    const { dialog } = await import('electron');
+    const options = vi.mocked(dialog.showMessageBox).mock.calls[0]?.[0];
+    expect(options).toEqual(expect.objectContaining({ type: 'warning', defaultId: 0, cancelId: 1, noLink: true }));
+    if (!options || typeof options !== 'object' || !('message' in options)) throw new Error('Expected native dialog options');
+    for (const text of [options.title, options.message, options.detail, ...options.buttons!]) {
+      expect(/[\uac00-\ud7a3]/u.test(text ?? '')).toBe(korean);
+    }
+  } finally {
+    await runtime.close();
+  }
 });
 
 it('starts daemon discovery before navigation or app mount and waits only for acceptance', async () => {

@@ -1832,12 +1832,14 @@ export async function createDesktopRuntime(options: DesktopRuntimeOptions): Prom
       executeSplash,
       reveal: revealMainWindow,
       onTimeout: () => {
+        // Match packaged native dialogs: use Electron's app locale, not renderer state.
+        const korean = app.getLocale().toLowerCase().startsWith('ko');
         // Native UI remains usable even if neither renderer can paint.
         void dialog.showMessageBox({
-          type: 'warning', title: 'Readable Studio startup',
-          message: 'The display has not finished painting.',
-          detail: 'Retry loading the display, or quit and reopen Readable Studio.',
-          buttons: ['Retry', 'Quit Readable Studio'], defaultId: 0, cancelId: 1, noLink: true,
+          type: 'warning', title: korean ? 'Readable Studio 시작' : 'Readable Studio startup',
+          message: korean ? '화면을 아직 표시하지 못했습니다.' : 'The display has not finished painting.',
+          detail: korean ? '화면을 다시 불러오거나 Readable Studio를 종료한 뒤 다시 실행해 주세요.' : 'Retry loading the display, or quit and reopen Readable Studio.',
+          buttons: korean ? ['다시 시도', 'Readable Studio 종료'] : ['Retry', 'Quit Readable Studio'], defaultId: 0, cancelId: 1, noLink: true,
         }).then(({ response }) => {
           if (stopped || window.isDestroyed()) return;
           if (response === 1) (options.requestQuit ?? (() => app.quit()))();
