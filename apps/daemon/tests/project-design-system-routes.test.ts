@@ -89,6 +89,19 @@ describe('project design system route gates', () => {
     return resp.text();
   }
 
+  it.each([undefined, null, 'default'])('persists the requested design-system choice %s', async (designSystemId) => {
+    const id = uniqueId('project-ds-choice');
+    const response = await createProject({ id, name: 'Selection fixture', designSystemId });
+    expect(response.status).toBe(200);
+    projectsToClean.push(id);
+    const created = await response.json() as { project: { designSystemId: string | null } };
+    expect(created.project.designSystemId).toBe(designSystemId ?? null);
+    const detail = await fetch(`${baseUrl}/api/projects/${id}`);
+    expect(detail.status).toBe(200);
+    const persisted = await detail.json() as { project: { designSystemId: string | null } };
+    expect(persisted.project.designSystemId).toBe(designSystemId ?? null);
+  });
+
   it('rejects draft design systems when creating a project', async () => {
     const draft = await createUserDesignSystem('draft');
     const id = uniqueId('project-draft-ds');

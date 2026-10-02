@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../../src/App';
@@ -38,6 +38,7 @@ vi.mock('../../src/components/EntryView', () => ({
       <div data-testid="agent-id">
         {config.agentId ?? (agentsLoading ? 'detecting' : 'none')}
       </div>
+      <div data-testid="design-system-id">{config.designSystemId ?? 'none'}</div>
       <div data-testid="onboarding-completed">
         {String(config.onboardingCompleted)}
       </div>
@@ -203,6 +204,28 @@ describe('App first-run agent auto-select', () => {
     vi.clearAllMocks();
   });
 
+  it.each([undefined, null, 'default', 'custom-brand'])(
+    'preserves the daemon design-system choice %s after the bundled registry loads',
+    async (designSystemId) => {
+      const systems = deferred<Awaited<ReturnType<typeof fetchDesignSystems>>>();
+      mockedFetchDesignSystems.mockReturnValue(systems.promise);
+      mockedFetchDaemonConfig.mockResolvedValue(
+        designSystemId === undefined ? {} : { designSystemId },
+      );
+      const { syncConfigToDaemon } = await import('../../src/state/config');
+      render(<App />);
+      await waitFor(() => expect(mergeDaemonConfig).toHaveBeenCalled());
+      await act(async () => {
+        systems.resolve([{ id: 'default', title: 'Neutral Modern', summary: '', category: 'Product', swatches: [] }]);
+        await systems.promise;
+      });
+      expect(screen.getByTestId('design-system-id').textContent).toBe(designSystemId ?? 'none');
+      expect(vi.mocked(syncConfigToDaemon).mock.calls.every(
+        ([config]) => config.designSystemId === (designSystemId ?? null),
+      )).toBe(true);
+    },
+  );
+
   it('starts agent detection before health readiness and the deferred startup callback', async () => {
     const health = deferred<boolean>();
     const probe = deferred<AgentInfo[]>();
@@ -223,7 +246,7 @@ describe('App first-run agent auto-select', () => {
     expect(mockedFetchAgentsStream).toHaveBeenCalledTimes(1);
     expect(idleCallback).toBeNull();
     expect(screen.getByTestId('agent-id').textContent).toBe('detecting');
-    expect(screen.queryByText('none')).toBeNull();
+    expect(screen.getByTestId('agent-id').textContent).not.toBe('none');
 
     health.resolve(true);
     await waitFor(() => expect(idleCallback).not.toBeNull());

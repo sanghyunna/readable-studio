@@ -613,6 +613,10 @@ export function composeSystemPrompt({
     }
   }
 
+  if (!activeDesignSystemBody) {
+    parts.push('\n\n## Active design system: none\n\nNo design system was selected. Choose the visual style from the user request; do not assume a bundled design system.');
+  }
+
   // Structured (compiled) form of the active brand. The DESIGN.md above
   // sets voice and intent; the tokens.css block below is the SAME
   // contract in machine-readable form — names + values the agent pastes

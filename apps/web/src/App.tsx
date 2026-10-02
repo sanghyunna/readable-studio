@@ -976,23 +976,6 @@ function AppInner() {
     });
   }, [daemonConfigLoaded, agentsLoading, agents, config.agentId]);
 
-  // Auto-pick the default design system the same way — only after daemon
-  // config has merged so we never overwrite a daemon-stored selection.
-  useEffect(() => {
-    if (!daemonConfigLoaded || dsLoading) return;
-    if (config.designSystemId) return;
-    if (designSystems.length === 0) return;
-    const id =
-      designSystems.find((d) => d.id === 'default')?.id ?? designSystems[0]!.id;
-    setConfig((prev) => {
-      if (prev.designSystemId) return prev;
-      const next: AppConfig = { ...prev, designSystemId: id };
-      saveConfig(next);
-      void syncConfigToDaemon(next);
-      return next;
-    });
-  }, [daemonConfigLoaded, dsLoading, designSystems, config.designSystemId]);
-
   // One-shot self-healing migration for pets adopted before the
   // overlay learned atlas-row switching. If the stored pet is a
   // custom / codex pet whose imageUrl is a single-row strip

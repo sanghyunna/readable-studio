@@ -5052,7 +5052,7 @@ Common options:
         promptFromArgs || defaultMessage,
       );
       const skillId = flags.skill ?? 'redesign-existing-projects';
-      const designSystemId = flags['design-system'] ?? 'default';
+      const designSystemId = flags['design-system'] ?? null;
       let projectId = flags.project;
       let conversationId = flags.conversation;
       let imported = null;
