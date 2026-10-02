@@ -502,7 +502,9 @@ export async function captureHostRegionSnapshot(
     if (result.ok && result.dataUrl && result.w >= 1 && result.h >= 1) {
       return { dataUrl: result.dataUrl, w: result.w, h: result.h };
     }
-    if (options.fullDocument && !result.ok) throw new Error(result.reason);
+    if (options.fullDocument && !result.ok) {
+      throw Object.assign(new Error(result.reason), { code: (result as { code?: string }).code });
+    }
   } catch (err) {
     if (options.fullDocument) throw err;
     /* fall through to null so the caller can use the bridge */

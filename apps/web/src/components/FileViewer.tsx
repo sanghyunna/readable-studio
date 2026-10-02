@@ -4160,6 +4160,7 @@ function HtmlViewer({
   const [imageExportBusy, setImageExportBusy] = useState(false);
   const [imageExportPreparing, setImageExportPreparing] = useState(false);
   const [imageExportError, setImageExportError] = useState<string | null>(null);
+  const [imageExportErrorDetail, setImageExportErrorDetail] = useState<string | null>(null);
   const [imageExportSavedToast, setImageExportSavedToast] = useState<{ message: string; details: string } | null>(null);
   const [imageExportPreparedBlob, setImageExportPreparedBlob] = useState<{ format: ImageExportFormat; blob: Blob } | null>(null);
   const imageExportSnapshotDataUrlRef = useRef<string | null>(null);
@@ -8474,6 +8475,7 @@ function HtmlViewer({
     imageExportPrepareIdRef.current = prepareId;
     setImageExportPreparing(true);
     setImageExportError(null);
+    setImageExportErrorDetail(null);
     setImageExportPreparedBlob(null);
     try {
       let dataUrl = imageExportSnapshotDataUrlRef.current;
@@ -8491,7 +8493,17 @@ function HtmlViewer({
     } catch (err) {
       console.warn('[exportAsImage] failed to prepare snapshot:', err);
       if (imageExportPrepareIdRef.current === prepareId) {
-        setImageExportError(err instanceof Error && err.message ? err.message : t('fileViewer.exportImageFailed'));
+        const messages: Record<string, keyof Dict> = {
+          CAPTURE_PREVIEW_NOT_FOUND: 'fileViewer.capturePreviewNotFound',
+          CAPTURE_TOO_LARGE: 'fileViewer.captureTooLarge',
+          CAPTURE_REFLOWED: 'fileViewer.captureReflowed',
+          CAPTURE_SCROLLBAR_BLOCKED: 'fileViewer.captureScrollbarBlocked',
+          CAPTURE_TRUNCATED: 'fileViewer.captureTruncated',
+          CAPTURE_INVALID_CLIP: 'fileViewer.capturePreviewNotFound',
+        };
+        const code = err instanceof Error ? (err as Error & { code?: string }).code : undefined;
+        setImageExportError(t((code && messages[code]) || 'fileViewer.exportImageFailed'));
+        setImageExportErrorDetail(err instanceof Error && err.message ? err.message : null);
       }
     } finally {
       if (imageExportPrepareIdRef.current === prepareId) {
@@ -10418,7 +10430,10 @@ function HtmlViewer({
                 </div>
               </fieldset>
               {imageExportError ? (
-                <p className="deploy-error" role="alert">{imageExportError}</p>
+                <div className="deploy-error" role="alert">
+                  <p>{imageExportError}</p>
+                  {imageExportErrorDetail ? <details><summary>{t('fileViewer.captureErrorDetails')}</summary><p>{imageExportErrorDetail}</p></details> : null}
+                </div>
               ) : null}
             </div>
             <div className="modal-foot">

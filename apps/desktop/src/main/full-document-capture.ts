@@ -30,9 +30,9 @@ function limitError(width: number, height: number): { ok: false; code: 'CAPTURE_
 }
 
 /** Only called for scrollable HTML; fixed-size slides use the unchanged capturePage(clip) path. */
-export async function captureFullDocument(surface: CaptureSurface, clip: Electron.Rectangle): Promise<ReadableStudioHostCaptureResult | { ok: false; code: 'CAPTURE_TOO_LARGE' | 'CAPTURE_REFLOWED'; reason: string }> {
+export async function captureFullDocument(surface: CaptureSurface, clip: Electron.Rectangle): Promise<ReadableStudioHostCaptureResult | { ok: false; code: 'CAPTURE_TOO_LARGE' | 'CAPTURE_REFLOWED' | 'CAPTURE_PREVIEW_NOT_FOUND' | 'CAPTURE_SCROLLBAR_BLOCKED' | 'CAPTURE_TRUNCATED'; reason: string }> {
   const preview = await surface.getPreview(clip);
-  if (!preview) return { ok: false, reason: 'No preview iframe at the requested capture rectangle' };
+  if (!preview) return { ok: false, code: 'CAPTURE_PREVIEW_NOT_FOUND', reason: 'No preview iframe at the requested capture rectangle' };
   const window = await surface.createWindow(preview);
   try {
     const frame = window.frame;
@@ -56,7 +56,7 @@ export async function captureFullDocument(surface: CaptureSurface, clip: Electro
     await frame.executeJavaScript(`(() => { const s = document.createElement('style'); s.textContent = 'html { overflow-y: scroll !important; } html, body, * { scrollbar-color: transparent transparent !important; } ::-webkit-scrollbar, ::-webkit-scrollbar-thumb, ::-webkit-scrollbar-track { background: transparent !important; }'; document.documentElement.append(s); })()`);
     const after = await frame.executeJavaScript('({ width: innerWidth, clientWidth: document.documentElement.clientWidth, scrollbarColor: getComputedStyle(document.documentElement).scrollbarColor })') as { width: number; clientWidth: number; scrollbarColor: string };
     if (!/^(transparent|rgba\(0, 0, 0, 0\))/.test(after.scrollbarColor)) {
-      return { ok: false, reason: 'Preview security policy prevented hiding its scrollbar; image export was canceled rather than including it.' };
+      return { ok: false, code: 'CAPTURE_SCROLLBAR_BLOCKED', reason: 'Preview security policy prevented hiding its scrollbar; image export was canceled rather than including it.' };
     }
     if (after.width !== before.width || after.clientWidth !== before.clientWidth) {
       return { ok: false, code: 'CAPTURE_REFLOWED', reason: 'Scrollbar suppression changed the preview width; image export was canceled to avoid reflowing the document.' };
@@ -79,7 +79,7 @@ export async function captureFullDocument(surface: CaptureSurface, clip: Electro
     const expectedWidth = Math.ceil(preview.width * surface.dpr);
     const expectedHeight = Math.ceil(finalHeight * surface.dpr);
     if (shot.width !== expectedWidth || shot.height !== expectedHeight) {
-      return { ok: false, reason: `Image was truncated (${shot.width} x ${shot.height}, expected ${expectedWidth} x ${expectedHeight}). Export a shorter document or reduce display scaling.` };
+      return { ok: false, code: 'CAPTURE_TRUNCATED', reason: `Image was truncated (${shot.width} x ${shot.height}, expected ${expectedWidth} x ${expectedHeight}). Export a shorter document or reduce display scaling.` };
     }
     return { ok: true, dataUrl: shot.dataUrl, w: shot.width, h: shot.height };
   } finally {
@@ -103,8 +103,8 @@ export function electronCaptureSurface(contents: WebContents, clip: Electron.Rec
     })()).scaleFactor,
     async getPreview(rect) {
       const result = await contents.executeJavaScript(`(() => {
-        const el = document.elementFromPoint(${rect.x + rect.width / 2}, ${rect.y + rect.height / 2});
-        const iframe = el?.closest('iframe');
+        const iframe = document.elementsFromPoint(${rect.x + rect.width / 2}, ${rect.y + rect.height / 2})
+          .find(el => el.tagName === 'IFRAME');
         if (!iframe) return null;
         return { srcdoc: iframe.srcdoc, src: iframe.getAttribute('src') || '', sandbox: iframe.getAttribute('sandbox'), baseUrl: document.baseURI, width: iframe.clientWidth, height: iframe.clientHeight };
       })()`) as PreviewSource | null;

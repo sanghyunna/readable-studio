@@ -2843,6 +2843,12 @@ export interface Dict {
   'fileViewer.exportMd': string;
   'fileViewer.exportImage': string;
   'fileViewer.exportImageFailed': string;
+  'fileViewer.capturePreviewNotFound': string;
+  'fileViewer.captureTooLarge': string;
+  'fileViewer.captureReflowed': string;
+  'fileViewer.captureScrollbarBlocked': string;
+  'fileViewer.captureTruncated': string;
+  'fileViewer.captureErrorDetails': string;
   'fileViewer.exportImageModalSubtitle': string;
   'fileViewer.exportImageFormatLabel': string;
   'fileViewer.exportImageSaving': string;

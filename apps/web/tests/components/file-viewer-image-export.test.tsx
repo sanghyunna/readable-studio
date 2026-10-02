@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ProjectFile } from '../../src/types';
 
@@ -43,10 +43,36 @@ vi.mock('../../src/runtime/exports', async () => {
     exportProjectAsHtml: exportProjectAsHtmlMock,
     prepareImageExportTarget: prepareImageExportTargetMock,
     requestPreviewSnapshot: requestPreviewSnapshotMock,
+    requestPreviewSnapshotResult: async (iframe: HTMLIFrameElement, timeout: number) => {
+      const snapshot = await requestPreviewSnapshotMock(iframe, timeout);
+      return snapshot ? { ok: true, snapshot } : { ok: false, reason: 'render-unavailable' };
+    },
   };
 });
 
 import { FileViewer } from '../../src/components/FileViewer';
+import { I18nProvider } from '../../src/i18n';
+import { getKo } from '../../src/i18n/locales/ko';
+import { getEn } from '../../src/i18n/locales/en';
+
+// Observe state-driven DOM mutations, never poll or wait for a fixed delay.
+function waitFor(assertion: () => void, { timeout = 5000 } = {}): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let lastError: unknown;
+    const timer = setTimeout(() => { observer.disconnect(); reject(lastError); }, timeout);
+    const check = () => {
+      try {
+        assertion();
+        clearTimeout(timer);
+        observer.disconnect();
+        resolve();
+      } catch (error) { lastError = error; }
+    };
+    const observer = new MutationObserver(check);
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, characterData: true });
+    check();
+  });
+}
 
 function htmlFile(): ProjectFile {
   return {
@@ -68,14 +94,14 @@ function htmlFile(): ProjectFile {
   };
 }
 
-function renderHtmlPreview() {
+function renderHtmlPreview(locale: 'en' | 'ko' = 'en') {
   const view = render(
-    <FileViewer
+    <I18nProvider initial={locale}><FileViewer
       projectId="project-1"
       projectKind="prototype"
       file={htmlFile()}
       liveHtml="<html><body><main>Workspace</main></body></html>"
-    />,
+    /></I18nProvider>,
   );
   const { container } = view;
   const activeFrame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
@@ -89,18 +115,41 @@ function renderHtmlPreview() {
 async function openImageExportDialog() {
   fireEvent.click(screen.getByRole('button', { name: /download/i }));
   fireEvent.click(screen.getByRole('menuitem', { name: /export as image/i }));
-  expect(await screen.findByRole('dialog', { name: /export as image/i })).toBeTruthy();
+  await waitFor(() => expect(screen.getByRole('dialog', { name: /export as image/i })).toBeTruthy());
 }
 
 async function waitForSaveButton() {
-  const button = await screen.findByRole('button', { name: /^save$/i });
   await waitFor(() => {
-    expect((button as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole('button', { name: /^save$/i }) as HTMLButtonElement).disabled).toBe(false);
   });
-  return button;
+  return screen.getByRole('button', { name: /^save$/i });
 }
 
 describe('FileViewer image export', () => {
+  it('renders the Korean capture failure by code with the raw reason as secondary detail', async () => {
+    const ko = getKo();
+    const reason = 'No preview iframe at the requested capture rectangle';
+    captureHostIframeSnapshotMock.mockRejectedValueOnce(Object.assign(new Error(reason), { code: 'CAPTURE_PREVIEW_NOT_FOUND' }));
+    renderHtmlPreview('ko');
+    const alertReady = new Promise<HTMLElement>((resolve, reject) => {
+      const timeout = setTimeout(() => { observer.disconnect(); reject(new Error('Capture failure alert was not rendered')); }, 5000);
+      const observer = new MutationObserver(() => {
+        const alert = document.querySelector<HTMLElement>('[role="alert"]');
+        if (!alert) return;
+        clearTimeout(timeout);
+        observer.disconnect();
+        resolve(alert);
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+    });
+    fireEvent.click(screen.getByRole('button', { name: ko['fileViewer.download'] }));
+    fireEvent.click(screen.getByRole('menuitem', { name: ko['fileViewer.exportImage'] }));
+    const alert = await alertReady;
+    expect(alert.querySelector(':scope > p')?.textContent).toBe(ko['fileViewer.capturePreviewNotFound']);
+    expect(alert.querySelector('details p')?.textContent).toBe(reason);
+    expect(alert.querySelector('details')?.open).toBe(false);
+    expect(requestPreviewSnapshotMock).not.toHaveBeenCalled();
+  });
   afterEach(() => {
     cleanup();
     vi.resetAllMocks();
@@ -233,10 +282,10 @@ describe('FileViewer image export', () => {
 
     await waitFor(() => {
       expect(prepareImageExportTargetMock).toHaveBeenCalledWith('workspace', 'jpeg', { useNativePicker: false });
+      expect(screen.getByText('workspace.jpg')).toBeTruthy();
     });
     expect(requestPreviewSnapshotMock).toHaveBeenCalledTimes(1);
     expect(saveImageBlobMock).toHaveBeenCalledWith(imageBlob);
-    expect(screen.getByText('workspace.jpg')).toBeTruthy();
   });
 
   it('keeps the Save label stable while a format change prepares the next image', async () => {
@@ -359,9 +408,7 @@ describe('FileViewer image export', () => {
     await openImageExportDialog();
 
     await waitFor(() => {
-      expect(screen.getByRole('alert').textContent).toBe(
-        "Image capture failed. Please try again or use your browser's screenshot tool.",
-      );
+      expect(screen.getByRole('alert').querySelector(':scope > p')?.textContent).toBe(getEn()['fileViewer.exportImageFailed']);
     }, { timeout: 4000 });
     expect((screen.getByRole('button', { name: /^save$/i }) as HTMLButtonElement).disabled).toBe(true);
     expect(prepareImageExportTargetMock).not.toHaveBeenCalled();
@@ -386,9 +433,7 @@ describe('FileViewer image export', () => {
     await openImageExportDialog();
 
     await waitFor(() => {
-      expect(screen.getByRole('alert').textContent).toBe(
-        "Image capture failed. Please try again or use your browser's screenshot tool.",
-      );
+      expect(screen.getByRole('alert').querySelector(':scope > p')?.textContent).toBe(getEn()['fileViewer.exportImageFailed']);
     }, { timeout: 4000 });
     expect((screen.getByRole('button', { name: /^save$/i }) as HTMLButtonElement).disabled).toBe(true);
     expect(imageDataUrlToBlobMock).toHaveBeenCalledWith('data:image/png;base64,ok', 'png');

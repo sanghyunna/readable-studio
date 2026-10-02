@@ -203,7 +203,7 @@ describe('full-document host image capture', () => {
     const restore = installMockReadableStudioHost({ host: { capture: { page: capture } } });
     try {
       const iframe = { getBoundingClientRect: () => ({ left: 0, top: 0, width: 400, height: 250 }) } as HTMLIFrameElement;
-      await expect(captureHostIframeSnapshot(iframe, { fullDocument: true })).rejects.toThrow('Document is too tall to capture.');
+      await expect(captureHostIframeSnapshot(iframe, { fullDocument: true })).rejects.toMatchObject({ code: 'CAPTURE_TOO_LARGE', message: 'Document is too tall to capture.' });
       expect(capture).toHaveBeenCalledTimes(1);
     } finally {
       restore();

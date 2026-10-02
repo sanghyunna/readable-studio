@@ -1623,9 +1623,9 @@ export async function createDesktopRuntime(options: DesktopRuntimeOptions): Prom
   });
 
   ipcMain.removeHandler('readable-studio:capture-page');
-  ipcMain.handle('readable-studio:capture-page', async (event, rawOptions: unknown): Promise<ReadableStudioHostCaptureResult> => {
+  ipcMain.handle('readable-studio:capture-page', async (event, rawOptions: unknown): Promise<ReadableStudioHostCaptureResult | { ok: false; code: string; reason: string }> => {
     if (event.sender !== window.webContents) {
-      return { ok: false, reason: 'capture sender not allowed' };
+      return { ok: false, code: 'CAPTURE_SENDER_NOT_ALLOWED', reason: 'capture sender not allowed' };
     }
     try {
       const clip = parseCaptureClip(rawOptions);
@@ -1641,10 +1641,10 @@ export async function createDesktopRuntime(options: DesktopRuntimeOptions): Prom
         },
         async () => clip
           ? captureFullDocument(electronCaptureSurface(window.webContents, clip), clip)
-          : { ok: false, reason: 'Full-document capture requires a valid preview iframe clip' },
+          : { ok: false, code: 'CAPTURE_INVALID_CLIP', reason: 'Full-document capture requires a valid preview iframe clip' },
       );
     } catch (error) {
-      return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+      return { ok: false, code: 'CAPTURE_FAILED', reason: error instanceof Error ? error.message : String(error) };
     }
   });
 
