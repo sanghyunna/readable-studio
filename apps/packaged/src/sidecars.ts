@@ -1,6 +1,8 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { access, appendFile, mkdir, open, readFile, type FileHandle } from "node:fs/promises";
 import { createRequire } from "node:module";
+import { request as createHttpRequest } from 'node:http';
+import { request as createHttpsRequest } from 'node:https';
 import { basename, delimiter, dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
@@ -43,6 +45,33 @@ import {
 } from "./startup-timing.js";
 
 const require = createRequire(import.meta.url);
+
+export async function checkPackagedDaemonHealth(url: string): Promise<void> {
+  const target = new URL('/api/health', url);
+  const request = target.protocol === 'https:' ? createHttpsRequest : createHttpRequest;
+  const health: unknown = await new Promise((resolve, reject) => {
+    // Internal health traffic must not inherit an env-aware global agent.
+    const probe = request(target, { agent: false, signal: AbortSignal.timeout(1_500) }, (response) => {
+      response.on('error', reject);
+      if (response.statusCode == null || response.statusCode < 200 || response.statusCode >= 300) {
+        response.resume();
+        reject(new Error(`HTTP ${response.statusCode}`));
+        return;
+      }
+      const chunks: Buffer[] = [];
+      response.on('data', (chunk: Buffer) => chunks.push(chunk));
+      response.on('end', () => {
+        try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
+        catch (error) { reject(error); }
+      });
+    });
+    probe.on('error', reject);
+    probe.end();
+  });
+  if (typeof health !== 'object' || health === null || Reflect.get(health, 'ok') !== true) {
+    throw new Error('invalid health response');
+  }
+}
 const PACKAGED_CHILD_ENV_ALLOWLIST = [
   "NODE_EXTRA_CA_CERTS",
   "SSL_CERT_FILE",
@@ -597,14 +626,7 @@ export async function startPackagedSidecars(
         ).then(async (status) => {
           if (status.url == null) throw new Error('daemon status has no URL');
           try {
-            const response = await fetch(new URL('/api/health', status.url), {
-              signal: AbortSignal.timeout(1_500),
-            });
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            const health: unknown = await response.json();
-            if (typeof health !== 'object' || health === null || Reflect.get(health, 'ok') !== true) {
-              throw new Error('invalid health response');
-            }
+            await checkPackagedDaemonHealth(status.url);
           } catch (error) {
             throw new Error(`daemon health check failed at ${status.url}`, { cause: error });
           }
