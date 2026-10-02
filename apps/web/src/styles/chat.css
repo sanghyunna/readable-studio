@@ -407,6 +407,17 @@
   letter-spacing: 0;
   font-weight: 600;
 }
+.msg .role .role-model {
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 400;
+  min-width: 0;
+  max-width: 40ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  word-break: keep-all;
+}
 .msg-time {
   color: var(--text-faint);
   font-size: 11px;

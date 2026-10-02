@@ -467,6 +467,7 @@ function AssistantMessageImpl({
     | Extract<AgentEvent, { kind: "usage" }>
     | undefined;
   const roleName = assistantRoleName(message, t);
+  const roleModel = assistantRunModel(message);
   const roleIconId = agentIconId(message.agentId, message.agentName);
   const hasEmptyResponse = events.some(
     (e) => e.kind === "status" && e.label === "empty_response"
@@ -532,6 +533,11 @@ function AssistantMessageImpl({
       <div className="role">
         <AgentIcon id={roleIconId} size={20} className="role-agent-icon" />
         <span className="role-name">{roleName}</span>
+        {roleModel ? (
+          <span className="role-model" title={roleModel}>
+            {roleModel}
+          </span>
+        ) : null}
       </div>
       <div className="assistant-flow">
         {fileOps.length > 0 ? (
@@ -832,6 +838,20 @@ export function assistantRoleLabel(
     agentDisplayName(starting?.detail) ?? t("assistant.role"),
     model
   );
+}
+
+// Model this run actually used, read from the message's own record — never
+// the composer's current selection. The CLI-reported `initializing` model
+// wins; otherwise the ` · model` suffix stamped into `agentName` at send time.
+export function assistantRunModel(message: ChatMessage): string | null {
+  const reported = assistantModelDetail(message);
+  if (reported) return reported;
+  const fromName = message.agentName?.trim();
+  if (!fromName) return null;
+  const sep = fromName.indexOf(" · ");
+  if (sep < 0) return null;
+  const suffix = fromName.slice(sep + 3).trim();
+  return suffix && suffix !== "default" ? suffix : null;
 }
 
 function assistantModelDetail(message: ChatMessage): string | null {
