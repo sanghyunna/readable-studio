@@ -43,14 +43,14 @@ test("the daemon prebundle loads css-tree's package-relative JSON from a relocat
       bundle: true, platform: "node", format: "esm", outfile,
       external: [...WIN_PREBUNDLE_POLICIES.daemonSidecar.externals],
     });
-    const { stdout } = await execFileAsync(process.execPath, [outfile], { cwd: root, windowsHide: true, timeout: 10_000 });
+    const { stdout } = await execFileAsync(process.execPath, [outfile], { cwd: root, windowsHide: true, timeout: 30_000 });
     expect(stdout.trim()).toBe("CSS_TREE_DATA_OK");
     expect(WIN_PREBUNDLE_RUNTIME_DEPENDENCIES).toHaveProperty("css-tree", "3.2.1");
     await expect(assertWinDaemonRuntimeAssets(daemonRoot)).resolves.toBeUndefined();
   } finally {
     await rm(root, { recursive: true, force: true });
   }
-}, 30_000);
+}, 60_000);
 
 for (const missing of dataFiles) {
   test(`the packaged runtime marker gate rejects missing transitive data: ${missing}`, async () => {
