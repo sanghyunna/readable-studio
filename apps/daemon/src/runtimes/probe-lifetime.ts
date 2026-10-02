@@ -4,8 +4,36 @@ import { subscribe } from 'node:diagnostics_channel';
 
 type ProbeLifetime = { readonly signal: AbortSignal; readonly children: Set<Promise<void>>; readonly cleanup: Set<Promise<void>> };
 const lifetimes = new AsyncLocalStorage<ProbeLifetime>();
+const daemonShutdown = new AbortController();
+export const probeShutdownSignal: AbortSignal = daemonShutdown.signal;
+const activeProbes = new Map<ChildProcess, () => Promise<void>>();
 
+export function trackProbeChild(child: ChildProcess): void {
+  if (activeProbes.has(child)) return;
+  const kill = child.kill.bind(child);
+  let stopping: Promise<void> | undefined;
+  activeProbes.set(child, () => stopping ??= terminateProbeTree(child, kill));
+  child.once('close', () => activeProbes.delete(child));
+}
+
+export async function shutdownProbes(): Promise<void> {
+  daemonShutdown.abort(new DOMException('Daemon is shutting down', 'AbortError'));
+  const results = await Promise.allSettled([...activeProbes.values()].map(stop => stop()));
+  const errors = results.filter(result => result.status === 'rejected').map(result => result.reason);
+  if (errors.length) throw new AggregateError(errors, 'Probe shutdown cleanup failed');
+}
+
+const treeCleanup = new WeakMap<ChildProcess, Promise<void>>();
 export function terminateProbeTree(child: ChildProcess, kill = child.kill.bind(child)): Promise<void> {
+  let pending = treeCleanup.get(child);
+  if (!pending) {
+    pending = stopProbeTree(child, kill);
+    treeCleanup.set(child, pending);
+  }
+  return pending;
+}
+
+function stopProbeTree(child: ChildProcess, kill: ChildProcess['kill']): Promise<void> {
   // Cleanup commands must not become children of the probe they are cleaning up.
   return lifetimes.exit(async () => {
     if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return;
@@ -46,6 +74,7 @@ subscribe('child_process', (message: unknown) => {
   const lifetime = lifetimes.getStore();
   if (!lifetime || typeof message !== 'object' || message === null || !('process' in message) || !(message.process instanceof ChildProcess)) return;
   const child = message.process;
+  trackProbeChild(child);
   let stopping: Promise<void> | undefined;
   const stop = () => {
     if (stopping || child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return;
@@ -71,6 +100,7 @@ subscribe('child_process', (message: unknown) => {
 });
 
 export async function withProbeLifetime<T>(signal: AbortSignal, probe: () => Promise<T>): Promise<T> {
+  signal = AbortSignal.any([signal, probeShutdownSignal]);
   signal.throwIfAborted();
   const lifetime: ProbeLifetime = { signal, children: new Set(), cleanup: new Set() };
   let onAbort = () => {};

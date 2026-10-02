@@ -15,6 +15,7 @@ function formatLocalProjectTimestamp(iso: string): string {
 
 import type { DesktopExportPdfInput, DesktopExportPdfResult } from '@readable-studio/sidecar-proto';
 import express from 'express';
+import { shutdownProbes } from './runtimes/probe-lifetime.js';
 import multer from 'multer';
 import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -14029,6 +14030,7 @@ export async function startServer({
       if (daemonShutdownStarted) return;
       daemonShutdownStarted = true;
       daemonShuttingDown = true;
+      await shutdownProbes();
       await design.runs.shutdownActive({ graceMs: resolveChatRunShutdownGraceMs() });
       await Promise.all([...activeDatabricksRuntimes].map((runtime) => runtime.close()));
       activeDatabricksRuntimes.clear();

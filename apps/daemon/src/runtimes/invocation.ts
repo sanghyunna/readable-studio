@@ -3,7 +3,7 @@ import os from 'node:os';
 import { promisify } from 'node:util';
 import { createCommandInvocation } from '@readable-studio/platform';
 import type { RuntimeExecOptions } from './types.js';
-import { terminateProbeTree } from './probe-lifetime.js';
+import { probeShutdownSignal, terminateProbeTree, trackProbeChild } from './probe-lifetime.js';
 
 const execFileP = promisify(execFile);
 
@@ -32,6 +32,7 @@ export function execAgentFile(
   args: string[],
   options: RuntimeExecOptions = {},
 ) {
+  probeShutdownSignal.throwIfAborted();
   const invocation = createAgentCommandInvocation(command, args, options.env);
   const pending = execFileP(invocation.command, invocation.args, {
     ...options,
@@ -41,6 +42,7 @@ export function execAgentFile(
     windowsVerbatimArguments: invocation.windowsVerbatimArguments,
   });
   const child = pending.child;
+  trackProbeChild(child);
   const kill = child.kill.bind(child);
   let stopping: Promise<void> | undefined;
   // execFile uses child.kill for timeout, abort and output-limit failures. Do

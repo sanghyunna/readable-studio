@@ -1,9 +1,10 @@
 import { execFile, spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { promisify } from 'node:util';
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import { execAgentFile } from '../../src/runtimes/invocation.js';
-import { withProbeLifetime } from '../../src/runtimes/probe-lifetime.js';
+import * as probeLifetime from '../../src/runtimes/probe-lifetime.js';
+const { withProbeLifetime } = probeLifetime;
 
 const exec = promisify(execFile);
 async function alive(pid: number): Promise<boolean> {
@@ -65,6 +66,33 @@ test.runIf(process.platform === 'win32')('scan cancellation joins custom transpo
     expect(await alive(descendant)).toBe(false);
   } finally {
     if (await alive(descendant)) await exec('taskkill.exe', ['/T', '/F', '/PID', String(descendant)], { windowsHide: true, timeout: 5000 });
+  }
+}, 15000);
+
+test.runIf(process.platform === 'win32')('daemon shutdown joins every in-flight probe tree before exit', async () => {
+  vi.resetModules();
+  const { execAgentFile: shutdownExec } = await import('../../src/runtimes/invocation.js');
+  const { shutdownProbes } = await import('../../src/runtimes/probe-lifetime.js');
+  const pending = shutdownExec(process.execPath, ['-e', `
+    const { spawn } = require('node:child_process');
+    const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore', windowsHide: true, detached: true });
+    child.once('spawn', () => console.log(child.pid));
+    setInterval(() => {}, 1000);
+  `], { timeout: 60000, env: { ...process.env, READABLE_PACKAGED_NAMESPACE: 'probe-fix' } });
+  const settled = pending.catch(error => error);
+  const [data] = await once(pending.child.stdout!, 'data', { signal: AbortSignal.timeout(10000) });
+  const descendant = Number(String(data).trim());
+  try {
+    expect(await alive(descendant)).toBe(true);
+    await shutdownProbes();
+    expect(await alive(pending.child.pid!)).toBe(false);
+    expect(await alive(descendant)).toBe(false);
+    await settled;
+  } finally {
+    for (const pid of [pending.child.pid!, descendant]) {
+      if (await alive(pid)) await exec('taskkill.exe', ['/T', '/F', '/PID', String(pid)], { windowsHide: true, timeout: 5000 });
+    }
+    await settled;
   }
 }, 15000);
 
