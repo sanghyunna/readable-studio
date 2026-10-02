@@ -237,7 +237,9 @@ function isDaemonProxyPathname(pathname: string): boolean {
     pathname === "/artifacts" ||
     pathname.startsWith("/artifacts/") ||
     pathname === "/frames" ||
-    pathname.startsWith("/frames/")
+    pathname.startsWith("/frames/") ||
+    pathname === "/offline-cdn" ||
+    pathname.startsWith("/offline-cdn/")
   );
 }
 
@@ -283,7 +285,7 @@ export function resolveHostedSidecarRoute(
   if (hasPathPrefix(parsed.pathname, '/api')) {
     return daemonOrigin == null ? { kind: 'unavailable' } : { kind: 'daemon', target: parsed };
   }
-  if (hasPathPrefix(parsed.pathname, '/artifacts') || hasPathPrefix(parsed.pathname, '/frames')) {
+  if (hasPathPrefix(parsed.pathname, '/artifacts') || hasPathPrefix(parsed.pathname, '/frames') || hasPathPrefix(parsed.pathname, '/offline-cdn')) {
     return { kind: 'deny' };
   }
   return { kind: 'next' };
@@ -305,7 +307,7 @@ function hasHostedEncodedPathEscape(requestUrl: string | undefined): boolean {
     || decoded.split('/').some((segment) => segment === '.' || segment === '..')
   ) return true;
 
-  const protectedPrefixes = ['/api', '/artifacts', '/frames'];
+  const protectedPrefixes = ['/api', '/artifacts', '/frames', '/offline-cdn'];
   return protectedPrefixes.some(
     (prefix) => hasPathPrefix(decoded, prefix) && !hasPathPrefix(rawPath, prefix),
   );
@@ -891,7 +893,7 @@ async function createWebSidecarHandle(
   };
 }
 
-function createDaemonProxyHandler(
+export function createDaemonProxyHandler(
   daemonOrigin: string | null,
   fallback: (request: IncomingMessage, response: ServerResponse) => Promise<void>,
   hostedPublicOrigin: URL | null = null,

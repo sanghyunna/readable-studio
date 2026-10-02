@@ -1,10 +1,12 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
 import {
+  createDaemonProxyHandler,
   createHostedDaemonProxyHeaders,
   createStandaloneBackendEnv,
   createStandaloneParentMonitorImport,
@@ -27,6 +29,8 @@ describe('hosted public sidecar boundary', () => {
     });
     expect(resolveHostedSidecarRoute('http://127.0.0.1:7456', '/artifacts/file')).toEqual({ kind: 'deny' });
     expect(resolveHostedSidecarRoute('http://127.0.0.1:7456', '/frames/example')).toEqual({ kind: 'deny' });
+    expect(resolveHostedSidecarRoute('http://127.0.0.1:7456', '/offline-cdn/chartjs/4/dist/chart.umd.js')).toEqual({ kind: 'deny' });
+    expect(resolveHostedSidecarRoute('http://127.0.0.1:7456', '/%6fffline-cdn/chartjs/4/dist/chart.umd.js')).toEqual({ kind: 'deny' });
     expect(resolveHostedSidecarRoute('http://127.0.0.1:7456', '/apiary')).toEqual({ kind: 'next' });
     expect(resolveHostedSidecarRoute('http://127.0.0.1:7456', '/settings')).toEqual({ kind: 'next' });
     expect(resolveHostedSidecarRoute('http://127.0.0.1:7456', '/api%2Fhealth')).toEqual({ kind: 'deny' });
@@ -116,6 +120,37 @@ describe('hosted public sidecar boundary', () => {
 });
 
 describe('resolveDaemonProxyTarget', () => {
+  it('forwards packaged offline CDN requests through the real sidecar HTTP handler', async () => {
+    const requests: string[] = [];
+    const daemon = createServer((request, response) => {
+      requests.push(request.url ?? '');
+      response.setHeader('content-type', 'application/javascript');
+      response.end('bundled asset');
+    });
+    await new Promise<void>((resolve) => daemon.listen(0, '127.0.0.1', resolve));
+    const address = daemon.address();
+    if (address === null || typeof address === 'string') throw new Error('Expected daemon listener');
+    const web = createServer(createDaemonProxyHandler(`http://127.0.0.1:${address.port}`, async (_request, response) => {
+      response.writeHead(404).end('Next fallback');
+    }));
+    await new Promise<void>((resolve) => web.listen(0, '127.0.0.1', resolve));
+    try {
+      const webAddress = web.address();
+      if (webAddress === null || typeof webAddress === 'string') throw new Error('Expected web listener');
+      for (const path of ['/offline-cdn', '/offline-cdn/chartjs/4/dist/chart.umd.js?cache=1', '/offline-cdn/font-awesome/6/css/all.min.css']) {
+        const response = await fetch(`http://127.0.0.1:${webAddress.port}${path}`);
+        expect(response.status).toBe(200);
+        expect(await response.text()).toBe('bundled asset');
+      }
+      expect(requests).toEqual(['/offline-cdn', '/offline-cdn/chartjs/4/dist/chart.umd.js?cache=1', '/offline-cdn/font-awesome/6/css/all.min.css']);
+      expect(resolveDaemonProxyTarget(`http://127.0.0.1:${address.port}`, '/offline-cdn-evil')).toBeNull();
+    } finally {
+      await Promise.all([web, daemon].map((server) => new Promise<void>((resolve, reject) => {
+        server.close((error) => error ? reject(error) : resolve());
+        server.closeAllConnections();
+      })));
+    }
+  });
   it('proxies allowlisted relative paths to the daemon origin', () => {
     const target = resolveDaemonProxyTarget('http://127.0.0.1:7456', '/api/projects?limit=10');
 
