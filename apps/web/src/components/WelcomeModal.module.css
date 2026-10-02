@@ -49,9 +49,12 @@
   gap: 4px;
 }
 
+/* The primitive's grid keeps a column for its optional state text; this
+   row has none, so a two-column template (label fills, track hugs the end)
+   is what puts the track at the trailing edge instead of mid-row. */
 .switch {
   width: 100%;
-  justify-content: space-between;
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .result,

@@ -106,6 +106,25 @@ describe('WelcomeModal', () => {
     expect(screen.getByText(/right-click|taskbar/i)).toBeTruthy();
   });
 
+  it('reflects each choice in aria-checked and the visual state attribute, and flips on activation', async () => {
+    mockFetch(fullCaps);
+    await renderModal();
+    const desktop = screen.getByRole('switch', { name: /desktop|바탕 화면/i });
+    const startMenu = screen.getByRole('switch', { name: /start menu|시작 메뉴/i });
+    expect(desktop.getAttribute('aria-checked')).toBe('true');
+    expect(desktop.getAttribute('data-state')).toBe('on');
+    expect(startMenu.getAttribute('aria-checked')).toBe('false');
+    expect(startMenu.getAttribute('data-state')).toBe('off');
+    expect(desktop.querySelector('[aria-hidden="true"] > span')).not.toBeNull();
+
+    fireEvent.click(desktop);
+    fireEvent.click(startMenu);
+    expect(desktop.getAttribute('aria-checked')).toBe('false');
+    expect(desktop.getAttribute('data-state')).toBe('off');
+    expect(startMenu.getAttribute('aria-checked')).toBe('true');
+    expect(startMenu.getAttribute('data-state')).toBe('on');
+  });
+
   it('renders no control for an unsupported capability', async () => {
     mockFetch({ ...fullCaps, desktop: false });
     await renderModal();
