@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { rootCertificates } from "node:tls";
@@ -20,13 +23,30 @@ import { PackagedNewerSchemaError, resolvePackagedStartupFailureDialog } from '.
 import type { PackagedNamespacePaths } from "../src/paths.js";
 import { startPackagedSidecars, type PackagedSidecarHandle } from "../src/sidecars.js";
 
-type FixtureBehavior = "concurrent" | "fail" | "newer-schema" | "no-http" | "port-conflict-once" | "ready" | "stale";
+type FixtureBehavior = "source-drain" | "hung-child" | "drain-child" | "concurrent" | "fail" | "newer-schema" | "no-http" | "port-conflict-once" | "ready" | "stale";
 
 function fixtureSource(
   app: "daemon" | "web",
   root: string,
   behavior: FixtureBehavior,
 ): string {
+  if (behavior === 'source-drain') {
+    const require = createRequire(import.meta.url);
+    const lifetimeUrl = new URL('../../daemon/src/runtimes/probe-lifetime.ts', import.meta.url).href;
+    const sidecarUrl = new URL('../../daemon/src/sidecar/index.ts', import.meta.url).href;
+    return `
+import { register } from ${JSON.stringify(pathToFileURL(require.resolve('tsx/esm/api')).href)};
+import { spawn } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
+register();
+process.env.READABLE_AGENT_DISCOVERY_OFFLINE = '1';
+const { trackProbeChild } = await import(${JSON.stringify(lifetimeUrl)});
+const probe = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { windowsHide: true, stdio: 'ignore' });
+trackProbeChild(probe);
+writeFileSync(${JSON.stringify(join(root, 'probe.pid'))}, String(probe.pid));
+await import(${JSON.stringify(sidecarUrl)});
+`;
+  }
   const peer = app === "daemon" ? "web" : "daemon";
   const descriptor = createRuntimeDescriptor("1.2.3");
   return `
@@ -34,6 +54,7 @@ import { appendFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "no
 import { createServer } from "node:net";
 import { createServer as createHttpServer } from "node:http";
 import { dirname, join } from "node:path";
+import { spawn, execFile } from "node:child_process";
 
 const app = ${JSON.stringify(app)};
 const behavior = ${JSON.stringify(behavior)};
@@ -100,10 +121,16 @@ const server = createServer((socket) => {
     }
     socket.end(JSON.stringify({ ok: true, result: { accepted: true } }) + "\\n");
     trace(app + ":shutdown");
-    setTimeout(() => server.close(() => {
+    if (behavior === "hung-child") return;
+    const finish = () => server.close(() => {
       if (!isPipe) rmSync(ipcPath, { force: true });
       process.exit(0);
-    }), 10);
+    });
+    if (probe) {
+      probe.once("exit", finish);
+      if (process.platform === "win32") execFile("taskkill.exe", ["/PID", String(probe.pid), "/T", "/F"], { windowsHide: true }, error => { if (error) console.error(error); });
+      else probe.kill("SIGKILL");
+    } else finish();
   });
 });
 
@@ -119,6 +146,11 @@ const listenIpc = () => server.listen(ipcPath, () => {
     });
   }, 750);
 });
+let probe;
+if (behavior === "hung-child" || behavior === "drain-child") {
+  probe = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { windowsHide: true, stdio: "ignore" });
+  writeFileSync(join(root, "probe.pid"), String(probe.pid));
+}
 if (app === "daemon" && behavior !== "no-http") {
   createHttpServer((_req, res) => {
     res.setHeader("content-type", "application/json");
@@ -149,6 +181,7 @@ function fixturePaths(root: string, namespace: string): PackagedNamespacePaths {
 }
 
 type FixtureHarness = {
+  daemonLogPath: string;
   fixturesRoot: string;
   phases: string[];
   root: string;
@@ -189,6 +222,7 @@ function createFixtureHarness(
   };
 
   return {
+    daemonLogPath: join(paths.logsRoot, 'daemon', 'latest.log'),
     fixturesRoot,
     phases,
     root,
@@ -212,6 +246,40 @@ function createFixtureHarness(
 }
 
 describe("startPackagedSidecars", () => {
+  it.each(['hung-child', 'drain-child', 'source-drain'] as const)('normal close leaves no in-flight descendant by PID (%s)', async (behavior) => {
+    const fixture = createFixtureHarness(behavior, 'ready');
+    let sidecars: PackagedSidecarHandle | null = null;
+    let probePid: number | undefined;
+    const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+    try {
+      sidecars = await fixture.start();
+      probePid = Number(readFileSync(join(fixture.fixturesRoot, 'probe.pid'), 'utf8'));
+      expect(alive(probePid)).toBe(true);
+      const started = performance.now();
+      await sidecars.close();
+      expect(alive(probePid)).toBe(false);
+      expect(sidecars.daemon.pid).toBeTypeOf('number');
+      expect(alive(sidecars.daemon.pid!)).toBe(false);
+      const elapsedMs = performance.now() - started;
+      expect(elapsedMs).toBeLessThan(3_500);
+      if (behavior === 'source-drain') {
+        const daemonLog = readFileSync(fixture.daemonLogPath, 'utf8');
+        expect(daemonLog).toContain('shutdown requested app=daemon');
+        expect(daemonLog).not.toContain('forcing tree stop');
+        process.stdout.write(JSON.stringify({ sourceDaemon: true, daemonPid: sidecars.daemon.pid, probePid, daemonAliveAfter: false, probeAliveAfter: false, elapsedMs, forced: false }) + '\n');
+      } else expect(readFileSync(join(fixture.fixturesRoot, 'trace.log'), 'utf8')).toContain('daemon:shutdown');
+    } finally {
+      const pidFile = join(fixture.fixturesRoot, 'probe.pid');
+      if (probePid === undefined && existsSync(pidFile)) probePid = Number(readFileSync(pidFile, 'utf8'));
+      if (probePid && alive(probePid)) {
+        if (process.platform === 'win32') execFileSync('taskkill.exe', ['/PID', String(probePid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+        else process.kill(probePid, 'SIGKILL');
+      }
+      await sidecars?.close();
+      rmSync(fixture.root, { force: true, recursive: true });
+    }
+  }, 15_000);
+
   it("forwards corporate CA paths but strips inherited privileges when launching the packaged daemon", async () => {
     // Given: real child fixtures and corporate trust settings in the desktop parent.
     const fixture = createFixtureHarness("ready", "ready");

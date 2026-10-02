@@ -14022,20 +14022,23 @@ export async function startServer({
   //   - `apps/daemon/sidecar/server.ts`     → expects `{ url, server }`
   //   - `apps/daemon/tests/version-route.test.ts` → expects `{ url, server }`
   return await new Promise((resolve, reject) => {
-    let daemonShutdownStarted = false;
+    let daemonShutdownPromise: Promise<void> | null = null;
     const cleanupDaemonBackgroundWork = () => {
       routineService?.stop();
     };
-    const shutdownDaemonRuns = async () => {
-      if (daemonShutdownStarted) return;
-      daemonShutdownStarted = true;
+    const shutdownDaemonRuns = () => {
+      if (daemonShutdownPromise) return daemonShutdownPromise;
       daemonShuttingDown = true;
-      await shutdownProbes();
-      await design.runs.shutdownActive({ graceMs: resolveChatRunShutdownGraceMs() });
-      await Promise.all([...activeDatabricksRuntimes].map((runtime) => runtime.close()));
-      activeDatabricksRuntimes.clear();
-      await terminalService.shutdownActive();
-      await design.analytics.shutdown();
+      // HTTP close and explicit shutdown may race; both must join probe cleanup.
+      daemonShutdownPromise = Promise.resolve().then(async () => {
+        await shutdownProbes();
+        await design.runs.shutdownActive({ graceMs: resolveChatRunShutdownGraceMs() });
+        await Promise.all([...activeDatabricksRuntimes].map((runtime) => runtime.close()));
+        activeDatabricksRuntimes.clear();
+        await terminalService.shutdownActive();
+        await design.analytics.shutdown();
+      });
+      return daemonShutdownPromise;
     };
     let server;
     try {

@@ -652,25 +652,30 @@ export async function runDesktopMain(
   let disposeMenu: () => void = () => undefined;
   let removeDiagnosticsIpc: () => void = () => undefined;
   let ipcServer: JsonIpcServerHandle | null = null;
-  let shuttingDown = false;
+  let shutdownComplete = false;
+  let shutdownPromise: Promise<void> | null = null;
 
-  async function shutdown(): Promise<void> {
-    if (shuttingDown) return;
-    shuttingDown = true;
-    approvalLoop?.abort();
-    shortcutLoop?.abort();
-    await options.beforeShutdown?.().catch((error: unknown) => {
-      console.error("desktop beforeShutdown failed", error);
+  function shutdown(): Promise<void> {
+    if (shutdownPromise) return shutdownPromise;
+    // Publish the shared promise before cleanup can trigger another quit event.
+    shutdownPromise = Promise.resolve().then(async () => {
+      approvalLoop?.abort();
+      shortcutLoop?.abort();
+      await options.beforeShutdown?.().catch((error: unknown) => {
+        console.error("desktop beforeShutdown failed", error);
+      });
+      disposeMenu();
+      removeDiagnosticsIpc();
+      await secretStorage?.close();
+      await ipcServer?.close().catch(() => undefined);
+      await desktop?.close().catch(() => undefined);
+      crashEvidence.dispose();
+      await approvalLoop?.done.catch(() => undefined);
+      await shortcutLoop?.done.catch(() => undefined);
+      shutdownComplete = true;
+      app.quit();
     });
-    disposeMenu();
-    removeDiagnosticsIpc();
-    await secretStorage?.close();
-    await ipcServer?.close().catch(() => undefined);
-    await desktop?.close().catch(() => undefined);
-    crashEvidence.dispose();
-    await approvalLoop?.done.catch(() => undefined);
-    await shortcutLoop?.done.catch(() => undefined);
-    app.quit();
+    return shutdownPromise;
   }
 
   function shutdownAndExit(): void {
@@ -709,9 +714,9 @@ export async function runDesktopMain(
   attachParentMonitor(shutdown);
 
   app.on("before-quit", (event) => {
-    if (shuttingDown) return;
+    if (shutdownComplete) return;
     event.preventDefault();
-    void shutdown().finally(() => process.exit(0));
+    shutdownAndExit();
   });
 
   ipcServer = await createJsonIpcServer({
@@ -748,12 +753,6 @@ export async function runDesktopMain(
           return { accepted: true };
       }
     },
-  });
-
-  app.on("before-quit", (event) => {
-    if (shuttingDown) return;
-    event.preventDefault();
-    shutdownAndExit();
   });
 
   app.on("window-all-closed", () => {

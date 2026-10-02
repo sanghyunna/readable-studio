@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { access, appendFile, mkdir, open, readFile, type FileHandle } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { request as createHttpRequest } from 'node:http';
@@ -31,8 +31,7 @@ import {
   createProcessStampArgs,
   mergeProxyAwareEnv,
   resolveSystemProxyEnv,
-  stopProcesses,
-  waitForProcessExit,
+  collectProcessTreePids,
   wellKnownUserToolchainBins,
 } from "@readable-studio/platform";
 
@@ -505,15 +504,49 @@ async function closeManagedChild(child: ManagedSidecarChild): Promise<void> {
     await appendFile(child.logPath, `${message}\n`, "utf8").catch(() => undefined);
   };
   await appendLifecycleLog(`[readable-studio packaged] shutdown requested app=${child.app} pid=${child.child.pid ?? "unknown"}`);
+  // Start the deadline before IPC, and observe exit before sending shutdown.
+  const exited = new Promise<boolean>((resolve) => {
+    if (child.child.exitCode !== null || child.child.signalCode !== null) { resolve(true); return; }
+    const deadline = AbortSignal.timeout(2_000);
+    const onTimeout = () => { child.child.off('exit', onExit); resolve(false); };
+    const onExit = () => { deadline.removeEventListener('abort', onTimeout); resolve(true); };
+    deadline.addEventListener('abort', onTimeout, { once: true });
+    child.child.once('exit', onExit);
+  });
   try {
-    await requestJsonIpc(child.ipcPath, { type: SIDECAR_MESSAGES.SHUTDOWN }, { timeoutMs: 1200 });
-  } catch {
-    // Fall through to process cleanup.
+    await requestJsonIpc(child.ipcPath, { type: SIDECAR_MESSAGES.SHUTDOWN }, { timeoutMs: 500 });
+  } catch (error) {
+    await appendLifecycleLog(`[readable-studio packaged] shutdown IPC failed app=${child.app}: ${String(error)}`);
   }
 
-  if (!(await waitForProcessExit(child.child.pid, 5000))) {
-    await appendLifecycleLog(`[readable-studio packaged] shutdown timeout app=${child.app} pid=${child.child.pid ?? "unknown"}; forcing stop`);
-    await stopProcesses([child.child.pid]);
+  if (!(await exited)) {
+    await appendLifecycleLog(`[readable-studio packaged] shutdown timeout app=${child.app} pid=${child.child.pid ?? "unknown"}; forcing tree stop`);
+    const pid = child.child.pid!;
+    if (process.platform === 'win32') {
+      await new Promise<void>((resolve, reject) => {
+        execFile('taskkill.exe', ['/PID', String(pid), '/T', '/F'], { windowsHide: true, timeout: 1_000 }, (error) => {
+          if (!error || child.child.exitCode !== null || child.child.signalCode !== null) resolve();
+          else reject(error);
+        });
+      });
+    } else {
+      const listing = await new Promise<string>((resolve, reject) => {
+        execFile('ps', ['-eo', 'pid=,ppid='], { timeout: 1_000 }, (error, stdout) => {
+          if (error) reject(error);
+          else resolve(stdout);
+        });
+      });
+      const snapshots = listing.trim().split(/\r?\n/).map(command => {
+        const [pid, ppid] = command.trim().split(/\s+/).map(Number);
+        return { pid: pid!, ppid: ppid!, command };
+      });
+      const tree = collectProcessTreePids(snapshots, [pid]);
+      for (const target of [...tree.filter(target => target !== pid), pid]) {
+        try { process.kill(target, 'SIGKILL'); } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+        }
+      }
+    }
   }
 
   await appendLifecycleLog(`[readable-studio packaged] exited app=${child.app} pid=${child.child.pid ?? "unknown"} code=${child.child.exitCode ?? "unknown"} signal=${child.child.signalCode ?? "none"}`);
@@ -657,15 +690,17 @@ export async function startPackagedSidecars(
       if (daemonStatus.url == null) throw new Error("daemon did not report a URL");
       if (webStatus.url == null) throw new Error("web did not report a URL");
 
+      let closePromise: Promise<void> | null = null;
       return {
         daemon: daemonStatus,
         web: webStatus,
-        async close() {
-          for (const child of [...children].reverse()) {
+        close() {
+          // Drain daemon probes immediately, not after a web shutdown timeout.
+          return closePromise ??= Promise.all(children.map(async (child) => {
             await closeManagedChild(child).catch((error: unknown) => {
               console.error(`failed to close packaged ${child.app} sidecar`, error);
             });
-          }
+          })).then(() => undefined);
         },
       };
     } catch (error) {
