@@ -31,7 +31,7 @@ export function registerOfflineCdnRoutes(app: Express, resourceRoot: string): vo
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
       res.type(MIME[path.extname(file)] ?? 'application/octet-stream');
-      res.sendFile(canonicalTarget, { cacheControl: false }, error => { if (error) next(error); });
+      res.sendFile(canonicalTarget, { cacheControl: false, dotfiles: 'allow' }, error => { if (error) next(error); });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') { res.sendStatus(404); return; }
       next(error);

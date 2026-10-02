@@ -42,7 +42,8 @@ describe('offline CDN resolver', () => {
 });
 describe('offline CDN route', () => {
   it('serves only listed files with MIME, CORS and immutable caching; resolves over HTTP', async () => {
-    const root = await mkdtemp(path.join(tmpdir(), 'ocdn-'));
+    const temporaryRoot = await mkdtemp(path.join(tmpdir(), 'ocdn-'));
+    const root = path.join(temporaryRoot, '.install');
     const app = express();
     for (const library of manifest.libraries) for (const file of library.files) {
       const target = path.join(root, 'offline-cdn', library.lib, String(library.major), file);
@@ -65,6 +66,6 @@ describe('offline CDN route', () => {
       for (const file of ['fontawesome/6/css/no.css', 'fontawesome/6/css/%2e%2e%2fmanifest.json', 'fontawesome/6/css/..%5c..%5cmanifest.json', 'fontawesome/6/%252e%252e/manifest.json', 'evil/6/css/all.min.css']) expect((await fetch(`${origin}/offline-cdn/${file}`)).status).toBe(404);
       const result = await fetch(`${origin}/api/offline-cdn/resolve?url=${encodeURIComponent(cases[0]![0])}`);
       expect(await result.json()).toEqual({ lib: 'fontawesome', major: 6, path: 'css/all.min.css' });
-    } finally { await new Promise<void>((resolve, reject) => server.close(err => err ? reject(err) : resolve())); await rm(root, { recursive: true, force: true }); }
+    } finally { await new Promise<void>((resolve, reject) => server.close(err => err ? reject(err) : resolve())); await rm(temporaryRoot, { recursive: true, force: true }); }
   });
 });
