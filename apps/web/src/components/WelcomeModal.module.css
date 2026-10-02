@@ -51,8 +51,11 @@
 
 /* The primitive's grid keeps a column for its optional state text; this
    row has none, so a two-column template (label fills, track hugs the end)
-   is what puts the track at the trailing edge instead of mid-row. */
+   is what puts the track at the trailing edge instead of mid-row. The rule
+   owns its display (layout-container guard): a full-width block grid is the
+   primitive's inline-grid stretched to the row. */
 .switch {
+  display: grid;
   width: 100%;
   grid-template-columns: minmax(0, 1fr) auto;
 }
