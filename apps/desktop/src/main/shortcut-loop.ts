@@ -1,8 +1,7 @@
 import { app, shell } from 'electron';
 import fs from 'node:fs';
-import path from 'node:path';
-import type { ShortcutLocation } from '@readable-studio/contracts';
-import { createShortcut } from './shortcuts.js';
+import type { ShortcutCreateResult, ShortcutLocation } from '@readable-studio/contracts';
+import { createShortcut, resolveShortcutPaths } from './shortcuts.js';
 
 export function startShortcutLoop(options: { token: string; discoverDaemonUrl(): Promise<string | null> }): { abort(): void; done: Promise<void> } {
   const controller = new AbortController();
@@ -16,11 +15,18 @@ export function startShortcutLoop(options: { token: string; discoverDaemonUrl():
         if (!response.ok) { await delay(1000, controller.signal); continue; }
         const body = await response.json() as { job: { id: string; location: ShortcutLocation } | null };
         if (!body.job || controller.signal.aborted) continue;
-        const result = createShortcut(body.job.location, {
-          packaged: app.isPackaged && process.platform === 'win32', exe: app.getPath('exe'),
-          paths: { desktop: app.getPath('desktop'), startMenu: path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs') },
-          shell, fs,
-        });
+        const packaged = app.isPackaged && process.platform === 'win32';
+        let result: ShortcutCreateResult;
+        try {
+          result = createShortcut(body.job.location, {
+            packaged, exe: app.getPath('exe'),
+            paths: packaged ? resolveShortcutPaths((name) => app.getPath(name), undefined, body.job.location) : { desktop: '', startMenu: '' },
+            shell, fs,
+          });
+        } catch (error) {
+          console.error('shortcut folder resolution failed:', { location: body.job.location, error });
+          result = { status: 'failed', location: body.job.location, reason: 'failed' };
+        }
         const ack = await fetch(`${base}/api/shortcuts/desktop/${encodeURIComponent(body.job.id)}/result`, {
           method: 'POST', headers: { ...headers, 'content-type': 'application/json' },
           body: JSON.stringify(result), signal: controller.signal,
