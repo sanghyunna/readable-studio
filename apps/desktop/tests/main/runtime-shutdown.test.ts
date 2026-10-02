@@ -34,7 +34,10 @@ const dialogs = vi.hoisted(() => ({ showMessageBox: vi.fn(), showErrorBox: vi.fn
 vi.mock("electron", () => ({
   BrowserWindow: TestWindow, app: { quit: vi.fn() }, dialog: dialogs,
   ipcMain: { removeHandler: vi.fn(), handle: vi.fn(), removeAllListeners: vi.fn(), on: vi.fn() },
-  nativeImage: {}, screen: new EventEmitter(), session: {}, shell: {},
+  nativeImage: {}, screen: new EventEmitter(), session: {
+    defaultSession: { webRequest: { onBeforeRequest: vi.fn() } },
+    fromPartition: vi.fn(() => ({ webRequest: { onBeforeRequest: vi.fn() } })),
+  }, shell: {},
 }));
 
 afterEach(() => {

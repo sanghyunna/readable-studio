@@ -15,6 +15,7 @@ import {
 import type { ReadableStudioHostActionResult, ReadableStudioHostCaptureResult } from "@readable-studio/host";
 
 import { openValidatedDirectory } from "./open-path.js";
+import { installOfflineCdnHooks } from "./offline-cdn.js";
 import { captureFullDocument, electronCaptureSurface, routeCaptureRequest } from "./full-document-capture.js";
 import { createElectronPdfTarget, exportPdfFromHtml, savePrintReadyDocumentAsPdf } from "./pdf-export.js";
 import type { PrintReadyPdfOptions } from "./pdf-export.js";
@@ -1233,6 +1234,13 @@ async function reportRendererCrash(
 export async function createDesktopRuntime(options: DesktopRuntimeOptions): Promise<DesktopRuntime> {
   const preloadPath = options.preloadPath ?? join(dirname(fileURLToPath(import.meta.url)), "preload.cjs");
   applyDockIcon();
+  // Install before any document navigation. Export/print/presentation windows
+  // inherit defaultSession; the design-browser webview is the only partition.
+  const disposeOfflineCdn = installOfflineCdnHooks(session, DESIGN_BROWSER_PARTITION, async () => {
+    const webOrigin = await options.discoverUrl();
+    const apiOrigin = (await options.discoverDaemonUrl?.()) ?? webOrigin;
+    return webOrigin && apiOrigin ? { webOrigin, apiOrigin } : null;
+  });
 
   // ipcMain.handle() registers a handler in an internal map that is *not*
   // surfaced via eventNames(); the previous `!eventNames().includes(...)`
@@ -1942,6 +1950,7 @@ export async function createDesktopRuntime(options: DesktopRuntimeOptions): Prom
     },
     async close() {
       stopped = true;
+      disposeOfflineCdn();
       startupScanRequest.abort();
       rendererRecovery.dispose();
       disposeLayoutGeometry();

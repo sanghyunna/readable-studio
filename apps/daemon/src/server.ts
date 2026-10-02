@@ -510,6 +510,7 @@ import { registerUpdateRoutes } from './update-routes.js';
 import { registerDataImportRoutes } from './data-import-routes.js';
 import { registerUpdateApplyRoutes } from './update-apply-routes.js';
 import { registerStaticResourceRoutes } from './routes/static-resource.js';
+import { registerOfflineCdnRoutes } from './routes/offline-cdn.js';
 import { registerRoutineRoutes, routineDbRowToContract } from './routes/routine.js';
 import { installRouteRegistrationGuard } from './route-registration-guard.js';
 import { assertServerContextSatisfiesRoutes } from './route-context-contract.js';
@@ -1240,6 +1241,7 @@ export function isStaticSpaFallbackRequest(req) {
   if (req.path === '/api' || req.path.startsWith('/api/')) return false;
   if (req.path === '/artifacts' || req.path.startsWith('/artifacts/')) return false;
   if (req.path === '/frames' || req.path.startsWith('/frames/')) return false;
+  if (req.path === '/offline-cdn' || req.path.startsWith('/offline-cdn/')) return false;
   if (req.path === '/_next' || req.path.startsWith('/_next/')) return false;
 
   const accept = req.get?.('accept') ?? '';
@@ -5315,6 +5317,7 @@ export async function startServer({
   });
 
   // Resource catalog
+  registerOfflineCdnRoutes(app, DAEMON_RESOURCE_ROOT ?? path.join(PROJECT_ROOT, 'vendor'));
   registerStaticResourceRoutes(app, {
     http: httpDeps,
     paths: pathDeps,

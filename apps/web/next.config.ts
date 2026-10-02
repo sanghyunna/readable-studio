@@ -217,6 +217,7 @@ const nextConfig: NextConfig = {
             { source: '/api/:path*', destination: `${DAEMON_ORIGIN}/api/:path*` },
             { source: '/artifacts/:path*', destination: `${DAEMON_ORIGIN}/artifacts/:path*` },
             { source: '/frames/:path*', destination: `${DAEMON_ORIGIN}/frames/:path*` },
+            { source: '/offline-cdn/:path*', destination: `${DAEMON_ORIGIN}/offline-cdn/:path*` },
           ];
         },
         devIndicators: false,

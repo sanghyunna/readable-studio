@@ -33,7 +33,10 @@ class TestWindow extends EventEmitter {
 vi.mock('electron', () => ({
   BrowserWindow: TestWindow, app: { quit: vi.fn() }, dialog: {},
   ipcMain: { removeHandler: vi.fn(), handle: vi.fn(), removeAllListeners: vi.fn(), on: vi.fn() },
-  nativeImage: {}, screen: new EventEmitter(), session: {}, shell: {},
+  nativeImage: {}, screen: new EventEmitter(), session: {
+    defaultSession: { webRequest: { onBeforeRequest: vi.fn() } },
+    fromPartition: vi.fn(() => ({ webRequest: { onBeforeRequest: vi.fn() } })),
+  }, shell: {},
 }));
 
 afterEach(() => {
@@ -70,6 +73,9 @@ it('starts daemon discovery before navigation or app mount and waits only for ac
     discoverDaemonUrl: async () => `http://127.0.0.1:${address.port}`,
   });
   try {
+    const { session } = await import('electron');
+    expect(session.defaultSession.webRequest.onBeforeRequest).toHaveBeenCalledOnce();
+    expect(session.fromPartition).toHaveBeenCalledWith('persist:readable-studio-design-browser');
     // When the daemon receives startup before the renderer has mounted.
     expect(await boundary).toEqual(['POST']);
     const main = TestWindow.instances[0];
