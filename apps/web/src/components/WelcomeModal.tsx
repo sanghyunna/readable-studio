@@ -10,11 +10,20 @@
 // probe is therefore deferred by SHOW_DELAY_MS from mount; the shown flag is
 // written only when the modal actually opens, so closing the window during
 // the delay does not burn the one-time showing.
-import { useEffect, useState } from 'react';
+//
+// The primary action is the whole decision: it creates every selected
+// shortcut, and when all of them succeed the modal closes itself and a
+// success toast names what was made. Only a failure keeps the modal open,
+// with the reason inline beside the switch and the successful ones marked
+// done, so the user can retry just the failed target or skip. With nothing
+// selected the primary action IS Skip (one button, labelled with what it
+// does) instead of a disabled "Add" beside a working ghost button.
+import { useEffect, useRef, useState } from 'react';
 import { Button, Switch } from '@readable-studio/components';
 import type { ShortcutCapabilities, ShortcutCreateResult, ShortcutLocation } from '@readable-studio/contracts';
 import { useT } from '../i18n';
 import { useEscapeDismiss } from '../hooks/useEscapeDismiss';
+import { Toast } from './Toast';
 import styles from './WelcomeModal.module.css';
 
 const STORAGE_KEY = 'readable-studio:welcome-modal-shown';
@@ -52,6 +61,10 @@ async function fetchCapabilities(): Promise<ShortcutCapabilities | null> {
   };
 }
 
+function isSuccess(result: ShortcutCreateResult | undefined): boolean {
+  return result?.status === 'created' || result?.status === 'already-existed';
+}
+
 async function createShortcut(location: ShortcutLocation): Promise<ShortcutCreateResult> {
   try {
     const res = await fetch('/api/shortcuts', {
@@ -73,6 +86,10 @@ export function WelcomeModal() {
   const [chosen, setChosen] = useState<Record<ShortcutLocation, boolean>>({ desktop: true, startMenu: false });
   const [results, setResults] = useState<Partial<Record<ShortcutLocation, ShortcutCreateResult>>>({});
   const [busy, setBusy] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  // setState is async, so a second click in the same tick would slip past the
+  // `busy` render guard; the ref closes that window.
+  const inFlight = useRef(false);
 
   useEffect(() => {
     if (readShown()) return;
@@ -97,20 +114,36 @@ export function WelcomeModal() {
 
   useEscapeDismiss(() => setOpen(false), open && !busy);
 
-  if (!open || !caps) return null;
+  if (!open || !caps) {
+    return toast ? <Toast message={toast} tone="success" onDismiss={() => setToast(null)} /> : null;
+  }
 
   const offered = LOCATIONS.filter((location) => caps[location]);
   const selected = offered.filter((location) => chosen[location]);
-  const finished = offered.length > 0 && offered.every((location) => results[location]);
+  const succeeded = (location: ShortcutLocation) => isSuccess(results[location]);
+  const pending = selected.filter((location) => !succeeded(location));
+  const failedBefore = pending.some((location) => results[location]?.status === 'failed');
+
+  function finish(made: ShortcutLocation[]) {
+    if (made.length > 0) {
+      const both = made.includes('desktop') && made.includes('startMenu');
+      setToast(t(both ? 'welcome.toast.both' : made[0] === 'desktop' ? 'welcome.toast.desktop' : 'welcome.toast.startMenu'));
+    }
+    setOpen(false);
+  }
 
   async function apply() {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setBusy(true);
-    const next: Partial<Record<ShortcutLocation, ShortcutCreateResult>> = {};
-    for (const location of selected) {
+    const next = { ...results };
+    for (const location of pending) {
       next[location] = await createShortcut(location);
     }
     setResults(next);
     setBusy(false);
+    inFlight.current = false;
+    if (selected.every((location) => isSuccess(next[location]))) finish(selected);
   }
 
   function resultText(result: ShortcutCreateResult): string {
@@ -126,8 +159,15 @@ export function WelcomeModal() {
     if (reason === 'desktop-unavailable') return t('welcome.reason.desktopUnavailable');
     if (reason === 'conflict') return t('welcome.reason.conflict');
     if (reason === 'write-failed') return t('welcome.reason.writeFailed');
-    return reason;
+    return t('welcome.reason.failed');
   }
+
+  const primary =
+    pending.length > 0
+      ? { label: busy ? t('welcome.applying') : failedBefore ? t('welcome.retry') : t('welcome.apply'), onClick: () => void apply() }
+      : selected.length > 0 || offered.length === 0
+        ? { label: t('welcome.done'), onClick: () => finish(selected) }
+        : { label: t('welcome.skip'), onClick: () => finish([]) };
 
   return (
     <div className={`modal-backdrop ${styles.backdrop}`} role="presentation">
@@ -153,7 +193,7 @@ export function WelcomeModal() {
                   <Switch
                     className={styles.switch}
                     checked={chosen[location]}
-                    disabled={busy || Boolean(result)}
+                    disabled={busy || succeeded(location)}
                     onCheckedChange={(checked) => setChosen((prev) => ({ ...prev, [location]: checked }))}
                     data-location={location}
                   >
@@ -177,20 +217,14 @@ export function WelcomeModal() {
         <p className={styles.hint}>{t('welcome.taskbarHint')}</p>
 
         <footer className={styles.foot}>
-          {finished || offered.length === 0 ? (
-            <Button variant="primary" onClick={() => setOpen(false)}>
-              {t('welcome.done')}
+          {pending.length > 0 ? (
+            <Button variant="ghost" onClick={() => finish([])} disabled={busy}>
+              {t('welcome.skip')}
             </Button>
-          ) : (
-            <>
-              <Button variant="ghost" onClick={() => setOpen(false)} disabled={busy}>
-                {t('welcome.skip')}
-              </Button>
-              <Button variant="primary" onClick={() => void apply()} disabled={busy || selected.length === 0}>
-                {busy ? t('welcome.applying') : t('welcome.apply')}
-              </Button>
-            </>
-          )}
+          ) : null}
+          <Button variant="primary" onClick={primary.onClick} disabled={busy} aria-busy={busy || undefined}>
+            {primary.label}
+          </Button>
         </footer>
       </section>
     </div>

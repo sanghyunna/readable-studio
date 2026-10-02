@@ -2106,9 +2106,12 @@ describe('SettingsDialog execution settings Local CLI interactions', () => {
     const codexCard = screen.getByRole('button', { name: /Codex CLI/i })
       .closest('.agent-card') as HTMLElement;
 
-    expect(
-      within(codexCard).getByText('Codex CLI is installed but not authenticated.'),
-    ).toBeTruthy();
+    // The row headlines the localized explanation for the reason; the daemon's
+    // raw sentence survives only as secondary detail (the tooltip).
+    const headline = within(codexCard).getByText(en['settings.agentDiagnostic.auth-missing']);
+    expect(headline).toBeTruthy();
+    expect(within(codexCard).queryByText('Codex CLI is installed but not authenticated.')).toBeNull();
+    expect(headline.getAttribute('title')).toContain('Codex CLI is installed but not authenticated.');
 
     fireEvent.click(within(codexCard).getByRole('button', {
       name: en['settings.agentInstall.docs'],

@@ -3311,8 +3311,12 @@ export interface Dict {
   'welcome.taskbarHint': string;
   'welcome.apply': string;
   'welcome.applying': string;
+  'welcome.retry': string;
   'welcome.skip': string;
   'welcome.done': string;
+  'welcome.toast.both': string;
+  'welcome.toast.desktop': string;
+  'welcome.toast.startMenu': string;
   'welcome.result.created': string;
   'welcome.result.alreadyExisted': string;
   'welcome.result.failed': string;
@@ -3320,4 +3324,5 @@ export interface Dict {
   'welcome.reason.desktopUnavailable': string;
   'welcome.reason.conflict': string;
   'welcome.reason.writeFailed': string;
+  'welcome.reason.failed': string;
 }

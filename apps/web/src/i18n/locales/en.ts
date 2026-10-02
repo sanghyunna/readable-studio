@@ -3198,8 +3198,12 @@ export function getEn(): Dict {
   'welcome.taskbarHint': 'To pin to the taskbar, right-click Readable Studio in the taskbar while it is running and choose Pin to taskbar.',
   'welcome.apply': 'Add shortcuts',
   'welcome.applying': 'Adding…',
+  'welcome.retry': 'Try again',
   'welcome.skip': 'Skip',
   'welcome.done': 'Done',
+  'welcome.toast.both': 'Desktop and Start Menu shortcuts created.',
+  'welcome.toast.desktop': 'Desktop shortcut created.',
+  'welcome.toast.startMenu': 'Start Menu shortcut created.',
   'welcome.result.created': 'Shortcut created.',
   'welcome.result.alreadyExisted': 'Shortcut already exists.',
   'welcome.result.failed': 'Could not create the shortcut: {reason}',
@@ -3207,5 +3211,6 @@ export function getEn(): Dict {
   'welcome.reason.desktopUnavailable': 'the desktop app is not connected',
   'welcome.reason.conflict': 'a different file already uses that name',
   'welcome.reason.writeFailed': 'the file could not be written',
+  'welcome.reason.failed': 'something went wrong while creating it',
   };
 }

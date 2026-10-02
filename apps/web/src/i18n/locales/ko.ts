@@ -3197,8 +3197,12 @@ export function getKo(): Dict {
   'welcome.taskbarHint': '작업 표시줄에 고정하려면 실행 중인 Readable Studio 아이콘을 작업 표시줄에서 마우스 오른쪽 버튼으로 클릭하고 "작업 표시줄에 고정"을 선택하세요.',
   'welcome.apply': '바로가기 추가',
   'welcome.applying': '추가하는 중…',
+  'welcome.retry': '다시 시도',
   'welcome.skip': '건너뛰기',
   'welcome.done': '완료',
+  'welcome.toast.both': '바탕화면과 시작 메뉴에 바로가기를 만들었습니다.',
+  'welcome.toast.desktop': '바탕화면에 바로가기를 만들었습니다.',
+  'welcome.toast.startMenu': '시작 메뉴에 바로가기를 만들었습니다.',
   'welcome.result.created': '바로가기를 만들었습니다.',
   'welcome.result.alreadyExisted': '바로가기가 이미 있습니다.',
   'welcome.result.failed': '바로가기를 만들지 못했습니다: {reason}',
@@ -3206,5 +3210,6 @@ export function getKo(): Dict {
   'welcome.reason.desktopUnavailable': '데스크톱 앱이 연결되어 있지 않습니다',
   'welcome.reason.conflict': '같은 이름의 다른 파일이 이미 있습니다',
   'welcome.reason.writeFailed': '파일을 쓸 수 없습니다',
+  'welcome.reason.failed': '바로가기를 만드는 중 오류가 발생했습니다',
   };
 }

@@ -41,6 +41,12 @@ async function elapse(ms: number) {
   await settle();
 }
 
+// The inline per-row results are also role="status", so the toast is
+// identified by the shared Toast surface class instead of its role.
+function toastEl(): HTMLElement | null {
+  return document.querySelector('.readable-toast');
+}
+
 async function renderModal() {
   render(<WelcomeModal />);
   await elapse(SHOW_DELAY_MS);
@@ -133,19 +139,130 @@ describe('WelcomeModal', () => {
     expect(switches[0]!.getAttribute('data-location')).toBe('startMenu');
   });
 
-  it('surfaces a failed creation with its reason', async () => {
+  it('keeps the modal open on a failed creation and explains the reason inline', async () => {
     mockFetch(fullCaps, (location) => ({ status: 'failed', location, reason: 'write-failed' }));
     await renderModal();
     fireEvent.click(screen.getByRole('button', { name: /add shortcut/i }));
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await settle();
     const result = screen.getByTestId('welcome-result-desktop');
     expect(result.getAttribute('role')).toBe('alert');
     expect(result.textContent).toMatch(/could not/i);
     expect(result.textContent).toMatch(/could not be written/i);
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(toastEl()).toBeNull();
+  });
+
+  it('closes and announces a success toast once every selected shortcut is created', async () => {
+    const fetchFn = mockFetch(fullCaps);
+    await renderModal();
+    fireEvent.click(screen.getByRole('switch', { name: /start menu/i }));
+    fireEvent.click(screen.getByRole('button', { name: /add shortcut/i }));
+    await settle();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    const posted = fetchFn.mock.calls
+      .filter(([, init]) => init?.method === 'POST')
+      .map(([, init]) => (JSON.parse(String(init!.body)) as { location: string }).location);
+    expect(posted).toEqual(['desktop', 'startMenu']);
+    const toast = toastEl();
+    expect(toast?.getAttribute('role')).toBe('status');
+    expect(toast?.textContent).toContain('Desktop and Start Menu shortcuts');
+    expect(window.localStorage.getItem('readable-studio:welcome-modal-shown')).toBe('1');
+  });
+
+  it('names only the chosen target in the toast', async () => {
+    mockFetch(fullCaps);
+    await renderModal();
+    fireEvent.click(screen.getByRole('button', { name: /add shortcut/i }));
+    await settle();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(toastEl()?.textContent).toContain('Desktop shortcut');
+  });
+
+  it('treats an already-existing shortcut as success', async () => {
+    mockFetch(fullCaps, (location) => ({ status: 'already-existed', location }));
+    await renderModal();
+    fireEvent.click(screen.getByRole('button', { name: /add shortcut/i }));
+    await settle();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(toastEl()).not.toBeNull();
+  });
+
+  it('stays open on partial failure, marks the created one done, and lets the user retry only the failed one', async () => {
+    const post = vi.fn((location: string) =>
+      location === 'startMenu' ? { status: 'failed', location, reason: 'conflict' } : { status: 'created', location },
+    );
+    mockFetch(fullCaps, post);
+    await renderModal();
+    fireEvent.click(screen.getByRole('switch', { name: /start menu/i }));
+    fireEvent.click(screen.getByRole('button', { name: /add shortcut/i }));
+    await settle();
+
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(toastEl()).toBeNull();
+    expect(screen.getByTestId('welcome-result-desktop').textContent).toMatch(/created/i);
+    const failed = screen.getByTestId('welcome-result-startMenu');
+    expect(failed.getAttribute('role')).toBe('alert');
+    expect(failed.textContent).toMatch(/different file already uses that name/i);
+    expect(screen.getByRole('switch', { name: /desktop/i }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('switch', { name: /start menu/i }).hasAttribute('disabled')).toBe(false);
+    expect(screen.getByRole('button', { name: /skip/i })).toBeTruthy();
+
+    post.mockImplementation((location) => ({ status: 'created', location }));
+    fireEvent.click(screen.getByRole('button', { name: /try again/i }));
+    await settle();
+    expect(post).toHaveBeenCalledTimes(3);
+    expect(post.mock.calls[2]![0]).toBe('startMenu');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(toastEl()?.textContent).toContain('Desktop and Start Menu shortcuts');
+  });
+
+  it('lets Skip close the modal after a failure without a toast', async () => {
+    mockFetch(fullCaps, (location) => ({ status: 'failed', location, reason: 'unsupported' }));
+    await renderModal();
+    fireEvent.click(screen.getByRole('button', { name: /add shortcut/i }));
+    await settle();
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /skip/i }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(toastEl()).toBeNull();
+  });
+
+  it('turns the primary action into Skip when nothing is selected, closing without creating anything', async () => {
+    const fetchFn = mockFetch(fullCaps);
+    await renderModal();
+    fireEvent.click(screen.getByRole('switch', { name: /desktop/i }));
+    expect(screen.queryByRole('button', { name: /add shortcut/i })).toBeNull();
+    const buttons = screen.getAllByRole('button');
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0]!.textContent).toBe('Skip');
+    fireEvent.click(buttons[0]!);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(toastEl()).toBeNull();
+    expect(fetchFn.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(0);
+    expect(window.localStorage.getItem('readable-studio:welcome-modal-shown')).toBe('1');
+  });
+
+  it('shows a busy state and ignores a second submit while creating', async () => {
+    let release!: (value: Response) => void;
+    const gate = new Promise<Response>((resolve) => { release = resolve; });
+    const fetchFn = vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') return gate;
+      return jsonResponse(fullCaps);
+    });
+    vi.stubGlobal('fetch', fetchFn);
+    await renderModal();
+    const apply = screen.getByRole('button', { name: /add shortcut/i });
+    fireEvent.click(apply);
+    await settle();
+    const busyButton = screen.getByRole('button', { name: /adding/i });
+    expect(busyButton.getAttribute('aria-busy')).toBe('true');
+    expect(busyButton.hasAttribute('disabled')).toBe(true);
+    fireEvent.click(busyButton);
+    expect(fetchFn.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
+    release(jsonResponse({ status: 'created', location: 'desktop' }));
+    await settle();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(toastEl()).not.toBeNull();
   });
 
   it('does not block the app when the capability call fails', async () => {
