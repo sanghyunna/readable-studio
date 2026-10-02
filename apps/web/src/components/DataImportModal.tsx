@@ -19,7 +19,10 @@ export function DataImportModal({ onResolved }: { onResolved: () => void }) {
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
       if (!active) return;
-      const value = body as DataImportCandidatesResponse;
+      // Boundary: an unexpected body must never trap the user behind this gate.
+      // A missing candidate list reads as empty; an unrecognized state resolves.
+      const raw = (body ?? {}) as Partial<DataImportCandidatesResponse>;
+      const value = { ...raw, candidates: Array.isArray(raw.candidates) ? raw.candidates : [] } as DataImportCandidatesResponse;
       setResult(value);
       setSelected(value.candidates[0]?.sourceData ?? '');
       if (value.state === 'pending') setPending(true);
