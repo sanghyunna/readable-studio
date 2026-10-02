@@ -19,6 +19,9 @@
 // time inside `apps/packaged/src/protocol.ts`. Stub the module before
 // importing so the test environment doesn't need a real Electron
 // runtime.
+import { execFile } from 'node:child_process';
+import { createServer } from 'node:http';
+import { promisify } from 'node:util';
 import { vi } from 'vitest';
 
 vi.mock('electron', () => ({
@@ -37,6 +40,85 @@ afterEach(() => {
 });
 
 describe('readable-studio:// protocol proxy', () => {
+  it.each(['', 'example.com'])('keeps default and registered protocol traffic direct with dead proxy env and NO_PROXY=%s', async (noProxy) => {
+    const requests: { url: string; method: string; body: string; marker: string | undefined }[] = [];
+    const server = createServer((request, response) => {
+      const chunks: Buffer[] = [];
+      request.on('data', (chunk: Buffer) => chunks.push(chunk));
+      request.on('end', () => {
+        requests.push({ url: request.url ?? '', method: request.method ?? '', body: Buffer.concat(chunks).toString(), marker: request.headers['x-test-marker'] as string | undefined });
+        response.setHeader('x-sidecar', 'direct');
+        response.end('sidecar response');
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const address = server.address();
+      if (address === null || typeof address === 'string') throw new Error('Expected sidecar listener');
+      const env = { ...process.env };
+      for (const name of Object.keys(env)) if (/^(https?_proxy|all_proxy|no_proxy|node_use_env_proxy)$/i.test(name)) delete env[name];
+      Object.assign(env, { HTTP_PROXY: 'http://127.0.0.1:1', HTTPS_PROXY: 'http://127.0.0.1:1', NO_PROXY: noProxy, NODE_USE_ENV_PROXY: '1' });
+      const stub = 'export const protocol = { registerSchemesAsPrivileged() {}, handle(_scheme, handler) { globalThis.protocolHandler = handler; } };';
+      const source = `
+        import { registerHooks } from 'node:module';
+        registerHooks({ resolve(specifier, context, nextResolve) {
+          return specifier === 'electron' ? { url: ${JSON.stringify(`data:text/javascript,${encodeURIComponent(stub)}`)}, shortCircuit: true } : nextResolve(specifier, context);
+        } });
+        const { handleReadableStudioRequest, registerReadableStudioProtocol } = await import(${JSON.stringify(new URL('../src/protocol.ts', import.meta.url).href)});
+        const origin = ${JSON.stringify(`http://127.0.0.1:${address.port}`)};
+        registerReadableStudioProtocol(origin);
+        const results = [];
+        for (const handler of [request => handleReadableStudioRequest(request, origin), globalThis.protocolHandler]) {
+          const response = await handler(new Request('readable-studio://app/api/test?limit=2', { method: 'POST', headers: { 'x-test-marker': 'preserved' }, body: 'renderer body' }));
+          results.push({ status: response.status, header: response.headers.get('x-sidecar'), body: await response.text() });
+        }
+        console.log(JSON.stringify(results));
+      `;
+      const { stdout } = await promisify(execFile)(process.execPath, ['--import', new URL('../../../node_modules/tsx/dist/loader.mjs', import.meta.url).href, '--input-type=module', '-e', source], { env, windowsHide: true, timeout: 10000 });
+      expect(JSON.parse(stdout)).toEqual(Array.from({ length: 2 }, () => ({ status: 200, header: 'direct', body: 'sidecar response' })));
+      expect(requests).toEqual(Array.from({ length: 2 }, () => ({ url: '/api/test?limit=2', method: 'POST', body: 'renderer body', marker: 'preserved' })));
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => error ? reject(error) : resolve());
+        server.closeAllConnections();
+      });
+    }
+  }, 15000);
+
+  it('follows local redirects and streams the response before the sidecar finishes', async () => {
+    let finish: (() => void) | undefined;
+    const requests: string[] = [];
+    const server = createServer((request, response) => {
+      requests.push(request.url ?? '');
+      if (request.url === '/redirect') {
+        response.writeHead(302, { location: '/stream' }).end();
+      } else {
+        response.writeHead(200, { 'content-type': 'text/event-stream' });
+        response.write('first');
+        finish = () => response.end('last');
+      }
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const address = server.address();
+      if (address === null || typeof address === 'string') throw new Error('Expected sidecar listener');
+      const response = await handleReadableStudioRequest(new Request('readable-studio://app/redirect'), `http://127.0.0.1:${address.port}`);
+      expect(response.status).toBe(200);
+      const reader = response.body!.getReader();
+      expect(new TextDecoder().decode((await reader.read()).value)).toBe('first');
+      finish!();
+      expect(new TextDecoder().decode((await reader.read()).value)).toBe('last');
+      expect((await reader.read()).done).toBe(true);
+      expect(requests).toEqual(['/redirect', '/stream']);
+    } finally {
+      finish?.();
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => error ? reject(error) : resolve());
+        server.closeAllConnections();
+      });
+    }
+  });
+
   it('publishes the exact packaged entry URL without a legacy alias', () => {
     expect(packagedEntryUrl()).toBe('readable-studio://app/');
   });

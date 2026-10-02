@@ -1,3 +1,6 @@
+import { request as createHttpRequest } from 'node:http';
+import { request as createHttpsRequest } from 'node:https';
+import { Readable } from 'node:stream';
 import { protocol } from "electron";
 import type { StartupNoticeState } from './onedrive.js';
 
@@ -63,10 +66,58 @@ async function logReadableStudioProtocolResponse(response: Response, target: str
   );
 }
 
+async function fetchWebSidecar(input: RequestInfo | URL, init?: RequestInit, redirectsRemaining = 20): Promise<Response> {
+  const request = new Request(input, init);
+  const target = new URL(request.url);
+  const transport = target.protocol === 'https:' ? createHttpsRequest : createHttpRequest;
+  const headers = Object.fromEntries(request.headers);
+  // The response is streamed without fetch's automatic decompression.
+  headers['accept-encoding'] = 'identity';
+  const body = request.body === null ? null : Buffer.from(await request.arrayBuffer());
+  const response = await new Promise<Response>((resolve, reject) => {
+    // Never inherit an env-aware global agent for renderer-to-sidecar traffic.
+    const proxy = transport(target, { agent: false, method: request.method, headers, signal: request.signal }, (incoming) => {
+      const responseHeaders = new Headers();
+      for (let index = 0; index < incoming.rawHeaders.length; index += 2) {
+        responseHeaders.append(incoming.rawHeaders[index]!, incoming.rawHeaders[index + 1]!);
+      }
+      const status = incoming.statusCode ?? 502;
+      const empty = request.method === 'HEAD' || status === 204 || status === 205 || status === 304;
+      if (empty) incoming.resume();
+      resolve(new Response(empty ? null : Readable.toWeb(incoming) as ReadableStream<Uint8Array>, {
+        status, statusText: incoming.statusMessage, headers: responseHeaders,
+      }));
+    });
+    proxy.on('error', reject);
+    proxy.end(body);
+  });
+  const location = response.headers.get('location');
+  if (location !== null && [301, 302, 303, 307, 308].includes(response.status) && request.redirect !== 'manual') {
+    await response.body?.cancel();
+    if (request.redirect === 'error' || redirectsRemaining === 0) throw new TypeError('Sidecar redirect rejected');
+    const nextTarget = new URL(location, target);
+    const useGet = ((response.status === 301 || response.status === 302) && request.method === 'POST')
+      || (response.status === 303 && request.method !== 'GET' && request.method !== 'HEAD');
+    if (useGet) {
+      delete headers['content-type'];
+      delete headers['content-length'];
+    }
+    if (nextTarget.origin !== target.origin) {
+      delete headers.authorization;
+      delete headers.cookie;
+    }
+    return await fetchWebSidecar(nextTarget, {
+      method: useGet ? 'GET' : request.method, headers, body: useGet ? null : body,
+      signal: request.signal, redirect: request.redirect,
+    }, redirectsRemaining - 1);
+  }
+  return response;
+}
+
 /**
  * Inner request handler for the `readable-studio://` Electron protocol — every
  * renderer fetch flows through here and gets proxied to the local web
- * sidecar via Node's global `fetch` (which is undici under the hood).
+ * sidecar via a direct Node HTTP transport, independent of proxy environment.
  *
  * Pulled out as a named export so unit tests can drive it with a stub
  * `fetchImpl` without spinning up Electron, and so the try/catch
@@ -85,7 +136,7 @@ async function logReadableStudioProtocolResponse(response: Response, target: str
 export async function handleReadableStudioRequest(
   request: Request,
   webRuntimeUrl: string,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: typeof fetch = fetchWebSidecar,
   startupState?: StartupNoticeState,
 ): Promise<Response> {
   const incoming = new URL(request.url);
@@ -125,6 +176,6 @@ export function packagedEntryUrl(): string {
 // @dsp func-97bde04f
 export function registerReadableStudioProtocol(webRuntimeUrl: string, startupState?: StartupNoticeState): void {
   protocol.handle(READABLE_STUDIO_SCHEME, async (request) => {
-    return await handleReadableStudioRequest(request, webRuntimeUrl, fetch, startupState);
+    return await handleReadableStudioRequest(request, webRuntimeUrl, fetchWebSidecar, startupState);
   });
 }
