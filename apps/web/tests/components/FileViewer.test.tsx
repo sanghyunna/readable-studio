@@ -48,10 +48,12 @@ import type { InspectOverrideMap } from '../../src/components/FileViewer';
 import type { PreviewComment, ProjectFile } from '../../src/types';
 import { I18nProvider } from '../../src/i18n';
 import type { Dict } from '../../src/i18n/types';
+import { getEn } from '../../src/i18n/locales/en';
 import { emptyManualEditStyles } from '../../src/edit-mode/types';
 import { readExpandedIndexCss } from '../helpers/read-expanded-css';
 
 const TEST_SNAPSHOT_DATA_URL = 'data:image/png;base64,c25hcHNob3Q=';
+const en = getEn();
 
 async function renderFileViewerOnServer(props: ComponentProps<typeof FileViewer>) {
   // The static imports above belong to jsdom. SSR must select the server hook
@@ -2993,7 +2995,7 @@ describe('FileViewer tweaks toolbar', () => {
         liveHtml='<html><body><main>Hero</main></body></html>' />);
       fireEvent.click(screen.getByRole('button', { name: /download/i }));
       fireEvent.click(screen.getByRole('menuitem', { name: /export as image/i }));
-      expect((await screen.findByRole('alert')).textContent).toBe('Document is too tall to capture.');
+      expect((await screen.findByRole('alert')).textContent).toContain(en['fileViewer.captureTooLarge']);
       expect(capture).toHaveBeenCalledTimes(1);
     } finally {
       warn.mockRestore();
