@@ -72,6 +72,7 @@ describe('database migration safety', () => {
     future.pragma(`user_version = ${supportedVersion + 1}`);
     future.close();
     const before = fs.readFileSync(file);
+    const refusalLog = vi.spyOn(console, 'error').mockImplementation(() => {});
     let failure: unknown;
     try {
       const opened = mode === 'local' ? openLocal() : openHostedDatabaseAtPath(file);
@@ -79,6 +80,12 @@ describe('database migration safety', () => {
     } catch (error) {
       failure = error;
     }
+    const record = refusalLog.mock.calls.map(([line]) => JSON.parse(String(line)));
+    expect(record).toEqual([{
+      type: 'readable-studio:database-open-refusal',
+      code: 'SCHEMA_VERSION_NEWER', pid: process.pid,
+      databaseVersion: 2, supportedVersion: 1,
+    }]);
     expect(failure).toBeInstanceOf(DatabaseOpenError);
     expect(failure).toMatchObject({ code: 'SCHEMA_VERSION_NEWER', databaseVersion: 2, supportedVersion: 1 });
     expect((failure as Error).message).toMatch(/schema version 2.*supports.*1/);

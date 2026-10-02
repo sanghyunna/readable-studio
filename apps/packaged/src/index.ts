@@ -27,7 +27,7 @@ import { acquireDataLock, PackagedDataLockAccessError, PackagedDataLockError } f
 import { runPendingDataImport } from './data-import.js';
 import { createStartupNoticeState, detectOneDriveLocation, readOneDriveKnownFolder } from './onedrive.js';
 import { writePackagedDesktopIdentity } from "./identity.js";
-import { PackagedNetworkingRestoreError, PackagedPathAccessError } from "./errors.js";
+import { PackagedNetworkingRestoreError, PackagedPathAccessError, resolvePackagedStartupFailureDialog } from "./errors.js";
 import {
   applyPackagedElectronPathOverrides,
   claimPackagedSingleInstanceLock,
@@ -206,20 +206,10 @@ async function main(): Promise<void> {
     } catch (error) {
       packagedLogger?.error('sidecar startup failed', { error });
       const korean = app.getLocale().toLowerCase().startsWith('ko');
-      const { response } = await dialog.showMessageBox(splash.window, {
-        type: 'error',
-        title: 'Readable Studio',
-        message: korean
-          ? '데이터를 여는 중 문제가 발생했습니다. 데이터는 안전합니다.'
-          : 'There was a problem opening your data. Your data is safe.',
-        detail: korean
-          ? `데몬을 시작하지 못했습니다. 다시 시도하거나 로그를 확인하세요: ${paths.logsRoot}`
-          : `The daemon could not start. Retry or check the logs: ${paths.logsRoot}`,
-        buttons: korean ? ['다시 시도', '종료'] : ['Retry', 'Quit'],
-        defaultId: 0,
-        cancelId: 1,
-        noLink: true,
-      });
+      const { response } = await dialog.showMessageBox(
+        splash.window,
+        resolvePackagedStartupFailureDialog(error, korean, paths.logsRoot),
+      );
       if (response !== 0) throw error;
     }
   }

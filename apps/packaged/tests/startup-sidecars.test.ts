@@ -16,10 +16,11 @@ import {
 import { resolveAppIpcPath, type SidecarRuntimeContext } from "@readable-studio/sidecar";
 import { describe, expect, it, vi } from "vitest";
 
+import { PackagedNewerSchemaError, resolvePackagedStartupFailureDialog } from '../src/errors.js';
 import type { PackagedNamespacePaths } from "../src/paths.js";
 import { startPackagedSidecars, type PackagedSidecarHandle } from "../src/sidecars.js";
 
-type FixtureBehavior = "concurrent" | "fail" | "no-http" | "port-conflict-once" | "ready" | "stale";
+type FixtureBehavior = "concurrent" | "fail" | "newer-schema" | "no-http" | "port-conflict-once" | "ready" | "stale";
 
 function fixtureSource(
   app: "daemon" | "web",
@@ -51,6 +52,11 @@ writeFileSync(join(root, app + ".env.json"), JSON.stringify(Object.fromEntries([
   "NODE_OPTIONS", "NODE_TLS_REJECT_UNAUTHORIZED", "UNRELATED_SECRET",
 ].map((key) => [key, process.env[key]]))), "utf8");
 trace(app + ":spawned:" + (process.env.READABLE_PORT ?? ""));
+if (behavior === "newer-schema") {
+  console.error(JSON.stringify({ type: "readable-studio:database-open-refusal", code: "SCHEMA_VERSION_NEWER", pid: process.pid, databaseVersion: 9, supportedVersion: 1 }));
+  console.error("unrelated human-readable startup text");
+  process.exit(1);
+}
 if (behavior === "fail") {
   console.error(app + " fixture startup failed");
   process.exit(3);
@@ -288,6 +294,21 @@ describe("startPackagedSidecars", () => {
       rmSync(fixture.root, { force: true, recursive: true });
     }
   });
+
+  it("carries machine-readable newer-schema refusal from the exited daemon to the dialog", async () => {
+    const fixture = createFixtureHarness("newer-schema", "ready");
+    try {
+      let failure: unknown;
+      try { await fixture.start(); } catch (error) { failure = error; }
+      expect(failure).toBeInstanceOf(PackagedNewerSchemaError);
+      expect(failure).toMatchObject({ code: 'SCHEMA_VERSION_NEWER', databaseVersion: 9, supportedVersion: 1 });
+      const dialog = resolvePackagedStartupFailureDialog(failure, true, fixture.root);
+      expect(dialog).toMatchObject({ defaultId: 1, cancelId: 1 });
+      expect(readFileSync(join(fixture.fixturesRoot, 'trace.log'), 'utf8')).toContain('web:shutdown');
+    } finally {
+      rmSync(fixture.root, { force: true, recursive: true });
+    }
+  }, 15000);
 
   it("stops web when daemon startup fails", async () => {
     const fixture = createFixtureHarness("fail", "ready");

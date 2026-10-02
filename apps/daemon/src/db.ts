@@ -106,6 +106,14 @@ export class DatabaseSnapshotError extends DatabaseOpenError {
 function assertSupportedSchema(db: SqliteDb, file: string): number {
   const version = db.pragma('user_version', { simple: true }) as number;
   if (version > DATABASE_SCHEMA_VERSION) {
+    // Startup can fail before IPC exists. stderr is the packaged child's log
+    // file, so emit a structured refusal before the sidecar exits. Do not touch
+    // the database or depend on a launcher parsing the human-readable error.
+    console.error(JSON.stringify({
+      type: 'readable-studio:database-open-refusal',
+      code: 'SCHEMA_VERSION_NEWER', pid: process.pid,
+      databaseVersion: version, supportedVersion: DATABASE_SCHEMA_VERSION,
+    }));
     throw new DatabaseSchemaVersionError(file, version, DATABASE_SCHEMA_VERSION);
   }
   return version;

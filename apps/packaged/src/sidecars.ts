@@ -36,6 +36,7 @@ import {
 
 import { isPortableAppLayout, resolvePortableTopFolder, type PackagedWebOutputMode } from "./config.js";
 import type { PackagedNamespacePaths } from "./paths.js";
+import { parsePackagedDatabaseRefusal } from './errors.js';
 import {
   createPackagedStartupPhaseTimer,
   type PackagedStartupPhaseLogger,
@@ -646,6 +647,15 @@ export async function startPackagedSidecars(
     } catch (error) {
       for (const child of [...children].reverse()) {
         await closeManagedChild(child).catch(() => undefined);
+      }
+      const daemonChild = children.find((child) => child.app === APP_KEYS.DAEMON);
+      if (daemonChild != null) {
+        const log = await readFile(daemonChild.logPath, 'utf8');
+        const refusal = parsePackagedDatabaseRefusal(log, daemonChild.child.pid);
+        if (refusal != null) {
+          refusal.cause = error;
+          throw refusal;
+        }
       }
       if (
         attempt === 0 &&
