@@ -14,6 +14,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import postcss, { type Rule } from 'postcss';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InstalledPluginRecord } from '@readable-studio/contracts';
 
@@ -246,6 +247,43 @@ describe('Hub template carousel', () => {
       vi.unstubAllGlobals();
       __resetHtmlSurfaceProbeCacheForTests();
     }
+  });
+
+  it('styles the rail scrollbar as the product\'s slim thumb-only bar, not the native one', () => {
+    // `scrollbar-width: thin` alone rendered Chromium's native Windows
+    // scrollbar, arrow buttons included, and any standard `scrollbar-width` /
+    // `scrollbar-color` makes Chromium ignore the ::-webkit pseudo-elements.
+    // So the rail owns neither and styles the pseudo-elements with the
+    // `.chat-log` thumb geometry and ink, buttons removed, existing tokens only.
+    const css = readFileSync(resolve(__dirname, '../../src/styles/home/home-hero.css'), 'utf8');
+    const rules = new Map<string, Record<string, string>>();
+    postcss.parse(css).walkRules((rule: Rule) => {
+      if (!rule.selector.includes('home-hero__templates-rail')) return;
+      const decls: Record<string, string> = rules.get(rule.selector) ?? {};
+      rule.walkDecls((decl) => { decls[decl.prop] = decl.value; });
+      rules.set(rule.selector, decls);
+    });
+    const rail = rules.get('.home-hero__templates-rail')!;
+    expect(rail['overflow-x']).toBe('auto');
+    expect(rail['scrollbar-width']).toBeUndefined();
+    expect(rail['scrollbar-color']).toBeUndefined();
+    expect(rules.get('.home-hero__templates-rail::-webkit-scrollbar')?.height).toBe('8px');
+    expect(rules.get('.home-hero__templates-rail::-webkit-scrollbar-button')?.display).toBe('none');
+    expect(rules.get('.home-hero__templates-rail::-webkit-scrollbar-track')?.background).toBe('transparent');
+    const thumb = rules.get('.home-hero__templates-rail::-webkit-scrollbar-thumb')!;
+    expect(thumb.background).toBe('color-mix(in srgb, var(--text-muted) 18%, transparent)');
+    expect(thumb.background).not.toMatch(/#|rgba?\(/);
+    expect(thumb['background-clip']).toBe('padding-box');
+    expect(thumb['border-radius']).toBe('var(--radius)');
+    expect(rules.get('.home-hero__templates-rail:hover::-webkit-scrollbar-thumb')?.background)
+      .toBe('color-mix(in srgb, var(--text-muted) 28%, transparent)');
+    // The same shape the transcript ships, so the two never drift.
+    const chat = readFileSync(resolve(__dirname, '../../src/styles/chat.css'), 'utf8');
+    let chatThumb = '';
+    postcss.parse(chat).walkRules('.chat-log::-webkit-scrollbar-thumb', (rule: Rule) => {
+      rule.walkDecls('background', (decl) => { chatThumb = decl.value; });
+    });
+    expect(thumb.background).toBe(chatThumb);
   });
 
   it('no longer renders the separate drop-to-edit zone', () => {

@@ -18,6 +18,12 @@
 // done, so the user can retry just the failed target or skip. With nothing
 // selected the primary action IS Skip (one button, labelled with what it
 // does) instead of a disabled "Add" beside a working ghost button.
+//
+// Closing plays the exit half of the shared modal motion: the surface stays
+// mounted with a `closing` class until its CSS exit animation ends (or the
+// EXIT_FALLBACK_MS safety net fires), gated `inert` so the fading buttons
+// cannot be pressed or focused, and only then unmounts. Reduced motion skips
+// the phase and unmounts at once.
 import { useEffect, useRef, useState } from 'react';
 import { Button, Switch } from '@readable-studio/components';
 import type { ShortcutCapabilities, ShortcutCreateResult, ShortcutLocation } from '@readable-studio/contracts';
@@ -28,6 +34,12 @@ import styles from './WelcomeModal.module.css';
 
 const STORAGE_KEY = 'readable-studio:welcome-modal-shown';
 export const SHOW_DELAY_MS = 2000;
+// Exit beat; kept in sync with `--dur-exit` (tokens.css), which the CSS module
+// animates on. The fallback covers a missing `animationend` (a tab hidden
+// mid-exit, a low-spec stylesheet collapsing the animation) so the modal can
+// never be stranded mounted-but-invisible.
+export const EXIT_MS = 140;
+export const EXIT_FALLBACK_MS = EXIT_MS + 60;
 const LOCATIONS: ShortcutLocation[] = ['desktop', 'startMenu'];
 
 function readShown(): boolean {
@@ -83,6 +95,7 @@ export function WelcomeModal() {
   const t = useT();
   const [caps, setCaps] = useState<ShortcutCapabilities | null>(null);
   const [open, setOpen] = useState(false);
+  const [closing, setClosing] = useState(false);
   const [chosen, setChosen] = useState<Record<ShortcutLocation, boolean>>({ desktop: true, startMenu: false });
   const [results, setResults] = useState<Partial<Record<ShortcutLocation, ShortcutCreateResult>>>({});
   const [busy, setBusy] = useState(false);
@@ -90,6 +103,9 @@ export function WelcomeModal() {
   // setState is async, so a second click in the same tick would slip past the
   // `busy` render guard; the ref closes that window.
   const inFlight = useRef(false);
+  // Same reasoning for the exit: two dismissals in one tick must resolve once.
+  const closingRef = useRef(false);
+  const dialogRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (readShown()) return;
@@ -112,11 +128,50 @@ export function WelcomeModal() {
     };
   }, []);
 
-  useEscapeDismiss(() => setOpen(false), open && !busy);
+  // The exit phase: unmount when the dialog's own exit animation ends, or on
+  // the fallback timer. The `animationend` listener is native rather than
+  // React's `onAnimationEnd` on purpose: React resolves that prop through
+  // vendor-prefix sniffing that yields no event name where `AnimationEvent`
+  // is absent, so the handler would silently never run in such a DOM.
+  useEffect(() => {
+    if (!closing) return;
+    const dialog = dialogRef.current;
+    const unmountModal = () => {
+      closingRef.current = false;
+      setClosing(false);
+      setOpen(false);
+    };
+    const onAnimationEnd = (event: Event) => {
+      // Only the dialog's own exit counts: descendants' animations bubble up
+      // through this node.
+      if (event.target !== event.currentTarget) return;
+      unmountModal();
+    };
+    dialog?.addEventListener('animationend', onAnimationEnd);
+    const timer = window.setTimeout(unmountModal, EXIT_FALLBACK_MS);
+    return () => {
+      dialog?.removeEventListener('animationend', onAnimationEnd);
+      window.clearTimeout(timer);
+    };
+  }, [closing]);
 
-  if (!open || !caps) {
-    return toast ? <Toast message={toast} tone="success" onDismiss={() => setToast(null)} /> : null;
+  function startClose() {
+    if (closingRef.current) return;
+    const reduceMotion =
+      typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduceMotion) {
+      setOpen(false);
+      return;
+    }
+    closingRef.current = true;
+    setClosing(true);
   }
+
+  useEscapeDismiss(startClose, open && !busy && !closing);
+
+  const toastNode = toast ? <Toast message={toast} tone="success" onDismiss={() => setToast(null)} /> : null;
+
+  if (!open || !caps) return toastNode;
 
   const offered = LOCATIONS.filter((location) => caps[location]);
   const selected = offered.filter((location) => chosen[location]);
@@ -129,7 +184,7 @@ export function WelcomeModal() {
       const both = made.includes('desktop') && made.includes('startMenu');
       setToast(t(both ? 'welcome.toast.both' : made[0] === 'desktop' ? 'welcome.toast.desktop' : 'welcome.toast.startMenu'));
     }
-    setOpen(false);
+    startClose();
   }
 
   async function apply() {
@@ -170,63 +225,75 @@ export function WelcomeModal() {
         : { label: t('welcome.skip'), onClick: () => finish([]) };
 
   return (
-    <div className={`modal-backdrop ${styles.backdrop}`} role="presentation">
-      <section
-        className={`modal ${styles.modal}`}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="welcome-modal-title"
-        data-testid="welcome-modal"
+    <>
+      <div
+        className={`modal-backdrop ${styles.backdrop}${closing ? ` ${styles.closing}` : ''}`}
+        role="presentation"
+        data-closing={closing ? 'true' : undefined}
+        // React 18 cannot serialize inert as a boolean prop; use the DOM boolean API.
+        ref={(node) => {
+          node?.toggleAttribute('inert', closing);
+        }}
       >
-        <header className={styles.head}>
-          <h2 id="welcome-modal-title">{t('welcome.title')}</h2>
-          <p className={styles.intro}>{t('welcome.intro')}</p>
-        </header>
+        <section
+          className={`modal ${styles.modal}`}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="welcome-modal-title"
+          data-testid="welcome-modal"
+          ref={dialogRef}
+        >
+          <header className={styles.head}>
+            <h2 id="welcome-modal-title">{t('welcome.title')}</h2>
+            <p className={styles.intro}>{t('welcome.intro')}</p>
+          </header>
 
-        {offered.length > 0 ? (
-          <div className={styles.shortcuts} role="group" aria-label={t('welcome.shortcutsHeading')}>
-            <p className={styles.sectionLabel}>{t('welcome.shortcutsHeading')}</p>
-            {offered.map((location) => {
-              const result = results[location];
-              return (
-                <div key={location} className={styles.row}>
-                  <Switch
-                    className={styles.switch}
-                    checked={chosen[location]}
-                    disabled={busy || succeeded(location)}
-                    onCheckedChange={(checked) => setChosen((prev) => ({ ...prev, [location]: checked }))}
-                    data-location={location}
-                  >
-                    {t(location === 'desktop' ? 'welcome.desktop' : 'welcome.startMenu')}
-                  </Switch>
-                  {result ? (
-                    <p
-                      className={result.status === 'failed' ? styles.resultFailed : styles.result}
-                      role={result.status === 'failed' ? 'alert' : 'status'}
-                      data-testid={`welcome-result-${location}`}
+          {offered.length > 0 ? (
+            <div className={styles.shortcuts} role="group" aria-label={t('welcome.shortcutsHeading')}>
+              <p className={styles.sectionLabel}>{t('welcome.shortcutsHeading')}</p>
+              {offered.map((location) => {
+                const result = results[location];
+                return (
+                  <div key={location} className={styles.row}>
+                    <Switch
+                      className={styles.switch}
+                      checked={chosen[location]}
+                      disabled={busy || succeeded(location)}
+                      onCheckedChange={(checked) => setChosen((prev) => ({ ...prev, [location]: checked }))}
+                      data-location={location}
                     >
-                      {resultText(result)}
-                    </p>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-        ) : null}
-
-        <p className={styles.hint}>{t('welcome.taskbarHint')}</p>
-
-        <footer className={styles.foot}>
-          {pending.length > 0 ? (
-            <Button variant="ghost" onClick={() => finish([])} disabled={busy}>
-              {t('welcome.skip')}
-            </Button>
+                      {t(location === 'desktop' ? 'welcome.desktop' : 'welcome.startMenu')}
+                    </Switch>
+                    {result ? (
+                      <p
+                        className={result.status === 'failed' ? styles.resultFailed : styles.result}
+                        role={result.status === 'failed' ? 'alert' : 'status'}
+                        data-testid={`welcome-result-${location}`}
+                      >
+                        {resultText(result)}
+                      </p>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
           ) : null}
-          <Button variant="primary" onClick={primary.onClick} disabled={busy} aria-busy={busy || undefined}>
-            {primary.label}
-          </Button>
-        </footer>
-      </section>
-    </div>
+
+          <p className={styles.hint}>{t('welcome.taskbarHint')}</p>
+
+          <footer className={styles.foot}>
+            {pending.length > 0 ? (
+              <Button variant="ghost" onClick={() => finish([])} disabled={busy}>
+                {t('welcome.skip')}
+              </Button>
+            ) : null}
+            <Button variant="primary" onClick={primary.onClick} disabled={busy} aria-busy={busy || undefined}>
+              {primary.label}
+            </Button>
+          </footer>
+        </section>
+      </div>
+      {toastNode}
+    </>
   );
 }

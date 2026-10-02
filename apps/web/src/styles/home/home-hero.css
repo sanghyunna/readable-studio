@@ -2551,7 +2551,33 @@
   overscroll-behavior-x: contain;
   scroll-snap-type: x proximity;
   padding: 2px 2px 8px;
-  scrollbar-width: thin;
+  /* Slim thumb-only bar, same geometry and ink as the chat transcript
+     (`.chat-log`, chat.css): 8px gutter, 4px thumb inset by a transparent
+     border, transparent track, one ink at two alphas (rest / hover).
+     Deliberately NO `scrollbar-width` / `scrollbar-color` here: Chromium
+     ignores the ::-webkit-scrollbar pseudo-elements the moment either
+     standard property is set and paints its own bar instead - the native
+     Windows one with arrow buttons the owner flagged. The pseudo-element
+     route is the only one that drops the buttons. */
+}
+.home-hero__templates-rail::-webkit-scrollbar {
+  height: 8px;
+}
+.home-hero__templates-rail::-webkit-scrollbar-button {
+  display: none;
+}
+.home-hero__templates-rail::-webkit-scrollbar-track {
+  background: transparent;
+}
+.home-hero__templates-rail::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-muted) 18%, transparent);
+  border-radius: var(--radius);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.home-hero__templates-rail:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-muted) 28%, transparent);
+  background-clip: padding-box;
 }
 
 .home-hero__template-card {

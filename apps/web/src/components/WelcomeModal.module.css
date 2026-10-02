@@ -7,6 +7,36 @@
   gap: 16px;
 }
 
+/* Exit mirrors the shared modal entrance (`fade-in` / `pop-in`, mention-
+   home.css) in reverse at the product exit beat: --dur-exit on --ease-out,
+   never ease-in. `forwards` holds the final transparent frame until the
+   component unmounts on animationend, so the surface cannot flash back.
+   The component gates the whole subtree with `inert` for the same window. */
+.closing.backdrop {
+  animation: welcome-backdrop-out var(--dur-exit) var(--ease-out) forwards;
+}
+
+.closing .modal {
+  animation: welcome-modal-out var(--dur-exit) var(--ease-out) forwards;
+}
+
+@keyframes welcome-backdrop-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes welcome-modal-out {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(6px) scale(0.98); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .closing.backdrop,
+  .closing .modal {
+    animation: none;
+  }
+}
+
 .head {
   display: flex;
   flex-direction: column;

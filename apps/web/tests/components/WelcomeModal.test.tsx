@@ -2,7 +2,7 @@
 
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SHOW_DELAY_MS, WelcomeModal } from '../../src/components/WelcomeModal';
+import { EXIT_FALLBACK_MS, EXIT_MS, SHOW_DELAY_MS, WelcomeModal } from '../../src/components/WelcomeModal';
 
 type Caps = { desktop: boolean; startMenu: boolean; taskbar: false; startPinned: false; reason?: string };
 
@@ -50,6 +50,23 @@ function toastEl(): HTMLElement | null {
 async function renderModal() {
   render(<WelcomeModal />);
   await elapse(SHOW_DELAY_MS);
+}
+
+// A dismissal keeps the dialog mounted in its closing phase until the CSS
+// exit animation reports `animationend`; jsdom runs no animations, so the
+// tests end the exit explicitly. Asserts the phase itself on the way.
+function backdropEl(): HTMLElement {
+  return document.querySelector('.modal-backdrop') as HTMLElement;
+}
+
+async function finishExit() {
+  const dialog = screen.getByRole('dialog');
+  expect(backdropEl().getAttribute('data-closing')).toBe('true');
+  expect(backdropEl().hasAttribute('inert')).toBe(true);
+  await act(async () => {
+    fireEvent.animationEnd(dialog);
+  });
+  expect(screen.queryByRole('dialog')).toBeNull();
 }
 
 beforeEach(() => {
@@ -158,7 +175,9 @@ describe('WelcomeModal', () => {
     fireEvent.click(screen.getByRole('switch', { name: /start menu/i }));
     fireEvent.click(screen.getByRole('button', { name: /add shortcut/i }));
     await settle();
-    expect(screen.queryByRole('dialog')).toBeNull();
+    // The toast is up while the modal is still fading out.
+    expect(toastEl()).not.toBeNull();
+    await finishExit();
     const posted = fetchFn.mock.calls
       .filter(([, init]) => init?.method === 'POST')
       .map(([, init]) => (JSON.parse(String(init!.body)) as { location: string }).location);
@@ -174,7 +193,7 @@ describe('WelcomeModal', () => {
     await renderModal();
     fireEvent.click(screen.getByRole('button', { name: /add shortcut/i }));
     await settle();
-    expect(screen.queryByRole('dialog')).toBeNull();
+    await finishExit();
     expect(toastEl()?.textContent).toContain('Desktop shortcut');
   });
 
@@ -183,7 +202,7 @@ describe('WelcomeModal', () => {
     await renderModal();
     fireEvent.click(screen.getByRole('button', { name: /add shortcut/i }));
     await settle();
-    expect(screen.queryByRole('dialog')).toBeNull();
+    await finishExit();
     expect(toastEl()).not.toBeNull();
   });
 
@@ -212,7 +231,7 @@ describe('WelcomeModal', () => {
     await settle();
     expect(post).toHaveBeenCalledTimes(3);
     expect(post.mock.calls[2]![0]).toBe('startMenu');
-    expect(screen.queryByRole('dialog')).toBeNull();
+    await finishExit();
     expect(toastEl()?.textContent).toContain('Desktop and Start Menu shortcuts');
   });
 
@@ -223,7 +242,7 @@ describe('WelcomeModal', () => {
     await settle();
     expect(screen.getByRole('dialog')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /skip/i }));
-    expect(screen.queryByRole('dialog')).toBeNull();
+    await finishExit();
     expect(toastEl()).toBeNull();
   });
 
@@ -236,7 +255,7 @@ describe('WelcomeModal', () => {
     expect(buttons).toHaveLength(1);
     expect(buttons[0]!.textContent).toBe('Skip');
     fireEvent.click(buttons[0]!);
-    expect(screen.queryByRole('dialog')).toBeNull();
+    await finishExit();
     expect(toastEl()).toBeNull();
     expect(fetchFn.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(0);
     expect(window.localStorage.getItem('readable-studio:welcome-modal-shown')).toBe('1');
@@ -261,8 +280,90 @@ describe('WelcomeModal', () => {
     expect(fetchFn.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
     release(jsonResponse({ status: 'created', location: 'desktop' }));
     await settle();
-    expect(screen.queryByRole('dialog')).toBeNull();
+    await finishExit();
     expect(toastEl()).not.toBeNull();
+  });
+
+  describe('exit animation', () => {
+    it('keeps the dialog mounted and inert in a closing state until animationend, then unmounts', async () => {
+      mockFetch(fullCaps);
+      await renderModal();
+      const dialog = screen.getByRole('dialog');
+      expect(backdropEl().getAttribute('data-closing')).toBeNull();
+      expect(backdropEl().hasAttribute('inert')).toBe(false);
+
+      fireEvent.click(screen.getByRole('button', { name: /skip/i }));
+      // Still mounted: the exit has to be painted before the unmount.
+      expect(screen.getByRole('dialog')).toBe(dialog);
+      expect(backdropEl().getAttribute('data-closing')).toBe('true');
+      expect(backdropEl().hasAttribute('inert')).toBe(true);
+
+      // A descendant's animationend bubbling through the dialog is not the exit.
+      await act(async () => {
+        fireEvent.animationEnd(screen.getByRole('heading', { level: 2 }));
+      });
+      expect(screen.getByRole('dialog')).toBe(dialog);
+
+      await act(async () => {
+        fireEvent.animationEnd(dialog);
+      });
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(window.localStorage.getItem('readable-studio:welcome-modal-shown')).toBe('1');
+    });
+
+    it('unmounts on the fallback timer when animationend never arrives', async () => {
+      mockFetch(fullCaps);
+      await renderModal();
+      fireEvent.click(screen.getByRole('button', { name: /skip/i }));
+      expect(backdropEl().getAttribute('data-closing')).toBe('true');
+      await elapse(EXIT_MS);
+      expect(screen.getByRole('dialog')).toBeTruthy();
+      await elapse(EXIT_FALLBACK_MS - EXIT_MS);
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    it('resolves a dismissal exactly once: repeat presses and Escape during the exit are ignored', async () => {
+      const fetchFn = mockFetch(fullCaps);
+      await renderModal();
+      fireEvent.click(screen.getByRole('switch', { name: /start menu/i }));
+      fireEvent.click(screen.getByRole('button', { name: /add shortcut/i }));
+      await settle();
+      expect(document.querySelectorAll('.readable-toast')).toHaveLength(1);
+      const postsBefore = fetchFn.mock.calls.filter(([, init]) => init?.method === 'POST').length;
+
+      // jsdom does not enforce `inert`, so the component's own guard is what
+      // these presses exercise.
+      fireEvent.click(screen.getByRole('button', { name: /skip|done|add shortcut/i }));
+      fireEvent.keyDown(document, { key: 'Escape' });
+      await settle();
+      expect(screen.getByRole('dialog')).toBeTruthy();
+      expect(document.querySelectorAll('.readable-toast')).toHaveLength(1);
+      expect(fetchFn.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(postsBefore);
+
+      await finishExit();
+      expect(document.querySelectorAll('.readable-toast')).toHaveLength(1);
+      expect(toastEl()?.textContent).toContain('Desktop and Start Menu shortcuts');
+      // The fallback timer was cleared by animationend: nothing fires later.
+      await elapse(EXIT_FALLBACK_MS);
+      expect(document.querySelectorAll('.readable-toast')).toHaveLength(1);
+    });
+
+    it('closes instantly under prefers-reduced-motion', async () => {
+      vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: query.includes('reduce'), media: query })));
+      mockFetch(fullCaps);
+      await renderModal();
+      fireEvent.click(screen.getByRole('button', { name: /skip/i }));
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    it('routes Escape through the same exit', async () => {
+      mockFetch(fullCaps);
+      await renderModal();
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.getByRole('dialog')).toBeTruthy();
+      await finishExit();
+      expect(toastEl()).toBeNull();
+    });
   });
 
   it('does not block the app when the capability call fails', async () => {
