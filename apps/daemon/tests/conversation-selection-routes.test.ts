@@ -4,6 +4,7 @@ import { promisify } from 'node:util';
 import type { ConversationResponse, ConversationsResponse, CreateProjectResponse } from '@readable-studio/contracts';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { startServer } from '../src/server.js';
+import { withFakeAgent } from './helpers/fake-agent.js';
 let server: http.Server;
 let base: string;
 beforeAll(async () => {
@@ -20,7 +21,7 @@ async function request<T = ConversationResponse>(route: string, method = 'GET', 
   expect(response.ok).toBe(true);
   return response.json() as Promise<T>;
 }
-it('copies recent selection for new sessions, persists independently, and rejects a no-model run even with a global request model', async () => {
+it('copies recent selection for new sessions, persists independently, and honors explicit per-turn choices', async () => {
   const initial = { agentId: 'codex', agentModels: { codex: { model: 'model-a' } } };
   await request('/api/app-config', 'PUT', initial);
   const project = await request<CreateProjectResponse>('/api/projects', 'POST', { id: 'selection-project', name: 'Selection' });
@@ -35,9 +36,26 @@ it('copies recent selection for new sessions, persists independently, and reject
   await request(`${route}/${a}`, 'PATCH', { selection: empty });
   expect((await request(`${route}/${b}`)).conversation.selection).toEqual(next);
   expect((await request<ConversationsResponse>(route)).conversations.find(c => c.id === a)?.selection).toEqual(empty);
-  const run = await fetch(`${base}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ projectId: 'selection-project', conversationId: a, agentId: 'claude', model: 'global-model', message: 'hello' }) });
-  expect(run.status).toBe(400);
+  await withFakeAgent('opencode', `
+process.stdin.resume();
+process.stdin.on('end', () => {
+  console.log(JSON.stringify({ type: 'text', part: { text: 'explicit-selection-ok' } }));
+  process.exit(0);
+});
+`, async () => {
+    const run = await fetch(`${base}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ projectId: 'selection-project', conversationId: a, agentId: 'opencode', model: 'openai/gpt-5', message: 'hello' }) });
+    const body = await run.text();
+    expect(run.ok, body).toBe(true);
+    expect(body).toContain('explicit-selection-ok');
+    const missingModel = await fetch(`${base}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ projectId: 'selection-project', conversationId: a, agentId: 'opencode', model: null, message: 'hello' }) });
+    const missingModelBody = await missingModel.text();
+    expect(missingModelBody).toContain('"code":"MODEL_SELECTION_REQUIRED"');
+    expect(missingModelBody).toContain('"status":"failed"');
+    expect(missingModelBody).not.toContain('explicit-selection-ok');
+  });
+  expect((await request(`${route}/${a}`)).conversation.selection).toEqual(empty);
   const invalid = await fetch(`${base}${route}/${a}`, { method: 'PATCH', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ selection: { agentId: 3, agentModels: {} } }) });
   expect(invalid.status).toBe(400);

@@ -264,6 +264,54 @@ process.stdin.on('end', () => {
     }
   });
 
+  it.each(['legacy-null', 'explicit-override', 'stored-fallback'] as const)(
+    'runs with %s conversation selection without replacing a per-turn choice', async (mode) => {
+      const projectId = `proj-${randomUUID()}`;
+      const created = await fetch(`${baseUrl}/api/projects`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: projectId, name: 'Selection compatibility' }),
+      });
+      expect(created.ok).toBe(true);
+      const { conversationId } = await created.json() as { conversationId: string };
+      const selection = mode === 'stored-fallback'
+        ? { agentId: 'opencode', agentModels: { opencode: { model: 'openai/gpt-5' } } }
+        : { agentId: 'unknown-selection-agent', agentModels: { 'unknown-selection-agent': { model: 'stored-model' } } };
+      const sqlite = new Database(resolve(process.env.READABLE_DATA_DIR!, 'app.sqlite'));
+      try {
+        sqlite.prepare('UPDATE conversations SET selection_json = ? WHERE id = ?')
+          .run(mode === 'legacy-null' ? null : JSON.stringify(selection), conversationId);
+      } finally { sqlite.close(); }
+      await withFakeAgent('opencode', `
+process.stdin.resume();
+process.stdin.on('end', () => {
+  console.log(JSON.stringify({ type: 'text', part: { text: 'selection-compatible-run' } }));
+  process.exit(0);
+});
+`, async () => {
+        const response = await fetch(`${baseUrl}/api/chat`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectId, conversationId, message: 'hello',
+            ...(mode === 'stored-fallback' ? {} : { agentId: 'opencode', model: 'openai/gpt-5' }) }),
+        });
+        const body = await response.text();
+        expect(response.ok, body).toBe(true);
+        expect(body).toContain('selection-compatible-run');
+        const startFrame = body.split(/\r?\n\r?\n/).find(frame => frame.includes('event: start\n'));
+        expect(startFrame).toBeDefined();
+        const start = JSON.parse(startFrame!.slice(startFrame!.indexOf('\ndata: ') + '\ndata: '.length)) as { agentId: string; model: string };
+        expect(start).toMatchObject({ agentId: 'opencode', model: 'openai/gpt-5' });
+      });
+      const response = await fetch(`${baseUrl}/api/runs?conversationId=${conversationId}`);
+      const { runs } = await response.json() as { runs: Array<{ agentId: string; status: string }> };
+      expect(runs).toHaveLength(1);
+      expect(runs[0]).toMatchObject({ agentId: 'opencode', status: 'succeeded' });
+      const details = await fetch(`${baseUrl}/api/projects/${projectId}/conversations/${conversationId}`);
+      const { conversation } = await details.json() as { conversation: { selection: unknown } };
+      if (mode === 'legacy-null') expect(conversation.selection).not.toBeNull();
+      else expect(conversation.selection).toEqual(selection);
+    },
+  );
+
   it('rewrites the OpenCode scanner overflow into a generic retry message', async () => {
     const conversationId = `conv-${randomUUID()}`;
 

@@ -13521,14 +13521,14 @@ export async function startServer({
         const lastRun = design.runs.list({ conversationId: existing.id }).sort((a, b) => b.createdAt - a.createdAt)[0];
         const conversation = initializeConversationSelection(db, existing.id, recent, lastRun);
         const selection = conversation.selection;
-        requestBody.agentId = selection.agentId;
-        const choice = selection.agentId ? selection.agentModels[selection.agentId] : null;
-        requestBody.model = choice?.model;
-        requestBody.reasoning = choice?.reasoning;
+        // Explicit per-turn choices are also used by CLI and automation callers.
+        // Only omitted fields inherit the session selection; runtime validation
+        // remains responsible for rejecting missing or unsupported models.
+        requestBody.agentId ??= selection.agentId;
+        const choice = requestBody.agentId ? selection.agentModels[requestBody.agentId] : null;
+        if (requestBody.model === undefined) requestBody.model = choice?.model;
+        if (requestBody.reasoning === undefined) requestBody.reasoning = choice?.reasoning;
         await writeAppConfig(RUNTIME_DATA_DIR, selection);
-        if (!requestBody.agentId || !requestBody.model?.trim()) {
-          return sendApiError(res, 400, 'BAD_REQUEST', 'Select an agent and model for this session first.');
-        }
       }
     }
     const toolBundle = parseRunToolBundleForRequest(requestBody.toolBundle);
