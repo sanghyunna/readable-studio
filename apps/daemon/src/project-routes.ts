@@ -1,4 +1,5 @@
 import { rm } from 'node:fs/promises';
+import { initializeConversationSelection, isConversationSelection, recentConversationSelection } from './conversation-selection.js';
 import { copyMessagePrefix, getMessagePosition, listMessagePage } from './db.js';
 import { registerMessageHistoryRoutes } from './message-history-routes.js';
 import path from 'node:path';
@@ -1048,6 +1049,7 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
               id: randomUUID(),
               projectId: manifest.id,
               title: null,
+              selection: recentConversationSelection(await readAppConfig(ctx.paths.RUNTIME_DATA_DIR)),
               createdAt: now,
               updatedAt: now,
             });
@@ -1118,6 +1120,9 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
     try {
       const { id, name, projectLocationId, skillId, designSystemId, pendingPrompt, metadata, customInstructions, skipDiscoveryBrief } =
         req.body || {};
+      if (req.body?.selection !== undefined && !isConversationSelection(req.body.selection)) {
+        return sendApiError(res, 400, 'BAD_REQUEST', 'Invalid conversation selection');
+      }
       if (typeof id !== 'string' || !isSafeId(id)) {
         return sendApiError(res, 400, 'BAD_REQUEST', 'invalid project id');
       }
@@ -1260,6 +1265,7 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
         projectId: id,
         title: null,
         sessionMode: initialSessionMode,
+        selection: req.body?.selection ?? recentConversationSelection(await readAppConfig(ctx.paths.RUNTIME_DATA_DIR)),
         createdAt: now,
         updatedAt: now,
       });
@@ -1530,7 +1536,19 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
     res.json({ conversations: listConversations(db, req.params.id) });
   });
 
-  app.post('/api/projects/:id/conversations', (req, res) => {
+  app.get(['/api/projects/:id/conversations/:cid', '/api/conversations/:cid'], async (req, res) => {
+    const conversation = getConversation(db, req.params.cid);
+    if (!conversation || (req.params.id && conversation.projectId !== req.params.id)) return res.status(404).json({ error: 'not found' });
+    const recent = recentConversationSelection(await readAppConfig(ctx.paths.RUNTIME_DATA_DIR));
+    const lastRun = design.runs.list({ projectId: conversation.projectId, conversationId: req.params.cid })
+      .sort((a: { createdAt: number }, b: { createdAt: number }) => b.createdAt - a.createdAt)[0];
+    res.json({ conversation: initializeConversationSelection(db, conversation.id, recent, lastRun) });
+  });
+
+  app.post('/api/projects/:id/conversations', async (req, res) => {
+    if (req.body?.selection !== undefined && !isConversationSelection(req.body.selection)) {
+      return sendApiError(res, 400, 'BAD_REQUEST', 'Invalid conversation selection');
+    }
     if (!getProject(db, req.params.id)) {
       return res.status(404).json({ error: 'project not found' });
     }
@@ -1598,6 +1616,7 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
       projectId: req.params.id,
       title: typeof title === 'string' ? title.trim() || null : null,
       sessionMode,
+      selection: req.body?.selection ?? recentConversationSelection(await readAppConfig(ctx.paths.RUNTIME_DATA_DIR)),
       createdAt: now,
       updatedAt: now,
     });
@@ -1627,12 +1646,19 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
     res.json({ conversation: conv });
   });
 
-  app.patch('/api/projects/:id/conversations/:cid', (req, res) => {
+  app.patch('/api/projects/:id/conversations/:cid', async (req, res) => {
+    if (req.body?.selection !== undefined && !isConversationSelection(req.body.selection)) {
+      return sendApiError(res, 400, 'BAD_REQUEST', 'Invalid conversation selection');
+    }
     const conv = getConversation(db, req.params.cid);
     if (!conv || conv.projectId !== req.params.id) {
       return res.status(404).json({ error: 'not found' });
     }
     const updated = updateConversation(db, req.params.cid, req.body || {});
+    if (req.body?.selection) {
+      const config = await readAppConfig(ctx.paths.RUNTIME_DATA_DIR);
+      await writeAppConfig(ctx.paths.RUNTIME_DATA_DIR, { ...config, ...req.body.selection });
+    }
     res.json({ conversation: updated });
   });
 

@@ -494,6 +494,7 @@ import { registerDesignSystemToolRoutes } from './routes/design-system-tool.js';
 import { registerDeployRoutes, registerDeploymentCheckRoutes } from './routes/deploy.js';
 import { registerMediaRoutes } from './media-routes.js';
 import { registerProjectRoutes, registerProjectArtifactRoutes, registerProjectFileRoutes, registerProjectUploadRoutes } from './project-routes.js';
+import { initializeConversationSelection, recentConversationSelection } from './conversation-selection.js';
 import { registerShortcutRoutes } from './shortcut-routes.js';
 import { registerFinalizeRoutes, registerImportRoutes, registerProjectExportRoutes } from './import-export-routes.js';
 import { registerStandaloneHtmlRoutes } from './routes/standalone-html.js';
@@ -13512,7 +13513,24 @@ export async function startServer({
     if (daemonShuttingDown) {
       return sendApiError(res, 503, 'UPSTREAM_UNAVAILABLE', 'daemon is shutting down');
     }
-    const requestBody = req.body && typeof req.body === 'object' ? req.body : {};
+    const requestBody = req.body && typeof req.body === 'object' ? { ...req.body } : {};
+    if (typeof requestBody.conversationId === 'string') {
+      const existing = getConversation(db, requestBody.conversationId);
+      if (existing && existing.projectId === requestBody.projectId) {
+        const recent = recentConversationSelection(await readAppConfig(RUNTIME_DATA_DIR));
+        const lastRun = design.runs.list({ conversationId: existing.id }).sort((a, b) => b.createdAt - a.createdAt)[0];
+        const conversation = initializeConversationSelection(db, existing.id, recent, lastRun);
+        const selection = conversation.selection;
+        requestBody.agentId = selection.agentId;
+        const choice = selection.agentId ? selection.agentModels[selection.agentId] : null;
+        requestBody.model = choice?.model;
+        requestBody.reasoning = choice?.reasoning;
+        await writeAppConfig(RUNTIME_DATA_DIR, selection);
+        if (!requestBody.agentId || !requestBody.model?.trim()) {
+          return sendApiError(res, 400, 'BAD_REQUEST', 'Select an agent and model for this session first.');
+        }
+      }
+    }
     const toolBundle = parseRunToolBundleForRequest(requestBody.toolBundle);
     if (!toolBundle.ok) {
       return sendApiError(res, 400, 'BAD_REQUEST', toolBundle.message);

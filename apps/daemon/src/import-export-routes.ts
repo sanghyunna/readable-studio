@@ -1,4 +1,6 @@
 import type { Express } from 'express';
+import { readAppConfig } from './app-config.js';
+import { recentConversationSelection } from './conversation-selection.js';
 import { STANDALONE_HTML_EXPORT_HEADERS } from '@readable-studio/contracts';
 import { buildProjectExportManifestResponse } from './project-export-manifest.js';
 import type { RouteDeps } from './server-context.js';
@@ -76,6 +78,7 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
           id: cid,
           projectId: id,
           title: 'Imported Claude Design project',
+          selection: recentConversationSelection(await readAppConfig(ctx.paths.RUNTIME_DATA_DIR)),
           createdAt: now,
           updatedAt: now,
         });
@@ -339,6 +342,7 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
         id: cid,
         projectId: id,
         title: `Imported from ${projectName}`,
+        selection: recentConversationSelection(await readAppConfig(ctx.paths.RUNTIME_DATA_DIR)),
         createdAt: now,
         updatedAt: now,
       });

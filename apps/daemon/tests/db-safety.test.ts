@@ -10,7 +10,7 @@ import {
   READABLE_STUDIO_SQLITE_APPLICATION_ID,
 } from '../src/db.js';
 
-const supportedVersion = 1;
+const supportedVersion = 2;
 let root: string;
 let file: string;
 
@@ -84,13 +84,38 @@ describe('database migration safety', () => {
     expect(record).toEqual([{
       type: 'readable-studio:database-open-refusal',
       code: 'SCHEMA_VERSION_NEWER', pid: process.pid,
-      databaseVersion: 2, supportedVersion: 1,
+      databaseVersion: 3, supportedVersion: 2,
     }]);
     expect(failure).toBeInstanceOf(DatabaseOpenError);
-    expect(failure).toMatchObject({ code: 'SCHEMA_VERSION_NEWER', databaseVersion: 2, supportedVersion: 1 });
-    expect((failure as Error).message).toMatch(/schema version 2.*supports.*1/);
+    expect(failure).toMatchObject({ code: 'SCHEMA_VERSION_NEWER', databaseVersion: 3, supportedVersion: 2 });
+    expect((failure as Error).message).toMatch(/schema version 3.*supports.*2/);
     expect(fs.readFileSync(file)).toEqual(before);
-    expect(fs.existsSync(`${file}.pre-2`)).toBe(false);
+    expect(fs.existsSync(`${file}.pre-3`)).toBe(false);
+  });
+
+  it('migrates a populated version 1 database atomically with a pre-1 snapshot and all existing rows intact', () => {
+    legacyFixture();
+    const original = openLocal();
+    original.exec('ALTER TABLE conversations DROP COLUMN selection_json');
+    original.pragma('user_version = 1');
+    const tables = original.prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").pluck().all() as string[];
+    const before = Object.fromEntries(tables.map(table => [table, original.prepare(`SELECT * FROM "${table}"`).all()]));
+    closeDatabase();
+    const migrated = openLocal();
+    expect(migrated.pragma('user_version', { simple: true })).toBe(2);
+    expect(migrated.pragma('integrity_check', { simple: true })).toBe('ok');
+    expect(migrated.prepare('PRAGMA table_info(conversations)').all()).toContainEqual(expect.objectContaining({ name: 'selection_json' }));
+    for (const table of tables) {
+      const after = migrated.prepare(`SELECT * FROM "${table}"`).all() as Record<string, unknown>[];
+      if (table === 'conversations') for (const row of after) delete row.selection_json;
+      expect(after, table).toEqual(before[table]);
+    }
+    const snapshot = new Database(`${file}.pre-1`, { readonly: true });
+    try {
+      expect(snapshot.pragma('user_version', { simple: true })).toBe(1);
+      expect(snapshot.prepare('PRAGMA table_info(conversations)').all()).not.toContainEqual(expect.objectContaining({ name: 'selection_json' }));
+      for (const table of tables) expect(snapshot.prepare(`SELECT * FROM "${table}"`).all(), table).toEqual(before[table]);
+    } finally { snapshot.close(); }
   });
 
   it('snapshots pre-migration schema and all rows, including committed WAL rows', () => {

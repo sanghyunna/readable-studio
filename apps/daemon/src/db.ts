@@ -32,7 +32,7 @@ export const HOSTED_DATABASE_OPEN_TIMEOUT_MS = 30_000;
 export const READABLE_STUDIO_SQLITE_APPLICATION_ID = 0x52535444;
 // Increment whenever the persisted schema changes. Version 0 is the legacy,
 // unstamped schema; the version commits atomically with all migration steps.
-export const DATABASE_SCHEMA_VERSION = 1;
+export const DATABASE_SCHEMA_VERSION = 2;
 // Retain three schema generations without unbounded full-database disk growth.
 export const PRE_MIGRATION_SNAPSHOT_LIMIT = 3;
 
@@ -490,6 +490,9 @@ function migrate(db: SqliteDb): void {
     db.exec(`ALTER TABLE projects ADD COLUMN custom_instructions TEXT`);
   }
   const conversationCols = db.prepare(`PRAGMA table_info(conversations)`).all() as DbRow[];
+  if (!conversationCols.some((c: DbRow) => c.name === 'selection_json')) {
+    db.exec(`ALTER TABLE conversations ADD COLUMN selection_json TEXT`);
+  }
   if (!conversationCols.some((c: DbRow) => c.name === 'session_mode')) {
     db.exec(`ALTER TABLE conversations ADD COLUMN session_mode TEXT NOT NULL DEFAULT 'design'`);
   }
@@ -1130,7 +1133,7 @@ export function listConversations(db: SqliteDb, projectId: string) {
     .prepare(
       `WITH project_conversations AS (
           SELECT id, project_id AS projectId, title, session_mode AS sessionMode,
-                 created_at AS createdAt, updated_at AS updatedAt
+                 selection_json AS selectionJson, created_at AS createdAt, updated_at AS updatedAt
             FROM conversations
            WHERE project_id = ?
         ),
@@ -1174,7 +1177,7 @@ export function listConversations(db: SqliteDb, projectId: string) {
              AND m.run_status IN ('succeeded', 'failed', 'canceled')
            GROUP BY m.conversation_id
         )
-        SELECT c.id, c.projectId, c.title, c.sessionMode, c.createdAt, c.updatedAt,
+        SELECT c.id, c.projectId, c.title, c.sessionMode, c.selectionJson, c.createdAt, c.updatedAt,
                COALESCE(mc.messageCount, 0) AS messageCount,
                lr.latestRunStatus, lr.latestRunStartedAt,
                lr.latestRunEndedAt, lr.latestRunEventsJson,
@@ -1192,7 +1195,7 @@ export function getConversation(db: SqliteDb, id: string) {
   const r = db
     .prepare(
       `SELECT id, project_id AS projectId, title, session_mode AS sessionMode,
-              created_at AS createdAt, updated_at AS updatedAt,
+              selection_json AS selectionJson, created_at AS createdAt, updated_at AS updatedAt,
               (SELECT COUNT(*) FROM messages WHERE conversation_id = conversations.id) AS messageCount
          FROM conversations WHERE id = ?`,
     )
@@ -1217,6 +1220,7 @@ function normalizeConversation(r: DbRow) {
     projectId: r.projectId,
     title: r.title ?? null,
     sessionMode: normalizeConversationSessionMode(r.sessionMode),
+    selection: r.selectionJson == null ? null : JSON.parse(r.selectionJson),
     messageCount: Number(r.messageCount ?? 0),
     createdAt: Number(r.createdAt),
     updatedAt: Number(r.updatedAt),
@@ -1342,13 +1346,14 @@ function latestUsageDurationMs(eventsJson: unknown): number | undefined {
 export function insertConversation(db: SqliteDb, c: DbRow) {
   db.prepare(
     `INSERT INTO conversations
-       (id, project_id, title, session_mode, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+       (id, project_id, title, session_mode, selection_json, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     c.id,
     c.projectId,
     c.title ?? null,
     normalizeConversationSessionMode(c.sessionMode),
+    c.selection == null ? null : JSON.stringify(c.selection),
     c.createdAt,
     c.updatedAt,
   );
@@ -1368,8 +1373,9 @@ export function updateConversation(db: SqliteDb, id: string, patch: DbRow) {
   };
   db.prepare(
     `UPDATE conversations
-        SET title = ?, session_mode = ?, updated_at = ? WHERE id = ?`,
-  ).run(merged.title ?? null, merged.sessionMode, merged.updatedAt, id);
+        SET title = ?, session_mode = ?, selection_json = ?, updated_at = ? WHERE id = ?`,
+  ).run(merged.title ?? null, merged.sessionMode,
+    merged.selection == null ? null : JSON.stringify(merged.selection), merged.updatedAt, id);
   return getConversation(db, id);
 }
 

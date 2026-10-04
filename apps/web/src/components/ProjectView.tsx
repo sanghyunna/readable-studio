@@ -344,6 +344,7 @@ interface Props {
     id: string,
     choice: { model?: string; reasoning?: string },
   ) => void;
+  onSelectionChange?: (selection: NonNullable<Conversation['selection']>) => void;
   onRefreshAgents: () => void;
   onThemeChange?: (theme: AppConfig['theme']) => void;
   onOpenSettings: (section?: SettingsSection) => void;
@@ -924,15 +925,16 @@ export function ProjectView({
   project,
   routeFileName,
   routeConversationId = null,
-  config,
+  config: globalConfig,
   agents,
   skills,
   designTemplates,
   designSystems,
   daemonLive,
   onModeChange,
-  onAgentChange,
-  onAgentModelChange,
+  onAgentChange: onRecentAgentChange,
+  onAgentModelChange: onRecentAgentModelChange,
+  onSelectionChange,
   onRefreshAgents,
   onThemeChange,
   onOpenSettings,
@@ -997,6 +999,52 @@ export function ProjectView({
     [conversations, activeConversationId],
   );
   const activeSessionMode = activeConversation?.sessionMode ?? 'design';
+  // App config is only the recent seed. A persisted session owns its choices.
+  const config: AppConfig = useMemo(() => ({
+    ...globalConfig,
+    ...(activeConversation?.selection === null
+      ? { agentId: null, agentModels: {} }
+      : activeConversation?.selection ?? {}),
+  }), [globalConfig, activeConversation?.selection]);
+  const selectionWritesRef = useRef(new Map<string, Promise<void>>());
+  const persistSelection = (selection: NonNullable<Conversation['selection']>) => {
+    if (!activeConversationId) return;
+    const id = activeConversationId;
+    setConversations(current => current.map(c => c.id === id ? { ...c, selection } : c));
+    onSelectionChange?.(selection);
+    const write = (selectionWritesRef.current.get(id) ?? Promise.resolve()).catch(() => undefined).then(async () => {
+      const saved = await patchConversation(project.id, id, { selection });
+      if (!saved) throw new Error('Could not save this session\'s model selection.');
+    });
+    selectionWritesRef.current.set(id, write);
+    void write.catch(error => setError(error.message));
+  };
+  const onAgentChange = (agentId: string) => {
+    persistSelection({ agentId, agentModels: config.agentModels ?? {} });
+    if (!onSelectionChange) onRecentAgentChange(agentId);
+  };
+  const onAgentModelChange = (agentId: string, choice: { model?: string; reasoning?: string }) => {
+    persistSelection({ agentId: config.agentId, agentModels: {
+      ...config.agentModels,
+      [agentId]: { ...config.agentModels?.[agentId], ...choice },
+    } });
+    if (!onSelectionChange) onRecentAgentModelChange(agentId, choice);
+  };
+  useEffect(() => {
+    if (!activeConversationId || activeConversation?.selection !== null) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}/conversations/${encodeURIComponent(activeConversationId)}`);
+        if (!response.ok) throw new Error('Could not load this session\'s model selection.');
+        const { conversation } = await response.json() as { conversation: Conversation };
+        if (!cancelled) setConversations(current => current.map(c => c.id === conversation.id ? conversation : c));
+      } catch (error) {
+        if (!cancelled) setError(error instanceof Error ? error.message : String(error));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [project.id, activeConversationId, activeConversation?.selection]);
   const [messagesConversationId, setMessagesConversationId] = useState<string | null>(null);
   const [failedMessagesConversationId, setFailedMessagesConversationId] = useState<string | null>(null);
   const [conversationLoadError, setConversationLoadError] = useState<string | null>(null);
@@ -1287,7 +1335,7 @@ export function ProjectView({
     || currentConversationHasActiveRun;
   const currentConversationAwaitingActiveRunAttach =
     currentConversationHasActiveRun && !currentConversationStreaming;
-  const currentConversationSendDisabled = restoringQueuedRuns || currentConversationLoading
+  const currentConversationSendDisabled = activeConversation?.selection === null || restoringQueuedRuns || currentConversationLoading
     || failedMessagesConversationId === activeConversationId
     || currentConversationAwaitingActiveRunAttach;
   const currentConversationActionDisabled = currentConversationBusy || currentConversationSendDisabled;
@@ -3277,6 +3325,12 @@ export function ProjectView({
     ) => {
       if (!activeConversationId || restoringQueuedRuns) return false;
       if (messagesConversationIdRef.current !== activeConversationId) return false;
+      if (activeConversation?.selection === null) return false;
+      try { await selectionWritesRef.current.get(activeConversationId!); } catch (error) {
+        setError(error instanceof Error ? error.message : String(error));
+        return false;
+      }
+      if (activeConversation?.selection) onSelectionChange?.(activeConversation.selection);
       const runSessionMode = meta?.sessionMode ?? activeSessionMode;
       const retryTarget = meta?.retryOfAssistantId
         ? resolveRetryTarget(messages, meta.retryOfAssistantId)

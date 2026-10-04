@@ -226,11 +226,18 @@ export interface ProjectTabsState {
   updatedAt?: number;
 }
 
+export interface ConversationSelection {
+  agentId: string | null;
+  agentModels: Record<string, { model?: string; reasoning?: string }>;
+}
+
 export interface Conversation {
   id: string;
   projectId: string;
   title: string | null;
   sessionMode?: ChatSessionMode;
+  /** Null only for older conversations awaiting first-open initialization. */
+  selection?: ConversationSelection | null;
   messageCount?: number;
   createdAt: number;
   updatedAt: number;
@@ -256,6 +263,7 @@ export interface CreateProjectRequest {
   pluginInputs?: Record<string, unknown>;
   /** Session mode for the default conversation seeded with the project. */
   conversationMode?: ChatSessionMode;
+  selection?: ConversationSelection;
   customInstructions?: string;
   /** Persisted to metadata.skipDiscoveryBrief for automated project runs. */
   skipDiscoveryBrief?: boolean;
@@ -364,6 +372,7 @@ export interface ConversationResponse {
 
 export interface CreateConversationRequest {
   title?: string | null;
+  selection?: ConversationSelection;
   sessionMode?: ChatSessionMode;
   /**
    * Seed the new conversation with another conversation's context by copying
@@ -395,6 +404,7 @@ export interface CreateConversationRequest {
 
 export interface UpdateConversationRequest {
   title?: string | null;
+  selection?: ConversationSelection;
   sessionMode?: ChatSessionMode;
 }
 

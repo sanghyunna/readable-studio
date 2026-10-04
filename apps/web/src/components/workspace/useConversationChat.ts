@@ -168,6 +168,10 @@ export function useConversationChat(
       const startedAt = Date.now();
       const selectedAgent = agents.get(cfg.agentId) ?? null;
       const choice = effectiveAgentModelChoice(selectedAgent, cfg.agentModels?.[cfg.agentId]);
+      if (!choice?.model) {
+        setError('Select a model for this session first.');
+        return;
+      }
       const assistantAgentName = agentModelDisplayName(
         cfg.agentId,
         selectedAgent?.name,

@@ -306,6 +306,7 @@ vi.mock('../../src/components/ChatPane', () => ({
             projectId="project-1" conversationId={activeConversationId} questionCard={questionCard} />
         ))}
         <output data-testid="active-conversation">{activeConversationId}</output>
+        <output data-testid="selected-model">{config?.agentId ? config.agentModels?.[config.agentId]?.model : ''}</output>
         <output data-testid="streaming-state">{streaming ? 'streaming' : 'idle'}</output>
         <output data-testid="chat-error">{error}</output>
         <output data-testid="conversation-latest-runs">
@@ -593,6 +594,9 @@ describe('ProjectView conversation run isolation', () => {
       return new Promise<ChatMessage[]>(() => {});
     });
     createConversation.mockResolvedValue(createdConversation);
+    patchConversation.mockImplementation(async (_projectId: string, id: string, patch: Partial<Conversation>) => ({
+      ...conversations.find(c => c.id === id), ...patch, id,
+    }));
     fetchPreviewComments.mockResolvedValue([]);
     loadTabs.mockResolvedValue({ tabs: [], active: null });
     fetchProjectFiles.mockResolvedValue([]);
@@ -621,6 +625,33 @@ describe('ProjectView conversation run isolation', () => {
     window.localStorage.clear();
     vi.unstubAllGlobals();
     vi.clearAllMocks();
+  });
+
+  it('uses each session model across switches and remount instead of the global model', async () => {
+    const selections = [
+      { agentId: 'agent-1', agentModels: { 'agent-1': { model: 'model-a' } } },
+      { agentId: 'agent-1', agentModels: { 'agent-1': { model: 'model-b' } } },
+    ];
+    listConversations.mockResolvedValue(conversations.map((c, index) => ({ ...c, selection: selections[index] })));
+    listMessages.mockResolvedValue([]);
+    listActiveChatRuns.mockResolvedValue([]);
+    fetchChatRunStatus.mockResolvedValue(null);
+    const agents: AgentInfo[] = [{ id: 'agent-1', name: 'Agent', bin: 'agent', available: true,
+      models: [{ id: 'model-a', label: 'A' }, { id: 'model-b', label: 'B' }, { id: 'global-model', label: 'Global' }] }];
+    const global = { ...config, agentModels: { 'agent-1': { model: 'global-model' } } };
+    const firstMount = renderProjectView(global, project, agents);
+    await act(async () => {});
+    expect(screen.getByTestId('selected-model').textContent).toBe('model-a');
+    await act(async () => { fireEvent.click(screen.getByTestId('conversation-select-conv-b')); });
+    expect(screen.getByTestId('selected-model').textContent).toBe('model-b');
+    await act(async () => { fireEvent.click(screen.getByTestId('send-message')); });
+    expect(streamViaDaemon).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'conv-b', model: 'model-b' }));
+    await act(async () => { fireEvent.click(screen.getByTestId('conversation-select-conv-a')); });
+    expect(screen.getByTestId('selected-model').textContent).toBe('model-a');
+    firstMount.unmount();
+    renderProjectView(global, project, agents);
+    await act(async () => {});
+    expect(screen.getByTestId('selected-model').textContent).toBe('model-a');
   });
 
   it('allows sending in another conversation while the previous conversation has an active run', async () => {

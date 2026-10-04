@@ -11,6 +11,7 @@ import type {
   ApplyResult,
   ChatSessionMode,
   CreateConversationRequest,
+  ConversationSelection,
   CreatePluginShareProjectResponse,
   CreateTerminalRequest,
   ImportFolderRequest,
@@ -106,6 +107,7 @@ export async function createProject(input: {
   pendingPrompt?: string;
   metadata?: ProjectMetadata;
   conversationMode?: ChatSessionMode;
+  selection?: ConversationSelection;
   // Plan §3.A1 / spec §11.5 — POST /api/projects accepts a pluginId
   // (or pre-applied snapshot id) to resolve and pin a plugin to the new
   // project. Used by the PluginLoopHome flow on Home.
@@ -392,6 +394,7 @@ export async function createConversation(
     seedFromConversationId?: string | null;
     forkAfterMessageId?: string | null;
     sessionMode?: ChatSessionMode;
+    selection?: ConversationSelection;
     // Fork snapshot: the exact in-memory messages to copy (up to the fork
     // point). Lets the daemon fork from what the user sees even when the fork
     // point was never persisted (e.g. a run that errored before its assistant
@@ -400,7 +403,7 @@ export async function createConversation(
   },
 ): Promise<Conversation | null> {
   try {
-    const body: CreateConversationRequest = { title };
+    const body: CreateConversationRequest = { title, ...(opts?.selection ? { selection: opts.selection } : {}) };
     if (opts?.sessionMode) {
       body.sessionMode = opts.sessionMode;
     }

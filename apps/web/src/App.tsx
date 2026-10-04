@@ -1102,6 +1102,18 @@ function AppInner() {
     [config],
   );
 
+  const handleSessionSelectionChange = useCallback(
+    (selection: { agentId: string | null; agentModels: NonNullable<AppConfig['agentModels']> }) => {
+      setConfig(current => {
+        const next = { ...current, ...selection };
+        saveConfig(next);
+        void syncConfigToDaemon(next);
+        return next;
+      });
+    },
+    [],
+  );
+
   const handleAgentModelChange = useCallback(
     (agentId: string, choice: { model?: string; reasoning?: string }) => {
       const prev = config.agentModels?.[agentId] ?? {};
@@ -1261,6 +1273,7 @@ function AppInner() {
         designSystemId: input.designSystemId,
         pendingPrompt: input.pendingPrompt,
         metadata: input.metadata,
+        selection: { agentId: config.agentId, agentModels: config.agentModels ?? {} },
         ...(input.conversationMode ? { conversationMode: input.conversationMode } : {}),
         ...(input.pluginId ? { pluginId: input.pluginId } : {}),
         ...(input.appliedPluginSnapshotId
@@ -1444,7 +1457,7 @@ function AppInner() {
       navigate(projectRoute);
       return true;
     },
-    [analytics.track, rememberLocalProject],
+    [analytics.track, rememberLocalProject, config.agentId, config.agentModels],
   );
 
   // "From template" in the Hub composer's "+" menu. Sends exactly what the
@@ -2150,6 +2163,7 @@ function AppInner() {
         onModeChange={handleModeChange}
         onAgentChange={handleAgentChange}
         onAgentModelChange={handleAgentModelChange}
+        onSelectionChange={handleSessionSelectionChange}
         onRefreshAgents={() => refreshAgents({ refresh: true })}
         onThemeChange={handleThemeChange}
         onOpenSettings={openSettings}

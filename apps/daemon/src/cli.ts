@@ -150,7 +150,7 @@ const PROJECT_STRING_FLAGS = new Set([
   'prompt-file', 'path', 'dir', 'as',
   'identity-token-file', 'since', 'query', 'pattern', 'max', 'root',
   'agent', 'model', 'snapshot-id', 'inputs', 'grant-caps',
-  'title', 'against', 'seed-from', 'fork-after', 'mode',
+  'title', 'against', 'seed-from', 'fork-after', 'mode', 'reasoning',
 ]);
 const PROJECT_BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'follow']);
 const WIDTH_RELEASE_STRING_FLAGS = new Set([...PROJECT_STRING_FLAGS, 'target', 'expected-content-sha256']);
@@ -6225,7 +6225,9 @@ async function runConversation(args) {
                                            --fork-after stops the copy at one
                                            source message.
   readable conversation list <projectId>           List conversations in a project.
-  readable conversation info <conversationId>      Print one conversation.
+  readable conversation info <conversationId>      Print one conversation, including its selection.
+  readable conversation set <conversationId> --project <projectId> --agent <id> [--model <id>] [--reasoning <id>]
+                                                   Save this session's selection (empty model clears it).
 
 Common options:
   --daemon-url <url>   Readable Studio daemon HTTP base.
@@ -6294,10 +6296,35 @@ Common options:
         console.error('hosted conversation info requires a project-scoped route; use conversation list');
         process.exit(2);
       }
-      const resp = await client.request(`/api/conversations/${encodeURIComponent(id)}`);
+      const resp = await client.request(flags.project
+        ? `/api/projects/${encodeURIComponent(flags.project)}/conversations/${encodeURIComponent(id)}`
+        : `/api/conversations/${encodeURIComponent(id)}`);
       if (!resp.ok) return structuredHttpFailure(resp);
       const data = await resp.json();
       process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+      return;
+    }
+    case 'set': {
+      const [id] = positionalArgs(rest, PROJECT_STRING_FLAGS);
+      if (!id || !flags.project || typeof flags.agent !== 'string') {
+        console.error('Usage: readable conversation set <conversationId> --project <projectId> --agent <id> [--model <id>] [--reasoning <id>]');
+        process.exit(2);
+      }
+      const route = `/api/projects/${encodeURIComponent(flags.project)}/conversations/${encodeURIComponent(id)}`;
+      const current = await client.request(route);
+      if (!current.ok) return structuredHttpFailure(current);
+      const { conversation } = await current.json();
+      const selection = { agentId: flags.agent || null, agentModels: { ...(conversation.selection?.agentModels ?? {}) } };
+      if (flags.agent) selection.agentModels[flags.agent] = {
+        ...selection.agentModels[flags.agent],
+        ...(typeof flags.model === 'string' ? { model: flags.model } : {}),
+        ...(typeof flags.reasoning === 'string' ? { reasoning: flags.reasoning } : {}),
+      };
+      const response = await client.request(route, {
+        method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ selection }),
+      }, true);
+      if (!response.ok) return structuredHttpFailure(response);
+      process.stdout.write(JSON.stringify(await response.json(), null, 2) + '\n');
       return;
     }
     default:

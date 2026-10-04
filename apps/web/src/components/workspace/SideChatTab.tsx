@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useT } from '../../i18n';
 import { Icon } from '../Icon';
 import { ChatPane } from '../ChatPane';
@@ -87,7 +88,7 @@ interface Props {
 export function SideChatTab({
   projectId,
   conversationId,
-  config,
+  config: parentConfig,
   agentsById,
   locale,
   projectFiles,
@@ -102,6 +103,27 @@ export function SideChatTab({
   onRequestOpenFile,
 }: Props) {
   const t = useT();
+  const storedSelection = conversations.find(conversation => conversation.id === conversationId)?.selection;
+  const [initializedSelection, setInitializedSelection] = useState<Conversation['selection']>(null);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
+  useEffect(() => {
+    if (storedSelection !== null) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/conversations/${encodeURIComponent(conversationId)}`);
+        if (!response.ok) throw new Error('Could not load the session model selection.');
+        const { conversation } = await response.json() as { conversation: Conversation };
+        if (!cancelled) setInitializedSelection(conversation.selection);
+      } catch (error) {
+        if (!cancelled) setSelectionError(error instanceof Error ? error.message : String(error));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [projectId, conversationId, storedSelection]);
+  const selection = storedSelection ?? initializedSelection;
+  const config: AppConfig = { ...parentConfig,
+    ...(storedSelection === null && !selection ? { agentId: null, agentModels: {} } : selection ?? {}) };
   const sessionMode =
     conversations.find((conversation) => conversation.id === conversationId)?.sessionMode
     ?? 'design';
@@ -135,7 +157,7 @@ export function SideChatTab({
           onUpdateQueuedSend={controlledChat?.onUpdateQueuedSend}
           onReorderQueuedSends={controlledChat?.onReorderQueuedSends}
           onSendQueuedNow={controlledChat?.onSendQueuedNow}
-          error={controlledChat ? controlledChat.error : chat.error}
+          error={selectionError ?? (controlledChat ? controlledChat.error : chat.error)}
           projectId={projectId}
           sessionMode={sessionMode}
           onSessionModeChange={(mode) => onSessionModeChange?.(conversationId, mode)}
