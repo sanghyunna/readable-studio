@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { JSDOM } from 'jsdom';
 import { captureFullDocument, routeCaptureRequest, type CaptureSurface } from '../../src/main/full-document-capture.js';
 
 function surface(height = 1200, dpr = 1.5) {
@@ -23,6 +24,40 @@ function surface(height = 1200, dpr = 1.5) {
 }
 
 describe('full document host capture', () => {
+  it.each([
+    { name: 'short non-scrolling', contentHeight: 539, gutter: 15 },
+    { name: 'long scrolling', contentHeight: 2939, gutter: 15 },
+    { name: 'long overlay-scrollbar', contentHeight: 2939, gutter: 0 },
+  ])('exports a $name document without adding or losing a scrollbar gutter', async ({ contentHeight, gutter }) => {
+    // Widths/height match the saved fixture measured in headless Chromium.
+    // JSDOM executes the real injected CSS; only layout/painting are modeled.
+    const dom = new JSDOM('<!doctype html><html><body>content</body></html>', { runScripts: 'outside-only' });
+    const root = dom.window.document.documentElement;
+    Object.defineProperties(dom.window, {
+      innerWidth: { value: 994 },
+      innerHeight: { value: 835, writable: true },
+      scrollTo: { value: () => {} },
+      requestAnimationFrame: { value: (callback: FrameRequestCallback) => { callback(0); return 0; } },
+    });
+    Object.defineProperties(root, {
+      scrollHeight: { get: () => Math.max(contentHeight, dom.window.innerHeight) },
+      clientWidth: { get: () => 994 - ((contentHeight > dom.window.innerHeight || dom.window.getComputedStyle(root).overflowY === 'scroll') ? gutter : 0) },
+    });
+    const screenshot = vi.fn(async (width: number, height: number) => ({ dataUrl: 'data:image/png;base64,pixels', width, height }));
+    const host: CaptureSurface = {
+      dpr: 1,
+      getPreview: async () => ({ srcdoc: '', src: '', sandbox: null, baseUrl: 'about:blank', width: 994, height: 835 }),
+      createWindow: async () => ({
+        frame: { executeJavaScript: async script => dom.window.eval(script) as unknown },
+        resizeFrame: async height => { Object.defineProperty(dom.window, 'innerHeight', { value: height }); },
+        screenshot,
+        close: () => dom.window.close(),
+      }),
+    };
+    expect(await captureFullDocument(host, { x: 0, y: 0, width: 994, height: 835 }))
+      .toEqual({ ok: true, dataUrl: 'data:image/png;base64,pixels', w: 994, h: Math.max(contentHeight, 835) });
+    expect(screenshot).toHaveBeenCalledOnce();
+  });
   it('materializes scroll content before expanding the iframe; captures the full height at DPR with no scrollbar reflow', async () => {
     const { host, calls } = surface();
     const result = await captureFullDocument(host, { x: 10, y: 20, width: 400, height: 300 });

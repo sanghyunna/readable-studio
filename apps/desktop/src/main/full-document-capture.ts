@@ -53,7 +53,9 @@ export async function captureFullDocument(surface: CaptureSurface, clip: Electro
     if (error) return error;
     // Transparent paint, not display:none/width:0: reserve the original
     // classic scrollbar gutter so text line breaks and content width persist.
-    await frame.executeJavaScript(`(() => { const s = document.createElement('style'); s.textContent = 'html { overflow-y: scroll !important; } html, body, * { scrollbar-color: transparent transparent !important; } ::-webkit-scrollbar, ::-webkit-scrollbar-thumb, ::-webkit-scrollbar-track { background: transparent !important; }'; document.documentElement.append(s); })()`);
+    // Do not introduce a gutter on short documents or overlay-scrollbar hosts.
+    const reserveGutter = before.width > before.clientWidth ? 'html { overflow-y: scroll !important; }' : '';
+    await frame.executeJavaScript(`(() => { const s = document.createElement('style'); s.textContent = '${reserveGutter} html, body, * { scrollbar-color: transparent transparent !important; } ::-webkit-scrollbar, ::-webkit-scrollbar-thumb, ::-webkit-scrollbar-track { background: transparent !important; }'; document.documentElement.append(s); })()`);
     const after = await frame.executeJavaScript('({ width: innerWidth, clientWidth: document.documentElement.clientWidth, scrollbarColor: getComputedStyle(document.documentElement).scrollbarColor })') as { width: number; clientWidth: number; scrollbarColor: string };
     if (!/^(transparent|rgba\(0, 0, 0, 0\))/.test(after.scrollbarColor)) {
       return { ok: false, code: 'CAPTURE_SCROLLBAR_BLOCKED', reason: 'Preview security policy prevented hiding its scrollbar; image export was canceled rather than including it.' };
