@@ -1,0 +1,38 @@
+
+ RUN  v4.1.6 D:/readable-studio/apps/web
+
+ ❯ tests/styles/interactive-reachability-contracts.test.ts (12 tests | 1 failed) 1792ms
+     × pairs pointer-events with opacity in every applied keyframe across the app 854ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/styles/interactive-reachability-contracts.test.ts > interactive reachability contracts > pairs pointer-events with opacity in every applied keyframe across the app
+AssertionError: every applied keyframe that reaches opacity 0 must declare pointer-events in the same step: pointer-events is discrete, so pairing it with opacity makes visibility and clickability one timeline that cannot desynchronise: expected [ Array(1) ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   "home-hero-fav-pop (styles/home/home-hero.css)",
++ ]
+
+ ❯ tests/styles/interactive-reachability-contracts.test.ts:565:7
+    563|         + 'step: pointer-events is discrete, so pairing it with opacit…
+    564|         + 'clickability one timeline that cannot desynchronise',
+    565|     ).toEqual([]);
+       |       ^
+    566|   });
+    567|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 11 passed (12)
+   Start at  01:51:42
+   Duration  3.39s (transform 166ms, setup 74ms, import 401ms, tests 1.79s, environment 0ms)
+
+undefined
+D:\readable-studio\apps\web:
+ ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command failed with exit code 1: vitest run tests/styles/interactive-reachability-contracts.test.ts

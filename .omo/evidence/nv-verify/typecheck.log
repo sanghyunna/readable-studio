@@ -1,0 +1,55 @@
+
+> readable-studio@1.2.1 typecheck D:\readable-studio
+> pnpm -r --workspace-concurrency=4 --if-present run typecheck && tsc -p scripts/tsconfig.json --noEmit
+
+Scope: 21 of 22 workspace projects
+packages/components typecheck$ tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json --noEmit
+packages/diagnostics typecheck$ tsc -p tsconfig.json --noEmit
+packages/host typecheck$ tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json --noEmit
+packages/html-edit typecheck$ tsc -p tsconfig.json && tsc -p tsconfig.tests.json --noEmit
+packages/diagnostics typecheck: Done
+packages/metatool typecheck$ tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json --noEmit
+packages/html-edit typecheck: Done
+packages/platform typecheck$ tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json --noEmit
+packages/host typecheck: Done
+packages/product-identity typecheck$ tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json --noEmit
+packages/components typecheck: Done
+packages/registry-protocol typecheck$ tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json --noEmit
+packages/metatool typecheck: Done
+packages/sidecar typecheck$ tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json --noEmit
+packages/product-identity typecheck: Done
+packages/platform typecheck: Done
+packages/sidecar typecheck: Done
+packages/registry-protocol typecheck: Done
+packages/contracts typecheck$ tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json --noEmit
+packages/download typecheck$ tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json --noEmit
+packages/sidecar-proto typecheck$ tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json --noEmit
+packages/sidecar-proto typecheck: Done
+packages/download typecheck: Done
+packages/contracts typecheck: Done
+apps/desktop typecheck$ tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json --noEmit
+packages/agui-adapter typecheck$ tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json --noEmit
+apps/web typecheck$ pnpm --filter @readable-studio/html-edit typecheck && tsc -b --noEmit
+packages/plugin-runtime typecheck$ tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json --noEmit
+apps/web typecheck: > @readable-studio/html-edit@1.2.1 typecheck D:\readable-studio\packages\html-edit
+apps/web typecheck: > tsc -p tsconfig.json && tsc -p tsconfig.tests.json --noEmit
+packages/agui-adapter typecheck: Done
+tools/dev typecheck$ tsc -p tsconfig.json --noEmit
+packages/plugin-runtime typecheck: Done
+tools/pack typecheck$ tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json --noEmit
+tools/dev typecheck: Done
+apps/desktop typecheck: Done
+tools/pack typecheck: Done
+apps/web typecheck: Done
+apps/daemon typecheck$ pnpm --filter @readable-studio/contracts build && pnpm --filter @readable-studio/registry-protocol build && tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json --noEmit
+apps/daemon typecheck: > @readable-studio/contracts@1.2.1 build D:\readable-studio\packages\contracts
+apps/daemon typecheck: > node ./esbuild.config.mjs && tsc -p tsconfig.json --emitDeclarationOnly
+apps/daemon typecheck: > @readable-studio/registry-protocol@0.5.0 build D:\readable-studio\packages\registry-protocol
+apps/daemon typecheck: > node ./esbuild.config.mjs && tsc -p tsconfig.json --emitDeclarationOnly
+apps/daemon typecheck: Done
+apps/packaged typecheck$ pnpm --filter @readable-studio/desktop build && tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json --noEmit
+e2e typecheck$ tsc -p tsconfig.json --noEmit
+apps/packaged typecheck: > @readable-studio/desktop@1.2.1 build D:\readable-studio\apps\desktop
+apps/packaged typecheck: > tsc -p tsconfig.json
+apps/packaged typecheck: Done
+e2e typecheck: Done
