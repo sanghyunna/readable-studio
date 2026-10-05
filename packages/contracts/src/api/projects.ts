@@ -167,6 +167,12 @@ export interface ProjectMetadata {
   examplePrompt?: boolean;
   examplePromptTitle?: string;
   examplePromptBrief?: Record<string, string>;
+  // Set when the first message was started from a Hub template card. The
+  // template brief is prepended to the user's own words in the sent message;
+  // `boundary` is the character offset where the user's text starts, so the
+  // chat can render a template chip plus only the user's words. Messages
+  // created before this field existed render exactly as before.
+  templateRef?: ProjectTemplateRef;
   // Plugins selected through @ mentions on Home. These are additive
   // context references; the explicit "Use plugin" snapshot, when present,
   // remains the primary executable plugin for the run.
@@ -179,6 +185,12 @@ export interface ProjectMetadata {
   // Stored on design-system projects so the review overview can remember
   // which generated sections were accepted or sent back for another pass.
   designSystemReview?: Record<string, DesignSystemReviewEntry>;
+}
+
+export interface ProjectTemplateRef {
+  id: string;
+  name: string;
+  boundary: number;
 }
 
 export interface Project {

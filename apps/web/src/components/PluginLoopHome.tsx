@@ -5,6 +5,7 @@ import type {
   InstalledPluginRecord,
   ProjectKind,
   ProjectMetadata,
+  ProjectTemplateRef,
 } from '@readable-studio/contracts';
 import {
   applyPlugin,
@@ -39,6 +40,8 @@ export interface PluginLoopSubmit {
   attachments: File[];
   autoSendFirstMessage: boolean;
   examplePromptContext: { title: string; artifactType: string; brief: Record<string, string> } | null;
+  /** Hub template card split: hidden template text + where the user's words start. */
+  templateRef?: ProjectTemplateRef | null;
 }
 
 interface Props {

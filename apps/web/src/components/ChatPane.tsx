@@ -38,6 +38,7 @@ import {
 } from '../design-system-auto-prompt';
 import { isTodoWriteToolName, latestTodoWriteInputForPinnedCard } from '../runtime/todos';
 import type { AgentInfo, AgentRollbackRequestEvent, ApiProtocol, AppConfig, ChatAttachment, ChatCommentAttachment, ChatMessage, Conversation, DesignSystemSummary, PreviewComment, Project, ProjectFile, ProjectMetadata, SkillSummary } from '../types';
+import type { ProjectTemplateRef } from '@readable-studio/contracts';
 import { exactDateTime, messageTime, shortTime } from '../utils/chatTime';
 import { commentTargetDisplayName, commentsToAttachments, simplePositionLabel } from '../comments';
 import { AssistantMessage, type InlineQuestionCardState } from './AssistantMessage';
@@ -53,6 +54,7 @@ import {
 import { listDesignArtifactCandidates } from './design-files/designArtifacts';
 import type { PluginFolderAgentAction } from './design-files/pluginFolderActions';
 import { Icon, type IconName } from './Icon';
+import { userTextFromTemplateMessage } from './home-hero/templatePrompt';
 import { InlineModelSwitcher } from './InlineModelSwitcher';
 import {
   composerReasoningOptions,
@@ -1794,6 +1796,7 @@ export function ChatPane({
                 forceStreamingMessageIds={forceStreamingMessageIds}
                 lastAssistantId={lastAssistantId}
                 firstUserMessageId={firstUserMessageId}
+                firstUserTemplateRef={projectMetadata?.templateRef ?? null}
                 activePluginSnapshot={activePluginSnapshot}
                 activeDesignSystem={activeDesignSystem}
                 hasActiveDesignSystem={hasActiveDesignSystem}
@@ -2066,6 +2069,7 @@ function ChatRows({
   forceStreamingMessageIds,
   lastAssistantId,
   firstUserMessageId,
+  firstUserTemplateRef,
   activePluginSnapshot,
   activeDesignSystem,
   hasActiveDesignSystem,
@@ -2105,6 +2109,8 @@ function ChatRows({
   forceStreamingMessageIds?: Set<string>;
   lastAssistantId: string | undefined;
   firstUserMessageId: string | undefined;
+  /** Hub template split for the first user message (ProjectMetadata.templateRef). */
+  firstUserTemplateRef?: ProjectTemplateRef | null;
   activePluginSnapshot?: AppliedPluginSnapshot | null;
   activeDesignSystem?: DesignSystemSummary | null;
   hasActiveDesignSystem: boolean;
@@ -2174,6 +2180,7 @@ function ChatRows({
           onRequestPluginDetails={onRequestPluginDetails}
           onRequestDesignSystemDetails={onRequestDesignSystemDetails}
           t={t}
+          templateRef={m.id === firstUserMessageId ? firstUserTemplateRef ?? null : null}
           activePluginSnapshot={
             m.id === firstUserMessageId
               ? activePluginSnapshot ?? null
@@ -3060,6 +3067,7 @@ function UserMessageImpl({
   onRequestPluginDetails,
   onRequestDesignSystemDetails,
   t,
+  templateRef = null,
   activePluginSnapshot,
   activeDesignSystem,
 }: {
@@ -3070,6 +3078,7 @@ function UserMessageImpl({
   onRequestPluginDetails?: (pluginId: string) => void;
   onRequestDesignSystemDetails?: (system: DesignSystemSummary) => void;
   t: TranslateFn;
+  templateRef?: ProjectTemplateRef | null;
   activePluginSnapshot?: AppliedPluginSnapshot | null;
   activeDesignSystem?: DesignSystemSummary | null;
 }) {
@@ -3077,10 +3086,17 @@ function UserMessageImpl({
   const commentAttachments = message.commentAttachments ?? [];
   const workspaceItems = message.runContext?.workspaceItems ?? [];
   const messagePluginSnapshot = message.appliedPluginSnapshot ?? activePluginSnapshot ?? null;
+  // Hub template split: show the template as a chip and only the user's own
+  // words as the bubble text. A ref that does not fit the content (older
+  // messages, foreign projects) leaves the bubble exactly as before.
+  const templateUserText = userTextFromTemplateMessage(message.content, templateRef);
+  const templateChip = templateUserText !== null ? templateRef : null;
+  const visibleContent = templateUserText ?? message.content;
   const hasRunContext = Boolean(
     message.sessionMode ||
       workspaceItems.length > 0 ||
       messagePluginSnapshot ||
+      templateChip ||
       activeDesignSystem,
   );
   const [copied, setCopied] = useState(false);
@@ -3124,7 +3140,19 @@ function UserMessageImpl({
               onOpen={onRequestOpenFile}
             />
           ))}
-          {messagePluginSnapshot ? (
+          {templateChip ? (
+            <div className="msg-plugin-context" data-testid="msg-template-context">
+              <span className="msg-plugin-chip" data-testid="msg-template-chip" title={templateChip.name}>
+                <span className="msg-plugin-chip__icon" aria-hidden>
+                  <Icon name="sparkles" size={11} />
+                </span>
+                <span className="msg-plugin-chip__label">
+                  <span className="msg-plugin-chip__kind">{t('chat.templateChipKind')}</span>
+                  <span className="msg-plugin-chip__title">{templateChip.name}</span>
+                </span>
+              </span>
+            </div>
+          ) : messagePluginSnapshot ? (
             <ActivePluginChip
               snapshot={messagePluginSnapshot}
               t={t}
@@ -3196,9 +3224,9 @@ function UserMessageImpl({
             </span>
           </div>
         </div>
-      ) : message.content ? (
+      ) : visibleContent ? (
         <div className="user-text-wrap">
-          <div className="user-text user-bubble">{message.content}</div>
+          <div className="user-text user-bubble">{visibleContent}</div>
           <div className="user-actions">
             {ts ? (
               <time

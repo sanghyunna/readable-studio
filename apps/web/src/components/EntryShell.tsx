@@ -383,6 +383,7 @@ export function EntryShell({
         examplePromptTitle: payload.examplePromptContext.title,
         examplePromptBrief: payload.examplePromptContext.brief,
       } : {}),
+      ...(payload.templateRef ? { templateRef: payload.templateRef } : {}),
     };
     return onCreateProject({
       name,

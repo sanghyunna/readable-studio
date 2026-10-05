@@ -149,6 +149,10 @@ interface Props {
   activeChipId: string | null;
   onClearActivePlugin: () => void;
   onClearActiveChip?: () => void;
+  /** Hub template card pick held outside the composer text (see
+   *  home-hero/templatePrompt.ts). Renders as a removable chip. */
+  templateChip?: { name: string } | null;
+  onClearTemplateChip?: () => void;
   activeSkillId?: string | null;
   activeSkillTitle?: string | null;
   onClearActiveSkill?: () => void;
@@ -269,6 +273,8 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     activeChipId,
     onClearActivePlugin,
     onClearActiveChip = onClearActivePlugin,
+    templateChip = null,
+    onClearTemplateChip = () => undefined,
     onClearActiveSkill = () => undefined,
     selectedPluginContexts = EMPTY_PLUGIN_CONTEXTS,
     contextOnlyPlugins = EMPTY_PLUGIN_CONTEXTS,
@@ -360,7 +366,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   // button only stays disabled for blockers HomeHero itself owns or is told
   // are non-attemptable.
   const canAttemptSubmit = !interactionLocked && !submitting && !submitDisabled
-    && (prompt.trim().length > 0 || stagedFiles.length > 0);
+    && (prompt.trim().length > 0 || stagedFiles.length > 0 || templateChip !== null);
   const canSubmit = canAttemptSubmit && (submitReady ?? true);
   const previewHomeFile = useMemo(() => {
     if (!previewHomeFileKey) return null;
@@ -375,7 +381,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
       : null;
   const placeholder = stagedEditableDocument
     ? t('homeHero.placeholderOpenDocument', { name: stagedEditableDocument.uploadName })
-    : activePluginTitle || activeSkillTitle
+    : activePluginTitle || activeSkillTitle || templateChip
       ? t('homeHero.placeholderActive')
       : t(surface === 'hub' ? 'hub.composerPlaceholder' : 'homeHero.placeholder');
   const mentionActive = Boolean(mentionTrigger);
@@ -1052,6 +1058,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   // have no inline representation) and the active plugin/skill/example chips do.
   const showActiveContextRow =
     contextItemCount > 0 ||
+    templateChip !== null ||
     (showActivePluginChip && activePluginTitle) ||
     activeSkillTitle ||
     stagedFiles.length > 0;
@@ -1224,6 +1231,29 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
                     <Icon name="close" size={9} />
                   </button>
                 )}
+              </span>
+            ) : null}
+            {templateChip ? (
+              <span
+                className="home-hero__active-chip home-hero__active-chip--template"
+                data-testid="home-hero-template-chip"
+              >
+                <span className="home-hero__active-icon" aria-hidden>
+                  <Icon name="sparkles" size={12} />
+                </span>
+                <span className="home-hero__active-label">{t('homeHero.templateChipLabel', { title: templateChip.name })}</span>
+                <button
+                  type="button"
+                  className="home-hero__active-clear readable-tooltip"
+                  onClick={onClearTemplateChip}
+                  disabled={interactionLocked}
+                  aria-label={t('homeHero.templateChipRemove')}
+                  title={t('homeHero.templateChipRemove')}
+                  data-tooltip={t('homeHero.templateChipRemove')}
+                  data-testid="home-hero-template-chip-remove"
+                >
+                  <Icon name="close" size={9} />
+                </button>
               </span>
             ) : null}
             {activeSkillTitle ? (

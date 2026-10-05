@@ -1048,6 +1048,9 @@ export interface Dict {
   'homeHero.pluginTitle': string;
   'homeHero.pluginPrefix': string;
   'homeHero.skillPrefix': string;
+  'homeHero.templateChipLabel': string;
+  'homeHero.templateChipRemove': string;
+  'chat.templateChipKind': string;
   'homeHero.removePlugin': string;
   'homeHero.removePluginAria': string;
   'homeHero.clearActivePlugin': string;

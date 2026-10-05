@@ -57,6 +57,11 @@ import { type ExamplePromptInfo, type HomeHeroHandle } from './HomeHero';
 import { HomeDraft, createHomeDraft } from './composer/HomeDraft';
 import { stageFiles as buildStagedFiles, type StagedFileItem } from './composer/stagedFiles';
 import { findChip, HOME_HERO_CHIPS, type HomeHeroChip } from './home-hero/chips';
+import {
+  composeTemplatePrompt,
+  templatePromptBoundary,
+  type HiddenTemplate,
+} from './home-hero/templatePrompt';
 import type { ComposerProjectImports, ProjectImportHandlers } from './project-create';
 import { useClaudeZipImport } from './useClaudeZipImport';
 import { useOpenFolderImport } from './useOpenFolderImport';
@@ -303,6 +308,10 @@ export function HomeView({
   const [fallbackProjectMetadata, setFallbackProjectMetadata] =
     useState<ProjectMetadata | null>(null);
   const [active, setActive] = useState<ActivePlugin | null>(null);
+  // Hub template card pick. The template brief is kept OUT of the composer
+  // text (the user only sees a removable chip) and is prepended to the user's
+  // own words at submit time, so the agent still receives the full brief.
+  const [hiddenTemplate, setHiddenTemplate] = useState<HiddenTemplate | null>(null);
   // The Hub composer always starts a design-mode project: mode is a
   // creation-time choice and now lives in the New Project flow, so the
   // composer no longer carries a mode toggle.
@@ -636,6 +645,9 @@ export function HomeView({
     setFallbackProjectKind(null);
     setFallbackProjectMetadata(null);
     setDetailsRecord(null);
+    // Any new binding replaces a hidden template; the Hub card path re-sets it
+    // right after this call returns its (synchronous) first segment.
+    setHiddenTemplate(null);
     if (!suppressPromptUpdate && optimisticPrompt !== null) {
       setPrompt(optimisticPrompt);
       setPromptEditedByUser(false);
@@ -957,18 +969,30 @@ export function HomeView({
     // submit (submit() already re-resolves), so a preset click stays instant
     // and doesn't fire an /apply roundtrip per card. The chip is already
     // active when preset cards are visible, so reuse its project kind/metadata.
+    // Hub surface: the brief never enters the composer text. It is held as a
+    // hidden template (chip in the active row) and prepended on submit.
+    const hideTemplateText = surface === 'hub';
     const confirm = async () => {
-      const submittable = await usePlugin(record, promptText, {
+      const pending = usePlugin(record, promptText, {
         chipId,
         projectKind: active?.projectKind ?? undefined,
         projectMetadata: active?.projectMetadata ?? null,
         deferApply: true,
         explicitPick: true,
+        ...(hideTemplateText ? { suppressPromptUpdate: true } : {}),
       });
+      if (hideTemplateText) {
+        setHiddenTemplate({
+          id: record.id,
+          name: localizePluginTitle(locale, record),
+          text: promptText,
+        });
+      }
+      const submittable = await pending;
       if (submittable) inputRef.current?.pulseSend();
       focusPromptAtEnd();
     };
-    runWithReplacementConfirmation(record.title, promptText, confirm, {
+    runWithReplacementConfirmation(record.title, hideTemplateText ? null : promptText, confirm, {
       before: active?.record.id ?? null,
       after: record.id,
     });
@@ -1092,14 +1116,31 @@ export function HomeView({
     setFallbackProjectMetadata(null);
     setPendingApplyId(null);
     setPendingChipId(null);
+    setHiddenTemplate(null);
     setPrompt('');
     setPromptEditedByUser(false);
+  }
+
+  // Hub template chip (x): drop the hidden brief and its plugin binding but
+  // keep whatever the user typed.
+  function clearHiddenTemplate() {
+    if (rejectDraftMutationDuringSubmit()) return;
+    activePluginApplyRequestRef.current += 1;
+    setActive(null);
+    setHiddenTemplate(null);
+    setFallbackProjectKind(null);
+    setFallbackProjectMetadata(null);
+    setPendingApplyId(null);
+    setPendingChipId(null);
+    setError(null);
+    focusPromptAtEnd();
   }
 
   function clearActiveChipSelection() {
     if (rejectDraftMutationDuringSubmit()) return;
     activePluginApplyRequestRef.current += 1;
     setActive(null);
+    setHiddenTemplate(null);
     setFallbackProjectKind(null);
     setFallbackProjectMetadata(null);
     setPendingApplyId(null);
@@ -1399,7 +1440,11 @@ export function HomeView({
   }
 
   async function submit(autoSendFirstMessage = true): Promise<boolean> {
-    const trimmed = draft.getSnapshot().trim();
+    const typed = draft.getSnapshot().trim();
+    // Hub template chip: the hidden brief goes first, then the user's words,
+    // exactly like the old "brief inserted, user types after it" composition.
+    const template = autoSendFirstMessage ? hiddenTemplate : null;
+    const trimmed = template ? composeTemplatePrompt(template.text, typed) : typed;
     let submittedPrompt = autoSendFirstMessage ? trimmed : '';
     const submittedAttachments = stagedFiles.map((item) => item.file);
     if (autoSendFirstMessage && !trimmed && submittedAttachments.length === 0) return false;
@@ -1409,6 +1454,7 @@ export function HomeView({
     if (
       surface === 'hub'
       && autoSendFirstMessage
+      && !template
       && submittedAttachments.length === 0
       && trimmed.length < 4
     ) {
@@ -1593,6 +1639,13 @@ export function HomeView({
         conversationMode: sessionMode,
         autoSendFirstMessage,
         examplePromptContext,
+        templateRef: template
+          ? {
+              id: template.id,
+              name: template.name,
+              boundary: templatePromptBoundary(template.text, typed),
+            }
+          : null,
       });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Failed to start the project. Try again.');
@@ -1607,6 +1660,7 @@ export function HomeView({
         return false;
       }
       if (examplePromptContext) localStorage.setItem('readable:example-prompt-used', '1');
+      setHiddenTemplate(null);
       setPrompt('');
       setSelectedPluginContexts([]);
       setSelectedMcpContexts([]);
@@ -1660,7 +1714,9 @@ export function HomeView({
         activeSkillId={activeSkill?.id ?? null}
         activeSkillTitle={activeSkill ? localizeSkillName(locale, activeSkill) : null}
         activeChipId={active?.chipId ?? null}
-        showActivePluginChip={showActivePluginChip}
+        showActivePluginChip={showActivePluginChip && !hiddenTemplate}
+        templateChip={hiddenTemplate ? { name: hiddenTemplate.name } : null}
+        onClearTemplateChip={clearHiddenTemplate}
         onClearActivePlugin={clearActivePlugin}
         onClearActiveChip={clearActiveChipSelection}
         onClearActiveSkill={() => {

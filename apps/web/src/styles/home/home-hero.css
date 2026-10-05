@@ -437,6 +437,14 @@
   background: color-mix(in srgb, var(--bg-subtle) 88%, var(--accent-tint));
   color: var(--text-strong);
 }
+/* Hub template chip: the hidden brief's only visible trace. Korean names
+   wrap at word boundaries if the chip is ever forced to wrap. */
+.home-hero__active-chip--template {
+  background: color-mix(in srgb, var(--bg-panel) 84%, var(--accent-tint));
+  color: var(--text-strong);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
 .home-hero__active-chip--context {
   background: color-mix(in srgb, var(--bg-panel) 90%, var(--bg-subtle));
   color: var(--text);
