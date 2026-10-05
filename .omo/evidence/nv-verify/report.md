@@ -27,11 +27,11 @@ d87c649 fix(packaged): put newer-schema refusal details on separate lines
 | typecheck | pnpm typecheck (root) | 0 | no "error TS" lines; every package printed Done | typecheck.log |
 | web full | pnpm --filter @readable-studio/web exec vitest run --pool=threads --maxWorkers=8 --fileParallelism | 1 | Test Files  7 failed | 539 passed (546); Tests  66 failed | 5206 passed | 1 skipped (5273) | web.log |
 | contracts | pnpm --filter @readable-studio/contracts test | 0 | Test Files  35 passed (35); Tests  436 passed (436) | contracts.log |
-| daemon (17 files, --maxWorkers=1) | vitest run -c vitest.config.ts --maxWorkers=1 <files in daemon-files.txt> | 1 | Test Files  3 failed | 14 passed (17); Tests  4 failed | 191 passed (195) | daemon.log |
+| daemon (17 files, --maxWorkers=1) | vitest run -c vitest.config.ts --maxWorkers=1 <files in daemon-files.log> | 1 | Test Files  3 failed | 14 passed (17); Tests  4 failed | 191 passed (195) | daemon.log |
 | rerun web reachability alone | vitest run tests/styles/interactive-reachability-contracts.test.ts | 1 | 1 failed, 11 passed (12) | rerun-web-reachability.log |
 | rerun 3 daemon files alone | vitest run the 3 failing files, --maxWorkers=1 | 1 | Test Files 1 failed, 2 passed (3); Tests 2 failed, 30 passed (32) | rerun-daemon.log |
 
-Daemon file set: the 3 src files changed since 9fce49d are app-config.ts, cli.ts, server.ts. The set is the 4 changed tests (app-config.test, app-config-template-favorites.test, fatal-daemon-log.test, pi-run-completion.test), plus tests importing ../src/app-config or ../src/cli (found with fd + grep, 13 files), plus app-config-cli.test and cli-templates.test added by name. 17 files in total. Tests that reach app-config or cli only through server.ts were not included. Full list in daemon-files.txt.
+Daemon file set: the 3 src files changed since 9fce49d are app-config.ts, cli.ts, server.ts. The set is the 4 changed tests (app-config.test, app-config-template-favorites.test, fatal-daemon-log.test, pi-run-completion.test), plus tests importing ../src/app-config or ../src/cli (found with fd + grep, 13 files), plus app-config-cli.test and cli-templates.test added by name. 17 files in total. Tests that reach app-config or cli only through server.ts were not included. Full list in daemon-files.log.
 
 ## Failure table
 | File | Failed | Gate | Classification | First error | Introducing commit |
