@@ -48,6 +48,11 @@ interface Props {
    * project's sessions are reached through the flyout instead of by expanding.
    */
   collapsed?: boolean;
+  /**
+   * The owner already narrowed `projects` by a search query. An empty tree
+   * then means "nothing matched", not "nothing exists".
+   */
+  searching?: boolean;
   currentSessionId: string | null;
   onOpenSession: (session: HubSessionNode) => void;
   onNewSession?: (project: HubProjectNode) => void;
@@ -245,6 +250,7 @@ export function HubSessionTree({
   compactByDefault = false,
   openWork,
   collapsed: railCollapsed = false,
+  searching = false,
   currentSessionId,
   onOpenSession,
   onNewSession,
@@ -942,7 +948,13 @@ export function HubSessionTree({
 
       {openWork}
 
-      {rows.length === 0 ? (
+      {projects.length === 0 && !searching ? (
+        // Nothing exists yet, so no filter is hiding anything and a
+        // "clear filter" link would promise rows that are not there.
+        <p className="hub-tree__empty" data-testid="hub-tree-no-projects">
+          {t('hub.noProjectsTitle')}
+        </p>
+      ) : rows.length === 0 ? (
         <p className="hub-tree__empty" data-testid="hub-tree-empty">
           {t('hub.emptyFiltered')}{' '}
           <button type="button" className="hub-tree__link" onClick={() => setFilter('all')}>

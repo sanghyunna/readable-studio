@@ -201,4 +201,46 @@ describe('HubSessionTree', () => {
       expect.objectContaining({ id: 's0', projectId: 'p1' }),
     );
   });
+
+  describe('empty states', () => {
+    it('shows a genuine empty state with no clear-filter link when nothing exists', () => {
+      render(<HubSessionTree projects={[]} currentSessionId={null} onOpenSession={vi.fn()} />);
+      const empty = screen.getByTestId('hub-tree-no-projects');
+      expect(empty.querySelector('button')).toBeNull();
+      expect(screen.queryByTestId('hub-tree-empty')).toBeNull();
+      expect(screen.queryByTestId('hub-group-label')).toBeNull();
+    });
+
+    it('keeps the genuine empty state when a non-default filter is active but nothing exists', () => {
+      render(<HubSessionTree projects={[]} currentSessionId={null} onOpenSession={vi.fn()} />);
+      fireEvent.click(screen.getByTestId('hub-filter-running'));
+      expect(screen.getByTestId('hub-tree-no-projects')).toBeTruthy();
+      expect(screen.queryByTestId('hub-tree-empty')).toBeNull();
+    });
+
+    it('offers to clear the filter when existing projects are hidden by it', () => {
+      const idleOnly = node({
+        id: 'idle',
+        sessions: [{ id: 'i1', projectId: 'idle', title: '초안', updatedAt: 5, state: 'idle' as const }],
+      });
+      render(<HubSessionTree projects={[idleOnly]} currentSessionId={null} onOpenSession={vi.fn()} />);
+      fireEvent.click(screen.getByTestId('hub-filter-running'));
+
+      const empty = screen.getByTestId('hub-tree-empty');
+      expect(within(empty).getByRole('button')).toBeTruthy();
+      expect(screen.queryByTestId('hub-tree-no-projects')).toBeNull();
+
+      fireEvent.click(within(empty).getByRole('button'));
+      expect(screen.getByTestId('hub-project-idle')).toBeTruthy();
+      expect(screen.queryByTestId('hub-tree-empty')).toBeNull();
+    });
+
+    it('reports no match, not an empty library, when a search narrowed everything away', () => {
+      render(
+        <HubSessionTree projects={[]} searching currentSessionId={null} onOpenSession={vi.fn()} />,
+      );
+      expect(screen.getByTestId('hub-tree-empty')).toBeTruthy();
+      expect(screen.queryByTestId('hub-tree-no-projects')).toBeNull();
+    });
+  });
 });
