@@ -2753,10 +2753,12 @@
   from {
     transform: scale(0.9);
     opacity: 0;
+    pointer-events: none;
   }
   to {
     transform: scale(1);
     opacity: 1;
+    pointer-events: auto;
   }
 }
 
