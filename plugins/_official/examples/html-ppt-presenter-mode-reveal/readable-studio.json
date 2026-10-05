@@ -2,12 +2,12 @@
   "$schema": "urn:readable-studio:schema:plugin-manifest:v1",
   "specVersion": "1.0.0",
   "name": "example-html-ppt-presenter-mode-reveal",
-  "title": "Html Ppt Presenter Mode Reveal",
+  "title": "Presenter Mode Deck",
   "title_i18n": {
     "zh-CN": "Html Ppt 演讲者模式 Reveal",
     "zh-TW": "Html Ppt 演講者模式 Reveal",
     "ja": "Html Ppt プレゼンターモード Reveal",
-    "ko": "Html Ppt 발표자 모드 Reveal",
+    "ko": "발표자 모드 덱",
     "de": "Html Ppt Präsentationsmodus Reveal",
     "fr": "Html Ppt Mode Présentateur Reveal",
     "ru": "Html Ppt Режим Докладчика Reveal",
@@ -21,7 +21,7 @@
     "ar": "Html Ppt وضع المقدم Reveal",
     "tr": "Html Ppt Sunucu Modu Reveal",
     "uk": "Html Ppt Режим Доповідача Reveal",
-    "en": "Html Ppt Presenter Mode Reveal"
+    "en": "Presenter Mode Deck"
   },
   "version": "0.1.0",
   "description": "A dedicated presenter-mode deck — tokyo-night default theme, 5 themes toggled with the T key, each slide ships a 150-300 word script example (<aside class=\"notes\">), press S to open the popup (CURRENT / NEXT / SCRIPT / TIMER magnetic cards). Built for tech talks, public speaking, and lectures where you're worried about forgetting your lines or need a teleprompter.",

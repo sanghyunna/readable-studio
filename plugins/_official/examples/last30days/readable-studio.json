@@ -2,7 +2,7 @@
   "$schema": "urn:readable-studio:schema:plugin-manifest:v1",
   "specVersion": "1.0.0",
   "name": "example-last30days",
-  "title": "Last30days",
+  "title": "Last 30 Days",
   "title_i18n": {
     "zh-CN": "最近30天",
     "zh-TW": "最近30天",
@@ -21,7 +21,7 @@
     "ar": "آخر 30 يومًا",
     "tr": "Son 30 Gün",
     "uk": "Останні 30 днів",
-    "en": "Last30days"
+    "en": "Last 30 Days"
   },
   "version": "0.1.0",
   "description": "Recent community and social trend research over the last 30 days. Use when\nthe brief asks what people are saying now, recent sentiment, community\nreactions, social proof, launch reaction, trend scan, or last-30-days context.",

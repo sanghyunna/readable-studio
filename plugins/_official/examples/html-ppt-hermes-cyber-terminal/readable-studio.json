@@ -2,12 +2,12 @@
   "$schema": "urn:readable-studio:schema:plugin-manifest:v1",
   "specVersion": "1.0.0",
   "name": "example-html-ppt-hermes-cyber-terminal",
-  "title": "Html Ppt Hermes Cyber Terminal",
+  "title": "Cyber Terminal Deck",
   "title_i18n": {
     "zh-CN": "Html Ppt Hermes 赛博终端",
     "zh-TW": "Html Ppt Hermes 賽博終端",
     "ja": "Html Ppt Hermes サイバーターミナル",
-    "ko": "Html Ppt Hermes 사이버 터미널",
+    "ko": "사이버 터미널 덱",
     "de": "Html Ppt Hermes Cyber-Terminal",
     "fr": "Html Ppt Hermes Terminal Cyber",
     "ru": "Html Ppt Hermes Киберт-терминал",
@@ -21,7 +21,7 @@
     "ar": "Html Ppt Hermes طرفية سايبر",
     "tr": "Html Ppt Hermes Siber Terminal",
     "uk": "Html Ppt Hermes Кібер-термінал",
-    "en": "Html Ppt Hermes Cyber Terminal"
+    "en": "Cyber Terminal Deck"
   },
   "version": "0.1.0",
   "description": "Dark terminal honest-review deck — #0a0c10 black background + 56px cyber grid + CRT vignette + scanlines, window traffic-light chrome, `$ prompt` command-line titles, mint green #7ed3a4 large text, JetBrains Mono, stroke-only bar charts, blinking cursor, amber/green/red tags, dark code blocks. Great for CLI / agent / dev tool reviews (with trace, diff, benchmark).",

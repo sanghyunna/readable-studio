@@ -2,12 +2,12 @@
   "$schema": "urn:readable-studio:schema:plugin-manifest:v1",
   "specVersion": "1.0.0",
   "name": "example-html-ppt-product-launch",
-  "title": "Html Ppt Product Launch",
+  "title": "Product Launch Keynote",
   "title_i18n": {
     "zh-CN": "Html Ppt 产品发布",
     "zh-TW": "Html Ppt 產品發表",
     "ja": "Html Ppt 製品ローンチ",
-    "ko": "Html Ppt 제품 출시",
+    "ko": "제품 런칭 키노트",
     "de": "Html Ppt Produkteinführung",
     "fr": "Html Ppt Lancement de produit",
     "ru": "Html Ppt Запуск продукта",
@@ -21,7 +21,7 @@
     "ar": "Html Ppt إطلاق المنتج",
     "tr": "Html Ppt Ürün Lansmanı",
     "uk": "Html Ppt Запуск продукту",
-    "en": "Html Ppt Product Launch"
+    "en": "Product Launch Keynote"
   },
   "version": "0.1.0",
   "description": "Launch keynote deck — dark hero + light content, warm orange→peach accent, feature cards, pricing tiers, CTA. Use when announcing a product, launching a feature, or doing a keynote-style reveal.",

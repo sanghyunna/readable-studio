@@ -2,12 +2,12 @@
   "$schema": "urn:readable-studio:schema:plugin-manifest:v1",
   "specVersion": "1.0.0",
   "name": "example-html-ppt-course-module",
-  "title": "Html Ppt Course Module",
+  "title": "Course Module Deck",
   "title_i18n": {
     "zh-CN": "Html Ppt 课程模块",
     "zh-TW": "Html Ppt 課程模組",
     "ja": "Html Ppt コースモジュール",
-    "ko": "Html Ppt 코스 모듈",
+    "ko": "온라인 강의 모듈 덱",
     "de": "Html Ppt Kursmodul",
     "fr": "Module de cours Html Ppt",
     "ru": "Html Ppt модуль курса",
@@ -21,7 +21,7 @@
     "ar": "وحدة دورة Html Ppt",
     "tr": "Html Ppt kurs modülü",
     "uk": "Модуль курсу Html Ppt",
-    "en": "Html Ppt Course Module"
+    "en": "Course Module Deck"
   },
   "version": "0.1.0",
   "description": "Online-course / workshop module deck — warm paper background + Playfair serif, persistent left sidebar of learning objectives, MCQ self-check page. Use for teaching modules, training materials, workshop slides.",

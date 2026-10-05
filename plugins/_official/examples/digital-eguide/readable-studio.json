@@ -2,7 +2,7 @@
   "$schema": "urn:readable-studio:schema:plugin-manifest:v1",
   "specVersion": "1.0.0",
   "name": "example-digital-eguide",
-  "title": "Digital Eguide",
+  "title": "Digital E-Guide",
   "title_i18n": {
     "zh-CN": "数字电子指南",
     "zh-TW": "數位電子指南",
@@ -21,7 +21,7 @@
     "ar": "دليل رقمي",
     "tr": "Dijital rehber",
     "uk": "Цифровий гід",
-    "en": "Digital Eguide"
+    "en": "Digital E-Guide"
   },
   "version": "0.1.0",
   "description": "A two-spread digital e-guide preview — page 1 is a cover (display title,\nauthor, \"What's inside\" stats, table of contents teaser); page 2 is a\nspread (lesson body with pull-quote and a step list). Lifestyle / creator\nbrand tone. Use when the brief asks for an \"e-guide\", \"digital guide\",\n\"lookbook\", \"lead magnet\", \"creator guide\", \"playbook\", or \"PDF guide\".",

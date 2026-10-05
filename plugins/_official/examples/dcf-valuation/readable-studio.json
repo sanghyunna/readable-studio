@@ -2,7 +2,7 @@
   "$schema": "urn:readable-studio:schema:plugin-manifest:v1",
   "specVersion": "1.0.0",
   "name": "example-dcf-valuation",
-  "title": "Dcf Valuation",
+  "title": "DCF Valuation",
   "title_i18n": {
     "zh-CN": "DCF估值",
     "zh-TW": "DCF估值",
@@ -21,7 +21,7 @@
     "ar": "تقييم DCF",
     "tr": "DCF Değerleme",
     "uk": "DCF-оцінка",
-    "en": "Dcf Valuation"
+    "en": "DCF Valuation"
   },
   "version": "0.1.0",
   "description": "Discounted cash flow valuation and intrinsic value analysis for public\ncompanies. Use when the brief asks for DCF, fair value, intrinsic value,\nprice target, undervalued or overvalued analysis, or \"what is this company\nworth?\"",

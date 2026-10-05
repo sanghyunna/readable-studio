@@ -2,12 +2,12 @@
   "$schema": "urn:readable-studio:schema:plugin-manifest:v1",
   "specVersion": "1.0.0",
   "name": "example-html-ppt-knowledge-arch-blueprint",
-  "title": "Html Ppt Knowledge Arch Blueprint",
+  "title": "Blueprint Architecture Deck",
   "title_i18n": {
     "zh-CN": "Html Ppt 知识架构蓝图",
     "zh-TW": "Html Ppt 知識架構藍圖",
     "ja": "Html Ppt ナレッジアーキテクチャ設計図",
-    "ko": "Html Ppt 지식 아키텍처 청사진",
+    "ko": "청사진 아키텍처 덱",
     "de": "Html Ppt Wissensarchitektur-Blaupause",
     "fr": "Plan d'architecture de connaissances Html Ppt",
     "ru": "Чертёж архитектуры знаний Html Ppt",
@@ -21,7 +21,7 @@
     "ar": "مخطط معماري للمعرفة Html Ppt",
     "tr": "Html Ppt bilgi mimarisi planı",
     "uk": "Креслення архітектури знань Html Ppt",
-    "en": "Html Ppt Knowledge Arch Blueprint"
+    "en": "Blueprint Architecture Deck"
   },
   "version": "0.1.0",
   "description": "Cream blueprint architecture deck — cream paper #F0EAE0 base + single rust-red #B5392A highlight, 48px blueprint grid mask, 2px black-bordered hard cards, pipeline step boxes (one raised), rust-red insight callout on the right, large Playfair serif type, SVG dashed feedback loop. Zero gradients, zero soft shadows — serious and print-friendly.",

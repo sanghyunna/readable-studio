@@ -2,7 +2,7 @@
   "$schema": "urn:readable-studio:schema:plugin-manifest:v1",
   "specVersion": "1.0.0",
   "name": "example-github-dashboard",
-  "title": "Github Dashboard",
+  "title": "GitHub Dashboard",
   "title_i18n": {
     "zh-CN": "GitHub 仪表板",
     "zh-TW": "GitHub 儀表板",
@@ -21,7 +21,7 @@
     "ar": "لوحة معلومات GitHub",
     "tr": "GitHub Panosu",
     "uk": "Панель GitHub",
-    "en": "Github Dashboard"
+    "en": "GitHub Dashboard"
   },
   "version": "0.1.0",
   "description": "GitHub repository analytics dashboard — stars, forks, contributors,\nissues, pull requests, recent activity, and top contributors. Use when\nthe brief asks for a GitHub repo dashboard, open-source growth report,\nrepository health page, or GitHub analytics view.",

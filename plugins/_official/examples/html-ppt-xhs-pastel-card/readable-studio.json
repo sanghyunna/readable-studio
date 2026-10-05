@@ -2,12 +2,12 @@
   "$schema": "urn:readable-studio:schema:plugin-manifest:v1",
   "specVersion": "1.0.0",
   "name": "example-html-ppt-xhs-pastel-card",
-  "title": "Html Ppt Xhs Pastel Card",
+  "title": "Pastel Macaron Cards",
   "title_i18n": {
     "zh-CN": "Html Ppt Xhs 柔和马卡龙卡片",
     "zh-TW": "Html Ppt Xhs 柔和馬卡龍卡片",
     "ja": "Html Ppt Xhs パステルカード",
-    "ko": "Html Ppt Xhs 파스텔 카드",
+    "ko": "파스텔 마카롱 카드",
     "de": "Html Ppt Xhs Pastell-Karte",
     "fr": "Html Ppt Xhs Carte Pastel",
     "ru": "Html Ppt Xhs Пастельная карточка",
@@ -21,7 +21,7 @@
     "ar": "Html Ppt Xhs بطاقة الباستيل",
     "tr": "Html Ppt Xhs Pastel Kart",
     "uk": "Html Ppt Xhs Пастельна картка",
-    "en": "Html Ppt Xhs Pastel Card"
+    "en": "Pastel Macaron Cards"
   },
   "version": "0.1.0",
   "description": "A soft macaron slow-living deck — cream #fef8f1 background + three soft-light blobs, Playfair italic serif display titles mixed with sans body text, 28px rounded macaron cards (peach / mint / sky / purple / lemon / rose), Playfair italic 01-04 numbering, an SVG donut chart, and a chip+page top bar. Great for lifestyle / personal growth / slow-living / emotional content with a \"magazine, handmade, not too techy\" feel.",

@@ -2,12 +2,12 @@
   "$schema": "urn:readable-studio:schema:plugin-manifest:v1",
   "specVersion": "1.0.0",
   "name": "example-html-ppt-dir-key-nav-minimal",
-  "title": "Html Ppt Dir Key Nav Minimal",
+  "title": "Minimal Arrow-Key Keynote",
   "title_i18n": {
     "zh-CN": "HTML PPT 方向键导航极简版",
     "zh-TW": "HTML PPT 方向鍵導航極簡版",
     "ja": "HTML PPT 方向キーナビ ミニマル",
-    "ko": "HTML PPT 방향키 네비 미니멀",
+    "ko": "미니멀 방향키 키노트",
     "de": "Html Ppt Richtungstastennavigation Minimal",
     "fr": "Html Ppt Navigation Clavier Minimal",
     "ru": "Html Ppt Навигация Клавишами Минимал",
@@ -21,7 +21,7 @@
     "ar": "Html Ppt تنقل بأزرار الاتجاه بسيط",
     "tr": "Html Ppt Yön Tuşu Navigasyon Minimal",
     "uk": "Html Ppt Навігація Клавішами Мінімал",
-    "en": "Html Ppt Dir Key Nav Minimal"
+    "en": "Minimal Arrow-Key Keynote"
   },
   "version": "0.1.0",
   "description": "An 8-page minimal arrow-key keynote — each page has its own single-color background (indigo / cream / crimson / teal / gray / purple / white / charcoal) with matching accent colors, a 160px display headline, a 4px bold accent divider line, an arrow-prefixed (→) Mono list, a bottom-left ← → kbd hint, a bottom-right page number, and generous breathing whitespace. Great for a keynote, launch, or public talk where you have a lot to say but not much to show.",

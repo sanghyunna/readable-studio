@@ -2,7 +2,7 @@
   "$schema": "urn:readable-studio:schema:plugin-manifest:v1",
   "specVersion": "1.0.0",
   "name": "example-team-okrs",
-  "title": "Team Okrs",
+  "title": "Team OKRs",
   "title_i18n": {
     "zh-CN": "团队 OKR",
     "zh-TW": "團隊 OKR",
@@ -21,7 +21,7 @@
     "ar": "OKR الفريق",
     "tr": "Ekip OKR'ları",
     "uk": "Командні OKR",
-    "en": "Team Okrs"
+    "en": "Team OKRs"
   },
   "version": "0.1.0",
   "description": "OKR tracker page — quarter banner, three objectives with their key\nresults as progress bars, owner avatars, status pills, and a \"this\nquarter at a glance\" sidebar. Use when the brief mentions \"OKRs\",\n\"key results\", or \"objectives\".",

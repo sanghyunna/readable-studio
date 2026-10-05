@@ -2,7 +2,7 @@
   "$schema": "urn:readable-studio:schema:plugin-manifest:v1",
   "specVersion": "1.0.0",
   "name": "example-ib-pitch-book",
-  "title": "Ib Pitch Book",
+  "title": "IB Pitch Book",
   "title_i18n": {
     "zh-CN": "投行路演材料",
     "zh-TW": "投行簡報手冊",
@@ -21,7 +21,7 @@
     "ar": "كتيب عرض الخدمات المصرفية الاستثمارية",
     "tr": "Yatırım Bankacılığı Sunum Kitabı",
     "uk": "Інвестиційний пітчбук",
-    "en": "Ib Pitch Book"
+    "en": "IB Pitch Book"
   },
   "version": "0.1.0",
   "description": "Investment-banking pitch book for strategic alternatives — trading comps,\nprecedent transactions, valuation football field, DCF sensitivity,\nstrategic-options matrix, process recommendation. Built by adapting\n`assets/template.html` so IB-specific chrome, disclosure bands, and source\nlabels are preserved. Use for Board / sell-side discussion materials. Not a\nVC fundraising deck (see html-ppt-pitch-deck). Workflow adapted from\nAnthropic financial-services Pitch Agent (Apache-2.0).",

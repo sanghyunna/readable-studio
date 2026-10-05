@@ -2,7 +2,7 @@
   "$schema": "urn:readable-studio:schema:plugin-manifest:v1",
   "specVersion": "1.0.0",
   "name": "example-eng-runbook",
-  "title": "Eng Runbook",
+  "title": "Engineering Runbook",
   "title_i18n": {
     "zh-CN": "工程运维手册",
     "zh-TW": "工程運維手冊",
@@ -21,7 +21,7 @@
     "ar": "دليل العمليات الهندسية",
     "tr": "Mühendislik Runbook'u",
     "uk": "Інженерний Runbook",
-    "en": "Eng Runbook"
+    "en": "Engineering Runbook"
   },
   "version": "0.1.0",
   "description": "An engineering runbook — service overview, alerts table, dashboards\nlinks, common procedures with copy-pasteable commands, on-call rotation,\nand an incident-response checklist. Use when the brief mentions\n\"runbook\", \"ops doc\", \"on-call guide\", or \"SRE doc\".",

@@ -2,7 +2,7 @@
   "$schema": "urn:readable-studio:schema:plugin-manifest:v1",
   "specVersion": "1.0.0",
   "name": "example-saas-landing",
-  "title": "Saas Landing",
+  "title": "SaaS Landing",
   "title_i18n": {
     "zh-CN": "SaaS 落地页",
     "zh-TW": "SaaS 著陸頁",
@@ -21,7 +21,7 @@
     "ar": "صفحة SaaS",
     "tr": "SaaS Landing",
     "uk": "SaaS Landing",
-    "en": "Saas Landing"
+    "en": "SaaS Landing"
   },
   "version": "0.1.0",
   "description": "Single-page SaaS landing with hero, features, social proof, pricing, and CTA.\nRespects the active DESIGN.md color/typography/layout tokens.\nTrigger keywords: \"saas landing\", \"marketing page\", \"product landing\".",

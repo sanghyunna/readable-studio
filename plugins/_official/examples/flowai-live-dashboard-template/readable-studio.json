@@ -2,12 +2,12 @@
   "$schema": "urn:readable-studio:schema:plugin-manifest:v1",
   "specVersion": "1.0.0",
   "name": "example-flowai-live-dashboard-template",
-  "title": "Flowai Live Dashboard Template",
+  "title": "FlowAI Team Dashboard",
   "title_i18n": {
     "zh-CN": "Flowai 实时仪表板模板",
     "zh-TW": "Flowai 即時儀表板範本",
     "ja": "Flowai ライブダッシュボードテンプレート",
-    "ko": "Flowai 라이브 대시보드 템플릿",
+    "ko": "FlowAI 팀 대시보드",
     "de": "Flowai Live-Dashboard-Vorlage",
     "fr": "Modèle de tableau de bord en direct Flowai",
     "ru": "Шаблон панели управления Flowai Live",
@@ -21,7 +21,7 @@
     "ar": "قالب لوحة تحكم Flowai المباشرة",
     "tr": "Flowai canlı gösterge paneli şablonu",
     "uk": "Шаблон панелі керування Flowai Live",
-    "en": "Flowai Live Dashboard Template"
+    "en": "FlowAI Team Dashboard"
   },
   "version": "0.1.0",
   "description": "Team-management dashboard skill in the FlowAI aesthetic — three tabs\n(Team Members, Team Details, Activity Log), KPI stat row, member table,\nrole distribution bar chart, online presence and activity sparklines,\nand a top-contributors panel, all in a single self-contained HTML file\nwith light/dark theming, hoverable chart tooltips, click-to-zoom panels,\nand CSV export. Use when the brief asks for a team / workspace admin\ndashboard, an interactive admin dashboard with charts, or names FlowAI.",
