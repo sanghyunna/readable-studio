@@ -21,6 +21,7 @@ input.on('line', line => {
     fs.writeFileSync(path.join(process.env.P0_SESSION_DIR, 'resumed'), request.sessionPath);
     send({ type: 'response', id: request.id, command: request.type, success: true });
   } else if (request.type === 'prompt') {
+    fs.appendFileSync(path.join(process.env.P0_SESSION_DIR, 'prompts.jsonl'), JSON.stringify(request) + String.fromCharCode(10));
     fs.writeFileSync(sessionFile, JSON.stringify({ type: 'session', version: 3,
       id: 'completion-session', timestamp: new Date().toISOString(), cwd: process.cwd() }) + String.fromCharCode(10));
     send({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'completed' } });
@@ -33,7 +34,11 @@ input.on('line', line => {
 });
 `;
 
-test('successful Pi completion persists its owned session without killing the daemon', async () => {
+test.each([
+  { label: 'different text', secondMessage: 'Summarize the next task', explicitCurrentPrompt: false },
+  { label: 'same text', secondMessage: 'Complete this turn', explicitCurrentPrompt: false },
+  { label: 'explicit latest turn', secondMessage: 'Summarize the next task', explicitCurrentPrompt: true },
+])('successful Pi completion preserves $label on resume and persists its owned session', async ({ secondMessage, explicitCurrentPrompt }) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'readable-pi-completion-'));
   const logPath = path.join(root, 'daemon.log');
   const fd = fs.openSync(logPath, 'a');
@@ -72,8 +77,10 @@ test('successful Pi completion persists its owned session without killing the da
     const { conversationId } = await created.json() as { conversationId: string };
     // A second turn also exercises reading the portable session written by close.
     for (let turn = 0; turn < 2; turn++) {
+      const message = turn === 0 ? 'Complete this turn' : secondMessage;
       const accepted = await post('/api/runs', { projectId: 'completion-project', conversationId,
-        agentId: 'pi', model: 'anthropic/claude-sonnet-4-5', message: 'Complete this turn' });
+        agentId: 'pi', model: 'anthropic/claude-sonnet-4-5', message,
+        ...(explicitCurrentPrompt ? { currentPrompt: message } : {}) });
       assert.equal(accepted.status, 202);
       const { runId } = await accepted.json() as { runId: string };
       // The replaying SSE surface closes on the exact terminal run event.
@@ -91,11 +98,21 @@ test('successful Pi completion persists its owned session without killing the da
       } finally {
         db.close();
       }
+      const projectsDir = path.join(root, 'data', 'projects');
+      const files = fs.readdirSync(projectsDir, { recursive: true });
       if (turn === 1) {
-        const resumed = fs.readdirSync(path.join(root, 'data', 'projects'), { recursive: true })
-          .find(file => String(file).endsWith(`${path.sep}resumed`));
+        const resumed = files.find(file => String(file).endsWith(`${path.sep}resumed`));
         assert.ok(resumed, 'second turn must switch to the persisted owned session');
       }
+      const promptsFile = files.find(file => String(file).endsWith(`${path.sep}prompts.jsonl`));
+      assert.ok(promptsFile, 'RPC child must record the actual prompt command');
+      const prompts = fs.readFileSync(path.join(projectsDir, String(promptsFile)), 'utf8')
+        .trim().split('\n').map(line => JSON.parse(line) as { message: string });
+      assert.equal(prompts.length, turn + 1);
+      const prompt = prompts[turn];
+      assert.ok(prompt, 'each accepted turn must have a captured RPC prompt');
+      assert.equal(prompt.message.split('# User request\n\n').at(-1), message,
+        'typed instruction must reach Pi verbatim, including on resumed identical turns');
     }
   } catch (error) {
     failure = error;

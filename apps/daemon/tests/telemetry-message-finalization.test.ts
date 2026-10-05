@@ -59,6 +59,15 @@ describe('Langfuse message finalization gate', () => {
     );
   });
 
+  it.each([false, true])('preserves message-only typed instructions with skipTranscript=%s', (skipTranscript) => {
+    expect(composeChatUserRequestForAgent('typed turn', undefined, { skipTranscript })).toBe('typed turn');
+  });
+
+  it('keeps an explicit empty latest turn empty instead of replaying history on resume', () => {
+    expect(composeChatUserRequestForAgent('old transcript', '', { skipTranscript: true }))
+      .toBe('(No extra typed instruction.)');
+  });
+
   it('promotes discovery form answers above the transcript with a build-now instruction', () => {
     const currentPrompt = [
       '[form answers \u2014 discovery]',

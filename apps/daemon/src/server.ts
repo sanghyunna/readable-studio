@@ -2698,7 +2698,9 @@ export function composeChatUserRequestForAgent(
   // session memory provides the rest. See
   // `RuntimeAgentDef.resumesSessionViaCli`.
   const skip = options.skipTranscript === true;
-  const bodySource = skip ? currentPrompt : message;
+  // Headless/API callers can send only `message`; `currentPrompt` is optional.
+  // Trim a resumed transcript only when its latest-turn slice was supplied.
+  const bodySource = skip && typeof currentPrompt === 'string' ? currentPrompt : message;
   const body =
     typeof bodySource === 'string' && bodySource.trim()
       ? bodySource
