@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type {
   ProjectConversationCreatedSsePayload,
 } from '@readable-studio/contracts';
@@ -19,6 +19,7 @@ export type ProjectEvent =
   | ProjectConversationCreatedEvent;
 
 export interface ProjectEventsConnectionOptions {
+  onConnectionChange?: (connected: boolean) => void;
   /** Test seam: substitute a mock EventSource constructor. */
   EventSourceCtor?: typeof EventSource;
   /** Initial backoff in ms. Defaults to 1000. */
@@ -74,7 +75,9 @@ export function createProjectEventsConnection(
     const es = new Ctor(projectEventsUrl(projectId));
     source = es;
     es.addEventListener('ready', () => {
+      if (cancelled || source !== es) return;
       backoff = initialBackoff;
+      options.onConnectionChange?.(true);
     });
     es.addEventListener('file-changed', (evt) => {
       try {
@@ -109,7 +112,8 @@ export function createProjectEventsConnection(
       }
     });
     es.addEventListener('error', () => {
-      if (cancelled) return;
+      if (cancelled || source !== es) return;
+      options.onConnectionChange?.(false);
       es.close();
       if (source === es) source = null;
       const delay = backoff;
@@ -146,7 +150,8 @@ export function useProjectFileEvents(
   enabled: boolean,
   onChange: (evt: ProjectEvent) => void,
   options: ProjectEventsConnectionOptions = {},
-): void {
+): boolean {
+  const [reconnecting, setReconnecting] = useState(false);
   const onChangeRef = useRef(onChange);
   useEffect(() => {
     onChangeRef.current = onChange;
@@ -155,12 +160,24 @@ export function useProjectFileEvents(
   useEffect(() => {
     if (!enabled || !projectId) return;
     if (typeof window === 'undefined') return;
+    let noticeTimer: ReturnType<typeof setTimeout> | undefined;
+    setReconnecting(false);
     const conn = createProjectEventsConnection(
       projectId,
       (evt) => onChangeRef.current(evt),
-      options,
+      { ...options, onConnectionChange: connected => {
+        if (connected) {
+          clearTimeout(noticeTimer);
+          noticeTimer = undefined;
+          setReconnecting(false);
+        } else if (noticeTimer === undefined) {
+          // Quiet short blips; an idle conversation still needs a loss signal.
+          noticeTimer = setTimeout(() => setReconnecting(true), 1_000);
+        }
+      } },
     );
-    return () => conn.close();
+    return () => { conn.close(); clearTimeout(noticeTimer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, enabled, options.EventSourceCtor, options.initialBackoffMs, options.maxBackoffMs]);
+  return enabled && reconnecting;
 }

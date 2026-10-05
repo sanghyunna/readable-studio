@@ -2256,7 +2256,7 @@ export function ProjectView({
       return;
     }
   }, [coalescedFileChangedRefresh, iframeKeepAlivePool, project.id]);
-  useProjectFileEvents(project.id, daemonLive, handleProjectEvent);
+  const backendReconnecting = useProjectFileEvents(project.id, daemonLive, handleProjectEvent);
 
   const activePromptContextSignature = useMemo(() => {
     const skill = project.skillId
@@ -5977,7 +5977,7 @@ export function ProjectView({
               loading={currentConversationLoading}
               sendDisabled={currentConversationSendDisabled}
               queuedItems={currentConversationQueuedItems}
-              error={conversationLoadError ?? error}
+              error={backendReconnecting ? t('connection.reconnecting') : conversationLoadError ?? error}
               errorRecovery={nativeRecovery && error === nativeRecovery.error.message && activeConversationId ? (() => {
                 const message = messages.find(item => item.id === nativeRecovery.messageId);
                 return message ? <NativeWriteConflictNotice key={message.id} error={nativeRecovery.error}

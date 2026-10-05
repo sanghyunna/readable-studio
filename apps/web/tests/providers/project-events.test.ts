@@ -47,6 +47,23 @@ describe('projectEventsUrl', () => {
 });
 
 describe('createProjectEventsConnection', () => {
+  it('signals idle backend loss on stream error and recovery only on daemon ready', () => {
+    vi.useFakeTimers();
+    const onConnectionChange = vi.fn();
+    const conn = createProjectEventsConnection('p1', () => {}, {
+      EventSourceCtor: MockEventSource as unknown as typeof EventSource,
+      onConnectionChange,
+    });
+    MockEventSource.instances[0]!.dispatch('ready', {});
+    expect(onConnectionChange).toHaveBeenLastCalledWith(true);
+    MockEventSource.instances[0]!.dispatch('error', {});
+    expect(onConnectionChange).toHaveBeenLastCalledWith(false);
+    vi.advanceTimersByTime(1_000);
+    MockEventSource.instances[1]!.dispatch('ready', {});
+    expect(onConnectionChange).toHaveBeenLastCalledWith(true);
+    conn.close();
+  });
+
   it('opens an EventSource against the events URL on creation', () => {
     const conn = createProjectEventsConnection(
       'p1',

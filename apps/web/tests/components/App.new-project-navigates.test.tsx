@@ -117,6 +117,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.clearAllMocks();
+  vi.useRealTimers();
 });
 
 async function renderApp() {
@@ -147,6 +148,16 @@ async function openPlusMenu() {
   return popup;
 }
 
+function holdReconnectTimers() {
+  const callbacks: Array<() => void> = [];
+  const original = globalThis.setTimeout;
+  vi.spyOn(globalThis, 'setTimeout').mockImplementation(((callback: () => void, delay?: number) => {
+    if (delay === 1_000) { callbacks.push(callback); return 0; }
+    return original(callback, delay);
+  }) as typeof setTimeout);
+  return callbacks;
+}
+
 describe('startup guards (unchanged by the modal removal)', () => {
   it('does not treat failed project listing as an empty workspace when health was briefly available', async () => {
     vi.mocked(listProjects).mockRejectedValueOnce(new TypeError('connection refused'));
@@ -156,13 +167,54 @@ describe('startup guards (unchanged by the modal removal)', () => {
   });
 
   it('shows a data-safe startup error with retry instead of an empty project list when daemon is unreachable', async () => {
-    vi.mocked(daemonIsLive).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const retries = holdReconnectTimers();
+    vi.mocked(daemonIsLive).mockResolvedValue(false);
     await renderApp();
     expect(screen.getByRole('alert').textContent).toMatch(/data|데이터/i);
     expect(screen.queryByTestId('entry-view-home')).toBeNull();
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /retry|다시 시도/i })); });
-    expect(await screen.findByTestId('entry-view-home')).toBeTruthy();
-  });
+    expect(screen.getByTestId('startup-reconnecting')).toBeTruthy();
+    vi.mocked(daemonIsLive).mockResolvedValue(true);
+    expect(retries.length).toBeGreaterThan(0);
+    await act(async () => { retries.forEach(retry => retry()); });
+    expect(screen.getByTestId('entry-view-home')).toBeTruthy();
+    expect(screen.queryByTestId('startup-reconnecting')).toBeNull();
+    expect(listProjects).toHaveBeenCalledWith({ strict: true });
+  }, 15_000);
+
+  it.each([new Error('HTTP 502'), new Error('HTTP 503'), new Error('HTTP 504'), new SyntaxError('non-JSON proxy body')])
+  ('automatically retries a failed strict data-open request without painting an empty workspace (%s)', async error => {
+    const retries = holdReconnectTimers();
+    vi.mocked(listProjects).mockRejectedValueOnce(error).mockResolvedValue([project]);
+    await renderApp();
+    expect(screen.getByTestId('startup-reconnecting')).toBeTruthy();
+    expect(screen.queryByTestId('entry-view-home')).toBeNull();
+    expect(retries.length).toBeGreaterThan(0);
+    await act(async () => { retries.forEach(retry => retry()); });
+    expect(screen.getByTestId('entry-view-home')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+  }, 15_000);
+
+  it('reloads an open project during a daemon gap without opening import and recovers automatically', async () => {
+    const retries = holdReconnectTimers();
+    window.history.replaceState(null, '', '/projects/existing');
+    vi.mocked(daemonIsLive).mockResolvedValue(false);
+    let reachable = false;
+    const fetcher = vi.fn(async (url: string) => url === '/api/data-import/candidates' && !reachable
+      ? new Response('connect ECONNREFUSED', { status: 502 })
+      : new Response(JSON.stringify({ state: 'done', candidates: [] })));
+    vi.stubGlobal('fetch', fetcher);
+    await renderApp();
+    expect(screen.getByTestId('startup-reconnecting')).toBeTruthy();
+    expect(screen.queryByTestId('data-import-modal')).toBeNull();
+    expect(screen.queryByTestId('entry-view-home')).toBeNull();
+    vi.mocked(daemonIsLive).mockResolvedValue(true);
+    reachable = true;
+    expect(retries.length).toBeGreaterThan(0);
+    await act(async () => { retries.forEach(retry => retry()); });
+    expect(screen.getByTestId('project-view')).toBeTruthy();
+    expect(screen.queryByTestId('data-import-modal')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+  }, 15_000);
 
   it('keeps only inactive mounted entry views inert across route changes', async () => {
     await renderApp();

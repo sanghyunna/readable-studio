@@ -7,6 +7,7 @@ import { ProjectView } from '../../src/components/ProjectView';
 import { fetchChatRunStatus, listActiveChatRuns, reattachDaemonRun, streamViaDaemon } from '../../src/providers/daemon';
 import { listConversations, listMessages, saveMessage } from '../../src/state/projects';
 import { DEFAULT_CONFIG } from '../../src/state/config';
+import { useProjectFileEvents } from '../../src/providers/project-events';
 import type { ChatAttachment, Project } from '../../src/types';
 
 const { chatPaneSpy } = vi.hoisted(() => ({ chatPaneSpy: vi.fn() }));
@@ -83,7 +84,21 @@ function HomeProject({ initialProject = project, daemonLive = true }: { initialP
     }} />;
 }
 
+it('surfaces idle backend loss in the existing chat error surface and clears it on recovery', async () => {
+  vi.mocked(useProjectFileEvents).mockReturnValue(false);
+  const view = render(<HomeProject initialProject={{ ...project, pendingPrompt: undefined }} />);
+  await act(async () => {});
+  const previousError = chatProps().error;
+  vi.mocked(useProjectFileEvents).mockReturnValue(true);
+  await act(async () => { view.rerender(<HomeProject initialProject={{ ...project, pendingPrompt: undefined }} />); });
+  expect(chatProps().error).toBe('connection.reconnecting');
+  vi.mocked(useProjectFileEvents).mockReturnValue(false);
+  await act(async () => { view.rerender(<HomeProject initialProject={{ ...project, pendingPrompt: undefined }} />); });
+  expect(chatProps().error).toBe(previousError);
+});
+
 beforeEach(() => {
+  vi.mocked(useProjectFileEvents).mockReturnValue(false);
   vi.mocked(listConversations).mockResolvedValue([{ id: 'home-conv', projectId: project.id, title: null, createdAt: 1, updatedAt: 1 }]);
   vi.mocked(listMessages).mockResolvedValue([]);
   vi.mocked(listActiveChatRuns).mockResolvedValue([]);

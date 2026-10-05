@@ -419,6 +419,7 @@ function AppInner() {
   const [daemonLive, setDaemonLive] = useState(false);
   const [daemonHealthChecked, setDaemonHealthChecked] = useState(false);
   const [startupRetry, setStartupRetry] = useState(0);
+  const startupRetryAttempt = useRef(0);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const amrModelsRef = useRef<AmrModelsResponse | null>(null);
   const amrPollGenerationRef = useRef(0);
@@ -861,12 +862,19 @@ function AppInner() {
     let cancelled = false;
     const deferredAbort = new AbortController();
     let cancelDeferredStartup: () => void = () => undefined;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const reconnect = () => {
+      setDaemonLive(false);
+      setDaemonHealthChecked(true);
+      setProjectsLoading(false);
+      retryTimer = setTimeout(() => setStartupRetry(current => current + 1),
+        Math.min(1_000 * 2 ** startupRetryAttempt.current++, 10_000));
+    };
     (async () => {
       const alive = await daemonIsLive();
       if (cancelled) return;
-      setDaemonLive(alive);
-      setDaemonHealthChecked(true);
       if (!alive) {
+        reconnect();
         // No daemon — stop loading but never show empty data as a valid project list.
         setAgentsLoading(false);
         setSkillsLoading(false);
@@ -875,6 +883,29 @@ function AppInner() {
         setDaemonConfigLoaded(true);
         setStartupDeferredReady(true);
         return;
+      }
+
+      // Health alone does not prove the data store was opened. Keep the
+      // data-safe gate until the strict project read also succeeds.
+      const request = beginProjectListRequest();
+      try {
+        const list = await listProjects({ strict: true });
+        if (cancelled) return;
+        reconcileFetchedProjects(list, request);
+      } catch {
+        if (!cancelled) reconnect();
+        return;
+      }
+      startupRetryAttempt.current = 0;
+      setDaemonLive(true);
+      setDaemonHealthChecked(true);
+      setProjectsLoading(false);
+      if (startupRetry > 0) {
+        void fetchAgentsStream({ refresh: false, onAgent: agent => {
+          if (!cancelled) setAgents(current => mergeAmrModelsIntoAgents(upsertAgent(current, agent), amrModelsRef.current));
+        } }).then(list => {
+          if (!cancelled) setAgents(mergeAmrModelsIntoAgents(orderAgentsByRegistry(list), amrModelsRef.current));
+        }).catch(() => { if (!cancelled) setAgents([]); });
       }
 
       void fetchSkills().then((list) => {
@@ -887,17 +918,6 @@ function AppInner() {
         if (cancelled) return;
         setDesignSystems(list);
         setDsLoading(false);
-      });
-
-      const request = beginProjectListRequest();
-      void listProjects({ strict: true }).then((list) => {
-        if (cancelled) return;
-        reconcileFetchedProjects(list, request);
-        setProjectsLoading(false);
-      }).catch(() => {
-        if (cancelled) return;
-        setDaemonLive(false);
-        setProjectsLoading(false);
       });
 
       void fetchDaemonConfig().then((daemonConfig) => {
@@ -946,6 +966,7 @@ function AppInner() {
     return () => {
       cancelled = true;
       cancelDeferredStartup();
+      clearTimeout(retryTimer);
       deferredAbort.abort();
     };
   }, [
@@ -2245,6 +2266,7 @@ function AppInner() {
   if (daemonHealthChecked && !daemonLive) {
     appMain = projectsLoading ? <ProjectRouteLoading /> : (
       <main role="alert" className="readable-loading-shell readable-loading-shell--surface">
+        <p role="status" data-testid="startup-reconnecting">{t('connection.reconnecting')}</p>
         <p>{t('entry.databaseUnavailable')}</p>
         <button type="button" onClick={() => {
           setProjectsLoading(true);

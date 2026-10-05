@@ -15,9 +15,13 @@ export function DataImportModal({ onResolved }: { onResolved: () => void }) {
   const dialog = useRef<HTMLElement>(null);
   useEffect(() => {
     let active = true;
-    void fetch('/api/data-import/candidates').then(async response => {
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let retryAttempt = 0;
+    const check = () => { void fetch('/api/data-import/candidates').then(async response => {
+      // Only a successful JSON status can offer a permanent import decision.
+      // Proxy/network failures are not an import state.
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const body = await response.json();
-      if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
       if (!active) return;
       // Boundary: an unexpected body must never trap the user behind this gate.
       // A missing candidate list reads as empty; an unrecognized state resolves.
@@ -27,8 +31,11 @@ export function DataImportModal({ onResolved }: { onResolved: () => void }) {
       setSelected(value.candidates[0]?.sourceData ?? '');
       if (value.state === 'pending') setPending(true);
       else if (value.state !== 'offered' && value.state !== 'failed') onResolved();
-    }).catch(cause => { if (active) setError(cause instanceof Error ? cause.message : String(cause)); });
-    return () => { active = false; };
+    }).catch(() => {
+      if (active) retryTimer = setTimeout(check, Math.min(1_000 * 2 ** retryAttempt++, 10_000));
+    }); };
+    check();
+    return () => { active = false; clearTimeout(retryTimer); };
   }, [onResolved]);
   useEffect(() => { dialog.current?.focus(); }, [result, error]);
 
@@ -36,11 +43,15 @@ export function DataImportModal({ onResolved }: { onResolved: () => void }) {
     setBusy(true); setError('');
     try {
       const response = await fetch('/api/data-import/request', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      if ([502, 503, 504].includes(response.status)) throw new TypeError('Backend unreachable');
       const value = await response.json();
-      if (!response.ok) throw new Error(value.error || `HTTP ${response.status}`);
+      if (!response.ok) throw new Error(value.error || t('dataImport.safeFailure'));
       if (value.restartRequired) setPending(true);
       else onResolved();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    } catch (cause) {
+      setError(cause instanceof TypeError || cause instanceof SyntaxError
+        ? t('connection.reconnecting') : t('dataImport.safeFailure'));
+    }
     finally { setBusy(false); }
   }
   // The check itself is invisible: the Hub stays usable until there is
