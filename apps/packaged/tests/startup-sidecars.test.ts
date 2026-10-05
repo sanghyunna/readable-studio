@@ -74,6 +74,7 @@ writeFileSync(join(root, app + ".env.json"), JSON.stringify(Object.fromEntries([
   "NODE_OPTIONS", "NODE_TLS_REJECT_UNAUTHORIZED", "UNRELATED_SECRET",
   "READABLE_DATA_DIR", "READABLE_PACKAGED_NAMESPACE", "READABLE_SIDECAR_IPC_PATH", "READABLE_PORT",
 ].map((key) => [key, process.env[key]]))), "utf8");
+trace(app + ":pid:" + process.pid);
 trace(app + ":spawned:" + (process.env.READABLE_PORT ?? ""));
 if (behavior === "newer-schema") {
   console.error(JSON.stringify({ type: "readable-studio:database-open-refusal", code: "SCHEMA_VERSION_NEWER", pid: process.pid, databaseVersion: 9, supportedVersion: 1 }));
@@ -184,6 +185,7 @@ function fixturePaths(root: string, namespace: string): PackagedNamespacePaths {
 
 type FixtureHarness = {
   daemonLogPath: string;
+  webLogPath: string;
   fixturesRoot: string;
   phases: string[];
   events: EventEmitter;
@@ -228,6 +230,7 @@ function createFixtureHarness(
 
   return {
     daemonLogPath: join(paths.logsRoot, 'daemon', 'latest.log'),
+    webLogPath: join(paths.logsRoot, 'web', 'latest.log'),
     fixturesRoot,
     phases,
     events,
@@ -250,6 +253,24 @@ function createFixtureHarness(
       });
     },
   };
+}
+
+const pidAlive = (pid: number): boolean => { try { process.kill(pid, 0); return true; } catch { return false; } };
+
+/**
+ * Shutdown contract: a failed start only rejects after every child it spawned has been stopped,
+ * either gracefully (shutdown IPC) or by the product's forced-termination fallback. Both are valid,
+ * so assert the outcome (the PID is gone and the product logged completion), not which path ran.
+ */
+function spawnedPids(fixture: FixtureHarness, app: 'daemon' | 'web'): number[] {
+  const trace = readFileSync(join(fixture.fixturesRoot, 'trace.log'), 'utf8');
+  return [...trace.matchAll(new RegExp(`^${app}:pid:(\\d+)$`, 'gm'))].map(match => Number(match[1]));
+}
+
+function expectChildStopped(fixture: FixtureHarness, app: 'daemon' | 'web', pid: number): void {
+  expect(pidAlive(pid)).toBe(false);
+  const log = readFileSync(app === 'daemon' ? fixture.daemonLogPath : fixture.webLogPath, 'utf8');
+  expect(log).toContain(`exited app=${app} pid=${pid} `);
 }
 
 describe("startPackagedSidecars", () => {
@@ -428,7 +449,15 @@ describe("startPackagedSidecars", () => {
       expect(failure).toMatchObject({ code: 'SCHEMA_VERSION_NEWER', databaseVersion: 9, supportedVersion: 1 });
       const dialog = resolvePackagedStartupFailureDialog(failure, true, fixture.root);
       expect(dialog).toMatchObject({ defaultId: 1, cancelId: 1 });
-      expect(readFileSync(join(fixture.fixturesRoot, 'trace.log'), 'utf8')).toContain('web:shutdown');
+      const trace = readFileSync(join(fixture.fixturesRoot, 'trace.log'), 'utf8');
+      expect(trace.match(/daemon:spawned:/g)).toHaveLength(1);
+      expect(fixture.phases).not.toContain('daemon-restart-ready');
+      const [daemonPid, ...extraDaemons] = spawnedPids(fixture, 'daemon');
+      expect(extraDaemons).toHaveLength(0);
+      expect(pidAlive(daemonPid!)).toBe(false);
+      const webPids = spawnedPids(fixture, 'web');
+      expect(webPids).toHaveLength(1);
+      expectChildStopped(fixture, 'web', webPids[0]!);
     } finally {
       rmSync(fixture.root, { force: true, recursive: true });
     }
@@ -441,7 +470,13 @@ describe("startPackagedSidecars", () => {
       const trace = readFileSync(join(fixture.fixturesRoot, "trace.log"), "utf8");
       expect(trace.match(/daemon:spawned:/g)).toHaveLength(1);
       expect(trace).toContain("web:spawned");
-      expect(trace).toContain("web:shutdown");
+      expect(fixture.phases).not.toContain('daemon-restart-ready');
+      const daemonPids = spawnedPids(fixture, 'daemon');
+      expect(daemonPids).toHaveLength(1);
+      expect(pidAlive(daemonPids[0]!)).toBe(false);
+      const webPids = spawnedPids(fixture, 'web');
+      expect(webPids).toHaveLength(1);
+      expectChildStopped(fixture, 'web', webPids[0]!);
     } finally {
       rmSync(fixture.root, { force: true, recursive: true });
     }
@@ -453,7 +488,13 @@ describe("startPackagedSidecars", () => {
       await expect(fixture.start()).rejects.toThrow(/web exited before reporting status/);
       const trace = readFileSync(join(fixture.fixturesRoot, "trace.log"), "utf8");
       expect(trace).toContain("daemon:spawned");
-      expect(trace).toContain("daemon:shutdown");
+      expect(fixture.phases).not.toContain('daemon-restart-ready');
+      const webPids = spawnedPids(fixture, 'web');
+      expect(webPids).toHaveLength(1);
+      expect(pidAlive(webPids[0]!)).toBe(false);
+      const daemonPids = spawnedPids(fixture, 'daemon');
+      expect(daemonPids).toHaveLength(1);
+      expectChildStopped(fixture, 'daemon', daemonPids[0]!);
     } finally {
       rmSync(fixture.root, { force: true, recursive: true });
     }
@@ -469,9 +510,11 @@ describe("startPackagedSidecars", () => {
         .filter((line) => line.startsWith("daemon:spawned:"));
       expect(daemonStarts).toHaveLength(2);
       expect(daemonStarts[0]).not.toBe(daemonStarts[1]);
-      expect(readFileSync(join(fixture.fixturesRoot, "trace.log"), "utf8")).toContain(
-        "web:shutdown",
-      );
+      const webPids = spawnedPids(fixture, 'web');
+      expect(webPids.length).toBeGreaterThanOrEqual(2);
+      // The restarted web reopens the web log, so only the PID outcome of the first web is observable.
+      expect(pidAlive(webPids[0]!)).toBe(false);
+      expect(pidAlive(webPids.at(-1)!)).toBe(true);
     } finally {
       await sidecars?.close();
       rmSync(fixture.root, { force: true, recursive: true });
