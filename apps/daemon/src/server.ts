@@ -4970,6 +4970,9 @@ async function startServerWithProbeLifetime({
   ): void => {
     if (fatalShuttingDown) return;
     fatalShuttingDown = true;
+    // Installing fatal listeners suppresses Node's default stderr diagnostic.
+    // Packaged stderr is the daemon log fd; write synchronously before exit.
+    fs.writeSync(2, `${new Date().toISOString()} [readable] ${eventName}\n${properties.error_stack ?? `${properties.error_name}: ${properties.error_message}`}\n`);
     // CRITICAL: wait for captureSafety to settle before starting shutdown().
     // The no-op analytics service preserves the old async contract, and the
     // fatal path still needs bounded ordering so process exit remains
