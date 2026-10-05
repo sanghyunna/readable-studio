@@ -6068,6 +6068,9 @@ async function runTemplates(args) {
                                                     files as a new template.
                      [--description <text>]
   readable templates delete <id>                          Delete a saved template by id.
+  readable templates favorites list                       List favorite template ids in order.
+  readable templates favorites add <id>                   Append a template/plugin id (no-op if present).
+  readable templates favorites remove <id>                Drop a template/plugin id (no-op if absent).
 
 Common options:
   --daemon-url <url>   Readable Studio daemon HTTP base.
@@ -6207,6 +6210,68 @@ Common options:
         return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
       }
       console.log(`[templates] deleted ${id}`);
+      return;
+    }
+    case 'favorites': {
+      // Favorites live in app-config (`templateFavorites`), the same
+      // /api/app-config document the web UI loads and saves.
+      const [action, id] = positionalArgs(rest);
+      if (action !== 'list' && action !== 'add' && action !== 'remove') {
+        console.error('Usage: readable templates favorites list | add <id> | remove <id> [--json]');
+        process.exit(2);
+      }
+      if (action !== 'list' && !id) {
+        console.error(`Usage: readable templates favorites ${action} <id> [--json]`);
+        process.exit(2);
+      }
+      let resp;
+      try {
+        resp = await fetch(`${base}/api/app-config`);
+      } catch (err) {
+        surfaceFetchError(err, base);
+        process.exit(3);
+      }
+      if (!resp.ok) return structuredHttpFailure(resp);
+      const current = (await resp.json())?.config?.templateFavorites;
+      let favorites = Array.isArray(current) ? current : [];
+      if (action !== 'list') {
+        const next = action === 'add'
+          ? (favorites.includes(id) ? favorites : [...favorites, id])
+          : favorites.filter((favorite) => favorite !== id);
+        if (next.length !== favorites.length) {
+          try {
+            resp = await fetch(`${base}/api/app-config`, {
+              method:  'PUT',
+              headers: { 'content-type': 'application/json' },
+              body:    JSON.stringify({ templateFavorites: next }),
+            });
+          } catch (err) {
+            surfaceFetchError(err, base);
+            process.exit(3);
+          }
+          if (!resp.ok) {
+            if (resp.status === 400) return structuredHttpFailure(resp, 'missing-input');
+            return structuredHttpFailure(resp);
+          }
+          const saved = (await resp.json())?.config?.templateFavorites;
+          favorites = Array.isArray(saved) ? saved : next;
+          if (action === 'add' && !favorites.includes(id)) {
+            // The daemon caps the list; surface that instead of claiming success.
+            console.error(`[templates] favorites full; ${id} was not added`);
+            process.exitCode = 1;
+            return;
+          }
+        }
+      }
+      if (flags.json) {
+        return process.stdout.write(JSON.stringify({ templateFavorites: favorites }, null, 2) + '\n');
+      }
+      if (action === 'list') {
+        if (favorites.length === 0) console.log('No favorite templates.');
+        else for (const favorite of favorites) console.log(favorite);
+        return;
+      }
+      console.log(`[templates] favorite ${action === 'add' ? 'added' : 'removed'} ${id}`);
       return;
     }
     default:

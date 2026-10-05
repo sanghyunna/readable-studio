@@ -104,6 +104,8 @@ export interface AppConfigPrefs {
   designSystemId?: string | null;
   disabledSkills?: string[];
   disabledDesignSystems?: string[];
+  // Ordered plugin record ids; unique, non-empty, at most TEMPLATE_FAVORITES_MAX.
+  templateFavorites?: string[];
   installationId?: string | null;
   telemetry?: TelemetryPrefs;
   privacyDecisionAt?: number | null;
@@ -139,6 +141,7 @@ const ALLOWED_KEYS: ReadonlySet<keyof AppConfigPrefs> = new Set([
   'designSystemId',
   'disabledSkills',
   'disabledDesignSystems',
+  'templateFavorites',
   'installationId',
   'telemetry',
   'privacyDecisionAt',
@@ -182,6 +185,21 @@ export function validateEnabledAgentIds(raw: unknown): string[] | undefined {
     result.push(normalized);
   }
   return result;
+}
+
+const TEMPLATE_FAVORITES_MAX = 200;
+
+// Keeps first-seen order; drops non-string, blank and duplicate ids, then caps.
+export function validateTemplateFavorites(raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const seen = new Set<string>();
+  for (const item of raw) {
+    if (typeof item !== 'string') continue;
+    const id = item.trim();
+    if (id.length > 0) seen.add(id);
+    if (seen.size >= TEMPLATE_FAVORITES_MAX) break;
+  }
+  return [...seen];
 }
 
 function configFile(dataDir: string): string {
@@ -394,6 +412,16 @@ function applyConfigValue(
       delete target[key];
     }
   }
+  if (key === 'templateFavorites') {
+    // null resets; a malformed payload leaves the saved list untouched.
+    if (value === null) {
+      target[key] = [];
+      return;
+    }
+    const validated = validateTemplateFavorites(value);
+    if (validated !== undefined) target[key] = validated;
+    return;
+  }
   if (key === 'installationId') {
     if (typeof value === 'string' || value === null) target[key] = value;
     return;
@@ -487,6 +515,7 @@ function applyConfigDefaults(prefs: AppConfigPrefs): AppConfigPrefs {
     ...prefs,
     // Explicit defaults prevent clients from substituting the full catalog.
     enabledAgentIds: prefs.enabledAgentIds ?? [...DEFAULT_ENABLED_AGENT_IDS],
+    templateFavorites: prefs.templateFavorites ?? [],
     telemetry: prefs.telemetry ?? { metrics: false, content: false },
   };
 }

@@ -35,6 +35,12 @@ export interface AppConfigPrefs {
   designSystemId?: string | null;
   disabledSkills?: string[];
   disabledDesignSystems?: string[];
+  /**
+   * Ordered favorite template ids, keyed by the template's plugin record id
+   * (InstalledPluginRecord.id). Unique, non-empty, capped at
+   * TEMPLATE_FAVORITES_MAX. Reads default to []; null on write resets to [].
+   */
+  templateFavorites?: string[];
   installationId?: string | null;
   telemetry?: TelemetryPrefs;
   /**
@@ -60,6 +66,8 @@ export interface AppConfigPrefs {
   /** Daemon-owned offered-agent history. Ignored in preference updates. */
   offeredAgentIds?: string[];
 }
+
+export const TEMPLATE_FAVORITES_MAX = 200;
 
 export interface AppConfigResponse {
   config: AppConfigPrefs;

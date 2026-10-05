@@ -99,6 +99,12 @@ export const DEFAULT_PET: PetConfig = {
   },
 };
 
+/**
+ * `AppConfig` plus the daemon-owned favorites list (plugin record ids).
+ * Fold into `AppConfig` in types.ts when the Hub UI consumes it.
+ */
+export type AppConfigWithTemplateFavorites = AppConfig & { templateFavorites?: string[] };
+
 export const DEFAULT_CONFIG: AppConfig = {
   mode: 'daemon',
   apiKey: '',
@@ -537,10 +543,11 @@ export function loadConfig(): AppConfig {
 // truth: clearing app-config.json (or rotating via "Delete my data")
 // fully resets the install identity, with no residual cohort key
 // silently sitting in browser storage where the user can't see it.
-const DAEMON_OWNED_KEYS = new Set<keyof AppConfig>([
+const DAEMON_OWNED_KEYS = new Set<keyof AppConfigWithTemplateFavorites>([
   'installationId',
   'telemetry',
   'privacyDecisionAt',
+  'templateFavorites',
 ]);
 
 const AGENT_CLI_SECRET_ENV_KEYS = new Set(['ANTHROPIC_API_KEY', 'CODEX_API_KEY', 'OPENAI_API_KEY']);
@@ -566,9 +573,9 @@ export function saveConfig(config: AppConfig): void {
 }
 
 export function mergeDaemonConfig(
-  localConfig: AppConfig,
+  localConfig: AppConfigWithTemplateFavorites,
   daemonConfig: AppConfigPrefs | null,
-): AppConfig {
+): AppConfigWithTemplateFavorites {
   const next = { ...localConfig };
   if (!daemonConfig) return next;
 
@@ -598,6 +605,9 @@ export function mergeDaemonConfig(
   }
   if (daemonConfig.disabledDesignSystems !== undefined) {
     next.disabledDesignSystems = daemonConfig.disabledDesignSystems;
+  }
+  if (daemonConfig.templateFavorites !== undefined) {
+    next.templateFavorites = daemonConfig.templateFavorites;
   }
   if (daemonConfig.installationId !== undefined) {
     next.installationId = daemonConfig.installationId;
@@ -661,7 +671,7 @@ export async function fetchDaemonConfig(): Promise<AppConfigPrefs | null> {
 }
 
 export async function syncConfigToDaemon(
-  config: AppConfig,
+  config: AppConfigWithTemplateFavorites,
   options?: { throwOnError?: boolean; syncPerformanceProfile?: boolean },
 ): Promise<void> {
   const prefs: AppConfigPrefs = {
@@ -676,6 +686,7 @@ export async function syncConfigToDaemon(
     designSystemId: config.designSystemId,
     disabledSkills: config.disabledSkills,
     disabledDesignSystems: config.disabledDesignSystems,
+    templateFavorites: config.templateFavorites,
     installationId: config.installationId,
     telemetry: config.telemetry,
     privacyDecisionAt: config.privacyDecisionAt,
