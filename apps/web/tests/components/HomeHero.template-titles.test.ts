@@ -66,6 +66,13 @@ function railTitles(locale: 'ko' | 'en'): Array<{ tab: string; id: string; title
 }
 
 describe('Hub template carousel titles', () => {
+  it('every ko card title in all three tabs contains Hangul', () => {
+    const offenders = railTitles('ko')
+      .filter(({ title }) => !/[\uAC00-\uD7A3]/.test(title))
+      .map(({ tab, id, title }) => `${tab}/${id}: "${title}"`);
+    expect(offenders).toEqual([]);
+  });
+
   it('every ko card title in all three tabs is a human title, not a humanized id', () => {
     const offenders = railTitles('ko')
       .filter(({ id, title }) => (
