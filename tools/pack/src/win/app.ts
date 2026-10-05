@@ -62,10 +62,11 @@ async function runPnpm(config: ToolPackConfig, args: string[], extraEnv: NodeJS.
   const invocation = createPackageManagerInvocation(profiling ? ["--reporter=ndjson", ...args] : args, process.env);
   try {
     const result = await execFileAsync(invocation.command, invocation.args, {
-      cwd: config.workspaceRoot, windowsHide: true,
+      cwd: config.workspaceRoot,
       env: { ...process.env, ...extraEnv },
       ...(profiling ? { maxBuffer: 16 * 1024 * 1024 } : {}),
       windowsVerbatimArguments: invocation.windowsVerbatimArguments,
+      windowsHide: true,
     });
     if (profiling) forwardPnpmProfile(result.stdout);
   } catch (error) {

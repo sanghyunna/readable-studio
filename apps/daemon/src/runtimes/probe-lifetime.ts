@@ -50,7 +50,7 @@ function stopProbeTree(child: ChildProcess, kill: ChildProcess['kill']): Promise
       // Walk descendants before killing the parent, while ancestry is intact.
       const listing = await new Promise<string>((resolve, reject) => {
         const timer = setTimeout(() => reject(new DOMException('Probe process-tree cleanup timed out', 'TimeoutError')), 2250);
-        execFile('ps', ['-eo', 'pid=,ppid='], { timeout: 2000 }, (error, stdout) => {
+        execFile('ps', ['-eo', 'pid=,ppid='], { timeout: 2000, windowsHide: true }, (error, stdout) => {
           clearTimeout(timer);
           if (error) reject(error);
           else resolve(stdout);

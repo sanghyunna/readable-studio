@@ -284,13 +284,14 @@ async function runElectronBuilderRaw(
         "--publish",
         "never",
       ], {
-        cwd: config.workspaceRoot, windowsHide: true,
+        cwd: config.workspaceRoot,
         ...(isBuildProfilingEnabled() ? { maxBuffer: 16 * 1024 * 1024 } : {}),
         env: {
           ...process.env,
           CSC_IDENTITY_AUTO_DISCOVERY: "false",
           ...(webStandaloneHookConfigPath == null ? {} : { [WEB_STANDALONE_HOOK_CONFIG_ENV]: webStandaloneHookConfigPath }),
         },
+        windowsHide: true,
       }).catch((error: unknown) => {
         if (error instanceof Error && "stderr" in error && typeof error.stderr === "string") {
           forwardBuildProfile(error.stderr);
