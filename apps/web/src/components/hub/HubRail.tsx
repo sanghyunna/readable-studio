@@ -119,6 +119,7 @@ export function HubRail({
               key={query.trim() ? 'filtered' : 'all'}
               projects={rail.tree}
               searching={Boolean(query.trim())}
+              onClearFilter={() => rail.setQuery('')}
               compactByDefault
               openWork={
                 <HubOpenWork

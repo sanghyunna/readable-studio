@@ -82,11 +82,15 @@ describe('hub left panel navigation', () => {
     expect(screen.queryByTestId('hub-project-p1')).toBeNull();
   });
 
-  it('reports when a query matches nothing', async () => {
+  it('clears the search with the no-match filter link', async () => {
     listConversations.mockResolvedValue([]);
     renderHub();
-    await screen.findByTestId('hub-search');
-    fireEvent.change(screen.getByTestId('hub-search'), { target: { value: 'zzzz-없음' } });
-    expect(screen.getByTestId('hub-tree-empty')).toBeTruthy();
+    const search = await screen.findByTestId('hub-search');
+    fireEvent.change(search, { target: { value: 'zzzz-없음' } });
+    const empty = screen.getByTestId('hub-tree-empty');
+    fireEvent.click(empty.querySelector('button')!);
+    expect((screen.getByTestId('hub-search') as HTMLInputElement).value).toBe('');
+    expect(screen.getByTestId('hub-project-p1')).toBeTruthy();
+    expect(screen.getByTestId('hub-project-p2')).toBeTruthy();
   });
 });

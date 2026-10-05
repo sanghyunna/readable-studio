@@ -53,6 +53,8 @@ interface Props {
    * then means "nothing matched", not "nothing exists".
    */
   searching?: boolean;
+  /** Clears the rail-owned search query alongside this tree's status filter. */
+  onClearFilter?: () => void;
   currentSessionId: string | null;
   onOpenSession: (session: HubSessionNode) => void;
   onNewSession?: (project: HubProjectNode) => void;
@@ -251,6 +253,7 @@ export function HubSessionTree({
   openWork,
   collapsed: railCollapsed = false,
   searching = false,
+  onClearFilter,
   currentSessionId,
   onOpenSession,
   onNewSession,
@@ -957,7 +960,7 @@ export function HubSessionTree({
       ) : rows.length === 0 ? (
         <p className="hub-tree__empty" data-testid="hub-tree-empty">
           {t('hub.emptyFiltered')}{' '}
-          <button type="button" className="hub-tree__link" onClick={() => setFilter('all')}>
+          <button type="button" className="hub-tree__link" onClick={() => { setFilter('all'); onClearFilter?.(); }}>
             {t('hub.clearFilter')}
           </button>
         </p>
