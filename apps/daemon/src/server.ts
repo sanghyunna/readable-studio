@@ -15,7 +15,7 @@ function formatLocalProjectTimestamp(iso: string): string {
 
 import type { DesktopExportPdfInput, DesktopExportPdfResult } from '@readable-studio/sidecar-proto';
 import express from 'express';
-import { shutdownProbes } from './runtimes/probe-lifetime.js';
+import { shutdownProbes, startDaemonProbeLifetime, withDaemonProbeLifetime, type DaemonProbeLifetime } from './runtimes/probe-lifetime.js';
 import multer from 'multer';
 import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -3930,7 +3930,12 @@ function resolveAcpStageTimeoutMs(): number | undefined {
 }
 
 // @dsp func-a4b7141c
-export async function startServer({
+export async function startServer(options: StartServerOptions = {}) {
+  const probeLifetime = startDaemonProbeLifetime();
+  return withDaemonProbeLifetime(probeLifetime, () => startServerWithProbeLifetime(options, probeLifetime));
+}
+
+async function startServerWithProbeLifetime({
   port = 7456,
   host = process.env.READABLE_BIND_HOST || '127.0.0.1',
   returnServer = false,
@@ -3940,7 +3945,7 @@ export async function startServer({
   isolatedAgentSpawn = spawnIsolatedAgent,
   hostedRequestBoundary,
   hostedPiRuntime,
-}: StartServerOptions = {}) {
+}: StartServerOptions, probeLifetime: DaemonProbeLifetime) {
   const desktopApprovalToken = consumeDesktopApprovalToken(process.env);
   const isolatedAgentSupport = desktopApprovalToken
     ? await isolatedAgentProbe({
@@ -3978,6 +3983,7 @@ export async function startServer({
   }
 
   const app = express();
+  app.use((_req, _res, next) => withDaemonProbeLifetime(probeLifetime, next));
   installRouteRegistrationGuard(app);
   const hostedRequestBodyGuard = hostedRequestBoundary === undefined
     ? undefined
@@ -14049,7 +14055,7 @@ export async function startServer({
       daemonShuttingDown = true;
       // HTTP close and explicit shutdown may race; both must join probe cleanup.
       daemonShutdownPromise = Promise.resolve().then(async () => {
-        await shutdownProbes();
+        await shutdownProbes(probeLifetime);
         await design.runs.shutdownActive({ graceMs: resolveChatRunShutdownGraceMs() });
         await Promise.all([...activeDatabricksRuntimes].map((runtime) => runtime.close()));
         activeDatabricksRuntimes.clear();

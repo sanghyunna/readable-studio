@@ -1,5 +1,5 @@
 import { availableParallelism } from 'node:os';
-import { probeShutdownSignal } from './probe-lifetime.js';
+import { getProbeShutdownSignal } from './probe-lifetime.js';
 import type { AgentScanProgress } from '@readable-studio/contracts';
 import type { DetectedAgent, RuntimeAgentDef } from './types.js';
 
@@ -20,7 +20,7 @@ export function startStartupScan(
   probe: Probe,
   signal?: AbortSignal,
 ): StartupScanSession {
-  signal = AbortSignal.any([probeShutdownSignal, ...(signal ? [signal] : [])]);
+  signal = AbortSignal.any([getProbeShutdownSignal(), ...(signal ? [signal] : [])]);
   let progress: AgentScanProgress = {
     phase: 'running', currentAgentId: null, currentAgentName: null,
     completed: 0, total: defs.length,

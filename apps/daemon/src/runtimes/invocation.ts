@@ -3,7 +3,7 @@ import os from 'node:os';
 import { promisify } from 'node:util';
 import { createCommandInvocation } from '@readable-studio/platform';
 import type { RuntimeExecOptions } from './types.js';
-import { probeShutdownSignal, terminateProbeTree, trackProbeChild } from './probe-lifetime.js';
+import { getProbeShutdownSignal, terminateProbeTree, trackProbeChild } from './probe-lifetime.js';
 
 const execFileP = promisify(execFile);
 
@@ -32,7 +32,7 @@ export function execAgentFile(
   args: string[],
   options: RuntimeExecOptions = {},
 ) {
-  probeShutdownSignal.throwIfAborted();
+  getProbeShutdownSignal().throwIfAborted();
   const invocation = createAgentCommandInvocation(command, args, options.env);
   const pending = execFileP(invocation.command, invocation.args, {
     ...options,

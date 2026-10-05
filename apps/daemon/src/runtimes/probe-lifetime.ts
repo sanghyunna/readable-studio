@@ -4,11 +4,30 @@ import { subscribe } from 'node:diagnostics_channel';
 
 type ProbeLifetime = { readonly signal: AbortSignal; readonly children: Set<Promise<void>>; readonly cleanup: Set<Promise<void>> };
 const lifetimes = new AsyncLocalStorage<ProbeLifetime>();
-const daemonShutdown = new AbortController();
-export const probeShutdownSignal: AbortSignal = daemonShutdown.signal;
-const activeProbes = new Map<ChildProcess, () => Promise<void>>();
+export type DaemonProbeLifetime = {
+  readonly shutdown: AbortController;
+  readonly activeProbes: Map<ChildProcess, () => Promise<void>>;
+};
+const daemons = new AsyncLocalStorage<DaemonProbeLifetime>();
+// Direct discovery callers use the latest server; owned async work keeps its
+// original controller and child registry even after another server starts.
+let currentDaemon: DaemonProbeLifetime = { shutdown: new AbortController(), activeProbes: new Map() };
+
+export function startDaemonProbeLifetime(): DaemonProbeLifetime {
+  currentDaemon = { shutdown: new AbortController(), activeProbes: new Map() };
+  return currentDaemon;
+}
+
+export function withDaemonProbeLifetime<T>(daemon: DaemonProbeLifetime, work: () => T): T {
+  return daemons.run(daemon, work);
+}
+
+export function getProbeShutdownSignal(): AbortSignal {
+  return (daemons.getStore() ?? currentDaemon).shutdown.signal;
+}
 
 export function trackProbeChild(child: ChildProcess): void {
+  const { activeProbes } = daemons.getStore() ?? currentDaemon;
   if (activeProbes.has(child)) return;
   const kill = child.kill.bind(child);
   let stopping: Promise<void> | undefined;
@@ -16,9 +35,9 @@ export function trackProbeChild(child: ChildProcess): void {
   child.once('close', () => activeProbes.delete(child));
 }
 
-export async function shutdownProbes(): Promise<void> {
-  daemonShutdown.abort(new DOMException('Daemon is shutting down', 'AbortError'));
-  const results = await Promise.allSettled([...activeProbes.values()].map(stop => stop()));
+export async function shutdownProbes(daemon: DaemonProbeLifetime = daemons.getStore() ?? currentDaemon): Promise<void> {
+  daemon.shutdown.abort(new DOMException('Daemon is shutting down', 'AbortError'));
+  const results = await Promise.allSettled([...daemon.activeProbes.values()].map(stop => stop()));
   const errors = results.filter(result => result.status === 'rejected').map(result => result.reason);
   if (errors.length) throw new AggregateError(errors, 'Probe shutdown cleanup failed');
 }
@@ -100,7 +119,8 @@ subscribe('child_process', (message: unknown) => {
 });
 
 export async function withProbeLifetime<T>(signal: AbortSignal, probe: () => Promise<T>): Promise<T> {
-  signal = AbortSignal.any([signal, probeShutdownSignal]);
+  const daemon = daemons.getStore() ?? currentDaemon;
+  signal = AbortSignal.any([signal, daemon.shutdown.signal]);
   signal.throwIfAborted();
   const lifetime: ProbeLifetime = { signal, children: new Set(), cleanup: new Set() };
   let onAbort = () => {};
@@ -108,7 +128,7 @@ export async function withProbeLifetime<T>(signal: AbortSignal, probe: () => Pro
     onAbort = () => reject(signal.reason);
     signal.addEventListener('abort', onAbort, { once: true });
   });
-  const completed = lifetimes.run(lifetime, async () => {
+  const completed = daemons.run(daemon, () => lifetimes.run(lifetime, async () => {
     try {
       const result = await probe();
       signal.throwIfAborted();
@@ -116,7 +136,7 @@ export async function withProbeLifetime<T>(signal: AbortSignal, probe: () => Pro
     } finally {
       await Promise.all(lifetime.children);
     }
-  });
+  }));
   try {
     // Cancellation does not depend on close or adapter cooperation. Cleanup
     // itself is bounded and joined before returning to the scan owner.

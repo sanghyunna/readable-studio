@@ -3,7 +3,9 @@ import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import { ok } from 'node:assert/strict';
 import { Server } from 'node:http';
-import { closeHttpServer } from '../src/daemon-startup.js';
+import { closeHttpServer, startDaemonRuntime } from '../src/daemon-startup.js';
+import { shutdownProbes, withProbeLifetime } from '../src/runtimes/probe-lifetime.js';
+import { execAgentFile } from '../src/runtimes/invocation.js';
 import { startServer } from '../src/server.js';
 import type { RuntimeAgentDef } from '../src/runtimes/types.js';
 
@@ -12,6 +14,42 @@ vi.mock('../src/runtimes/detection-probe.js', async (importOriginal) => ({
 }));
 import { safeProbe } from '../src/runtimes/detection-probe.js';
 import { _resetAgentDetectionCacheForTests, detectAgents } from '../src/runtimes/detection.js';
+
+it('restarts a daemon runtime without reviving probes from the stopped runtime', async () => {
+  const first = await startDaemonRuntime({ port: 0 });
+  const resume = deferred();
+  const resumed = deferred();
+  let lateProbe: unknown;
+  const pending = withProbeLifetime(new AbortController().signal, async () => {
+    await resume.promise;
+    try {
+      await shutdownProbes();
+      await execAgentFile(process.execPath, ['-e', "console.log('stale')"]);
+    } catch (error) {
+      lateProbe = error;
+    } finally {
+      resumed.resolve();
+    }
+  });
+  const cancelled = pending.catch(error => error);
+  await first.stop();
+  const second = await startDaemonRuntime({ port: 0 });
+  try {
+    const result = await withProbeLifetime(new AbortController().signal, () =>
+      execAgentFile(process.execPath, ['-e', "console.log('restarted')"]));
+    expect(String(result.stdout).trim()).toBe('restarted');
+    resume.resolve();
+    await resumed.promise;
+    expect(lateProbe).toMatchObject({ name: 'AbortError' });
+    expect(await cancelled).toMatchObject({ name: 'AbortError' });
+    await first.stop();
+    expect(await withProbeLifetime(new AbortController().signal, async () => 'still active')).toBe('still active');
+  } finally {
+    resume.resolve();
+    await second.stop();
+  }
+  await expect(withProbeLifetime(new AbortController().signal, async () => 'blocked')).rejects.toMatchObject({ name: 'AbortError' });
+});
 
 function deferred() {
   let resolve: () => void = () => { throw new Error('uninitialized signal'); };
