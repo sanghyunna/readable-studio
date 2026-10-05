@@ -711,6 +711,8 @@ export function getEn(): Dict {
   'homeHero.templateTabDeck': 'Slide decks',
   'homeHero.templateTabReport': 'Reports',
   'homeHero.templateTabPrototype': 'Websites',
+  'homeHero.templateFavoriteAdd': 'Add to favorites',
+  'homeHero.templateFavoriteRemove': 'Remove from favorites',
   'homeHero.subtitlePrefix': 'Source text to polished standalone HTML, with PowerPoint-like direct editing for office workers and enterprise AI transformation.',
   'homeHero.placeholder': 'Paste source text or describe the document…',
   'homeHero.placeholderOpenDocument': 'Press Enter to open {name} for editing, or describe what the agent should do with it…',

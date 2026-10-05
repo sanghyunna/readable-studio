@@ -1032,6 +1032,8 @@ export interface Dict {
   'homeHero.templateTabDeck': string;
   'homeHero.templateTabReport': string;
   'homeHero.templateTabPrototype': string;
+  'homeHero.templateFavoriteAdd': string;
+  'homeHero.templateFavoriteRemove': string;
   'homeHero.subtitlePrefix': string;
   'homeHero.placeholder': string;
   'homeHero.placeholderOpenDocument': string;

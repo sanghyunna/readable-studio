@@ -12,6 +12,14 @@
 //    collapse the rail once; the choice is persisted in localStorage next to
 //    the first-run guide stage, so it survives restarts. Visible by default
 //    - the user opts out, never in.
+//  - Favorites. Each card carries a star toggle; favorited templates sort
+//    FIRST within the active tab in the order they were starred, then the
+//    rest keep the curated order. The list is the app config's
+//    `templateFavorites` (daemon-owned, so it survives a reload and is the
+//    same list `readable templates favorites` edits): HomeHero reads it
+//    through `fetchDaemonConfig`, writes it with a partial PUT, and then
+//    announces the change so App's config state adopts the new list instead
+//    of re-syncing a stale one.
 //  - Which preview a card paints. The rail exists so templates appear
 //    VISUALLY, so a thumbnail must never depend on a remote host: the daemon
 //    attaches a baked poster/clip whose URL falls back to a CDN when the bake
@@ -23,6 +31,7 @@
 
 import type { InstalledPluginRecord } from '@readable-studio/contracts';
 
+import { fetchDaemonConfig } from '../../state/config';
 import { inferPluginPreview, type PluginPreviewSpec } from '../plugins-home/preview';
 
 export interface HubTemplateCarouselItem {
@@ -52,6 +61,63 @@ export function hubTemplateCardPreview(record: InstalledPluginRecord): PluginPre
     return { kind: 'text' };
   }
   return local;
+}
+
+// Favorites first, in the order they were starred; everything else keeps
+// its incoming (curated) order.
+export function sortHubTemplateItemsByFavorite<T extends { record: { id: string } }>(
+  items: readonly T[],
+  favorites: readonly string[],
+): T[] {
+  if (favorites.length === 0) return [...items];
+  const rank = new Map<string, number>();
+  favorites.forEach((id, index) => {
+    if (!rank.has(id)) rank.set(id, index);
+  });
+  const starred = items
+    .filter((item) => rank.has(item.record.id))
+    .sort((a, b) => rank.get(a.record.id)! - rank.get(b.record.id)!);
+  const rest = items.filter((item) => !rank.has(item.record.id));
+  return [...starred, ...rest];
+}
+
+// Starring appends (so the list IS the favorite order); unstarring removes.
+export function toggleTemplateFavorite(favorites: readonly string[], id: string): string[] {
+  return favorites.includes(id)
+    ? favorites.filter((entry) => entry !== id)
+    : [...favorites, id];
+}
+
+// Same event App listens to: after a successful write it re-reads the
+// daemon config and merges `templateFavorites` into its own state, so a later
+// full config sync carries the new list rather than the one it loaded with.
+export const APP_CONFIG_CHANGED_EVENT = 'readable-studio:app-config-changed';
+
+export async function fetchTemplateFavorites(): Promise<string[]> {
+  const config = await fetchDaemonConfig();
+  const list = config?.templateFavorites;
+  return Array.isArray(list) ? list.filter((id): id is string => typeof id === 'string') : [];
+}
+
+// Partial PUT: the daemon merges only the keys present in the body, so the
+// Hub never has to know the rest of the config. Resolves to whether the
+// daemon accepted the write; an offline daemon keeps the optimistic UI for
+// this run and the next load re-reads whatever was persisted.
+export async function persistTemplateFavorites(favorites: readonly string[]): Promise<boolean> {
+  try {
+    const response = await fetch('/api/app-config', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ templateFavorites: [...favorites] }),
+    });
+    if (!response.ok) return false;
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event(APP_CONFIG_CHANGED_EVENT));
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 const STORAGE_KEY = 'readable-studio:hub-template-carousel';

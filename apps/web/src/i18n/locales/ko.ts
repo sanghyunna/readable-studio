@@ -711,6 +711,8 @@ export function getKo(): Dict {
   'homeHero.templateTabDeck': '슬라이드덱',
   'homeHero.templateTabReport': '보고서',
   'homeHero.templateTabPrototype': '웹사이트',
+  'homeHero.templateFavoriteAdd': '즐겨찾기 추가',
+  'homeHero.templateFavoriteRemove': '즐겨찾기 해제',
   'homeHero.subtitlePrefix': '오픈소스 Claude Design 대안.',
   'homeHero.placeholder': '생성하고 싶은 내용을 설명하세요…',
   'homeHero.placeholderOpenDocument': 'Enter를 누르면 {name}을(를) 바로 편집합니다. 에이전트에게 맡기려면 요청을 적어 주세요…',

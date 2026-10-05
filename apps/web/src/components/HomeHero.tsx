@@ -12,6 +12,7 @@ import {
   useEffect,
   useId,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -70,9 +71,13 @@ import { PreviewSurface } from './plugins-home/cards/PreviewSurface';
 import { readHomeGuideStage, writeHomeGuideStage } from './home-hero/firstRunGuide';
 import {
   HUB_TEMPLATE_TAB_IDS,
+  fetchTemplateFavorites,
   hubTemplateCardPreview,
+  persistTemplateFavorites,
   readTemplateCarouselCollapsed,
   readTemplateCarouselTab,
+  sortHubTemplateItemsByFavorite,
+  toggleTemplateFavorite,
   writeTemplateCarouselCollapsed,
   writeTemplateCarouselTab,
   type HubTemplateCarouselItem,
@@ -584,14 +589,40 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   // with no chip the rail shows the selected tab's FULL curated set - every
   // template of that creation type, uncapped, in the curated / visual-appeal
   // order the chip view uses.
+  // Starred templates lead the rail (in starring order); the list is the
+  // daemon-owned `templateFavorites` so it survives a reload.
+  const [templateFavorites, setTemplateFavorites] = useState<string[]>([]);
+  // A star pressed before the initial read resolves must not be undone by
+  // that read: the user's list is newer than the one on disk.
+  const templateFavoritesTouchedRef = useRef(false);
+  const templateFavoritesRef = useRef(templateFavorites);
+  templateFavoritesRef.current = templateFavorites;
+  useEffect(() => {
+    if (surface !== 'hub') return;
+    let cancelled = false;
+    void fetchTemplateFavorites().then((list) => {
+      if (!cancelled && !templateFavoritesTouchedRef.current) setTemplateFavorites(list);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [surface]);
   const hubTemplateItems = useMemo<HubTemplateCarouselItem[]>(() => {
     if (surface !== 'hub') return [];
-    if (activeChipId) {
-      return filteredExamplePlugins.map((record) => ({ record, chipId: activeChipId }));
-    }
-    return homeHeroExamplePluginsForChip(templateRailTab, pluginOptions, locale, { limit: Infinity })
-      .map((record) => ({ record, chipId: templateRailTab }));
-  }, [surface, activeChipId, filteredExamplePlugins, templateRailTab, pluginOptions, locale]);
+    const items = activeChipId
+      ? filteredExamplePlugins.map((record) => ({ record, chipId: activeChipId }))
+      : homeHeroExamplePluginsForChip(templateRailTab, pluginOptions, locale, { limit: Infinity })
+        .map((record) => ({ record, chipId: templateRailTab }));
+    return sortHubTemplateItemsByFavorite(items, templateFavorites);
+  }, [surface, activeChipId, filteredExamplePlugins, templateRailTab, pluginOptions, locale, templateFavorites]);
+  function toggleHubTemplateFavorite(id: string) {
+    // Optimistic: the star and the order flip at once; the write follows.
+    templateFavoritesTouchedRef.current = true;
+    const next = toggleTemplateFavorite(templateFavoritesRef.current, id);
+    templateFavoritesRef.current = next;
+    setTemplateFavorites(next);
+    void persistTemplateFavorites(next);
+  }
   // The rail (with its tab column) stays mounted while ANY tab has templates,
   // so an empty tab still leaves the other two reachable; with a chip active
   // the rail follows the chip and shows only when that chip has presets.
@@ -1699,6 +1730,8 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
       {hubTemplateRailVisible ? (
         <HubTemplateCarousel
           items={hubTemplateItems}
+          favorites={templateFavorites}
+          onToggleFavorite={toggleHubTemplateFavorite}
           collapsed={templateRailCollapsed}
           tab={activeChipId ? null : templateRailTab}
           onTabChange={(next) => {
@@ -1847,22 +1880,26 @@ function PluginPromptPresets({
 function HubTemplateCarousel({
   activePluginId,
   collapsed,
+  favorites,
   items,
   locale,
   onPick,
   onTabChange,
   onToggle,
+  onToggleFavorite,
   pendingPluginId,
   pulseFirstPreset = false,
   tab,
 }: {
   activePluginId: string | null;
   collapsed: boolean;
+  favorites: readonly string[];
   items: HubTemplateCarouselItem[];
   locale: Locale;
   onPick: (record: InstalledPluginRecord, chipId: string, promptText: string) => void;
   onTabChange: (tab: HubTemplateTabId) => void;
   onToggle: () => void;
+  onToggleFavorite: (id: string) => void;
   pendingPluginId: string | null;
   pulseFirstPreset?: boolean;
   tab: HubTemplateTabId | null;
@@ -1905,6 +1942,36 @@ function HubTemplateCarousel({
   useEffect(() => {
     if (focusIndex >= items.length) setFocusIndex(0);
   }, [focusIndex, items.length]);
+
+  // Starring reorders the rail; FLIP the cards that moved so the change
+  // reads as a slide instead of a jump. Positions are captured before every
+  // commit and the delta played after, so only a reorder animates (a tab
+  // switch swaps the whole set and nothing matches). Reduced motion skips it.
+  const cardRectsRef = useRef(new Map<string, number>());
+  const orderKey = items.map((item) => item.record.id).join('\n');
+  useLayoutEffect(() => {
+    const rail = railRef.current;
+    if (!rail) return;
+    const previous = cardRectsRef.current;
+    const next = new Map<string, number>();
+    const reduceMotion = typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    for (const node of rail.querySelectorAll<HTMLElement>('[data-testid="hub-template-item"]')) {
+      const id = node.dataset.pluginId;
+      if (!id) continue;
+      const left = node.getBoundingClientRect().left;
+      next.set(id, left);
+      const before = previous.get(id);
+      if (reduceMotion || before === undefined || typeof node.animate !== 'function') continue;
+      const delta = before - left;
+      if (Math.abs(delta) < 1) continue;
+      node.animate(
+        [{ transform: `translateX(${delta}px)` }, { transform: 'translateX(0)' }],
+        { duration: 320, easing: 'cubic-bezier(0.23, 1, 0.32, 1)' },
+      );
+    }
+    cardRectsRef.current = next;
+  }, [orderKey]);
 
   function moveFocus(next: number) {
     const clamped = Math.max(0, Math.min(items.length - 1, next));
@@ -2012,12 +2079,14 @@ function HubTemplateCarousel({
                   item={item}
                   locale={locale}
                   active={activePluginId === item.record.id}
+                  favorite={favorites.includes(item.record.id)}
                   pending={pendingPluginId === item.record.id}
                   disabled={pendingPluginId !== null}
                   pulse={pulseFirstPreset && index === 0}
                   tabIndex={index === focusIndex ? 0 : -1}
                   onFocus={() => setFocusIndex(index)}
                   onPick={onPick}
+                  onToggleFavorite={onToggleFavorite}
                 />
               ))}
             </div>
@@ -2028,27 +2097,35 @@ function HubTemplateCarousel({
   );
 }
 
+// The list item is a wrapper: the pick button and the favorite star are
+// SIBLINGS (a button cannot nest a button), the star positioned over the
+// thumb's top-right corner. A star press never reaches the pick handler.
 function HubTemplateCard({
   active,
   disabled,
+  favorite,
   item,
   locale,
   onFocus,
   onPick,
+  onToggleFavorite,
   pending,
   pulse,
   tabIndex,
 }: {
   active: boolean;
   disabled: boolean;
+  favorite: boolean;
   item: HubTemplateCarouselItem;
   locale: Locale;
   onFocus: () => void;
   onPick: (record: InstalledPluginRecord, chipId: string, promptText: string) => void;
+  onToggleFavorite: (id: string) => void;
   pending: boolean;
   pulse: boolean;
   tabIndex: 0 | -1;
 }) {
+  const { t } = useI18n();
   const { record, chipId } = item;
   // Local-only thumbnail: a daemon-served baked poster when the bake is on
   // disk, otherwise the bundled example page rendered in a sandboxed, scaled
@@ -2060,9 +2137,14 @@ function HubTemplateCard({
     pluginPresetPromptPreview(record, locale, chipId),
   ).text;
   return (
+    <div
+      role="listitem"
+      className={`home-hero__template-item${favorite ? ' is-favorite' : ''}`}
+      data-testid="hub-template-item"
+      data-plugin-id={record.id}
+    >
     <button
       type="button"
-      role="listitem"
       className={`home-hero__template-card${active ? ' is-active' : ''}${pending ? ' is-pending' : ''}${pulse ? ' home-hero__attention-sheen' : ''}`}
       data-testid="hub-template-card"
       data-plugin-id={record.id}
@@ -2089,6 +2171,28 @@ function HubTemplateCard({
         <span>{title}</span>
       </span>
     </button>
+    <button
+      type="button"
+      className={`home-hero__template-fav${favorite ? ' is-on' : ''}`}
+      data-testid="hub-template-favorite"
+      data-plugin-id={record.id}
+      aria-pressed={favorite}
+      aria-label={t(favorite ? 'homeHero.templateFavoriteRemove' : 'homeHero.templateFavoriteAdd')}
+      tabIndex={tabIndex}
+      onFocus={onFocus}
+      onClick={(event) => {
+        event.stopPropagation();
+        onToggleFavorite(record.id);
+      }}
+      onKeyDown={(event) => {
+        // Enter/Space toggle through the native click; keep the rail's
+        // arrow-key handler from treating the press as a card pick.
+        if (event.key === 'Enter' || event.key === ' ') event.stopPropagation();
+      }}
+    >
+      <Icon name="star" size={16} />
+    </button>
+    </div>
   );
 }
 

@@ -2645,9 +2645,19 @@
   background-clip: padding-box;
 }
 
+/* The list item wraps the pick button and its favorite star as siblings
+   (a button cannot nest a button); the star floats over the thumb's
+   top-right corner. */
+.home-hero__template-item {
+  position: relative;
+  flex: 0 0 216px;
+  min-width: 0;
+  scroll-snap-align: start;
+}
+
 .home-hero__template-card {
   appearance: none;
-  flex: 0 0 216px;
+  width: 100%;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -2662,12 +2672,84 @@
   font: inherit;
   text-align: left;
   cursor: pointer;
-  scroll-snap-align: start;
   transition:
     background-color var(--dur-quick) var(--ease-out),
     box-shadow var(--dur-quick) var(--ease-out),
     color var(--dur-quick) var(--ease-out),
     transform var(--dur-quick) var(--ease-out);
+}
+
+/* Favorite star: a 26px hit area inside the thumb's top-right corner (card
+   padding 8 + 6 inset). OFF is a faint outline only, ON fills with the warm
+   token; a panel-colored halo behind the glyph keeps either state legible
+   on light and dark previews without a hard border. */
+.home-hero__template-fav {
+  appearance: none;
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: color-mix(in srgb, var(--text-muted) 55%, transparent);
+  cursor: pointer;
+  transition:
+    color var(--dur-quick) var(--ease-out),
+    background-color var(--dur-quick) var(--ease-out),
+    transform var(--dur-quick) var(--ease-out);
+}
+
+.home-hero__template-fav svg {
+  fill: transparent;
+  filter: drop-shadow(0 1px 2px color-mix(in srgb, var(--bg-panel) 80%, transparent))
+    drop-shadow(0 0 1px color-mix(in srgb, var(--bg-panel) 60%, transparent));
+  transition:
+    fill var(--dur-quick) var(--ease-out),
+    transform var(--dur-enter) var(--ease-out);
+}
+
+.home-hero__template-fav:hover,
+.home-hero__template-fav:focus-visible {
+  outline: none;
+  color: var(--text);
+  background: color-mix(in srgb, var(--bg-panel) 55%, transparent);
+  transform: scale(1.08);
+}
+
+.home-hero__template-fav:focus-visible {
+  box-shadow: 0 0 0 2px var(--hub-accent);
+}
+
+.home-hero__template-fav.is-on {
+  color: var(--amber);
+}
+
+.home-hero__template-fav.is-on svg {
+  fill: currentColor;
+  animation: home-hero-fav-pop var(--dur-enter) var(--ease-out);
+}
+
+.home-hero__template-fav.is-on:hover,
+.home-hero__template-fav.is-on:focus-visible {
+  color: var(--amber);
+}
+
+@keyframes home-hero-fav-pop {
+  from {
+    transform: scale(0.9);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 .home-hero__template-card:disabled {
@@ -2779,8 +2861,16 @@
 @media (prefers-reduced-motion: reduce) {
   .home-hero__templates-toggle,
   .home-hero__templates-toggle svg,
-  .home-hero__template-card {
+  .home-hero__template-card,
+  .home-hero__template-fav,
+  .home-hero__template-fav svg {
     transition: none;
+    animation: none;
+  }
+
+  .home-hero__template-fav:hover,
+  .home-hero__template-fav:focus-visible {
+    transform: none;
   }
 }
 
