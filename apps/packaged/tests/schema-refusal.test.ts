@@ -20,7 +20,10 @@ describe('schema refusal protocol', () => {
   });
   it.each([true, false])('defaults to Quit for newer schema (Korean=%s)', (korean) => {
     const error = parsePackagedDatabaseRefusal(JSON.stringify(record), 123);
-    expect(resolvePackagedStartupFailureDialog(error, korean, 'logs')).toMatchObject({ defaultId: 1, cancelId: 1 });
+    const dialog = resolvePackagedStartupFailureDialog(error, korean, 'logs');
+    expect(dialog).toMatchObject({ defaultId: 1, cancelId: 1 });
+    expect(dialog.detail).toContain('9');
+    expect(dialog.detail).toContain('1');
     expect(resolvePackagedStartupFailureDialog(new Error('failure'), korean, 'logs')).toMatchObject({ defaultId: 0, cancelId: 1 });
   });
 });
