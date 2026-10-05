@@ -10,11 +10,28 @@ import {
   installGeneratedPluginFolder,
   listProjectCheckpoints,
   listProjects,
+  listConversations,
   listPlugins,
   pickLocalFolderPath,
   publishGeneratedPluginToGitHub,
   rollbackConversation,
 } from '../../src/state/projects';
+
+describe('conversation listing availability', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it.each(['network', 500, 502] as const)('strict reads preserve %s failures instead of treating them as an empty project', async failure => {
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => {
+      if (failure === 'network') throw new TypeError('connection refused');
+      return new Response('unavailable', { status: failure });
+    }));
+    await expect(listConversations('p', { strict: true })).rejects.toThrow();
+    await expect(listConversations('p')).resolves.toEqual([]);
+  });
+  it('strict reads return an authoritative empty list', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ conversations: [] }))));
+    await expect(listConversations('p', { strict: true })).resolves.toEqual([]);
+  });
+});
 
 describe('project listing availability', () => {
   it('distinguishes an unavailable daemon from a genuinely empty project list during startup', async () => {

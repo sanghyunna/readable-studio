@@ -6,14 +6,16 @@ import { createShortcut, resolveShortcutPaths } from './shortcuts.js';
 export function startShortcutLoop(options: { token: string; discoverDaemonUrl(): Promise<string | null> }): { abort(): void; done: Promise<void> } {
   const controller = new AbortController();
   const done = (async () => {
+    let failures = 0;
     while (!controller.signal.aborted) {
       try {
         const base = await options.discoverDaemonUrl();
-        if (!base) { await delay(1000, controller.signal); continue; }
+        if (!base) throw new Error('daemon is unavailable');
         const headers = { Authorization: `Bearer ${options.token}` };
         const response = await fetch(`${base}/api/shortcuts/desktop/next`, { headers, signal: controller.signal });
-        if (!response.ok) { await delay(1000, controller.signal); continue; }
+        if (!response.ok) throw new Error(`shortcut queue HTTP ${response.status}`);
         const body = await response.json() as { job: { id: string; location: ShortcutLocation } | null };
+        failures = 0;
         if (!body.job || controller.signal.aborted) continue;
         const packaged = app.isPackaged && process.platform === 'win32';
         let result: ShortcutCreateResult;
@@ -33,7 +35,13 @@ export function startShortcutLoop(options: { token: string; discoverDaemonUrl():
         });
         if (!ack.ok) console.error('shortcut result delivery failed:', ack.status);
       } catch (error) {
-        if (!controller.signal.aborted) { console.error('shortcut loop:', error); await delay(1000, controller.signal); }
+        if (!controller.signal.aborted) {
+          if (failures === 0) console.error('shortcut loop:', {
+            message: error instanceof Error ? error.message : String(error),
+            cause: error instanceof Error && error.cause != null ? String(error.cause) : undefined,
+          });
+          await delay(Math.min(1000 * 2 ** failures++, 30_000), controller.signal);
+        }
       }
     }
   })();

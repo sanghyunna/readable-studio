@@ -5,6 +5,7 @@ let ko: Dict | undefined;
 
 export function getKo(): Dict {
   return ko ??= {
+  'connection.reconnecting': '연결이 끊겼습니다 - 다시 연결 중',
   'dataImport.checking': '이전 작업 내역을 확인하고 있습니다',
   'dataImport.title': '이전 버전의 작업 내역을 가져올까요?',
   'dataImport.description': '이전 폴더의 프로젝트와 대화, 저장된 작업 내역을 이 폴더로 복사합니다. 원본은 그대로 남고, 앞으로 업데이트할 때는 다시 가져올 필요가 없습니다.',

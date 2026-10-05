@@ -27,15 +27,28 @@ export function parsePackagedDatabaseRefusal(log: string, pid: number | undefine
   return null;
 }
 
+export class PackagedDaemonStoppedError extends Error {
+  readonly code = 'DAEMON_STOPPED';
+  constructor(options?: { cause?: unknown }) {
+    super('The background service stopped and automatic restarts were exhausted.', options);
+    this.name = 'PackagedDaemonStoppedError';
+  }
+}
+
 export function resolvePackagedStartupFailureDialog(error: unknown, korean: boolean, logsRoot: string) {
   const newer = error instanceof PackagedNewerSchemaError;
+  const stopped = error instanceof PackagedDaemonStoppedError;
   return {
     type: 'error' as const,
     title: 'Readable Studio',
-    message: newer
+    message: stopped
+      ? (korean ? '백그라운드 서비스가 중지되었습니다. 데이터는 안전합니다.' : 'The background service stopped. Your data is safe.')
+      : newer
       ? (korean ? '이 데이터는 더 새로운 버전의 Readable Studio에서 생성되었습니다.' : 'This data was created by a newer version of Readable Studio.')
       : (korean ? '데이터를 여는 중 문제가 발생했습니다. 데이터는 안전합니다.' : 'There was a problem opening your data. Your data is safe.'),
-    detail: newer
+    detail: stopped
+      ? (korean ? `자동으로 다시 연결하지 못했습니다. 다시 시도하거나 앱을 종료하세요. 로그: ${logsRoot}` : `Automatic reconnection failed. Retry or quit the app. Logs: ${logsRoot}`)
+      : newer
       ? (korean
         ? `데이터 스키마 버전: ${error.databaseVersion}\n이 앱이 지원하는 버전: ${error.supportedVersion}\n\n데이터는 변경되지 않았습니다.\n종료한 뒤 최신 버전의 Readable Studio를 실행하세요.`
         : `Data schema version: ${error.databaseVersion}\nSupported version: ${error.supportedVersion}\n\nYour data has not been changed.\nQuit and run the latest version of Readable Studio.`)

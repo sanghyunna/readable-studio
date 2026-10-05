@@ -13,6 +13,7 @@ import { startShortcutLoop } from '../../src/main/shortcut-loop.js';
 
 const roots: string[] = [];
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
@@ -39,6 +40,26 @@ async function deliverJob(location: 'desktop' | 'startMenu') {
 }
 
 describe('shortcut queue folder boundary', () => {
+  it('logs one unreachable error and backs off until a successful response', async () => {
+    vi.useFakeTimers();
+    const error = new TypeError('fetch failed');
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fetch = vi.fn().mockRejectedValue(error);
+    vi.stubGlobal('fetch', fetch);
+    const loop = startShortcutLoop({ token: 'test', discoverDaemonUrl: async () => 'http://127.0.0.1:1' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(log.mock.calls[0]?.[1]).toEqual(expect.objectContaining({ message: 'fetch failed' }));
+    loop.abort();
+    await loop.done;
+  });
   it('acknowledges unsupported source requests without invoking PowerShell', async () => {
     mocks.packaged = false;
     mocks.getPath.mockReturnValue('D:\\source\\electron.exe');

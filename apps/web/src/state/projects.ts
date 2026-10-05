@@ -379,9 +379,12 @@ export async function readConversations(
 
 export async function listConversations(
   projectId: string,
+  options: { strict?: boolean; signal?: AbortSignal } = {},
 ): Promise<Conversation[]> {
-  const result = await readConversations(projectId);
-  return result.ok ? result.conversations : [];
+  const result = await readConversations(projectId, options);
+  if (result.ok) return result.conversations;
+  if (options.strict) throw new Error(result.error.message);
+  return [];
 }
 
 export async function createConversation(

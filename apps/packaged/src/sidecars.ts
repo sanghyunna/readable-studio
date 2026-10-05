@@ -37,7 +37,7 @@ import {
 
 import { isPortableAppLayout, resolvePortableTopFolder, type PackagedWebOutputMode } from "./config.js";
 import type { PackagedNamespacePaths } from "./paths.js";
-import { parsePackagedDatabaseRefusal } from './errors.js';
+import { PackagedDaemonStoppedError, parsePackagedDatabaseRefusal } from './errors.js';
 import {
   createPackagedStartupPhaseTimer,
   type PackagedStartupPhaseLogger,
@@ -202,9 +202,9 @@ export async function resolvePackagedElectronNodeCommand(
   return (await pathExists(helperPath)) ? helperPath : execPath;
 }
 
-async function openLog(path: string): Promise<FileHandle> {
+async function openLog(path: string, append: boolean): Promise<FileHandle> {
   await mkdir(dirname(path), { recursive: true });
-  return await open(path, "w");
+  return await open(path, append ? 'a' : 'w');
 }
 
 const DAEMON_STATUS_TIMEOUT_MS = 180_000;
@@ -434,6 +434,7 @@ export function buildPackagedDaemonSpawnEnv(
 }
 
 async function spawnSidecarChild(options: {
+  appendLog?: boolean;
   app: AppKey;
   entryPath: string;
   env: NodeJS.ProcessEnv;
@@ -454,7 +455,7 @@ async function spawnSidecarChild(options: {
     source: options.runtime.source,
   } satisfies SidecarStamp;
   const logPath = logPathFor(options.paths, options.app);
-  const logHandle = await openLog(logPath);
+  const logHandle = await openLog(logPath, options.appendLog === true);
   const childEnv = createSidecarLaunchEnv({
     base: options.paths.runtimeRoot,
     contract: SIDECAR_CONTRACT,
@@ -584,6 +585,7 @@ export async function startPackagedSidecars(
     webStandaloneRoot: string | null;
     webOutputMode: PackagedWebOutputMode;
     logStartupPhase?: PackagedStartupPhaseLogger;
+    onDaemonFailure?: (error: PackagedDaemonStoppedError) => Promise<'retry' | 'quit'>;
   },
 ): Promise<PackagedSidecarHandle> {
   const localStartupTiming = options.logStartupPhase == null
@@ -691,18 +693,106 @@ export async function startPackagedSidecars(
       if (webStatus.url == null) throw new Error("web did not report a URL");
 
       let closePromise: Promise<void> | null = null;
-      return {
+      let currentDaemon = daemon;
+      let recovery: Promise<void> | null = null;
+      let restartAttempts = 0;
+      let readySince = Date.now();
+      const shutdown = new AbortController();
+      const handle: PackagedSidecarHandle = {
         daemon: daemonStatus,
         web: webStatus,
         close() {
-          // Drain daemon probes immediately, not after a web shutdown timeout.
-          return closePromise ??= Promise.all(children.map(async (child) => {
-            await closeManagedChild(child).catch((error: unknown) => {
-              console.error(`failed to close packaged ${child.app} sidecar`, error);
-            });
-          })).then(() => undefined);
+          if (closePromise != null) return closePromise;
+          // Stop exit supervision before intentional shutdown, including a
+          // restart already waiting for its backoff or ready status.
+          shutdown.abort();
+          currentDaemon.child.off('exit', onDaemonExit);
+          closePromise = (async () => {
+            await Promise.all(children.map(async (child) => {
+              await closeManagedChild(child).catch((error: unknown) => {
+                console.error(`failed to close packaged ${child.app} sidecar`, error);
+              });
+            }));
+            await recovery;
+          })();
+          return closePromise;
         },
       };
+      const onDaemonExit = (code: number | null, signal: NodeJS.Signals | null): void => {
+        if (shutdown.signal.aborted) return;
+        console.error('[readable-studio packaged] daemon exited unexpectedly', {
+          pid: currentDaemon.child.pid, code, signal, namespace: runtime.namespace, dataRoot: paths.dataRoot,
+        });
+        if (Date.now() - readySince >= 180_000) restartAttempts = 0;
+        recovery = recoverDaemon(code, signal);
+      };
+      const watchDaemon = (): void => {
+        currentDaemon.child.once('exit', onDaemonExit);
+        // Exit may have happened between the final health check and installing
+        // the lifetime listener. Synchronous child fields close that gap.
+        if (currentDaemon.child.exitCode != null || currentDaemon.child.signalCode != null) {
+          currentDaemon.child.off('exit', onDaemonExit);
+          onDaemonExit(currentDaemon.child.exitCode, currentDaemon.child.signalCode);
+        }
+      };
+      async function recoverDaemon(code: number | null, signal: NodeJS.Signals | null): Promise<void> {
+        let cause: unknown = new Error(`daemon exited (code=${code}, signal=${signal ?? 'none'})`);
+        while (!shutdown.signal.aborted) {
+          if (restartAttempts >= 3) {
+            const error = new PackagedDaemonStoppedError({ cause });
+            console.error('[readable-studio packaged] daemon restart attempts exhausted', { error: error.message });
+            const decision = await options.onDaemonFailure?.(error);
+            if (shutdown.signal.aborted || decision !== 'retry') return;
+            restartAttempts = 0;
+          }
+          const backoff = 1_000 * 2 ** restartAttempts++;
+          try {
+            await sleep(backoff, undefined, { signal: shutdown.signal });
+          } catch (error) {
+            if (shutdown.signal.aborted) return;
+            throw error;
+          }
+          try {
+            await currentDaemon.logHandle.close();
+            // The web proxy keeps its original upstream. Reuse the same port,
+            // stamp and managed roots; never allocate a new namespace or port.
+            currentDaemon = await spawnSidecarChild({
+              appendLog: true,
+              app: APP_KEYS.DAEMON,
+              entryPath: options.daemonSidecarEntry ?? resolveSidecarEntry('@readable-studio/daemon', 'sidecar'),
+              env: buildPackagedDaemonSpawnEnv(paths, {
+                appVersion: options.appVersion, amrProfile: options.amrProfile,
+                daemonCliEntry: options.daemonCliEntry, daemonPort,
+                desktopApprovalToken: options.desktopApprovalToken, requireDesktopAuth: options.requireDesktopAuth,
+              }),
+              nodeCommand: options.nodeCommand, paths, runtime,
+            });
+            children[0] = currentDaemon;
+            if (shutdown.signal.aborted) { await closeManagedChild(currentDaemon); return; }
+            const status = await waitForStatus<DaemonStatusSnapshot>(
+              currentDaemon.ipcPath, status => status.url != null,
+              Math.min(resolveDaemonStatusTimeoutMs(), 30_000),
+              { child: currentDaemon.child, logPath: currentDaemon.logPath },
+            );
+            await checkPackagedDaemonHealth(status.url!);
+            if (shutdown.signal.aborted) return;
+            handle.daemon = status;
+            readySince = Date.now();
+            console.info('[readable-studio packaged] daemon restarted', {
+              pid: status.pid, attempt: restartAttempts, namespace: runtime.namespace, dataRoot: paths.dataRoot,
+            });
+            watchDaemon();
+            logStartupPhase('daemon-restart-ready');
+            return;
+          } catch (error) {
+            cause = error;
+            console.error('[readable-studio packaged] daemon restart failed', { attempt: restartAttempts, error: String(error) });
+            await closeManagedChild(currentDaemon);
+          }
+        }
+      }
+      watchDaemon();
+      return handle;
     } catch (error) {
       for (const child of [...children].reverse()) {
         await closeManagedChild(child).catch(() => undefined);

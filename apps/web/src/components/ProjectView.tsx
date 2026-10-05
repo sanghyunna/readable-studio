@@ -1048,6 +1048,7 @@ export function ProjectView({
   const [messagesConversationId, setMessagesConversationId] = useState<string | null>(null);
   const [failedMessagesConversationId, setFailedMessagesConversationId] = useState<string | null>(null);
   const [conversationLoadError, setConversationLoadError] = useState<string | null>(null);
+  const [conversationLoadRetryNonce, setConversationLoadRetryNonce] = useState(0);
   const [messageLoadRetryNonce, setMessageLoadRetryNonce] = useState(0);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [olderPosition, setOlderPosition] = useState<number | null>(null);
@@ -1518,6 +1519,9 @@ export function ProjectView({
   // dropped), create one on the fly.
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let retryAttempt = 0;
     setConversations([]);
     setActiveConversationId(null);
     setMessagesConversationId(null);
@@ -1534,9 +1538,11 @@ export function ProjectView({
     setArtifact(null);
     savedArtifactRef.current = null;
     pendingWritesRef.current.clear();
-    (async () => {
+    const loadConversations = async () => {
       try {
-        const list = await listConversations(project.id);
+        // A failed list is not an empty project. Never POST a seed until a
+        // successful read confirms that no conversation already exists.
+        const list = await listConversations(project.id, { strict: true, signal: controller.signal });
         if (cancelled) return;
         if (list.length === 0) {
           const fresh = await createConversation(project.id);
@@ -1545,7 +1551,7 @@ export function ProjectView({
             setConversations([fresh]);
             setActiveConversationId(fresh.id);
           } else {
-            throw new Error('Could not create a conversation for this project.');
+            throw new Error(t('connection.reconnecting'));
           }
         } else {
           setConversations(list);
@@ -1559,19 +1565,25 @@ export function ProjectView({
             : null;
           setActiveConversationId(routedMatch ? routedMatch.id : list[0]!.id);
         }
-      } catch (err) {
+        setConversationLoadError(null);
+        setError(null);
+      } catch {
         if (cancelled) return;
-        const message = err instanceof Error ? err.message : 'Could not load conversations for this project.';
-        setConversations([]);
-        setActiveConversationId(null);
+        const message = t('connection.reconnecting');
         setConversationLoadError(message);
         setError(message);
+        // Every retry starts with GET, including an uncertain POST result:
+        // a conversation created before its response was lost is reused.
+        retryTimer = setTimeout(() => { void loadConversations(); }, Math.min(1_000 * 2 ** retryAttempt++, 10_000));
       }
-    })();
+    };
+    void loadConversations();
     return () => {
       cancelled = true;
+      controller.abort();
+      clearTimeout(retryTimer);
     };
-  }, [project.id]);
+  }, [project.id, conversationLoadRetryNonce]);
 
   // Issue #1505: when the URL changes the routed conversation id while
   // we are already inside the project (e.g. the user clicks "Open
@@ -4862,7 +4874,7 @@ export function ProjectView({
     setConversationLoadError(null);
     try {
       const fresh = await createConversation(project.id);
-      if (!fresh) throw new Error('Could not create a conversation for this project.');
+      if (!fresh) throw new Error(t('connection.reconnecting'));
       // Eagerly clear messages and update ref so rapid clicks don't create
       // duplicate empty conversations before the effect resolves.
       setMessages([]);
@@ -4889,14 +4901,17 @@ export function ProjectView({
       );
       setError(null);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Could not create a conversation for this project.';
+      const message = t('connection.reconnecting');
       setConversationLoadError(message);
       setError(message);
+      // Recover by reading, not by blindly repeating an uncertain mutation.
+      // A POST whose response was lost may already have created the session.
+      setConversationLoadRetryNonce(nonce => nonce + 1);
     } finally {
       creatingConversationRef.current = false;
       setCreatingConversation(false);
     }
-  }, [project.id, activeConversationId, messages.length, navigate, openTabsState.active]);
+  }, [project.id, activeConversationId, messages.length, navigate, openTabsState.active, t]);
 
   const handleSelectConversation = useCallback((id: string) => {
     if (id === activeConversationId && failedMessagesConversationId !== id) return;

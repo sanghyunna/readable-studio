@@ -201,6 +201,14 @@ async function main(): Promise<void> {
         webStandaloneRoot: activeConfig.webStandaloneRoot,
         webOutputMode: activeConfig.webOutputMode,
         logStartupPhase: startupTiming.mark,
+        async onDaemonFailure(error) {
+          const { response } = await dialog.showMessageBox(
+            resolvePackagedStartupFailureDialog(error, app.getLocale().toLowerCase().startsWith('ko'), paths.logsRoot),
+          );
+          if (response === 0) return 'retry';
+          app.quit();
+          return 'quit';
+        },
       });
       break;
     } catch (error) {

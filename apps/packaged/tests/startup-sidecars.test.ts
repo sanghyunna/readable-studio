@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { EventEmitter, once } from 'node:events';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
@@ -71,6 +72,7 @@ writeFileSync(join(root, app + ".env.json"), JSON.stringify(Object.fromEntries([
   "CURL_CA_BUNDLE", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
   "READABLE_DESKTOP_APPROVAL_TOKEN", "DATABRICKS_TOKEN", "DATABRICKS_API_KEY",
   "NODE_OPTIONS", "NODE_TLS_REJECT_UNAUTHORIZED", "UNRELATED_SECRET",
+  "READABLE_DATA_DIR", "READABLE_PACKAGED_NAMESPACE", "READABLE_SIDECAR_IPC_PATH", "READABLE_PORT",
 ].map((key) => [key, process.env[key]]))), "utf8");
 trace(app + ":spawned:" + (process.env.READABLE_PORT ?? ""));
 if (behavior === "newer-schema") {
@@ -184,6 +186,7 @@ type FixtureHarness = {
   daemonLogPath: string;
   fixturesRoot: string;
   phases: string[];
+  events: EventEmitter;
   root: string;
   start(): Promise<PackagedSidecarHandle>;
 };
@@ -191,6 +194,7 @@ type FixtureHarness = {
 function createFixtureHarness(
   daemonBehavior: FixtureBehavior,
   webBehavior: FixtureBehavior,
+  onDaemonFailure?: (error: unknown) => Promise<'retry' | 'quit'>,
 ): FixtureHarness {
   const root = mkdtempSync(join(tmpdir(), "readable-packaged-startup-"));
   const namespace = `startup-${randomUUID()}`;
@@ -199,6 +203,7 @@ function createFixtureHarness(
   const daemonEntry = join(fixturesRoot, "daemon.mjs");
   const webEntry = join(fixturesRoot, "web.mjs");
   const phases: string[] = [];
+  const events = new EventEmitter();
 
   mkdirSync(fixturesRoot, { recursive: true });
   writeFileSync(
@@ -225,6 +230,7 @@ function createFixtureHarness(
     daemonLogPath: join(paths.logsRoot, 'daemon', 'latest.log'),
     fixturesRoot,
     phases,
+    events,
     root,
     async start() {
       return await startPackagedSidecars(runtime, paths, {
@@ -239,13 +245,63 @@ function createFixtureHarness(
         webSidecarEntry: webEntry,
         webStandaloneRoot: null,
         webOutputMode: "server",
-        logStartupPhase: (phase) => phases.push(phase),
+        onDaemonFailure,
+        logStartupPhase: (phase) => { phases.push(phase); events.emit(phase); },
       });
     },
   };
 }
 
 describe("startPackagedSidecars", () => {
+  it('restarts an exited daemon on the same port, namespace and data root without restarting web', async () => {
+    const fixture = createFixtureHarness('ready', 'ready');
+    let sidecars: PackagedSidecarHandle | null = null;
+    try {
+      sidecars = await fixture.start();
+      const first = { ...sidecars.daemon };
+      const envPath = join(fixture.fixturesRoot, 'daemon.env.json');
+      const originalEnv = JSON.parse(readFileSync(envPath, 'utf8'));
+      const restarted = once(fixture.events, 'daemon-restart-ready', { signal: AbortSignal.timeout(12_000) });
+      process.kill(first.pid!, 'SIGKILL');
+      await restarted;
+      expect(sidecars.daemon.pid).not.toBe(first.pid);
+      expect(sidecars.daemon.url).toBe(first.url);
+      const received = JSON.parse(readFileSync(envPath, 'utf8'));
+      for (const key of ['READABLE_DATA_DIR', 'READABLE_PACKAGED_NAMESPACE', 'READABLE_SIDECAR_IPC_PATH', 'READABLE_PORT']) {
+        expect(received[key]).toBe(originalEnv[key]);
+        expect(received[key]).toBeTruthy();
+      }
+      const trace = readFileSync(join(fixture.fixturesRoot, 'trace.log'), 'utf8');
+      expect(trace.match(/daemon:spawned:/g)).toHaveLength(2);
+      expect(trace.match(/web:spawned:/g)).toHaveLength(1);
+    } finally { await sidecars?.close(); rmSync(fixture.root, { recursive: true, force: true }); }
+  }, 15_000);
+
+  it('offers the runtime failure dialog after three restart attempts are exhausted', async () => {
+    let resolveFailure!: (error: unknown) => void;
+    const failure = new Promise<unknown>(resolve => { resolveFailure = resolve; });
+    const onFailure = vi.fn(async (error: unknown) => { resolveFailure(error); return 'quit' as const; });
+    const fixture = createFixtureHarness('ready', 'ready', onFailure);
+    let sidecars: PackagedSidecarHandle | null = null;
+    try {
+      sidecars = await fixture.start();
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const restarted = once(fixture.events, 'daemon-restart-ready', { signal: AbortSignal.timeout(12_000) });
+        process.kill(sidecars.daemon.pid!, 'SIGKILL');
+        await restarted;
+      }
+      const exhausted = Promise.race([failure, new Promise<never>((_, reject) => {
+        AbortSignal.timeout(5_000).addEventListener('abort', () => reject(new Error('failure callback missing')), { once: true });
+      })]);
+      process.kill(sidecars.daemon.pid!, 'SIGKILL');
+      const error = await exhausted;
+      expect(onFailure).toHaveBeenCalledTimes(1);
+      const options = resolvePackagedStartupFailureDialog(error, true, fixture.root);
+      expect(options).toMatchObject({ defaultId: 0, cancelId: 1 });
+      expect(options.buttons).toHaveLength(2);
+      expect(error).toMatchObject({ code: 'DAEMON_STOPPED' });
+    } finally { await sidecars?.close(); rmSync(fixture.root, { recursive: true, force: true }); }
+  }, 25_000);
   it.each(['hung-child', 'drain-child', 'source-drain'] as const)('normal close leaves no in-flight descendant by PID (%s)', async (behavior) => {
     const fixture = createFixtureHarness(behavior, 'ready');
     let sidecars: PackagedSidecarHandle | null = null;

@@ -5,6 +5,7 @@ let en: Dict | undefined;
 
 export function getEn(): Dict {
   return en ??= {
+  'connection.reconnecting': 'Connection lost - reconnecting',
   'dataImport.checking': 'Checking for your earlier work',
   'dataImport.title': 'Bring your work from an earlier version?',
   'dataImport.description': 'Copy projects, conversations, and saved history into this folder. The original stays untouched. Future updates keep your work here, so this is only needed once.',
