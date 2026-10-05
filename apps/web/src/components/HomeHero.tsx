@@ -69,11 +69,14 @@ import {
 import { PreviewSurface } from './plugins-home/cards/PreviewSurface';
 import { readHomeGuideStage, writeHomeGuideStage } from './home-hero/firstRunGuide';
 import {
+  HUB_TEMPLATE_TAB_IDS,
   hubTemplateCardPreview,
-  mixHubTemplateCarouselItems,
   readTemplateCarouselCollapsed,
+  readTemplateCarouselTab,
   writeTemplateCarouselCollapsed,
+  writeTemplateCarouselTab,
   type HubTemplateCarouselItem,
+  type HubTemplateTabId,
 } from './home-hero/templateCarousel';
 import { curatedPluginPriorityForChip } from './plugins-home/curatedPriority';
 import { sortByVisualAppeal } from './plugins-home/visualScore';
@@ -329,6 +332,9 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   const [selectedPromptExample, setSelectedPromptExample] = useState<SelectedPromptExample | null>(null);
   // Hub template rail: collapsed is a persisted opt-out (see templateCarousel.ts).
   const [templateRailCollapsed, setTemplateRailCollapsed] = useState(readTemplateCarouselCollapsed);
+  // Hub template rail: the creation-type tab (deck / report / website) is
+  // persisted next to the collapse opt-out.
+  const [templateRailTab, setTemplateRailTab] = useState<HubTemplateTabId>(readTemplateCarouselTab);
   const [previewHomeFileKey, setPreviewHomeFileKey] = useState<string | null>(null);
   const stagedFilePreviewsRef = useRef<Map<string, { file: File; url: string }>>(new Map());
   // Lexical-driven @-trigger state (replaces the old end-anchored
@@ -575,19 +581,27 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
 
   // Hub template rail contents. With a chip active it mirrors that chip's
   // filtered presets (same records, same order as the default surface shows);
-  // with no chip it is a bounded round-robin mix across every creation type.
+  // with no chip the rail shows the selected tab's FULL curated set - every
+  // template of that creation type, uncapped, in the curated / visual-appeal
+  // order the chip view uses.
   const hubTemplateItems = useMemo<HubTemplateCarouselItem[]>(() => {
     if (surface !== 'hub') return [];
     if (activeChipId) {
       return filteredExamplePlugins.map((record) => ({ record, chipId: activeChipId }));
     }
-    return mixHubTemplateCarouselItems(
-      chipsForGroup('create').map((chip) => ({
-        chipId: chip.id,
-        plugins: homeHeroExamplePluginsForChip(chip.id, pluginOptions, locale),
-      })),
+    return homeHeroExamplePluginsForChip(templateRailTab, pluginOptions, locale, { limit: Infinity })
+      .map((record) => ({ record, chipId: templateRailTab }));
+  }, [surface, activeChipId, filteredExamplePlugins, templateRailTab, pluginOptions, locale]);
+  // The rail (with its tab column) stays mounted while ANY tab has templates,
+  // so an empty tab still leaves the other two reachable; with a chip active
+  // the rail follows the chip and shows only when that chip has presets.
+  const hubTemplateRailVisible = useMemo(() => {
+    if (surface !== 'hub') return false;
+    if (activeChipId) return hubTemplateItems.length > 0;
+    return hubTemplateItems.length > 0 || HUB_TEMPLATE_TAB_IDS.some(
+      (id) => homeHeroExamplePluginsForChip(id, pluginOptions, locale, { limit: 1 }).length > 0,
     );
-  }, [surface, activeChipId, filteredExamplePlugins, pluginOptions, locale]);
+  }, [surface, activeChipId, hubTemplateItems.length, pluginOptions, locale]);
 
   // First-run guide, beat 1: pulse the Prototype chip for brand-new users.
   // The settle delay lets the hero finish its entrance before the sheen.
@@ -1682,10 +1696,15 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
         </Button>
       </div>
 
-      {surface === 'hub' && hubTemplateItems.length > 0 ? (
+      {hubTemplateRailVisible ? (
         <HubTemplateCarousel
           items={hubTemplateItems}
           collapsed={templateRailCollapsed}
+          tab={activeChipId ? null : templateRailTab}
+          onTabChange={(next) => {
+            writeTemplateCarouselTab(next);
+            setTemplateRailTab(next);
+          }}
           onToggle={() => {
             setTemplateRailCollapsed((current) => {
               writeTemplateCarouselCollapsed(!current);
@@ -1819,29 +1838,70 @@ function PluginPromptPresets({
 // the shared accordion pair (grid-template-rows 0fr -> 1fr) so the rail stays
 // mounted and the exit transition can play; `inert` keeps the hidden cards
 // out of the tab order and the accessibility tree while collapsed.
+//
+// A vertical tab column (deck / report / website) sits to the left of the
+// rail, inside the same accordion body so it collapses with the cards. The
+// column is its own single Tab stop: ArrowUp/ArrowDown walk the tabs and
+// select as they go. `tab` is null while a creation chip is active - the
+// chip already names the type, so the rail follows it and the column hides.
 function HubTemplateCarousel({
   activePluginId,
   collapsed,
   items,
   locale,
   onPick,
+  onTabChange,
   onToggle,
   pendingPluginId,
   pulseFirstPreset = false,
+  tab,
 }: {
   activePluginId: string | null;
   collapsed: boolean;
   items: HubTemplateCarouselItem[];
   locale: Locale;
   onPick: (record: InstalledPluginRecord, chipId: string, promptText: string) => void;
+  onTabChange: (tab: HubTemplateTabId) => void;
   onToggle: () => void;
   pendingPluginId: string | null;
   pulseFirstPreset?: boolean;
+  tab: HubTemplateTabId | null;
 }) {
   const { t } = useI18n();
   const railId = useId();
+  const tabIdPrefix = useId();
   const railRef = useRef<HTMLDivElement | null>(null);
+  const tabListRef = useRef<HTMLDivElement | null>(null);
   const [focusIndex, setFocusIndex] = useState(0);
+
+  function tabLabel(id: HubTemplateTabId): string {
+    switch (id) {
+      case 'deck': return t('homeHero.templateTabDeck');
+      case 'report': return t('homeHero.templateTabReport');
+      case 'prototype': return t('homeHero.templateTabPrototype');
+    }
+  }
+
+  function selectTab(next: HubTemplateTabId, focus: boolean) {
+    onTabChange(next);
+    if (!focus) return;
+    const index = HUB_TEMPLATE_TAB_IDS.indexOf(next);
+    tabListRef.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[index]?.focus();
+  }
+
+  function handleTabListKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (!tab) return;
+    const current = HUB_TEMPLATE_TAB_IDS.indexOf(tab);
+    const last = HUB_TEMPLATE_TAB_IDS.length - 1;
+    let next: number | null = null;
+    if (event.key === 'ArrowDown') next = Math.min(last, current + 1);
+    else if (event.key === 'ArrowUp') next = Math.max(0, current - 1);
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = last;
+    if (next === null) return;
+    event.preventDefault();
+    selectTab(HUB_TEMPLATE_TAB_IDS[next]!, true);
+  }
   useEffect(() => {
     if (focusIndex >= items.length) setFocusIndex(0);
   }, [focusIndex, items.length]);
@@ -1907,27 +1967,60 @@ function HubTemplateCarousel({
         aria-hidden={collapsed}
       >
         <div className="accordion-collapsible-inner">
-          <div
-            ref={railRef}
-            className="home-hero__templates-rail"
-            data-testid="hub-template-carousel-rail"
-            role="list"
-            onKeyDown={handleRailKeyDown}
-          >
-            {items.map((item, index) => (
-              <HubTemplateCard
-                key={item.record.id}
-                item={item}
-                locale={locale}
-                active={activePluginId === item.record.id}
-                pending={pendingPluginId === item.record.id}
-                disabled={pendingPluginId !== null}
-                pulse={pulseFirstPreset && index === 0}
-                tabIndex={index === focusIndex ? 0 : -1}
-                onFocus={() => setFocusIndex(index)}
-                onPick={onPick}
-              />
-            ))}
+          <div className="home-hero__templates-deck">
+            {tab ? (
+              <div
+                ref={tabListRef}
+                className="home-hero__templates-tabs"
+                data-testid="hub-template-carousel-tabs"
+                role="tablist"
+                aria-orientation="vertical"
+                aria-label={t('homeHero.templateTabsLabel')}
+                onKeyDown={handleTabListKeyDown}
+              >
+                {HUB_TEMPLATE_TAB_IDS.map((id) => (
+                  <button
+                    key={id}
+                    type="button"
+                    role="tab"
+                    id={`${tabIdPrefix}-${id}`}
+                    className={`home-hero__templates-tab${tab === id ? ' is-selected' : ''}`}
+                    data-testid="hub-template-carousel-tab"
+                    data-tab-id={id}
+                    aria-selected={tab === id}
+                    aria-controls={`${tabIdPrefix}-rail`}
+                    tabIndex={tab === id ? 0 : -1}
+                    onClick={() => selectTab(id, false)}
+                  >
+                    {tabLabel(id)}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <div
+              id={`${tabIdPrefix}-rail`}
+              ref={railRef}
+              className="home-hero__templates-rail"
+              data-testid="hub-template-carousel-rail"
+              role="list"
+              aria-labelledby={tab ? `${tabIdPrefix}-${tab}` : undefined}
+              onKeyDown={handleRailKeyDown}
+            >
+              {items.map((item, index) => (
+                <HubTemplateCard
+                  key={item.record.id}
+                  item={item}
+                  locale={locale}
+                  active={activePluginId === item.record.id}
+                  pending={pendingPluginId === item.record.id}
+                  disabled={pendingPluginId !== null}
+                  pulse={pulseFirstPreset && index === 0}
+                  tabIndex={index === focusIndex ? 0 : -1}
+                  onFocus={() => setFocusIndex(index)}
+                  onPick={onPick}
+                />
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -3065,10 +3158,13 @@ function homeHeroChipTitle(chip: HomeHeroChip, t: ReturnType<typeof useT>): stri
 // presets.
 const EXAMPLE_PRESET_HIDDEN_PLUGIN_IDS = new Set<string>();
 
+// `limit` defaults to the showcase cap the chip view has always used; the
+// template-rail tabs pass `Infinity` to show the whole type.
 export function homeHeroExamplePluginsForChip(
   chipId: string,
   plugins: InstalledPluginRecord[],
   locale: Locale,
+  { limit = 18 }: { limit?: number } = {},
 ): InstalledPluginRecord[] {
   const presets = plugins
     .filter((plugin) => !EXAMPLE_PRESET_HIDDEN_PLUGIN_IDS.has(plugin.id))
@@ -3081,7 +3177,7 @@ export function homeHeroExamplePluginsForChip(
       curatedPluginPriorityForChip(plugin, chipId) !== null
     ))
     .sort((a, b) => comparePluginPresetOrder(a, b, chipId))
-    .slice(0, 18);
+    .slice(0, limit);
   return presets;
 }
 

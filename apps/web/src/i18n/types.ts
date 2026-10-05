@@ -1028,6 +1028,10 @@ export interface Dict {
   'homeHero.templateCarouselTitle': string;
   'homeHero.templateCarouselShow': string;
   'homeHero.templateCarouselHide': string;
+  'homeHero.templateTabsLabel': string;
+  'homeHero.templateTabDeck': string;
+  'homeHero.templateTabReport': string;
+  'homeHero.templateTabPrototype': string;
   'homeHero.subtitlePrefix': string;
   'homeHero.placeholder': string;
   'homeHero.placeholderOpenDocument': string;

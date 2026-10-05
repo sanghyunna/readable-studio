@@ -3,12 +3,11 @@
 //
 // Two concerns live here so HomeHero stays declarative:
 //
-//  - Which templates the rail shows when NO creation type is active: one
-//    bounded, round-robin mix across the creation chips (prototype, deck,
-//    ...) so the first viewport reads as variety rather than 18 landing
-//    pages. With a chip active the hero passes that chip's own filtered
-//    presets instead, so the rail never disagrees with the type the user
-//    picked.
+//  - Which creation types the rail's vertical tab column offers when NO
+//    creation chip is active (deck / report / website), plus the persisted
+//    selected tab. Each tab shows that type's full curated set. With a chip
+//    active the hero passes that chip's own filtered presets instead, so
+//    the rail never disagrees with the type the user picked.
 //  - The collapsed preference. Users who never want template suggestions
 //    collapse the rail once; the choice is persisted in localStorage next to
 //    the first-run guide stage, so it survives restarts. Visible by default
@@ -31,30 +30,6 @@ export interface HubTemplateCarouselItem {
   // The creation chip the preset is filed under; the pick handler binds the
   // plugin AND stamps this chip, exactly as a chip-scoped preset pick does.
   chipId: string;
-}
-
-// Hard cap on rail cards. PreviewSurface already lazy-mounts each thumbnail
-// through IntersectionObserver, so the cap bounds DOM + manifest work, not
-// iframe count (that is bounded by the viewport).
-export const HUB_TEMPLATE_CAROUSEL_LIMIT = 24;
-
-export function mixHubTemplateCarouselItems(
-  perChip: ReadonlyArray<{ chipId: string; plugins: InstalledPluginRecord[] }>,
-  limit = HUB_TEMPLATE_CAROUSEL_LIMIT,
-): HubTemplateCarouselItem[] {
-  const items: HubTemplateCarouselItem[] = [];
-  const seen = new Set<string>();
-  const longest = perChip.reduce((max, entry) => Math.max(max, entry.plugins.length), 0);
-  for (let index = 0; index < longest && items.length < limit; index += 1) {
-    for (const entry of perChip) {
-      const record = entry.plugins[index];
-      if (!record || seen.has(record.id)) continue;
-      seen.add(record.id);
-      items.push({ record, chipId: entry.chipId });
-      if (items.length >= limit) break;
-    }
-  }
-  return items;
 }
 
 // Same-origin daemon path ("/api/..."), as opposed to an absolute or
@@ -80,6 +55,40 @@ export function hubTemplateCardPreview(record: InstalledPluginRecord): PluginPre
 }
 
 const STORAGE_KEY = 'readable-studio:hub-template-carousel';
+
+// The creation types the rail's vertical tab column offers, in column order.
+// Each tab shows that type's FULL curated set (no rail cap) so the user can
+// scan every deck / report / website template without leaving the Hub.
+export const HUB_TEMPLATE_TAB_IDS = ['deck', 'report', 'prototype'] as const;
+export type HubTemplateTabId = (typeof HUB_TEMPLATE_TAB_IDS)[number];
+export const DEFAULT_HUB_TEMPLATE_TAB: HubTemplateTabId = 'deck';
+
+export function isHubTemplateTabId(value: unknown): value is HubTemplateTabId {
+  return typeof value === 'string' && (HUB_TEMPLATE_TAB_IDS as readonly string[]).includes(value);
+}
+
+// Persisted next to the collapse preference so both survive a restart.
+const TAB_STORAGE_KEY = 'readable-studio:hub-template-carousel-tab';
+
+export function readTemplateCarouselTab(): HubTemplateTabId {
+  if (typeof window === 'undefined') return DEFAULT_HUB_TEMPLATE_TAB;
+  try {
+    const stored = window.localStorage.getItem(TAB_STORAGE_KEY);
+    return isHubTemplateTabId(stored) ? stored : DEFAULT_HUB_TEMPLATE_TAB;
+  } catch {
+    return DEFAULT_HUB_TEMPLATE_TAB;
+  }
+}
+
+export function writeTemplateCarouselTab(tab: HubTemplateTabId): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (tab === DEFAULT_HUB_TEMPLATE_TAB) window.localStorage.removeItem(TAB_STORAGE_KEY);
+    else window.localStorage.setItem(TAB_STORAGE_KEY, tab);
+  } catch {
+    // Private-mode storage failures just lose the preference for this run.
+  }
+}
 
 export function readTemplateCarouselCollapsed(): boolean {
   if (typeof window === 'undefined') return false;

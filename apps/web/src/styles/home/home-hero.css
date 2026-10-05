@@ -2544,8 +2544,73 @@
     opacity var(--dur-enter) var(--ease-out);
 }
 
+/* Tab column + rail. The column is a flex sibling of the rail inside the
+   accordion body so collapsing the rail collapses the tabs with it. Tabs
+   are the Hub's raised control material (pearl fill, inset highlight, no
+   border line); the selected tab reads through the accent fill + accent
+   ink alone, never an outline. */
+.home-hero__templates-deck {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.home-hero__templates-tabs {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 6px;
+  width: 104px;
+  padding: 2px 0;
+}
+
+.home-hero__templates-tab {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--hub-control-surface);
+  box-shadow: inset 0 1px 0 var(--hub-control-highlight);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 1.3;
+  text-align: left;
+  cursor: pointer;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  transition:
+    background-color var(--dur-quick) var(--ease-out),
+    box-shadow var(--dur-quick) var(--ease-out),
+    color var(--dur-quick) var(--ease-out);
+}
+
+.home-hero__templates-tab:hover {
+  background: var(--hub-control-surface-hover);
+  box-shadow: var(--hub-control-shadow-hover);
+  color: var(--text-strong);
+}
+
+.home-hero__templates-tab:focus-visible {
+  outline: 2px solid var(--hub-accent);
+  outline-offset: 2px;
+}
+
+.home-hero__templates-tab.is-selected {
+  background: var(--hub-accent-fill);
+  box-shadow: var(--hub-control-shadow);
+  color: var(--hub-accent);
+  font-weight: 650;
+}
+
 .home-hero__templates-rail {
   display: flex;
+  flex: 1 1 auto;
   gap: 10px;
   overflow-x: auto;
   overscroll-behavior-x: contain;

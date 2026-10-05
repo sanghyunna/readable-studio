@@ -65,6 +65,11 @@ const CATALOGUE = [
   'guizang-ppt',
 ].map(catalogueRecord);
 
+function tabButton(id: string): HTMLButtonElement {
+  return screen.getAllByTestId('hub-template-carousel-tab')
+    .find((node) => node.getAttribute('data-tab-id') === id) as HTMLButtonElement;
+}
+
 function renderHub(overrides: Partial<React.ComponentProps<typeof HomeHero>> = {}, locale: 'ko' | 'en' = 'ko') {
   const onAddFiles = vi.fn();
   const onPickExamplePlugin = vi.fn();
@@ -102,9 +107,15 @@ describe('Hub template carousel', () => {
     expect(carousel.getAttribute('data-collapsed')).toBe('false');
     expect(screen.getByText(ko['homeHero.templateCarouselTitle'])).not.toBeNull();
 
+    // Default tab is the deck set; the website tab holds the prototype cards.
+    expect(screen.getAllByTestId('hub-template-card').map((card) => card.getAttribute('data-plugin-id')))
+      .toEqual(['example-guizang-ppt']);
+    fireEvent.click(tabButton('prototype'));
     const cards = screen.getAllByTestId('hub-template-card');
     const ids = cards.map((card) => card.getAttribute('data-plugin-id'));
-    expect(ids).toEqual(expect.arrayContaining(CATALOGUE.map((record) => record.id)));
+    expect(ids).toEqual(expect.arrayContaining(
+      CATALOGUE.filter((record) => record.id !== 'example-guizang-ppt').map((record) => record.id),
+    ));
 
     const pricing = cards.find((card) => card.getAttribute('data-plugin-id') === 'example-pricing-page')!;
     const manifest = CATALOGUE[0]!.manifest;
@@ -118,15 +129,120 @@ describe('Hub template carousel', () => {
     expect(thumb).not.toBeNull();
     // Preview above the title in DOM order (the card is a column).
     expect(thumb.compareDocumentPosition(pricing.querySelector('.home-hero__template-title')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    // Mixed rail: a deck template rides next to the prototype ones, filed
-    // under its own chip so a pick binds the right creation type.
-    const deck = cards.find((card) => card.getAttribute('data-plugin-id') === 'example-guizang-ppt')!;
-    expect(deck.getAttribute('data-chip-id')).toBe('deck');
+    // Each card is filed under its tab's chip so a pick binds the right
+    // creation type.
     expect(pricing.getAttribute('data-chip-id')).toBe('prototype');
+    fireEvent.click(tabButton('deck'));
+    const deck = screen.getAllByTestId('hub-template-card')
+      .find((card) => card.getAttribute('data-plugin-id') === 'example-guizang-ppt')!;
+    expect(deck.getAttribute('data-chip-id')).toBe('deck');
+  });
+
+  it('stacks three vertical type tabs left of the rail, each showing that type\'s full set', () => {
+    const { unmount } = renderHub();
+    const tablist = screen.getByTestId('hub-template-carousel-tabs');
+    expect(tablist.getAttribute('role')).toBe('tablist');
+    expect(tablist.getAttribute('aria-orientation')).toBe('vertical');
+    expect(tablist.getAttribute('aria-label')).toBe(ko['homeHero.templateTabsLabel']);
+    const tabs = screen.getAllByTestId('hub-template-carousel-tab');
+    expect(tabs.map((node) => node.getAttribute('data-tab-id'))).toEqual(['deck', 'report', 'prototype']);
+    expect(tabs.map((node) => node.textContent)).toEqual([
+      ko['homeHero.templateTabDeck'],
+      ko['homeHero.templateTabReport'],
+      ko['homeHero.templateTabPrototype'],
+    ]);
+    // The column precedes the rail inside the collapsible body, so it collapses with it.
+    const rail = screen.getByTestId('hub-template-carousel-rail');
+    const body = screen.getByTestId('hub-template-carousel-body');
+    expect(body.contains(tablist)).toBe(true);
+    expect(tablist.compareDocumentPosition(rail) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(tablist.parentElement).toBe(rail.parentElement);
+    // Tabs are buttons with aria-selected (never checkboxes); the rail is
+    // labelled by the selected tab and the tab controls the rail.
+    for (const node of tabs) expect(node.tagName).toBe('BUTTON');
+    expect(tabButton('deck').getAttribute('aria-selected')).toBe('true');
+    expect(tabButton('deck').classList.contains('is-selected')).toBe(true);
+    expect(tabButton('report').getAttribute('aria-selected')).toBe('false');
+    expect(rail.getAttribute('aria-labelledby')).toBe(tabButton('deck').id);
+    expect(tabButton('deck').getAttribute('aria-controls')).toBe(rail.id);
+
+    // Full, uncapped set per tab: 20 prototype records all show (the chip
+    // view's showcase cap is 18), in the chip view's curated order.
+    const many = Array.from({ length: 20 }, (_, index) => ({
+      ...CATALOGUE[0]!,
+      id: `example-site-${index}`,
+      title: `Site ${index}`,
+      manifest: { ...CATALOGUE[0]!.manifest, name: `example-site-${index}` },
+    }));
+    unmount();
+    renderHub({ pluginOptions: [...CATALOGUE, ...many] });
+    fireEvent.click(tabButton('prototype'));
+    const shown = screen.getAllByTestId('hub-template-card').map((card) => card.getAttribute('data-plugin-id'));
+    expect(shown).toHaveLength(24);
+    expect(shown).toEqual(expect.arrayContaining(many.map((record) => record.id)));
+    expect(new Set(screen.getAllByTestId('hub-template-card').map((card) => card.getAttribute('data-chip-id'))))
+      .toEqual(new Set(['prototype']));
+    // Report tab: nothing in this catalogue is a report, so the rail empties
+    // but the tabs stay so the user can move on.
+    fireEvent.click(tabButton('report'));
+    expect(screen.queryAllByTestId('hub-template-card')).toHaveLength(0);
+    expect(screen.getAllByTestId('hub-template-carousel-tab')).toHaveLength(3);
+  });
+
+  it('tabs are one Tab stop with a roving tabindex: ArrowUp/ArrowDown move and select', () => {
+    renderHub();
+    const tablist = screen.getByTestId('hub-template-carousel-tabs');
+    expect(screen.getAllByTestId('hub-template-carousel-tab').filter((node) => node.tabIndex === 0))
+      .toHaveLength(1);
+    expect(tabButton('deck').tabIndex).toBe(0);
+    tabButton('deck').focus();
+    fireEvent.keyDown(tablist, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(tabButton('report'));
+    expect(tabButton('report').getAttribute('aria-selected')).toBe('true');
+    expect(tabButton('report').tabIndex).toBe(0);
+    expect(tabButton('deck').tabIndex).toBe(-1);
+    fireEvent.keyDown(tablist, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(tabButton('prototype'));
+    // Clamped at the ends, never wraps.
+    fireEvent.keyDown(tablist, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(tabButton('prototype'));
+    fireEvent.keyDown(tablist, { key: 'ArrowUp' });
+    expect(document.activeElement).toBe(tabButton('report'));
+    fireEvent.keyDown(tablist, { key: 'Home' });
+    expect(document.activeElement).toBe(tabButton('deck'));
+    fireEvent.keyDown(tablist, { key: 'End' });
+    expect(document.activeElement).toBe(tabButton('prototype'));
+  });
+
+  it('persists the selected tab next to the collapse preference and defaults to decks', () => {
+    const first = renderHub();
+    expect(window.localStorage.getItem('readable-studio:hub-template-carousel-tab')).toBeNull();
+    fireEvent.click(tabButton('prototype'));
+    expect(window.localStorage.getItem('readable-studio:hub-template-carousel-tab')).toBe('prototype');
+    first.unmount();
+    renderHub();
+    expect(tabButton('prototype').getAttribute('aria-selected')).toBe('true');
+    expect(screen.getAllByTestId('hub-template-card').map((card) => card.getAttribute('data-plugin-id')))
+      .toContain('example-pricing-page');
+    // Back to the default clears the key; garbage in storage falls back to decks.
+    fireEvent.click(tabButton('deck'));
+    expect(window.localStorage.getItem('readable-studio:hub-template-carousel-tab')).toBeNull();
+    cleanup();
+    window.localStorage.setItem('readable-studio:hub-template-carousel-tab', 'bogus');
+    renderHub(undefined, 'en');
+    expect(tabButton('deck').getAttribute('aria-selected')).toBe('true');
+    expect(tabButton('deck').textContent).toBe(en['homeHero.templateTabDeck']);
+  });
+
+  it('hides the tab column while a creation chip names the type', () => {
+    renderHub({ activeChipId: 'deck' });
+    expect(screen.queryByTestId('hub-template-carousel-tabs')).toBeNull();
+    expect(screen.getByTestId('hub-template-carousel-rail').hasAttribute('aria-labelledby')).toBe(false);
   });
 
   it('picking a card seeds the composer through the example-plugin handler', () => {
     const { onPickExamplePlugin } = renderHub();
+    fireEvent.click(tabButton('prototype'));
     const card = screen.getAllByTestId('hub-template-card')
       .find((node) => node.getAttribute('data-plugin-id') === 'example-hr-onboarding')!;
     fireEvent.click(card);
@@ -139,6 +255,7 @@ describe('Hub template carousel', () => {
 
   it('is one Tab stop: arrow keys move focus between cards', () => {
     renderHub();
+    fireEvent.click(tabButton('prototype'));
     const cards = screen.getAllByTestId('hub-template-card');
     expect(cards.filter((card) => card.tabIndex === 0)).toHaveLength(1);
     cards[0]!.focus();
@@ -160,7 +277,8 @@ describe('Hub template carousel', () => {
     expect(body.classList.contains('accordion-collapsible')).toBe(true);
     expect(body.classList.contains('open')).toBe(true);
     expect(body.hasAttribute('inert')).toBe(false);
-    expect(body.querySelector('.accordion-collapsible-inner > .home-hero__templates-rail')).not.toBeNull();
+    expect(body.querySelector('.accordion-collapsible-inner > .home-hero__templates-deck > .home-hero__templates-rail')).not.toBeNull();
+    expect(body.querySelector('.accordion-collapsible-inner > .home-hero__templates-deck > .home-hero__templates-tabs')).not.toBeNull();
     fireEvent.click(toggle);
     // Collapse toggles the class and keeps the rail mounted so the exit
     // transition can play (an unmount would snap); the hidden cards leave
@@ -231,6 +349,7 @@ describe('Hub template carousel', () => {
     __resetHtmlSurfaceProbeCacheForTests();
     try {
       renderHub({ pluginOptions: decorated });
+      fireEvent.click(tabButton('prototype'));
       const card = screen.getAllByTestId('hub-template-card')
         .find((node) => node.getAttribute('data-plugin-id') === 'example-pricing-page')!;
       const thumb = card.querySelector('.home-hero__template-thumb')!;
