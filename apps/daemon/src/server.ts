@@ -12015,6 +12015,13 @@ async function startServerWithProbeLifetime({
       send('agent', ev);
     };
 
+    // Both RPC resume and child-close persistence must use the same owner root.
+    const piSessionRoot = def.id === 'databricks'
+      ? managedPiHandle.invocation.sessionDir
+      : managedPiHandle?.invocation.sessionDir
+        ? path.dirname(managedPiHandle.invocation.sessionDir)
+        : path.join(effectiveCwd, '.pi', 'sessions');
+
     if (def.streamFormat === 'claude-stream-json') {
       const claude = createClaudeStreamHandler((ev) => {
         if (ev?.type === 'error') {
@@ -12119,11 +12126,6 @@ async function startServerWithProbeLifetime({
       //   - 'error' channel → route through the daemon's error path
       //     (createSseErrorPayload + send SSE + set agentStreamError)
       trackingSubstantiveOutput = true;
-      const piSessionRoot = def.id === 'databricks'
-        ? managedPiHandle.invocation.sessionDir
-        : managedPiHandle?.invocation.sessionDir
-          ? path.dirname(managedPiHandle.invocation.sessionDir)
-          : path.join(effectiveCwd, '.pi', 'sessions');
       acpSession = attachPiRpcSession({
         child,
         prompt: composed,
