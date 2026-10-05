@@ -1,6 +1,6 @@
 # nv-verify report
 
-Exit codes are the captured process codes in `*.exit`; counts are parsed from the vitest/node:test summary lines in `*.log`. Source was not modified.
+Exit codes are the captured process codes in `*.exit.log`; counts are parsed from the vitest/node:test summary lines in `*.log`. Source was not modified.
 
 ## Git state
 ```
