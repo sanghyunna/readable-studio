@@ -59,6 +59,13 @@ if (process.argv.includes('--check')) {
           await Promise.race([new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Thumbnail readiness exceeded 15 seconds')), 15000); }), (async () => {
           await document.fonts.ready;
           await Promise.all(Array.from(document.images).filter(image => image.loading !== 'lazy').map(image => image.decode()));
+          for (const video of document.querySelectorAll('video')) {
+            const box = video.getBoundingClientRect();
+            if (box.bottom > 0 && box.top < innerHeight && box.width > 0 && video.readyState < 2) {
+              throw new Error('Above-fold video has no decoded frame');
+            }
+            video.pause();
+          }
           for (const animation of document.getAnimations()) {
             const end = animation.effect?.getComputedTiming().endTime;
             if (end !== undefined && Number.isFinite(end)) animation.finish(); else animation.pause();
