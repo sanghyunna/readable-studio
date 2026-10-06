@@ -12188,6 +12188,7 @@ async function startServerWithProbeLifetime({
         mcpServers,
         ...(def.id === 'amr' ? { modelUnavailableErrorCode: 'AMR_MODEL_UNAVAILABLE' } : {}),
         rejectEmptyPromptCompletion: def.id === 'kimi',
+        env: spawnedAgentEnv ?? process.env,
         send: (event, data) => {
           if (event === 'agent') {
             lastAgentEventPhase = summarizeAgentEventForInactivity(data);

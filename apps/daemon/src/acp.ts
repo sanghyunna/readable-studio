@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { Writable } from 'node:stream';
 import path from 'node:path';
+import { readKimiSessionFailure } from './kimi-session-failure.js';
 import {
   createDsmlArtifactTextSuppressor,
   type ArtifactTextSuppressor,
@@ -84,6 +85,7 @@ interface AttachAcpSessionOptions {
   stageTimeoutMs?: number;
   modelUnavailableErrorCode?: 'AMR_MODEL_UNAVAILABLE';
   rejectEmptyPromptCompletion?: boolean;
+  env?: NodeJS.ProcessEnv;
 }
 
 function errorMessage(err: unknown): string {
@@ -761,6 +763,7 @@ export function attachAcpSession({
   stageTimeoutMs = DEFAULT_STAGE_TIMEOUT_MS,
   modelUnavailableErrorCode,
   rejectEmptyPromptCompletion = false,
+  env = process.env,
 }: AttachAcpSessionOptions) {
   const runStartedAt = Date.now();
   const effectiveCwd = path.resolve(cwd || process.cwd());
@@ -868,6 +871,15 @@ export function attachAcpSession({
             },
     );
     if (!child.killed) child.kill('SIGTERM');
+  };
+
+  const failEmptyKimiTurn = () => {
+    const failure = readKimiSessionFailure(sessionId, env);
+    if (failure) {
+      failWithPayload({ message: failure.message, error: failure });
+    } else {
+      fail('Kimi CLI completed without producing assistant text or tool calls.', { retryable: false });
+    }
   };
 
   const writeRpc = (id: JsonRpcId, method: string, params: unknown, timeoutLabel: string) => {
@@ -1163,7 +1175,7 @@ export function attachAcpSession({
     }
     if (promptRequestId !== null && obj.id === promptRequestId) {
       if (rejectEmptyPromptCompletion && !emittedTextChunk && !emittedToolCall) {
-        fail('Kimi CLI completed without producing assistant text or tool calls.', { retryable: false });
+        failEmptyKimiTurn();
         return;
       }
       if (!emittedTextChunk && !emittedToolCall && modelUnavailableErrorCode) {
@@ -1188,7 +1200,11 @@ export function attachAcpSession({
     clearStageTimer();
     parser.flush();
     if (!finished && !aborted && !fatal) {
-      fail(`ACP session exited before completion (code=${code ?? 'null'}, signal=${signal ?? 'none'})`);
+      if (rejectEmptyPromptCompletion && promptRequestId !== null && !emittedTextChunk && !emittedToolCall) {
+        failEmptyKimiTurn();
+      } else {
+        fail(`ACP session exited before completion (code=${code ?? 'null'}, signal=${signal ?? 'none'})`);
+      }
     }
   });
   child.on('error', (err: Error) => fail(err.message));

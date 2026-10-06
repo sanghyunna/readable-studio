@@ -1190,6 +1190,7 @@ test('Kimi empty end_turn is an execution failure rather than silent success', (
   assert.equal(session.hasFatalError(), true);
   const errors = events.filter(({ event }) => event === 'error');
   assert.equal(errors.length, 1);
+  assert.ok(errors[0]);
   assert.equal((errors[0].payload as { error: { code: string } }).error.code, 'AGENT_EXECUTION_FAILED');
 });
 
