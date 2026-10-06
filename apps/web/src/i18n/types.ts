@@ -2010,6 +2010,11 @@ export interface Dict {
   'chat.antigravityError.launchTerminalCta': string;
   'chat.antigravityError.launchSwitchModelCta': string;
   'chat.connectionDropped': string;
+  'chat.kimiError.usageLimitMessage': string;
+  'chat.kimiError.usageLimitWindowMessage': string;
+  'chat.kimiError.usageLimitResetMessage': string;
+  'chat.kimiError.authMessage': string;
+  'chat.kimiError.providerMessage': string;
   'chat.tabComments': string;
   'chat.commentsSoon': string;
   'chat.comments.attached': string;

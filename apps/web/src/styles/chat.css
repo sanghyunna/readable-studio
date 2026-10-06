@@ -796,7 +796,7 @@
   justify-content: space-between;
   gap: 10px;
 }
-.chat-error-text { min-width: 0; }
+.chat-error-text { min-width: 0; word-break: keep-all; overflow-wrap: anywhere; }
 /* Expanded long error: the message block becomes multi-line, so the recovery
    actions top-align against its first line instead of floating at the middle
    of a tall stack trace. Keyed on the disclosure button's own aria state so a

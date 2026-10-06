@@ -761,7 +761,11 @@ export function ChatPane({
   // Per-case failure UI (button + copy + whether to promote AMR). Only
   // meaningful for a failed run (retryAssistant present).
   const runFailureUi = retryAssistant
-    ? resolveRunFailureUi(failedRunErrorEvent?.code, retryAssistant.agentId)
+    ? resolveRunFailureUi(
+        failedRunErrorEvent?.code,
+        retryAssistant.agentId,
+        failedRunErrorEvent?.detail,
+      )
     : null;
   // Offer Continue (resume) when the failed run is resumable AND the active
   // agent still matches the agent that produced it. The daemon stores a
@@ -782,7 +786,9 @@ export function ChatPane({
   // string; fall back to the live global error (also covers conversation-load
   // / audio errors) then the persisted run error so a reload still shows it.
   const rawError = error ?? failedRunErrorEvent?.detail ?? null;
-  const displayError = runFailureUi?.messageKey ? t(runFailureUi.messageKey) : rawError;
+  const displayError = runFailureUi?.messageKey
+    ? t(runFailureUi.messageKey, runFailureUi.messageVars)
+    : rawError;
   const errorDiagnosticText = displayError
     ? buildRunErrorDiagnosticText({
         message: displayError,

@@ -66,6 +66,11 @@ export type RunFailureMessageKey =
   | 'chat.amrError.authMessage'
   | 'chat.amrError.balanceMessage'
   | 'chat.connectionDropped'
+  | 'chat.kimiError.usageLimitMessage'
+  | 'chat.kimiError.usageLimitWindowMessage'
+  | 'chat.kimiError.usageLimitResetMessage'
+  | 'chat.kimiError.authMessage'
+  | 'chat.kimiError.providerMessage'
   | null;
 
 export interface RunFailureUi {
@@ -73,6 +78,8 @@ export interface RunFailureUi {
   // Override the gray error card's text (e.g. AMR auth / balance get a clearer
   // explanation than the raw upstream string).
   messageKey: RunFailureMessageKey;
+  // Interpolation values for `messageKey` (only the Kimi copy uses them).
+  messageVars?: Record<string, string | number>;
   // Show a secondary plain "retry" button alongside the primary action (used
   // by the recharge case, where retry is manual after topping up).
   secondaryRetry: boolean;
@@ -81,14 +88,51 @@ export interface RunFailureUi {
   showSwitchCard: boolean;
 }
 
+type KimiFailureCopy = Pick<RunFailureUi, 'messageKey' | 'messageVars'>;
+
+// Kimi failures recovered from the ACP session log arrive as plain-English
+// daemon messages (apps/daemon/src/kimi-session-failure.ts). The persisted run
+// error event keeps only `code` + `detail`, so the reset/status facts are read
+// back from that text; anything unrecognized keeps the raw message.
+function resolveKimiFailureCopy(
+  code: string | null | undefined,
+  detail: string | null | undefined,
+): KimiFailureCopy | null {
+  if (code === 'RATE_LIMITED') {
+    if (/resets when the current 7-day window ends/i.test(detail ?? '')) {
+      return { messageKey: 'chat.kimiError.usageLimitWindowMessage' };
+    }
+    const reset = detail?.match(/\bReset: (.+?)\.(?: Retry|$)/)?.[1];
+    if (reset) {
+      return { messageKey: 'chat.kimiError.usageLimitResetMessage', messageVars: { reset } };
+    }
+    return { messageKey: 'chat.kimiError.usageLimitMessage' };
+  }
+  if (code === 'AGENT_AUTH_REQUIRED') {
+    return { messageKey: 'chat.kimiError.authMessage' };
+  }
+  if (code === 'AGENT_EXECUTION_FAILED') {
+    const match = detail?.match(/^Kimi provider error \(HTTP (\d{3})\): (.+?)\.?$/);
+    if (match) {
+      return {
+        messageKey: 'chat.kimiError.providerMessage',
+        messageVars: { status: match[1]!, reason: match[2]! },
+      };
+    }
+  }
+  return null;
+}
+
 // Resolve the failure UI for a failed run:
 //   - AMR agent, auth required      → authorize-and-retry button, clearer copy
 //   - AMR agent, insufficient funds → recharge button + manual retry, clearer copy
 //   - AMR agent, anything else      → plain retry
+//   - Kimi agent, provider failure  → plain retry, Korean-localizable copy
 //   - non-AMR agent, any failure    → plain retry (no promotion card)
 export function resolveRunFailureUi(
   code: string | null | undefined,
   agentId: string | null | undefined,
+  detail?: string | null,
 ): RunFailureUi {
   if (agentId === 'amr') {
     if (code === 'AMR_AUTH_REQUIRED') {
@@ -139,6 +183,12 @@ export function resolveRunFailureUi(
         secondaryRetry: true,
         showSwitchCard: false,
       };
+    }
+  }
+  if (agentId === 'kimi') {
+    const copy = resolveKimiFailureCopy(code, detail);
+    if (copy) {
+      return { primaryAction: 'retry', secondaryRetry: false, showSwitchCard: false, ...copy };
     }
   }
   // Agent-neutral: a mid-response connection drop (any agent) gets a clear,
