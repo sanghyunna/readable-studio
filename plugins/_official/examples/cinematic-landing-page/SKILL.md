@@ -26,7 +26,7 @@ This is the authoritative build brief. Follow it exactly — named colors, fonts
 
 ## Stack
 
-- Default output: the single self-contained `example.html` seed (vanilla HTML/CSS/JS). It includes everything inline; the only remote refs are the 3 CloudFront hero videos and `picsum.photos` gallery stills (stable CDNs — keep them).
+- Default output: the single self-contained `example.html` seed (vanilla HTML/CSS/JS). It includes everything inline; media comes from the sibling `assets/` directory; hero loops use local posters and the gallery reuses a bakery still.
 - If the user explicitly asks for the project form, port faithfully to **React 18 + Vite + TypeScript + Tailwind + GSAP (ScrollTrigger + SplitText) + Lottie**. No Framer Motion — all motion is GSAP. Keep the design identical while porting. Map the vanilla ports back to their framework origin:
   - `IntersectionObserver` toggling `.in` → GSAP `ScrollTrigger` with `once: true`.
   - passive `scroll` listener writing inline `clip-path` / `transform` / word opacity → GSAP `useScroll`/`ScrollTrigger scrub`.
@@ -84,7 +84,7 @@ Gold accent **`#CB9D06`** — every hover state (nav links, buttons, footer link
 
 - `bg-white py-8 md:py-16 flex justify-center`; inner `w-[90%] md:w-[65%]`.
 - Grid: desktop ≥1000px = 4 cols (row 1: 4 equal; row 2: 3 cards, middle spans 2). Mobile = 2 cols. Aspect ratio 3:4, row gap 40px, item padding 4px.
-- 7 items: Viennese Pastry, Bread, Dessert, Savory, Sweet Treats, Culinary Aid, Ingredient (Culinary Aid is the span-2 middle card). Backgrounds `https://picsum.photos/seed/bakery-<seed>/600/800`.
+- 7 items: Viennese Pastry, Bread, Dessert, Savory, Sweet Treats, Culinary Aid, Ingredient (Culinary Aid is the span-2 middle card). Backgrounds use `./assets/hf_20260515_114315_ee3663e6-bd79-41b4-9e5b-0fae62827eb9-b97001.webp` as a bundled bakery still.
 - Entry: ScrollTrigger `start "top 85%"`, `once`; `{opacity:0, y:+120, filter: blur(10px)} → {opacity:1, y:0, blur(0)}`, 0.8s, `power3.out`, 0.05s stagger.
 - Hover: CSS `transform: scale(1.2)` on the bg image, `transition: transform 6s cubic-bezier(0.22,0.61,0.36,1)`.
 - Labels: `text-left text-black text-sm mt-2 font-manrope font-medium`.
@@ -128,6 +128,6 @@ Mobile-first. `md:` = 768px, `lg:` = 1024px. Gallery columns: 1 (<400px), 2 (400
 
 - All motion is **GSAP** (ScrollTrigger + SplitText) + **Lottie** — never Framer Motion.
 - Gold `#CB9D06` is the only accent; no purple/indigo/teal/green substitutes.
-- Keep the 3 CloudFront hero video URLs and the `picsum.photos` gallery stills exactly; do not swap to other hosts.
+- Keep the bundled hero posters and gallery still relative paths; do not require remote media hosts.
 - Do not use remote avatar hosts (`i.pravatar.cc`, dicebear, etc.) — they 403 in the sandbox. Any generated decoration is an inline SVG data URI.
 - Start from `example.html`; only swap copy/data and (if requested) port to React. Do not redesign.

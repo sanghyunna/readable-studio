@@ -88,7 +88,7 @@ if (process.argv.includes('--check')) {
           for (const element of Array.from(document.querySelectorAll('*'))) {
             const box = element.getBoundingClientRect();
             if (box.bottom <= 0 || box.top >= innerHeight) continue;
-            for (const match of getComputedStyle(element).backgroundImage.matchAll(/url\((?:"([^"]*)"|'([^']*)'|([^)]*))\)/g)) backgrounds.add((match[1] ?? match[2] ?? match[3])!.trim());
+            for (const match of getComputedStyle(element).backgroundImage.matchAll(/url\((?:"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'|([^)]*))\)/g)) backgrounds.add((match[1] ?? match[2] ?? match[3])!.trim().replace(/\\(["'\\])/g, '$1'));
           }
           await Promise.all(Array.from(backgrounds).map(async src => {
             const image = new Image(); image.src = src;

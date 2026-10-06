@@ -466,25 +466,25 @@
     {
       "id": "example-acreage-farming",
       "type": "website",
-      "sourceHash": "19576c367867f53a829173ad0e76111e50abafd8abf890a37b83f669316b3df9",
+      "sourceHash": "12274f74221c9da1cb49bcb97ee483858c062145c29f959aa177aea3d83af3a9",
       "bytes": 12744
     },
     {
       "id": "example-aerocore",
       "type": "website",
-      "sourceHash": "8b7c123d82b11d2efc1e4a99ff82833c82c3aebbfa6d9950ced00c5ac886eae3",
+      "sourceHash": "e293e7121ba82b8c1d326850b766da738010e3f2c0feb25086fe74276d0d3d3e",
       "bytes": 12428
     },
     {
       "id": "example-ai-designer-portfolio",
       "type": "website",
-      "sourceHash": "0160f0b95b4445d3339df27303a78cfd69d2bebc6491d46ee5577c19ba15d664",
+      "sourceHash": "a4aa532127d4fd6c8bcfa49091e89cbd0314064dbad9484dd478f477d6d07168",
       "bytes": 13308
     },
     {
       "id": "example-cinematic-landing-page",
       "type": "website",
-      "sourceHash": "955318bb7fa38437259f58659afaeaa4c1afca3eb99877492e43f5f49066c9c5",
+      "sourceHash": "3de3cfd386cb8314c721b443149e54cfdbb98694ace4703d104b046987d06d22",
       "bytes": 23354
     },
     {
@@ -526,13 +526,13 @@
     {
       "id": "example-dreamcore-landing",
       "type": "website",
-      "sourceHash": "3a59b84f62a74633a48ace2d34a933adb6d0b98fde4c5cca573cfd1a210b9476",
+      "sourceHash": "ba41958c3845c115e3d1978fde43f82d833c6bf39c6e3132c23716fa3f544a12",
       "bytes": 32780
     },
     {
       "id": "example-evergreen-finance",
       "type": "website",
-      "sourceHash": "eada4ff4deb54dc6e440efb4557b275cceb280ad0c52fa29a5de24c324c377c0",
+      "sourceHash": "b94bd5553c4d6d46f2778f6fffe96a9efa2fe0c194bac5436ffdb266c359076f",
       "bytes": 8088
     },
     {
@@ -556,7 +556,7 @@
     {
       "id": "example-innovation",
       "type": "website",
-      "sourceHash": "d9f9ae87cbf521f79381338d0a9bc27bba2ccbafe9d93275abf06dc59009e8b2",
+      "sourceHash": "56757e1f298788e2af4548535e769465d81bca94276724dee5743b8b9b85fb52",
       "bytes": 4788
     },
     {
@@ -574,25 +574,25 @@
     {
       "id": "example-layered-depth",
       "type": "website",
-      "sourceHash": "3b75daa25ad503f4cf3dc12ae5ada79323c1dee9ff710b39c1287b6c094e58de",
+      "sourceHash": "43d9a5c031e2516672f83ad99b3916622b195a8a2b20d9e1d652b2a495144f18",
       "bytes": 18228
     },
     {
       "id": "example-liquid-glass-agency",
       "type": "website",
-      "sourceHash": "b9f8d953e2527aa8c6600f80451020bf0aa48b7fde26a576191ec4e5c8902993",
+      "sourceHash": "54dba231b0f88b37c3c9ecbef21266b206925c3945f6e7bc2c0478220a0c0277",
       "bytes": 17418
     },
     {
       "id": "example-luxury-botanical",
       "type": "website",
-      "sourceHash": "c3345b9ac605d14c9211c81a01c46c89090d33a6f7fa7cba0c1f88b971cc7c25",
+      "sourceHash": "cad9edfb823701efa2aee21f0b9ba346592b4867852d84fb2ab4064dd9589144",
       "bytes": 22834
     },
     {
       "id": "example-mindloop-landing",
       "type": "website",
-      "sourceHash": "844930c218df22b51783ae6f14a8dc85ce5944d496fae6a37b6a2fda19e6c4f0",
+      "sourceHash": "15f53204e75a53cc3efc0f88049768492c570e84eae364515100bb1bf91d0763",
       "bytes": 17790
     },
     {
@@ -610,8 +610,8 @@
     {
       "id": "example-mythic-naturecore",
       "type": "website",
-      "sourceHash": "5c3db470c7188fac62ff4d593fdf7a5218691b5fd07c38d4ba1b9fca0b2c2e85",
-      "bytes": 36696
+      "sourceHash": "b07fd44da3e05d924156a6ab209ffef524b1eaefb2c4d2a539c2ac88d283a307",
+      "bytes": 35638
     },
     {
       "id": "example-nimbus-grid",
@@ -622,7 +622,7 @@
     {
       "id": "example-orbis-nft",
       "type": "website",
-      "sourceHash": "aabac95c03c52ba593c3a123079ae2a702f41542892554e6c25837da255b48e8",
+      "sourceHash": "858ba8ebae07e0863023020eecdb630dcfd5dab44779232dc31aa1308d1cae98",
       "bytes": 35420
     },
     {
@@ -652,7 +652,7 @@
     {
       "id": "example-skyelite-private-jets",
       "type": "website",
-      "sourceHash": "d8174fc6468993b5fc223cbe20946cc5e22021c31003f162ebd68a77be90279c",
+      "sourceHash": "880db551af032de8738df481d3476ac887616e18b3cf05ed7f2b77a9517a5506",
       "bytes": 12420
     },
     {
@@ -670,7 +670,7 @@
     {
       "id": "example-stellar-launch",
       "type": "website",
-      "sourceHash": "13234b84356e127476ba1b725bea5a15af11bed42d65a1a55b365ba91a743153",
+      "sourceHash": "a9fe398d5ba5a595496fb415201593cf925670d786a2eb20e7625a44f308fcae",
       "bytes": 16574
     },
     {
