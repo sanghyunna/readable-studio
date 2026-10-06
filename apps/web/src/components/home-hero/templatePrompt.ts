@@ -16,6 +16,15 @@ export interface HiddenTemplate {
 
 const TEMPLATE_USER_SEPARATOR = '\n\n';
 
+/** Naming surfaces must never use the hidden brief, even for a chip-only send. */
+export function visiblePromptForNaming(
+  content: string,
+  ref: ProjectTemplateRef | null | undefined,
+): string {
+  if (!ref) return content;
+  return userTextFromTemplateMessage(content, ref)?.trim() || ref.name;
+}
+
 /** The sent prompt: template brief, then the user's words (when any). */
 export function composeTemplatePrompt(templateText: string, userText: string): string {
   const trimmedUser = userText.trim();

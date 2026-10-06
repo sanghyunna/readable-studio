@@ -20,6 +20,7 @@ import {
   composeTemplatePrompt,
   templatePromptBoundary,
   userTextFromTemplateMessage,
+  visiblePromptForNaming,
 } from '../../src/components/home-hero/templatePrompt';
 import { homeHeroPromptText, setHomeHeroPrompt } from '../helpers/home-hero-lexical';
 
@@ -176,6 +177,17 @@ describe('Hub template chip', () => {
 });
 
 describe('template prompt split helpers', () => {
+  it.each(['이번 분기 실적을 한국어로 정리해 주세요.', ''])('names template submissions without the hidden brief (%s)', (typed) => {
+    const brief = 'Hidden template instructions';
+    const prompt = composeTemplatePrompt(brief, typed);
+    const ref = { id: 'report', name: '보고서', boundary: templatePromptBoundary(brief, typed) };
+    expect(visiblePromptForNaming(prompt, ref)).toBe(typed || ref.name);
+  });
+
+  it('preserves legacy naming and does not expose a brief with an invalid boundary', () => {
+    expect(visiblePromptForNaming('Create a landing page', undefined)).toBe('Create a landing page');
+    expect(visiblePromptForNaming('Hidden brief', { id: 'report', name: '보고서', boundary: 99 })).toBe('보고서');
+  });
   it('composes brief + user text and locates the boundary', () => {
     const prompt = composeTemplatePrompt('BRIEF', '  hello  ');
     expect(prompt).toBe('BRIEF\n\nhello');

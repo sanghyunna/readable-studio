@@ -5,7 +5,7 @@ import { StrictMode, type ComponentProps, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectView } from '../../src/components/ProjectView';
 import { fetchChatRunStatus, listActiveChatRuns, reattachDaemonRun, streamViaDaemon } from '../../src/providers/daemon';
-import { listConversations, listMessages, saveMessage } from '../../src/state/projects';
+import { listConversations, listMessages, patchConversation, patchProject, saveMessage } from '../../src/state/projects';
 import { DEFAULT_CONFIG } from '../../src/state/config';
 import { useProjectFileEvents } from '../../src/providers/project-events';
 import type { ChatAttachment, Project } from '../../src/types';
@@ -115,6 +115,29 @@ afterEach(() => {
 });
 
 describe('Home first-turn run hydration', () => {
+  it.each([
+    { userText: '이번 분기 실적을 한국어로 정리해 주세요.', template: true },
+    { userText: '', template: true },
+    { userText: 'Create a landing page', template: false },
+  ])('names the first turn from visible text (template=$template, userText=$userText)', async ({ userText, template }) => {
+    const brief = '使用 the active project design system hidden template instructions';
+    const prompt = template ? brief + (userText ? `\n\n${userText}` : '') : userText;
+    const current: Project = {
+      ...project, pendingPrompt: prompt,
+      metadata: {
+        kind: 'other',
+        nameSource: 'generated',
+        ...(template ? { templateRef: { id: 'report', name: '보고서', boundary: userText ? brief.length + 2 : brief.length } } : {}),
+      },
+    };
+    await act(async () => { render(<HomeProject initialProject={current} />); });
+    const visible = userText || '보고서';
+    expect(patchConversation).toHaveBeenCalledWith(project.id, 'home-conv', { title: visible });
+    expect(patchProject).toHaveBeenCalledWith(project.id, expect.objectContaining({
+      name: template ? visible.replace(/\.$/, '') : 'Landing Page',
+    }));
+    expect(vi.mocked(streamViaDaemon).mock.calls[0]![0].history.at(-1)?.content).toBe(prompt);
+  });
   it.each(['prompt', 'attachments', 'both'] as const)('retains %s until idle hydration and dispatches exactly once under StrictMode', async kind => {
     const hydration = deferred<Runs>();
     vi.mocked(listActiveChatRuns).mockReturnValue(hydration.promise);

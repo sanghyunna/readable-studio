@@ -97,6 +97,7 @@ import {
 import { navigate } from '../router';
 import { agentDisplayName, agentModelDisplayName } from '../utils/agentLabels';
 import { isMacPlatform } from '../utils/platform';
+import { visiblePromptForNaming } from './home-hero/templatePrompt';
 import {
   canAutoRenameProjectFromPrompt,
   summarizeProjectNameFromPrompt,
@@ -3502,9 +3503,10 @@ export function ProjectView({
       // so the conversation is identifiable in the dropdown without a
       // round-trip through the agent.
       if (!retryTarget && historyBase.length === 0) {
-        const title = isDesignSystemWorkspacePrompt(prompt)
+        const visiblePrompt = visiblePromptForNaming(prompt, project.metadata?.templateRef);
+        const title = isDesignSystemWorkspacePrompt(visiblePrompt)
           ? DESIGN_SYSTEM_WORKSPACE_DISPLAY_TITLE
-          : prompt.slice(0, 60).trim();
+          : visiblePrompt.slice(0, 60).trim();
         if (title) {
           setConversations((curr) =>
             curr.map((c) =>
@@ -3513,7 +3515,7 @@ export function ProjectView({
           );
           void patchConversation(project.id, runConversationId, { title });
         }
-        const projectName = summarizeProjectNameFromPrompt(prompt);
+        const projectName = summarizeProjectNameFromPrompt(visiblePrompt);
         if (
           projectName &&
           projectName !== project.name &&

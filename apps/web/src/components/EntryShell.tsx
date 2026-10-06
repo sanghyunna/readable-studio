@@ -37,6 +37,7 @@ import type {
   SkillSummary,
 } from '../types';
 import { CenteredLoader } from './Loading';
+import { visiblePromptForNaming } from './home-hero/templatePrompt';
 import dynamic from 'next/dynamic';
 
 function SurfaceLoading() {
@@ -354,7 +355,8 @@ export function EntryShell({
   // agent asks for the exact task type before continuing.
   function handlePluginLoopSubmit(payload: PluginLoopSubmit) {
     if (!requireModelSelection(config, agents)) return false;
-    const head = payload.prompt.trim().split(/\s+/).slice(0, 8).join(' ');
+    const head = visiblePromptForNaming(payload.prompt, payload.templateRef)
+      .trim().split(/\s+/).slice(0, 8).join(' ');
     const firstAttachmentName = payload.attachments?.[0]?.name ?? '';
     const fallbackName = head.length > 0 ? head : firstAttachmentName || 'Untitled';
     const name =
