@@ -3422,14 +3422,8 @@ export function homeHeroExamplePluginsForChip(
 ): InstalledPluginRecord[] {
   const presets = plugins
     .filter((plugin) => !EXAMPLE_PRESET_HIDDEN_PLUGIN_IDS.has(plugin.id))
-    .filter((plugin) => (
-      pluginMatchesExampleChip(plugin, chipId) ||
-      curatedPluginPriorityForChip(plugin, chipId) !== null
-    ))
-    .filter((plugin) => (
-      Boolean(pluginPresetQuery(plugin, locale)) ||
-      curatedPluginPriorityForChip(plugin, chipId) !== null
-    ))
+    .filter((plugin) => pluginMatchesExampleChip(plugin, chipId))
+    .filter((plugin) => Boolean(pluginPresetQuery(plugin, locale)?.trim()))
     .sort((a, b) => comparePluginPresetOrder(a, b, chipId))
     .slice(0, limit);
   return presets;
@@ -3453,6 +3447,11 @@ function comparePluginPresetOrder(
 }
 
 export function pluginMatchesExampleChip(record: InstalledPluginRecord, chipId: string): boolean {
+  const hubType = record.manifest?.readable?.hubType;
+  if (hubType !== undefined) {
+    return hubType !== 'none' && hubType === (chipId === 'prototype' ? 'website' : chipId);
+  }
+  // Compatibility for external manifests that have not declared a Hub type.
   const slugs = pluginRecordSlugs(record);
   const has = (...values: string[]) => values.some((value) => slugs.has(value));
   const hasPart = (...values: string[]) => {

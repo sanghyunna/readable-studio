@@ -98,6 +98,7 @@
           },
           "homepage": { "type": "string" },
           "license":  { "type": "string" },
+          "hubType": { "type": "string", "enum": ["deck", "report", "website", "none"] },
           "capabilitiesSummary": {
             "type": "array",
             "items": { "type": "string" }

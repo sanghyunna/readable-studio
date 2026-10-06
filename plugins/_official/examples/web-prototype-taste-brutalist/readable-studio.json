@@ -2,12 +2,12 @@
   "$schema": "urn:readable-studio:schema:plugin-manifest:v1",
   "specVersion": "1.0.0",
   "name": "example-web-prototype-taste-brutalist",
-  "title": "Brutalist Web Prototype",
+  "title": "Brutalist Editorial Document",
   "title_i18n": {
     "zh-CN": "Brutalist Web Prototype",
     "zh-TW": "Brutalist Web Prototype",
     "ja": "Brutalist Web Prototype",
-    "ko": "브루탈리스트 웹 프로토타입",
+    "ko": "브루탈리스트 에디토리얼 문서",
     "de": "Brutalist Web Prototype",
     "fr": "Brutalist Web Prototype",
     "ru": "Brutalist Web Prototype",
@@ -21,7 +21,7 @@
     "ar": "Brutalist Web Prototype",
     "tr": "Brutalist Web Prototype",
     "uk": "Brutalist Web Prototype",
-    "en": "Brutalist Web Prototype"
+    "en": "Brutalist Editorial Document"
   },
   "version": "0.1.0",
   "description": "Swiss industrial-print web prototype. Newsprint canvas, monolithic black grotesque, viewport-bleeding numerals, hairline grid dividers, hazard-red accent, ASCII syntax decoration. Distilled from Leonxlnx/taste-skill `brutalist-skill` (Swiss Industrial Print mode).",
@@ -66,6 +66,7 @@
     ]
   },
   "readable": {
+    "hubType": "report",
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "prototype",

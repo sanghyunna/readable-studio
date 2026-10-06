@@ -44,6 +44,24 @@ describe('plugin manifest localized text', () => {
     );
   });
 
+  it.each(['deck', 'report', 'website', 'none'])('retains explicit Hub type %s in plugin and marketplace schemas', (hubType) => {
+    const manifest = PluginManifestSchema.parse({
+      name: 'sample-plugin', version: '1.0.0', readable: { hubType },
+    });
+    expect(manifest.readable?.hubType).toBe(hubType);
+    const entry = MarketplacePluginEntrySchema.parse({
+      name: 'sample-plugin', version: '1.0.0', source: 'local:sample', hubType,
+    });
+    expect(entry.hubType).toBe(hubType);
+  });
+
+  it('rejects unknown Hub types while allowing unmigrated manifests', () => {
+    expect(() => PluginManifestSchema.parse({
+      name: 'sample-plugin', version: '1.0.0', readable: { hubType: 'prototype' },
+    })).toThrow();
+    expect(PluginManifestSchema.parse({ name: 'sample-plugin', version: '1.0.0' }).readable).toBeUndefined();
+  });
+
   it('accepts a valid preview motion and rejects an invalid one', () => {
     const manifest = PluginManifestSchema.parse({
       name: 'sample-plugin',

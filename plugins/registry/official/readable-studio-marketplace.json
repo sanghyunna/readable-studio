@@ -9292,6 +9292,7 @@
         "fs:write",
         "network"
       ],
+      "hubType": "website",
       "description": "Dark, premium 3D-creator portfolio landing page: a full-viewport hero with gradient-text headline and a mouse-following magnetic 3D portrait, a scroll-driven horizontal image marquee, an About section with corner 3D decorations and character-by-character scroll-reveal text, a white Services list, and sticky-stacking project cards.",
       "description_i18n": {
         "zh-CN": "暗色高端 3D 创作者作品集落地页：全屏 Hero（渐变标题 + 鼠标磁吸 3D 人像）、随滚动横移的图片 marquee、带四角 3D 装饰与逐字揭示文案的 About、白底 Services 列表，以及滚动缩放堆叠的项目卡片。",
@@ -9364,6 +9365,7 @@
         "fs:write",
         "network"
       ],
+      "hubType": "website",
       "description": "Premium precision-farming landing page: dark/light alternating sections, a fullscreen hero video background, an animated stats grid, an infinite logo marquee, and image-backed service cards.",
       "description_i18n": {
         "zh-CN": "高端精准农业落地页：明暗交替分区、全屏 hero 视频背景、动态数据网格、无限滚动 logo 跑马灯，以及图片背景的服务卡片。",
@@ -9434,6 +9436,7 @@
         "fs:write",
         "network"
       ],
+      "hubType": "website",
       "description": "Premium scroll-cinematic aerospace propulsion marketing site: a blue-to-warm-white gradient hero with parallax wordmark and engine still, a mission thumbnail that grows into a fullscreen sticky video, a pinned tabbed showcase, a bento capabilities grid with looping video cards and a tool marquee, an animated dark stats chart, a horizontal video-story rail, and a starfield footer.",
       "description_i18n": {
         "zh-CN": "高端电影感航天动力营销站：蓝转暖白渐变 Hero（视差大字 + 发动机静帧）、由缩略图放大为全屏粘性视频的展示、固定标签页 showcase、含循环视频卡与工具跑马灯的 bento 能力网格、深色动画数据图、横向视频故事轨与星点页脚。",
@@ -9504,6 +9507,7 @@
         "fs:write",
         "network"
       ],
+      "hubType": "website",
       "description": "Premium white-background creative-studio landing page: serif-accented hero, infinite GIF marquee, parallax testimonial, two-card pricing, auto-scrolling testimonial carousel, vertical project showcase, a mouse-trail partner CTA, and a fixed floating bottom nav.",
       "description_i18n": {
         "zh-CN": "高端纯白创意工作室落地页：衬线点缀的 Hero、无限滚动 GIF 跑马灯、视差证言、双卡定价、自动轮播证言、纵向项目展示、鼠标拖尾合作 CTA，以及固定悬浮底栏。",
@@ -9573,6 +9577,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "report",
       "description": "Huashu / huashu-md-html-inspired magazine article layout for turning Markdown or notes into a polished long-form HTML essay.",
       "description_i18n": {
         "en": "Huashu / huashu-md-html-inspired magazine article layout for turning Markdown or notes into a polished long-form HTML essay.",
@@ -9642,6 +9647,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "report",
       "description": "A long-form article / blog post — masthead, hero image placeholder,\narticle body with figures and pull quotes, author byline, related posts.\nUse when the brief asks for \"blog\", \"article\", \"post\", \"essay\", or\n\"case study\".",
       "description_i18n": {
         "zh-CN": "长篇文章/博客——包含页眉、主图占位符、带插图和引用的正文、作者署名及相关文章推荐。适用于需求中包含'博客'、'文章'、'帖子'、'随笔'或'案例研究'等关键词时。",
@@ -9714,6 +9720,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "none",
       "description": "Twitter quote or data card designed to pair with a post.",
       "description_i18n": {
         "en": "Twitter quote or data card designed to pair with a post.",
@@ -9783,6 +9790,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "none",
       "description": "Xiaohongshu-style knowledge cards, arranged as a swipeable multi-card carousel.",
       "description_i18n": {
         "en": "Xiaohongshu-style knowledge cards, arranged as a swipeable multi-card carousel.",
@@ -9852,6 +9860,7 @@
         "fs:write",
         "network"
       ],
+      "hubType": "website",
       "description": "Premium GSAP-driven cinematic B2B landing page: a scroll-driven full-screen video-slider hero with clip-path ellipse transitions, SplitText char-reveal headlines, a masonry product gallery, scroll-reveal about text, a partner marquee, Lottie feature cards, and a multi-office footer.",
       "description_i18n": {
         "zh-CN": "高端 GSAP 电影感 B2B 落地页：滚动驱动的全屏视频切换 Hero（clip-path 椭圆转场）、SplitText 逐字标题、瀑布流产品画廊、滚动揭示文案、合作伙伴跑马灯、Lottie 特性卡片与多办公室页脚。",
@@ -9921,6 +9930,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "report",
       "description": "Structured medical case presentation for clinical rounds, conferences,\nand documentation. Generates SOAP-format or narrative case reports\nwith physiologically accurate vitals, labs, and evidence-based plans.\nUse when the brief mentions \"case report\", \"case presentation\", \"SOAP note\",\n\"clinical case\", \"ward rounds\", \"case summary\", or \"patient presentation\".",
       "description_i18n": {
         "zh-CN": "为临床查房、病例讨论会和医疗文档生成结构化病例报告。支持生成SOAP格式或叙述性病例报告，包含生理准确的生命体征、实验室数据和循证医疗方案。",
@@ -9995,6 +10005,7 @@
         "fs:write",
         "network"
       ],
+      "hubType": "website",
       "description": "High-end dark cinematic hero for a coding-education platform: full-screen HLS background video, a liquid-glass card, green-accent uppercase typography, central glow, desktop grid lines, and a working mobile hamburger menu.",
       "description_i18n": {
         "zh-CN": "高端暗色电影感编程教育平台 Hero：全屏 HLS 背景视频、液态玻璃卡片、绿色强调的大写排版、中央光晕、桌面网格线，以及可用的移动端汉堡菜单。",
@@ -10064,6 +10075,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "website",
       "description": "Turn a long-form article, thread, memo, or product narrative into a Codex-style clickable capability map with a workflow loop, use-case matrix, and responsive detail panel.",
       "description_i18n": {
         "zh-CN": "将长文、帖子、备忘录或产品说明转换为 Codex 风格的可点击能力地图，包含工作流循环、用例矩阵和响应式详情面板。",
@@ -10136,6 +10148,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "report",
       "description": "Run a 5-dimension expert design review on any HTML artifact in the\nproject — Philosophy / Visual hierarchy / Detail / Functionality /\nInnovation, each scored 0–10. Outputs a single self-contained HTML\nreport with a radar chart, evidence-backed scores, and three lists:\nKeep / Fix / Quick-wins. Use when the brief asks for a \"design\nreview\", \"design critique\", \"5-dimension review\", \"design audit\", or \"what's\nwrong with my design\".",
       "description_i18n": {
         "zh-CN": "对项目中的任何 HTML 成品进行 5 维度专家设计评审——哲学/视觉层级/细节/功能性/创新性，每项评分 0-10。输出包含雷达图、有据可依的评分以及三个清单（保留/修复/快速优化）的独立 HTML 报告。",
@@ -10210,6 +10223,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "website",
       "description": "Admin / analytics dashboard in a single HTML file. Fixed left sidebar,\ntop bar with user/search, main grid of KPI cards and one or two charts.\nUse when the brief asks for a \"dashboard\", \"admin\", \"analytics\", or\n\"control panel\" screen.",
       "description_i18n": {
         "zh-CN": "单文件 HTML 管理/分析仪表盘。固定左侧边栏，顶部用户/搜索栏，主区域显示 KPI 卡片网格和图表。适用于需要'仪表盘'、'管理后台'、'数据分析'或'控制面板'界面的场景。",
@@ -10281,6 +10295,7 @@
         "fs:write",
         "network"
       ],
+      "hubType": "website",
       "description": "Premium liquid-glassmorphism conference dashboard: dual fullscreen background videos swapped by theme, a 4x2 glass/solid card grid, animated voice-wave participant indicators, and a floating control bar.",
       "description_i18n": {
         "zh-CN": "高端液态玻璃会议仪表盘：随主题切换的双全屏背景视频、4×2 玻璃/实心卡片网格、带声波动画的参与者指示器，以及悬浮控制栏。",
@@ -10350,6 +10365,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "report",
       "description": "Turns CSV, Excel, or JSON data into a polished visual report page.",
       "description_i18n": {
         "en": "Turns CSV, Excel, or JSON data into a polished visual report page.",
@@ -10419,6 +10435,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "website",
       "description": "A consumer-feeling dating / matchmaking dashboard — left rail navigation,\nticker bar of community signals, headline KPIs, a 30-day mutual-matches\nbar chart, and a match-rate trend block. Editorial typography, restrained\naccent. Use when the brief asks for a \"dating site\", \"matchmaking\",\n\"community dashboard\", \"social network dashboard\", or any consumer\nproduct where the data is the story.",
       "description_i18n": {
         "zh-CN": "消费级约会/配对仪表板，包含左侧导航栏、社区动态滚动条、核心KPI指标、30天互相匹配柱状图和匹配率趋势模块。编辑风格排版，克制的强调色。适用于约会网站、配对服务、社区仪表板或社交网络等消费类产品界面。",
@@ -10491,6 +10508,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "report",
       "description": "Discounted cash flow valuation and intrinsic value analysis for public\ncompanies. Use when the brief asks for DCF, fair value, intrinsic value,\nprice target, undervalued or overvalued analysis, or \"what is this company\nworth?\"",
       "description_i18n": {
         "zh-CN": "为上市公司提供现金流折现估值和内在价值分析。适用于DCF、公允价值、内在价值、目标价、低估或高估分析等需求。",
@@ -10563,6 +10581,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Editorial magazine meets e-ink: 10 layouts and 5 palettes (Ink, Indigo Porcelain, Forest Ink, Kraft Paper, Dune).",
       "description_i18n": {
         "en": "Editorial magazine meets e-ink: 10 layouts and 5 palettes (Ink, Indigo Porcelain, Forest Ink, Kraft Paper, Dune).",
@@ -10632,6 +10651,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Locked 1920x1080 canvas deck with React component-level free composition, not bound to a fixed template.",
       "description_i18n": {
         "en": "Locked 1920x1080 canvas deck with React component-level free composition, not bound to a fixed template.",
@@ -10701,6 +10721,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "16-column grid, one saturated accent, and 22 locked layouts (Klein Blue, Lemon, Mint, Safety Orange).",
       "description_i18n": {
         "en": "16-column grid, one saturated accent, and 22 locked layouts (Klein Blue, Lemon, Mint, Safety Orange).",
@@ -10771,6 +10792,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "none",
       "description": "Parse a structured design brief written in I-Lang protocol format into a\nconcrete design spec. Eliminates ambiguity from vague requests like\n\"make it professional\" by requiring explicit dimensions: palette, typography,\nlayout, mood, density, and constraints.\nTrigger keywords: \"design brief\", \"create a design brief\", \"ilang brief\", \"structured brief\".",
       "description_i18n": {
         "zh-CN": "将 I-Lang 协议格式编写的结构化设计简报解析为具体的设计规范。通过要求明确的维度（调色板、排版、布局、氛围、密度和约束）消除诸如'使其专业'之类模糊请求的歧义。\n触发关键词：design brief、create a design brief、ilang brief、structured brief。",
@@ -10840,6 +10862,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "report",
       "description": "A two-spread digital e-guide preview — page 1 is a cover (display title,\nauthor, \"What's inside\" stats, table of contents teaser); page 2 is a\nspread (lesson body with pull-quote and a step list). Lifestyle / creator\nbrand tone. Use when the brief asks for an \"e-guide\", \"digital guide\",\n\"lookbook\", \"lead magnet\", \"creator guide\", \"playbook\", or \"PDF guide\".",
       "description_i18n": {
         "zh-CN": "双页数字电子指南预览——第1页为封面（显示标题、作者、'内含什么'统计信息、目录预览）；第2页为内页（课程正文含引用语和步骤列表）。生活方式/创作者品牌风格。适用于需要'电子指南'、'数字指南'、'lookbook'、'引流素材'、'创作者指南'、'手册'或'PDF指南'的需求。",
@@ -10914,6 +10937,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "report",
       "description": "Warm parchment canvas (#f5f4ed), monochrome ink-blue accent (#1B365D), one serif family, and editorial-grade typography.",
       "description_i18n": {
         "en": "Warm parchment canvas (#f5f4ed), monochrome ink-blue accent (#1B365D), one serif family, and editorial-grade typography.",
@@ -10986,6 +11010,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "website",
       "description": "A documentation page — inline-start nav, scrollable article body,\ninline-end table of contents. Use when the brief mentions \"docs\",\n\"documentation\", \"guide\", \"API reference\", or \"tutorial\".",
       "description_i18n": {
         "zh-CN": "文档页面 — 侧边导航、可滚动正文和目录。当需求提到'文档'、'指南'、'API 参考'或'教程'时使用。",
@@ -11058,6 +11083,7 @@
         "fs:write",
         "network"
       ],
+      "hubType": "website",
       "description": "Immersive single-page parallax landing: a sticky viewport zooms a portal image toward you on scroll, curtains sweep open on entrance, and a curved arc card slider reveals nine dream-world destinations in scene two.",
       "description_i18n": {
         "zh-CN": "沉浸式单页视差落地页：粘性视口随滚动将传送门图像放大推近，入场时帷幕滑开，第二幕以弧形卡片滑块展示九个梦境世界。",
@@ -11127,6 +11153,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "none",
       "description": "A brand product-launch email — masthead with wordmark, hero image block,\nheadline lockup with skewed-italic accent, body copy, primary CTA, and a\nspecifications grid. Pure HTML email layout (centered single column, table\nfallback). Use when the brief asks for an \"email\", \"newsletter blast\",\n\"MJML\", \"product launch email\", or \"email template\".",
       "description_i18n": {
         "zh-CN": "品牌产品发布电子邮件模板，包含报头、主图、斜体强调标题、正文、主要行动号召按钮和规格表格，采用HTML居中单栏布局。",
@@ -11199,6 +11226,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "report",
       "description": "An engineering runbook — service overview, alerts table, dashboards\nlinks, common procedures with copy-pasteable commands, on-call rotation,\nand an incident-response checklist. Use when the brief mentions\n\"runbook\", \"ops doc\", \"on-call guide\", or \"SRE doc\".",
       "description_i18n": {
         "zh-CN": "工程运维手册 — 包含服务概览、告警表、仪表盘链接、常用命令操作步骤、值班轮换和事故响应清单。适用于需要运维文档、值班指南、SRE 文档或运维手册的场景。",
@@ -11271,6 +11299,7 @@
         "fs:write",
         "network"
       ],
+      "hubType": "website",
       "description": "Premium Kova fintech landing: full-screen hero with a forward/reverse boomerang video background, FadeUp blur reveals, floating dashboard cards (savings line + spend bar charts), a split testimonial with a square autoplay video, and a 4-up features grid with image cards and a donut spend chart.",
       "description_i18n": {
         "zh-CN": "高端 Kova 金融科技落地页：全屏正反向 boomerang 视频背景的 Hero、FadeUp 模糊上浮动画、悬浮仪表盘卡片（储蓄折线 + 支出柱状图）、左右分栏的方形自动播放视频证言区，以及含图片卡与甜甜圈支出图的四宫格功能区。",
@@ -11340,6 +11369,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "report",
       "description": "Flexible long-form report document for any business or technical topic, with a title block, executive summary, body sections, tables, chart blocks, and appendix.",
       "description_i18n": {
         "en": "Flexible long-form report document for any business or technical topic, with a title block, executive summary, body sections, tables, chart blocks, and appendix.",
@@ -11405,6 +11435,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "report",
       "description": "Quarterly / monthly financial report — masthead with KPIs, revenue and\nburn charts, P&L summary table, top-line highlights, and an outlook\nparagraph. Use when the brief mentions \"financial report\", \"Q3 report\",\n\"MRR review\", or \"P&L\".",
       "description_i18n": {
         "zh-CN": "季度/月度财务报告——包含关键指标的报头、收入与消耗图表、损益汇总表、重点摘要和展望段落。当需求提到'财务报告'、'Q3报告'、'MRR审查'、'P&L'或'财报'时使用。",
@@ -11476,6 +11507,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "website",
       "description": "Team-management dashboard skill in the FlowAI aesthetic — three tabs\n(Team Members, Team Details, Activity Log), KPI stat row, member table,\nrole distribution bar chart, online presence and activity sparklines,\nand a top-contributors panel, all in a single self-contained HTML file\nwith light/dark theming, hoverable chart tooltips, click-to-zoom panels,\nand CSV export. Use when the brief asks for a team / workspace admin\ndashboard, an interactive admin dashboard with charts, or names FlowAI.",
       "description_i18n": {
         "zh-CN": "FlowAI 风格的团队管理仪表板，包含三个标签页（团队成员、团队详情、活动日志）、KPI 统计行、成员表格、角色分布条形图、在线状态和活动趋势图、顶级贡献者面板，支持亮暗主题切换、图表悬停提示、面板点击缩放和 CSV 导出功能。",
@@ -11547,6 +11579,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "none",
       "description": "NYT-newsroom typography, staggered reveal animation, and editorial-grade charts (line, bar, or range band).",
       "description_i18n": {
         "en": "NYT-newsroom typography, staggered reveal animation, and editorial-grade charts (line, bar, or range band).",
@@ -11614,6 +11647,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "none",
       "description": "SVG curve connectors, sticky-note nodes, and cursor interaction with a whiteboard-brainstorm feel.",
       "description_i18n": {
         "en": "SVG curve connectors, sticky-note nodes, and cursor interaction with a whiteboard-brainstorm feel.",
@@ -11682,6 +11716,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "none",
       "description": "Digital glitch, chromatic offset, and data-corruption title frame for video transitions or cyberpunk heroes.",
       "description_i18n": {
         "en": "Digital glitch, chromatic offset, and data-corruption title frame for video transitions or cyberpunk heroes.",
@@ -11750,6 +11785,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "none",
       "description": "Film light leaks, grain, 16:9 letterbox, and large serif type for cinematic openings or chapter cards.",
       "description_i18n": {
         "en": "Film light leaks, grain, 16:9 letterbox, and large serif type for cinematic openings or chapter cards.",
@@ -11818,6 +11854,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "none",
       "description": "WebGL-style fluid displacement background with a quote overlay, suited to video intros, landing heroes, or posters.",
       "description_i18n": {
         "en": "WebGL-style fluid displacement background with a quote overlay, suited to video intros, landing heroes, or posters.",
@@ -11886,6 +11923,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "none",
       "description": "Segmented logo assembly, glow bloom, and tagline reveal for video outros or brand closing frames.",
       "description_i18n": {
         "en": "Segmented logo assembly, glow bloom, and tagline reveal for video outros or brand closing frames.",
@@ -11953,6 +11991,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "none",
       "description": "Realistic macOS notification banner with app icon, title, and body, suited to video overlays or product teasers.",
       "description_i18n": {
         "en": "Realistic macOS notification banner with app icon, title, and body, suited to video overlays or product teasers.",
@@ -12020,6 +12059,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "website",
       "description": "A multi-frame gamified mobile-app prototype — three phone frames on a dark\nshowcase stage. Frame 1: cover / poster, Frame 2: today's quests with XP\nribbons and a level bar, Frame 3: quest detail. Vivid quest tiles, level\nribbon, bottom tab bar. Use when the brief asks for a \"gamified app\",\n\"habit tracker\", \"RPG-style life app\", \"level-up app\", \"daily quests\",\n\"XP / streak app\", or \"ELI5-style explainer app\".",
       "description_i18n": {
         "zh-CN": "三屏手机原型展示游戏化应用界面：封面海报、每日任务与经验值进度条、任务详情。适用于游戏化应用、习惯追踪、RPG 风格生活应用、升级系统、每日任务、XP/连击应用等需求。",
@@ -12094,6 +12134,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "website",
       "description": "GitHub repository analytics dashboard — stars, forks, contributors,\nissues, pull requests, recent activity, and top contributors. Use when\nthe brief asks for a GitHub repo dashboard, open-source growth report,\nrepository health page, or GitHub analytics view.",
       "description_i18n": {
         "zh-CN": "GitHub 仓库分析仪表板 — 星标、分支、贡献者、议题、拉取请求、近期活动和主要贡献者。适用于 GitHub 仓库仪表板、开源增长报告、仓库健康页面或 GitHub 分析视图。",
@@ -12167,6 +12208,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Generates a horizontal-swipe web PPT (single HTML file) in an \"electronic magazine x e-ink\" style, with a WebGL fluid background, serif headings + sans-serif body text, chapter title cards, big-number data slides, image grids, and more templates. Use when the user needs to create a web PPT for a talk, presentation, or launch event, or mentions \"magazine-style PPT\", \"horizontal swipe deck\", \"editorial magazine\", or \"e-ink presentation\".",
       "description_i18n": {
         "zh-CN": "生成「电子杂志 × 电子墨水」风格的横向翻页网页 PPT（单 HTML 文件），含 WebGL 流体背景、衬线标题 + 非衬线正文、章节幕封、数据大字报、图片网格等模板。适用于制作分享、演讲、发布会风格的网页 PPT，或杂志风演示文稿。",
@@ -12240,6 +12282,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "none",
       "description": "Create, repair, validate, preview, and package Codex-compatible animated pet spritesheets from character art, screenshots, generated images, or visual references. Use when a user wants to hatch a Codex pet, create a custom animated pet, or build a built-in pet asset with an 8x9 atlas, transparent unused cells, row-by-row animation prompts, QA contact sheets, preview videos, and pet.json packaging. This skill composes the installed $imagegen system skill for visual generation and uses bundled scripts for deterministic spritesheet assembly.",
       "description_i18n": {
         "zh-CN": "从角色美术、截图或生成图像创建、修复、验证、预览并打包符合 Codex 规范的宠物动画精灵图。自动生成 8x9 图集、透明空白单元格、逐行动画提示、QA 审查表、预览视频和 pet.json 打包文件。",
@@ -12309,6 +12352,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "report",
       "description": "A new-hire onboarding plan as a single page — first week schedule,\nbuddy + manager intro, learning track, equipment checklist, and \"you're\nset when…\" outcomes. Use when the brief mentions \"onboarding\",\n\"new hire\", or \"first week plan\".",
       "description_i18n": {
         "zh-CN": "单页新员工入职计划——第一周日程安排、伙伴+经理介绍、学习路径、设备清单以及'完成标志'目标。当需求提及'入职'、'新员工'、'第一周计划'或'onboarding'时使用。",
@@ -12378,6 +12422,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "HTML PPT Studio — author professional static HTML presentations in many styles, layouts, and animations, all driven by templates. Use when the user asks for a presentation, PPT, slides, keynote, deck, slideshow, a speech script, \"make a PPT\", \"make some slides\", a reveal-style HTML deck, a Xiaohongshu-style image-text post, or any kind of multi-slide pitch/report/sharing document that should look tasteful and be usable with keyboard navigation. Triggers include keywords like \"presentation\", \"ppt\", \"slides\", \"deck\", \"keynote\", \"reveal\", \"slideshow\", \"speech script\", \"sharing deck\", \"Xiaohongshu image-text post\", \"talk slides\", \"pitch deck\", \"tech sharing\", \"technical presentation\".",
       "description_i18n": {
         "zh-CN": "HTML PPT Studio — 制作专业的静态 HTML 演示文稿，提供多种样式、布局和动画效果，所有内容均由模板驱动。适用于制作演示文稿、PPT、幻灯片、keynote、slides、演讲稿、reveal 风格的 HTML 演示、小红书图文等多种形式的分享文档，支持键盘导航。",
@@ -12453,6 +12498,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Online-course / workshop module deck — warm paper background + Playfair serif, persistent left sidebar of learning objectives, MCQ self-check page. Use for teaching modules, training materials, workshop slides.",
       "description_i18n": {
         "zh-CN": "在线课程/工作坊模块幻灯片——温暖纸质背景 + Playfair 衬线字体，左侧边栏持久显示学习目标，带多项选择题自测页面。适用于教学模块、培训材料、工作坊幻灯片。",
@@ -12523,6 +12569,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "An 8-page minimal arrow-key keynote — each page has its own single-color background (indigo / cream / crimson / teal / gray / purple / white / charcoal) with matching accent colors, a 160px display headline, a 4px bold accent divider line, an arrow-prefixed (→) Mono list, a bottom-left ← → kbd hint, a bottom-right page number, and generous breathing whitespace. Great for a keynote, launch, or public talk where you have a lot to say but not much to show.",
       "description_i18n": {
         "zh-CN": "8 页极简方向键 keynote — 每页一个独立单色背景（靛 / 奶 / 绛 / 翠 / 灰 / 紫 / 白 / 炭），各自配色，160px display 标题 + 4px 短粗 accent 线分隔、箭头 → 前缀的 Mono 列表、左下 ← → kbd 提示 + 右下页码、巨大呼吸留白。适合'有话要说但没什么可看'的 keynote、launch、公开演讲。",
@@ -12593,6 +12640,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Dark-theme knowledge-graph deck — #06060c→#0e1020 late-night gradient with floating blur orbs, an SVG force-directed graph cover, a rainbow-gradient title, JetBrains Mono command-line highlighting, and glass-morphism cards. Suited to dev-tool / CLI / knowledge-graph / data-visualization launches with an \"AI-native + sci-fi + warm-tone\" feel.",
       "description_i18n": {
         "zh-CN": "暗底知识图谱 deck — #06060c→#0e1020 深夜渐变 + 漂浮 blur orbs、封面 SVG 力导向图谱、彩虹渐变标题、JetBrains Mono 命令行高亮、glass-morphism 卡片。适合 dev-tool / CLI / 知识图谱 / 数据可视化的发布会，'AI-native + 科幻 + 暖色' 调子。",
@@ -12663,6 +12711,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Dark terminal honest-review deck — #0a0c10 black background + 56px cyber grid + CRT vignette + scanlines, window traffic-light chrome, `$ prompt` command-line titles, mint green #7ed3a4 large text, JetBrains Mono, stroke-only bar charts, blinking cursor, amber/green/red tags, dark code blocks. Great for CLI / agent / dev tool reviews (with trace, diff, benchmark).",
       "description_i18n": {
         "zh-CN": "暗色终端风格演示模板，#0a0c10 黑底配 56px 赛博网格、CRT 暗角、扫描线、窗口红绿灯 chrome、`$ prompt` 命令行标题、薄荷绿 #7ed3a4 大字、JetBrains Mono、描边柱状图、闪烁光标、琥珀/绿/红三档标签、暗色代码块。适合 CLI/agent/开发工具测评（含 trace、diff、benchmark）。",
@@ -12733,6 +12782,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Cream blueprint architecture deck — cream paper #F0EAE0 base + single rust-red #B5392A highlight, 48px blueprint grid mask, 2px black-bordered hard cards, pipeline step boxes (one raised), rust-red insight callout on the right, large Playfair serif type, SVG dashed feedback loop. Zero gradients, zero soft shadows — serious and print-friendly.",
       "description_i18n": {
         "zh-CN": "奶油蓝图架构 deck — 奶油纸 #F0EAE0 底色 + 单一锈红 #B5392A 高亮、48px 蓝图网格 mask、2px 黑边硬卡片、pipeline 步骤盒（其中一个抬高）、右侧锈红 insight callout、Playfair 衬线大字、SVG 虚线反馈环。零渐变零软阴影，认真且印刷友好。",
@@ -12803,6 +12853,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "GitHub dark purple gradient deck — GitHub-dark #0d1117 background with a purple-blue radial ambient glow, 60px grid mask, centered layout, purple pill tags, tri-color gradient headings (#a855f7→#60a5fa→#34d399), GitHub-style code palette, and purple left-border highlight blocks. Great for developer workflow / MCP / Agent / dev tool tutorials, similar to GitHub Blog / Linear Changelog.",
       "description_i18n": {
         "zh-CN": "GitHub 暗紫渐变幻灯片主题，采用 GitHub-dark #0d1117 背景、紫蓝径向环境光、60px 网格遮罩、居中布局、紫色药丸标签、三色渐变标题（#a855f7→#60a5fa→#34d399）、GitHub 风格代码配色和紫色左边框高亮块。适合开发者工作流、MCP、Agent 和开发工具教程。",
@@ -12873,6 +12924,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Investor-ready 10-slide HTML pitch deck — white + blue→purple gradient hero, big numbers, traction bar chart, $4.5M-style ask page. Use when the user wants a fundraising deck, seed-round pitch, or VC meeting slides.",
       "description_i18n": {
         "zh-CN": "投资级 10 页 HTML 融资演示模板——白色 + 蓝紫渐变主视觉，大数字展示，增长柱状图，450 万美元融资需求页。适用于制作融资演示、种子轮路演或 VC 会议幻灯片。",
@@ -12944,6 +12996,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "A dedicated presenter-mode deck — tokyo-night default theme, 5 themes toggled with the T key, each slide ships a 150-300 word script example (<aside class=\"notes\">), press S to open the popup (CURRENT / NEXT / SCRIPT / TIMER magnetic cards). Built for tech talks, public speaking, and lectures where you're worried about forgetting your lines or need a teleprompter.",
       "description_i18n": {
         "zh-CN": "演讲者模式专用 deck — tokyo-night 默认主题，5 套主题 T 键切换，每页带 150-300 字逐字稿示例（<aside class=\"notes\">），按 S 打开 popup（CURRENT / NEXT / SCRIPT / TIMER 四张磁吸卡片）。用于技术分享、公开演讲、课程讲解，怕忘词或要提词器的场景。",
@@ -13012,6 +13065,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Launch keynote deck — dark hero + light content, warm orange→peach accent, feature cards, pricing tiers, CTA. Use when announcing a product, launching a feature, or doing a keynote-style reveal.",
       "description_i18n": {
         "zh-CN": "发布主题演示文稿 — 深色主视觉 + 浅色内容，暖橙到桃色强调色，功能卡片，价格层级，行动号召。适用于产品发布、功能上线或主题演讲式揭晓。",
@@ -13082,6 +13136,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "16:9 HTML deck in tactical-telemetry / CRT-terminal taste. Deactivated-CRT charcoal slides, white-phosphor monospace, hazard-red accent, scanline overlay, ASCII syntax, density over decoration. Distilled from Leonxlnx/taste-skill `brutalist-skill` (Tactical Telemetry mode).",
       "description_i18n": {
         "zh-CN": "16:9 HTML 幻灯片，战术遥测 / CRT 终端风格。失活 CRT 炭黑背景、白色荧光等宽字体、警示红强调色、扫描线叠加、ASCII 语法，密度优先于装饰。提取自 Leonxlnx/taste-skill `brutalist-skill`（战术遥测模式）。",
@@ -13146,6 +13201,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "16:9 HTML deck in editorial-minimalist taste. Warm cream slides, serif display + grotesque body, hairline rules, monospace meta, generous macro-whitespace, one accent. Distilled from Leonxlnx/taste-skill `minimalist-skill`.",
       "description_i18n": {
         "zh-CN": "16:9 HTML 演示文稿，编辑极简风格。暖奶油色幻灯片，衬线标题 + 无衬线正文，细线分隔，等宽元数据，宽松留白，单一强调色。提炼自 Leonxlnx/taste-skill `minimalist-skill`。",
@@ -13210,6 +13266,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Conference / internal tech-talk deck — GitHub-dark, JetBrains Mono, terminal code blocks, agenda + Q&A pages. Use for engineering presentations, internal sharing sessions, conference talks, and code-heavy walkthroughs.",
       "description_i18n": {
         "zh-CN": "会议 / 内部技术分享演示文稿 — GitHub-dark 风格、JetBrains Mono 字体、终端代码块、议程 + 问答页面。适用于工程演示、内部分享会、技术会议演讲和代码详解。",
@@ -13280,6 +13337,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Red-amber safety alert deck — top/bottom 45° red-black hazard stripes, red strikethrough negation headline, L1/L2/L3 green/amber/red tier cards, dot-status alert boxes, policy-yaml code blocks (red left border + bad-keyword highlighting), red/green checklist, and a Q1 incident stacked bar chart. Suited for safety / risk / incident review / red team / pre-launch AI review / policy-as-code.",
       "description_i18n": {
         "zh-CN": "红琥珀警示 deck — 顶/底 45° 红黑 hazard 条纹、红色删除线否定标题、L1/L2/L3 绿/琥珀/红 tier 卡片、圆点状态 alert box、policy-yaml 代码块（红左边框 + bad 关键词高亮）、红绿 checklist、Q1 事故堆叠柱状图。适合安全 / 风险 / 事故复盘 / 红队 / 上线前 AI 评审 / policy-as-code。",
@@ -13350,6 +13408,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Team weekly / status-update deck — corporate clarity, 8-cell KPI grid, shipped list, 8-week bar chart, next-week table. Use for weekly reports, business reviews, team status updates, and exec dashboards.",
       "description_i18n": {
         "zh-CN": "团队周报/状态更新幻灯片 — 企业级清晰展示，8格KPI网格，已完成任务列表，8周柱状图，下周计划表。适用于周报、业务回顾、团队状态更新和高管仪表板。",
@@ -13420,6 +13479,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "A soft macaron slow-living deck — cream #fef8f1 background + three soft-light blobs, Playfair italic serif display titles mixed with sans body text, 28px rounded macaron cards (peach / mint / sky / purple / lemon / rose), Playfair italic 01-04 numbering, an SVG donut chart, and a chip+page top bar. Great for lifestyle / personal growth / slow-living / emotional content with a \"magazine, handmade, not too techy\" feel.",
       "description_i18n": {
         "zh-CN": "柔和马卡龙慢生活 deck — 奶油 #fef8f1 底 + 三个柔光 blob、Playfair 斜体衬线 display 标题混 sans 正文、28px 圆角马卡龙卡片（桃 / 薄荷 / 天 / 紫 / 柠 / 玫）、Playfair 斜体 01-04 序号、SVG donut 图、chip+page 顶栏。适合生活方式 / 个人成长 / 慢生活 / 情绪类内容，'杂志、手作、不太科技'的感觉。",
@@ -13489,6 +13549,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "none",
       "description": "Xiaohongshu / Instagram-style 9-page vertical 3:4 post set (810×1080) — warm pastel colors, dashed-outline sticker cards, page-number dots at the bottom. For Xiaohongshu posts, Instagram carousels, and brand promotional content.",
       "description_i18n": {
         "zh-CN": "小红书 / Instagram 风 9 页 3:4 竖版图文（810×1080）— 暖色 pastel、虚线 sticker 卡片、底部页码点点。用于发小红书图文、Instagram carousel、品牌种草内容。",
@@ -13558,6 +13619,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "White-background magazine-style deck — pure white background + a top 10-color rainbow bar, 80-110px display headlines, purple→blue→green→orange→pink gradient text, soft macaron cards (pink/purple/blue/green/orange), black-background white-text .focus pills, and bold quote blocks. Works for both Xiaohongshu image posts and landscape PPT.",
       "description_i18n": {
         "zh-CN": "白底杂志风 deck — 纯白背景 + 顶部 10 色彩虹 bar、80-110px display 标题、紫→蓝→绿→橙→粉渐变文字、马卡龙软卡片组（粉/紫/蓝/绿/橙）、黑底白字 .focus pill、引用大块。同时适合发小红书图文 + 横版 PPT 双用。",
@@ -13626,6 +13688,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "8-Bit Orbit — Pixel-art neon arcade aesthetic on a deep navy void. Anything that should feel like a CRT screen at 2am: cyberpunk, gaming, web3, indie dev tools, hackathon demos.",
       "description_i18n": {
         "zh-CN": "8-Bit Orbit — 深邃海军蓝背景上的像素艺术霓虹街机美学。适合任何需要凌晨2点CRT屏幕感觉的场景：赛博朋克、游戏、web3、独立开发工具、黑客马拉松演示。",
@@ -13701,6 +13764,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Biennale Yellow — Solar yellow on warm parchment with deep indigo serif and atmospheric sun-glow gradients. Anything that should feel like an art-biennale poster or a museum's annual programme: exhibition decks, arts-institution announcements, design conference brochures, curatorial pitches, literary publications, studio retrospectives.",
       "description_i18n": {
         "zh-CN": "双年展黄色主题 — 温暖羊皮纸底色配太阳黄，搭配深靛蓝衬线字体和大气阳光渐变效果。适用于艺术双年展海报、博物馆年度计划、展览演示文稿、艺术机构公告、设计会议手册、策展方案、文学出版物、工作室回顾展等场景。",
@@ -13776,6 +13840,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "BlockFrame — Neobrutalist deck with pastel-neon color blocks and chunky black borders. Anything that should feel pop-graphic and design-led: indie SaaS launches, agency credentials, creative reviews, brand redesigns.",
       "description_i18n": {
         "zh-CN": "BlockFrame — 新野兽派风格演示模板，采用柔和霓虹色块和粗黑边框。适用于需要突出图形和设计感的场景：独立 SaaS 发布、机构介绍、创意评审、品牌重塑。",
@@ -13852,6 +13917,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Blue Professional — Cream paper background with electric cobalt blue accents; clean modern professional. Anything that should feel modern-considered and lightly authoritative: B2B SaaS pitches, consulting deliverables, advisory updates, investor reports.",
       "description_i18n": {
         "zh-CN": "蓝色专业风格 — 奶油色纸质背景搭配钴蓝色点缀；简洁现代专业。适用于需要现代考究且略带权威感的场景：B2B SaaS 演示、咨询交付物、顾问更新、投资者报告。",
@@ -13927,6 +13993,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Bold Poster — Editorial poster aesthetic with massive Shrikhand display and a single fire-engine red accent. Anything that should land like a magazine cover: brand manifestos, founder vision decks, editorial / cultural pitches, creative reviews.",
       "description_i18n": {
         "zh-CN": "粗体海报 — 编辑海报美学，采用大型 Shrikhand 展示字体和单一消防红重点色。适用于需要如杂志封面般呈现的内容：品牌宣言、创始人愿景演示、编辑/文化提案、创意评审。",
@@ -14002,6 +14069,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Broadside — Dark editorial canvas with a single fire orange accent and bilingual Latin/Chinese type stack. Anything that should land like a broadside newspaper headline: brand manifestos, magazine and cultural pitches, design talks, bilingual EN/CN decks, founder vision statements.",
       "description_i18n": {
         "zh-CN": "Broadside — 深色编辑画布，配以单一火橙色强调色和拉丁文/中文双语字体栈。适用于需要如报纸大标题般震撼的内容：品牌宣言、杂志和文化提案、设计演讲、中英双语演示文稿、创始人愿景声明。",
@@ -14077,6 +14145,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Capsule — Modular pill-shaped cards on warm bone with a full pastel-pop palette. Anything that should feel modular, modern, and a little Y2K: lifestyle brands, creator portfolios, DTC launches, beauty / wellness, agency credentials.",
       "description_i18n": {
         "zh-CN": "Capsule — 温暖米白色背景上的模块化药丸形卡片，配有完整的柔和流行色调色板。适合需要模块化、现代感和一点千禧年风格的场景：生活方式品牌、创作者作品集、DTC 发布、美容/健康、agency 介绍。",
@@ -14152,6 +14221,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Cartesian — Quiet warm-neutral palette with classical Playfair serifs; tasteful and unhurried. Anything that should feel quiet, considered, and grown-up: investment theses, white papers, advisory work, longform research, gallery / cultural decks.",
       "description_i18n": {
         "zh-CN": "Cartesian — 静谧的暖中性色调配以经典的 Playfair 衬线字体；雅致而从容。适用于需要安静、深思熟虑和成熟感的内容：投资论文、白皮书、咨询报告、长篇研究、画廊与文化演示文稿。",
@@ -14227,6 +14297,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Cobalt Grid — Electric cobalt italic serifs on a graph-paper canvas, anchored by stair-stepped pixel-glitch decorations and slim hairline rules. Anything that should feel like a quietly serious design / research bulletin, art publication, or curated trend report.",
       "description_i18n": {
         "zh-CN": "Cobalt Grid — 电光钴蓝色斜体衬线字体搭配方格纸画布，配有阶梯式像素故障装饰和纤细发线规则。适合严肃设计/研究简报、艺术出版物或精选趋势报告。",
@@ -14302,6 +14373,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Coral — Cream and coral on near-black, set in oversized Bebas Neue. Anything that should feel warm-graphic and editorial: fashion, beauty, fitness, F&B, lifestyle brands, agency credentials.",
       "description_i18n": {
         "zh-CN": "Coral — 近黑色背景上的奶油色和珊瑚色，采用超大 Bebas Neue 字体。适合需要温暖图形化和编辑风格的内容：时尚、美容、健身、餐饮、生活方式品牌、代理商宣传。",
@@ -14377,6 +14449,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Creative Mode — Cream paper canvas with confident multi-color (green, pink, orange, yellow) accents and Archivo Black display. Anything that should feel design-led and confident: creative agency pitches, design studio decks, ad shop credentials, brand creative reviews, art-direction reviews.",
       "description_i18n": {
         "zh-CN": "Creative Mode — 奶油纸质画布配以自信的多色调（绿、粉、橙、黄）点缀和 Archivo Black 字体。适用于需要展现设计主导和自信感的场景：创意机构提案、设计工作室演示、广告公司资质展示、品牌创意审查、艺术指导评审。",
@@ -14452,6 +14525,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Daisy Days — Cheerful pastel deck with hand-drawn daisies, stars, and rainbows. Friendly, soft, and warm. Anything that should feel friendly, soft, and joyful: educational content, kids and family, wellness programs, community workshops, creator portfolios for craft / illustration.",
       "description_i18n": {
         "zh-CN": "Daisy Days — 明快的粉彩风格模板，包含手绘雏菊、星星和彩虹。友好、柔和、温暖。适用于需要友好、柔和和欢乐感觉的内容：教育内容、儿童与家庭、健康项目、社区工作坊、手工艺/插画作品集。",
@@ -14527,6 +14601,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Editorial Tri-Tone — Three-color editorial system: dusty pink, mustard cream, and deep burgundy, set in Bricolage + Instrument Serif. Anything that should feel like a fashion-magazine spread: editorial pitches, fashion brand decks, lifestyle media, art direction reviews.",
       "description_i18n": {
         "zh-CN": "Editorial Tri-Tone — 三色编辑系统：灰粉色、芥末奶油色和深勃艮第酒红色，采用 Bricolage + Instrument Serif 字体。适用于时尚杂志风格的内容：编辑提案、时尚品牌演示、生活方式媒体、艺术指导评审。",
@@ -14601,6 +14676,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Grove — Forest-green canvas with cream type, classical Playfair serifs, and a single rust accent. Anything that should feel organic, considered, and grown-up: sustainability and wellness brands, outdoor / nature products, wineries and restaurants, literary or arts decks, advisory deliverables, bilingual EN/CN reports.",
       "description_i18n": {
         "zh-CN": "Grove — 森林绿画布配米白色字体，经典 Playfair 衬线体，单色锈红点缀。适用于需要有机、考究、成熟感的内容：可持续发展和健康品牌、户外/自然产品、酒庄和餐厅、文学或艺术演示、咨询交付物、中英双语报告。",
@@ -14676,6 +14752,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Long Table — Warm cream and rust-red supper-club aesthetic with bold uppercase grotesk headlines, italic Fraunces, and pill-shaped outlined buttons. Anything that should feel like a warm, intimate, modern hospitality / community brand: supper clubs, dinner series, small restaurants, creative-studio events, membership pitches, lifestyle and wine brands.",
       "description_i18n": {
         "zh-CN": "Long Table — 温暖奶油色和铁锈红晚餐俱乐部美学，配合粗体无衬线大写标题、斜体 Fraunces 字体和药丸形轮廓按钮。适合温馨亲密的现代餐饮和社区品牌：晚餐俱乐部、餐厅系列、小型餐馆、创意工作室活动、会员推广、生活方式和葡萄酒品牌。",
@@ -14750,6 +14827,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Mat — Dark sage canvas with bone paper and burnt-orange accent; mid-century modern with wood undertones. Anything that should feel mid-century, tactile, and intentional: design studio credentials, architecture / interior brands, ceramics / craft / furniture, advisory decks.",
       "description_i18n": {
         "zh-CN": "Mat — 深鼠尾草绿画布，搭配骨白纸张和焦橙色点缀；木质基调的中世纪现代风格。适用于需要中世纪、触感和精心设计感的场景：设计工作室作品集、建筑/室内设计品牌、陶瓷/手工艺/家具、咨询演示文稿。",
@@ -14825,6 +14903,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Monochrome — Ivory ledger paper with all-black type; Lora serif headlines, Jost body, no color at all. Anything that should feel like a hand-typeset ledger: user research synthesis, white papers, longform reports, academic and policy briefs, advisory deliverables, bilingual EN/CN reports.",
       "description_i18n": {
         "zh-CN": "单色主题——象牙色账本纸配纯黑字体；标题使用 Lora 衬线字体，正文使用 Jost，完全无彩色。适用于手工排版账本风格的内容：用户研究综述、白皮书、长篇报告、学术和政策简报、咨询交付物、中英双语报告。",
@@ -14899,6 +14978,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Neo-Grid Bold — Editorial neo-brutalism with a single neon yellow accent on off-white paper. Anything that should feel confident and editorial-graphic: design-led pitches, brand work, founder talks, conference keynotes.",
       "description_i18n": {
         "zh-CN": "Neo-Grid Bold — 编辑风格的新野兽主义设计，在米白纸上使用单一霓虹黄色点缀。适合展现自信与编辑图形感的场景：设计主导的提案、品牌工作、创始人演讲、会议主题演讲。",
@@ -14974,6 +15054,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "People's Platform (Block & Bold) — Activist poster energy: blue, orange, red on cream, with Alfa Slab + Caveat Brush. Anything that should feel honest, loud, and graphic: cultural commentary, manifestos, civic and community decks, design talks, campaign pitches.",
       "description_i18n": {
         "zh-CN": "人民平台（块状粗体风格）——活动海报能量：奶油色背景上的蓝、橙、红配色，使用 Alfa Slab + Caveat Brush 字体。适合需要真诚、响亮和图形化表达的内容：文化评论、宣言、社区演示、设计演讲、活动提案。",
@@ -15050,6 +15131,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Pin & Paper — Yellow paper with safety-pin illustrations, ink-blue handwritten Caveat, paper-grain texture. Anything that should feel hand-crafted, warm, and literary: qualitative research findings, founder reflections, longform brand stories, workshop debriefs.",
       "description_i18n": {
         "zh-CN": "Pin & Paper — 黄色纸张配安全别针插图，墨蓝色 Caveat 手写字体，纸纹理质感。适用于手工感、温暖、文学性的内容：定性研究结论、创始人反思、品牌长文、工作坊总结。",
@@ -15126,6 +15208,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Pink Script — After Hours — Black canvas, hot pink accent, pearl-cream paper, Instrument Serif headlines: late-night editorial luxury. Anything that should feel nocturnal, intentional, and a little luxe: fashion brand decks, creator personal brands, after-hours / nightlife / spirits launches, luxury product reveals, editorial features.",
       "description_i18n": {
         "zh-CN": "Pink Script — After Hours — 黑色画布、亮粉色点缀、珍珠奶油纸张、Instrument Serif 标题字体：深夜编辑奢华风格。适用于时尚品牌演示、个人品牌、夜生活/酒类发布、奢侈品展示、编辑专题等需要营造夜间、精致、轻奢氛围的场景。",
@@ -15202,6 +15285,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Playful — Sun-warm peach background with Syne display: a friendly indie launch deck. Anything that should feel warm, indie, and approachable: creator portfolios, indie product launches, lifestyle brands, small-business pitches, newsletter / community decks.",
       "description_i18n": {
         "zh-CN": "Playful — 温暖的阳光蜜桃背景配合 Syne 字体：友好的独立项目发布演示文稿。适用于需要温暖、独立和亲切感的场景：创作者作品集、独立产品发布、生活方式品牌、小型企业宣讲、社区简报等。",
@@ -15277,6 +15361,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Raw Grid — Neo-brutalist deck with thick borders, offset shadows, and a pink/sage/ink palette. Anything that should feel direct and graphic-confident: founder pitches, accelerator demos, brand decks, indie launches, creator portfolios.",
       "description_i18n": {
         "zh-CN": "Raw Grid——新粗野主义演示模板，采用粗边框、偏移阴影和粉/鼠尾草/墨色配色方案。适合需要直接且富有图形自信感的场景：创始人路演、加速器演示、品牌手册、独立产品发布、创作者作品集。",
@@ -15352,6 +15437,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Retro Windows — Windows 95 chrome: gray title bars, MS Sans Serif, pixel typography, full nostalgia. Anything that should feel knowingly nostalgic: retro gaming, Y2K-aesthetic brands, creator portfolios with a 90s vibe, tech-history talks, deliberately tongue-in-cheek decks.",
       "description_i18n": {
         "zh-CN": "Windows 95 风格界面：灰色标题栏、MS Sans Serif 字体、像素排版，满满的怀旧感。适用于复古游戏、Y2K 美学品牌、90 年代风格作品集、科技史演讲及刻意复古的演示文稿。",
@@ -15426,6 +15512,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Retro Zine — Beige paper with green accent and Bebas Neue + Caveat: a riso-printed zine in HTML form. Anything that should feel printed, lo-fi, and crafted: indie zines and publications, music / arts brands, creator portfolios, small-batch craft launches, community decks.",
       "description_i18n": {
         "zh-CN": "Retro Zine — 米色纸张配绿色点缀，采用 Bebas Neue + Caveat 字体：HTML 形式的复古油印杂志。适用于独立杂志刊物、音乐艺术品牌、创作者作品集、小批量手工产品发布、社区演示文稿等需要印刷质感、低保真和手工感的场景。",
@@ -15501,6 +15588,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Sakura Chroma — Vintage Japanese cassette-package aesthetic: cream paper, diagonal rainbow ribbons, condensed bold type, JIS-style spec checkboxes. Anything that should feel like a vintage Japanese cassette package or a TDK / Sony / Sakura Color product catalogue: indie hardware brand decks, music-label release schedules, analog studio retrospectives, zine and magazine pitches, kawaii-tech product launches, creative-studio annual reports.",
       "description_i18n": {
         "zh-CN": "Sakura Chroma — 复古日式磁带包装美学风格，包含米色纸张、对角彩虹条纹、粗体压缩字体和 JIS 规格复选框。适用于独立硬件品牌演示、音乐厂牌发行计划、模拟录音室回顾、杂志提案、可爱科技产品发布和创意工作室年报。",
@@ -15575,6 +15663,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Scatterbrain — Post-it inspired: pastel sticky notes, Caveat handwriting, Shrikhand and Zilla Slab type stack. Anything that should feel like a designer's whiteboard: brainstorms, workshops, creative-agency credentials, design-thinking sessions, ideation pitches, art-direction reviews.",
       "description_i18n": {
         "zh-CN": "Scatterbrain — 便利贴风格设计：柔和色便签纸、Caveat 手写字体、Shrikhand 和 Zilla Slab 字体组合。适合设计师白板场景：头脑风暴、工作坊、创意机构简介、设计思维研讨、创意提案、艺术指导评审。",
@@ -15650,6 +15739,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Signal — Deep navy canvas with bone paper and a single muted-gold accent; institutional with quiet weight. Anything that should feel weighty, considered, and credibly institutional: investor decks, board presentations, consulting deliverables, legal / policy briefs, advisory pitches.",
       "description_i18n": {
         "zh-CN": "Signal — 深海军蓝画布配骨白纸张和单一哑光金色点缀；沉稳专业的机构风格。适用于需要体现分量感、深思熟虑和可信度的场景：投资者资料、董事会演示、咨询交付物、法律/政策简报、顾问提案。",
@@ -15725,6 +15815,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Soft Editorial — Cormorant Garamond serif on warm paper with sage, blush, and lemon accents. Anything that should feel literary, elegant, and unhurried: editorial features, longform brand stories, gallery / museum decks, advisory deliverables, wedding / lifestyle media, founder essays.",
       "description_i18n": {
         "zh-CN": "柔和编辑风格 — 采用 Cormorant Garamond 衬线字体，配以温暖纸质背景、鼠尾草绿、腮红粉和柠檬黄点缀。适合文学、优雅、从容的场景：编辑专题、品牌长文、画廊/博物馆演示、咨询交付物、婚礼/生活方式媒体、创始人随笔。",
@@ -15799,6 +15890,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Stencil & Tablet — Bone paper with stencil-cut headlines and a six-color earth palette: archaeology meets brand. Anything that should feel archival, tactile, and weighty-graphic: museum and cultural-institution decks, art / architecture brands, longform research, heritage and craft brands, manifestos.",
       "description_i18n": {
         "zh-CN": "模板与平板——骨纸质感搭配镂空标题和六色大地色系：考古学与品牌的融合。适用于博物馆和文化机构演示、艺术/建筑品牌、长篇研究、传统工艺品牌及宣言等需要档案感、触感和视觉冲击力的内容。",
@@ -15874,6 +15966,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Studio — Black canvas with electric-yellow type; high-voltage design studio aesthetic. Anything that should feel electric and design-led: studio credentials, creative agency pitches, brand showcases, art-direction reviews, fashion / sneaker brand work.",
       "description_i18n": {
         "zh-CN": "Studio — 黑色画布搭配荧光黄字体；高压电感设计工作室美学。适用于设计工作室作品集、创意机构提案、品牌展示、艺术指导评审、时尚/球鞋品牌等场景。",
@@ -15949,6 +16042,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Vellum — Deep navy canvas with warm-yellow italic Cormorant serifs and a single dusty teal accent. A quiet, scholarly aesthetic. Anything that should feel scholarly, literary, and quietly intelligent: research synthesis, white papers, academic and policy briefs, advisory deliverables, longform editorial pieces, founder reflections.",
       "description_i18n": {
         "zh-CN": "Vellum — 深海军蓝画布搭配暖黄色斜体 Cormorant 衬线字体和单一灰蓝色强调。静谧学术美学，适用于研究报告、白皮书、学术简报、政策文件、咨询交付物、长篇社论、创始人思考等需要学术、文学和智性氛围的内容。",
@@ -16023,6 +16117,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Investment-banking pitch book for strategic alternatives — trading comps,\nprecedent transactions, valuation football field, DCF sensitivity,\nstrategic-options matrix, process recommendation. Built by adapting\n`assets/template.html` so IB-specific chrome, disclosure bands, and source\nlabels are preserved. Use for Board / sell-side discussion materials. Not a\nVC fundraising deck (see html-ppt-pitch-deck). Workflow adapted from\nAnthropic financial-services Pitch Agent (Apache-2.0).",
       "description_i18n": {
         "zh-CN": "投资银行战略方案路演材料，包含可比公司分析、先例交易、估值区间、DCF敏感性分析、战略选项矩阵和流程建议。基于 assets/template.html 构建，保留投行专用格式、披露条带和数据来源标签。适用于董事会和卖方讨论材料。",
@@ -16098,6 +16193,7 @@
         "fs:write",
         "network"
       ],
+      "hubType": "website",
       "description": "Premium dark editorial agency landing page: an Instrument-Serif hero headline over a self-crossfading fullscreen hero video, liquid-glass nav and buttons, and scroll-revealed About / Featured-Video / Philosophy / Services sections.",
       "description_i18n": {
         "zh-CN": "高端暗色编辑风代理商落地页：Instrument Serif 衬线大标题叠在自动淡入淡出的全屏视频上，液态玻璃导航与按钮，滚动渐显的关于 / 特色视频 / 理念 / 服务板块。",
@@ -16167,6 +16263,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "report",
       "description": "A printable invoice page — sender + recipient block, line items table,\ntax breakdown, totals, and payment instructions. Use when the brief\nmentions \"invoice\", \"bill\", or \"billing statement\".",
       "description_i18n": {
         "zh-CN": "可打印的发票页面——包含发件人和收件人信息块、明细表、税费明细、总计和付款说明。当需求提到'invoice'、'bill'、'billing statement'或'发票'时使用。",
@@ -16236,6 +16333,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Produce a print-grade slide deck in the kami design system — warm parchment background (or ink-blue for cover / chapter slides), serif at one weight, ink-blue accent ≤ 5% per slide, no italic. Horizontal magazine swipe pagination (←/→ · wheel · swipe · ESC overview). One self-contained HTML file, zero dependencies beyond Google Fonts.",
       "description_i18n": {
         "zh-CN": "基于 kami（紙 / 纸）设计系统生成印刷级幻灯片：温暖羊皮纸背景（封面/章节页为墨蓝色），单一字重衬线字体，每页墨蓝色点缀 ≤ 5%，无斜体。支持横向杂志式翻页（←/→ · 滚轮 · 滑动 · ESC 概览）。单个 HTML 文件，除 Google Fonts 外零依赖。",
@@ -16306,6 +16404,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "website",
       "description": "Produce a print-grade single-page kami document — warm parchment canvas, ink-blue accent, serif at one weight, no italic, no cool grays. The output reads like a professional white paper or studio one-pager, not an app UI. Multilingual by design (EN · zh-CN · ja). One self-contained HTML file, zero dependencies.",
       "description_i18n": {
         "zh-CN": "生成印刷级单页纸质文档——温暖羊皮纸底色、墨蓝强调色、单一衬线字重，无斜体，无冷灰。输出呈现专业白皮书或工作室单页效果，而非应用 UI。原生多语言支持（EN · zh-CN · ja）。单个独立 HTML 文件，零依赖。",
@@ -16379,6 +16478,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "website",
       "description": "Kanban / task board with columns (To do / In progress / In review / Done),\ndraggable-looking cards, assignee avatars, swimlanes, and a top filter\nbar. Use when the brief mentions \"kanban\", \"task board\", \"sprint board\",\n\"trello\".",
       "description_i18n": {
         "zh-CN": "看板/任务面板，包含多个列（待办/进行中/审核中/已完成）、可拖动样式的卡片、成员头像、泳道和顶部筛选栏。当需求中提到'kanban'、'task board'、'sprint board'、'trello'、'看板'时使用。",
@@ -16450,6 +16550,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "report",
       "description": "Recent community and social trend research over the last 30 days. Use when\nthe brief asks what people are saying now, recent sentiment, community\nreactions, social proof, launch reaction, trend scan, or last-30-days context.",
       "description_i18n": {
         "zh-CN": "最近30天的社区和社交趋势研究。适用于了解当前舆论、近期情绪、社区反应、社交证明、发布反馈、趋势扫描或最近30天的背景信息。",
@@ -16524,6 +16625,7 @@
         "fs:write",
         "network"
       ],
+      "hubType": "website",
       "description": "Cinematic layered-parallax landing page for an architecture studio: fullscreen background video, a giant center brand wordmark behind a parallax sculpture slab, an animated bird-video state machine, frosted-glass nav pills and info panels, and a second full-viewport video section with a centered editorial headline.",
       "description_i18n": {
         "zh-CN": "电影感层叠视差建筑事务所落地页：全屏背景视频、视差雕塑石板后的巨型品牌字标、飞鸟视频状态机、磨砂玻璃导航胶囊与信息面板，以及带居中编排标题的第二屏全屏视频区。",
@@ -16594,6 +16696,7 @@
         "fs:write",
         "network"
       ],
+      "hubType": "website",
       "description": "Dark, luxury single-page landing for an AI web-design agency: cinematic video backgrounds, Instrument Serif italic headings, liquid-glass cards and CTAs, BlurText word-by-word reveals, and section-by-section storytelling.",
       "description_i18n": {
         "zh-CN": "暗黑高奢风 AI 网页设计代理单页落地页：电影级视频背景、Instrument Serif 斜体标题、液态玻璃卡片与 CTA、BlurText 逐词浮现动画，分段叙事。",
@@ -16664,6 +16767,7 @@
         "fs:write",
         "network"
       ],
+      "hubType": "website",
       "description": "Cinematic luxury-fragrance landing page: a fullscreen video hero, a scroll-driven elliptical clip-path reveal, an orbiting carousel of perfume bottles that scales up at a focal point, a newsletter section, and a warm parchment footer.",
       "description_i18n": {
         "zh-CN": "电影感奢华香氛落地页：全屏视频英雄区、滚动驱动的椭圆裁切揭示、在焦点处放大的香水瓶环绕轮播、订阅区与暖色羊皮纸页脚。",
@@ -16733,6 +16837,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "none",
       "description": "An editorial-style poster — newsprint paper, dateline, oversized serif\nheadline with a struck-through word and italic accent, a 2-column body\nblock, and 6 numbered sections with annotated pull-quote captions.\nReads like a Sunday-paper full-page essay or a thoughtful launch poster.\nUse when the brief asks for \"magazine poster\", \"editorial poster\",\n\"newsprint\", \"essay layout\", or \"manifesto\".",
       "description_i18n": {
         "zh-CN": "报纸风格的编辑海报，包含新闻纸材质、日期线、超大衬线标题（带删除线和斜体）、双栏正文、6个编号章节及引用注释。适合需要杂志海报、编辑排版、新闻纸风格或宣言设计的场景。",
@@ -16806,6 +16911,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "report",
       "description": "Meeting notes page — title bar with attendees, agenda checklist, decisions\nblock, action items table with owners + dates, and a \"next meeting\" footer.\nUse when the brief mentions \"meeting notes\", \"minutes\", \"1:1 notes\", or\n\"all-hands recap\".",
       "description_i18n": {
         "zh-CN": "会议记录页面——包含与会者标题栏、议程清单、决策事项区块、带负责人和日期的行动项表格，以及'下次会议'页脚。适用于需要'会议纪要'、'会议记录'、'1:1 笔记'、'全员会议总结'或'minutes'的场景。",
@@ -16877,6 +16983,7 @@
         "fs:write",
         "network"
       ],
+      "hubType": "website",
       "description": "Pure-black monochrome newsletter/content-platform landing page: fullscreen video hero, Instrument-Serif italic accent words, liquid-glass controls, scroll-driven word-by-word mission reveal, and an HLS-video CTA.",
       "description_i18n": {
         "zh-CN": "纯黑单色的 newsletter/内容平台落地页：全屏视频 Hero、Instrument Serif 斜体强调词、液态玻璃控件、随滚动逐词点亮的 mission 段落，以及 HLS 视频 CTA。",
@@ -16946,6 +17053,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "website",
       "description": "A mobile-app screen rendered inside a pixel-accurate iPhone 15 Pro frame\non the page. Built by copying the seed `assets/template.html` and pasting\none screen archetype from `references/layouts.md`. Use when the brief asks\nfor \"mobile app\", \"iOS app\", \"Android app\", \"phone screen\", or \"app UI\".",
       "description_i18n": {
         "zh-CN": "在页面中渲染于像素级精确的 iPhone 15 Pro 框架内的移动应用屏幕。通过复制种子文件 assets/template.html 并粘贴 references/layouts.md 中的一个屏幕原型来构建。当需求提到《移动应用》、《iOS 应用》、《Android 应用》、《手机屏幕》或《应用 UI》时使用。",
@@ -17019,6 +17127,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "website",
       "description": "A multi-screen mobile onboarding flow rendered as three phone frames\nside by side — splash, value-prop, sign-in. Status bar, swipe dots,\nprimary CTA. Use when the brief mentions \"mobile onboarding\", \"iOS\nonboarding\", or \"phone signup\".",
       "description_i18n": {
         "zh-CN": "多屏幕移动引导流程，呈现为三个并排的手机框架——启动页、价值主张、登录页。包含状态栏、滑动指示点和主要CTA按钮。适用于需要'移动端引导'、'iOS引导'、'手机注册'或'移动端引导'的场景。",
@@ -17090,6 +17199,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "none",
       "description": "Static iPhone and MacBook 3D-style showcase with real HTML embedded on screens, glass-lens refraction, and 360-degree turntable composition.",
       "description_i18n": {
         "en": "Static iPhone and MacBook 3D-style showcase with real HTML embedded on screens, glass-lens refraction, and 360-degree turntable composition.",
@@ -17161,6 +17271,7 @@
         "fs:write",
         "network"
       ],
+      "hubType": "website",
       "description": "A cinematic mythic-naturecore landing page: a 480vh scroll zooms through a portal while mirrored curtains part over a layered world background, with mouse-parallax 3D depth and a Viaoda-Libre / Imprima serif-sans pairing.",
       "description_i18n": {
         "zh-CN": "电影感神话自然核落地页：480vh 滚动穿过传送门，镜像帷幕在分层世界背景上拉开，配合鼠标视差 3D 景深与 Viaoda Libre / Imprima 衬线无衬线字体组合。",
@@ -17231,6 +17342,7 @@
         "fs:write",
         "network"
       ],
+      "hubType": "website",
       "description": "Dark warm-gold single-page marketing site for a secure cloud-storage product: a shader hero with live console + typewriter, a scroll-driven sticky platform accordion, a scroll-morphing pricing bar field, security cards, a 3D tilting console showcase, and a click-to-explode operations cube.",
       "description_i18n": {
         "zh-CN": "暗金色调的安全云存储产品单页营销站：着色器英雄区配实时控制台与打字机动效、滚动驱动的吸顶平台手风琴、随滚动形变的价格柱状图、安全卡片、3D 倾斜控制台展示，以及点击爆裂的运营立方体。",
@@ -17301,6 +17413,7 @@
         "fs:write",
         "network"
       ],
+      "hubType": "website",
       "description": "Dark space-themed NFT collection landing page with full-bleed CloudFront video backgrounds, a liquid-glass UI, Anton + Condiment fonts, and a neon-green accent across four sections.",
       "description_i18n": {
         "zh-CN": "暗黑太空主题 NFT 收藏落地页：全屏 CloudFront 视频背景、液态玻璃 UI、Anton + Condiment 字体、霓虹绿点缀，四个分区。",
@@ -17370,6 +17483,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "report",
       "description": "Product spec / PRD as a single page — problem, success metrics, scope,\nuser stories, design notes, rollout plan, open questions. Use when the\nbrief mentions \"PRD\", \"spec\", \"product spec\", \"feature brief\", or \"requirements doc\".",
       "description_i18n": {
         "zh-CN": "单页产品规格文档/PRD——包含问题定义、成功指标、范围、用户故事、设计笔记、上线计划、待解决问题。适用于需求文档、产品规格、功能说明等场景。",
@@ -17442,6 +17556,7 @@
         "fs:write",
         "network"
       ],
+      "hubType": "website",
       "description": "Premium dark single-page portfolio landing: cinematic HLS hero video, Instrument-Serif italic display type, a 000→100 loading counter, an alternating bento works grid, a scroll-pinned parallax exploration gallery, and a marquee contact footer with the locked #89AACC→#4E85BF accent gradient.",
       "description_i18n": {
         "zh-CN": "高端暗色单页作品集落地页：电影感 HLS 视频首屏、Instrument Serif 斜体标题、000→100 加载计数器、错位 bento 作品网格、滚动钉住的视差探索画廊，以及带 #89AACC→#4E85BF 渐变强调色的跑马灯联系页脚。",
@@ -17511,6 +17626,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "none",
       "description": "Vertical poster or Moments-style share image with strong visual impact.",
       "description_i18n": {
         "en": "Vertical poster or Moments-style share image with strong visual impact.",
@@ -17578,6 +17694,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Apple Keynote-quality slides, one card per screen, with keyboard left/right navigation.",
       "description_i18n": {
         "en": "Apple Keynote-quality slides, one card per screen, with keyboard left/right navigation.",
@@ -17645,6 +17762,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "none",
       "description": "Audit a python-pptx export against its source HTML deck, identify layout/content drift (footer overflow, cropped content, missing italic/em, lost styling, off-rhythm spacing), and re-export with strict footer-rail + cursor-flow layout discipline. Use this skill whenever the user has a .pptx that was generated from an HTML slide deck and asks to compare/audit/verify/fix the export — including phrases like \"compare ppt with html\", \"fidelity audit\", \"fix the pptx\", \"ppt is cut off\", \"footer overlap\", \"italic missing in pptx\", \"re-export the deck\", \"pptx-html-fidelity-audit\", or any case where a python-pptx → HTML round-trip needs verification or repair. Also trigger when the user shows you a deck.html and a deck.pptx side by side and is debugging visual differences.",
       "description_i18n": {
         "zh-CN": "审计 python-pptx 导出与源 HTML 幻灯片的一致性，识别布局和内容偏差（页脚溢出、内容裁剪、斜体丢失、样式丢失、间距错误），并以严格的页脚和光标流布局规范重新导出。",
@@ -17716,6 +17834,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "website",
       "description": "A standalone pricing page — header, plan tiers, feature comparison table,\nand an FAQ. Use when the brief asks for \"pricing\", \"plans\",\n\"subscription tiers\", or a \"compare plans\" page.",
       "description_i18n": {
         "zh-CN": "独立的价格页面 — 包含页眉、套餐层级、功能对比表和常见问题。适用于需要'价格'、'套餐'、'订阅层级'或'对比套餐'页面的需求。",
@@ -17787,6 +17906,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "website",
       "description": "Produce a single-page editorial landing site in the Atelier Zero visual language. Fill typed inputs from a brand brief, optionally generate 16 collage assets, and compose a self-contained HTML file with scroll-reveal motion and sticky navigation.",
       "description_i18n": {
         "zh-CN": "使用 Atelier Zero 视觉语言（Monocle / Apartamento / Études 编辑拼贴风格）生成单页编辑落地页。从品牌简报填充 inputs.json，可选通过 gpt-image-2 生成 16 张拼贴素材，输出独立 HTML 文件，内置滚动动画和粘性导航。",
@@ -17858,6 +17978,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Produce a single-file slide deck in the Atelier Zero visual language (warm-paper background, italic-serif emphasis spans, coral terminating dots, surreal collage plates) — Readable Studio's brand deck recipe. The deck uses **horizontal magazine-style swipe pagination** (←/→, wheel, swipe), a per-slide chrome strip with brand mark and slide counter, an ESC overview grid, a coral progress bar, and inherits the canonical stylesheet + 16-slot image library from the sister `readable-landing` skill.",
       "description_i18n": {
         "zh-CN": "使用 Atelier Zero 视觉语言（暖纸背景、斜体衬线强调、珊瑚色终止点、超现实拼贴板）生成单文件幻灯片。支持横向杂志式滑动翻页（←/→、滚轮、滑动），包含品牌标识、页码条、ESC 概览网格、珊瑚色进度条，继承自姊妹技能 readable-landing 的标准样式表和 16 槽图片库。",
@@ -17933,6 +18054,7 @@
         "subprocess",
         "network"
       ],
+      "hubType": "none",
       "description": "Opens a pull request that adds a local Readable Studio plugin to the Readable Studio community catalog using the GitHub CLI.",
       "description_i18n": {
         "zh-CN": "使用 GitHub CLI 打开拉取请求，将本地 Readable Studio 插件添加到 Readable Studio 社区目录。",
@@ -18003,6 +18125,7 @@
         "subprocess",
         "network"
       ],
+      "hubType": "none",
       "description": "Creates a public GitHub repository for a local Readable Studio plugin using the GitHub CLI.",
       "description_i18n": {
         "zh-CN": "使用 GitHub CLI 为本地 Readable Studio 插件创建公共 GitHub 仓库。",
@@ -18070,6 +18193,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Single-file horizontal-swipe HTML deck in the style of Replit Slides's\nlanding-page template gallery. Eight distinct themes (helix, holm, vance,\nbevel, world-dark, world-mint, atlas, bluehouse) — each a complete visual\nsystem (palette + type + accent) captured from replit.com/slides. Pick one\ntheme, do not mix. For pitch decks, board reports, brand memos, campaign\nreveals — when the user explicitly wants \"Replit Slides style\".",
       "description_i18n": {
         "zh-CN": "单文件横向滑动 HTML 演示文稿，采用 Replit Slides 落地页模板库风格。提供八种主题（helix、holm、vance、bevel、world-dark、world-mint、atlas、bluehouse），每种都是从 replit.com/slides 提取的完整视觉系统（调色板+字体+强调色）。选择一种主题，请勿混用。适用于融资路演、董事会报告、品牌备忘录、营销发布等需要 Replit Slides 风格的场景。",
@@ -18143,6 +18267,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "report",
       "description": "Modern minimal resume, single A4 page, ready for print or PDF export.",
       "description_i18n": {
         "en": "Modern minimal resume, single A4 page, ready for print or PDF export.",
@@ -18211,6 +18336,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "website",
       "description": "Single-page SaaS landing with hero, features, social proof, pricing, and CTA.\nRespects the active DESIGN.md color/typography/layout tokens.\nTrigger keywords: \"saas landing\", \"marketing page\", \"product landing\".",
       "description_i18n": {
         "zh-CN": "单页 SaaS 落地页，包含主视觉、功能特性、社会证明、价格方案和行动号召。遵循当前 DESIGN.md 的颜色/排版/布局规范。触发关键词：\"saas landing\"、\"marketing page\"、\"product landing\"。",
@@ -18279,6 +18405,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Single-file horizontal-swipe HTML deck. Built by copying the seed\n`assets/template.html` (which carries the proven 5-rule iframe nav script)\nand pasting slide layouts from `references/layouts.md`. Pitch decks,\nproduct overviews, study material — when you don't need the magazine\naesthetic of `magazine-web-ppt`.",
       "description_i18n": {
         "zh-CN": "单文件横向滑动 HTML 幻灯片。复制种子文件 assets/template.html（内含经过验证的 5 行 iframe 导航脚本）并粘贴 references/layouts.md 中的幻灯片布局即可。适用于路演、产品介绍、学习资料等场景——当你不需要 magazine-web-ppt 的杂志风格时。",
@@ -18348,6 +18475,7 @@
         "fs:write",
         "network"
       ],
+      "hubType": "website",
       "description": "Premium private-jet landing hero: a fullscreen autoplay CloudFront video background, a max-w-7xl nav with a Lucide hamburger mobile dropdown, and a centered overlapping two-line headline (Premium. / Accessible.) with Discover + Book Now pill CTAs.",
       "description_i18n": {
         "zh-CN": "高端私人飞机落地页 Hero：全屏自动播放的 CloudFront 视频背景、max-w-7xl 导航栏配 Lucide 汉堡菜单移动端下拉，以及居中重叠的双行标题（Premium. / Accessible.）和 Discover + Book Now 胶囊按钮。",
@@ -18417,6 +18545,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "none",
       "description": "A three-card social-media carousel laid out as 1080×1080 squares —\nthree cinematic, on-brand panels with display headlines that connect\nacross the series (\"onwards.\" → \"to the next one.\" → \"looking ahead.\").\nEach card has a brand mark, a number / total, a caption, and a \"loop\"\naffordance. Use when the brief asks for a \"carousel post\", \"social\ncarousel\", \"Instagram carousel\", \"LinkedIn series\", \"X thread cards\",\nor a \"triple-post drop\".",
       "description_i18n": {
         "zh-CN": "三张 1080×1080 方形社交媒体轮播卡片——三个富有电影感和品牌调性的面板，配有连贯的展示标题（'往前走。' → '到下一个。' → '展望未来。'）。每张卡片包含品牌标识、序号/总数、说明文字和'循环'提示。适用于'轮播帖子'、'社交媒体轮播'、'Instagram 轮播'、'LinkedIn 系列'、'X 系列卡片'或'三连发'等需求。",
@@ -18489,6 +18618,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "website",
       "description": "Creator-facing social media analytics dashboard in a single HTML file.\nA platform switcher (X / LinkedIn / YouTube / Instagram), a row of KPI\ncards (followers, engagement rate, likes, reposts), a follower-growth\nchart, a \"top post this week\" preview, and a trending topics / top\ncomments side panel. Use when the brief mentions a \"social media\ndashboard\", \"creator analytics\", \"social analytics\", or names specific\nplatforms (X, Twitter, LinkedIn, YouTube, Instagram, TikTok) together\nwith metrics like followers, engagement, likes, reposts.",
       "description_i18n": {
         "zh-CN": "创作者社交媒体分析仪表板，单个 HTML 文件。包含平台切换器（X / LinkedIn / YouTube / Instagram）、KPI 卡片（粉丝数、互动率、点赞数、转发数）、粉丝增长图表、本周热门帖子预览和热门话题/评论侧边栏。",
@@ -18560,6 +18690,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "website",
       "description": "Social Media Matrix Tracker template.\nUse when users ask for a cinematic, data-dense social media analytics dashboard\nwith multi-platform metrics, interactive charts, hover insights, range compare,\nand dark/light theme switching in a single HTML artifact.",
       "description_i18n": {
         "zh-CN": "社媒矩阵数据追踪面板模板（Social Media Matrix Tracker）。适用于需要电影级、数据密集型社交媒体分析仪表板的场景，支持多平台指标、交互式图表、悬停洞察、范围对比和深浅主题切换，单个 HTML 文件即可实现。",
@@ -18635,6 +18766,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "none",
       "description": "Realistic Reddit post card with vote rail and comment count, suited to video overlays or story sharing.",
       "description_i18n": {
         "en": "Realistic Reddit post card with vote rail and comment count, suited to video overlays or story sharing.",
@@ -18705,6 +18837,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "none",
       "description": "Spotify Now Playing-style card with album art, progress bar, and playback controls, suited to video overlays or personal homepages.",
       "description_i18n": {
         "en": "Spotify Now Playing-style card with album art, progress bar, and playback controls, suited to video overlays or personal homepages.",
@@ -18775,6 +18908,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "none",
       "description": "Realistic X post card with engagement metrics (likes, reposts, views), suited to video overlays or shareable image cards.",
       "description_i18n": {
         "en": "Realistic X post card with engagement metrics (likes, reposts, views), suited to video overlays or shareable image cards.",
@@ -18845,6 +18979,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "none",
       "description": "A pixel / sprite-style animated explainer slide — full-bleed cream stage,\nbold display year, animated pixel-art mascot (e.g. Hanafuda card, mushroom,\nor 8-bit console), kinetic Japanese display type, ticking timeline ribbon.\nReads like a single frame of an educational motion video — looping CSS\nkeyframes, no JS, ready to be screen-recorded into a vertical video.\nUse when the brief asks for a \"sprite animation\", \"pixel-art video\",\n\"8-bit explainer\", \"history of X explainer\", \"kinetic typography history\",\n\"Nintendo-style\", \"sprite-image animation\", \"pixel animation\", or \"retro animation\".",
       "description_i18n": {
         "zh-CN": "像素风格的动画解说幻灯片，配有奶油色背景、粗体年份显示、像素艺术吉祥物（如花札卡、蘑菇或8位游戏机）、动态日文字体和时间轴条带。纯CSS动画，无需JS，可直接录制为竖屏视频。适合像素动画、8位解说、复古动画等需求。",
@@ -18919,6 +19054,7 @@
         "fs:write",
         "network"
       ],
+      "hubType": "website",
       "description": "Premium awards / venture-prize landing page: an inset white card shell with rounded corners, a fullscreen video hero with chamfered clip-path CTA, a three-column submissions section with angular nomination cards around a square video, and an about-the-founders stats grid using plus-darker image cards and gradient-text figures.",
       "description_i18n": {
         "zh-CN": "高端创投大奖落地页：内嵌白色圆角卡片外壳、全屏视频 Hero 配斜切 clip-path CTA、围绕方形视频的三栏几何提名卡区，以及使用 plus-darker 图像卡和渐变文字数字的创始人统计网格。",
@@ -18988,6 +19124,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "website",
       "description": "OKR tracker page — quarter banner, three objectives with their key\nresults as progress bars, owner avatars, status pills, and a \"this\nquarter at a glance\" sidebar. Use when the brief mentions \"OKRs\",\n\"key results\", or \"objectives\".",
       "description_i18n": {
         "zh-CN": "OKR 跟踪页面——季度横幅，三个目标及其关键结果进度条、负责人头像、状态标签，以及「本季度概览」侧边栏。当需求提及 OKR、关键结果、目标时使用。",
@@ -19058,6 +19195,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "website",
       "description": "Professional trading analysis dashboard template (single-file HTML) with\nlight/dark theme switch, dense market panels, chart interactions, demo/live\nplayback, and command palette behavior.\nUse when users ask for a Wall-Street-style analytics terminal, trading cockpit,\nor high-tech financial dashboard template with realistic data layout.",
       "description_i18n": {
         "zh-CN": "专业交易分析仪表板模板（单文件 HTML），包含明暗主题切换、密集市场面板、图表交互、演示/实时回放和命令面板功能。适用于华尔街风格分析终端、交易驾驶舱或高科技金融仪表板模板需求。",
@@ -19128,6 +19266,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "website",
       "description": "Wrap any HTML artifact with a side panel of live, parameterized\ncontrols — accent color, type scale, density, motion, theme — that\nrewrite CSS custom properties in real time and persist to\nlocalStorage. Lets the user explore variants of a design without\nre-prompting the agent. Use when the brief asks for \"variants\",\n\"side-by-side options\", \"tweak this\", \"let me adjust\", \"live\nknobs\", or \"real-time tweaking\".",
       "description_i18n": {
         "zh-CN": "为任何 HTML 组件添加侧面板实时控制器，可调整主题色、字体比例、密度、动效等参数，修改实时同步到 CSS 自定义属性并保存到 localStorage，让用户无需重新提示即可探索设计变体。",
@@ -19202,6 +19341,7 @@
         "fs:write",
         "network"
       ],
+      "hubType": "website",
       "description": "Cinematic single-page luxury real-estate landing page: a typewriter preloader that lifts away, a scroll-driven building image that rises from below and scales up while pinning to a dark statement section, a sticky dark stats band with count-up numbers, and a hover-expand video gallery that slides up over the dark section.",
       "description_i18n": {
         "zh-CN": "电影感单页奢侈地产落地页：打字机预加载升起、从下方升起并放大同时贴向暗色段的滚动驱动建筑图、带数字 count-up 的 sticky 暗色统计带，以及滑动覆盖暗色段的 hover 展开视频画廊。",
@@ -19272,6 +19412,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "none",
       "description": "Cursor light trail, chromatic rays, and directional flares for word-by-word quote reveals in video intros.",
       "description_i18n": {
         "en": "Cursor light trail, chromatic rays, and directional flares for word-by-word quote reveals in video intros.",
@@ -19340,6 +19481,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "website",
       "description": "Minimal pre-launch landing with email capture, brand logo, and optional decorative layer.\nReads DESIGN.md for colors, typography, and layout rules.\nBest for: product launches, beta signups, early access programs, indie projects.",
       "description_i18n": {
         "zh-CN": "简约的预发布落地页，支持邮箱收集、品牌logo和可选装饰层。从 DESIGN.md 读取颜色、排版和布局规则。适用于产品发布、Beta 测试注册、抢先体验计划和独立项目。",
@@ -19410,6 +19552,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "website",
       "description": "General-purpose desktop web prototype. Single self-contained HTML file built\nby copying the seed `assets/template.html` and pasting section layouts from\n`references/layouts.md`. Default for any landing / marketing / docs / SaaS\npage when no more specific skill matches.",
       "description_i18n": {
         "zh-CN": "通用桌面网页原型。通过复制种子文件 `assets/template.html` 并粘贴 `references/layouts.md` 中的布局生成单个独立 HTML 文件。适用于落地页、营销页、文档或 SaaS 页面的默认选项。",
@@ -19449,12 +19592,12 @@
     },
     {
       "name": "readable-studio/example-web-prototype-taste-brutalist",
-      "title": "Brutalist Web Prototype",
+      "title": "Brutalist Editorial Document",
       "title_i18n": {
         "zh-CN": "Brutalist Web Prototype",
         "zh-TW": "Brutalist Web Prototype",
         "ja": "Brutalist Web Prototype",
-        "ko": "브루탈리스트 웹 프로토타입",
+        "ko": "브루탈리스트 에디토리얼 문서",
         "de": "Brutalist Web Prototype",
         "fr": "Brutalist Web Prototype",
         "ru": "Brutalist Web Prototype",
@@ -19468,7 +19611,7 @@
         "ar": "Brutalist Web Prototype",
         "tr": "Brutalist Web Prototype",
         "uk": "Brutalist Web Prototype",
-        "en": "Brutalist Web Prototype"
+        "en": "Brutalist Editorial Document"
       },
       "version": "0.1.0",
       "source": "github:sanghyunna/readable-studio@main/plugins/_official/examples/web-prototype-taste-brutalist",
@@ -19480,6 +19623,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "report",
       "description": "Swiss industrial-print web prototype. Newsprint canvas, monolithic black grotesque, viewport-bleeding numerals, hairline grid dividers, hazard-red accent, ASCII syntax decoration. Distilled from Leonxlnx/taste-skill `brutalist-skill` (Swiss Industrial Print mode).",
       "description_i18n": {
         "zh-CN": "瑞士工业印刷风格网页原型。新闻纸画布、黑色粗体字、溢出式数字、细线网格分隔、危险红强调色、ASCII 语法装饰。源自 Leonxlnx/taste-skill `brutalist-skill`（瑞士工业印刷模式）。",
@@ -19544,6 +19688,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "website",
       "description": "Editorial-minimalist web prototype. Warm monochrome canvas, serif display + grotesque body, 1px hairline borders, muted pastel chips, generous macro-whitespace, ambient micro-motion. Distilled from Leonxlnx/taste-skill `minimalist-skill`.",
       "description_i18n": {
         "zh-CN": "极简编辑风格网页原型。暖色单色调画布，衬线标题配无衬线正文，1px 细线边框，柔和粉彩色块，大量留白，微妙动效。",
@@ -19608,6 +19753,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "website",
       "description": "Apple-tier soft web prototype. Silver/cream canvas, double-bezel cards, button-in-button CTAs, generous squircle radii, spring motion, ambient mesh. Distilled from Leonxlnx/taste-skill `soft-skill` + sections 4–8 of `taste-skill`.",
       "description_i18n": {
         "zh-CN": "Apple 级柔和风格网页原型。银灰/奶油色画布，双边框卡片，嵌套按钮 CTA，大圆角，弹性动效和环境网格。基于 Leonxlnx/taste-skill 的 soft-skill 及第 4-8 节。",
@@ -19672,6 +19818,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "deck",
       "description": "Single-file horizontal-swipe slide deck for a weekly team update —\nshipped, in flight, blocked, metrics, asks. 6–8 slides. Use when the\nbrief mentions \"weekly update\", \"team update slides\", \"weekly status\",\n\"weekly recap slides\".",
       "description_i18n": {
         "zh-CN": "单文件横向滑动幻灯片，用于团队周报展示——已完成、进行中、受阻、数据指标、需求。6-8 页幻灯片。适用于需要「周报」「团队汇报」「周报演示」等场景。",
@@ -19741,6 +19888,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "website",
       "description": "A hand-drawn wireframe exploration — graph-paper background, marker /\npencil tone, multiple tab labels for variants, sticky-note annotations,\nscribbled chart placeholders, hatched fills. Reads like a designer's\nwhiteboard before any pixels are committed. Use when the brief asks for\n\"wireframe\", \"sketch wireframe\", \"hand-drawn\", \"lo-fi\", \"whiteboard\",\n\"rough draft\", or \"hand-drawn prototype\".",
       "description_i18n": {
         "zh-CN": "手绘风格的线框图，包含方格纸背景、马克笔/铅笔质感、多标签页变体、便签注释、图表占位符和阴影填充。适用于「线框图」「草图线框」「手绘」「低保真」「白板」「草稿」「手绘原型」等需求。",
@@ -19813,6 +19961,7 @@
         "prompt:inject",
         "fs:write"
       ],
+      "hubType": "report",
       "description": "X/Twitter public sentiment research for recent market, company, product, or\ncommunity discourse. Use when the brief asks what people are saying on X,\nTwitter sentiment, CT sentiment, public opinion, expert posts, or social\nreaction around a stock, sector, company, product, or market event.",
       "description_i18n": {
         "zh-CN": "针对市场、公司、产品或社区话题进行 X/Twitter 公众情绪研究。当需要了解 X 或 Twitter 上的舆论、加密社区情绪、专家观点或股票、行业、公司、产品、市场事件的社交反应时使用。",

@@ -78,6 +78,7 @@
     ]
   },
   "readable": {
+    "hubType": "deck",
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "deck",

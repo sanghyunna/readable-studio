@@ -50,6 +50,7 @@ export const MarketplacePluginEntrySchema = lazyObject(() => ({
   homepage:    z.string().optional(),
   license:     z.string().optional(),
   capabilitiesSummary: z.array(z.string()).optional(),
+  hubType: z.enum(['deck', 'report', 'website', 'none']).optional(),
   deprecated:  z.union([z.boolean(), z.string()]).optional(),
   yanked:      z.boolean().optional(),
   yankedAt:    z.string().optional(),

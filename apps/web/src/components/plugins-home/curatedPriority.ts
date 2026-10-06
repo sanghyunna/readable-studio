@@ -35,7 +35,9 @@ const CURATED_PROTOTYPE_PLUGIN_IDS = [
   ...PINNED_TEMPLATE_PLUGIN_IDS,
   'example-readable-landing',
   'example-kanban-board',
-  'example-social-carousel',
+] as const;
+
+const CURATED_REPORT_PLUGIN_IDS = [
   'example-blog-post',
   'example-doc-kami-parchment',
 ] as const;
@@ -51,13 +53,16 @@ const CURATED_DECK_PLUGIN_IDS = [
 export const CURATED_PLUGIN_IDS_BY_CHIP = {
   prototype: CURATED_PROTOTYPE_PLUGIN_IDS,
   deck: CURATED_DECK_PLUGIN_IDS,
+  report: CURATED_REPORT_PLUGIN_IDS,
 };
 
 let curatedGlobalRank: Map<string, number> | undefined;
 
 export function curatedPluginPriority(record: InstalledPluginRecord): number | null {
   curatedGlobalRank ??= new Map(
-    [...CURATED_PROTOTYPE_PLUGIN_IDS, ...CURATED_DECK_PLUGIN_IDS]
+    // The Community shelf keeps its existing global order; tab priorities
+    // above are ranking only and never grant carousel membership.
+    [...CURATED_PROTOTYPE_PLUGIN_IDS, 'example-social-carousel', ...CURATED_REPORT_PLUGIN_IDS, ...CURATED_DECK_PLUGIN_IDS]
       .map((id, index) => [id, index]),
   );
   return curatedGlobalRank.get(record.id) ?? null;

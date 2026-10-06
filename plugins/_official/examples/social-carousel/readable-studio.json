@@ -74,6 +74,7 @@
     ]
   },
   "readable": {
+    "hubType": "none",
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "prototype",

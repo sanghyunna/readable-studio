@@ -40,6 +40,7 @@
       "properties": {
         "kind":     { "type": "string", "enum": ["skill", "scenario", "atom", "bundle"] },
         "taskKind": { "type": "string", "enum": ["new-generation", "code-migration", "figma-migration", "tune-collab"] },
+        "hubType":  { "type": "string", "enum": ["deck", "report", "website", "none"], "description": "Single Hub artifact type, independent of generation mode. Explicit none opts out of all template tabs." },
         "mode":     { "type": "string" },
         "platform": { "type": "string" },
         "scenario": { "type": "string" },

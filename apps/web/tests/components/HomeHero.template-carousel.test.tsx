@@ -114,7 +114,7 @@ describe('Hub template carousel', () => {
     const cards = screen.getAllByTestId('hub-template-card');
     const ids = cards.map((card) => card.getAttribute('data-plugin-id'));
     expect(ids).toEqual(expect.arrayContaining(
-      CATALOGUE.filter((record) => record.id !== 'example-guizang-ppt').map((record) => record.id),
+      CATALOGUE.filter((record) => record.manifest.readable?.hubType === 'website').map((record) => record.id),
     ));
 
     const pricing = cards.find((card) => card.getAttribute('data-plugin-id') === 'example-pricing-page')!;
@@ -152,15 +152,15 @@ describe('Hub template carousel', () => {
       ko['homeHero.templateTabPrototype'],
     ]);
     // Each tab is a real button: an icon per type (the creation chip's
-    // glyph), the label, and that type's template count (1 deck, 0 reports,
-    // 4 websites in this catalogue) with a spoken-form label.
+    // glyph), the label, and that type's template count (1 deck, 1 report,
+    // 3 websites in this catalogue) with a spoken-form label.
     for (const node of tabs) {
       expect(node.querySelector('.home-hero__templates-tab-icon svg')).not.toBeNull();
     }
     expect(tabs.map((node) => node.querySelector('[data-testid="hub-template-carousel-tab-count"]')?.textContent))
-      .toEqual(['1', '0', '4']);
+      .toEqual(['1', '1', '3']);
     expect(tabButton('prototype').querySelector('[data-testid="hub-template-carousel-tab-count"]')?.getAttribute('aria-label'))
-      .toBe(ko['homeHero.templateTabCount'].replace('{count}', '4'));
+      .toBe(ko['homeHero.templateTabCount'].replace('{count}', '3'));
     // The column precedes the rail inside the collapsible body, so it collapses with it.
     const rail = screen.getByTestId('hub-template-carousel-rail');
     const body = screen.getByTestId('hub-template-carousel-body');
@@ -189,14 +189,14 @@ describe('Hub template carousel', () => {
     renderHub({ pluginOptions: [...CATALOGUE, ...many] });
     fireEvent.click(tabButton('prototype'));
     const shown = screen.getAllByTestId('hub-template-card').map((card) => card.getAttribute('data-plugin-id'));
-    expect(shown).toHaveLength(24);
+    expect(shown).toHaveLength(23);
     expect(shown).toEqual(expect.arrayContaining(many.map((record) => record.id)));
     expect(new Set(screen.getAllByTestId('hub-template-card').map((card) => card.getAttribute('data-chip-id'))))
       .toEqual(new Set(['prototype']));
-    // Report tab: nothing in this catalogue is a report, so the rail empties
-    // but the tabs stay so the user can move on.
+    // The onboarding document is a report, not a website despite prototype mode.
     fireEvent.click(tabButton('report'));
-    expect(screen.queryAllByTestId('hub-template-card')).toHaveLength(0);
+    expect(screen.getAllByTestId('hub-template-card').map((card) => card.getAttribute('data-plugin-id')))
+      .toEqual(['example-hr-onboarding']);
     expect(screen.getAllByTestId('hub-template-carousel-tab')).toHaveLength(3);
   });
 
@@ -396,14 +396,14 @@ describe('Hub template carousel', () => {
 
   it('picking a card seeds the composer through the example-plugin handler', () => {
     const { onPickExamplePlugin } = renderHub();
-    fireEvent.click(tabButton('prototype'));
+    fireEvent.click(tabButton('report'));
     const card = screen.getAllByTestId('hub-template-card')
       .find((node) => node.getAttribute('data-plugin-id') === 'example-hr-onboarding')!;
     fireEvent.click(card);
     expect(onPickExamplePlugin).toHaveBeenCalledTimes(1);
     const [record, chipId, promptText] = onPickExamplePlugin.mock.calls[0]!;
     expect(record.id).toBe('example-hr-onboarding');
-    expect(chipId).toBe('prototype');
+    expect(chipId).toBe('report');
     expect(promptText.length).toBeGreaterThan(0);
   });
 

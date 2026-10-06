@@ -79,7 +79,11 @@ export async function readBundledManifestSources(officialRoot: string): Promise<
         throw error;
       }
       const label = `${relativeFolder}/${MANIFEST_NAME}`;
-      sources.push({ relativeFolder, manifest: parseCanonicalManifest(raw, label, folder), raw });
+      const manifest = parseCanonicalManifest(raw, label, folder);
+      if (tier === "examples" && manifest.readable?.hubType === undefined) {
+        throw new PluginCatalogError(`${label}: bundled examples must declare readable.hubType`);
+      }
+      sources.push({ relativeFolder, manifest, raw });
     }
   }
   const ids = sources.map((source) => source.manifest.name);
@@ -121,6 +125,7 @@ function marketplaceEntry(source: BundledManifestSource): MarketplacePluginEntry
     source: `github:sanghyunna/readable-studio@main/plugins/_official/${source.relativeFolder}`,
     publisher: { id: "readable-studio", url: REPOSITORY },
     capabilitiesSummary: manifest.readable?.capabilities ?? [],
+    hubType: manifest.readable?.hubType,
     description: manifest.description,
     description_i18n: manifest.description_i18n,
     tags: manifest.tags,

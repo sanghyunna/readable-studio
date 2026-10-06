@@ -9,7 +9,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import postcss, { type Rule } from 'postcss';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InstalledPluginRecord } from '@readable-studio/contracts';
@@ -78,6 +78,20 @@ function stubDaemon(initialFavorites: string[]) {
   });
   vi.stubGlobal('fetch', fetchMock);
   return { state, calls, fetchMock };
+}
+
+function nextConfigChange(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const listener = () => {
+      clearTimeout(timeout);
+      resolve();
+    };
+    const timeout = setTimeout(() => {
+      window.removeEventListener('readable-studio:app-config-changed', listener);
+      reject(new Error('Config change was not announced'));
+    }, 2000);
+    window.addEventListener('readable-studio:app-config-changed', listener, { once: true });
+  });
 }
 
 function tabButton(id: string): HTMLButtonElement {
@@ -179,9 +193,11 @@ describe('Hub template favorites', () => {
 
   it('pressing the star toggles the favorite, persists it, and does not pick the template', async () => {
     const daemon = stubDaemon([]);
-    const { onPickExamplePlugin } = renderHub();
+    let hub!: ReturnType<typeof renderHub>;
+    await act(async () => { hub = renderHub(); });
+    const { onPickExamplePlugin } = hub;
     fireEvent.click(tabButton('prototype'));
-    await waitFor(() => expect(daemon.calls.some((call) => call.url === '/api/app-config')).toBe(true));
+    expect(daemon.calls.some((call) => call.url === '/api/app-config')).toBe(true);
     const before = cardIds();
     // Star the LAST card so the reorder is observable.
     const target = before[before.length - 1]!;
@@ -189,6 +205,7 @@ describe('Hub template favorites', () => {
 
     const changed = vi.fn();
     window.addEventListener('readable-studio:app-config-changed', changed);
+    const starred = nextConfigChange();
     fireEvent.click(starFor(target));
     expect(onPickExamplePlugin).not.toHaveBeenCalled();
     const star = starFor(target);
@@ -199,10 +216,11 @@ describe('Hub template favorites', () => {
     expect(cardIds()).toEqual([target, ...before.filter((id) => id !== target)]);
 
     // Persisted through the daemon config as a partial PUT, then announced.
-    await waitFor(() => expect(daemon.state.templateFavorites).toEqual([target]));
+    await act(async () => { await starred; });
+    expect(daemon.state.templateFavorites).toEqual([target]);
     const put = daemon.calls.find((call) => call.init?.method === 'PUT')!;
     expect(JSON.parse(String(put.init?.body))).toEqual({ templateFavorites: [target] });
-    await waitFor(() => expect(changed).toHaveBeenCalledTimes(1));
+    expect(changed).toHaveBeenCalledTimes(1);
     window.removeEventListener('readable-studio:app-config-changed', changed);
 
     // Keyboard: Enter / Space on the star only toggles.
@@ -211,24 +229,30 @@ describe('Hub template favorites', () => {
     expect(onPickExamplePlugin).not.toHaveBeenCalled();
 
     // Unstar restores the original order and writes the empty list.
+    const unstarred = nextConfigChange();
     fireEvent.click(starFor(target));
     expect(starFor(target).getAttribute('aria-pressed')).toBe('false');
     expect(cardIds()).toEqual(before);
-    await waitFor(() => expect(daemon.state.templateFavorites).toEqual([]));
+    await act(async () => { await unstarred; });
+    expect(daemon.state.templateFavorites).toEqual([]);
     // Picking still works from the card itself.
     fireEvent.click(screen.getAllByTestId('hub-template-card')[0]!);
     expect(onPickExamplePlugin).toHaveBeenCalledTimes(1);
   });
 
   it('loads persisted favorites on mount and orders them by starring order within the tab', async () => {
-    stubDaemon(['example-hr-onboarding', 'example-pricing-page', 'example-guizang-ppt']);
-    renderHub();
+    stubDaemon(['example-hr-onboarding', 'example-gamified-app', 'example-pricing-page', 'example-guizang-ppt']);
+    await act(async () => { renderHub(); });
     fireEvent.click(tabButton('prototype'));
-    await waitFor(() => expect(starFor('example-hr-onboarding').getAttribute('aria-pressed')).toBe('true'));
+    expect(starFor('example-gamified-app').getAttribute('aria-pressed')).toBe('true');
     const ids = cardIds();
-    expect(ids.slice(0, 2)).toEqual(['example-hr-onboarding', 'example-pricing-page']);
-    expect(ids).toHaveLength(4);
+    expect(ids.slice(0, 2)).toEqual(['example-gamified-app', 'example-pricing-page']);
+    expect(ids).toHaveLength(3);
     expect(starFor('example-velar-luxury-real-estate').getAttribute('aria-pressed')).toBe('false');
+    // A favorited document cannot leak back into the website tab.
+    fireEvent.click(tabButton('report'));
+    expect(cardIds()).toEqual(['example-hr-onboarding']);
+    expect(starFor('example-hr-onboarding').getAttribute('aria-pressed')).toBe('true');
     // The deck favorite stays in its own tab.
     fireEvent.click(tabButton('deck'));
     expect(cardIds()).toEqual(['example-guizang-ppt']);

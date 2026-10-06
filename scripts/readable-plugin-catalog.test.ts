@@ -27,7 +27,7 @@ before(async () => {
       name: id,
       version: "1.0.0",
       author: { name: "Readable Studio" },
-      readable: { capabilities },
+      readable: { capabilities, hubType: "none" },
       futureField: { retained: true },
     }, null, 2)}\n`, "utf8");
   }
@@ -55,6 +55,7 @@ test("generates a deterministic Readable Studio marketplace from canonical manif
 
   // Then: bytes and canonical publisher contracts match exactly.
   assert.equal(first, second);
+  assert.deepEqual((await buildOfficialMarketplace(fixtureRoot)).plugins.map((entry) => entry.hubType), ["none", "none"]);
   const parsed: unknown = JSON.parse(first);
   assert.ok(typeof parsed === "object" && parsed !== null);
   assert.equal(Reflect.get(parsed, "name"), "readable-studio-official");
@@ -63,6 +64,26 @@ test("generates a deterministic Readable Studio marketplace from canonical manif
   assert.deepEqual(plugins.map((entry) => (
     typeof entry === "object" && entry !== null ? Reflect.get(entry, "name") : undefined
   )), ["readable-studio/alpha", "readable-studio/zeta"]);
+});
+
+test("requires an explicit valid Hub type for bundled examples", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "readable-hub-type-"));
+  const folder = path.join(root, "examples", "sample");
+  await mkdir(folder, { recursive: true });
+  try {
+    for (const hubType of [undefined, "prototype"]) {
+      await writeFile(path.join(folder, "readable-studio.json"), JSON.stringify({
+        specVersion: "1.0.0", name: "sample", version: "1.0.0", readable: { hubType },
+      }), "utf8");
+      await assert.rejects(readBundledManifestSources(root), PluginCatalogError);
+    }
+    await writeFile(path.join(folder, "readable-studio.json"), JSON.stringify({
+      specVersion: "1.0.0", name: "sample", version: "1.0.0", readable: { hubType: "none" },
+    }), "utf8");
+    assert.equal((await readBundledManifestSources(root))[0]?.manifest.readable?.hubType, "none");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("rejects old product metadata instead of normalizing external v1 content", async () => {

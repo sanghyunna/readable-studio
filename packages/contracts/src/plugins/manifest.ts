@@ -165,6 +165,9 @@ export const PluginManifestSchema = lazyObject(() => ({
   readable: z.object({
     kind:     z.enum(['skill', 'scenario', 'atom', 'bundle']).optional(),
     taskKind: z.enum(['new-generation', 'code-migration', 'figma-migration', 'tune-collab']).optional(),
+    // Artifact type for Hub membership, independent of generation mode.
+    // Explicit 'none' opts out; absence supports unmigrated external plugins.
+    hubType:  z.enum(['deck', 'report', 'website', 'none']).optional(),
     mode:     z.string().optional(),
     platform: z.string().optional(),
     scenario: z.string().optional(),

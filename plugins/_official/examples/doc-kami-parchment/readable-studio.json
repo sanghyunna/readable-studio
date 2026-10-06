@@ -74,6 +74,7 @@
     ]
   },
   "readable": {
+    "hubType": "report",
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "prototype",
