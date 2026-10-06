@@ -31,7 +31,11 @@ vi.mock('../../src/components/IntegrationsView', () => ({ IntegrationsView: () =
 vi.mock('../../src/components/PluginsView', () => ({ PluginsView: () => null }));
 vi.mock('../../src/components/TasksView', () => ({ TasksView: () => null }));
 vi.mock('../../src/components/ProjectView', () => ({
-  ProjectView: () => <main data-testid="project-view" />,
+  ProjectView: ({ onProjectsRefresh }: { onProjectsRefresh: () => void }) => (
+    <main data-testid="project-view">
+      <button data-testid="project-view-refresh" onClick={() => onProjectsRefresh()}>refresh</button>
+    </main>
+  ),
 }));
 vi.mock('../../src/components/pet/PetOverlay', () => ({ PetOverlay: () => null }));
 vi.mock('../../src/components/pet/pets', () => ({ migrateCustomPetAtlas: async () => null }));
@@ -257,6 +261,107 @@ describe('startup guards (unchanged by the modal removal)', () => {
     expect(home.hasAttribute('inert')).toBe(false);
     expect(projects.getAttribute('inert')).toBe('');
   });
+});
+
+describe('mid-session daemon reconnect (after a successful startup)', () => {
+  const recovered: Project = { ...project, id: 'recovered', name: 'Recovered' };
+  const retryButton = () => screen.queryByRole('button', { name: /^retry$|^다시 시도$/i });
+
+  // Each failing site runs after a clean startup: the project list is already
+  // known, then one strict read fails and must drop into the calm reconnect
+  // state exactly like a startup failure.
+  type Site = { name: string; path: string; setup: () => void; prepare?: () => Promise<void>; trigger: () => Promise<void>; recoveredId: string };
+  const sites: Site[] = [
+    {
+      name: 'refreshProjects',
+      path: '/projects/existing',
+      setup: () => {},
+      trigger: async () => { await act(async () => { fireEvent.click(screen.getByTestId('project-view-refresh')); }); },
+      recoveredId: 'recovered',
+    },
+    {
+      name: 'route sync for an unknown project',
+      path: '/',
+      setup: () => { vi.mocked(getProject).mockResolvedValue(null); },
+      // Deep-linking to a project the list does not know triggers the strict re-read.
+      trigger: async () => { await act(async () => { navigate({ kind: 'project', projectId: 'ghost', conversationId: null, fileName: null }); }); },
+      recoveredId: 'ghost',
+    },
+    {
+      name: 'desktop folder import',
+      path: '/',
+      setup: () => {
+        vi.mocked(getProject).mockResolvedValue(null);
+        vi.mocked(pickAndImportHostProject).mockResolvedValue({ ok: true, projectId: 'created', conversationId: 'conversation', entryFile: null });
+      },
+      prepare: async () => { await openPlusMenu(); },
+      trigger: async () => { await act(async () => { fireEvent.click(screen.getByTestId('composer-plus-open-folder')); }); },
+      recoveredId: 'created',
+    },
+  ];
+
+  // Starts a healthy session, then makes every strict project read fail and
+  // installs the timer capture only now, so just the post-startup probe and
+  // stall timers are held (never waitFor's own timeout).
+  async function failMidSession(site: Site) {
+    window.history.replaceState(null, '', site.path);
+    site.setup();
+    const listed = [project, { ...project, id: site.recoveredId, name: 'Recovered' }];
+    // Startup read succeeds without the target project.
+    vi.mocked(listProjects).mockResolvedValueOnce([project]);
+    await renderApp();
+    if (site.path === '/') {
+      await screen.findByTestId('home-hero-input');
+    } else if (site.path === '/projects/existing') {
+      await screen.findByTestId('project-view');
+    }
+    await site.prepare?.();
+    const timers = holdReconnectTimers();
+    vi.mocked(listProjects).mockRejectedValue(new TypeError('connection refused'));
+    const before = vi.mocked(listProjects).mock.calls.length;
+    await site.trigger();
+    return { timers, before, listed };
+  }
+
+  it.each(sites)('shows the calm reconnect state, probes again by itself, and restores the list when the daemon answers ($name)', async (site) => {
+    const { timers, before, listed } = await failMidSession(site);
+    expect(screen.getByRole('status').textContent).toMatch(/reconnect|재연결|다시 연결/i);
+    expect(screen.getByTestId('startup-reconnecting')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(retryButton()).toBeNull();
+    expect(screen.queryByTestId('hub-tree-no-projects')).toBeNull();
+    // The failing read plus the immediate re-probe, then a backoff timer is armed.
+    expect(vi.mocked(listProjects).mock.calls.length).toBeGreaterThanOrEqual(before + 2);
+    expect(timers.length).toBeGreaterThan(0);
+    expect(timers.stalls).toHaveLength(1);
+
+    vi.mocked(listProjects).mockResolvedValue(listed);
+    await act(async () => { timers.forEach(retry => retry()); });
+    expect(screen.queryByTestId('startup-reconnecting')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(retryButton()).toBeNull();
+    expect(screen.getByTestId(`hub-project-${site.recoveredId}`)).toBeTruthy();
+  }, 15_000);
+
+  it('escalates to the alert and retry button only once the mid-session outage passes the stall threshold, then recovers on retry', async () => {
+    const { timers, listed } = await failMidSession(sites[0]!);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(retryButton()).toBeNull();
+    expect(timers.stalls).toHaveLength(1);
+
+    await act(async () => { timers.stalls.forEach(stall => stall()); });
+    expect(screen.getByRole('alert').textContent).toMatch(/data|데이터/i);
+    expect(screen.queryByTestId('startup-reconnecting')).toBeNull();
+    const button = retryButton();
+    expect(button).toBeTruthy();
+
+    vi.mocked(listProjects).mockResolvedValue(listed);
+    await act(async () => { fireEvent.click(button!); });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(retryButton()).toBeNull();
+    expect(screen.getByTestId('project-view')).toBeTruthy();
+    expect(screen.getByTestId('hub-project-recovered')).toBeTruthy();
+  }, 15_000);
 });
 
 describe('새 프로젝트 navigates to the Hub and focuses the composer', () => {
