@@ -12,12 +12,13 @@ import sharp from 'sharp';
 // pnpm exec tsx scripts/generate-template-thumbnails.ts [--check] [--id example-...]
 const root = process.cwd();
 const out = path.join(root, 'apps/web/public/template-thumbnails');
-const evidence = path.join(root, '.omo/evidence/impl-thumbs');
+const evidence = path.join(root, process.argv.includes('--evidence') ? process.argv[process.argv.indexOf('--evidence') + 1]! : '.omo/evidence/impl-thumbs');
 const files = execFileSync('fd', ['^readable-studio\\.json$', 'plugins/_official/examples'], { encoding: 'utf8' }).trim().split(/\r?\n/);
 const templates = await Promise.all(files.map(async file => ({ file, manifest: JSON.parse(await readFile(file, 'utf8')) })));
 const selected = templates.filter(({ manifest }) => ['deck', 'report', 'website'].includes(manifest.readable.hubType)).sort((a, b) => ['deck', 'report', 'website'].indexOf(a.manifest.readable.hubType) - ['deck', 'report', 'website'].indexOf(b.manifest.readable.hubType));
 const onlyId = process.argv.includes('--id') ? process.argv[process.argv.indexOf('--id') + 1] : undefined;
-const htmlFiles = execFileSync('fd', ['\\.html$', 'plugins/_official/examples'], { encoding: 'utf8' }).trim().split(/\r?\n/).filter(Boolean);
+const ids = onlyId?.split(',');
+const htmlFiles = execFileSync('fd', ['\\.html$', 'plugins/_official/examples', 'design-templates'], { encoding: 'utf8' }).trim().split(/\r?\n/).filter(Boolean);
 await mkdir(out, { recursive: true });
 await mkdir(evidence, { recursive: true });
 if (process.argv.includes('--check')) {
@@ -30,41 +31,83 @@ if (process.argv.includes('--check')) {
   if (missing.length) throw new Error(`Missing thumbnails: ${missing.join(', ')}`);
   console.log(`Coverage: ${selected.length}/${selected.length}`);
 } else {
-  const browser = await chromium.launch({ headless: true, channel: 'chromium' });
+  const browser = await chromium.launch({ headless: true, channel: 'chromium', args: ['--use-angle=swiftshader'] });
   const page = await browser.newPage({ reducedMotion: 'reduce' });
   page.setDefaultTimeout(15000);
   const entries: { id: string; type: string; sourceHash: string; bytes: number }[] = [];
   const failures: { id: string; error: string }[] = [];
   try {
     for (const { file, manifest } of selected) {
-      if (onlyId && manifest.name !== onlyId) continue;
+      if (ids && !ids.includes(manifest.name)) continue;
       const type = manifest.readable.hubType;
       try {
         console.log(`Capturing ${manifest.name}`);
         const viewport = type === 'deck' ? { width: 1920, height: 1080 } : type === 'report' ? { width: 1280, height: 1600 } : { width: 1440, height: 900 };
         await page.setViewportSize(viewport);
         const folder = path.dirname(file);
-        const candidates = htmlFiles.filter(candidate => path.resolve(candidate).startsWith(path.resolve(folder) + path.sep));
+        const sourceFolder = path.join(root, 'design-templates', path.basename(folder));
+        const candidates = htmlFiles.filter(candidate => [folder, sourceFolder].some(base => path.resolve(candidate).startsWith(path.resolve(base) + path.sep)));
         const declared = path.join(folder, manifest.readable.thumbnail?.entry ?? manifest.readable.preview?.entry ?? 'example.html');
-        const filename = candidates.find(candidate => path.resolve(candidate) === path.resolve(declared)) ?? candidates.find(candidate => candidate.endsWith('example.html')) ?? candidates.find(candidate => candidate.endsWith('template.html'));
+        const filename = candidates.find(candidate => path.resolve(candidate) === path.resolve(declared)) ?? candidates.find(candidate => candidate.endsWith('example.html')) ?? candidates.find(candidate => candidate.endsWith('template.html')) ?? candidates.find(candidate => /examples[\\/]demo-deck[\\/]index\.html$/.test(candidate));
         if (!filename) throw new Error('No HTML exemplar');
         let html = await readFile(filename, 'utf8');
         if (html.includes('<!-- SLIDES_HERE -->')) html = html.replace('<!-- SLIDES_HERE -->', await readFile(path.join(path.dirname(filename), 'example-slides.html'), 'utf8'));
         const url = pathToFileURL(path.resolve(filename)).href;
         await page.route(url, route => route.fulfill({ body: html, contentType: 'text/html; charset=utf-8' }), { times: 1 });
-        await page.goto(url, { waitUntil: 'load', timeout: 15000 });
-        await page.waitForLoadState('networkidle', { timeout: 10000 });
+        await page.goto(url, { waitUntil: 'load', timeout: 30000 });
+        // Streaming media and render loops need not become network-idle.
+        // Let authored entrance timers and canvas scenes reach their intended frame.
+        await page.waitForTimeout(2500);
+        // tsx's function-name transform can otherwise leak __name into the page.
+        await page.evaluate('globalThis.__name = (value) => value');
         await page.evaluate(async () => {
           let timer: ReturnType<typeof setTimeout>;
           await Promise.race([new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Thumbnail readiness exceeded 15 seconds')), 15000); }), (async () => {
           await document.fonts.ready;
-          await Promise.all(Array.from(document.images).filter(image => image.loading !== 'lazy').map(image => image.decode()));
-          for (const video of document.querySelectorAll('video')) {
+          const bounded = async (work: Promise<unknown>, ms = 10000) => {
+            let timeout: ReturnType<typeof setTimeout>;
+            try { await Promise.race([work, new Promise<never>((_, reject) => { timeout = setTimeout(() => reject(new Error('Media readiness timeout')), ms); })]); }
+            finally { clearTimeout(timeout!); }
+          };
+          const failed: HTMLImageElement[] = [];
+          await Promise.all(Array.from(document.images).map(async image => {
+            image.loading = 'eager';
+            try { await bounded(image.decode()); } catch { failed.push(image); }
+          }));
+          const visibleFailures = failed.filter(image => {
+            const box = image.getBoundingClientRect();
+            return box.bottom > 0 && box.top < innerHeight && box.right > 0 && box.left < innerWidth && box.width * box.height > 4096;
+          });
+          if (visibleFailures.length > 1 || visibleFailures.some(image => {
+            const box = image.getBoundingClientRect();
+            return box.width * box.height > innerWidth * innerHeight * 0.1;
+          })) throw new Error(`Undecoded visible images: ${visibleFailures.map(image => image.currentSrc).join(', ')}`);
+          // CSS backgrounds are not represented in document.images.
+          const backgrounds = new Set<string>();
+          for (const element of Array.from(document.querySelectorAll('*'))) {
+            const box = element.getBoundingClientRect();
+            if (box.bottom <= 0 || box.top >= innerHeight) continue;
+            for (const match of getComputedStyle(element).backgroundImage.matchAll(/url\(["']?(.*?)["']?\)/g)) backgrounds.add(match[1]!);
+          }
+          await Promise.all(Array.from(backgrounds).map(async src => {
+            const image = new Image(); image.src = src;
+            await bounded(image.decode());
+          }));
+          for (const video of Array.from(document.querySelectorAll('video'))) {
             const box = video.getBoundingClientRect();
-            if (box.bottom > 0 && box.top < innerHeight && box.width > 0 && video.readyState < 2) {
-              throw new Error('Above-fold video has no decoded frame');
-            }
-            video.pause();
+            if (box.bottom > 0 && box.top < innerHeight && box.width > 0) {
+              video.preload = 'auto';
+              if (video.readyState < 2) await bounded(new Promise<void>((resolve, reject) => {
+                video.addEventListener('loadeddata', () => resolve(), { once: true });
+                video.addEventListener('error', () => reject(new Error('Video load failed')), { once: true });
+                video.load();
+              }));
+              video.pause();
+              await bounded(new Promise<void>(resolve => {
+                video.addEventListener('seeked', () => resolve(), { once: true });
+                video.currentTime = Math.min(2, video.duration / 2);
+              }));
+            } else video.pause();
           }
           for (const animation of document.getAnimations()) {
             const end = animation.effect?.getComputedTiming().endTime;
@@ -85,6 +128,7 @@ if (process.argv.includes('--check')) {
         const buffer = type === 'deck' ? await image.resize(480, 270, { fit: 'contain' }).webp({ quality: 80 }).toBuffer() : await image.resize({ width: 480 }).webp({ quality: 80 }).toBuffer();
         if (buffer.length > 81920) throw new Error(`Over 80 KiB budget: ${buffer.length}`);
         if (buffer.length < 1500) throw new Error(`Suspiciously empty capture: ${buffer.length} bytes`);
+        await writeFile(path.join(evidence, `${manifest.name}.png`), capture);
         await writeFile(path.join(out, `${manifest.name}.webp`), buffer);
         const raw = await readFile(file, 'utf8');
         const thumb = { ...manifest.readable.thumbnail, src: `/template-thumbnails/${manifest.name}.webp` };
@@ -96,10 +140,14 @@ if (process.argv.includes('--check')) {
         const message = error instanceof Error ? error.message : String(error);
         failures.push({ id: manifest.name, error: message });
         console.error(`${manifest.name}: ${message}`);
+        if (!message.includes('No HTML exemplar')) await page.screenshot({ path: path.join(evidence, `${manifest.name}-rejected.png`) });
       }
     }
   } finally { await browser.close(); }
-  if (!onlyId) await writeFile(path.join(out, 'manifest.json'), JSON.stringify({ recipe: 1, entries }, null, 2) + '\n');
+  const previous = ids ? JSON.parse(await readFile(path.join(out, 'manifest.json'), 'utf8')).entries as typeof entries : [];
+  const merged = [...previous.filter(entry => !entries.some(next => next.id === entry.id)), ...entries];
+  merged.sort((a, b) => selected.findIndex(({ manifest }) => manifest.name === a.id) - selected.findIndex(({ manifest }) => manifest.name === b.id));
+  await writeFile(path.join(out, 'manifest.json'), JSON.stringify({ recipe: 1, entries: merged }, null, 2) + '\n');
   await writeFile(path.join(evidence, 'failures.json'), JSON.stringify(failures, null, 2) + '\n');
   console.log(`Total: ${entries.length} thumbnails, ${entries.reduce((sum, entry) => sum + entry.bytes, 0)} bytes; failures: ${failures.length}`);
   for (const type of ['deck', 'report', 'website']) {

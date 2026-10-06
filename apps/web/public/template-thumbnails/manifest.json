@@ -26,6 +26,12 @@
       "bytes": 10882
     },
     {
+      "id": "example-html-ppt",
+      "type": "deck",
+      "sourceHash": "3d28e2d8c4527572fa449a0c9d110744b7adba4662663b6e71e2ffb9bed8a1fc",
+      "bytes": 4714
+    },
+    {
       "id": "example-html-ppt-course-module",
       "type": "deck",
       "sourceHash": "d9ca0e8cc7688aa8b1e5947e8acd77c19cbe0bf7d77b0776bb864be0f08d36e0",
@@ -452,6 +458,12 @@
       "bytes": 30234
     },
     {
+      "id": "example-3d-creator-portfolio",
+      "type": "website",
+      "sourceHash": "5d7fab2a5f2844b31cbd11c3e0d4f1aa4feecc6a685e48fdbf4bf143825ff69b",
+      "bytes": 9768
+    },
+    {
       "id": "example-acreage-farming",
       "type": "website",
       "sourceHash": "eff0542aae3ec0b42473c52f1c5fa03d689fe2db7c20937952de173079daab7d",
@@ -474,6 +486,12 @@
       "type": "website",
       "sourceHash": "d28ef2101077c3571d427462b327a1f96ea9cfe2aafd331a21ecb63d5490a4bc",
       "bytes": 6186
+    },
+    {
+      "id": "example-dashboard-ui-glass",
+      "type": "website",
+      "sourceHash": "6402dca6d2334bb85b350d541abc6b4399f2ef7f913ac905eb708d085f2bfe20",
+      "bytes": 20262
     },
     {
       "id": "example-dating-web",
@@ -558,6 +576,12 @@
       "type": "website",
       "sourceHash": "bf621cc4a326554c25e49164f4b5e9cc90febb6ac4f116c5123e118b87271353",
       "bytes": 36392
+    },
+    {
+      "id": "example-portfolio-cosmic",
+      "type": "website",
+      "sourceHash": "88eae45002bf1728d66b21117b9ee993013da3027cf88ba6ae1aad82f819ae23",
+      "bytes": 6368
     },
     {
       "id": "example-pricing-page",

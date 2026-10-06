@@ -71,6 +71,7 @@
   },
   "readable": {
     "hubType": "website",
+    "thumbnail": {"src":"/template-thumbnails/example-portfolio-cosmic.webp"},
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "prototype",
