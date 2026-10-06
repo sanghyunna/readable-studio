@@ -83,6 +83,7 @@ interface AttachAcpSessionOptions {
   clientVersion?: string;
   stageTimeoutMs?: number;
   modelUnavailableErrorCode?: 'AMR_MODEL_UNAVAILABLE';
+  rejectEmptyPromptCompletion?: boolean;
 }
 
 function errorMessage(err: unknown): string {
@@ -759,6 +760,7 @@ export function attachAcpSession({
   clientVersion = 'runtime-adapter',
   stageTimeoutMs = DEFAULT_STAGE_TIMEOUT_MS,
   modelUnavailableErrorCode,
+  rejectEmptyPromptCompletion = false,
 }: AttachAcpSessionOptions) {
   const runStartedAt = Date.now();
   const effectiveCwd = path.resolve(cwd || process.cwd());
@@ -1160,6 +1162,10 @@ export function attachAcpSession({
       return;
     }
     if (promptRequestId !== null && obj.id === promptRequestId) {
+      if (rejectEmptyPromptCompletion && !emittedTextChunk && !emittedToolCall) {
+        fail('Kimi CLI completed without producing assistant text or tool calls.', { retryable: false });
+        return;
+      }
       if (!emittedTextChunk && !emittedToolCall && modelUnavailableErrorCode) {
         fail(
           'ACP session completed without producing any assistant text. Refresh the AMR model list, choose a supported model, and retry this run.',

@@ -1173,6 +1173,44 @@ test('attachAcpSession still fails an AMR turn that produces no text and no tool
   );
 });
 
+test('Kimi empty end_turn is an execution failure rather than silent success', () => {
+  const child = new FakeAcpChild();
+  const events: Array<{ event: string; payload: unknown }> = [];
+  const session = attachAcpSession({
+    child: child as never,
+    prompt: 'Reply with exactly HELLO. Do not use tools.',
+    rejectEmptyPromptCompletion: true,
+    send: (event, payload) => events.push({ event, payload }),
+  });
+  writeAcpResult(child, 1, {});
+  writeAcpResult(child, 2, { sessionId: 'session-1' });
+  writeAcpResult(child, 3, { stopReason: 'end_turn' });
+  child.emit('close', 0, null);
+  assert.equal(session.completedSuccessfully(), false);
+  assert.equal(session.hasFatalError(), true);
+  const errors = events.filter(({ event }) => event === 'error');
+  assert.equal(errors.length, 1);
+  assert.equal((errors[0].payload as { error: { code: string } }).error.code, 'AGENT_EXECUTION_FAILED');
+});
+
+test('Kimi tool-only completion remains successful', () => {
+  const child = new FakeAcpChild();
+  const events: Array<{ event: string; payload: unknown }> = [];
+  const session = attachAcpSession({
+    child: child as never,
+    prompt: 'Edit the file.',
+    rejectEmptyPromptCompletion: true,
+    send: (event, payload) => events.push({ event, payload }),
+  });
+  writeAcpResult(child, 1, {});
+  writeAcpResult(child, 2, { sessionId: 'session-1' });
+  writeAcpUpdate(child, { sessionUpdate: 'tool_call', toolCallId: 'edit-1', title: 'edit', status: 'completed' });
+  writeAcpResult(child, 3, { stopReason: 'end_turn' });
+  child.emit('close', 0, null);
+  assert.equal(session.completedSuccessfully(), true);
+  assert.equal(events.some(({ event }) => event === 'error'), false);
+});
+
 test('attachAcpSession promotes allowlisted OpenCode role-marker ACP errors', () => {
   const child = new FakeAcpChild();
   const events: Array<{ event: string; payload: unknown }> = [];

@@ -12187,6 +12187,7 @@ async function startServerWithProbeLifetime({
         imagePaths: def.supportsImagePaths ? amrStagedImages : [],
         mcpServers,
         ...(def.id === 'amr' ? { modelUnavailableErrorCode: 'AMR_MODEL_UNAVAILABLE' } : {}),
+        rejectEmptyPromptCompletion: def.id === 'kimi',
         send: (event, data) => {
           if (event === 'agent') {
             lastAgentEventPhase = summarizeAgentEventForInactivity(data);
