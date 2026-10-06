@@ -58,8 +58,27 @@ describe('Hub template membership from reviewed manifests', () => {
     }
   });
 
-  it('requires a usable query even for curated templates', () => {
-    const original = catalogue.find(({ id }) => id === 'example-mythic-naturecore')!;
+  it('keeps matching curated templates without queries in curated order, never in another type', () => {
+    const records = ['example-html-ppt-zhangzara-capsule', 'example-html-ppt-zhangzara-creative-mode']
+      .map((id) => {
+        const original = catalogue.find((record) => record.id === id)!;
+        return { ...original, manifest: {
+          ...original.manifest, readable: { ...original.manifest.readable, useCase: {} },
+        } };
+      });
+    for (const locale of ['ko', 'en'] as const) {
+      expect(homeHeroExamplePluginsForChip('deck', records, locale)).toEqual([...records].reverse());
+      expect(homeHeroExamplePluginsForChip('report', records, locale)).toEqual([]);
+      expect(homeHeroExamplePluginsForChip('prototype', records, locale)).toEqual([]);
+      const reclassified = records.map((record) => ({ ...record, manifest: {
+        ...record.manifest, readable: { ...record.manifest.readable, hubType: 'report' as const },
+      } }));
+      expect(homeHeroExamplePluginsForChip('deck', reclassified, locale)).toEqual([]);
+    }
+  });
+
+  it('still requires a usable query for non-curated templates', () => {
+    const original = catalogue.find(({ id }) => id === 'example-web-prototype')!;
     const record = { ...original, manifest: {
       ...original.manifest, readable: { ...original.manifest.readable, useCase: { query: ' ' } },
     } };

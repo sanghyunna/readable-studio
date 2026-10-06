@@ -68,10 +68,11 @@ describe('low-spec material: universal backdrop kill (M1)', () => {
 
   // HubPerformanceToggle and its CSS module were removed together in 083ffba;
   // the New Project modal backdrop (`home/new-project-modal.css`) went with the
-  // modal. The remaining inventory is 43 global groups plus SettingsDialog.module.
+  // modal. Carousel arrows add one group whose strong-glass fill becomes
+  // opaque via M2. The inventory is 44 global groups plus SettingsDialog.module.
   // Bump this pin only after checking a new surface's low-mode fill is
   // opaque and readable (M5).
-  it('covers the measured base inventory: 44 active CSS groups (43 global + 1 CSS module)', () => {
+  it('covers the measured base inventory: 45 active CSS groups (44 global + 1 CSS module)', () => {
     const globalGroups = sourceFiles(
       (path) => path.startsWith('src/styles/') && path.endsWith('.css') && !path.startsWith('src/styles/low-spec/'),
     ).flatMap(activeBaseBackdropGroups);
@@ -82,8 +83,8 @@ describe('low-spec material: universal backdrop kill (M1)', () => {
     expect(moduleGroups).toEqual([
       'src/components/SettingsDialog.module.css:226',
     ]);
-    expect(globalGroups).toHaveLength(43);
-    expect(globalGroups.length + moduleGroups.length).toBe(44);
+    expect(globalGroups).toHaveLength(44);
+    expect(globalGroups.length + moduleGroups.length).toBe(45);
   });
 
   it('pins the inline JSX backdropFilter sites to the four known ones', () => {
@@ -152,6 +153,22 @@ describe('low-spec material: opaque, token-only surfaces', () => {
     expect(values['--hub-control-surface']).toBe('var(--bg-elevated)');
     expect(values['--hub-canvas-background']).toBe('var(--hub-canvas-base)');
     expect(values['--hub-control-engraved-shadow']).toBe('inset 0 0 0 1px var(--border)');
+  });
+
+  it('routes carousel arrow blur and fill through the neutralized material tokens', () => {
+    const hero = postcss.parse(read('src/styles/home/home-hero.css'));
+    const arrow = hero.nodes.find(
+      (node) => node.type === 'rule' && node.selector === '.home-hero__templates-arrow',
+    );
+    expect(arrow?.type).toBe('rule');
+    if (arrow?.type !== 'rule') return;
+    const values = Object.fromEntries(arrow.nodes.flatMap(
+      (node) => node.type === 'decl' ? [[node.prop, node.value]] : [],
+    ));
+    expect(values['-webkit-backdrop-filter']).toBe('var(--hub-control-blur)');
+    expect(values['backdrop-filter']).toBe('var(--hub-control-blur)');
+    expect(values.background).toBe('var(--hub-glass-fill-strong)');
+    expect(values.color).toBe('var(--text-strong)');
   });
 
   it('uses semantic tokens only: no hex, rgb(a), hsl(a) or color-mix alpha literals', () => {

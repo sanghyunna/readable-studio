@@ -3430,7 +3430,10 @@ export function homeHeroExamplePluginsForChip(
   const presets = plugins
     .filter((plugin) => !EXAMPLE_PRESET_HIDDEN_PLUGIN_IDS.has(plugin.id))
     .filter((plugin) => pluginMatchesExampleChip(plugin, chipId))
-    .filter((plugin) => Boolean(pluginPresetQuery(plugin, locale)?.trim()))
+    // Curated templates can use the description fallback, but only after
+    // matching the chip above: curator rank never overrides an explicit type.
+    .filter((plugin) => Boolean(pluginPresetQuery(plugin, locale)?.trim())
+      || curatedPluginPriorityForChip(plugin, chipId) !== null)
     .sort((a, b) => comparePluginPresetOrder(a, b, chipId))
     .slice(0, limit);
   return presets;
