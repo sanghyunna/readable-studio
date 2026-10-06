@@ -3,6 +3,13 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+// Refresh tests exercise Pi's real probe/cache/persistence, not installed peers
+// whose catalogue discovery can spawn outside the execAgentFile seam below.
+vi.mock('../../src/runtimes/registry.js', async () => {
+  const { piAgentDef } = await import('../../src/runtimes/defs/pi.js');
+  return { AGENT_DEFS: [piAgentDef], DEFAULT_ENABLED_AGENT_IDS: ['pi'] };
+});
+
 import * as invocation from '../../src/runtimes/invocation.js';
 import { _resetAgentDetectionCacheForTests, configureDetectionStorage, detectAgents } from '../../src/runtimes/detection.js';
 

@@ -7,6 +7,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// OS proxy discovery is an external command, unrelated to executable readiness.
+vi.mock('@readable-studio/platform', async (original) => ({
+  ...await original<typeof import('@readable-studio/platform')>(),
+  resolveSystemProxyEnv: vi.fn(() => ({})),
+}));
+
 const execAgentFileMock = vi.fn();
 const resolveAgentLaunchMock = vi.fn();
 const discoverCodexCatalogMock = vi.fn();
@@ -24,6 +30,12 @@ vi.mock('../../src/runtimes/launch.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/runtimes/launch.js')>();
   return { ...actual, resolveAgentLaunch: (...args: unknown[]) => resolveAgentLaunchMock(...args) };
 });
+
+// Claude catalogue sessions bypass execAgentFile and are not under test here.
+vi.mock('../../src/runtimes/defs/claude-model-discovery.js', async (original) => ({
+  ...await original<typeof import('../../src/runtimes/defs/claude-model-discovery.js')>(),
+  discoverClaudeCatalog: vi.fn(async () => { throw new Error('Fixture catalogue unavailable'); }),
+}));
 
 function fakeLaunch(def: { id: string }) {
   const path = `/fake/bin/${def.id}`;

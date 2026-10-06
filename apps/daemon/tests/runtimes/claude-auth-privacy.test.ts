@@ -1,7 +1,14 @@
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, expect, test } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+// Detection filters enabled IDs only after probing the inventory. Keep the real
+// Claude auth subprocess and scan persistence, without probing installed peers.
+vi.mock('../../src/runtimes/registry.js', async () => {
+  const { claudeAgentDef } = await import('../../src/runtimes/defs/claude.js');
+  return { AGENT_DEFS: [claudeAgentDef], DEFAULT_ENABLED_AGENT_IDS: ['claude'] };
+});
+
 import { probeAgentAuthStatus } from '../../src/runtimes/auth.js';
 import { claudeAgentDef } from '../../src/runtimes/defs/claude.js';
 import { configureDetectionStorage, detectAgents, _resetAgentDetectionCacheForTests } from '../../src/runtimes/detection.js';
@@ -54,7 +61,8 @@ test('excludes auth identity data from reported and persisted agent records', as
     CLAUDE_BIN: bin, MMD_MODEL_ROUTES_FILE: routes, SIGN_IN: 'false', AUTH_EXIT: '1',
   } }, { enabledAgentIds: ['claude'], refresh: true });
   // Then neither API-facing results nor persisted records contain probe identity data.
-  expect(agents[0]).toMatchObject({ available: false, authStatus: 'missing', version: 'synthetic-version', models: [] });
+  expect(agents).toHaveLength(1);
+  expect(agents[0]).toMatchObject({ id: 'claude', available: false, authStatus: 'missing', version: 'synthetic-version', models: [] });
   const artifacts = [JSON.stringify(agents), readFileSync(join(home, 'agent-scan.json'), 'utf8')];
   for (const artifact of artifacts) {
     expect(artifact).not.toMatch(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);

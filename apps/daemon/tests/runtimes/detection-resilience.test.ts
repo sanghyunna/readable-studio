@@ -7,6 +7,19 @@
 // isolation invariant: one broken adapter must not blank the picker.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
+// OS proxy commands do not participate in per-adapter fault isolation.
+vi.mock('@readable-studio/platform', async (original) => ({
+  ...await original<typeof import('@readable-studio/platform')>(),
+  resolveSystemProxyEnv: vi.fn(() => ({})),
+}));
+
+// Offline fault isolation needs version results, not one real Node subprocess
+// per registry entry. Keep the real per-agent probe and full inventory.
+vi.mock('../../src/runtimes/invocation.js', async (original) => ({
+  ...await original<typeof import('../../src/runtimes/invocation.js')>(),
+  execAgentFile: vi.fn(async () => ({ stdout: 'fixture-version', stderr: '' })),
+}));
+
 vi.mock('../../src/runtimes/launch.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/runtimes/launch.js')>();
   return {

@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AGENT_DEFS } from '../../src/runtimes/registry.js';
 
+// OS proxy discovery shells out on Windows for every probe; it is not cache behavior.
+vi.mock('@readable-studio/platform', async (original) => ({
+  ...await original<typeof import('@readable-studio/platform')>(),
+  resolveSystemProxyEnv: vi.fn(() => ({})),
+}));
+
 const execAgentFileMock = vi.fn();
 const resolveAgentLaunchMock = vi.fn();
 
@@ -23,6 +29,16 @@ vi.mock('../../src/runtimes/launch.js', async (importOriginal) => {
       )(...args),
   };
 });
+
+// Catalogue sessions spawn directly, outside the execAgentFile fixture seam.
+vi.mock('../../src/runtimes/defs/claude-model-discovery.js', async (original) => ({
+  ...await original<typeof import('../../src/runtimes/defs/claude-model-discovery.js')>(),
+  discoverClaudeCatalog: vi.fn(async () => { throw new Error('Fixture catalogue unavailable'); }),
+}));
+vi.mock('../../src/runtimes/codex-model-discovery.js', async (original) => ({
+  ...await original<typeof import('../../src/runtimes/codex-model-discovery.js')>(),
+  discoverCodexCatalog: vi.fn(async () => { throw new Error('Fixture catalogue unavailable'); }),
+}));
 
 function fakeAgentLaunch(def: { readonly id: string }) {
   return {
