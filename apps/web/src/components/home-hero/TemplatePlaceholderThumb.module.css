@@ -1,0 +1,180 @@
+/*
+ * Designed static thumb for Hub templates without a renderable preview.
+ * Fills the card's 10:9 `.home-hero__template-thumb` box (200 x 180 at the
+ * rail's card width). Only shared tokens: the wash is the Hub accent tint,
+ * the sheet is the elevated panel surface, the type lines are the muted ink.
+ */
+
+.root {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 90% at 100% 0%, var(--hub-accent-fill), transparent 60%),
+    linear-gradient(180deg, var(--hub-accent-tint), var(--bg-subtle));
+}
+
+/* The document itself. Positioned per frame below. */
+.sheet {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-elevated);
+  box-shadow:
+    var(--shadow-md),
+    inset 0 0 0 1px var(--border-soft);
+  transition: transform var(--dur-quick) var(--ease-out);
+}
+
+/* Report: a portrait sheet that runs off the bottom edge, so it reads as the
+   top of a longer page rather than a framed box. */
+.report .sheet {
+  top: 18px;
+  left: 28px;
+  right: 28px;
+  bottom: -12px;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+
+/* Deck: a single 16:9 slide, centered, with an accent rule along the foot. */
+.deck .sheet {
+  top: 50%;
+  left: 16px;
+  right: 16px;
+  aspect-ratio: 16 / 9;
+  transform: translateY(-50%);
+  border-radius: var(--radius-sm);
+}
+
+.deck .sheet::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--hub-accent), transparent 70%);
+}
+
+/* Website: a browser window anchored at the top-left, bleeding right/bottom. */
+.website .sheet {
+  top: 16px;
+  left: 16px;
+  right: -8px;
+  bottom: -8px;
+  border-radius: var(--radius-sm) 0 0 0;
+}
+
+.chrome {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 8px;
+  background: var(--bg-subtle);
+  box-shadow: inset 0 -1px 0 var(--border-soft);
+}
+
+.dot {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-pill);
+  background: var(--border-strong);
+}
+
+.address {
+  flex: 1;
+  height: 7px;
+  margin-left: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--border);
+}
+
+.page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  padding: 14px 16px;
+}
+
+.deck .page {
+  justify-content: flex-end;
+  padding: 10px 14px 12px;
+}
+
+.kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--hub-accent);
+}
+
+.kickerText {
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  text-transform: uppercase;
+  word-break: keep-all;
+}
+
+.heading {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--text-strong);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.deck .heading {
+  font-size: 12px;
+}
+
+.lines {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 2px;
+}
+
+.line {
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--text-muted) 28%, transparent);
+}
+
+/* The slide has room for two body lines only. */
+.deck .line:nth-child(n + 3) {
+  display: none;
+}
+
+/* Lift with the card's own hover so the sheet feels attached to it. */
+:global(.home-hero__template-card:not(:disabled):hover) .report .sheet,
+:global(.home-hero__template-card:not(:disabled):focus-visible) .report .sheet,
+:global(.home-hero__template-card:not(:disabled):hover) .website .sheet,
+:global(.home-hero__template-card:not(:disabled):focus-visible) .website .sheet {
+  transform: translateY(-2px);
+}
+
+:global(.home-hero__template-card:not(:disabled):hover) .deck .sheet,
+:global(.home-hero__template-card:not(:disabled):focus-visible) .deck .sheet {
+  transform: translateY(calc(-50% - 2px));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet {
+    transition: none;
+  }
+}

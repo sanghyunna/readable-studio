@@ -82,8 +82,10 @@ import {
   writeTemplateCarouselCollapsed,
   writeTemplateCarouselTab,
   type HubTemplateCarouselItem,
+  type HubTemplatePlaceholderFrame,
   type HubTemplateTabId,
 } from './home-hero/templateCarousel';
+import { TemplatePlaceholderThumb } from './home-hero/TemplatePlaceholderThumb';
 import { curatedPluginPriorityForChip } from './plugins-home/curatedPriority';
 import { sortByVisualAppeal } from './plugins-home/visualScore';
 import { applyFacetSelection } from './plugins-home/facets';
@@ -2280,7 +2282,10 @@ function HubTemplateCard({
   // Shipped images paint immediately, including on offline machines. The
   // live preview mounts only when the static image is absent or fails.
   const [failedThumbnail, setFailedThumbnail] = useState<string | null>(null);
-  const preview = useMemo(() => hubTemplateCardPreview(record, failedThumbnail === record.id), [record, failedThumbnail]);
+  const preview = useMemo(
+    () => hubTemplateCardPreview(record, chipId, failedThumbnail === record.id),
+    [record, chipId, failedThumbnail],
+  );
   const title = localizePluginTitle(locale, record);
   const description = localizePluginDescription(locale, record);
   const seedPrompt = examplePresetSeedPrompt(record, locale, () =>
@@ -2313,6 +2318,13 @@ function HubTemplateCard({
             decoding="async"
             style={{ width: '100%', height: '100%', objectFit: 'contain', objectPosition: 'top' }}
             onError={() => setFailedThumbnail(record.id)}
+          />
+        ) : preview.kind === 'placeholder' ? (
+          <TemplatePlaceholderThumb
+            frame={preview.frame}
+            icon={placeholderFrameIcon(preview.frame)}
+            label={t(placeholderFrameLabelKey(preview.frame))}
+            title={title}
           />
         ) : (
           <PreviewSurface pluginId={record.id} pluginTitle={title} preview={preview} eager />
@@ -2351,6 +2363,26 @@ function HubTemplateCard({
     </button>
     </div>
   );
+}
+
+// Same glyphs and labels as the rail's type tabs, so the designed card names
+// its type the way the column does.
+function placeholderFrameIcon(frame: HubTemplatePlaceholderFrame): IconName {
+  switch (frame) {
+    case 'deck': return 'present';
+    case 'report': return 'file';
+    case 'website': return 'palette';
+  }
+}
+
+function placeholderFrameLabelKey(
+  frame: HubTemplatePlaceholderFrame,
+): 'homeHero.templateTabDeck' | 'homeHero.templateTabReport' | 'homeHero.templateTabPrototype' {
+  switch (frame) {
+    case 'deck': return 'homeHero.templateTabDeck';
+    case 'report': return 'homeHero.templateTabReport';
+    case 'website': return 'homeHero.templateTabPrototype';
+  }
 }
 
 function PluginPromptPresetCard({

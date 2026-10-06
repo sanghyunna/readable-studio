@@ -27,7 +27,11 @@
 //    a rail of letter glyphs. `hubTemplateCardPreview` keeps the baked media
 //    only when it is served by our own daemon and otherwise renders the
 //    bundled example page itself (`/api/plugins/<id>/preview`, sandboxed and
-//    scaled down), leaving the glyph as the rare last resort.
+//    scaled down). A template with NEITHER (no shipped thumbnail and no
+//    renderable `readable.preview` / example output in its manifest — the
+//    research-style report scenarios ship only a SKILL.md) gets a designed
+//    static card shaped like its hub type instead of a glyph or a blank
+//    iframe; see `TemplatePlaceholderThumb`.
 
 import type { InstalledPluginRecord } from '@readable-studio/contracts';
 
@@ -47,7 +51,42 @@ function isDaemonServedUrl(url: string | null): boolean {
   return typeof url === 'string' && url.startsWith('/') && !url.startsWith('//');
 }
 
-export function hubTemplateCardPreview(record: InstalledPluginRecord, liveFallback = false): PluginPreviewSpec {
+// The shape the designed static card borrows when a template has nothing
+// to paint: a paper sheet, a 16:9 slide, or a browser window.
+export type HubTemplatePlaceholderFrame = 'report' | 'deck' | 'website';
+
+export interface HubTemplatePlaceholderSpec {
+  kind: 'placeholder';
+  frame: HubTemplatePlaceholderFrame;
+}
+
+export type HubTemplateCardPreviewSpec = PluginPreviewSpec | HubTemplatePlaceholderSpec;
+
+// Catalogue-level: the frame follows the tab the card is filed under, which
+// is the manifest's `hubType` (website templates live on the prototype tab).
+export function hubTemplatePlaceholderFrame(chipId: string): HubTemplatePlaceholderFrame {
+  if (chipId === 'deck') return 'deck';
+  if (chipId === 'report') return 'report';
+  return 'website';
+}
+
+export function hubTemplateCardPreview(
+  record: InstalledPluginRecord,
+  chipId: string,
+  liveFallback = false,
+): HubTemplateCardPreviewSpec {
+  const resolved = resolveHubTemplateCardPreview(record, liveFallback);
+  // `text` is the gallery's letter-glyph fallback and `design` is the brand
+  // patch for design-system plugins; neither is a preview of this template,
+  // so the rail draws its designed card instead. Everything renderable
+  // (shipped thumbnail, daemon-served bake, example page) passes through.
+  if (resolved.kind === 'text' || resolved.kind === 'design') {
+    return { kind: 'placeholder', frame: hubTemplatePlaceholderFrame(chipId) };
+  }
+  return resolved;
+}
+
+function resolveHubTemplateCardPreview(record: InstalledPluginRecord, liveFallback: boolean): PluginPreviewSpec {
   const thumbnail = record.manifest?.readable?.thumbnail as { src?: unknown } | undefined;
   if (!liveFallback && typeof thumbnail?.src === 'string' && thumbnail.src.startsWith('/template-thumbnails/')) {
     return { kind: 'media', mediaType: 'image', poster: thumbnail.src, videoUrl: null, audioUrl: null, imageOnly: true };

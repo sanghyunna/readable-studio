@@ -527,6 +527,82 @@ describe('Hub template carousel', () => {
     }
   });
 
+  it('draws a designed static card for templates with neither a thumbnail nor a preview entry', async () => {
+    // These report scenarios ship only a SKILL.md: their manifests declare a
+    // non-HTML preview whose `./example.html` does not exist, so neither a
+    // live iframe nor the letter glyph is an honest preview. hr-onboarding
+    // does ship an example page, so without a thumbnail it keeps the live
+    // fallback.
+    const noPreview = ['dcf-valuation', 'last30days', 'x-research'].map(catalogueRecord);
+    const onboardingRecord = catalogueRecord('hr-onboarding');
+    const { thumbnail: _thumbnail, ...onboardingReadable } = onboardingRecord.manifest.readable as Record<string, unknown>;
+    const onboardingNoThumb = {
+      ...onboardingRecord,
+      manifest: { ...onboardingRecord.manifest, readable: onboardingReadable },
+    } as InstalledPluginRecord;
+    for (const record of noPreview) {
+      expect(record.manifest.readable?.hubType).toBe('report');
+      expect(record.manifest.readable?.thumbnail).toBeUndefined();
+      expect((record.manifest.readable?.preview as { type?: string }).type).not.toBe('html');
+    }
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) => new Response('<!doctype html>', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    __resetHtmlSurfaceProbeCacheForTests();
+    try {
+      renderHub({ pluginOptions: [...CATALOGUE.filter((record) => record.id !== 'example-hr-onboarding'), onboardingNoThumb, ...noPreview] });
+      fireEvent.click(tabButton('report'));
+      const cards = screen.getAllByTestId('hub-template-card');
+      expect(cards.map((card) => card.getAttribute('data-plugin-id'))).toEqual(
+        expect.arrayContaining(['example-hr-onboarding', ...noPreview.map((record) => record.id)]),
+      );
+      for (const record of noPreview) {
+        const card = cards.find((node) => node.getAttribute('data-plugin-id') === record.id)!;
+        const thumb = card.querySelector('.home-hero__template-thumb')!;
+        const placeholder = thumb.querySelector('[data-testid="hub-template-placeholder"]')!;
+        expect(placeholder).not.toBeNull();
+        expect(placeholder.getAttribute('data-frame')).toBe('report');
+        // Shaped like the output (type kicker + the template's own title as
+        // the sheet heading); no iframe, no image, no gallery glyph.
+        expect(placeholder.textContent).toBe(`${ko['homeHero.templateTabReport']}${record.manifest.title_i18n?.ko}`);
+        expect(placeholder.querySelector('svg')).not.toBeNull();
+        expect(thumb.querySelector('iframe')).toBeNull();
+        expect(thumb.querySelector('img')).toBeNull();
+        expect(thumb.querySelector('.plugins-home__text-surface')).toBeNull();
+        // The visible title line under the thumb is unchanged.
+        expect(card.querySelector('.home-hero__template-title')?.textContent).toBe(record.manifest.title_i18n?.ko);
+      }
+      const onboarding = cards.find((node) => node.getAttribute('data-plugin-id') === 'example-hr-onboarding')!;
+      const iframe = await screen.findByTitle(`${onboarding.querySelector('.home-hero__template-title')?.textContent} preview`);
+      expect(onboarding.contains(iframe)).toBe(true);
+      expect(onboarding.querySelector('[data-testid="hub-template-placeholder"]')).toBeNull();
+      // Only the live card probed its preview; the static cards asked the
+      // daemon for nothing.
+      const probed = fetchMock.mock.calls.map(([input]) => String(input)).filter((url) => url.startsWith('/api/plugins/'));
+      expect(probed).toEqual(['/api/plugins/example-hr-onboarding/preview']);
+    } finally {
+      vi.unstubAllGlobals();
+      __resetHtmlSurfaceProbeCacheForTests();
+    }
+  });
+
+  it('shapes the designed card after the tab it is filed under: slide for decks, browser for websites', () => {
+    const base = catalogueRecord('x-research');
+    const retyped = (hubType: string, id: string): InstalledPluginRecord => ({
+      ...base,
+      id,
+      manifest: { ...base.manifest, name: id, readable: { ...base.manifest.readable!, hubType } },
+    } as InstalledPluginRecord);
+    const deck = retyped('deck', 'example-blank-deck');
+    const site = retyped('website', 'example-blank-site');
+    renderHub({ pluginOptions: [deck, site] });
+    expect(screen.getByTestId('hub-template-placeholder').getAttribute('data-frame')).toBe('deck');
+    expect(screen.getByTestId('hub-template-placeholder').textContent).toContain(ko['homeHero.templateTabDeck']);
+    fireEvent.click(tabButton('prototype'));
+    expect(screen.getByTestId('hub-template-placeholder').getAttribute('data-frame')).toBe('website');
+    expect(screen.getByTestId('hub-template-placeholder').textContent).toContain(ko['homeHero.templateTabPrototype']);
+    expect(document.querySelector('iframe')).toBeNull();
+  });
+
   it('styles the rail scrollbar as the product\'s slim thumb-only bar, not the native one', () => {
     // `scrollbar-width: thin` alone rendered Chromium's native Windows
     // scrollbar, arrow buttons included, and any standard `scrollbar-width` /
