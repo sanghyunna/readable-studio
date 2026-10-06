@@ -211,6 +211,23 @@ describe('HubSessionTree', () => {
       expect(screen.queryByTestId('hub-group-label')).toBeNull();
     });
 
+    it('claims nothing about an empty library while the project list is still unknown', () => {
+      render(
+        <HubSessionTree projects={[]} projectsKnown={false} currentSessionId={null} onOpenSession={vi.fn()} />,
+      );
+      expect(screen.queryByTestId('hub-tree-no-projects')).toBeNull();
+      expect(screen.queryByTestId('hub-tree-empty')).toBeNull();
+      expect(screen.queryByTestId('hub-group-label')).toBeNull();
+      expect(screen.queryByText('아직 프로젝트가 없습니다')).toBeNull();
+    });
+
+    it('shows the genuine empty state for a successfully loaded empty list', () => {
+      render(
+        <HubSessionTree projects={[]} projectsKnown currentSessionId={null} onOpenSession={vi.fn()} />,
+      );
+      expect(screen.getByTestId('hub-tree-no-projects')).toBeTruthy();
+    });
+
     it('keeps the genuine empty state when a non-default filter is active but nothing exists', () => {
       render(<HubSessionTree projects={[]} currentSessionId={null} onOpenSession={vi.fn()} />);
       fireEvent.click(screen.getByTestId('hub-filter-running'));

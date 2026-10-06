@@ -53,6 +53,12 @@ interface Props {
    * then means "nothing matched", not "nothing exists".
    */
   searching?: boolean;
+  /**
+   * False while the owner has not yet loaded the list (startup, daemon
+   * reconnect). An empty tree then means "unknown", not "nothing exists",
+   * so no empty-library copy is shown.
+   */
+  projectsKnown?: boolean;
   /** Clears the rail-owned search query alongside this tree's status filter. */
   onClearFilter?: () => void;
   currentSessionId: string | null;
@@ -253,6 +259,7 @@ export function HubSessionTree({
   openWork,
   collapsed: railCollapsed = false,
   searching = false,
+  projectsKnown = true,
   onClearFilter,
   currentSessionId,
   onOpenSession,
@@ -953,10 +960,13 @@ export function HubSessionTree({
 
       {projects.length === 0 && !searching ? (
         // Nothing exists yet, so no filter is hiding anything and a
-        // "clear filter" link would promise rows that are not there.
-        <p className="hub-tree__empty" data-testid="hub-tree-no-projects">
-          {t('hub.noProjectsTitle')}
-        </p>
+        // "clear filter" link would promise rows that are not there. An
+        // unknown list (not loaded yet) says nothing rather than lying.
+        projectsKnown ? (
+          <p className="hub-tree__empty" data-testid="hub-tree-no-projects">
+            {t('hub.noProjectsTitle')}
+          </p>
+        ) : null
       ) : rows.length === 0 ? (
         <p className="hub-tree__empty" data-testid="hub-tree-empty">
           {t('hub.emptyFiltered')}{' '}

@@ -15,6 +15,11 @@ import { HUB_RAIL_WIDTH_MAX, HUB_RAIL_WIDTH_MIN } from './useHubRailController';
 
 export interface HubRailProps {
   projectsLoading?: boolean;
+  /**
+   * False until a project read has succeeded (startup, daemon reconnect).
+   * An empty list is then unknown, not empty, and the tree stays silent.
+   */
+  projectsKnown?: boolean;
   /** Windows account running the local daemon, when available. */
   username?: string | null;
   /** Name of the active workspace, rendered in the rail footer row. */
@@ -35,6 +40,7 @@ export interface HubRailProps {
 
 export function HubRail({
   projectsLoading = false,
+  projectsKnown = true,
   username = null,
   workspaceName = null,
   onGoHome,
@@ -118,6 +124,7 @@ export function HubRail({
             <HubSessionTree
               key={query.trim() ? 'filtered' : 'all'}
               projects={rail.tree}
+              projectsKnown={projectsKnown}
               searching={Boolean(query.trim())}
               onClearFilter={() => rail.setQuery('')}
               compactByDefault

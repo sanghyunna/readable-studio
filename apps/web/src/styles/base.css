@@ -65,3 +65,29 @@ body {
   background: transparent;
   color: var(--text-muted);
 }
+
+/* Short text notice inside the surface variant (daemon reconnecting, data
+   open error). The workspace surface turns the shell into a flex row for the
+   pane-shaped route fallback, which would line the sentences up side by side
+   and stretch a button to the full pane height; a notice is a centred column
+   with naturally sized controls. */
+.readable-loading-shell--notice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  text-align: center;
+}
+
+.readable-loading-shell--notice > p {
+  margin: 0;
+  max-inline-size: 44ch;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.readable-loading-shell--notice > button {
+  flex: none;
+  align-self: center;
+}

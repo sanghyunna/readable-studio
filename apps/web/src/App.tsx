@@ -42,6 +42,7 @@ import { TooltipLayer } from './components/TooltipLayer';
 import { openWorkspaceTab } from './components/workspaceTabEvents';
 import { WindowControls } from './components/WindowControls';
 import { LayoutGeometryDiagnostics } from './components/LayoutGeometryDiagnostics';
+import { Button } from '@readable-studio/components';
 import { HubRail } from './components/hub/HubRail';
 import { HubRailProvider } from './components/hub/HubRailContext';
 import { HubRailOverlays } from './components/hub/HubRailOverlays';
@@ -143,6 +144,10 @@ const ProjectView = dynamic(
   () => import('./components/ProjectView').then((m) => m.ProjectView),
   { ssr: false, loading: ProjectRouteLoading },
 );
+
+// How long the startup auto-reconnect loop may keep failing before the calm
+// "reconnecting" state escalates to the data-safe error with a manual retry.
+const STARTUP_RECONNECT_STALL_MS = 60_000;
 
 function ProjectRouteLoading() {
   const { t } = useI18n();
@@ -470,6 +475,23 @@ function AppInner() {
   const [skillsLoading, setSkillsLoading] = useState(true);
   const [dsLoading, setDsLoading] = useState(true);
   const [projectsLoading, setProjectsLoading] = useState(true);
+  // True once a strict project read has succeeded in this renderer life.
+  // Until then an empty `projects` array is "unknown", not "none exist",
+  // and the rail must not paint the genuine empty state.
+  const [projectsKnown, setProjectsKnown] = useState(false);
+  // True from the first failed startup probe until one succeeds. Drives the
+  // calm auto-reconnect state; the error + retry button only appear once
+  // reconnecting has stalled for STARTUP_RECONNECT_STALL_MS.
+  const [startupReconnecting, setStartupReconnecting] = useState(false);
+  const [startupReconnectStalled, setStartupReconnectStalled] = useState(false);
+  // A strict project read failed after startup (refresh, create, route sync).
+  // Drop into the same calm reconnect state and restart the probe loop so
+  // recovery is automatic there too, instead of parking on a dead screen.
+  const beginReconnect = useCallback(() => {
+    setDaemonLive(false);
+    setStartupReconnecting(true);
+    setStartupRetry(current => current + 1);
+  }, []);
   const [startupDeferredReady, setStartupDeferredReady] = useState(false);
   // Goes true once the daemon-persisted config (agentId/designSystemId/etc.)
   // has merged into local state. Auto-selection effects below wait on this
@@ -867,6 +889,7 @@ function AppInner() {
       setDaemonLive(false);
       setDaemonHealthChecked(true);
       setProjectsLoading(false);
+      setStartupReconnecting(true);
       retryTimer = setTimeout(() => setStartupRetry(current => current + 1),
         Math.min(1_000 * 2 ** startupRetryAttempt.current++, 10_000));
     };
@@ -899,7 +922,9 @@ function AppInner() {
       startupRetryAttempt.current = 0;
       setDaemonLive(true);
       setDaemonHealthChecked(true);
+      setProjectsKnown(true);
       setProjectsLoading(false);
+      setStartupReconnecting(false);
       if (startupRetry > 0) {
         void fetchAgentsStream({ refresh: false, onAgent: agent => {
           if (!cancelled) setAgents(current => mergeAmrModelsIntoAgents(upsertAgent(current, agent), amrModelsRef.current));
@@ -976,6 +1001,18 @@ function AppInner() {
     t,
   ]);
 
+  // Escalate the calm reconnect state to the data-safe error only after the
+  // auto-retry loop has been failing for a while; a daemon restart normally
+  // resolves within a few probes and must not flash an error.
+  useEffect(() => {
+    if (!startupReconnecting) {
+      setStartupReconnectStalled(false);
+      return;
+    }
+    const timer = setTimeout(() => setStartupReconnectStalled(true), STARTUP_RECONNECT_STALL_MS);
+    return () => clearTimeout(timer);
+  }, [startupReconnecting]);
+
   // Auto-pick the first available agent once both the daemon-stored config
   // and the complete agents listing have landed. Splitting this out of
   // bootstrap avoids racing the local-config initial value against a slow
@@ -1031,9 +1068,9 @@ function AppInner() {
       const list = await listProjects({ strict: true });
       reconcileFetchedProjects(list, request);
     } catch {
-      setDaemonLive(false);
+      beginReconnect();
     }
-  }, [beginProjectListRequest, reconcileFetchedProjects]);
+  }, [beginProjectListRequest, beginReconnect, reconcileFetchedProjects]);
 
   const refreshDesignSystems = useCallback(async () => {
     const list = await fetchDesignSystems();
@@ -1669,7 +1706,7 @@ function AppInner() {
         const list = await listProjects({ strict: true });
         reconcileFetchedProjects(list, request);
       } catch {
-        setDaemonLive(false);
+        beginReconnect();
         return;
       }
     }
@@ -1678,7 +1715,7 @@ function AppInner() {
       projectId: result.projectId,
       fileName: null,
     });
-  }, [beginProjectListRequest, rememberLocalProject, reconcileFetchedProjects]);
+  }, [beginProjectListRequest, beginReconnect, rememberLocalProject, reconcileFetchedProjects]);
 
   const handleOpenProject = useCallback((id: string) => {
     navigate({ kind: 'project', projectId: id, fileName: null });
@@ -1843,7 +1880,7 @@ function AppInner() {
       try {
         list = await listProjects({ strict: true });
       } catch {
-        if (!cancelled) setDaemonLive(false);
+        if (!cancelled) beginReconnect();
         return;
       }
       if (cancelled) return;
@@ -1862,7 +1899,7 @@ function AppInner() {
     return () => {
       cancelled = true;
     };
-  }, [route, activeProject, projects, projectsLoading, beginProjectListRequest, reconcileFetchedProjects]);
+  }, [route, activeProject, projects, projectsLoading, beginProjectListRequest, beginReconnect, reconcileFetchedProjects]);
 
   const openSettings = useCallback((
     section: SettingsSection = 'execution',
@@ -2264,14 +2301,19 @@ function AppInner() {
   // it they keep springing/sliding for users who asked us not to animate.
   // Low-spec mode forces `always` regardless of the OS preference.
   if (daemonHealthChecked && !daemonLive) {
-    appMain = projectsLoading ? <ProjectRouteLoading /> : (
-      <main role="alert" className="readable-loading-shell readable-loading-shell--surface">
-        <p role="status" data-testid="startup-reconnecting">{t('connection.reconnecting')}</p>
+    appMain = projectsLoading ? <ProjectRouteLoading /> : startupReconnectStalled ? (
+      <main role="alert" className="readable-loading-shell readable-loading-shell--surface readable-loading-shell--notice">
         <p>{t('entry.databaseUnavailable')}</p>
-        <button type="button" onClick={() => {
+        <Button variant="primary" onClick={() => {
           setProjectsLoading(true);
           setStartupRetry((current) => current + 1);
-        }}>{t('entry.retryDatabase')}</button>
+        }}>{t('entry.retryDatabase')}</Button>
+      </main>
+    ) : (
+      // One calm state while the probe loop is still expected to succeed:
+      // no error copy and no retry button beside "reconnecting".
+      <main role="status" className="readable-loading-shell readable-loading-shell--surface readable-loading-shell--notice">
+        <p data-testid="startup-reconnecting">{t('connection.reconnecting')}</p>
       </main>
     );
   }
@@ -2306,6 +2348,7 @@ function AppInner() {
         >
           <HubRail
             projectsLoading={projectsLoading}
+            projectsKnown={projectsKnown}
             username={username}
             workspaceName={activeWorkspaceName}
             onGoHome={goHome}

@@ -248,16 +248,17 @@ describe('App AMR polling', () => {
     vi.clearAllMocks();
   });
 
-  it('shows a data-safe offline error without starting another unavailable agent scan', async () => {
+  it('shows a calm reconnect state offline without starting another unavailable agent scan', async () => {
     mockedDaemonIsLive.mockResolvedValue(false);
     mockedFetchAgentsStream.mockReturnValue(new Promise(() => undefined));
 
     render(<App />);
 
-    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(await screen.findByTestId('startup-reconnecting')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.queryByTestId('daemon-status')).toBeNull();
     expect(screen.queryByRole('button', { name: 'open settings' })).toBeNull();
-    expect(screen.getByRole('button', { name: /retry|다시 시도/i })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /retry|다시 시도/i })).toBeNull();
     expect(mockedFetchAgentsStream).toHaveBeenCalledTimes(1);
   });
 

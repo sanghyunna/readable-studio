@@ -148,35 +148,63 @@ async function openPlusMenu() {
   return popup;
 }
 
+// Captures the first reconnect probe (1 s backoff) and the 60 s "still
+// failing" stall timer so a test drives both deterministically.
 function holdReconnectTimers() {
   const callbacks: Array<() => void> = [];
+  const stalls: Array<() => void> = [];
   const original = globalThis.setTimeout;
   vi.spyOn(globalThis, 'setTimeout').mockImplementation(((callback: () => void, delay?: number) => {
     if (delay === 1_000) { callbacks.push(callback); return 0; }
+    if (delay === 60_000) { stalls.push(callback); return 0; }
     return original(callback, delay);
   }) as typeof setTimeout);
-  return callbacks;
+  return Object.assign(callbacks, { stalls });
 }
 
 describe('startup guards (unchanged by the modal removal)', () => {
   it('does not treat failed project listing as an empty workspace when health was briefly available', async () => {
     vi.mocked(listProjects).mockRejectedValueOnce(new TypeError('connection refused'));
     await renderApp();
-    expect(screen.getByRole('alert').textContent).toMatch(/data|데이터/i);
+    expect(screen.getByTestId('startup-reconnecting')).toBeTruthy();
     expect(screen.queryByTestId('entry-view-home')).toBeNull();
+    expect(screen.queryByTestId('hub-tree-no-projects')).toBeNull();
   });
 
-  it('shows a data-safe startup error with retry instead of an empty project list when daemon is unreachable', async () => {
+  it('shows one calm reconnect state - no startup error, no retry button, no false empty rail - while the daemon is unreachable', async () => {
     const retries = holdReconnectTimers();
     vi.mocked(daemonIsLive).mockResolvedValue(false);
     await renderApp();
-    expect(screen.getByRole('alert').textContent).toMatch(/data|데이터/i);
-    expect(screen.queryByTestId('entry-view-home')).toBeNull();
     expect(screen.getByTestId('startup-reconnecting')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(document.body.textContent).not.toMatch(/데이터를 여는 중|opening your data/i);
+    expect(screen.queryByRole('button', { name: /^retry$|^다시 시도$/i })).toBeNull();
+    expect(screen.queryByTestId('entry-view-home')).toBeNull();
+    expect(screen.queryByTestId('hub-tree-no-projects')).toBeNull();
     vi.mocked(daemonIsLive).mockResolvedValue(true);
     expect(retries.length).toBeGreaterThan(0);
     await act(async () => { retries.forEach(retry => retry()); });
     expect(screen.getByTestId('entry-view-home')).toBeTruthy();
+    expect(screen.queryByTestId('startup-reconnecting')).toBeNull();
+    expect(listProjects).toHaveBeenCalledWith({ strict: true });
+  }, 15_000);
+
+  it('escalates to the data-safe startup error with an inline retry button only after reconnecting has stalled', async () => {
+    const retries = holdReconnectTimers();
+    vi.mocked(daemonIsLive).mockResolvedValue(false);
+    await renderApp();
+    expect(screen.getByTestId('startup-reconnecting')).toBeTruthy();
+    expect(retries.stalls).toHaveLength(1);
+    await act(async () => { retries.stalls.forEach(stall => stall()); });
+    expect(screen.getByRole('alert').textContent).toMatch(/data|데이터/i);
+    expect(screen.getByRole('button', { name: /^retry$|^다시 시도$/i })).toBeTruthy();
+    expect(screen.queryByTestId('entry-view-home')).toBeNull();
+    expect(screen.queryByTestId('hub-tree-no-projects')).toBeNull();
+    vi.mocked(daemonIsLive).mockResolvedValue(true);
+    expect(retries.length).toBeGreaterThan(0);
+    await act(async () => { retries.forEach(retry => retry()); });
+    expect(screen.getByTestId('entry-view-home')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.queryByTestId('startup-reconnecting')).toBeNull();
     expect(listProjects).toHaveBeenCalledWith({ strict: true });
   }, 15_000);
