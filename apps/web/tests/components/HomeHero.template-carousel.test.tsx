@@ -146,17 +146,28 @@ describe('Hub template carousel', () => {
     expect(tablist.getAttribute('aria-label')).toBe(ko['homeHero.templateTabsLabel']);
     const tabs = screen.getAllByTestId('hub-template-carousel-tab');
     expect(tabs.map((node) => node.getAttribute('data-tab-id'))).toEqual(['deck', 'report', 'prototype']);
-    expect(tabs.map((node) => node.textContent)).toEqual([
+    expect(tabs.map((node) => node.querySelector('.home-hero__templates-tab-label')?.textContent)).toEqual([
       ko['homeHero.templateTabDeck'],
       ko['homeHero.templateTabReport'],
       ko['homeHero.templateTabPrototype'],
     ]);
+    // Each tab is a real button: an icon per type (the creation chip's
+    // glyph), the label, and that type's template count (1 deck, 0 reports,
+    // 4 websites in this catalogue) with a spoken-form label.
+    for (const node of tabs) {
+      expect(node.querySelector('.home-hero__templates-tab-icon svg')).not.toBeNull();
+    }
+    expect(tabs.map((node) => node.querySelector('[data-testid="hub-template-carousel-tab-count"]')?.textContent))
+      .toEqual(['1', '0', '4']);
+    expect(tabButton('prototype').querySelector('[data-testid="hub-template-carousel-tab-count"]')?.getAttribute('aria-label'))
+      .toBe(ko['homeHero.templateTabCount'].replace('{count}', '4'));
     // The column precedes the rail inside the collapsible body, so it collapses with it.
     const rail = screen.getByTestId('hub-template-carousel-rail');
     const body = screen.getByTestId('hub-template-carousel-body');
     expect(body.contains(tablist)).toBe(true);
     expect(tablist.compareDocumentPosition(rail) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(tablist.parentElement).toBe(rail.parentElement);
+    // The rail sits in its arrow viewport; the tab column is that viewport's sibling.
+    expect(tablist.parentElement).toBe(screen.getByTestId('hub-template-carousel-viewport').parentElement);
     // Tabs are buttons with aria-selected (never checkboxes); the rail is
     // labelled by the selected tab and the tab controls the rail.
     for (const node of tabs) expect(node.tagName).toBe('BUTTON');
@@ -231,7 +242,150 @@ describe('Hub template carousel', () => {
     window.localStorage.setItem('readable-studio:hub-template-carousel-tab', 'bogus');
     renderHub(undefined, 'en');
     expect(tabButton('deck').getAttribute('aria-selected')).toBe('true');
-    expect(tabButton('deck').textContent).toBe(en['homeHero.templateTabDeck']);
+    expect(tabButton('deck').querySelector('.home-hero__templates-tab-label')?.textContent).toBe(en['homeHero.templateTabDeck']);
+  });
+
+  it('styles the tabs as a vertical segmented control: filled buttons with a solid selected pill', () => {
+    // The owner's complaint: the column did not read as clickable. Every
+    // tab is a pointer-cursor button on an engraved tray; hover changes the
+    // fill, :active presses, and the selected tab is the solid accent pill
+    // with contrast ink (not a tint). No border lines, existing tokens only.
+    const css = readFileSync(resolve(__dirname, '../../src/styles/home/home-hero.css'), 'utf8');
+    const rules = new Map<string, Record<string, string>>();
+    postcss.parse(css).walkRules((rule: Rule) => {
+      if (!rule.selector.includes('home-hero__templates-tab')) return;
+      if (rule.parent?.type === 'atrule') return; // reduced-motion overrides are not the base look
+      const decls: Record<string, string> = rules.get(rule.selector) ?? {};
+      rule.walkDecls((decl) => { decls[decl.prop] = decl.value; });
+      rules.set(rule.selector, decls);
+    });
+    const tray = rules.get('.home-hero__templates-tabs')!;
+    expect(tray['flex-direction']).toBe('column');
+    expect(tray.background).toBe('var(--hub-control-engraved)');
+    const tab = rules.get('.home-hero__templates-tab')!;
+    expect(tab.cursor).toBe('pointer');
+    expect(tab.border).toBe('0');
+    expect(tab['min-height']).toBe('40px');
+    expect(tab['word-break']).toBe('keep-all');
+    expect(rules.get('.home-hero__templates-tab:hover')?.background).toBe('var(--hub-control-surface-hover)');
+    expect(rules.get('.home-hero__templates-tab:active')?.transform).toMatch(/scale/);
+    expect(rules.get('.home-hero__templates-tab:focus-visible')?.outline).toBe('2px solid var(--hub-accent)');
+    const selected = rules.get('.home-hero__templates-tab.is-selected')!;
+    expect(selected.background).toBe('var(--hub-accent)');
+    expect(selected.color).toBe('var(--hub-accent-fg)');
+    expect(selected['font-weight']).toBe('650');
+    for (const decls of rules.values()) {
+      for (const [prop, value] of Object.entries(decls)) {
+        if (prop === 'background' || prop === 'color' || prop === 'box-shadow') expect(value).not.toMatch(/#[0-9a-f]{3}|rgba?\(/i);
+        if (prop.startsWith('border') && !prop.includes('radius')) expect(value).toBe('0');
+      }
+    }
+  });
+
+  describe('edge arrows', () => {
+    // jsdom has no layout: drive scrollWidth / clientWidth / scrollLeft by
+    // hand on the rail and fire `scroll` so the component re-reads them.
+    function layoutRail(rail: HTMLElement, { scrollWidth, clientWidth, scrollLeft }: { scrollWidth: number; clientWidth: number; scrollLeft: number }) {
+      Object.defineProperty(rail, 'scrollWidth', { configurable: true, value: scrollWidth });
+      Object.defineProperty(rail, 'clientWidth', { configurable: true, value: clientWidth });
+      let left = scrollLeft;
+      Object.defineProperty(rail, 'scrollLeft', {
+        configurable: true,
+        get: () => left,
+        set: (value: number) => { left = value; },
+      });
+      fireEvent.scroll(rail);
+    }
+    function arrows() {
+      return {
+        prev: screen.getByTestId('hub-template-carousel-prev') as HTMLButtonElement,
+        next: screen.getByTestId('hub-template-carousel-next') as HTMLButtonElement,
+        viewport: screen.getByTestId('hub-template-carousel-viewport'),
+      };
+    }
+
+    it('both hide while the cards fit; left hides at the start, right at the end, both show midway', () => {
+      renderHub();
+      fireEvent.click(tabButton('prototype'));
+      const rail = screen.getByTestId('hub-template-carousel-rail');
+      const { prev, next, viewport } = arrows();
+      expect(prev.getAttribute('aria-label')).toBe(ko['homeHero.templateRailPrev']);
+      expect(next.getAttribute('aria-label')).toBe(ko['homeHero.templateRailNext']);
+      // The arrows sit inside the viewport that wraps the rail, after the
+      // cards in DOM order, so they overlay the rail edges.
+      expect(viewport.contains(rail)).toBe(true);
+      expect(viewport.contains(prev) && viewport.contains(next)).toBe(true);
+
+      // No overflow (jsdom default 0/0): both hidden and out of the tab order.
+      layoutRail(rail, { scrollWidth: 600, clientWidth: 600, scrollLeft: 0 });
+      expect(prev.disabled && next.disabled).toBe(true);
+      expect(prev.getAttribute('aria-hidden')).toBe('true');
+      expect(next.tabIndex).toBe(-1);
+      expect(viewport.classList.contains('is-at-start') && viewport.classList.contains('is-at-end')).toBe(true);
+
+      // Overflowing, at the start: only the right arrow.
+      layoutRail(rail, { scrollWidth: 1800, clientWidth: 600, scrollLeft: 0 });
+      expect(prev.disabled).toBe(true);
+      expect(next.disabled).toBe(false);
+      expect(next.getAttribute('aria-hidden')).toBe('false');
+      expect(next.tabIndex).toBe(0);
+      expect(viewport.classList.contains('is-at-start')).toBe(true);
+      expect(viewport.classList.contains('is-at-end')).toBe(false);
+
+      // Midway: both.
+      layoutRail(rail, { scrollWidth: 1800, clientWidth: 600, scrollLeft: 500 });
+      expect(prev.disabled || next.disabled).toBe(false);
+      expect(prev.tabIndex === 0 && next.tabIndex === 0).toBe(true);
+      expect(viewport.classList.contains('is-at-start') || viewport.classList.contains('is-at-end')).toBe(false);
+
+      // At the end (within the 1px tolerance): only the left arrow.
+      layoutRail(rail, { scrollWidth: 1800, clientWidth: 600, scrollLeft: 1199.5 });
+      expect(prev.disabled).toBe(false);
+      expect(next.disabled).toBe(true);
+      expect(viewport.classList.contains('is-at-end')).toBe(true);
+    });
+
+    it('a click pages the rail by one viewport minus a card width, smoothly unless motion is reduced', () => {
+      renderHub();
+      fireEvent.click(tabButton('prototype'));
+      const rail = screen.getByTestId('hub-template-carousel-rail');
+      const item = rail.querySelector<HTMLElement>('[data-testid="hub-template-item"]')!;
+      item.getBoundingClientRect = () => ({ width: 140, height: 120, top: 0, left: 0, right: 140, bottom: 120, x: 0, y: 0, toJSON: () => ({}) });
+      const scrollTo = vi.fn((options: ScrollToOptions) => {
+        rail.scrollLeft = options.left ?? 0;
+        fireEvent.scroll(rail);
+      });
+      rail.scrollTo = scrollTo as unknown as typeof rail.scrollTo;
+      layoutRail(rail, { scrollWidth: 1800, clientWidth: 600, scrollLeft: 0 });
+      const { prev, next } = arrows();
+
+      fireEvent.click(next);
+      expect(scrollTo).toHaveBeenCalledWith({ left: 460, behavior: 'smooth' });
+      expect(rail.scrollLeft).toBe(460);
+      expect(prev.disabled).toBe(false);
+      fireEvent.click(prev);
+      expect(scrollTo).toHaveBeenLastCalledWith({ left: 0, behavior: 'smooth' });
+      expect(prev.disabled).toBe(true);
+
+      // Reduced motion: same distance, instant.
+      const matchMedia = window.matchMedia;
+      window.matchMedia = ((query: string) => ({
+        matches: query.includes('prefers-reduced-motion'),
+        media: query,
+        onchange: null,
+        addListener: () => undefined,
+        removeListener: () => undefined,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        dispatchEvent: () => false,
+      })) as typeof window.matchMedia;
+      try {
+        fireEvent.click(next);
+        expect(scrollTo).toHaveBeenLastCalledWith({ left: 460, behavior: 'auto' });
+      } finally {
+        window.matchMedia = matchMedia;
+      }
+    });
   });
 
   it('hides the tab column while a creation chip names the type', () => {
@@ -277,7 +431,7 @@ describe('Hub template carousel', () => {
     expect(body.classList.contains('accordion-collapsible')).toBe(true);
     expect(body.classList.contains('open')).toBe(true);
     expect(body.hasAttribute('inert')).toBe(false);
-    expect(body.querySelector('.accordion-collapsible-inner > .home-hero__templates-deck > .home-hero__templates-rail')).not.toBeNull();
+    expect(body.querySelector('.accordion-collapsible-inner > .home-hero__templates-deck > .home-hero__templates-viewport > .home-hero__templates-rail')).not.toBeNull();
     expect(body.querySelector('.accordion-collapsible-inner > .home-hero__templates-deck > .home-hero__templates-tabs')).not.toBeNull();
     fireEvent.click(toggle);
     // Collapse toggles the class and keeps the rail mounted so the exit

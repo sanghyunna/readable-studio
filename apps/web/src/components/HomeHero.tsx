@@ -9,6 +9,7 @@
 
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useId,
   useImperativeHandle,
@@ -639,6 +640,16 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
       (id) => homeHeroExamplePluginsForChip(id, pluginOptions, locale, { limit: 1 }).length > 0,
     );
   }, [surface, activeChipId, hubTemplateItems.length, pluginOptions, locale]);
+  // Per-type totals shown on the tab buttons so each tab reads as "open this
+  // set" rather than a static label.
+  const hubTemplateTabCounts = useMemo<Record<HubTemplateTabId, number>>(() => {
+    const counts = { deck: 0, report: 0, prototype: 0 };
+    if (surface !== 'hub') return counts;
+    for (const id of HUB_TEMPLATE_TAB_IDS) {
+      counts[id] = homeHeroExamplePluginsForChip(id, pluginOptions, locale, { limit: Infinity }).length;
+    }
+    return counts;
+  }, [surface, pluginOptions, locale]);
 
   // First-run guide, beat 1: pulse the Prototype chip for brand-new users.
   // The settle delay lets the hero finish its entrance before the sheen.
@@ -1764,6 +1775,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
           onToggleFavorite={toggleHubTemplateFavorite}
           collapsed={templateRailCollapsed}
           tab={activeChipId ? null : templateRailTab}
+          tabCounts={hubTemplateTabCounts}
           onTabChange={(next) => {
             writeTemplateCarouselTab(next);
             setTemplateRailTab(next);
@@ -1920,6 +1932,7 @@ function HubTemplateCarousel({
   pendingPluginId,
   pulseFirstPreset = false,
   tab,
+  tabCounts,
 }: {
   activePluginId: string | null;
   collapsed: boolean;
@@ -1933,6 +1946,7 @@ function HubTemplateCarousel({
   pendingPluginId: string | null;
   pulseFirstPreset?: boolean;
   tab: HubTemplateTabId | null;
+  tabCounts: Record<HubTemplateTabId, number>;
 }) {
   const { t } = useI18n();
   const railId = useId();
@@ -1946,6 +1960,68 @@ function HubTemplateCarousel({
       case 'deck': return t('homeHero.templateTabDeck');
       case 'report': return t('homeHero.templateTabReport');
       case 'prototype': return t('homeHero.templateTabPrototype');
+    }
+  }
+
+  // Same glyphs the creation chips use for these types, so the column
+  // reads as the chip row turned vertical.
+  function tabIcon(id: HubTemplateTabId): IconName {
+    switch (id) {
+      case 'deck': return 'present';
+      case 'report': return 'file';
+      case 'prototype': return 'palette';
+    }
+  }
+
+  // Edge arrows: the rail is a plain overflow scroller, which only a
+  // horizontal wheel / trackpad can move. The two overlay buttons page the
+  // rail by one viewport minus a card's partial width (so the card cut off
+  // at the edge lands fully in view), and hide at the edge they cannot
+  // move past; neither shows while the cards fit. State is read from the
+  // rail itself on scroll / resize / content change, so wheel, drag and
+  // keyboard scrolling keep the arrows honest.
+  const [railEdges, setRailEdges] = useState({ start: true, end: true });
+  const railEdgesRef = useRef(railEdges);
+  railEdgesRef.current = railEdges;
+  const syncRailEdges = useCallback(() => {
+    const rail = railRef.current;
+    if (!rail) return;
+    const max = rail.scrollWidth - rail.clientWidth;
+    const next = { start: rail.scrollLeft <= 1, end: rail.scrollLeft >= max - 1 };
+    const prev = railEdgesRef.current;
+    if (prev.start !== next.start || prev.end !== next.end) setRailEdges(next);
+  }, []);
+  useEffect(() => {
+    const rail = railRef.current;
+    if (!rail) return;
+    syncRailEdges();
+    rail.addEventListener('scroll', syncRailEdges, { passive: true });
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(syncRailEdges) : null;
+    observer?.observe(rail);
+    window.addEventListener('resize', syncRailEdges);
+    return () => {
+      rail.removeEventListener('scroll', syncRailEdges);
+      observer?.disconnect();
+      window.removeEventListener('resize', syncRailEdges);
+    };
+  }, [syncRailEdges, collapsed]);
+  useEffect(() => {
+    syncRailEdges();
+  }, [syncRailEdges, items.length, tab]);
+
+  function pageRail(direction: -1 | 1) {
+    const rail = railRef.current;
+    if (!rail) return;
+    const card = rail.querySelector<HTMLElement>('[data-testid="hub-template-item"]');
+    const cardWidth = card?.getBoundingClientRect().width ?? 0;
+    const page = Math.max(cardWidth, rail.clientWidth - cardWidth);
+    const reduceMotion = typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const left = rail.scrollLeft + direction * page;
+    if (typeof rail.scrollTo === 'function') {
+      rail.scrollTo({ left, behavior: reduceMotion ? 'auto' : 'smooth' });
+    } else {
+      rail.scrollLeft = left;
     }
   }
 
@@ -2089,36 +2165,80 @@ function HubTemplateCarousel({
                     tabIndex={tab === id ? 0 : -1}
                     onClick={() => selectTab(id, false)}
                   >
-                    {tabLabel(id)}
+                    <span className="home-hero__templates-tab-icon" aria-hidden="true">
+                      <Icon name={tabIcon(id)} size={15} />
+                    </span>
+                    <span className="home-hero__templates-tab-text">
+                      <span className="home-hero__templates-tab-label">{tabLabel(id)}</span>
+                      <span
+                        className="home-hero__templates-tab-count"
+                        data-testid="hub-template-carousel-tab-count"
+                        aria-label={t('homeHero.templateTabCount', { count: tabCounts[id] })}
+                      >
+                        {tabCounts[id]}
+                      </span>
+                    </span>
                   </button>
                 ))}
               </div>
             ) : null}
             <div
-              id={`${tabIdPrefix}-rail`}
-              ref={railRef}
-              className="home-hero__templates-rail"
-              data-testid="hub-template-carousel-rail"
-              role="list"
-              aria-labelledby={tab ? `${tabIdPrefix}-${tab}` : undefined}
-              onKeyDown={handleRailKeyDown}
+              className={`home-hero__templates-viewport${railEdges.start ? ' is-at-start' : ''}${railEdges.end ? ' is-at-end' : ''}`}
+              data-testid="hub-template-carousel-viewport"
             >
-              {items.map((item, index) => (
-                <HubTemplateCard
-                  key={item.record.id}
-                  item={item}
-                  locale={locale}
-                  active={activePluginId === item.record.id}
-                  favorite={favorites.includes(item.record.id)}
-                  pending={pendingPluginId === item.record.id}
-                  disabled={pendingPluginId !== null}
-                  pulse={pulseFirstPreset && index === 0}
-                  tabIndex={index === focusIndex ? 0 : -1}
-                  onFocus={() => setFocusIndex(index)}
-                  onPick={onPick}
-                  onToggleFavorite={onToggleFavorite}
-                />
-              ))}
+              <div
+                id={`${tabIdPrefix}-rail`}
+                ref={railRef}
+                className="home-hero__templates-rail"
+                data-testid="hub-template-carousel-rail"
+                role="list"
+                aria-labelledby={tab ? `${tabIdPrefix}-${tab}` : undefined}
+                onKeyDown={handleRailKeyDown}
+              >
+                {items.map((item, index) => (
+                  <HubTemplateCard
+                    key={item.record.id}
+                    item={item}
+                    locale={locale}
+                    active={activePluginId === item.record.id}
+                    favorite={favorites.includes(item.record.id)}
+                    pending={pendingPluginId === item.record.id}
+                    disabled={pendingPluginId !== null}
+                    pulse={pulseFirstPreset && index === 0}
+                    tabIndex={index === focusIndex ? 0 : -1}
+                    onFocus={() => setFocusIndex(index)}
+                    onPick={onPick}
+                    onToggleFavorite={onToggleFavorite}
+                  />
+                ))}
+              </div>
+              {/* Kept mounted and toggled by class so the fade can play; the
+                  hidden arrow is disabled and inert so it is neither a tab stop
+                  nor a click target. */}
+              <button
+                type="button"
+                className="home-hero__templates-arrow home-hero__templates-arrow--prev"
+                data-testid="hub-template-carousel-prev"
+                aria-label={t('homeHero.templateRailPrev')}
+                aria-hidden={railEdges.start}
+                disabled={railEdges.start}
+                tabIndex={railEdges.start ? -1 : 0}
+                onClick={() => pageRail(-1)}
+              >
+                <Icon name="chevron-left" size={18} strokeWidth={2} />
+              </button>
+              <button
+                type="button"
+                className="home-hero__templates-arrow home-hero__templates-arrow--next"
+                data-testid="hub-template-carousel-next"
+                aria-label={t('homeHero.templateRailNext')}
+                aria-hidden={railEdges.end}
+                disabled={railEdges.end}
+                tabIndex={railEdges.end ? -1 : 0}
+                onClick={() => pageRail(1)}
+              >
+                <Icon name="chevron-right" size={18} strokeWidth={2} />
+              </button>
             </div>
           </div>
         </div>
