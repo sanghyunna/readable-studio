@@ -73,6 +73,7 @@
   },
   "readable": {
     "hubType": "deck",
+    "thumbnail": {"src":"/template-thumbnails/example-html-ppt-knowledge-arch-blueprint.webp"},
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "deck",

@@ -43,6 +43,9 @@ importers:
       '@types/node':
         specifier: 20.19.39
         version: 20.19.39
+      playwright:
+        specifier: 1.60.0
+        version: 1.60.0
       sharp:
         specifier: 0.34.5
         version: 0.34.5

@@ -71,6 +71,7 @@
   },
   "readable": {
     "hubType": "website",
+    "thumbnail": {"src":"/template-thumbnails/example-liquid-glass-agency.webp"},
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "prototype",

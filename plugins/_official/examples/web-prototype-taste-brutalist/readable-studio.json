@@ -67,6 +67,7 @@
   },
   "readable": {
     "hubType": "report",
+    "thumbnail": {"src":"/template-thumbnails/example-web-prototype-taste-brutalist.webp"},
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "prototype",

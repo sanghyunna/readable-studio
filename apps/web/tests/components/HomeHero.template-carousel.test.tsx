@@ -484,6 +484,7 @@ describe('Hub template carousel', () => {
         ...record.manifest,
         readable: {
           ...record.manifest.readable,
+          thumbnail: { src: `/template-thumbnails/${record.id}.webp` },
           bakedPreview: {
             poster: `${remote}/${record.id}.poster.jpg`,
             video: `${remote}/${record.id}.mp4`,
@@ -507,6 +508,10 @@ describe('Hub template carousel', () => {
       const card = screen.getAllByTestId('hub-template-card')
         .find((node) => node.getAttribute('data-plugin-id') === 'example-pricing-page')!;
       const thumb = card.querySelector('.home-hero__template-thumb')!;
+      const image = thumb.querySelector('img')!;
+      expect(image.getAttribute('src')).toBe('/template-thumbnails/example-pricing-page.webp');
+      expect(thumb.querySelector('iframe')).toBeNull();
+      fireEvent.error(image);
       const iframe = await screen.findByTitle(`${CATALOGUE[0]!.manifest.title_i18n?.ko} preview`);
       expect(thumb.contains(iframe)).toBe(true);
       expect(iframe.getAttribute('src')).toBe('/api/plugins/example-pricing-page/preview');

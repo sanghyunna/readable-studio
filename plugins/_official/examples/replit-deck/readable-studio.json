@@ -76,6 +76,7 @@
   },
   "readable": {
     "hubType": "deck",
+    "thumbnail": {"src":"/template-thumbnails/example-replit-deck.webp"},
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "deck",

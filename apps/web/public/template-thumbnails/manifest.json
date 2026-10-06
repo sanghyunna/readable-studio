@@ -1,0 +1,659 @@
+{
+  "recipe": 1,
+  "entries": [
+    {
+      "id": "example-deck-guizang-editorial",
+      "type": "deck",
+      "sourceHash": "078255a9c68a55b97f7af40619c8704dca61cc4e2169cadc2bf46e0786220fac",
+      "bytes": 12544
+    },
+    {
+      "id": "example-deck-open-slide-canvas",
+      "type": "deck",
+      "sourceHash": "a0c1243c947968b59a43216607172dfed6871c26c89b25adc83b6b426bd9a7ec",
+      "bytes": 7794
+    },
+    {
+      "id": "example-deck-swiss-international",
+      "type": "deck",
+      "sourceHash": "3645c957c645c88096beabbc9551e6ba053fcc00cba2384449c5404af3c21fde",
+      "bytes": 11674
+    },
+    {
+      "id": "example-guizang-ppt",
+      "type": "deck",
+      "sourceHash": "26edf2057bd9fd2ddadda501447c5acbfe3f129ba2fc2f09111f6a9da23eb191",
+      "bytes": 10882
+    },
+    {
+      "id": "example-html-ppt-course-module",
+      "type": "deck",
+      "sourceHash": "d9ca0e8cc7688aa8b1e5947e8acd77c19cbe0bf7d77b0776bb864be0f08d36e0",
+      "bytes": 5246
+    },
+    {
+      "id": "example-html-ppt-dir-key-nav-minimal",
+      "type": "deck",
+      "sourceHash": "12da2fb280f6868910ec979fb3cdc74963a1b1296031d7082677d0e568973ba5",
+      "bytes": 6988
+    },
+    {
+      "id": "example-html-ppt-graphify-dark-graph",
+      "type": "deck",
+      "sourceHash": "0b7d12c96227e5a042ecbb1bc07c60ebf8d5dbee429a6a53a859649e50238cd0",
+      "bytes": 8164
+    },
+    {
+      "id": "example-html-ppt-hermes-cyber-terminal",
+      "type": "deck",
+      "sourceHash": "0cf3f0d37826f42e129dfb8cb502049cdfa2144619974e4e131d70cae4c78c00",
+      "bytes": 3388
+    },
+    {
+      "id": "example-html-ppt-knowledge-arch-blueprint",
+      "type": "deck",
+      "sourceHash": "803dc8ef58cabe6461936f742de23920bfed742ba0930ba89e80745791f9e158",
+      "bytes": 7310
+    },
+    {
+      "id": "example-html-ppt-obsidian-claude-gradient",
+      "type": "deck",
+      "sourceHash": "d629527fb1eb05347c801d18792e70fabe3c212657860fa8eec37d2eaf3429f4",
+      "bytes": 4358
+    },
+    {
+      "id": "example-html-ppt-pitch-deck",
+      "type": "deck",
+      "sourceHash": "68ed93d8603e0044e92138a7e0925e0c24d5e2e2f0a055a0602c020f5b47bb15",
+      "bytes": 4984
+    },
+    {
+      "id": "example-html-ppt-presenter-mode-reveal",
+      "type": "deck",
+      "sourceHash": "15fb08179e25744733dc564117e0602f9bb67aaacd665a4a8bd94ff6282b5a07",
+      "bytes": 3888
+    },
+    {
+      "id": "example-html-ppt-product-launch",
+      "type": "deck",
+      "sourceHash": "4bf8d159d1c810aa05dc8cf270eac9df6f381ef5360dc58a87ad54eab3dd679c",
+      "bytes": 5752
+    },
+    {
+      "id": "example-html-ppt-taste-brutalist",
+      "type": "deck",
+      "sourceHash": "2e4010e9ce15c4e7737b9b5752633809e31e29f99b7f5b000a8d5bb3384d06d7",
+      "bytes": 8750
+    },
+    {
+      "id": "example-html-ppt-taste-editorial",
+      "type": "deck",
+      "sourceHash": "054136191f25a6fa9201cf0da1c75f6c6bb9e00bdb8083484cfa2eafd9f46bfc",
+      "bytes": 8194
+    },
+    {
+      "id": "example-html-ppt-tech-sharing",
+      "type": "deck",
+      "sourceHash": "028f3234b60af6d9780462de1d0730af09b715bf5cbde185577ba0873844e8d8",
+      "bytes": 5198
+    },
+    {
+      "id": "example-html-ppt-testing-safety-alert",
+      "type": "deck",
+      "sourceHash": "d6a5e8d609e78d9cb84256cad372e070003c1e491a79a942049485a6d6d9ebdb",
+      "bytes": 14176
+    },
+    {
+      "id": "example-html-ppt-weekly-report",
+      "type": "deck",
+      "sourceHash": "61a09a3b7226f0944287fa8fe47c2462b0a457fd45022ac71eb7e7b86efd76f2",
+      "bytes": 3720
+    },
+    {
+      "id": "example-html-ppt-xhs-pastel-card",
+      "type": "deck",
+      "sourceHash": "3ffa00f7e8cf71851365301ae78abf14158fb98f323e0915b72d458d6941706c",
+      "bytes": 5764
+    },
+    {
+      "id": "example-html-ppt-xhs-white-editorial",
+      "type": "deck",
+      "sourceHash": "43c1422a07c498921f52e39a2c760cf5260ab1fcc28c518e8d72ed0cce1a95dc",
+      "bytes": 9128
+    },
+    {
+      "id": "example-html-ppt-zhangzara-8-bit-orbit",
+      "type": "deck",
+      "sourceHash": "fa2416b0fd5e00d903b8a8acb33899dc9e749f92716ab8e4cabfe9c24318c3b9",
+      "bytes": 4792
+    },
+    {
+      "id": "example-html-ppt-zhangzara-biennale-yellow",
+      "type": "deck",
+      "sourceHash": "cdee6011e6851d814fd16d2021dc41792476649bab7171f42ed5e7ae3c125dc2",
+      "bytes": 9904
+    },
+    {
+      "id": "example-html-ppt-zhangzara-block-frame",
+      "type": "deck",
+      "sourceHash": "4aac8ee8a1885b90a55d2917f829ef6ee9700cc7aeebc481f91c1aab9c6588a0",
+      "bytes": 4944
+    },
+    {
+      "id": "example-html-ppt-zhangzara-blue-professional",
+      "type": "deck",
+      "sourceHash": "5376e910203970ac69bc954e35a39626070b3fc48051ce1408aae7619e4caefa",
+      "bytes": 3758
+    },
+    {
+      "id": "example-html-ppt-zhangzara-bold-poster",
+      "type": "deck",
+      "sourceHash": "69840b4b4e59018877a7291857be3b471f55627c7e43bedc7dd49756cc86d09e",
+      "bytes": 6286
+    },
+    {
+      "id": "example-html-ppt-zhangzara-broadside",
+      "type": "deck",
+      "sourceHash": "1e70f8355fd78264cc5c4dbbc067ceb2719a0a04943c9c0366d6667f26d5af2f",
+      "bytes": 8394
+    },
+    {
+      "id": "example-html-ppt-zhangzara-capsule",
+      "type": "deck",
+      "sourceHash": "b250ec6fef9568a8d875c10ef7cc9ad88b3cf84b94f923845c68edcbce08c777",
+      "bytes": 3790
+    },
+    {
+      "id": "example-html-ppt-zhangzara-cartesian",
+      "type": "deck",
+      "sourceHash": "f95f597d54ed4ad6de2aa3a6b3691ef6be3388109bb4d704bc145e4bfc5df4a6",
+      "bytes": 1942
+    },
+    {
+      "id": "example-html-ppt-zhangzara-cobalt-grid",
+      "type": "deck",
+      "sourceHash": "746d5828ce534d5a47a3f4a6fa5e8bc07f8c76b8896775ebdd8c028132290c64",
+      "bytes": 7530
+    },
+    {
+      "id": "example-html-ppt-zhangzara-coral",
+      "type": "deck",
+      "sourceHash": "4f64119fe08528a038fe7c51772a71c660372ef57a259861caa9ea43dc5f8188",
+      "bytes": 6360
+    },
+    {
+      "id": "example-html-ppt-zhangzara-creative-mode",
+      "type": "deck",
+      "sourceHash": "4826d1a0c14faea3535ca965bc0797aeb63cc8a91b87c1a81ae9534363cb1935",
+      "bytes": 5822
+    },
+    {
+      "id": "example-html-ppt-zhangzara-daisy-days",
+      "type": "deck",
+      "sourceHash": "faa911b124742e8eb2f47fea57fbcac5185a7064cce973c863e69a7241f33e4a",
+      "bytes": 5322
+    },
+    {
+      "id": "example-html-ppt-zhangzara-editorial-tri-tone",
+      "type": "deck",
+      "sourceHash": "e2f581c296a2579c891aa11e51880e8bf2b92e1cf48b54260329423bde7c8639",
+      "bytes": 9602
+    },
+    {
+      "id": "example-html-ppt-zhangzara-grove",
+      "type": "deck",
+      "sourceHash": "9e7493cc779bcab293cce644fd9ad010902d9036b3cd9099cfbea353638a5392",
+      "bytes": 3620
+    },
+    {
+      "id": "example-html-ppt-zhangzara-long-table",
+      "type": "deck",
+      "sourceHash": "eb1f693c498f58b3861377c1680b0900ab9d1589a0bd7329e24da3167f8e7ad6",
+      "bytes": 8276
+    },
+    {
+      "id": "example-html-ppt-zhangzara-mat",
+      "type": "deck",
+      "sourceHash": "6f28b4d56e23e06821bebf47533c38f17f3b77458c63d346b23b64cd662d388a",
+      "bytes": 7702
+    },
+    {
+      "id": "example-html-ppt-zhangzara-monochrome",
+      "type": "deck",
+      "sourceHash": "90849c2911004f914e96d7c92c10dbc617405dcbb576e24cb15897abbda20d45",
+      "bytes": 4274
+    },
+    {
+      "id": "example-html-ppt-zhangzara-neo-grid-bold",
+      "type": "deck",
+      "sourceHash": "7f1a8edfbefa3e3df4658101f1f7ced2caedf783bec2e9144d3969cb2089528b",
+      "bytes": 6042
+    },
+    {
+      "id": "example-html-ppt-zhangzara-peoples-platform",
+      "type": "deck",
+      "sourceHash": "8afa4c174ef0f62b59f65a74e707628d5b139b4c63006773671d179ab7e1a2d2",
+      "bytes": 12908
+    },
+    {
+      "id": "example-html-ppt-zhangzara-pin-and-paper",
+      "type": "deck",
+      "sourceHash": "1f68b61c9089b527334021d39b92cc74cc19e5f9406b236d0ecd028364697cd6",
+      "bytes": 6264
+    },
+    {
+      "id": "example-html-ppt-zhangzara-pink-script",
+      "type": "deck",
+      "sourceHash": "ad695fd4ee53aa89a159aaa70104f48c5f9bd70d2b1e5f408e98677a5667f6cf",
+      "bytes": 7154
+    },
+    {
+      "id": "example-html-ppt-zhangzara-playful",
+      "type": "deck",
+      "sourceHash": "7431fb8becb2df89ad859ea8a137c9a8d6752a2352ab4ebf9a7e6f5762e2f1a5",
+      "bytes": 7466
+    },
+    {
+      "id": "example-html-ppt-zhangzara-raw-grid",
+      "type": "deck",
+      "sourceHash": "f2798def9c736ff4ee98e833970ea1841087927dcb6a34440c53569831ff7293",
+      "bytes": 4884
+    },
+    {
+      "id": "example-html-ppt-zhangzara-retro-windows",
+      "type": "deck",
+      "sourceHash": "be02b9ae4a7414103616d012b142ef3d0d5965269e8c79d44014a15cc4f646b1",
+      "bytes": 2662
+    },
+    {
+      "id": "example-html-ppt-zhangzara-retro-zine",
+      "type": "deck",
+      "sourceHash": "504c5798bed5a157ccf3a5b227089fc36b1cb87f5da1a320f3383d84c2fccb64",
+      "bytes": 3384
+    },
+    {
+      "id": "example-html-ppt-zhangzara-sakura-chroma",
+      "type": "deck",
+      "sourceHash": "ccdffb15e40844dbd33f98fc76ea56bd87efff8a063b60a1843a7c6b4cc0e921",
+      "bytes": 8320
+    },
+    {
+      "id": "example-html-ppt-zhangzara-scatterbrain",
+      "type": "deck",
+      "sourceHash": "b1c9aac9c852cd29fcea9d407cbd19442f61c1f49a4df61d96405309b9e58c01",
+      "bytes": 3580
+    },
+    {
+      "id": "example-html-ppt-zhangzara-signal",
+      "type": "deck",
+      "sourceHash": "ef09f8ba31ec096f345a1e8efd23d66cd449082f913c970da678b1150490c2e4",
+      "bytes": 4998
+    },
+    {
+      "id": "example-html-ppt-zhangzara-soft-editorial",
+      "type": "deck",
+      "sourceHash": "0f8b97ea197fac7a0d98d026cc93dfea73d85d2995dc55f5c517b8ed69f28a85",
+      "bytes": 7784
+    },
+    {
+      "id": "example-html-ppt-zhangzara-stencil-tablet",
+      "type": "deck",
+      "sourceHash": "6f9a21c7fab7ea4700eab6283c54864ef72fe65e874761f094fc54f74029a7e1",
+      "bytes": 6606
+    },
+    {
+      "id": "example-html-ppt-zhangzara-studio",
+      "type": "deck",
+      "sourceHash": "e3a0fae30d340a36b9b0cfdc353adef127112ca564446f5998ec6f384b52b7d9",
+      "bytes": 4070
+    },
+    {
+      "id": "example-html-ppt-zhangzara-vellum",
+      "type": "deck",
+      "sourceHash": "5358fba4524f888868370fd6ccc982ee077031a4e6db8b52d92ff3a33ed32786",
+      "bytes": 4308
+    },
+    {
+      "id": "example-ib-pitch-book",
+      "type": "deck",
+      "sourceHash": "18d862ff9139082fca1d176b0ffe48de00b06be7c20e1e3e97f43e05b15e9d60",
+      "bytes": 6638
+    },
+    {
+      "id": "example-kami-deck",
+      "type": "deck",
+      "sourceHash": "05d8a75cea3cbfa74879d25b70f3088d212f21d5110b72f71c57e502baac3f4c",
+      "bytes": 6420
+    },
+    {
+      "id": "example-ppt-keynote",
+      "type": "deck",
+      "sourceHash": "45dad92047646f7526d15652dcf4c39ccd1f11472f3ffa52cf592f27d374836a",
+      "bytes": 5898
+    },
+    {
+      "id": "example-readable-landing-deck",
+      "type": "deck",
+      "sourceHash": "5f40d8cff3185246df1804eca98315a5da494c999ba409e8d4fe0ebfd1b8c8e8",
+      "bytes": 8870
+    },
+    {
+      "id": "example-replit-deck",
+      "type": "deck",
+      "sourceHash": "7712fd6e608361acec161f184e065fa34639345e3a6c423706ceef8e36680dbe",
+      "bytes": 3968
+    },
+    {
+      "id": "example-simple-deck",
+      "type": "deck",
+      "sourceHash": "114d39bc6d5ef79432233df03936deef7c604b376861f2bd7a75cf45f63a5859",
+      "bytes": 3442
+    },
+    {
+      "id": "example-weekly-update",
+      "type": "deck",
+      "sourceHash": "e2c8e17d58b6398ad43c48d909cff48d416cb8524d47bab142cf45cb270aa24b",
+      "bytes": 3428
+    },
+    {
+      "id": "example-article-magazine",
+      "type": "report",
+      "sourceHash": "a80d5694e57cb670d6f03b0f057604f24c5efb17efdfd3341584ddf03f4bf242",
+      "bytes": 23792
+    },
+    {
+      "id": "example-blog-post",
+      "type": "report",
+      "sourceHash": "256df08fb8896b21dbf5ce96a1590c7a08824da59cbfe27fb9513315d5f355d9",
+      "bytes": 19526
+    },
+    {
+      "id": "example-clinical-case-report",
+      "type": "report",
+      "sourceHash": "a0e62de2722290a494608bcbf67444489914b66abae10c394b7334b5609f159a",
+      "bytes": 24822
+    },
+    {
+      "id": "example-critique",
+      "type": "report",
+      "sourceHash": "d84de2ffab33eec937c04a187c0b9eb918cf897d7918ba48ca4091db94e2cd01",
+      "bytes": 25766
+    },
+    {
+      "id": "example-data-report",
+      "type": "report",
+      "sourceHash": "5b3f550a3a88a1fd4f2525ce3aae5e29764b3ddd4a31e95d504d8d06071c3bf0",
+      "bytes": 17410
+    },
+    {
+      "id": "example-digital-eguide",
+      "type": "report",
+      "sourceHash": "540d7bb1b72095c14912ed156c747d4dd76201960f6a7d7841b1c8c5b02a9d59",
+      "bytes": 16294
+    },
+    {
+      "id": "example-doc-kami-parchment",
+      "type": "report",
+      "sourceHash": "a4548925e6ae0487a8b78605d1c9b0ca3d6c67ffbb9cd16f6ab4d96fe54ed47a",
+      "bytes": 14668
+    },
+    {
+      "id": "example-eng-runbook",
+      "type": "report",
+      "sourceHash": "ccbd0af75e9c15e04210cfb2f2a01f1eb4e08d06eab2f38f43579cb024a2ee6e",
+      "bytes": 20110
+    },
+    {
+      "id": "example-report",
+      "type": "report",
+      "sourceHash": "6adbedff8d324b5d2b2c827c804d7e05c082cb85a083ec6d631f350fa281a467",
+      "bytes": 20790
+    },
+    {
+      "id": "example-finance-report",
+      "type": "report",
+      "sourceHash": "f12bcf084054513da0c7a61436ae03ba568b33789339aa125afbb4706102b185",
+      "bytes": 13792
+    },
+    {
+      "id": "example-hr-onboarding",
+      "type": "report",
+      "sourceHash": "e167043b4445bedd504608240da5597647dd1ce7f3c03ed7fca82220160fe41f",
+      "bytes": 21562
+    },
+    {
+      "id": "example-invoice",
+      "type": "report",
+      "sourceHash": "c7288d480d4d4efee7f12943c0a9a7851eaae56025fde8a892293e12df42ea86",
+      "bytes": 14278
+    },
+    {
+      "id": "example-meeting-notes",
+      "type": "report",
+      "sourceHash": "3776a8bb22cdd4ca27fecf3b45457707eeeec08bd9fb255dce45f374d1306396",
+      "bytes": 16002
+    },
+    {
+      "id": "example-pm-spec",
+      "type": "report",
+      "sourceHash": "38aa8f21d1c44c3ed5eebf4de1dde0f735c16faa860dfe6deb631b7c1fdd256a",
+      "bytes": 22122
+    },
+    {
+      "id": "example-resume-modern",
+      "type": "report",
+      "sourceHash": "02424c8b279921d19a5353a4b0bd53223ab28bb8059637312360b87d8954471e",
+      "bytes": 13204
+    },
+    {
+      "id": "example-web-prototype-taste-brutalist",
+      "type": "report",
+      "sourceHash": "5c879e85b1e883b9c336f013a0862ee29ddc19616d828459771cac1a0aa6c19b",
+      "bytes": 30234
+    },
+    {
+      "id": "example-acreage-farming",
+      "type": "website",
+      "sourceHash": "eff0542aae3ec0b42473c52f1c5fa03d689fe2db7c20937952de173079daab7d",
+      "bytes": 14308
+    },
+    {
+      "id": "example-codenest-coding-platform",
+      "type": "website",
+      "sourceHash": "12599d49cca294f9370bf050393b88b87b5f5efdac74cc2df0e0df3b078d8d20",
+      "bytes": 9214
+    },
+    {
+      "id": "example-codex-interactive-capability-map",
+      "type": "website",
+      "sourceHash": "61b25f1d26db5effa5914b80be3d32263677fde49e8f2c3d914f88bda224fc18",
+      "bytes": 9796
+    },
+    {
+      "id": "example-dashboard",
+      "type": "website",
+      "sourceHash": "d28ef2101077c3571d427462b327a1f96ea9cfe2aafd331a21ecb63d5490a4bc",
+      "bytes": 6186
+    },
+    {
+      "id": "example-dating-web",
+      "type": "website",
+      "sourceHash": "819929711b48da258cffb0476ae98d5ab297aa095025470f176cccc937340d8a",
+      "bytes": 9090
+    },
+    {
+      "id": "example-docs-page",
+      "type": "website",
+      "sourceHash": "e959dc1033316b4da93e51b54e0b5bd9579dcd12e74dc946901efdcecb362df9",
+      "bytes": 6404
+    },
+    {
+      "id": "example-flowai-live-dashboard-template",
+      "type": "website",
+      "sourceHash": "eb47a457eb0e7e150a256fdc9dd4ce2b6ee4b400fee11afceb25b62d180928e6",
+      "bytes": 3558
+    },
+    {
+      "id": "example-gamified-app",
+      "type": "website",
+      "sourceHash": "c7f9d93ba655bfb23d41e6987f8e6e879e75fccaa4861d2e547d519bfdcc502e",
+      "bytes": 14218
+    },
+    {
+      "id": "example-github-dashboard",
+      "type": "website",
+      "sourceHash": "abef2772b79f0eea6e97ceb3d1caeeb6d4c4480bc750e3cfa28836d1ee5fbf9a",
+      "bytes": 7812
+    },
+    {
+      "id": "example-innovation",
+      "type": "website",
+      "sourceHash": "83481b46bce53336a474c34db9d7e02f0e0bc95c1166ceb11e6fc102bb48ba5a",
+      "bytes": 4716
+    },
+    {
+      "id": "example-kami-landing",
+      "type": "website",
+      "sourceHash": "03786487a667eb0ca36093cd7b8781636ce02afab91bfaeb8c8320a02b30b9c5",
+      "bytes": 7990
+    },
+    {
+      "id": "example-kanban-board",
+      "type": "website",
+      "sourceHash": "ee6a37993b714b0d2baef02bc2504bcc5e0f14f0f166ee459b6933a8277286af",
+      "bytes": 11930
+    },
+    {
+      "id": "example-liquid-glass-agency",
+      "type": "website",
+      "sourceHash": "cf34ec539d92a2677e5c0b6d12e28db6d1c4362f707bf11ebf0f33bed7add85c",
+      "bytes": 6312
+    },
+    {
+      "id": "example-mindloop-landing",
+      "type": "website",
+      "sourceHash": "11e074fe8a87956129a308b741dba12d801dcb3eff6c5cb8c123e4600bc41ef0",
+      "bytes": 5452
+    },
+    {
+      "id": "example-mobile-app",
+      "type": "website",
+      "sourceHash": "eb78b9967ebc0dccbc3c5091ac65269819dd282ec4678ae10085e32979e026d9",
+      "bytes": 3804
+    },
+    {
+      "id": "example-mobile-onboarding",
+      "type": "website",
+      "sourceHash": "20230e52cce424296043f31e956d4126e9db57cc211e68a7ccd35ee335ec0a5a",
+      "bytes": 9922
+    },
+    {
+      "id": "example-nimbus-grid",
+      "type": "website",
+      "sourceHash": "85d3f79d24dab27c19d3a95899ecb74d14c3382e02380ef142f12c5dc456b90c",
+      "bytes": 15332
+    },
+    {
+      "id": "example-orbis-nft",
+      "type": "website",
+      "sourceHash": "bf621cc4a326554c25e49164f4b5e9cc90febb6ac4f116c5123e118b87271353",
+      "bytes": 36392
+    },
+    {
+      "id": "example-pricing-page",
+      "type": "website",
+      "sourceHash": "935eda56ec537466395ab9e293ec5543a2e1ace99ded926682afe4a130b3e9fd",
+      "bytes": 7440
+    },
+    {
+      "id": "example-readable-landing",
+      "type": "website",
+      "sourceHash": "830226756b7787d691b66923b46a2e17b8596f048a41a4d9bc01f20662a71a2a",
+      "bytes": 17602
+    },
+    {
+      "id": "example-saas-landing",
+      "type": "website",
+      "sourceHash": "0e63b81ca1a2e8c182db468ee8d960be5799e1965bb72ec7e52dba8578272f20",
+      "bytes": 7800
+    },
+    {
+      "id": "example-skyelite-private-jets",
+      "type": "website",
+      "sourceHash": "3c89f70349db8f57210c4c6ba360bb52824c53b9ed6168a9ab2c10350f28e170",
+      "bytes": 3984
+    },
+    {
+      "id": "example-social-media-dashboard",
+      "type": "website",
+      "sourceHash": "7ac787d03d0215b15dcc18bca8bb1a3ffc5327a788af0d2e68cb82ecdb4b0e3b",
+      "bytes": 10434
+    },
+    {
+      "id": "example-social-media-matrix-tracker-template",
+      "type": "website",
+      "sourceHash": "92b2bc4932e83c60f763c43ca22ba184858bc41eb1647b29ad19aa50570377df",
+      "bytes": 11702
+    },
+    {
+      "id": "example-stellar-launch",
+      "type": "website",
+      "sourceHash": "63492a3bb7b437e6f006bcd271fe957c01db8e710afb33708c7199823fd19c2e",
+      "bytes": 5242
+    },
+    {
+      "id": "example-team-okrs",
+      "type": "website",
+      "sourceHash": "842eb650fb096d626406e4908293e376c65c5e3bacdaab2cba98efa5167375fb",
+      "bytes": 9608
+    },
+    {
+      "id": "example-trading-analysis-dashboard-template",
+      "type": "website",
+      "sourceHash": "a83d90cb92b6e42750dbdeb69d8e63bed0cbd448b5e2b677428105a9b9e9ac9b",
+      "bytes": 8780
+    },
+    {
+      "id": "example-tweaks",
+      "type": "website",
+      "sourceHash": "404d509984a4172c7e856b21daf3d49138171fe3cc2568807084a42c59c308bc",
+      "bytes": 8372
+    },
+    {
+      "id": "example-velar-luxury-real-estate",
+      "type": "website",
+      "sourceHash": "98dd8460682aef48525a2a3972975afff1276c03ddde366d764674f5407a2cd5",
+      "bytes": 9144
+    },
+    {
+      "id": "example-waitlist-page",
+      "type": "website",
+      "sourceHash": "c85442342367fa63798fd285029c0c25e37e35a2411a0fc71a1b53495f5f8715",
+      "bytes": 7616
+    },
+    {
+      "id": "example-web-prototype",
+      "type": "website",
+      "sourceHash": "9d7f2a1c67a05c4ffd9725cb7df2bb5147cc1e0a6798edaddbfa9b346c0ffb84",
+      "bytes": 6518
+    },
+    {
+      "id": "example-web-prototype-taste-editorial",
+      "type": "website",
+      "sourceHash": "99ae8a2f9027ca5d93953cb9b66de9e81712568f5ccc5b29e3b3caa18b65c4dd",
+      "bytes": 8458
+    },
+    {
+      "id": "example-web-prototype-taste-soft",
+      "type": "website",
+      "sourceHash": "fbd30e74d16b04ca77db7e40e0b0d20297cbf26e9800ce439836e2e8db6695ca",
+      "bytes": 11956
+    },
+    {
+      "id": "example-wireframe-sketch",
+      "type": "website",
+      "sourceHash": "6d5bb4c658ca1afac074e50f4665f054de7988abf4221b59d4d0d7e29f132679",
+      "bytes": 14818
+    }
+  ]
+}

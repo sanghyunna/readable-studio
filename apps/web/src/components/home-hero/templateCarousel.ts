@@ -47,7 +47,11 @@ function isDaemonServedUrl(url: string | null): boolean {
   return typeof url === 'string' && url.startsWith('/') && !url.startsWith('//');
 }
 
-export function hubTemplateCardPreview(record: InstalledPluginRecord): PluginPreviewSpec {
+export function hubTemplateCardPreview(record: InstalledPluginRecord, liveFallback = false): PluginPreviewSpec {
+  const thumbnail = record.manifest?.readable?.thumbnail as { src?: unknown } | undefined;
+  if (!liveFallback && typeof thumbnail?.src === 'string' && thumbnail.src.startsWith('/template-thumbnails/')) {
+    return { kind: 'media', mediaType: 'image', poster: thumbnail.src, videoUrl: null, audioUrl: null, imageOnly: true };
+  }
   const baked = inferPluginPreview(record, { preferBaked: true });
   if (baked.kind !== 'media') return baked;
   if (isDaemonServedUrl(baked.poster) && (baked.videoUrl === null || isDaemonServedUrl(baked.videoUrl))) {

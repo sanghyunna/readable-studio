@@ -38,6 +38,7 @@
     "@readable-studio/tools-dev": "workspace:*",
     "@readable-studio/tools-pack": "workspace:*",
     "@types/node": "20.19.39",
+    "playwright": "1.60.0",
     "sharp": "0.34.5",
     "tsx": "4.22.3",
     "typescript": "5.9.3"

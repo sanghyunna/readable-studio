@@ -73,6 +73,7 @@
   },
   "readable": {
     "hubType": "deck",
+    "thumbnail": {"src":"/template-thumbnails/example-html-ppt-weekly-report.webp"},
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "deck",

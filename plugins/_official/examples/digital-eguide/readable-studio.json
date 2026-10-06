@@ -77,6 +77,7 @@
   },
   "readable": {
     "hubType": "report",
+    "thumbnail": {"src":"/template-thumbnails/example-digital-eguide.webp"},
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "prototype",

@@ -67,6 +67,7 @@
   },
   "readable": {
     "hubType": "website",
+    "thumbnail": {"src":"/template-thumbnails/example-web-prototype-taste-editorial.webp"},
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "prototype",

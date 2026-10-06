@@ -78,6 +78,7 @@
   },
   "readable": {
     "hubType": "deck",
+    "thumbnail": {"src":"/template-thumbnails/example-html-ppt-zhangzara-coral.webp"},
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "deck",

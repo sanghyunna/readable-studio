@@ -72,6 +72,7 @@
   },
   "readable": {
     "hubType": "deck",
+    "thumbnail": {"src":"/template-thumbnails/example-deck-open-slide-canvas.webp"},
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "deck",

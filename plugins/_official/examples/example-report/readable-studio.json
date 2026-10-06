@@ -68,6 +68,7 @@
   },
   "readable": {
     "hubType": "report",
+    "thumbnail": {"src":"/template-thumbnails/example-report.webp"},
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "prototype",

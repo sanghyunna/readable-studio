@@ -73,6 +73,7 @@
   },
   "readable": {
     "hubType": "report",
+    "thumbnail": {"src":"/template-thumbnails/example-meeting-notes.webp"},
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "prototype",

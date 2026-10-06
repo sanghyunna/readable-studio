@@ -74,6 +74,7 @@
   },
   "readable": {
     "hubType": "report",
+    "thumbnail": {"src":"/template-thumbnails/example-pm-spec.webp"},
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "prototype",

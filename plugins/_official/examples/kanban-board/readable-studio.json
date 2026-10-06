@@ -74,6 +74,7 @@
   },
   "readable": {
     "hubType": "website",
+    "thumbnail": {"src":"/template-thumbnails/example-kanban-board.webp"},
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "prototype",

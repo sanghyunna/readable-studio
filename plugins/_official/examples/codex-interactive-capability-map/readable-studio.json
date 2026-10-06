@@ -75,6 +75,7 @@
   },
   "readable": {
     "hubType": "website",
+    "thumbnail": {"src":"/template-thumbnails/example-codex-interactive-capability-map.webp"},
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "prototype",

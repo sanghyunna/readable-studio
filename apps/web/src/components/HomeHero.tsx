@@ -2277,10 +2277,10 @@ function HubTemplateCard({
 }) {
   const { t } = useI18n();
   const { record, chipId } = item;
-  // Local-only thumbnail: a daemon-served baked poster when the bake is on
-  // disk, otherwise the bundled example page rendered in a sandboxed, scaled
-  // iframe. Never a remote host (see hubTemplateCardPreview).
-  const preview = useMemo(() => hubTemplateCardPreview(record), [record]);
+  // Shipped images paint immediately, including on offline machines. The
+  // live preview mounts only when the static image is absent or fails.
+  const [failedThumbnail, setFailedThumbnail] = useState<string | null>(null);
+  const preview = useMemo(() => hubTemplateCardPreview(record, failedThumbnail === record.id), [record, failedThumbnail]);
   const title = localizePluginTitle(locale, record);
   const description = localizePluginDescription(locale, record);
   const seedPrompt = examplePresetSeedPrompt(record, locale, () =>
@@ -2306,10 +2306,17 @@ function HubTemplateCard({
       title={description ? `${title} · ${description}` : title}
     >
       <span className="home-hero__template-thumb" aria-hidden>
-        {/* eager: mount the page as soon as the card is near the viewport
-            instead of after the gallery's hover/linger gate - the rail is
-            glanced at, not lingered on, and the thumb must be a picture. */}
-        <PreviewSurface pluginId={record.id} pluginTitle={title} preview={preview} eager />
+        {preview.kind === 'media' && preview.poster?.startsWith('/template-thumbnails/') ? (
+          <img
+            src={preview.poster}
+            alt=""
+            decoding="async"
+            style={{ width: '100%', height: '100%', objectFit: 'contain', objectPosition: 'top' }}
+            onError={() => setFailedThumbnail(record.id)}
+          />
+        ) : (
+          <PreviewSurface pluginId={record.id} pluginTitle={title} preview={preview} eager />
+        )}
         {active ? (
           <span className="home-hero__plugin-preset-check" aria-hidden>
             <Icon name="check" size={12} />

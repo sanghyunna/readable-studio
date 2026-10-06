@@ -71,6 +71,7 @@
   },
   "readable": {
     "hubType": "website",
+    "thumbnail": {"src":"/template-thumbnails/example-stellar-launch.webp"},
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "prototype",

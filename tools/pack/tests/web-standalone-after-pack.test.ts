@@ -1,4 +1,5 @@
-import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { access, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path, { join } from "node:path";
@@ -94,6 +95,7 @@ async function runFixture(options: {
   omitRootWebPackage?: boolean;
   requireRootWebPackageAudit?: boolean;
   useAbsolutePnpmSymlinks?: boolean;
+  thumbnailPublicRoot?: string;
 }): Promise<{
   appOutDir: string;
   auditReportPath: string;
@@ -107,6 +109,9 @@ async function runFixture(options: {
     includeWebNext: options.includeWebNext,
     useAbsolutePnpmSymlinks: options.useAbsolutePnpmSymlinks,
   });
+  if (options.thumbnailPublicRoot) {
+    await cp(options.thumbnailPublicRoot, join(workspaceRoot, "apps", "web", "public", "template-thumbnails"), { recursive: true });
+  }
   const appOutDir = join(root, "builder", "win-unpacked");
   const resourcesRoot = join(appOutDir, "resources");
   const auditReportPath = join(root, "audit.json");
@@ -169,6 +174,27 @@ async function runFixture(options: {
 }
 
 describe("web standalone afterPack hook", () => {
+  it("packages every declared Hub thumbnail and its coverage manifest", async () => {
+    const repoRoot = path.resolve(import.meta.dirname, "../../..");
+    const sourceRoot = join(repoRoot, "apps/web/public/template-thumbnails");
+    const fixture = await runFixture({ includeWebNext: true, thumbnailPublicRoot: sourceRoot });
+    try {
+      const packaged = join(fixture.destinationRoot, "apps/web/public/template-thumbnails");
+      const manifest = JSON.parse(await readFile(join(packaged, "manifest.json"), "utf8")) as { entries: { id: string }[] };
+      const ids = new Set(manifest.entries.map(entry => entry.id));
+      const files = execFileSync("fd", ["^readable-studio\\.json$", "plugins/_official/examples"], { cwd: repoRoot, encoding: "utf8" }).trim().split(/\r?\n/);
+      let count = 0;
+      for (const file of files) {
+        const plugin = JSON.parse(await readFile(join(repoRoot, file), "utf8"));
+        if (!plugin.readable.thumbnail) continue;
+        count += 1;
+        expect(ids.has(plugin.name), plugin.name).toBe(true);
+        const name = path.basename(plugin.readable.thumbnail.src);
+        expect(await readFile(join(packaged, name))).toEqual(await readFile(join(sourceRoot, name)));
+      }
+      expect(count).toBeGreaterThan(0);
+    } finally { await rm(fixture.root, { recursive: true, force: true }); }
+  }, 30_000);
   it("preserves the actual hook audit when profiling its copies and audits", async () => {
     // Given the original hook's output on an independent tiny filesystem fixture
     const baseline = await runFixture({ includeWebNext: true });

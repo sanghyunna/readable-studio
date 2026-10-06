@@ -72,6 +72,7 @@
   },
   "readable": {
     "hubType": "report",
+    "thumbnail": {"src":"/template-thumbnails/example-data-report.webp"},
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "prototype",

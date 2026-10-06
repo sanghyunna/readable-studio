@@ -71,6 +71,7 @@
   },
   "readable": {
     "hubType": "website",
+    "thumbnail": {"src":"/template-thumbnails/example-skyelite-private-jets.webp"},
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "prototype",

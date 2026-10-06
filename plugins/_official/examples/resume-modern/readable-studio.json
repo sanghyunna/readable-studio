@@ -71,6 +71,7 @@
   },
   "readable": {
     "hubType": "report",
+    "thumbnail": {"src":"/template-thumbnails/example-resume-modern.webp"},
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "prototype",

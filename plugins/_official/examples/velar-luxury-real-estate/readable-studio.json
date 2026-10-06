@@ -73,6 +73,7 @@
   },
   "readable": {
     "hubType": "website",
+    "thumbnail": {"src":"/template-thumbnails/example-velar-luxury-real-estate.webp"},
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "prototype",

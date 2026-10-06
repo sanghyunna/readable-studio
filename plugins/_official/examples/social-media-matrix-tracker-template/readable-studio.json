@@ -78,6 +78,7 @@
   },
   "readable": {
     "hubType": "website",
+    "thumbnail": {"src":"/template-thumbnails/example-social-media-matrix-tracker-template.webp"},
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "template",

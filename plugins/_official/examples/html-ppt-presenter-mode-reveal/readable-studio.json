@@ -71,6 +71,7 @@
   },
   "readable": {
     "hubType": "deck",
+    "thumbnail": {"src":"/template-thumbnails/example-html-ppt-presenter-mode-reveal.webp"},
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "deck",

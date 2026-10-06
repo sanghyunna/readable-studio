@@ -75,6 +75,7 @@
   },
   "readable": {
     "hubType": "deck",
+    "thumbnail": {"src":"/template-thumbnails/example-readable-landing-deck.webp"},
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "deck",

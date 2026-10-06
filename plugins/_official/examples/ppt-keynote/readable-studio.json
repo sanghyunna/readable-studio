@@ -70,6 +70,7 @@
   },
   "readable": {
     "hubType": "deck",
+    "thumbnail": {"src":"/template-thumbnails/example-ppt-keynote.webp"},
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "deck",

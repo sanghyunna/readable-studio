@@ -71,6 +71,7 @@
   },
   "readable": {
     "hubType": "deck",
+    "thumbnail": {"src":"/template-thumbnails/example-html-ppt-xhs-white-editorial.webp"},
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "deck",

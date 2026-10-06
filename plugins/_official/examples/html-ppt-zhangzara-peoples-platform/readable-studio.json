@@ -79,6 +79,7 @@
   },
   "readable": {
     "hubType": "deck",
+    "thumbnail": {"src":"/template-thumbnails/example-html-ppt-zhangzara-peoples-platform.webp"},
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "deck",

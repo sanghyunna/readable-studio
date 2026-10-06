@@ -77,6 +77,7 @@
   },
   "readable": {
     "hubType": "deck",
+    "thumbnail": {"src":"/template-thumbnails/example-html-ppt-zhangzara-long-table.webp"},
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "deck",

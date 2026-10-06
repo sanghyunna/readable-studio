@@ -73,6 +73,7 @@
   },
   "readable": {
     "hubType": "website",
+    "thumbnail": {"src":"/template-thumbnails/example-trading-analysis-dashboard-template.webp"},
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "template",
