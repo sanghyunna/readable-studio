@@ -13,6 +13,11 @@ readable:
     requires: false
 ---
 
+## Offline media
+
+Copy the sibling `assets/` directory beside the generated HTML, retaining its relative paths (or embed these assets for a standalone file). Use the bundled images instead of remote media. Large video loops and animated previews are represented by local still images; render them as images or video posters without a video source. This offline-media rule overrides remote/video instructions below. See `assets/NOTICE.md` for attribution.
+
+
 # SkyElite Private Jets — Premium Hero Landing
 
 Produce a premium **private jet landing-page hero** with a fullscreen video background, a clean centered overlapping headline, and two pill CTAs. A complete, rendered reference implementation ships beside this skill at `example.html` — **start from it**. Copy `example.html`, then adjust copy and data; do not rewrite the CSS or invent a new visual language. The seed already encodes the exact tokens, video URL, layout, typography, and responsive behavior described below.
@@ -28,7 +33,7 @@ This is the authoritative build brief. Follow it exactly — the named colors, f
 
 Use this exact CloudFront video URL (keep it remote — large stable CDN media):
 
-`https://plugin-assets.readable-studio.ai/plugins/skyelite-private-jets/hf_20260328_091828_e240eb17-6edc-4129-ad9d-98678e3fd238-86655b.mp4`
+`./assets/hf_20260328_091828_e240eb17-6edc-4129-ad9d-98678e3fd238-86655b.webp`
 
 - Attributes: `autoplay muted loop playsInline`.
 - `object-fit: cover`, fills the entire hero viewport (`height: 100vh`), `position: absolute; inset: 0; z-index: 0`. **No overlay.**

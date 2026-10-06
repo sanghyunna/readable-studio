@@ -13,6 +13,11 @@ readable:
     requires: false
 ---
 
+## Offline media
+
+Copy the sibling `assets/` directory beside the generated HTML, retaining its relative paths (or embed these assets for a standalone file). Use the bundled images instead of remote media. Large video loops and animated previews are represented by local still images; render them as images or video posters without a video source. This offline-media rule overrides remote/video instructions below. See `assets/NOTICE.md` for attribution.
+
+
 # AeroCore — Cinematic Aerospace Propulsion Landing
 
 Produce a premium, scroll-cinematic **aerospace / custom-engine marketing site** (sample brand: *EngineTech*). A complete, rendered reference implementation ships beside this skill at `example.html` — **start from it**. Copy `example.html`, then change only copy, data, and the remote media URLs; do **not** rewrite the CSS, the scroll math, or the section structure. The seed already encodes every token, layout, and animation locked below.
@@ -66,7 +71,7 @@ The page content width is `min(100% - 96px, var(--hero-max-width))` (gutters tig
 - Sticky `.hero__background` (100vh) whose three gradient stops (`--hero-top/mid/bottom`) are **lerped from blue→warm-white** as you scroll (start `[113,145,208]/[170,184,213]/[236,233,230]`, end `[240,232,220]/[238,229,216]/[236,226,210]`). A twinkling `.hero__stars` layer animates `hero-stars-twinkle 4.8s alternate`.
 - Fixed `.hero__nav` (max-width grid `minmax(220px,1fr) auto minmax(180px,1fr)`): brand mark (a white circle with a `clip-path` "engine fins" wedge), centered nav links built from `navItems`, and a CTA pill "Get In Touch". Nav has three scroll states: at-top (transparent white), `nav--scroll-down` (frosted white pill, dark text, `border-radius:40px`, blur 12px), `nav--scroll-up` (slides off `translateY(-100px)`).
 - Title is split into a fixed `.hero__title` ("Powering") and a fixed `.hero__title-row` ("the" + "Ship", the third line nudged `translateX(112px)`), font-size `clamp(144px,18vw,285px)`, weight 200. Both parallax via `--scroll-y` (`scrollProgress * -120`).
-- `.engine-visual` is a fixed, centered engine still that parallaxes up faster (`scrollProgress * -250`) — the Cloudinary PNG `https://plugin-assets.readable-studio.ai/plugins/aerocore/hero-engine_isebcf-b0bfea.webp`. This is a large stable-CDN still; keep it remote.
+- `.engine-visual` is a fixed, centered engine still that parallaxes up faster (`scrollProgress * -250`) — the Cloudinary PNG `./assets/hero-engine_isebcf-b0bfea.webp`. This is a large stable-CDN still; keep it remote.
 - `.hero__caption` bottom-left with a 1px rule. Title/row/caption/visual all fade out between 0.9vh and 1.35vh of scroll; `.hero.is-past` hard-hides them once the hero passes.
 
 ## 2. Mission (`.mission#company`, white, `margin-top:-12vh` to overlap the hero)
@@ -75,7 +80,7 @@ Grid: `minmax(240px,0.95fr) minmax(0,2fr)` × `auto minmax(360px,1fr)`. Eyebrow 
 
 ## 3. Showcase (`.showcase#technology`, 600vh, sticky 100vh)
 
-- `ShowcaseSection` (vanilla class) appends a fixed `.showcase-film` to `<body>` containing a looping `<video>` (`https://plugin-assets.readable-studio.ai/plugins/aerocore/6853-720-41905c.mp4`, poster = the Cloudinary engine PNG) + a black overlay.
+- `ShowcaseSection` (vanilla class) appends a fixed `.showcase-film` to `<body>` containing a looping `<video>` (`./assets/6853-720-41905c.webp`, poster = the Cloudinary engine PNG) + a black overlay.
 - Phase A: while the mission media is on screen and not yet scrolled past, the film is pinned to the `.mission__media` rect. Once its center crosses mid-viewport it locks and, over one viewport of scroll, **grows (`easeOutCubic`) to fill the full screen** (top/left→0, width/height→viewport), overlay fades to 0.22.
 - Phase B: with the film full-screen, `.showcase__ui` fades in: a `.showcase__panels` stack (num / light `clamp(38px,4.4vw,80px)` title with `<br>` / desc) on the left and a right-aligned `.showcase__tabs-nav`. Scroll progress past `TAB_START=0.08` selects the active tab/panel among the 4 `TABS` (`is-active` toggles opacity/translate). The film hard-hides when `.showcase` bottom passes.
 - `TABS` = 4 entries (`01 Precision Manufacturing` … `04 Mission Certified`) with `title` (contains `<br>`) and `desc`. Keep all four.
@@ -84,9 +89,9 @@ Grid: `minmax(240px,0.95fr) minmax(0,2fr)` × `auto minmax(360px,1fr)`. Eyebrow 
 
 Header: light `h2`, muted `p`, and a pill `.capabilities__button` "Start a Program". Bento `.capabilities__grid` = 3 columns:
 
-- **Col 1** `.cap-card--tall.cap-card--media`: full-bleed looping video (`https://plugin-assets.readable-studio.ai/plugins/aerocore/45229-720-74e6d9.mp4`), bottom shade, "Program Background" label, and a 3-row `.cap-card__timeline` (2026 / 2025 / 2024 program rows: year · dot · bold title · muted detail).
-- **Col 2 stack**: a `.cap-card--quote` (gradient card, "Mission Voice", blockquote, attributed to *Dr. Lena Morris*) over a `.cap-card--metric.cap-card--video-panel` (looping video `https://plugin-assets.readable-studio.ai/plugins/aerocore/23211-720-e83442.mp4`, centered giant `2K` metric, caption "Highly Qualified Engineers").
-- **Col 3 stack** (`--systems`): a tall `.cap-card--tools-media` video card (`https://plugin-assets.readable-studio.ai/plugins/aerocore/23843-720-35899f.mp4`) with "Core Systems" label and a **two-row tool marquee** (`marquee-left 24s` / `marquee-right 28s`, each row duplicated for a seamless `-50%` loop), over a `.cap-card--contact#contact` row (email link + phone + circular `ph-arrow-up-right` button).
+- **Col 1** `.cap-card--tall.cap-card--media`: full-bleed looping video (`./assets/45229-720-74e6d9.webp`), bottom shade, "Program Background" label, and a 3-row `.cap-card__timeline` (2026 / 2025 / 2024 program rows: year · dot · bold title · muted detail).
+- **Col 2 stack**: a `.cap-card--quote` (gradient card, "Mission Voice", blockquote, attributed to *Dr. Lena Morris*) over a `.cap-card--metric.cap-card--video-panel` (looping video `./assets/23211-720-e83442.webp`, centered giant `2K` metric, caption "Highly Qualified Engineers").
+- **Col 3 stack** (`--systems`): a tall `.cap-card--tools-media` video card (`./assets/23843-720-35899f.webp`) with "Core Systems" label and a **two-row tool marquee** (`marquee-left 24s` / `marquee-right 28s`, each row duplicated for a seamless `-50%` loop), over a `.cap-card--contact#contact` row (email link + phone + circular `ph-arrow-up-right` button).
 
 Responsive: ≤1080px → 2 cols (last stack spans full width as 2 cols); ≤760px → single column.
 

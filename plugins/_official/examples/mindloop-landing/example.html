@@ -223,7 +223,7 @@
   <!-- ── HERO ── -->
   <header class="hero">
     <video class="hero-video" autoplay muted loop playsinline
-      src="https://plugin-assets.readable-studio.ai/plugins/mindloop-landing/hf_20260325_120549_0cd82c36-56b3-4dd9-b190-069cfc3a623f-9b476a.mp4"></video>
+      poster="./assets/hf_20260325_120549_0cd82c36-56b3-4dd9-b190-069cfc3a623f-9b476a.webp" preload="none"></video>
     <div class="hero-fade"></div>
     <div class="hero-content">
       <div class="avatar-row fade-up">
@@ -271,7 +271,7 @@
     <!-- ── MISSION ── -->
     <section class="mission-sec container" id="philosophy">
       <video class="mission-video fade-up" autoplay muted loop playsinline
-        src="https://plugin-assets.readable-studio.ai/plugins/mindloop-landing/hf_20260325_132944_a0d124bb-eaa1-4082-aa30-2310efb42b4b-d0e30d.mp4"></video>
+        poster="./assets/hf_20260325_132944_a0d124bb-eaa1-4082-aa30-2310efb42b4b-d0e30d.webp" preload="none"></video>
       <div class="mission-words">
         <p class="mission-p1" data-reveal data-hl="curiosity,meets,clarity"></p>
         <p class="mission-p2" data-reveal></p>
@@ -284,7 +284,7 @@
         <div class="label fade-up">SOLUTION</div>
         <h2 class="fade-up">The platform for <span class="serif">meaningful</span> content</h2>
         <video class="solution-video fade-up" autoplay muted loop playsinline
-          src="https://plugin-assets.readable-studio.ai/plugins/mindloop-landing/hf_20260325_125119_8e5ae31c-0021-4396-bc08-f7aebeb877a2-1f0a78.mp4"></video>
+          poster="./assets/hf_20260325_125119_8e5ae31c-0021-4396-bc08-f7aebeb877a2-1f0a78.webp" preload="none"></video>
         <div class="feature-grid">
           <div class="feature fade-up"><h4>Curated Feed</h4><p>A signal-first stream of writing worth your attention, tuned to depth over volume.</p></div>
           <div class="feature fade-up"><h4>Writer Tools</h4><p>Drafting, scheduling, and analytics built for thinkers who publish with intent.</p></div>
@@ -296,7 +296,7 @@
 
     <!-- ── CTA ── -->
     <section class="cta-sec">
-      <video class="cta-video" id="cta-video" autoplay muted loop playsinline></video>
+      <video class="cta-video" id="cta-video" autoplay muted loop playsinline poster="./assets/hf_20260325_120549_0cd82c36-56b3-4dd9-b190-069cfc3a623f-9b476a.webp" preload="none"></video>
       <div class="cta-overlay"></div>
       <div class="cta-content container">
         <div class="cta-logo fade-up"><div class="o"></div><div class="i"></div></div>
@@ -380,7 +380,7 @@
     (function () {
       const SRC = 'https://stream.mux.com/8wrHPCX2dC3msyYU9ObwqNdm00u3ViXvOSHUMRYSEe5Q.m3u8';
       const video = document.getElementById('cta-video');
-      if (!video) return;
+      if (!video || video.poster) return;
       if (window.Hls && window.Hls.isSupported()) {
         const hls = new window.Hls();
         hls.loadSource(SRC);

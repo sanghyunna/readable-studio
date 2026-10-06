@@ -13,6 +13,11 @@ readable:
     requires: false
 ---
 
+## Offline media
+
+Copy the sibling `assets/` directory beside the generated HTML, retaining its relative paths (or embed these assets for a standalone file). Use the bundled images instead of remote media. Large video loops and animated previews are represented by local still images; render them as images or video posters without a video source. This offline-media rule overrides remote/video instructions below. See `assets/NOTICE.md` for attribution.
+
+
 # Stellar Launch — Launchex Awards Landing Page
 
 Produce a premium **awards / venture-prize landing page** ("Launchex Awards") with an editorial, angular, clip-path-driven aesthetic. A complete, rendered reference implementation ships beside this skill at `example.html` — **start from it**. Copy `example.html`, then adjust copy, video URLs, and image URLs; do **not** rewrite the CSS or invent a new visual language. The seed already encodes the exact shell, fonts, colors, clip-path chamfers, section layout, and responsive behavior described below.
@@ -57,7 +62,7 @@ html, body { font-family: 'Inter', system-ui, -apple-system, sans-serif; -webkit
 
 - `min-height: calc(100vh - 40px)`, `position: relative; overflow: hidden`.
 - Background `<video>` (`autoplay loop muted playsinline`, `object-fit: cover`, fills the section, `z-index:0`):
-  `https://plugin-assets.readable-studio.ai/plugins/stellar-launch/hf_20260511_151648_2bdfbd1c-6bde-4f5d-a967-f57cbced97f6-fb3729.mp4`
+  `./assets/hf_20260511_151648_2bdfbd1c-6bde-4f5d-a967-f57cbced97f6-fb3729.webp`
 - Overlay gradient on the video (`z-index:1`): `linear-gradient(to bottom, rgba(0,0,0,0.10), transparent 50%, rgba(0,0,0,0.20))`.
 - **Top bar** (`z-index:20`, flex row, justify-between, padding `20px 16px 0` → `32px 40px 0` at ≥640px):
   - Left: logo = lucide `Sparkles` (20px → 24px, strokeWidth 1.5, white) + "launchex" (14/15px, font-semibold, tracking-tight) and "awards" below (10/11px, font-light, opacity 0.9, `-mt-0.5`). All white.
@@ -75,7 +80,7 @@ html, body { font-family: 'Inter', system-ui, -apple-system, sans-serif; -webkit
   - Kicker "[submissions]" (12px, letter-spacing `0.24em`, uppercase, color `#154359`).
   - Title "submissions" below (`.font-firs`, 44px → 54px, font-semibold, tracking-tight, uppercase, `#154359`).
   - Square video below (margin-top 24px → 32px), 220px → 380px → 460px, `object-fit: cover`, `autoplay loop muted playsinline`:
-    `https://plugin-assets.readable-studio.ai/plugins/stellar-launch/hf_20260514_154120_b89bfedd-530d-4ebb-9eb7-42eeafe08667-c6b971.mp4`
+    `./assets/hf_20260514_154120_b89bfedd-530d-4ebb-9eb7-42eeafe08667-c6b971.webp`
 - **Left nominations** (3 cards): "Lead" / "AI venture for commerce" · "Emerging innovations" / "in food commerce" · "The finest innovations" / "for learners and young students".
 - **Right nominations** (3 cards): "Innovations for advanced" / "career training" · "The finest innovations" / "in finance" · "Categories" / "coming soon".
 - **NominationCard**: `<a>`, `max-width: 20em`, `height: 5em`, `hover: translateY(-2px)`. Border is an SVG chamfered rectangle `polygon(points="14,0 100,0 100,86 86,100 0,100 0,14")`, `viewBox="0 0 100 100"`, `preserveAspectRatio="none"`, stroke `rgba(6,99,119,0.25)`, stroke-width 1, `vector-effect="non-scaling-stroke"`, fill none. Centered text: title 13px font-semibold, subtitle 12px font-normal opacity 0.8, color `#154359`.
@@ -95,9 +100,9 @@ html, body { font-family: 'Inter', system-ui, -apple-system, sans-serif; -webkit
   - Outer: `width:100%; height: 280px → 340px; background-color: rgba(255,255,255,0.8); padding: 1.5px` (acts as border), clip-path applied.
   - Inner image: `width/height 100%; overflow:hidden; background-size: cover; background-position: center; mix-blend-mode: plus-darker`, same clip-path.
   - Text overlay (absolute): value `.font-firs`, font-semibold, uppercase, 36px → 52px, gradient text `linear-gradient(294deg, #185B7B 20%, #4BBDF0)` (`background-clip: text; color: transparent`). Description 14px, line-height 1.4, `#154359`, margin-top 12px, max-width 66%.
-  - **Card 1** — "7+ years" / "Launchex has served the market, guiding ventures and their journeys"; no offset; text `left:24px; right:24px; bottom:24px`; clip-path `polygon(64px 0, calc(100% - 14px) 0, calc(100% - 4px) 4px, 100% 14px, 100% calc(100% - 14px), calc(100% - 4px) calc(100% - 4px), calc(100% - 14px) 100%, 14px 100%, 4px calc(100% - 4px), 0 calc(100% - 14px), 0 64px)`. Image: `https://plugin-assets.readable-studio.ai/plugins/stellar-launch/hf_20260514_154203_6c6f94dc-a07e-4ba5-8688-106f01ccd2c8-158c74.webp&w=1280&q=85`.
-  - **Card 2** — "15000+" / "innovation ventures moved through the Launchex pipeline"; offset down `lg:mt-24`; text `left:24px; bottom:80px`; clip-path `polygon(0 14px, 4px 4px, 14px 0, calc(100% - 64px) 0, 100% 64px, 100% calc(100% - 14px), calc(100% - 4px) calc(100% - 4px), calc(100% - 14px) 100%, 64px 100%, 0 calc(100% - 64px))`. Image: `https://plugin-assets.readable-studio.ai/plugins/stellar-launch/hf_20260514_154151_45c62c60-3bcc-4f21-8f9d-03722ebb5df8-71cb96.webp&w=1280&q=85`.
-  - **Card 3** — "120+" / "accelerator sessions delivered by Launchex across Eastern Europe"; no offset; text `left:24px; right:112px; bottom:24px`; clip-path `polygon(0 14px, 4px 4px, 14px 0, calc(100% - 64px) 0, 100% 64px, 100% calc(100% - 64px), calc(100% - 64px) 100%, 14px 100%, 4px calc(100% - 4px), 0 calc(100% - 14px))`. Image: `https://plugin-assets.readable-studio.ai/plugins/stellar-launch/hf_20260514_152238_24ec8db4-d728-4739-bb30-e985533e9637-8b9102.webp&w=1280&q=85`.
+  - **Card 1** — "7+ years" / "Launchex has served the market, guiding ventures and their journeys"; no offset; text `left:24px; right:24px; bottom:24px`; clip-path `polygon(64px 0, calc(100% - 14px) 0, calc(100% - 4px) 4px, 100% 14px, 100% calc(100% - 14px), calc(100% - 4px) calc(100% - 4px), calc(100% - 14px) 100%, 14px 100%, 4px calc(100% - 4px), 0 calc(100% - 14px), 0 64px)`. Image: `./assets/hf_20260514_154203_6c6f94dc-a07e-4ba5-8688-106f01ccd2c8-158c74.webp`.
+  - **Card 2** — "15000+" / "innovation ventures moved through the Launchex pipeline"; offset down `lg:mt-24`; text `left:24px; bottom:80px`; clip-path `polygon(0 14px, 4px 4px, 14px 0, calc(100% - 64px) 0, 100% 64px, 100% calc(100% - 14px), calc(100% - 4px) calc(100% - 4px), calc(100% - 14px) 100%, 64px 100%, 0 calc(100% - 64px))`. Image: `./assets/hf_20260514_154151_45c62c60-3bcc-4f21-8f9d-03722ebb5df8-71cb96.webp`.
+  - **Card 3** — "120+" / "accelerator sessions delivered by Launchex across Eastern Europe"; no offset; text `left:24px; right:112px; bottom:24px`; clip-path `polygon(0 14px, 4px 4px, 14px 0, calc(100% - 64px) 0, 100% 64px, 100% calc(100% - 64px), calc(100% - 64px) 100%, 14px 100%, 4px calc(100% - 4px), 0 calc(100% - 14px))`. Image: `./assets/hf_20260514_152238_24ec8db4-d728-4739-bb30-e985533e9637-8b9102.webp`.
 - **Bottom fade**: same as section 2.
 
 ## Persistent overlay elements (inside `.frame`, outside `.scroll`)

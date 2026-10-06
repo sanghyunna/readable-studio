@@ -13,6 +13,11 @@ readable:
     requires: false
 ---
 
+## Offline media
+
+Copy the sibling `assets/` directory beside the generated HTML, retaining its relative paths (or embed these assets for a standalone file). Use the bundled images instead of remote media. Large video loops and animated previews are represented by local still images; render them as images or video posters without a video source. This offline-media rule overrides remote/video instructions below. See `assets/NOTICE.md` for attribution.
+
+
 # AI Designer Portfolio — "Viktor Oddy" Creative Studio Landing
 
 Produce a premium **single-page creative-studio landing page** on a **white background throughout**. A complete, rendered reference implementation ships beside this skill at `example.html` — **start from it**. Copy `example.html`, then adjust copy and data only; do not rewrite the CSS or invent a new visual language. The seed already encodes the exact tokens, fonts, section order, animations, button shadows, and responsive behavior described below.
@@ -93,14 +98,14 @@ Card:      0 4px 16px rgba(0,0,0,0.08)
    - Two buttons in `flex-col sm:flex-row`, gap 3/4, `mt-5 md:mt-6`, delay `.5s`: "Start a chat" (primary) + "View projects" (secondary).
 
 2. **Infinite marquee** — full width, `mt-16 md:mt-20 mb-16`. 8 GIFs **duplicated (16 total)** in a flex row, `animate-marquee` `translateX(0) → translateX(-50%)`, **30s linear infinite desktop / 10s mobile**. Images `h-[280px] md:h-[500px]`, `object-cover`, `mx-3`, `rounded-2xl`, `shadow-lg`. URLs (keep as remote — stable motionsites CDN):
-   - `https://plugin-assets.readable-studio.ai/plugins/ai-designer-portfolio/hero-space-voyage-preview-eECLH3Yc-475920.gif`
-   - `https://plugin-assets.readable-studio.ai/plugins/ai-designer-portfolio/hero-portfolio-cosmic-preview-BpvWJ3Nc-89ab29.gif`
-   - `https://plugin-assets.readable-studio.ai/plugins/ai-designer-portfolio/hero-velorah-preview-CJNTtbpd-626d83.gif`
-   - `https://plugin-assets.readable-studio.ai/plugins/ai-designer-portfolio/hero-asme-preview-B_nGDnTP-7fb29d.gif`
-   - `https://plugin-assets.readable-studio.ai/plugins/ai-designer-portfolio/hero-transform-data-preview-Cx5OU29N-910cf9.gif`
-   - `https://plugin-assets.readable-studio.ai/plugins/ai-designer-portfolio/hero-aethera-preview-DknSlcTa-097fee.gif`
-   - `https://plugin-assets.readable-studio.ai/plugins/ai-designer-portfolio/hero-orbit-web3-preview-BXt4OttD-f84442.gif`
-   - `https://plugin-assets.readable-studio.ai/plugins/ai-designer-portfolio/hero-nexora-preview-cx5HmUgo-d2d4a4.gif`
+   - `./assets/hero-space-voyage-preview-eECLH3Yc-475920.webp`
+   - `./assets/hero-portfolio-cosmic-preview-BpvWJ3Nc-89ab29.webp`
+   - `./assets/hero-velorah-preview-CJNTtbpd-626d83.webp`
+   - `./assets/hero-asme-preview-B_nGDnTP-7fb29d.webp`
+   - `./assets/hero-transform-data-preview-Cx5OU29N-910cf9.webp`
+   - `./assets/hero-aethera-preview-DknSlcTa-097fee.webp`
+   - `./assets/hero-orbit-web3-preview-BXt4OttD-f84442.webp`
+   - `./assets/hero-nexora-preview-cx5HmUgo-d2d4a4.webp`
 
 3. **Testimonial quote** — `py-12 px-6`, `max-w-2xl`, centered.
    - lucide `Quote` icon `w-6 h-6 text-slate-900`, delay `.1s`.
@@ -108,7 +113,7 @@ Card:      0 4px 16px rgba(0,0,0,0.08)
    - Author "Viktor Oddy" italic, `text-sm`, `#273C46`, delay `.3s`.
    - Three text logos: "Apple" (80px / 24px), "IDEO" (83px / 24px), "Polygon" (110px / 24px), `font-medium text-slate-900`, delay `.4s`.
    - **Parallax image** below: `w-full max-w-xs rounded-2xl shadow-lg`, alt "Chris Halaska", delay `.5s`. Keep this URL (stable higgs CDN):
-     `https://plugin-assets.readable-studio.ai/plugins/ai-designer-portfolio/hf_20260330_103804_7aa5494f-4d5b-432e-9dc7-20715275f143-069da9.webp&w=1280&q=85`
+     `./assets/hf_20260330_103804_7aa5494f-4d5b-432e-9dc7-20715275f143-069da9.webp`
      Parallax = IntersectionObserver + passive scroll listener with `requestAnimationFrame`, max offset 200px.
 
 4. **Pricing** — full width, `py-12 px-6`. Two cards `grid-cols-1 md:grid-cols-2 gap-8`, right-aligned on desktop (`md:justify-end md:max-w-4xl`, container `margin-left:auto`). Each `rounded-[40px]`, `pl-10 pr-10 md:pr-24 pt-3 pb-10`.

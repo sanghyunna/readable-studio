@@ -34,6 +34,7 @@ if (process.argv.includes('--check')) {
   const browser = await chromium.launch({ headless: true, channel: 'chromium', args: ['--use-angle=swiftshader'] });
   const page = await browser.newPage({ reducedMotion: 'reduce' });
   page.setDefaultTimeout(15000);
+  if (process.argv.includes('--offline')) await page.route(/^https?:\/\//, route => route.abort('blockedbyclient'));
   const entries: { id: string; type: string; sourceHash: string; bytes: number }[] = [];
   const failures: { id: string; error: string }[] = [];
   try {
@@ -87,7 +88,7 @@ if (process.argv.includes('--check')) {
           for (const element of Array.from(document.querySelectorAll('*'))) {
             const box = element.getBoundingClientRect();
             if (box.bottom <= 0 || box.top >= innerHeight) continue;
-            for (const match of getComputedStyle(element).backgroundImage.matchAll(/url\(["']?(.*?)["']?\)/g)) backgrounds.add(match[1]!);
+            for (const match of getComputedStyle(element).backgroundImage.matchAll(/url\((?:"([^"]*)"|'([^']*)'|([^)]*))\)/g)) backgrounds.add((match[1] ?? match[2] ?? match[3])!.trim());
           }
           await Promise.all(Array.from(backgrounds).map(async src => {
             const image = new Image(); image.src = src;
@@ -96,6 +97,12 @@ if (process.argv.includes('--check')) {
           for (const video of Array.from(document.querySelectorAll('video'))) {
             const box = video.getBoundingClientRect();
             if (box.bottom > 0 && box.top < innerHeight && box.width > 0) {
+              // Offline exemplars may intentionally ship a still instead of a large loop.
+              if (video.poster && !video.getAttribute('src') && !video.querySelector('source[src]')) {
+                const image = new Image(); image.src = video.poster;
+                await bounded(image.decode());
+                continue;
+              }
               video.preload = 'auto';
               if (video.readyState < 2) await bounded(new Promise<void>((resolve, reject) => {
                 video.addEventListener('loadeddata', () => resolve(), { once: true });

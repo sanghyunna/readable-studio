@@ -466,8 +466,26 @@
     {
       "id": "example-acreage-farming",
       "type": "website",
-      "sourceHash": "eff0542aae3ec0b42473c52f1c5fa03d689fe2db7c20937952de173079daab7d",
-      "bytes": 14308
+      "sourceHash": "19576c367867f53a829173ad0e76111e50abafd8abf890a37b83f669316b3df9",
+      "bytes": 12744
+    },
+    {
+      "id": "example-aerocore",
+      "type": "website",
+      "sourceHash": "8b7c123d82b11d2efc1e4a99ff82833c82c3aebbfa6d9950ced00c5ac886eae3",
+      "bytes": 12428
+    },
+    {
+      "id": "example-ai-designer-portfolio",
+      "type": "website",
+      "sourceHash": "0160f0b95b4445d3339df27303a78cfd69d2bebc6491d46ee5577c19ba15d664",
+      "bytes": 13308
+    },
+    {
+      "id": "example-cinematic-landing-page",
+      "type": "website",
+      "sourceHash": "955318bb7fa38437259f58659afaeaa4c1afca3eb99877492e43f5f49066c9c5",
+      "bytes": 23354
     },
     {
       "id": "example-codenest-coding-platform",
@@ -506,6 +524,18 @@
       "bytes": 6404
     },
     {
+      "id": "example-dreamcore-landing",
+      "type": "website",
+      "sourceHash": "3a59b84f62a74633a48ace2d34a933adb6d0b98fde4c5cca573cfd1a210b9476",
+      "bytes": 32780
+    },
+    {
+      "id": "example-evergreen-finance",
+      "type": "website",
+      "sourceHash": "eada4ff4deb54dc6e440efb4557b275cceb280ad0c52fa29a5de24c324c377c0",
+      "bytes": 8088
+    },
+    {
       "id": "example-flowai-live-dashboard-template",
       "type": "website",
       "sourceHash": "eb47a457eb0e7e150a256fdc9dd4ce2b6ee4b400fee11afceb25b62d180928e6",
@@ -526,8 +556,8 @@
     {
       "id": "example-innovation",
       "type": "website",
-      "sourceHash": "83481b46bce53336a474c34db9d7e02f0e0bc95c1166ceb11e6fc102bb48ba5a",
-      "bytes": 4716
+      "sourceHash": "d9f9ae87cbf521f79381338d0a9bc27bba2ccbafe9d93275abf06dc59009e8b2",
+      "bytes": 4788
     },
     {
       "id": "example-kami-landing",
@@ -542,16 +572,28 @@
       "bytes": 11930
     },
     {
+      "id": "example-layered-depth",
+      "type": "website",
+      "sourceHash": "3b75daa25ad503f4cf3dc12ae5ada79323c1dee9ff710b39c1287b6c094e58de",
+      "bytes": 18228
+    },
+    {
       "id": "example-liquid-glass-agency",
       "type": "website",
-      "sourceHash": "cf34ec539d92a2677e5c0b6d12e28db6d1c4362f707bf11ebf0f33bed7add85c",
-      "bytes": 6312
+      "sourceHash": "b9f8d953e2527aa8c6600f80451020bf0aa48b7fde26a576191ec4e5c8902993",
+      "bytes": 17418
+    },
+    {
+      "id": "example-luxury-botanical",
+      "type": "website",
+      "sourceHash": "c3345b9ac605d14c9211c81a01c46c89090d33a6f7fa7cba0c1f88b971cc7c25",
+      "bytes": 22834
     },
     {
       "id": "example-mindloop-landing",
       "type": "website",
-      "sourceHash": "11e074fe8a87956129a308b741dba12d801dcb3eff6c5cb8c123e4600bc41ef0",
-      "bytes": 5452
+      "sourceHash": "844930c218df22b51783ae6f14a8dc85ce5944d496fae6a37b6a2fda19e6c4f0",
+      "bytes": 17790
     },
     {
       "id": "example-mobile-app",
@@ -566,6 +608,12 @@
       "bytes": 9922
     },
     {
+      "id": "example-mythic-naturecore",
+      "type": "website",
+      "sourceHash": "5c3db470c7188fac62ff4d593fdf7a5218691b5fd07c38d4ba1b9fca0b2c2e85",
+      "bytes": 36696
+    },
+    {
       "id": "example-nimbus-grid",
       "type": "website",
       "sourceHash": "85d3f79d24dab27c19d3a95899ecb74d14c3382e02380ef142f12c5dc456b90c",
@@ -574,8 +622,8 @@
     {
       "id": "example-orbis-nft",
       "type": "website",
-      "sourceHash": "bf621cc4a326554c25e49164f4b5e9cc90febb6ac4f116c5123e118b87271353",
-      "bytes": 36392
+      "sourceHash": "aabac95c03c52ba593c3a123079ae2a702f41542892554e6c25837da255b48e8",
+      "bytes": 35420
     },
     {
       "id": "example-portfolio-cosmic",
@@ -604,8 +652,8 @@
     {
       "id": "example-skyelite-private-jets",
       "type": "website",
-      "sourceHash": "3c89f70349db8f57210c4c6ba360bb52824c53b9ed6168a9ab2c10350f28e170",
-      "bytes": 3984
+      "sourceHash": "d8174fc6468993b5fc223cbe20946cc5e22021c31003f162ebd68a77be90279c",
+      "bytes": 12420
     },
     {
       "id": "example-social-media-dashboard",
@@ -622,8 +670,8 @@
     {
       "id": "example-stellar-launch",
       "type": "website",
-      "sourceHash": "63492a3bb7b437e6f006bcd271fe957c01db8e710afb33708c7199823fd19c2e",
-      "bytes": 5242
+      "sourceHash": "13234b84356e127476ba1b725bea5a15af11bed42d65a1a55b365ba91a743153",
+      "bytes": 16574
     },
     {
       "id": "example-team-okrs",

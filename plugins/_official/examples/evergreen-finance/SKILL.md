@@ -13,6 +13,11 @@ readable:
     requires: false
 ---
 
+## Offline media
+
+Copy the sibling `assets/` directory beside the generated HTML, retaining its relative paths (or embed these assets for a standalone file). Use the bundled images instead of remote media. Large video loops and animated previews are represented by local still images; render them as images or video posters without a video source. This offline-media rule overrides remote/video instructions below. See `assets/NOTICE.md` for attribution.
+
+
 # Evergreen Finance — Kova Fintech Landing
 
 Produce a premium **"Kova" fintech landing page**. A complete, rendered reference implementation ships beside this skill at `example.html` — **start from it**. Copy `example.html`, then adjust copy and data; do not rewrite the CSS or invent a new visual language. The seed already encodes the exact tokens, fonts, colors, three sections, dashboard cards, donut chart, and animations described below.
@@ -73,7 +78,7 @@ White background. `hero-inner` is `flex-1 flex flex-col justify-between` so the 
 
 ### Boomerang video background (locked)
 `<BoomerangVideoBg>` wrapped in `absolute inset-0 w-full h-full scale-[1.08] origin-center`:
-- Loads (muted, playsInline, crossOrigin="anonymous"): `https://plugin-assets.readable-studio.ai/plugins/evergreen-finance/hf_20260517_070729_32a7eb4e-d6e2-4571-badc-91b4dab1ecbe-2db9b1.mp4`
+- Loads (muted, playsInline, crossOrigin="anonymous"): `./assets/hf_20260517_070729_32a7eb4e-d6e2-4571-badc-91b4dab1ecbe-2db9b1.webp`
 - Captures every frame into offscreen canvases (max width 960px) while the video plays once, via `requestVideoFrameCallback` (with `requestAnimationFrame` fallback).
 - After `ended`, swaps the `<video>` for a visible `<canvas>` and plays the captured frames forward/reverse (boomerang) at 30fps. The `scale-[1.08]` hides edge gaps.
 - If frame capture fails (cross-origin taint), it gracefully keeps showing the looping `<video>` — keep this fallback.
@@ -109,7 +114,7 @@ Left column (scroll FadeUp, staggered delays 0 → 0.4):
 - Attribution (0.3): "Maya Reeves" (`text-sm font-semibold`) + "Director, Arcvex" (`text-xs text-stone-500`).
 - Button (0.4): "All Stories" + arrow icon, dark button style.
 
-Right column (FadeUp delay 0.15): a looping muted autoplay video `https://plugin-assets.readable-studio.ai/plugins/evergreen-finance/hf_20260517_074029_c7a854bd-2d6e-4b62-96b3-ae8c16311e44-59f9be.mp4`, styled `w-full rounded-2xl object-cover aspect-square` inside `max-w-xs sm:max-w-sm`.
+Right column (FadeUp delay 0.15): a looping muted autoplay video `./assets/hf_20260517_074029_c7a854bd-2d6e-4b62-96b3-ae8c16311e44-59f9be.webp`, styled `w-full rounded-2xl object-cover aspect-square` inside `max-w-xs sm:max-w-sm`.
 
 ## Section 3 — Features
 
@@ -122,12 +127,12 @@ Header row (scroll-animated):
 Cards grid: `grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4`. Each card `aspect-[3/4] rounded-2xl overflow-hidden`, scroll FadeUp with staggered delays 0.05 / 0.15 / 0.25 / 0.35.
 
 - **Card 1 — Smart Budgeting** (0.05): absolute object-cover bg image; gradient overlay `bg-gradient-to-t from-[#08150C]/80 via-[#08150C]/20 to-transparent`; top label Lucide `Sparkles` (16, white) + "Smart Budgeting"; bottom text "Let AI reshape how you plan your spending. Kova adapts to your…" (`text-white/80`).
-  - Image: `https://plugin-assets.readable-studio.ai/plugins/evergreen-finance/hf_20260517_061249_f20dfeda-1033-45ce-a3ee-070965599cbf-6c6b7e.webp&w=1280&q=85`
+  - Image: `./assets/hf_20260517_061249_f20dfeda-1033-45ce-a3ee-070965599cbf-6c6b7e.webp`
 - **Card 2 — Bank-Grade Security** (0.15): same overlay; Lucide `ShieldCheck` (16, white) + "Bank-Grade Security"; bottom text "Keep your money safe with end-to-end encryption, live fraud alerts, and two-factor auth…".
-  - Image: `https://plugin-assets.readable-studio.ai/plugins/evergreen-finance/hf_20260517_061305_db631f5f-185f-4fda-a7a8-1dd7359ef2ea-4b7cdd.webp&w=1280&q=85`
+  - Image: `./assets/hf_20260517_061305_db631f5f-185f-4fda-a7a8-1dd7359ef2ea-4b7cdd.webp`
 - **Card 3 — Spend Insights** (0.25): **no bg image**. Solid `#EBE4DC`, `p-5`. Top label Lucide `PieChart` (16, `text-stone-700`) + "Spend Insights". Inner `rounded-2xl p-4` `#F4F1EC` centered: "Monthly Spend" + "1 Apr – 30 May 2026", then a donut SVG (`viewBox="0 0 36 36"`, `-rotate-90`, four circles r=14 strokeWidth=5) with arcs: `#C46B2D` (26.4/61.56, offset 0), `#7A8C3E` (22/65.96, offset -26.4), `#A8B87A` (17.6/70.36, offset -48.4), `#B8AFA4` (22/65.96, offset -66); center overlay "50%" bold + "of budget".
 - **Card 4 — Wealth Building** (0.35): same overlay; Lucide `TrendingUp` (16, white) + "Wealth Building"; bottom text "Grow your net worth with tools that help you set targets, monitor gains, and act…".
-  - Image: `https://plugin-assets.readable-studio.ai/plugins/evergreen-finance/hf_20260517_061316_50e651f8-02d0-4add-9ddb-7d81d15ac02e-24edde.webp&w=1280&q=85`
+  - Image: `./assets/hf_20260517_061316_50e651f8-02d0-4add-9ddb-7d81d15ac02e-24edde.webp`
 
 ## Assets — keep remote (do not inline)
 

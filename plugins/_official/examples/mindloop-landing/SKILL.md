@@ -13,6 +13,11 @@ readable:
     requires: false
 ---
 
+## Offline media
+
+Copy the sibling `assets/` directory beside the generated HTML, retaining its relative paths (or embed these assets for a standalone file). Use the bundled images instead of remote media. Large video loops and animated previews are represented by local still images; render them as images or video posters without a video source. This offline-media rule overrides remote/video instructions below. See `assets/NOTICE.md` for attribution.
+
+
 # Mindloop — Dark Monochrome Content-Platform Landing
 
 Produce a premium, **pure-black monochrome** landing page for **Mindloop**, a newsletter / content platform. A complete, rendered reference implementation ships beside this skill at `example.html` — **start from it**. Copy `example.html`, then adjust copy and data; do not rewrite the CSS or invent a new visual language. The seed already encodes the exact HSL tokens, liquid-glass treatment, fonts, section layout, fadeUp reveal, scroll-driven mission reveal, and the HLS CTA.
@@ -110,7 +115,7 @@ In the seed this is mapped down to an `IntersectionObserver` (threshold ~0.08, `
 
 ### Hero — full viewport height
 - Background: autoplay/loop/muted/playsInline MP4 covering the section, `object-cover`.
-  - URL: `https://plugin-assets.readable-studio.ai/plugins/mindloop-landing/hf_20260325_120549_0cd82c36-56b3-4dd9-b190-069cfc3a623f-9b476a.mp4`
+  - URL: `./assets/hf_20260325_120549_0cd82c36-56b3-4dd9-b190-069cfc3a623f-9b476a.webp`
 - Bottom gradient: `h-64` (`256px`) `bg-gradient-to-t from-background to-transparent` for a smooth fade to black.
 - Content (centered, `z-10`, `pt-28 md:pt-32`):
   - Avatar row: 3 overlapping circular avatars (`-space-x-2`, `w-8 h-8 rounded-full border-2 border-background`, inlined data URIs) + "7,000+ people already subscribed" (`text-muted-foreground text-sm`).
@@ -127,7 +132,7 @@ In the seed this is mapped down to an `IntersectionObserver` (threshold ~0.08, `
 
 ### Mission section — `pt-0 pb-32 md:pb-44`, centered
 - Large ~800×800 looping autoplay muted video, centered.
-  - URL: `https://plugin-assets.readable-studio.ai/plugins/mindloop-landing/hf_20260325_132944_a0d124bb-eaa1-4082-aa30-2310efb42b4b-d0e30d.mp4`
+  - URL: `./assets/hf_20260325_132944_a0d124bb-eaa1-4082-aa30-2310efb42b4b-d0e30d.webp`
 - **Scroll-driven word-by-word reveal** (`useScroll` + `useTransform` in the port; in the seed a passive `scroll` listener that maps each word's viewport position to opacity `0.15 → 1`).
   - Paragraph 1 (`text-2xl md:text-4xl lg:text-5xl font-medium tracking-[-1px]`): "We're building a space where curiosity meets clarity — where readers find depth, writers find reach, and every newsletter becomes a conversation worth having." Words **"curiosity", "meets", "clarity"** snap to `--foreground`; the rest sit in `--hero-subtitle`.
   - Paragraph 2 (`text-xl md:text-2xl lg:text-3xl font-medium mt-10`): "A platform where content, community, and insight flow together — with less noise, less friction, and more meaning for everyone involved."
@@ -136,7 +141,7 @@ In the seed this is mapped down to an `IntersectionObserver` (threshold ~0.08, `
 - Label: "SOLUTION" (`text-xs tracking-[3px] uppercase text-muted-foreground`).
 - Heading: `text-4xl md:text-6xl` — "The platform for meaningful content" (serif italic on **"meaningful"**).
 - Video: `rounded-2xl aspect-[3/1] object-cover`.
-  - URL: `https://plugin-assets.readable-studio.ai/plugins/mindloop-landing/hf_20260325_125119_8e5ae31c-0021-4396-bc08-f7aebeb877a2-1f0a78.mp4`
+  - URL: `./assets/hf_20260325_125119_8e5ae31c-0021-4396-bc08-f7aebeb877a2-1f0a78.webp`
 - 4-column feature grid (`md:grid-cols-4 gap-8`): Curated Feed, Writer Tools, Community, Distribution — each title (`font-semibold text-base`) + description (`text-muted-foreground text-sm`).
 
 ### CTA section — `py-32 md:py-44`, `border-t border-border/30`, `overflow-hidden`

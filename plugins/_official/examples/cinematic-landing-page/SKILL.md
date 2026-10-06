@@ -13,6 +13,11 @@ readable:
     requires: false
 ---
 
+## Offline media
+
+Copy the sibling `assets/` directory beside the generated HTML, retaining its relative paths (or embed these assets for a standalone file). Use the bundled images instead of remote media. Large video loops and animated previews are represented by local still images; render them as images or video posters without a video source. This offline-media rule overrides remote/video instructions below. See `assets/NOTICE.md` for attribution.
+
+
 # Cinematic Landing Page — Bakery Facilities
 
 Produce a single-page, scroll-cinematic B2B landing site for **"Bakery Facilities"**, a premium bakery-solutions company. A complete, rendered reference implementation ships beside this skill at `example.html` — **start from it**. Copy `example.html`, then adjust copy/data and (if asked) port to the React stack; do **not** rewrite the CSS or invent a new visual language. The seed already encodes the exact tokens, fonts, layout, sections, and animations described below.
@@ -53,9 +58,9 @@ Gold accent **`#CB9D06`** — every hover state (nav links, buttons, footer link
 
 - Wrapper `height: calc(100vh + 300vh)`; inner `position: sticky; top: 0; height: 100vh; overflow: visible`.
 - **3 stacked `<video>` slides** (`autoplay loop muted playsinline`, `object-fit: cover`), z-index 1/2/3. Locked URLs:
-  - `https://plugin-assets.readable-studio.ai/plugins/cinematic-landing-page/hf_20260515_113235_88e0d62e-8103-40c1-948e-f0a4f886ffd1-e00afb.mp4`
-  - `https://plugin-assets.readable-studio.ai/plugins/cinematic-landing-page/hf_20260515_114315_ee3663e6-bd79-41b4-9e5b-0fae62827eb9-b97001.mp4`
-  - `https://plugin-assets.readable-studio.ai/plugins/cinematic-landing-page/hf_20260515_114559_dca18b14-90f5-47c4-8a84-3cbae9bd8a0c-62cb47.mp4`
+  - `./assets/hf_20260515_113235_88e0d62e-8103-40c1-948e-f0a4f886ffd1-e00afb.webp`
+  - `./assets/hf_20260515_114315_ee3663e6-bd79-41b4-9e5b-0fae62827eb9-b97001.webp`
+  - `./assets/hf_20260515_114559_dca18b14-90f5-47c4-8a84-3cbae9bd8a0c-62cb47.webp`
 - Transition: `SCROLL_PER_SLIDE_VH = 150`. Per slide compute `localProgress` over its scroll window, ease with cubic in-out `p<0.5 ? 4p³ : 1-((-2p+2)³)/2`, then `clip-path: ellipse(${5+progress*150}% ${8+progress*150}% at 50% 50%)`.
 - **H1** "THE SMART BAKERY SOLUTION": desktop `font-accent`, `font-size: 9.7vw`, `line-height: 1`, `white-space: nowrap`, `letter-spacing: -0.04em`, `bottom: -26px`. Mobile `40px`, `line-height 1.1`, wrap, centered, `bottom: 48px`, `px-4`. Animation: GSAP SplitText per char `{opacity:0,y:40}→{opacity:1,y:0}`, 0.8s, 30ms stagger, `power3.out`, autoStart on load.
 - **Subtitle** "for Professionals" (Luxurious Script): desktop `3vw`, mobile `12vw`, `absolute inset-x-0 top-0`, `padding-top: calc(80px + 60px)`. Same SplitText params; fires after h1 completes (~600ms).

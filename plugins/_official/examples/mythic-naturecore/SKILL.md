@@ -13,6 +13,11 @@ readable:
     requires: false
 ---
 
+## Offline media
+
+Copy the sibling `assets/` directory beside the generated HTML, retaining its relative paths (or embed these assets for a standalone file). Use the bundled images instead of remote media. Large video loops and animated previews are represented by local still images; render them as images or video posters without a video source. This offline-media rule overrides remote/video instructions below. See `assets/NOTICE.md` for attribution.
+
+
 # Mythic Naturecore — "Reverie" Cinematic Parallax Landing
 
 Produce a high-fidelity, premium interactive landing page named **"Reverie"**. A complete, rendered reference implementation ships beside this skill at `example.html` — **start from it**. Copy `example.html`, then adjust copy and imagery only; do **not** rewrite the scroll/parallax math or invent a new visual language. The seed already encodes the exact fonts, asset map, scroll timeline, parallax magnitudes, and entrance sequence below.
@@ -42,15 +47,15 @@ body { font-family: 'Imprima', sans-serif; }
 Define these exact constants at the top of the script. These are big background stills on a stable CDN (`res.cloudinary.com`); per the inline-vs-remote rule they **stay remote** — do NOT re-host, swap the host, or inline them.
 
 ```
-PORTAL_BG    = https://plugin-assets.readable-studio.ai/plugins/mythic-naturecore/portal_bg_mu60k9-78f20d.webp
-CURTAIN_LEFT = https://plugin-assets.readable-studio.ai/plugins/mythic-naturecore/curtain_left_cdht6q-c85f2f.webp
-CURTAIN_RIGHT= https://plugin-assets.readable-studio.ai/plugins/mythic-naturecore/curtain_right_a9bn3i-1ca8f6.webp
-WORLD_BG     = https://plugin-assets.readable-studio.ai/plugins/mythic-naturecore/world_bg_jzzcn1-dfd909.webp
+PORTAL_BG    = ./assets/portal_bg_mu60k9-78f20d.webp
+CURTAIN_LEFT = ./assets/curtain_left_cdht6q-c85f2f.webp
+CURTAIN_RIGHT= ./assets/curtain_right_a9bn3i-1ca8f6.webp
+WORLD_BG     = ./assets/world_bg_jzzcn1-dfd909.webp
 // Cards MUST remain in this exact order (Card 3, Card 1, Card 2):
 CARD_IMAGES = [
-  https://plugin-assets.readable-studio.ai/plugins/mythic-naturecore/card_3_nbwm25-de0132.webp,  // Card 3
-  https://plugin-assets.readable-studio.ai/plugins/mythic-naturecore/card_2_wr6al6-b3a8c5.webp,  // Card 1
-  https://plugin-assets.readable-studio.ai/plugins/mythic-naturecore/card_1_jz8otj-096be2.webp   // Card 2
+  ./assets/card_3_nbwm25-de0132.webp,  // Card 3
+  ./assets/card_2_wr6al6-b3a8c5.webp,  // Card 1
+  ./assets/card_1_jz8otj-096be2.webp   // Card 2
 ]
 ```
 

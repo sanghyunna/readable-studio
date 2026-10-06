@@ -13,6 +13,11 @@ readable:
     requires: false
 ---
 
+## Offline media
+
+Copy the sibling `assets/` directory beside the generated HTML, retaining its relative paths (or embed these assets for a standalone file). Use the bundled images instead of remote media. Large video loops and animated previews are represented by local still images; render them as images or video posters without a video source. This offline-media rule overrides remote/video instructions below. See `assets/NOTICE.md` for attribution.
+
+
 # Dreamcore Landing — Immersive Parallax Scroll Hero
 
 Produce a single-page immersive **parallax landing page** with two scroll-driven scenes inside one sticky viewport. A complete, rendered reference implementation ships beside this skill at `example.html` — **start from it**. Copy `example.html`, then adjust copy and data; do not rewrite the layer math, the easing, or the visual language. The seed already encodes the exact layer stack, scroll mapping, entrance sequence, mouse parallax, and arc-slider geometry described below.
@@ -35,14 +40,14 @@ This is the authoritative build brief. Follow it exactly — the layer z-order, 
 These are large stable CDN stills; **do not inline them and do not swap the host**.
 
 ```
-PORTAL_BG     = https://plugin-assets.readable-studio.ai/plugins/dreamcore-landing/image_1_vdzwae-464f73.webp
-CURTAIN_LEFT  = https://plugin-assets.readable-studio.ai/plugins/dreamcore-landing/curtain_left_znkmva-f9eb4c.webp
-CURTAIN_RIGHT = https://plugin-assets.readable-studio.ai/plugins/dreamcore-landing/curtain_right_paeyym-9fa947.webp
-WORLD_BG      = https://plugin-assets.readable-studio.ai/plugins/dreamcore-landing/image_2_gkcdlx-5f252f.webp
-BOTTOM_CLOUDS = https://plugin-assets.readable-studio.ai/plugins/dreamcore-landing/bottom_clouds_xskut6-c56b42.webp
-CARD_IMAGES[0] = https://plugin-assets.readable-studio.ai/plugins/dreamcore-landing/hf_20260525_160507_2ccbb4eb-1469-484f-af25-59168ad9a233-0c7429.webp&w=1280&q=85
-CARD_IMAGES[1] = https://plugin-assets.readable-studio.ai/plugins/dreamcore-landing/hf_20260525_160644_072a7f68-a101-4ded-a332-7d37707dbdd1-bfae0e.webp&w=1280&q=85
-CARD_IMAGES[2] = https://plugin-assets.readable-studio.ai/plugins/dreamcore-landing/hf_20260525_160706_1c153d04-0dfb-4ac9-a4ef-e74f301c329c-8b9d4e.webp&w=1280&q=85
+PORTAL_BG     = ./assets/image_1_vdzwae-464f73.webp
+CURTAIN_LEFT  = ./assets/curtain_left_znkmva-f9eb4c.webp
+CURTAIN_RIGHT = ./assets/curtain_right_paeyym-9fa947.webp
+WORLD_BG      = ./assets/image_2_gkcdlx-5f252f.webp
+BOTTOM_CLOUDS = ./assets/bottom_clouds_xskut6-c56b42.webp
+CARD_IMAGES[0] = ./assets/hf_20260525_160507_2ccbb4eb-1469-484f-af25-59168ad9a233-0c7429.webp
+CARD_IMAGES[1] = ./assets/hf_20260525_160644_072a7f68-a101-4ded-a332-7d37707dbdd1-bfae0e.webp
+CARD_IMAGES[2] = ./assets/hf_20260525_160706_1c153d04-0dfb-4ac9-a4ef-e74f301c329c-8b9d4e.webp
 ```
 
 ## Architecture

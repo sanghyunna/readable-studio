@@ -13,6 +13,11 @@ readable:
     requires: false
 ---
 
+## Offline media
+
+Copy the sibling `assets/` directory beside the generated HTML, retaining its relative paths (or embed these assets for a standalone file). Use the bundled images instead of remote media. Large video loops and animated previews are represented by local still images; render them as images or video posters without a video source. This offline-media rule overrides remote/video instructions below. See `assets/NOTICE.md` for attribution.
+
+
 # Layered Depth — Architecture Studio Landing (Qelora)
 
 Produce a cinematic, depth-layered landing page for an architecture studio called **Qelora**, built on stacked z-index layers (background video → warm overlay → animated birds → giant brand wordmark → parallax sculpture slab → frosted nav → frosted info panels) plus a second full-viewport video section with a centered editorial headline.
@@ -65,17 +70,17 @@ body { font-family: 'Zimula Trial Med', sans-serif; background: #0e0c0a; overflo
 These are stable CDN media; keep them as remote URLs (do not try to inline the videos). The Cloudinary background videos / bird webm clips and the Pexels CTA photo stay as URLs.
 
 Videos:
-- Hero background: `https://plugin-assets.readable-studio.ai/plugins/layered-depth/bg-video_xsmysw-f9ba1c.mp4`
-- Bird enter: `https://plugin-assets.readable-studio.ai/plugins/layered-depth/bird-entrada_e72qt7-102269.webm`
-- Bird idle 1: `https://plugin-assets.readable-studio.ai/plugins/layered-depth/bird-idle_fzjami-a7d50b.webm`
-- Bird idle 2: `https://plugin-assets.readable-studio.ai/plugins/layered-depth/bird-idle2_rajmgo-a2bfbb.webm`
-- Bird leave: `https://plugin-assets.readable-studio.ai/plugins/layered-depth/bird-saida_ifroz1-4ad3cb.webm`
-- Section 2 background: `https://plugin-assets.readable-studio.ai/plugins/layered-depth/bg-2-video_sgbpqt-cdc7da.mp4`
+- Hero background: `./assets/bg-video_xsmysw-f9ba1c.mp4`
+- Bird enter: `./assets/bird-entrada_e72qt7-102269.webm`
+- Bird idle 1: `./assets/bird-idle_fzjami-a7d50b.webm`
+- Bird idle 2: `./assets/bird-idle2_rajmgo-a2bfbb.webm`
+- Bird leave: `./assets/bird-saida_ifroz1-4ad3cb.webm`
+- Section 2 background: `./assets/bg-2-video_sgbpqt-cdc7da.mp4`
 
 Images:
-- Q logo (declared, unused): `https://plugin-assets.readable-studio.ai/plugins/layered-depth/q-logo_isvugc-be3611.webp`
-- Center sculpture / slab: `https://plugin-assets.readable-studio.ai/plugins/layered-depth/slab_v1_kb4vqk-eb36b8.webp`
-- CTA card photo (Pexels): `https://plugin-assets.readable-studio.ai/plugins/layered-depth/pexels-photo-3184465-a44809.webp`
+- Q logo (declared, unused): `./assets/q-logo_isvugc-be3611.webp`
+- Center sculpture / slab: `./assets/slab_v1_kb4vqk-eb36b8.webp`
+- CTA card photo (Pexels): `./assets/pexels-photo-3184465-a44809.webp`
 
 > Do not swap these CDN URLs for other hosts and do not introduce remote avatar hosts (`i.pravatar.cc`, dicebear, etc.) — there are no avatars in this template.
 

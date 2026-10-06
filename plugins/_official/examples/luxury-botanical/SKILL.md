@@ -13,6 +13,11 @@ readable:
     requires: false
 ---
 
+## Offline media
+
+Copy the sibling `assets/` directory beside the generated HTML, retaining its relative paths (or embed these assets for a standalone file). Use the bundled images instead of remote media. Large video loops and animated previews are represented by local still images; render them as images or video posters without a video source. This offline-media rule overrides remote/video instructions below. See `assets/NOTICE.md` for attribution.
+
+
 # Luxury Botanical — Beyond The Collection
 
 Produce a cinematic, scroll-driven **luxury fragrance landing page**. A complete, rendered reference implementation ships beside this skill at `example.html` — **start from it**. Copy `example.html`, then adjust copy, bottle imagery, and section text; do not rewrite the motion system or invent a new visual language. The seed already encodes the exact fonts, tokens, scroll-keyframes, orbit math, clip-path reveal, and responsive behavior described below.
@@ -50,7 +55,7 @@ Load once via `<link>`:
 These are large, stable CDN media; keep them as remote URLs (do **not** try to inline them, and do **not** swap them for other hosts):
 
 - Hero background video (autoplay/muted/loop/playsinline, `object-fit:cover`, fixed inside the sticky stage):
-  `https://plugin-assets.readable-studio.ai/plugins/luxury-botanical/hf_20260520_114550_b72cc2b7-2267-4d9e-b19f-f3bb4b0c7084-e5c560.mp4`
+  `./assets/hf_20260520_114550_b72cc2b7-2267-4d9e-b19f-f3bb4b0c7084-e5c560.webp`
 - Six fragrance-bottle `.webp` stills on `res.cloudinary.com/dsdhxhhqh` (the orbit images), in this order:
   1. Wild Vetiver — `…/v1780390315/BL1996-Beyond_wild_vetiver_Flakon_100ml_300dpi_a55ie5.webp`
   2. Radiant Osmanthus — `…/v1780390315/BL2156_BEYOND_RADIANT_OSMANTHUS_hoc3up.webp`
@@ -58,7 +63,7 @@ These are large, stable CDN media; keep them as remote URLs (do **not** try to i
   4. Mellow Heliotrope — `…/v1780390315/BL2158_BEYOND_MELLOW_HELIOTROPE_agqych.webp`
   5. Magnetic Amber — `…/v1780390317/BL2371-BL2372-BL2373-Magnetic-Amber_web_2_dbmtpy.webp`
   6. Crystal Edition — `…/v1780390315/BL2156_BEYOND_RADIANT_OSMANTHUS_1_hlc4v1.webp`
-- Stay-section bottom decoration still: `https://plugin-assets.readable-studio.ai/plugins/luxury-botanical/pasted-1779282335552-1_gmztyi-eccf42.webp`
+- Stay-section bottom decoration still: `./assets/pasted-1779282335552-1_gmztyi-eccf42.webp`
 
 There are **no avatar / face images** in this template — nothing needs base64 inlining. Keep the CDN URLs exactly as above.
 

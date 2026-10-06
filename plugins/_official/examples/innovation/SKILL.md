@@ -13,6 +13,11 @@ readable:
     requires: false
 ---
 
+## Offline media
+
+Copy the sibling `assets/` directory beside the generated HTML, retaining its relative paths (or embed these assets for a standalone file). Use the bundled images instead of remote media. Large video loops and animated previews are represented by local still images; render them as images or video posters without a video source. This offline-media rule overrides remote/video instructions below. See `assets/NOTICE.md` for attribution.
+
+
 # Innovation — Dark Editorial Liquid-Glass Landing
 
 Produce a premium single-page **agency / studio landing site**: bg-black, an Instrument-Serif hero headline over a seamlessly-looping fullscreen hero video, liquid-glass nav and buttons, and four scroll-revealed sections (About, Featured Video, Philosophy, Services). A complete, rendered reference implementation ships beside this skill at `example.html` — **start from it**. Copy `example.html`, then adjust copy and swap video URLs; do not rewrite the CSS or invent a new visual language. The seed already encodes the exact `.liquid-glass` treatment, fonts, layout, scroll reveals, and the hand-written hero-video crossfade loop described below.
@@ -76,7 +81,7 @@ Apply `.liquid-glass` to: the nav pill, the Login button, the email-input pill, 
 
 - `min-height:100vh; position:relative; overflow:hidden; display:flex; flex-direction:column`.
 - **Background video** (`absolute inset-0 w-full h-full object-cover object-bottom`, `z-index:0`):
-  `https://plugin-assets.readable-studio.ai/plugins/innovation/hf_20260405_074625_a81f018a-956b-43fb-9aee-4d1508e30e6a-6993b9.mp4`
+  `./assets/hf_20260405_074625_a81f018a-956b-43fb-9aee-4d1508e30e6a-6993b9.webp`
   Attributes: `muted autoPlay playsInline preload="auto"`. **Starts at `opacity: 0`.**
 - **Hero video fade logic (vanilla JS via refs, NOT CSS transitions):**
   - On `canplay`: play, then animate opacity 0 → 1 over **500ms** with `requestAnimationFrame`.
@@ -108,7 +113,7 @@ Apply `.liquid-glass` to: the nav pill, the Login button, the email-input pill, 
 - `bg-black pt-6 md:pt-10 pb-20 md:pb-32 px-6 overflow-hidden`, `max-w-6xl`.
 - `rounded-3xl overflow-hidden aspect-video` container, reveal opacity 0 / y 60 → in, 0.9s.
 - Video `w-full h-full object-cover`, `muted autoPlay loop playsInline preload="auto"`:
-  `https://plugin-assets.readable-studio.ai/plugins/innovation/hf_20260402_054547_9875cfc5-155a-4229-8ec8-b7ba7125cbf8-eee511.mp4`
+  `./assets/hf_20260402_054547_9875cfc5-155a-4229-8ec8-b7ba7125cbf8-eee511.webp`
 - Gradient overlay on video: `bg-gradient-to-t from-black/60 via-transparent to-transparent`.
 - Bottom overlay (`absolute bottom-0 inset-x-0 p-6 md:p-10`): flex row on desktop, column on mobile.
   - Left: `.liquid-glass` rounded-2xl `p-6 md:p-8 max-w-md` card. Label "Our Approach" (`text-white/50 text-xs tracking-widest uppercase mb-3`) + body (`text-white text-sm md:text-base leading-relaxed`): "We believe in the power of curiosity-driven exploration. Every project starts with a question, and every answer opens a new door to innovation."
@@ -120,7 +125,7 @@ Apply `.liquid-glass` to: the nav pill, the Login button, the email-input pill, 
 - Heading `text-5xl md:text-7xl lg:text-8xl text-white tracking-tight mb-16 md:mb-24`, reveal opacity 0 / y 40 → in, 0.8s. Text: "Innovation " + *x* (Instrument Serif italic, `text-white/40`) + " Vision".
 - Two-column grid (`grid-cols-1 md:grid-cols-2 gap-8 md:gap-12`):
   - Left: video `rounded-3xl overflow-hidden aspect-[4/3]`, reveal from opacity 0 / x -40. `muted autoPlay loop playsInline preload="auto"`:
-    `https://plugin-assets.readable-studio.ai/plugins/liquid-glass-agency/hf_20260307_083826_e938b29f-a43a-41ec-a153-3d4730578ab8-b7258e.mp4`
+    `./assets/hf_20260307_083826_e938b29f-a43a-41ec-a153-3d4730578ab8-b7258e.webp`
   - Right: reveal from opacity 0 / x 40. Two text blocks split by a `w-full h-px bg-white/10` divider.
     - Block 1: label "Choose your space" (`text-white/40 text-xs tracking-widest uppercase mb-4`) + body (`text-white/70 text-base md:text-lg leading-relaxed`): "Every meaningful breakthrough begins at the intersection of disciplined strategy and remarkable creative vision. We operate at that crossroads, turning bold thinking into tangible outcomes that move people and reshape industries."
     - Block 2: label "Shape the future" + body: "We believe that the best work emerges when curiosity meets conviction. Our process is designed to uncover hidden opportunities and translate them into experiences that resonate long after the first impression."
@@ -135,9 +140,9 @@ Apply `.liquid-glass` to: the nav pill, the Login button, the email-input pill, 
   - Media: `aspect-video object-cover transition-transform duration-700 group-hover:scale-105` + gradient `bg-gradient-to-t from-black/40 to-transparent`.
   - Body (`p-6 md:p-8`): tag (uppercase tracking-widest `text-white/40 text-xs`), ArrowUpRight icon in a `.liquid-glass` rounded-full `p-2` circle, title (`text-white text-xl md:text-2xl mb-3 tracking-tight`, Instrument Serif), description (`text-white/50 text-sm leading-relaxed`).
   - Card 1 — tag "Strategy", title "Research & Insight", desc "We dig deep into data, culture, and human behavior to surface the insights that drive meaningful, lasting change." Video:
-    `https://plugin-assets.readable-studio.ai/plugins/innovation/hf_20260314_131748_f2ca2a28-fed7-44c8-b9a9-bd9acdd5ec31-b2a357.mp4`
+    `./assets/hf_20260314_131748_f2ca2a28-fed7-44c8-b9a9-bd9acdd5ec31-b2a357.webp`
   - Card 2 — tag "Craft", title "Design & Execution", desc "From concept to launch, we obsess over every detail to deliver experiences that feel effortless and look extraordinary." Video:
-    `https://plugin-assets.readable-studio.ai/plugins/innovation/hf_20260324_151826_c7218672-6e92-402c-9e45-f1e0f454bdc4-c2f128.mp4`
+    `./assets/hf_20260324_151826_c7218672-6e92-402c-9e45-f1e0f454bdc4-c2f128.webp`
 
 ## Animations / Interactions
 

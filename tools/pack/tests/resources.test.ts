@@ -93,8 +93,12 @@ describe("copyBundledResourceTrees", () => {
         "utf8",
       );
       await writeFile(communityRegistryPath, "{\"plugins\":[]}\n", "utf8");
+      const pluginAsset = Buffer.from([0x52, 0x49, 0x46, 0x46, 0x57, 0x45, 0x42, 0x50]);
+      await mkdir(join(workspaceRoot, "plugins", "_official", "sample", "assets"), { recursive: true });
+      await writeFile(join(workspaceRoot, "plugins", "_official", "sample", "assets", "hero.webp"), pluginAsset);
 
       await copyBundledResourceTrees({ workspaceRoot, resourceRoot });
+      await expect(readFile(join(resourceRoot, "plugins", "_official", "sample", "assets", "hero.webp"))).resolves.toEqual(pluginAsset);
 
       // The baked plugin-preview manifest must land under data/plugin-previews so
       // the packaged daemon can map plugins to their R2 clips; without it the

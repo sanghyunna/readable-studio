@@ -1482,8 +1482,8 @@ a {
 
         <div class="capabilities__grid" aria-label="EngineTech capabilities and proof points">
           <article class="cap-card cap-card--tall cap-card--media">
-            <video class="cap-card__video" autoplay muted loop playsinline>
-              <source src="https://plugin-assets.readable-studio.ai/plugins/aerocore/45229-720-74e6d9.mp4" type="video/mp4" />
+            <video class="cap-card__video" autoplay muted loop playsinline poster="./assets/45229-720-74e6d9.webp" preload="none">
+
             </video>
             <div class="cap-card__shade" aria-hidden="true"></div>
 
@@ -1511,8 +1511,8 @@ a {
             </article>
 
             <article class="cap-card cap-card--metric cap-card--video-panel">
-              <video class="cap-card__video" autoplay muted loop playsinline>
-                <source src="https://plugin-assets.readable-studio.ai/plugins/aerocore/23211-720-e83442.mp4" type="video/mp4" />
+              <video class="cap-card__video" autoplay muted loop playsinline poster="./assets/23211-720-e83442.webp" preload="none">
+
               </video>
               <div class="cap-card__shade" aria-hidden="true"></div>
               <div class="cap-card__metric">
@@ -1524,8 +1524,8 @@ a {
 
           <div class="capabilities__stack capabilities__stack--systems">
             <article class="cap-card cap-card--tools cap-card--tools-media cap-card--video-panel">
-              <video class="cap-card__video" autoplay muted loop playsinline>
-                <source src="https://plugin-assets.readable-studio.ai/plugins/aerocore/23843-720-35899f.mp4" type="video/mp4" />
+              <video class="cap-card__video" autoplay muted loop playsinline poster="./assets/23843-720-35899f.webp" preload="none">
+
               </video>
               <div class="cap-card__shade" aria-hidden="true"></div>
 
@@ -1617,8 +1617,8 @@ a {
 
         <div class="video-stories__rail" aria-label="EngineTech video previews">
           <article class="story-card">
-            <video class="story-card__media" autoplay muted loop playsinline>
-              <source src="https://plugin-assets.readable-studio.ai/plugins/aerocore/hf_20260324_032431_5e054107-51c0-4162-9f0f-3a40054761ef-424242.mp4" type="video/mp4" />
+            <video class="story-card__media" autoplay muted loop playsinline poster="./assets/hf_20260324_032431_5e054107-51c0-4162-9f0f-3a40054761ef-424242.webp" preload="none">
+
             </video>
             <div class="story-card__content">
               <p>Integration Review</p>
@@ -1628,8 +1628,8 @@ a {
           </article>
 
           <article class="story-card">
-            <video class="story-card__media" autoplay muted loop playsinline>
-              <source src="https://plugin-assets.readable-studio.ai/plugins/aerocore/hf_20260324_032535_4ccc152e-0cc8-4ee5-a698-e1a98cea8a1e-866873.mp4" type="video/mp4" />
+            <video class="story-card__media" autoplay muted loop playsinline poster="./assets/hf_20260324_032535_4ccc152e-0cc8-4ee5-a698-e1a98cea8a1e-866873.webp" preload="none">
+
             </video>
             <div class="story-card__content">
               <p>Hot-Fire Campaign</p>
@@ -1639,8 +1639,8 @@ a {
           </article>
 
           <article class="story-card">
-            <video class="story-card__media" autoplay muted loop playsinline>
-              <source src="https://plugin-assets.readable-studio.ai/plugins/aerocore/hf_20260324_033707_b842a2ea-f223-4804-96d0-737ab67510fc-80dd35.mp4" type="video/mp4" />
+            <video class="story-card__media" autoplay muted loop playsinline poster="./assets/hf_20260324_033707_b842a2ea-f223-4804-96d0-737ab67510fc-80dd35.webp" preload="none">
+
             </video>
             <div class="story-card__content">
               <p>Manufacturing Floor</p>
@@ -1650,8 +1650,8 @@ a {
           </article>
 
           <article class="story-card">
-            <video class="story-card__media" autoplay muted loop playsinline>
-              <source src="https://plugin-assets.readable-studio.ai/plugins/aerocore/hf_20260324_032431_5e054107-51c0-4162-9f0f-3a40054761ef-424242.mp4" type="video/mp4" />
+            <video class="story-card__media" autoplay muted loop playsinline poster="./assets/hf_20260324_032431_5e054107-51c0-4162-9f0f-3a40054761ef-424242.webp" preload="none">
+
             </video>
             <div class="story-card__content">
               <p>Hydrogen Pathway</p>
@@ -1661,8 +1661,8 @@ a {
           </article>
 
           <article class="story-card">
-            <video class="story-card__media" autoplay muted loop playsinline>
-              <source src="https://plugin-assets.readable-studio.ai/plugins/aerocore/hf_20260324_032535_4ccc152e-0cc8-4ee5-a698-e1a98cea8a1e-866873.mp4" type="video/mp4" />
+            <video class="story-card__media" autoplay muted loop playsinline poster="./assets/hf_20260324_032535_4ccc152e-0cc8-4ee5-a698-e1a98cea8a1e-866873.webp" preload="none">
+
             </video>
             <div class="story-card__content">
               <p>Mission Support</p>
@@ -1769,7 +1769,7 @@ class EngineHero extends HTMLElement {
           </div>
 
           <div class="engine-visual" aria-hidden="true">
-            <img class="engine-visual__asset" src="https://plugin-assets.readable-studio.ai/plugins/aerocore/hero-engine_isebcf-b0bfea.webp" alt="" />
+            <img class="engine-visual__asset" src="./assets/hero-engine_isebcf-b0bfea.webp" alt="" />
           </div>
         </div>
 
@@ -1894,8 +1894,8 @@ class ShowcaseSection {
     this.film = document.createElement("div");
     this.film.className = "showcase-film";
     this.film.innerHTML = `
-      <video class="showcase-film__video" autoplay muted loop playsinline poster="https://plugin-assets.readable-studio.ai/plugins/aerocore/hero-engine_isebcf-b0bfea.webp">
-        <source src="https://plugin-assets.readable-studio.ai/plugins/aerocore/6853-720-41905c.mp4" type="video/mp4" />
+      <video class="showcase-film__video" autoplay muted loop playsinline poster="./assets/6853-720-41905c.webp" preload="none">
+
       </video>
       <div class="showcase-film__overlay"></div>
     `;

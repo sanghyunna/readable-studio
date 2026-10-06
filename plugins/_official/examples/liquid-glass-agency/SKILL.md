@@ -13,6 +13,11 @@ readable:
     requires: false
 ---
 
+## Offline media
+
+Copy the sibling `assets/` directory beside the generated HTML, retaining its relative paths (or embed these assets for a standalone file). Use the bundled images instead of remote media. Large video loops and animated previews are represented by local still images; render them as images or video posters without a video source. This offline-media rule overrides remote/video instructions below. See `assets/NOTICE.md` for attribution.
+
+
 # Liquid Glass Agency — Cinematic AI Web-Design Landing
 
 Produce a dark, premium, single-page landing page for an AI-powered web-design agency with a luxury editorial aesthetic: black backgrounds, white text, **liquid glass (glassmorphism)** effects, and cinematic video backgrounds. A complete, rendered reference implementation ships beside this skill at `example.html` — **start from it**. Copy `example.html`, then adjust copy and data; do not rewrite the CSS or invent a new visual language. The seed already encodes the exact tokens, glass utilities, section layout, video wiring, and reveal animations described below.
@@ -78,12 +83,12 @@ Both get a `::before` pseudo-element that paints a **thin glowing gradient borde
 
 ## Assets & Media URLs — locked
 
-- Hero background video (CloudFront MP4, kept remote): `https://plugin-assets.readable-studio.ai/plugins/liquid-glass-agency/hf_20260307_083826_e938b29f-a43a-41ec-a153-3d4730578ab8-b7258e.mp4`
+- Hero background video (CloudFront MP4, kept remote): `./assets/hf_20260307_083826_e938b29f-a43a-41ec-a153-3d4730578ab8-b7258e.webp`
 - Hero poster: inlined `data:image/svg+xml` in the seed (desaturated-blue atmospheric still). In a fuller React build the original was `/images/hero_bg.jpeg`.
 - StartSection video (Mux HLS): `https://stream.mux.com/9JXDljEVWYwWu01PUkAemafDugK89o01BR6zqJ3aS9u00A.m3u8`
 - Stats section video (Mux HLS, rendered **desaturated** `filter: saturate(0)`): `https://stream.mux.com/NcU3HlHeF7CUL86azTTzpy3Tlb00d6iF3BmCdFslMJYM.m3u8`
 - CTA/Footer video (Mux HLS): `https://stream.mux.com/8wrHPCX2dC3msyYU9ObwqNdm00u3ViXvOSHUMRYSEe5Q.m3u8`
-- Feature GIFs (originals): `https://plugin-assets.readable-studio.ai/plugins/liquid-glass-agency/hero-finlytic-preview-CV9g0FHP-9d3cb6.gif` (row 1, right) and `https://plugin-assets.readable-studio.ai/plugins/liquid-glass-agency/hero-wealth-preview-B70idl_u-7969db.gif` (row 2, left). The seed ships inlined SVG mock previews in their place so the card never breaks; you may use the GIF URLs in a React port.
+- Feature GIFs (originals): `./assets/hero-finlytic-preview-CV9g0FHP-9d3cb6.webp` (row 1, right) and `./assets/hero-wealth-preview-B70idl_u-7969db.webp` (row 2, left). The seed ships inlined SVG mock previews in their place so the card never breaks; you may use the GIF URLs in a React port.
 - Logo icon: inlined SVG data URI in the seed (`h-12 w-12` ⇒ 48×48).
 
 **Note for the vanilla seed:** HLS `.m3u8` cannot play in `<video>` without `hls.js`. To keep the seed self-contained and dependency-free, every video-background section reuses the CloudFront MP4 (which plays natively) as a stand-in. In a React port, wire each section's Mux HLS URL through `hls.js`.
