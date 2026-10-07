@@ -153,6 +153,11 @@ const PROJECT_STRING_FLAGS = new Set([
   'title', 'against', 'seed-from', 'fork-after', 'mode', 'reasoning',
 ]);
 const PROJECT_BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'follow']);
+const SESSION_STRING_FLAGS = new Set([
+  'daemon-url', 'identity-token-file', 'folder', 'title', 'mode', 'skill',
+  'design-system', 'prompt-file', 'limit', 'name', 'sessions',
+]);
+const SESSION_BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'recent']);
 const WIDTH_RELEASE_STRING_FLAGS = new Set([...PROJECT_STRING_FLAGS, 'target', 'expected-content-sha256']);
 const WIDTH_RELEASE_BOOLEAN_FLAGS = new Set([...PROJECT_BOOLEAN_FLAGS, 'all']);
 const HOSTED_ARTIFACT_STRING_FLAGS = new Set([
@@ -280,6 +285,8 @@ const SUBCOMMAND_MAP = {
   files: runFiles,
   templates: runTemplates,
   conversation: runConversation,
+  session: runSession,
+  folder: runFolder,
   chat: runChat,
   daemon: runDaemon,
   atoms: runAtoms,
@@ -6289,6 +6296,7 @@ async function runConversation(args) {
                                            conversation's messages in (Side Chat).
                                            --fork-after stops the copy at one
                                            source message.
+                                           For a new top-level session, use "readable session new".
   readable conversation list <projectId>           List conversations in a project.
   readable conversation info <conversationId>      Print one conversation, including its selection.
   readable conversation set <conversationId> --project <projectId> --agent <id> [--model <id>] [--reasoning <id>]
@@ -6522,6 +6530,190 @@ function formatCheckpointTime(value) {
 //   /api/projects/:id/conversations endpoint the UI uses. This is the CLI half
 //   of the dual-track surface for context-seeded conversations.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Subcommands: readable session / readable folder
+// ---------------------------------------------------------------------------
+
+async function sessionCliClient(args, usage, noun) {
+  if (args.length === 0 || args[0] === 'help' || args.includes('--help') || args.includes('-h')) {
+    console.log(`${usage}
+
+Common options:
+  --daemon-url <url>   Readable Studio daemon HTTP base.
+  --json               Emit the raw JSON response.`);
+    process.exit(args.length === 0 ? 2 : 0);
+  }
+  const rest = args.slice(1);
+  const flags = parseFlags(rest, { string: SESSION_STRING_FLAGS, boolean: SESSION_BOOLEAN_FLAGS });
+  const client = await createContentCliClient(flags, { stdinInUse: flags['prompt-file'] === '-' });
+  if (client.hosted) {
+    console.error(`readable ${noun} is local-only`);
+    process.exit(2);
+  }
+  const [id] = positionalArgs(rest, SESSION_STRING_FLAGS);
+  const need = (line) => {
+    if (!id) sessionCliUsageError(`Usage: ${line}`);
+    return encodeURIComponent(id);
+  };
+  const out = (data, text) => {
+    if (flags.json) process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
+    else console.log(text);
+  };
+  return { sub: args[0], flags, client, id, need, out };
+}
+
+async function sessionCliCall(client, pathname, method, body, fallbackCode) {
+  const init = { method };
+  if (body !== undefined) {
+    init.headers = { 'content-type': 'application/json' };
+    init.body = JSON.stringify(body);
+  }
+  const resp = await client.request(pathname, init, method !== 'GET');
+  if (!resp.ok) return structuredHttpFailure(resp, fallbackCode);
+  return resp.json();
+}
+
+function sessionCliUsageError(message) {
+  console.error(message);
+  process.exit(2);
+}
+
+async function runSession(args) {
+  const usage = `Usage:
+  readable session new    [--folder <id>] [--title "<t>"] [--mode design|chat] [--skill <id>]
+                          [--design-system <id>] [--prompt-file <path|->] [--json]
+                          Create a top-level session (it owns its own working folder).
+  readable session list   [--recent | --folder <id|none>] [--limit <n>] [--json]
+  readable session tree   [--json]                 Folders with their sessions, then recents.
+  readable session info   <id> [--json]
+  readable session rename <id> --title "<t>" [--json]
+  readable session move   <id> --folder <id|none> [--json]
+                          Moving changes only where the session is listed. Its files,
+                          working folder, checkpoints, comments, tabs, run history and
+                          agent resume state are the same before and after.
+  readable session delete <id> [--json]`;
+  const { sub, flags, client, id, need, out } = await sessionCliClient(args, usage, 'session');
+  const where = (s) => s.folderId ?? '-';
+  switch (sub) {
+    case 'new': {
+      const body = {};
+      if (typeof flags.folder === 'string') body.folderId = flags.folder === 'none' ? null : flags.folder;
+      if (typeof flags.title === 'string') body.title = flags.title;
+      const mode = normalizeChatSessionModeFlag(flags.mode);
+      if (mode) body.conversationMode = mode;
+      if (typeof flags.skill === 'string') body.skillId = flags.skill;
+      if (typeof flags['design-system'] === 'string') body.designSystemId = flags['design-system'];
+      if (flags['prompt-file'] !== undefined) {
+        const prompt = await readPromptFromFlags({ 'prompt-file': flags['prompt-file'] });
+        if (!prompt || prompt.trim().length === 0) sessionCliUsageError('--prompt-file is empty');
+        body.pendingPrompt = prompt;
+      }
+      const data = await sessionCliCall(client, '/api/sessions', 'POST', body, 'session-create-failed');
+      return out(data, `[session] created ${data.session?.id ?? '-'} (workspace ${data.workspace?.id ?? '-'})`);
+    }
+    case 'list': {
+      if (flags.recent && flags.folder !== undefined) sessionCliUsageError('--recent and --folder cannot be used together');
+      const query = new URLSearchParams();
+      if (flags.recent) query.set('folder', 'none');
+      else if (typeof flags.folder === 'string') query.set('folder', flags.folder);
+      if (typeof flags.limit === 'string') query.set('limit', flags.limit);
+      const qs = query.toString();
+      const data = await sessionCliCall(client, `/api/sessions${qs ? `?${qs}` : ''}`, 'GET', undefined, 'session-list-failed');
+      if (flags.json) return process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
+      const sessions = data?.sessions ?? [];
+      if (sessions.length === 0) return console.log('No sessions. Create one with `readable session new --title "..."`.');
+      for (const s of sessions) console.log(`${s.id}\t${where(s)}\t${s.title ?? '-'}\t${s.state}`);
+      return;
+    }
+    case 'tree': {
+      const data = await sessionCliCall(client, '/api/rail', 'GET', undefined, 'session-list-failed');
+      if (flags.json) return process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
+      for (const f of data?.folders ?? []) {
+        console.log(`${f.id}\t${f.name}`);
+        for (const s of f.sessions ?? []) console.log(`  ${s.id}\t${s.title ?? '-'}\t${s.state}`);
+      }
+      console.log('recent');
+      for (const s of data?.recents ?? []) console.log(`  ${s.id}\t${s.title ?? '-'}\t${s.state}`);
+      return;
+    }
+    case 'info': {
+      const data = await sessionCliCall(client, `/api/sessions/${need('readable session info <id>')}`, 'GET', undefined, 'session-not-found');
+      if (flags.json) return process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
+      const s = data.session ?? {};
+      console.log(`id:        ${s.id}\nworkspace: ${s.projectId}\nfolder:    ${where(s)}\ntitle:     ${s.title ?? '-'}\nmode:      ${s.sessionMode ?? '-'}`);
+      return;
+    }
+    case 'rename': {
+      const path = `/api/sessions/${need('readable session rename <id> --title "<t>"')}`;
+      if (typeof flags.title !== 'string') sessionCliUsageError('Usage: readable session rename <id> --title "<t>"');
+      const data = await sessionCliCall(client, path, 'PATCH', { title: flags.title }, 'session-not-found');
+      return out(data, `[session] renamed ${data.session?.id ?? id}`);
+    }
+    case 'move': {
+      const path = `/api/sessions/${need('readable session move <id> --folder <id|none>')}`;
+      if (typeof flags.folder !== 'string' || flags.folder.length === 0) {
+        sessionCliUsageError('Usage: readable session move <id> --folder <id|none>');
+      }
+      const folderId = flags.folder === 'none' ? null : flags.folder;
+      const data = await sessionCliCall(client, path, 'PATCH', { folderId }, 'session-move-failed');
+      return out(data, `[session] moved ${data.session?.id ?? id} -> ${folderId ?? 'none'}`);
+    }
+    case 'delete': {
+      const data = await sessionCliCall(client, `/api/sessions/${need('readable session delete <id>')}`, 'DELETE', undefined, 'session-not-found');
+      return out(data, `[session] deleted ${id}`);
+    }
+    default:
+      console.error(`unknown subcommand: readable session ${sub}`);
+      process.exit(2);
+  }
+}
+
+async function runFolder(args) {
+  const usage = `Usage:
+  readable folder create --name "<n>" [--json]
+  readable folder list   [--json]
+  readable folder rename <id> --name "<n>" [--json]
+  readable folder delete <id> [--sessions keep|delete] [--json]
+                         keep (default) moves its sessions to "no project";
+                         delete removes them too.`;
+  const { sub, flags, client, id, need, out } = await sessionCliClient(args, usage, 'folder');
+  const requireName = (line) => {
+    if (typeof flags.name !== 'string' || flags.name.trim().length === 0) sessionCliUsageError(`Usage: ${line}`);
+    return flags.name;
+  };
+  switch (sub) {
+    case 'create': {
+      const name = requireName('readable folder create --name "<n>"');
+      const data = await sessionCliCall(client, '/api/folders', 'POST', { name }, 'folder-create-failed');
+      return out(data, `[folder] created ${data.folder?.id ?? '-'}`);
+    }
+    case 'list': {
+      const data = await sessionCliCall(client, '/api/folders', 'GET', undefined, 'folder-list-failed');
+      if (flags.json) return process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
+      const folders = data?.folders ?? [];
+      if (folders.length === 0) return console.log('No folders. Create one with `readable folder create --name "..."`.');
+      for (const f of folders) console.log(`${f.id}\t${f.name}`);
+      return;
+    }
+    case 'rename': {
+      const path = `/api/folders/${need('readable folder rename <id> --name "<n>"')}`;
+      const name = requireName('readable folder rename <id> --name "<n>"');
+      const data = await sessionCliCall(client, path, 'PATCH', { name }, 'folder-not-found');
+      return out(data, `[folder] renamed ${data.folder?.id ?? id}`);
+    }
+    case 'delete': {
+      const path = `/api/folders/${need('readable folder delete <id> [--sessions keep|delete]')}`;
+      const policy = flags.sessions === undefined ? 'keep' : flags.sessions;
+      if (policy !== 'keep' && policy !== 'delete') sessionCliUsageError('--sessions must be one of: keep, delete');
+      const data = await sessionCliCall(client, `${path}?sessions=${policy}`, 'DELETE', undefined, 'folder-not-found');
+      return out(data, `[folder] deleted ${id} (${data.movedSessionIds?.length ?? 0} moved, ${data.deletedSessionIds?.length ?? 0} deleted)`);
+    }
+    default:
+      console.error(`unknown subcommand: readable folder ${sub}`);
+      process.exit(2);
+  }
+}
 
 async function runChat(args) {
   if (args.length === 0 || args[0] === 'help' || args.includes('--help') || args.includes('-h')) {
