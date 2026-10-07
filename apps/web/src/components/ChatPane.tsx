@@ -50,6 +50,7 @@ import {
   ChatComposer,
   type ChatComposerHandle,
   type ChatSendMeta,
+  type ChatSendResult,
 } from './ChatComposer';
 import { listDesignArtifactCandidates } from './design-files/designArtifacts';
 import type { PluginFolderAgentAction } from './design-files/pluginFolderActions';
@@ -337,7 +338,7 @@ interface Props {
     attachments: ChatAttachment[],
     commentAttachments: ChatCommentAttachment[],
     meta?: ChatSendMeta,
-  ) => void;
+  ) => ChatSendResult | Promise<ChatSendResult>;
   onRetry?: (assistantMessage: ChatMessage) => void;
   onResumeRun?: (assistantMessage: ChatMessage) => void;
   onStop: () => void;
@@ -1503,7 +1504,7 @@ export function ChatPane({
         anchorActiveRef.current = false;
         resetTailSpacer();
         anchorPendingRef.current = true;
-        onSend(prompt, attachments, commentAttachments, meta);
+        return onSend(prompt, attachments, commentAttachments, meta);
       }}
       onStop={onStop}
       onOpenSettings={onOpenSettings}

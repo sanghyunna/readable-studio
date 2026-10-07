@@ -3363,7 +3363,7 @@ export function ProjectView({
           chatAttachmentsFromPreviewCommentImages(attachment.imageAttachments),
         ),
       );
-      if (!retryTarget && meta?.queueOnly) {
+      if ((!retryTarget && meta?.queueOnly) || currentConversationBusy) {
         queueChatSendForCurrentConversation({
           conversationId: activeConversationId,
           prompt,
@@ -3371,17 +3371,7 @@ export function ProjectView({
           commentAttachments,
           meta: { ...(meta ?? {}), sessionMode: runSessionMode },
         });
-        return false;
-      }
-      if (currentConversationBusy) {
-        queueChatSendForCurrentConversation({
-          conversationId: activeConversationId,
-          prompt,
-          attachments: effectiveAttachments,
-          commentAttachments,
-          meta: { ...(meta ?? {}), sessionMode: runSessionMode },
-        });
-        return false;
+        return 'queued' as const;
       }
       setChatSeed(null);
       const runConversationId = activeConversationId;
@@ -4220,7 +4210,7 @@ export function ProjectView({
         item.commentAttachments,
         item.meta,
       );
-      if (started) removeQueuedChatSend(id);
+      if (started === true) removeQueuedChatSend(id);
     })();
   }, [armSlideNavForQueuedSend, currentConversationBusy, currentConversationSendDisabled, handleSend, handleStop, prioritizeQueuedChatSend, project.id, removeQueuedChatSend]);
 
@@ -4283,7 +4273,7 @@ export function ProjectView({
         next.commentAttachments,
         next.meta,
       );
-      if (!started) {
+      if (started !== true) {
         if (startingQueuedChatSendIdRef.current === next.id) {
           startingQueuedChatSendIdRef.current = null;
         }

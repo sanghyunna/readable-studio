@@ -175,7 +175,7 @@ interface Props {
     attachments: ChatAttachment[],
     commentAttachments: ChatCommentAttachment[],
     meta?: ChatSendMeta,
-  ) => void;
+  ) => ChatSendResult | Promise<ChatSendResult>;
   onStop: () => void;
   // Opens the global settings dialog (CLI / model / agent picker). The
   // composer's leading gear icon routes here so users can switch models
@@ -274,6 +274,8 @@ export interface ChatComposerHandle {
   /** Legacy: open the standalone toolbox popover. Currently unused by callers. */
   openDesignToolbox: () => void;
 }
+
+export type ChatSendResult = boolean | 'queued' | void;
 
 export interface ChatSendMeta {
   queueOnly?: boolean;
@@ -913,7 +915,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       attachments: ChatAttachment[],
       nextCommentAttachments: ChatCommentAttachment[],
       meta?: ChatSendMeta,
-    ): boolean {
+    ): boolean | 'queued' | Promise<boolean | 'queued'> {
       setStreamingAnnotationSendPending(false);
       if (!prompt && attachments.length === 0 && nextCommentAttachments.length === 0) return false;
       const nextAttachments =
@@ -927,9 +929,13 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
               ...attachments,
             ]
           : attachments;
-      onSend(prompt, nextAttachments, nextCommentAttachments, meta);
-      reset();
-      return true;
+      const finish = (result: ChatSendResult): boolean | 'queued' => {
+        if (result === false) return false;
+        reset();
+        return result === 'queued' ? 'queued' : true;
+      };
+      const result = onSend(prompt, nextAttachments, nextCommentAttachments, meta);
+      return result instanceof Promise ? result.then(finish) : finish(result);
     }
 
     function queueMeta(meta?: ChatSendMeta): ChatSendMeta {
@@ -1262,7 +1268,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
         if (!detail) return;
         void (async () => {
           let acked = false;
-          const ack = (result: { ok: boolean; message?: string }) => {
+          const ack = (result: { ok: boolean; outcome?: 'accepted' | 'queued' | 'rejected'; message?: string }) => {
             if (acked) return;
             acked = true;
             detail.ack?.(result);
@@ -1271,6 +1277,10 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
           let visualAttachmentInput: Parameters<typeof buildVisualAnnotationAttachment>[0] | null = null;
           let visualAttachment: ChatCommentAttachment | null = null;
           try {
+            if (detail.action !== 'draft' && modelSelectionGuard && !modelSelectionGuard()) {
+              ack({ ok: false, outcome: 'rejected', message: t('inlineSwitcher.modelSelectionRequired') });
+              return;
+            }
             // Upload the annotation screenshot together with any images the
             // user attached in the markup composer. The screenshot (when
             // present) is first so it keeps backing the structured visual
@@ -1364,8 +1374,8 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
               const prompt = [draft.trim(), detail.note].filter(Boolean).join('\n');
               const attachments = sortChatAttachmentsByOrder([...staged, ...uploaded]);
               const nextCommentAttachments = currentCommentAttachments(visualAttachment ? [visualAttachment] : []);
-              sendComposedTurn(prompt, attachments, nextCommentAttachments, queueMeta(currentRunContextMeta()));
-              ack({ ok: true });
+              const result = await sendComposedTurn(prompt, attachments, nextCommentAttachments, queueMeta(currentRunContextMeta()));
+              ack({ ok: result !== false, outcome: result === false ? 'rejected' : 'queued' });
               return;
             }
 
@@ -1373,7 +1383,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
               if (streaming) {
                 appendAnnotationToComposer();
                 setStreamingAnnotationSendPending(true);
-                ack({ ok: true });
+                ack({ ok: true, outcome: 'queued' });
                 return;
               }
               if (visualAttachmentInput) {
@@ -1384,8 +1394,8 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
               const prompt = [draft.trim(), detail.note].filter(Boolean).join('\n');
               const attachments = sortChatAttachmentsByOrder([...staged, ...uploaded]);
               const nextCommentAttachments = currentCommentAttachments(visualAttachment ? [visualAttachment] : []);
-              sendComposedTurn(prompt, attachments, nextCommentAttachments, currentRunContextMeta());
-              ack({ ok: true });
+              const result = await sendComposedTurn(prompt, attachments, nextCommentAttachments, currentRunContextMeta());
+              ack({ ok: result !== false, outcome: result === false ? 'rejected' : result === 'queued' ? 'queued' : 'accepted' });
               return;
             }
 
@@ -1410,6 +1420,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
     }, [
       commentAttachments,
       draft,
+      modelSelectionGuard,
       onSend,
       projectId,
       selectedWorkspaceContexts,

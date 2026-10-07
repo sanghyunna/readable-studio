@@ -124,7 +124,7 @@ describe('PreviewDrawOverlay', () => {
     expect(input?.style.maxWidth).toBe('100%');
   });
 
-  it('queues a note when Enter submits from the draw input', async () => {
+  it('sends a note immediately when idle Enter submits from the draw input', async () => {
     const annotation = vi.fn();
     window.addEventListener('readable-studio:annotation', annotation);
 
@@ -141,9 +141,9 @@ describe('PreviewDrawOverlay', () => {
       fireEvent.change(input!, { target: { value: 'Please inspect this panel.' } });
       fireEvent.keyDown(input!, { key: 'Enter' });
 
-      await waitFor(() => expect(annotation).toHaveBeenCalledTimes(1));
+      expect(annotation).toHaveBeenCalledTimes(1);
       expect(annotation.mock.calls[0]?.[0].detail).toMatchObject({
-        action: 'queue',
+        action: 'send',
         note: 'Please inspect this panel.',
       });
     } finally {

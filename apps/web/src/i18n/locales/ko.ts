@@ -1573,6 +1573,7 @@ export function getKo(): Dict {
   'chat.annotationPreviewMissingInk': '미리보기를 캡처할 수 없습니다. 잉크만 전송되지 않도록 다시 시도해 주세요.',
   'chat.annotationTimeout': '주석 전송 시간이 초과되었습니다. 다시 시도해 주세요.',
   'chat.annotationFailed': '주석 전송에 실패했습니다. 다시 시도해 주세요.',
+  'chat.annotationCaptureFailed': '스크린샷을 캡처하지 못했습니다. 입력한 내용과 선택 영역은 유지됩니다. 다시 시도해 주세요.',
   'chat.annotationProjectCreateFailed': '프로젝트를 생성할 수 없어 주석이 전송되지 않았습니다.',
   'chat.annotationUploadFailed': '첨부 파일 업로드에 실패했습니다. 다시 시도해 주세요.',
   'chat.conversationsTitle': '대화 목록',

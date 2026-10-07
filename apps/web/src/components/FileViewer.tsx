@@ -8374,14 +8374,14 @@ function HtmlViewer({
     setDownloadMenuOpen(false);
     setDeployMenuOpen((v) => !v);
   };
-  const captureExportImageSnapshot = useCallback(async () => {
+  const captureExportImageSnapshot = useCallback(async (fullDocument = !isDeck) => {
     // Prefer the desktop compositor screenshot of the visible preview region:
     // it returns the real rendered pixels (fonts, external CSS, gradients,
     // images) and is never tainted, so it cannot produce the black/blank frames
     // the in-iframe SVG-foreignObject bridge does. Works for both srcDoc and
     // URL-load previews. Falls through to the bridge on pure web (no host).
     const visibleIframe = iframeRef.current ?? srcDocPreviewIframeRef.current;
-    const hostSnapshot = await captureHostIframeSnapshot(visibleIframe, isDeck ? undefined : { fullDocument: true });
+    const hostSnapshot = await captureHostIframeSnapshot(visibleIframe, fullDocument ? { fullDocument: true } : undefined);
     if (hostSnapshot) return hostSnapshot;
 
     if (!useUrlLoadPreview) {
@@ -8389,14 +8389,14 @@ function HtmlViewer({
       if (!activeIframe) return null;
       await waitForIframeLoadOrTimeout(activeIframe, 250);
       await waitForAnimationFrame();
-      return requestPreviewSnapshotWithRetry(activeIframe, !isDeck);
+      return requestPreviewSnapshotWithRetry(activeIframe, fullDocument);
     }
 
     const urlIframe = iframeRef.current ?? urlPreviewIframeRef.current;
     if (urlIframe) {
       await waitForIframeLoadOrTimeout(urlIframe, 250);
       await waitForAnimationFrame();
-      const urlSnapshot = await requestPreviewSnapshotWithRetry(urlIframe, !isDeck);
+      const urlSnapshot = await requestPreviewSnapshotWithRetry(urlIframe, fullDocument);
       if (urlSnapshot) return urlSnapshot;
     }
 
@@ -8404,7 +8404,7 @@ function HtmlViewer({
     if (!srcDocIframe) {
       const activeIframe = iframeRef.current;
       if (!activeIframe) return null;
-      return requestPreviewSnapshotWithRetry(activeIframe, !isDeck);
+      return requestPreviewSnapshotWithRetry(activeIframe, fullDocument);
     }
 
     if (useLazySrcDocTransport && !srcDocShellReady) {
@@ -8416,7 +8416,7 @@ function HtmlViewer({
     const restoreVisibility = temporarilyExposeIframeForSnapshot(srcDocIframe);
     try {
       await waitForAnimationFrame();
-      return requestPreviewSnapshotWithRetry(srcDocIframe, !isDeck);
+      return requestPreviewSnapshotWithRetry(srcDocIframe, fullDocument);
     } finally {
       restoreVisibility();
     }
@@ -10040,7 +10040,7 @@ function HtmlViewer({
                     active={drawOverlayOpen}
                     onActiveChange={setDrawOverlayOpen}
                     captureViewport
-                    captureSnapshot={captureExportImageSnapshot}
+                    captureSnapshot={() => captureExportImageSnapshot(false)}
                     captureTarget={null}
                     filePath={file.name}
                     sendDisabled={streaming}

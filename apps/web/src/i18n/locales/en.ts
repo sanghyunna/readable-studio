@@ -1573,6 +1573,7 @@ export function getEn(): Dict {
   'chat.annotationPreviewMissingInk': 'Could not capture the preview. Try again to avoid sending only ink.',
   'chat.annotationTimeout': 'Annotation send timed out. Please try again.',
   'chat.annotationFailed': 'Annotation send failed. Please try again.',
+  'chat.annotationCaptureFailed': 'Could not capture the screenshot. Your text and selected region are kept. Please try again.',
   'chat.annotationProjectCreateFailed': 'Could not create a project, so the annotation was not sent.',
   'chat.annotationUploadFailed': 'Attachment upload failed. Please try again.',
   'chat.conversationsTitle': 'Conversations',

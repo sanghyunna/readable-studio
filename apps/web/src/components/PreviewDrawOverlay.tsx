@@ -31,6 +31,11 @@ type CaptureFrameRect = Pick<DOMRect, 'left' | 'top' | 'width' | 'height'>;
 
 export const ANNOTATION_EVENT = 'readable-studio:annotation';
 export type AnnotationAction = 'draft' | 'queue' | 'send';
+export interface AnnotationResult {
+  ok: boolean;
+  outcome?: 'accepted' | 'queued' | 'rejected';
+  message?: string;
+}
 export type DrawToolbarElement =
   | 'rect'
   | 'pen'
@@ -50,7 +55,7 @@ export interface AnnotationEventDetail {
   target?: CaptureTarget | null;
   /** Images the user attached in the markup composer to combine with the mark. */
   extraFiles?: File[];
-  ack?: (result: { ok: boolean; message?: string }) => void;
+  ack?: (result: AnnotationResult) => void;
 }
 
 interface Props {
@@ -656,14 +661,15 @@ export function PreviewDrawOverlay({
         file = new File([blob], `drawing-${ts}.png`, { type: 'image/png' });
       }
       const kind = markKind();
-      const result = await new Promise<{ ok: boolean; message?: string }>((resolve) => {
+      const result = await new Promise<AnnotationResult>((resolve) => {
         let settled = false;
-        const finish = (next: { ok: boolean; message?: string }) => {
+        const finish = (next: AnnotationResult) => {
           if (settled) return;
           settled = true;
+          window.clearTimeout(timeout);
           resolve(next);
         };
-        window.setTimeout(() => {
+        const timeout = window.setTimeout(() => {
           finish({ ok: false, message: t('chat.annotationTimeout') });
         }, 60000);
         const detail: AnnotationEventDetail = {
@@ -691,6 +697,10 @@ export function PreviewDrawOverlay({
       setNote('');
       setExtraFiles([]);
       setPreviewIndex(null);
+    } catch (error) {
+      const code = error && typeof error === 'object' && 'code' in error ? error.code : 'CAPTURE_FAILED';
+      console.warn('Could not capture annotation', { code, error });
+      setCaptureWarning({ action, message: t('chat.annotationCaptureFailed') });
     } finally {
       setPendingAction(null);
     }
@@ -778,6 +788,7 @@ export function PreviewDrawOverlay({
                 pointerEvents: 'none',
                 fontSize: 13,
                 lineHeight: 1.35,
+                wordBreak: 'keep-all',
                 visibility: chromeHidden ? 'hidden' : undefined,
               }}
             >
@@ -1014,8 +1025,11 @@ export function PreviewDrawOverlay({
                 composingRef.current = false;
               }}
               onKeyDown={(e) => {
-                if (isImeComposing(e, composingRef.current)) return;
-                if (e.key === 'Enter') void send('queue');
+                if (isImeComposing(e, composingRef.current) || e.nativeEvent.isComposing || e.keyCode === 229) return;
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void send(sendDisabled ? 'queue' : 'send');
+                }
               }}
             />
             <button
