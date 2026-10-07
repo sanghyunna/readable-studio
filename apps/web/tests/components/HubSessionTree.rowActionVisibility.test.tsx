@@ -13,7 +13,7 @@ import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { HubSessionTree } from '../../src/components/hub/HubSessionTree';
-import type { HubProjectNode } from '../../src/components/hub/types';
+import type { HubFolderNode } from '../../src/components/hub/types';
 
 const hubCss = readFileSync(resolve(process.cwd(), 'src/styles/home/hub.css'), 'utf8');
 
@@ -31,24 +31,24 @@ afterEach(() => {
 });
 
 const SESSION_TITLE = '차트 팔레트 정리';
-const PROJECTS: HubProjectNode[] = [
+const PROJECTS: HubFolderNode[] = [
   {
     id: 'p1',
     name: '분기 보고서',
     updatedAt: 900,
-    sessions: [{ id: 's1', projectId: 'p1', title: SESSION_TITLE, updatedAt: 900, state: 'idle' }],
+    sessions: [{ id: 's1', workspaceId: 'p1', folderId: 'p1', workspaceSessionCount: 1, title: SESSION_TITLE, updatedAt: 900, state: 'idle' }],
   },
 ];
 
 function renderTree() {
   const props = {
-    projects: PROJECTS,
+    tree: { folders: PROJECTS, recents: [] },
     currentSessionId: 's1',
     onOpenSession: vi.fn(),
     onPeekSession: vi.fn(),
     onNewSession: vi.fn(),
-    onRenameProject: vi.fn(),
-    onDeleteProject: vi.fn(),
+    onRenameFolder: vi.fn(),
+    onDeleteFolder: vi.fn(),
     onRenameSession: vi.fn(),
     onDeleteSession: vi.fn(),
   };

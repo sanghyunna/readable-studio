@@ -13,6 +13,8 @@ const listConversations = vi.hoisted(() => vi.fn());
 const createConversation = vi.hoisted(() => vi.fn());
 const deleteConversation = vi.hoisted(() => vi.fn());
 const patchConversation = vi.hoisted(() => vi.fn());
+const folderRename = vi.hoisted(() => vi.fn());
+const folderDelete = vi.hoisted(() => vi.fn());
 
 vi.mock('../../src/state/projects', () => ({
   listConversations,
@@ -20,6 +22,25 @@ vi.mock('../../src/state/projects', () => ({
   createConversation,
   deleteConversation,
   patchConversation,
+}));
+
+
+vi.mock('../../src/state/rail', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../src/state/rail')>(),
+  subscribeRailEvents: () => () => {},
+  fetchRail: async () => ({ ok: true, rail: {
+    folders: await Promise.all(PROJECTS.map(async (project) => ({
+      id: project.id, name: project.name, createdAt: project.createdAt, updatedAt: project.updatedAt,
+      sessions: (await listConversations(project.id) ?? []).map((c: import('../../src/types').Conversation) => ({
+        ...c, workspaceId: project.id, folderId: project.id, workspaceSessionCount: 1,
+        state: c.latestRun?.status === 'running' ? 'running' : 'idle',
+      })),
+    }))), recents: [], generatedAt: 1,
+  }}),
+  renameSession: async (id: string, title: string) => { patchConversation('p1', id, {title}); return {}; },
+  deleteSession: async (id: string) => deleteConversation('p1', id),
+  renameFolder: async (id: string, name: string) => { folderRename(id, name); return {id, name}; },
+  deleteFolder: async (id: string, policy: string) => { folderDelete(id, policy); return {ok: true}; },
 }));
 
 import { TestHubHome as HubHome } from '../helpers/HubTestHost';
@@ -85,7 +106,7 @@ describe('HubHome rail', () => {
 
     const toggle = screen.getByTestId('hub-rail-toggle');
     const brand = screen.getByTestId('hub-brand');
-    const newProject = screen.getByTestId('hub-new-project');
+    const newProject = screen.getByTestId('hub-new-session');
 
     // One toggle, inside the rail, sharing the brand's row.
     expect(screen.getAllByTestId('hub-rail-toggle')).toHaveLength(1);
@@ -103,7 +124,7 @@ describe('HubHome rail', () => {
     expect(ordered.map((node) => node.dataset['testid'])).toEqual([
       'hub-brand',
       'hub-rail-toggle',
-      'hub-new-project',
+      'hub-new-session',
     ]);
 
     // Nothing became unreachable: each control is focusable, enabled and not
@@ -169,7 +190,7 @@ describe('HubHome rail', () => {
     const onNewProject = vi.fn();
     renderHub({ onNewProject });
 
-    fireEvent.click(screen.getByTestId('hub-new-project'));
+    fireEvent.click(screen.getByTestId('hub-new-session'));
 
     expect(onNewProject).toHaveBeenCalledTimes(1);
   });
@@ -268,7 +289,7 @@ describe('HubHome rail', () => {
     renderHub();
     await screen.findByTestId('hub-session-c2');
     vi.useFakeTimers();
-    expect(screen.getByTestId('hub-group-count').textContent).toBe('2');
+    expect(screen.queryByTestId('hub-group-count')).toBeNull();
 
     fireEvent.click(screen.getByTestId('hub-menu-session-c2'));
     fireEvent.click(screen.getByTestId('hub-row-menu-delete'));
@@ -367,24 +388,16 @@ describe('HubHome rail', () => {
     expect(screen.getByTestId('hub-session-c2').textContent).toContain('요약 정리');
   });
 
-  it('creates a session in the targeted project and reuses an untouched one', async () => {
+  it('routes folder creation to the composer without creating an empty session', async () => {
     seedTwoSessions();
-    createConversation.mockResolvedValue(
-      conversation('c9', 'p2', '새 세션', { messageCount: 0 }),
-    );
+    const onNewProject = vi.fn();
     const onOpenSession = vi.fn();
-    renderHub({ onOpenSession });
+    renderHub({ onOpenSession, onNewProject });
     await screen.findByTestId('hub-session-c3');
-
     fireEvent.click(screen.getByTestId('hub-new-session-p2'));
-    await waitFor(() => expect(createConversation).toHaveBeenCalledWith('p2'));
-    await screen.findByTestId('hub-session-c9');
-
-    // The freshly created session has no messages, so a second click reopens it
-    // rather than stacking another empty session.
-    fireEvent.click(screen.getByTestId('hub-new-session-p2'));
-    expect(createConversation).toHaveBeenCalledTimes(1);
-    expect(onOpenSession).toHaveBeenCalledWith('p2', 'c9');
+    expect(onNewProject).toHaveBeenCalledTimes(1);
+    expect(createConversation).not.toHaveBeenCalled();
+    expect(onOpenSession).not.toHaveBeenCalled();
   });
 
   it('renames and deletes a project through the callbacks the entry shell owns', async () => {
@@ -394,19 +407,19 @@ describe('HubHome rail', () => {
     renderHub({ onRenameProject, onDeleteProject });
     await screen.findByTestId('hub-session-c3');
 
-    fireEvent.click(screen.getByTestId('hub-menu-project-p2'));
+    fireEvent.click(screen.getByTestId('hub-menu-folder-p2'));
     fireEvent.click(screen.getByTestId('hub-row-menu-delete'));
     // A project delete is unrecoverable, so it is confirmed first.
     expect(onDeleteProject).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId('hub-delete-confirm-cta'));
-    expect(onDeleteProject).toHaveBeenCalledWith('p2');
+    expect(folderDelete).toHaveBeenCalledWith('p2', 'keep');
 
-    fireEvent.click(screen.getByTestId('hub-menu-project-p1'));
+    fireEvent.click(screen.getByTestId('hub-menu-folder-p1'));
     fireEvent.click(screen.getByTestId('hub-row-menu-rename'));
     const field = screen.getByTestId('hub-rename-p-p1') as HTMLInputElement;
     fireEvent.change(field, { target: { value: '연간 보고서' } });
     fireEvent.keyDown(field, { key: 'Enter' });
-    expect(onRenameProject).toHaveBeenCalledWith('p1', '연간 보고서');
+    expect(folderRename).toHaveBeenCalledWith('p1', '연간 보고서');
   });
 
   it('carries elapsed time and a trailing arrow on the running strip', async () => {

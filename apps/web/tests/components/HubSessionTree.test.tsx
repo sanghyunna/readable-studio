@@ -4,13 +4,13 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { HubSessionTree } from '../../src/components/hub/HubSessionTree';
-import type { HubProjectNode } from '../../src/components/hub/types';
+import type { HubFolderNode } from '../../src/components/hub/types';
 
 afterEach(() => {
   cleanup();
 });
 
-function node(overrides: Partial<HubProjectNode> & { id: string }): HubProjectNode {
+function node(overrides: Partial<HubFolderNode> & { id: string }): HubFolderNode {
   return {
     name: overrides.id,
     updatedAt: 1,
@@ -25,7 +25,7 @@ const MANY = node({
   updatedAt: 900,
   sessions: Array.from({ length: 8 }, (_, i) => ({
     id: `s${i}`,
-    projectId: 'p1',
+    workspaceId: 'p1', folderId: 'p1', workspaceSessionCount: 1,
     title: `세션 ${i}`,
     updatedAt: 900 - i,
     state: i === 0 ? ('running' as const) : i === 1 ? ('awaiting' as const) : ('idle' as const),
@@ -37,13 +37,13 @@ const OTHER = node({
   name: '가격 페이지',
   updatedAt: 100,
   sessions: [
-    { id: 's-other', projectId: 'p2', title: '요금제 비교표', updatedAt: 100, state: 'failed' as const },
+    { id: 's-other', workspaceId: 'p2', folderId: 'p2', workspaceSessionCount: 1, title: '요금제 비교표', updatedAt: 100, state: 'failed' as const },
   ],
 });
 
 describe('HubSessionTree', () => {
   it('caps visible sessions and reveals the rest on demand', () => {
-    render(<HubSessionTree projects={[MANY]} currentSessionId={null} onOpenSession={vi.fn()} />);
+    render(<HubSessionTree tree={{ folders: [MANY], recents: [] }} currentSessionId={null} onOpenSession={vi.fn()} />);
     const sessionRows = () =>
       screen.getByTestId('hub-project-p1').querySelectorAll('[data-testid^="hub-session-"]');
     const overflowRow = () =>
@@ -60,7 +60,7 @@ describe('HubSessionTree', () => {
     const newer = node({ id: 'newer', updatedAt: 1_000 });
     render(
       <HubSessionTree
-        projects={[newer, MANY]}
+        tree={{ folders: [newer, MANY], recents: [] }}
         compactByDefault
         currentSessionId={null}
         onOpenSession={vi.fn()}
@@ -79,7 +79,7 @@ describe('HubSessionTree', () => {
   });
 
   it('filters to attention rows without duplicating them', () => {
-    render(<HubSessionTree projects={[MANY, OTHER]} currentSessionId={null} onOpenSession={vi.fn()} />);
+    render(<HubSessionTree tree={{ folders: [MANY, OTHER], recents: [] }} currentSessionId={null} onOpenSession={vi.fn()} />);
     fireEvent.click(screen.getByTestId('hub-filter-attention'));
     const titles = screen
       .getAllByTestId(/^hub-session-/)
@@ -90,7 +90,7 @@ describe('HubSessionTree', () => {
 
   it('exposes sort choices as an exclusive radio group without selection glyphs', () => {
     // Given: the recent sort is active by default.
-    render(<HubSessionTree projects={[MANY, OTHER]} currentSessionId={null} onOpenSession={vi.fn()} />);
+    render(<HubSessionTree tree={{ folders: [MANY, OTHER], recents: [] }} currentSessionId={null} onOpenSession={vi.fn()} />);
 
     // When: the sort menu opens.
     fireEvent.click(screen.getByTestId('hub-sort'));
@@ -104,7 +104,7 @@ describe('HubSessionTree', () => {
   });
 
   it('sorts projects by name through the single sort control', () => {
-    render(<HubSessionTree projects={[MANY, OTHER]} currentSessionId={null} onOpenSession={vi.fn()} />);
+    render(<HubSessionTree tree={{ folders: [MANY, OTHER], recents: [] }} currentSessionId={null} onOpenSession={vi.fn()} />);
     // One control, not one pill per order: opening it reveals both orders.
     expect(screen.getAllByTestId(/^hub-sort$/)).toHaveLength(1);
     fireEvent.click(screen.getByTestId('hub-sort'));
@@ -117,7 +117,7 @@ describe('HubSessionTree', () => {
     // Given: one session is the current destination in a collapsed rail.
     render(
       <HubSessionTree
-        projects={[MANY]}
+        tree={{ folders: [MANY], recents: [] }}
         collapsed
         currentSessionId="s1"
         onOpenSession={vi.fn()}
@@ -137,7 +137,7 @@ describe('HubSessionTree', () => {
 
   it('exposes full project and session names through the portal tooltip contract', () => {
     // Given: the tree contains names that may exceed the rail width.
-    render(<HubSessionTree projects={[MANY]} currentSessionId={null} onOpenSession={vi.fn()} />);
+    render(<HubSessionTree tree={{ folders: [MANY], recents: [] }} currentSessionId={null} onOpenSession={vi.fn()} />);
 
     // When: the project and nested session rows render.
     const projectRow = screen.getByTestId('hub-project-p1');
@@ -155,7 +155,7 @@ describe('HubSessionTree', () => {
   it('opens a compact-default closed project on its first click without replacing the row', () => {
     render(
       <HubSessionTree
-        projects={[MANY, OTHER]}
+        tree={{ folders: [MANY, OTHER], recents: [] }}
         compactByDefault
         currentSessionId={null}
         onOpenSession={vi.fn()}
@@ -171,14 +171,14 @@ describe('HubSessionTree', () => {
   });
 
   it('expands an unloaded compact project instead of navigating from its disclosure row', () => {
-    const onOpenProject = vi.fn();
+    const onSelectFolder = vi.fn();
     render(
       <HubSessionTree
-        projects={[MANY, node({ id: 'loading', sessionsStatus: 'loading' })]}
+        tree={{ folders: [MANY, node({ id: 'loading' })], recents: [] }}
         compactByDefault
         currentSessionId={null}
         onOpenSession={vi.fn()}
-        onOpenProject={onOpenProject}
+        onSelectFolder={onSelectFolder}
       />,
     );
     const row = screen.getByTestId('hub-project-loading');
@@ -188,23 +188,23 @@ describe('HubSessionTree', () => {
 
     expect(screen.getByTestId('hub-project-loading')).toBe(row);
     expect(row.getAttribute('aria-expanded')).toBe('true');
-    expect(onOpenProject).not.toHaveBeenCalled();
+    expect(onSelectFolder).toHaveBeenCalledWith(expect.objectContaining({ id: 'loading' }));
     expect(screen.queryByTestId('hub-new-terminal-loading')).toBeNull();
-    expect(screen.getByTestId('hub-sessions-loading-loading')).toBeTruthy();
+    expect(screen.queryByTestId('hub-sessions-loading-loading')).toBeNull();
   });
 
   it('opens a session on click without an intermediate view', () => {
     const onOpenSession = vi.fn();
-    render(<HubSessionTree projects={[MANY]} currentSessionId={null} onOpenSession={onOpenSession} />);
+    render(<HubSessionTree tree={{ folders: [MANY], recents: [] }} currentSessionId={null} onOpenSession={onOpenSession} />);
     fireEvent.click(screen.getByTestId('hub-session-s0'));
     expect(onOpenSession).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 's0', projectId: 'p1' }),
+      expect.objectContaining({ id: 's0', workspaceId: 'p1', folderId: 'p1', workspaceSessionCount: 1 }),
     );
   });
 
   describe('empty states', () => {
     it('shows a genuine empty state with no clear-filter link when nothing exists', () => {
-      render(<HubSessionTree projects={[]} currentSessionId={null} onOpenSession={vi.fn()} />);
+      render(<HubSessionTree tree={{ folders: [], recents: [] }} currentSessionId={null} onOpenSession={vi.fn()} />);
       const empty = screen.getByTestId('hub-tree-no-projects');
       expect(empty.querySelector('button')).toBeNull();
       expect(screen.queryByTestId('hub-tree-empty')).toBeNull();
@@ -213,7 +213,7 @@ describe('HubSessionTree', () => {
 
     it('claims nothing about an empty library while the project list is still unknown', () => {
       render(
-        <HubSessionTree projects={[]} projectsKnown={false} currentSessionId={null} onOpenSession={vi.fn()} />,
+        <HubSessionTree tree={{ folders: [], recents: [] }} railStatus="loading" currentSessionId={null} onOpenSession={vi.fn()} />,
       );
       expect(screen.queryByTestId('hub-tree-no-projects')).toBeNull();
       expect(screen.queryByTestId('hub-tree-empty')).toBeNull();
@@ -223,13 +223,13 @@ describe('HubSessionTree', () => {
 
     it('shows the genuine empty state for a successfully loaded empty list', () => {
       render(
-        <HubSessionTree projects={[]} projectsKnown currentSessionId={null} onOpenSession={vi.fn()} />,
+        <HubSessionTree tree={{ folders: [], recents: [] }} railStatus="ready" currentSessionId={null} onOpenSession={vi.fn()} />,
       );
       expect(screen.getByTestId('hub-tree-no-projects')).toBeTruthy();
     });
 
     it('keeps the genuine empty state when a non-default filter is active but nothing exists', () => {
-      render(<HubSessionTree projects={[]} currentSessionId={null} onOpenSession={vi.fn()} />);
+      render(<HubSessionTree tree={{ folders: [], recents: [] }} currentSessionId={null} onOpenSession={vi.fn()} />);
       fireEvent.click(screen.getByTestId('hub-filter-running'));
       expect(screen.getByTestId('hub-tree-no-projects')).toBeTruthy();
       expect(screen.queryByTestId('hub-tree-empty')).toBeNull();
@@ -238,9 +238,9 @@ describe('HubSessionTree', () => {
     it('offers to clear the filter when existing projects are hidden by it', () => {
       const idleOnly = node({
         id: 'idle',
-        sessions: [{ id: 'i1', projectId: 'idle', title: '초안', updatedAt: 5, state: 'idle' as const }],
+        sessions: [{ id: 'i1', workspaceId: 'idle', folderId: 'idle', workspaceSessionCount: 1, title: '초안', updatedAt: 5, state: 'idle' as const }],
       });
-      render(<HubSessionTree projects={[idleOnly]} currentSessionId={null} onOpenSession={vi.fn()} />);
+      render(<HubSessionTree tree={{ folders: [idleOnly], recents: [] }} currentSessionId={null} onOpenSession={vi.fn()} />);
       fireEvent.click(screen.getByTestId('hub-filter-running'));
 
       const empty = screen.getByTestId('hub-tree-empty');
@@ -254,7 +254,7 @@ describe('HubSessionTree', () => {
 
     it('reports no match, not an empty library, when a search narrowed everything away', () => {
       render(
-        <HubSessionTree projects={[]} searching currentSessionId={null} onOpenSession={vi.fn()} />,
+        <HubSessionTree tree={{ folders: [], recents: [] }} searching currentSessionId={null} onOpenSession={vi.fn()} />,
       );
       expect(screen.getByTestId('hub-tree-empty')).toBeTruthy();
       expect(screen.queryByTestId('hub-tree-no-projects')).toBeNull();

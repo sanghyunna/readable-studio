@@ -58,7 +58,7 @@ describe('Hub rail long-name truncation contract', () => {
   it('constrains project names while preserving their chevron, state, and actions', () => {
     const project = declarations('.hub-row--project');
 
-    expect(project).toContain('grid-template-columns: auto minmax(0, 1fr) auto auto;');
+    expect(project).toContain('grid-template-columns: auto auto minmax(0, 1fr) auto auto;');
     expect(declarations('.hub-row--project > .hub-row__title')).toContain('grid-area: title;');
     expect(declarations('.hub-row--project > .hub-row__chevron')).toContain('grid-area: chevron;');
     expect(declarations('.hub-row--project > .hub-row__state')).toContain('grid-area: state;');

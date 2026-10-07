@@ -4,20 +4,20 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { HubSessionTree } from '../../src/components/hub/HubSessionTree';
-import type { HubProjectNode } from '../../src/components/hub/types';
+import type { HubFolderNode } from '../../src/components/hub/types';
 
 afterEach(() => {
   cleanup();
 });
 
-const PROJECTS: HubProjectNode[] = [
+const PROJECTS: HubFolderNode[] = [
   {
     id: 'p1',
     name: '분기 보고서',
     updatedAt: 900,
     sessions: [
-      { id: 's1', projectId: 'p1', title: '차트 팔레트 정리', updatedAt: 900, state: 'running' },
-      { id: 's2', projectId: 'p1', title: '범례 겹침 수정', updatedAt: 800, state: 'awaiting' },
+      { id: 's1', workspaceId: 'p1', folderId: 'p1', workspaceSessionCount: 1, title: '차트 팔레트 정리', updatedAt: 900, state: 'running' },
+      { id: 's2', workspaceId: 'p1', folderId: 'p1', workspaceSessionCount: 1, title: '범례 겹침 수정', updatedAt: 800, state: 'awaiting' },
     ],
   },
   {
@@ -25,14 +25,14 @@ const PROJECTS: HubProjectNode[] = [
     name: '가격 페이지',
     updatedAt: 100,
     sessions: [
-      { id: 's3', projectId: 'p2', title: '요금제 비교표', updatedAt: 100, state: 'idle' },
+      { id: 's3', workspaceId: 'p2', folderId: 'p2', workspaceSessionCount: 1, title: '요금제 비교표', updatedAt: 100, state: 'idle' },
     ],
   },
 ];
 
 describe('HubSessionTree keyboard and semantics', () => {
   it('exposes the ARIA tree pattern', () => {
-    render(<HubSessionTree projects={PROJECTS} currentSessionId={null} onOpenSession={vi.fn()} />);
+    render(<HubSessionTree tree={{ folders: PROJECTS, recents: [] }} currentSessionId={null} onOpenSession={vi.fn()} />);
     expect(screen.getByRole('tree')).toBeTruthy();
     expect(screen.getAllByRole('treeitem').length).toBeGreaterThan(2);
     const project = screen.getByTestId('hub-project-p1');
@@ -43,7 +43,7 @@ describe('HubSessionTree keyboard and semantics', () => {
   });
 
   it('keeps exactly one tab stop (roving tabindex)', () => {
-    render(<HubSessionTree projects={PROJECTS} currentSessionId={null} onOpenSession={vi.fn()} />);
+    render(<HubSessionTree tree={{ folders: PROJECTS, recents: [] }} currentSessionId={null} onOpenSession={vi.fn()} />);
     const stops = screen
       .getAllByRole('treeitem')
       .filter((el) => el.getAttribute('tabindex') === '0');
@@ -51,7 +51,7 @@ describe('HubSessionTree keyboard and semantics', () => {
   });
 
   it('moves focus with ArrowDown and collapses with ArrowLeft', () => {
-    render(<HubSessionTree projects={PROJECTS} currentSessionId={null} onOpenSession={vi.fn()} />);
+    render(<HubSessionTree tree={{ folders: PROJECTS, recents: [] }} currentSessionId={null} onOpenSession={vi.fn()} />);
     const project = screen.getByTestId('hub-project-p1');
     project.focus();
     fireEvent.keyDown(project, { key: 'ArrowDown' });
@@ -67,7 +67,7 @@ describe('HubSessionTree keyboard and semantics', () => {
   it('opens the focused session with Enter', () => {
     const onOpenSession = vi.fn();
     render(
-      <HubSessionTree projects={PROJECTS} currentSessionId={null} onOpenSession={onOpenSession} />,
+      <HubSessionTree tree={{ folders: PROJECTS, recents: [] }} currentSessionId={null} onOpenSession={onOpenSession} />,
     );
     const row = screen.getByTestId('hub-session-s2');
     row.focus();
@@ -80,7 +80,7 @@ describe('HubSessionTree keyboard and semantics', () => {
     const onDelete = vi.fn();
     render(
       <HubSessionTree
-        projects={PROJECTS}
+        tree={{ folders: PROJECTS, recents: [] }}
         currentSessionId={null}
         onOpenSession={vi.fn()}
         onRenameSession={onRename}
@@ -101,7 +101,7 @@ describe('HubSessionTree keyboard and semantics', () => {
   });
 
   it('uses printable-key type-ahead to focus a matching visible row', () => {
-    render(<HubSessionTree projects={PROJECTS} currentSessionId={null} onOpenSession={vi.fn()} />);
+    render(<HubSessionTree tree={{ folders: PROJECTS, recents: [] }} currentSessionId={null} onOpenSession={vi.fn()} />);
     const first = screen.getByTestId('hub-project-p1');
     first.focus();
     fireEvent.keyDown(first, { key: '가' });
@@ -109,7 +109,7 @@ describe('HubSessionTree keyboard and semantics', () => {
   });
 
   it('marks the current session for assistive tech', () => {
-    render(<HubSessionTree projects={PROJECTS} currentSessionId="s2" onOpenSession={vi.fn()} />);
+    render(<HubSessionTree tree={{ folders: PROJECTS, recents: [] }} currentSessionId="s2" onOpenSession={vi.fn()} />);
     expect(screen.getByTestId('hub-session-s2').getAttribute('aria-current')).toBe('true');
     expect(screen.getByTestId('hub-session-s1').getAttribute('aria-current')).toBeNull();
   });

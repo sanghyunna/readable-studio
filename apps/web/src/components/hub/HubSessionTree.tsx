@@ -1,9 +1,12 @@
 // Left-panel navigation for the entry hub.
 //
-// This is the single navigation model for the entry surface: projects expand
-// into their sessions in place, and activating a session hands off directly to
-// the workspace. Follows the ARIA tree pattern - one tab stop (roving
-// tabindex), arrow-key traversal, and a group per project.
+// This is the single navigation model for the entry surface: a `프로젝트`
+// section of folders that expand into their sessions in place, then a `최근`
+// section of standalone sessions. Activating a session hands off directly to
+// the workspace; a folder has no workspace of its own - clicking it toggles
+// the disclosure and makes it the composer's context. Follows the ARIA tree
+// pattern - one tab stop (roving tabindex), arrow-key traversal, and a group
+// per folder.
 
 import {
   useCallback,
@@ -12,12 +15,14 @@ import {
   useMemo,
   useRef,
   useState,
+  type DragEvent as ReactDragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from 'react';
 
 import { createPortal } from 'react-dom';
 import { Button } from '@readable-studio/components';
+import type { DeleteFolderSessionsPolicy } from '@readable-studio/contracts';
 
 import { useT } from '../../i18n';
 import { Icon } from '../Icon';
@@ -25,64 +30,80 @@ import { HubMenu, type HubMenuItem } from './HubMenu';
 import { initialGlyph } from './initialGlyph';
 import { relativeTimeShort } from './relativeTime';
 import {
+  HUB_RECENTS_PAGE,
   HUB_SESSION_PAGE,
+  folderMatchesFilter,
   matchesHubFilter,
-  projectMatchesFilter,
-  rollupProjectState,
-  sortProjects,
+  rollupFolderState,
+  sortFolders,
   type HubFilter,
-  type HubProjectNode,
+  type HubFolderNode,
+  type HubRailTree,
   type HubSessionNode,
   type HubSessionState,
+  type HubSessionsStatus,
   type HubSort,
 } from './types';
 
+/** The drag payload type a session row carries; nothing else is accepted. */
+export const HUB_SESSION_DRAG_TYPE = 'application/x-readable-session';
+
 interface Props {
-  projects: HubProjectNode[];
-  /** Open one project when this tree is used in the compact hub rail, preferring live work. */
+  tree: HubRailTree;
+  /** Move destinations are never narrowed by the rail search. */
+  moveFolders?: HubFolderNode[];
+  /** Open one folder when this tree is used in the compact hub rail, preferring live work. */
   compactByDefault?: boolean;
-  /** Content placed after the shared filters and before the project tree. */
+  /** Content placed after the shared filters and before the folder tree. */
   openWork?: ReactNode;
   /**
    * The rail is showing glyphs only. Sessions are not rendered inline, so a
-   * project's sessions are reached through the flyout instead of by expanding.
+   * folder's sessions are reached through the flyout instead of by expanding;
+   * recents are not rendered at all.
    */
   collapsed?: boolean;
   /**
-   * The owner already narrowed `projects` by a search query. An empty tree
-   * then means "nothing matched", not "nothing exists".
+   * The owner already narrowed `tree` by a search query. An empty tree then
+   * means "nothing matched", not "nothing exists".
    */
   searching?: boolean;
   /**
-   * False while the owner has not yet loaded the list (startup, daemon
-   * reconnect). An empty tree then means "unknown", not "nothing exists",
-   * so no empty-library copy is shown.
+   * One status for the whole rail. `loading` and `unavailable` with an empty
+   * tree mean "unknown", not "nothing exists"; `stale`/`unavailable` render a
+   * single retry row.
    */
-  projectsKnown?: boolean;
+  railStatus?: HubSessionsStatus;
   /** Clears the rail-owned search query alongside this tree's status filter. */
   onClearFilter?: () => void;
   currentSessionId: string | null;
+  /** The folder currently chosen as the composer's context, if any. */
+  selectedFolderId?: string | null;
   onOpenSession: (session: HubSessionNode) => void;
-  onNewSession?: (project: HubProjectNode) => void;
-  /** Retries ONE project's session read; siblings are left alone. */
-  onRetrySessions?: (project: HubProjectNode) => void;
-  /** The project whose new-session request is currently in flight, if any. */
-  pendingNewSessionProjectId?: string | null;
-  /** Opens a project from an explicit workspace-surface action. */
-  onOpenProject?: (project: HubProjectNode) => void;
+  /** Go to the composer; with a folder it becomes the composer's context. */
+  onNewSession?: (folder?: HubFolderNode) => void;
+  /** Folder row click / Enter: make it the composer's context. */
+  onSelectFolder?: (folder: HubFolderNode) => void;
+  /** Esc on the selected folder row clears the context. */
+  onClearSelectedFolder?: () => void;
+  /** Re-reads the whole rail. */
+  onRetrySessions?: () => void;
   /** Open the inspector for a session without navigating to it. */
   onPeekSession?: (session: HubSessionNode) => void;
-  onRenameProject?: (project: HubProjectNode, name: string) => void;
-  onDeleteProject?: (project: HubProjectNode) => void;
+  onCreateFolder?: (name: string) => void;
+  onRenameFolder?: (folder: HubFolderNode, name: string) => void;
+  onDeleteFolder?: (folder: HubFolderNode, sessions: DeleteFolderSessionsPolicy) => void;
   onRenameSession?: (session: HubSessionNode, title: string) => void;
   onDeleteSession?: (session: HubSessionNode) => void;
+  /** `null` = "No project" (recents). */
+  onMoveSession?: (session: HubSessionNode, folderId: string | null) => void;
 }
 
 interface FlatRow {
   key: string;
-  kind: 'project' | 'session' | 'more';
-  project: HubProjectNode;
-  /** The rendered project state, including compact-by-default policy. */
+  kind: 'folder' | 'session' | 'more';
+  /** `null` for rows in the recents section. */
+  folder: HubFolderNode | null;
+  /** The rendered folder state, including compact-by-default policy. */
   open?: boolean;
   session?: HubSessionNode;
 }
@@ -92,19 +113,28 @@ interface MenuState {
   anchor: HTMLElement;
   /** Set when the menu was opened from a right-click, so it hangs off the pointer. */
   point?: { x: number; y: number };
+  /** The `이동 ▸` drill-down lives inside the same menu as a second page. */
+  page: 'root' | 'move';
+}
+
+interface ConfirmAction {
+  label: string;
+  testId: string;
+  danger?: boolean;
+  run: () => void;
 }
 
 /**
- * A queued destructive action. Delete is confirmed through the same
+ * A queued destructive action. Folder delete is confirmed through the same
  * `modal-confirm` alertdialog the projects grid already uses, so the rail
- * cannot become the one place a project vanishes on a single click.
+ * cannot become the one place a folder vanishes on a single click.
  */
 interface ConfirmState {
   title: string;
   message: string;
-  confirmLabel: string;
   rowKey: string;
-  onConfirm: () => void;
+  /** The first action is the default (focused); the cancel button is implicit. */
+  actions: ConfirmAction[];
 }
 
 // Hovering must not fire a flyout the pointer only crossed on its way
@@ -112,6 +142,9 @@ interface ConfirmState {
 const FLYOUT_HOVER_DELAY_MS = 180;
 const COMPACT_SESSION_QUERY = '(max-height: 760px) and (max-width: 900px)';
 const COMPACT_SESSION_PAGE = 4;
+const RECENTS_KEY = 'recents';
+const RECENTS_MORE_KEY = 'm:recents';
+const CREATE_KEY = 'create';
 
 /* ---------------------------------------------------------------------------
  * Session-surface handoff: Hub session tree -> workspace.
@@ -253,25 +286,37 @@ function stateLabelKey(state: HubSessionState): StateLabelKey | null {
   return null;
 }
 
+const byRecency = (a: HubSessionNode, b: HubSessionNode) =>
+  b.updatedAt - a.updatedAt || a.id.localeCompare(b.id);
+
+/** Only a session row's own payload is accepted; file drops stay with the composer. */
+function hasSessionDrag(event: ReactDragEvent): boolean {
+  return Array.from(event.dataTransfer?.types ?? []).includes(HUB_SESSION_DRAG_TYPE);
+}
+
 export function HubSessionTree({
-  projects,
+  tree,
+  moveFolders = tree.folders,
   compactByDefault = false,
   openWork,
   collapsed: railCollapsed = false,
   searching = false,
-  projectsKnown = true,
+  railStatus = 'ready',
   onClearFilter,
   currentSessionId,
+  selectedFolderId = null,
   onOpenSession,
   onNewSession,
+  onSelectFolder,
+  onClearSelectedFolder,
   onRetrySessions,
-  pendingNewSessionProjectId = null,
-  onOpenProject,
   onPeekSession,
-  onRenameProject,
-  onDeleteProject,
+  onCreateFolder,
+  onRenameFolder,
+  onDeleteFolder,
   onRenameSession,
   onDeleteSession,
+  onMoveSession,
 }: Props) {
   const t = useT();
   const [filter, setFilter] = useState<HubFilter>('all');
@@ -280,19 +325,24 @@ export function HubSessionTree({
   const [expandedOverflow, setExpandedOverflow] = useState<Record<string, boolean>>({});
   const [cursor, setCursor] = useState(0);
   const [menu, setMenu] = useState<MenuState | null>(null);
-  // The collapsed rail's project flyout. Kept apart from `menu` so a row's
+  // The collapsed rail's folder flyout. Kept apart from `menu` so a row's
   // overflow menu and its flyout can never both claim the same anchor.
-  const [flyout, setFlyout] = useState<{ projectId: string; anchor: HTMLElement } | null>(null);
+  const [flyout, setFlyout] = useState<{ folderId: string; anchor: HTMLElement } | null>(null);
   const [sortAnchor, setSortAnchor] = useState<HTMLElement | null>(null);
   const [compactSessionPage, setCompactSessionPage] = useState(
     () => typeof window !== 'undefined' && window.matchMedia(COMPACT_SESSION_QUERY).matches,
   );
   // Rename happens in place: a modal for one field is heavier than the edit.
   const [renaming, setRenaming] = useState<string | null>(null);
+  // Folder creation is an inline row in edit mode, never a modal.
+  const [creatingFolder, setCreatingFolder] = useState(false);
   const [confirming, setConfirming] = useState<ConfirmState | null>(null);
+  // Which drop target the dragged session is over: a folder id, or `recents`.
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
   const confirmId = useId();
   const confirmRef = useRef<HTMLDivElement>(null);
-  const cancelRef = useRef<HTMLButtonElement>(null);
+  const defaultActionRef = useRef<HTMLButtonElement>(null);
   const typeAheadRef = useRef('');
   const typeAheadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // A row activated out of existence (the overflow row) hands focus to a row
@@ -309,9 +359,9 @@ export function HubSessionTree({
     if (!confirming) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    cancelRef.current?.focus();
+    defaultActionRef.current?.focus();
     const onFocus = (event: FocusEvent) => {
-      if (!confirmRef.current?.contains(event.target as Node)) cancelRef.current?.focus();
+      if (!confirmRef.current?.contains(event.target as Node)) defaultActionRef.current?.focus();
     };
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -368,31 +418,30 @@ export function HubSessionTree({
     return () => query.removeEventListener('change', onChange);
   }, []);
 
-  const ordered = useMemo(() => sortProjects(projects, sort), [projects, sort]);
+  const ordered = useMemo(() => sortFolders(tree.folders, sort), [tree.folders, sort]);
   const sessionPageSize = compactSessionPage ? COMPACT_SESSION_PAGE : HUB_SESSION_PAGE;
-  // Compact mode has room for one expanded project. That slot must follow live
-  // work rather than incidental project recency: the Hub's live strip can point
-  // at a running session in an older project, and collapsing that same project
+  // Compact mode has room for one expanded folder. That slot must follow live
+  // work rather than incidental folder recency: the Hub's live strip can point
+  // at a running session in an older folder, and collapsing that same folder
   // leaves its session and overflow rows mounted under `hidden` with no visible
   // route to them. Explicit disclosure choices in `collapsed` still win.
-  const defaultOpenProjectId = compactByDefault
-    ? (ordered.find((project) =>
-        project.state === 'running' || project.sessions.some((session) => session.state === 'running'))
+  const defaultOpenFolderId = compactByDefault
+    ? (ordered.find((folder) => folder.sessions.some((session) => session.state === 'running'))
         ?.id ?? ordered[0]?.id)
     : undefined;
 
   const visible = useMemo(() => {
     return ordered
-      .map((project) => {
-        const matching = [...project.sessions]
-          .sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id))
+      .map((folder) => {
+        const matching = [...folder.sessions]
+          .sort(byRecency)
           .filter((session) => matchesHubFilter(session.state, filter));
         const capped =
-          filter === 'all' && !expandedOverflow[project.id]
+          filter === 'all' && !expandedOverflow[folder.id]
             ? matching.slice(0, sessionPageSize)
             : matching;
         return {
-          project,
+          folder,
           sessions: capped,
           hiddenCount: matching.length - capped.length,
           // A filtered view always reveals its matches, so only the unfiltered
@@ -400,11 +449,11 @@ export function HubSessionTree({
           open:
             filter !== 'all'
               ? true
-              : collapsed[project.id] === undefined
-                ? !compactByDefault || project.id === defaultOpenProjectId
-                : !collapsed[project.id],
+              : collapsed[folder.id] === undefined
+                ? !compactByDefault || folder.id === defaultOpenFolderId
+                : !collapsed[folder.id],
           empty: matching.length === 0,
-          selfMatches: projectMatchesFilter(project, filter),
+          selfMatches: folderMatchesFilter(folder, filter),
         };
       })
       .filter((entry) => (filter === 'all' ? true : !entry.empty || entry.selfMatches));
@@ -415,31 +464,42 @@ export function HubSessionTree({
     expandedOverflow,
     sessionPageSize,
     compactByDefault,
-    defaultOpenProjectId,
+    defaultOpenFolderId,
   ]);
+
+  // Recents are always recency-ordered; the sort control orders folders only.
+  const recents = useMemo(() => {
+    const matching = tree.recents.filter((session) => session.folderId === null)
+      .sort(byRecency)
+      .filter((session) => matchesHubFilter(session.state, filter));
+    const capped = filter === 'all' && !expandedOverflow[RECENTS_KEY]
+      ? matching.slice(0, HUB_RECENTS_PAGE)
+      : matching;
+    return { sessions: capped, hiddenCount: matching.length - capped.length };
+  }, [tree.recents, filter, expandedOverflow]);
 
   const rows = useMemo<FlatRow[]>(() => {
     const next: FlatRow[] = [];
     for (const entry of visible) {
-      next.push({
-        key: `p:${entry.project.id}`,
-        kind: 'project',
-        project: entry.project,
-        open: entry.open,
-      });
+      next.push({ key: `p:${entry.folder.id}`, kind: 'folder', folder: entry.folder, open: entry.open });
       // Session rows are hidden in the collapsed rail, so leaving them in the
       // row model would send arrow-key focus to invisible rows.
       if (railCollapsed) continue;
       if (!entry.open) continue;
       for (const session of entry.sessions) {
-        next.push({ key: `s:${session.id}`, kind: 'session', project: entry.project, session });
+        next.push({ key: `s:${session.id}`, kind: 'session', folder: entry.folder, session });
       }
       if (entry.hiddenCount > 0) {
-        next.push({ key: `m:${entry.project.id}`, kind: 'more', project: entry.project });
+        next.push({ key: `m:${entry.folder.id}`, kind: 'more', folder: entry.folder });
       }
     }
+    if (railCollapsed) return next;
+    for (const session of recents.sessions) {
+      next.push({ key: `s:${session.id}`, kind: 'session', folder: null, session });
+    }
+    if (recents.hiddenCount > 0) next.push({ key: RECENTS_MORE_KEY, kind: 'more', folder: null });
     return next;
-  }, [visible, railCollapsed]);
+  }, [visible, recents, railCollapsed]);
 
   useEffect(() => {
     if (cursor > rows.length - 1) setCursor(Math.max(0, rows.length - 1));
@@ -450,7 +510,7 @@ export function HubSessionTree({
   useEffect(() => {
     if (menu && !rows.some((row) => row.key === menu.rowKey)) setMenu(null);
     if (renaming && !rows.some((row) => row.key === renaming)) setRenaming(null);
-    if (flyout && !rows.some((row) => row.key === `p:${flyout.projectId}`)) setFlyout(null);
+    if (flyout && !rows.some((row) => row.key === `p:${flyout.folderId}`)) setFlyout(null);
     // A confirmation whose subject is already gone would delete nothing and
     // strand focus on a detached row.
     if (confirming && !rows.some((row) => row.key === confirming.rowKey)) setConfirming(null);
@@ -462,24 +522,40 @@ export function HubSessionTree({
 
   // One destructive path for the whole tree: the row menu, the context menu and
   // the Delete key all queue the same confirmation instead of each growing its
-  // own idea of what "safe" means.
-  const confirmDeleteProject = useCallback(
-    (project: HubProjectNode) => {
-      if (!onDeleteProject) return;
+  // own idea of what "safe" means. A folder with no sessions has nothing to
+  // ask about and deletes at once.
+  const confirmDeleteFolder = useCallback(
+    (folder: HubFolderNode) => {
+      if (!onDeleteFolder) return;
+      if (folder.sessions.length === 0) {
+        onDeleteFolder(folder, 'keep');
+        return;
+      }
       setConfirming({
-        title: t('designs.deleteTitle'),
-        message: t('designs.deleteConfirm', { name: project.name }),
-        confirmLabel: t('designs.menuDelete'),
-        rowKey: `p:${project.id}`,
-        onConfirm: () => onDeleteProject(project),
+        title: t('hub.deleteFolderTitle'),
+        message: t('hub.deleteFolderBody', { count: String(folder.sessions.length) }),
+        rowKey: `p:${folder.id}`,
+        actions: [
+          {
+            label: t('hub.deleteFolderKeep'),
+            testId: 'hub-delete-confirm-cta',
+            run: () => onDeleteFolder(folder, 'keep'),
+          },
+          {
+            label: t('hub.deleteFolderAll'),
+            testId: 'hub-delete-folder-all',
+            danger: true,
+            run: () => onDeleteFolder(folder, 'delete'),
+          },
+        ],
       });
     },
-    [onDeleteProject, t],
+    [onDeleteFolder, t],
   );
 
   // Sessions are NOT confirmed here on purpose: the hub already deletes a
   // session optimistically behind an undoable toast, and stacking a modal on
-  // top of an undo would be friction without added safety. Projects have no
+  // top of an undo would be friction without added safety. Folders have no
   // undo, so they get the dialog.
   const deleteSession = useCallback(
     (session: HubSessionNode) => {
@@ -498,41 +574,53 @@ export function HubSessionTree({
     [rows],
   );
 
+  const revealOverflow = useCallback(
+    (row: FlatRow) => {
+      // The "more" row disappears once its sessions render, so hand focus to
+      // the first newly revealed session rather than letting it fall to body.
+      // Index against the rows the current filter actually shows.
+      const key = row.folder ? row.folder.id : RECENTS_KEY;
+      const source = row.folder ? row.folder.sessions : tree.recents;
+      const page = row.folder ? sessionPageSize : HUB_RECENTS_PAGE;
+      const shown = [...source].sort(byRecency).filter((s) => matchesHubFilter(s.state, filter));
+      const firstHidden = shown[page]?.id;
+      setExpandedOverflow((prev) => ({ ...prev, [key]: true }));
+      if (firstHidden) pendingFocusRef.current = `s:${firstHidden}`;
+    },
+    [filter, sessionPageSize, tree.recents],
+  );
+
   const activate = useCallback(
     (row: FlatRow) => {
       if (row.kind === 'session' && row.session) {
         onOpenSession(row.session);
         return;
       }
-      if (row.kind === 'project' && railCollapsed) {
+      if (row.kind === 'more') {
+        revealOverflow(row);
+        return;
+      }
+      if (!row.folder) return;
+      if (railCollapsed) {
         // There is nothing to expand into: the sessions group is not rendered
-        // in the collapsed rail, so activating a project offers them directly.
+        // in the collapsed rail, so activating a folder offers them directly.
         const anchor = rowRefs.current.get(row.key);
         if (anchor) {
           setFlyout((prev) =>
-            prev?.projectId === row.project.id ? null : { projectId: row.project.id, anchor },
+            prev?.folderId === row.folder?.id ? null : { folderId: row.folder!.id, anchor },
           );
         }
+        onSelectFolder?.(row.folder);
         return;
       }
-      if (row.kind === 'more') {
-        // The "more" row disappears once its sessions render, so hand focus to
-        // the first newly revealed session rather than letting it fall to body.
-        // Index against the rows the current filter actually shows.
-        const shown = row.project.sessions.filter((s) => matchesHubFilter(s.state, filter));
-        const firstHidden = shown[sessionPageSize]?.id;
-        setExpandedOverflow((prev) => ({ ...prev, [row.project.id]: true }));
-        if (firstHidden) pendingFocusRef.current = `s:${firstHidden}`;
-        return;
-      }
-      // The project row is the tree's disclosure control. Opening its workspace
-      // is a separate action inside the revealed group, so even a loading or
-      // genuinely empty project expands here instead of disappearing on route
-      // navigation. Toggle the state the user can actually see: compact mode
-      // closes non-leading projects without writing that default to `collapsed`.
-      setCollapsed((prev) => ({ ...prev, [row.project.id]: row.open === true }));
+      // The folder row is the tree's disclosure control AND the composer's
+      // context picker. Toggle the state the user can actually see: compact
+      // mode closes non-leading folders without writing that default to
+      // `collapsed`.
+      setCollapsed((prev) => ({ ...prev, [row.folder!.id]: row.open === true }));
+      onSelectFolder?.(row.folder);
     },
-    [onOpenSession, filter, railCollapsed, sessionPageSize],
+    [onOpenSession, onSelectFolder, railCollapsed, revealOverflow],
   );
 
   const onKeyDown = useCallback(
@@ -544,14 +632,14 @@ export function HubSessionTree({
       const index = resolved >= 0 ? resolved : fallbackIndex;
       const row = rows[index];
       if (!row) return;
-      // A session group lives INSIDE its project treeitem for ARIA ownership, so
+      // A session group lives INSIDE its folder treeitem for ARIA ownership, so
       // an unstopped key would run this handler again on the ancestor row and
-      // act twice - Space on a session would also collapse its project.
+      // act twice - Space on a session would also collapse its folder.
       event.stopPropagation();
       switch (event.key) {
         case 'F2': {
           if (row.kind === 'more') break;
-          const canRename = row.kind === 'project' ? onRenameProject : onRenameSession;
+          const canRename = row.kind === 'folder' ? onRenameFolder : onRenameSession;
           if (!canRename) break;
           event.preventDefault();
           setRenaming(row.key);
@@ -560,8 +648,8 @@ export function HubSessionTree({
         case 'Delete':
           if (row.kind === 'more') break;
           event.preventDefault();
-          if (row.kind === 'project') {
-            confirmDeleteProject(row.project);
+          if (row.kind === 'folder' && row.folder) {
+            confirmDeleteFolder(row.folder);
           } else if (row.session) {
             deleteSession(row.session);
             focusRow(Math.min(index + 1, rows.length - 1));
@@ -577,9 +665,16 @@ export function HubSessionTree({
           event.preventDefault();
           const anchor = rowRefs.current.get(row.key);
           if (!anchor) break;
-          setMenu({ rowKey: row.key, anchor });
+          setMenu({ rowKey: row.key, anchor, page: 'root' });
           break;
         }
+        case 'Escape':
+          // Esc on the selected folder row drops it as the composer context.
+          if (row.kind === 'folder' && row.folder && row.folder.id === selectedFolderId) {
+            event.preventDefault();
+            onClearSelectedFolder?.();
+          }
+          break;
         case 'ArrowDown':
           event.preventDefault();
           focusRow(Math.min(index + 1, rows.length - 1));
@@ -597,22 +692,23 @@ export function HubSessionTree({
           focusRow(rows.length - 1);
           break;
         case 'ArrowRight':
-          if (row.kind !== 'project') break;
+          if (row.kind !== 'folder' || !row.folder) break;
           event.preventDefault();
-          if (collapsed[row.project.id]) {
-            setCollapsed((prev) => ({ ...prev, [row.project.id]: false }));
+          if (collapsed[row.folder.id]) {
+            setCollapsed((prev) => ({ ...prev, [row.folder!.id]: false }));
           } else {
             focusRow(Math.min(index + 1, rows.length - 1));
           }
           break;
         case 'ArrowLeft': {
           event.preventDefault();
-          if (row.kind === 'project' && !collapsed[row.project.id]) {
-            setCollapsed((prev) => ({ ...prev, [row.project.id]: true }));
+          if (row.kind === 'folder' && row.folder && !collapsed[row.folder.id]) {
+            setCollapsed((prev) => ({ ...prev, [row.folder!.id]: true }));
             break;
           }
+          if (!row.folder) break;
           const parent = rows.findIndex(
-            (candidate) => candidate.kind === 'project' && candidate.project.id === row.project.id,
+            (candidate) => candidate.kind === 'folder' && candidate.folder?.id === row.folder?.id,
           );
           if (parent >= 0) focusRow(parent);
           break;
@@ -624,7 +720,7 @@ export function HubSessionTree({
         case ' ':
           event.preventDefault();
           // Space peeks a session rather than opening it - the whole point of
-          // the inspector is inspecting without leaving the rail. Projects have
+          // the inspector is inspecting without leaving the rail. Folders have
           // nothing to peek, so Space keeps toggling them.
           if (row.kind === 'session' && row.session && onPeekSession) {
             onPeekSession(row.session);
@@ -646,7 +742,7 @@ export function HubSessionTree({
               typeAheadRef.current = '';
             }, 800);
             const match = rows.findIndex((candidate) => {
-              const name = candidate.session?.title ?? candidate.project.name;
+              const name = candidate.session?.title ?? candidate.folder?.name ?? '';
               return candidate.kind !== 'more'
                 && name.toLocaleLowerCase().startsWith(typeAheadRef.current);
             });
@@ -661,9 +757,11 @@ export function HubSessionTree({
       collapsed,
       activate,
       onPeekSession,
-      onRenameProject,
+      onRenameFolder,
       onRenameSession,
-      confirmDeleteProject,
+      onClearSelectedFolder,
+      selectedFolderId,
+      confirmDeleteFolder,
       deleteSession,
     ],
   );
@@ -677,27 +775,26 @@ export function HubSessionTree({
       event.stopPropagation();
       const anchor = rowRefs.current.get(rowKey) ?? (event.currentTarget as HTMLElement);
       if (index >= 0) setCursor(index);
-      setMenu({ rowKey, anchor, point: { x: event.clientX, y: event.clientY } });
+      setMenu({ rowKey, anchor, point: { x: event.clientX, y: event.clientY }, page: 'root' });
     },
     [],
   );
 
-  // Counts are per-project so a project awaiting input is counted once, even
-  // though no session can carry that state.
-  const counts = useMemo(
-    () => ({
-      attention: projects.filter((p) => projectMatchesFilter(p, 'attention')).length,
-      running: projects.filter((p) => projectMatchesFilter(p, 'running')).length,
-    }),
-    [projects],
-  );
+  // Counts count SESSIONS across both sections, not folders.
+  const counts = useMemo(() => {
+    const all = [...tree.folders.flatMap((folder) => folder.sessions), ...tree.recents];
+    return {
+      attention: all.filter((s) => matchesHubFilter(s.state, 'attention')).length,
+      running: all.filter((s) => matchesHubFilter(s.state, 'running')).length,
+    };
+  }, [tree]);
 
-  // The heading counts what the list is actually showing: projects when
-  // unfiltered, matching sessions once a filter narrows the view.
-  const groupCount = useMemo(() => {
-    if (filter === 'all') return visible.length;
-    return visible.reduce((total, entry) => total + entry.sessions.length, 0);
-  }, [visible, filter]);
+  // The results count is what the list is actually showing once a filter or
+  // search narrows the view: matching sessions in both sections.
+  const resultCount = useMemo(
+    () => visible.reduce((total, entry) => total + entry.sessions.length, 0) + recents.sessions.length,
+    [visible, recents],
+  );
 
   const syncCursorToFocus = useCallback(
     (key: string) => {
@@ -723,38 +820,51 @@ export function HubSessionTree({
 
   const menuRow = menu ? (rows.find((row) => row.key === menu.rowKey) ?? null) : null;
 
+  // HubMenu dismisses before invoking an action. Keep this page's anchor in
+  // the closure so the action can replace the dismissed page in the same turn.
+  const openMovePage = useCallback(() => {
+    if (menu) setMenu({ ...menu, page: 'move' });
+  }, [menu]);
+  const openRootPage = useCallback(() => {
+    if (menu) setMenu({ ...menu, page: 'root' });
+  }, [menu]);
+
+  useEffect(() => {
+    if (menu?.page !== 'move') return;
+    // HubMenu's shared item contract has no disabled field. Mark only the
+    // current-location radio inert; all positioning and navigation stay there.
+    const current = document.querySelector<HTMLButtonElement>('[data-testid="hub-row-menu"] [aria-checked="true"]');
+    if (current) {
+      current.disabled = true;
+      current.setAttribute('aria-disabled', 'true');
+    }
+  }, [menu]);
+
   const menuItems = useMemo<HubMenuItem[]>(() => {
-    if (!menuRow) return [];
-    if (menuRow.kind === 'project') {
+    if (!menuRow || !menu) return [];
+    if (menuRow.kind === 'folder' && menuRow.folder) {
+      const folder = menuRow.folder;
       const items: HubMenuItem[] = [];
-      if (onOpenProject) {
-        items.push({
-          kind: 'action',
-          id: 'open',
-          label: t('quickSwitcher.open'),
-          icon: 'folder',
-          onSelect: () => onOpenProject(menuRow.project),
-        });
-      }
-      if (onRenameProject) {
-        items.push({
-          kind: 'action',
-          id: 'rename',
-          label: t('common.rename'),
-          icon: 'pencil',
-          onSelect: () => setRenaming(menuRow.key),
-        });
-      }
       if (onNewSession) {
         items.push({
           kind: 'action',
           id: 'new-session',
           label: t('hub.newSession'),
           icon: 'plus',
-          onSelect: () => onNewSession(menuRow.project),
+          onSelect: () => onNewSession(folder),
         });
       }
-      if (onDeleteProject) {
+      if (onRenameFolder) {
+        items.push({
+          kind: 'action',
+          id: 'rename',
+          label: t('hub.menuRename'),
+          icon: 'pencil',
+          shortcut: 'F2',
+          onSelect: () => setRenaming(menuRow.key),
+        });
+      }
+      if (onDeleteFolder) {
         items.push({
           kind: 'action',
           id: 'delete',
@@ -762,13 +872,41 @@ export function HubSessionTree({
           icon: 'trash',
           shortcut: 'Del',
           danger: true,
-          onSelect: () => confirmDeleteProject(menuRow.project),
+          onSelect: () => confirmDeleteFolder(folder),
         });
       }
       return items;
     }
     const session = menuRow.session;
     if (!session) return [];
+    if (menu.page === 'move' && onMoveSession) {
+      // The drill-down: "No project" plus every folder, as radios with the
+      // current location checked. Selecting the current location is a no-op.
+      const targets: Array<{ id: string | null; name: string }> = [
+        { id: null, name: t('hub.moveNoProject') },
+        ...moveFolders.map((folder) => ({ id: folder.id, name: folder.name })),
+      ];
+      const back: HubMenuItem = {
+        kind: 'action',
+        id: 'back',
+        label: t('hub.menuBack'),
+        icon: 'arrow-left',
+        onSelect: openRootPage,
+      };
+      return [
+        back,
+        ...targets.map((target): HubMenuItem => ({
+          kind: 'radio',
+          id: `move-${target.id ?? 'none'}`,
+          label: target.name,
+          icon: target.id === null ? 'file' : 'folder',
+          checked: session.folderId === target.id,
+          onSelect: () => {
+            if (session.folderId !== target.id) onMoveSession(session, target.id);
+          },
+        })),
+      ];
+    }
     const items: HubMenuItem[] = [];
     items.push({
       kind: 'action',
@@ -781,9 +919,19 @@ export function HubSessionTree({
       items.push({
         kind: 'action',
         id: 'rename',
-        label: t('common.rename'),
+        label: t('hub.menuRename'),
         icon: 'pencil',
+        shortcut: 'F2',
         onSelect: () => setRenaming(menuRow.key),
+      });
+    }
+    if (onMoveSession) {
+      items.push({
+        kind: 'action',
+        id: 'move',
+        label: `${t('hub.menuMove')} \u25B8`,
+        icon: 'folder',
+        onSelect: openMovePage,
       });
     }
     if (onPeekSession) {
@@ -809,19 +957,43 @@ export function HubSessionTree({
     }
     return items;
   }, [
+    menu,
     menuRow,
-    onOpenProject,
+    moveFolders,
     onOpenSession,
-    onRenameProject,
+    onRenameFolder,
     onNewSession,
-    onDeleteProject,
+    onDeleteFolder,
     onRenameSession,
     onPeekSession,
     onDeleteSession,
-    confirmDeleteProject,
+    onMoveSession,
+    openMovePage,
+    openRootPage,
+    confirmDeleteFolder,
     deleteSession,
     t,
   ]);
+
+  // The drill-down's keyboard: ArrowRight on `이동` opens the page, ArrowLeft
+  // or Esc on the page returns. Capture runs before the menu's own Esc close.
+  const onMenuKeyDownCapture = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (!menu || menuRow?.kind !== 'session') return;
+    if (menu.page === 'root' && event.key === 'ArrowRight') {
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && active.dataset.testid === 'hub-row-menu-move') {
+        event.preventDefault();
+        event.stopPropagation();
+        openMovePage();
+      }
+      return;
+    }
+    if (menu.page === 'move' && (event.key === 'ArrowLeft' || event.key === 'Escape')) {
+      event.preventDefault();
+      event.stopPropagation();
+      openRootPage();
+    }
+  };
 
   const sortItems = useMemo<HubMenuItem[]>(
     () => [
@@ -843,13 +1015,13 @@ export function HubSessionTree({
     [sort, t],
   );
 
-  const flyoutProject = flyout
-    ? (visible.find((entry) => entry.project.id === flyout.projectId)?.project ?? null)
+  const flyoutFolder = flyout
+    ? (visible.find((entry) => entry.folder.id === flyout.folderId)?.folder ?? null)
     : null;
 
   const flyoutItems = useMemo<HubMenuItem[]>(() => {
-    if (!flyoutProject) return [];
-    const items: HubMenuItem[] = flyoutProject.sessions.map((session) => ({
+    if (!flyoutFolder) return [];
+    const items: HubMenuItem[] = [...flyoutFolder.sessions].sort(byRecency).map((session) => ({
       kind: 'radio',
       id: session.id,
       label: session.title,
@@ -863,18 +1035,18 @@ export function HubSessionTree({
         id: 'new-session',
         label: t('hub.newSession'),
         icon: 'plus',
-        onSelect: () => onNewSession(flyoutProject),
+        onSelect: () => onNewSession(flyoutFolder),
       });
     }
     return items;
-  }, [flyoutProject, currentSessionId, onOpenSession, onNewSession, t]);
+  }, [flyoutFolder, currentSessionId, onOpenSession, onNewSession, t]);
 
   const renameField = (rowKey: string, current: string, commit: (next: string) => void) => (
     <input
       className="hub-row__rename"
       defaultValue={current}
       data-testid={`hub-rename-${rowKey.replace(':', '-')}`}
-      aria-label={t('common.rename')}
+      aria-label={t('hub.menuRename')}
       autoFocus
       onClick={(event) => event.stopPropagation()}
       onKeyDown={(event) => {
@@ -899,8 +1071,212 @@ export function HubSessionTree({
     />
   );
 
+  /* ---- drag and drop (native HTML5) ---- */
+
+  const onSessionDragStart = (event: ReactDragEvent<HTMLDivElement>, session: HubSessionNode) => {
+    event.stopPropagation();
+    event.dataTransfer.setData(HUB_SESSION_DRAG_TYPE, session.id);
+    event.dataTransfer.setData('text/plain', session.id);
+    event.dataTransfer.effectAllowed = 'move';
+    setDraggingId(session.id);
+  };
+
+  const onSessionDragEnd = () => {
+    setDraggingId(null);
+    setDropTarget(null);
+  };
+
+  const dropHandlers = (targetKey: string, folderId: string | null) => {
+    if (!onMoveSession) return {};
+    return {
+      onDragOver: (event: ReactDragEvent<HTMLElement>) => {
+        if (!hasSessionDrag(event)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.dataTransfer.dropEffect = 'move';
+        setDropTarget((prev) => (prev === targetKey ? prev : targetKey));
+      },
+      onDragLeave: (event: ReactDragEvent<HTMLElement>) => {
+        // Leaving for a child of the same target is not leaving the target.
+        const next = event.relatedTarget;
+        if (next instanceof Node && event.currentTarget.contains(next)) return;
+        setDropTarget((prev) => (prev === targetKey ? null : prev));
+      },
+      onDrop: (event: ReactDragEvent<HTMLElement>) => {
+        if (!hasSessionDrag(event)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const id = event.dataTransfer.getData(HUB_SESSION_DRAG_TYPE);
+        setDropTarget(null);
+        setDraggingId(null);
+        const session = [...tree.folders.flatMap((f) => f.sessions), ...tree.recents]
+          .find((candidate) => candidate.id === id);
+        if (!session || session.folderId === folderId) return;
+        if (folderId !== null) setCollapsed((prev) => ({ ...prev, [folderId]: false }));
+        onMoveSession(session, folderId);
+      },
+    };
+  };
+
+  /* ---- inline folder create ---- */
+
+  const createField = (
+    <div className="hub-row hub-row--folder hub-row--creating" data-testid="hub-folder-create-row">
+      <Icon name="folder" size={15} />
+      <input
+        className="hub-row__rename"
+        data-testid="hub-folder-create-input"
+        aria-label={t('hub.newFolder')}
+        placeholder={t('hub.newFolder')}
+        autoFocus
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => {
+          event.stopPropagation();
+          if (event.key === 'Enter') {
+            const next = event.currentTarget.value.trim();
+            setCreatingFolder(false);
+            if (next) onCreateFolder?.(next);
+          }
+          if (event.key === 'Escape') setCreatingFolder(false);
+        }}
+        onBlur={(event) => {
+          const next = event.currentTarget.value.trim();
+          setCreatingFolder(false);
+          if (next) onCreateFolder?.(next);
+        }}
+      />
+    </div>
+  );
+
+  const nothingKnown = railStatus === 'loading' || railStatus === 'unavailable';
+  const treeEmpty = tree.folders.length === 0 && tree.recents.length === 0;
+  const narrowed = filter !== 'all' || searching;
+
+  const sessionRow = (session: HubSessionNode, folder: HubFolderNode | null) => {
+    const sessionKey = `s:${session.id}`;
+    const sessionIndex = indexOfKey(sessionKey);
+    const labelKey = stateLabelKey(session.state);
+    const sessionRenaming = renaming === sessionKey;
+    return (
+      <div
+        key={session.id}
+        ref={registerRow(sessionKey)}
+        role="treeitem"
+        aria-level={folder ? 2 : 1}
+        aria-current={session.id === currentSessionId ? 'true' : undefined}
+        aria-roledescription={onMoveSession ? t('hub.dragSession') : undefined}
+        {...(labelKey ? { 'aria-describedby': `hub-state-${session.id}` } : {})}
+        tabIndex={cursor === sessionIndex ? 0 : -1}
+        data-testid={`hub-session-${session.id}`}
+        data-row-key={sessionKey}
+        data-session-id={session.id}
+        data-folder={folder ? folder.id : 'none'}
+        data-state={session.state}
+        data-dragging={draggingId === session.id ? 'true' : undefined}
+        data-tooltip={session.title}
+        draggable={Boolean(onMoveSession) && !sessionRenaming}
+        className={`hub-row hub-row--session readable-tooltip${
+          session.id === currentSessionId ? ' is-current' : ''
+        }${menu?.rowKey === sessionKey ? ' is-menu-open' : ''}`}
+        onFocus={() => syncCursorToFocus(sessionKey)}
+        onClick={(event) => {
+          // Nested inside the folder treeitem, so opening a session must not
+          // also toggle its folder.
+          event.stopPropagation();
+          setCursor(sessionIndex);
+          onOpenSession(session);
+        }}
+        onKeyDown={(event) => onKeyDown(event, sessionIndex)}
+        onContextMenu={(event) => openContextMenu(event, sessionKey, sessionIndex)}
+        onDragStart={onMoveSession ? (event) => onSessionDragStart(event, session) : undefined}
+        onDragEnd={onMoveSession ? onSessionDragEnd : undefined}
+      >
+        {sessionRenaming && onRenameSession ? (
+          renameField(sessionKey, session.title, (next) => onRenameSession(session, next))
+        ) : (
+          <span className="hub-row__title">{session.title}</span>
+        )}
+        {labelKey ? (
+          <span
+            id={`hub-state-${session.id}`}
+            className={`hub-row__state hub-row__state--${session.state}`}
+          >
+            {t(labelKey)}
+          </span>
+        ) : (
+          // A settled session carries its last activity instead of a state
+          // word.
+          <span className="hub-row__meta" data-testid={`hub-when-${session.id}`}>
+            {relativeTimeShort(session.updatedAt, t)}
+          </span>
+        )}
+        <span className="hub-row__actions">
+          {onPeekSession ? (
+            <button
+              type="button"
+              tabIndex={-1}
+              className="hub-row__action"
+              data-testid={`hub-peek-${session.id}`}
+              aria-label={t('hub.peekSession', { name: session.title })}
+              onClick={(event) => {
+                event.stopPropagation();
+                setCursor(sessionIndex);
+                onPeekSession(session);
+              }}
+            >
+              <Icon name="info" size={14} />
+            </button>
+          ) : null}
+          {onRenameSession || onDeleteSession || onMoveSession ? (
+            <button
+              type="button"
+              tabIndex={-1}
+              className="hub-row__action"
+              data-testid={`hub-menu-session-${session.id}`}
+              aria-haspopup="menu"
+              aria-expanded={menu?.rowKey === sessionKey}
+              aria-label={t('hub.rowMenu', { name: session.title })}
+              onClick={(event) => {
+                event.stopPropagation();
+                const anchor = event.currentTarget as HTMLElement;
+                setCursor(sessionIndex);
+                setMenu((prev) =>
+                  prev?.rowKey === sessionKey ? null : { rowKey: sessionKey, anchor, page: 'root' },
+                );
+              }}
+            >
+              <Icon name="more-horizontal" size={14} />
+            </button>
+          ) : null}
+        </span>
+      </div>
+    );
+  };
+
+  const moreRow = (key: string, hiddenCount: number, row: FlatRow, testId: string) => (
+    <div
+      ref={registerRow(key)}
+      role="treeitem"
+      aria-level={row.folder ? 2 : 1}
+      tabIndex={cursor === indexOfKey(key) ? 0 : -1}
+      data-testid={testId}
+      data-row-key={key}
+      className="hub-row hub-row--more"
+      onFocus={() => syncCursorToFocus(key)}
+      onClick={(event) => {
+        event.stopPropagation();
+        revealOverflow(row);
+      }}
+      onKeyDown={(event) => onKeyDown(event, indexOfKey(key))}
+    >
+      <Icon name="chevron-right" size={12} strokeWidth={1.8} />
+      <span>{t('hub.showMoreSessions', { count: String(hiddenCount) })}</span>
+    </div>
+  );
+
   return (
     <div className="hub-tree">
+      {openWork}
       <div className="hub-tree__filters" role="group" aria-label={t('hub.filterLabel')}>
         <button
           type="button"
@@ -945,9 +1321,7 @@ export function HubSessionTree({
             // Read the button out of the event BEFORE the state updater runs.
             // React clears `currentTarget` once the handler returns, so a
             // deferred updater would anchor the menu to `null` and silently
-            // swallow the click - which is exactly what happened on the click
-            // right after selecting an item, when the menu's focus handoff
-            // leaves React scheduling this update outside the handler.
+            // swallow the click.
             const button = event.currentTarget as HTMLElement;
             setSortAnchor((prev) => (prev ? null : button));
           }}
@@ -956,331 +1330,287 @@ export function HubSessionTree({
         </button>
       </div>
 
-      {openWork}
+      {railStatus === 'unavailable' || railStatus === 'stale' ? (
+        <p
+          role="presentation"
+          className={`hub-tree__note hub-tree__note--${railStatus}`}
+          data-testid="hub-sessions-error"
+          data-status={railStatus}
+        >
+          <span>
+            {railStatus === 'unavailable' ? t('hub.sessionsUnavailable') : t('hub.sessionsStale')}
+          </span>
+          {onRetrySessions ? (
+            <button
+              type="button"
+              className="hub-tree__link"
+              data-testid="hub-sessions-retry"
+              onClick={(event) => {
+                event.stopPropagation();
+                onRetrySessions();
+              }}
+            >
+              {t('hub.retrySessions')}
+            </button>
+          ) : null}
+        </p>
+      ) : null}
 
-      {projects.length === 0 && !searching ? (
+      {treeEmpty && railStatus === 'loading' ? (
+        <p role="presentation" className="hub-tree__note" data-testid="hub-sessions-loading">
+          {t('common.loading')}
+        </p>
+      ) : null}
+
+      {treeEmpty && !searching && !creatingFolder ? (
         // Nothing exists yet, so no filter is hiding anything and a
         // "clear filter" link would promise rows that are not there. An
         // unknown list (not loaded yet) says nothing rather than lying.
-        projectsKnown ? (
+        nothingKnown ? null : (
           <p className="hub-tree__empty" data-testid="hub-tree-no-projects">
             {t('hub.noProjectsTitle')}
           </p>
-        ) : null
-      ) : rows.length === 0 ? (
+        )
+      ) : rows.length === 0 && !creatingFolder ? (
         <p className="hub-tree__empty" data-testid="hub-tree-empty">
           {t('hub.emptyFiltered')}{' '}
           <button type="button" className="hub-tree__link" onClick={() => { setFilter('all'); onClearFilter?.(); }}>
             {t('hub.clearFilter')}
           </button>
         </p>
-      ) : (
+      ) : narrowed ? (
         <p className="hub-tree__group-label" data-testid="hub-group-label">
-          {filter === 'all' ? t('hub.projects') : t('hub.results')}{' '}
+          {t('hub.results')}{' '}
           <span className="hub-tree__group-count" data-testid="hub-group-count">
-            {groupCount}
+            {resultCount}
           </span>
         </p>
-      )}
+      ) : null}
 
       <div className="hub-tree__body" role="tree" aria-label={t('hub.treeLabel')}>
-        {visible.map((entry) => {
-          const projectKey = `p:${entry.project.id}`;
-          const projectIndex = indexOfKey(projectKey);
-          const rollup = rollupProjectState(entry.project);
-          const rollupKey = stateLabelKey(rollup);
-          const sessionsStatus = entry.project.sessionsStatus ?? 'ready';
-          const projectRenaming = renaming === projectKey;
-          const hasCurrent =
-            currentSessionId !== null &&
-            entry.project.sessions.some((session) => session.id === currentSessionId);
-          return (
-            <div key={entry.project.id} className="hub-tree__node">
-              <div
-                ref={registerRow(projectKey)}
-                role="treeitem"
-                // A collapsed project has no rendered group to expand, and
-                // claiming otherwise would promise screen readers a subtree
-                // that is not there.
-                {...(railCollapsed
-                  ? { 'aria-haspopup': 'menu' as const, 'aria-expanded': flyout?.projectId === entry.project.id }
-                  : { 'aria-expanded': entry.open })}
-                {...(railCollapsed ? { 'aria-label': entry.project.name } : {})}
-                data-tooltip={entry.project.name}
-                data-initial={initialGlyph(entry.project.name)}
-                data-current={hasCurrent ? 'true' : 'false'}
-                onMouseEnter={
-                  railCollapsed
-                    ? (event) => {
-                        const anchor = event.currentTarget;
-                        cancelHoverFlyout();
-                        hoverTimerRef.current = setTimeout(() => {
-                          hoverTimerRef.current = null;
-                          setFlyout({ projectId: entry.project.id, anchor });
-                        }, FLYOUT_HOVER_DELAY_MS);
-                      }
-                    : undefined
-                }
-                onMouseLeave={railCollapsed ? cancelHoverFlyout : undefined}
-                aria-level={1}
-                {...(!entry.open && rollupKey
-                  ? { 'aria-describedby': `hub-state-${entry.project.id}` }
-                  : {})}
-                tabIndex={cursor === projectIndex ? 0 : -1}
-                data-testid={`hub-project-${entry.project.id}`}
-                data-row-key={projectKey}
-                data-project-id={entry.project.id}
-                data-state={rollup}
-                className={`hub-row hub-row--project readable-tooltip${
-                  menu?.rowKey === projectKey ? ' is-menu-open' : ''
-                }`}
-                onFocus={() => syncCursorToFocus(projectKey)}
-                onClick={() => {
-                  setCursor(projectIndex);
-                  const row = rows[projectIndex];
-                  if (row) activate(row);
+        {/* ---- 프로젝트 ---- */}
+        <div
+          className="hub-tree__section hub-tree__section--projects"
+          data-testid="hub-section-projects"
+          hidden={treeEmpty && !creatingFolder && nothingKnown}
+        >
+          <div className="hub-tree__section-head" role="presentation">
+            <span className="hub-tree__section-label" data-testid="hub-section-projects-label">
+              {t('hub.projects')}
+            </span>
+            {onCreateFolder ? (
+              <button
+                type="button"
+                className="hub-row__action hub-tree__section-action"
+                data-testid="hub-folder-create"
+                aria-label={t('hub.newFolder')}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setCreatingFolder(true);
                 }}
-                onKeyDown={(event) => onKeyDown(event, projectIndex)}
-                onContextMenu={(event) => openContextMenu(event, projectKey, projectIndex)}
               >
-                <span className="hub-row__chevron" aria-hidden="true" data-open={entry.open} />
-                {projectRenaming && onRenameProject ? (
-                  renameField(projectKey, entry.project.name, (next) =>
-                    onRenameProject(entry.project, next),
-                  )
-                ) : (
-                  <span className="hub-row__title">{entry.project.name}</span>
-                )}
-                {entry.open || !rollupKey ? null : (
-                  <span
-                    id={`hub-state-${entry.project.id}`}
-                    className={`hub-row__state hub-row__state--${rollup}`}
-                  >
-                    {t(rollupKey)}
+                <Icon name="plus" size={14} />
+              </button>
+            ) : null}
+          </div>
+          {creatingFolder && !railCollapsed ? createField : null}
+          {visible.map((entry) => {
+            const folderKey = `p:${entry.folder.id}`;
+            const folderIndex = indexOfKey(folderKey);
+            const rollup = rollupFolderState(entry.folder);
+            const rollupKey = stateLabelKey(rollup);
+            const folderRenaming = renaming === folderKey;
+            const hasCurrent =
+              currentSessionId !== null &&
+              entry.folder.sessions.some((session) => session.id === currentSessionId);
+            const isSelected = selectedFolderId === entry.folder.id;
+            return (
+              <div key={entry.folder.id} className="hub-tree__node">
+                <div
+                  ref={registerRow(folderKey)}
+                  role="treeitem"
+                  // A collapsed folder has no rendered group to expand, and
+                  // claiming otherwise would promise screen readers a subtree
+                  // that is not there.
+                  {...(railCollapsed
+                    ? { 'aria-haspopup': 'menu' as const, 'aria-expanded': flyout?.folderId === entry.folder.id }
+                    : { 'aria-expanded': entry.open })}
+                  {...(railCollapsed ? { 'aria-label': entry.folder.name } : {})}
+                  aria-selected={isSelected}
+                  data-tooltip={entry.folder.name}
+                  data-initial={initialGlyph(entry.folder.name)}
+                  data-current={hasCurrent ? 'true' : 'false'}
+                  data-selected={isSelected ? 'true' : undefined}
+                  data-drop={dropTarget === folderKey ? 'active' : undefined}
+                  onMouseEnter={
+                    railCollapsed
+                      ? (event) => {
+                          const anchor = event.currentTarget;
+                          cancelHoverFlyout();
+                          hoverTimerRef.current = setTimeout(() => {
+                            hoverTimerRef.current = null;
+                            setFlyout({ folderId: entry.folder.id, anchor });
+                          }, FLYOUT_HOVER_DELAY_MS);
+                        }
+                      : undefined
+                  }
+                  onMouseLeave={railCollapsed ? cancelHoverFlyout : undefined}
+                  aria-level={1}
+                  {...(!entry.open && rollupKey
+                    ? { 'aria-describedby': `hub-state-${entry.folder.id}` }
+                    : {})}
+                  tabIndex={cursor === folderIndex ? 0 : -1}
+                  data-testid={`hub-project-${entry.folder.id}`}
+                  data-row-key={folderKey}
+                  data-project-id={entry.folder.id}
+                  data-state={rollup}
+                  className={`hub-row hub-row--project hub-row--folder readable-tooltip${
+                    menu?.rowKey === folderKey ? ' is-menu-open' : ''
+                  }${isSelected ? ' is-selected' : ''}`}
+                  onFocus={() => syncCursorToFocus(folderKey)}
+                  onClick={() => {
+                    setCursor(folderIndex);
+                    const row = rows[folderIndex];
+                    if (row) activate(row);
+                  }}
+                  onKeyDown={(event) => onKeyDown(event, folderIndex)}
+                  onContextMenu={(event) => openContextMenu(event, folderKey, folderIndex)}
+                  {...dropHandlers(folderKey, entry.folder.id)}
+                >
+                  <span className="hub-row__chevron" aria-hidden="true" data-open={entry.open} />
+                  <span className="hub-row__icon" aria-hidden="true">
+                    <Icon name="folder" size={15} />
                   </span>
-                )}
-                <span className="hub-row__actions">
-                  {onNewSession ? (
-                    <button
-                      type="button"
-                      tabIndex={-1}
-                      className="hub-row__action"
-                      data-testid={`hub-new-session-${entry.project.id}`}
-                      aria-label={t('hub.newSessionIn', { name: entry.project.name })}
-                      aria-busy={pendingNewSessionProjectId === entry.project.id}
-                      disabled={pendingNewSessionProjectId === entry.project.id}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onNewSession(entry.project);
-                      }}
+                  {folderRenaming && onRenameFolder ? (
+                    renameField(folderKey, entry.folder.name, (next) =>
+                      onRenameFolder(entry.folder, next),
+                    )
+                  ) : (
+                    <span className="hub-row__title">{entry.folder.name}</span>
+                  )}
+                  {entry.open || !rollupKey ? null : (
+                    <span
+                      id={`hub-state-${entry.folder.id}`}
+                      className={`hub-row__state hub-row__state--${rollup}`}
                     >
-                      <Icon name="plus" size={14} />
-                    </button>
-                  ) : null}
-                  {onRenameProject || onDeleteProject ? (
-                    <button
-                      type="button"
-                      tabIndex={-1}
-                      className="hub-row__action"
-                      data-testid={`hub-menu-project-${entry.project.id}`}
-                      aria-haspopup="menu"
-                      aria-expanded={menu?.rowKey === projectKey}
-                      aria-label={t('hub.rowMenu', { name: entry.project.name })}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        const anchor = event.currentTarget as HTMLElement;
-                        setCursor(projectIndex);
-                        setMenu((prev) =>
-                          prev?.rowKey === projectKey ? null : { rowKey: projectKey, anchor },
-                        );
-                      }}
-                    >
-                      <Icon name="more-horizontal" size={14} />
-                    </button>
-                  ) : null}
-                </span>
-
-              {/* The group is a DESCENDANT of the project treeitem, not a
-                  sibling: ARIA ownership is what lets assistive tech say which
-                  project owns which sessions. */}
-              <div
-                role="group"
-                aria-label={entry.project.name}
-                className="hub-tree__group"
-                data-open={entry.open && !railCollapsed}
-                hidden={!entry.open || railCollapsed}
-              >
-                {sessionsStatus === 'loading' ? (
-                  <p
-                    role="presentation"
-                    className="hub-tree__note"
-                    data-testid={`hub-sessions-loading-${entry.project.id}`}
-                  >
-                    {t('common.loading')}
-                  </p>
-                ) : null}
-                {sessionsStatus === 'unavailable' || sessionsStatus === 'stale' ? (
-                  <p
-                    role="presentation"
-                    className={`hub-tree__note hub-tree__note--${sessionsStatus}`}
-                    data-testid={`hub-sessions-error-${entry.project.id}`}
-                    data-status={sessionsStatus}
-                  >
-                    <span>
-                      {sessionsStatus === 'unavailable'
-                        ? t('hub.sessionsUnavailable')
-                        : t('hub.sessionsStale')}
+                      {t(rollupKey)}
                     </span>
-                    {onRetrySessions ? (
+                  )}
+                  <span className="hub-row__actions">
+                    {onNewSession ? (
                       <button
                         type="button"
-                        className="hub-tree__link"
-                        data-testid={`hub-sessions-retry-${entry.project.id}`}
+                        tabIndex={-1}
+                        className="hub-row__action"
+                        data-testid={`hub-new-session-${entry.folder.id}`}
+                        aria-label={t('hub.newSessionIn', { name: entry.folder.name })}
                         onClick={(event) => {
                           event.stopPropagation();
-                          onRetrySessions(entry.project);
+                          onNewSession(entry.folder);
                         }}
                       >
-                        {t('hub.retrySessions')}
+                        <Icon name="plus" size={14} />
                       </button>
                     ) : null}
-                  </p>
-                ) : null}
-                {entry.sessions.map((session) => {
-                  const sessionKey = `s:${session.id}`;
-                  const sessionIndex = indexOfKey(sessionKey);
-                  const labelKey = stateLabelKey(session.state);
-                  const sessionRenaming = renaming === sessionKey;
-                  return (
-                    <div
-                      key={session.id}
-                      ref={registerRow(sessionKey)}
-                      role="treeitem"
-                      aria-level={2}
-                      aria-current={session.id === currentSessionId ? 'true' : undefined}
-                      {...(labelKey ? { 'aria-describedby': `hub-state-${session.id}` } : {})}
-                      tabIndex={cursor === sessionIndex ? 0 : -1}
-                      data-testid={`hub-session-${session.id}`}
-                      data-row-key={sessionKey}
-                      data-session-id={session.id}
-                      data-state={session.state}
-                      data-tooltip={session.title}
-                      className={`hub-row hub-row--session readable-tooltip${
-                        session.id === currentSessionId ? ' is-current' : ''
-                      }${menu?.rowKey === sessionKey ? ' is-menu-open' : ''}`}
-                      onFocus={() => syncCursorToFocus(sessionKey)}
-                      onClick={(event) => {
-                        // Nested inside the project treeitem, so opening a
-                        // session must not also toggle its project.
-                        event.stopPropagation();
-                        setCursor(sessionIndex);
-                        onOpenSession(session);
-                      }}
-                      onKeyDown={(event) => onKeyDown(event, sessionIndex)}
-                      onContextMenu={(event) => openContextMenu(event, sessionKey, sessionIndex)}
-                    >
-                      {sessionRenaming && onRenameSession ? (
-                        renameField(sessionKey, session.title, (next) =>
-                          onRenameSession(session, next),
-                        )
-                      ) : (
-                        <span className="hub-row__title">{session.title}</span>
-                      )}
-                      {labelKey ? (
-                        <span
-                          id={`hub-state-${session.id}`}
-                          className={`hub-row__state hub-row__state--${session.state}`}
-                        >
-                          {t(labelKey)}
-                        </span>
-                      ) : (
-                        // A settled session carries its last activity instead of
-                        // a state word - the fetched `updatedAt` was previously
-                        // dropped on the floor.
-                        <span className="hub-row__meta" data-testid={`hub-when-${session.id}`}>
-                          {relativeTimeShort(session.updatedAt, t)}
-                        </span>
-                      )}
-                      <span className="hub-row__actions">
-                        {onPeekSession ? (
-                          <button
-                            type="button"
-                            tabIndex={-1}
-                            className="hub-row__action"
-                            data-testid={`hub-peek-${session.id}`}
-                            aria-label={t('hub.peekSession', { name: session.title })}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setCursor(sessionIndex);
-                              onPeekSession(session);
-                            }}
-                          >
-                            <Icon name="info" size={14} />
-                          </button>
-                        ) : null}
-                        {onRenameSession || onDeleteSession ? (
-                          <button
-                            type="button"
-                            tabIndex={-1}
-                            className="hub-row__action"
-                            data-testid={`hub-menu-session-${session.id}`}
-                            aria-haspopup="menu"
-                            aria-expanded={menu?.rowKey === sessionKey}
-                            aria-label={t('hub.rowMenu', { name: session.title })}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              const anchor = event.currentTarget as HTMLElement;
-                              setCursor(sessionIndex);
-                              setMenu((prev) =>
-                                prev?.rowKey === sessionKey ? null : { rowKey: sessionKey, anchor },
-                              );
-                            }}
-                          >
-                            <Icon name="more-horizontal" size={14} />
-                          </button>
-                        ) : null}
-                      </span>
-                    </div>
-                  );
-                })}
+                    {onRenameFolder || onDeleteFolder ? (
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        className="hub-row__action"
+                        data-testid={`hub-menu-folder-${entry.folder.id}`}
+                        aria-haspopup="menu"
+                        aria-expanded={menu?.rowKey === folderKey}
+                        aria-label={t('hub.rowMenu', { name: entry.folder.name })}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          const anchor = event.currentTarget as HTMLElement;
+                          setCursor(folderIndex);
+                          setMenu((prev) =>
+                            prev?.rowKey === folderKey ? null : { rowKey: folderKey, anchor, page: 'root' },
+                          );
+                        }}
+                      >
+                        <Icon name="more-horizontal" size={14} />
+                      </button>
+                    ) : null}
+                  </span>
 
-                {entry.hiddenCount > 0 ? (
+                  {/* The group is a DESCENDANT of the folder treeitem, not a
+                      sibling: ARIA ownership is what lets assistive tech say
+                      which folder owns which sessions. */}
                   <div
-                    ref={registerRow(`m:${entry.project.id}`)}
-                    role="treeitem"
-                    aria-level={2}
-                    tabIndex={cursor === indexOfKey(`m:${entry.project.id}`) ? 0 : -1}
-                    data-testid={`hub-tree-more-${entry.project.id}`}
-                    data-row-key={`m:${entry.project.id}`}
-                    className="hub-row hub-row--more"
-                    onFocus={() => syncCursorToFocus(`m:${entry.project.id}`)}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      setExpandedOverflow((prev) => ({ ...prev, [entry.project.id]: true }));
-                    }}
-                    onKeyDown={(event) => onKeyDown(event, indexOfKey(`m:${entry.project.id}`))}
+                    role="group"
+                    aria-label={entry.folder.name}
+                    className="hub-tree__group"
+                    data-open={entry.open && !railCollapsed}
+                    hidden={!entry.open || railCollapsed}
                   >
-                    <Icon name="chevron-right" size={12} strokeWidth={1.8} />
-                    <span>{t('hub.showMoreSessions', { count: String(entry.hiddenCount) })}</span>
+                    {entry.sessions.map((session) => sessionRow(session, entry.folder))}
+                    {entry.hiddenCount > 0
+                      ? moreRow(
+                          `m:${entry.folder.id}`,
+                          entry.hiddenCount,
+                          { key: `m:${entry.folder.id}`, kind: 'more', folder: entry.folder },
+                          `hub-tree-more-${entry.folder.id}`,
+                        )
+                      : null}
                   </div>
-                ) : null}
+                </div>
               </div>
-              </div>
+            );
+          })}
+        </div>
+
+        {/* ---- 최근 ---- */}
+        {railCollapsed || (treeEmpty && nothingKnown) ? null : (
+          <div
+            className="hub-tree__section hub-tree__section--recents"
+            data-testid="hub-section-recents"
+            data-drop={dropTarget === RECENTS_KEY ? 'active' : undefined}
+            {...dropHandlers(RECENTS_KEY, null)}
+          >
+            <div className="hub-tree__section-head" role="presentation">
+              <span className="hub-tree__section-label" data-testid="hub-section-recents-label">
+                {t('hub.recents')}
+              </span>
             </div>
-          );
-        })}
+            {recents.sessions.length === 0 && !narrowed ? (
+              <p role="presentation" className="hub-tree__note" data-testid="hub-no-recents">
+                {t('hub.noRecents')}
+              </p>
+            ) : null}
+            {recents.sessions.map((session) => sessionRow(session, null))}
+            {recents.hiddenCount > 0
+              ? moreRow(
+                  RECENTS_MORE_KEY,
+                  recents.hiddenCount,
+                  { key: RECENTS_MORE_KEY, kind: 'more', folder: null },
+                  'hub-tree-more-recents',
+                )
+              : null}
+          </div>
+        )}
       </div>
 
       {menu && menuRow && menuItems.length > 0 ? (
-        <HubMenu
-          title={menuRow.kind === 'project' ? menuRow.project.name : (menuRow.session?.title ?? '')}
-          items={menuItems}
-          anchor={menu.anchor}
-          point={menu.point ?? null}
-          returnFocusTo={rowRefs.current.get(menu.rowKey) ?? menu.anchor}
-          testId="hub-row-menu"
-          onClose={() => setMenu(null)}
-        />
+        <div onKeyDownCapture={onMenuKeyDownCapture}>
+          <HubMenu
+            key={menu.page}
+            title={
+              menu.page === 'move'
+                ? t('hub.menuMove')
+                : menuRow.kind === 'folder'
+                  ? (menuRow.folder?.name ?? '')
+                  : (menuRow.session?.title ?? '')
+            }
+            items={menuItems}
+            anchor={menu.anchor}
+            point={menu.point ?? null}
+            returnFocusTo={rowRefs.current.get(menu.rowKey) ?? menu.anchor}
+            testId="hub-row-menu"
+            onClose={() => setMenu(null)}
+          />
+        </div>
       ) : null}
 
       {confirming ? createPortal(
@@ -1305,25 +1635,27 @@ export function HubSessionTree({
           >
             <h2 id={`${confirmId}-title`}>{confirming.title}</h2>
             <p id={`${confirmId}-message`} className="modal-confirm-message">{confirming.message}</p>
-            <div className="row">
+            <div className="row hub-delete-confirm__actions">
+              {confirming.actions.map((action, index) => (
+                <Button
+                  key={action.testId}
+                  ref={index === 0 ? defaultActionRef : undefined}
+                  variant={action.danger ? 'primary' : undefined}
+                  className={action.danger ? 'danger' : undefined}
+                  data-testid={action.testId}
+                  onClick={() => {
+                    setConfirming(null);
+                    action.run();
+                  }}
+                >
+                  {action.label}
+                </Button>
+              ))}
               <Button
-                ref={cancelRef}
                 data-testid="hub-delete-cancel"
                 onClick={() => setConfirming(null)}
               >
-                {t('designs.renameCancel')}
-              </Button>
-              <Button
-                variant="primary"
-                className="danger"
-                data-testid="hub-delete-confirm-cta"
-                onClick={() => {
-                  const run = confirming.onConfirm;
-                  setConfirming(null);
-                  run();
-                }}
-              >
-                {confirming.confirmLabel}
+                {t('common.cancel')}
               </Button>
             </div>
           </div>
@@ -1331,12 +1663,12 @@ export function HubSessionTree({
         document.body,
       ) : null}
 
-      {flyout && flyoutProject && flyoutItems.length > 0 ? (
+      {flyout && flyoutFolder && flyoutItems.length > 0 ? (
         <HubMenu
-          title={flyoutProject.name}
+          title={flyoutFolder.name}
           items={flyoutItems}
           anchor={flyout.anchor}
-          returnFocusTo={rowRefs.current.get(`p:${flyoutProject.id}`) ?? flyout.anchor}
+          returnFocusTo={rowRefs.current.get(`p:${flyoutFolder.id}`) ?? flyout.anchor}
           testId="hub-project-flyout"
           onClose={() => setFlyout(null)}
         />

@@ -3,9 +3,12 @@
 // surface; every route reads the same controller and exposes the same actions.
 // The shell owns layout, including the rail's resizer and transient overlays.
 
+import { useEffect } from 'react';
 import { useT } from '../../i18n';
 import type { AppTheme } from '../../types';
 import { ProjectRail } from '../ProjectRail';
+import { Icon } from '../Icon';
+import { HUB_SESSION_DRAG_TYPE } from './HubSessionTree';
 import { HubOpenWork } from './HubOpenWork';
 import { HubRailFooter } from './HubRailFooter';
 import { useHubRail } from './HubRailContext';
@@ -40,7 +43,7 @@ export interface HubRailProps {
 
 export function HubRail({
   projectsLoading = false,
-  projectsKnown = true,
+  projectsKnown: _projectsKnown = true,
   username = null,
   workspaceName = null,
   onGoHome,
@@ -53,6 +56,21 @@ export function HubRail({
   const t = useT();
   const rail = useHubRail();
   const { railCollapsed, narrow, railWidth, query, setRailWidth } = rail;
+
+  useEffect(() => {
+    const nav = document.querySelector<HTMLElement>('[data-testid="hub-nav"]');
+    const onDragOver = (event: DragEvent) => {
+      if (!Array.from(event.dataTransfer?.types ?? []).includes(HUB_SESSION_DRAG_TYPE)) return;
+      event.preventDefault();
+      // React delegates at the root; let a tree target reach its own drop
+      // handler before it stops propagation. Blank chrome has no such handler.
+      if (!(event.target instanceof Element) || !event.target.closest('[data-row-key], [data-testid="hub-section-recents"]')) {
+        event.stopPropagation();
+      }
+    };
+    nav?.addEventListener('dragover', onDragOver);
+    return () => nav?.removeEventListener('dragover', onDragOver);
+  }, []);
 
   return (
     <>
@@ -93,11 +111,13 @@ export function HubRail({
         <div className="hub__nav-actions">
           <button
             type="button"
-            className="hub__new-project"
-            data-testid="hub-new-project"
-            onClick={rail.newProject}
+            className="hub__new-session"
+            data-testid="hub-new-session"
+            aria-label={t('hub.newSession')}
+            onClick={() => rail.newSession()}
           >
-            {t('entry.navNewProject')}
+            <Icon name="pencil" size={16} />
+            <span>{t('hub.newSession')}</span>
           </button>
           <div className="hub__search-wrap">
             <input
@@ -117,14 +137,21 @@ export function HubRail({
             </button>
           </div>
         </div>
+        <div className="hub__nav-divider" role="separator" />
         {projectsLoading ? (
           <p className="hub__nav-loading">{t('common.loading')}</p>
         ) : (
           <div className="hub__nav-list">
             <HubSessionTree
               key={query.trim() ? 'filtered' : 'all'}
-              projects={rail.tree}
-              projectsKnown={projectsKnown}
+              tree={rail.tree}
+              moveFolders={rail.allTree.folders}
+              railStatus={rail.railStatus}
+              selectedFolderId={rail.selectedFolder?.id ?? null}
+              onSelectFolder={rail.selectFolder}
+              onClearSelectedFolder={rail.clearSelectedFolder}
+              onCreateFolder={(name) => { void rail.createFolder(name); }}
+              onMoveSession={(session, folderId) => { void rail.moveSession(session, folderId); }}
               searching={Boolean(query.trim())}
               onClearFilter={() => rail.setQuery('')}
               compactByDefault
@@ -142,12 +169,10 @@ export function HubRail({
               onPeekSession={rail.peekSession}
               onNewSession={rail.newSession}
               onRetrySessions={rail.retrySessions}
-              pendingNewSessionProjectId={rail.creatingSessionFor}
-              {...(rail.openProject ? { onOpenProject: rail.openProject } : {})}
               onRenameSession={rail.renameSession}
               onDeleteSession={rail.deleteSession}
-              {...(rail.renameProject ? { onRenameProject: rail.renameProject } : {})}
-              {...(rail.deleteProject ? { onDeleteProject: rail.deleteProject } : {})}
+              onRenameFolder={(folder, name) => { void rail.renameFolder(folder, name); }}
+              onDeleteFolder={(folder, policy) => { void rail.deleteFolder(folder, policy); }}
             />
           </div>
         )}

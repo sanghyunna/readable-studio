@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useT } from '../../i18n';
+import { Icon } from '../Icon';
 
 export interface HubPaletteEntry {
   id: string;
@@ -135,7 +136,9 @@ export function HubCommandPalette({ entries, onClose }: Props) {
                   onMouseEnter={() => setCursor(index)}
                   onClick={() => activate(index)}
                 >
-                  <span className={`hub-palette__item-icon hub-palette__item-icon--${entry.kind}`} aria-hidden="true" />
+                  <span className="hub-palette__item-icon" aria-hidden="true">
+                    <Icon name={entry.kind === 'project' ? 'folder' : entry.kind === 'session' ? 'file' : entry.kind === 'command' ? 'pencil' : 'chevron-right'} size={15} />
+                  </span>
                   <span className="hub-palette__item-title">{entry.title}</span>
                   {entry.meta ? <span className="hub-palette__item-meta">{entry.meta}</span> : null}
                 </button>

@@ -25,6 +25,25 @@ vi.mock('../../src/state/projects', async (importOriginal) => ({
   listPlugins,
 }));
 
+
+vi.mock('../../src/state/rail', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../src/state/rail')>(),
+  subscribeRailEvents: () => () => {},
+  fetchRail: async (options: { signal?: AbortSignal } = {}) => {
+    try { return { ok: true, rail: {
+    folders: await Promise.all(PROJECTS.map(async (project) => ({
+      id: project.id, name: project.name, createdAt: project.createdAt, updatedAt: project.updatedAt,
+      sessions: (await listConversations(project.id, options) ?? []).map((c: import('../../src/types').Conversation) => ({
+        ...c, workspaceId: project.id, folderId: project.id, workspaceSessionCount: 1,
+        state: c.latestRun?.status === 'running' ? 'running' : 'idle',
+      })),
+    }))), recents: [], generatedAt: 1,
+  }}; } catch { return { ok: false, aborted: options.signal?.aborted ?? false }; }
+  },
+  renameSession: async (id: string, title: string) => { patchConversation('p1', id, {title}); return {}; },
+  deleteSession: async (id: string) => deleteConversation('p1', id),
+}));
+
 import { HomeView } from '../../src/components/HomeView';
 import { HubHome } from '../../src/components/hub/HubHome';
 import { HubRail } from '../../src/components/hub/HubRail';
@@ -88,7 +107,6 @@ function ShellWithHub({
   onCreateFromTemplate?: () => void;
 }) {
   const rail = useHubRailController({
-    projects: PROJECTS,
     currentSessionId: null,
     onOpenSession: () => undefined,
     onNewProject: () => undefined,
@@ -194,7 +212,7 @@ describe('hub rail boundary', () => {
     seedSessions();
     const view = render(<ShellWithHub controllerInputs={{ pauseSessionReads: true }} />);
     expect(listConversations).not.toHaveBeenCalled();
-    expect(screen.getByTestId('hub-sessions-loading-p1')).toBeTruthy();
+    expect(screen.getByTestId('hub-sessions-loading')).toBeTruthy();
     fireEvent(window, new CustomEvent('readable-studio:runs-changed'));
     expect(listConversations).not.toHaveBeenCalled();
     await act(async () => { view.rerender(<ShellWithHub controllerInputs={{ pauseSessionReads: false }} />); });
@@ -233,9 +251,9 @@ describe('hub rail boundary', () => {
     listConversations.mockRejectedValue(new Error('offline'));
     await act(async () => { fireEvent(window, new CustomEvent('readable-studio:runs-changed')); });
     expect(screen.getByTestId('hub-session-c1')).toBeTruthy();
-    expect(screen.getByTestId('hub-sessions-error-p1').dataset['status']).toBe('stale');
+    expect(screen.getByTestId('hub-sessions-error').dataset['status']).toBe('stale');
     view.rerender(<ShellWithHub controllerInputs={{ pauseSessionReads: true }} />);
-    fireEvent.click(screen.getByTestId('hub-sessions-retry-p1'));
+    fireEvent.click(screen.getByTestId('hub-sessions-retry'));
     expect(listConversations).toHaveBeenCalledTimes(4);
     expect(screen.getByTestId('hub-session-c1')).toBeTruthy();
   });

@@ -69,10 +69,18 @@ export function HubInspector({ session, projectName, onOpen, onClose }: Props) {
           {session.title}
         </h2>
         <p className="hub-inspector__sub" data-testid="hub-inspector-project">
-          {projectName}
+          {session.folderId === null ? t('hub.moveNoProject') : projectName}
         </p>
 
+        {session.workspaceSessionCount > 1 ? (
+          <p className="hub-inspector__sub" data-testid="hub-inspector-shared-workspace">
+            {t('hub.sharedWorkspace', { count: String(session.workspaceSessionCount) })}
+          </p>
+        ) : null}
+
         <dl className="hub-inspector__facts">
+          <dt>{t('hub.projects')}</dt>
+          <dd data-testid="hub-inspector-folder">{session.folderId === null ? t('hub.moveNoProject') : projectName}</dd>
           <dt>{t('hub.inspectorState')}</dt>
           <dd data-testid="hub-inspector-state">{t(STATE_KEY[session.state])}</dd>
           <dt>{t('hub.inspectorMode')}</dt>

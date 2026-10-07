@@ -9,7 +9,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { HubSessionTree } from '../../src/components/hub/HubSessionTree';
-import type { HubProjectNode } from '../../src/components/hub/types';
+import type { HubFolderNode } from '../../src/components/hub/types';
 import { I18nProvider } from '../../src/i18n';
 import { getEn } from '../../src/i18n/locales/en';
 import { getKo } from '../../src/i18n/locales/ko';
@@ -20,34 +20,34 @@ afterEach(() => {
   cleanup();
 });
 
-const PROJECTS: HubProjectNode[] = [
+const PROJECTS: HubFolderNode[] = [
   {
     id: 'p1',
     name: '분기 보고서',
     updatedAt: 900,
     sessions: [
-      { id: 's1', projectId: 'p1', title: '차트 팔레트 정리', updatedAt: 900, state: 'idle' },
-      { id: 's2', projectId: 'p1', title: '범례 겹침 수정', updatedAt: 800, state: 'idle' },
+      { id: 's1', workspaceId: 'p1', folderId: 'p1', workspaceSessionCount: 1, title: '차트 팔레트 정리', updatedAt: 900, state: 'idle' },
+      { id: 's2', workspaceId: 'p1', folderId: 'p1', workspaceSessionCount: 1, title: '범례 겹침 수정', updatedAt: 800, state: 'idle' },
     ],
   },
   {
     id: 'p2',
     name: '가격 페이지',
     updatedAt: 100,
-    sessions: [{ id: 's3', projectId: 'p2', title: '요금제 비교표', updatedAt: 100, state: 'idle' }],
+    sessions: [{ id: 's3', workspaceId: 'p2', folderId: 'p2', workspaceSessionCount: 1, title: '요금제 비교표', updatedAt: 100, state: 'idle' }],
   },
 ];
 
 function renderTree(overrides: Partial<Parameters<typeof HubSessionTree>[0]> = {}) {
   const props = {
-    projects: PROJECTS,
+    tree: { folders: PROJECTS, recents: [] },
     currentSessionId: null,
     onOpenSession: vi.fn(),
-    onOpenProject: vi.fn(),
+    onSelectFolder: vi.fn(),
     onPeekSession: vi.fn(),
     onNewSession: vi.fn(),
-    onRenameProject: vi.fn(),
-    onDeleteProject: vi.fn(),
+    onRenameFolder: vi.fn(),
+    onDeleteFolder: vi.fn(),
     onRenameSession: vi.fn(),
     onDeleteSession: vi.fn(),
     ...overrides,
@@ -70,7 +70,7 @@ describe('HubSessionTree context menu', () => {
     expect(screen.getByTestId('hub-row-menu')).toBeTruthy();
     // Activating a project row toggles it; right-clicking must leave the
     // expansion exactly as it found it and must not navigate.
-    expect(props.onOpenProject).not.toHaveBeenCalled();
+    expect(props.onSelectFolder).not.toHaveBeenCalled();
     expect(props.onOpenSession).not.toHaveBeenCalled();
     expect(row.getAttribute('aria-expanded')).toBe(before);
     // Non-vacuous: a plain click on the same row DOES toggle it, so the
@@ -123,13 +123,12 @@ describe('HubSessionTree context menu', () => {
     expect(screen.queryByTestId('hub-row-menu')).toBeNull();
   });
 
-  it('opens the project from the menu, using the localized open label', () => {
+  it('offers folder composition rather than opening a nonexistent workspace', () => {
     const props = renderTree();
     contextMenu(screen.getByTestId('hub-project-p2'), { clientX: 40, clientY: 40 });
-    const open = screen.getByTestId('hub-row-menu-open');
-    expect(open.textContent).toContain(en['quickSwitcher.open']);
-    fireEvent.click(open);
-    expect(props.onOpenProject).toHaveBeenCalledWith(expect.objectContaining({ id: 'p2' }));
+    expect(screen.queryByTestId('hub-row-menu-open')).toBeNull();
+    fireEvent.click(screen.getByTestId('hub-row-menu-new-session'));
+    expect(props.onNewSession).toHaveBeenCalledWith(expect.objectContaining({ id: 'p2' }));
   });
 
   it('renames through the existing in-row rename flow', () => {
@@ -140,7 +139,7 @@ describe('HubSessionTree context menu', () => {
     expect(field.value).toBe('가격 페이지');
     fireEvent.change(field, { target: { value: '가격표' } });
     fireEvent.keyDown(field, { key: 'Enter' });
-    expect(props.onRenameProject).toHaveBeenCalledWith(
+    expect(props.onRenameFolder).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'p2' }),
       '가격표',
     );
@@ -160,11 +159,11 @@ describe('HubSessionTree context menu', () => {
 
     const dialog = screen.getByTestId('hub-delete-confirm');
     expect(dialog.getAttribute('role')).toBe('alertdialog');
-    expect(dialog.textContent).toContain('가격 페이지');
-    expect(props.onDeleteProject).not.toHaveBeenCalled();
+    expect(screen.getByTestId('hub-delete-folder-all')).toBeTruthy();
+    expect(props.onDeleteFolder).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByTestId('hub-delete-confirm-cta'));
-    expect(props.onDeleteProject).toHaveBeenCalledWith(expect.objectContaining({ id: 'p2' }));
+    expect(props.onDeleteFolder).toHaveBeenCalledWith(expect.objectContaining({ id: 'p2' }), 'keep');
   });
 
   // Non-vacuousness: the confirmation is a real gate, not decoration. Cancel
@@ -177,7 +176,7 @@ describe('HubSessionTree context menu', () => {
     fireEvent.click(screen.getByTestId('hub-delete-cancel'));
 
     expect(screen.queryByTestId('hub-delete-confirm')).toBeNull();
-    expect(props.onDeleteProject).not.toHaveBeenCalled();
+    expect(props.onDeleteFolder).not.toHaveBeenCalled();
     expect(document.activeElement).toBe(row);
   });
 
@@ -187,13 +186,13 @@ describe('HubSessionTree context menu', () => {
     fireEvent.click(screen.getByTestId('hub-row-menu-delete'));
     fireEvent.keyDown(screen.getByTestId('hub-delete-confirm'), { key: 'Escape' });
     expect(screen.queryByTestId('hub-delete-confirm')).toBeNull();
-    expect(props.onDeleteProject).not.toHaveBeenCalled();
+    expect(props.onDeleteFolder).not.toHaveBeenCalled();
 
     contextMenu(screen.getByTestId('hub-project-p2'), { clientX: 40, clientY: 40 });
     fireEvent.click(screen.getByTestId('hub-row-menu-delete'));
     fireEvent.click(screen.getByTestId('hub-delete-confirm-backdrop'));
     expect(screen.queryByTestId('hub-delete-confirm')).toBeNull();
-    expect(props.onDeleteProject).not.toHaveBeenCalled();
+    expect(props.onDeleteFolder).not.toHaveBeenCalled();
   });
 
   it('gives session rows the same context menu, opening the session it targets', () => {
@@ -215,7 +214,7 @@ describe('HubSessionTree context menu', () => {
     fireEvent.click(screen.getByTestId('hub-row-menu-delete'));
     expect(screen.queryByTestId('hub-delete-confirm')).toBeNull();
     expect(props.onDeleteSession).toHaveBeenCalledWith(expect.objectContaining({ id: 's1' }));
-    expect(props.onDeleteProject).not.toHaveBeenCalled();
+    expect(props.onDeleteFolder).not.toHaveBeenCalled();
   });
 
   it('moves between items with the arrow keys and closes on a click outside', () => {
@@ -241,9 +240,8 @@ describe('HubSessionTree context menu', () => {
       screen.getByTestId('hub-row-menu').querySelectorAll('.hub-menu__text'),
     ).map((node) => node.textContent);
     expect(labels).toEqual([
-      en['quickSwitcher.open'],
-      en['common.rename'],
       en['hub.newSession'],
+      en['hub.menuRename'],
       en['common.delete'],
     ]);
   });
@@ -252,13 +250,13 @@ describe('HubSessionTree context menu', () => {
     render(
       <I18nProvider initial="ko">
         <HubSessionTree
-          projects={PROJECTS}
+          tree={{ folders: PROJECTS, recents: [] }}
           currentSessionId={null}
           onOpenSession={vi.fn()}
-          onOpenProject={vi.fn()}
+          onSelectFolder={vi.fn()}
           onNewSession={vi.fn()}
-          onRenameProject={vi.fn()}
-          onDeleteProject={vi.fn()}
+          onRenameFolder={vi.fn()}
+          onDeleteFolder={vi.fn()}
         />
       </I18nProvider>,
     );
@@ -267,9 +265,8 @@ describe('HubSessionTree context menu', () => {
       screen.getByTestId('hub-row-menu').querySelectorAll('.hub-menu__text'),
     ).map((node) => node.textContent);
     expect(labels).toEqual([
-      ko['quickSwitcher.open'],
-      ko['common.rename'],
       ko['hub.newSession'],
+      ko['hub.menuRename'],
       ko['common.delete'],
     ]);
     // A Korean UI must not be showing the English strings.
@@ -277,27 +274,27 @@ describe('HubSessionTree context menu', () => {
 
     fireEvent.click(screen.getByTestId('hub-row-menu-delete'));
     const dialog = screen.getByTestId('hub-delete-confirm');
-    expect(dialog.textContent).toContain(ko['designs.deleteTitle']);
-    expect(dialog.textContent).toContain(ko['designs.menuDelete']);
+    expect(screen.getByTestId('hub-delete-confirm-cta').textContent).toBe(ko['hub.deleteFolderKeep']);
+    expect(screen.getByTestId('hub-delete-folder-all').textContent).toBe(ko['hub.deleteFolderAll']);
   });
 
   it('drops a menu whose row disappears', () => {
     const { rerender } = render(
       <HubSessionTree
-        projects={PROJECTS}
+        tree={{ folders: PROJECTS, recents: [] }}
         currentSessionId={null}
         onOpenSession={vi.fn()}
-        onDeleteProject={vi.fn()}
+        onDeleteFolder={vi.fn()}
       />,
     );
     contextMenu(screen.getByTestId('hub-project-p2'), { clientX: 40, clientY: 40 });
     expect(screen.getByTestId('hub-row-menu')).toBeTruthy();
     rerender(
       <HubSessionTree
-        projects={[PROJECTS[0]!]}
+        tree={{ folders: [PROJECTS[0]!], recents: [] }}
         currentSessionId={null}
         onOpenSession={vi.fn()}
-        onDeleteProject={vi.fn()}
+        onDeleteFolder={vi.fn()}
       />,
     );
     expect(screen.queryByTestId('hub-row-menu')).toBeNull();

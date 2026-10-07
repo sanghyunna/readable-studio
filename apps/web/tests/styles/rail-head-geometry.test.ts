@@ -310,14 +310,14 @@ describe('rail head: the toggle shares the New Project trailing edge', () => {
     for (const track of [262, 292, 420]) {
       const host = mount(`<div class="workspace-shell__body" style="--hub-rail-expanded: ${track}px">
         <nav class="hub__nav" data-project-rail="hub" data-project-rail-state="expanded">${HEAD_ROW}
-          <div class="hub__nav-actions"><button class="hub__new-project"></button></div>
+          <div class="hub__nav-actions"><button class="hub__new-session"></button></div>
         </nav>
       </div>`);
       const computed = (selector: string) => getComputedStyle(host.querySelector(selector) as HTMLElement);
       const rail = computed('.hub__nav');
       const head = computed('.hub__nav-head');
       const actions = computed('.hub__nav-actions');
-      const button = computed('.hub__new-project');
+      const button = computed('.hub__new-session');
       expect(rail.inlineSize).toBe('auto');
       expect(pixels(rail.getPropertyValue('--hub-rail-inline-inset'))).toBe(12);
       expect(head.justifyContent).toBe('space-between');

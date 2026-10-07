@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { HubSessionTree } from '../../src/components/hub/HubSessionTree';
 import { FileWorkspace } from '../../src/components/FileWorkspace';
-import type { HubProjectNode } from '../../src/components/hub/types';
+import type { HubFolderNode } from '../../src/components/hub/types';
 
 vi.mock('../../src/state/projects', async () => {
   const actual = await vi.importActual<typeof import('../../src/state/projects')>(
@@ -31,13 +31,13 @@ vi.mock('../../src/components/workspace/TerminalViewer', () => ({
   ),
 }));
 
-const PROJECT: HubProjectNode = {
+const PROJECT: HubFolderNode = {
   id: 'p1',
   name: 'Quarterly report',
   updatedAt: 10,
   sessions: [
-    { id: 'c1', projectId: 'p1', title: 'Chart cleanup', updatedAt: 9, state: 'idle' },
-    { id: 'c2', projectId: 'p1', title: 'Copy review', updatedAt: 8, state: 'idle' },
+    { id: 'c1', workspaceId: 'p1', folderId: 'p1', workspaceSessionCount: 1, title: 'Chart cleanup', updatedAt: 9, state: 'idle' },
+    { id: 'c2', workspaceId: 'p1', folderId: 'p1', workspaceSessionCount: 1, title: 'Copy review', updatedAt: 8, state: 'idle' },
   ],
 };
 
@@ -59,9 +59,9 @@ describe('Hub session surface handoff', () => {
   it('omits terminal and side-chat launchers while retaining ordinary sessions', () => {
     render(
       <HubSessionTree
-        projects={[PROJECT]}
+        tree={{ folders: [PROJECT], recents: [] }}
         currentSessionId={null}
-        onOpenProject={vi.fn()}
+        onSelectFolder={vi.fn()}
         onOpenSession={vi.fn()}
         onNewSession={vi.fn()}
       />,

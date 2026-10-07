@@ -8,39 +8,39 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { HubSessionTree } from '../../src/components/hub/HubSessionTree';
-import type { HubProjectNode } from '../../src/components/hub/types';
+import type { HubFolderNode } from '../../src/components/hub/types';
 
 afterEach(() => {
   cleanup();
 });
 
-const PROJECTS: HubProjectNode[] = [
+const PROJECTS: HubFolderNode[] = [
   {
     id: 'p1',
     name: '분기 보고서',
     updatedAt: 900,
     sessions: [
-      { id: 's1', projectId: 'p1', title: '차트 팔레트 정리', updatedAt: 900, state: 'running' },
-      { id: 's2', projectId: 'p1', title: '범례 겹침 수정', updatedAt: 800, state: 'idle' },
+      { id: 's1', workspaceId: 'p1', folderId: 'p1', workspaceSessionCount: 1, title: '차트 팔레트 정리', updatedAt: 900, state: 'running' },
+      { id: 's2', workspaceId: 'p1', folderId: 'p1', workspaceSessionCount: 1, title: '범례 겹침 수정', updatedAt: 800, state: 'idle' },
     ],
   },
   {
     id: 'p2',
     name: '가격 페이지',
     updatedAt: 100,
-    sessions: [{ id: 's3', projectId: 'p2', title: '요금제 비교표', updatedAt: 100, state: 'idle' }],
+    sessions: [{ id: 's3', workspaceId: 'p2', folderId: 'p2', workspaceSessionCount: 1, title: '요금제 비교표', updatedAt: 100, state: 'idle' }],
   },
 ];
 
 function renderTree(overrides: Partial<Parameters<typeof HubSessionTree>[0]> = {}) {
   const props = {
-    projects: PROJECTS,
+    tree: { folders: PROJECTS, recents: [] },
     currentSessionId: null,
     onOpenSession: vi.fn(),
     onPeekSession: vi.fn(),
     onNewSession: vi.fn(),
-    onRenameProject: vi.fn(),
-    onDeleteProject: vi.fn(),
+    onRenameFolder: vi.fn(),
+    onDeleteFolder: vi.fn(),
     onRenameSession: vi.fn(),
     onDeleteSession: vi.fn(),
     ...overrides,
@@ -52,22 +52,22 @@ function renderTree(overrides: Partial<Parameters<typeof HubSessionTree>[0]> = {
 describe('HubSessionTree row actions', () => {
   it('exposes rename, new session and delete on a project row and hits that project', () => {
     const props = renderTree();
-    fireEvent.click(screen.getByTestId('hub-menu-project-p2'));
+    fireEvent.click(screen.getByTestId('hub-menu-folder-p2'));
     expect(screen.getByTestId('hub-row-menu-rename')).toBeTruthy();
     expect(screen.getByTestId('hub-row-menu-new-session')).toBeTruthy();
 
     fireEvent.click(screen.getByTestId('hub-row-menu-delete'));
     // Delete is destructive, so the menu queues the shared confirmation instead
     // of firing straight through.
-    expect(props.onDeleteProject).not.toHaveBeenCalled();
+    expect(props.onDeleteFolder).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId('hub-delete-confirm-cta'));
-    expect(props.onDeleteProject).toHaveBeenCalledTimes(1);
-    expect(props.onDeleteProject).toHaveBeenCalledWith(expect.objectContaining({ id: 'p2' }));
+    expect(props.onDeleteFolder).toHaveBeenCalledTimes(1);
+    expect(props.onDeleteFolder).toHaveBeenCalledWith(expect.objectContaining({ id: 'p2' }), 'keep');
   });
 
   it('creates a new session in the project whose menu was opened', () => {
     const props = renderTree();
-    fireEvent.click(screen.getByTestId('hub-menu-project-p1'));
+    fireEvent.click(screen.getByTestId('hub-menu-folder-p1'));
     fireEvent.click(screen.getByTestId('hub-row-menu-new-session'));
     expect(props.onNewSession).toHaveBeenCalledWith(expect.objectContaining({ id: 'p1' }));
   });
@@ -83,7 +83,7 @@ describe('HubSessionTree row actions', () => {
     fireEvent.click(screen.getByTestId('hub-row-menu-delete'));
     expect(screen.queryByTestId('hub-delete-confirm')).toBeNull();
     expect(props.onDeleteSession).toHaveBeenCalledWith(expect.objectContaining({ id: 's2' }));
-    expect(props.onDeleteProject).not.toHaveBeenCalled();
+    expect(props.onDeleteFolder).not.toHaveBeenCalled();
   });
 
   it('renames the row the menu was opened from, not the focused one', () => {
@@ -135,7 +135,7 @@ describe('HubSessionTree row actions', () => {
 
   it('labels the result group and counts what the list is showing', () => {
     renderTree();
-    expect(screen.getByTestId('hub-group-count').textContent).toBe('2');
+    expect(screen.queryByTestId('hub-group-count')).toBeNull();
     fireEvent.click(screen.getByTestId('hub-filter-running'));
     // Filtered views count matching sessions, not projects.
     expect(screen.getByTestId('hub-group-count').textContent).toBe('1');
@@ -144,7 +144,7 @@ describe('HubSessionTree row actions', () => {
   it('renders relative last activity on a settled session', () => {
     render(
       <HubSessionTree
-        projects={[
+        tree={{ folders: [
           {
             id: 'p9',
             name: 'p9',
@@ -152,14 +152,14 @@ describe('HubSessionTree row actions', () => {
             sessions: [
               {
                 id: 's9',
-                projectId: 'p9',
+                workspaceId: 'p9', folderId: 'p9', workspaceSessionCount: 1,
                 title: 'done',
                 updatedAt: Date.now() - 2 * 60 * 60 * 1000,
                 state: 'idle',
               },
             ],
           },
-        ]}
+        ], recents: [] }}
         currentSessionId={null}
         onOpenSession={vi.fn()}
       />,

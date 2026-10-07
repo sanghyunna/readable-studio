@@ -22,6 +22,21 @@ vi.mock('../../src/router', async (importOriginal) => {
 });
 
 import { openProjectRoute, openSessionRoute } from '../../src/components/hub/openSessionRoute';
+
+vi.mock('../../src/state/rail', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../src/state/rail')>(),
+  subscribeRailEvents: () => () => {},
+  fetchRail: async () => ({ ok: true, rail: {
+    folders: await Promise.all([PROJECT].map(async (project) => ({
+      id: project.id, name: project.name, createdAt: project.createdAt, updatedAt: project.updatedAt,
+      sessions: (await listConversations(project.id) ?? []).map((c: import('../../src/types').Conversation) => ({
+        ...c, workspaceId: project.id, folderId: project.id, workspaceSessionCount: 1,
+        state: c.latestRun?.status === 'running' ? 'running' : 'idle',
+      })),
+    }))), recents: [], generatedAt: 1,
+  }}),
+}));
+
 import { TestHubHome as HubHome } from '../helpers/HubTestHost';
 import type { Project } from '../../src/types';
 

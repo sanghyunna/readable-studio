@@ -9,19 +9,19 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { HubSessionTree } from '../../src/components/hub/HubSessionTree';
-import type { HubProjectNode } from '../../src/components/hub/types';
+import type { HubFolderNode } from '../../src/components/hub/types';
 
 afterEach(() => {
   cleanup();
 });
 
-const MANY: HubProjectNode = {
+const MANY: HubFolderNode = {
   id: 'p1',
   name: '분기 보고서',
   updatedAt: 900,
   sessions: Array.from({ length: 8 }, (_, i) => ({
     id: `s${i}`,
-    projectId: 'p1',
+    workspaceId: 'p1', folderId: 'p1', workspaceSessionCount: 1,
     title: `세션 ${i}`,
     updatedAt: 900 - i,
     state: 'idle' as const,
@@ -30,7 +30,7 @@ const MANY: HubProjectNode = {
 
 describe('HubSessionTree ownership and focus', () => {
   it('nests each session group inside its owning treeitem', () => {
-    render(<HubSessionTree projects={[MANY]} currentSessionId={null} onOpenSession={vi.fn()} />);
+    render(<HubSessionTree tree={{ folders: [MANY], recents: [] }} currentSessionId={null} onOpenSession={vi.fn()} />);
     const project = screen.getByTestId('hub-project-p1');
     const group = project.querySelector('[role="group"]');
     expect(group).not.toBeNull();
@@ -41,14 +41,14 @@ describe('HubSessionTree ownership and focus', () => {
   it('keeps status readable to assistive tech instead of overriding it', () => {
     render(
       <HubSessionTree
-        projects={[
+        tree={{ folders: [
           {
             ...MANY,
             sessions: [
-              { id: 'sx', projectId: 'p1', title: '차트', updatedAt: 1, state: 'failed' as const },
+              { id: 'sx', workspaceId: 'p1', folderId: 'p1', workspaceSessionCount: 1, title: '차트', updatedAt: 1, state: 'failed' as const },
             ],
           },
-        ]}
+        ], recents: [] }}
         currentSessionId={null}
         onOpenSession={vi.fn()}
       />,
@@ -62,7 +62,7 @@ describe('HubSessionTree ownership and focus', () => {
   });
 
   it('restores focus into the tree after revealing hidden sessions', () => {
-    render(<HubSessionTree projects={[MANY]} currentSessionId={null} onOpenSession={vi.fn()} />);
+    render(<HubSessionTree tree={{ folders: [MANY], recents: [] }} currentSessionId={null} onOpenSession={vi.fn()} />);
     const more = screen.getByTestId('hub-tree-more-p1');
     more.focus();
     fireEvent.keyDown(more, { key: 'Enter' });
