@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { access, cp, lstat, mkdir, readdir, readFile, stat, symlink, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
+import { availableParallelism } from "node:os";
 
 import { measureBuildStep, writeBuildProfile } from "./build-profile.js";
 import { hashJson, hashPath, ToolPackCache } from "./cache.js";
@@ -17,6 +18,7 @@ const WORKSPACE_BUILD_PACKAGES = [
   { directory: "packages/platform", name: "@readable-studio/platform" },
   { directory: "packages/download", name: "@readable-studio/download" },
   { directory: "packages/host", name: "@readable-studio/host" },
+  { directory: "packages/html-edit", name: "@readable-studio/html-edit" },
   { directory: "packages/agui-adapter", name: "@readable-studio/agui-adapter" },
   { directory: "packages/plugin-runtime", name: "@readable-studio/plugin-runtime" },
   { directory: "packages/product-identity", name: "@readable-studio/product-identity" },
@@ -36,6 +38,7 @@ const BUILD_COMMANDS = [
   { args: ["--filter", "@readable-studio/platform", "build"] },
   { args: ["--filter", "@readable-studio/download", "build"] },
   { args: ["--filter", "@readable-studio/host", "build"] },
+  { args: ["--filter", "@readable-studio/html-edit", "build"] },
   { args: ["--filter", "@readable-studio/agui-adapter", "build"] },
   { args: ["--filter", "@readable-studio/plugin-runtime", "build"] },
   { args: ["--filter", "@readable-studio/product-identity", "build"] },
@@ -100,10 +103,12 @@ async function createWorkspaceBuildCacheKey(config: ToolPackConfig): Promise<str
       ? { args: ["--filter", "@readable-studio/platform", "build:native:win32"] }
       : null,
     packageHashes,
+    packageBuildInputs: await readWorkspaceBuildInputs(config),
+    webEnvironment: workspaceWebEnvironment(),
     packageManager: await readPackageManager(config.workspaceRoot),
     platform: config.platform,
     pnpmLock: await hashPath(join(config.workspaceRoot, "pnpm-lock.yaml")),
-    schemaVersion: 8,
+    schemaVersion: 9,
     webOutputMode: config.webOutputMode,
   };
   const key = hashJson(keyInput);
@@ -136,6 +141,8 @@ function workspaceBuildOutputFiles(config: ToolPackConfig): string[] {
     "packages/download/dist/index.d.ts",
     "packages/host/dist/index.mjs",
     "packages/host/dist/index.d.ts",
+    "packages/html-edit/dist/index.js",
+    "packages/html-edit/dist/index.d.ts",
     "packages/agui-adapter/dist/index.mjs",
     "packages/agui-adapter/dist/index.d.ts",
     "packages/plugin-runtime/dist/index.mjs",
@@ -167,6 +174,7 @@ function workspaceBuildArtifacts(config: ToolPackConfig): WorkspaceBuildArtifact
     "packages/platform/dist",
     "packages/download/dist",
     "packages/host/dist",
+    "packages/html-edit/dist",
     "packages/agui-adapter/dist",
     "packages/plugin-runtime/dist",
     "packages/product-identity/dist",
@@ -179,7 +187,8 @@ function workspaceBuildArtifacts(config: ToolPackConfig): WorkspaceBuildArtifact
   if (config.webOutputMode === "standalone") {
     artifacts.push("apps/web/.next/standalone", "apps/web/.next/static");
   } else {
-    artifacts.push("apps/web/.next/BUILD_ID");
+    // Server mode needs the compiled tree too, not only its BUILD_ID sentinel.
+    artifacts.push("apps/web/.next");
   }
   const outputFiles = workspaceBuildOutputFiles(config);
   return artifacts.map((workspacePath) => {
@@ -270,8 +279,12 @@ async function hoistStandaloneNextPeerDeps(standaloneRoot: string): Promise<void
   }
 }
 
-async function copyWorkspaceBuildArtifactsToCache(config: ToolPackConfig, entryRoot: string): Promise<void> {
-  for (const artifact of workspaceBuildArtifacts(config)) {
+async function copyWorkspaceBuildArtifactsToCache(
+  config: ToolPackConfig,
+  entryRoot: string,
+  artifacts = workspaceBuildArtifacts(config),
+): Promise<void> {
+  for (const artifact of artifacts) {
     const sourcePath = join(config.workspaceRoot, artifact.workspacePath);
     // Strip dangling symlinks first: that clears any leftover from a
     // previous build whose target moved (e.g. a renamed `.pnpm/<pkg>@<ver>`
@@ -365,4 +378,134 @@ export async function ensureWorkspaceBuildArtifacts(
     },
     seedFrom: versionFamilyAlias == null ? [] : [{ aliasKey: versionFamilyAlias, materialize }],
   });
+}
+
+type WorkspacePackage = (typeof WORKSPACE_BUILD_PACKAGES)[number];
+type BuildPackageManifest = {
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
+};
+
+async function readWorkspaceBuildInputs(config: ToolPackConfig): Promise<Record<string, unknown>> {
+  return {
+    nodeVersion: process.version, platform: process.platform, arch: process.arch,
+    rootPackage: await hashPath(join(config.workspaceRoot, "package.json")),
+    lockfile: await hashPath(join(config.workspaceRoot, "pnpm-lock.yaml")),
+    workspaceConfig: await pathExists(join(config.workspaceRoot, "pnpm-workspace.yaml"))
+      ? await hashPath(join(config.workspaceRoot, "pnpm-workspace.yaml")) : null,
+    patches: await pathExists(join(config.workspaceRoot, "patches"))
+      ? await hashPath(join(config.workspaceRoot, "patches")) : null,
+    environment: Object.fromEntries(["NODE_OPTIONS", "CI", "PATH", "CC", "CXX", "CL", "INCLUDE", "LIB", "SOURCE_DATE_EPOCH", "TZ", "LANG"]
+      .map((name) => [name, process.env[name] ?? null])),
+    schemaVersion: 1,
+  };
+}
+
+function workspaceWebEnvironment(): Record<string, string | undefined> {
+  return Object.fromEntries(Object.entries(process.env)
+    .filter(([name]) => (name.startsWith("READABLE_") || name.startsWith("NEXT_") || name === "NODE_ENV")
+      && name !== "READABLE_TOOLS_PACK_PROFILE")
+    .sort(([left], [right]) => left.localeCompare(right)));
+}
+
+// Each package has a private cache root. The caller holds the shared workspace
+// mutation lock; independent package producers never share a build-wide cache
+// lock or make a redundant whole-workspace snapshot.
+export async function ensureWorkspacePackageBuilds(
+  config: ToolPackConfig,
+  build: (packageInfo: WorkspacePackage) => Promise<void>,
+): Promise<void> {
+  const commonInputs = await readWorkspaceBuildInputs(config);
+  const webEnvironment = workspaceWebEnvironment();
+  const packages = new Map(WORKSPACE_BUILD_PACKAGES.map((info) => [info.name as string, info]));
+  const sourceKeys = new Map<string, string>();
+  const dependencies = new Map<string, string[]>();
+  for (const info of WORKSPACE_BUILD_PACKAGES) {
+    const manifest = JSON.parse(await readFile(join(config.workspaceRoot, info.directory, "package.json"), "utf8")) as BuildPackageManifest;
+    dependencies.set(info.name, Object.keys({ ...manifest.dependencies, ...manifest.devDependencies, ...manifest.optionalDependencies })
+      .filter((name) => packages.has(name)).sort());
+    sourceKeys.set(info.name, await hashPackageSourcePath(join(config.workspaceRoot, info.directory)));
+  }
+  const keys = new Map<string, string>();
+  const visiting = new Set<string>();
+  const keyFor = (info: WorkspacePackage): string => {
+    const existing = keys.get(info.name);
+    if (existing != null) return existing;
+    if (visiting.has(info.name)) throw new Error(`workspace build dependency cycle: ${info.name}`);
+    visiting.add(info.name);
+    const key = hashJson({
+      ...commonInputs, package: info.name, source: sourceKeys.get(info.name),
+      dependencies: dependencies.get(info.name)!.map((name) => [name, keyFor(packages.get(name)!)]),
+      web: info.name === "@readable-studio/web" ? { environment: webEnvironment, outputMode: config.webOutputMode } : null,
+      commands: BUILD_COMMANDS.filter(({ args }) => args[1] === info.name),
+      native: info.name === "@readable-studio/platform" ? "build:native:win32" : null,
+    });
+    visiting.delete(info.name);
+    keys.set(info.name, key);
+    return key;
+  };
+  for (const info of WORKSPACE_BUILD_PACKAGES) keyFor(info); // Validate cycles before starting any producer.
+
+  const artifacts = workspaceBuildArtifacts(config);
+  const outputFiles = workspaceBuildOutputFiles(config);
+  let active = 0;
+  const waiters: Array<() => void> = [];
+  const concurrency = Math.min(20, availableParallelism());
+  const tasks = new Map<string, Promise<void>>();
+  const start = (info: WorkspacePackage): Promise<void> => {
+    const existing = tasks.get(info.name);
+    if (existing != null) return existing;
+    const task = (async () => {
+      await Promise.all(dependencies.get(info.name)!.map((name) => start(packages.get(name)!)));
+      if (active >= concurrency) await new Promise<void>((resolve) => waiters.push(resolve));
+      else active += 1;
+      try {
+        const owned = artifacts.filter((artifact) => artifact.workspacePath.startsWith(`${info.directory}/`));
+        const required = outputFiles.filter((output) => output.startsWith(`${info.directory}/`));
+        const cache = new ToolPackCache(join(config.roots.cacheRoot, "workspace-packages", info.name.replaceAll("/", "_")));
+        await cache.acquire({
+          materialize: owned.map((artifact) => ({
+            from: artifact.cachePath, to: join(config.workspaceRoot, artifact.workspacePath),
+            retainOnBuild: true, reuse: true, reuseRequiredPaths: artifact.requiredPathGroups,
+          })),
+          node: {
+            id: `win.workspace-package.${info.name}`, key: keys.get(info.name)!, outputs: owned.map((artifact) => artifact.cachePath),
+            invalidate: async ({ entryRoot }) => {
+              for (const output of required) {
+                if (!(await Promise.any(output.split("|").map(async (candidate) => {
+                  if (!(await pathExists(join(entryRoot, "outputs", candidate)))) throw new Error(candidate);
+                  return true;
+                })).catch(() => false))) return { reason: `missing package output: ${output}` };
+              }
+              return null;
+            },
+            build: async ({ entryRoot }) => {
+              await measureBuildStep("workspace:package-build", () => build(info), { package: info.name });
+              for (const artifact of owned) {
+                for (const candidates of artifact.requiredPathGroups) {
+                  if (!(await Promise.any(candidates.map(async (candidate) => {
+                    if (!(await pathExists(join(config.workspaceRoot, artifact.workspacePath, candidate)))) throw new Error(candidate);
+                    return true;
+                  })).catch(() => false))) throw new Error(`workspace package ${info.name} is missing ${candidates.join("|")}`);
+                }
+              }
+              await copyWorkspaceBuildArtifactsToCache(config, entryRoot, owned);
+              return {};
+            },
+          },
+        });
+        process.stderr.write(`[tools-pack workspace] package=${info.name} status=${cache.report().entries.at(-1)!.status}\n`);
+      } finally {
+        const next = waiters.shift();
+        if (next == null) active -= 1;
+        else next(); // Transfer the slot; never exceed the host's 20-slot budget.
+      }
+    })();
+    tasks.set(info.name, task);
+    return task;
+  };
+  const started = WORKSPACE_BUILD_PACKAGES.map(start);
+  await Promise.allSettled(started); // Drain producers before the caller restores mutable generated inputs.
+  await Promise.all(started);
 }

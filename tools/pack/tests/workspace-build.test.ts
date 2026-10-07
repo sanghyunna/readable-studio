@@ -1,14 +1,21 @@
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { EventEmitter, once } from "node:events";
+import { MessageChannel } from "node:worker_threads";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("node:os", async (importOriginal) => ({
+  ...await importOriginal<typeof import("node:os")>(),
+  availableParallelism: () => 2,
+}));
+
 afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 
 import { ToolPackCache } from "../src/cache.js";
 import type { ToolPackConfig } from "../src/config.js";
-import { ensureWorkspaceBuildArtifacts } from "../src/workspace-build.js";
+import { ensureWorkspaceBuildArtifacts, ensureWorkspacePackageBuilds } from "../src/workspace-build.js";
 
 const PACKAGE_DIRS = [
   "packages/components",
@@ -19,6 +26,7 @@ const PACKAGE_DIRS = [
   "packages/platform",
   "packages/download",
   "packages/host",
+  "packages/html-edit",
   "packages/agui-adapter",
   "packages/plugin-runtime",
   "packages/product-identity",
@@ -47,6 +55,8 @@ const OUTPUT_FILES = [
   "packages/download/dist/index.d.ts",
   "packages/host/dist/index.mjs",
   "packages/host/dist/index.d.ts",
+  "packages/html-edit/dist/index.js",
+  "packages/html-edit/dist/index.d.ts",
   "packages/agui-adapter/dist/index.mjs",
   "packages/agui-adapter/dist/index.d.ts",
   "packages/plugin-runtime/dist/index.mjs",
@@ -73,7 +83,7 @@ async function writeWorkspace(root: string): Promise<void> {
   await writeFile(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n", "utf8");
   for (const directory of PACKAGE_DIRS) {
     await mkdir(join(root, directory, "src"), { recursive: true });
-    await writeFile(join(root, directory, "package.json"), `${JSON.stringify({ name: directory }, null, 2)}\n`, "utf8");
+    await writeFile(join(root, directory, "package.json"), `${JSON.stringify({ name: `@readable-studio/${directory.split("/")[1]}`, scripts: { build: "fixture-build" } }, null, 2)}\n`, "utf8");
     await writeFile(join(root, directory, "src", "index.ts"), "export const value = 1;\n", "utf8");
   }
 }
@@ -82,6 +92,13 @@ async function writeOutputs(root: string, value: string): Promise<void> {
   for (const file of OUTPUT_FILES) {
     await mkdir(join(root, file, ".."), { recursive: true });
     await writeFile(join(root, file), `${value}\n`, "utf8");
+  }
+}
+
+async function writePackageOutputs(root: string, directory: string, value: string): Promise<void> {
+  for (const file of OUTPUT_FILES.filter((file) => file.startsWith(`${directory}/`))) {
+    await mkdir(join(root, file, ".."), { recursive: true });
+    await writeFile(join(root, file), value);
   }
 }
 
@@ -116,6 +133,124 @@ function createConfig(root: string, cacheRoot: string): ToolPackConfig {
     workspaceRoot: root,
   };
 }
+
+describe("dependency-keyed workspace package builds", () => {
+  it("starts dependency-ready daemon work while web is still running", async () => {
+    const root = await mkdtemp(join(tmpdir(), "readable-package-ready-"));
+    const events = new EventEmitter();
+    const webStarted = once(events, "web", { signal: AbortSignal.timeout(10_000) });
+    const daemonStarted = once(events, "daemon", { signal: AbortSignal.timeout(10_000) });
+    const releaseWeb = Promise.withResolvers<void>();
+    let contractReady = false;
+    let active = 0;
+    let peak = 0;
+    try {
+      await writeWorkspace(root);
+      for (const app of ["daemon", "web"]) await writeFile(join(root, "apps", app, "package.json"), JSON.stringify({
+        dependencies: { "@readable-studio/contracts": "workspace:*" },
+      }));
+      const work = ensureWorkspacePackageBuilds(createConfig(root, join(root, ".cache")), async (info) => {
+        active += 1;
+        peak = Math.max(peak, active);
+        try {
+          if (info.name === "@readable-studio/contracts") contractReady = true;
+          if (info.name === "@readable-studio/web") { expect(contractReady).toBe(true); events.emit("web"); await releaseWeb.promise; }
+          if (info.name === "@readable-studio/daemon") { expect(contractReady).toBe(true); events.emit("daemon"); }
+          await writePackageOutputs(root, info.directory, "bytes");
+        } finally { active -= 1; }
+      });
+      try { await Promise.all([webStarted, daemonStarted]); }
+      finally { releaseWeb.resolve(); await work; }
+      expect(peak).toBe(2);
+    } finally { releaseWeb.resolve(); await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("keys web environment separately and ignores profiler changes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "readable-package-env-"));
+    const builds: Record<string, number> = {};
+    const config = createConfig(root, join(root, ".cache"));
+    const build = async (info: { directory: string; name: string }) => {
+      builds[info.name] = (builds[info.name] ?? 0) + 1;
+      await writePackageOutputs(root, info.directory, "bytes");
+    };
+    try {
+      await writeWorkspace(root);
+      await ensureWorkspacePackageBuilds(config, build);
+      vi.stubEnv("READABLE_WEB_BROWSER_SOURCE_MAPS", "1");
+      await ensureWorkspacePackageBuilds(config, build);
+      expect(builds["@readable-studio/web"]).toBe(2);
+      expect(builds["@readable-studio/daemon"]).toBe(1);
+      vi.stubEnv("READABLE_TOOLS_PACK_PROFILE", "1");
+      vi.spyOn(process.stderr, "write").mockReturnValue(true);
+      await ensureWorkspacePackageBuilds(config, build);
+      expect(builds["@readable-studio/web"]).toBe(2);
+      await writeFile(join(root, "pnpm-lock.yaml"), "changed dependency lock");
+      await ensureWorkspacePackageBuilds(config, build);
+      expect(Object.values(builds).every((count) => count >= 2)).toBe(true);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("drains independent package producers before reporting failure", async () => {
+    const root = await mkdtemp(join(tmpdir(), "readable-package-drain-"));
+    const events = new EventEmitter();
+    const webStarted = once(events, "web", { signal: AbortSignal.timeout(10_000) });
+    const { port1, port2 } = new MessageChannel();
+    const webCompleted = once(port1, "message", { signal: AbortSignal.timeout(10_000) });
+    const failure = new Error("daemon build failed");
+    let webFinished = false;
+    try {
+      await writeWorkspace(root);
+      const work = ensureWorkspacePackageBuilds(createConfig(root, join(root, ".cache")), async (info) => {
+        if (info.name === "@readable-studio/web") { events.emit("web"); await webCompleted; webFinished = true; }
+        if (info.name === "@readable-studio/daemon") { await webStarted; throw failure; }
+        await writePackageOutputs(root, info.directory, "bytes");
+      });
+      const outcome = work.then(() => ({ error: undefined, webFinished }), (error: unknown) => ({ error, webFinished }));
+      try {
+        await webStarted;
+        // Deliver completion in a later event-loop turn, after rejection reactions.
+        port2.postMessage("complete");
+        expect(await outcome).toEqual({ error: failure, webFinished: true });
+      } finally { port2.postMessage("complete"); await outcome; await webCompleted; }
+    } finally { port1.close(); port2.close(); await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("reuses unchanged Next bytes on daemon edits, propagates dependency changes and restores missing Next output", async () => {
+    const root = await mkdtemp(join(tmpdir(), "readable-package-build-cache-"));
+    const config = createConfig(root, join(root, ".cache"));
+    const builds: Record<string, number> = {};
+    const build = async (packageInfo: { directory: string; name: string }) => {
+      builds[packageInfo.name] = (builds[packageInfo.name] ?? 0) + 1;
+      await writePackageOutputs(root, packageInfo.directory, `${packageInfo.name}:${builds[packageInfo.name]}`);
+    };
+    try {
+      await writeWorkspace(root);
+      for (const app of ["daemon", "web"]) {
+        await writeFile(join(root, "apps", app, "package.json"), JSON.stringify({
+          name: `@readable-studio/${app}`, dependencies: { "@readable-studio/contracts": "workspace:*" }, scripts: { build: "fixture-build" },
+        }));
+      }
+      await ensureWorkspacePackageBuilds(config, build);
+      const next = join(root, "apps/web/.next/static/chunk.js");
+      const originalNext = await readFile(next);
+      await writeFile(join(root, "apps/daemon/src/index.ts"), "changed daemon");
+      await ensureWorkspacePackageBuilds(config, build);
+      expect(builds["@readable-studio/daemon"]).toBe(2);
+      expect(builds["@readable-studio/web"]).toBe(1);
+      expect(await readFile(next)).toEqual(originalNext);
+      await rm(join(root, "apps/web/.next/standalone/apps/web/server.js"));
+      await ensureWorkspacePackageBuilds(config, build);
+      expect(builds["@readable-studio/web"]).toBe(1);
+      expect(await readFile(join(root, "apps/web/.next/standalone/apps/web/server.js"), "utf8")).toBe("@readable-studio/web:1");
+      await writeFile(join(root, "packages/contracts/src/index.ts"), "changed dependency");
+      await ensureWorkspacePackageBuilds(config, build);
+      expect(builds["@readable-studio/contracts"]).toBe(2);
+      expect(builds["@readable-studio/daemon"]).toBe(3);
+      expect(builds["@readable-studio/web"]).toBe(2);
+      expect(builds["@readable-studio/html-edit"]).toBe(1);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+});
 
 describe("ensureWorkspaceBuildArtifacts", () => {
   it("builds once and skips when the key and outputs are still valid", async () => {

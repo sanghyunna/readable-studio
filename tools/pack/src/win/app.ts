@@ -1,6 +1,5 @@
 import { execFile } from "node:child_process";
 import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
-import { cpus } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { promisify } from "node:util";
 
@@ -36,7 +35,8 @@ import {
   shouldUseWinStandalonePrebundle,
 } from "../win-prebundle.js";
 import { processWebSourcemaps } from "../web-sourcemaps.js";
-import { ensureWorkspaceBuildArtifacts } from "../workspace-build.js";
+import { ensureWorkspacePackageBuilds } from "../workspace-build.js";
+import { withDirectoryLock } from "../lock.js";
 import {
   ELECTRON_BUILDER_BUILD_DEPENDENCIES_FROM_SOURCE,
   ELECTRON_REBUILD_MODE,
@@ -109,61 +109,27 @@ async function validateNodeNativeModuleOutput(appRoot: string): Promise<string |
   }
 }
 
-// The workspace packages whose `build` script the packaged Windows app
-// needs. We hand the whole set to pnpm's recursive scheduler instead of
-// sequencing them by hand: pnpm derives the build order from each
-// package's declared workspace dependencies and runs independent
-// packages concurrently (bounded by --workspace-concurrency), so the
-// builds saturate available cores rather than running one at a time.
-// The list is order-independent here — pnpm computes the topological
-// order itself — but kept readable. Web's main `build` runs inside this
-// wave; its extra `build:sidecar` script and sourcemap post-processing
-// stay serial below because neither is a `build` script.
-const WORKSPACE_BUILD_FILTER_PACKAGES = [
-  "@readable-studio/contracts",
-  "@readable-studio/registry-protocol",
-  "@readable-studio/sidecar-proto",
-  "@readable-studio/sidecar",
-  "@readable-studio/platform",
-  "@readable-studio/agui-adapter",
-  "@readable-studio/plugin-runtime",
-  "@readable-studio/download",
-  "@readable-studio/host",
-  "@readable-studio/html-edit",
-  "@readable-studio/diagnostics",
-  "@readable-studio/components",
-  "@readable-studio/daemon",
-  "@readable-studio/web",
-  "@readable-studio/desktop",
-  "@readable-studio/packaged",
-] as const;
-
 async function buildWorkspaceArtifacts(config: ToolPackConfig): Promise<void> {
   const webNextEnvPath = join(config.workspaceRoot, "apps", "web", "next-env.d.ts");
   const previousWebNextEnv = await readFile(webNextEnvPath, "utf8").catch(() => null);
 
-  // pnpm caps real parallelism at the topological ready-set, so requesting
-  // one slot per core lets the independent base packages — and the daemon
-  // build overlapping the long-pole web build — use every available core.
-  const workspaceConcurrency = Math.max(2, cpus().length);
-  const filterArgs = WORKSPACE_BUILD_FILTER_PACKAGES.flatMap((name) => ["--filter", name]);
-
   try {
-    // One recursive invocation builds every workspace package in dependency
-    // order with up to `workspaceConcurrency` running at once. READABLE_WEB_OUTPUT_MODE
-    // is consumed only by the web build; it is inert for the other packages.
-    await measureBuildStep("workspace:recursive-build", () => runPnpm(
-      config,
-      ["-r", `--workspace-concurrency=${workspaceConcurrency}`, ...filterArgs, "run", "build"],
-      { READABLE_WEB_OUTPUT_MODE: config.webOutputMode },
-    ));
-    await measureBuildStep("workspace:native-isolator", () =>
-      runPnpm(config, ["--filter", "@readable-studio/platform", "build:native:win32"]));
-    await measureBuildStep("workspace:web-sidecar", () =>
-      runPnpm(config, ["--filter", "@readable-studio/web", "build:sidecar"]));
-    // Strip browser sourcemaps before any packaging step copies the web
-    // output into the Electron resources.
-    await measureBuildStep("workspace:web-sourcemaps", () => processWebSourcemaps(config));
+    // Dependency-ready scheduling avoids pnpm's whole-level barrier. Exact
+    // package/dependency keys reuse outputs, including unchanged Next builds.
+    await ensureWorkspacePackageBuilds(config, async (packageInfo) => {
+      await runPnpm(config, ["--filter", packageInfo.name, "run", "build"],
+        { READABLE_WEB_OUTPUT_MODE: config.webOutputMode });
+      if (packageInfo.name === "@readable-studio/platform") {
+        await measureBuildStep("workspace:native-isolator", () =>
+          runPnpm(config, ["--filter", packageInfo.name, "build:native:win32"]));
+      }
+      if (packageInfo.name === "@readable-studio/web") {
+        await measureBuildStep("workspace:web-sidecar", () =>
+          runPnpm(config, ["--filter", packageInfo.name, "build:sidecar"]));
+        // Cache only the post-processed, shippable browser output.
+        await measureBuildStep("workspace:web-sourcemaps", () => processWebSourcemaps(config));
+      }
+    });
   } finally {
     if (previousWebNextEnv == null) await rm(webNextEnvPath, { force: true });
     else await writeFile(webNextEnvPath, previousWebNextEnv, "utf8");
@@ -171,7 +137,9 @@ async function buildWorkspaceArtifacts(config: ToolPackConfig): Promise<void> {
 }
 
 export async function ensureWinWorkspaceBuild(config: ToolPackConfig, cache: ToolPackCache): Promise<void> {
-  await ensureWorkspaceBuildArtifacts(config, cache, async () => {
+  // Serialize callers that mutate this shared workspace, but let package cache
+  // nodes build independently. No second whole-workspace snapshot/copy-back.
+  await withDirectoryLock(join(cache.root, "locks"), "workspace-build", async () => {
     await buildWorkspaceArtifacts(config);
   });
 }

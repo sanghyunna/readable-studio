@@ -46,10 +46,22 @@ available CPU threads. Level 1 requires an explicit `-PortableZipCompression 1`
 or `READABLE_PORTABLE_ZIP_COMPRESSION=1` and may produce a larger download.
 File selection, metadata policy, signing, and runtime checks are unchanged. ZIP cache keys include the thread
 setting, so fast archives cannot replace ordinary cached ZIPs. The first default
-release build therefore misses the old ZIP cache. Upstream build
-caches remain shared. Without the flag, stage order, compression, archiver arguments,
-and cache keys retain their existing behavior. Fast builds also request 7-Zip
-execution statistics (`-bt`), captured in the existing ZIP segment details.
+release build therefore misses the old ZIP cache. Without the flag, preparation
+remains serial and ZIP thread arguments stay automatic. Fast builds also request
+7-Zip execution statistics (`-bt`); ZIP segment details expose CPU seconds, wall
+seconds and average busy cores when those statistics are available.
+
+Workspace builds use dependency-keyed package caches under
+`cache/workspace-packages/`, independent of FastBuild. Unchanged packages retain
+validated outputs; deleted required outputs restore from cache. Unchanged web
+inputs and shared dependencies reuse the exact Next output rather than rebuilding
+its BUILD_ID. Package source, dependency keys, root manifest/lock/patches,
+toolchain environment and web build environment participate in invalidation.
+Ready packages run concurrently, bounded by available processors and 20 slots;
+the workspace mutation lock still serializes separate builds sharing this cache.
+Successful snapshots are not copied back over freshly built outputs, and there
+is no second aggregate workspace snapshot. First use fills the new package caches;
+whole-build content equivalence and speedup are not yet qualified.
 
 Whole-build speedup and real-archive equivalence still require an approved measurement
 window. Do not run a performance build alongside a release build. The first-pass
