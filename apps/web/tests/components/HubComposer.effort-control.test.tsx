@@ -194,11 +194,9 @@ function Shell({
 }) {
   const [config, setConfig] = useState(initialConfig);
   const rail = useHubRailController({
-    projects: [PROJECT],
     currentSessionId: null,
     onOpenSession: vi.fn(),
     onNewProject: vi.fn(),
-    onOpenProject: vi.fn(),
     onNavigateDestination: vi.fn(),
   });
 

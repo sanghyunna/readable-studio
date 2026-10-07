@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 
 import { act, cleanup, render, renderHook, waitFor } from '@testing-library/react';
+import type { RailResponse } from '@readable-studio/contracts';
 import { useHubRailController } from '../../src/components/hub/useHubRailController';
-import type { Project } from '../../src/types';
+import { RUNS_CHANGED_EVENT } from '../../src/providers/daemon';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectView } from '../../src/components/ProjectView';
 
@@ -27,6 +28,10 @@ const patchProject = vi.fn();
 const saveMessage = vi.fn();
 const saveTabs = vi.fn();
 const navigate = vi.fn();
+const { fetchRail, deleteRailSession } = vi.hoisted(() => ({
+  fetchRail: vi.fn(),
+  deleteRailSession: vi.fn(),
+}));
 
 // Capture the props ChatPane receives so the test can drive
 // `onDeleteConversation` directly — ChatPane itself is mocked to a
@@ -92,6 +97,13 @@ vi.mock('../../src/state/projects', () => ({
   patchProject: (...args: unknown[]) => patchProject(...args),
   saveMessage: (...args: unknown[]) => saveMessage(...args),
   saveTabs: (...args: unknown[]) => saveTabs(...args),
+}));
+
+vi.mock('../../src/state/rail', async (original) => ({
+  ...await original<typeof import('../../src/state/rail')>(),
+  fetchRail,
+  deleteSession: deleteRailSession,
+  subscribeRailEvents: () => () => undefined,
 }));
 
 vi.mock('../../src/components/AppChromeHeader', () => ({
@@ -182,11 +194,34 @@ describe('ProjectView conversation delete', () => {
     const fork = { ...original, id: 'fork', title: 'Original fork', updatedAt: 2 };
     const message = { id: 'last-message', role: 'assistant' as const, content: 'Last response' };
     let stored = [original];
+    const railFixture = (): RailResponse => ({
+      folders: [{
+        id: 'folder-1', name: 'Project', createdAt: 1, updatedAt: 1,
+        sessions: stored.map((conversation) => ({
+          id: conversation.id,
+          workspaceId: 'project-1',
+          folderId: 'folder-1',
+          title: conversation.title,
+          createdAt: conversation.createdAt,
+          updatedAt: conversation.updatedAt,
+          messageCount: 0,
+          state: 'idle',
+          workspaceSessionCount: 1,
+        })),
+      }],
+      recents: [],
+      generatedAt: 1,
+    });
+    fetchRail.mockImplementation(async () => ({ ok: true, rail: railFixture() }));
     listConversations.mockImplementation(async () => stored);
     listMessages.mockResolvedValue([message]);
     readConversations.mockImplementation(async () => ({ ok: true, conversations: stored }));
     createConversation.mockImplementation(async () => { stored = [fork, original]; return fork; });
     deleteConversation.mockImplementation(async (_projectId: string, id: string) => {
+      stored = stored.filter((row) => row.id !== id);
+      return true;
+    });
+    deleteRailSession.mockImplementation(async (id: string) => {
       stored = stored.filter((row) => row.id !== id);
       return true;
     });
@@ -200,13 +235,12 @@ describe('ProjectView conversation delete', () => {
     fetchChatRunStatus.mockResolvedValue(null);
     listActiveChatRuns.mockResolvedValue([]);
     reattachDaemonRun.mockResolvedValue(undefined);
-    const railProject: Project = { id: 'project-1', name: 'Project', skillId: null, designSystemId: null, createdAt: 1, updatedAt: 1 };
     const { result: rail, rerender } = renderHook(({ currentSessionId }: { currentSessionId: string }) =>
-      useHubRailController({ projects: [railProject], currentSessionId, onOpenSession: vi.fn(), onNewProject: vi.fn() }),
+      useHubRailController({ currentSessionId, onOpenSession: vi.fn(), onNewProject: vi.fn() }),
       { initialProps: { currentSessionId: 'original' } },
     );
     renderProjectView(vi.fn(), 'original');
-    await waitFor(() => expect(rail.current.allNodes[0]?.sessions.map((row) => row.id)).toEqual(['original']));
+    await waitFor(() => expect(rail.current.allTree.folders[0]?.sessions.map((row) => row.id)).toEqual(['original']));
     await waitFor(() => expect(chatPaneProps.onForkFromMessage).toBeDefined());
     await waitFor(() => expect(chatPaneProps.messages?.some((row) => row.id === message.id)).toBe(true));
 
@@ -215,20 +249,21 @@ describe('ProjectView conversation delete', () => {
     await waitFor(() => expect(createConversation).toHaveBeenCalled());
     await waitFor(() => expect(chatPaneProps.activeConversationId).toBe('fork'));
     rerender({ currentSessionId: 'fork' });
-    await waitFor(() => expect(rail.current.allNodes[0]?.sessions.map((row) => row.id)).toEqual(['fork', 'original']));
+    await act(async () => { window.dispatchEvent(new Event(RUNS_CHANGED_EVENT)); });
+    await waitFor(() => expect(rail.current.allTree.folders[0]?.sessions.map((row) => row.id)).toEqual(['fork', 'original']));
     expect(rail.current.currentSessionId).toBe('fork');
     expect(createConversation).toHaveBeenCalledWith('project-1', expect.anything(), expect.objectContaining({
       seedFromConversationId: 'original', forkAfterMessageId: message.id, seedMessages: [message],
     }));
 
     // Then: the actual rail action removes only the selected id; the sibling survives.
-    const victim = rail.current.allNodes[0]?.sessions.find((row) => row.id === deletedSide);
+    const victim = rail.current.allTree.folders[0]?.sessions.find((row) => row.id === deletedSide);
     if (!victim) throw new Error('Fixture victim absent from rail');
     act(() => rail.current.deleteSession(victim));
     await act(async () => { rail.current.commitPendingSessionDeletion(); });
     const survivor = deletedSide === 'fork' ? 'original' : 'fork';
-    expect(deleteConversation).toHaveBeenCalledExactlyOnceWith('project-1', deletedSide);
-    expect(rail.current.allNodes[0]?.sessions.map((row) => row.id)).toEqual([survivor]);
+    expect(deleteRailSession).toHaveBeenCalledExactlyOnceWith(deletedSide);
+    expect(rail.current.allTree.folders[0]?.sessions.map((row) => row.id)).toEqual([survivor]);
   });
 
   it('triggers onProjectsRefresh after deleting a conversation', async () => {

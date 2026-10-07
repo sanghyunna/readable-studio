@@ -25,6 +25,11 @@ vi.mock('../../src/state/projects', async (original) => ({
   listPlugins: async () => [], listConversations: async () => [],
   readConversations: async () => ({ conversations: [], source: 'network' }),
 }));
+vi.mock('../../src/state/rail', async (original) => ({
+  ...await original<typeof import('../../src/state/rail')>(),
+  fetchRail: async () => ({ ok: true as const, rail: { folders: [], recents: [], generatedAt: 1 } }),
+  subscribeRailEvents: () => () => undefined,
+}));
 vi.mock('../../src/providers/registry', async (original) => ({
   ...await original<typeof import('../../src/providers/registry')>(),
   uploadProjectFiles: vi.fn(),
@@ -79,7 +84,7 @@ for (const surface of ['hub', 'workspace'] as const) {
             onAgentModelChange: (id: string, choice: { model?: string }) => setConfig(current => ({ ...current, agentModels: { [id]: choice } })),
             onApiProtocolChange: vi.fn(), onApiModelChange: vi.fn(), onOpenSettings: vi.fn(),
           };
-          return surface === 'hub' ? <HubTestHost projects={[]} currentSessionId={null} onOpenSession={vi.fn()} onNewProject={vi.fn()}><EntryShell {...execution}
+          return surface === 'hub' ? <HubTestHost currentSessionId={null} onOpenSession={vi.fn()} onNewProject={vi.fn()}><EntryShell {...execution}
             skills={[]} designTemplates={[]} designSystems={[]} projects={[]} templates={[]}
             defaultDesignSystemId={null} onConfigPersist={vi.fn()} onRefreshAgents={vi.fn(() => [])}
             onThemeChange={vi.fn()} onCreateProject={onAccepted} onCreatePluginShareProject={vi.fn()}
