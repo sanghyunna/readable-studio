@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { expect, test } from 'vitest';
 
-import { RAIL_V2_PROJECTS, writeRailV2Fixture } from '../fixtures/rail-v2.js';
+import { RAIL_V2_PROJECTS, writeRailV2Fixture } from '../lib/fixtures/rail-v2.js';
 import { createSmokeSuite } from '@/smoke-suite';
 
 test('migrates a v2 fixture into folders and standalone recent sessions exposed by /api/rail', async () => {
