@@ -5,6 +5,7 @@ import { performance } from "node:perf_hooks";
 
 import { isBuildProfilingEnabled, measureBuildStep, writeBuildProfile } from "./build-profile.js";
 import { withDirectoryLock } from "./lock.js";
+import { copyTreeConcurrent } from "./copy-tree.js";
 
 export const CACHE_SCHEMA_VERSION = 1;
 
@@ -86,6 +87,7 @@ export type CacheNode<TMetadata> = {
 
 export type CacheMaterializeTarget = {
   from: string;
+  concurrentTreeCopy?: boolean;
   // The node's successful build produced and snapshotted this destination.
   // Only trusted workspace producers may set this; hits still require restore.
   retainOnBuild?: boolean;
@@ -246,7 +248,8 @@ export class ToolPackCache {
       const sourcePath = join(sourceEntryPath, target.from);
       await rm(target.to, { force: true, recursive: true });
       await mkdir(dirname(target.to), { recursive: true });
-      await cp(sourcePath, target.to, { recursive: true });
+      if (target.concurrentTreeCopy) await copyTreeConcurrent(sourcePath, target.to);
+      else await cp(sourcePath, target.to, { recursive: true });
       if (options.markerKeyHash != null) await writeMarker(target, options.markerKeyHash);
     };
     const materializeTarget = async (target: CacheMaterializeTarget): Promise<void> => {
@@ -447,7 +450,8 @@ export class ToolPackCache {
       const sourcePath = join(entryPath, target.from);
       await rm(target.to, { force: true, recursive: true });
       await mkdir(dirname(target.to), { recursive: true });
-      await cp(sourcePath, target.to, { recursive: true });
+      if (target.concurrentTreeCopy) await copyTreeConcurrent(sourcePath, target.to);
+      else await cp(sourcePath, target.to, { recursive: true });
       await mkdir(dirname(markerPath), { recursive: true });
       await writeFile(markerPath, `${JSON.stringify({
         from: normalizedFrom,

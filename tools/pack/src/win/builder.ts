@@ -548,7 +548,7 @@ export async function runElectronBuilder(
   const signingCacheKey = resolveWinSigningCacheKey(config);
   const materialized = await runSegment("portable-zip:materialize-unpacked", async () => {
     const cached = await cache.readHit({
-      materialize: [{ from: "builder/win-unpacked", reuse: true, reuseRequiredPaths: [[`resources/${WEB_STANDALONE_RESOURCE_NAME}/apps/web/server.js`, `resources/${WEB_STANDALONE_RESOURCE_NAME}/server.js`], [`resources/app/${PI_RPC_ENTRY_RELATIVE_PATH}`], [`resources/app/${DATABRICKS_CLI_RELATIVE_PATH}`]], to: paths.unpackedRoot }],
+      materialize: [{ from: "builder/win-unpacked", concurrentTreeCopy: config.fastBuild === true, reuse: true, reuseRequiredPaths: [[`resources/${WEB_STANDALONE_RESOURCE_NAME}/apps/web/server.js`, `resources/${WEB_STANDALONE_RESOURCE_NAME}/server.js`], [`resources/app/${PI_RPC_ENTRY_RELATIVE_PATH}`], [`resources/app/${DATABRICKS_CLI_RELATIVE_PATH}`]], to: paths.unpackedRoot }],
       node,
     });
     if (cached == null) throw new Error("electron builder cache entry disappeared before portable zip materialization");
