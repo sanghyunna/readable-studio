@@ -1334,7 +1334,12 @@ export function HomeView({
       // The folder pill, if any, was set by the controller before the chip.
       const editorHost = homeViewRef.current?.querySelector<HTMLElement>('[data-testid="home-hero-input"]')
         ?? homeViewRef.current;
-      focusComposerWhenInteractive(editorHost, () => inputRef.current?.focusEnd());
+      const ownerAtRequest = document.activeElement;
+      focusComposerWhenInteractive(editorHost, () => {
+        const ownerNow = document.activeElement;
+        if (ownerNow !== ownerAtRequest && ownerNow !== document.body) return;
+        inputRef.current?.focusEnd();
+      });
     } else if (commandChip.id === 'continue') {
       void continueWithoutPrompt();
     } else {

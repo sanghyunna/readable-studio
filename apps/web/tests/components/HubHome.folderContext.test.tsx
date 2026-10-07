@@ -2,9 +2,11 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../../src/App';
-import { setHomeHeroPrompt } from '../helpers/home-hero-lexical';
+import { homeHeroPromptText, setHomeHeroPrompt } from '../helpers/home-hero-lexical';
 import { isReadableStudioHostAvailable, pickAndImportHostProject } from '@readable-studio/host';
-import { importFolderProject, pickLocalFolderPath } from '../../src/state/projects';
+import { importFolderProject, listTemplates, pickLocalFolderPath } from '../../src/state/projects';
+import { loadConfig } from '../../src/state/config';
+import { MODEL_SELECTION_REQUIRED_EVENT } from '../../src/components/agentModelSelection';
 
 vi.mock('../../src/components/InlineModelSwitcher', () => ({ InlineModelSwitcher: () => null }));
 vi.mock('../../src/components/DesignsTab', () => ({ DesignsTab: () => null }));
@@ -28,12 +30,12 @@ vi.mock('../../src/providers/registry', async (original) => ({
 }));
 vi.mock('../../src/state/config', async (original) => ({
   ...await original<typeof import('../../src/state/config')>(),
-  loadConfig: () => ({ mode: 'api', apiKey: '', baseUrl: '', model: 'qa-model', agentId: null, skillId: null, designSystemId: null, onboardingCompleted: true }),
+  loadConfig: vi.fn(() => ({ mode: 'api', apiKey: '', baseUrl: '', model: 'qa-model', agentId: null, skillId: null, designSystemId: null, onboardingCompleted: true })),
   fetchDaemonConfig: async () => ({}), saveConfig: vi.fn(), syncConfigToDaemon: async () => undefined,
 }));
 vi.mock('../../src/state/projects', async (original) => ({
   ...await original<typeof import('../../src/state/projects')>(),
-  listProjects: async () => [], listTemplates: async () => [], getProject: async () => workspace,
+  listProjects: async () => [], listTemplates: vi.fn(async () => []), getProject: async () => workspace,
   pickLocalFolderPath: vi.fn(), importFolderProject: vi.fn(),
 }));
 
@@ -44,6 +46,7 @@ let requests: Array<{ url: string; init?: RequestInit }>;
 
 beforeEach(() => {
   requests = [];
+  vi.mocked(listTemplates).mockResolvedValue([]);
   window.history.replaceState(null, '', '/');
   window.localStorage.clear();
   window.sessionStorage.clear();
@@ -78,6 +81,96 @@ async function openPlus() {
 }
 
 describe('Hub folder context', () => {
+  it('selected-folder saved template reaches the actual session HTTP body', async () => {
+    vi.mocked(listTemplates).mockResolvedValue([{
+      id: 'saved',
+      name: 'Saved starter',
+      description: '',
+      files: [{ name: 'index.html', content: '<h1>Saved</h1>' }],
+      createdAt: 1,
+    }]);
+    await startInFolder();
+    await openPlus();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('composer-plus-templates'));
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId('composer-plus-template-saved'));
+    });
+    await screen.findByTestId('created-workspace');
+
+    const posts = requests.filter(({ url, init }) =>
+      url === '/api/sessions' && init?.method === 'POST');
+    expect(posts).toHaveLength(1);
+    expect(JSON.parse(String(posts[0]!.init!.body))).toMatchObject({
+      folderId: folder.id,
+      conversationMode: 'design',
+      metadata: { kind: 'template', templateId: 'saved' },
+      selection: { agentId: null, agentModels: {} },
+    });
+    expect(window.location.pathname).toBe('/projects/workspace-1/conversations/session-1');
+  });
+
+  it('missing model prevents POST and preserves the selected-folder draft', async () => {
+    vi.mocked(loadConfig).mockReturnValueOnce({ ...loadConfig(), model: '' });
+    await startInFolder();
+    const input = screen.getByTestId('home-hero-input');
+    const draft = 'Keep this selected-folder draft until I choose a model';
+    setHomeHeroPrompt(draft);
+
+    const required = vi.fn();
+    window.addEventListener(MODEL_SELECTION_REQUIRED_EVENT, required, { once: true });
+    try {
+      await act(async () => {
+        fireEvent.keyDown(input, { key: 'Enter', keyCode: 13 });
+      });
+      expect(required).toHaveBeenCalledOnce();
+      expect(requests.filter(({ url, init }) =>
+        url === '/api/sessions' && init?.method === 'POST')).toHaveLength(0);
+      expect(homeHeroPromptText()).toBe(draft);
+      expect(screen.getByTestId('home-hero-input')).toBe(input);
+      expect(screen.getByTestId('home-hero-folder-chip').textContent).toContain(folder.name);
+      expect(window.location.pathname).toBe('/');
+      expect(window.sessionStorage.getItem('readable:auto-send-first:workspace-1')).toBeNull();
+      expect(window.sessionStorage.getItem('readable:auto-send-attachments:workspace-1')).toBeNull();
+    } finally {
+      window.removeEventListener(MODEL_SELECTION_REQUIRED_EVENT, required);
+    }
+  });
+
+  it.each([false, true])('deferred new-session focus respects ownership (changed=%s)', async (changed) => {
+    await startInFolder();
+    const input = screen.getByTestId('home-hero-input');
+    const gate = screen.getByTestId('hub-composer');
+    const trigger = screen.getByTestId('hub-new-session');
+    gate.setAttribute('inert', '');
+    trigger.focus();
+
+    await act(async () => { fireEvent.click(trigger); });
+    expect(gate.hasAttribute('inert')).toBe(true);
+    expect(document.activeElement).toBe(trigger);
+
+    const owner = screen.getByTestId('hub-search');
+    if (changed) {
+      owner.focus();
+      expect(document.activeElement).toBe(owner);
+    }
+    const opened = new Promise<void>((resolve) => {
+      const observer = new MutationObserver(() => {
+        if (!gate.hasAttribute('inert')) {
+          observer.disconnect();
+          resolve();
+        }
+      });
+      observer.observe(gate, { attributes: true, attributeFilter: ['inert'] });
+    });
+    await act(async () => {
+      gate.removeAttribute('inert');
+      await opened;
+    });
+    expect(document.activeElement).toBe(changed ? owner : input);
+  }, 10000);
+
   it.each([true, false])('Enter POSTs a session in the selected folder or standalone (selected=%s)', async (selected) => {
     await startInFolder();
     if (!selected) {
