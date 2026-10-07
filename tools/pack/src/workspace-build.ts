@@ -324,6 +324,7 @@ export async function ensureWorkspaceBuildArtifacts(
       });
   const materialize = artifacts.map((artifact) => ({
     from: artifact.cachePath,
+    retainOnBuild: true,
     reuse: true,
     reuseRequiredPaths: artifact.requiredPathGroups,
     to: join(config.workspaceRoot, artifact.workspacePath),

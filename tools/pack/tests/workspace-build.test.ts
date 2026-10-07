@@ -137,6 +137,8 @@ describe("ensureWorkspaceBuildArtifacts", () => {
 
       expect(builds).toBe(1);
       expect(cache.report().entries.map((entry) => entry.status)).toEqual(["miss", "hit"]);
+      // The miss snapshot came from these validated outputs: never copy it back.
+      expect(cache.report().entries[0]!.materialized.every((target) => target.skipped === true)).toBe(true);
       expect(cache.report().entries.map((entry) => entry.nodeId)).toEqual([
         "win.workspace-build",
         "win.workspace-build",

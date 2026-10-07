@@ -16,6 +16,56 @@ async function pathExists(path: string): Promise<boolean> {
 }
 
 describe("ToolPackCache", () => {
+  it("retains a snapshotted build destination only after success and restores a missing hit", async () => {
+    const root = await mkdtemp(join(tmpdir(), "readable-cache-retain-"));
+    const cache = new ToolPackCache(join(root, "cache"));
+    const out = join(root, "out");
+    const materialize = [{ from: "payload", to: out, retainOnBuild: true, reuse: true, reuseRequiredPaths: [["value.txt"]] }];
+    let fail = true;
+    let builds = 0;
+    const node = {
+      id: "test.retain", key: "one", outputs: ["payload"], invalidate: async () => null,
+      build: async ({ entryRoot }: { entryRoot: string }) => {
+        builds += 1;
+        await mkdir(out, { recursive: true });
+        await writeFile(join(out, "value.txt"), "identical bytes");
+        await mkdir(join(entryRoot, "payload"), { recursive: true });
+        await writeFile(join(entryRoot, "payload", "value.txt"), "identical bytes");
+        if (fail) throw new Error("snapshot failed");
+        return {};
+      },
+    };
+    try {
+      await expect(cache.acquire({ materialize, node })).rejects.toThrow("snapshot failed");
+      expect(await pathExists(join(cache.root, "materialized"))).toBe(false);
+      fail = false;
+      await cache.acquire({ materialize, node });
+      expect(cache.report().entries.at(-1)?.materialized[0]?.skipped).toBe(true);
+      await rm(out, { recursive: true });
+      await cache.acquire({ materialize, node });
+      expect(builds).toBe(2);
+      expect(cache.report().entries.at(-1)?.materialized[0]?.skipped).toBeUndefined();
+      expect(await readFile(join(out, "value.txt"), "utf8")).toBe("identical bytes");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects retained destinations missing their required output", async () => {
+    const root = await mkdtemp(join(tmpdir(), "readable-cache-retain-missing-"));
+    const cache = new ToolPackCache(join(root, "cache"));
+    try {
+      await expect(cache.acquire({
+        materialize: [{ from: "payload", to: join(root, "missing"), retainOnBuild: true }],
+        node: {
+          id: "test.missing", key: "one", outputs: ["payload"], invalidate: async () => null,
+          build: async ({ entryRoot }) => { await writeFile(join(entryRoot, "payload"), "bytes"); return {}; },
+        },
+      })).rejects.toThrow("did not retain built destination");
+      expect(await pathExists(join(cache.root, "materialized"))).toBe(false);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("builds once, materializes copies, and reports cache hits", async () => {
     const root = await mkdtemp(join(tmpdir(), "readable-studio-tools-pack-cache-"));
     const cacheRoot = join(root, "cache");

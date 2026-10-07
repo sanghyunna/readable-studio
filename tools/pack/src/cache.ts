@@ -86,6 +86,9 @@ export type CacheNode<TMetadata> = {
 
 export type CacheMaterializeTarget = {
   from: string;
+  // The node's successful build produced and snapshotted this destination.
+  // Only trusted workspace producers may set this; hits still require restore.
+  retainOnBuild?: boolean;
   reuse?: boolean;
   reuseRequiredPaths?: string[][];
   to: string;
@@ -220,31 +223,39 @@ export class ToolPackCache {
     let reason: string | null = null;
 
     const materialized: CacheAcquireReport["materialized"] = [];
+    const writeMarker = async (target: CacheMaterializeTarget, markerKeyHash: string): Promise<void> => {
+      const markerPath = join(this.root, "materialized", hashText(target.to), "marker.json");
+      await mkdir(dirname(markerPath), { recursive: true });
+      await writeFile(markerPath, `${JSON.stringify({
+        from: normalizeRelativePath(target.from),
+        keyHash: markerKeyHash,
+        nodeId: node.id,
+        schemaVersion: 1,
+        to: target.to,
+      } satisfies CacheMaterializationMarker, null, 2)}\n`, "utf8");
+    };
     const copyFromEntry = async (
       sourceEntryPath: string,
       target: CacheMaterializeTarget,
       options: { markerKeyHash?: string },
     ): Promise<void> => {
-      const normalizedFrom = normalizeRelativePath(target.from);
       const sourcePath = join(sourceEntryPath, target.from);
       await rm(target.to, { force: true, recursive: true });
       await mkdir(dirname(target.to), { recursive: true });
       await cp(sourcePath, target.to, { recursive: true });
-      if (options.markerKeyHash != null) {
-        const markerPath = join(this.root, "materialized", hashText(target.to), "marker.json");
-        await mkdir(dirname(markerPath), { recursive: true });
-        await writeFile(markerPath, `${JSON.stringify({
-          from: normalizedFrom,
-          keyHash: options.markerKeyHash,
-          nodeId: node.id,
-          schemaVersion: 1,
-          to: target.to,
-        } satisfies CacheMaterializationMarker, null, 2)}\n`, "utf8");
-      }
+      if (options.markerKeyHash != null) await writeMarker(target, options.markerKeyHash);
     };
     const materializeTarget = async (target: CacheMaterializeTarget): Promise<void> => {
       const materializeStartedAt = Date.now();
       const normalizedFrom = normalizeRelativePath(target.from);
+      if (status !== "hit" && target.retainOnBuild === true) {
+        if (!(await materializedTargetIsReusable(target))) {
+          throw new Error(`cache node ${node.id} did not retain built destination: ${target.to}`);
+        }
+        await writeMarker(target, keyHash);
+        materialized.push({ durationMs: Date.now() - materializeStartedAt, from: normalizedFrom, skipped: true, to: target.to });
+        return;
+      }
       if (target.reuse === true && await materializedTargetIsReusable(target)) {
         const markerPath = join(this.root, "materialized", hashText(target.to), "marker.json");
         const marker = await readMaterializationMarker(markerPath);
