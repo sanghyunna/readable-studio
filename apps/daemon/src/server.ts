@@ -494,6 +494,9 @@ import { registerDesignSystemToolRoutes } from './routes/design-system-tool.js';
 import { registerDeployRoutes, registerDeploymentCheckRoutes } from './routes/deploy.js';
 import { registerMediaRoutes } from './media-routes.js';
 import { registerProjectRoutes, registerProjectArtifactRoutes, registerProjectFileRoutes, registerProjectUploadRoutes } from './project-routes.js';
+import { registerSessionRoutes } from './routes/sessions.js';
+import { registerFolderRoutes } from './routes/folders.js';
+import { registerRailRoutes } from './routes/rail.js';
 import { initializeConversationSelection, recentConversationSelection } from './conversation-selection.js';
 import { registerShortcutRoutes } from './shortcut-routes.js';
 import { registerFinalizeRoutes, registerImportRoutes, registerProjectExportRoutes } from './import-export-routes.js';
@@ -5278,7 +5281,7 @@ async function startServerWithProbeLifetime({
   });
   registerSocialShareRoutes(app, { http: httpDeps });
   registerSystemFontsRoutes(app, { http: httpDeps });
-  registerProjectRoutes(app, {
+  const projectRoutes = registerProjectRoutes(app, {
     db,
     design,
     http: httpDeps,
@@ -5296,6 +5299,18 @@ async function startServerWithProbeLifetime({
     appConfig: appConfigDeps,
     validation: validationDeps,
   });
+  registerSessionRoutes(app, {
+    db,
+    design,
+    http: httpDeps,
+    ids: idDeps,
+    paths: pathDeps,
+    projectStore: projectStoreDeps,
+    appConfig: appConfigDeps,
+    createWorkspaceWithSeed: projectRoutes.createWorkspaceWithSeed,
+  });
+  registerFolderRoutes(app, { db, http: httpDeps, ids: idDeps, paths: pathDeps, projectStore: projectStoreDeps });
+  registerRailRoutes(app, { db, design, http: httpDeps });
   registerDesktopApprovalRoutes(app, desktopApprovalBroker, sendDesktopApprovalError);
   registerShortcutRoutes(app, desktopApprovalToken);
   registerTerminalRoutes(app, {

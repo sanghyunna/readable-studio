@@ -22,6 +22,8 @@ import {
   resolvePluginSnapshot,
 } from './plugins/index.js';
 import type { RouteDeps } from './server-context.js';
+import { railEvents } from './rail-events.js';
+import { folderIdExists, touchFoldersAfterMove } from './routes/folders.js';
 import { listSkills } from './skills.js';
 import { isSafeId, ProjectFileContentConflictError, type ProjectFileWriteGuard } from './projects.js';
 import {
@@ -39,6 +41,15 @@ import {
 } from './project-checkpoints.js';
 
 export interface RegisterProjectRoutesDeps extends RouteDeps<'db' | 'design' | 'http' | 'paths' | 'projectStore' | 'projectFiles' | 'checkpoints' | 'approvals' | 'conversations' | 'templates' | 'status' | 'events' | 'ids' | 'telemetry' | 'appConfig' | 'validation'> {}
+
+export type CreateWorkspaceResult =
+  | { ok: true; project: any; conversationId: string; appliedPluginSnapshotId?: string }
+  | { ok: false; status: number; code?: string; message?: string; body?: unknown };
+
+export type CreateWorkspaceWithSeed = (
+  body: Record<string, any>,
+  seed?: { title?: string | null; folderId?: string | null },
+) => Promise<CreateWorkspaceResult>;
 
 export function cancelActiveConversationRuns(
   design: any,
@@ -797,7 +808,10 @@ function normalizeChatSessionMode(value: unknown): ChatSessionMode {
   return value === 'chat' ? 'chat' : 'design';
 }
 
-export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDeps) {
+export function registerProjectRoutes(
+  app: Express,
+  ctx: RegisterProjectRoutesDeps,
+): { createWorkspaceWithSeed: CreateWorkspaceWithSeed } {
   const { db, design } = ctx;
   registerMessageHistoryRoutes(app, db);
   const { sendApiError, createSseResponse } = ctx.http;
@@ -1116,84 +1130,101 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
     };
   }
 
-  app.post('/api/projects', async (req, res) => {
-    try {
-      const { id, name, projectLocationId, skillId, designSystemId, pendingPrompt, metadata, customInstructions, skipDiscoveryBrief } =
-        req.body || {};
-      if (req.body?.selection !== undefined && !isConversationSelection(req.body.selection)) {
-        return sendApiError(res, 400, 'BAD_REQUEST', 'Invalid conversation selection');
-      }
-      if (typeof id !== 'string' || !isSafeId(id)) {
-        return sendApiError(res, 400, 'BAD_REQUEST', 'invalid project id');
-      }
-      if (typeof name !== 'string' || !name.trim()) {
-        return sendApiError(res, 400, 'BAD_REQUEST', 'name required');
-      }
-      // baseDir is privileged: it lets a project root directly inside the
-      // user's filesystem. The /api/import/folder endpoint is the only
-      // path that's allowed to set it, because that's where realpath() +
-      // RUNTIME_DATA_DIR reentry checks live. Block client-supplied
-      // metadata.baseDir on this generic create endpoint so an attacker
-      // can't smuggle e.g. /etc through here. Same rule for
-      // originalBaseDir / importedFrom='folder' — only the import path
-      // owns those state fields.
-      if (metadata && typeof metadata === 'object') {
-        if ('baseDir' in metadata) {
-          return sendApiError(
-            res, 400, 'BAD_REQUEST',
-            'baseDir can only be set via POST /api/import/folder',
-          );
-        }
-        if ('fromTrustedPicker' in metadata) {
-          return sendApiError(
-            res, 400, 'BAD_REQUEST',
-            'fromTrustedPicker can only be set via POST /api/import/folder',
-          );
-        }
-      }
-      if (customInstructions !== undefined
-          && typeof customInstructions !== 'string'
-          && customInstructions !== null) {
-        return sendApiError(res, 400, 'BAD_REQUEST', 'customInstructions must be a string or null');
-      }
-      if (typeof customInstructions === 'string' && customInstructions.length > 5000) {
-        return sendApiError(res, 400, 'BAD_REQUEST', 'customInstructions exceeds 5 000 character limit');
-      }
-      if (skipDiscoveryBrief !== undefined && typeof skipDiscoveryBrief !== 'boolean') {
-        return sendApiError(res, 400, 'BAD_REQUEST', 'skipDiscoveryBrief must be a boolean');
-      }
-      const designSystemValidation = await validateProjectDesignSystemId(designSystemId);
-      if (!designSystemValidation.ok) {
-        return sendApiError(
-          res,
-          400,
-          designSystemValidation.code,
-          designSystemValidation.message,
+  /**
+   * Shared workspace-creation core for `POST /api/projects` and
+   * `POST /api/sessions`: validation, location dir, template seeding, plugin
+   * snapshot pinning and the seeded conversation. Throws on unexpected errors;
+   * callers map those to 400 as before.
+   */
+  async function createWorkspaceWithSeed(
+    body: Record<string, any>,
+    seed: { title?: string | null; folderId?: string | null } = {},
+  ): Promise<CreateWorkspaceResult> {
+    const fail = (status: number, code: string, message: string): CreateWorkspaceResult =>
+      ({ ok: false, status, code, message });
+    const { id, name, projectLocationId, skillId, designSystemId, pendingPrompt, metadata, customInstructions, skipDiscoveryBrief } =
+      body;
+    if (body.selection !== undefined && !isConversationSelection(body.selection)) {
+      return fail(400, 'BAD_REQUEST', 'Invalid conversation selection');
+    }
+    if (typeof id !== 'string' || !isSafeId(id)) {
+      return fail(400, 'BAD_REQUEST', 'invalid project id');
+    }
+    if (typeof name !== 'string' || !name.trim()) {
+      return fail(400, 'BAD_REQUEST', 'name required');
+    }
+    // baseDir is privileged: it lets a project root directly inside the
+    // user's filesystem. The /api/import/folder endpoint is the only
+    // path that's allowed to set it, because that's where realpath() +
+    // RUNTIME_DATA_DIR reentry checks live. Block client-supplied
+    // metadata.baseDir on this generic create endpoint so an attacker
+    // can't smuggle e.g. /etc through here. Same rule for
+    // originalBaseDir / importedFrom='folder' — only the import path
+    // owns those state fields.
+    if (metadata && typeof metadata === 'object') {
+      if ('baseDir' in metadata) {
+        return fail(400, 'BAD_REQUEST',
+          'baseDir can only be set via POST /api/import/folder',
         );
       }
-      const normalizedDesignSystemId = designSystemValidation.id;
-      const skillValidation = await validateProjectSkillId(skillId);
-      if (!skillValidation.ok) {
-        return sendApiError(res, 400, skillValidation.code, skillValidation.message);
+      if ('fromTrustedPicker' in metadata) {
+        return fail(400, 'BAD_REQUEST',
+          'fromTrustedPicker can only be set via POST /api/import/folder',
+        );
       }
-      const normalizedSkillId = skillValidation.id;
-      const selectedLocationId = await resolveCreateProjectLocationId(projectLocationId);
-      let externalProjectDir: string | null = null;
-      if (selectedLocationId !== BUILT_IN_PROJECT_LOCATION_ID) {
-        const location = (await configuredProjectLocations()).find((loc: any) => loc.id === selectedLocationId);
-        if (!location || location.builtIn) {
-          return sendApiError(res, 400, 'BAD_REQUEST', 'unknown project location');
-        }
-        if (getProject(db, id)) {
-          return sendApiError(res, 400, 'BAD_REQUEST', 'project id already exists');
-        }
-        externalProjectDir = await createLocationProjectDir(location, id);
+    }
+    if (customInstructions !== undefined
+        && typeof customInstructions !== 'string'
+        && customInstructions !== null) {
+      return fail(400, 'BAD_REQUEST', 'customInstructions must be a string or null');
+    }
+    if (typeof customInstructions === 'string' && customInstructions.length > 5000) {
+      return fail(400, 'BAD_REQUEST', 'customInstructions exceeds 5 000 character limit');
+    }
+    if (skipDiscoveryBrief !== undefined && typeof skipDiscoveryBrief !== 'boolean') {
+      return fail(400, 'BAD_REQUEST', 'skipDiscoveryBrief must be a boolean');
+    }
+    const designSystemValidation = await validateProjectDesignSystemId(designSystemId);
+    if (!designSystemValidation.ok) {
+      return fail(400,
+        designSystemValidation.code,
+        designSystemValidation.message,
+      );
+    }
+    const normalizedDesignSystemId = designSystemValidation.id;
+    const skillValidation = await validateProjectSkillId(skillId);
+    if (!skillValidation.ok) {
+      return fail(400, skillValidation.code, skillValidation.message);
+    }
+    const normalizedSkillId = skillValidation.id;
+    const selectedLocationId = await resolveCreateProjectLocationId(projectLocationId);
+    let externalProjectDir: string | null = null;
+    if (selectedLocationId !== BUILT_IN_PROJECT_LOCATION_ID) {
+      const location = (await configuredProjectLocations()).find((loc: any) => loc.id === selectedLocationId);
+      if (!location || location.builtIn) {
+        return fail(400, 'BAD_REQUEST', 'unknown project location');
       }
-      const projectMetadata =
-        metadata && typeof metadata === 'object'
+      if (getProject(db, id)) {
+        return fail(400, 'BAD_REQUEST', 'project id already exists');
+      }
+      externalProjectDir = await createLocationProjectDir(location, id);
+    }
+    const projectMetadata =
+      metadata && typeof metadata === 'object'
+        ? {
+            ...metadata,
+            ...(skipDiscoveryBrief === true ? { skipDiscoveryBrief: true } : {}),
+            ...(externalProjectDir
+              ? {
+                  baseDir: externalProjectDir,
+                  importedFrom: 'project-location',
+                  projectLocationId: selectedLocationId,
+                }
+              : {}),
+          }
+        : skipDiscoveryBrief === true
           ? {
-              ...metadata,
-              ...(skipDiscoveryBrief === true ? { skipDiscoveryBrief: true } : {}),
+              skipDiscoveryBrief: true,
               ...(externalProjectDir
                 ? {
                     baseDir: externalProjectDir,
@@ -1202,157 +1233,163 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
                   }
                 : {}),
             }
-          : skipDiscoveryBrief === true
+          : externalProjectDir
             ? {
-                skipDiscoveryBrief: true,
-                ...(externalProjectDir
-                  ? {
-                      baseDir: externalProjectDir,
-                      importedFrom: 'project-location',
-                      projectLocationId: selectedLocationId,
-                    }
-                  : {}),
+                kind: 'prototype',
+                baseDir: externalProjectDir,
+                importedFrom: 'project-location',
+                projectLocationId: selectedLocationId,
               }
-            : externalProjectDir
-              ? {
-                  kind: 'prototype',
-                  baseDir: externalProjectDir,
-                  importedFrom: 'project-location',
-                  projectLocationId: selectedLocationId,
-                }
-              : null;
-      const now = Date.now();
-      let project;
-      try {
-        if (externalProjectDir) {
-          await writeProjectManifest(externalProjectDir, {
-            schemaVersion: 1,
-            id,
-            name: name.trim(),
-            createdAt: now,
-            updatedAt: now,
-            skillId: normalizedSkillId,
-            designSystemId: normalizedDesignSystemId,
-          });
-        }
-        project = insertProject(db, {
+            : null;
+    const now = Date.now();
+    let project;
+    try {
+      if (externalProjectDir) {
+        await writeProjectManifest(externalProjectDir, {
+          schemaVersion: 1,
           id,
           name: name.trim(),
-          skillId: normalizedSkillId,
-          designSystemId: normalizedDesignSystemId,
-          pendingPrompt: pendingPrompt || null,
-          metadata: projectMetadata,
-          customInstructions:
-            typeof customInstructions === 'string'
-              ? customInstructions
-              : null,
           createdAt: now,
           updatedAt: now,
+          skillId: normalizedSkillId,
+          designSystemId: normalizedDesignSystemId,
         });
-      } catch (err) {
-        if (externalProjectDir) {
-          await rm(externalProjectDir, { recursive: true, force: true }).catch(() => {});
-        }
-        throw err;
       }
-      // Seed a default conversation so the UI always has somewhere to write.
-      const cid = randomUUID();
-      const initialSessionMode = normalizeChatSessionMode(
-        req.body?.conversationMode ?? req.body?.sessionMode,
-      );
-      insertConversation(db, {
-        id: cid,
-        projectId: id,
-        title: null,
-        sessionMode: initialSessionMode,
-        selection: req.body?.selection ?? recentConversationSelection(await readAppConfig(ctx.paths.RUNTIME_DATA_DIR)),
+      project = insertProject(db, {
+        id,
+        name: name.trim(),
+        skillId: normalizedSkillId,
+        designSystemId: normalizedDesignSystemId,
+        pendingPrompt: pendingPrompt || null,
+        metadata: projectMetadata,
+        customInstructions:
+          typeof customInstructions === 'string'
+            ? customInstructions
+            : null,
         createdAt: now,
         updatedAt: now,
       });
-      const explicitPlugin =
-        typeof req.body?.pluginId === 'string' && req.body.pluginId.trim().length > 0
-          ? true
-          : typeof req.body?.appliedPluginSnapshotId === 'string'
-            && req.body.appliedPluginSnapshotId.trim().length > 0;
-      let resolveBody =
-        explicitPlugin ? (req.body as Record<string, unknown>) : null;
-      if (!resolveBody && initialSessionMode === 'design') {
-        const fallbackPluginId = defaultScenarioPluginIdForProjectMetadata(projectMetadata);
-        if (fallbackPluginId && getInstalledPlugin(db, fallbackPluginId)) {
-          resolveBody = { ...(req.body || {}), pluginId: fallbackPluginId };
-        }
+    } catch (err) {
+      if (externalProjectDir) {
+        await rm(externalProjectDir, { recursive: true, force: true }).catch(() => {});
       }
-      let resolvedSnapshot = null;
-      if (resolveBody) {
-        const registry = await loadPluginRegistryView();
-        const resolved = resolvePluginSnapshot({
-          db,
-          body: resolveBody,
-          projectId: id,
-          conversationId: cid,
-          registry,
-          activeProjectDesignSystem:
-            typeof normalizedDesignSystemId === 'string' && normalizedDesignSystemId.length > 0
-              ? { id: normalizedDesignSystemId }
-              : undefined,
-        });
-        if (resolved && !resolved.ok) {
-          if (!explicitPlugin) {
-            console.warn(
-              `[plugins] default-scenario fallback skipped for project ${id}: ${resolved.body?.error?.code ?? 'unknown'}`,
-            );
-          } else {
-            return res.status(resolved.status).json(resolved.body);
-          }
+      throw err;
+    }
+    // Seed a default conversation so the UI always has somewhere to write.
+    const cid = randomUUID();
+    const initialSessionMode = normalizeChatSessionMode(
+      body.conversationMode ?? body.sessionMode,
+    );
+    insertConversation(db, {
+      id: cid,
+      projectId: id,
+      title: seed.title ?? null,
+      sessionMode: initialSessionMode,
+      folderId: seed.folderId,
+      selection: body.selection ?? recentConversationSelection(await readAppConfig(ctx.paths.RUNTIME_DATA_DIR)),
+      createdAt: now,
+      updatedAt: now,
+    });
+    const explicitPlugin =
+      typeof body.pluginId === 'string' && body.pluginId.trim().length > 0
+        ? true
+        : typeof body.appliedPluginSnapshotId === 'string'
+          && body.appliedPluginSnapshotId.trim().length > 0;
+    let resolveBody =
+      explicitPlugin ? (body as Record<string, unknown>) : null;
+    if (!resolveBody && initialSessionMode === 'design') {
+      const fallbackPluginId = defaultScenarioPluginIdForProjectMetadata(projectMetadata);
+      if (fallbackPluginId && getInstalledPlugin(db, fallbackPluginId)) {
+        resolveBody = { ...body, pluginId: fallbackPluginId };
+      }
+    }
+    let resolvedSnapshot = null;
+    if (resolveBody) {
+      const registry = await loadPluginRegistryView();
+      const resolved = resolvePluginSnapshot({
+        db,
+        body: resolveBody,
+        projectId: id,
+        conversationId: cid,
+        registry,
+        activeProjectDesignSystem:
+          typeof normalizedDesignSystemId === 'string' && normalizedDesignSystemId.length > 0
+            ? { id: normalizedDesignSystemId }
+            : undefined,
+      });
+      if (resolved && !resolved.ok) {
+        if (!explicitPlugin) {
+          console.warn(
+            `[plugins] default-scenario fallback skipped for project ${id}: ${resolved.body?.error?.code ?? 'unknown'}`,
+          );
         } else {
-          resolvedSnapshot = resolved;
+          return { ok: false, status: resolved.status, body: resolved.body };
         }
+      } else {
+        resolvedSnapshot = resolved;
       }
-      // For "from template" projects, seed the chosen template's snapshot
-      // HTML into the new project folder so the agent can Read/edit files
-      // on disk (the system prompt also embeds them, but a real on-disk
-      // copy lets the agent treat them as the project's working state).
-      if (
-        metadata &&
-        typeof metadata === 'object' &&
-        metadata.kind === 'template' &&
-        typeof metadata.templateId === 'string'
-      ) {
-        const tpl = getTemplate(db, metadata.templateId);
-        if (tpl && Array.isArray(tpl.files) && tpl.files.length > 0) {
-          await ensureProject(PROJECTS_DIR, id, projectMetadata);
-          for (const f of tpl.files) {
-            if (
-              !f ||
-              typeof f.name !== 'string' ||
-              typeof f.content !== 'string'
-            ) {
-              continue;
-            }
-            try {
-              await writeProjectFile(
-                PROJECTS_DIR,
-                id,
-                f.name,
-                Buffer.from(f.content, 'utf8'),
-                {},
-                projectMetadata,
-              );
-            } catch {
-              // Skip individual file failures — the template snapshot is
-              // best-effort; the agent still has the embedded copy.
-            }
+    }
+    // For "from template" projects, seed the chosen template's snapshot
+    // HTML into the new project folder so the agent can Read/edit files
+    // on disk (the system prompt also embeds them, but a real on-disk
+    // copy lets the agent treat them as the project's working state).
+    if (
+      metadata &&
+      typeof metadata === 'object' &&
+      metadata.kind === 'template' &&
+      typeof metadata.templateId === 'string'
+    ) {
+      const tpl = getTemplate(db, metadata.templateId);
+      if (tpl && Array.isArray(tpl.files) && tpl.files.length > 0) {
+        await ensureProject(PROJECTS_DIR, id, projectMetadata);
+        for (const f of tpl.files) {
+          if (
+            !f ||
+            typeof f.name !== 'string' ||
+            typeof f.content !== 'string'
+          ) {
+            continue;
+          }
+          try {
+            await writeProjectFile(
+              PROJECTS_DIR,
+              id,
+              f.name,
+              Buffer.from(f.content, 'utf8'),
+              {},
+              projectMetadata,
+            );
+          } catch {
+            // Skip individual file failures — the template snapshot is
+            // best-effort; the agent still has the embedded copy.
           }
         }
       }
+    }
+    return {
+      ok: true,
+      project: resolvedSnapshot?.ok ? getProject(db, id) ?? project : project,
+      conversationId: cid,
+      ...(resolvedSnapshot?.ok ? { appliedPluginSnapshotId: resolvedSnapshot.snapshotId } : {}),
+    };
+  }
+
+  function sendWorkspaceFailure(res: Response, failure: Extract<CreateWorkspaceResult, { ok: false }>) {
+    if (failure.body !== undefined) return res.status(failure.status).json(failure.body);
+    return sendApiError(res, failure.status, failure.code, failure.message);
+  }
+
+  app.post('/api/projects', async (req, res) => {
+    try {
+      const result = await createWorkspaceWithSeed(req.body || {});
+      if (!result.ok) return sendWorkspaceFailure(res, result);
       /** @type {import('@readable-studio/contracts').CreateProjectResponse} */
       const body = {
-        project: resolvedSnapshot?.ok ? getProject(db, id) ?? project : project,
-        conversationId: cid,
-        ...(resolvedSnapshot?.ok
-          ? { appliedPluginSnapshotId: resolvedSnapshot.snapshotId }
-          : {}),
+        project: result.project,
+        conversationId: result.conversationId,
+        ...(result.appliedPluginSnapshotId ? { appliedPluginSnapshotId: result.appliedPluginSnapshotId } : {}),
       };
+      railEvents.emit('session-created', [result.conversationId]);
       res.json(body);
     } catch (err: any) {
       sendApiError(res, 400, 'BAD_REQUEST', String(err));
@@ -1654,7 +1691,21 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
     if (!conv || conv.projectId !== req.params.id) {
       return res.status(404).json({ error: 'not found' });
     }
-    const updated = updateConversation(db, req.params.cid, req.body || {});
+    const patch = req.body || {};
+    const hasFolderId = Object.prototype.hasOwnProperty.call(patch, 'folderId');
+    if (hasFolderId && !folderIdExists(db, patch.folderId)) {
+      return sendApiError(res, 404, 'NOT_FOUND', 'folder not found');
+    }
+    // A pure move keeps the conversation's recency (recency = chat activity).
+    const moveOnly = hasFolderId && Object.keys(patch).every((key) => key === 'folderId');
+    const updated = updateConversation(
+      db,
+      req.params.cid,
+      moveOnly ? { folderId: patch.folderId, updatedAt: conv.updatedAt } : patch,
+    );
+    const moved = hasFolderId && (conv.folderId ?? null) !== (patch.folderId ?? null);
+    if (moved) touchFoldersAfterMove(db, conv.folderId ?? null, patch.folderId ?? null);
+    railEvents.emit(moved ? 'session-moved' : 'session-updated', [req.params.cid]);
     if (req.body?.selection) {
       const config = await readAppConfig(ctx.paths.RUNTIME_DATA_DIR);
       await writeAppConfig(ctx.paths.RUNTIME_DATA_DIR, { ...config, ...req.body.selection });
@@ -1668,6 +1719,7 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
       return res.status(404).json({ error: 'not found' });
     }
     deleteConversation(db, req.params.cid);
+    railEvents.emit('session-deleted', [req.params.cid]);
     res.json({ ok: true });
   });
 
@@ -2044,6 +2096,7 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
     res.json({ ok: true });
   });
 
+  return { createWorkspaceWithSeed };
 }
 
 export interface RegisterProjectArtifactRoutesDeps extends RouteDeps<'http' | 'uploads' | 'paths' | 'node' | 'artifacts'> {}

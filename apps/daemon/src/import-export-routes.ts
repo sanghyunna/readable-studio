@@ -4,6 +4,8 @@ import { recentConversationSelection } from './conversation-selection.js';
 import { STANDALONE_HTML_EXPORT_HEADERS } from '@readable-studio/contracts';
 import { buildProjectExportManifestResponse } from './project-export-manifest.js';
 import type { RouteDeps } from './server-context.js';
+import { railEvents } from './rail-events.js';
+import { folderIdExists } from './routes/folders.js';
 import { isSandboxModeEnabled } from './sandbox-mode.js';
 import { StandaloneHtmlBundleError, StandaloneHtmlLimitError, StandaloneHtmlResolutionError } from './standalone-html.js';
 import { bundleProjectStandaloneHtml, StandaloneHtmlSourceError } from './routes/standalone-html.js';
@@ -48,6 +50,12 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
           fs.promises.unlink(req.file.path).catch(() => {});
           return res.status(400).json({ error: 'expected a .zip file' });
         }
+        // Multipart text field; an empty value means standalone.
+        const folderId = typeof req.body?.folderId === 'string' && req.body.folderId ? req.body.folderId : null;
+        if (!folderIdExists(db, folderId)) {
+          fs.promises.unlink(req.file.path).catch(() => {});
+          return sendApiError(res, 404, 'NOT_FOUND', 'folder not found');
+        }
         const id = randomUUID();
         const now = Date.now();
         const baseName =
@@ -78,11 +86,13 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
           id: cid,
           projectId: id,
           title: 'Imported Claude Design project',
+          folderId,
           selection: recentConversationSelection(await readAppConfig(ctx.paths.RUNTIME_DATA_DIR)),
           createdAt: now,
           updatedAt: now,
         });
         setTabs(db, id, [imported.entryFile], imported.entryFile);
+        railEvents.emit('session-created', [cid]);
         res.json({
           project,
           conversationId: cid,
@@ -219,6 +229,10 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
       if (typeof baseDir !== 'string' || !baseDir.trim()) {
         return sendApiError(res, 400, 'BAD_REQUEST', 'baseDir required');
       }
+      const folderId = req.body?.folderId ?? null;
+      if (!folderIdExists(db, folderId)) {
+        return sendApiError(res, 404, 'NOT_FOUND', 'folder not found');
+      }
       const sandboxReason = rejectSandboxFolderImport();
       if (sandboxReason) {
         return sendApiError(res, 400, 'BAD_REQUEST', sandboxReason);
@@ -342,10 +356,12 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
         id: cid,
         projectId: id,
         title: `Imported from ${projectName}`,
+        folderId,
         selection: recentConversationSelection(await readAppConfig(ctx.paths.RUNTIME_DATA_DIR)),
         createdAt: now,
         updatedAt: now,
       });
+      railEvents.emit('session-created', [cid]);
       // Folder imports should land on Design Files so users can choose from
       // the imported folder's artifacts. Persist an empty saved tab state so
       // ProjectView does not auto-open the detected primary file on hydration.
