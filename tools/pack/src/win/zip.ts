@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { availableParallelism } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -8,6 +8,7 @@ import { isBuildProfilingEnabled } from "../build-profile.js";
 import type { ToolPackConfig } from "../config.js";
 import { winResources } from "../resources.js";
 import { pathExists } from './fs.js';
+import { mergeWinZipShards } from "./merge-zip.js";
 import type { WinBuiltAppManifest, WinPackTiming, WinPaths } from "./types.js";
 
 const execFileAsync = promisify(execFile);
@@ -82,6 +83,11 @@ export function resolvePortableZipCompression(value = process.env[PORTABLE_ZIP_C
 
 export function resolvePortableZipThreads(fastBuild = false): number | undefined {
   return fastBuild ? Math.min(20, availableParallelism()) : undefined;
+}
+
+export function resolvePortableZipShards(fastBuild = false): number | undefined {
+  const threads = resolvePortableZipThreads(fastBuild);
+  return threads != null && threads > 1 ? Math.min(4, threads) : undefined;
 }
 
 export function parseSevenZipTiming(stdout: string): { cpuSeconds: number; wallSeconds: number; averageBusyCores: number } | null {
@@ -176,37 +182,53 @@ export async function buildWinPortableZip(
   };
 
   const archiveListPath = `${paths.setupZipPath}.files.txt`;
+  let files: string[] = [];
   await runSegment("portable-zip:prepare", async () => {
     await mkdir(dirname(paths.setupZipPath), { recursive: true });
     await rm(paths.setupZipPath, { force: true });
     const pruneEntries = await resolveWinPortableZipLocalePruneEntries({ config, unpackedRoot: builtApp.unpackedRoot });
     const layout = await pathExists(join(builtApp.unpackedRoot, 'app', 'Readable Studio.exe'));
-    const files = layout
+    files = layout
       ? ['Readable Studio.exe', ...await collectPortableArchiveFiles(builtApp.unpackedRoot, new Set(pruneEntries), 'app')]
       : await collectPortableArchiveFiles(builtApp.unpackedRoot, new Set(pruneEntries));
     await writeFile(archiveListPath, `${files.join("\n")}\n`, "utf8");
   });
+  const compress = async (phase: string, output: string, list: string, threads = portableZipThreads) => runExecSegment(
+    phase, winResources.sevenZipExe,
+    ["a", "-tzip", `-mx=${portableZipCompression}`,
+      ...(threads == null ? [] : [`-mmt=${threads}`]),
+      ...(threads != null || isBuildProfilingEnabled() ? ["-bt"] : []),
+      ...PORTABLE_ZIP_METADATA_ARGS, "-scsUTF-8", output, `@${list}`],
+    { cwd: builtApp.unpackedRoot, outputPath: output },
+  );
   try {
     await runSegment("portable-zip:7z", async () => {
-      await runExecSegment(
-        "portable-zip:7z:process",
-        winResources.sevenZipExe,
-        [
-          "a",
-          "-tzip",
-          `-mx=${portableZipCompression}`,
-          ...(portableZipThreads == null ? [] : [`-mmt=${portableZipThreads}`]),
-          ...(portableZipThreads != null || isBuildProfilingEnabled() ? ["-bt"] : []),
-          ...PORTABLE_ZIP_METADATA_ARGS,
-          "-scsUTF-8",
-          paths.setupZipPath,
-          `@${archiveListPath}`,
-        ],
-        {
-          cwd: builtApp.unpackedRoot,
-          outputPath: paths.setupZipPath,
-        },
-      );
+      const shardCount = files.length >= 128 ? resolvePortableZipShards(config.fastBuild) ?? 1 : 1;
+      if (shardCount === 1) {
+        await compress("portable-zip:7z:process", paths.setupZipPath, archiveListPath);
+        return;
+      }
+      const scratch = await mkdtemp(join(dirname(paths.setupZipPath), ".zip-shards-"));
+      try {
+        const outputs: string[] = [];
+        const tasks: Array<() => Promise<void>> = [];
+        for (let i = 0; i < shardCount; i++) {
+          const list = join(scratch, `${i}.txt`);
+          const output = join(scratch, `${i}.zip`);
+          outputs.push(output);
+          // Round-robin large files and file-open work across independent readers.
+          await writeFile(list, `${files.filter((_, index) => index % shardCount === i).join("\n")}\n`, "utf8");
+          tasks.push(() => compress(`portable-zip:7z:shard-${i}`, output, list, Math.max(1, Math.floor(portableZipThreads! / shardCount))));
+        }
+        const running = tasks.map((task) => task());
+        await Promise.allSettled(running);
+        await Promise.all(running);
+        const merged = await runSegment("portable-zip:merge", () => mergeWinZipShards(outputs, paths.setupZipPath));
+        if (!merged) {
+          logWinZipProgress("portable-zip:shards-unsupported", { reason: "ZIP64 requires native single-process assembly" });
+          await compress("portable-zip:7z:process", paths.setupZipPath, archiveListPath);
+        }
+      } finally { await rm(scratch, { recursive: true, force: true }); }
     });
   } finally {
     await rm(archiveListPath, { force: true });

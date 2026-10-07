@@ -50,6 +50,7 @@ import {
   buildWinPortableZip,
   resolvePortableZipCompression,
   resolvePortableZipThreads,
+  resolvePortableZipShards,
 } from "./zip.js";
 import type {
   ElectronBuilderDirCacheMetadata,
@@ -81,6 +82,7 @@ export function buildWinPortableZipCacheKeyInput(input: {
   packagedConfig: string;
   portableZipCompression: number;
   readonly portableZipThreads?: number;
+  readonly portableZipShards?: number;
   namespace: string;
   packagedAppKey: string;
   packagedVersion: string;
@@ -95,6 +97,7 @@ export function buildWinPortableZipCacheKeyInput(input: {
     packagedVersion: input.packagedVersion,
     portableZipCompression: input.portableZipCompression,
     ...(input.portableZipThreads == null ? {} : { portableZipThreads: input.portableZipThreads }),
+    ...(input.portableZipShards == null ? {} : { portableZipShards: input.portableZipShards }),
     portableZipCacheVersion: WIN_PORTABLE_ZIP_CACHE_VERSION,
     signing: input.signing,
     target: "portable-zip",
@@ -114,6 +117,7 @@ function createWinPortableZipNode(input: {
   packagedVersion: string;
   portableZipCompression: number;
   readonly portableZipThreads?: number;
+  readonly portableZipShards?: number;
   signingCacheKey: unknown;
 }): CacheNode<{ createdAt: string; portableZipPath: string }> {
   return {
@@ -129,6 +133,7 @@ function createWinPortableZipNode(input: {
         packagedVersion: input.packagedVersion,
         portableZipCompression: input.portableZipCompression,
         portableZipThreads: input.portableZipThreads,
+        portableZipShards: input.portableZipShards,
         signing: input.signingCacheKey,
       }),
     ),
@@ -590,6 +595,7 @@ export async function runElectronBuilder(
       packagedVersion,
       portableZipCompression: resolvePortableZipCompression(),
       portableZipThreads: resolvePortableZipThreads(config.fastBuild),
+      portableZipShards: resolvePortableZipShards(config.fastBuild),
       signingCacheKey,
     });
     await cache.acquire({ materialize: [{ from: "portable.zip", reuse: true, to: paths.setupZipPath }], node: portableZipNode });
