@@ -7051,7 +7051,16 @@ async function startServerWithProbeLifetime({
   function rewritePluginAssetUrls(html: string, pluginId: string, baseDir: string) {
     if (typeof html !== 'string' || html.length === 0) return html;
     const safeBase = baseDir === '.' ? '' : baseDir;
-    const withAttrs = html.replace(
+    // Browser URL resolution covers srcset, CSS and runtime-built JS URLs,
+    // not just literal attributes. Put our base first and replace author bases
+    // so all document-relative references use the guarded plugin asset route.
+    const baseHref = `/api/plugins/${encodeURIComponent(pluginId)}/asset/${safeBase ? `${safeBase}/` : ''}`;
+    const baseTag = `<base href="${baseHref.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}">`;
+    const withoutBase = html.replace(/<base\b[^>]*>/gi, '');
+    const withBase = /<head\b[^>]*>/i.test(withoutBase)
+      ? withoutBase.replace(/<head\b[^>]*>/i, (head) => `${head}${baseTag}`)
+      : withoutBase.replace(/^(\s*<!doctype[^>]*>)?/i, (doctype) => `${doctype}${baseTag}`);
+    const withAttrs = withBase.replace(
       /(\s(?:src|href|poster)\s*=\s*)(['"])([^'"]+)(\2)/gi,
       (match, attr, quote, rawValue, closeQuote) => {
         const value = String(rawValue).trim();
@@ -7315,17 +7324,13 @@ async function startServerWithProbeLifetime({
       );
       res.setHeader('X-Content-Type-Options', 'nosniff');
       const ext = path.extname(resolved).toLowerCase();
-      const ct =
-        ext === '.html' ? 'text/html; charset=utf-8'
-        : ext === '.js'  ? 'application/javascript; charset=utf-8'
-        : ext === '.css' ? 'text/css; charset=utf-8'
-        : ext === '.json' ? 'application/json; charset=utf-8'
-        : ext === '.svg' ? 'image/svg+xml'
-        : ext === '.png' ? 'image/png'
-        : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg'
-        : 'application/octet-stream';
-      res.setHeader('Content-Type', ct);
-      res.send(buf);
+      // Express's MIME registry includes vendored WebP/AVIF and video formats.
+      res.type(ext || 'application/octet-stream');
+      if (ext === '.html' || ext === '.htm') {
+        res.send(rewritePluginAssetUrls(buf.toString('utf8'), req.params.id, path.posix.dirname(relpath)));
+      } else {
+        res.send(buf);
+      }
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }

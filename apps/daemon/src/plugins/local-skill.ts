@@ -18,6 +18,7 @@ import path from 'node:path';
 import { promises as fsp } from 'node:fs';
 import type { InstalledPluginRecord } from '@readable-studio/contracts';
 import { pickFirstLocalSkillPath } from './apply.js';
+import { withSkillRootPreamble } from '../skills.js';
 
 export interface PluginLocalSkill {
   body: string;
@@ -52,7 +53,11 @@ export async function loadPluginLocalSkill(
   if (!body) return null;
   const name = (manifest.title ?? manifest.name ?? plugin.id).toString();
   return {
-    body,
+    // Plugin-local skills bypass the global registry loader. Advertise the
+    // same staged root so relative side files are discoverable by the agent.
+    body: /\b(?:assets|references)\/|\bexample\.html\b/.test(body)
+      ? withSkillRootPreamble(body, path.dirname(abs))
+      : body,
     name,
     dir: path.dirname(abs),
     relpath: safeRel,
