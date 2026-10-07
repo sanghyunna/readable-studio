@@ -5,6 +5,8 @@ type ParserKind = string;
 
 type ParserState = {
   cursorTextSoFar: string;
+  cursorPendingText: string | null;
+  cursorThinking: boolean;
   openCodeToolUses: Set<string>;
   codexToolUses: Set<string>;
   codexErrorEmitted: boolean;
@@ -462,27 +464,42 @@ function emitCodexTodoList(item: JsonObject, onEvent: StreamEventHandler): boole
   return true;
 }
 
-function emitCursorTextDelta(text: string, onEvent: StreamEventHandler, state: ParserState): void {
-  if (!state.cursorTextSoFar) {
-    state.cursorTextSoFar = text;
-    onEvent({ type: 'text_delta', delta: text });
-    return;
-  }
-  if (text === state.cursorTextSoFar) {
-    return;
-  }
-  if (text.startsWith(state.cursorTextSoFar)) {
-    const delta = text.slice(state.cursorTextSoFar.length);
-    if (delta) onEvent({ type: 'text_delta', delta });
-    state.cursorTextSoFar = text;
-    return;
-  }
-  state.cursorTextSoFar += text;
-  onEvent({ type: 'text_delta', delta: text });
+function emitCursorTextDelta(text: string, onEvent: StreamEventHandler, state: ParserState, consolidated = false): void {
+  const delta = consolidated && text.startsWith(state.cursorTextSoFar)
+    ? text.slice(state.cursorTextSoFar.length)
+    : text;
+  state.cursorTextSoFar += delta;
+  if (delta) onEvent({ type: 'text_delta', delta });
+}
+
+function flushCursorPendingText(onEvent: StreamEventHandler, state: ParserState, consolidated = false): void {
+  if (state.cursorPendingText === null) return;
+  emitCursorTextDelta(state.cursorPendingText, onEvent, state, consolidated);
+  state.cursorPendingText = null;
 }
 
 function handleCursorEvent(obj: unknown, onEvent: StreamEventHandler, state: ParserState): boolean {
   if (!isRecord(obj)) return false;
+
+  // The CLI flushes a segment snapshot immediately before these boundaries.
+  // A timestamp alone cannot distinguish that snapshot from a real delta.
+  const segmentBoundary = (obj.type === 'tool_call' && obj.subtype === 'started') ||
+    obj.type === 'retry' || (obj.type === 'interaction_query' && obj.subtype === 'request');
+  if (obj.type !== 'assistant') {
+    flushCursorPendingText(onEvent, state, segmentBoundary);
+    if (segmentBoundary) state.cursorTextSoFar = '';
+  }
+
+  if (obj.type === 'thinking') {
+    if (obj.subtype === 'delta' && typeof obj.text === 'string' && obj.text) {
+      if (!state.cursorThinking) onEvent({ type: 'thinking_start' });
+      state.cursorThinking = true;
+      onEvent({ type: 'thinking_delta', delta: obj.text });
+    } else if (obj.subtype === 'completed') {
+      state.cursorThinking = false;
+    }
+    return true;
+  }
 
   if (obj.type === 'system' && obj.subtype === 'init') {
     onEvent({
@@ -496,11 +513,18 @@ function handleCursorEvent(obj: unknown, onEvent: StreamEventHandler, state: Par
   if (obj.type === 'assistant' && obj.message) {
     const text = extractCursorText(obj.message);
     if (!text) return false;
-    if (typeof obj.timestamp_ms === 'number') {
+    flushCursorPendingText(onEvent, state);
+    const consolidated = typeof obj.timestamp_ms !== 'number' || typeof obj.model_call_id === 'string';
+    if (consolidated) {
+      emitCursorTextDelta(text, onEvent, state, true);
+      state.cursorTextSoFar = '';
+    } else if (state.cursorTextSoFar && text.startsWith(state.cursorTextSoFar)) {
+      // Hold only ambiguous prefix-sharing chunks until the next frame proves
+      // whether this is a snapshot or a genuine (possibly repeated) delta.
+      state.cursorPendingText = text;
+    } else {
       emitCursorTextDelta(text, onEvent, state);
-      return true;
     }
-    emitCursorTextDelta(text, onEvent, state);
     return true;
   }
 
@@ -668,6 +692,8 @@ export function createJsonEventStreamHandler(kind: ParserKind, onEvent: StreamEv
   let buffer = '';
   const state: ParserState = {
     cursorTextSoFar: '',
+    cursorPendingText: null,
+    cursorThinking: false,
     openCodeToolUses: new Set<string>(),
     codexToolUses: new Set<string>(),
     codexErrorEmitted: false,
@@ -711,6 +737,7 @@ export function createJsonEventStreamHandler(kind: ParserKind, onEvent: StreamEv
     const rem = buffer.trim();
     buffer = '';
     if (rem) handleLine(rem);
+    if (kind === 'cursor-agent') flushCursorPendingText(onEvent, state);
     flushPendingArtifactText(state, onEvent);
   }
 

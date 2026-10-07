@@ -676,7 +676,8 @@ test('cursor stream emits suffix when final assistant extends partial text', () 
   ]);
 });
 
-test('cursor stream de-duplicates cumulative timestamped assistant chunks', () => {
+test('cursor stream preserves prefix-sharing timestamped deltas from the native CLI', () => {
+  // --stream-partial-output emits individual deltas, not cumulative snapshots.
   const { events, handler } = collectEvents('cursor-agent');
 
   handler.feed(
@@ -699,10 +700,12 @@ test('cursor stream de-duplicates cumulative timestamped assistant chunks', () =
     }) +
     '\n',
   );
+  handler.flush();
 
   assert.deepEqual(events, [
     { type: 'text_delta', delta: 'hello' },
-    { type: 'text_delta', delta: ' world' },
+    { type: 'text_delta', delta: 'hello world' },
+    { type: 'text_delta', delta: 'hello world' },
   ]);
 });
 

@@ -1,0 +1,14 @@
+{"type":"system","subtype":"init","model":"fixture-thinking-model","session_id":"fixture-session"}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"fixture"}]},"session_id":"fixture-session"}
+{"type":"thinking","subtype":"delta","text":"Plan A.","session_id":"fixture-session","timestamp_ms":1}
+{"type":"thinking","subtype":"completed","session_id":"fixture-session","timestamp_ms":1}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"A"}]},"session_id":"fixture-session","timestamp_ms":1}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"A"}]},"session_id":"fixture-session","model_call_id":"model-1","timestamp_ms":1}
+{"type":"tool_call","subtype":"started","call_id":"tool-1","tool_call":{"tool":{"case":"readToolCall","value":{"args":{"path":"README.md"}}}},"model_call_id":"model-1","session_id":"fixture-session","timestamp_ms":1}
+{"type":"tool_call","subtype":"completed","call_id":"tool-1","model_call_id":"model-1","tool_call":{"tool":{"case":"readToolCall","value":{"result":{"content":"fixture"}}}},"session_id":"fixture-session","timestamp_ms":1}
+{"type":"thinking","subtype":"delta","text":"Plan B.","session_id":"fixture-session","timestamp_ms":1}
+{"type":"thinking","subtype":"completed","session_id":"fixture-session","timestamp_ms":1}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"B"}]},"session_id":"fixture-session","timestamp_ms":1}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"B"}]},"session_id":"fixture-session","model_call_id":"model-2","timestamp_ms":1}
+{"type":"tool_call","subtype":"started","call_id":"tool-2","tool_call":{"tool":{"case":"readToolCall","value":{"args":{"path":"README.md"}}}},"model_call_id":"model-2","session_id":"fixture-session","timestamp_ms":1}
+{"type":"result","subtype":"success","is_error":false,"result":"AB","session_id":"fixture-session","usage":{"inputTokens":5,"outputTokens":2},"duration_ms":120}
