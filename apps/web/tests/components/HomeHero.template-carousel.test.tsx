@@ -510,6 +510,10 @@ describe('Hub template carousel', () => {
       const thumb = card.querySelector('.home-hero__template-thumb')!;
       const image = thumb.querySelector('img')!;
       expect(image.getAttribute('src')).toBe('/template-thumbnails/example-pricing-page.webp');
+      // Frame fill comes from the stylesheet contract (tests/styles/hub-template-thumb-frame),
+      // not an inline letterbox style.
+      expect(image.className).toBe('home-hero__template-img');
+      expect(image.getAttribute('style')).toBeNull();
       expect(thumb.querySelector('iframe')).toBeNull();
       fireEvent.error(image);
       const iframe = await screen.findByTitle(`${CATALOGUE[0]!.manifest.title_i18n?.ko} preview`);

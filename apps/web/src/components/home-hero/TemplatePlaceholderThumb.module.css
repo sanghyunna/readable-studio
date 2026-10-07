@@ -1,7 +1,7 @@
 /*
  * Designed static thumb for Hub templates without a renderable preview.
- * Fills the card's 10:9 `.home-hero__template-thumb` box (200 x 180 at the
- * rail's card width). Only shared tokens: the wash is the Hub accent tint,
+ * Fills the card's 16:9 `.home-hero__template-thumb` frame (200 x 112.5 at
+ * the rail's card width). Only shared tokens: the wash is the Hub accent tint,
  * the sheet is the elevated panel surface, the type lines are the muted ink.
  */
 
@@ -61,7 +61,7 @@
 
 /* Website: a browser window anchored at the top-left, bleeding right/bottom. */
 .website .sheet {
-  top: 16px;
+  top: 12px;
   left: 16px;
   right: -8px;
   bottom: -8px;
@@ -106,6 +106,12 @@
 .deck .page {
   justify-content: flex-end;
   padding: 10px 14px 12px;
+}
+
+/* The browser chrome takes 18px of the 16:9 frame, so the page body is
+   tighter than the report sheet's to keep the heading and body lines whole. */
+.website .page {
+  padding: 10px 14px;
 }
 
 .kicker {

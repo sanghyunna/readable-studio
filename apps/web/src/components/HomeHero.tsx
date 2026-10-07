@@ -2313,10 +2313,10 @@ function HubTemplateCard({
       <span className="home-hero__template-thumb" aria-hidden>
         {preview.kind === 'media' && preview.poster?.startsWith('/template-thumbnails/') ? (
           <img
+            className="home-hero__template-img"
             src={preview.poster}
             alt=""
             decoding="async"
-            style={{ width: '100%', height: '100%', objectFit: 'contain', objectPosition: 'top' }}
             onError={() => setFailedThumbnail(record.id)}
           />
         ) : preview.kind === 'placeholder' ? (
