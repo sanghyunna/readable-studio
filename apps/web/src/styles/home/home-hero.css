@@ -2878,15 +2878,16 @@
     transform var(--dur-quick) var(--ease-out);
 }
 
-/* Favorite star: a 26px hit area inside the thumb's top-right corner (card
-   padding 8 + 6 inset). OFF is a faint outline only, ON fills with the warm
-   token; a panel-colored halo behind the glyph keeps either state legible
-   on light and dark previews without a hard border. */
+/* Favorite star: a 26px hit area inside the thumb's top-LEFT corner (card
+   padding 8 + 6 inset); the selection check takes the top-right at the same
+   size and inset so the two never overlap. OFF is a faint outline only, ON
+   fills with the warm token; a panel-colored halo behind the glyph keeps
+   either state legible on light and dark previews without a hard border. */
 .home-hero__template-fav {
   appearance: none;
   position: absolute;
   top: 14px;
-  right: 14px;
+  left: 14px;
   z-index: 1;
   display: inline-flex;
   align-items: center;
@@ -2954,6 +2955,39 @@
     opacity: 1;
     pointer-events: auto;
   }
+}
+
+/* Selection check: the picked card's badge, top-RIGHT at the star's size
+   and inset. Stays mounted and class-toggled so it can fade; never a click
+   target (the card button owns the selection). */
+.home-hero__template-check {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-pill);
+  background: var(--hub-accent);
+  color: var(--hub-accent-fg);
+  box-shadow: var(--shadow-sm);
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.9);
+  transition:
+    opacity var(--dur-exit) var(--ease-out),
+    transform var(--dur-exit) var(--ease-out);
+}
+
+.home-hero__template-check.is-on {
+  opacity: 1;
+  transform: scale(1);
+  transition:
+    opacity var(--dur-enter) var(--ease-out),
+    transform var(--dur-enter) var(--ease-out);
 }
 
 .home-hero__template-card:disabled {

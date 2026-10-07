@@ -388,10 +388,78 @@ describe('Hub template carousel', () => {
     });
   });
 
-  it('hides the tab column while a creation chip names the type', () => {
-    renderHub({ activeChipId: 'deck' });
-    expect(screen.queryByTestId('hub-template-carousel-tabs')).toBeNull();
-    expect(screen.getByTestId('hub-template-carousel-rail').hasAttribute('aria-labelledby')).toBe(false);
+  it('a card pick never enters an expanded state: the tab column and the set stay, only the check moves', () => {
+    // Regression: picking a card used to switch the rail into a chip-scoped
+    // mode (tab column gone, set replaced by the chip's presets) the owner
+    // could not leave. The rail must look the same before and after a pick
+    // (the host activates the chip and the plugin), and no sub-category
+    // chip row may appear under the composer.
+    const { onPickExamplePlugin, rerender } = renderHub();
+    const before = screen.getAllByTestId('hub-template-card').map((card) => card.getAttribute('data-plugin-id'));
+    fireEvent.click(screen.getAllByTestId('hub-template-card')[0]!);
+    expect(onPickExamplePlugin).toHaveBeenCalledTimes(1);
+    rerender(
+      <I18nProvider initial="ko">
+        <HomeHero
+          surface="hub"
+          prompt=""
+          onPromptChange={() => undefined}
+          onSubmit={() => undefined}
+          activePluginTitle={CATALOGUE[4]!.title}
+          activePluginRecord={CATALOGUE[4]!}
+          activeChipId="deck"
+          onClearActivePlugin={() => undefined}
+          pluginOptions={CATALOGUE}
+          pluginsLoading={false}
+          pendingPluginId={null}
+          pendingChipId={null}
+          onPickPlugin={() => undefined}
+          onPickExamplePlugin={onPickExamplePlugin}
+          onPickChip={() => undefined}
+          onAddFiles={() => undefined}
+          contextItemCount={0}
+          error={null}
+        />
+      </I18nProvider>,
+    );
+    expect(screen.getByTestId('hub-template-carousel-tabs')).not.toBeNull();
+    expect(screen.getByTestId('hub-template-carousel-rail').getAttribute('aria-labelledby')).toBe(tabButton('deck').id);
+    expect(screen.getAllByTestId('hub-template-card').map((card) => card.getAttribute('data-plugin-id'))).toEqual(before);
+    const picked = screen.getAllByTestId('hub-template-card')
+      .find((card) => card.getAttribute('data-plugin-id') === 'example-guizang-ppt')!;
+    expect(picked.getAttribute('aria-pressed')).toBe('true');
+    expect(picked.classList.contains('is-active')).toBe(true);
+    expect(screen.queryByTestId('home-hero-subtype-row')).toBeNull();
+    expect(screen.queryByTestId('home-hero-plugin-presets')).toBeNull();
+    // The other tabs stay reachable (the way out of a mis-click).
+    fireEvent.click(tabButton('report'));
+    expect(screen.getAllByTestId('hub-template-card').map((card) => card.getAttribute('data-plugin-id')))
+      .toEqual(['example-hr-onboarding']);
+  });
+
+  it('keeps the favorite star and the selection check on opposite corners of every card', () => {
+    renderHub({ activeChipId: 'deck', activePluginRecord: CATALOGUE[4]!, activePluginTitle: CATALOGUE[4]!.title });
+    const item = screen.getAllByTestId('hub-template-item')[0]!;
+    const star = item.querySelector('[data-testid="hub-template-favorite"]')!;
+    const check = item.querySelector('[data-testid="hub-template-check"]')!;
+    expect(star.parentElement).toBe(item);
+    expect(check.parentElement).toBe(item);
+    expect(check.getAttribute('data-active')).toBe('true');
+    expect(check.classList.contains('is-on')).toBe(true);
+    // The check is a visual only; the card button carries the state.
+    expect(check.getAttribute('aria-hidden')).toBe('true');
+    expect(item.querySelector('.home-hero__plugin-preset-check')).toBeNull();
+    const css = readFileSync(resolve(__dirname, '../../src/styles/home/home-hero.css'), 'utf8');
+    const root = postcss.parse(css);
+    const decl = (selector: string) => Object.fromEntries(
+      (root.nodes.find((node): node is Rule => node.type === 'rule' && node.selector === selector)!.nodes)
+        .flatMap((node) => (node.type === 'decl' ? [[node.prop, node.value]] : [])),
+    );
+    const fav = decl('.home-hero__template-fav');
+    const badge = decl('.home-hero__template-check');
+    expect([fav.top, fav.left, fav.right]).toEqual(['14px', '14px', undefined]);
+    expect([badge.top, badge.right, badge.left]).toEqual(['14px', '14px', undefined]);
+    expect([fav.width, fav.height]).toEqual([badge.width, badge.height]);
   });
 
   it('picking a card seeds the composer through the example-plugin handler', () => {
@@ -463,13 +531,6 @@ describe('Hub template carousel', () => {
     renderHub(undefined, 'en');
     expect(screen.getByTestId('hub-template-carousel').getAttribute('data-collapsed')).toBe('false');
     expect(screen.getByText(en['homeHero.templateCarouselTitle'])).not.toBeNull();
-  });
-
-  it('follows the active creation type instead of the mixed rail', () => {
-    renderHub({ activeChipId: 'deck' });
-    const cards = screen.getAllByTestId('hub-template-card');
-    expect(cards.map((card) => card.getAttribute('data-plugin-id'))).toEqual(['example-guizang-ppt']);
-    expect(screen.queryByTestId('home-hero-plugin-presets')).toBeNull();
   });
 
   it('renders card thumbnails from the local example page, never from a remote host', async () => {

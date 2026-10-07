@@ -593,11 +593,11 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     );
   }, [activeExamplePlugins, activeChipId, selectedSubcategory, pluginOptions]);
 
-  // Hub template rail contents. With a chip active it mirrors that chip's
-  // filtered presets (same records, same order as the default surface shows);
-  // with no chip the rail shows the selected tab's FULL curated set - every
+  // Hub template rail contents: the selected tab's FULL curated set - every
   // template of that creation type, uncapped, in the curated / visual-appeal
-  // order the chip view uses.
+  // order the chip view uses. The rail never follows the active chip: a card
+  // pick must leave the rail (tab column, set, arrows) exactly as it was, so
+  // a mis-click is undone by clicking another card or the chip's (x).
   // Starred templates lead the rail (in starring order); the list is the
   // daemon-owned `templateFavorites` so it survives a reload.
   const [templateFavorites, setTemplateFavorites] = useState<string[]>([]);
@@ -618,12 +618,10 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   }, [surface]);
   const hubTemplateItems = useMemo<HubTemplateCarouselItem[]>(() => {
     if (surface !== 'hub') return [];
-    const items = activeChipId
-      ? filteredExamplePlugins.map((record) => ({ record, chipId: activeChipId }))
-      : homeHeroExamplePluginsForChip(templateRailTab, pluginOptions, locale, { limit: Infinity })
-        .map((record) => ({ record, chipId: templateRailTab }));
+    const items = homeHeroExamplePluginsForChip(templateRailTab, pluginOptions, locale, { limit: Infinity })
+      .map((record) => ({ record, chipId: templateRailTab }));
     return sortHubTemplateItemsByFavorite(items, templateFavorites);
-  }, [surface, activeChipId, filteredExamplePlugins, templateRailTab, pluginOptions, locale, templateFavorites]);
+  }, [surface, templateRailTab, pluginOptions, locale, templateFavorites]);
   function toggleHubTemplateFavorite(id: string) {
     // Optimistic: the star and the order flip at once; the write follows.
     templateFavoritesTouchedRef.current = true;
@@ -633,15 +631,13 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     void persistTemplateFavorites(next);
   }
   // The rail (with its tab column) stays mounted while ANY tab has templates,
-  // so an empty tab still leaves the other two reachable; with a chip active
-  // the rail follows the chip and shows only when that chip has presets.
+  // so an empty tab still leaves the other two reachable.
   const hubTemplateRailVisible = useMemo(() => {
     if (surface !== 'hub') return false;
-    if (activeChipId) return hubTemplateItems.length > 0;
     return hubTemplateItems.length > 0 || HUB_TEMPLATE_TAB_IDS.some(
       (id) => homeHeroExamplePluginsForChip(id, pluginOptions, locale, { limit: 1 }).length > 0,
     );
-  }, [surface, activeChipId, hubTemplateItems.length, pluginOptions, locale]);
+  }, [surface, hubTemplateItems.length, pluginOptions, locale]);
   // Per-type totals shown on the tab buttons so each tab reads as "open this
   // set" rather than a static label.
   const hubTemplateTabCounts = useMemo<Record<HubTemplateTabId, number>>(() => {
@@ -1728,7 +1724,10 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
         </RailGroup>
       )}
 
-      {activeSubChips.length > 0 && isSubChipParent(activeChipId) ? (
+      {/* Sub-category pills belong to the default surface's chip rail. On the
+          Hub a template pick activates the chip, and the pill row would land
+          under the composer on its own; the Hub never renders it. */}
+      {surface !== 'hub' && activeSubChips.length > 0 && isSubChipParent(activeChipId) ? (
         <SubTypeRow
           subChips={activeSubChips}
           selectedSlug={selectedSubcategory}
@@ -1776,7 +1775,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
           favorites={templateFavorites}
           onToggleFavorite={toggleHubTemplateFavorite}
           collapsed={templateRailCollapsed}
-          tab={activeChipId ? null : templateRailTab}
+          tab={templateRailTab}
           tabCounts={hubTemplateTabCounts}
           onTabChange={(next) => {
             writeTemplateCarouselTab(next);
@@ -1919,8 +1918,8 @@ function PluginPromptPresets({
 // A vertical tab column (deck / report / website) sits to the left of the
 // rail, inside the same accordion body so it collapses with the cards. The
 // column is its own single Tab stop: ArrowUp/ArrowDown walk the tabs and
-// select as they go. `tab` is null while a creation chip is active - the
-// chip already names the type, so the rail follows it and the column hides.
+// select as they go. The column and the set never change on a card pick;
+// the picked card only carries the selection check.
 function HubTemplateCarousel({
   activePluginId,
   collapsed,
@@ -1947,7 +1946,7 @@ function HubTemplateCarousel({
   onToggleFavorite: (id: string) => void;
   pendingPluginId: string | null;
   pulseFirstPreset?: boolean;
-  tab: HubTemplateTabId | null;
+  tab: HubTemplateTabId;
   tabCounts: Record<HubTemplateTabId, number>;
 }) {
   const { t } = useI18n();
@@ -2035,7 +2034,6 @@ function HubTemplateCarousel({
   }
 
   function handleTabListKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
-    if (!tab) return;
     const current = HUB_TEMPLATE_TAB_IDS.indexOf(tab);
     const last = HUB_TEMPLATE_TAB_IDS.length - 1;
     let next: number | null = null;
@@ -2143,8 +2141,7 @@ function HubTemplateCarousel({
       >
         <div className="accordion-collapsible-inner">
           <div className="home-hero__templates-deck">
-            {tab ? (
-              <div
+            <div
                 ref={tabListRef}
                 className="home-hero__templates-tabs"
                 data-testid="hub-template-carousel-tabs"
@@ -2182,8 +2179,7 @@ function HubTemplateCarousel({
                     </span>
                   </button>
                 ))}
-              </div>
-            ) : null}
+            </div>
             <div
               className={`home-hero__templates-viewport${railEdges.start ? ' is-at-start' : ''}${railEdges.end ? ' is-at-end' : ''}`}
               data-testid="hub-template-carousel-viewport"
@@ -2194,7 +2190,7 @@ function HubTemplateCarousel({
                 className="home-hero__templates-rail"
                 data-testid="hub-template-carousel-rail"
                 role="list"
-                aria-labelledby={tab ? `${tabIdPrefix}-${tab}` : undefined}
+                aria-labelledby={`${tabIdPrefix}-${tab}`}
                 onKeyDown={handleRailKeyDown}
               >
                 {items.map((item, index) => (
@@ -2250,8 +2246,9 @@ function HubTemplateCarousel({
 }
 
 // The list item is a wrapper: the pick button and the favorite star are
-// SIBLINGS (a button cannot nest a button), the star positioned over the
-// thumb's top-right corner. A star press never reaches the pick handler.
+// SIBLINGS (a button cannot nest a button). Two same-size overlays sit on
+// the thumb's corners: the star top-LEFT, the selection check top-RIGHT, so
+// they never cover each other. A star press never reaches the pick handler.
 function HubTemplateCard({
   active,
   disabled,
@@ -2306,6 +2303,7 @@ function HubTemplateCard({
       data-chip-id={chipId}
       disabled={disabled}
       tabIndex={tabIndex}
+      aria-pressed={active}
       onFocus={onFocus}
       onClick={() => onPick(record, chipId, seedPrompt)}
       title={description ? `${title} · ${description}` : title}
@@ -2329,11 +2327,6 @@ function HubTemplateCard({
         ) : (
           <PreviewSurface pluginId={record.id} pluginTitle={title} preview={preview} eager />
         )}
-        {active ? (
-          <span className="home-hero__plugin-preset-check" aria-hidden>
-            <Icon name="check" size={12} />
-          </span>
-        ) : null}
       </span>
       <span className="home-hero__template-title">
         <Icon name="sparkles" size={13} />
@@ -2361,6 +2354,16 @@ function HubTemplateCard({
     >
       <Icon name="star" size={16} />
     </button>
+    {/* Selection state lives on the card button (`aria-pressed`); the check
+        is its visual, kept mounted and class-toggled so it can fade. */}
+    <span
+      className={`home-hero__template-check${active ? ' is-on' : ''}`}
+      data-testid="hub-template-check"
+      data-active={active ? 'true' : 'false'}
+      aria-hidden
+    >
+      <Icon name="check" size={14} />
+    </span>
     </div>
   );
 }
