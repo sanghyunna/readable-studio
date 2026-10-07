@@ -2,12 +2,17 @@
 // JSX attached.
 //
 // This is the boundary between "who owns the rail's state" and "who renders
-// it". Today HubHome calls this hook and mounts `HubRail` itself; the intent is
-// for the shell (AppInner) to own ONE instance outside the keyed surface later,
-// with HubHome reading it through `useHubRail()` instead of creating a second.
-// Nothing in here assumes it lives inside the hub's DOM: the daemon reads, the
-// open-work / rail-width persistence, the keyboard bindings and the undo
-// window are all keyed off `window`, not off a component ancestor.
+// it". AppInner owns ONE instance outside the keyed surface and every rail
+// consumer reads it through `useHubRail()`. Nothing in here assumes it lives
+// inside the hub's DOM: the daemon reads, the open-work / rail-width
+// persistence, the keyboard bindings and the undo window are all keyed off
+// `window`, not off a component ancestor.
+//
+// The rail is a tree of folders (UI: projects) and standalone sessions
+// (recents), read in one request from `GET /api/rail` and refetched on mount,
+// on `RUNS_CHANGED_EVENT`, on the `rail-changed` SSE and after the rail's own
+// mutations. A folder groups sessions and nothing more: moving a session only
+// changes where it is listed.
 
 import {
   useCallback,
@@ -20,23 +25,28 @@ import {
   type RefObject,
 } from 'react';
 
+import type { DeleteFolderSessionsPolicy, RailResponse, RailSession } from '@readable-studio/contracts';
+
 import { useT } from '../../i18n';
 import { RUNS_CHANGED_EVENT } from '../../providers/daemon';
 import {
-  createConversation,
-  deleteConversation,
-  patchConversation,
-  readConversations,
-} from '../../state/projects';
-import type { Project } from '../../types';
+  createFolder as createFolderRequest,
+  deleteFolder as deleteFolderRequest,
+  deleteSession as deleteSessionRequest,
+  fetchRail,
+  moveSession as moveSessionRequest,
+  renameFolder as renameFolderRequest,
+  renameSession as renameSessionRequest,
+  subscribeRailEvents,
+} from '../../state/rail';
 import type { HubPaletteEntry } from './HubCommandPalette';
 import type { HubOpenWorkItem } from './HubOpenWork';
-import {
-  projectStateFromStatus,
-  sessionStateFromRunStatus,
-  type HubProjectNode,
-  type HubSessionNode,
-  type HubSessionsStatus,
+import type {
+  HubFolderNode,
+  HubRailTree,
+  HubSelectedFolder,
+  HubSessionNode,
+  HubSessionsStatus,
 } from './types';
 
 const OPEN_WORK_STORAGE_KEY = 'readable-studio:hub-open-work';
@@ -55,11 +65,8 @@ export const HUB_RAIL_WIDTH_MAX = 420;
 // The mockup's breakpoint. Below it the rail is ALWAYS the icon rail, so the
 // stored preference is irrelevant until the window widens again.
 const NARROW_RAIL_QUERY = '(max-width: 900px)';
-// The daemon serves conversation reads synchronously and Chromium limits
-// parallel HTTP/1 requests per origin. Launching one fetch per project lets a
-// large idle workspace fill both queues before the project with live work is
-// serviced. Keep the client wave bounded to the transport's useful parallelism.
-const SESSION_READ_CONCURRENCY = 6;
+/** A burst of `rail-changed` events (e.g. a folder delete) costs one refetch. */
+const RAIL_EVENT_COALESCE_MS = 150;
 
 function loadRailCollapsed(): boolean {
   if (typeof window === 'undefined') return false;
@@ -92,17 +99,60 @@ function loadOpenWorkIds(): string[] {
   }
 }
 
-/**
- * What the hub knows about ONE project's sessions.
- *
- * `sessions` is a cache: a failed read keeps the last good rows and marks them
- * stale rather than blanking the project, and a failure with no cache says so
- * instead of claiming the project has no sessions.
- */
-interface ProjectSessionsEntry {
-  status: HubSessionsStatus;
-  sessions: HubSessionNode[];
+function toSessionNode(session: RailSession, untitled: string): HubSessionNode {
+  return {
+    id: session.id,
+    workspaceId: session.workspaceId,
+    folderId: session.folderId,
+    title: session.title ?? untitled,
+    updatedAt: session.updatedAt,
+    state: session.state,
+    messageCount: session.messageCount,
+    ...(session.sessionMode === undefined ? {} : { sessionMode: session.sessionMode }),
+    workspaceSessionCount: session.workspaceSessionCount,
+  };
 }
+
+function toRailTree(rail: RailResponse, untitled: string): HubRailTree {
+  return {
+    folders: rail.folders.map((folder) => ({
+      id: folder.id,
+      name: folder.name,
+      updatedAt: folder.updatedAt,
+      sessions: folder.sessions.map((session) => toSessionNode(session, untitled)),
+    })),
+    recents: rail.recents.map((session) => toSessionNode(session, untitled)),
+  };
+}
+
+const byRecency = (a: HubSessionNode, b: HubSessionNode) =>
+  b.updatedAt - a.updatedAt || a.id.localeCompare(b.id);
+
+/** Place `session` under `folderId` (or recents), removing it from where it was. */
+function placeSession(tree: HubRailTree, session: HubSessionNode, folderId: string | null): HubRailTree {
+  const moved: HubSessionNode = { ...session, folderId };
+  const without = (sessions: HubSessionNode[]) => sessions.filter((s) => s.id !== session.id);
+  return {
+    folders: tree.folders.map((folder) => ({
+      ...folder,
+      sessions: folder.id === folderId
+        ? [...without(folder.sessions), moved].sort(byRecency)
+        : without(folder.sessions),
+    })),
+    recents: folderId === null
+      ? [...without(tree.recents), moved].sort(byRecency)
+      : without(tree.recents),
+  };
+}
+
+function mapSessions(tree: HubRailTree, map: (session: HubSessionNode) => HubSessionNode): HubRailTree {
+  return {
+    folders: tree.folders.map((folder) => ({ ...folder, sessions: folder.sessions.map(map) })),
+    recents: tree.recents.map(map),
+  };
+}
+
+const EMPTY_TREE: HubRailTree = { folders: [], recents: [] };
 
 export type HubPendingSessionDeletion = {
   readonly session: HubSessionNode;
@@ -110,9 +160,19 @@ export type HubPendingSessionDeletion = {
   readonly wasPeeked: boolean;
 };
 
-/** A session together with the project row it belongs to. */
+/** Where a session is listed: a folder, or "No project" (`id: null`). */
+export interface HubRailLocation {
+  readonly id: string | null;
+  /** The folder name, or the localized "No project" label. */
+  readonly name: string;
+}
+
+/** A session together with the folder it is listed in. */
 export interface HubRailSessionEntry {
-  readonly project: HubProjectNode;
+  /** `null` for a standalone session listed in recents. */
+  readonly folder: HubFolderNode | null;
+  /** Display location; `project.name` is the folder name or "No project". */
+  readonly project: HubRailLocation;
   readonly session: HubSessionNode;
 }
 
@@ -127,33 +187,24 @@ export type HubNavigateDestination =
   | 'plugins'
   | 'integrations';
 
-const EMPTY_SESSIONS: HubSessionNode[] = [];
-
 /** Everything the controller needs from whoever owns it. */
 export interface HubRailControllerInputs {
-  projects: Project[];
   currentSessionId: string | null;
-  /** Open an existing session directly in the workspace. */
-  onOpenSession: (projectId: string, conversationId: string) => void;
+  /** Open an existing session directly in its workspace. */
+  onOpenSession: (workspaceId: string, sessionId: string) => void;
   /**
-   * Land on the Hub. The controller follows it with the `new-project` command
+   * Land on the Hub. The controller follows it with the `new-session` command
    * chip, which the Hub composer consumes by focusing its editor - so the
    * owner only navigates; it never focuses.
    */
   onNewProject: () => void;
-  /** Open a project itself, including projects with no sessions. */
-  onOpenProject?: ((projectId: string) => void) | undefined;
-  /** Persisted rename/delete for a project row; the hub never invents these. */
-  onRenameProject?: ((projectId: string, name: string) => void) | undefined;
-  onDeleteProject?: ((projectId: string) => Promise<boolean | void> | boolean | void) | undefined;
   onNavigateDestination?: ((destination: HubNavigateDestination) => void) | undefined;
   /**
-   * Hold the per-project session reads. While `true` no read wave is issued
-   * and in-flight reads are aborted so they release the browser's request
-   * slots; cached rows stay on screen and unread projects stay `loading`.
-   * Flipping back to `false` fans out afresh, exactly as a remount would. The
-   * owner uses this to keep the rail from competing with project hydration or
-   * with a workspace that is loading its own conversation.
+   * Hold the rail read. While `true` no `GET /api/rail` is issued and an
+   * in-flight read is aborted so it releases the browser's request slot;
+   * the cached tree stays on screen. Flipping back to `false` reads afresh.
+   * The owner uses this to keep the rail from competing with a workspace that
+   * is loading its own conversation.
    */
   pauseSessionReads?: boolean | undefined;
   /**
@@ -166,10 +217,8 @@ export interface HubRailControllerInputs {
 
 /**
  * The rail's public surface. `HubRail` renders from it; the hub's start
- * surface reads the parts it depends on (`running`, `commandChip`, the
- * inspector, the undo toast, the palette). Optional row actions are exposed
- * as `undefined` when the owner supplied no callback, so the tree keeps its
- * "no menu item without a handler" contract.
+ * surface reads the parts it depends on (`running`, `commandChip`,
+ * `selectedFolder`, the inspector, the undo toast, the palette).
  */
 export interface HubRailController {
   readonly currentSessionId: string | null;
@@ -188,10 +237,14 @@ export interface HubRailController {
   readonly setQuery: (query: string) => void;
   readonly expandRailForSearch: () => void;
 
-  readonly allNodes: HubProjectNode[];
-  /** `allNodes` narrowed by the search query. */
-  readonly tree: HubProjectNode[];
-  readonly failedSessionReads: number;
+  /** The whole rail tree from `GET /api/rail`, minus sessions pending deletion. */
+  readonly allTree: HubRailTree;
+  /** `allTree` narrowed by the search query. */
+  readonly tree: HubRailTree;
+  /** One status for the whole rail; a failure renders one retry row. */
+  readonly railStatus: HubSessionsStatus;
+  /** Re-read `GET /api/rail` (the `hub.retrySessions` action). */
+  readonly retrySessions: () => void;
   readonly running: HubRailSessionEntry | null;
   readonly announcement: string;
 
@@ -205,15 +258,28 @@ export interface HubRailController {
   readonly openPeekedSession: (session: HubSessionNode) => void;
   readonly closeInspector: () => void;
 
-  readonly creatingSessionFor: string | null;
-  readonly newProject: () => void;
-  readonly newSession: (project: HubProjectNode) => void;
-  readonly retrySessions: (project: HubProjectNode) => void;
+  /**
+   * The folder the next composer submit creates its session in (the composer
+   * pill). Not persisted; cleared automatically when the folder disappears.
+   */
+  readonly selectedFolder: HubSelectedFolder | null;
+  readonly selectFolder: (folder: HubSelectedFolder) => void;
+  readonly clearSelectedFolder: () => void;
+  /**
+   * Go to the Hub composer with the caret in it (chip `new-session`). Without
+   * a folder it clears the selection (standalone session); with one it
+   * selects that folder first (folder `+`, folder menu, palette, Ctrl+Shift+N).
+   */
+  readonly newSession: (folder?: HubSelectedFolder) => void;
+
+  /** `PATCH /api/sessions/:id { folderId }`; `null` = "No project". */
+  readonly moveSession: (session: HubSessionNode, folderId: string | null) => Promise<boolean>;
   readonly renameSession: (session: HubSessionNode, title: string) => void;
+  /** Removes the row now; the DELETE fires when the undo window closes. */
   readonly deleteSession: (session: HubSessionNode) => void;
-  readonly openProject: ((project: HubProjectNode) => void) | undefined;
-  readonly renameProject: ((project: HubProjectNode, name: string) => void) | undefined;
-  readonly deleteProject: ((project: HubProjectNode) => void) | undefined;
+  readonly createFolder: (name: string) => Promise<HubFolderNode | null>;
+  readonly renameFolder: (folder: HubFolderNode, name: string) => Promise<boolean>;
+  readonly deleteFolder: (folder: HubFolderNode, sessions?: DeleteFolderSessionsPolicy) => Promise<boolean>;
 
   readonly pendingSessionDeletion: HubPendingSessionDeletion | null;
   readonly undoPendingSessionDeletion: () => void;
@@ -234,40 +300,30 @@ export interface HubRailController {
 }
 
 export function useHubRailController({
-  projects,
   currentSessionId,
   onOpenSession,
   onNewProject,
-  onOpenProject,
-  onRenameProject,
-  onDeleteProject,
   onNavigateDestination,
   pauseSessionReads = false,
   onCommandChip,
 }: HubRailControllerInputs): HubRailController {
   const t = useT();
-  const [sessionsByProject, setSessionsByProject] = useState<
-    Record<string, ProjectSessionsEntry>
-  >({});
+  const [railTree, setRailTree] = useState<HubRailTree>(EMPTY_TREE);
+  const [railStatus, setRailStatus] = useState<HubSessionsStatus>('loading');
   const [announcement, setAnnouncement] = useState('');
   const [query, setQuery] = useState('');
-  // One generation counter per project, so a retry (or a runs-changed refresh)
-  // can discard a slower in-flight response for the SAME project without
-  // touching any sibling's request.
-  const generationsRef = useRef(new Map<string, number>());
-  // Superseded reads must release the browser's per-origin request slots, not
-  // merely have their eventual responses ignored. Only the bounded worker wave
-  // below may add controllers, so this map also represents every active read.
-  const sessionReadControllersRef = useRef(new Map<string, AbortController>());
-  // Per-project in-flight guard for the new-session action: a double click
-  // must not create two empty conversations.
-  const creatingSessionRef = useRef(new Set<string>());
-  const [creatingSessionFor, setCreatingSessionFor] = useState<string | null>(null);
+  // A newer read (or a local mutation) supersedes an older in-flight read, so
+  // a slow response can never overwrite fresher state.
+  const railGenerationRef = useRef(0);
+  const railReadControllerRef = useRef<AbortController | null>(null);
+  const railLoadedRef = useRef(false);
+  const pauseRef = useRef(pauseSessionReads);
+  pauseRef.current = pauseSessionReads;
+  const [selectedFolderState, setSelectedFolderState] = useState<HubSelectedFolder | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [commandChip, setCommandChip] = useState<HubCommandChip | null>(null);
   const commandChipNonceRef = useRef(0);
   const paletteReturnRef = useRef<HTMLElement | null>(null);
-  const allNodesRef = useRef<HubProjectNode[]>([]);
   // Open work is client-side: which sessions the user is holding open. The
   // daemon has no concept of an open tab, so this must not be inferred from it.
   const [openWorkIds, setOpenWorkIds] = useState<string[]>(loadOpenWorkIds);
@@ -292,7 +348,7 @@ export function useHubRailController({
   const [pendingSessionDeletion, setPendingSessionDeletion] = useState<HubPendingSessionDeletion | null>(null);
   const pendingSessionDeletionRef = useRef<HubPendingSessionDeletion | null>(null);
   const mountedRef = useRef(true);
-  // Read through a ref so the fetch effect does not re-run when `t` changes
+  // Read through a ref so the fetch does not re-run when `t` changes
   // identity, while still rendering the translated fallback label.
   const untitledLabel = useRef(t('hub.untitledSession'));
   untitledLabel.current = t('hub.untitledSession');
@@ -390,183 +446,145 @@ export function useHubRailController({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [narrow, toggleRail]);
-  // Sessions are per-project on the daemon; there is no cross-project
-  // conversation endpoint. Load urgent project states first, then drain the
-  // rest through a bounded pool. This preserves progressive rendering without
-  // allowing hundreds of idle projects to starve the live-work strip.
-  const prioritizedProjectIds = useMemo(() => {
-    const priority = (project: Project): number => {
-      const state = projectStateFromStatus(project.status?.value);
-      if (state === 'running') return 0;
-      if (state === 'awaiting') return 1;
-      if (state === 'failed') return 2;
-      return 3;
-    };
-    return projects
-      .map((project, index) => ({ project, index }))
-      .sort((left, right) => priority(left.project) - priority(right.project) || left.index - right.index)
-      .map(({ project }) => project.id);
-  }, [projects]);
-  const projectLoadKey = prioritizedProjectIds.join('\u0000');
 
-  const loadProject = useCallback(async (projectId: string): Promise<void> => {
-    const generation = (generationsRef.current.get(projectId) ?? 0) + 1;
-    generationsRef.current.set(projectId, generation);
-    sessionReadControllersRef.current.get(projectId)?.abort();
-    const controller = new AbortController();
-    sessionReadControllersRef.current.set(projectId, controller);
-    const result = await readConversations(projectId, { signal: controller.signal });
-    // A response from a superseded request for this project is dropped
-    // outright, so a slow first read can never overwrite a newer retry.
-    if (generationsRef.current.get(projectId) !== generation) return;
-    if (sessionReadControllersRef.current.get(projectId) === controller) {
-      sessionReadControllersRef.current.delete(projectId);
-    }
-    setSessionsByProject((prev) => {
-      const cached = prev[projectId];
-      if (result.ok) {
-        return {
-          ...prev,
-          [projectId]: {
-            status: 'ready',
-            sessions: result.conversations.map((conversation) => ({
-              id: conversation.id,
-              projectId,
-              title: conversation.title ?? untitledLabel.current,
-              updatedAt: conversation.updatedAt,
-              state: sessionStateFromRunStatus(conversation.latestRun?.status),
-              ...(conversation.messageCount === undefined
-                ? {}
-                : { messageCount: conversation.messageCount }),
-              ...(conversation.sessionMode === undefined
-                ? {}
-                : { sessionMode: conversation.sessionMode }),
-            })),
-          },
-        };
-      }
-      // A failed read keeps this project's last known rows and marks them
-      // stale; with nothing cached it says the sessions are unavailable
-      // rather than claiming there are none. Siblings are untouched.
-      const keptSessions = cached?.sessions ?? EMPTY_SESSIONS;
-      return {
-        ...prev,
-        [projectId]: {
-          status: keptSessions.length > 0 ? 'stale' : 'unavailable',
-          sessions: keptSessions,
-        },
-      };
-    });
+  // Supersede any in-flight read: its response would predate a mutation or a
+  // newer read and must not land.
+  const invalidateRailRead = useCallback(() => {
+    railGenerationRef.current += 1;
+    railReadControllerRef.current?.abort();
+    railReadControllerRef.current = null;
   }, []);
 
-  useEffect(() => {
-    const ids = projectLoadKey ? projectLoadKey.split('\u0000') : [];
-    // Missing entries already derive as loading in allNodes. Preserve cache
-    // identity unless a project was removed; materializing loading adds a commit.
-    setSessionsByProject((prev) => {
-      const currentIds = new Set(ids);
-      if (Object.keys(prev).every((id) => currentIds.has(id))) return prev;
-      return Object.fromEntries(Object.entries(prev).filter(([id]) => currentIds.has(id)));
-    });
-    if (ids.length === 0) {
-      generationsRef.current.clear();
-      return undefined;
+  const loadRail = useCallback(async (): Promise<void> => {
+    if (pauseRef.current) return;
+    invalidateRailRead();
+    const generation = railGenerationRef.current;
+    const controller = new AbortController();
+    railReadControllerRef.current = controller;
+    const result = await fetchRail({ signal: controller.signal });
+    if (railGenerationRef.current !== generation || !mountedRef.current) return;
+    railReadControllerRef.current = null;
+    if (result.ok) {
+      railLoadedRef.current = true;
+      setRailTree(toRailTree(result.rail, untitledLabel.current));
+      setRailStatus('ready');
+      return;
     }
-    // The owner is holding reads back. The previous run's cleanup has already
-    // aborted anything in flight; this run issues nothing and the effect
-    // re-runs to fan out when the hold lifts.
+    if (result.aborted) return;
+    // A failed read keeps the last good tree and marks it stale; with nothing
+    // cached it says the sessions are unavailable rather than claiming none.
+    setRailStatus(railLoadedRef.current ? 'stale' : 'unavailable');
+  }, [invalidateRailRead]);
+
+  useEffect(() => {
+    // The owner is holding reads back; the previous run's cleanup already
+    // aborted anything in flight, and releasing the hold re-runs this effect.
     if (pauseSessionReads) return undefined;
-
-    let wave = 0;
-    const load = () => {
-      const currentWave = ++wave;
-      for (const [id, controller] of sessionReadControllersRef.current) {
-        generationsRef.current.set(id, (generationsRef.current.get(id) ?? 0) + 1);
-        controller.abort();
-      }
-      sessionReadControllersRef.current.clear();
-
-      let cursor = 0;
-      const worker = async () => {
-        while (currentWave === wave) {
-          const id = ids[cursor];
-          cursor += 1;
-          if (!id) return;
-          await loadProject(id);
-        }
-      };
-      for (let index = 0; index < Math.min(SESSION_READ_CONCURRENCY, ids.length); index += 1) {
-        void worker();
-      }
-    };
-
+    const load = () => { void loadRail(); };
     load();
     window.addEventListener(RUNS_CHANGED_EVENT, load);
     return () => {
       window.removeEventListener(RUNS_CHANGED_EVENT, load);
-      wave += 1;
-      // Bump every generation so responses still in flight are ignored
-      // instead of writing into an unmounted or re-keyed tree.
-      for (const id of ids) {
-        generationsRef.current.set(id, (generationsRef.current.get(id) ?? 0) + 1);
-        sessionReadControllersRef.current.get(id)?.abort();
-        sessionReadControllersRef.current.delete(id);
-      }
+      invalidateRailRead();
     };
-  }, [projectLoadKey, loadProject, pauseSessionReads]);
+  }, [invalidateRailRead, loadRail, pauseSessionReads]);
 
-  const allNodes = useMemo<HubProjectNode[]>(
-    () =>
-      projects.map((project) => {
-        const entry = sessionsByProject[project.id];
-        return {
-          id: project.id,
-          name: project.name,
-          updatedAt: project.updatedAt,
-          // A deleted session must leave the list immediately; a cached fetch
-          // result would otherwise keep rendering a row that no longer exists.
-          sessions: (entry?.sessions ?? EMPTY_SESSIONS).filter(
-            (session) => !removedSessionIds.includes(session.id),
-          ),
-          sessionsStatus: entry?.status ?? 'loading',
-          state: projectStateFromStatus(project.status?.value),
-        };
-      }),
-    [projects, sessionsByProject, removedSessionIds],
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const unsubscribe = subscribeRailEvents(() => {
+      if (timer !== null) return;
+      timer = setTimeout(() => {
+        timer = null;
+        void loadRail();
+      }, RAIL_EVENT_COALESCE_MS);
+    });
+    return () => {
+      unsubscribe();
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, [loadRail]);
+
+  /** Apply an optimistic patch, run the request, then reconcile with the daemon. */
+  const mutateRail = useCallback(
+    async <T,>(patch: ((tree: HubRailTree) => HubRailTree) | null, request: () => Promise<T>): Promise<T> => {
+      invalidateRailRead();
+      if (patch) setRailTree(patch);
+      const result = await request();
+      if (mountedRef.current) void loadRail();
+      return result;
+    },
+    [invalidateRailRead, loadRail],
   );
 
-  // The failure is announced as a count in the live region, so it is never
-  // carried by colour alone.
-  const failedSessionReads = useMemo(
-    () =>
-      allNodes.filter(
-        (project) =>
-          project.sessionsStatus === 'stale' || project.sessionsStatus === 'unavailable',
-      ).length,
-    [allNodes],
-  );
+  const retrySessions = useCallback(() => {
+    if (pauseSessionReads) return;
+    if (!railLoadedRef.current) setRailStatus('loading');
+    void loadRail();
+  }, [loadRail, pauseSessionReads]);
+
+  // A deleted session must leave the list immediately, before the DELETE
+  // fires at the end of the undo window.
+  const allTree = useMemo<HubRailTree>(() => {
+    if (removedSessionIds.length === 0) return railTree;
+    const keep = (session: HubSessionNode) => !removedSessionIds.includes(session.id);
+    return {
+      folders: railTree.folders.map((folder) => ({ ...folder, sessions: folder.sessions.filter(keep) })),
+      recents: railTree.recents.filter(keep),
+    };
+  }, [railTree, removedSessionIds]);
 
   // Search narrows the same rows the tree already renders instead of opening a
-  // second result list. A project name match keeps all of its sessions.
-  const tree = useMemo<HubProjectNode[]>(() => {
+  // second result list. A folder name match keeps all of its sessions.
+  const tree = useMemo<HubRailTree>(() => {
     const needle = query.trim().toLowerCase();
-    if (!needle) return allNodes;
-    return allNodes
-      .map((project) => {
-        if (project.name.toLowerCase().includes(needle)) return project;
-        return {
-          ...project,
-          sessions: project.sessions.filter((s) => s.title.toLowerCase().includes(needle)),
-        };
-      })
-      .filter(
-        (project) => project.sessions.length > 0 || project.name.toLowerCase().includes(needle),
-      );
-  }, [allNodes, query]);
+    if (!needle) return allTree;
+    const matches = (session: HubSessionNode) => session.title.toLowerCase().includes(needle);
+    return {
+      folders: allTree.folders
+        .map((folder) => (folder.name.toLowerCase().includes(needle)
+          ? folder
+          : { ...folder, sessions: folder.sessions.filter(matches) }))
+        .filter((folder) => folder.sessions.length > 0 || folder.name.toLowerCase().includes(needle)),
+      recents: allTree.recents.filter(matches),
+    };
+  }, [allTree, query]);
 
+  const noProjectLabel = t('hub.moveNoProject');
+  const sessionIndex = useMemo(() => {
+    const map = new Map<string, HubRailSessionEntry>();
+    for (const folder of allTree.folders) {
+      const project = { id: folder.id, name: folder.name };
+      for (const session of folder.sessions) map.set(session.id, { folder, project, session });
+    }
+    const none = { id: null, name: noProjectLabel };
+    for (const session of allTree.recents) map.set(session.id, { folder: null, project: none, session });
+    return map;
+  }, [allTree, noProjectLabel]);
+  const sessionIndexRef = useRef(sessionIndex);
   useLayoutEffect(() => {
-    allNodesRef.current = allNodes;
-  }, [allNodes]);
+    sessionIndexRef.current = sessionIndex;
+  }, [sessionIndex]);
+
+  // The selection follows the live tree: a renamed folder renames the pill,
+  // and a folder that no longer exists (deleted here or elsewhere) clears it.
+  const selectedFolder = useMemo<HubSelectedFolder | null>(() => {
+    if (!selectedFolderState) return null;
+    if (railStatus === 'loading' || railStatus === 'unavailable') return selectedFolderState;
+    const live = railTree.folders.find((folder) => folder.id === selectedFolderState.id);
+    if (!live) return null;
+    return live.name === selectedFolderState.name
+      ? selectedFolderState
+      : { id: live.id, name: live.name };
+  }, [railStatus, railTree.folders, selectedFolderState]);
+
+  const selectFolder = useCallback((folder: HubSelectedFolder) => {
+    setSelectedFolderState((current) =>
+      current?.id === folder.id && current.name === folder.name
+        ? current
+        : { id: folder.id, name: folder.name });
+  }, []);
+
+  const clearSelectedFolder = useCallback(() => setSelectedFolderState(null), []);
 
   const closePalette = useCallback(() => {
     setPaletteOpen(false);
@@ -585,33 +603,32 @@ export function useHubRailController({
     setPaletteOpen(true);
   }, [paletteOpen]);
 
-  const createSession = useCallback(async (project: HubProjectNode) => {
-    const conversation = await createConversation(project.id);
-    if (!conversation) return;
-    onOpenSession(project.id, conversation.id);
-  }, [onOpenSession]);
-
   const issueCommandChip = useCallback((id: string) => {
     const chip: HubCommandChip = { id, nonce: ++commandChipNonceRef.current };
     setCommandChip(chip);
     onCommandChip?.(chip);
   }, [onCommandChip]);
 
-  // "New project" everywhere (rail button, Ctrl/Cmd+N, Projects empty state):
-  // navigate to the Hub, then hand the composer a chip it answers by taking
-  // focus. Issuing the chip on an already-open Hub still focuses; nothing here
-  // is a no-op.
-  const newProject = useCallback(() => {
+  // "New session" everywhere (rail row, Ctrl/Cmd+N, folder `+`, Projects
+  // empty state): set the composer's folder context, navigate to the Hub, then
+  // hand the composer a chip it answers by taking focus. Issuing the chip on
+  // an already-open Hub still focuses; nothing here is a no-op.
+  const newSession = useCallback((folder?: HubSelectedFolder) => {
+    if (folder) selectFolder(folder);
+    else clearSelectedFolder();
     onNewProject();
     // Not `issueCommandChip`: the owner already navigated above, so the chip
     // must not also fire the palette's "go home" hook (a second navigation and
     // a spurious nav analytics click).
-    setCommandChip({ id: 'new-project', nonce: ++commandChipNonceRef.current });
-  }, [onNewProject]);
+    setCommandChip({ id: 'new-session', nonce: ++commandChipNonceRef.current });
+  }, [clearSelectedFolder, onNewProject, selectFolder]);
 
   const consumeCommandChip = useCallback((nonce: number) => {
     setCommandChip((current) => (current?.nonce === nonce ? null : current));
   }, []);
+
+  const currentSessionIdRef = useRef(currentSessionId);
+  currentSessionIdRef.current = currentSessionId;
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -621,16 +638,15 @@ export function useHubRailController({
         event.preventDefault();
         openPalette();
       } else if (primary && event.shiftKey && key === 'n') {
+        // A new session next to the current one: select its folder and go to
+        // the composer. A standalone current session starts a standalone one.
         event.preventDefault();
-        const focusedProjectId = document.activeElement instanceof HTMLElement
-          ? document.activeElement.closest<HTMLElement>('[data-project-id]')?.dataset.projectId
-          : undefined;
-        const project = allNodesRef.current.find((candidate) => candidate.id === focusedProjectId)
-          ?? allNodesRef.current[0];
-        if (project) void createSession(project);
+        const current = currentSessionIdRef.current;
+        const folder = current ? sessionIndexRef.current.get(current)?.folder : null;
+        newSession(folder ?? undefined);
       } else if (primary && !event.shiftKey && key === 'n') {
         event.preventDefault();
-        newProject();
+        newSession();
       } else if (primary && !event.shiftKey && key === 'i') {
         event.preventDefault();
         // Todo 11 owns the inspector. This event is its stable integration seam.
@@ -642,24 +658,26 @@ export function useHubRailController({
     };
     window.addEventListener('keydown', onKeyDown, { capture: true });
     return () => window.removeEventListener('keydown', onKeyDown, { capture: true });
-  }, [closePalette, createSession, newProject, openPalette, paletteOpen]);
+  }, [closePalette, newSession, openPalette, paletteOpen]);
 
   const paletteEntries = useMemo<HubPaletteEntry[]>(() => {
-    const projectEntries = allNodes.map((project) => ({
-      id: `project-${project.id}`,
+    // Choosing a folder makes it the composer's context; a folder has no
+    // workspace of its own to open.
+    const folderEntries = allTree.folders.map((folder) => ({
+      id: `folder-${folder.id}`,
       group: t('hub.projects'),
-      title: project.name,
+      title: folder.name,
       kind: 'project' as const,
-      activate: () => onOpenProject?.(project.id),
+      activate: () => newSession(folder),
     }));
-    const sessionEntries = allNodes.flatMap((project) => project.sessions.map((session) => ({
+    const sessionEntries = [...sessionIndex.values()].map(({ project, session }) => ({
       id: `session-${session.id}`,
       group: t('hub.treeLabel'),
       title: session.title,
       meta: project.name,
       kind: 'session' as const,
-      activate: () => onOpenSession(project.id, session.id),
-    })));
+      activate: () => onOpenSession(session.workspaceId, session.id),
+    }));
     const destinations = [
       ['home', t('entry.navHome')],
       ['projects', t('entry.navProjects')],
@@ -685,7 +703,7 @@ export function useHubRailController({
         kind: 'command' as const,
         activate: () => issueCommandChip(chipId),
       })),
-      ...projectEntries,
+      ...folderEntries,
       ...sessionEntries,
       ...destinations.map(([destination, title]) => ({
         id: `destination-${destination}`,
@@ -695,22 +713,12 @@ export function useHubRailController({
         activate: () => onNavigateDestination?.(destination),
       })),
     ];
-  }, [allNodes, issueCommandChip, onNavigateDestination, onOpenProject, onOpenSession, t]);
+  }, [allTree.folders, issueCommandChip, newSession, onNavigateDestination, onOpenSession, sessionIndex, t]);
 
   const running = useMemo(
-    () =>
-      allNodes
-        .flatMap((project) => project.sessions.map((session) => ({ project, session })))
-        .find((entry) => entry.session.state === 'running') ?? null,
-    [allNodes],
+    () => [...sessionIndex.values()].find((entry) => entry.session.state === 'running') ?? null,
+    [sessionIndex],
   );
-  const sessionIndex = useMemo(() => {
-    const map = new Map<string, HubRailSessionEntry>();
-    for (const project of allNodes) {
-      for (const session of project.sessions) map.set(session.id, { project, session });
-    }
-    return map;
-  }, [allNodes]);
 
   const openSession = useCallback(
     (session: HubSessionNode) => {
@@ -718,7 +726,7 @@ export function useHubRailController({
       updateOpenWorkIds((prev) =>
         prev.includes(session.id) ? prev : [session.id, ...prev],
       );
-      onOpenSession(session.projectId, session.id);
+      onOpenSession(session.workspaceId, session.id);
     },
     [onOpenSession, t, updateOpenWorkIds],
   );
@@ -731,7 +739,7 @@ export function useHubRailController({
         return [
           {
             sessionId: entry.session.id,
-            projectId: entry.project.id,
+            projectId: entry.session.workspaceId,
             title: entry.session.title,
             projectName: entry.project.name,
           },
@@ -800,21 +808,31 @@ export function useHubRailController({
     return () => window.removeEventListener(HUB_INSPECTOR_TOGGLE_EVENT, toggleInspector);
   }, [currentSessionId, sessionIndex]);
 
+  const moveSession = useCallback(
+    async (session: HubSessionNode, folderId: string | null): Promise<boolean> => {
+      if (session.folderId === folderId) return true;
+      const target = folderId === null
+        ? noProjectLabel
+        : (railTree.folders.find((folder) => folder.id === folderId)?.name ?? noProjectLabel);
+      const moved = await mutateRail(
+        (tree) => placeSession(tree, session, folderId),
+        () => moveSessionRequest(session.id, folderId),
+      );
+      if (moved && mountedRef.current) {
+        setAnnouncement(t('hub.sessionMoved', { name: session.title, target }));
+      }
+      return moved !== null;
+    },
+    [mutateRail, noProjectLabel, railTree.folders, t],
+  );
+
   const renameSession = useCallback((session: HubSessionNode, title: string) => {
-    setSessionsByProject((prev) => {
-      const entry = prev[session.projectId] ?? { status: 'ready', sessions: EMPTY_SESSIONS };
-      return {
-        ...prev,
-        [session.projectId]: {
-          ...entry,
-          sessions: entry.sessions.map((candidate) =>
-            candidate.id === session.id ? { ...candidate, title } : candidate,
-          ),
-        },
-      };
-    });
-    void patchConversation(session.projectId, session.id, { title });
-  }, []);
+    void mutateRail(
+      (tree) => mapSessions(tree, (candidate) =>
+        candidate.id === session.id ? { ...candidate, title } : candidate),
+      () => renameSessionRequest(session.id, title),
+    );
+  }, [mutateRail]);
 
   const restorePendingSession = useCallback(
     (pending: HubPendingSessionDeletion) => {
@@ -832,7 +850,7 @@ export function useHubRailController({
     if (!pending) return;
     pendingSessionDeletionRef.current = null;
     setPendingSessionDeletion(null);
-    void deleteConversation(pending.session.projectId, pending.session.id).then((ok) => {
+    void deleteSessionRequest(pending.session.id).then((ok) => {
       if (!ok && mountedRef.current) restorePendingSession(pending);
     });
   }, [restorePendingSession]);
@@ -852,7 +870,7 @@ export function useHubRailController({
       const pending = pendingSessionDeletionRef.current;
       pendingSessionDeletionRef.current = null;
       if (pending) {
-        void deleteConversation(pending.session.projectId, pending.session.id);
+        void deleteSessionRequest(pending.session.id);
       }
     };
   }, []);
@@ -875,108 +893,59 @@ export function useHubRailController({
     [commitPendingSessionDeletion, peekedSessionId, t, updateOpenWorkIds],
   );
 
-  const renameProject = useMemo(
-    () =>
-      onRenameProject
-        ? (project: HubProjectNode, name: string) => {
-            onRenameProject(project.id, name);
-          }
-        : undefined,
-    [onRenameProject],
-  );
+  const createFolder = useCallback(async (name: string): Promise<HubFolderNode | null> => {
+    const trimmed = name.trim();
+    if (!trimmed) return null;
+    const created = await mutateRail(null, () => createFolderRequest(trimmed));
+    if (!created) return null;
+    const node: HubFolderNode = { id: created.id, name: created.name, updatedAt: created.updatedAt, sessions: [] };
+    // Show the new folder at once; the reconcile read started above confirms it.
+    if (mountedRef.current) {
+      setRailTree((tree) => tree.folders.some((folder) => folder.id === node.id)
+        ? tree
+        : { ...tree, folders: [node, ...tree.folders] });
+    }
+    return node;
+  }, [mutateRail]);
 
-  const deleteProject = useMemo(
-    () =>
-      onDeleteProject
-        ? (project: HubProjectNode) => {
-            updateOpenWorkIds((prev) =>
-              prev.filter((id) => sessionIndex.get(id)?.project.id !== project.id),
-            );
-            setPeekedSessionId((prev) =>
-              prev && sessionIndex.get(prev)?.project.id === project.id ? null : prev,
-            );
-            void onDeleteProject(project.id);
-          }
-        : undefined,
-    [onDeleteProject, sessionIndex, updateOpenWorkIds],
-  );
-  const retrySessions = useCallback(
-    (project: HubProjectNode) => {
-      if (pauseSessionReads) return;
-      setSessionsByProject((prev) => {
-        const cached = prev[project.id];
-        return {
-          ...prev,
-          [project.id]: {
-            // Keep the cached rows on screen while the retry runs; only a
-            // project with nothing to show falls back to the loading note.
-            status: cached && cached.sessions.length > 0 ? cached.status : 'loading',
-            sessions: cached?.sessions ?? EMPTY_SESSIONS,
-          },
-        };
-      });
-      void loadProject(project.id);
-    },
-    [loadProject, pauseSessionReads],
-  );
-  const openProject = useMemo(
-    () =>
-      onOpenProject
-        ? (project: HubProjectNode) => {
-            onOpenProject(project.id);
-          }
-        : undefined,
-    [onOpenProject],
-  );
+  const renameFolder = useCallback(async (folder: HubFolderNode, name: string): Promise<boolean> => {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === folder.name) return false;
+    const renamed = await mutateRail(
+      (tree) => ({
+        ...tree,
+        folders: tree.folders.map((candidate) =>
+          candidate.id === folder.id ? { ...candidate, name: trimmed } : candidate),
+      }),
+      () => renameFolderRequest(folder.id, trimmed),
+    );
+    return renamed !== null;
+  }, [mutateRail]);
 
-  // The new-session action creates a real conversation and hands it to the
-  // workspace through the same route the tree uses for existing sessions, so
-  // the workspace-tab reuse contract is preserved. It never falls back to
-  // "open the new-project form" and never navigates without a conversation.
-  const newSession = useCallback(
-    (project: HubProjectNode) => {
-      if (creatingSessionRef.current.has(project.id)) return;
-      // An already-empty session is what the user would get anyway, so reuse
-      // it rather than accumulating empty conversations.
-      const reusable = project.sessions.find((session) => session.messageCount === 0);
-      if (reusable) {
-        openSession(reusable);
-        return;
+  const deleteFolder = useCallback(
+    async (folder: HubFolderNode, sessions: DeleteFolderSessionsPolicy = 'keep'): Promise<boolean> => {
+      const ids = new Set(folder.sessions.map((session) => session.id));
+      setSelectedFolderState((current) => (current?.id === folder.id ? null : current));
+      if (sessions === 'delete') {
+        updateOpenWorkIds((prev) => prev.filter((id) => !ids.has(id)));
+        setPeekedSessionId((prev) => (prev && ids.has(prev) ? null : prev));
       }
-      creatingSessionRef.current.add(project.id);
-      setCreatingSessionFor(project.id);
-      void createConversation(project.id)
-        .then((conversation) => {
-          if (!conversation) return;
-          setSessionsByProject((prev) => {
-            const cached = prev[project.id];
-            const created: HubSessionNode = {
-              id: conversation.id,
-              projectId: project.id,
-              title: conversation.title ?? untitledLabel.current,
-              updatedAt: conversation.updatedAt,
-              state: sessionStateFromRunStatus(conversation.latestRun?.status),
-              messageCount: conversation.messageCount ?? 0,
-              ...(conversation.sessionMode === undefined
-                ? {}
-                : { sessionMode: conversation.sessionMode }),
-            };
-            return {
-              ...prev,
-              [project.id]: {
-                status: 'ready',
-                sessions: [created, ...(cached?.sessions ?? EMPTY_SESSIONS)],
-              },
-            };
-          });
-          onOpenSession(project.id, conversation.id);
-        })
-        .finally(() => {
-          creatingSessionRef.current.delete(project.id);
-          setCreatingSessionFor((current) => (current === project.id ? null : current));
-        });
+      const result = await mutateRail(
+        (tree) => {
+          const target = tree.folders.find((candidate) => candidate.id === folder.id);
+          const kept = sessions === 'keep'
+            ? (target?.sessions ?? []).map((session) => ({ ...session, folderId: null }))
+            : [];
+          return {
+            folders: tree.folders.filter((candidate) => candidate.id !== folder.id),
+            recents: [...tree.recents, ...kept].sort(byRecency),
+          };
+        },
+        () => deleteFolderRequest(folder.id, sessions),
+      );
+      return result !== null;
     },
-    [openSession, onOpenSession],
+    [mutateRail, updateOpenWorkIds],
   );
 
   return {
@@ -992,9 +961,10 @@ export function useHubRailController({
     query,
     setQuery,
     expandRailForSearch,
-    allNodes,
+    allTree,
     tree,
-    failedSessionReads,
+    railStatus,
+    retrySessions,
     running,
     announcement,
     openWork,
@@ -1005,15 +975,16 @@ export function useHubRailController({
     peekSession,
     openPeekedSession,
     closeInspector,
-    creatingSessionFor,
-    newProject,
+    selectedFolder,
+    selectFolder,
+    clearSelectedFolder,
     newSession,
-    retrySessions,
+    moveSession,
     renameSession,
     deleteSession,
-    openProject,
-    renameProject,
-    deleteProject,
+    createFolder,
+    renameFolder,
+    deleteFolder,
     pendingSessionDeletion,
     undoPendingSessionDeletion,
     commitPendingSessionDeletion,

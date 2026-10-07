@@ -1,8 +1,8 @@
 // Shared contract for the entry hub (left navigation + start surface).
 //
-// The hub only ever renders data the daemon already returns: projects with
-// name/updatedAt/status, and per-project conversations with
-// title/sessionMode/messageCount/updatedAt/latestRun. Archive, unread,
+// The hub only ever renders data the daemon already returns from
+// `GET /api/rail`: folders (UI: projects) with their sessions, and standalone
+// sessions (recents) with title/sessionMode/messageCount/updatedAt/state. Archive, unread,
 // pinning, cross-project search, artifact lineage and session thumbnails do
 // NOT exist server-side and must not be invented here.
 
@@ -25,49 +25,59 @@ export type HubDestination =
   | 'plugins'
   | 'integrations';
 
-/** Ordering for the project list. */
+/** Ordering for the folder list. */
 export type HubSort = 'recent' | 'name';
 
 export interface HubSessionNode {
   id: string;
-  projectId: string;
+  /** The workspace (`projects` row) that owns the session's files and cwd. */
+  workspaceId: string;
+  /** The rail folder (UI: project) the session is listed in; `null` = recents. */
+  folderId: string | null;
   title: string;
   updatedAt: number;
   state: HubSessionState;
   /** Present only when the daemon reported one; never fabricated. */
   messageCount?: number;
   sessionMode?: string;
+  /** >1 only for legacy sessions that still share a workspace with siblings. */
+  workspaceSessionCount: number;
 }
 
 /**
- * How much the hub actually knows about a project's sessions.
+ * How much the hub actually knows about the rail tree.
  *
- * `listConversations()` collapses every failure into `[]`, so the hub used to
- * render "no sessions" for a project it simply could not read. These four
- * states keep "known empty" apart from "still loading" and from "the read
- * failed", with `stale` reserved for a failure that still has cached rows to
- * show.
+ * Keeps "known empty" apart from "still loading" and from "the read failed",
+ * with `stale` reserved for a failure that still has cached rows to show.
  */
 export type HubSessionsStatus = 'loading' | 'ready' | 'stale' | 'unavailable';
 
-export interface HubProjectNode {
+/** A user-visible folder of sessions (UI label: project). It owns no files. */
+export interface HubFolderNode {
   id: string;
   name: string;
   updatedAt: number;
   sessions: HubSessionNode[];
-  /** Defaults to `ready` so existing callers keep their current meaning. */
-  sessionsStatus?: HubSessionsStatus;
-  /**
-   * Project-level state from `project.status.value`. This is the ONLY place
-   * `awaiting_input` exists - `Conversation.latestRun.status` is a
-   * `ChatRunStatus`, which has no awaiting member - so the "needs you" filter
-   * must consult it rather than inferring from sessions alone.
-   */
-  state?: HubSessionState;
 }
 
-/** How many sessions a project shows before the overflow row appears. */
+/** The whole rail: folders with their sessions, then standalone sessions. */
+export interface HubRailTree {
+  folders: HubFolderNode[];
+  /** Sessions with `folderId === null`, most recent first. */
+  recents: HubSessionNode[];
+}
+
+/** The folder a new session will be created in, shown as the composer pill. */
+export interface HubSelectedFolder {
+  readonly id: string;
+  readonly name: string;
+}
+
+/** How many sessions a folder shows before the overflow row appears. */
 export const HUB_SESSION_PAGE = 5;
+
+/** How many standalone sessions recents shows before the overflow row appears. */
+export const HUB_RECENTS_PAGE = 20;
 
 /** Sessions a human still has to act on. */
 export function isAttentionState(state: HubSessionState): boolean {
@@ -96,42 +106,28 @@ export function sessionStateFromRunStatus(status: string | undefined): HubSessio
   }
 }
 
-/** Map `ProjectStatusInfo.value` onto the four states the hub renders. */
-export function projectStateFromStatus(status: string | undefined): HubSessionState {
-  switch (status) {
-    case 'running':
-    case 'queued':
-      return 'running';
-    case 'awaiting_input':
-      return 'awaiting';
-    case 'failed':
-      return 'failed';
-    default:
-      return 'idle';
-  }
-}
-
 /**
- * A project rolls up the most urgent state among its own status and its
- * sessions. Project status wins for `awaiting`, which sessions cannot express.
+ * A folder rolls up the most urgent state among its sessions. `awaiting` comes
+ * from the daemon's per-session state, which attributes workspace-level
+ * `awaiting_input` to that workspace's sessions.
  */
-export function rollupProjectState(project: HubProjectNode): HubSessionState {
-  const states = [project.state ?? 'idle', ...project.sessions.map((s) => s.state)];
+export function rollupFolderState(folder: HubFolderNode): HubSessionState {
+  const states = folder.sessions.map((s) => s.state);
   if (states.includes('awaiting')) return 'awaiting';
   if (states.includes('failed')) return 'failed';
   if (states.includes('running')) return 'running';
   return 'idle';
 }
 
-/** A project matches a filter when its rollup or any of its sessions do. */
-export function projectMatchesFilter(project: HubProjectNode, filter: HubFilter): boolean {
+/** A folder matches a filter when any of its sessions do. */
+export function folderMatchesFilter(folder: HubFolderNode, filter: HubFilter): boolean {
   if (filter === 'all') return true;
-  if (matchesHubFilter(rollupProjectState(project), filter)) return true;
-  return project.sessions.some((s) => matchesHubFilter(s.state, filter));
+  return folder.sessions.some((s) => matchesHubFilter(s.state, filter));
 }
 
-export function sortProjects(projects: HubProjectNode[], sort: HubSort): HubProjectNode[] {
-  const next = [...projects];
+/** Orders folders only; recents are always recency-ordered. */
+export function sortFolders(folders: HubFolderNode[], sort: HubSort): HubFolderNode[] {
+  const next = [...folders];
   if (sort === 'name') {
     next.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
     return next;
