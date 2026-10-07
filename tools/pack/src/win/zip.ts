@@ -84,6 +84,16 @@ export function resolvePortableZipThreads(fastBuild = false): number | undefined
   return fastBuild ? Math.min(20, availableParallelism()) : undefined;
 }
 
+export function parseSevenZipTiming(stdout: string): { cpuSeconds: number; wallSeconds: number; averageBusyCores: number } | null {
+  const cpu = /Process\s+Time\s*=\s*([\d.]+)/.exec(stdout);
+  const wall = /Global\s+Time\s*=\s*([\d.]+)/.exec(stdout);
+  if (cpu == null || wall == null) return null; // Legacy commands omit -bt.
+  const cpuSeconds = Number(cpu[1]);
+  const wallSeconds = Number(wall[1]);
+  if (!Number.isFinite(cpuSeconds) || !Number.isFinite(wallSeconds) || wallSeconds <= 0) return null;
+  return { cpuSeconds, wallSeconds, averageBusyCores: cpuSeconds / wallSeconds };
+}
+
 function logWinZipProgress(message: string, fields: Record<string, unknown> = {}): void {
   const suffix = Object.entries(fields)
     .map(([key, value]) => `${key}=${String(value)}`)
@@ -143,6 +153,7 @@ export async function buildWinPortableZip(
       details.stderrBytes = result.stderr.length;
       details.stdoutTail = result.stdout.slice(-2000);
       details.stderrTail = result.stderr.slice(-2000);
+      details.archiverTiming = parseSevenZipTiming(result.stdout);
       if (options.outputPath != null) {
         details.outputBytes = (await stat(options.outputPath)).size;
         details.outputPath = options.outputPath;
