@@ -196,6 +196,10 @@ export class ToolPackCache {
 
   constructor(readonly root: string) {}
 
+  #materialize<T>(target: CacheMaterializeTarget, task: () => Promise<T>): Promise<T> {
+    return withDirectoryLock(join(this.root, "locks"), `materialize-${hashText(target.to)}`, task);
+  }
+
   report(): CacheReport {
     return {
       entries: [...this.#entries],
@@ -300,14 +304,14 @@ export class ToolPackCache {
       if ((await node.invalidate({ entryRoot: alias.entryPath, manifest })) != null) return false;
 
       for (const target of source.materialize) {
-        await measureBuildStep("cache:seed-copy", () => copyFromEntry(alias.entryPath, target, {}),
+        await measureBuildStep("cache:seed-copy", () => this.#materialize(target, () => copyFromEntry(alias.entryPath, target, {})),
           { nodeId: node.id, artifact: target.from });
       }
       return true;
     };
     const profiling = isBuildProfilingEnabled();
     const lockWaitStartedAt = profiling ? performance.now() : 0;
-    const manifest = await withDirectoryLock(join(this.root, "locks"), "global", async () => {
+    const manifest = await withDirectoryLock(join(this.root, "locks"), `node-${hashText(node.id)}`, async () => {
       if (profiling) writeBuildProfile("cache:lock-wait", {
         nodeId: node.id, startedAt: performance.timeOrigin + lockWaitStartedAt, durationMs: performance.now() - lockWaitStartedAt,
       });
@@ -383,7 +387,7 @@ export class ToolPackCache {
       })();
 
       for (const target of materialize) {
-        await measureBuildStep("cache:materialize", () => materializeTarget(target), { nodeId: node.id, artifact: target.from });
+        await measureBuildStep("cache:materialize", () => this.#materialize(target, () => materializeTarget(target)), { nodeId: node.id, artifact: target.from });
       }
 
       return nextManifest;
@@ -461,7 +465,7 @@ export class ToolPackCache {
 
     const profiling = isBuildProfilingEnabled();
     const lockWaitStartedAt = profiling ? performance.now() : 0;
-    const manifest = await withDirectoryLock(join(this.root, "locks"), "global", async () => {
+    const manifest = await withDirectoryLock(join(this.root, "locks"), `node-${hashText(node.id)}`, async () => {
       if (profiling) writeBuildProfile("cache:lock-wait", {
         nodeId: node.id, startedAt: performance.timeOrigin + lockWaitStartedAt, durationMs: performance.now() - lockWaitStartedAt,
       });
@@ -474,7 +478,7 @@ export class ToolPackCache {
       if ((await node.invalidate({ entryRoot: entryPath, manifest: existingManifest })) != null) return null;
 
       for (const target of materialize) {
-        await measureBuildStep("cache:materialize", () => materializeTarget(target), { nodeId: node.id, artifact: target.from });
+        await measureBuildStep("cache:materialize", () => this.#materialize(target, () => materializeTarget(target)), { nodeId: node.id, artifact: target.from });
       }
 
       return existingManifest;
