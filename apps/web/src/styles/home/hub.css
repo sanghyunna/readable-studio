@@ -744,6 +744,10 @@
   width: 22px;
   height: 22px;
   flex: none;
+  /* The global `button` rule pads 6px 12px; inside a border-box 22px square
+     that leaves no content width, so the 14px icon collapsed to 0px and the
+     row actions were clickable but never painted. */
+  padding: 0;
   border: 0;
   border-radius: var(--radius-xs);
   background: none;
