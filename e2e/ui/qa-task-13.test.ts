@@ -329,7 +329,7 @@ test('canonical start proves R1-R11 and R14 from rendered paint and geometry', a
   await page.getByTestId('hub-palette-item-command-create-template').click();
   await expect(page.getByTestId('new-project-advanced'), 'the Advanced / Import disclosure must not exist').toHaveCount(0);
   // The palette's "From template" opens the composer "+" menu template list;
-  // there is no New Project modal and no creation-time mode picker any more
+  // there is no New Session modal and no creation-time mode picker any more
   // (the Hub always starts in design mode; the workspace composer switches).
   const newProjectModal = page.getByTestId('new-project-modal'); await expect(newProjectModal).toHaveCount(0);
   const templateList = page.getByTestId('composer-plus-templates-list'); await expect(templateList).toBeVisible();
@@ -344,7 +344,7 @@ test('canonical start proves R1-R11 and R14 from rendered paint and geometry', a
   // hub.css raises the Home label to opacity 1 only under `.hub__brand:hover` /
   // `:focus-visible`, so R10 has to sample each state while that state still
   // holds. Re-reading the label later - after focus has advanced to
-  // `hub-new-project` and the pointer has moved to the live strip - would record
+  // `hub-new-session` and the pointer has moved to the live strip - would record
   // the resting value under a hover/focus claim.
   const brandHomeRestOpacity = await brandHome.evaluate((node) => getComputedStyle(node).opacity);
   await page.getByTestId('hub-brand').hover(); await expect(brandHome).toHaveCSS('opacity', '1');
@@ -364,13 +364,13 @@ test('canonical start proves R1-R11 and R14 from rendered paint and geometry', a
   const brandHomeFocusOpacity = await brandHome.evaluate((node) => getComputedStyle(node).opacity);
   // Keyboard traversal must keep reaching the rail's own contents, not stop at the brand.
   await page.keyboard.press('Tab');
-  await expect(page.getByTestId('hub-new-project')).toBeFocused();
+  await expect(page.getByTestId('hub-new-session')).toBeFocused();
   const chromeTabOrder = await page.evaluate(() => {
     const focusable = [...document.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input, select, textarea, [tabindex]')]
       .filter((node) => node.tabIndex >= 0 && node.offsetParent !== null);
     return focusable.slice(0, 3).map((node) => node.hasAttribute('data-project-rail-toggle') ? 'project-rail-toggle' : node.dataset.testid ?? node.tagName.toLowerCase());
   });
-  expect(chromeTabOrder).toEqual(['project-rail-toggle', 'hub-brand', 'hub-new-project']);
+  expect(chromeTabOrder).toEqual(['project-rail-toggle', 'hub-brand', 'hub-new-session']);
   const live = page.getByTestId('hub-live-strip'); const arrow = live.locator('.hub__live-arrow');
   const liveBefore = await geometry(live); const arrowBefore = await geometry(arrow); await live.hover();
   await live.evaluate((node) =>

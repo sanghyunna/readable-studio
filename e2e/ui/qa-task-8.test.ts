@@ -271,7 +271,7 @@ for (const tab of TYPE_TABS) {
 // (b) The overflow menu carries the three migrate-group shortcuts.
 // Historical note: 4b72960 introduced the direct starter guarantee; 6d88559
 // deliberately invalidated it when all three starters were removed. Current
-// template reachability belongs to the New Project modal/reachability tests;
+// template reachability belongs to the New Session modal/reachability tests;
 // the accepted path is two clicks.
 test('the more-shortcuts overflow exposes Create plugin, From Figma and From template', async ({ page }) => {
   await gotoHome(page);

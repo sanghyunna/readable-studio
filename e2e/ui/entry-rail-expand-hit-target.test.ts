@@ -1,7 +1,7 @@
 // Regression: the collapsed project rail's expand control must be reachable by
 // a REAL POINTER, not merely present in the DOM.
 //
-// The shipped defect put a rail expand control onto the "New project" button
+// The shipped defect put a rail expand control onto the "New session" button
 // - 784px^2 of overlap, i.e. 100% of the control. Keyboard activation still
 // worked, so the verification lane could keep going; a real mouse could not
 // expand the rail at all. Home now owns the shared ProjectRail implementation,
@@ -19,7 +19,7 @@ import { applyStandardMocks } from '@/playwright/mock-factory';
 const RAIL_COLLAPSED_STORAGE_KEY = 'readable-studio:hub-rail-collapsed';
 const RAIL_SELECTOR = '[data-project-rail]';
 const TOGGLE_SELECTOR = '[data-project-rail-toggle]';
-const NEW_PROJECT_TEST_ID = 'hub-new-project';
+const NEW_PROJECT_TEST_ID = 'hub-new-session';
 
 type HitProbe = {
   centre: { x: number; y: number };
@@ -33,7 +33,7 @@ type HitProbe = {
 type RailGeometry = {
   collapse: { x: number; y: number; width: number; height: number };
   newProject: { x: number; y: number; width: number; height: number };
-  /** Intersection area in px^2 between the expand control and New project. */
+  /** Intersection area in px^2 between the expand control and New session. */
   overlapArea: number;
   probes: Record<'collapse' | 'newProject', HitProbe>;
 };
@@ -143,7 +143,7 @@ for (const theme of ['light', 'dark'] as const) {
 
     // THE ASSERTION THAT MATTERS: a real pointer press at the expand control's
     // own centre must be delivered to the expand control. This fails whenever
-    // anything - the New project button, a drag surface, a tooltip layer -
+    // anything - the New session button, a drag surface, a tooltip layer -
     // covers that point, which no presence or bounding-box check can detect.
     expect(
       geometry.probes.collapse.reachable,
@@ -154,10 +154,10 @@ for (const theme of ['light', 'dark'] as const) {
     // The two controls must not occupy the same pixels at all.
     expect(geometry.overlapArea).toBe(0);
 
-    // Fixing the expand control must not cost New project its own clickability.
+    // Fixing the expand control must not cost New session its own clickability.
     expect(
       geometry.probes.newProject.reachable,
-      `New project centre is covered by <${geometry.probes.newProject.hitTag} ` +
+      `New session centre is covered by <${geometry.probes.newProject.hitTag} ` +
         `data-testid=${geometry.probes.newProject.hitTestId}>`,
     ).toBe(true);
 
@@ -195,7 +195,7 @@ test('[P0] expanded rail keeps both controls independently hit-testable', async 
   expect(geometry.probes.collapse.reachable).toBe(true);
   expect(geometry.probes.newProject.reachable).toBe(true);
 
-  // New project must remain independently clickable in the expanded panel.
+  // New session must remain independently clickable in the expanded panel.
   await page.mouse.click(geometry.probes.newProject.centre.x, geometry.probes.newProject.centre.y);
   // No modal: the action lands the caret in the Hub composer.
   await expect(page.getByTestId('new-project-modal')).toHaveCount(0);

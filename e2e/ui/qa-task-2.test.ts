@@ -83,7 +83,7 @@ async function fillDefaultConversation(page: Page, projectId: string) {
   return after[0]!;
 }
 
-test('[P1] the New Project modal folder import runs the real folder import instead of opening the Other tab', async ({
+test('[P1] the New Session modal folder import runs the real folder import instead of opening the Other tab', async ({
   page,
 }) => {
   // The native picker cannot open in CI, so only the picker RESPONSE is

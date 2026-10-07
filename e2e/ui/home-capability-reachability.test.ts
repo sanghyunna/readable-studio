@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 import { addStorageInitScript, evaluateStorageSeed } from '@/playwright/storage-init';
 import type { Locator, Page } from '@playwright/test';
 import { routeAgents } from '@/playwright/mock-factory';
-import { createEmptyProjectFromHub, openComposerPlusMenu } from '@/playwright/new-project-modal';
+import { createEmptySessionFromHub, openComposerPlusMenu } from '@/playwright/new-project-modal';
 
 test.describe.configure({ timeout: 30_000 });
 
@@ -40,7 +40,7 @@ export const CONTROLS = [
   { id: 'audit-A-17', label: 'Active plugin chip clear', i18nKey: 'homeHero.clearActivePlugin', howToReach: 'Pick the seeded plugin and clear its active chip.', expect: 'present' },
   { id: 'audit-A-18', label: 'Active skill chip clear', i18nKey: 'homeHero.clearActiveSkill', howToReach: 'Pick the seeded skill and clear its active chip.', expect: 'present' },
   { id: 'audit-A-19', label: 'Context plugin/MCP chip remove', i18nKey: 'common.close', howToReach: 'Pick a context item and remove its chip.', expect: 'present' },
-  { id: 'audit-A-20', label: 'Project design-system picker (workspace)', i18nKey: 'designSystemPicker.select', howToReach: 'New project lands in the Hub composer; create, then switch the design system in the workspace picker.', expect: 'present' },
+  { id: 'audit-A-20', label: 'Project design-system picker (workspace)', i18nKey: 'designSystemPicker.select', howToReach: 'New session lands in the Hub composer; create, then switch the design system in the workspace picker.', expect: 'present' },
   { id: 'audit-A-21', label: 'Footer speaker-notes toggle', i18nKey: 'homeHero.footer.speakerNotes', howToReach: 'Choose Deck and change speaker notes.', expect: 'present' },
   { id: 'audit-A-22', label: 'Footer fidelity select', i18nKey: 'newproj.fidelityLabel', howToReach: 'Choose Prototype and change fidelity.', expect: 'present' },
   { id: 'audit-A-23', label: 'Footer model select', i18nKey: 'newproj.modelLabel', howToReach: 'Choose a creation type and change model.', expect: 'present' },
@@ -302,7 +302,7 @@ async function visible(locator: Locator, id: string) {
   await expect(locator, `[${id}] control must be visible on the real home surface`).toBeVisible({ timeout: 2_000 });
 }
 
-// The Advanced / Import disclosure and the New Project modal are both gone.
+// The Advanced / Import disclosure and the New Session modal are both gone.
 // Folder / ZIP / template starts live in the Hub composer "+" menu; the
 // design system and session mode are switched on the project itself.
 async function openHubPlusMenu(page: Page, id: string) {
@@ -310,13 +310,13 @@ async function openHubPlusMenu(page: Page, id: string) {
     page.getByTestId('new-project-advanced'),
     `[${id}] the Advanced / Import disclosure must not exist`,
   ).toHaveCount(0);
-  await expect(page.getByTestId('new-project-modal'), `[${id}] the New Project modal must not exist`).toHaveCount(0);
+  await expect(page.getByTestId('new-project-modal'), `[${id}] the New Session modal must not exist`).toHaveCount(0);
   await openComposerPlusMenu(page);
 }
 
 async function openWorkspaceFromHub(page: Page, id: string) {
-  await expect(page.getByTestId('new-project-modal'), `[${id}] the New Project modal must not exist`).toHaveCount(0);
-  await createEmptyProjectFromHub(page, { context: id });
+  await expect(page.getByTestId('new-project-modal'), `[${id}] the New Session modal must not exist`).toHaveCount(0);
+  await createEmptySessionFromHub(page, { context: id });
   await visible(page.getByTestId('chat-composer'), id);
 }
 
@@ -550,7 +550,7 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
       await expect(picker).toContainText('Airbnb');
       await writeEvidence(page, 'design-system-workspace-path', {
         selectedDesignSystem: (await picker.innerText()).trim(),
-        path: ['+ New project', 'Continue without prompt', 'Workspace design-system picker', 'Airbnb'],
+        path: ['+ New session', 'Continue without prompt', 'Workspace design-system picker', 'Airbnb'],
       });
       return;
     }
@@ -614,7 +614,7 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
     ]); expect(applyRequest.postDataJSON()).toMatchObject({ inputs: { topic: 'routing observables' } }); expect(creationRequest.postDataJSON()).toMatchObject({ pluginId: 'localized-plugin', appliedPluginSnapshotId: 'snap-localized-plugin', pluginInputs: { topic: 'routing observables' } }); } return; }
     case 'skill-clear': case 'skill-route': { await openMention(page); const tab = page.getByRole('tab', { name: /Skills/i }); await tab.click(); const option = page.getByRole('option', { name: /QA Skill/i }); await option.click(); const chip = page.getByTestId('home-hero-active-skill'); await visible(chip, id); if (kind === 'skill-clear') { await chip.getByRole('button').click(); await expect(chip).toHaveCount(0); } else { await replaceComposerText(page, 'skill routed creation'); const payload = await captureCreation(page); expect(payload).toMatchObject({ skillId: 'qa-skill', pendingPrompt: 'skill routed creation' }); expect(payload).not.toHaveProperty('pluginId'); } return; }
     case 'context-clear': { await openMention(page, '@local'); const option = page.getByRole('option', { name: /Localized Plugin/i }); await option.hover(); const details = page.getByTestId('home-hero-plugin-hover-card').getByRole('button'); await visible(details, id); await details.click(); await page.getByTestId('plugin-details-use-localized-plugin').click(); const chip = page.getByTestId('home-hero-active-plugin'); await visible(chip, id); const clear = chip.getByRole('button', { name: /Clear active plugin/i }); await visible(clear, id); await clear.click(); await expect(chip).toHaveCount(0); return; }
-    // Session mode is a creation-time choice, so it lives in the New Project
+    // Session mode is a creation-time choice, so it lives in the New Session
     // flow rather than the Hub composer footer. The capability being pinned is
     // unchanged: picking Ask must reach POST /api/projects as chat mode.
     case 'mode': case 'mode-route': { await expect(page.getByTestId('home-hero-agent-model').getByTestId('session-mode-trigger')).toHaveCount(0); await expect(page.getByTestId('newproj-mode-picker')).toHaveCount(0); await openWorkspaceFromHub(page, id); const trigger = page.getByTestId('chat-composer').getByTestId('session-mode-trigger'); await visible(trigger, id); await trigger.click(); const popover = page.getByTestId('session-mode-popover'); await visible(popover, id); const ask = popover.getByRole('menuitemradio', { name: /Chat|Ask|질문/i }); await visible(ask, id); const request = page.waitForRequest(candidate => candidate.method() === 'PATCH' && /\/conversations\//.test(new URL(candidate.url()).pathname)); await ask.click(); expect((await request).postDataJSON()).toMatchObject({ sessionMode: 'chat' }); if (kind === 'mode-route') { await trigger.click(); await expect(page.getByTestId('session-mode-popover').getByRole('menuitemradio', { name: /Chat|Ask|질문/i })).toHaveAttribute('aria-checked', 'true'); } return; }

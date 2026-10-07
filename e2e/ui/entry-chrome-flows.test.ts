@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test';
 import { addStorageInitScript } from '@/playwright/storage-init';
 import type { Page, Request } from '@playwright/test';
 import { applyStandardMocks, fulfillAgentsRoute, STORAGE_KEY } from '@/playwright/mock-factory';
-import { pressNewProject } from '@/playwright/new-project-modal';
+import { pressNewSession } from '@/playwright/new-project-modal';
 
 const DESIGN_SYSTEMS = [
   { id: 'agentic', title: 'Agentic', category: 'Productivity & SaaS', summary: 'Conversational AI-first interface.', surface: 'web', swatches: ['#ff5a1f', '#111827'] },
@@ -52,7 +52,7 @@ async function returnHome(page: Page) {
 test('[P0] @critical entry chrome exposes the Hub composer, navigation, and settings entry', async ({ page }) => {
   await gotoEntryHome(page);
   await expect(page.locator('[data-project-rail-toggle]')).toBeVisible();
-  await expect(page.getByTestId('hub-new-project')).toBeVisible();
+  await expect(page.getByTestId('hub-new-session')).toBeVisible();
   await expect(page.getByTestId('hub-search')).toBeVisible();
   await expect(page.getByTestId('hub-open-palette')).toBeVisible();
   await expect(page.getByTestId('home-hero-plus-trigger')).toBeVisible();
@@ -62,10 +62,10 @@ test('[P0] @critical entry chrome exposes the Hub composer, navigation, and sett
   await expect(page.getByTestId('home-hero-submit')).toBeDisabled();
 
   // Mode is not a Hub control (the Hub always starts in design mode; the
-  // workspace composer owns the switch). "New project" is the Hub composer
+  // workspace composer owns the switch). "New session" is the Hub composer
   // itself: pressing it must land the caret there and open no modal.
   await expect(page.getByTestId('new-project-advanced')).toHaveCount(0);
-  await pressNewProject(page, 'entry-chrome');
+  await pressNewSession(page, 'entry-chrome');
   await expect(page.getByTestId('newproj-mode-picker')).toHaveCount(0);
 
   const settings = page.getByTestId('hub-footer-settings');
@@ -263,7 +263,7 @@ test('[P1] Hub rail collapse control preserves the compact navigation surface', 
   await expect(rail).toHaveAttribute('data-project-rail-state', 'collapsed');
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await expect(page.getByTestId('hub-brand')).toBeVisible();
-  await expect(page.getByTestId('hub-new-project')).toBeVisible();
+  await expect(page.getByTestId('hub-new-session')).toBeVisible();
   await toggle.click();
   await expect(rail).toHaveAttribute('data-project-rail-state', 'expanded');
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');

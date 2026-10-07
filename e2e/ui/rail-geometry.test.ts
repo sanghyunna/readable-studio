@@ -88,7 +88,7 @@ for (const track of ['default', 262, 420] as const) {
     const brand = await box(page.getByTestId('hub-brand'));
     const brandMark = await box(page.locator('.hub__brand-mark'));
     const expanded = await box(page.locator(TOGGLE));
-    const newProject = await box(page.getByTestId('hub-new-project'));
+    const newProject = await box(page.getByTestId('hub-new-session'));
     expect(Math.abs(expanded.right - newProject.right)).toBeLessThanOrEqual(epsilon);
     expect(expanded.x).toBeGreaterThanOrEqual(brand.right - epsilon);
     checkBoundary(await chromeProbe(page), 'expanded', epsilon);
@@ -105,7 +105,7 @@ for (const track of ['default', 262, 420] as const) {
         boundary: await chromeProbe(page), toggle: await box(page.locator(TOGGLE)), rail: await box(page.locator(RAIL)),
         brandVisible: await page.getByTestId('hub-brand').isVisible(),
         brandRects: await page.getByTestId('hub-brand').evaluate((node) => node.getClientRects().length),
-        newProjectRight: (await box(page.getByTestId('hub-new-project'))).right,
+        newProjectRight: (await box(page.getByTestId('hub-new-session'))).right,
       });
     }
     for (const { state, samples, actualState, boundary, toggle, rail, brandVisible, brandRects, newProjectRight } of observations) {
@@ -279,7 +279,7 @@ for (const track of [262, 420] as const) {
   });
 }
 
-test('[P1] rail tooltip and New Project overlay escape both resized and collapsed tracks', async ({ page }) => {
+test('[P1] rail tooltip and New Session overlay escape both resized and collapsed tracks', async ({ page }) => {
   await open(page);
   for (const track of [262, 420] as const) {
     await setTrack(page, track);
@@ -300,9 +300,9 @@ test('[P1] rail tooltip and New Project overlay escape both resized and collapse
     finally { await tooltip.evaluate((node, previous) => { node.style.pointerEvents = previous; }, pointer); }
     await changeAndWait(page, '[role="tooltip"]', false, () => page.keyboard.press('Escape'));
     await expect(page.locator(TOGGLE)).toBeFocused();
-    // New project opens no overlay any more; the composer "+" menu is the
+    // New session opens no overlay any more; the composer "+" menu is the
     // overlay that now hangs off the Hub start surface.
-    await page.getByTestId('hub-new-project').click();
+    await page.getByTestId('hub-new-session').click();
     await expect(page.getByTestId('home-hero-input')).toBeFocused();
     await changeAndWait(page, '.plus-menu__popup', true, () => page.getByTestId('home-hero-plus-trigger').click());
     await settle(page);

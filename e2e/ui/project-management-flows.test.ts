@@ -4,7 +4,7 @@ import { openSettingsDialog } from '../lib/playwright/amr.js';
 import { routeAgents } from '../lib/playwright/mock-factory.js';
 
 import { addStorageInitScript } from '@/playwright/storage-init';
-import { openComposerPlusMenu, pressNewProject } from '@/playwright/new-project-modal';
+import { openComposerPlusMenu, pressNewSession } from '@/playwright/new-project-modal';
 
 const STORAGE_KEY = 'readable-studio:config';
 const ACTIVE_ARTIFACT_PREVIEW_SELECTOR = '[data-testid="artifact-preview-frame"]:visible, [data-testid="artifact-preview-frame-url-load"]:visible, [data-testid="artifact-preview-frame-srcdoc"]:visible';
@@ -125,13 +125,13 @@ function artifactPreviewFrame(page: Page) {
   return page.frameLocator(ACTIVE_ARTIFACT_PREVIEW_SELECTOR);
 }
 
-test('[P1] new project lands in the Hub composer and the kind chips replace the modal tabs', async ({ page }) => {
+test('[P1] new session lands in the Hub composer and the kind chips replace the modal tabs', async ({ page }) => {
   await page.route('**/api/skills', async (route) => {
     await route.fulfill({ json: { skills: TAB_SKILLS } });
   });
 
   await page.goto('/');
-  await pressNewProject(page, 'project-management');
+  await pressNewSession(page, 'project-management');
   // The modal's Prototype / Slide deck tabs are the Hub's kind commands
   // (palette, Ctrl K); the free-form ("Other") path is the bare composer.
   for (const kind of ['prototype', 'deck'] as const) {
