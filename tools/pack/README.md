@@ -27,12 +27,15 @@ updater, alternate target, or compatibility mode.
 Windows portable archives retain the shared bundled resource trees and generic
 sidecar/platform runtime primitives used by the packaged application.
 
-## Opt-in faster builds (after v1.2.0)
+## Faster release builds
 
-Keep the v1.2.0 release on the existing command without this flag. After release:
+The root release entrypoint enables FastBuild by default. Direct tools-pack
+invocations still opt in explicitly:
 
 ```powershell
-.\build-portable.ps1 -FastBuild
+.\build-portable.ps1
+# Controlled legacy-path comparison, without changing compression:
+.\build-portable.ps1 -FastBuild:$false
 # Or, after building tools-pack itself:
 pnpm tools-pack win build --fast-build
 ```
@@ -42,7 +45,8 @@ workspace compilation. ZIP compression remains level 5, with at most 20
 available CPU threads. Level 1 requires an explicit `-PortableZipCompression 1`
 or `READABLE_PORTABLE_ZIP_COMPRESSION=1` and may produce a larger download.
 File selection, metadata policy, signing, and runtime checks are unchanged. ZIP cache keys include the thread
-setting, so fast archives cannot replace ordinary cached ZIPs. Upstream build
+setting, so fast archives cannot replace ordinary cached ZIPs. The first default
+release build therefore misses the old ZIP cache. Upstream build
 caches remain shared. Without the flag, stage order, compression, archiver arguments,
 and cache keys retain their existing behavior. Fast builds also request 7-Zip
 execution statistics (`-bt`), captured in the existing ZIP segment details.
@@ -58,7 +62,7 @@ time series under `.omo/evidence/build-perf/utilization-<run-id>.log`: normalize
 system/build-tree CPU, physical-disk bytes/sec, IOPS, queue depth, process/child
 counts, top CPU consumers, and recorder overhead. The recorder confirms readiness
 before any build command. It is stopped in `finally`; only its own PID can be killed.
-It does not enable `-FastBuild`. The final comparison ZIP keeps the canonical
+Profiling does not change the selected FastBuild setting. The final comparison ZIP keeps the canonical
 `Readable-Studio-win-x64-portable.zip` filename. Use a separate `-DropDir` for each
 comparison run; an existing comparison file is never replaced.
 Published 1.1.5 and hotfix ZIPs must never be used as output destinations.

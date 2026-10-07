@@ -24,8 +24,9 @@
     Optional packaged version. Defaults to the project package.json version.
 
 .PARAMETER FastBuild
-    Post-v1.2.0 opt-in: overlap independent preparation and use up to 20 ZIP
+    Enabled by default: overlap independent preparation and use up to 20 ZIP
     threads. Compression remains level 5 unless explicitly overridden.
+    Pass -FastBuild:$false for a controlled legacy-path comparison.
 
 .PARAMETER ProfileBuild
     Record phase timings and Windows CPU/disk/process utilization. Off by
@@ -41,7 +42,7 @@ param(
     [string]$DropDir,
     [string]$PortableZipCompression,
     [string]$AppVersion,
-    [switch]$FastBuild,
+    [switch]$FastBuild = $true,
     [switch]$ProfileBuild,
     [string]$CacheDir
 )
