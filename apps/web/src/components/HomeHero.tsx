@@ -156,6 +156,9 @@ interface Props {
    *  home-hero/templatePrompt.ts). Renders as a removable chip. */
   templateChip?: { name: string } | null;
   onClearTemplateChip?: () => void;
+  /** Hub only: the rail's selected project, rendered as the project pill. */
+  folderChip?: { readonly id: string; readonly name: string } | null;
+  onClearFolderChip?: (() => void) | undefined;
   activeSkillId?: string | null;
   activeSkillTitle?: string | null;
   onClearActiveSkill?: () => void;
@@ -278,6 +281,8 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     onClearActiveChip = onClearActivePlugin,
     templateChip = null,
     onClearTemplateChip = () => undefined,
+    folderChip = null,
+    onClearFolderChip,
     onClearActiveSkill = () => undefined,
     selectedPluginContexts = EMPTY_PLUGIN_CONTEXTS,
     contextOnlyPlugins = EMPTY_PLUGIN_CONTEXTS,
@@ -1084,6 +1089,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   const showActiveContextRow =
     contextItemCount > 0 ||
     templateChip !== null ||
+    folderChip !== null ||
     (showActivePluginChip && activePluginTitle) ||
     activeSkillTitle ||
     stagedFiles.length > 0;
@@ -1256,6 +1262,29 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
                     <Icon name="close" size={9} />
                   </button>
                 )}
+              </span>
+            ) : null}
+            {folderChip ? (
+              <span
+                className="home-hero__active-chip home-hero__active-chip--folder"
+                data-testid="home-hero-folder-chip"
+              >
+                <span className="home-hero__active-icon" aria-hidden>
+                  <Icon name="folder" size={12} />
+                </span>
+                <span className="home-hero__active-label">{t('hub.projectContext', { name: folderChip.name })}</span>
+                <button
+                  type="button"
+                  className="home-hero__active-clear readable-tooltip"
+                  onClick={onClearFolderChip}
+                  disabled={interactionLocked}
+                  aria-label={t('hub.projectContextRemove')}
+                  title={t('hub.projectContextRemove')}
+                  data-tooltip={t('hub.projectContextRemove')}
+                  data-testid="home-hero-folder-chip-remove"
+                >
+                  <Icon name="close" size={9} />
+                </button>
               </span>
             ) : null}
             {templateChip ? (

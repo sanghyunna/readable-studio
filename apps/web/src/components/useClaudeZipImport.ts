@@ -16,12 +16,15 @@ export interface ClaudeZipImportError {
 }
 
 interface UseClaudeZipImportArgs {
+  /** Composer's selected project; `null` = standalone session. */
+  folderId?: string | null;
   onImportClaudeDesign?: (
     file: File,
+    folderId: string | null,
   ) => Promise<ImportClaudeDesignOutcome | void> | ImportClaudeDesignOutcome | void;
 }
 
-export function useClaudeZipImport({ onImportClaudeDesign }: UseClaudeZipImportArgs) {
+export function useClaudeZipImport({ folderId = null, onImportClaudeDesign }: UseClaudeZipImportArgs) {
   const t = useT();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [importing, setImporting] = useState(false);
@@ -48,7 +51,7 @@ export function useClaudeZipImport({ onImportClaudeDesign }: UseClaudeZipImportA
       setImporting(true);
       setError(null);
       try {
-        const result = await onImportClaudeDesign(file);
+        const result = await onImportClaudeDesign(file, folderId);
         if (result?.ok === false) {
           const details = [result.message, result.details].filter(Boolean).join('\n');
           setError({
@@ -69,7 +72,7 @@ export function useClaudeZipImport({ onImportClaudeDesign }: UseClaudeZipImportA
         setImporting(false);
       }
     },
-    [onImportClaudeDesign, t],
+    [folderId, onImportClaudeDesign, t],
   );
 
   return {

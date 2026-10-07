@@ -544,7 +544,7 @@ export function DesignsTab({
 										onNewProject();
 									}}
 								>
-									<span>{t("entry.navNewProject")}</span>
+									<span>{t("hub.newSession")}</span>
 								</button>
 							) : null}
 						</div>

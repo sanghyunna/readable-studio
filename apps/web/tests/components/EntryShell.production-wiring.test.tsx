@@ -34,6 +34,10 @@ const { designsTabRender, libraryPlugin, listConversations } = vi.hoisted(() => 
   listConversations: vi.fn(),
 }));
 
+vi.mock('../../src/state/rail', async (original) => ({
+  ...await original<typeof import('../../src/state/rail')>(),
+  fetchRail: async () => ({ ok: true, rail: { folders: [], recents: [{ id: 'live-session', workspaceId: 'live-project', folderId: null, title: 'Live session', createdAt: 1, updatedAt: 1, messageCount: 1, state: 'running', workspaceSessionCount: 1 }], generatedAt: 1 } }),
+}));
 vi.mock('../../src/state/projects', async () => {
   const actual = await vi.importActual<typeof import('../../src/state/projects')>(
     '../../src/state/projects',
@@ -126,11 +130,9 @@ function renderEntryShell(projects: Project[] = [project]) {
 
   function ShellWithPersistentRail() {
     const rail = useHubRailController({
-      projects,
       currentSessionId: null,
       onOpenSession: vi.fn(),
       onNewProject,
-      onOpenProject: vi.fn(),
       onNavigateDestination: vi.fn(),
     });
 
@@ -300,7 +302,7 @@ describe('EntryShell production hub wiring', () => {
   // App owner in App.new-project-navigates.test.tsx; the shell owns no modal.
   it('routes Home New Project through the rail controller and focuses the composer', async () => {
     const { onNewProject, onCreateProject } = renderEntryShell();
-    await act(async () => { fireEvent.click(screen.getByTestId('hub-new-project')); });
+    await act(async () => { fireEvent.click(screen.getByTestId('hub-new-session')); });
     expect(onNewProject).toHaveBeenCalledOnce();
     expect(onCreateProject).not.toHaveBeenCalled();
     expect(screen.queryByTestId('new-project-modal')).toBeNull();

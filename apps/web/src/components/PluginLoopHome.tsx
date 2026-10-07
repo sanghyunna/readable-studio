@@ -42,6 +42,11 @@ export interface PluginLoopSubmit {
   examplePromptContext: { title: string; artifactType: string; brief: Record<string, string> } | null;
   /** Hub template card split: hidden template text + where the user's words start. */
   templateRef?: ProjectTemplateRef | null;
+  /**
+   * Rail folder the new session is listed in (the composer's project pill);
+   * `null` creates a standalone session under recents.
+   */
+  folderId: string | null;
 }
 
 interface Props {
@@ -148,6 +153,7 @@ export function PluginLoopHome({ onSubmit }: Props) {
       attachments: [],
       autoSendFirstMessage: true,
       examplePromptContext: null,
+      folderId: null,
     });
   }
 

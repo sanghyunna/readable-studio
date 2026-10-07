@@ -6,6 +6,7 @@ import type { PluginLoopSubmit } from '../../src/components/PluginLoopHome';
 describe('hub composer submission boundary', () => {
   it('requires every normalized field and the four-value project kind', () => {
     const payload = {
+      folderId: null,
       prompt: '',
       pluginId: null,
       pluginType: null,

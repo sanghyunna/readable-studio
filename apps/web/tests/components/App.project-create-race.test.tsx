@@ -4,6 +4,10 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ProjectImportHandlers } from '../../src/components/project-create';
 
+import { createSession } from '../../src/state/sessions';
+vi.mock('../../src/state/sessions', () => ({ createSession: vi.fn() }));
+vi.mock('../../src/state/rail', async (original) => ({ ...await original<typeof import('../../src/state/rail')>(), fetchRail: async () => ({ ok: true, rail: { folders: [], recents: [], generatedAt: 1 } }) }));
+
 import { App } from '../../src/App';
 import type { AgentInfo, AppConfig, Project } from '../../src/types';
 import {
@@ -24,7 +28,6 @@ import {
   uploadProjectFiles,
 } from '../../src/providers/registry';
 import {
-  createProject,
   deleteProject,
   getProject,
   listProjects,
@@ -42,7 +45,7 @@ vi.mock('../../src/components/EntryView', () => ({
     agents,
     projects,
   }: {
-    onCreateProject: (input: unknown) => void;
+    onCreateProject: (input: unknown) => Promise<boolean>;
     onDeleteProject: (id: string) => void;
     projectImportHandlers: ProjectImportHandlers;
     onOpenProject: (id: string) => void;
@@ -70,24 +73,31 @@ vi.mock('../../src/components/EntryView', () => ({
       <button
         type="button"
         onClick={() =>
-          onCreateProject({
+          void onCreateProject({
             name: 'Dir project',
             skillId: null,
             designSystemId: null,
-            metadata: { kind: 'prototype', userWorkingDir: '/Users/me/external' },
-            userWorkingDirToken: 'wd-token',
+            metadata: { kind: 'prototype' },
+            folderId: 'folder-1',
+            pendingPrompt: 'Use this attachment',
+            autoSendFirstMessage: true,
             pendingFiles: [new File(['hi'], 'note.txt', { type: 'text/plain' })],
+          }).catch((error: Error) => {
+            const alert = document.createElement('div');
+            alert.dataset.testid = 'test-create-error';
+            alert.textContent = error.message;
+            document.body.append(alert);
           })
         }
       >
-        Create project with project folder
+        Create session with attachment
       </button>
       {/* The Hub composer's "+" menu "Open folder" row ends in this handler. */}
       <button
         type="button"
         onClick={() => void projectImportHandlers.onImportFolderResponse?.({
           conversationId: 'conv-import', entryFile: null, ok: true, projectId: 'project-new',
-        })}
+        }, null)}
       >
         Host import folder
       </button>
@@ -210,7 +220,7 @@ const mockedFetchDesignTemplates = vi.mocked(fetchDesignTemplates);
 const mockedFetchSkills = vi.mocked(fetchSkills);
 const mockedUploadProjectFiles = vi.mocked(uploadProjectFiles);
 const mockedReplaceProjectWorkingDir = vi.mocked(replaceProjectWorkingDir);
-const mockedCreateProject = vi.mocked(createProject);
+const mockedCreateProject = vi.mocked(createSession);
 const mockedDeleteProject = vi.mocked(deleteProject);
 const mockedGetProject = vi.mocked(getProject);
 const mockedListProjects = vi.mocked(listProjects);
@@ -283,8 +293,8 @@ describe('App project creation routing', () => {
     mockedLoadConfig.mockReturnValue({ ...baseConfig });
     mockedUploadProjectFiles.mockResolvedValue({ uploaded: [], failed: [] });
     mockedCreateProject.mockResolvedValue({
-      project: freshProject,
-      conversationId: 'conv-new',
+      workspace: freshProject,
+      session: { id: 'conv-new', projectId: freshProject.id, title: 'Fresh project', createdAt: 1, updatedAt: 1 },
     });
     mockedDeleteProject.mockResolvedValue(true);
     mockedGetProject.mockResolvedValue(null);
@@ -301,6 +311,8 @@ describe('App project creation routing', () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+    window.sessionStorage.clear();
+    document.querySelector('[data-testid="test-create-error"]')?.remove();
     vi.clearAllMocks();
   });
 
@@ -647,7 +659,7 @@ describe('App project creation routing', () => {
     await waitFor(() => {
       expect(screen.getByTestId('project-title').textContent).toBe('Fresh project');
     });
-    expect(window.location.pathname).toBe('/projects/project-new');
+    expect(window.location.pathname).toBe('/projects/project-new/conversations/conv-new');
 
     await act(async () => {
       bootstrapProjects.resolve([]);
@@ -655,7 +667,7 @@ describe('App project creation routing', () => {
     });
 
     expect(screen.getByTestId('project-title').textContent).toBe('Fresh project');
-    expect(window.location.pathname).toBe('/projects/project-new');
+    expect(window.location.pathname).toBe('/projects/project-new/conversations/conv-new');
   });
 
   it('keeps a newly created project open when a post-create refresh resolves stale', async () => {
@@ -673,7 +685,7 @@ describe('App project creation routing', () => {
     await waitFor(() => {
       expect(screen.getByTestId('project-title').textContent).toBe('Fresh project');
     });
-    expect(window.location.pathname).toBe('/projects/project-new');
+    expect(window.location.pathname).toBe('/projects/project-new/conversations/conv-new');
 
     fireEvent.click(screen.getByRole('button', { name: 'Refresh projects' }));
 
@@ -683,7 +695,7 @@ describe('App project creation routing', () => {
     });
 
     expect(screen.getByTestId('project-title').textContent).toBe('Fresh project');
-    expect(window.location.pathname).toBe('/projects/project-new');
+    expect(window.location.pathname).toBe('/projects/project-new/conversations/conv-new');
 
     await act(async () => {
       bootstrapProjects.resolve([]);
@@ -691,7 +703,7 @@ describe('App project creation routing', () => {
     });
 
     expect(screen.getByTestId('project-title').textContent).toBe('Fresh project');
-    expect(window.location.pathname).toBe('/projects/project-new');
+    expect(window.location.pathname).toBe('/projects/project-new/conversations/conv-new');
   });
 
   it('ignores an older stale project list after a newer response confirms the local project', async () => {
@@ -709,7 +721,7 @@ describe('App project creation routing', () => {
     await waitFor(() => {
       expect(screen.getByTestId('project-title').textContent).toBe('Fresh project');
     });
-    expect(window.location.pathname).toBe('/projects/project-new');
+    expect(window.location.pathname).toBe('/projects/project-new/conversations/conv-new');
 
     fireEvent.click(screen.getByRole('button', { name: 'Refresh projects' }));
 
@@ -719,7 +731,7 @@ describe('App project creation routing', () => {
     });
 
     expect(screen.getByTestId('project-title').textContent).toBe('Fresh project');
-    expect(window.location.pathname).toBe('/projects/project-new');
+    expect(window.location.pathname).toBe('/projects/project-new/conversations/conv-new');
 
     await act(async () => {
       bootstrapProjects.resolve([]);
@@ -727,7 +739,7 @@ describe('App project creation routing', () => {
     });
 
     expect(screen.getByTestId('project-title').textContent).toBe('Fresh project');
-    expect(window.location.pathname).toBe('/projects/project-new');
+    expect(window.location.pathname).toBe('/projects/project-new/conversations/conv-new');
   });
 
   it('does not revive nonlocal projects from an older list after a newer empty refresh', async () => {
@@ -745,7 +757,7 @@ describe('App project creation routing', () => {
     await waitFor(() => {
       expect(screen.getByTestId('project-title').textContent).toBe('Fresh project');
     });
-    expect(window.location.pathname).toBe('/projects/project-new');
+    expect(window.location.pathname).toBe('/projects/project-new/conversations/conv-new');
 
     fireEvent.click(screen.getByRole('button', { name: 'Refresh projects' }));
     expect(mockedListProjects).toHaveBeenCalledTimes(2);
@@ -756,7 +768,7 @@ describe('App project creation routing', () => {
     });
 
     expect(screen.getByTestId('project-title').textContent).toBe('Fresh project');
-    expect(window.location.pathname).toBe('/projects/project-new');
+    expect(window.location.pathname).toBe('/projects/project-new/conversations/conv-new');
 
     await act(async () => {
       bootstrapProjects.resolve([existingProject]);
@@ -764,7 +776,7 @@ describe('App project creation routing', () => {
     });
 
     expect(screen.getByTestId('project-title').textContent).toBe('Fresh project');
-    expect(window.location.pathname).toBe('/projects/project-new');
+    expect(window.location.pathname).toBe('/projects/project-new/conversations/conv-new');
 
     fireEvent.click(screen.getByRole('button', { name: 'Back to projects' }));
 
@@ -847,7 +859,7 @@ describe('App project creation routing', () => {
     });
 
     expect(screen.getByTestId('project-view')).toBeTruthy();
-    expect(window.location.pathname).toBe('/projects/project-new');
+    expect(window.location.pathname).toBe('/projects/project-new/conversations/conv-import');
 
     await act(async () => {
       bootstrapProjects.resolve([]);
@@ -855,7 +867,7 @@ describe('App project creation routing', () => {
     });
 
     expect(screen.getByTestId('project-view')).toBeTruthy();
-    expect(window.location.pathname).toBe('/projects/project-new');
+    expect(window.location.pathname).toBe('/projects/project-new/conversations/conv-import');
   });
 
   it('hydrates a host-import placeholder from an older project list that contains the import', async () => {
@@ -879,7 +891,7 @@ describe('App project creation routing', () => {
 
     expect(screen.getByTestId('project-view')).toBeTruthy();
     expect(screen.getByTestId('project-title').textContent).toBe('');
-    expect(window.location.pathname).toBe('/projects/project-new');
+    expect(window.location.pathname).toBe('/projects/project-new/conversations/conv-import');
 
     await act(async () => {
       bootstrapProjects.resolve([freshProject]);
@@ -887,7 +899,7 @@ describe('App project creation routing', () => {
     });
 
     expect(screen.getByTestId('project-title').textContent).toBe('Fresh project');
-    expect(window.location.pathname).toBe('/projects/project-new');
+    expect(window.location.pathname).toBe('/projects/project-new/conversations/conv-import');
   });
 
   it('does not revive unrelated projects from an older list that hydrates a host import', async () => {
@@ -911,7 +923,7 @@ describe('App project creation routing', () => {
 
     expect(screen.getByTestId('project-view')).toBeTruthy();
     expect(screen.getByTestId('project-title').textContent).toBe('');
-    expect(window.location.pathname).toBe('/projects/project-new');
+    expect(window.location.pathname).toBe('/projects/project-new/conversations/conv-import');
 
     await act(async () => {
       bootstrapProjects.resolve([freshProject, existingProject]);
@@ -929,69 +941,30 @@ describe('App project creation routing', () => {
     expect(screen.queryByTestId('entry-project-project-existing')).toBeNull();
   });
 
-  it('switches to the picked project folder before uploading staged attachments', async () => {
-    // Regression for the "picked project folder + staged attachment" case:
-    // replaceProjectWorkingDir flips metadata.baseDir to the external folder,
-    // so it must run BEFORE uploadProjectFiles — otherwise the staged files
-    // land in the temporary managed .readable-studio/projects/<id> root and vanish once the
-    // project folder flips. Asserting the call order locks the ordering in.
+  it('uploads staged attachments to the session workspace and preserves auto-send', async () => {
     mockedListProjects.mockResolvedValue([]);
-    mockedReplaceProjectWorkingDir.mockResolvedValue(undefined as never);
     mockedUploadProjectFiles.mockResolvedValue({
-      uploaded: [{ path: 'stored-note.txt', name: 'note.txt', kind: 'file', size: 2 }],
-      failed: [],
+      uploaded: [{ path: 'stored-note.txt', name: 'note.txt', kind: 'file', size: 2 }], failed: [],
     });
-
     render(<App />);
-
-    fireEvent.click(
-      await screen.findByRole('button', { name: 'Create project with project folder' }),
-    );
-
-    await waitFor(() => {
-      expect(mockedReplaceProjectWorkingDir).toHaveBeenCalledTimes(1);
-      expect(mockedUploadProjectFiles).toHaveBeenCalledTimes(1);
-    });
-
-    expect(mockedReplaceProjectWorkingDir).toHaveBeenCalledWith(
-      'project-new',
-      '/Users/me/external',
-      'wd-token',
-    );
-    // Both target the same project id, and the project-folder handoff is ordered
-    // strictly before the upload so the files land in the final tree.
+    fireEvent.click(await screen.findByRole('button', { name: 'Create session with attachment' }));
+    await screen.findByTestId('project-view');
+    expect(mockedCreateProject).toHaveBeenCalledWith(expect.objectContaining({ folderId: 'folder-1' }));
+    expect(mockedReplaceProjectWorkingDir).not.toHaveBeenCalled();
     expect(mockedUploadProjectFiles.mock.calls[0]?.[0]).toBe('project-new');
-    const replaceOrder = mockedReplaceProjectWorkingDir.mock.invocationCallOrder[0]!;
-    const uploadOrder = mockedUploadProjectFiles.mock.invocationCallOrder[0]!;
-    expect(replaceOrder).toBeLessThan(uploadOrder);
+    expect(window.sessionStorage.getItem('readable:auto-send-first:project-new')).toBe('1');
+    expect(JSON.parse(window.sessionStorage.getItem('readable:auto-send-attachments:project-new')!)).toHaveLength(1);
+    expect(window.location.pathname).toBe('/projects/project-new/conversations/conv-new');
   });
 
-  it('short-circuits the upload + auto-send when the project-folder handoff fails', async () => {
-    // Regression for the swallowed-failure case: the desktop project-folder token
-    // has a ~60s TTL, so a slow user (or any rejected POST) makes
-    // replaceProjectWorkingDir throw AFTER the project already exists. The old
-    // code only logged a warning and then uploaded the staged attachments into
-    // the managed root while the user believed their chosen folder was applied.
-    // The fix surfaces a create-time error toast AND aborts the rest of the
-    // submit path so the first run cannot proceed on a tree the user did not
-    // choose.
+  it('keeps the draft on Home when its staged attachment upload fails', async () => {
     mockedListProjects.mockResolvedValue([]);
-    mockedReplaceProjectWorkingDir.mockRejectedValue(
-      new Error('project-folder token expired'),
-    );
-
+    mockedUploadProjectFiles.mockResolvedValue({ uploaded: [], failed: [{ name: 'note.txt', error: 'UPLOAD_FAILED' }] });
     render(<App />);
-
-    fireEvent.click(
-      await screen.findByRole('button', { name: 'Create project with project folder' }),
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText(/Couldn't apply the chosen folder/i)).toBeTruthy();
-    });
-    expect(mockedReplaceProjectWorkingDir).toHaveBeenCalledTimes(1);
-    // The handoff failed, so the staged attachments must NOT be uploaded into
-    // the managed `.readable-studio/projects/<id>` root the user did not pick.
-    expect(mockedUploadProjectFiles).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole('button', { name: 'Create session with attachment' }));
+    await screen.findByTestId('test-create-error');
+    expect(window.location.pathname).toBe('/');
+    expect(window.sessionStorage.getItem('readable:auto-send-first:project-new')).toBeNull();
+    expect(mockedReplaceProjectWorkingDir).not.toHaveBeenCalled();
   });
 });

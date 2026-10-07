@@ -34,7 +34,6 @@ import { SHOW_DELAY_MS as HUB_SETTLED_MS, WelcomeModal } from './components/Welc
 import { OneDriveNotice } from './components/OneDriveNotice';
 import { DataImportModal } from './components/DataImportModal';
 import { UpdateLaunchBanner } from './components/UpdateSection';
-import { Toast } from './components/Toast';
 import { PetOverlay } from './components/pet/PetOverlay';
 import { usePetTaskCenter } from './hooks/usePetTaskCenter';
 import { migrateCustomPetAtlas } from './components/pet/pets';
@@ -47,7 +46,7 @@ import { HubRail } from './components/hub/HubRail';
 import { HubRailProvider } from './components/hub/HubRailContext';
 import { HubRailOverlays } from './components/hub/HubRailOverlays';
 import { useHubRailController, type HubNavigateDestination } from './components/hub/useHubRailController';
-import { openProjectRoute, openSessionRoute } from './components/hub/openSessionRoute';
+import { openSessionRoute } from './components/hub/openSessionRoute';
 import { useRuntimeUsername } from './hooks/useRuntimeUser';
 import workspaceTransition from './components/WorkspaceTransition.module.css';
 import {
@@ -64,7 +63,6 @@ import {
   fetchSkills,
   uploadProjectFile,
   uploadProjectFiles,
-  replaceProjectWorkingDir,
 } from './providers/registry';
 import {
   fetchAmrModels,
@@ -102,13 +100,14 @@ import {
   createPluginShareProject,
   deleteProject as deleteProjectApi,
   getProject,
-  importClaudeDesignZip,
   importFolderProject,
   listProjects,
   listTemplates,
   deleteTemplate,
   patchProject,
 } from './state/projects';
+import { createSession, importClaudeDesignZipIntoFolder } from './state/sessions';
+import { moveSession } from './state/rail';
 import { useModalWindowDragGuard } from './hooks/useModalWindowDragGuard';
 import { useTransparentPhaseInert } from './hooks/useTransparentPhaseInert';
 import type {
@@ -412,11 +411,6 @@ function AppInner() {
   const latestPersistedConfigRef = useRef(config);
   latestPersistedConfigRef.current = config;
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // Surfaced when a picked project folder could not be applied to a freshly
-  // created project (expired/invalid desktop token, daemon rejection). Without
-  // this the failure was swallowed and the user believed their folder was in
-  // effect while the project actually stayed in the managed root.
-  const [workingDirError, setWorkingDirError] = useState<string | null>(null);
   const [settingsWelcome, setSettingsWelcome] = useState(false);
   const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSection>('execution');
   const [settingsHighlight, setSettingsHighlight] = useState<SettingsHighlight>(null);
@@ -1314,7 +1308,7 @@ function AppInner() {
         autoSendFirstMessage?: boolean;
         requestId?: string;
         pendingFiles?: File[];
-        userWorkingDirToken?: string;
+        folderId?: string | null;
       },
     ): Promise<boolean> => {
       // Honor an explicit `null` design system — the create panel defaults
@@ -1325,8 +1319,9 @@ function AppInner() {
       const fidelity = fidelityToTracking(input.metadata?.fidelity ?? null);
       const creationSource: 'blank' | 'template' | 'zip' | 'folder' =
         kind === 'template' ? 'template' : 'blank';
-      const result = await createProject({
+      const result = await createSession({
         name: input.name,
+        folderId: input.folderId ?? null,
         skillId: input.skillId,
         designSystemId: input.designSystemId,
         pendingPrompt: input.pendingPrompt,
@@ -1361,49 +1356,15 @@ function AppInner() {
       const pendingFiles = Array.isArray(input.pendingFiles)
         ? input.pendingFiles.filter((file): file is File => file instanceof File)
         : [];
-      // Flip the project onto the user-picked project folder BEFORE
-      // uploading staged attachments. `replaceProjectWorkingDir` changes
-      // `metadata.baseDir`, so the project starts reading from the external
-      // folder. If we uploaded first, the staged files would land in the
-      // temporary managed `.readable-studio/projects/<id>` root and then silently vanish
-      // from Design Files and the first auto-send context once the project
-      // folder flips. Doing the handoff first means the initial upload lands in
-      // the final tree.
-      const userWorkingDir = input.metadata?.userWorkingDir;
-      let workingDirHandoffFailed = false;
-      if (userWorkingDir) {
-        try {
-          await replaceProjectWorkingDir(
-            result.project.id,
-            userWorkingDir,
-            input.userWorkingDirToken,
-          );
-        } catch (err) {
-          // The desktop project-folder token is short-lived (~60s TTL); if the
-          // user lingered on Home or the POST was otherwise rejected, the
-          // handoff fails AFTER the project already exists. Do NOT swallow
-          // this and do NOT proceed: uploading staged attachments or
-          // auto-sending the first message would target the managed
-          // `.readable-studio/projects/<id>` root the user did not choose. Mark the
-          // handoff as failed so the upload + auto-send branches below are
-          // skipped, then surface a create-time error so the user can create
-          // again after choosing the intended project folder.
-          console.warn('Failed to set project folder for new project', userWorkingDir, err);
-          workingDirHandoffFailed = true;
-          setWorkingDirError(
-            `Couldn't apply the chosen folder "${userWorkingDir}". The project was created in the default location. Create it again after choosing the intended project folder before uploading files or sending a message.`,
-          );
-        }
-      }
       let firstMessageAttachments: ChatAttachment[] = [];
-      if (!workingDirHandoffFailed && pendingFiles.length > 0) {
+      if (pendingFiles.length > 0) {
         // Home composer attaches stay client-side until submit lands a
         // project; the actual upload happens here. v2 doc wants one
         // file_upload_result per surface — `page_name='home'` /
         // `area='chat_composer'` so it's distinguishable from the
         // file_manager Upload button and the chat_panel composer.
         const cohort = deriveUploadCohort(pendingFiles);
-        const uploadResult = await uploadProjectFiles(result.project.id, pendingFiles);
+        const uploadResult = await uploadProjectFiles(result.workspace.id, pendingFiles);
         firstMessageAttachments = uploadResult.uploaded;
         const uploadFailed =
           uploadResult.failed.length > 0 || uploadResult.uploaded.length !== pendingFiles.length;
@@ -1413,7 +1374,7 @@ function AppInner() {
         trackFileUploadResult(analytics.track, {
           page_name: 'home',
           area: 'chat_composer',
-          project_id: result.project.id,
+          project_id: result.workspace.id,
           ...cohort,
           result: uploadFailed ? 'failed' : 'success',
           ...(uploadFailed && uploadResult.error
@@ -1427,7 +1388,7 @@ function AppInner() {
               page_name: 'home',
               area: 'new_project',
               project_source: 'create_button',
-              project_id: result.project.id,
+              project_id: result.workspace.id,
               project_kind: projectKindToTracking(kind),
               fidelity,
               ...(input.pluginId ? { plugin_id: input.pluginId } : {}),
@@ -1454,7 +1415,7 @@ function AppInner() {
           page_name: 'home',
           area: 'new_project',
           project_source: 'create_button',
-          project_id: result.project.id,
+          project_id: result.workspace.id,
           project_kind: projectKindToTracking(kind),
           fidelity,
           ...(input.pluginId ? { plugin_id: input.pluginId } : {}),
@@ -1469,23 +1430,22 @@ function AppInner() {
       // pre-filling the composer. Scoped to sessionStorage so a page
       // reload after the run has started does not refire.
       if (
-        !workingDirHandoffFailed &&
         input.autoSendFirstMessage &&
         (input.pendingPrompt !== undefined || firstMessageAttachments.length > 0)
       ) {
         try {
           window.sessionStorage.setItem(
-            `readable:auto-send-first:${result.project.id}`,
+            `readable:auto-send-first:${result.workspace.id}`,
             '1',
           );
           if (firstMessageAttachments.length > 0) {
             window.sessionStorage.setItem(
-              `readable:auto-send-attachments:${result.project.id}`,
+              `readable:auto-send-attachments:${result.workspace.id}`,
               JSON.stringify(firstMessageAttachments),
             );
           } else {
             window.sessionStorage.removeItem(
-              `readable:auto-send-attachments:${result.project.id}`,
+              `readable:auto-send-attachments:${result.workspace.id}`,
             );
           }
         } catch {
@@ -1495,10 +1455,10 @@ function AppInner() {
       }
       const project = result.appliedPluginSnapshotId
         ? {
-            ...result.project,
+            ...result.workspace,
             appliedPluginSnapshotId: result.appliedPluginSnapshotId,
           }
-        : result.project;
+        : result.workspace;
       rememberLocalProject(project.id);
       flushSync(() => {
         setProjects((curr) => [
@@ -1509,6 +1469,7 @@ function AppInner() {
       const projectRoute = {
         kind: 'project',
         projectId: project.id,
+        conversationId: result.session.id,
         fileName: null,
       } as const;
       openWorkspaceTab(projectRoute);
@@ -1522,7 +1483,7 @@ function AppInner() {
   // removed New Project modal's Template tab sent with its defaults: the
   // shared scenario mapping picks the plugin, `defaultPluginInputsForCreate`
   // the inputs, and the request id correlates click and result like before.
-  const handleCreateFromTemplate = useCallback((template: ProjectTemplate) => {
+  const handleCreateFromTemplate = useCallback((template: ProjectTemplate, folderId: string | null) => {
     const input = buildTemplateCreateInput(
       template,
       configRef.current.designSystemId,
@@ -1532,6 +1493,7 @@ function AppInner() {
     const pluginInputs = defaultPluginInputsForCreate(input, pluginId);
     return handleCreateProject({
       ...input,
+      folderId,
       ...(pluginId ? { pluginId } : {}),
       ...(pluginInputs ? { pluginInputs } : {}),
       requestId: analytics.newRequestId(),
@@ -1578,9 +1540,10 @@ function AppInner() {
 
   const handleImportClaudeDesign = useCallback(async (
     file: File,
+    folderId: string | null,
   ): Promise<ImportClaudeDesignOutcome> => {
     try {
-      const result = await importClaudeDesignZip(file);
+      const result = await importClaudeDesignZipIntoFolder(file, folderId);
       rememberLocalProject(result.project.id);
       setProjects((curr) => [
         result.project,
@@ -1589,6 +1552,7 @@ function AppInner() {
       navigate({
         kind: 'project',
         projectId: result.project.id,
+        conversationId: result.conversationId,
         fileName: result.entryFile,
       });
       return { ok: true };
@@ -1663,13 +1627,14 @@ function AppInner() {
     return { ok: true };
   }, [handleDeleteProject, rememberLocalProject]);
 
-  const handleImportFolder = useCallback(async (baseDir: string) => {
-    const result = await importFolderProject({ baseDir });
+  const handleImportFolder = useCallback(async (baseDir: string, folderId: string | null) => {
+    const result = await importFolderProject({ baseDir, folderId });
     rememberLocalProject(result.project.id);
     setProjects((curr) => [result.project, ...curr.filter((p) => p.id !== result.project.id)]);
     navigate({
       kind: 'project',
       projectId: result.project.id,
+      conversationId: result.conversationId,
       fileName: null,
     });
   }, [rememberLocalProject]);
@@ -1678,7 +1643,12 @@ function AppInner() {
   // atomically. The renderer never sees the path, token, or daemon DTO;
   // it receives host-owned project identifiers and refreshes project state
   // through the normal daemon API.
-  const handleImportFolderResponse = useCallback(async (result: ReadableStudioHostProjectImportSuccess) => {
+  const handleImportFolderResponse = useCallback(async (result: ReadableStudioHostProjectImportSuccess, folderId: string | null) => {
+    // The host owns picker/import atomically and has no folder input yet.
+    // Move only rail placement after import; never change its workspace.
+    if (folderId && !await moveSession(result.conversationId, folderId)) {
+      throw new Error(t('hubImport.folderFailed'));
+    }
     rememberLocalProject(result.projectId);
     const project = await getProject(result.projectId);
     if (project != null) {
@@ -1713,9 +1683,10 @@ function AppInner() {
     navigate({
       kind: 'project',
       projectId: result.projectId,
+      conversationId: result.conversationId,
       fileName: null,
     });
-  }, [beginProjectListRequest, beginReconnect, rememberLocalProject, reconcileFetchedProjects]);
+  }, [beginProjectListRequest, beginReconnect, rememberLocalProject, reconcileFetchedProjects, t]);
 
   const handleOpenProject = useCallback((id: string) => {
     navigate({ kind: 'project', projectId: id, fileName: null });
@@ -2122,10 +2093,8 @@ function AppInner() {
     navigate({ kind: 'home', view: destination });
   }, [analytics.track]);
   const goHome = useCallback(() => navigateHub('home'), [navigateHub]);
-  // "New project" = the Hub composer. The rail controller follows this with
-  // the `new-project` command chip that focuses the composer, so leaving an
-  // open workspace is the same plain navigation the rail's Home brand does.
-  const newRailProject = useCallback(() => navigate({ kind: 'home', view: 'home' }), []);
+  // New session lands on the Hub; the controller issues the focus chip.
+  const newRailSession = useCallback(() => navigate({ kind: 'home', view: 'home' }), []);
   const projectImportHandlers = useMemo<ProjectImportHandlers>(() => ({
     onCreateFromTemplate: handleCreateFromTemplate,
     onImportClaudeDesign: handleImportClaudeDesign,
@@ -2133,16 +2102,12 @@ function AppInner() {
     onImportFolderResponse: handleImportFolderResponse,
   }), [handleCreateFromTemplate, handleImportClaudeDesign, handleImportFolder, handleImportFolderResponse]);
   const rail = useHubRailController({
-    projects,
     currentSessionId: route.kind === 'project' ? route.conversationId ?? null : null,
-    // Route detail hydration takes priority over background session fan-out.
-    // The controller aborts the old wave, retains rows, and resumes on release.
-    pauseSessionReads: route.kind === 'project' && !activeProject,
+    // Startup/reconnect and route hydration take priority over background rail
+    // reads. Abort the old read, retain cached rows, and resume on release.
+    pauseSessionReads: startupReconnecting || projectsLoading || (route.kind === 'project' && !activeProject),
     onOpenSession: openSessionRoute,
-    onOpenProject: openProjectRoute,
-    onNewProject: newRailProject,
-    onRenameProject: handleRenameProject,
-    onDeleteProject: handleDeleteProject,
+    onNewProject: newRailSession,
     onNavigateDestination: navigateHub,
     onCommandChip: goHome,
   });
@@ -2347,7 +2312,7 @@ function AppInner() {
           className={`workspace-shell__body${rail.railResizing ? ' workspace-shell__body--rail-resizing' : ''}`}
         >
           <HubRail
-            projectsLoading={projectsLoading}
+            projectsLoading={projectsLoading || startupReconnecting}
             projectsKnown={projectsKnown}
             username={username}
             workspaceName={activeWorkspaceName}
@@ -2430,13 +2395,6 @@ function AppInner() {
       {!dataImportResolved ? <DataImportModal onResolved={resolveDataImport} /> : <WelcomeModal />}
       <OneDriveNotice />
       <UpdateLaunchBanner ready={hubSettled} />
-      {workingDirError ? (
-        <Toast
-          message={workingDirError}
-          role="alert"
-          onDismiss={() => setWorkingDirError(null)}
-        />
-      ) : null}
     </HubRailProvider>
     </MotionConfig>
   );

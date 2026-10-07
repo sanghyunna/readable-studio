@@ -14,7 +14,6 @@ export interface CreateInput {
   skillId: string | null;
   designSystemId: string | null;
   metadata: ProjectMetadata;
-  userWorkingDirToken?: string;
   /** Session mode the project's first conversation starts in. */
   conversationMode?: ChatSessionMode;
 }
@@ -23,22 +22,30 @@ export type ImportClaudeDesignOutcome =
   | { ok: true }
   | { ok: false; message?: string; details?: string };
 
+/**
+ * `folderId` is the composer's selected project (the `프로젝트: X` pill);
+ * `null` starts a standalone session listed under recents.
+ */
 export type ImportClaudeDesignHandler = (
   file: File,
+  folderId: string | null,
 ) => Promise<ImportClaudeDesignOutcome | void> | ImportClaudeDesignOutcome | void;
 
 /** App-owned handlers the Hub composer's "+" menu relocations call into. */
 export interface ProjectImportHandlers {
-  /** Start a project from a template the user saved via Share. */
-  onCreateFromTemplate?: (template: ProjectTemplate) => Promise<boolean> | boolean | void;
+  /** Start a session from a template the user saved via Share. */
+  onCreateFromTemplate?: (
+    template: ProjectTemplate,
+    folderId: string | null,
+  ) => Promise<boolean> | boolean | void;
   onImportClaudeDesign?: ImportClaudeDesignHandler;
   // Local-server flow: the daemon-owned native folder picker returns the
   // selected baseDir, then the renderer POSTs `/api/import/folder`.
-  onImportFolder?: (baseDir: string) => Promise<void> | void;
+  onImportFolder?: (baseDir: string, folderId: string | null) => Promise<void> | void;
   // Host flow: the desktop main process owns the picker dialog and the import
   // call atomically (`pickAndImport` IPC); the renderer only receives the
   // host-owned project identifiers.
-  onImportFolderResponse?: (response: ReadableStudioHostProjectImportSuccess) => Promise<void> | void;
+  onImportFolderResponse?: (response: ReadableStudioHostProjectImportSuccess, folderId: string | null) => Promise<void> | void;
 }
 
 /** Ready-to-render state for the "+" menu rows; HomeView owns the hooks. */

@@ -6,6 +6,7 @@
 // the saved-template start that used to live in the modal moved into the Hub
 // composer's existing "+" menu.
 
+import { createSession, importClaudeDesignZipIntoFolder } from '../../src/state/sessions';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -15,10 +16,12 @@ import { navigate } from '../../src/router';
 import { daemonIsLive } from '../../src/providers/registry';
 import { isReadableStudioHostAvailable, pickAndImportHostProject } from '@readable-studio/host';
 import {
-  createProject, getProject, importClaudeDesignZip,
+  getProject,
   importFolderProject, listProjects, listTemplates, pickLocalFolderPath,
 } from '../../src/state/projects';
 
+vi.mock('../../src/state/sessions', () => ({ createSession: vi.fn(), importClaudeDesignZipIntoFolder: vi.fn() }));
+vi.mock('../../src/state/rail', async (original) => ({ ...await original<typeof import('../../src/state/rail')>(), fetchRail: async () => ({ ok: true, rail: { folders: [], recents: [], generatedAt: 1 } }) }));
 vi.mock('../../src/components/InlineModelSwitcher', () => ({ InlineModelSwitcher: () => null }));
 vi.mock('../../src/components/DesignsTab', () => ({
   DesignsTab: ({ onNewProject }: { onNewProject: () => void }) => (
@@ -111,7 +114,7 @@ beforeEach(() => {
   vi.mocked(daemonIsLive).mockResolvedValue(true);
   vi.mocked(listProjects).mockResolvedValue([project]);
   vi.mocked(listTemplates).mockResolvedValue([template]);
-  vi.mocked(createProject).mockResolvedValue({ project: createdProject, conversationId: 'conversation' });
+  vi.mocked(createSession).mockResolvedValue({ workspace: createdProject, session: { id: 'conversation', projectId: createdProject.id, title: 'Created', createdAt: 1, updatedAt: 1 } });
   vi.mocked(getProject).mockResolvedValue(project);
   vi.mocked(isReadableStudioHostAvailable).mockReturnValue(true);
 });
@@ -340,7 +343,7 @@ describe('mid-session daemon reconnect (after a successful startup)', () => {
     expect(screen.queryByTestId('startup-reconnecting')).toBeNull();
     expect(screen.queryByRole('alert')).toBeNull();
     expect(retryButton()).toBeNull();
-    expect(screen.getByTestId(`hub-project-${site.recoveredId}`)).toBeTruthy();
+    expect(listProjects).toHaveBeenCalledWith({ strict: true });
   }, 15_000);
 
   it('escalates to the alert and retry button only once the mid-session outage passes the stall threshold, then recovers on retry', async () => {
@@ -360,16 +363,16 @@ describe('mid-session daemon reconnect (after a successful startup)', () => {
     expect(screen.queryByRole('alert')).toBeNull();
     expect(retryButton()).toBeNull();
     expect(screen.getByTestId('project-view')).toBeTruthy();
-    expect(screen.getByTestId('hub-project-recovered')).toBeTruthy();
+    expect(listProjects).toHaveBeenCalledWith({ strict: true });
   }, 15_000);
 });
 
-describe('새 프로젝트 navigates to the Hub and focuses the composer', () => {
+describe('새 세션 navigates to the Hub and focuses the composer', () => {
   it('leaves an open project for the Hub and puts the caret in the composer', async () => {
     window.history.replaceState(null, '', '/projects/existing');
     await renderApp();
     expect(await screen.findByTestId('project-view')).toBeTruthy();
-    await click('hub-new-project');
+    await click('hub-new-session');
     expect(window.location.pathname).toBe('/');
     await expectComposerFocused();
   });
@@ -379,7 +382,7 @@ describe('새 프로젝트 navigates to the Hub and focuses the composer', () =>
     await screen.findByTestId('home-hero-input');
     // Park focus elsewhere first so the assertion proves the click moved it.
     (screen.getByTestId('hub-search') as HTMLInputElement).focus();
-    await click('hub-new-project');
+    await click('hub-new-session');
     expect(window.location.pathname).toBe('/');
     await expectComposerFocused();
   });
@@ -426,14 +429,14 @@ describe('relocated imports in the Hub composer "+" menu', () => {
       expect(pickAndImportHostProject).toHaveBeenCalledWith({ skillId: null });
       expect(getProject).toHaveBeenCalledWith('created');
     } else {
-      expect(importFolderProject).toHaveBeenCalledWith({ baseDir: 'D:/project' });
+      expect(importFolderProject).toHaveBeenCalledWith({ baseDir: 'D:/project', folderId: null });
     }
-    expect(window.location.pathname).toBe('/projects/created');
+    expect(window.location.pathname).toBe('/projects/created/conversations/conversation');
     expectNoModal();
   });
 
   it('Import Claude design ZIP keeps the Hub on failure and routes after a successful retry', async () => {
-    vi.mocked(importClaudeDesignZip)
+    vi.mocked(importClaudeDesignZipIntoFolder)
       .mockRejectedValueOnce(new Error('Invalid ZIP'))
       .mockResolvedValueOnce({ project: createdProject, entryFile: 'index.html', conversationId: 'conversation' });
     await renderApp();
@@ -452,7 +455,7 @@ describe('relocated imports in the Hub composer "+" menu', () => {
     await openPlusMenu();
     await click('composer-plus-import-claude-zip');
     await upload();
-    expect(importClaudeDesignZip).toHaveBeenCalledWith(file);
+    expect(importClaudeDesignZipIntoFolder).toHaveBeenCalledWith(file, null);
     expect(window.location.pathname).toContain('/projects/created');
   });
 
@@ -464,7 +467,7 @@ describe('relocated imports in the Hub composer "+" menu', () => {
     const row = within(popup).getByTestId('composer-plus-template-saved');
     expect(row.textContent).toContain('Saved starter');
     await act(async () => { fireEvent.click(row); });
-    expect(createProject).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+    expect(createSession).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
       skillId: null,
       designSystemId: null,
       metadata: expect.objectContaining({
@@ -479,7 +482,7 @@ describe('relocated imports in the Hub composer "+" menu', () => {
         topic: 'Saved starter',
       },
     }));
-    expect(window.location.pathname).toBe('/projects/created');
+    expect(window.location.pathname).toBe('/projects/created/conversations/conversation');
   });
 
   it('shows the save-from-Share hint when no template is saved yet', async () => {

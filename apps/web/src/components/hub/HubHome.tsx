@@ -2,8 +2,9 @@
 //
 // Left panel owns navigation (project -> session tree). The center is a calm
 // start surface: a live-work strip when something is running and the composer.
-// The composer IS how a project starts ("새 프로젝트" lands the caret here);
-// its "+" menu carries the folder / ZIP imports and the saved-template start.
+// The composer IS how a session starts ("새 세션" lands the caret here); the
+// rail's selected project shows as a pill and Enter files the session in it.
+// Its "+" menu carries the folder / ZIP imports and the saved-template start.
 // Past work is never dumped into the center canvas.
 //
 // AppInner owns the persistent rail, controller and overlays. This component
@@ -119,7 +120,7 @@ export function HubHome({
 }: Props) {
   const t = useT();
   const rail = useHubRail();
-  const { railCollapsed, running, commandChip, consumeCommandChip } = rail;
+  const { railCollapsed, running, commandChip, consumeCommandChip, selectedFolder, clearSelectedFolder } = rail;
 
   return (
     <div
@@ -131,20 +132,6 @@ export function HubHome({
       <div className="sr-only" role="status" aria-live="polite" data-testid="hub-live-region">
         {rail.announcement}
       </div>
-      {/* The aggregate read failure is text, not a colour: assistive tech and
-          a sighted user get the same fact. */}
-      <div
-        className="hub__status"
-        role="status"
-        aria-live="polite"
-        data-testid="hub-sessions-status"
-        hidden={rail.failedSessionReads === 0}
-      >
-        {rail.failedSessionReads > 0
-          ? t('hub.sessionsFailed', { count: String(rail.failedSessionReads) })
-          : ''}
-      </div>
-
       <div className="hub__stage">
         <div className="hub__start">
           {running ? (
@@ -191,6 +178,8 @@ export function HubHome({
             skillsLoading={skillsLoading}
             commandChip={active ? commandChip : null}
             onCommandChipAccepted={consumeCommandChip}
+            selectedFolder={selectedFolder}
+            onClearSelectedFolder={clearSelectedFolder}
             executionSwitcher={executionSwitcher}
           />
 

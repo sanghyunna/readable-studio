@@ -2,7 +2,7 @@
 //
 // This component owns the entire JSX render and local UI state for
 // the redesigned home view (left rail + sticky settings cog + hero +
-// recent projects + plugins section). App owns the new-project modal. It is
+// recent projects + plugins section). App owns session creation. It is
 // intentionally a sibling of `EntryView` so that upstream `main`
 // changes to `EntryView` (props, lifecycle, helpers, exports) can be
 // rebased without touching this file. `EntryView` becomes a thin wrapper
@@ -129,6 +129,8 @@ interface Props {
       conversationMode?: ChatSessionMode;
       autoSendFirstMessage?: boolean;
       pendingFiles?: File[];
+      /** Rail folder for the new session; `null` = standalone. */
+      folderId?: string | null;
     },
   ) => Promise<boolean> | boolean | void;
   onCreatePluginShareProject: (
@@ -244,9 +246,10 @@ export function EntryShell({
   onOpenSettings,
 }: Props) {
   const t = useT();
-  // "New project" is one action app-wide: the rail controller lands on the Hub and
-  // focuses the composer. The Projects empty-state CTA reuses it verbatim.
-  const { newProject } = useHubRail();
+  // "New session" is one action app-wide: the rail controller clears the
+  // selected project, lands on the Hub and focuses the composer. The Projects
+  // empty-state CTA reuses it verbatim.
+  const { newSession } = useHubRail();
   // Each entry sub-view (home / projects / design-systems) is its own
   // URL now, so the browser back/forward buttons work and a deep link
   // to /design-systems lands on that section. We derive the active
@@ -404,6 +407,7 @@ export function EntryShell({
         ? { pendingFiles: payload.attachments }
         : {}),
       autoSendFirstMessage: payload.autoSendFirstMessage ?? true,
+      folderId: payload.folderId,
     });
   }
 
@@ -501,7 +505,7 @@ export function EntryShell({
                 promptHandoff={homePromptHandoff}
                 skills={skills}
                 skillsLoading={skillsLoading}
-                onNewProject={newProject}
+                onNewProject={() => newSession()}
                 onRenameProject={onRenameProject}
                 onDeleteProject={(projectId) => { void onDeleteProject(projectId); }}
                 onNavigateDestination={changeView}
@@ -527,7 +531,7 @@ export function EntryShell({
                     onOpen={onOpenProject}
                     onDelete={onDeleteProject}
                     onRename={onRenameProject}
-                    onNewProject={newProject}
+                    onNewProject={() => newSession()}
                   />
                 </div>
               )}

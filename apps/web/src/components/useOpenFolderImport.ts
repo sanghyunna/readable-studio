@@ -10,12 +10,15 @@ import { formatPickAndImportFailure } from '../utils/pickAndImportError';
 
 interface UseOpenFolderImportArgs {
   skillId?: string | null;
-  onImportFolder?: (baseDir: string) => Promise<void> | void;
-  onImportFolderResponse?: (response: ReadableStudioHostProjectImportSuccess) => Promise<void> | void;
+  /** Composer's selected project; `null` = standalone session. */
+  folderId?: string | null;
+  onImportFolder?: (baseDir: string, folderId: string | null) => Promise<void> | void;
+  onImportFolderResponse?: (response: ReadableStudioHostProjectImportSuccess, folderId: string | null) => Promise<void> | void;
 }
 
 export function useOpenFolderImport({
   skillId,
+  folderId = null,
   onImportFolder,
   onImportFolderResponse,
 }: UseOpenFolderImportArgs) {
@@ -36,7 +39,7 @@ export function useOpenFolderImport({
         });
         if (!result) return;
         if (result.ok === true) {
-          await onImportFolderResponse(result);
+          await onImportFolderResponse(result, folderId);
           return;
         }
         if ('canceled' in result && result.canceled === true) return;
@@ -62,7 +65,7 @@ export function useOpenFolderImport({
     try {
       const selectedPath = await pickLocalFolderPath();
       if (!selectedPath) return;
-      await onImportFolder(selectedPath);
+      await onImportFolder(selectedPath, folderId);
     } catch (err) {
       setError({
         message: t('hubImport.folderFailed'),
@@ -71,7 +74,7 @@ export function useOpenFolderImport({
     } finally {
       setImporting(false);
     }
-  }, [hasHostPickAndImport, onImportFolder, onImportFolderResponse, skillId, t]);
+  }, [folderId, hasHostPickAndImport, onImportFolder, onImportFolderResponse, skillId, t]);
 
   return {
     available,

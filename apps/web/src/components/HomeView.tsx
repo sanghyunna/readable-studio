@@ -252,6 +252,13 @@ interface Props {
   commandChip?: { readonly id: string; readonly nonce: number } | null;
   /** Acknowledge once the action is bound/queued, not when its eventual run succeeds. */
   onCommandChipAccepted?: (nonce: number) => void;
+  /**
+   * Hub only: the rail's selected project. Submit creates the session inside
+   * it; the composer shows it as the project pill.
+   */
+  selectedFolder?: { readonly id: string; readonly name: string } | null;
+  /** Pill `x`: back to a standalone session. */
+  onClearSelectedFolder?: () => void;
 }
 
 const EMPTY_DESIGN_SYSTEMS: DesignSystemSummary[] = [];
@@ -282,6 +289,8 @@ export function HomeView({
   executionSwitcher,
   commandChip = null,
   onCommandChipAccepted,
+  selectedFolder = null,
+  onClearSelectedFolder,
 }: Props) {
   const { locale, t } = useI18n();
   const analytics = useAnalytics();
@@ -1319,9 +1328,10 @@ export function HomeView({
   useEffect(() => {
     if (!commandChip || acceptedCommandChipNonceRef.current === commandChip.nonce) return;
     if (submitInFlightRef.current || continuingWithoutPrompt) return;
-    if (commandChip.id === 'new-project') {
-      // New project (rail button, Ctrl/Cmd+N, Projects empty state): the
-      // Hub composer IS the new-project surface now, so land the caret in it.
+    if (commandChip.id === 'new-session') {
+      // New session (rail row, Ctrl/Cmd+N, folder `+`, Projects empty state):
+      // the Hub composer IS the creation surface, so land the caret in it.
+      // The folder pill, if any, was set by the controller before the chip.
       const editorHost = homeViewRef.current?.querySelector<HTMLElement>('[data-testid="home-hero-input"]')
         ?? homeViewRef.current;
       focusComposerWhenInteractive(editorHost, () => inputRef.current?.focusEnd());
@@ -1343,13 +1353,16 @@ export function HomeView({
 
   // "+" menu project starts relocated from the New Project modal. Same hooks,
   // same App handlers, same endpoints; only the launcher moved.
+  const selectedFolderId = selectedFolder?.id ?? null;
   const claudeZipImport = useClaudeZipImport({
+    folderId: selectedFolderId,
     ...(projectImportHandlers.onImportClaudeDesign
       ? { onImportClaudeDesign: projectImportHandlers.onImportClaudeDesign }
       : {}),
   });
   const folderImport = useOpenFolderImport({
     skillId: null,
+    folderId: selectedFolderId,
     ...(projectImportHandlers.onImportFolder
       ? { onImportFolder: projectImportHandlers.onImportFolder }
       : {}),
@@ -1366,7 +1379,7 @@ export function HomeView({
     setTemplateCreating(true);
     setError(null);
     try {
-      const ok = await onCreateFromTemplate(template);
+      const ok = await onCreateFromTemplate(template, selectedFolderId);
       if (ok === false) setError(t('hubImport.templateCreateFailed'));
     } catch {
       setError(t('hubImport.templateCreateFailed'));
@@ -1374,7 +1387,7 @@ export function HomeView({
       templateCreatingRef.current = false;
       setTemplateCreating(false);
     }
-  }, [onCreateFromTemplate, t]);
+  }, [onCreateFromTemplate, selectedFolderId, t]);
   const projectImports = useMemo<ComposerProjectImports | undefined>(() => {
     if (!onCreateFromTemplate && !claudeZipImport.available && !folderImport.available) return undefined;
     return {
@@ -1646,6 +1659,9 @@ export function HomeView({
               boundary: templatePromptBoundary(template.text, typed),
             }
           : null,
+        // Enter with a pill = session inside that project; without = standalone.
+        // The pill stays after submit (the user is still "in" the project).
+        folderId: selectedFolderId,
       });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Failed to start the project. Try again.');
@@ -1717,6 +1733,8 @@ export function HomeView({
         showActivePluginChip={showActivePluginChip && !hiddenTemplate}
         templateChip={hiddenTemplate ? { name: hiddenTemplate.name } : null}
         onClearTemplateChip={clearHiddenTemplate}
+        folderChip={surface === 'hub' ? selectedFolder : null}
+        onClearFolderChip={onClearSelectedFolder}
         onClearActivePlugin={clearActivePlugin}
         onClearActiveChip={clearActiveChipSelection}
         onClearActiveSkill={() => {

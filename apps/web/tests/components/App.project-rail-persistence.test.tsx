@@ -64,7 +64,8 @@ vi.mock('../../src/router', async () => {
   };
 });
 
-const { listConversations } = vi.hoisted(() => ({ listConversations: vi.fn() }));
+const { listConversations, fetchRail } = vi.hoisted(() => ({ listConversations: vi.fn(), fetchRail: vi.fn() }));
+vi.mock('../../src/state/rail', async (original) => ({ ...await original<typeof import('../../src/state/rail')>(), fetchRail }));
 
 // The workspace surface itself is out of scope: it is the thing the rail must
 // survive, not the thing under test.
@@ -237,6 +238,9 @@ beforeEach(() => {
         ]
       : [conversation('c3', 'project-2', 'Plan comparison')],
   );
+  fetchRail.mockImplementation(async () => ({ ok: true, rail: {
+    folders: await Promise.all(PROJECTS.map(async (project) => ({ ...project, sessions: (await listConversations(project.id)).map((session: ReturnType<typeof conversation>) => ({ ...session, workspaceId: project.id, folderId: project.id, state: 'idle', workspaceSessionCount: 2 })) }))), recents: [], generatedAt: 1,
+  } }));
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }));
   globalThis.ResizeObserver = ResizeObserverMock as typeof ResizeObserver;
   Element.prototype.scrollIntoView = vi.fn();
@@ -456,33 +460,31 @@ describe('Project rail persistence across Hub -> workspace -> Hub', () => {
     expect(theRail()).toBe(rail);
   });
 
-  it('aborts fan-out during route hydration, keeps cached rows and resumes afterward', async () => {
+  it('aborts the rail read during route hydration, keeps cached rows and resumes afterward', async () => {
     await renderHubWithSessions();
     const rail = theRail();
-    const readyRead = listConversations.getMockImplementation()!;
-    let finishReads!: (value: never[]) => void;
-    const reads = new Promise<never[]>((resolve) => { finishReads = resolve; });
-    listConversations.mockImplementation(() => reads);
-    fireEvent(window, new CustomEvent('readable-studio:runs-changed'));
-    const signals = listConversations.mock.calls.slice(2).map((call) => call[1].signal as AbortSignal);
-    expect(signals).toHaveLength(2);
+    const readyRead = fetchRail.getMockImplementation()!;
+    let finishRead!: (value: { ok: false; aborted: true }) => void;
+    const read = new Promise<{ ok: false; aborted: true }>((resolve) => { finishRead = resolve; });
+    fetchRail.mockImplementation(() => read);
+    act(() => fireEvent(window, new CustomEvent('readable-studio:runs-changed')));
+    const signal = fetchRail.mock.calls.at(-1)![0].signal as AbortSignal;
+    expect(signal.aborted).toBe(false);
     let finishHydration!: (value: Project) => void;
     const hydration = new Promise<Project>((resolve) => { finishHydration = resolve; });
     vi.mocked(getProject).mockReturnValue(hydration);
     act(() => setRoute({ ...PROJECT_ROUTE, projectId: 'project-3' }));
-    expect(signals.every((signal) => signal.aborted)).toBe(true);
+    expect(signal.aborted).toBe(true);
     screen.getByTestId('project-route-loading');
     expect(theRail()).toBe(rail);
     within(rail).getByTestId('hub-session-c1');
-    await act(async () => { finishReads([]); await reads; });
+    await act(async () => { finishRead({ ok: false, aborted: true }); await read; });
+    const heldCalls = fetchRail.mock.calls.length;
     fireEvent(window, new CustomEvent('readable-studio:runs-changed'));
-    expect(listConversations).toHaveBeenCalledTimes(4);
-    listConversations.mockImplementation(readyRead);
-    await act(async () => {
-      finishHydration(project('project-3', 'Hydrated project', 1000));
-      await hydration;
-    });
-    expect(listConversations).toHaveBeenCalledTimes(7);
+    expect(fetchRail).toHaveBeenCalledTimes(heldCalls);
+    fetchRail.mockImplementation(readyRead);
+    await act(async () => { finishHydration(project('project-3', 'Hydrated project', 1000)); await hydration; });
+    expect(fetchRail).toHaveBeenCalledTimes(heldCalls + 1);
     expect(theRail()).toBe(rail);
     within(rail).getByTestId('hub-session-c1');
   });
@@ -511,7 +513,7 @@ describe('Project rail persistence across Hub -> workspace -> Hub', () => {
     const rail = theRail();
     const search = within(rail).getByTestId('hub-search') as HTMLInputElement;
     expect(search.disabled).toBe(false);
-    const newProject = within(rail).getByTestId('hub-new-project') as HTMLButtonElement;
+    const newProject = within(rail).getByTestId('hub-new-session') as HTMLButtonElement;
     expect(newProject.disabled).toBe(false);
     within(rail).getByTestId('hub-project-project-1');
     within(rail).getByTestId('hub-session-c1');
@@ -525,7 +527,7 @@ describe('Project rail persistence across Hub -> workspace -> Hub', () => {
     fireEvent.keyDown(sessionMenu, { key: 'Escape' });
     expect(screen.queryByTestId('hub-row-menu')).toBeNull();
 
-    fireEvent.click(within(rail).getByTestId('hub-menu-project-project-1'));
+    fireEvent.click(within(rail).getByTestId('hub-menu-folder-project-1'));
     const projectMenu = screen.getByTestId('hub-row-menu');
     within(projectMenu).getByTestId('hub-row-menu-rename');
     within(projectMenu).getByTestId('hub-row-menu-delete');
@@ -549,10 +551,10 @@ describe('Project rail persistence across Hub -> workspace -> Hub', () => {
     const railOnHub = theRail();
     expect(railOnHub).toBe(rail);
     within(railOnHub).getByTestId('hub-search');
-    within(railOnHub).getByTestId('hub-new-project');
+    within(railOnHub).getByTestId('hub-new-session');
     within(railOnHub).getByTestId('hub-project-project-1');
     within(railOnHub).getByTestId('hub-session-c1');
-    within(railOnHub).getByTestId('hub-menu-project-project-1');
+    within(railOnHub).getByTestId('hub-menu-folder-project-1');
     within(railOnHub).getByTestId('hub-menu-session-c1');
   });
 
