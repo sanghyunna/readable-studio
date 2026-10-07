@@ -71,6 +71,8 @@ export type RunFailureMessageKey =
   | 'chat.kimiError.usageLimitResetMessage'
   | 'chat.kimiError.authMessage'
   | 'chat.kimiError.providerMessage'
+  | 'chat.databricksError.responseMessage'
+  | 'chat.databricksError.providerMessage'
   | null;
 
 export interface RunFailureUi {
@@ -184,6 +186,14 @@ export function resolveRunFailureUi(
         showSwitchCard: false,
       };
     }
+  }
+  if (agentId === 'databricks' || agentId === 'pi' && /Databricks/i.test(detail ?? '')) {
+    const status = detail?.match(/\bHTTP\s+(\d{3})\b/i)?.[1];
+    return {
+      primaryAction: 'retry', secondaryRetry: false, showSwitchCard: false,
+      messageKey: status ? 'chat.databricksError.providerMessage' : 'chat.databricksError.responseMessage',
+      ...(status ? { messageVars: { status } } : {}),
+    };
   }
   if (agentId === 'kimi') {
     const copy = resolveKimiFailureCopy(code, detail);

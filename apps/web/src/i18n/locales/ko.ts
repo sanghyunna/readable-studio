@@ -69,6 +69,8 @@ export function getKo(): Dict {
   'chat.kimiError.usageLimitResetMessage': 'Kimi 계정의 사용량 한도에 도달했습니다. 초기화 시점: {reset}. 한도가 초기화된 뒤 다시 시도하세요.',
   'chat.kimiError.authMessage': 'Kimi 로그인이 필요합니다. 터미널에서 Kimi에 다시 로그인한 뒤 다시 시도하세요.',
   'chat.kimiError.providerMessage': 'Kimi 서비스 오류(HTTP {status}): {reason}',
+  'chat.databricksError.responseMessage': 'Databricks 응답이 비어 있거나 중간에 끊겨 자동 복구하지 못했습니다. 이미 생성된 내용은 유지됩니다. 다시 시도해 주세요.',
+  'chat.databricksError.providerMessage': 'Databricks 요청이 자동 재시도 후에도 실패했습니다(HTTP {status}). 엔드포인트의 프로토콜과 출력 토큰 한도를 확인한 뒤 다시 시도해 주세요. 이미 생성된 내용은 유지됩니다.',
   'common.cancel': '취소',
   'common.save': '저장',
   'common.close': '닫기',

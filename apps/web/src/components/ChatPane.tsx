@@ -767,7 +767,9 @@ export function ChatPane({
         retryAssistant.agentId,
         failedRunErrorEvent?.detail,
       )
-    : null;
+    : error && config?.agentId === 'databricks'
+      ? resolveRunFailureUi(null, config.agentId, error)
+      : null;
   // Offer Continue (resume) when the failed run is resumable AND the active
   // agent still matches the agent that produced it. The daemon stores a
   // resumable session per (conversation, agent); after an agent switch the new

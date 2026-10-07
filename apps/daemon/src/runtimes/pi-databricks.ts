@@ -64,8 +64,8 @@ export function renderDatabricksPiProvider(
             id: relay.modelAlias, name: relay.modelAlias,
             reasoning: true,
             input: runtime.capabilities.images === 'supported' ? ['text', 'image'] : ['text'],
-            // Pi requires numeric planning limits. Unknown catalogue maxima stay null;
-            // the relay strips speculative output budgets before any upstream request.
+            // Register explicit per-model output budgets; the relay negotiates
+            // rejected budgets rather than relying on endpoint defaults.
             ...effectiveDatabricksLimits(runtime.capabilities),
             cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
             thinkingLevelMap,

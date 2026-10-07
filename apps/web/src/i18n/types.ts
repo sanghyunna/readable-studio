@@ -2015,6 +2015,8 @@ export interface Dict {
   'chat.kimiError.usageLimitResetMessage': string;
   'chat.kimiError.authMessage': string;
   'chat.kimiError.providerMessage': string;
+  'chat.databricksError.responseMessage': string;
+  'chat.databricksError.providerMessage': string;
   'chat.tabComments': string;
   'chat.commentsSoon': string;
   'chat.comments.attached': string;

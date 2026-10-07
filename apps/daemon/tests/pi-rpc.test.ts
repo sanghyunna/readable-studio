@@ -1921,3 +1921,62 @@ test('attachPiRpcSession keeps state parsing after abort while suppressing user 
     await fixture.cleanup();
   }
 });
+
+
+test('Databricks terminated streams retry empty turns and continue partial turns without duplication', () => {
+  for (const partial of ['', 'PART']) {
+    const { child, events, session } = createSession({ model: 'dbm_fixture' });
+    child.stdin.read();
+    if (partial) feedStdoutLines(child, [{ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: partial } }]);
+    feedStdoutLines(child, [
+      { type: 'message_update', assistantMessageEvent: { type: 'error', reason: 'terminated' } },
+      { type: 'turn_end', message: { stopReason: 'error', errorMessage: 'terminated', content: partial ? [{ type: 'text', text: partial }] : [] } },
+      { type: 'agent_end' }, { type: 'agent_settled' },
+    ]);
+    assert.equal(JSON.parse(String(child.stdin.read())).type, 'prompt');
+    feedStdoutLines(child, [
+      { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'OK' } },
+      { type: 'turn_end', message: { stopReason: 'stop', content: [{ type: 'text', text: 'OK' }] } },
+      { type: 'agent_end' }, { type: 'agent_settled' },
+    ]);
+    assert.equal(events.filter(event => event.type === 'text_delta').map(event => event.delta).join(''), `${partial}OK`);
+    assert.equal(events.filter(event => event.type === 'error').length, 0);
+    session.abort(); child.emit('close', 0, null);
+  }
+});
+
+test('Databricks empty SDK errors recover before surfacing a failure', () => {
+  const { child, events, session } = createSession({ model: 'dbm_fixture' });
+  child.stdin.read();
+  feedStdoutLines(child, [
+    { type: 'message_update', assistantMessageEvent: { type: 'error', reason: 'Empty response' } },
+    { type: 'turn_end', message: { stopReason: 'error', errorMessage: 'Empty response', content: [] } },
+    { type: 'agent_end' }, { type: 'agent_settled' },
+  ]);
+  assert.equal(JSON.parse(String(child.stdin.read())).type, 'prompt');
+  assert.equal(events.filter(event => event.type === 'error').length, 0);
+  session.abort(); child.emit('close', 0, null);
+});
+
+for (const stopReason of ['length', 'stop']) {
+  test(`Databricks ${stopReason === 'length' ? 'truncated' : 'empty'} turn continues once without duplicate output`, () => {
+    const { child, events, session } = createSession({ model: 'dbm_fixture' });
+    child.stdin.read();
+    if (stopReason === 'length') feedStdoutLines(child, [{ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'PART' } }]);
+    feedStdoutLines(child, [
+      { type: 'turn_end', message: { role: 'assistant', stopReason, content: stopReason === 'length' ? [{ type: 'text', text: 'PART' }] : [] } },
+      { type: 'agent_end' }, { type: 'agent_settled' },
+    ]);
+    const command = JSON.parse(String(child.stdin.read()));
+    assert.equal(command.type, 'prompt');
+    feedStdoutLines(child, [
+      { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'OK' } },
+      { type: 'turn_end', message: { role: 'assistant', stopReason: 'stop', content: [{ type: 'text', text: 'OK' }] } },
+      { type: 'agent_end' }, { type: 'agent_settled' },
+    ]);
+    assert.equal(JSON.parse(String(child.stdin.read())).type, 'get_state');
+    assert.equal(events.filter(event => event.type === 'text_delta').map(event => event.delta).join(''), stopReason === 'length' ? 'PARTOK' : 'OK');
+    assert.equal(events.filter(event => event.type === 'error').length, 0);
+    session.abort(); child.emit('close', 0, null);
+  });
+}

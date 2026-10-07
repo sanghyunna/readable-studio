@@ -1,6 +1,8 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { namedPath, namedRequest } from './named-profile.js';
 import { outputCeiling } from './request-limits.js';
+import { effectiveDatabricksLimits } from './capabilities.js';
+import { setTimeout as backoff } from 'node:timers/promises';
 import { once } from 'node:events';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { DatabricksRuntimeResolution } from './service.js';
@@ -197,7 +199,8 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
     ? runtime.wireCapabilities.toolSurfaceVersion === 2 ? 'unsupported' : 'unknown'
     : runtime.wireCapabilities?.tools ?? (runtime.capabilities.tools === 'supported' ? 'supported' : 'unknown');
   let chatTokensField = runtime.wireCapabilities?.chatTokensField ?? 'max_completion_tokens';
-  let outputLimit = runtime.wireCapabilities?.outputLimit;
+  let outputLimit = runtime.wireCapabilities?.outputLimit ?? namedProfile?.outputLimit;
+  if (outputLimit === 8192) outputLimit = 8191;
   let requiredOutputBudget = runtime.wireCapabilities?.requiredOutputBudget ?? false;
   const omittedFields = new Set<string>(runtime.wireCapabilities?.omittedFields);
   const active = new Set<AbortController>();
@@ -451,9 +454,13 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
         }
         return false;
       };
-      // Bounded routes plus the existing field/budget corrections and one artifact fallback.
-      // Only explicit HTTP 400 validation failures are replayed; never a stream,
-      // transport failure, rate limit, or a possibly completed inference.
+      let transientRetries = 0;
+      const retryTransient = async (status: number): Promise<boolean> => {
+        if (![400, 429].includes(status) && status < 500 || transientRetries >= 3) return false;
+        await backoff(1000 * 2 ** transientRetries++, undefined, { signal: controller.signal });
+        return true;
+      };
+      // Validation corrections do not spend the transient retry allowance.
       for (let attempt = 0; ; attempt++) {
         controller.signal.throwIfAborted();
         const source = toolsState === 'unsupported' ? artifactDeliveryRequest(body, anthropic) : body;
@@ -467,16 +474,14 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
             delete wire.max_completion_tokens;
           }
         }
-        // Pi needs numeric planning limits, but unknown maxima must never escape
-        // as speculative wire budgets. Messages may require one: negotiate a
-        // conservative starting budget only after an explicit required-field 400.
-        for (const field of OUTPUT_FIELDS) {
-          if (runtime.capabilities.maxTokens === null && !requiredOutputBudget && outputLimit === undefined) delete wire[field];
-          else if (typeof wire[field] === 'number' && outputLimit !== undefined) wire[field] = Math.min(wire[field], outputLimit);
-        }
-        const outputField = messagesSurface ? 'max_tokens' : responses ? 'max_output_tokens' : chatTokensField;
-        if (runtime.capabilities.maxTokens === null && requiredOutputBudget) wire[outputField] = Math.min(4096, outputLimit ?? 4096);
-        for (const field of omittedFields) delete wire[field];
+        const outputField = messagesSurface ? 'max_tokens' : responses ? 'max_output_tokens'
+          : wire.max_tokens !== undefined ? 'max_tokens' : chatTokensField;
+        const requestedBudget = OUTPUT_FIELDS.map(field => wire[field]).find(value => typeof value === 'number');
+        const budget = typeof requestedBudget === 'number' && requestedBudget !== 8192
+          ? requestedBudget : effectiveDatabricksLimits(runtime.capabilities).maxTokens;
+        for (const field of OUTPUT_FIELDS) delete wire[field];
+        wire[outputField] = Math.min(budget, outputLimit ?? Infinity);
+        for (const field of omittedFields) if (!OUTPUT_FIELDS.includes(field as typeof OUTPUT_FIELDS[number])) delete wire[field];
         carriedTools = Array.isArray(wire.tools) && wire.tools.length > 0;
         // Only an invocation URL selects the endpoint without a body model.
         if (invocation && route === upstream.pathname) delete wire.model;
@@ -485,7 +490,8 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
         // invocations and native/translated Messages) can bypass tool sanitation.
         if (Array.isArray(wire.tools)) wire.tools = wire.tools.map(tool => record(tool) ? gatewayFunctionTool(tool) : tool);
         const endpoint = new URL(namedProfile ? namedPath(namedProfile, runtime.model) : route, upstream.origin);
-        const serializedWire = JSON.stringify(namedProfile ? namedRequest(namedProfile, runtime.model, body) : wire);
+        const serializedWire = JSON.stringify(namedProfile
+          ? namedRequest({ ...namedProfile, ...(outputLimit === undefined ? {} : { outputLimit }) }, runtime.model, wire) : wire);
         const outboundBody: unknown = JSON.parse(serializedWire);
         if (!record(outboundBody)) throw new Error('Invalid serialized request');
         lastAttempt = { endpoint, body: outboundBody, routeKind: invocation && route === upstream.pathname ? 'serving-invocations'
@@ -502,8 +508,17 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
         }
         if (result.ok) break;
         rejected = await readUpstreamError(result);
-        if (namedProfile) break; // Never renegotiate a proven named profile on a user's turn.
         const message = record(rejected) ? rejected.message ?? (record(rejected.error) ? rejected.error.message : undefined) : undefined;
+        const limit = typeof message === 'string' ? outputCeiling(message) : undefined;
+        const actualBudget = OUTPUT_FIELDS.map(field => outboundBody[field]).find(value => typeof value === 'number');
+        if (result.status === 400 && typeof actualBudget === 'number'
+          && (limit !== undefined && actualBudget > limit || typeof message === 'string' && /max_(?:tokens|completion_tokens|output_tokens|new_tokens)/.test(message) && /(?:too (?:high|large)|exceed)/i.test(message))
+          && correctOnce('output-step-down')) {
+          outputLimit = limit ?? Math.floor(actualBudget / 2);
+          if (outputLimit === 8192) outputLimit = 8191;
+          continue;
+        }
+        if (namedProfile) { if (await retryTransient(result.status)) continue; break; }
         parameterHint = undefined;
         // A missing route is safe to probe elsewhere, but auth/transport/server
         // failures never establish capability and never replay inference.
@@ -511,7 +526,10 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
           if (nextToolRoute()) continue;
           break;
         }
-        if (result.status !== 400 || typeof message !== 'string') break;
+        if (result.status !== 400 || typeof message !== 'string') {
+          if (await retryTransient(result.status)) continue;
+          break;
+        }
         const detail = record(rejected) && record(rejected.error) ? rejected.error : rejected;
         const parameter = record(detail) ? detail.param ?? detail.parameter : undefined;
         const rejectedEffort = typeof parameter === 'string' && /^(?:reasoning_effort|reasoning\.effort|output_config\.effort|thinking|thinking\.type)$/.test(parameter)
@@ -578,15 +596,8 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
             omittedFields.delete(outputField);
             continue;
           }
-          const limit = outputCeiling(message);
-          // The caller may already use max_tokens before field negotiation has
-          // changed chatTokensField. Inspect actual wire budgets, not that preference.
-          if (limit !== undefined && OUTPUT_FIELDS.some(field => typeof wire[field] === 'number' && wire[field] > limit)
-            && correctOnce(`ceiling:${limit}`)) {
-            outputLimit = limit;
-            continue;
-          }
         }
+        if (await retryTransient(result.status)) continue;
         break;
       }
       const learnCompleted = async () => {

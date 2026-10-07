@@ -10,6 +10,7 @@ import { cleanup, render } from '@testing-library/react';
 import { forwardRef } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { getKo } from '../../src/i18n/locales/ko';
 import { ChatPane } from '../../src/components/ChatPane';
 import type { AppConfig, ChatMessage } from '../../src/types';
 
@@ -42,7 +43,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-function renderFailed(code: string, detail: string) {
+function renderFailed(code: string, detail: string, agentId = 'kimi') {
   const message = {
     id: 'msg-failed',
     role: 'assistant',
@@ -50,7 +51,7 @@ function renderFailed(code: string, detail: string) {
     createdAt: 1,
     runId: 'run-failed',
     runStatus: 'failed',
-    agentId: 'kimi',
+    agentId,
     events: [{ kind: 'status', label: 'error', detail, code }],
   } as ChatMessage;
   render(
@@ -70,7 +71,7 @@ function renderFailed(code: string, detail: string) {
       activeConversationId="conv-1"
       onSelectConversation={vi.fn()}
       onDeleteConversation={vi.fn()}
-      config={{ agentId: 'kimi', agentCliEnv: {} } as unknown as AppConfig}
+      config={{ agentId, agentCliEnv: {} } as unknown as AppConfig}
     />,
   );
   return document.querySelector('.msg.error');
@@ -106,4 +107,17 @@ describe('ChatPane Kimi provider failures', () => {
     expect(card?.textContent).toContain('Kimi 서비스 오류(HTTP 502): bad gateway');
     expect(card?.textContent).not.toContain('provider error');
   });
+});
+
+
+it('renders a failed Databricks empty response in the Korean error box', () => {
+  const card = renderFailed('AGENT_EXECUTION_FAILED', 'Agent completed without producing any output. The model or provider may have returned an empty response — check the agent logs for upstream errors.', 'databricks');
+  expect(card).not.toBeNull();
+
+  expect(card?.textContent).toContain(getKo()['chat.databricksError.responseMessage']);
+});
+
+it('renders an exhausted HTTP 400 in the Korean error box', () => {
+  const card = renderFailed('AGENT_EXECUTION_FAILED', 'Databricks [bad-request; HTTP 400]: request rejected', 'databricks');
+  expect(card?.textContent).toContain(getKo()['chat.databricksError.providerMessage'].replace('{status}', '400'));
 });

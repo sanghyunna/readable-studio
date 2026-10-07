@@ -69,6 +69,8 @@ export function getEn(): Dict {
   'chat.kimiError.usageLimitResetMessage': 'The Kimi account usage limit is reached. Reset: {reset}. Retry after the limit resets.',
   'chat.kimiError.authMessage': 'Kimi login is required. Log in to Kimi again in a terminal, then retry.',
   'chat.kimiError.providerMessage': 'Kimi service error (HTTP {status}): {reason}',
+  'chat.databricksError.responseMessage': 'Databricks returned an empty or truncated response after recovery attempts. Your existing output is preserved. Please retry.',
+  'chat.databricksError.providerMessage': 'Databricks request failed (HTTP {status}) after automatic retries. Check the endpoint protocol and output budget, then retry. Your existing output is preserved.',
   'common.cancel': 'Cancel',
   'common.save': 'Save',
   'common.close': 'Close',

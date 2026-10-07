@@ -24,7 +24,7 @@ export function namedRequest(profile: DatabricksNamedProfile, name: string, body
   const wire = profile.api === 'anthropic-messages' ? nativeMessagesRequest(body) : gatewayChatRequest(body);
   const budget = wire.max_tokens ?? wire.max_completion_tokens;
   delete wire.max_tokens; delete wire.max_completion_tokens;
-  wire[profile.tokenField] = Math.min(typeof budget === 'number' && budget > 0 ? budget : profile.testedBudget, profile.outputLimit ?? profile.testedBudget);
+  wire[profile.tokenField] = Math.min(typeof budget === 'number' && budget > 0 ? budget : profile.testedBudget, profile.outputLimit ?? Infinity);
   delete wire.store; delete wire.stream_options; delete wire.parallel_tool_calls;
   if (profile.kind === 'serving-endpoint' && profile.api === 'openai-completions') delete wire.model;
   else wire.model = name;

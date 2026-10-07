@@ -698,6 +698,12 @@ export function attachPiRpcSession({
   let aborted = false;
   let agentEnded = false;
   let agentSettled = false;
+  const recoverDatabricks = typeof model === 'string' && model.startsWith('dbm_');
+  let responseRecoveries = 0;
+  let recoveryReason: 'empty' | 'length' | null = null;
+  let committedOutput = false;
+  const interrupted = (value: unknown) => value === 'terminated'
+    || typeof value === 'string' && /^Connection closed while reading the streaming response from the Pi model connection\b/i.test(value);
   const sentFirstToken = { value: false };
   let capturedSessionPath: string | null = null;
   let expectedResumePath: string | null = null;
@@ -940,8 +946,25 @@ export function attachPiRpcSession({
         fail('Pi emitted agent_settled before agent_end', 'PI_SESSION_STATE_FAILED');
         return;
       }
+      if (!aborted && !agentFailed && recoveryReason && responseRecoveries < 3) {
+        responseRecoveries++;
+        const reason = recoveryReason;
+        recoveryReason = null;
+        agentEnded = false;
+        send('agent', { type: 'status', label: 'retrying' });
+        promptRpcId = sendCommand(stdin, 'prompt', {
+          message: reason === 'length'
+            ? 'Continue the interrupted response from exactly where it stopped. Do not repeat previously produced text or completed tool actions.'
+            : 'The last response was empty. Complete the pending user request now; do not repeat completed tool actions.',
+        });
+        return;
+      }
       if (!agentSettled) {
         agentSettled = true;
+        if (!aborted && !agentFailed && recoveryReason) {
+          agentFailed = true;
+          send('agent', { type: 'error', message: `Databricks response recovery exhausted: ${recoveryReason}.`, retryable: true });
+        }
         stateRpcId = sendCommand(stdin, 'get_state');
         if (stateRpcId === null) {
           fail('Pi stdin closed before session state capture', 'PI_SESSION_STATE_FAILED');
@@ -950,12 +973,38 @@ export function attachPiRpcSession({
       return;
     }
 
+    if (recoverDatabricks && raw.type === 'message_update') {
+      const event = getRecord(raw.assistantMessageEvent);
+      if (event?.type === 'error') {
+        const reason = event.reason ?? event.delta;
+        if (interrupted(reason)) recoveryReason = committedOutput ? 'length' : 'empty';
+        else if (/empty response|no choices|no content/i.test(String(reason ?? ''))) recoveryReason = 'empty';
+      }
+    }
+    if (recoverDatabricks && raw.type === 'turn_end') {
+      const message = getRecord(raw.message);
+      const content = message?.content;
+      const substantive = Array.isArray(content) && content.some(block => {
+        const item = getRecord(block);
+        return item?.type === 'toolCall' || item?.type === 'text' && typeof item.text === 'string' && item.text.trim().length > 0;
+      });
+      recoveryReason = message?.stopReason === 'error' && interrupted(message.errorMessage)
+        ? committedOutput ? 'length' : 'empty'
+        : message?.stopReason === 'length' ? 'length'
+        : message?.stopReason === 'stop' && !substantive
+          || message?.stopReason === 'error' && /empty response|no choices|no content/i.test(String(message.errorMessage ?? '')) ? 'empty' : null;
+    }
+
     // Agent events: delegate to the pure mapper.
     const result = mapPiRpcEvent(
       raw,
       (channel, payload) => {
         if (!aborted && !terminal) {
-          if (payload.type === 'error') agentFailed = true;
+          if (payload.type === 'error') {
+            if (recoverDatabricks && recoveryReason && responseRecoveries < 3) return;
+            agentFailed = true;
+          }
+          if (payload.type === 'text_delta' || payload.type === 'tool_use') committedOutput = true;
           send(channel, payload);
         }
       },

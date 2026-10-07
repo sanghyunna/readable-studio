@@ -34,9 +34,9 @@ const MODEL_LIMITS = [
 ] as const;
 
 /**
- * Pi requires numeric planning budgets. These are NOT wire budgets or claimed
- * maxima: the relay removes unknown output budgets and negotiates if required.
- * Null + unknown provenance remains in the catalogue.
+ * Explicit fallback request budgets prevent endpoint generation defaults from
+ * silently capping output. They are not claimed maxima; a budget rejection is
+ * negotiated by the relay. Null + unknown provenance remains in the catalogue.
  */
 const UNKNOWN_LIMITS = { contextWindow: 1_000_000, maxTokens: 128_000 };
 
@@ -164,7 +164,8 @@ export function resolveDatabricksCapabilities(
 
 export function effectiveDatabricksLimits(capabilities: Limits): { contextWindow: number; maxTokens: number } {
   const contextWindow = capabilities.contextWindow ?? UNKNOWN_LIMITS.contextWindow;
-  return { contextWindow, maxTokens: capabilities.maxTokens ?? Math.min(UNKNOWN_LIMITS.maxTokens, contextWindow) };
+  const maxTokens = capabilities.maxTokens ?? Math.min(UNKNOWN_LIMITS.maxTokens, contextWindow);
+  return { contextWindow, maxTokens: maxTokens === 8192 ? 16384 : maxTokens };
 }
 
 /** Display identity only; limits and their provenance belong in capabilities. */
