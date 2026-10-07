@@ -437,6 +437,27 @@ describe('Hub template carousel', () => {
       .toEqual(['example-hr-onboarding']);
   });
 
+  it('a click on the already-selected card routes to the chip-remove path, not a re-pick', () => {
+    const onClearTemplateChip = vi.fn();
+    const { onPickExamplePlugin } = renderHub({
+      activePluginTitle: CATALOGUE[4]!.title,
+      activePluginRecord: CATALOGUE[4]!,
+      activeChipId: 'deck',
+      templateChip: { name: CATALOGUE[4]!.title },
+      onClearTemplateChip,
+    });
+    const picked = screen.getAllByTestId('hub-template-card')
+      .find((card) => card.getAttribute('data-plugin-id') === 'example-guizang-ppt')!;
+    expect(picked.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(picked);
+    expect(onClearTemplateChip).toHaveBeenCalledTimes(1);
+    expect(onPickExamplePlugin).not.toHaveBeenCalled();
+    // The favorite star on the same card never touches the selection.
+    fireEvent.click(picked.parentElement!.querySelector('.home-hero__template-fav')!);
+    expect(onClearTemplateChip).toHaveBeenCalledTimes(1);
+    expect(onPickExamplePlugin).not.toHaveBeenCalled();
+  });
+
   it('keeps the favorite star and the selection check on opposite corners of every card', () => {
     renderHub({ activeChipId: 'deck', activePluginRecord: CATALOGUE[4]!, activePluginTitle: CATALOGUE[4]!.title });
     const item = screen.getAllByTestId('hub-template-item')[0]!;

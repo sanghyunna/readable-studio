@@ -1008,8 +1008,24 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     triggerSendAttention();
   }
 
+  // Hub template chip (x) and a re-click on the selected card share this
+  // path: the host drops the hidden brief + plugin binding (keeping the typed
+  // text) and the local example-prompt bookkeeping is reset with it.
+  function clearTemplateChip() {
+    if (interactionLocked) return;
+    setSelectedPromptExample(null);
+    onExamplePromptStatusChange?.(null);
+    onClearTemplateChip();
+  }
+
   function pickExamplePluginPreset(record: InstalledPluginRecord, chipId: string, promptText: string) {
     if (interactionLocked) return;
+    // Clicking the already-selected Hub card toggles it off, exactly like
+    // pressing the chip's (x); a different card still switches the pick.
+    if (surface === 'hub' && templateChip && activePluginRecord?.id === record.id) {
+      clearTemplateChip();
+      return;
+    }
     trackHomeChatComposerClick(analytics.track, {
       page_name: 'home',
       area: 'chat_composer',
@@ -1254,7 +1270,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
                 <button
                   type="button"
                   className="home-hero__active-clear readable-tooltip"
-                  onClick={onClearTemplateChip}
+                  onClick={clearTemplateChip}
                   disabled={interactionLocked}
                   aria-label={t('homeHero.templateChipRemove')}
                   title={t('homeHero.templateChipRemove')}

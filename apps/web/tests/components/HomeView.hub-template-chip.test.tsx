@@ -47,6 +47,7 @@ function catalogueRecord(slug: string): InstalledPluginRecord {
 }
 
 const DECK = catalogueRecord('guizang-ppt');
+const DECK_B = catalogueRecord('deck-swiss-international');
 
 const APPLY_RESULT = {
   query: '',
@@ -85,7 +86,7 @@ function renderHub() {
   writeHomeGuideStage('done');
   vi.stubGlobal('fetch', vi.fn(async (url: RequestInfo | URL) => {
     if (typeof url === 'string' && url === '/api/plugins') {
-      return new Response(JSON.stringify({ plugins: [DECK] }), {
+      return new Response(JSON.stringify({ plugins: [DECK, DECK_B] }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       });
@@ -113,10 +114,22 @@ function renderHub() {
   return { onSubmit };
 }
 
+function deckCard(id: string = DECK.id): HTMLButtonElement {
+  return screen.getAllByTestId('hub-template-card')
+    .find((node) => node.getAttribute('data-plugin-id') === id) as HTMLButtonElement;
+}
+
+function expectCardSelected(card: HTMLButtonElement, selected: boolean) {
+  expect(card.getAttribute('aria-pressed')).toBe(selected ? 'true' : 'false');
+  expect(card.classList.contains('is-active')).toBe(selected);
+  const check = card.parentElement!.querySelector('[data-testid="hub-template-check"]')!;
+  expect(check.getAttribute('data-active')).toBe(selected ? 'true' : 'false');
+  expect(check.classList.contains('is-on')).toBe(selected);
+}
+
 async function pickDeckCard() {
-  const card = (await screen.findAllByTestId('hub-template-card'))
-    .find((node) => node.getAttribute('data-plugin-id') === DECK.id) as HTMLButtonElement;
-  fireEvent.click(card);
+  await screen.findAllByTestId('hub-template-card');
+  fireEvent.click(deckCard());
   return screen.findByTestId('home-hero-template-chip');
 }
 
@@ -173,6 +186,46 @@ describe('Hub template chip', () => {
       prompt: 'explain the transformer architecture',
       templateRef: null,
     });
+  });
+
+  it('clicking the selected card again deselects it: chip gone, card unpressed, typed text kept', async () => {
+    const { onSubmit } = renderHub();
+    await pickDeckCard();
+    expectCardSelected(deckCard(), true);
+    setHomeHeroPrompt('explain the transformer architecture');
+
+    fireEvent.click(deckCard());
+    await waitFor(() => expect(screen.queryByTestId('home-hero-template-chip')).toBeNull());
+    expectCardSelected(deckCard(), false);
+    expect(homeHeroPromptText().trim()).toBe('explain the transformer architecture');
+
+    fireEvent.click(screen.getByTestId('home-hero-submit'));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce());
+    expect(onSubmit.mock.calls[0]![0]).toMatchObject({
+      prompt: 'explain the transformer architecture',
+      templateRef: null,
+    });
+  });
+
+  it('clicking a different card switches the selection instead of clearing it', async () => {
+    renderHub();
+    await pickDeckCard();
+    fireEvent.click(deckCard(DECK_B.id));
+    // Swapping one bound template for another goes through the existing
+    // replacement confirmation; confirming it completes the switch.
+    fireEvent.click(document.querySelector('.home-hero-confirm__primary')!);
+    await waitFor(() => expectCardSelected(deckCard(DECK_B.id), true));
+    expectCardSelected(deckCard(), false);
+    expect(screen.getByTestId('home-hero-template-chip').textContent).toContain(DECK_B.title);
+  });
+
+  it('removing the chip via its (x) also deselects the card', async () => {
+    renderHub();
+    await pickDeckCard();
+    expectCardSelected(deckCard(), true);
+    fireEvent.click(screen.getByTestId('home-hero-template-chip-remove'));
+    await waitFor(() => expect(screen.queryByTestId('home-hero-template-chip')).toBeNull());
+    expectCardSelected(deckCard(), false);
   });
 });
 
