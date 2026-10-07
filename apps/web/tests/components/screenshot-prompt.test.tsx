@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, within } from '@testing-library/react';
+import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PreviewDrawOverlay, ANNOTATION_EVENT, type AnnotationEventDetail } from '../../src/components/PreviewDrawOverlay';
 import { ChatComposer } from '../../src/components/ChatComposer';
@@ -28,7 +29,11 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); frames.length = 0; });
 function mount(streaming = false, onSend = vi.fn(), guard = vi.fn(() => true), captureSnapshot?: () => Promise<{ dataUrl: string; w: number; h: number } | null>) {
   render(<ChatComposer projectId="p" projectFiles={[]} streaming={streaming} modelSelectionGuard={guard} onEnsureProject={async () => 'p'} onSend={onSend} onStop={vi.fn()} />);
-  const ui = render(<PreviewDrawOverlay active sendDisabled={streaming} captureViewport={Boolean(captureSnapshot)} captureSnapshot={captureSnapshot} captureTarget={captureSnapshot ? { position: { x: 20, y: 20, width: 100, height: 80 } } : null}><iframe /></PreviewDrawOverlay>);
+  function DrawOwner() {
+    const [active, setActive] = useState(true);
+    return <PreviewDrawOverlay active={active} onActiveChange={setActive} sendDisabled={streaming} captureViewport={Boolean(captureSnapshot)} captureSnapshot={captureSnapshot} captureTarget={captureSnapshot ? { position: { x: 20, y: 20, width: 100, height: 80 } } : null}><iframe /></PreviewDrawOverlay>;
+  }
+  const ui = render(<DrawOwner />);
   const input = ui.container.querySelector<HTMLInputElement>('.preview-draw-note-input')!;
   fireEvent.change(input, { target: { value: '한국어 명령' } });
   return { ui, input, onSend, guard };
@@ -53,24 +58,73 @@ async function enter(input: HTMLInputElement) {
   return ack;
 }
 describe('screenshot floating prompt', () => {
-  it('idle Enter sends without queueOnly and clears the accepted note', async () => {
+  it.each([
+    { streaming: false, trigger: 'enter' },
+    { streaming: true, trigger: 'enter' },
+    { streaming: false, trigger: 'send' },
+    { streaming: true, trigger: 'queue' },
+  ])('keeps chrome hidden from capture through accepted close ($trigger, streaming=$streaming)', async ({ streaming, trigger }) => {
+    let accept!: (result: 'queued' | undefined) => void;
+    let sent!: () => void;
+    const sentSignal = new Promise<void>((resolve, reject) => {
+      const timeout = window.setTimeout(() => reject(new Error('Send not reached')), 2000);
+      sent = () => { window.clearTimeout(timeout); resolve(); };
+    });
+    const result = new Promise<'queued' | undefined>(resolve => { accept = resolve; });
+    const onSend = vi.fn<(...args: unknown[]) => Promise<'queued' | undefined>>(() => { sent(); return result; });
+    const capture = vi.fn(async () => ({ dataUrl: 'data:image/png;base64,AAAA', w: 320, h: 200 }));
+    const { ui, input } = mount(streaming, onSend, vi.fn(() => true), capture);
+    const toolbar = ui.container.querySelector<HTMLElement>('.preview-draw-toolbar')!;
+    const ack = nextAck();
+    try {
+      await act(async () => {
+        if (trigger === 'enter') fireEvent.keyDown(input, { key: 'Enter' });
+        else fireEvent.click(within(toolbar).getByRole('button', { name: ko[trigger === 'send' ? 'chat.send' : 'chat.annotationQueue'] }));
+        while (frames.length) frames.shift()!(0);
+        await sentSignal;
+      });
+      expect(capture).toHaveBeenCalledTimes(1);
+      expect(onSend.mock.calls[0]?.[1]).toEqual(expect.arrayContaining([expect.objectContaining({ path: 'shot.png', kind: 'image' })]));
+      expect(toolbar.style.visibility).toBe('hidden');
+      await act(async () => { accept(streaming ? 'queued' : undefined); await ack; });
+      expect(ui.container.querySelector('.preview-draw-toolbar')).toBeNull();
+      expect(ui.container.querySelector('canvas')).toBeNull();
+      expect(toolbar.style.visibility).toBe('hidden');
+    } finally { accept(undefined); await ack; }
+  });
+  it('explicit add to input keeps draw mode open and clears its staged note', async () => {
+    const { ui, input, onSend } = mount(false, vi.fn(), vi.fn(() => true), async () => ({ dataUrl: 'data:image/png;base64,AAAA', w: 320, h: 200 }));
+    const ack = nextAck();
+    await act(async () => {
+      fireEvent.click(ui.getByRole('button', { name: ko['chat.annotationAddToInput'] }));
+      while (frames.length) frames.shift()!(0);
+      await ack;
+    });
+    expect(onSend).not.toHaveBeenCalled();
+    expect(input.isConnected).toBe(true);
+    expect(input.value).toBe('');
+    expect(ui.container.querySelector<HTMLElement>('.preview-draw-toolbar')?.style.visibility).toBe('');
+  });
+  it('idle Enter sends without queueOnly and closes the accepted prompt', async () => {
     const { input, onSend } = mount();
     expect((await enter(input)).ok).toBe(true);
     expect(onSend).toHaveBeenCalledTimes(1);
     expect(onSend.mock.calls[0]?.[3]?.queueOnly).not.toBe(true);
-    expect(input.value).toBe('');
+    expect(input.isConnected).toBe(false);
   });
-  it('streaming Enter queues and clears the accepted note', async () => {
+  it('streaming Enter queues and closes the accepted prompt', async () => {
     const { input, onSend } = mount(true);
     expect((await enter(input)).ok).toBe(true);
     expect(onSend.mock.calls[0]?.[3]?.queueOnly).toBe(true);
-    expect(input.value).toBe('');
+    expect(input.isConnected).toBe(false);
   });
   it('awaits a real downstream rejection and retains the note', async () => {
     const onSend = vi.fn(async () => false);
-    const { input, ui } = mount(false, onSend);
+    const { input, ui } = mount(false, onSend, vi.fn(() => true), async () => ({ dataUrl: 'data:image/png;base64,AAAA', w: 320, h: 200 }));
     expect((await enter(input)).ok).toBe(false);
     expect(input.value).toBe('한국어 명령');
+    expect(input.isConnected).toBe(true);
+    expect(ui.container.querySelector<HTMLElement>('.preview-draw-toolbar')?.style.visibility).toBe('');
     expect(ui.container.querySelector('[role=status]')).not.toBeNull();
   });
   it('ChatPane forwards a downstream rejection instead of acknowledging callback invocation', async () => {
@@ -89,17 +143,19 @@ describe('screenshot floating prompt', () => {
     const onSend = vi.fn(async () => 'queued' as const);
     const { input } = mount(true, onSend);
     expect(await enter(input)).toMatchObject({ ok: true, outcome: 'queued' });
-    expect(input.value).toBe('');
+    expect(input.isConnected).toBe(false);
   });
   it('missing model invokes the shared guard feedback and keeps the note', async () => {
     const warned = vi.fn();
     window.addEventListener(MODEL_SELECTION_REQUIRED_EVENT, warned, { once: true });
     const guard = vi.fn(() => requireModelSelection({ mode: 'daemon', model: '', agentId: 'a', agentModels: {} }, [{ id: 'a', name: 'A', bin: 'a', available: true, models: [{ id: 'm', label: 'M' }] }]));
-    const { input, onSend } = mount(false, vi.fn(), guard);
+    const { input, ui, onSend } = mount(false, vi.fn(), guard, async () => ({ dataUrl: 'data:image/png;base64,AAAA', w: 320, h: 200 }));
     expect((await enter(input)).ok).toBe(false);
     expect(warned).toHaveBeenCalledTimes(1);
     expect(onSend).not.toHaveBeenCalled();
     expect(input.value).toBe('한국어 명령');
+    expect(input.isConnected).toBe(true);
+    expect(ui.container.querySelector<HTMLElement>('.preview-draw-toolbar')?.style.visibility).toBe('');
   });
   it.each([{ isComposing: true }, { keyCode: 229 }])('does not submit native Korean composition Enter %j', evidence => {
     const { input, onSend } = mount();
@@ -132,13 +188,15 @@ describe('screenshot floating prompt', () => {
       expect(ui.container.querySelector('[role=status]')?.textContent).toContain(ko['chat.annotationCaptureFailed']);
       expect(input.value).toBe('한국어 명령');
       expect(input.disabled).toBe(false);
+      expect(input.isConnected).toBe(true);
+      expect(ui.container.querySelector<HTMLElement>('.preview-draw-toolbar')?.style.visibility).toBe('');
       expect(onSend).not.toHaveBeenCalled();
       expect(annotation).not.toHaveBeenCalled();
       expect(log).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ code: 'CAPTURE_REFLOWED' }));
       expect((await enter(input)).ok).toBe(true);
       expect(onSend).toHaveBeenCalledTimes(1);
       expect(annotation.mock.calls[0]?.[0].detail).toMatchObject({ bounds: { x: 20, y: 20, width: 100, height: 80 } });
-      expect(input.value).toBe('');
+      expect(input.isConnected).toBe(false);
     } finally { window.removeEventListener(ANNOTATION_EVENT, annotation); }
   });
 });

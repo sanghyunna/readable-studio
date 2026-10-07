@@ -10038,7 +10038,10 @@ function HtmlViewer({
                 <div style={previewScaleShellStyle(previewViewport, previewScale)}>
                   <PreviewDrawOverlay
                     active={drawOverlayOpen}
-                    onActiveChange={setDrawOverlayOpen}
+                    onActiveChange={(active) => {
+                      setDrawOverlayOpen(active);
+                      if (!active) document.querySelector<HTMLElement>('[data-testid="chat-composer"] .composer-editable')?.focus();
+                    }}
                     captureViewport
                     captureSnapshot={() => captureExportImageSnapshot(false)}
                     captureTarget={null}

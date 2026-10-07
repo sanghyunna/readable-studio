@@ -21,6 +21,8 @@ it('annotates a 20000px document using visible pixels instead of full-document e
   const restore = installMockReadableStudioHost({ host: { capture: { page: capture } } });
   let listener: EventListener | undefined;
   try {
+    const chat = render(<div data-testid="chat-composer"><div className="composer-editable" contentEditable /></div>);
+    const composer = chat.container.querySelector<HTMLElement>('.composer-editable')!;
     const { container, getByTestId } = render(<FileViewer projectId="p" projectKind="prototype"
       file={{ name: 'long.html', path: 'long.html', type: 'file', size: 1024, mtime: 1, kind: 'html', mime: 'text/html' }}
       liveHtml='<html><body><main style="height:20000px">Long document</main></body></html>' />);
@@ -48,7 +50,10 @@ it('annotates a 20000px document using visible pixels instead of full-document e
     expect(capture).toHaveBeenCalledTimes(1);
     expect(capture.mock.calls[0]?.[0]).toMatchObject({ clip: { width: 320, height: 200 } });
     expect(capture.mock.calls[0]?.[0]?.fullDocument).not.toBe(true);
-    expect(input.value).toBe('');
+    expect(container.querySelector('.preview-draw-toolbar')).toBeNull();
+    expect(container.querySelector('.preview-draw-active')).toBeNull();
+    expect(getByTestId('draw-overlay-toggle').getAttribute('aria-pressed')).toBe('false');
+    expect(document.activeElement).toBe(composer);
   } finally {
     if (listener) window.removeEventListener(ANNOTATION_EVENT, listener);
     restore();

@@ -112,9 +112,9 @@ export function PreviewDrawOverlay({
   const [undoCount, setUndoCount] = useState(0);
   const [redoCount, setRedoCount] = useState(0);
   const [pendingAction, setPendingAction] = useState<AnnotationAction | null>(null);
-  // True only for the brief window while a host compositor capture is in
-  // flight: hides this overlay's strokes/toolbar so they don't appear in the
-  // screenshot (they're re-painted onto the result by compositeWithBackground).
+  // Hide compositor chrome through capture and its ACK, so an accepted send
+  // can close draw mode without briefly restoring the toolbar. Marks are
+  // re-painted onto the screenshot by compositeWithBackground.
   const [capturing, setCapturing] = useState(false);
   // Images the user attaches (picker/paste/drop) to combine with the mark.
   const [extraFiles, setExtraFiles] = useState<File[]>([]);
@@ -527,12 +527,8 @@ export function PreviewDrawOverlay({
       // toolbar. Hide them for the capture; compositeWithBackground re-paints
       // the marks onto the result afterwards.
       flushSync(() => setCapturing(true));
-      try {
-        await waitForOverlayHidden();
-        return await captureSnapshot();
-      } finally {
-        flushSync(() => setCapturing(false));
-      }
+      await waitForOverlayHidden();
+      return await captureSnapshot();
     }
     const iframe = snapshotHostIframe();
     if (!iframe) return null;
@@ -685,7 +681,7 @@ export function PreviewDrawOverlay({
         };
         window.dispatchEvent(new CustomEvent(ANNOTATION_EVENT, { detail }));
       });
-      if (!result.ok) {
+      if (!result.ok || result.outcome === 'rejected') {
         setCaptureWarning({
           action,
           message: result.message || t('chat.annotationFailed'),
@@ -697,11 +693,17 @@ export function PreviewDrawOverlay({
       setNote('');
       setExtraFiles([]);
       setPreviewIndex(null);
+      if (action !== 'draft' && (result.outcome === 'accepted' || result.outcome === 'queued')) {
+        // Exit through the same owner callback as Close/Escape before restoring
+        // capture visibility, including when the owner keeps this wrapper mounted.
+        flushSync(() => closeOverlay());
+      }
     } catch (error) {
       const code = error && typeof error === 'object' && 'code' in error ? error.code : 'CAPTURE_FAILED';
       console.warn('Could not capture annotation', { code, error });
       setCaptureWarning({ action, message: t('chat.annotationCaptureFailed') });
     } finally {
+      setCapturing(false);
       setPendingAction(null);
     }
   }
