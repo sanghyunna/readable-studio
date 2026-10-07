@@ -219,7 +219,7 @@ describe('ProjectView conversation delete', () => {
     createConversation.mockImplementation(async () => { stored = [fork, original]; return fork; });
     deleteConversation.mockImplementation(async (_projectId: string, id: string) => {
       stored = stored.filter((row) => row.id !== id);
-      return true;
+      return id === original.id ? original : fork;
     });
     deleteRailSession.mockImplementation(async (id: string) => {
       stored = stored.filter((row) => row.id !== id);
@@ -282,7 +282,10 @@ describe('ProjectView conversation delete', () => {
     fetchChatRunStatus.mockResolvedValue(null);
     listActiveChatRuns.mockResolvedValue([]);
     reattachDaemonRun.mockResolvedValue(undefined);
-    deleteConversation.mockResolvedValue(true);
+    deleteConversation.mockResolvedValue({
+      id: 'conv-1', projectId: 'project-1', title: 'Conversation 1',
+      folderId: null, createdAt: 1, updatedAt: 1,
+    });
 
     const onProjectsRefresh = vi.fn();
 
@@ -318,7 +321,7 @@ describe('ProjectView conversation delete', () => {
     fetchChatRunStatus.mockResolvedValue(null);
     listActiveChatRuns.mockResolvedValue([]);
     reattachDaemonRun.mockResolvedValue(undefined);
-    deleteConversation.mockResolvedValue(false);
+    deleteConversation.mockResolvedValue(null);
 
     const onProjectsRefresh = vi.fn();
 
@@ -350,7 +353,10 @@ describe('ProjectView conversation delete', () => {
     fetchChatRunStatus.mockResolvedValue(null);
     listActiveChatRuns.mockResolvedValue([]);
     reattachDaemonRun.mockResolvedValue(undefined);
-    deleteConversation.mockResolvedValue(true);
+    deleteConversation.mockResolvedValue({
+      id: 'conv-1', projectId: 'project-1', title: 'Conversation 1',
+      folderId: null, createdAt: 1, updatedAt: 1,
+    });
 
     renderProjectView(vi.fn());
 
@@ -385,7 +391,10 @@ describe('ProjectView conversation delete', () => {
     fetchChatRunStatus.mockResolvedValue(null);
     listActiveChatRuns.mockResolvedValue([]);
     reattachDaemonRun.mockResolvedValue(undefined);
-    deleteConversation.mockResolvedValue(true);
+    deleteConversation.mockResolvedValue({
+      id: 'conv-1', projectId: 'project-1', title: 'Conversation 1',
+      folderId: null, createdAt: 1, updatedAt: 1,
+    });
 
     renderProjectView(vi.fn(), 'conv-1');
 
@@ -408,7 +417,7 @@ describe('ProjectView conversation delete', () => {
     expect(chatPaneProps.messages?.some((message) => message.id === 'deleted-message')).toBe(false);
   });
 
-  it('re-seeds a fresh conversation when deleting the last remaining history item', async () => {
+  it.each(['authoritative-folder', null])('re-seeds using the authoritative snapshot (%s)', async (folderId) => {
     listConversations.mockResolvedValue([{ id: 'conv-1', title: 'Conversation 1' }]);
     listMessages.mockResolvedValue([]);
     fetchPreviewComments.mockResolvedValue([]);
@@ -421,7 +430,11 @@ describe('ProjectView conversation delete', () => {
     fetchChatRunStatus.mockResolvedValue(null);
     listActiveChatRuns.mockResolvedValue([]);
     reattachDaemonRun.mockResolvedValue(undefined);
-    deleteConversation.mockResolvedValue(true);
+    const selection = { agentId: 'codex', agentModels: {} };
+    deleteConversation.mockResolvedValue({
+      id: 'conv-1', projectId: 'project-1', title: 'Conversation 1',
+      folderId, sessionMode: 'chat', selection, createdAt: 1, updatedAt: 1,
+    });
     createConversation.mockResolvedValue({ id: 'conv-fresh', title: 'Fresh conversation' });
 
     renderProjectView(vi.fn());
@@ -433,8 +446,10 @@ describe('ProjectView conversation delete', () => {
       await chatPaneProps.onDeleteConversation!('conv-1');
     });
 
-    await waitFor(() => expect(createConversation).toHaveBeenCalledWith('project-1'));
-    await waitFor(() => expect(chatPaneProps.activeConversationId).toBe('conv-fresh'));
+    expect(createConversation).toHaveBeenCalledExactlyOnceWith('project-1', undefined, {
+      folderId, sessionMode: 'chat', selection,
+    });
+    expect(chatPaneProps.activeConversationId).toBe('conv-fresh');
     expect(chatPaneProps.conversations?.map((conversation) => conversation.id)).toEqual(['conv-fresh']);
   });
 });

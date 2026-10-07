@@ -4939,8 +4939,8 @@ export function ProjectView({
 
   const handleDeleteConversation = useCallback(
     async (id: string) => {
-      const ok = await deleteConversationApi(project.id, id);
-      if (!ok) return;
+      const deleted = await deleteConversationApi(project.id, id);
+      if (!deleted) return;
       // The deleted conversation may have owned an unanswered
       // `<question-form>`, which the daemon counts toward the project's
       // `needsInput` flag in `/api/projects`. Home cards render that
@@ -4984,7 +4984,11 @@ export function ProjectView({
 
       // Re-seed so the project always has at least one conversation to write into.
       setActiveConversationId(null);
-      void createConversation(project.id).then((fresh) => {
+      await createConversation(project.id, undefined, {
+        folderId: deleted.folderId ?? null,
+        ...(deleted.sessionMode ? { sessionMode: deleted.sessionMode } : {}),
+        ...(deleted.selection ? { selection: deleted.selection } : {}),
+      }).then((fresh) => {
         if (!fresh) return;
         setConversations([fresh]);
         setActiveConversationId(fresh.id);

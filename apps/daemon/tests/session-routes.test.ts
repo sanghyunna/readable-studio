@@ -159,6 +159,70 @@ describe('session routes', () => {
     expect((await json('GET', `/api/projects/${imported.body.project.id}`)).status).toBe(200);
   });
 
+  it('lifecycle create emits once and honors omitted versus null', async () => {
+    const { railEvents } = await import('../src/rail-events.js');
+    const folder = await createFolder('Lifecycle');
+    const seeded = await createSession({ title: 'Lifecycle', folderId: folder.id });
+    const route = `/api/projects/${seeded.workspace.id}/conversations`;
+    const events: unknown[] = [];
+    const unsubscribe = railEvents.subscribe((event) => events.push(event));
+    try {
+      for (const body of [{}, { folderId: null }, { folderId: folder.id }]) {
+        events.length = 0;
+        const created = await json('POST', route, body);
+        expect(created.status).toBe(200);
+        expect(created.body.conversation.folderId).toBe(
+          'folderId' in body ? body.folderId : folder.id,
+        );
+        expect(events).toEqual([
+          expect.objectContaining({
+            reason: 'session-created',
+            ids: [created.body.conversation.id],
+          }),
+        ]);
+        expect((await json('DELETE', `${route}/${created.body.conversation.id}`)).status).toBe(200);
+      }
+      events.length = 0;
+      expect((await json('POST', route, { folderId: 'missing-folder' })).status).toBe(404);
+      expect(events).toEqual([]);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it.each([true, false])('lifecycle authoritative last-delete and one replacement (%s)', async (grouped) => {
+    const folderId = grouped ? (await createFolder('Reseed')).id : null;
+    const seeded = await createSession({ title: 'Reseed', folderId });
+    const route = `/api/projects/${seeded.workspace.id}/conversations`;
+    const selection = { agentId: 'codex', agentModels: {} };
+    expect((await json('PATCH', `${route}/${seeded.session.id}`, {
+      sessionMode: 'chat', selection,
+    })).status).toBe(200);
+    const before = (await json('GET', `/api/projects/${seeded.workspace.id}`)).body;
+    expect(before).toMatchObject({
+      project: { id: seeded.workspace.id },
+      resolvedDir: expect.any(String),
+    });
+    const removed = await json('DELETE', `${route}/${seeded.session.id}`);
+    expect(removed.status).toBe(200);
+    expect(removed.body.conversation).toMatchObject({
+      id: seeded.session.id, folderId, sessionMode: 'chat', selection,
+    });
+    const snapshot = removed.body.conversation;
+    const fresh = await json('POST', route, {
+      folderId: snapshot.folderId,
+      sessionMode: snapshot.sessionMode,
+      selection: snapshot.selection,
+    });
+    expect(fresh.status).toBe(200);
+    expect(fresh.body.conversation).toMatchObject({
+      projectId: seeded.workspace.id, folderId, sessionMode: 'chat', selection,
+    });
+    expect((await json('GET', route)).body.conversations.map((row: { id: string }) => row.id))
+      .toEqual([fresh.body.conversation.id]);
+    expect((await json('GET', `/api/projects/${seeded.workspace.id}`)).body).toEqual(before);
+  });
+
   it('accepts folderId on the workspace conversation PATCH', async () => {
     const folder = await createFolder('Conversation patch');
     const created = await createSession({ title: 'Via conversation route' });

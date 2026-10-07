@@ -11,6 +11,7 @@ import type {
   ApplyResult,
   ChatSessionMode,
   CreateConversationRequest,
+  DeleteConversationResponse,
   ConversationSelection,
   CreatePluginShareProjectResponse,
   CreateTerminalRequest,
@@ -394,6 +395,7 @@ export async function createConversation(
   // by copying its messages. `forkAfterMessageId` narrows that copy to a
   // specific point in the source history.
   opts?: {
+    folderId?: string | null;
     seedFromConversationId?: string | null;
     forkAfterMessageId?: string | null;
     sessionMode?: ChatSessionMode;
@@ -407,6 +409,9 @@ export async function createConversation(
 ): Promise<Conversation | null> {
   try {
     const body: CreateConversationRequest = { title, ...(opts?.selection ? { selection: opts.selection } : {}) };
+    if (opts?.folderId !== undefined) {
+      body.folderId = opts.folderId;
+    }
     if (opts?.sessionMode) {
       body.sessionMode = opts.sessionMode;
     }
@@ -460,15 +465,16 @@ export async function patchConversation(
 export async function deleteConversation(
   projectId: string,
   conversationId: string,
-): Promise<boolean> {
+): Promise<Conversation | null> {
   try {
     const resp = await fetch(
       `/api/projects/${encodeURIComponent(projectId)}/conversations/${encodeURIComponent(conversationId)}`,
       { method: 'DELETE' },
     );
-    return resp.ok;
+    if (!resp.ok) return null;
+    return ((await resp.json()) as DeleteConversationResponse).conversation;
   } catch {
-    return false;
+    return null;
   }
 }
 

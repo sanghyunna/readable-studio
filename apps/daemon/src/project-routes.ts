@@ -1590,6 +1590,9 @@ export function registerProjectRoutes(
       return res.status(404).json({ error: 'project not found' });
     }
     const { title, seedFromConversationId, forkAfterMessageId } = req.body || {};
+    if (req.body?.folderId !== undefined && !folderIdExists(db, req.body.folderId)) {
+      return sendApiError(res, 404, 'NOT_FOUND', 'folder not found');
+    }
     const now = Date.now();
     const hasExplicitSessionMode = Boolean(
       req.body && Object.prototype.hasOwnProperty.call(req.body, 'sessionMode'),
@@ -1653,6 +1656,7 @@ export function registerProjectRoutes(
       projectId: req.params.id,
       title: typeof title === 'string' ? title.trim() || null : null,
       sessionMode,
+      folderId: req.body?.folderId,
       selection: req.body?.selection ?? recentConversationSelection(await readAppConfig(ctx.paths.RUNTIME_DATA_DIR)),
       createdAt: now,
       updatedAt: now,
@@ -1680,6 +1684,7 @@ export function registerProjectRoutes(
         });
       }
     }
+    if (conv) railEvents.emit('session-created', [conv.id]);
     res.json({ conversation: conv });
   });
 
@@ -1720,7 +1725,7 @@ export function registerProjectRoutes(
     }
     deleteConversation(db, req.params.cid);
     railEvents.emit('session-deleted', [req.params.cid]);
-    res.json({ ok: true });
+    res.json({ ok: true, conversation: conv });
   });
 
   // ---- Messages -------------------------------------------------------------

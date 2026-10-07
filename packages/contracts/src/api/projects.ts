@@ -386,8 +386,16 @@ export interface ConversationResponse {
   conversation: Conversation;
 }
 
+export interface DeleteConversationResponse {
+  ok: true;
+  /** Authoritative snapshot captured before deletion, for last-conversation reseeding. */
+  conversation: Conversation;
+}
+
 export interface CreateConversationRequest {
   title?: string | null;
+  /** Omitted inherits workspace placement; null explicitly creates a standalone session. */
+  folderId?: string | null;
   selection?: ConversationSelection;
   sessionMode?: ChatSessionMode;
   /**
