@@ -93,6 +93,8 @@ describe('relative preview assets', () => {
     const examplesRoot = path.join(root, 'plugins', '_official', 'examples');
     const folders = execFileSync('fd', ['^assets$', examplesRoot, '-t', 'd', '-d', '2', '--absolute-path'], { encoding: 'utf8' }).trim().split(/\r?\n/);
     const htmlFiles = execFileSync('fd', ['\\.html$', examplesRoot, '-t', 'f', '--absolute-path'], { encoding: 'utf8' }).trim().split(/\r?\n/).map((file) => path.resolve(file));
+    const auditStarted = performance.now();
+    const assertionStart = expect.getState().assertionCalls;
     let templates = 0;
     let assets = 0;
     const types: Record<string, string> = { '.webp': 'image/webp', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.svg': 'image/svg+xml', '.gif': 'image/gif', '.avif': 'image/avif', '.mp4': 'video/mp4', '.webm': 'video/webm' };
@@ -134,14 +136,15 @@ describe('relative preview assets', () => {
         const type = types[path.extname(diskPath).toLowerCase()];
         if (type) expect(asset.headers.get('content-type'), ref).toContain(type);
         const bytes = Buffer.from(await asset.arrayBuffer());
-        if (!/\.html?$/i.test(diskPath)) expect(bytes, ref).toEqual(await readFile(diskPath));
+        // Native equality checks every byte without Vitest's expensive per-byte deep traversal.
+        if (!/\.html?$/i.test(diskPath)) expect(bytes.equals(await readFile(diskPath)), ref).toBe(true);
         assets++;
       }
       templates++;
     }
     expect(templates).toBeGreaterThan(30);
     expect(assets).toBeGreaterThan(100);
-    process.stdout.write(`Offline preview audit: ${templates} templates, ${assets} references\n`);
+    process.stdout.write(`Offline preview audit: ${templates} templates, ${assets} references, ${expect.getState().assertionCalls - assertionStart} assertions, ${(performance.now() - auditStarted).toFixed(1)}ms\n`);
   }, 180_000);
 
   it('copies plugin-local skill media into the agent project and allows copying it beside output', async () => {
