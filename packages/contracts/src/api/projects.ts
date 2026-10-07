@@ -248,6 +248,8 @@ export interface Conversation {
   projectId: string;
   title: string | null;
   sessionMode?: ChatSessionMode;
+  /** Rail folder (UI label: Project) this session is listed under; null = standalone. */
+  folderId?: string | null;
   /** Null only for older conversations awaiting first-open initialization. */
   selection?: ConversationSelection | null;
   messageCount?: number;
@@ -356,6 +358,8 @@ export interface ImportFolderRequest {
   name?: string;
   skillId?: string | null;
   designSystemId?: string | null;
+  /** Rail folder for the imported workspace's seeded session; null/omitted = standalone. */
+  folderId?: string | null;
 }
 
 export interface ImportFolderResponse {
