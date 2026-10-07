@@ -10,7 +10,7 @@ import {
   READABLE_STUDIO_SQLITE_APPLICATION_ID,
 } from '../src/db.js';
 
-const supportedVersion = 2;
+const supportedVersion = 3;
 let root: string;
 let file: string;
 
@@ -84,13 +84,13 @@ describe('database migration safety', () => {
     expect(record).toEqual([{
       type: 'readable-studio:database-open-refusal',
       code: 'SCHEMA_VERSION_NEWER', pid: process.pid,
-      databaseVersion: 3, supportedVersion: 2,
+      databaseVersion: 4, supportedVersion: 3,
     }]);
     expect(failure).toBeInstanceOf(DatabaseOpenError);
-    expect(failure).toMatchObject({ code: 'SCHEMA_VERSION_NEWER', databaseVersion: 3, supportedVersion: 2 });
-    expect((failure as Error).message).toMatch(/schema version 3.*supports.*2/);
+    expect(failure).toMatchObject({ code: 'SCHEMA_VERSION_NEWER', databaseVersion: 4, supportedVersion: 3 });
+    expect((failure as Error).message).toMatch(/schema version 4.*supports.*3/);
     expect(fs.readFileSync(file)).toEqual(before);
-    expect(fs.existsSync(`${file}.pre-3`)).toBe(false);
+    expect(fs.existsSync(`${file}.pre-4`)).toBe(false);
   });
 
   it('migrates a populated version 1 database atomically with a pre-1 snapshot and all existing rows intact', () => {
@@ -102,7 +102,7 @@ describe('database migration safety', () => {
     const before = Object.fromEntries(tables.map(table => [table, original.prepare(`SELECT * FROM "${table}"`).all()]));
     closeDatabase();
     const migrated = openLocal();
-    expect(migrated.pragma('user_version', { simple: true })).toBe(2);
+    expect(migrated.pragma('user_version', { simple: true })).toBe(supportedVersion);
     expect(migrated.pragma('integrity_check', { simple: true })).toBe('ok');
     expect(migrated.prepare('PRAGMA table_info(conversations)').all()).toContainEqual(expect.objectContaining({ name: 'selection_json' }));
     for (const table of tables) {
@@ -114,6 +114,53 @@ describe('database migration safety', () => {
     try {
       expect(snapshot.pragma('user_version', { simple: true })).toBe(1);
       expect(snapshot.prepare('PRAGMA table_info(conversations)').all()).not.toContainEqual(expect.objectContaining({ name: 'selection_json' }));
+      for (const table of tables) expect(snapshot.prepare(`SELECT * FROM "${table}"`).all(), table).toEqual(before[table]);
+    } finally { snapshot.close(); }
+  });
+
+  it('migrates a populated version 2 database to version 3 with a pre-2 snapshot and all existing rows intact', () => {
+    legacyFixture();
+    openLocal();
+    closeDatabase();
+    const v2 = new Database(file);
+    try {
+      // Version 2 had neither the session_folders table nor conversations.folder_id.
+      v2.pragma('foreign_keys = OFF');
+      const columns = (v2.prepare('PRAGMA table_info(conversations)').all() as Array<{
+        name: string; type: string; notnull: number; dflt_value: string | null; pk: number;
+      }>).filter(column => column.name !== 'folder_id');
+      const definitions = columns.map(c => `${c.name} ${c.type}${c.pk ? ' PRIMARY KEY' : ''}` +
+        `${c.notnull ? ' NOT NULL' : ''}${c.dflt_value === null ? '' : ` DEFAULT ${c.dflt_value}`}`);
+      const names = columns.map(c => c.name).join(', ');
+      v2.exec(`
+        DROP INDEX idx_conv_folder;
+        CREATE TABLE conversations_v2 (${definitions.join(', ')},
+          FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE);
+        INSERT INTO conversations_v2 (${names}) SELECT ${names} FROM conversations;
+        DROP TABLE conversations;
+        ALTER TABLE conversations_v2 RENAME TO conversations;
+        CREATE INDEX idx_conv_project ON conversations(project_id, updated_at DESC);
+        DROP TABLE session_folders;
+      `);
+      v2.pragma('user_version = 2');
+    } finally { v2.close(); }
+    const original = new Database(file, { readonly: true });
+    const tables = original.prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").pluck().all() as string[];
+    const before = Object.fromEntries(tables.map(table => [table, original.prepare(`SELECT * FROM "${table}"`).all()]));
+    original.close();
+    const migrated = openLocal();
+    expect(migrated.pragma('user_version', { simple: true })).toBe(3);
+    expect(migrated.pragma('integrity_check', { simple: true })).toBe('ok');
+    for (const table of tables) {
+      const after = migrated.prepare(`SELECT * FROM "${table}"`).all() as Record<string, unknown>[];
+      if (table === 'conversations') for (const row of after) expect(row).toMatchObject({ folder_id: null });
+      if (table === 'conversations') for (const row of after) delete row.folder_id;
+      expect(after, table).toEqual(before[table]);
+    }
+    expect(migrated.prepare('SELECT COUNT(*) FROM session_folders').pluck().get()).toBe(0);
+    const snapshot = new Database(`${file}.pre-2`, { readonly: true });
+    try {
+      expect(snapshot.pragma('user_version', { simple: true })).toBe(2);
       for (const table of tables) expect(snapshot.prepare(`SELECT * FROM "${table}"`).all(), table).toEqual(before[table]);
     } finally { snapshot.close(); }
   });

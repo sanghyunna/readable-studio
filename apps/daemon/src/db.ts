@@ -32,7 +32,7 @@ export const HOSTED_DATABASE_OPEN_TIMEOUT_MS = 30_000;
 export const READABLE_STUDIO_SQLITE_APPLICATION_ID = 0x52535444;
 // Increment whenever the persisted schema changes. Version 0 is the legacy,
 // unstamped schema; the version commits atomically with all migration steps.
-export const DATABASE_SCHEMA_VERSION = 2;
+export const DATABASE_SCHEMA_VERSION = 3;
 // Retain three schema generations without unbounded full-database disk growth.
 export const PRE_MIGRATION_SNAPSHOT_LIMIT = 3;
 
@@ -496,6 +496,22 @@ function migrate(db: SqliteDb): void {
   if (!conversationCols.some((c: DbRow) => c.name === 'session_mode')) {
     db.exec(`ALTER TABLE conversations ADD COLUMN session_mode TEXT NOT NULL DEFAULT 'design'`);
   }
+  // Schema 3: rail folders group sessions; the workspace (projects row) stays
+  // the owner of files, cwd and checkpoints.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS session_folders (
+      id         TEXT PRIMARY KEY,
+      name       TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+  if (!conversationCols.some((c: DbRow) => c.name === 'folder_id')) {
+    db.exec(`ALTER TABLE conversations ADD COLUMN folder_id TEXT
+      REFERENCES session_folders(id) ON DELETE SET NULL`);
+    backfillSessionFolders(db);
+  }
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_conv_folder ON conversations(folder_id, updated_at DESC)`);
   const messageCols = db.prepare(`PRAGMA table_info(messages)`).all() as DbRow[];
   if (!messageCols.some((c: DbRow) => c.name === 'agent_id')) {
     db.exec(`ALTER TABLE messages ADD COLUMN agent_id TEXT`);
@@ -591,6 +607,34 @@ function migrate(db: SqliteDb): void {
   migrateCritique(db);
   migratePlugins(db);
   migrateMessageEvents(db);
+}
+
+// One-time placement of pre-v3 conversations: a workspace with N >= 2
+// conversations becomes a folder named after it; a single conversation becomes
+// a standalone session titled with the former project name when untitled.
+function backfillSessionFolders(db: SqliteDb): void {
+  const projects = rows(db.prepare(
+    `SELECT p.id, p.name, p.created_at AS createdAt, p.updated_at AS updatedAt,
+            (SELECT COUNT(*) FROM conversations c WHERE c.project_id = p.id) AS conversationCount
+       FROM projects p`,
+  ).all());
+  const insertFolderRow = db.prepare(
+    `INSERT INTO session_folders (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)`,
+  );
+  const assignFolder = db.prepare(`UPDATE conversations SET folder_id = ? WHERE project_id = ?`);
+  const titleStandalone = db.prepare(
+    `UPDATE conversations SET title = ? WHERE project_id = ? AND title IS NULL`,
+  );
+  for (const project of projects) {
+    const count = Number(project.conversationCount);
+    if (count >= 2) {
+      const folderId = randomUUID();
+      insertFolderRow.run(folderId, project.name, project.createdAt, project.updatedAt);
+      assignFolder.run(folderId, project.id);
+    } else if (count === 1) {
+      titleStandalone.run(project.name, project.id);
+    }
+  }
 }
 
 // Keep the SQL messages contract (including transcript exports) while appends
@@ -1130,12 +1174,38 @@ function normalizeTemplate(row: DbRow) {
 
 export function listConversations(db: SqliteDb, projectId: string) {
   return rows(db
-    .prepare(
-      `WITH project_conversations AS (
+    .prepare(conversationSummariesSql('WHERE project_id = ?'))
+    .all(projectId)).map(normalizeConversation);
+}
+
+/**
+ * Every conversation across workspaces for the rail, newest activity first,
+ * with its folder placement, workspace name and how many conversations share
+ * its workspace.
+ */
+export function listRailSessions(db: SqliteDb) {
+  return rows(db.prepare(conversationSummariesSql('')).all()).map((r) => ({
+    ...normalizeConversation(r),
+    workspaceName: String(r.workspaceName ?? ''),
+    workspaceSessionCount: Number(r.workspaceSessionCount ?? 1),
+  }));
+}
+
+export function countConversationsInWorkspace(db: SqliteDb, projectId: string): number {
+  return Number(db
+    .prepare(`SELECT COUNT(*) FROM conversations WHERE project_id = ?`)
+    .pluck()
+    .get(projectId) ?? 0);
+}
+
+function conversationSummariesSql(filter: string) {
+  return `WITH project_conversations AS (
           SELECT id, project_id AS projectId, title, session_mode AS sessionMode,
-                 selection_json AS selectionJson, created_at AS createdAt, updated_at AS updatedAt
+                 folder_id AS folderId,
+                 selection_json AS selectionJson, created_at AS createdAt, updated_at AS updatedAt,
+                 COUNT(*) OVER (PARTITION BY project_id) AS workspaceSessionCount
             FROM conversations
-           WHERE project_id = ?
+           ${filter}
         ),
         latest_runs AS (
           SELECT conversation_id AS conversationId,
@@ -1177,24 +1247,24 @@ export function listConversations(db: SqliteDb, projectId: string) {
              AND m.run_status IN ('succeeded', 'failed', 'canceled')
            GROUP BY m.conversation_id
         )
-        SELECT c.id, c.projectId, c.title, c.sessionMode, c.selectionJson, c.createdAt, c.updatedAt,
+        SELECT c.id, c.projectId, c.title, c.sessionMode, c.folderId, c.selectionJson,
+               c.createdAt, c.updatedAt, c.workspaceSessionCount, p.name AS workspaceName,
                COALESCE(mc.messageCount, 0) AS messageCount,
                lr.latestRunStatus, lr.latestRunStartedAt,
                lr.latestRunEndedAt, lr.latestRunEventsJson,
                trd.totalDurationMs
           FROM project_conversations c
+          LEFT JOIN projects p ON p.id = c.projectId
           LEFT JOIN latest_runs lr ON lr.conversationId = c.id
           LEFT JOIN message_counts mc ON mc.conversationId = c.id
           LEFT JOIN total_run_durations trd ON trd.conversationId = c.id
-         ORDER BY c.updatedAt DESC`,
-    )
-    .all(projectId)).map(normalizeConversation);
+         ORDER BY c.updatedAt DESC`;
 }
 
 export function getConversation(db: SqliteDb, id: string) {
   const r = db
     .prepare(
-      `SELECT id, project_id AS projectId, title, session_mode AS sessionMode,
+      `SELECT id, project_id AS projectId, title, session_mode AS sessionMode, folder_id AS folderId,
               selection_json AS selectionJson, created_at AS createdAt, updated_at AS updatedAt,
               (SELECT COUNT(*) FROM messages WHERE conversation_id = conversations.id) AS messageCount
          FROM conversations WHERE id = ?`,
@@ -1220,6 +1290,7 @@ function normalizeConversation(r: DbRow) {
     projectId: r.projectId,
     title: r.title ?? null,
     sessionMode: normalizeConversationSessionMode(r.sessionMode),
+    folderId: r.folderId ?? null,
     selection: r.selectionJson == null ? null : JSON.parse(r.selectionJson),
     messageCount: Number(r.messageCount ?? 0),
     createdAt: Number(r.createdAt),
@@ -1343,16 +1414,28 @@ function latestUsageDurationMs(eventsJson: unknown): number | undefined {
   return undefined;
 }
 
+/**
+ * `folderId` undefined inherits the folder of the most recently updated
+ * conversation in the same workspace (forks, routine runs and re-seeded chats
+ * land next to their siblings); explicit null means standalone.
+ */
 export function insertConversation(db: SqliteDb, c: DbRow) {
+  const folderId = c.folderId !== undefined
+    ? c.folderId
+    : db.prepare(
+        `SELECT folder_id FROM conversations WHERE project_id = ?
+          ORDER BY updated_at DESC LIMIT 1`,
+      ).pluck().get(c.projectId) ?? null;
   db.prepare(
     `INSERT INTO conversations
-       (id, project_id, title, session_mode, selection_json, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+       (id, project_id, title, session_mode, folder_id, selection_json, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     c.id,
     c.projectId,
     c.title ?? null,
     normalizeConversationSessionMode(c.sessionMode),
+    folderId,
     c.selection == null ? null : JSON.stringify(c.selection),
     c.createdAt,
     c.updatedAt,
@@ -1373,14 +1456,71 @@ export function updateConversation(db: SqliteDb, id: string, patch: DbRow) {
   };
   db.prepare(
     `UPDATE conversations
-        SET title = ?, session_mode = ?, selection_json = ?, updated_at = ? WHERE id = ?`,
-  ).run(merged.title ?? null, merged.sessionMode,
+        SET title = ?, session_mode = ?, folder_id = ?, selection_json = ?, updated_at = ? WHERE id = ?`,
+  ).run(merged.title ?? null, merged.sessionMode, merged.folderId ?? null,
     merged.selection == null ? null : JSON.stringify(merged.selection), merged.updatedAt, id);
   return getConversation(db, id);
 }
 
 export function deleteConversation(db: SqliteDb, id: string) {
   db.prepare(`DELETE FROM conversations WHERE id = ?`).run(id);
+}
+
+// ---------- session folders ----------
+
+const FOLDER_COLS = `f.id, f.name, f.created_at AS createdAt, f.updated_at AS updatedAt,
+  (SELECT COUNT(*) FROM conversations c WHERE c.folder_id = f.id) AS sessionCount`;
+
+function normalizeFolder(r: DbRow) {
+  return {
+    id: String(r.id),
+    name: String(r.name),
+    createdAt: Number(r.createdAt),
+    updatedAt: Number(r.updatedAt),
+    sessionCount: Number(r.sessionCount ?? 0),
+  };
+}
+
+export function listFolders(db: SqliteDb) {
+  return rows(db
+    .prepare(`SELECT ${FOLDER_COLS} FROM session_folders f ORDER BY f.updated_at DESC, f.name`)
+    .all()).map(normalizeFolder);
+}
+
+export function getFolder(db: SqliteDb, id: string) {
+  const r = row(db.prepare(`SELECT ${FOLDER_COLS} FROM session_folders f WHERE f.id = ?`).get(id));
+  return r ? normalizeFolder(r) : null;
+}
+
+export function insertFolder(
+  db: SqliteDb,
+  f: { id: string; name: string; createdAt: number; updatedAt: number },
+) {
+  db.prepare(
+    `INSERT INTO session_folders (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)`,
+  ).run(f.id, f.name, f.createdAt, f.updatedAt);
+  return getFolder(db, f.id);
+}
+
+/** `updatedAt` defaults to now; pass it alone to bump recency after a move. */
+export function updateFolder(
+  db: SqliteDb,
+  id: string,
+  patch: { name?: string; updatedAt?: number },
+) {
+  const existing = getFolder(db, id);
+  if (!existing) return null;
+  db.prepare(`UPDATE session_folders SET name = ?, updated_at = ? WHERE id = ?`).run(
+    patch.name ?? existing.name,
+    typeof patch.updatedAt === 'number' ? patch.updatedAt : Date.now(),
+    id,
+  );
+  return getFolder(db, id);
+}
+
+/** Sessions in the folder become standalone through ON DELETE SET NULL. */
+export function deleteFolder(db: SqliteDb, id: string): boolean {
+  return db.prepare(`DELETE FROM session_folders WHERE id = ?`).run(id).changes > 0;
 }
 
 // ---------- agent sessions ----------
