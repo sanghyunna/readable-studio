@@ -9245,10 +9245,6 @@ async function startServerWithProbeLifetime({
       if (typeof dir !== 'string' || dir.length === 0) return;
       if (!activeSkillDir) activeSkillDir = dir;
       if (!activeSkillDirs.includes(dir)) activeSkillDirs.push(dir);
-      if (DESIGN_TEMPLATE_ROOTS.some((root) => {
-        const relative = path.relative(root, dir);
-        return relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
-      })) templateReference = true;
     };
     const mergeSkillCritiquePolicy = (
       current: SkillCritiquePolicy,

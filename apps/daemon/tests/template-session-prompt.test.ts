@@ -131,4 +131,83 @@ process.stdin.on('end', () => {
       await new Promise<void>((resolve) => captureServer.close(() => resolve()));
     }
   });
+
+  // Runs a real project through /api/runs with a capturing fake agent and returns the composed prompt.
+  async function composedPrompt(projectBody: Record<string, unknown>): Promise<string> {
+    const captureServer = net.createServer();
+    let timeout: ReturnType<typeof setTimeout>;
+    const captured = new Promise<string>((resolve, reject) => {
+      timeout = setTimeout(() => reject(new Error('agent prompt capture timed out')), 15_000);
+      captureServer.once('connection', (socket) => {
+        let text = '';
+        socket.setEncoding('utf8');
+        socket.on('data', (chunk) => {
+          text += chunk;
+          if (!text.endsWith('\n')) return;
+          clearTimeout(timeout);
+          resolve(JSON.parse(text).prompt);
+          socket.end('ok');
+        });
+        socket.once('error', (error) => { clearTimeout(timeout); reject(error); });
+      });
+      captureServer.once('error', (error) => { clearTimeout(timeout); reject(error); });
+    });
+    void captured.catch(() => undefined);
+    captureServer.listen(0, '127.0.0.1');
+    await once(captureServer, 'listening');
+    const capturePort = (captureServer.address() as net.AddressInfo).port;
+    try {
+      let sent = '';
+      await withFakeAgent('opencode', `
+if (process.argv.includes('--version')) { console.log('1.0.0'); process.exit(0); }
+let prompt = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', chunk => { prompt += chunk; });
+process.stdin.on('end', () => {
+  const socket = require('node:net').connect(${capturePort}, '127.0.0.1', () => socket.write(JSON.stringify({ prompt }) + '\\n'));
+  socket.on('data', () => { console.log(JSON.stringify({ type: 'text', part: { text: 'ok' } })); });
+  socket.on('error', error => { console.error(error); process.exitCode = 1; });
+});
+`, async () => {
+        const created = await post<CreateProjectResponse>('/api/projects', projectBody);
+        const message = 'USER_REQUEST_SCOPE: make a deck';
+        const run = await post<{ runId: string }>('/api/runs', {
+          agentId: 'opencode', model: 'openai/gpt-5', message, currentPrompt: message, projectId: created.project.id,
+        });
+        sent = await captured;
+        // Finish at the buffered terminal SSE event, not by timing luck.
+        const response = await fetch(`${baseUrl}/api/runs/${run.runId}/events`, { signal: AbortSignal.timeout(15_000) });
+        const reader = response.body!.getReader();
+        let events = '';
+        try {
+          while (!events.includes('event: end')) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            events += new TextDecoder().decode(value);
+          }
+        } finally { await reader.cancel(); }
+      });
+      return sent;
+    } finally {
+      clearTimeout(timeout!);
+      await new Promise<void>((resolve) => captureServer.close(() => resolve()));
+    }
+  }
+
+  it('keeps the authoritative skill workflow for an ordinary project that merely uses simple-deck', async () => {
+    const sent = await composedPrompt({ id: 'ordinary-simple-deck', name: 'Ordinary deck', skillId: 'simple-deck', metadata: { kind: 'deck' } });
+    expect(sent).not.toContain('<readable-template-policy>');
+    expect(sent).toContain("Follow this skill's workflow exactly");
+  });
+
+  it.each([
+    ['metadata.templateRef', { id: 'explicit-template-ref', name: 'Template ref', skillId: 'simple-deck', metadata: { kind: 'other', templateRef: { id: 'simple-deck', name: 'Simple deck', boundary: 0 } } }],
+    ['kind template', { id: 'explicit-kind-template', name: 'Saved template', metadata: { kind: 'template', templateId: 'explicit-kind-template-src' } }],
+  ])('still applies the template contract for explicit %s selections', async (_label, body) => {
+    if (body.metadata.kind === 'template') {
+      insertTemplate(openDatabase('', { dataDir }), { id: 'explicit-kind-template-src', name: 'T', files: [{ name: 'index.html', content: '<h1>X</h1>' }], createdAt: 1 });
+    }
+    const sent = await composedPrompt(body);
+    expect(sent).toContain('<readable-template-policy>');
+  });
 });

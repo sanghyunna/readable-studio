@@ -422,7 +422,7 @@ export interface ComposeInput {
   // Snapshot of HTML files that the agent should treat as a starting
   // reference rather than a fixed deliverable.
   template?: ProjectTemplate | undefined;
-  // Also set for direct selections from the design-template registry.
+  // Set only for explicit template provenance (metadata.templateRef or a saved kind:'template' project).
   templateReference?: boolean | undefined;
   // When present and enabled, the Critique Theater protocol addendum is
   // concatenated to the end of the composed prompt. Omitting this field
