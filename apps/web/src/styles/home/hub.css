@@ -458,7 +458,7 @@
   font-weight: 600;
 }
 
-.hub-tree__section-action { opacity: 1; pointer-events: auto; }
+.hub-tree__section-head > .hub-tree__section-action { opacity: 1; pointer-events: auto; }
 .hub-row__icon { display: inline-flex; grid-area: icon; color: var(--text-muted); }
 .hub-row[data-selected="true"] { background: var(--selected-soft); }
 .hub-row[data-dragging="true"] { opacity: 0.5; }

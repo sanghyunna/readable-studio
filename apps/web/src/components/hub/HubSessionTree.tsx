@@ -625,6 +625,9 @@ export function HubSessionTree({
 
   const onKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLDivElement>, fallbackIndex: number) => {
+      // Descendant controls own their keys and native button activation. Only
+      // the focused treeitem may run tree navigation or row shortcuts.
+      if (event.target !== event.currentTarget) return;
       // Resolve the row from the focused element so keyboard traversal stays
       // correct even when focus arrived without going through onClick.
       const focusedKey = event.currentTarget.dataset.rowKey;

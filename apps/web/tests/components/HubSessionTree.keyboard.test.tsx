@@ -75,6 +75,45 @@ describe('HubSessionTree keyboard and semantics', () => {
     expect(onOpenSession).toHaveBeenCalledWith(expect.objectContaining({ id: 's2' }));
   });
 
+  it.each(['Enter', ' '])('leaves %s on row action buttons to native activation', (key) => {
+    const onOpenSession = vi.fn();
+    const onPeekSession = vi.fn();
+    const onNewSession = vi.fn();
+    const onSelectFolder = vi.fn();
+    render(
+      <HubSessionTree
+        tree={{ folders: PROJECTS, recents: [] }}
+        currentSessionId={null}
+        onOpenSession={onOpenSession}
+        onPeekSession={onPeekSession}
+        onNewSession={onNewSession}
+        onSelectFolder={onSelectFolder}
+        onRenameSession={vi.fn()}
+        onRenameFolder={vi.fn()}
+      />,
+    );
+    for (const id of ['hub-peek-s1', 'hub-menu-session-s1', 'hub-new-session-p1', 'hub-menu-folder-p1']) {
+      const button = screen.getByTestId(id);
+      button.focus();
+      expect(fireEvent.keyDown(button, { key })).toBe(true);
+      expect(onOpenSession).not.toHaveBeenCalled();
+      expect(onPeekSession).not.toHaveBeenCalled();
+      expect(onSelectFolder).not.toHaveBeenCalled();
+      expect(screen.getByTestId('hub-project-p1').getAttribute('aria-expanded')).toBe('true');
+      // jsdom does not synthesize native keyboard clicks; exercise that click
+      // separately after proving the key's default action was not cancelled.
+      fireEvent.click(button);
+      if (id === 'hub-peek-s1') expect(onPeekSession).toHaveBeenCalledTimes(1);
+      if (id === 'hub-new-session-p1') expect(onNewSession).toHaveBeenCalledWith(PROJECTS[0]);
+      if (id.includes('menu')) {
+        expect(screen.getByRole('menu')).toBeTruthy();
+        fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+      }
+      onPeekSession.mockClear();
+    }
+    expect(screen.getAllByRole('treeitem').filter((row) => row.tabIndex === 0)).toHaveLength(1);
+  });
+
   it('renames and deletes the focused row without changing the existing activation model', () => {
     const onRename = vi.fn();
     const onDelete = vi.fn();

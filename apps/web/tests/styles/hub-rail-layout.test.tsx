@@ -50,6 +50,16 @@ describe('Hub rail layout and disclosure contract', () => {
     expect(getComputedStyle(tree).gridTemplateRows).toBe('none');
   });
 
+  it('keeps section actions visible and pointer-active without row hover', () => {
+    const style = document.createElement('style');
+    style.textContent = css;
+    document.head.append(style);
+    render(<HubSessionTree tree={{ folders: [], recents: [] }} currentSessionId={null} onOpenSession={vi.fn()} onCreateFolder={vi.fn()} />);
+    const button = screen.getByTestId('hub-folder-create');
+    expect(getComputedStyle(button).opacity).toBe('1');
+    expect(getComputedStyle(button).pointerEvents).toBe('auto');
+  });
+
   it('keeps the chevron and rendered session visibility in sync with disclosure', () => {
     applyRules('.hub-row__chevron', ".hub-row__chevron[data-open='true']", ".hub-tree__group[data-open='false']");
     render(<HubSessionTree
