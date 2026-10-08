@@ -24,7 +24,15 @@ export async function fetchRail(options: { signal?: AbortSignal } = {}): Promise
   try {
     const resp = await fetch('/api/rail', { signal: options.signal });
     if (!resp.ok) return { ok: false, aborted: false };
-    return { ok: true, rail: (await resp.json()) as RailResponse };
+    const body = (await resp.json()) as Record<string, unknown> | null;
+    if (
+      !Array.isArray(body?.folders) ||
+      !Array.isArray(body?.recents) ||
+      !body.folders.every((f) => f && Array.isArray((f as Record<string, unknown>).sessions))
+    ) {
+      return { ok: false, aborted: false };
+    }
+    return { ok: true, rail: body as unknown as RailResponse };
   } catch {
     return { ok: false, aborted: options.signal?.aborted ?? false };
   }
