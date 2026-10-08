@@ -93,7 +93,8 @@
   grid-column: 1;
   grid-row: 1;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  /* Head, actions, divider, scrolling tree, footer. Only the tree grows. */
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   min-inline-size: 0;
   min-height: 0;
   /* Expanded, the rail is a panel floating inside the shell, inset by the ONE
@@ -486,8 +487,9 @@
 
 .hub-tree {
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr);
+  /* Optional open-work and status rows must not stretch the filters/body. */
   grid-auto-rows: auto;
+  align-content: start;
   min-inline-size: 0;
   min-height: 0;
 }
@@ -692,6 +694,10 @@
   border-bottom: 1.5px solid var(--text-faint);
   transform: rotate(-45deg) scale(0.6);
   transition: transform var(--dur-enter) var(--ease-out);
+}
+
+.hub-row__chevron[data-open='true'] {
+  transform: rotate(45deg) scale(0.6);
 }
 
 .hub-row__state {
