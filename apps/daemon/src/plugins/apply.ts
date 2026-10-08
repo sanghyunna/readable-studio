@@ -311,6 +311,21 @@ function pickDesignSystemId(
 // `packages/contracts/src/prompts/plugin-block.ts` so the daemon and the
 // contracts-side composer share one definition (spec §11.8 PB1).
 // Re-exported here for back-compat with daemon-internal callers.
-export const pluginPromptBlock = renderPluginBlock;
+export function pluginPromptBlock(
+  snapshot: AppliedPluginSnapshot,
+  options?: { templateReference: boolean; visualCharacteristics?: readonly string[] | undefined },
+): string {
+  if (!options?.templateReference) return renderPluginBlock(snapshot);
+  // Templates never promote catalogue copy, example queries, or hydrated
+  // defaults into instructions. The composer quotes this rendering data.
+  // Reuse the earlier explicit visual contract when available; no catalogue
+  // fallback. SKILL/seed references still preserve templates without one.
+  return JSON.stringify({
+    visualCharacteristics: options.visualCharacteristics ?? [],
+    referenceParameters: snapshot.inputs,
+    assets: snapshot.assetsStaged,
+    atoms: snapshot.resolvedContext?.atoms ?? [],
+  });
+}
 
 export type { McpServerSpec };

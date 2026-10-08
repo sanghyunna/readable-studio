@@ -1459,11 +1459,11 @@ export function HomeView({
 
   async function submit(autoSendFirstMessage = true): Promise<boolean> {
     const typed = draft.getSnapshot().trim();
-    // Hub template chip: the hidden brief goes first, then the user's words,
-    // exactly like the old "brief inserted, user types after it" composition.
+    // Template material is quoted separately; only typed text/attachments
+    // provide content. The same prefix determines the persisted display split.
     const template = autoSendFirstMessage ? hiddenTemplate : null;
     const trimmed = template ? composeTemplatePrompt(template.text, typed) : typed;
-    let submittedPrompt = autoSendFirstMessage ? trimmed : '';
+    let submittedPrompt = autoSendFirstMessage ? (template ? typed : trimmed) : '';
     const submittedAttachments = stagedFiles.map((item) => item.file);
     if (autoSendFirstMessage && !trimmed && submittedAttachments.length === 0) return false;
     if (surface === 'hub' && autoSendFirstMessage && !trimmed && onOpenDocument) {
@@ -1598,7 +1598,13 @@ export function HomeView({
       const reference = visualReferenceForPlugin(item.record);
       return reference ? [{ item, reference }] : [];
     });
-    const visualReferences = visualContextsWithReferences.map(({ reference }) => reference);
+    const templateVisualReference = template && submittedActive
+      ? visualReferenceForPlugin(submittedActive.record)
+      : null;
+    const visualReferences = [
+      ...visualContextsWithReferences.map(({ reference }) => reference),
+      ...(templateVisualReference ? [templateVisualReference] : []),
+    ];
     // Strip only mentions that produced an actual reference. The picker uses
     // the same conversion to prevent no-op selections, while this condition
     // ensures a stale or externally staged context can never erase user text.
@@ -1606,6 +1612,7 @@ export function HomeView({
       (current, { item }) => removePluginMentionFromPrompt(current, item.record),
       submittedPrompt,
     );
+    if (template) submittedPrompt = composeTemplatePrompt(template.text, submittedPrompt);
     if (!submittedActive) submittedPluginInputs = { prompt: submittedPrompt };
     const contextMcpServers = selectedMcpContexts
       .filter((item) => !item.inlineBacked || mentionTokenPresent(submittedPrompt, item.server.label || item.server.id))
@@ -1632,7 +1639,7 @@ export function HomeView({
         ? submittedActive?.record.id ?? DEFAULT_UNSELECTED_SCENARIO_PLUGIN_ID
         : submittedActive?.record.id ?? null;
     const examplePromptContext = (() => {
-      if (!autoSendFirstMessage || !examplePromptInfoRef.current) return null;
+      if (!autoSendFirstMessage || template || !examplePromptInfoRef.current) return null;
       const key = 'readable:example-prompt-used';
       if (localStorage.getItem(key)) return null;
       return examplePromptInfoRef.current;

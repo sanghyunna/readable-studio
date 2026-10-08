@@ -14,7 +14,22 @@ export interface HiddenTemplate {
   text: string;
 }
 
-const TEMPLATE_USER_SEPARATOR = '\n\n';
+function templateReferencePrefix(templateText: string): string {
+  // Quote source text so headings/closing tags inside a future template cannot
+  // masquerade as the user's request. Keep all framing before the display split.
+  const reference = JSON.stringify({ text: templateText }).replaceAll('<', '\\u003c');
+  return [
+    '<readable-template-reference role="structure-and-visual-style-only">',
+    reference,
+    '</readable-template-reference>',
+    '',
+    'Use the template and seeded example files only for structure and visual style. Never copy their example names, numbers, people, products, or claims. Only my request below and my attachments supply content and data. If those are insufficient, ask through <question-form> rather than inventing content.',
+    '',
+    '<readable-user-content-source/>',
+    '',
+    '',
+  ].join('\n');
+}
 
 /** Naming surfaces must never use the hidden brief, even for a chip-only send. */
 export function visiblePromptForNaming(
@@ -25,18 +40,14 @@ export function visiblePromptForNaming(
   return userTextFromTemplateMessage(content, ref)?.trim() || ref.name;
 }
 
-/** The sent prompt: template brief, then the user's words (when any). */
+/** Reference first, clearly separated user content last (including an empty brief). */
 export function composeTemplatePrompt(templateText: string, userText: string): string {
-  const trimmedUser = userText.trim();
-  if (!trimmedUser) return templateText;
-  return `${templateText}${TEMPLATE_USER_SEPARATOR}${trimmedUser}`;
+  return `${templateReferencePrefix(templateText)}${userText.trim()}`;
 }
 
 /** Character offset where the user's own words start inside the sent prompt. */
-export function templatePromptBoundary(templateText: string, userText: string): number {
-  return userText.trim()
-    ? templateText.length + TEMPLATE_USER_SEPARATOR.length
-    : templateText.length;
+export function templatePromptBoundary(templateText: string, _userText: string): number {
+  return templateReferencePrefix(templateText).length;
 }
 
 /**

@@ -37,6 +37,7 @@ import {
 import {
   composeSystemPrompt,
 } from './prompts/system.js';
+import { isTemplateReferenceProject } from './prompts/template-reference.js';
 import { readEffectiveSystemPromptBodies } from './prompts/user-overrides.js';
 import { expandHomePrefix, resolveProjectRelativePath } from './home-expansion.js';
 import { emittedRenderableQuestionForm } from './question-form-detect.js';
@@ -9213,6 +9214,7 @@ async function startServerWithProbeLifetime({
           .filter((id) => resolveSkillId(id) !== effectiveCanonicalSkillId)
       : [];
 
+    let templateReference = isTemplateReferenceProject(metadata);
     let skillBody;
     let skillName;
     let skillMode;
@@ -9243,6 +9245,10 @@ async function startServerWithProbeLifetime({
       if (typeof dir !== 'string' || dir.length === 0) return;
       if (!activeSkillDir) activeSkillDir = dir;
       if (!activeSkillDirs.includes(dir)) activeSkillDirs.push(dir);
+      if (DESIGN_TEMPLATE_ROOTS.some((root) => {
+        const relative = path.relative(root, dir);
+        return relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+      })) templateReference = true;
     };
     const mergeSkillCritiquePolicy = (
       current: SkillCritiquePolicy,
@@ -9526,7 +9532,13 @@ async function startServerWithProbeLifetime({
     ) {
       try {
         const snap = getSnapshot(db, appliedPluginSnapshotId);
-        if (snap) pluginBlock = pluginPromptBlock(snap);
+        if (snap) {
+          const plugin = templateReference ? getInstalledPlugin(db, snap.pluginId) : null;
+          pluginBlock = pluginPromptBlock(snap, {
+            templateReference,
+            visualCharacteristics: plugin?.manifest.readable?.visualReference?.characteristics,
+          });
+        }
       } catch (err) {
         console.warn(
           `[plugins] pluginBlock build failed: ${err?.message ?? err}`,
@@ -9588,6 +9600,7 @@ async function startServerWithProbeLifetime({
       memoryBody,
       metadata,
       template,
+      templateReference,
       // critiqueCfg.enabled is loaded from READABLE_CRITIQUE_ENABLED only, so a
       // run that the resolver enabled via phase / project / skill (env
       // unset) would have critiqueShouldRun = true while critiqueCfg.enabled

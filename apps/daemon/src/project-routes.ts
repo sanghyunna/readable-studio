@@ -1,4 +1,5 @@
 import { rm } from 'node:fs/promises';
+import { markTemplateSeedHtml } from './prompts/template-reference.js';
 import { initializeConversationSelection, isConversationSelection, recentConversationSelection } from './conversation-selection.js';
 import { copyMessagePrefix, getMessagePosition, listMessagePage } from './db.js';
 import { registerMessageHistoryRoutes } from './message-history-routes.js';
@@ -1332,7 +1333,8 @@ export function registerProjectRoutes(
     // For "from template" projects, seed the chosen template's snapshot
     // HTML into the new project folder so the agent can Read/edit files
     // on disk (the system prompt also embeds them, but a real on-disk
-    // copy lets the agent treat them as the project's working state).
+    // copy preserves the look). HTML carries an invisible placeholder notice;
+    // these seeds are rendering references, not user-authored working content.
     if (
       metadata &&
       typeof metadata === 'object' &&
@@ -1355,7 +1357,7 @@ export function registerProjectRoutes(
               PROJECTS_DIR,
               id,
               f.name,
-              Buffer.from(f.content, 'utf8'),
+              Buffer.from(/\.html?$/i.test(f.name) ? markTemplateSeedHtml(f.content) : f.content, 'utf8'),
               {},
               projectMetadata,
             );

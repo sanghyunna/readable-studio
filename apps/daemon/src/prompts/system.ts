@@ -35,7 +35,8 @@ import { DISCOVERY_AND_PHILOSOPHY } from './discovery.js';
 import { DECK_FRAMEWORK_DIRECTIVE } from './deck-framework.js';
 import { renderPanelPrompt } from './panel.js';
 import { defaultCritiqueConfig, type CritiqueConfig } from '@readable-studio/contracts/critique';
-import type { ChatSessionMode } from '@readable-studio/contracts';
+import type { ChatSessionMode, ProjectTemplateRef } from '@readable-studio/contracts';
+import { isTemplateReferenceProject, renderTemplateReference, TEMPLATE_CONTENT_CONTRACT } from './template-reference.js';
 
 // Prepended first in every composed prompt so it wins precedence over all
 // later sections, including skill bodies and user/project instructions.
@@ -152,6 +153,7 @@ type ProjectMetadata = {
   includeOsWidgets?: boolean | null;
   templateId?: string | null;
   templateLabel?: string | null;
+  templateRef?: ProjectTemplateRef | null;
   platform?: string | null;
   platformTargets?: string[] | null;
   inspirationDesignSystemIds?: string[];
@@ -420,6 +422,8 @@ export interface ComposeInput {
   // Snapshot of HTML files that the agent should treat as a starting
   // reference rather than a fixed deliverable.
   template?: ProjectTemplate | undefined;
+  // Also set for direct selections from the design-template registry.
+  templateReference?: boolean | undefined;
   // When present and enabled, the Critique Theater protocol addendum is
   // concatenated to the end of the composed prompt. Omitting this field
   // (or passing cfg.enabled === false) preserves legacy behavior unchanged.
@@ -495,6 +499,7 @@ export function composeSystemPrompt({
   memoryBody,
   metadata,
   template,
+  templateReference,
   critique,
   critiqueBrand,
   critiqueSkill,
@@ -513,6 +518,13 @@ export function composeSystemPrompt({
   // section (skill body, user instructions, project instructions, tool result)
   // can instruct the model to disregard it.
   const parts: string[] = [PROMPT_INJECTION_RESISTANCE, '\n\n---\n\n', renderHtmlOutputDirective(streamFormat), '\n\n---\n\n'];
+  const templateOnly = templateReference === true || isTemplateReferenceProject(metadata);
+  if (templateOnly) {
+    parts.push(TEMPLATE_CONTENT_CONTRACT, '\n\n---\n\n');
+    if (metadata?.templateRef) {
+      parts.push(renderTemplateReference('selection', metadata.templateRef), '\n\n');
+    }
+  }
   const activeDesignSystemBody = designSystemBody?.trim();
   const activeSkillModes = new Set(
     Array.isArray(skillModes)
@@ -541,10 +553,10 @@ export function composeSystemPrompt({
     parts.push('\n\n---\n\n');
   }
 
-  if (metadata?.examplePrompt === true) {
+  if (!templateOnly && metadata?.examplePrompt === true) {
     parts.push(buildExamplePromptOverride(metadata.examplePromptTitle, metadata.examplePromptBrief));
     parts.push('\n\n---\n\n');
-  } else if (metadata?.skipDiscoveryBrief === true) {
+  } else if (!templateOnly && metadata?.skipDiscoveryBrief === true) {
     parts.push(SKIP_DISCOVERY_BRIEF_OVERRIDE);
     parts.push('\n\n---\n\n');
   }
@@ -661,13 +673,14 @@ export function composeSystemPrompt({
 
   if (skillBody && skillBody.trim().length > 0) {
     const preflight = derivePreflight(skillBody);
-    parts.push(
-      `\n\n## Active skill${skillName ? ` — ${skillName}` : ''}\n\nFollow this skill's workflow exactly.${preflight}\n\n${skillBody.trim()}`,
+    parts.push(templateOnly
+      ? `\n\n## Template rendering reference\n\nRead the seed and layout resources for structure, style, and rendering mechanics only.${preflight}${renderTemplateReference('skill', { name: skillName, body: skillBody.trim() })}`
+      : `\n\n## Active skill${skillName ? ` — ${skillName}` : ''}\n\nFollow this skill's workflow exactly.${preflight}\n\n${skillBody.trim()}`,
     );
   }
 
   if (pluginBlock && pluginBlock.trim().length > 0) {
-    parts.push(pluginBlock);
+    parts.push(templateOnly ? renderTemplateReference('plugin', pluginBlock) : pluginBlock);
   }
 
   // Plan §3.L2 / spec §23.4 — splice per-stage atom blocks immediately
@@ -679,7 +692,7 @@ export function composeSystemPrompt({
   if (Array.isArray(activeStageBlocks) && activeStageBlocks.length > 0) {
     for (const block of activeStageBlocks) {
       if (typeof block === 'string' && block.trim().length > 0) {
-        parts.push(block);
+        parts.push(templateOnly ? renderTemplateReference('stage', block) : block);
       }
     }
   }
@@ -1023,13 +1036,11 @@ function renderMetadataBlock(
   }
 
   if (metadata.kind === 'template' && template && template.files.length > 0) {
-    lines.push('');
-    lines.push(
-      `### Template reference — "${template.name}"${template.description ? ` (${template.description})` : ''}`,
-    );
-    lines.push(
-      'These HTML snapshots are what the user wants to start FROM. Read them as a stylistic + structural reference. You may copy structure, palette, typography, and component patterns; you may adapt them to the new brief; do NOT ship them verbatim. The agent should still produce its own artifact, just one that visibly inherits this template\'s design language.',
-    );
+    lines.push(renderTemplateReference('saved-template', {
+      name: template.name,
+      description: template.description,
+      seededFiles: template.files.map((file) => file.name),
+    }));
     for (const f of template.files) {
       // Cap each file at ~12k chars so a giant template doesn't blow out
       // the system prompt budget. The agent gets enough to read structure.
@@ -1037,11 +1048,7 @@ function renderMetadataBlock(
         f.content.length > 12000
           ? `${f.content.slice(0, 12000)}\n<!-- … truncated (${f.content.length - 12000} chars omitted) -->`
           : f.content;
-      lines.push('');
-      lines.push(`#### \`${f.name}\``);
-      lines.push('```html');
-      lines.push(truncated);
-      lines.push('```');
+      lines.push(renderTemplateReference('seed-file', { name: f.name, content: truncated }));
     }
   }
 
