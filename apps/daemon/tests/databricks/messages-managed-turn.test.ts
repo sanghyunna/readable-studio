@@ -79,6 +79,10 @@ test('real Pi recovers to Messages, writes with a real tool, resumes natively af
         await withDeadline(() => run.completed, 25000);
         expect(run.session.hasFatalError()).toBe(false);
         expect(events.filter(event => event.type === 'text_delta').map(event => event.delta).join('')).toBe('DOCUMENT_WRITTEN');
+        // Documented native thinking_delta/signature_delta must survive the tool
+        // turn AND the final answer, through translated and native Pi consumers.
+        // https://docs.databricks.com/aws/en/machine-learning/model-serving/query-reason-models
+        expect(events.filter(event => event.type === 'thinking_delta').map(event => event.delta).join('')).toBe('Ready.Ready.');
         expect(await readFile(path.join(cwd, 'index.html'), 'utf8')).toBe(document(turn));
         const saved = run.session.getLastSessionPath(); expect(saved).toBeTruthy();
         resumeSession = { path: saved!, root: run.runtime.invocation.sessionDir };

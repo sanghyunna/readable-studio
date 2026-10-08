@@ -26,6 +26,8 @@ export interface DatabricksRuntimeResolution {
   api: Exclude<DatabricksEndpointApi, null>;
   baseUrl: string;
   model: string;
+  /** Metadata identity, not the user-chosen serving alias. */
+  servedModelName?: string;
   apiKey: string;
   onAuthRejected?: () => Promise<void>;
   wireCapabilities?: DatabricksWireCapabilities;
@@ -494,6 +496,7 @@ export class LocalDatabricksService implements DatabricksService {
       appModelId: entry.endpoint.appModelId!, endpointId: entry.endpoint.id, profileId: binding.id,
       api: entry.endpoint.api, baseUrl: `${binding.host}${entry.basePath}`, model: entry.upstreamName,
       apiKey,
+      ...(entry.endpoint.servedModelName ? { servedModelName: entry.endpoint.servedModelName } : {}),
       ...(entry.wireCapabilities ? { wireCapabilities: entry.wireCapabilities } : {}),
       captureFailure: (capture) => writeDatabricksFailureCapture(this.options.dataRoot, capture),
       onCapabilitiesLearned: async (learned) => {

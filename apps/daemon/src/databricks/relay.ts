@@ -1,7 +1,7 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { namedPath, namedRequest } from './named-profile.js';
 import { outputCeiling } from './request-limits.js';
-import { effectiveDatabricksLimits } from './capabilities.js';
+import { effectiveDatabricksLimits, normalizeDatabricksModelIdentity } from './capabilities.js';
 import { setTimeout as backoff } from 'node:timers/promises';
 import { once } from 'node:events';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
@@ -32,6 +32,10 @@ export interface DatabricksRelayOptions {
 const MAX_BODY_BYTES = 32 * 1024 * 1024;
 const MAX_FRAME_BYTES = 4 * 1024 * 1024;
 const OUTPUT_FIELDS = ['max_completion_tokens', 'max_tokens', 'max_output_tokens', 'max_new_tokens'] as const;
+const EFFORT_BETA = 'effort-2025-11-24';
+// Process-lifetime, endpoint/model-local negotiation; never persist credentials.
+const unsupportedEffortBeta = new Set<string>();
+const unsupportedReasoningSummary = new Set<string>();
 
 const relayError = (detail: DatabricksFailureDetail) => ({ type: 'error', error: { type: 'api_error', ...detail } });
 class UpstreamStreamError extends Error {
@@ -88,12 +92,21 @@ function chatUsage(value: unknown): Record<string, unknown> | undefined {
     prompt_tokens_details: value.input_tokens_details, completion_tokens_details: value.output_tokens_details };
 }
 
+/** Databricks documents readable and encrypted summaries; signatures/data are not display text.
+ * https://docs.databricks.com/aws/en/machine-learning/model-serving/score-foundation-models */
+function readableSummary(value: unknown): string[] {
+  return Array.isArray(value) ? value.flatMap(part => record(part) && part.type === 'summary_text'
+    && typeof part.text === 'string' ? [part.text] : []) : [];
+}
+
 function chatResponse(payload: Record<string, unknown>): Record<string, unknown> {
   if (!Array.isArray(payload.output) || !['completed', 'incomplete'].includes(String(payload.status))) throw new Error('Invalid Responses result');
   const content: string[] = [];
+  const reasoning: string[] = [];
   const calls: Record<string, unknown>[] = [];
   for (const item of payload.output) {
     if (!record(item)) throw new Error('Invalid output item');
+    if (item.type === 'reasoning') reasoning.push(...readableSummary(item.summary));
     if (item.type === 'function_call') calls.push({ id: item.call_id, type: 'function', function: { name: item.name, arguments: item.arguments } });
     if (item.type === 'message' && Array.isArray(item.content)) for (const part of item.content) {
       if (record(part) && typeof part.text === 'string') content.push(part.text);
@@ -101,7 +114,8 @@ function chatResponse(payload: Record<string, unknown>): Record<string, unknown>
     }
   }
   return { id: payload.id, object: 'chat.completion', created: payload.created_at, model: payload.model,
-    choices: [{ index: 0, message: { role: 'assistant', content: content.join('') || null, ...(calls.length ? { tool_calls: calls } : {}) },
+    choices: [{ index: 0, message: { role: 'assistant', content: content.join('') || null,
+      ...(reasoning.join('') ? { reasoning_content: reasoning.join('') } : {}), ...(calls.length ? { tool_calls: calls } : {}) },
       finish_reason: payload.status === 'incomplete' ? 'length' : calls.length ? 'tool_calls' : 'stop' }], usage: chatUsage(payload.usage) };
 }
 
@@ -117,14 +131,9 @@ function normalizeChatContent(payload: Record<string, unknown>): Record<string, 
     const text: string[] = [];
     const reasoning: string[] = [];
     for (const part of message.content) {
-      if (!record(part)) throw new Error('Invalid chat content block');
+      if (!record(part)) continue;
       if (part.type === 'text' && typeof part.text === 'string') text.push(part.text);
-      else if (part.type === 'reasoning' && Array.isArray(part.summary)) {
-        for (const summary of part.summary) {
-          if (!record(summary) || summary.type !== 'summary_text' || typeof summary.text !== 'string') throw new Error('Invalid reasoning summary');
-          reasoning.push(summary.text);
-        }
-      } else throw new Error('Unsupported chat content block');
+      else if (part.type === 'reasoning') reasoning.push(...readableSummary(part.summary));
     }
     return { ...choice, [key]: { ...message, content: text.join(''),
       ...(reasoning.length ? { reasoning_content: reasoning.join('') } : {}) } };
@@ -247,7 +256,12 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
     let created: unknown;
     let completed = false;
     const toolIndexes = new Map<unknown, number>();
-    const reasoningDialects = new Map<unknown, string>();
+    const reasoningDialects = new Map<string, string>();
+    const reasoningKeys = (id: unknown, outputIndex: unknown): string[] => {
+      const keys = [...(typeof id === 'string' ? [`id:${id}`] : []),
+        ...(typeof outputIndex === 'number' ? [`index:${outputIndex}`] : [])];
+      return keys.length ? keys : ['unindexed'];
+    };
     const messagesStream = translatedMessages ? new MessagesChatStream() : undefined;
     async function emit(value: unknown, event?: string): Promise<void> {
       signal.throwIfAborted();
@@ -288,6 +302,15 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
           id: responseId, object: 'chat.completion.chunk', created, model: modelAlias,
           choices: [{ index: 0, delta, finish_reason }], ...(usage ? { usage } : {}),
         });
+        const finalReasoning = async (item: unknown, outputIndex: unknown) => {
+          if (!record(item) || item.type !== 'reasoning') return;
+          const keys = reasoningKeys(item.id, outputIndex);
+          if (keys.some(key => reasoningDialects.has(key))) return;
+          const text = readableSummary(item.summary).join('');
+          if (!text) return;
+          for (const key of keys) reasoningDialects.set(key, 'final');
+          await chunk({ reasoning_content: text });
+        };
         if (payload.type === 'response.created' && record(payload.response)) {
           responseId = payload.response.id;
           created = payload.response.created_at;
@@ -298,11 +321,13 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
           if (typeof payload.delta !== 'string' || !payload.delta) return;
           // Stream the first dialect per item; its alternate is a second view of
           // the same reasoning. Never buffer thoughts past intervening prose.
-          const item = payload.item_id ?? payload.output_index;
-          const dialect = reasoningDialects.get(item);
+          const keys = reasoningKeys(payload.item_id, payload.output_index);
+          const dialect = keys.map(key => reasoningDialects.get(key)).find(Boolean);
           if (dialect && dialect !== payload.type) return;
-          reasoningDialects.set(item, payload.type);
+          for (const key of keys) reasoningDialects.set(key, payload.type);
           await chunk({ reasoning_content: payload.delta });
+        } else if (payload.type === 'response.output_item.done') {
+          await finalReasoning(payload.item, payload.output_index);
         } else if (payload.type === 'response.output_item.added' && record(payload.item) && payload.item.type === 'function_call') {
           const toolIndex = toolIndexes.size;
           toolIndexes.set(payload.output_index, toolIndex);
@@ -315,6 +340,9 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
         } else if (payload.type === 'response.completed' || payload.type === 'response.incomplete') {
           if (!record(payload.response)) throw new Error('Missing response');
           const result = chatResponse(payload.response);
+          if (Array.isArray(payload.response.output)) for (const [outputIndex, item] of payload.response.output.entries()) {
+            await finalReasoning(item, outputIndex);
+          }
           const choices = result.choices as Array<{ finish_reason: string }>;
           await chunk({}, choices[0]!.finish_reason, result.usage);
           await emit('[DONE]');
@@ -340,7 +368,31 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
       } else {
         const safeEvent = anthropic && typeof payload.type === 'string' && /^[a-z_]+$/.test(payload.type) ? payload.type
           : event && /^[a-z_]+$/.test(event) ? event : undefined;
-        await emit(anthropic ? payload : normalizeChatContent(payload), safeEvent);
+        const normalized = anthropic ? payload : normalizeChatContent(payload);
+        // Pi consumes prose before reasoning inside a combined Chat delta. Split
+        // only combined chunks here so thoughts precede prose/tools without a Pi patch.
+        if (!anthropic && Array.isArray(normalized.choices)) {
+          const thoughts: Record<string, unknown>[] = [];
+          const choices = normalized.choices.map(choice => {
+            if (!record(choice) || !record(choice.delta)) return choice;
+            const delta = choice.delta;
+            const fields = ['reasoning_content', 'reasoning', 'reasoning_text'].filter(field => typeof delta[field] === 'string' && delta[field]);
+            if (!fields.length || !(delta.content || delta.tool_calls)) return choice;
+            const rest = { ...delta };
+            const thought: Record<string, unknown> = {};
+            if (delta.role !== undefined) thought.role = delta.role;
+            for (const field of fields) { thought[field] = delta[field]; delete rest[field]; }
+            thoughts.push({ ...choice, delta: thought, finish_reason: null });
+            return { ...choice, delta: rest };
+          });
+          if (thoughts.length) {
+            const { usage: _usage, ...envelope } = normalized;
+            await emit({ ...envelope, choices: thoughts }, safeEvent);
+            await emit({ ...normalized, choices }, safeEvent);
+            return;
+          }
+        }
+        await emit(normalized, safeEvent);
       }
     }
     try {
@@ -490,15 +542,32 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
         // invocations and native/translated Messages) can bypass tool sanitation.
         if (Array.isArray(wire.tools)) wire.tools = wire.tools.map(tool => record(tool) ? gatewayFunctionTool(tool) : tool);
         const endpoint = new URL(namedProfile ? namedPath(namedProfile, runtime.model) : route, upstream.origin);
+        const featureKey = JSON.stringify([endpoint.href, runtime.model]);
+        // ReasoningConfig is scoped to GPT-5/o-series, not arbitrary Responses
+        // models. Metadata lets renamed services retain their actual family.
+        // https://docs.databricks.com/aws/en/machine-learning/foundation-model-apis/api-reference
+        const summaryFamily = (runtime.servedModelName ?? runtime.model).split(',').every(name =>
+          /^(?:gpt-5(?:[.-][a-z0-9]+)*|o[1-9](?:-[a-z0-9]+)*)$/.test(normalizeDatabricksModelIdentity(name)));
+        const addSummary = responses && summaryFamily && !unsupportedReasoningSummary.has(featureKey)
+          && record(wire.reasoning) && typeof wire.reasoning.effort === 'string' && !['none', 'off'].includes(wire.reasoning.effort);
+        if (addSummary && record(wire.reasoning)) wire.reasoning.summary = 'auto';
         const serializedWire = JSON.stringify(namedProfile
           ? namedRequest({ ...namedProfile, ...(outputLimit === undefined ? {} : { outputLimit }) }, runtime.model, wire) : wire);
         const outboundBody: unknown = JSON.parse(serializedWire);
         if (!record(outboundBody)) throw new Error('Invalid serialized request');
         lastAttempt = { endpoint, body: outboundBody, routeKind: invocation && route === upstream.pathname ? 'serving-invocations'
           : messagesSurface ? 'anthropic-messages' : responses ? 'openai-responses' : 'chat-completions' };
+        const outboundHeaders: Record<string, string> = { ...headers, ...(messagesSurface ? { 'anthropic-version': '2023-06-01' } : {}) };
+        // The Databricks Messages effort examples explicitly negotiate this beta.
+        // Do not enable thinking or alter the selected mode/budget on idle turns.
+        // https://docs.databricks.com/aws/en/machine-learning/model-serving/query-reason-models
+        const addEffortBeta = messagesSurface && record(outboundBody.output_config)
+          && typeof outboundBody.output_config.effort === 'string' && !unsupportedEffortBeta.has(featureKey)
+          && !headers['anthropic-beta']?.split(',').map(value => value.trim()).includes(EFFORT_BETA);
+        if (addEffortBeta) outboundHeaders['anthropic-beta'] = [headers['anthropic-beta'], EFFORT_BETA].filter(Boolean).join(',');
         result = await upstreamFetch(endpoint, {
           method: 'POST', redirect: 'error', signal: controller.signal,
-          headers: { ...headers, ...(messagesSurface ? { 'anthropic-version': '2023-06-01' } : {}) },
+          headers: outboundHeaders,
           body: serializedWire,
         });
         upstreamStatus = result.status;
@@ -509,6 +578,16 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
         if (result.ok) break;
         rejected = await readUpstreamError(result);
         const message = record(rejected) ? rejected.message ?? (record(rejected.error) ? rejected.error.message : undefined) : undefined;
+        if (result.status === 400 && addSummary && /reasoning|summary/i.test(JSON.stringify(rejected))
+          && correctOnce('reasoning-summary')) {
+          unsupportedReasoningSummary.add(featureKey);
+          continue;
+        }
+        if (result.status === 400 && addEffortBeta && /anthropic-beta|effort-2025-11-24/i.test(JSON.stringify(rejected))
+          && correctOnce('effort-beta')) {
+          unsupportedEffortBeta.add(featureKey);
+          continue;
+        }
         const limit = typeof message === 'string' ? outputCeiling(message) : undefined;
         const actualBudget = OUTPUT_FIELDS.map(field => outboundBody[field]).find(value => typeof value === 'number');
         if (result.status === 400 && typeof actualBudget === 'number'
