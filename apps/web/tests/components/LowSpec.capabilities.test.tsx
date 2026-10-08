@@ -15,6 +15,21 @@ vi.mock('../../src/state/projects', async (importOriginal) => ({
   listConversations,
   readConversations: readConversationsFromListMock(listConversations),
 }));
+// The rail is fed by GET /api/rail: one folder (`p1`) holding one session.
+vi.mock('../../src/state/rail', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../src/state/rail')>(),
+  subscribeRailEvents: () => () => {},
+  fetchRail: async () => ({ ok: true, rail: {
+    folders: [{
+      id: 'p1', name: 'Project', createdAt: 1, updatedAt: 1,
+      sessions: [{
+        id: 'c1', projectId: 'p1', title: 'Session', createdAt: 1, updatedAt: 1,
+        workspaceId: 'p1', folderId: 'p1', workspaceSessionCount: 1, state: 'idle',
+      }],
+    }],
+    recents: [], generatedAt: 1,
+  } }),
+}));
 beforeEach(() => applyPerformanceProfileToDocument('low'));
 afterEach(() => {
   cleanup();
@@ -24,16 +39,17 @@ afterEach(() => {
 });
 
 describe('low-profile capabilities', () => {
-  it('retains navigation, project opening, agent/model selection and composer submission', async () => {
+  it('retains navigation, session opening, agent/model selection and composer submission', async () => {
     // Given the real Hub and execution switcher with low active.
-    const open = vi.fn();
+    const openSession = vi.fn();
+    const newSession = vi.fn();
     const submit = vi.fn();
     const changeAgent = vi.fn();
     await act(async () => {
       render(<TestHubHome
         projects={[{ id: 'p1', name: 'Project', skillId: null, designSystemId: null, createdAt: 1, updatedAt: 1 }]}
-        projectsLoading={false} onOpenSession={vi.fn()} onOpenProject={open}
-        onSubmitPrompt={submit} onNewProject={vi.fn()}
+        projectsLoading={false} onOpenSession={openSession}
+        onSubmitPrompt={submit} onNewProject={newSession}
         executionSwitcher={<InlineModelSwitcher
           config={{ ...DEFAULT_CONFIG, mode: 'daemon', agentId: 'codex', performanceProfile: 'low' }}
           agents={[{ id: 'codex', name: 'Codex', bin: 'codex', available: true, version: '1', models: [{ id: 'default', label: 'Default' }] }]}
@@ -50,7 +66,12 @@ describe('low-profile capabilities', () => {
     expect(screen.getByTestId('home-hero-input')).toBeTruthy();
     expect(screen.getByTestId('home-hero-agent-model').querySelector('button')).not.toBeNull();
     expect(screen.getByTestId('inline-model-switcher-chip').getAttribute('aria-haspopup')).toBe('menu');
+    // A folder has no open action; its sessions open their own workspace.
     expect(screen.getByTestId('hub-project-p1')).toBeTruthy();
+    fireEvent.click(await screen.findByTestId('hub-session-c1'));
+    expect(openSession).toHaveBeenCalledWith('p1', 'c1');
+    fireEvent.click(screen.getByTestId('hub-new-session'));
+    expect(newSession).toHaveBeenCalledTimes(1);
     expect(submit).toHaveBeenCalledWith('Create artifact', { designSystemId: null });
   });
 

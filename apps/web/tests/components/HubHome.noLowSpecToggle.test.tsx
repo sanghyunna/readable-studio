@@ -62,7 +62,7 @@ describe('Hub has no low-spec toggle', () => {
     expect(screen.getByTestId('execution-switcher-probe')).not.toBeNull();
     // The drop-to-edit zone left with the template carousel taking its slot.
     expect(screen.queryByTestId('hub-drop-to-edit')).toBeNull();
-    expect(screen.getByTestId('hub-new-project')).not.toBeNull();
+    expect(screen.getByTestId('hub-new-session')).not.toBeNull();
     expect(screen.getByTestId('hub-search')).not.toBeNull();
   });
 });

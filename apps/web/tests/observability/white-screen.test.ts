@@ -208,7 +208,7 @@ describe('observability/white-screen', () => {
     render(createElement(App));
 
     expect(screen.getByTestId('home-ready')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'New project' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'New session' })).toBeTruthy();
     expect(document.documentElement.getAttribute('data-readable-app-mounted')).toBe('1');
     expect(screen.getByTestId('selected-agent').textContent).toBe('codex');
     // Agent detection deliberately starts during the pre-paint layout pass so
@@ -219,7 +219,7 @@ describe('observability/white-screen', () => {
     expect(fetchAppVersionInfo).not.toHaveBeenCalled();
   });
 
-  it('routes New project from the single persistent rail to the Hub before registries settle', async () => {
+  it('routes New session from the single persistent rail to the Hub before registries settle', async () => {
     // Only geometry is stubbed: the rail and controller stay real.
     const { navigate } = await import('../../src/router');
     vi.stubGlobal('ResizeObserver', class {
@@ -231,8 +231,8 @@ describe('observability/white-screen', () => {
 
     // Singular global queries fail on duplicate reachable controls/owners.
     const rail = screen.getByRole('navigation');
-    const action = screen.getByRole<HTMLButtonElement>('button', { name: 'New project' });
-    expect(action).toBe(screen.getByTestId('hub-new-project'));
+    const action = screen.getByRole<HTMLButtonElement>('button', { name: 'New session' });
+    expect(action).toBe(screen.getByTestId('hub-new-session'));
     expect(rail.contains(action)).toBe(true);
     expect(action.disabled).toBe(false);
     expect(action.closest('[inert], [hidden], [aria-hidden="true"]')).toBeNull();
@@ -246,7 +246,7 @@ describe('observability/white-screen', () => {
       expect(screen.queryByRole('dialog')).toBeNull();
       expect(screen.queryByTestId('new-project-modal')).toBeNull();
       expect(screen.getByRole('navigation')).toBe(rail);
-      expect(screen.getByRole('button', { name: 'New project' })).toBe(action);
+      expect(screen.getByRole('button', { name: 'New session' })).toBe(action);
     }
     expect(vi.mocked(navigate).mock.calls.filter(([route]) => route.kind === 'home' && route.view === 'home')).toHaveLength(2);
 
