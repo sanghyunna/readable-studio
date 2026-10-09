@@ -43,7 +43,8 @@ afterEach(() => {
 });
 
 function renderFailed(code: string, detail: string, agentId = 'claude') {
-  const message = {
+  // Reloaded history crosses the JSON API boundary, with no live error state.
+  const message = JSON.parse(JSON.stringify({
     id: 'msg-failed',
     role: 'assistant',
     content: '',
@@ -52,7 +53,7 @@ function renderFailed(code: string, detail: string, agentId = 'claude') {
     runStatus: 'failed',
     agentId,
     events: [{ kind: 'status', label: 'error', detail, code }],
-  } as ChatMessage;
+  })) as ChatMessage;
   render(
     <ChatPane
       messages={[message]}
@@ -77,6 +78,23 @@ function renderFailed(code: string, detail: string, agentId = 'claude') {
 }
 
 describe('ChatPane missing document failures', () => {
+  it.each([
+    ['DOCUMENT_NOT_SAVED', 'claude', 'chat.documentNotSaved'],
+    ['AGENT_CONNECTION_DROPPED', 'claude', 'chat.connectionDropped'],
+    ['AMR_AUTH_REQUIRED', 'amr', 'chat.amrError.authMessage'],
+    ['AMR_INSUFFICIENT_BALANCE', 'amr', 'chat.amrError.balanceMessage'],
+    ['RATE_LIMITED', 'kimi', 'chat.kimiError.usageLimitMessage'],
+    ['AGENT_AUTH_REQUIRED', 'kimi', 'chat.kimiError.authMessage'],
+  ])('localizes persisted %s after an unmount and reload', async (code, agentId, key) => {
+    const { getKo } = await import('../../src/i18n/locales/ko');
+    const expected = (getKo() as unknown as Record<string, string>)[key]!;
+    renderFailed(code!, 'Upstream diagnostic', agentId);
+    cleanup();
+    const card = renderFailed(code!, 'Upstream diagnostic', agentId);
+    expect(card?.textContent).toContain(expected);
+    expect(card?.textContent).not.toContain('Upstream diagnostic');
+  });
+
   it('shows the Korean not-saved message for DOCUMENT_NOT_SAVED', () => {
     const card = renderFailed(
       'DOCUMENT_NOT_SAVED',

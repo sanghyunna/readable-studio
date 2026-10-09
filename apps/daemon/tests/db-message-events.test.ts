@@ -14,6 +14,8 @@ import {
   upsertMessage,
 } from '../src/db.js';
 
+import { runSseEventToPersistedAgentEvent } from '../src/server.js';
+
 describe('message event persistence', () => {
   let tempDir: string;
 
@@ -69,6 +71,25 @@ describe('message event persistence', () => {
         detail: 'Agent stalled without emitting any new output for 1s.',
       },
     ]);
+  });
+
+  it.each(['DOCUMENT_NOT_SAVED', 'AGENT_CONNECTION_DROPPED', 'AMR_AUTH_REQUIRED', 'AMR_INSUFFICIENT_BALANCE', 'RATE_LIMITED', 'AGENT_AUTH_REQUIRED', 'AGENT_EXECUTION_FAILED'])('retains %s from SSE through a database reopen', (code) => {
+    const db = openDatabase(tempDir, { dataDir: tempDir });
+    insertProject(db, { id: 'proj-1', name: 'Failure', createdAt: 1, updatedAt: 1 });
+    insertConversation(db, { id: 'conv-1', projectId: 'proj-1', title: 'Failure', createdAt: 1, updatedAt: 1 });
+    upsertMessage(db, 'conv-1', {
+      id: 'assistant-1', role: 'assistant', content: '', runId: 'run-1', runStatus: 'failed', events: [],
+    });
+    const detail = 'Upstream diagnostic';
+    const persisted = runSseEventToPersistedAgentEvent('error', { error: { code, message: detail } });
+    expect(persisted).not.toBeNull();
+    appendMessageAgentEvent(db, 'assistant-1', persisted!);
+    closeDatabase();
+    const reopened = openDatabase(tempDir, { dataDir: tempDir });
+    expect(listMessages(reopened, 'conv-1')[0]?.events).toEqual([
+      { kind: 'status', label: 'error', detail, code },
+    ]);
+    expect(runSseEventToPersistedAgentEvent('error', { code, message: detail })).toEqual(persisted);
   });
 
   it('appends agent events and mirrors text deltas into message content', () => {
