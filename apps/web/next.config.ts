@@ -149,7 +149,11 @@ function configuredAllowedDevHosts(): string[] {
   const bindHost = parseAllowedDevHost(process.env.READABLE_HOST ?? '');
   return Array.from(new Set([
     '127.0.0.1',
-    ...localPrivateLanHosts(),
+    // allowedDevOrigins only matters to `next dev`, but this config is serialized
+    // into production artifacts (required-server-files.json, standalone server.js).
+    // Keep the build machine's LAN addresses out of them so builds stay
+    // reproducible and do not leak the builder's network.
+    ...(isProd ? [] : localPrivateLanHosts()),
     ...(bindHost != null && bindHost !== '0.0.0.0' && bindHost !== '::' ? [bindHost] : []),
     ...configured,
     ...allowedOrigins,
