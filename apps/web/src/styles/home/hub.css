@@ -1283,6 +1283,9 @@
 /* ---- floating menus ---- */
 
 .hub-menu {
+  /* Session flyouts use the expanded rail's default width and the placer's viewport inset. */
+  --hub-session-flyout-width: 292px;
+  --hub-menu-viewport-inset: 10px;
   position: fixed;
   /* HubMenu is portalled to body, outside `.hub__nav`'s z=60 stacking
      context. Keep the entire menu above the rail so row/action layers cannot
@@ -1298,6 +1301,18 @@
   border-radius: var(--radius);
   background: var(--bg-panel);
   box-shadow: var(--shadow-md);
+}
+
+.hub-menu--sessions {
+  width: min(var(--hub-session-flyout-width), calc(100vw - 2 * var(--hub-menu-viewport-inset)));
+  max-width: none;
+  max-block-size: calc(100dvh - 2 * var(--hub-menu-viewport-inset));
+  overflow-y: auto;
+}
+
+.hub-menu--sessions .hub-row__action {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .hub-menu__label {

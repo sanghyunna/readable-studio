@@ -8,6 +8,7 @@ import type { HubFolderNode } from '../../src/components/hub/types';
 
 afterEach(() => {
   cleanup();
+  localStorage.removeItem('readable-studio:hub-folder-collapsed');
 });
 
 function node(overrides: Partial<HubFolderNode> & { id: string }): HubFolderNode {
@@ -113,7 +114,7 @@ describe('HubSessionTree', () => {
     expect(order).toEqual(['p2', 'p1']);
   });
 
-  it('exposes collapsed-project sessions as exclusive radio choices', () => {
+  it('exposes collapsed-project sessions as shared tree rows with one current destination', () => {
     // Given: one session is the current destination in a collapsed rail.
     render(
       <HubSessionTree
@@ -127,11 +128,11 @@ describe('HubSessionTree', () => {
     // When: the project session menu opens.
     fireEvent.click(screen.getByTestId('hub-project-p1'));
 
-    // Then: every session is a radio item and only the current one is selected.
-    const choices = screen.getAllByRole('menuitemradio');
+    // Then: the same session rows render in the flyout, with one current destination.
+    const choices = within(screen.getByTestId('hub-project-flyout')).getAllByRole('treeitem');
     expect(choices).toHaveLength(MANY.sessions.length);
-    expect(choices.filter((choice) => choice.getAttribute('aria-checked') === 'true')).toHaveLength(1);
-    expect(screen.getByTestId('hub-project-flyout-s1').getAttribute('aria-checked')).toBe('true');
+    expect(choices.filter((choice) => choice.getAttribute('aria-current') === 'true')).toHaveLength(1);
+    expect(screen.getByTestId('hub-session-s1').getAttribute('aria-current')).toBe('true');
     expect(screen.getByTestId('hub-project-flyout').querySelector('.hub-menu__check')).toBeNull();
   });
 

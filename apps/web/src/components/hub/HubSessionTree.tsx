@@ -58,8 +58,7 @@ interface Props {
   openWork?: ReactNode;
   /**
    * The rail is showing glyphs only. Sessions are not rendered inline, so a
-   * folder's sessions are reached through the flyout instead of by expanding;
-   * recents are not rendered at all.
+   * folder's sessions and the recents are reached through shared-row flyouts.
    */
   collapsed?: boolean;
   /**
@@ -145,6 +144,18 @@ const COMPACT_SESSION_PAGE = 4;
 const RECENTS_KEY = 'recents';
 const RECENTS_MORE_KEY = 'm:recents';
 const CREATE_KEY = 'create';
+const FOLDER_COLLAPSED_KEY = 'readable-studio:hub-folder-collapsed';
+
+function loadFolderCollapsed(): Record<string, boolean> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const value: unknown = JSON.parse(window.localStorage.getItem(FOLDER_COLLAPSED_KEY) ?? '{}');
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    return Object.fromEntries(Object.entries(value).filter(([, state]) => typeof state === 'boolean'));
+  } catch {
+    return {};
+  }
+}
 
 /* ---------------------------------------------------------------------------
  * Session-surface handoff: Hub session tree -> workspace.
@@ -321,12 +332,37 @@ export function HubSessionTree({
   const t = useT();
   const [filter, setFilter] = useState<HubFilter>('all');
   const [sort, setSort] = useState<HubSort>('recent');
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(loadFolderCollapsed);
   const [expandedOverflow, setExpandedOverflow] = useState<Record<string, boolean>>({});
+  // Mark navigation handled only once its session arrives in the asynchronous rail read.
+  const revealedSessionRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (currentSessionId === null) {
+      revealedSessionRef.current = null;
+      return;
+    }
+    if (revealedSessionRef.current === currentSessionId) return;
+    const folder = moveFolders.find((candidate) => candidate.sessions.some((session) => session.id === currentSessionId));
+    if (!folder && !tree.recents.some((session) => session.id === currentSessionId)) return;
+    revealedSessionRef.current = currentSessionId;
+    if (folder) {
+      setCollapsed((prev) => ({ ...prev, [folder.id]: false }));
+      setExpandedOverflow((prev) => ({ ...prev, [folder.id]: true }));
+    }
+  }, [currentSessionId, moveFolders, tree.recents]);
+
+  useEffect(() => {
+    // Search narrows tree.folders; prune only against the complete move destinations.
+    if (railStatus !== 'ready') return;
+    const ids = new Set(moveFolders.map((folder) => folder.id));
+    const next = Object.fromEntries(Object.entries(collapsed).filter(([id]) => ids.has(id)));
+    window.localStorage.setItem(FOLDER_COLLAPSED_KEY, JSON.stringify(next));
+    if (Object.keys(next).length !== Object.keys(collapsed).length) setCollapsed(next);
+  }, [collapsed, moveFolders, railStatus]);
   const [cursor, setCursor] = useState(0);
   const [menu, setMenu] = useState<MenuState | null>(null);
-  // The collapsed rail's folder flyout. Kept apart from `menu` so a row's
-  // overflow menu and its flyout can never both claim the same anchor.
+  // The collapsed rail's session flyout. Its reused rows own their normal
+  // overflow menu, with a separate anchor above this flyout.
   const [flyout, setFlyout] = useState<{ folderId: string; anchor: HTMLElement } | null>(null);
   const [sortAnchor, setSortAnchor] = useState<HTMLElement | null>(null);
   const [compactSessionPage, setCompactSessionPage] = useState(
@@ -493,13 +529,20 @@ export function HubSessionTree({
         next.push({ key: `m:${entry.folder.id}`, kind: 'more', folder: entry.folder });
       }
     }
-    if (railCollapsed) return next;
+    if (railCollapsed) {
+      const folder = flyout ? visible.find((entry) => entry.folder.id === flyout.folderId)?.folder : null;
+      const sessions = flyout?.folderId === RECENTS_KEY ? tree.recents : folder?.sessions ?? [];
+      for (const session of [...sessions].sort(byRecency)) {
+        next.push({ key: `s:${session.id}`, kind: 'session', folder: folder ?? null, session });
+      }
+      return next;
+    }
     for (const session of recents.sessions) {
       next.push({ key: `s:${session.id}`, kind: 'session', folder: null, session });
     }
     if (recents.hiddenCount > 0) next.push({ key: RECENTS_MORE_KEY, kind: 'more', folder: null });
     return next;
-  }, [visible, recents, railCollapsed]);
+  }, [visible, recents, railCollapsed, flyout, tree.recents]);
 
   useEffect(() => {
     if (cursor > rows.length - 1) setCursor(Math.max(0, rows.length - 1));
@@ -510,7 +553,7 @@ export function HubSessionTree({
   useEffect(() => {
     if (menu && !rows.some((row) => row.key === menu.rowKey)) setMenu(null);
     if (renaming && !rows.some((row) => row.key === renaming)) setRenaming(null);
-    if (flyout && !rows.some((row) => row.key === `p:${flyout.folderId}`)) setFlyout(null);
+    if (flyout && flyout.folderId !== RECENTS_KEY && !rows.some((row) => row.key === `p:${flyout.folderId}`)) setFlyout(null);
     // A confirmation whose subject is already gone would delete nothing and
     // strand focus on a detached row.
     if (confirming && !rows.some((row) => row.key === confirming.rowKey)) setConfirming(null);
@@ -1023,15 +1066,8 @@ export function HubSessionTree({
     : null;
 
   const flyoutItems = useMemo<HubMenuItem[]>(() => {
-    if (!flyoutFolder) return [];
-    const items: HubMenuItem[] = [...flyoutFolder.sessions].sort(byRecency).map((session) => ({
-      kind: 'radio',
-      id: session.id,
-      label: session.title,
-      icon: 'file',
-      checked: session.id === currentSessionId,
-      onSelect: () => onOpenSession(session),
-    }));
+    const items: HubMenuItem[] = [];
+    if (!flyoutFolder) return items;
     if (onNewSession) {
       items.push({
         kind: 'action',
@@ -1436,7 +1472,7 @@ export function HubSessionTree({
                   // claiming otherwise would promise screen readers a subtree
                   // that is not there.
                   {...(railCollapsed
-                    ? { 'aria-haspopup': 'menu' as const, 'aria-expanded': flyout?.folderId === entry.folder.id }
+                    ? { 'aria-haspopup': 'dialog' as const, 'aria-expanded': flyout?.folderId === entry.folder.id }
                     : { 'aria-expanded': entry.open })}
                   {...(railCollapsed ? { 'aria-label': entry.folder.name } : {})}
                   aria-selected={isSelected}
@@ -1548,7 +1584,7 @@ export function HubSessionTree({
                     data-open={entry.open && !railCollapsed}
                     hidden={!entry.open || railCollapsed}
                   >
-                    {entry.sessions.map((session) => sessionRow(session, entry.folder))}
+                    {!railCollapsed ? entry.sessions.map((session) => sessionRow(session, entry.folder)) : null}
                     {entry.hiddenCount > 0
                       ? moreRow(
                           `m:${entry.folder.id}`,
@@ -1565,6 +1601,24 @@ export function HubSessionTree({
         </div>
 
         {/* ---- 최근 ---- */}
+        {railCollapsed ? (
+          <button
+            type="button"
+            className="hub-row hub-row--project readable-tooltip"
+            data-testid="hub-recents-flyout-trigger"
+            aria-label={t('hub.recents')}
+            data-tooltip={t('hub.recents')}
+            aria-haspopup="dialog"
+            aria-expanded={flyout?.folderId === RECENTS_KEY}
+            onClick={(event) => {
+              const anchor = event.currentTarget;
+              setFlyout((prev) => prev?.folderId === RECENTS_KEY ? null : { folderId: RECENTS_KEY, anchor });
+            }}
+            {...dropHandlers(RECENTS_KEY, null)}
+          >
+            <Icon name="file" size={15} />
+          </button>
+        ) : null}
         {railCollapsed || (treeEmpty && nothingKnown) ? null : (
           <div
             className="hub-tree__section hub-tree__section--recents"
@@ -1666,15 +1720,19 @@ export function HubSessionTree({
         document.body,
       ) : null}
 
-      {flyout && flyoutFolder && flyoutItems.length > 0 ? (
+      {flyout && (flyoutFolder || flyout.folderId === RECENTS_KEY) ? (
         <HubMenu
-          title={flyoutFolder.name}
+          title={flyoutFolder?.name ?? t('hub.recents')}
           items={flyoutItems}
           anchor={flyout.anchor}
-          returnFocusTo={rowRefs.current.get(`p:${flyoutFolder.id}`) ?? flyout.anchor}
+          returnFocusTo={flyout.anchor}
           testId="hub-project-flyout"
-          onClose={() => setFlyout(null)}
-        />
+          onClose={() => { setMenu(null); setFlyout(null); }}
+        >
+          <div role="tree" aria-label={flyoutFolder?.name ?? t('hub.recents')}>
+            {[...(flyoutFolder?.sessions ?? tree.recents)].sort(byRecency).map((session) => sessionRow(session, flyoutFolder))}
+          </div>
+        </HubMenu>
       ) : null}
 
       {sortAnchor ? (

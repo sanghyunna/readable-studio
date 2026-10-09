@@ -8,6 +8,7 @@ import type { HubFolderNode } from '../../src/components/hub/types';
 
 afterEach(() => {
   cleanup();
+  localStorage.removeItem('readable-studio:hub-folder-collapsed');
 });
 
 const PROJECTS: HubFolderNode[] = [

@@ -66,6 +66,8 @@ interface Props {
   /** Heading rendered above the items, as in the mockup's labelled menus. */
   title: string;
   items: readonly HubMenuItem[];
+  /** Shared session rows in a collapsed flyout, using this same portal and placer. */
+  children?: ReactNode;
   anchor: HTMLElement | null;
   /**
    * Pointer position for a context menu. When present the menu opens AT the
@@ -82,7 +84,7 @@ interface Props {
   testId?: string;
 }
 
-export function HubMenu({ id, title, items, anchor, point = null, returnFocusTo, onClose, testId }: Props) {
+export function HubMenu({ id, title, items, children, anchor, point = null, returnFocusTo, onClose, testId }: Props) {
   const menuRef = useRef<HTMLDivElement | null>(null);
   const typeAheadRef = useRef('');
   const typeAheadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -106,7 +108,8 @@ export function HubMenu({ id, title, items, anchor, point = null, returnFocusTo,
     const place = () => {
       const box = anchor.getBoundingClientRect();
       const height = menuRef.current?.offsetHeight ?? 0;
-      const maxLeft = Math.max(MENU_MARGIN, window.innerWidth - MENU_WIDTH - MENU_MARGIN);
+      const width = menuRef.current?.offsetWidth || MENU_WIDTH;
+      const maxLeft = Math.max(MENU_MARGIN, window.innerWidth - width - MENU_MARGIN);
       // A context menu hangs off the pointer, so its "anchor rect" is the
       // pointer itself - the same clamp then keeps it inside the viewport.
       const left = point ? point.x : box.left;
@@ -126,7 +129,7 @@ export function HubMenu({ id, title, items, anchor, point = null, returnFocusTo,
       window.removeEventListener('resize', place);
       window.removeEventListener('scroll', place, true);
     };
-  }, [anchor, items.length, point]);
+  }, [anchor, items.length, children, point]);
 
   // Focus the first item once the menu has a position, so the browser does not
   // scroll to a menu still parked at the origin. Tracked as a boolean so that
@@ -134,7 +137,7 @@ export function HubMenu({ id, title, items, anchor, point = null, returnFocusTo,
   const placed = rect !== null;
   useEffect(() => {
     if (!placed) return;
-    menuRef.current?.querySelector<HTMLButtonElement>(MENU_ITEM_SELECTOR)?.focus();
+    menuRef.current?.querySelector<HTMLElement>(children ? '[role="treeitem"]' : MENU_ITEM_SELECTOR)?.focus();
   }, [placed]);
 
   useEffect(
@@ -148,6 +151,8 @@ export function HubMenu({ id, title, items, anchor, point = null, returnFocusTo,
     const onPointerDown = (event: MouseEvent) => {
       const target = event.target as Node;
       if (menuRef.current?.contains(target)) return;
+      // A flyout's row menu is another body portal owned by these same rows.
+      if (children && target instanceof Element && target.closest('.hub-menu')) return;
       if (anchor?.contains(target)) return;
       // A click elsewhere is a deliberate move away, so focus stays where the
       // pointer put it rather than snapping back to the row.
@@ -155,9 +160,10 @@ export function HubMenu({ id, title, items, anchor, point = null, returnFocusTo,
     };
     document.addEventListener('mousedown', onPointerDown);
     return () => document.removeEventListener('mousedown', onPointerDown);
-  }, [anchor, close]);
+  }, [anchor, children, close]);
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (children && event.key !== 'Escape' && event.key !== 'Tab') return;
     const nodes = Array.from(
       menuRef.current?.querySelectorAll<HTMLButtonElement>(MENU_ITEM_SELECTOR) ?? [],
     );
@@ -218,14 +224,20 @@ export function HubMenu({ id, title, items, anchor, point = null, returnFocusTo,
     <div
       ref={menuRef}
       id={id}
-      className="hub-menu"
-      role="menu"
+      className={`hub-menu${children ? ' hub-menu--sessions' : ''}`}
+      role={children ? 'dialog' : 'menu'}
       aria-label={title}
       data-testid={testId}
       style={rect ? { left: `${rect.left}px`, top: `${rect.top}px` } : { visibility: 'hidden' }}
       onKeyDown={onKeyDown}
+      onKeyDownCapture={children ? (event) => {
+        // Tree rows stop their own keys; dismiss the flyout before that boundary.
+        // An inline rename field still owns Escape to cancel only its edit.
+        if (event.key === 'Escape' && !(event.target instanceof HTMLInputElement)) onKeyDown(event);
+      } : undefined}
     >
       <p className="hub-menu__label">{title}</p>
+      {children}
       {items.map((item) => {
         const presentation = (() => {
           switch (item.kind) {
