@@ -14,10 +14,11 @@ export interface HiddenTemplate {
   text: string;
 }
 
-function templateReferencePrefix(templateText: string): string {
-  // Quote source text so headings/closing tags inside a future template cannot
-  // masquerade as the user's request. Keep all framing before the display split.
-  const reference = JSON.stringify({ text: templateText }).replaceAll('<', '\\u003c');
+function templateReferencePrefix(_templateText: string): string {
+  // The daemon resolves structure/style from the selected templateRef and its
+  // resources. Catalogue queries are example workflows, not rendering data;
+  // forwarding them inside the final user request revives their asking rules.
+  const reference = JSON.stringify({ source: 'selected-template', exampleWorkflow: 'omitted' });
   return [
     '<readable-template-reference role="structure-and-visual-style-only">',
     reference,

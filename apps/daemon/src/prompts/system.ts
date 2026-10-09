@@ -31,7 +31,7 @@
  */
 import { OFFICIAL_DESIGNER_PROMPT } from './official-system.js';
 import { renderHtmlOutputDirective } from './html-output-policy.js';
-import { DISCOVERY_AND_PHILOSOPHY } from './discovery.js';
+import { DISCOVERY_AND_PHILOSOPHY, DISCOVERY_WORKFLOW_AND_PHILOSOPHY, TEMPLATE_DISCOVERY_BRIEF } from './discovery.js';
 import { DECK_FRAMEWORK_DIRECTIVE } from './deck-framework.js';
 import { renderPanelPrompt } from './panel.js';
 import { defaultCritiqueConfig, type CritiqueConfig } from '@readable-studio/contracts/critique';
@@ -584,12 +584,16 @@ Whenever generated HTML contains Korean copy, regardless of the UI locale, apply
   parts.push(FILE_ENCODING_RULE);
   parts.push('\n\n---\n\n');
 
-  parts.push(editablePromptBodies?.['discovery-workflow'] ?? DISCOVERY_AND_PHILOSOPHY, '\n\n---\n\n');
+  // Template content completeness is not ordinary preference discovery.
+  // Route at composition, rather than stacking conflicting asking rules.
+  parts.push(templateOnly
+    ? TEMPLATE_DISCOVERY_BRIEF + DISCOVERY_WORKFLOW_AND_PHILOSOPHY
+    : editablePromptBodies?.['discovery-workflow'] ?? DISCOVERY_AND_PHILOSOPHY, '\n\n---\n\n');
 
-  parts.push(
-    '# Identity and workflow charter (background)\n\n',
-    editablePromptBodies?.['designer-charter'] ?? BASE_SYSTEM_PROMPT,
-  );
+  const charter = editablePromptBodies?.['designer-charter'] ?? BASE_SYSTEM_PROMPT;
+  parts.push(templateOnly
+    ? renderTemplateReference('workflow-background', charter)
+    : '# Identity and workflow charter (background)\n\n' + charter);
 
   if (memoryBody && memoryBody.trim().length > 0) {
     parts.push(
@@ -774,7 +778,7 @@ Whenever generated HTML contains Korean copy, regardless of the UI locale, apply
   // structured ask surface: the form renders inline in the conversation and
   // answers return as the next user message. Applies to every agent:
   // question-form is UI-parsed markup, not a tool.
-  parts.push('\n\n---\n\n', QUESTION_FORM_CLARIFICATION_SECTION);
+  if (!templateOnly) parts.push('\n\n---\n\n', QUESTION_FORM_CLARIFICATION_SECTION);
 
   // Self-rollback request marker. Placed near the runtime tool environment
   // section (appended after this prompt by the daemon) so the model treats it

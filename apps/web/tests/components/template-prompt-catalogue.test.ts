@@ -28,7 +28,7 @@ describe('all shipped hidden template submissions', () => {
     const prompt = composeTemplatePrompt(seed, user);
     const envelope = prompt.match(/^<readable-template-reference role="([^"]+)">\n(.*?)\n<\/readable-template-reference>/s)!;
     expect(envelope[1]).toBe('structure-and-visual-style-only');
-    expect(JSON.parse(envelope[2]!)).toEqual({ text: seed });
+    expect(JSON.parse(envelope[2]!)).toEqual({ source: 'selected-template', exampleWorkflow: 'omitted' });
     expect(prompt.endsWith(`<readable-user-content-source/>\n\n${user}`)).toBe(true);
     const ref = { id: record.id, name: record.title, boundary: templatePromptBoundary(seed, user) };
     expect(userTextFromTemplateMessage(prompt, ref)).toBe(user);
