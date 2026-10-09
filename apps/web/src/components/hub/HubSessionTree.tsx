@@ -1402,14 +1402,8 @@ export function HubSessionTree({
       ) : null}
 
       {treeEmpty && !searching && !creatingFolder ? (
-        // Nothing exists yet, so no filter is hiding anything and a
-        // "clear filter" link would promise rows that are not there. An
-        // unknown list (not loaded yet) says nothing rather than lying.
-        nothingKnown ? null : (
-          <p className="hub-tree__empty" data-testid="hub-tree-no-projects">
-            {t('hub.noProjectsTitle')}
-          </p>
-        )
+        // The genuine empty-state hint belongs only to the Recent section.
+        null
       ) : rows.length === 0 && !creatingFolder ? (
         <p className="hub-tree__empty" data-testid="hub-tree-empty">
           {t('hub.emptyFiltered')}{' '}
@@ -1631,9 +1625,11 @@ export function HubSessionTree({
                 {t('hub.recents')}
               </span>
             </div>
-            {recents.sessions.length === 0 && !narrowed ? (
-              <p role="presentation" className="hub-tree__note" data-testid="hub-no-recents">
-                {t('hub.noRecents')}
+            {recents.sessions.length === 0 && (!narrowed || (treeEmpty && !searching)) ? (
+              <p role="presentation" className="hub-tree__empty" data-testid="hub-no-recents">
+                <span data-testid={treeEmpty && !searching ? 'hub-tree-no-projects' : undefined}>
+                  {t('hub.noRecents')}
+                </span>
               </p>
             ) : null}
             {recents.sessions.map((session) => sessionRow(session, null))}

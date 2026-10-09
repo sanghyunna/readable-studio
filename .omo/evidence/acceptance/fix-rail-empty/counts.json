@@ -1,0 +1,50 @@
+{
+  "testFiles": 19,
+  "passedFiles": 19,
+  "tests": 170,
+  "passed": 170,
+  "failed": 0,
+  "emptyStates": [
+    {
+      "theme": "light",
+      "width": 262,
+      "count": 1,
+      "x": 40
+    },
+    {
+      "theme": "light",
+      "width": 420,
+      "count": 1,
+      "x": 40
+    },
+    {
+      "theme": "light",
+      "width": 44,
+      "count": 0
+    },
+    {
+      "theme": "dark",
+      "width": 262,
+      "count": 1,
+      "x": 40
+    },
+    {
+      "theme": "dark",
+      "width": 420,
+      "count": 1,
+      "x": 40
+    },
+    {
+      "theme": "dark",
+      "width": 44,
+      "count": 0
+    },
+    {}
+  ],
+  "session": {
+    "createdStatus": 200,
+    "sessionId": "eb71d6bb-a9f6-44f4-bf2d-ab7d81790cb6",
+    "rowTextX": 40,
+    "emptyCount": 0
+  }
+}

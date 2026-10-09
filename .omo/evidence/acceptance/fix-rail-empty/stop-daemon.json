@@ -1,0 +1,18 @@
+
+> readable-studio@1.3.0 tools-dev D:\readable-studio
+> pnpm exec tools-dev "stop" "daemon" "--namespace" "fixempty" "--tools-dev-root" "D:/readable-studio/.tmp/fixempty-td" "--json"
+
+{
+  "daemon": {
+    "app": "daemon",
+    "status": "not-running",
+    "stop": {
+      "alreadyStopped": true,
+      "forcedPids": [],
+      "matchedPids": [],
+      "remainingPids": [],
+      "stoppedPids": []
+    },
+    "via": "process-scan"
+  }
+}

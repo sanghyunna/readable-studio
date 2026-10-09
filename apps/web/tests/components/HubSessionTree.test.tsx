@@ -208,8 +208,23 @@ describe('HubSessionTree', () => {
       render(<HubSessionTree tree={{ folders: [], recents: [] }} currentSessionId={null} onOpenSession={vi.fn()} />);
       const empty = screen.getByTestId('hub-tree-no-projects');
       expect(empty.querySelector('button')).toBeNull();
+      const recent = screen.getByTestId('hub-section-recents');
+      expect(recent.contains(empty)).toBe(true);
+      expect(screen.getByRole('tree').parentElement?.querySelectorAll('.hub-tree__empty, .hub-tree__note')).toHaveLength(1);
+      expect(screen.getByTestId('hub-section-projects').querySelectorAll('.hub-tree__empty, .hub-tree__note')).toHaveLength(0);
       expect(screen.queryByTestId('hub-tree-empty')).toBeNull();
       expect(screen.queryByTestId('hub-group-label')).toBeNull();
+    });
+
+    it('renders no empty-state text in the collapsed rail', () => {
+      const { container } = render(<HubSessionTree tree={{ folders: [], recents: [] }} collapsed currentSessionId={null} onOpenSession={vi.fn()} />);
+      expect(container.querySelectorAll('.hub-tree__empty, .hub-tree__note')).toHaveLength(0);
+    });
+
+    it('keeps an empty folder without inventing a folder-session hint', () => {
+      render(<HubSessionTree tree={{ folders: [node({ id: 'empty' })], recents: [] }} currentSessionId={null} onOpenSession={vi.fn()} />);
+      expect(screen.getByTestId('hub-project-empty').querySelector('[role="group"]')?.children).toHaveLength(0);
+      expect(screen.getByTestId('hub-no-recents')).toBeTruthy();
     });
 
     it('claims nothing about an empty library while the project list is still unknown', () => {

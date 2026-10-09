@@ -1,0 +1,52 @@
+
+> readable-studio@1.3.0 tools-dev D:\readable-studio
+> pnpm exec tools-dev "stop" "web" "--namespace" "fixempty" "--tools-dev-root" "D:/readable-studio/.tmp/fixempty-td" "--json"
+
+{
+  "web": {
+    "app": "web",
+    "status": "stopped",
+    "stop": {
+      "alreadyStopped": false,
+      "forcedPids": [],
+      "matchedPids": [
+        53728,
+        51664,
+        50708,
+        37588,
+        17256
+      ],
+      "remainingPids": [],
+      "stoppedPids": [
+        53728,
+        51664,
+        50708,
+        37588,
+        17256
+      ]
+    },
+    "via": "ipc"
+  },
+  "daemon": {
+    "app": "daemon",
+    "status": "stopped",
+    "stop": {
+      "alreadyStopped": false,
+      "forcedPids": [],
+      "matchedPids": [
+        45628,
+        43568,
+        42612,
+        14736
+      ],
+      "remainingPids": [],
+      "stoppedPids": [
+        45628,
+        43568,
+        42612,
+        14736
+      ]
+    },
+    "via": "ipc"
+  }
+}

@@ -1,0 +1,56 @@
+
+ RUN  v4.1.6 D:/readable-studio/apps/web
+
+ ❯ tests/components/HubSessionTree.test.tsx (18 tests | 2 failed) 696ms
+       × shows a genuine empty state with no clear-filter link when nothing exists 17ms
+       × renders no empty-state text in the collapsed rail 10ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/components/HubSessionTree.test.tsx > HubSessionTree > empty states > shows a genuine empty state with no clear-filter link when nothing exists
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/components/HubSessionTree.test.tsx:212:38
+    210|       expect(empty.querySelector('button')).toBeNull();
+    211|       const recent = screen.getByTestId('hub-section-recents');
+    212|       expect(recent.contains(empty)).toBe(true);
+       |                                      ^
+    213|       expect(screen.getByRole('tree').parentElement?.querySelectorAll(…
+    214|       expect(screen.getByTestId('hub-section-projects').querySelectorA…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/components/HubSessionTree.test.tsx > HubSessionTree > empty states > renders no empty-state text in the collapsed rail
+AssertionError: expected <p class="hub-tree__empty" …(1)></p> to have a length of +0 but got 1
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ tests/components/HubSessionTree.test.tsx:221:79
+    219|     it('renders no empty-state text in the collapsed rail', () => {
+    220|       const { container } = render(<HubSessionTree tree={{ folders: []…
+    221|       expect(container.querySelectorAll('.hub-tree__empty, .hub-tree__…
+       |                                                                               ^
+    222|     });
+    223|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 16 passed (18)
+   Start at  07:27:17
+   Duration  9.09s (transform 1.26s, setup 83ms, import 2.55s, tests 696ms, environment 4.98s)
+
+undefined
+D:\readable-studio\apps\web:
+ ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command failed with exit code 1: vitest run tests/components/HubSessionTree.test.tsx --maxWorkers=2

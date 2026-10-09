@@ -1,0 +1,48 @@
+
+> readable-studio@1.3.0 tools-dev D:\readable-studio
+> pnpm exec tools-dev "start" "web" "--namespace" "fixempty" "--tools-dev-root" "D:/readable-studio/.tmp/fixempty-td" "--daemon-port" "18350" "--web-port" "18351" "--json"
+
+{
+  "daemon": {
+    "app": "daemon",
+    "created": true,
+    "logPath": "D:\\readable-studio\\.tmp\\fixempty-td\\fixempty\\logs\\daemon\\latest.log",
+    "pid": 14736,
+    "status": {
+      "descriptor": {
+        "appId": "studio.readable.desktop",
+        "appVersion": "1.3.0",
+        "descriptorHash": "9d1181594e3733ae67c685c6e1529baa1f095a19d93ec9739445a15643ab0c3a",
+        "productId": "readable-studio",
+        "protocolVersion": 1,
+        "runtimeVersion": 1
+      },
+      "desktopAuthGateActive": false,
+      "pid": 42612,
+      "state": "running",
+      "trustedWebOriginPort": 18351,
+      "updatedAt": "2026-10-09T22:28:59.922Z",
+      "url": "http://127.0.0.1:18350"
+    }
+  },
+  "web": {
+    "app": "web",
+    "created": true,
+    "logPath": "D:\\readable-studio\\.tmp\\fixempty-td\\fixempty\\logs\\web\\latest.log",
+    "pid": 37588,
+    "status": {
+      "descriptor": {
+        "appId": "studio.readable.desktop",
+        "appVersion": "1.3.0",
+        "descriptorHash": "9d1181594e3733ae67c685c6e1529baa1f095a19d93ec9739445a15643ab0c3a",
+        "productId": "readable-studio",
+        "protocolVersion": 1,
+        "runtimeVersion": 1
+      },
+      "pid": 17256,
+      "state": "running",
+      "updatedAt": "2026-10-09T22:29:09.115Z",
+      "url": "http://127.0.0.1:18351"
+    }
+  }
+}

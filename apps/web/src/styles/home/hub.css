@@ -83,6 +83,7 @@
   /* Shared trailing line for the head and actions. The app does not declare
      --space-3, so this rail-owned token must have a concrete value. */
   --hub-rail-inline-inset: 12px;
+  --hub-rail-session-inset: calc(var(--hub-rail-inline-inset) * 11 / 6);
   /* Search glyph is rail-owned, including outside the Home surface. */
   --hub-search-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E");
   position: relative;
@@ -578,6 +579,11 @@
   overflow-wrap: anywhere;
 }
 
+.hub-tree__section--recents > .hub-tree__empty {
+  padding-block: calc(var(--hub-rail-inline-inset) * 2 / 3);
+  padding-inline: var(--hub-rail-session-inset);
+}
+
 .hub-tree__link {
   border: 0;
   background: none;
@@ -853,7 +859,7 @@
 }
 
 .hub-row--session {
-  padding-left: 22px;
+  padding-left: var(--hub-rail-session-inset, 22px);
   min-height: 32px;
 }
 
