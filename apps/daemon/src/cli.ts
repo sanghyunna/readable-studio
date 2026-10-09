@@ -159,6 +159,10 @@ const SESSION_STRING_FLAGS = new Set([
 ]);
 const SESSION_BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'recent']);
 const RAIL_UNTITLED_LABEL = '제목 없는 세션';
+// English locale equivalent, kept in sync with apps/web/src/i18n/locales/en.ts
+// hub.untitledSession. The daemon must match either label so `readable session
+// list --query untitled` works regardless of the UI locale.
+const RAIL_UNTITLED_LABEL_EN = 'Untitled session';
 const RAIL_NO_PROJECT_LABEL = '프로젝트 없음';
 const RAIL_FILTERS = ['all', 'attention', 'running'];
 const RAIL_SORTS = ['recent', 'name'];
@@ -6648,7 +6652,11 @@ function railNarrow(rail, { query, filter = 'all' }) {
   let recents = rail.recents ?? [];
   const needle = typeof query === 'string' ? query.trim().toLowerCase() : '';
   if (needle) {
-    const matches = (s) => (s.title ?? RAIL_UNTITLED_LABEL).toLowerCase().includes(needle);
+    const searchableTitle = (s) => {
+      if (s.title != null) return s.title;
+      return `${RAIL_UNTITLED_LABEL}\t${RAIL_UNTITLED_LABEL_EN}`;
+    };
+    const matches = (s) => searchableTitle(s).toLowerCase().includes(needle);
     folders = folders
       .map((f) => (f.name.toLowerCase().includes(needle) ? f : { ...f, sessions: f.sessions.filter(matches) }))
       .filter((f) => f.sessions.length > 0 || f.name.toLowerCase().includes(needle));
@@ -6682,7 +6690,7 @@ async function runSession(args) {
                           Folders with their sessions, then recents.
                           These flags match the left rail: --query is its search
                           (session title, or a folder name that keeps all of that
-                          folder's sessions; untitled sessions match "${RAIL_UNTITLED_LABEL}"),
+                          folder's sessions; untitled sessions match "${RAIL_UNTITLED_LABEL}" or "${RAIL_UNTITLED_LABEL_EN}"),
                           --state attention is "확인 필요" (awaiting input or failed),
                           --state running is "실행 중", and --sort orders folders only.
   readable session info   <id> [--json]    Includes folder name, state and how many

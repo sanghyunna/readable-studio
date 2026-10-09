@@ -217,6 +217,14 @@ describe('readable session', () => {
     expect(await ids(['session', 'list', '--query', '  DECK '])).toEqual(['s-r2', 's-a1']);
     expect(await ids(['session', 'list', '--query', 'research'])).toEqual(['s-a1', 's-a2']);
     expect(await ids(['session', 'list', '--query', '제목 없는'])).toEqual(['s-a2']);
+    expect(await ids(['session', 'list', '--query', 'untitled'])).toEqual(['s-a2']);
+    expect(await ids(['session', 'list', '--query', '제목'])).toEqual(['s-a2']);
+    const untitledTree = JSON.parse((await runCli(['session', 'tree', '--query', 'untitled', '--json'])).stdout);
+    expect(untitledTree.folders.flatMap((f: { sessions: { id: string }[] }) => f.sessions.map((s) => s.id))).toEqual(['s-a2']);
+    expect(untitledTree.recents.map((s: { id: string }) => s.id)).toEqual([]);
+    const untitledTreeKo = JSON.parse((await runCli(['session', 'tree', '--query', '제목', '--json'])).stdout);
+    expect(untitledTreeKo.folders.flatMap((f: { sessions: { id: string }[] }) => f.sessions.map((s) => s.id))).toEqual(['s-a2']);
+    expect(untitledTreeKo.recents.map((s: { id: string }) => s.id)).toEqual([]);
     // 확인 필요 = awaiting or failed; 실행 중 = running.
     expect(await ids(['session', 'list', '--state', 'attention'])).toEqual(['s-r2', 's-b1']);
     expect(await ids(['session', 'list', '--state', 'running'])).toEqual(['s-a1']);
