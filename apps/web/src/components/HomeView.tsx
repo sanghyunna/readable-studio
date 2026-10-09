@@ -992,7 +992,8 @@ export function HomeView({
         explicitPick: true,
         ...(hideTemplateText ? {
           suppressPromptUpdate: true,
-          inputFields: (record.manifest?.readable?.inputs ?? []).map((field) => ({ ...field, required: false })),
+          // Templates supply structure/style only, never editable content parameters.
+          inputFields: [],
           preserveInputFields: true,
         } : {}),
       });

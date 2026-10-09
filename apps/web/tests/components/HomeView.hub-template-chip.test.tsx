@@ -31,6 +31,7 @@ const DECK = catalogueRecord('guizang-ppt');
 const DECK_B = catalogueRecord('deck-swiss-international');
 const ACREAGE = catalogueRecord('acreage-farming');
 const SAAS = catalogueRecord('saas-landing');
+const WAITLIST = catalogueRecord('waitlist-page');
 const LIBRARY_REQUEST = "우리 동네 도서관 10월 독서모임 안내: 2025-10-18 토 오후 2시, 3층 세미나실, 선정 도서 '소년이 온다', 참가비 없음, 주민 누구나, 사전 신청 없이 방문";
 const APPLY_RESULT = {
   query: '', contextItems: [], inputs: [], assets: [], mcpServers: [],
@@ -53,9 +54,9 @@ async function renderHub(ordinaryPlugin = false) {
   writeHomeGuideStage('done');
   vi.stubGlobal('fetch', vi.fn(async (url: RequestInfo | URL) => {
     if (url === '/api/plugins') {
-      return Response.json({ plugins: [DECK, DECK_B, ACREAGE, SAAS] });
+      return Response.json({ plugins: [DECK, DECK_B, ACREAGE, SAAS, WAITLIST] });
     }
-    const record = [DECK, DECK_B, ACREAGE, SAAS].find((item) => url === `/api/plugins/${encodeURIComponent(item.id)}/apply`);
+    const record = [DECK, DECK_B, ACREAGE, SAAS, WAITLIST].find((item) => url === `/api/plugins/${encodeURIComponent(item.id)}/apply`);
     if (record) {
       return Response.json({ ...APPLY_RESULT, appliedPlugin: { ...APPLY_RESULT.appliedPlugin, pluginId: record.id } });
     }
@@ -116,8 +117,29 @@ describe('Hub template chip - 91df2d0 hidden-brief regression', () => {
     expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith('/apply'))).toHaveLength(0);
   });
 
+  it.each([WAITLIST, SAAS])('hides parameter controls for template $id and submits its reference', async (record) => {
+    const { submit } = await renderHub();
+    fireEvent.click(screen.getAllByTestId('hub-template-carousel-tab')
+      .find((node) => node.getAttribute('data-tab-id') === 'prototype')!);
+    await act(async () => { fireEvent.click(deckCard(record.id)); });
+    expect(screen.getByTestId('home-hero-template-chip')).toBeTruthy();
+    expect(document.querySelectorAll('.home-hero__footer-option[data-field-name]')).toHaveLength(0);
+    expect(screen.queryByTestId('home-hero-error')).toBeNull();
+    await act(async () => { setHomeHeroPrompt(LIBRARY_REQUEST); });
+    const payload = await submit();
+    expect(payload.pluginId).toBe(record.id);
+    expect(payload.templateRef?.id).toBe(record.id);
+    expect(userTextFromTemplateMessage(payload.prompt, payload.templateRef)).toBe(LIBRARY_REQUEST);
+    expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith('/apply'))).toHaveLength(0);
+  });
+
   it('still blocks ordinary SaaS plugin use with missing required inputs', async () => {
     const { onSubmit } = await renderHub(true);
+    for (const field of SAAS.manifest.readable!.inputs!) {
+      const control = screen.getByTestId(`home-hero-footer-option-${field.name}`);
+      expect(control.getAttribute('aria-label')).toBe(field.label ?? field.name);
+    }
+    expect(document.querySelectorAll('.home-hero__footer-option[data-field-name]')).toHaveLength(SAAS.manifest.readable!.inputs!.length);
     expect(screen.getByTestId('home-hero-error')).toBeTruthy();
     await act(async () => { setHomeHeroPrompt(LIBRARY_REQUEST); });
     await act(async () => { fireEvent.click(screen.getByTestId('home-hero-submit')); });
