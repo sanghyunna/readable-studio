@@ -24,6 +24,7 @@ createInterface({input:process.stdin}).on('line',line=>{
  if(m.method==='turn/start'){
   turns++;
   send({id:m.id,result:{turn:{id:'turn-'+turns}}});
+  send({method:'turn/started',params:{turn:{id:'turn-'+turns}}});
   if(turns===2 && ${JSON.stringify(mode)}==='recover')writeFileSync(${JSON.stringify(expectedArtifactPath)},'<!doctype html><html>real output</html>');
   const text=${JSON.stringify(mode)}==='question'?'<question-form id="brief">{"questions":[{"id":"topic","question":"Topic?","options":[{"label":"A","value":"a"},{"label":"B","value":"b"}]}]}</question-form>':'index.html written';
   if(turns===1 && ${JSON.stringify(!!report)}) {
@@ -39,6 +40,9 @@ createInterface({input:process.stdin}).on('line',line=>{
   const session = attachCodexAppServerSession(options);
   try {
     await closed;
+    expect(events.filter(event => event.type === 'status' && event.label === 'running')).toHaveLength(mode === 'question' ? 1 : 2);
+    // The bounded close signal proves recovery cannot leave its peer running.
+    expect(() => process.kill(child.pid!, 0)).toThrow();
     return { success: session.completedSuccessfully(), fatal: session.hasFatalError(), exists: existsSync(expectedArtifactPath), events };
   } finally {
     if (child.exitCode === null) child.kill();

@@ -5,11 +5,15 @@ import net from 'node:net';
 import { once } from 'node:events';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { CreateProjectResponse, CreateSessionResponse } from '@readable-studio/contracts';
 import { startServer } from '../src/server.js';
 import { closeDatabase, insertTemplate, openDatabase } from '../src/db.js';
 import { withFakeAgent } from './helpers/fake-agent.js';
+
+// Background memory extraction also launches the CLI; it must not consume the
+// one-shot prompt capture intended for the document run.
+vi.mock('../src/memory-llm.js', () => ({ extractWithLLM: vi.fn(async () => undefined) }));
 
 const dataDir = process.env.READABLE_DATA_DIR;
 if (!dataDir) throw new Error('isolated READABLE_DATA_DIR required');
@@ -101,7 +105,8 @@ process.stdin.on('data', chunk => { prompt += chunk; });
 process.stdin.on('end', () => {
   const socket = require('node:net').connect(${capturePort}, '127.0.0.1', () => socket.write(JSON.stringify({ prompt }) + '\\n'));
   socket.on('data', () => {
-    console.log(JSON.stringify({ type: 'text', part: { text: '<question-form id="content-source"><!-- capture fixture --></question-form>' } }));
+    require('node:fs').writeFileSync(require('node:path').join(process.env.READABLE_PROJECT_DIR, 'index.html'), '<!doctype html><html><body>Captured document</body></html>');
+    console.log(JSON.stringify({ type: 'text', part: { text: 'Document saved' } }));
   });
   socket.on('error', error => { console.error(error); process.exitCode = 1; });
 });
@@ -180,7 +185,10 @@ process.stdin.setEncoding('utf8');
 process.stdin.on('data', chunk => { prompt += chunk; });
 process.stdin.on('end', () => {
   const socket = require('node:net').connect(${capturePort}, '127.0.0.1', () => socket.write(JSON.stringify({ prompt }) + '\\n'));
-  socket.on('data', () => { console.log(JSON.stringify({ type: 'text', part: { text: 'ok' } })); });
+  socket.on('data', () => {
+    require('node:fs').writeFileSync(require('node:path').join(process.env.READABLE_PROJECT_DIR, 'index.html'), '<!doctype html><html><body>Captured document</body></html>');
+    console.log(JSON.stringify({ type: 'text', part: { text: 'Document saved' } }));
+  });
   socket.on('error', error => { console.error(error); process.exitCode = 1; });
 });
 `, async () => {
@@ -200,6 +208,8 @@ process.stdin.on('end', () => {
             if (done) break;
             events += new TextDecoder().decode(value);
           }
+          const end = events.match(/event: end\r?\ndata: ([^\n]+)/);
+          expect(JSON.parse(end![1]!)).toMatchObject({ code: 0, status: 'succeeded' });
         } finally { await reader.cancel(); }
       });
       return sent;
