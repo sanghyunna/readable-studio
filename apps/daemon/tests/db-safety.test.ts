@@ -260,6 +260,12 @@ describe('database migration safety', () => {
     expect(fs.existsSync(`${file}.pre-0`)).toBe(true);
   });
 
+  it('writes no rollback snapshot for a fresh empty install', () => {
+    const db = openLocal();
+    expect(db.pragma('user_version', { simple: true })).toBe(supportedVersion);
+    expect(fs.readdirSync(root).filter((name) => name.includes('.pre-'))).toEqual([]);
+  });
+
   it('bounds retained snapshots to three, always preserving the current rollback point and live DB', () => {
     legacyFixture();
     // A user can restore a version-0 DB while retaining snapshots from later builds.

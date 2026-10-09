@@ -161,7 +161,10 @@ function snapshotBeforeMigration(db: SqliteDb, file: string, fromVersion: number
 }
 
 function migrateSafely(db: SqliteDb, file: string, fromVersion: number, shouldStampIdentity: boolean): void {
-  if (fromVersion < DATABASE_SCHEMA_VERSION) snapshotBeforeMigration(db, file, fromVersion);
+  // A fresh install has no schema yet, so there is nothing to roll back to and
+  // an empty snapshot would only take a retention slot.
+  const hasPriorData = Boolean(db.prepare("SELECT 1 FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' LIMIT 1").get());
+  if (fromVersion < DATABASE_SCHEMA_VERSION && hasPriorData) snapshotBeforeMigration(db, file, fromVersion);
   db.transaction(() => {
     if (shouldStampIdentity) db.pragma(`application_id = ${READABLE_STUDIO_SQLITE_APPLICATION_ID}`);
     if (fromVersion < DATABASE_SCHEMA_VERSION) {
