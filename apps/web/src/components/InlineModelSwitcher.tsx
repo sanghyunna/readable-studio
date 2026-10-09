@@ -58,6 +58,7 @@ import {
 import {
   effectiveAgentModelChoice,
   effectiveReasoningOptions,
+  isModelSelectionLoading,
   MODEL_SELECTION_REQUIRED_EVENT,
 } from './agentModelSelection';
 import {
@@ -461,6 +462,7 @@ export function InlineModelSwitcher({
     (config.agentId && config.agentModels?.[config.agentId]) || {};
   const currentModelChoice = effectiveAgentModelChoice(currentAgent, currentChoice);
   const currentModelId = currentModelChoice?.model ?? null;
+  const modelSelectionLoading = isModelSelectionLoading(config, agents, agentsLoading);
   // Databricks owns its model catalogue: the dropdown always ends in the
   // "Add models" action row, and the empty state is that row alone.
   const databricksManaged = isDatabricksManagedAgent(currentAgent);
@@ -472,12 +474,13 @@ export function InlineModelSwitcher({
   useEffect(() => {
     if (variant !== 'model') return;
     const warn = () => {
+      if (modelSelectionLoading) return;
       setSelectionWarningNonce((nonce) => nonce + 1);
       setShowSelectionWarning(true);
     };
     window.addEventListener(MODEL_SELECTION_REQUIRED_EVENT, warn);
     return () => window.removeEventListener(MODEL_SELECTION_REQUIRED_EVENT, warn);
-  }, [variant]);
+  }, [variant, modelSelectionLoading]);
 
   useLayoutEffect(() => {
     if (!showSelectionWarning) {
@@ -677,15 +680,20 @@ export function InlineModelSwitcher({
   const hasExplicitModel = config.mode === 'daemon'
     ? Boolean(currentModelId)
     : Boolean(apiModelId && apiModelId !== 'default');
-  const chipModel = config.mode === 'daemon'
-    ? currentModelLabel ?? (hasExplicitModel
-        ? t('inlineSwitcher.modelDefault')
-        : t('inlineSwitcher.modelUnselected'))
-    : hasExplicitModel ? apiModelId : t('inlineSwitcher.modelUnselected');
+  const chipModel = modelSelectionLoading
+    ? (currentChoice.model?.trim() && currentChoice.model !== 'default'
+        ? currentChoice.model.trim()
+        : t('common.loading'))
+    : config.mode === 'daemon'
+      ? currentModelLabel ?? (hasExplicitModel
+          ? t('inlineSwitcher.modelDefault')
+          : t('inlineSwitcher.modelUnselected'))
+      : hasExplicitModel ? apiModelId : t('inlineSwitcher.modelUnselected');
+  const modelUnselected = !hasExplicitModel && !modelSelectionLoading;
 
   useEffect(() => {
-    if (hasExplicitModel) setShowSelectionWarning(false);
-  }, [hasExplicitModel]);
+    if (hasExplicitModel || modelSelectionLoading) setShowSelectionWarning(false);
+  }, [hasExplicitModel, modelSelectionLoading]);
 
   const handleChipClick = useCallback(() => {
     const nextOpen = !open;
@@ -747,7 +755,7 @@ export function InlineModelSwitcher({
           'inline-switcher__chip' +
           (variant === 'combined' ? '' : ` inline-switcher__chip--${variant}`) +
           (showAmrReminder ? ' has-amr-reminder' : '') +
-          (isModelVariant && !hasExplicitModel ? ' is-model-unselected' : '') +
+          (isModelVariant && modelUnselected ? ' is-model-unselected' : '') +
           (isModelVariant && showSelectionWarning ? ' is-model-warning' : '')
         }
         data-testid={
@@ -757,6 +765,7 @@ export function InlineModelSwitcher({
         }
         onClick={handleChipClick}
         aria-haspopup="menu"
+        aria-busy={isModelVariant && modelSelectionLoading ? true : undefined}
         aria-expanded={open}
         aria-label={triggerAccessibleName}
         title={triggerAccessibleName}
@@ -796,7 +805,7 @@ export function InlineModelSwitcher({
                 data-testid="inline-model-switcher-model-label"
               >
                 {chipModel}
-                {!hasExplicitModel ? (
+                {modelUnselected ? (
                   <span
                     className="inline-switcher__model-warning-mark"
                     data-testid="inline-model-switcher-model-warning-mark"
@@ -828,7 +837,7 @@ export function InlineModelSwitcher({
           </span>
         )}
         <Icon
-          name="chevron-down"
+          name={isModelVariant && modelSelectionLoading ? 'spinner' : 'chevron-down'}
           size={12}
           className="inline-switcher__chip-chevron"
         />
