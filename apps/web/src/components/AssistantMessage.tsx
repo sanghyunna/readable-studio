@@ -362,7 +362,7 @@ function AssistantMessageImpl({
   }, [streaming, liveToolInput, settledUseIds]);
   // Compose the block list, then run the strip/suppress pipeline once.
   const blocks = useMemo(() => {
-    const rawBlocks = [...buildBlocks(events), ...liveCodeBlocks];
+    const rawBlocks = [...buildBlocks(events, streaming ? undefined : message.endedAt), ...liveCodeBlocks];
     return placeConversationTodoCard(
       stripEmptyThinkingBlocks(suppressDuplicateQuestionForms(rawBlocks)),
       {
@@ -370,7 +370,7 @@ function AssistantMessageImpl({
         input: conversationTodoInput,
       },
     );
-  }, [events, liveCodeBlocks, showConversationTodoCard, conversationTodoInput]);
+  }, [events, liveCodeBlocks, showConversationTodoCard, conversationTodoInput, streaming, message.endedAt]);
   const fileOps = useMemo(() => deriveFileOps(events), [events]);
   // Persisted messages are an external boundary. Older/manual fixtures may
   // contain compact filename strings instead of ProjectFile objects; never let
@@ -575,6 +575,7 @@ function AssistantMessageImpl({
               <ThinkingBlock
                 key={i}
                 text={b.text}
+                durationMs={b.durationMs}
                 streaming={streaming && i === blocks.length - 1}
               />
             );
@@ -1645,14 +1646,12 @@ function SystemReminderBlock({
   );
 }
 
-function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean }) {
+function ThinkingBlock({ text, streaming, durationMs }: { text: string; streaming?: boolean; durationMs?: number }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const isThinking = streaming === true;
-  // Thinking events carry no server timestamps, so the "用时 X 秒" duration is
-  // measured client-side: stamp the start when streaming begins and freeze the
-  // elapsed once it ends. Blocks restored from history never stream, so they
-  // fall back to the plain "已深度思考" label with no seconds.
+  // Prefer persisted observation times. Legacy events retain the live-only
+  // measurement, and unknown historical durations keep the plain fallback.
   const startRef = useRef<number | null>(null);
   const [elapsedSec, setElapsedSec] = useState<number | null>(null);
   useEffect(() => {
@@ -1664,10 +1663,11 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean 
       startRef.current = null;
     }
   }, [isThinking]);
+  const measuredSec = durationMs !== undefined ? Math.max(1, Math.round(durationMs / 1000)) : elapsedSec;
   const label = isThinking
     ? t("assistant.thinking")
-    : elapsedSec != null
-      ? t("assistant.thoughtFor", { s: elapsedSec })
+    : measuredSec != null
+      ? t("assistant.thoughtFor", { s: measuredSec })
       : t("assistant.thought");
   return (
     <div className="thinking-block">
@@ -2084,7 +2084,7 @@ function isStatusNotice(label: string): boolean {
 
 type Block =
   | { kind: "text"; text: string }
-  | { kind: "thinking"; text: string }
+  | { kind: "thinking"; text: string; timestamp?: number; durationMs?: number }
   | { kind: "tool-group"; items: ToolItem[] }
   | { kind: "live-tool"; id: string; name: string; raw: string }
   | { kind: "status"; label: string; detail?: string | undefined };
@@ -2152,7 +2152,7 @@ function suppressDuplicateQuestionForms(blocks: Block[]): Block[] {
  * regardless of tool family, so a long chain of Bash / Read / Edit calls is
  * a single expandable row; prose or thinking between calls starts a new group.
  */
-function buildBlocks(events: AgentEvent[]): Block[] {
+function buildBlocks(events: AgentEvent[], endedAt?: number): Block[] {
   const out: Block[] = [];
   const resultByToolId = new Map<
     string,
@@ -2162,6 +2162,14 @@ function buildBlocks(events: AgentEvent[]): Block[] {
     if (ev.kind === "tool_result") resultByToolId.set(ev.toolUseId, ev);
   }
   for (const ev of events) {
+    const previous = out[out.length - 1];
+    const closesThinking = ev.kind === 'text' || ev.kind === 'tool_use' || (ev.kind === 'status' && isStatusNotice(ev.label));
+    if (previous?.kind === 'thinking' && closesThinking) {
+      const timestamp = (ev as AgentEvent & { timestamp?: number }).timestamp;
+      if (Number.isFinite(previous.timestamp) && Number.isFinite(timestamp) && timestamp! >= previous.timestamp!) {
+        previous.durationMs = timestamp! - previous.timestamp!;
+      }
+    }
     if (ev.kind === "text") {
       const last = out[out.length - 1];
       if (last && last.kind === "text") last.text += ev.text;
@@ -2171,7 +2179,7 @@ function buildBlocks(events: AgentEvent[]): Block[] {
     if (ev.kind === "thinking") {
       const last = out[out.length - 1];
       if (last && last.kind === "thinking") last.text += ev.text;
-      else out.push({ kind: "thinking", text: ev.text });
+      else out.push({ kind: "thinking", text: ev.text, timestamp: ev.timestamp });
       continue;
     }
     if (ev.kind === "tool_use") {
@@ -2197,6 +2205,10 @@ function buildBlocks(events: AgentEvent[]): Block[] {
       out.push({ kind: "status", label: ev.label, detail: ev.detail });
       continue;
     }
+  }
+  const trailing = out[out.length - 1];
+  if (trailing?.kind === 'thinking' && Number.isFinite(trailing.timestamp) && Number.isFinite(endedAt) && endedAt! >= trailing.timestamp!) {
+    trailing.durationMs = endedAt! - trailing.timestamp!;
   }
   return out;
 }

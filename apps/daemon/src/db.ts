@@ -1848,8 +1848,16 @@ export function appendMessageAgentEvent(db: SqliteDb, messageId: string, event: 
     CASE WHEN json_valid(events_json) THEN json_extract(events_json, '$[#-1]') END
     ) AS eventJson FROM message_snapshots WHERE id = ?`).get(messageId, messageId) as { eventJson: string | null } | undefined;
   if (!last) return null;
-  if (last.eventJson && JSON.stringify(JSON.parse(last.eventJson)) === encoded) return false;
-  db.prepare('INSERT INTO message_event_deltas (message_id, event_json) VALUES (?, ?)').run(messageId, encoded);
+  if (last.eventJson) {
+    const previous = JSON.parse(last.eventJson);
+    // Observation time is not event identity (repeated status snapshots dedupe).
+    if (event.timestamp === undefined) delete previous.timestamp;
+    if (JSON.stringify(previous) === encoded) return false;
+  }
+  const timedEvent = event.kind === 'thinking' || event.kind === 'text' || event.kind === 'tool_use'
+    ? { ...event, timestamp: event.timestamp ?? Date.now() }
+    : event;
+  db.prepare('INSERT INTO message_event_deltas (message_id, event_json) VALUES (?, ?)').run(messageId, JSON.stringify(timedEvent));
   return true;
 }
 

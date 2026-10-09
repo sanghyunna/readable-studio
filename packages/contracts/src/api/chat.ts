@@ -312,7 +312,7 @@ export interface ChatCommentAttachment {
   source?: 'saved-comment' | 'board-batch';
 }
 
-export type PersistedAgentEvent =
+export type PersistedAgentEvent = { /** Daemon-observed epoch milliseconds; absent in legacy transcripts. */ timestamp?: number } & (
   // `code` carries the structured API error code for `label: 'error'`
   // status events (e.g. AGENT_AUTH_REQUIRED, RATE_LIMITED). Clients use it to
   // decide error-specific affordances such as the hosted-AMR nudge.
@@ -323,7 +323,7 @@ export type PersistedAgentEvent =
   | { kind: 'tool_result'; toolUseId: string; content: string; isError: boolean }
   | { kind: 'usage'; inputTokens?: number; outputTokens?: number; costUsd?: number; durationMs?: number }
   | { kind: 'raw'; line: string }
-  | AgentRollbackRequestEvent;
+  | AgentRollbackRequestEvent);
 
 export interface AgentRollbackRequestEvent {
   kind: 'agent_rollback_request';

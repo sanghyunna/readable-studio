@@ -109,14 +109,15 @@ describe('message event persistence', () => {
     const message = listMessages(db, 'conv-1')[0];
     expect(message?.content).toBe('Rendering done.');
     expect(message?.events).toEqual([
-      { kind: 'text', text: 'Rendering ' },
+      { kind: 'text', text: 'Rendering ', timestamp: expect.any(Number) },
       {
         kind: 'tool_use',
         id: 'tool-1',
         name: 'Bash',
         input: { command: 'readable run start' },
+        timestamp: expect.any(Number),
       },
-      { kind: 'text', text: 'done.' },
+      { kind: 'text', text: 'done.', timestamp: expect.any(Number) },
     ]);
   });
 });

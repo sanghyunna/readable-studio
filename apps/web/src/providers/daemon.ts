@@ -973,6 +973,8 @@ async function consumeDaemonRun({
             }
             const translated = translateAgentEvent(event.data);
             if (!translated) continue;
+            const timestamp = (event.data as DaemonAgentPayload & { timestamp?: number }).timestamp;
+            if (typeof timestamp === 'number' && Number.isFinite(timestamp)) Object.assign(translated, { timestamp });
             if (translated.kind === 'text') {
               acc += translated.text;
               handlers.onDelta(translated.text);

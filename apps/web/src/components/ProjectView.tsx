@@ -6741,6 +6741,7 @@ export function createBufferedTextUpdates({
 }) {
   let pendingContentDelta = '';
   let pendingTextEventDelta = '';
+  let pendingTextTimestamp: number | undefined;
   let flushFrame: number | null = null;
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
   let disposed = false;
@@ -6772,14 +6773,16 @@ export function createBufferedTextUpdates({
     needsFlush = false;
     const contentDelta = pendingContentDelta;
     const textEventDelta = pendingTextEventDelta;
+    const textTimestamp = pendingTextTimestamp;
     pendingContentDelta = '';
     pendingTextEventDelta = '';
+    pendingTextTimestamp = undefined;
     try {
       updateMessage((prev) => ({
         ...prev,
         content: prev.content + contentDelta,
         events: textEventDelta
-          ? [...(prev.events ?? []), { kind: 'text', text: textEventDelta }]
+          ? [...(prev.events ?? []), { kind: 'text', text: textEventDelta, ...(textTimestamp === undefined ? {} : { timestamp: textTimestamp }) }]
           : prev.events,
       }));
       persistSoon();
@@ -6822,6 +6825,7 @@ export function createBufferedTextUpdates({
   const appendEvent = (ev: AgentEvent) => {
     if (disposed) return;
     if (ev.kind === 'text') {
+      if (!pendingTextEventDelta) pendingTextTimestamp = ev.timestamp;
       appendTextEvent(ev.text);
       return;
     }

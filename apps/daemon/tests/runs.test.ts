@@ -77,7 +77,7 @@ describe('chat run service shutdown', () => {
       await vi.advanceTimersByTimeAsync(32);
       expect(activeB.events).toContainEqual(expect.objectContaining({
         event: 'agent',
-        data: { type: 'text_delta', delta: 'keep me' },
+        data: { type: 'text_delta', delta: 'keep me', timestamp: expect.any(Number) },
       }));
 
       runsB.dispose();
