@@ -21,7 +21,6 @@
 // deterministic across CLI / desktop / web.
 
 import type Database from 'better-sqlite3';
-import { getProject } from '../db.js';
 import { isTemplateReferenceProject } from '../prompts/template-reference.js';
 import type {
   AppliedPluginSnapshot,
@@ -107,6 +106,16 @@ function readProjectPinnedSnapshotId(db: SqliteDb, projectId: string): string | 
   } catch {
     return null;
   }
+}
+
+// Plugin-only databases can predate project metadata. Read only provenance,
+// without requiring the unrelated columns used by the full project model.
+function readProjectTemplateReference(db: SqliteDb, projectId: string): boolean {
+  const columns = db.prepare('PRAGMA table_info(projects)').all() as { name: string }[];
+  if (!columns.some(column => column.name === 'metadata_json')) return false;
+  const row = db.prepare('SELECT metadata_json FROM projects WHERE id = ?')
+    .get(projectId) as { metadata_json: string | null } | undefined;
+  return isTemplateReferenceProject(row?.metadata_json ? JSON.parse(row.metadata_json) : null);
 }
 
 // Pull plugin-bearing fields off the request body without mutating it.
@@ -215,7 +224,7 @@ export function resolvePluginSnapshot(input: ResolveSnapshotInput): ResolveSnaps
       registry: input.registry,
       activeProjectDesignSystem: input.activeProjectDesignSystem,
       locale: fields.locale,
-      templateReference: isTemplateReferenceProject(getProject(input.db, input.projectId)?.metadata),
+      templateReference: readProjectTemplateReference(input.db, input.projectId),
     });
   } catch (err) {
     if (err instanceof MissingInputError) {

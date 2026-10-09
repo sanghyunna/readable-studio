@@ -65,7 +65,11 @@ test('run SSE delivers reasoning with no assistant message ID and preserves befo
   service.emit(run, 'agent', { type: 'text_delta', delta: answer });
   service.emit(run, 'agent', { type: 'thinking_delta', delta: thought });
   service.emit(run, 'agent', { type: 'usage' }); // Synchronous boundary flush, no timing luck.
-  expect(sent.slice(0, 3)).toEqual([{ type: 'thinking_delta', delta: thought }, { type: 'text_delta', delta: answer }, { type: 'thinking_delta', delta: thought }]);
+  expect(sent.slice(0, 3)).toEqual([
+    { type: 'thinking_delta', delta: thought, timestamp: expect.any(Number) },
+    { type: 'text_delta', delta: answer, timestamp: expect.any(Number) },
+    { type: 'thinking_delta', delta: thought, timestamp: expect.any(Number) },
+  ]);
 });
 
 test('Claude, Copilot and Qoder wire reasoning reaches the daemon event sink before and after text', () => {
@@ -203,8 +207,9 @@ test('thinking survives database reload, fork and transcript export', async () =
     await mkdir(path.join(projectsRoot, 'p'), { recursive: true });
     const exported = exportProjectTranscript(reopened, projectsRoot, 'p', { now: () => new Date('2026-01-01T00:00:00Z') });
     // Then: both persisted copies and the exported thinking blocks retain order.
-    expect(storage.listMessages(reopened, 'source')[0]?.events).toEqual(events);
-    expect(storage.listMessages(reopened, 'fork')[0]?.events).toEqual(events);
+    const persistedEvents = storage.listMessages(reopened, 'source')[0]?.events;
+    expect(persistedEvents).toEqual(events.map(event => ({ ...event, timestamp: expect.any(Number) })));
+    expect(storage.listMessages(reopened, 'fork')[0]?.events).toEqual(persistedEvents);
     const transcript: unknown[] = (await readFile(exported.path, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
     const blocks = transcript.flatMap(line => typeof line === 'object' && line !== null && 'blocks' in line ? [line.blocks] : []);
     expect(blocks).toEqual(Array.from({ length: 2 }, () => [

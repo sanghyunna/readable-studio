@@ -284,6 +284,30 @@ describe('Plan §8 e2e — daemon-side anchors', () => {
     }
   });
 
+  it.each([null, { templateRef: { id: 'saved-template' } }])(
+    'uses persisted metadata provenance without requiring full project columns: %j',
+    async metadata => {
+      await installLocal(FIXTURE_DIR);
+      db.exec('ALTER TABLE projects ADD COLUMN metadata_json TEXT');
+      db.prepare('UPDATE projects SET metadata_json = ? WHERE id = ?')
+        .run(metadata ? JSON.stringify(metadata) : null, 'project-1');
+
+      const result = resolvePluginSnapshot({
+        db,
+        body: { pluginId: 'sample-plugin' },
+        projectId: 'project-1',
+        registry: REGISTRY_VIEW,
+      });
+
+      expect(result?.ok).toBe(metadata !== null);
+      if (metadata === null) {
+        expect(result && !result.ok && result.body.error.code).toBe('missing-input');
+      } else if (result?.ok) {
+        expect(result.snapshot.inputs).not.toHaveProperty('topic');
+      }
+    },
+  );
+
   it('capabilitiesRequiredError envelope shape stays stable for code agents', () => {
     const err = capabilitiesRequiredError({
       pluginId: 'sample',
