@@ -254,13 +254,13 @@ describe("web standalone afterPack hook", () => {
     }
   });
 
-  it("deduplicates win32 copied standalone Next while retaining the app-local Next package", async () => {
+  it("deduplicates win32 copied standalone Next and moves the retained bytes to the shorter ancestor", async () => {
     const fixture = await runFixture({ includeWebNext: true });
 
     try {
-      expect(await pathExists(join(fixture.destinationRoot, "node_modules", "next"))).toBe(false);
+      expect(await pathExists(join(fixture.destinationRoot, "node_modules", "next"))).toBe(true);
       expect(await pathExists(join(fixture.destinationRoot, "node_modules", ".pnpm", "node_modules", "next"))).toBe(false);
-      expect(await pathExists(join(fixture.destinationRoot, "apps", "web", "node_modules", "next", "package.json"))).toBe(true);
+      expect(await pathExists(join(fixture.destinationRoot, "apps", "web", "node_modules", "next", "package.json"))).toBe(false);
 
       const report = JSON.parse(await readFile(fixture.auditReportPath, "utf8")) as {
         copiedAudit: { resolvedModules: Record<string, string>; brokenSymlinks: string[] };
@@ -274,19 +274,54 @@ describe("web standalone afterPack hook", () => {
         "copied standalone pnpm-hoisted next duplicate superseded by app-local next",
       ]);
       expect(report.copiedNextDedupe.retainedPath.split(path.sep).join("/")).toMatch(
-        /apps\/web\/node_modules\/next$/,
+        /readable-studio-web-standalone\/node_modules\/next$/,
       );
       expect(report.copiedNextDedupeAudit.remainingPaths).toEqual([]);
       expect(resolvedNextPath).toMatch(
-        /readable-studio-web-standalone\/apps\/web\/node_modules\/next\/package\.json$/,
+        /readable-studio-web-standalone\/node_modules\/next\/package\.json$/,
       );
       expect(report.copiedAudit.brokenSymlinks).toEqual([]);
       expect(report.copiedAudit.resolvedModules["next/package.json"].split(path.sep).join("/")).toMatch(
-        /readable-studio-web-standalone\/apps\/web\/node_modules\/next\/package\.json$/,
+        /readable-studio-web-standalone\/node_modules\/next\/package\.json$/,
       );
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
+  });
+
+  it("rejects any packaged entry above the Explorer extraction budget", async () => {
+    const source = await readFile(join(import.meta.dirname, "../resources/web-standalone-after-pack.cjs"), "utf8");
+    const loaded: { exports: unknown } = { exports: {} };
+    compileFunction(`${source}\nmodule.exports = auditPortablePaths;`, ["require", "module", "exports"])(require, loaded, loaded.exports);
+    const audit = loaded.exports as (root: string) => Promise<{ budget: number; maxLength: number }>;
+    const root = await mkdtemp(join(tmpdir(), "pack-path-budget-"));
+    try {
+      const legal = "x".repeat(174);
+      await writeFile(join(root, legal), "same bytes");
+      expect(await audit(root)).toMatchObject({ budget: 178, maxLength: 178 });
+      await writeFile(join(root, `${legal}x`), "same bytes");
+      await expect(audit(root)).rejects.toThrow(/portable path budget 178 exceeded/);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("shortens dereferenced peer stores without changing bytes or module lookup", async () => {
+    const source = await readFile(join(import.meta.dirname, "../resources/web-standalone-after-pack.cjs"), "utf8");
+    const loaded: { exports: unknown } = { exports: {} };
+    compileFunction(`${source}\nmodule.exports = shortenCopiedVirtualStore;`, ["require", "module", "exports"])(require, loaded, loaded.exports);
+    const shorten = loaded.exports as (root: string) => Promise<Array<{ from: string; to: string }>>;
+    const root = await mkdtemp(join(tmpdir(), "pack-peer-store-"));
+    try {
+      const store = join(root, "node_modules", ".pnpm", `next@16.2.6_${"peer".repeat(15)}`);
+      await writePackage(join(store, "node_modules", "next"), "next");
+      await writePackage(join(store, "node_modules", "react"), "react");
+      const before = await readFile(join(store, "node_modules", "next", "package.json"));
+      const renamed = await shorten(root);
+      expect(renamed).toHaveLength(1);
+      expect(path.basename(renamed[0]!.to)).toHaveLength(7);
+      const entry = join(renamed[0]!.to, "node_modules", "next", "index.js");
+      expect(await readFile(join(path.dirname(entry), "package.json"))).toEqual(before);
+      expect(createRequire(entry).resolve("react/package.json")).toBe(join(renamed[0]!.to, "node_modules", "react", "package.json"));
+    } finally { await rm(root, { recursive: true, force: true }); }
   });
 
   it("fails the win32 Next dedupe when no copied Next package exists", async () => {

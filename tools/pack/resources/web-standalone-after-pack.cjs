@@ -1,5 +1,9 @@
-const { access, copyFile, cp, lstat, mkdir, readFile, readlink, readdir, realpath, rm, stat, symlink, writeFile } = require("node:fs/promises");
+const { access, copyFile, cp, lstat, mkdir, readFile, readlink, readdir, realpath, rename, rm, stat, symlink, writeFile } = require("node:fs/promises");
 const { createRequire } = require("node:module");
+const { createHash } = require("node:crypto");
+
+// A 79-character Downloads extraction root leaves two characters below MAX_PATH.
+const PORTABLE_RELATIVE_PATH_BUDGET = 178;
 const { availableParallelism } = require("node:os");
 const path = require("node:path");
 
@@ -453,9 +457,12 @@ async function dedupeCopiedStandaloneNext(destinationRoot, destinationWebRoot, p
     removedPaths,
   );
 
+  // Windows copies are dereferenced. Moving the retained copy up preserves Node's
+  // ancestor lookup while removing apps/web from every Next package path.
+  await rename(webNextRoot, rootNextRoot);
   return {
     removedPaths,
-    retainedPath: webNextRoot,
+    retainedPath: rootNextRoot,
   };
 }
 
@@ -636,10 +643,10 @@ async function auditCopiedStandaloneNextDedupe(installResult, platformName) {
   if (platformName !== "win32") return null;
 
   const serverPath = path.join(installResult.destinationWebRoot, "server.js");
-  const retainedNextRoot = path.join(installResult.destinationWebRoot, "node_modules", "next");
+  const retainedNextRoot = path.join(installResult.destinationRoot, "node_modules", "next");
   const retainedNextPackagePath = path.join(retainedNextRoot, "package.json");
   const checkedPaths = [
-    path.join(installResult.destinationRoot, "node_modules", "next"),
+    path.join(installResult.destinationWebRoot, "node_modules", "next"),
     path.join(installResult.destinationRoot, "node_modules", ".pnpm", "node_modules", "next"),
   ];
   const remainingPaths = [];
@@ -779,6 +786,41 @@ async function auditNoBrokenSymlinks(root, label) {
   };
 }
 
+async function shortenCopiedVirtualStore(destinationRoot) {
+  const store = path.join(destinationRoot, "node_modules", ".pnpm");
+  const renamedPaths = [];
+  // Only Windows' fully dereferenced copies reach here: there are no store links
+  // to retarget, and each package keeps the same node_modules ancestor depth.
+  for (const entry of await readdir(store, { withFileTypes: true })) {
+    if (!entry.isDirectory() || entry.name.length <= 32) continue;
+    const name = `p${createHash("sha256").update(entry.name).digest("hex").slice(0, 6)}`;
+    const from = path.join(store, entry.name);
+    const to = path.join(store, name);
+    if (await pathLstatExists(to)) throw new Error(`[tools-pack] virtual store collision: ${to}`);
+    await rename(from, to);
+    renamedPaths.push({ from, to });
+  }
+  return renamedPaths;
+}
+
+async function auditPortablePaths(appOutDir) {
+  const offendingPaths = [];
+  let maxLength = 0;
+  let files = 0;
+  await visitPaths(appOutDir, async (current) => {
+    const metadata = await lstat(current);
+    const relative = path.posix.join("app", path.relative(appOutDir, current).split(path.sep).join("/"));
+    maxLength = Math.max(maxLength, relative.length);
+    if (relative.length > PORTABLE_RELATIVE_PATH_BUDGET) offendingPaths.push(relative);
+    if (metadata.isDirectory()) return childPaths(current);
+    files += 1;
+  });
+  if (offendingPaths.length) {
+    throw new Error(`[tools-pack] portable path budget ${PORTABLE_RELATIVE_PATH_BUDGET} exceeded: ${offendingPaths.join(", ")}`);
+  }
+  return { budget: PORTABLE_RELATIVE_PATH_BUDGET, files, maxLength };
+}
+
 async function runWebStandaloneAfterPack(context) {
   if (context?.electronPlatformName != null && context.electronPlatformName !== "win32") return;
 
@@ -807,6 +849,9 @@ async function runWebStandaloneAfterPack(context) {
     [],
     "copied broken symlink",
   );
+  const virtualStoreRenames = context.electronPlatformName === "win32"
+    ? await shortenCopiedVirtualStore(installResult.destinationRoot)
+    : [];
   const copiedNextDedupeAudit = await auditCopiedStandaloneNextDedupe(
     installResult,
     context.electronPlatformName,
@@ -835,7 +880,10 @@ async function runWebStandaloneAfterPack(context) {
     appNodeModulesRoot,
     "root app node_modules",
   );
+  const portablePathAudit = await auditPortablePaths(appPath);
   const report = {
+    portablePathAudit,
+    virtualStoreRenames,
     appPath,
     brokenSymlinkPrune,
     copiedAudit,
