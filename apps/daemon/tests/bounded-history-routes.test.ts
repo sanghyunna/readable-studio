@@ -82,7 +82,7 @@ it('advances beyond an oversized row and transfers its exact body and metadata i
   expect(page.nextPosition).toBe(0);
   expect(next.messages.map((message: { id: string }) => message.id)).toEqual(['last']);
   expect(fields.content).toBe('한글🙂'.repeat(100_000));
-  expect(fields.event).toEqual({ kind: 'text', text: ' streamed partial' });
+  expect(fields.event).toEqual({ kind: 'text', text: ' streamed partial', timestamp: expect.any(Number) });
   expect(fields.attachments).toEqual([{ name: 'artifact.html', path: '/artifact.html' }]);
   expect(JSON.stringify(listMessages(db, 'c'))).toBe(before);
 });

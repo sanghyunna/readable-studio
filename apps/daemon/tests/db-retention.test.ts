@@ -49,7 +49,7 @@ it('preserves legacy raw bytes and exposes ordered incremental content to SQL re
   // Then: all existing consumers, including raw SQL export, see the complete data.
   const message = listMessages(db, 'c')[0];
   expect(message?.content).toBe('legacy\n한글\u0000');
-  expect(message?.events).toEqual([{ kind: 'text', text: 'legacy' }, { kind: 'text', text: '\n한글\u0000' }]);
+  expect(message?.events).toEqual([{ kind: 'text', text: 'legacy' }, { kind: 'text', text: '\n한글\u0000', timestamp: expect.any(Number) }]);
   expect(db.prepare('SELECT content, events_json FROM messages WHERE id = ?').get('m')).toEqual({ content: message?.content, events_json: JSON.stringify(message?.events) });
   expect(db.prepare('SELECT events_json FROM message_snapshots WHERE id = ?').pluck().get('m')).toBe(legacy);
 });
