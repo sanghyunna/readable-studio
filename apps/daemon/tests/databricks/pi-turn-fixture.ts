@@ -41,6 +41,8 @@ export async function createPiTurnFixture() {
   const claude = protocolFixture('anthropic-messages');
   const [catalog, schema] = luna.request.body.model.split('.');
   const requests: GatewayRequest[] = [];
+  /** Responses attempts carrying the optional reasoning.summary, which this endpoint rejects. */
+  const rejections: GatewayRequest[] = [];
   const errors: string[] = [];
   const routes: string[] = [];
   const json = (response: ServerResponse, value: unknown, status = 200) => {
@@ -84,15 +86,21 @@ export async function createPiTurnFixture() {
     const chunks: Buffer[] = [];
     for await (const chunk of request) chunks.push(Buffer.from(chunk));
     const body: GatewayRequest['body'] = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-    requests.push({ path: url.pathname, authorization: request.headers.authorization, body });
+    const summaryRejected = responses && body.stream && typeof body.reasoning === 'object' && body.reasoning !== null && 'summary' in body.reasoning;
+    (summaryRejected ? rejections : requests).push({ path: url.pathname, authorization: request.headers.authorization, body });
     const fixture = anthropic ? claude : luna;
     assert.equal(body.model, fixture.request.body.model);
     if (anthropic) assert.equal(request.headers['anthropic-version'], '2023-06-01');
     if (!body.stream) return json(response, fixture.response.body, fixture.response.status);
     if (responses) {
-      assert.deepEqual(body.reasoning, { effort: 'high' });
       assert.equal(body.reasoning_effort, undefined);
       assert.ok(Array.isArray(body.input));
+      if (summaryRejected) {
+        // The optional summary request is rejected; the relay must retry without it.
+        assert.deepEqual(body.reasoning, { effort: 'high', summary: 'auto' });
+        return json(response, { error: { message: 'Fixture rejects the optional reasoning summary' } }, 500);
+      }
+      assert.deepEqual(body.reasoning, { effort: 'high' });
     }
     response.writeHead(200, { 'content-type': 'text/event-stream' });
     response.end(responses ? await readFile(new URL('luna-responses-stream.txt', directory), 'utf8')
@@ -119,7 +127,7 @@ export async function createPiTurnFixture() {
     return nativeFetch(`${origin}${url.pathname}${url.search}`, init);
   };
   return {
-    requests, errors, routes, fetch: localFetch,
+    requests, rejections, errors, routes, fetch: localFetch,
     async close() {
       await new Promise<void>((resolve, reject) => {
         server.close((error) => error ? reject(error) : resolve());

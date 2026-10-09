@@ -117,6 +117,14 @@ for (const api of ['anthropic-messages', 'openai-completions'] as const) {
           expect(request.authorization).toBe(`Bearer ${upstreamBearer}`);
           expect(request.body.model).toBe(upstreamModel);
           expect(request.body.model).not.toBe(model);
+          // Responses endpoints reject the optional reasoning.summary once: the first attempt carries
+          // summary:'auto', the retry omits it, and the remembered incompatibility spares turn 2.
+          expect(fixture.rejections).toHaveLength(api === 'anthropic-messages' ? 0 : 1);
+          if (api !== 'anthropic-messages') {
+            expect(fixture.rejections[0]!.body.reasoning).toEqual({ effort: 'high', summary: 'auto' });
+            expect(request.body.reasoning).toEqual({ effort: 'high' });
+            if (index === 0) expect({ ...fixture.rejections[0]!.body, reasoning: undefined }).toEqual({ ...request.body, reasoning: undefined });
+          }
           expect(request.body.stream).toBe(true);
           expect(request.body.tools).toHaveLength(4);
           expect(invocation.args).not.toContain('--no-tools');
