@@ -578,12 +578,20 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
         if (result.ok) break;
         rejected = await readUpstreamError(result);
         const message = record(rejected) ? rejected.message ?? (record(rejected.error) ? rejected.error.message : undefined) : undefined;
-        if (result.status === 400 && addSummary && /reasoning|summary/i.test(JSON.stringify(rejected))
+        const rejectionText = JSON.stringify(rejected);
+        // Gateways can wrap schema validation in a 5xx without naming the
+        // rejected field. Retry only the additive feature, never effort itself.
+        // Auth/rate-limit/route errors do not establish feature incompatibility.
+        const featureRejection = result.status >= 400 && result.status <= 599
+          && ![401, 403, 404, 408, 429].includes(result.status);
+        const opaqueValidation = result.status >= 500
+          || /(?:unknown|unexpected|unrecognized|unsupported)\s+(?:request\s+)?(?:field|parameter|argument)|(?:schema|protocol|validation)\s+(?:assertion\s+)?(?:failed|failure|error)/i.test(rejectionText);
+        if (featureRejection && addSummary && (/reasoning|summary/i.test(rejectionText) || opaqueValidation)
           && correctOnce('reasoning-summary')) {
           unsupportedReasoningSummary.add(featureKey);
           continue;
         }
-        if (result.status === 400 && addEffortBeta && /anthropic-beta|effort-2025-11-24/i.test(JSON.stringify(rejected))
+        if (featureRejection && addEffortBeta && (/anthropic-beta|effort-2025-11-24/i.test(rejectionText) || opaqueValidation)
           && correctOnce('effort-beta')) {
           unsupportedEffortBeta.add(featureKey);
           continue;
