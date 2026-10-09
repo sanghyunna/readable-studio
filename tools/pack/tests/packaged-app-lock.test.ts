@@ -18,7 +18,7 @@ describe("packaged app registry lock", () => {
       await mkdir(join(root, "fixture", "package"), { recursive: true });
       await mkdir(join(root, "app"));
       await writeFile(join(root, "fixture", "package", "package.json"), JSON.stringify(packed));
-      await promisify(execFile)(nativeTar, ["-czf", join(root, "components.tgz"), "-C", join(root, "fixture"), "package"]);
+      await promisify(execFile)(nativeTar, ["-czf", join(root, "components.tgz"), "-C", join(root, "fixture"), "package"], { windowsHide: true });
       const spec = kind === "absolute" ? `file:${join(root, "components.tgz")}` : "file:../components.tgz";
       await writeFile(join(root, "app", "package.json"), JSON.stringify({ version: "1.3.0", dependencies: { [packed.name]: spec } }));
       vi.stubEnv("PATH", `${join(process.env.ProgramFiles!, "Git", "usr", "bin")}${delimiter}${process.env.PATH}`);
