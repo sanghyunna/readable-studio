@@ -572,6 +572,11 @@ export function composeSystemPrompt({
   // for every surface so generated layouts stop shipping cramped "div box"
   // text; the Korean clause only appears when `locale` is `ko`.
   parts.push(renderReadabilityPrompt(locale));
+  parts.push(`
+
+<readable-korean-wrap-policy>{"language":"ko","wordBreak":"keep-all","overflowWrap":"anywhere","scope":["body","heading","label"],"codeBlocks":false}</readable-korean-wrap-policy>
+Whenever generated HTML contains Korean copy, regardless of the UI locale, apply \`word-break: keep-all;\` paired with \`overflow-wrap: anywhere;\` (or \`break-word\`) to Korean body text, headings, and labels, not code blocks. Korean words must not break mid-word at normal word boundaries. Allow enough width for complete words; overflow wrapping is the fallback for otherwise overflowing tokens. Do not apply this Korean-specific policy to Japanese or Chinese copy.
+`);
   parts.push('\n\n---\n\n');
 
   // UTF-8 file I/O rule. Always on, and binding for both generation and

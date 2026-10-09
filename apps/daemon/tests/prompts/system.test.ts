@@ -264,7 +264,9 @@ describe('composeSystemPrompt', () => {
 
       for (const locale of [undefined, 'en', 'zh-CN', 'zh-TW', 'ja']) {
         const prompt = composeSystemPrompt(locale ? { locale } : {});
-        expect(prompt).not.toContain('word-break: keep-all');
+        const policy = JSON.parse(prompt.match(/<readable-korean-wrap-policy>(.*?)<\/readable-korean-wrap-policy>/s)![1]!);
+        expect(policy.language).toBe('ko');
+        expect(policy.wordBreak).toBe('keep-all');
         expect(prompt).not.toContain('Korean (한국어) line breaking');
       }
     });
