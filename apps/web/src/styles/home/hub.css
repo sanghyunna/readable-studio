@@ -754,6 +754,7 @@
 }
 
 .hub-row:hover .hub-row__action,
+.hub-row--session.is-current .hub-row__action,
 .hub-row:focus-within .hub-row__action,
 .hub-row.is-menu-open .hub-row__action {
   opacity: 1;

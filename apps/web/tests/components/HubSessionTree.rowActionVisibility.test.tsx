@@ -72,6 +72,27 @@ function expectPaintableIconButton(button: HTMLElement): void {
 }
 
 describe('HubSessionTree row action visibility', () => {
+  it('exposes current-session actions without hover or keyboard focus', () => {
+    // jsdom does not evaluate hover media features. Exercise the actual base
+    // and reveal rules outside that touch-device fallback.
+    const style = document.createElement('style');
+    style.textContent = hubCss.slice(hubCss.indexOf('.hub-row__action {'), hubCss.indexOf('@media (hover: none)'));
+    document.head.append(style);
+    try {
+      renderTree();
+      const row = screen.getByTestId('hub-session-s1');
+      expect(row.getAttribute('aria-current')).toBe('true');
+      expect(row.contains(document.activeElement)).toBe(false);
+      for (const id of ['hub-peek-s1', 'hub-menu-session-s1']) {
+        const computed = getComputedStyle(screen.getByTestId(id));
+        expect(computed.opacity).toBe('1');
+        expect(computed.pointerEvents).toBe('auto');
+      }
+    } finally {
+      style.remove();
+    }
+  });
+
   it('renders the session peek control as a named, paintable icon button', () => {
     renderTree();
     expectPaintableIconButton(screen.getByTestId('hub-peek-s1'));
