@@ -19,6 +19,24 @@ const session = {
 const folder = { id: KNOWN_FOLDER, name: 'Research', createdAt: 1, updatedAt: 1 };
 const railSession = { ...session, workspaceId: 'workspace-1', state: 'idle', workspaceSessionCount: 1 };
 
+// A rail with every shape the UI's search, filter and sort distinguish.
+const rs = (id: string, folderId: string | null, title: string | null, state: string, updatedAt: number, shared = 1) => ({
+  id, workspaceId: `ws-${id}`, folderId, title, sessionMode: 'design', createdAt: 1, updatedAt,
+  messageCount: 1, state, workspaceSessionCount: shared,
+});
+const sA1 = rs('s-a1', KNOWN_FOLDER, 'Deck draft', 'running', 50, 2);
+const sA2 = rs('s-a2', KNOWN_FOLDER, null, 'idle', 40, 2);
+const sB1 = rs('s-b1', 'folder-2', 'Summary', 'awaiting', 30);
+const sR2 = rs('s-r2', null, 'Failed deck', 'failed', 60);
+const railFolders = [
+  { ...folder, updatedAt: 5, sessions: [sA1, sA2] },
+  { id: 'folder-2', name: 'Notes', createdAt: 1, updatedAt: 9, sessions: [sB1] },
+  { id: 'folder-3', name: 'Archive deck', createdAt: 1, updatedAt: 1, sessions: [] },
+];
+const rail = { folders: railFolders, recents: [railSession, sR2], generatedAt: 1 };
+const listedFolders = [railFolders[0], railFolders[2], railFolders[1]].map(({ sessions, ...rest }) => rest);
+const withName = (s: { folderId: string | null }, folderName: string | null) => ({ ...s, folderName });
+
 const requests: RequestRecord[] = [];
 let baseOrigin = '';
 let server: http.Server;
@@ -49,8 +67,9 @@ beforeAll(async () => {
       });
     }
     if (method === 'GET' && url.startsWith('/api/sessions?')) return json(response, { sessions: [railSession] });
-    if (method === 'GET' && url === '/api/rail') {
-      return json(response, { folders: [{ ...folder, sessions: [] }], recents: [railSession], generatedAt: 1 });
+    if (method === 'GET' && url === '/api/rail') return json(response, rail);
+    if (method === 'GET' && url === '/api/sessions/s-a1') {
+      return json(response, { session: { ...session, id: 's-a1', projectId: 'ws-s-a1', folderId: KNOWN_FOLDER, title: 'Deck draft' } });
     }
     if (url === '/api/sessions/missing') {
       return json(response, { error: { code: 'CONVERSATION_NOT_FOUND', message: 'session not found' } }, 404);
@@ -64,7 +83,7 @@ beforeAll(async () => {
     }
     if (method === 'DELETE' && url === '/api/sessions/session-1') return json(response, { ok: true });
     if (method === 'POST' && url === '/api/folders') return json(response, { folder: { ...folder, name: body.name } });
-    if (method === 'GET' && url === '/api/folders') return json(response, { folders: [folder] });
+    if (method === 'GET' && url === '/api/folders') return json(response, { folders: listedFolders });
     if (method === 'PATCH' && url === `/api/folders/${KNOWN_FOLDER}`) {
       return json(response, { folder: { ...folder, name: body.name } });
     }
@@ -145,20 +164,81 @@ describe('readable session', () => {
   }, 60_000);
 
   it('lists, trees, and reads sessions through the frozen routes', async () => {
-    const recent = await runCli(['session', 'list', '--recent', '--limit', '5', '--json']);
-    expect(JSON.parse(recent.stdout)).toEqual({ sessions: [railSession] });
-    await runCli(['session', 'list', '--folder', KNOWN_FOLDER]);
+    const recent = await runCli(['session', 'list', '--recent', '--limit', '1', '--json']);
+    expect(JSON.parse(recent.stdout)).toEqual({ sessions: [withName(sR2, null)] });
+    const inFolder = await runCli(['session', 'list', '--folder', KNOWN_FOLDER]);
+    expect(inFolder.stdout.trim().split('\n')).toEqual([
+      's-a1\tResearch\tDeck draft\trunning\t2',
+      's-a2\tResearch\t-\tidle\t2',
+    ]);
     const tree = await runCli(['session', 'tree', '--json']);
-    expect(JSON.parse(tree.stdout)).toMatchObject({ folders: [{ id: KNOWN_FOLDER }], recents: [{ id: 'session-1' }] });
+    expect(JSON.parse(tree.stdout)).toEqual(rail);
     const info = await runCli(['session', 'info', 'session-1', '--json']);
-    expect(JSON.parse(info.stdout)).toEqual({ session });
+    expect(JSON.parse(info.stdout)).toEqual({ session, folderName: null, state: 'idle', workspaceSessionCount: 1 });
+    const infoText = await runCli(['session', 'info', 'session-1']);
+    expect(infoText.stdout).toMatch(/^folder: +프로젝트 없음$/m);
+    expect(infoText.stdout).toMatch(/^state: +idle$/m);
+    expect(infoText.stdout).toMatch(/^shared: +no$/m);
+    const shared = await runCli(['session', 'info', 's-a1']);
+    expect(shared.stdout).toMatch(/^folder: +Research \(folder-1\)$/m);
+    expect(shared.stdout).toMatch(/^state: +running$/m);
+    expect(shared.stdout).toMatch(/^shared: +작업 폴더 공유 \(세션 2개\)$/m);
 
     expect(sent()).toEqual([
-      ['GET', '/api/sessions?folder=none&limit=5'],
-      ['GET', `/api/sessions?folder=${KNOWN_FOLDER}`],
+      ['GET', '/api/rail'],
+      ['GET', '/api/rail'],
       ['GET', '/api/rail'],
       ['GET', '/api/sessions/session-1'],
+      ['GET', '/api/rail'],
+      ['GET', '/api/sessions/session-1'],
+      ['GET', '/api/rail'],
+      ['GET', '/api/sessions/s-a1'],
+      ['GET', '/api/rail'],
     ]);
+  }, 60_000);
+
+  it('mirrors the rail search, state filters and folder sort over GET /api/rail', async () => {
+    const ids = async (args: string[]) => {
+      const result = await runCli([...args, '--json']);
+      expect(result.code, args.join(' ')).toBe(0);
+      return JSON.parse(result.stdout).sessions.map((s: { id: string }) => s.id);
+    };
+    // Unfiltered: every session, most recent first, with its folder name.
+    expect(JSON.parse((await runCli(['session', 'list', '--json'])).stdout)).toEqual({
+      sessions: [withName(sR2, null), withName(sA1, 'Research'), withName(sA2, 'Research'),
+        withName(sB1, 'Notes'), withName(railSession, null)],
+    });
+    // Search is case-insensitive on the title; a folder-name hit keeps all its sessions;
+    // an untitled session matches the rail's untitled label.
+    expect(await ids(['session', 'list', '--query', '  DECK '])).toEqual(['s-r2', 's-a1']);
+    expect(await ids(['session', 'list', '--query', 'research'])).toEqual(['s-a1', 's-a2']);
+    expect(await ids(['session', 'list', '--query', '제목 없는'])).toEqual(['s-a2']);
+    // 확인 필요 = awaiting or failed; 실행 중 = running.
+    expect(await ids(['session', 'list', '--state', 'attention'])).toEqual(['s-r2', 's-b1']);
+    expect(await ids(['session', 'list', '--state', 'running'])).toEqual(['s-a1']);
+    expect(await ids(['session', 'list', '--state', 'all', '--recent'])).toEqual(['s-r2', 'session-1']);
+    expect(await ids(['session', 'list', '--recent', '--state', 'attention', '--query', 'deck', '--limit', '1'])).toEqual(['s-r2']);
+
+    // The tree keeps a folder whose name matches even when it has no matching session.
+    const tree = JSON.parse((await runCli(['session', 'tree', '--query', 'deck', '--sort', 'name', '--json'])).stdout);
+    expect(tree.folders.map((f: { id: string; sessions: { id: string }[] }) => [f.id, f.sessions.map((s) => s.id)]))
+      .toEqual([['folder-3', []], [KNOWN_FOLDER, ['s-a1']]]);
+    expect(tree.recents.map((s: { id: string }) => s.id)).toEqual(['s-r2']);
+    const attention = JSON.parse((await runCli(['session', 'tree', '--state', 'attention', '--json'])).stdout);
+    expect(attention.folders.map((f: { id: string }) => f.id)).toEqual(['folder-2']);
+    const byRecent = JSON.parse((await runCli(['session', 'tree', '--sort', 'recent', '--json'])).stdout);
+    expect(byRecent.folders.map((f: { id: string }) => f.id)).toEqual(['folder-2', KNOWN_FOLDER, 'folder-3']);
+
+    const folderIds = async (sort: string) =>
+      JSON.parse((await runCli(['folder', 'list', '--sort', sort, '--json'])).stdout).folders.map((f: { id: string }) => f.id);
+    expect(await folderIds('name')).toEqual(['folder-3', 'folder-2', KNOWN_FOLDER]);
+    expect(await folderIds('recent')).toEqual(['folder-2', KNOWN_FOLDER, 'folder-3']);
+
+    for (const args of [['session', 'list', '--state', 'done'], ['session', 'tree', '--sort', 'size'], ['folder', 'list', '--sort', 'size']]) {
+      const bad = await runCli(args);
+      expect(bad.code, args.join(' ')).toBe(2);
+    }
+    expect(new Set(sent().map(([method, url]) => `${method} ${url}`))).toEqual(new Set(['GET /api/rail', 'GET /api/folders']));
   }, 60_000);
 
   it('renames, moves (folder none sends null), and deletes', async () => {
@@ -278,7 +358,7 @@ describe('readable folder', () => {
     const created = await runCli(['folder', 'create', '--name', 'Research', '--json']);
     expect(JSON.parse(created.stdout)).toEqual({ folder });
     const listed = await runCli(['folder', 'list', '--json']);
-    expect(JSON.parse(listed.stdout)).toEqual({ folders: [folder] });
+    expect(JSON.parse(listed.stdout)).toEqual({ folders: listedFolders });
     const renamed = await runCli(['folder', 'rename', KNOWN_FOLDER, '--name', 'Notes', '--json']);
     expect(JSON.parse(renamed.stdout)).toEqual({ folder: { ...folder, name: 'Notes' } });
     const kept = await runCli(['folder', 'delete', KNOWN_FOLDER, '--json']);

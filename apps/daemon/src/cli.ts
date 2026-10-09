@@ -155,9 +155,19 @@ const PROJECT_STRING_FLAGS = new Set([
 const PROJECT_BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'follow']);
 const SESSION_STRING_FLAGS = new Set([
   'daemon-url', 'identity-token-file', 'folder', 'title', 'mode', 'skill',
-  'design-system', 'prompt-file', 'limit', 'name', 'sessions',
+  'design-system', 'prompt-file', 'limit', 'name', 'sessions', 'query', 'state', 'sort',
 ]);
 const SESSION_BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'recent']);
+const RAIL_UNTITLED_LABEL = '제목 없는 세션';
+const RAIL_NO_PROJECT_LABEL = '프로젝트 없음';
+const RAIL_FILTERS = ['all', 'attention', 'running'];
+const RAIL_SORTS = ['recent', 'name'];
+const SESSION_VERB_FLAGS = {
+  'prompt-file': ['session new'],
+  query: ['session list', 'session tree'],
+  state: ['session list', 'session tree'],
+  sort: ['session tree', 'folder list'],
+};
 const WIDTH_RELEASE_STRING_FLAGS = new Set([...PROJECT_STRING_FLAGS, 'target', 'expected-content-sha256']);
 const WIDTH_RELEASE_BOOLEAN_FLAGS = new Set([...PROJECT_BOOLEAN_FLAGS, 'all']);
 const HOSTED_ARTIFACT_STRING_FLAGS = new Set([
@@ -419,8 +429,8 @@ function printRootHelp() {
       Query portable shortcut support or create a Desktop/Start Menu shortcut.
 
   readable session <new|list|tree|info|rename|move|delete> [args]
-      Create, find, rename, move and delete rail sessions. Same routes as the
-      left rail, including its search, state filters and folder sort.
+      Create, list, rename, move and delete the sessions shown in the left
+      rail, through the same routes the rail uses.
 
   readable folder <create|list|rename|delete> [args]
       Manage rail folders (UI: projects). Deleting a folder keeps its
@@ -6559,9 +6569,12 @@ Common options:
   } catch (err) {
     sessionCliUsageError(`${err.message}\n\n${usage}`);
   }
-  // Only `session new` takes a prompt; anywhere else the flag would be ignored.
-  if (flags['prompt-file'] !== undefined && !(noun === 'session' && args[0] === 'new')) {
-    sessionCliUsageError(`--prompt-file is not accepted by readable ${noun} ${args[0]}`);
+  // Verb-specific flags are rejected elsewhere instead of being silently ignored.
+  const verb = `${noun} ${args[0]}`;
+  for (const [flag, verbs] of Object.entries(SESSION_VERB_FLAGS)) {
+    if (flags[flag] !== undefined && !verbs.includes(verb)) {
+      sessionCliUsageError(`--${flag} is not accepted by readable ${verb}`);
+    }
   }
   const client = await createContentCliClient(flags, { stdinInUse: flags['prompt-file'] === '-' });
   if (client.hosted) {
@@ -6601,14 +6614,79 @@ function sessionCliUsageError(message) {
   process.exit(2);
 }
 
+// The left rail filters GET /api/rail on the client. These mirror its
+// predicates exactly (apps/web/src/components/hub/useHubRailController.ts and
+// hub/types.ts) so the CLI and the UI agree on what a search, filter or sort
+// shows. RAIL_* labels (declared with the flag sets, because dispatch runs
+// during module evaluation) are the rail's Korean copy.
+function railFlagValue(flags, name, allowed) {
+  const value = flags[name];
+  if (value === undefined) return undefined;
+  if (!allowed.includes(value)) sessionCliUsageError(`--${name} must be one of: ${allowed.join(', ')}`);
+  return value;
+}
+
+function railByRecency(a, b) {
+  return b.updatedAt - a.updatedAt || a.id.localeCompare(b.id);
+}
+
+function railMatchesFilter(state, filter) {
+  if (filter === 'all') return true;
+  if (filter === 'attention') return state === 'awaiting' || state === 'failed';
+  return state === 'running';
+}
+
+function railSortFolders(folders, sort) {
+  const next = [...folders];
+  if (sort === 'name') return next.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+  return next.sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
+}
+
+/** Search, then state filter, as the rail applies them; folders are kept when they still match. */
+function railNarrow(rail, { query, filter = 'all' }) {
+  let folders = rail.folders ?? [];
+  let recents = rail.recents ?? [];
+  const needle = typeof query === 'string' ? query.trim().toLowerCase() : '';
+  if (needle) {
+    const matches = (s) => (s.title ?? RAIL_UNTITLED_LABEL).toLowerCase().includes(needle);
+    folders = folders
+      .map((f) => (f.name.toLowerCase().includes(needle) ? f : { ...f, sessions: f.sessions.filter(matches) }))
+      .filter((f) => f.sessions.length > 0 || f.name.toLowerCase().includes(needle));
+    recents = recents.filter(matches);
+  }
+  if (filter !== 'all') {
+    folders = folders
+      .map((f) => ({ ...f, sessions: [...f.sessions].sort(railByRecency).filter((s) => railMatchesFilter(s.state, filter)) }))
+      .filter((f) => f.sessions.length > 0);
+    recents = recents.filter((s) => railMatchesFilter(s.state, filter));
+  }
+  return { ...rail, folders, recents };
+}
+
+function railFolderName(rail, folderId) {
+  if (folderId == null) return null;
+  return (rail.folders ?? []).find((f) => f.id === folderId)?.name ?? null;
+}
+
+
 async function runSession(args) {
   const usage = `Usage:
   readable session new    [--folder <id>] [--title "<t>"] [--mode design|chat] [--skill <id>]
                           [--design-system <id>] [--prompt-file <path|->] [--json]
                           Create a top-level session (it owns its own working folder).
-  readable session list   [--recent | --folder <id|none>] [--limit <n>] [--json]
-  readable session tree   [--json]                 Folders with their sessions, then recents.
-  readable session info   <id> [--json]
+  readable session list   [--recent | --folder <id|none>] [--query "<text>"]
+                          [--state all|attention|running] [--limit <n>] [--json]
+                          Sessions, most recent first, with folder name and state.
+  readable session tree   [--query "<text>"] [--state all|attention|running]
+                          [--sort recent|name] [--json]
+                          Folders with their sessions, then recents.
+                          These flags match the left rail: --query is its search
+                          (session title, or a folder name that keeps all of that
+                          folder's sessions; untitled sessions match "${RAIL_UNTITLED_LABEL}"),
+                          --state attention is "확인 필요" (awaiting input or failed),
+                          --state running is "실행 중", and --sort orders folders only.
+  readable session info   <id> [--json]    Includes folder name, state and how many
+                                           sessions share its working folder.
   readable session rename <id> --title "<t>" [--json]
   readable session move   <id> --folder <id|none> [--json]
                           Moving changes only where the session is listed. Its files,
@@ -6616,7 +6694,8 @@ async function runSession(args) {
                           agent resume state are the same before and after.
   readable session delete <id> [--json]`;
   const { sub, flags, client, id, need, out } = await sessionCliClient(args, usage, 'session');
-  const where = (s) => s.folderId ?? '-';
+  const folderLabel = (s) => s.folderName ?? (s.folderId == null ? RAIL_NO_PROJECT_LABEL : s.folderId);
+  const readRail = () => sessionCliCall(client, '/api/rail', 'GET', undefined, 'session-list-failed');
   switch (sub) {
     case 'new': {
       const body = {};
@@ -6640,27 +6719,36 @@ async function runSession(args) {
     }
     case 'list': {
       if (flags.recent && flags.folder !== undefined) sessionCliUsageError('--recent and --folder cannot be used together');
-      const query = new URLSearchParams();
-      if (flags.recent) query.set('folder', 'none');
-      else if (typeof flags.folder === 'string') query.set('folder', flags.folder);
+      let limit;
       if (typeof flags.limit === 'string') {
-        // Same rule the route enforces, checked here so it is a usage error.
-        const limit = Number(flags.limit);
+        // Same rule GET /api/sessions enforces, checked here so it is a usage error.
+        limit = Number(flags.limit);
         if (!Number.isInteger(limit) || limit < 1) sessionCliUsageError('--limit must be a positive integer');
-        query.set('limit', flags.limit);
       }
-      const qs = query.toString();
-      const data = await sessionCliCall(client, `/api/sessions${qs ? `?${qs}` : ''}`, 'GET', undefined, 'session-list-failed');
-      if (flags.json) return process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
-      const sessions = data?.sessions ?? [];
+      const filter = railFlagValue(flags, 'state', RAIL_FILTERS) ?? 'all';
+      // The rail's own read, so search and filters see exactly what the UI sees.
+      const rail = await readRail();
+      const narrowed = railNarrow(rail, { query: flags.query, filter });
+      const scope = flags.recent ? 'none' : flags.folder;
+      let sessions = [...narrowed.folders.flatMap((f) => f.sessions), ...narrowed.recents]
+        .filter((s) => scope === undefined || (scope === 'none' ? s.folderId === null : s.folderId === scope))
+        .sort(railByRecency)
+        .map((s) => ({ ...s, folderName: railFolderName(rail, s.folderId) }));
+      if (limit !== undefined) sessions = sessions.slice(0, limit);
+      if (flags.json) return process.stdout.write(`${JSON.stringify({ sessions }, null, 2)}\n`);
       if (sessions.length === 0) return console.log('No sessions. Create one with `readable session new --title "..."`.');
-      for (const s of sessions) console.log(`${s.id}\t${where(s)}\t${s.title ?? '-'}\t${s.state}`);
+      for (const s of sessions) {
+        console.log(`${s.id}\t${folderLabel(s)}\t${s.title ?? '-'}\t${s.state}\t${s.workspaceSessionCount}`);
+      }
       return;
     }
     case 'tree': {
-      const data = await sessionCliCall(client, '/api/rail', 'GET', undefined, 'session-list-failed');
+      const filter = railFlagValue(flags, 'state', RAIL_FILTERS) ?? 'all';
+      const sort = railFlagValue(flags, 'sort', RAIL_SORTS);
+      const data = railNarrow(await readRail(), { query: flags.query, filter });
+      if (sort) data.folders = railSortFolders(data.folders, sort);
       if (flags.json) return process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
-      for (const f of data?.folders ?? []) {
+      for (const f of data.folders) {
         console.log(`${f.id}\t${f.name}`);
         for (const s of f.sessions ?? []) console.log(`  ${s.id}\t${s.title ?? '-'}\t${s.state}`);
       }
@@ -6670,9 +6758,28 @@ async function runSession(args) {
     }
     case 'info': {
       const data = await sessionCliCall(client, `/api/sessions/${need('readable session info <id>')}`, 'GET', undefined, 'session-not-found');
-      if (flags.json) return process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
+      // The peek inspector's facts come from the rail row, not the session record.
+      const rail = await readRail();
       const s = data.session ?? {};
-      console.log(`id:        ${s.id}\nworkspace: ${s.projectId}\nfolder:    ${where(s)}\ntitle:     ${s.title ?? '-'}\nmode:      ${s.sessionMode ?? '-'}`);
+      const row = [...(rail.folders ?? []).flatMap((f) => f.sessions), ...(rail.recents ?? [])].find((r) => r.id === s.id);
+      const peek = {
+        folderName: railFolderName(rail, s.folderId),
+        state: row?.state ?? null,
+        workspaceSessionCount: row?.workspaceSessionCount ?? null,
+      };
+      if (flags.json) return process.stdout.write(`${JSON.stringify({ ...data, ...peek }, null, 2)}\n`);
+      const folder = s.folderId == null ? RAIL_NO_PROJECT_LABEL : `${peek.folderName ?? '-'} (${s.folderId})`;
+      const shared = peek.workspaceSessionCount > 1
+        ? `작업 폴더 공유 (세션 ${peek.workspaceSessionCount}개)` : 'no';
+      console.log([
+        `id:        ${s.id}`,
+        `workspace: ${s.projectId}`,
+        `folder:    ${folder}`,
+        `title:     ${s.title ?? '-'}`,
+        `mode:      ${s.sessionMode ?? '-'}`,
+        `state:     ${peek.state ?? '-'}`,
+        `shared:    ${shared}`,
+      ].join('\n'));
       return;
     }
     case 'rename': {
@@ -6703,7 +6810,8 @@ async function runSession(args) {
 async function runFolder(args) {
   const usage = `Usage:
   readable folder create --name "<n>" [--json]
-  readable folder list   [--json]
+  readable folder list   [--sort recent|name] [--json]
+                         --sort orders folders as the left rail's sort control does.
   readable folder rename <id> --name "<n>" [--json]
   readable folder delete <id> [--sessions keep|delete] [--json]
                          keep (default) moves its sessions to "no project";
@@ -6720,7 +6828,9 @@ async function runFolder(args) {
       return out(data, `[folder] created ${data.folder?.id ?? '-'}`);
     }
     case 'list': {
+      const sort = railFlagValue(flags, 'sort', RAIL_SORTS);
       const data = await sessionCliCall(client, '/api/folders', 'GET', undefined, 'folder-list-failed');
+      if (sort) data.folders = railSortFolders(data.folders ?? [], sort);
       if (flags.json) return process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
       const folders = data?.folders ?? [];
       if (folders.length === 0) return console.log('No folders. Create one with `readable folder create --name "..."`.');
