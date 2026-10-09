@@ -218,6 +218,7 @@ describe('readable session', () => {
     expect(await ids(['session', 'list', '--state', 'running'])).toEqual(['s-a1']);
     expect(await ids(['session', 'list', '--state', 'all', '--recent'])).toEqual(['s-r2', 'session-1']);
     expect(await ids(['session', 'list', '--recent', '--state', 'attention', '--query', 'deck', '--limit', '1'])).toEqual(['s-r2']);
+    expect((await runCli(['session', 'list', '--query', 'no such title'])).stdout.trim()).toBe('No sessions match.');
 
     // The tree keeps a folder whose name matches even when it has no matching session.
     const tree = JSON.parse((await runCli(['session', 'tree', '--query', 'deck', '--sort', 'name', '--json'])).stdout);

@@ -6736,6 +6736,9 @@ async function runSession(args) {
         .map((s) => ({ ...s, folderName: railFolderName(rail, s.folderId) }));
       if (limit !== undefined) sessions = sessions.slice(0, limit);
       if (flags.json) return process.stdout.write(`${JSON.stringify({ sessions }, null, 2)}\n`);
+      if (sessions.length === 0 && (flags.query !== undefined || filter !== 'all' || scope !== undefined)) {
+        return console.log('No sessions match.');
+      }
       if (sessions.length === 0) return console.log('No sessions. Create one with `readable session new --title "..."`.');
       for (const s of sessions) {
         console.log(`${s.id}\t${folderLabel(s)}\t${s.title ?? '-'}\t${s.state}\t${s.workspaceSessionCount}`);
