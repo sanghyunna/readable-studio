@@ -23,6 +23,26 @@ export function attachCodexAppServerSession(options: SessionOptions) {
   let threadId = '';
   let turnId = '';
   const textByItem = new Map<string, string>();
+  const reasoningByItem = new Map<string, { summary: Map<number, string>; content: Map<number, string>; completed: boolean }>();
+  let lastReasoningPart = '';
+  const reasoningItem = (id: string) => {
+    let item = reasoningByItem.get(id);
+    if (!item) { item = { summary: new Map(), content: new Map(), completed: false }; reasoningByItem.set(id, item); }
+    return item;
+  };
+  const emitReasoning = (id: string, index: number, delta: string) => {
+    if (!delta) return;
+    const key = JSON.stringify([id, index]);
+    onEvent({ type: 'thinking_delta', delta: (lastReasoningPart && lastReasoningPart !== key ? '\n\n' : '') + delta });
+    lastReasoningPart = key;
+  };
+  const flushRawReasoning = (id: string) => {
+    const item = reasoningItem(id);
+    if (item.summary.size === 0 && !item.completed) {
+      for (const [index, text] of item.content) emitReasoning(id, index, text);
+    }
+    item.completed = true;
+  };
   let lastTextItem = '';
   let lastText = '';
   let shutdownTimer: ReturnType<typeof setTimeout> | undefined;
@@ -47,6 +67,7 @@ export function attachCodexAppServerSession(options: SessionOptions) {
   const emitText = (id: string, delta: string) => {
     if (!delta) return;
     const boundary = lastTextItem && lastTextItem !== id && !lastText.endsWith('\n') && !delta.startsWith('\n') ? '\n' : '';
+    lastReasoningPart = '';
     onEvent({ type: 'text_delta', delta: boundary + delta });
     lastTextItem = id;
     lastText = delta;
@@ -106,16 +127,41 @@ export function attachCodexAppServerSession(options: SessionOptions) {
           if (item.text.startsWith(prior)) emitText(id, item.text.slice(prior.length));
           textByItem.set(id, item.text);
         }
+        if (item.type === 'reasoning' && message.method === 'item/completed') {
+          const reasoning = reasoningItem(id);
+          if (!reasoning.completed) {
+            if (Array.isArray(item.summary)) item.summary.forEach((text, index) => {
+              if (typeof text !== 'string') return;
+              const prior = reasoning.summary.get(index) ?? '';
+              if (text.startsWith(prior)) emitReasoning(id, index, text.slice(prior.length));
+              reasoning.summary.set(index, text);
+            });
+            if (Array.isArray(item.content)) item.content.forEach((text, index) => {
+              if (typeof text === 'string') reasoning.content.set(index, text);
+            });
+            flushRawReasoning(id);
+          }
+        }
         if (item.type === 'commandExecution') {
+          lastReasoningPart = '';
           if (message.method === 'item/started') onEvent({ type: 'tool_use', id, name: 'Bash', input: { command: item.command } });
           else onEvent({ type: 'tool_result', toolUseId: id, content: item.aggregatedOutput ?? '', isError: item.status === 'failed' || (typeof item.exitCode === 'number' && item.exitCode !== 0) });
         }
         break;
       }
       case 'item/reasoning/summaryTextDelta':
-      case 'item/reasoning/textDelta':
-        if (typeof params.delta === 'string') onEvent({ type: 'thinking_delta', delta: params.delta });
+      case 'item/reasoning/textDelta': {
+        if (typeof params.delta !== 'string' || typeof params.itemId !== 'string') break;
+        const item = reasoningItem(params.itemId);
+        if (item.completed) break;
+        const summary = message.method === 'item/reasoning/summaryTextDelta';
+        const index = Number(summary ? params.summaryIndex ?? 0 : params.contentIndex ?? 0);
+        const parts = summary ? item.summary : item.content;
+        parts.set(index, (parts.get(index) ?? '') + params.delta);
+        // Raw reasoning may precede a summary of the same item; prefer the summary.
+        if (summary) emitReasoning(params.itemId, index, params.delta);
         break;
+      }
       case 'thread/tokenUsage/updated': {
         const usage = codexRecord(codexRecord(params.tokenUsage).last);
         onEvent({ type: 'usage', usage: { input_tokens: usage.inputTokens, output_tokens: usage.outputTokens, cached_read_tokens: usage.cachedInputTokens, thought_tokens: usage.reasoningOutputTokens } });
@@ -127,6 +173,7 @@ export function attachCodexAppServerSession(options: SessionOptions) {
       case 'turn/completed': {
         const turn = codexRecord(params.turn);
         if (turn.status !== 'completed') { fail(new CodexRpcError(String(codexRecord(turn.error).message ?? `Codex turn ${String(turn.status)}`))); return; }
+        for (const id of reasoningByItem.keys()) flushRawReasoning(id);
         finished = true;
         stop();
         break;

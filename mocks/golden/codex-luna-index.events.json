@@ -1,0 +1,315 @@
+[
+  {
+    "type": "status",
+    "label": "thread_started",
+    "threadId": "thread"
+  },
+  {
+    "type": "status",
+    "label": "running"
+  },
+  {
+    "type": "thinking_delta",
+    "delta": "**Reading index.html**"
+  },
+  {
+    "type": "thinking_delta",
+    "delta": "\n\n**Opening index.html**"
+  },
+  {
+    "type": "text_delta",
+    "delta": "I"
+  },
+  {
+    "type": "text_delta",
+    "delta": "’ll"
+  },
+  {
+    "type": "text_delta",
+    "delta": " read"
+  },
+  {
+    "type": "text_delta",
+    "delta": " `"
+  },
+  {
+    "type": "text_delta",
+    "delta": "index"
+  },
+  {
+    "type": "text_delta",
+    "delta": ".html"
+  },
+  {
+    "type": "text_delta",
+    "delta": "`"
+  },
+  {
+    "type": "text_delta",
+    "delta": " from"
+  },
+  {
+    "type": "text_delta",
+    "delta": " the"
+  },
+  {
+    "type": "text_delta",
+    "delta": " shell"
+  },
+  {
+    "type": "text_delta",
+    "delta": " and"
+  },
+  {
+    "type": "text_delta",
+    "delta": " report"
+  },
+  {
+    "type": "text_delta",
+    "delta": " its"
+  },
+  {
+    "type": "text_delta",
+    "delta": " `"
+  },
+  {
+    "type": "text_delta",
+    "delta": "<title"
+  },
+  {
+    "type": "text_delta",
+    "delta": ">`"
+  },
+  {
+    "type": "text_delta",
+    "delta": " and"
+  },
+  {
+    "type": "text_delta",
+    "delta": " heading"
+  },
+  {
+    "type": "text_delta",
+    "delta": ","
+  },
+  {
+    "type": "text_delta",
+    "delta": " without"
+  },
+  {
+    "type": "text_delta",
+    "delta": " changing"
+  },
+  {
+    "type": "text_delta",
+    "delta": " files"
+  },
+  {
+    "type": "text_delta",
+    "delta": "."
+  },
+  {
+    "type": "tool_use",
+    "id": "exec-abdeaddb-47cc-421d-bcd4-56218d3be771",
+    "name": "Bash",
+    "input": {
+      "command": "\"C:\\\\windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content -Raw -LiteralPath .\\\\index.html\""
+    }
+  },
+  {
+    "type": "tool_result",
+    "toolUseId": "exec-abdeaddb-47cc-421d-bcd4-56218d3be771",
+    "content": "<!doctype html><html><head><title>Thinking capture</title></head><body><h1>Read this page</h1></body></html>\r\n",
+    "isError": false
+  },
+  {
+    "type": "usage",
+    "usage": {
+      "input_tokens": 22084,
+      "output_tokens": 284,
+      "cached_read_tokens": 17152,
+      "thought_tokens": 188
+    }
+  },
+  {
+    "type": "thinking_delta",
+    "delta": "**Checking file title heading**"
+  },
+  {
+    "type": "thinking_delta",
+    "delta": "\n\n**Reading shell script**"
+  },
+  {
+    "type": "text_delta",
+    "delta": "\nTitle"
+  },
+  {
+    "type": "text_delta",
+    "delta": ":"
+  },
+  {
+    "type": "text_delta",
+    "delta": " **"
+  },
+  {
+    "type": "text_delta",
+    "delta": "Thinking"
+  },
+  {
+    "type": "text_delta",
+    "delta": " capture"
+  },
+  {
+    "type": "text_delta",
+    "delta": "**"
+  },
+  {
+    "type": "text_delta",
+    "delta": "."
+  },
+  {
+    "type": "text_delta",
+    "delta": " Heading"
+  },
+  {
+    "type": "text_delta",
+    "delta": ":"
+  },
+  {
+    "type": "text_delta",
+    "delta": " **"
+  },
+  {
+    "type": "text_delta",
+    "delta": "Read"
+  },
+  {
+    "type": "text_delta",
+    "delta": " this"
+  },
+  {
+    "type": "text_delta",
+    "delta": " page"
+  },
+  {
+    "type": "text_delta",
+    "delta": "**"
+  },
+  {
+    "type": "text_delta",
+    "delta": "."
+  },
+  {
+    "type": "text_delta",
+    "delta": " The"
+  },
+  {
+    "type": "text_delta",
+    "delta": " file"
+  },
+  {
+    "type": "text_delta",
+    "delta": " contains"
+  },
+  {
+    "type": "text_delta",
+    "delta": " both"
+  },
+  {
+    "type": "text_delta",
+    "delta": " requested"
+  },
+  {
+    "type": "text_delta",
+    "delta": " elements"
+  },
+  {
+    "type": "text_delta",
+    "delta": ".\n\n"
+  },
+  {
+    "type": "text_delta",
+    "delta": "No"
+  },
+  {
+    "type": "text_delta",
+    "delta": " files"
+  },
+  {
+    "type": "text_delta",
+    "delta": " edited"
+  },
+  {
+    "type": "text_delta",
+    "delta": "."
+  },
+  {
+    "type": "text_delta",
+    "delta": " I"
+  },
+  {
+    "type": "text_delta",
+    "delta": " skipped"
+  },
+  {
+    "type": "text_delta",
+    "delta": " checks"
+  },
+  {
+    "type": "text_delta",
+    "delta": " beyond"
+  },
+  {
+    "type": "text_delta",
+    "delta": " the"
+  },
+  {
+    "type": "text_delta",
+    "delta": " title"
+  },
+  {
+    "type": "text_delta",
+    "delta": " and"
+  },
+  {
+    "type": "text_delta",
+    "delta": " heading"
+  },
+  {
+    "type": "text_delta",
+    "delta": ";"
+  },
+  {
+    "type": "text_delta",
+    "delta": " no"
+  },
+  {
+    "type": "text_delta",
+    "delta": " task"
+  },
+  {
+    "type": "text_delta",
+    "delta": "-related"
+  },
+  {
+    "type": "text_delta",
+    "delta": " risk"
+  },
+  {
+    "type": "text_delta",
+    "delta": " found"
+  },
+  {
+    "type": "text_delta",
+    "delta": "."
+  },
+  {
+    "type": "usage",
+    "usage": {
+      "input_tokens": 22424,
+      "output_tokens": 189,
+      "cached_read_tokens": 21248,
+      "thought_tokens": 142
+    }
+  }
+]

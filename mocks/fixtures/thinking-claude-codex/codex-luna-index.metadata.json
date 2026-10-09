@@ -1,0 +1,15 @@
+{
+  "captured_at": "2026-10-08T09:10:50.035Z",
+  "cli_version": "codex-cli 0.155.1",
+  "model": "gpt-6-luna",
+  "protocol": "app-server JSON-RPC over stdio",
+  "args": ["app-server", "--listen", "stdio://", "-c", "sandbox_mode=\"danger-full-access\"", "-c", "model=\"gpt-6-luna\"", "-c", "model_reasoning_summary=\"auto\""],
+  "task": "Read index.html using a shell file read. Inspect its title and heading, verify the task against the file, then report the title and heading. Do not edit any files.",
+  "capture_exit_code": 0,
+  "free_commit_bytes_before_capture": 9916706816,
+  "raw_sha256": "5dc80ae0c1b53f64329de2f6cfa782f20b897e1f712780e8c2ab130a4ecc481c",
+  "fixture_sha256": "3edbb4c206d7823eed551de24de09d9d59cceed0a0251c0db98f0ff3d25a54f6",
+  "anonymization": "Local username replaced with fixture; account-rate-limit, hook and remote-control frames removed. Reasoning IDs, summary indices, deltas and completed items are unchanged.",
+  "golden": "mocks/golden/codex-luna-index.events.json",
+  "golden_reason": "New capture-based assertion of full production adapter output, including paragraph boundaries and completion reconciliation. Existing goldens were not changed."
+}
