@@ -1,4 +1,4 @@
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, readdir, readlink, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -20,6 +20,33 @@ describe("bounded tree materialization", () => {
         expect(await readFile(join(root, "candidate", "nested", name))).toEqual(await readFile(join(root, "reference", "nested", name)));
         expect((await stat(join(root, "candidate", "nested", name))).mode).toBe((await stat(join(root, "reference", "nested", name))).mode);
       }
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+  it.each([false, true])("matches cp for directory links with dereference=%s", async (dereference) => {
+    const root = await mkdtemp(join(tmpdir(), "pack-copy-links-"));
+    try {
+      const source = join(root, "source");
+      const target = join(root, "target");
+      await mkdir(source);
+      await mkdir(join(target, "empty"), { recursive: true });
+      await writeFile(join(target, "payload"), "linked bytes");
+      await symlink(target, join(source, "linked"), process.platform === "win32" ? "junction" : "dir");
+      await cp(source, join(root, "reference"), { recursive: true, dereference });
+      await copyTreeConcurrent(source, join(root, "candidate"), { dereference });
+      expect(await readFile(join(root, "candidate", "linked", "payload"))).toEqual(await readFile(join(root, "reference", "linked", "payload")));
+      expect((await stat(join(root, "candidate", "linked", "empty"))).isDirectory()).toBe(true);
+      if (!dereference) expect(await readlink(join(root, "candidate", "linked"))).toBe(await readlink(join(root, "reference", "linked")));
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+  it("rejects a dangling dereferenced link and drains copies before cleanup", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pack-copy-dangling-"));
+    try {
+      const source = join(root, "source");
+      await mkdir(source);
+      await Promise.all(Array.from({ length: 80 }, (_, i) => writeFile(join(source, `file-${i}`), "payload")));
+      await symlink(join(root, "missing"), join(source, "dangling"), process.platform === "win32" ? "junction" : "dir");
+      await expect(copyTreeConcurrent(source, join(root, "out"), { dereference: true })).rejects.toMatchObject({ code: "ENOENT" });
+      await rm(join(root, "out"), { recursive: true, force: true });
     } finally { await rm(root, { recursive: true, force: true }); }
   });
   it("propagates source errors", async () => {

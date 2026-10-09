@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
-import { access, cp, lstat, mkdir, readdir, readFile, stat, symlink, unlink, writeFile } from "node:fs/promises";
+import { access, lstat, mkdir, readdir, readFile, stat, symlink, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { availableParallelism } from "node:os";
 
 import { measureBuildStep, writeBuildProfile } from "./build-profile.js";
 import { hashJson, hashPath, ToolPackCache } from "./cache.js";
 import type { ToolPackConfig } from "./config.js";
+import { copyTreeConcurrent } from "./copy-tree.js";
 import { hashPackageSourcePath } from "./package-source-hash.js";
 import { readRuntimeAppVersion, versionFamilyForAppVersion } from "./versions.js";
 
@@ -296,7 +297,7 @@ async function copyWorkspaceBuildArtifactsToCache(
     }
     const targetPath = join(entryRoot, artifact.cachePath);
     await mkdir(dirname(targetPath), { recursive: true });
-    await measureBuildStep("workspace:cache-copy", () => cp(sourcePath, targetPath, { dereference: true, recursive: true }),
+    await measureBuildStep("workspace:cache-copy", () => copyTreeConcurrent(sourcePath, targetPath, { dereference: true }),
       { artifact: artifact.workspacePath });
   }
 }
