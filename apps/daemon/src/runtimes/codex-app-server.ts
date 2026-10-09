@@ -1,6 +1,5 @@
 import { execFile, type ChildProcess } from 'node:child_process';
-import { existsSync, statSync } from 'node:fs';
-import { emittedRenderableQuestionForm } from '../question-form-detect.js';
+import { missingDocumentArtifact, documentRecoveryPrompt } from '../document-completion.js';
 import { attachCodexAppServerClient, codexRecord, CodexRpcError } from './codex-app-server-client.js';
 import { codexNeedsDangerFullAccessSandbox } from './defs/codex.js';
 
@@ -210,7 +209,7 @@ export function attachCodexAppServerSession(options: SessionOptions) {
         finishSummary();
         for (const id of reasoningByItem.keys()) flushRawReasoning(id);
         const artifact = options.expectedArtifactPath;
-        if (artifact && (!existsSync(artifact) || statSync(artifact).size === 0) && !emittedRenderableQuestionForm(turnText)) {
+        if (artifact && missingDocumentArtifact(artifact, turnText)) {
           if (artifactRecoveryAttempted) {
             fail(new CodexRpcError('Document generation completed without saving index.html in the project root.'));
             return;
@@ -220,7 +219,7 @@ export function attachCodexAppServerSession(options: SessionOptions) {
           artifactRecoveryAttempted = true;
           turnText = '';
           endThinkingBlock();
-          expectedId = client.request('turn/start', { threadId, input: [{ type: 'text', text: `The required deliverable is missing: ${artifact}. Your previous turn did not save a non-empty index.html in the project root. Review failed tool results, correct the write, and verify the file on disk before claiming completion. Continue the original document request now; do not stop at a receipt. If required user information is genuinely missing, ask using a question-form instead.` }] });
+          expectedId = client.request('turn/start', { threadId, input: [{ type: 'text', text: documentRecoveryPrompt(artifact) }] });
           return;
         }
         finished = true;

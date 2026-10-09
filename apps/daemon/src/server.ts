@@ -258,6 +258,7 @@ import { narrowProjectCritiqueOverride } from './critique/spawn-inputs.js';
 import { createCopilotStreamHandler } from './copilot-stream.js';
 import { createJsonEventStreamHandler } from './json-event-stream.js';
 import { attachCodexAppServerSession } from './runtimes/codex-app-server.js';
+import { expectedDocumentArtifact, missingDocumentArtifact, documentRecoveryPrompt } from './document-completion.js';
 import {
   antigravityAuthGuidance,
   antigravityQuotaGuidance,
@@ -9912,6 +9913,14 @@ async function startServerWithProbeLifetime({
       typeof projectId === 'string' && projectId
         ? getProject(db, projectId)
         : null;
+    // Classify delivery from project intent, not optional plugin installation.
+    // Keep the initial expectation across corrective attempts.
+    if (run.expectedDocumentArtifact === undefined) {
+      run.expectedDocumentArtifact = expectedDocumentArtifact({
+        cwd, metadata: projectRecord?.metadata, sessionMode: runSessionMode,
+        pluginAuthoring: isPluginAuthoringRun(db, run),
+      }) ?? null;
+    }
     const runContextPrompt = renderRunContextPrompt(context, projectRecord?.metadata);
     const cwdHint = cwd
       ? formatDesignFilesWorkspaceHint(cwd, existingProjectFiles, existingProjectFolders)
@@ -10320,13 +10329,11 @@ async function startServerWithProbeLifetime({
     const rollbackDetector = new RollingAgentRollbackDetector();
     const emitRunEvent = (event, data) => {
       if (
-        event === 'agent' &&
-        data &&
-        data.type === 'text_delta' &&
-        typeof data.delta === 'string' &&
+        ((event === 'agent' && data?.type === 'text_delta' && typeof data.delta === 'string') ||
+          (event === 'stdout' && typeof data?.chunk === 'string')) &&
         clarifyingQuestionText.length < CLARIFYING_QUESTION_BUFFER_CAP
       ) {
-        clarifyingQuestionText = (clarifyingQuestionText + data.delta).slice(
+        clarifyingQuestionText = (clarifyingQuestionText + (event === 'stdout' ? data.chunk : data.delta)).slice(
           0,
           CLARIFYING_QUESTION_BUFFER_CAP,
         );
@@ -12264,12 +12271,10 @@ async function startServerWithProbeLifetime({
       trackingSubstantiveOutput = true;
       acpSession = attachCodexAppServerSession({
         child, prompt: composed, cwd: effectiveCwd, model: agentOptions.model,
-        // A new file-backed plugin document must deliver its stable entry.
-        // Existing projects can legitimately run read-only turns, and plugin
-        // authoring has its own generated-plugin completion contract.
-        ...(run.appliedPluginSnapshotId && !isPluginAuthoringRun(db, run) &&
-          !fs.existsSync(path.join(effectiveCwd, 'index.html'))
-          ? { expectedArtifactPath: path.join(effectiveCwd, 'index.html') } : {}),
+        // Codex can recover in-thread; the shared finalizer also enforces
+        // delivery for Claude, Pi/Databricks, ACP and plain-stream adapters.
+        ...(run.expectedDocumentArtifact
+          ? { expectedArtifactPath: run.expectedDocumentArtifact } : {}),
         onEvent: sendAgentEvent,
       });
     } else if (def.streamFormat === 'json-event-stream') {
@@ -12561,7 +12566,7 @@ async function startServerWithProbeLifetime({
         typeof acpSession?.completedSuccessfully === 'function' &&
         acpSession.completedSuccessfully();
       const runArtifactSideEffects = scanRunEventsForRetrySideEffects(run.events);
-      const status = classifyChatRunCloseStatus({
+      let status = classifyChatRunCloseStatus({
         cancelRequested: !!run.cancelRequested,
         code,
         signal,
@@ -12692,6 +12697,27 @@ async function startServerWithProbeLifetime({
         send('stdout', { chunk });
       }
       flushAgentRollbackTail();
+      // A successful transport turn is not delivery. This seam covers every
+      // local runtime, including Claude, Pi/Databricks, ACP and plain stdout.
+      if (status === 'succeeded' && !run.cancelRequested && !design.runs.isTerminal(run.status) &&
+        missingDocumentArtifact(run.expectedDocumentArtifact, clarifyingQuestionText)) {
+        if (!run.documentRecoveryAttempted) {
+          run.documentRecoveryAttempted = true;
+          const recovery = documentRecoveryPrompt(run.expectedDocumentArtifact);
+          chatBody = { ...chatBody, message: `${message}\n\n${recovery}`, currentPrompt: `${currentPrompt ?? message}\n\n${recovery}` };
+          // Release this attempt before acquiring the next managed runtime.
+          await isolatedToolBroker?.close();
+          await closeManagedPi();
+          cleanupPromptFile();
+          restartSameRunAfterRetry();
+          return;
+        }
+        status = 'failed';
+        code = 1;
+        run.errorCode = 'AGENT_EXECUTION_FAILED';
+        run.error = 'Document generation completed without saving index.html in the project root.';
+        send('error', createSseErrorPayload(run.errorCode, run.error, { retryable: true }));
+      }
       // Persist only the authoritative session path returned by Pi get_state
       // after agent_end and agent_settled. Scoping it to the conversation and
       // agent prevents another conversation in the same cwd inheriting it.

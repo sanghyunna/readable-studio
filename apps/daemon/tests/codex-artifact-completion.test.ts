@@ -5,10 +5,13 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, it } from 'vitest';
 import { attachCodexAppServerSession } from '../src/runtimes/codex-app-server.js';
+import { expectedDocumentArtifact } from '../src/document-completion.js';
+import { finalGenReportEvents } from './helpers/final-gen-report-events.js';
 
-async function runPeer(mode: 'recover' | 'missing' | 'question') {
+async function runPeer(mode: 'recover' | 'missing' | 'question', report?: keyof typeof finalGenReportEvents) {
   const cwd = mkdtempSync(path.join(tmpdir(), 'codex-artifact-'));
-  const expectedArtifactPath = path.join(cwd, 'index.html');
+  const expectedArtifactPath = expectedDocumentArtifact({ cwd, metadata: { kind: 'report' }, sessionMode: 'design', pluginAuthoring: false })!;
+  const deltas = report ? finalGenReportEvents[report].flatMap(event => 'type' in event && event.type === 'text_delta' ? [event.delta] : []) : [];
   const fixture = `
 const {createInterface}=require('node:readline');
 const {writeFileSync}=require('node:fs');
@@ -23,7 +26,9 @@ createInterface({input:process.stdin}).on('line',line=>{
   send({id:m.id,result:{turn:{id:'turn-'+turns}}});
   if(turns===2 && ${JSON.stringify(mode)}==='recover')writeFileSync(${JSON.stringify(expectedArtifactPath)},'<!doctype html><html>real output</html>');
   const text=${JSON.stringify(mode)}==='question'?'<question-form id="brief">{"questions":[{"id":"topic","question":"Topic?","options":[{"label":"A","value":"a"},{"label":"B","value":"b"}]}]}</question-form>':'index.html written';
-  send({method:'item/completed',params:{item:{id:'message-'+turns,type:'agentMessage',text}}});
+  if(turns===1 && ${JSON.stringify(!!report)}) {
+    for(const delta of ${JSON.stringify(deltas)}) send({method:'item/agentMessage/delta',params:{itemId:'message-'+turns,delta}});
+  } else send({method:'item/completed',params:{item:{id:'message-'+turns,type:'agentMessage',text}}});
   send({method:'turn/completed',params:{turn:{status:'completed'}}});
  }
 }).on('close',()=>process.exit(0));`;
@@ -39,6 +44,19 @@ createInterface({input:process.stdin}).on('line',line=>{
     if (child.exitCode === null) child.kill();
     rmSync(cwd, { recursive: true, force: true });
   }
+}
+
+for (const report of ['report-1', 'report-2'] as const) {
+  it(`recovers the exact ${report} receipt/plain-question sequence`, async () => {
+    const result = await runPeer('recover', report);
+    expect(result.exists).toBe(true);
+    expect(result.success).toBe(true);
+  });
+  it(`fails after one corrective turn for the exact ${report} sequence`, async () => {
+    const result = await runPeer('missing', report);
+    expect(result.success).toBe(false);
+    expect(result.fatal).toBe(true);
+  });
 }
 
 it('continues a completed generation that claims a missing entry was written', async () => {

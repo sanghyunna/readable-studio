@@ -1,0 +1,43 @@
+import { randomUUID } from 'node:crypto';
+import { Server } from 'node:http';
+import { afterEach, expect, it, vi } from 'vitest';
+import { closeHttpServer } from '../src/daemon-startup.js';
+import { closeDatabase } from '../src/db.js';
+import { startServer } from '../src/server.js';
+import { withFakeAgent } from './helpers/fake-agent.js';
+import { finalGenReportEvents } from './helpers/final-gen-report-events.js';
+vi.mock('../src/memory-llm.js', () => ({ extractWithLLM: vi.fn(async () => undefined) }));
+let server: Server | undefined;
+afterEach(async () => { if (server) await closeHttpServer(server); server = undefined; closeDatabase(); });
+
+for (const report of ['report-1', 'report-2'] as const) {
+  it(`rejects artifact-free success through the shared Claude completion path (${report})`, async () => {
+    const text = finalGenReportEvents[report].flatMap(event => 'type' in event && event.type === 'text_delta' ? [event.delta] : []).join('');
+    const peer = `
+if(process.argv.includes('--version')){console.log('claude 1.0.0');process.exit(0);}
+const send=m=>process.stdout.write(JSON.stringify(m)+'\\n');
+require('node:readline').createInterface({input:process.stdin}).once('line',()=>{
+ send({type:'assistant',message:{id:'message',role:'assistant',content:[{type:'text',text:${JSON.stringify(text)}}],stop_reason:'end_turn'}});
+ send({type:'result',subtype:'success',is_error:false,result:'done',usage:{input_tokens:1,output_tokens:1}});
+}).on('close',()=>process.exit(0));`;
+    await withFakeAgent('claude', peer, async () => {
+      const started = await startServer({ port: 0, returnServer: true, isolatedAgentProbe: async () => ({ supported: false, reason: 'Direct test peer' }) });
+      if (!started || typeof started !== 'object' || !('server' in started) || !(started.server instanceof Server) || !('url' in started) || typeof started.url !== 'string') throw Error('Missing server');
+      server = started.server;
+      const post = async (route: string, body: unknown): Promise<Record<string, any>> => {
+        const r = await fetch(started.url + route, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(15000) });
+        const j = await r.json() as Record<string, any>; expect(r.ok, JSON.stringify(j)).toBe(true); return j;
+      };
+      const projectId = 'guard-' + randomUUID();
+      const project = await post('/api/projects', { id: projectId, name: 'Missing report', metadata: { kind: 'report' } });
+      const run = await post('/api/runs', { projectId, conversationId: project.conversationId, agentId: 'claude', model: 'sonnet', message: 'Make a report' });
+      const stream = await fetch(started.url + '/api/runs/' + run.runId + '/events', { signal: AbortSignal.timeout(15000) });
+      const events = await stream.text();
+      expect(events.match(/event: end\n/g)).toHaveLength(1);
+      expect(events).toContain('"status":"failed"');
+      expect(events).toContain('Document generation completed without saving index.html');
+      // The original and exactly one corrective attempt both delivered text.
+      expect(events.split(text.slice(0, 8)).length - 1).toBe(2);
+    });
+  });
+}
