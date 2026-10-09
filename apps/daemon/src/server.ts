@@ -5812,6 +5812,12 @@ async function startServerWithProbeLifetime({
   // The vela CLI owns the device-authorization UX (URL + code + browser open);
   // these routes only surface enough state for Readable Studio's Settings card to
   // show login status and trigger a login from a button.
+  class AmrBinaryUnresolvedError extends Error {
+    constructor() {
+      super('AMR vela binary could not be resolved');
+    }
+  }
+
   async function resolveAmrModelProbe() {
     const appConfig = await readAppConfig(RUNTIME_DATA_DIR);
     const configuredEnv = agentCliEnvForAgent(appConfig.agentCliEnv, 'amr');
@@ -5819,7 +5825,7 @@ async function startServerWithProbeLifetime({
     if (!def) throw new Error('AMR runtime definition is missing');
     const agentLaunch = resolveAgentLaunch(def, configuredEnv);
     const launchPath = agentLaunch.launchPath ?? agentLaunch.selectedPath;
-    if (!launchPath) throw new Error('AMR vela binary could not be resolved');
+    if (!launchPath) throw new AmrBinaryUnresolvedError();
     const env = applyAgentLaunchEnv(
       spawnEnvForAgent(
         def.id,
@@ -5855,6 +5861,12 @@ async function startServerWithProbeLifetime({
       });
       res.json(response);
     } catch (err) {
+      if (err instanceof AmrBinaryUnresolvedError) {
+        // AMR is an optional agent: when vela is not installed, answer with the
+        // empty catalog the web client already ignores instead of a 500.
+        res.json({ source: 'preset', models: [], refreshing: false, remoteError: err.message });
+        return;
+      }
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
   });

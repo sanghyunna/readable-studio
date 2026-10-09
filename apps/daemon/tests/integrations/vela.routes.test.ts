@@ -559,6 +559,45 @@ describe('POST /api/integrations/vela/login', () => {
   });
 });
 
+describe('GET /api/amr/models when AMR is unavailable', () => {
+  it('returns an empty preset catalog instead of HTTP 500 when the vela binary cannot be resolved', async () => {
+    const dataDir = process.env.READABLE_DATA_DIR as string;
+    const previous = await readAppConfig(dataDir);
+    const originalPath = process.env.PATH;
+    const originalVelaBin = process.env.VELA_BIN;
+    const missing = path.join(tmpHome, 'definitely-missing', 'vela-not-installed');
+    await writeAppConfig(dataDir, {
+      ...previous,
+      agentCliEnv: {
+        ...(previous.agentCliEnv ?? {}),
+        amr: {
+          ...((previous.agentCliEnv?.amr as Record<string, string>) ?? {}),
+          VELA_BIN: missing,
+        },
+      },
+    });
+    process.env.PATH = tmpHome;
+    delete process.env.VELA_BIN;
+    try {
+      const { status, body } = await getJson<{
+        source: string;
+        models: unknown[];
+        refreshing: boolean;
+        remoteError?: string;
+        error?: string;
+      }>(`${baseUrl}/api/amr/models`);
+      expect(status).toBe(200);
+      expect(body.error).toBeUndefined();
+      expect(body).toMatchObject({ source: 'preset', models: [], refreshing: false });
+      expect(body.remoteError).toMatch(/vela binary could not be resolved/);
+    } finally {
+      process.env.PATH = originalPath;
+      if (originalVelaBin !== undefined) process.env.VELA_BIN = originalVelaBin;
+      await writeAppConfig(dataDir, previous);
+    }
+  });
+});
+
 describe('POST /api/integrations/vela/logout', () => {
   it('drops back to preset AMR models after file-backed logout invalidates the cached remote catalog', async () => {
     seedLogin('local');
