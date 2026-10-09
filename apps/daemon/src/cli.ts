@@ -418,6 +418,14 @@ function printRootHelp() {
   readable shortcut <capabilities|create> [desktop|startMenu] [--json]
       Query portable shortcut support or create a Desktop/Start Menu shortcut.
 
+  readable session <new|list|tree|info|rename|move|delete> [args]
+      Create, find, rename, move and delete rail sessions. Same routes as the
+      left rail, including its search, state filters and folder sort.
+
+  readable folder <create|list|rename|delete> [args]
+      Manage rail folders (UI: projects). Deleting a folder keeps its
+      sessions unless you pass --sessions delete.
+
   readable chat new --project <id> [--seed-from <cid>] [--fork-after <mid>] [--title "<t>"] [--json]
       Create a Side Chat: a new conversation that inherits another
       conversation's context by copying its messages (--seed-from), optionally

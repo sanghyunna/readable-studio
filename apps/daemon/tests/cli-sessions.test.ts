@@ -88,11 +88,11 @@ beforeEach(() => {
   requests.length = 0;
 });
 
-async function runCli(args: string[], input?: string): Promise<{ code: number; stderr: string; stdout: string }> {
+async function runCli(args: string[], input?: string, withDaemonUrl = true): Promise<{ code: number; stderr: string; stdout: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn(
       process.execPath,
-      ['--import', 'tsx', cliEntry, ...args, '--daemon-url', baseOrigin],
+      ['--import', 'tsx', cliEntry, ...args, ...(withDaemonUrl ? ['--daemon-url', baseOrigin] : [])],
       {
         cwd: daemonRoot,
         env: { ...process.env, READABLE_HOSTED_IDENTITY_TOKEN_FILE: '' },
@@ -199,6 +199,15 @@ describe('readable session', () => {
       'PATCH /api/sessions/session-1',
       'POST /api/sessions',
     ]);
+  }, 60_000);
+});
+
+describe('readable --help', () => {
+  it('lists the session and folder commands', async () => {
+    const result = await runCli(['--help'], undefined, false);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toMatch(/^ {2}readable session <new\|list\|tree\|info\|rename\|move\|delete>/m);
+    expect(result.stdout).toMatch(/^ {2}readable folder <create\|list\|rename\|delete>/m);
   }, 60_000);
 });
 
