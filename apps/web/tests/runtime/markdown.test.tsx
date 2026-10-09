@@ -50,6 +50,10 @@ describe('renderMarkdown', () => {
     expect(out).not.toContain('<em>');
   });
 
+  it.each(['read-only', 'no-file-changes', 'question'])('hides the machine completion signal for %s', reason => {
+    expect(html(`Answer\n\n<!-- readable:no-document-required reason="${reason}" -->`)).toBe(html('Answer'));
+  });
+
   it('keeps italic working in regular prose', () => {
     const out = html('A word with _emphasis_ here.');
     expect(out).toContain('<em>emphasis</em>');

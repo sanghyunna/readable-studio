@@ -34,7 +34,8 @@ export interface RenderMarkdownOptions {
 }
 
 export function renderMarkdown(input: string, options?: RenderMarkdownOptions): ReactNode {
-  const blocks = parseBlocks(input);
+  // The daemon consumes this terminal intent signal; it is not chat copy.
+  const blocks = parseBlocks(input.replace(/<!-- readable:no-document-required reason="(?:read-only|no-file-changes|question)" -->\s*$/, ''));
   return (
     <>
       {blocks.map((b, i) => renderBlock(b, i, options))}
