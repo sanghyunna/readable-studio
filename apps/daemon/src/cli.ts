@@ -6545,7 +6545,16 @@ Common options:
     process.exit(args.length === 0 ? 2 : 0);
   }
   const rest = args.slice(1);
-  const flags = parseFlags(rest, { string: SESSION_STRING_FLAGS, boolean: SESSION_BOOLEAN_FLAGS });
+  let flags;
+  try {
+    flags = parseFlags(rest, { string: SESSION_STRING_FLAGS, boolean: SESSION_BOOLEAN_FLAGS });
+  } catch (err) {
+    sessionCliUsageError(`${err.message}\n\n${usage}`);
+  }
+  // Only `session new` takes a prompt; anywhere else the flag would be ignored.
+  if (flags['prompt-file'] !== undefined && !(noun === 'session' && args[0] === 'new')) {
+    sessionCliUsageError(`--prompt-file is not accepted by readable ${noun} ${args[0]}`);
+  }
   const client = await createContentCliClient(flags, { stdinInUse: flags['prompt-file'] === '-' });
   if (client.hosted) {
     console.error(`readable ${noun} is local-only`);
@@ -6570,7 +6579,12 @@ async function sessionCliCall(client, pathname, method, body, fallbackCode) {
     init.body = JSON.stringify(body);
   }
   const resp = await client.request(pathname, init, method !== 'GET');
-  if (!resp.ok) return structuredHttpFailure(resp, fallbackCode);
+  if (!resp.ok) {
+    // Every verb reports an unknown session the same way, whatever its own fallback.
+    const peek = resp.status === 404 ? await resp.clone().json().catch(() => null) : null;
+    const code = peek?.error?.code === 'CONVERSATION_NOT_FOUND' ? 'session-not-found' : fallbackCode;
+    return structuredHttpFailure(resp, code);
+  }
   return resp.json();
 }
 
@@ -6605,7 +6619,11 @@ async function runSession(args) {
       if (typeof flags.skill === 'string') body.skillId = flags.skill;
       if (typeof flags['design-system'] === 'string') body.designSystemId = flags['design-system'];
       if (flags['prompt-file'] !== undefined) {
-        const prompt = await readPromptFromFlags({ 'prompt-file': flags['prompt-file'] });
+        const prompt = await readPromptFromFlags({ 'prompt-file': flags['prompt-file'] }).catch((err) => {
+          const file = flags['prompt-file'];
+          if (err?.code === 'ENOENT') sessionCliUsageError(`prompt file not found: ${file}`);
+          sessionCliUsageError(`cannot read prompt file ${file}: ${err?.code ?? err?.message ?? err}`);
+        });
         if (!prompt || prompt.trim().length === 0) sessionCliUsageError('--prompt-file is empty');
         body.pendingPrompt = prompt;
       }
@@ -6617,7 +6635,12 @@ async function runSession(args) {
       const query = new URLSearchParams();
       if (flags.recent) query.set('folder', 'none');
       else if (typeof flags.folder === 'string') query.set('folder', flags.folder);
-      if (typeof flags.limit === 'string') query.set('limit', flags.limit);
+      if (typeof flags.limit === 'string') {
+        // Same rule the route enforces, checked here so it is a usage error.
+        const limit = Number(flags.limit);
+        if (!Number.isInteger(limit) || limit < 1) sessionCliUsageError('--limit must be a positive integer');
+        query.set('limit', flags.limit);
+      }
       const qs = query.toString();
       const data = await sessionCliCall(client, `/api/sessions${qs ? `?${qs}` : ''}`, 'GET', undefined, 'session-list-failed');
       if (flags.json) return process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);

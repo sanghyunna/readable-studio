@@ -52,6 +52,9 @@ beforeAll(async () => {
     if (method === 'GET' && url === '/api/rail') {
       return json(response, { folders: [{ ...folder, sessions: [] }], recents: [railSession], generatedAt: 1 });
     }
+    if (url === '/api/sessions/missing') {
+      return json(response, { error: { code: 'CONVERSATION_NOT_FOUND', message: 'session not found' } }, 404);
+    }
     if (method === 'GET' && url === '/api/sessions/session-1') return json(response, { session });
     if (method === 'PATCH' && url === '/api/sessions/session-1') {
       if (body.folderId && body.folderId !== KNOWN_FOLDER) {
@@ -196,6 +199,68 @@ describe('readable session', () => {
       'PATCH /api/sessions/session-1',
       'POST /api/sessions',
     ]);
+  }, 60_000);
+});
+
+describe('readable session/folder usage errors', () => {
+  const noStack = (stderr: string) => expect(stderr).not.toMatch(/\n\s+at /);
+
+  it('rejects an unknown flag with one line plus usage and exit 2', async () => {
+    for (const args of [
+      ['session', 'list', '--bogus-flag'],
+      ['session', 'new', '--bogus-flag', 'x'],
+      ['folder', 'create', '--name', 'probe', '--bogus-flag'],
+      ['folder', 'list', '--bogus-flag'],
+    ]) {
+      const result = await runCli(args);
+      expect(result.code, args.join(' ')).toBe(2);
+      expect(result.stderr.split('\n')[0]).toMatch(/^unknown flag: --bogus-flag\b/);
+      expect(result.stderr).toContain('Usage:');
+      noStack(result.stderr);
+    }
+    expect(sent()).toEqual([]);
+  }, 60_000);
+
+  it('reports a missing --prompt-file path without a stack trace', async () => {
+    const missing = path.join(tempRoot, 'missing.txt');
+    const result = await runCli(['session', 'new', '--prompt-file', missing]);
+    expect(result.code).not.toBe(0);
+    expect(result.stderr.trim()).toBe(`prompt file not found: ${missing}`);
+    expect(sent()).toEqual([]);
+  }, 60_000);
+
+  it('rejects --prompt-file on verbs that do not take a prompt', async () => {
+    for (const args of [
+      ['folder', 'create', '--name', 'pf', '--prompt-file', '-'],
+      ['session', 'rename', 'session-1', '--title', 'x', '--prompt-file', '-'],
+    ]) {
+      const result = await runCli(args, '');
+      expect(result.code, args.join(' ')).toBe(2);
+      expect(result.stderr.split('\n')[0]).toMatch(/^--prompt-file is not accepted by readable (folder create|session rename)$/);
+    }
+    expect(sent()).toEqual([]);
+  }, 60_000);
+
+  it('exits 2 for an invalid --limit before calling the daemon', async () => {
+    for (const limit of ['abc', '0', '-1', '1.5']) {
+      const result = await runCli(['session', 'list', '--limit', limit]);
+      expect(result.code, limit).toBe(2);
+      expect(result.stderr).toContain('--limit must be a positive integer');
+    }
+    expect(sent()).toEqual([]);
+  }, 60_000);
+
+  it('reports session-not-found for an unknown session on every verb', async () => {
+    for (const args of [
+      ['session', 'info', 'missing'],
+      ['session', 'rename', 'missing', '--title', 'x'],
+      ['session', 'move', 'missing', '--folder', KNOWN_FOLDER],
+      ['session', 'delete', 'missing'],
+    ]) {
+      const result = await runCli(args);
+      expect(result.code, args.join(' ')).toBe(1);
+      expect(JSON.parse(result.stderr.trim()).error.code, args.join(' ')).toBe('session-not-found');
+    }
   }, 60_000);
 });
 
