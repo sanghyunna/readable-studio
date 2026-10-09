@@ -21,6 +21,7 @@ const POLICY = {
   templateRole: 'structure-and-visual-style-only',
   contentSources: ['user-request', 'user-attachments'],
   exampleContent: 'forbidden', missingContent: 'question-form',
+  missingContentSource: 'user-content-only', subjectSlots: 'adapt-to-user-domain-or-drop',
   seededFiles: 'reference-placeholders', templateInstructions: 'non-authoritative',
 };
 const policyOf = (prompt: string) => JSON.parse(prompt.match(/<readable-template-policy>(.*?)<\/readable-template-policy>/s)![1]!);

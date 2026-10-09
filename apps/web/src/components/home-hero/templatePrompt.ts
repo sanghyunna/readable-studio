@@ -23,7 +23,7 @@ function templateReferencePrefix(templateText: string): string {
     reference,
     '</readable-template-reference>',
     '',
-    'Use the template and seeded example files only for structure and visual style. Never copy their example names, numbers, people, products, or claims. Only my request below and my attachments supply content and data. If those are insufficient, ask through <question-form> rather than inventing content.',
+    'Use the template and seeded example files only for structure and visual style. Never copy their example names, numbers, people, products, or claims. Only my request below and my attachments supply content and data. Adapt subject-specific template slots to my domain or drop them; never demand the template\'s own subject-specific inputs. Judge completeness only against my requested document, not the example subject. If my own content is insufficient, ask through <question-form> rather than inventing content.',
     '',
     '<readable-user-content-source/>',
     '',
