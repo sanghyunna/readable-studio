@@ -30,6 +30,8 @@ function catalogueRecord(slug: string): InstalledPluginRecord {
 const DECK = catalogueRecord('guizang-ppt');
 const DECK_B = catalogueRecord('deck-swiss-international');
 const ACREAGE = catalogueRecord('acreage-farming');
+const SAAS = catalogueRecord('saas-landing');
+const LIBRARY_REQUEST = "우리 동네 도서관 10월 독서모임 안내: 2025-10-18 토 오후 2시, 3층 세미나실, 선정 도서 '소년이 온다', 참가비 없음, 주민 누구나, 사전 신청 없이 방문";
 const APPLY_RESULT = {
   query: '', contextItems: [], inputs: [], assets: [], mcpServers: [],
   trust: 'trusted', capabilitiesGranted: [], capabilitiesRequired: [], projectMetadata: {},
@@ -47,13 +49,13 @@ afterEach(() => {
   window.localStorage.clear();
 });
 
-async function renderHub() {
+async function renderHub(ordinaryPlugin = false) {
   writeHomeGuideStage('done');
   vi.stubGlobal('fetch', vi.fn(async (url: RequestInfo | URL) => {
     if (url === '/api/plugins') {
-      return Response.json({ plugins: [DECK, DECK_B, ACREAGE] });
+      return Response.json({ plugins: [DECK, DECK_B, ACREAGE, SAAS] });
     }
-    const record = [DECK, DECK_B, ACREAGE].find((item) => url === `/api/plugins/${encodeURIComponent(item.id)}/apply`);
+    const record = [DECK, DECK_B, ACREAGE, SAAS].find((item) => url === `/api/plugins/${encodeURIComponent(item.id)}/apply`);
     if (record) {
       return Response.json({ ...APPLY_RESULT, appliedPlugin: { ...APPLY_RESULT.appliedPlugin, pluginId: record.id } });
     }
@@ -67,7 +69,8 @@ async function renderHub() {
   });
   await act(async () => {
     render(<I18nProvider initial="en"><HomeView surface="hub" projects={[]} onSubmit={onSubmit}
-      onOpenProject={() => undefined} onViewAllProjects={() => undefined} /></I18nProvider>);
+      onOpenProject={() => undefined} onViewAllProjects={() => undefined}
+      promptHandoff={ordinaryPlugin ? { id: 1, source: 'plugin-use', pluginId: SAAS.id, action: 'use', focus: true } : null} /></I18nProvider>);
   });
   const submit = async () => {
     // Subscribe before triggering. Vitest's bounded test timeout guards this signal.
@@ -78,7 +81,7 @@ async function renderHub() {
     expect(onSubmit).toHaveBeenCalledOnce();
     return submitted;
   };
-  return { submit };
+  return { submit, onSubmit };
 }
 function deckCard(id = DECK.id): HTMLButtonElement {
   return screen.getAllByTestId('hub-template-card').find((node) => node.getAttribute('data-plugin-id') === id) as HTMLButtonElement;
@@ -96,6 +99,33 @@ async function pickDeckCard() {
 }
 
 describe('Hub template chip - 91df2d0 hidden-brief regression', () => {
+  it('sends unrelated library content through the SaaS template without required slots or ordinary apply', async () => {
+    const { onSubmit } = await renderHub();
+    fireEvent.click(screen.getAllByTestId('hub-template-carousel-tab')
+      .find((node) => node.getAttribute('data-tab-id') === 'prototype')!);
+    await act(async () => { fireEvent.click(deckCard(SAAS.id)); });
+    await act(async () => { setHomeHeroPrompt(LIBRARY_REQUEST); });
+    await act(async () => { fireEvent.click(screen.getByTestId('home-hero-submit')); });
+    expect(onSubmit).toHaveBeenCalledOnce();
+    const payload = onSubmit.mock.calls[0]![0];
+    expect(payload.pluginId).toBe(SAAS.id);
+    expect(payload.templateRef?.id).toBe(SAAS.id);
+    expect(userTextFromTemplateMessage(payload.prompt, payload.templateRef)).toBe(LIBRARY_REQUEST);
+    expect(payload.appliedPluginSnapshotId).toBeNull();
+    expect(screen.queryByTestId('home-hero-error')).toBeNull();
+    expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith('/apply'))).toHaveLength(0);
+  });
+
+  it('still blocks ordinary SaaS plugin use with missing required inputs', async () => {
+    const { onSubmit } = await renderHub(true);
+    expect(screen.getByTestId('home-hero-error')).toBeTruthy();
+    await act(async () => { setHomeHeroPrompt(LIBRARY_REQUEST); });
+    await act(async () => { fireEvent.click(screen.getByTestId('home-hero-submit')); });
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByTestId('home-hero-submit').hasAttribute('disabled')).toBe(true);
+    expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith('/apply'))).toHaveLength(0);
+  });
+
   it('keeps the chip UI but separates reference material from the final user content', async () => {
     const { submit } = await renderHub();
     const chip = await pickDeckCard();

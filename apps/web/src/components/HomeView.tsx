@@ -990,7 +990,11 @@ export function HomeView({
         projectMetadata: active?.projectMetadata ?? null,
         deferApply: true,
         explicitPick: true,
-        ...(hideTemplateText ? { suppressPromptUpdate: true } : {}),
+        ...(hideTemplateText ? {
+          suppressPromptUpdate: true,
+          inputFields: (record.manifest?.readable?.inputs ?? []).map((field) => ({ ...field, required: false })),
+          preserveInputFields: true,
+        } : {}),
       });
       if (hideTemplateText) {
         setHiddenTemplate({
@@ -1499,7 +1503,7 @@ export function HomeView({
       });
     }
     let submittedActive = autoSendFirstMessage ? active : null;
-    if (autoSendFirstMessage && submittedActive && !submittedActive.inputsValid) {
+    if (autoSendFirstMessage && !template && submittedActive && !submittedActive.inputsValid) {
       const missing = missingRequiredInputs(
         submittedActive.inputFields,
         submittedActive.inputs,
@@ -1536,7 +1540,7 @@ export function HomeView({
       ? !submittedActive.result ||
         !inputsEqual(submittedActive.result.appliedPlugin.inputs, submittedPluginInputs)
       : false;
-    if (autoSendFirstMessage && submittedActive && (!submittedActive.result || activeInputsChangedForSubmit)) {
+    if (autoSendFirstMessage && !template && submittedActive && (!submittedActive.result || activeInputsChangedForSubmit)) {
       const result = await resolveActivePlugin(submittedActive.record, submittedPluginInputs);
       if (!result) {
         const failedPluginId = submittedActive.record.id;
