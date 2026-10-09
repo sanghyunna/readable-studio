@@ -12025,6 +12025,14 @@ async function startServerWithProbeLifetime({
           failureText,
         );
         clearInactivityWatchdog();
+        // The Codex runtime's in-thread recovery ran out: same code and copy
+        // as the shared post-run guard so the web shows the Korean message.
+        if (ev.code === 'DOCUMENT_NOT_SAVED') {
+          run.errorCode = 'DOCUMENT_NOT_SAVED';
+          run.error = agentStreamError;
+          send('error', createSseErrorPayload('DOCUMENT_NOT_SAVED', agentStreamError, { retryable: true }));
+          return;
+        }
         const authFailure = classifyAgentAuthFailure(agentId, failureText);
         if (authFailure?.status === 'missing') {
           send('error', createSseErrorPayload(

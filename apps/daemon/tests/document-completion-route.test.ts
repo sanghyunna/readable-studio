@@ -44,3 +44,52 @@ require('node:readline').createInterface({input:process.stdin}).once('line',()=>
     });
   });
 }
+
+async function runCodexPeer(turnCompleted: string, metadata?: Record<string, unknown>): Promise<string> {
+  const peer = `
+if(process.argv.includes('--version')){console.log('codex 1.0.0');process.exit(0);}
+const send=m=>process.stdout.write(JSON.stringify(m)+'\\n');
+let turns=0;
+require('node:readline').createInterface({input:process.stdin}).on('line',line=>{
+ const m=JSON.parse(line);
+ if(m.method==='initialize')send({id:m.id,result:{}});
+ if(m.method==='thread/start')send({id:m.id,result:{thread:{id:'thread'}}});
+ if(m.method==='turn/start'){
+  turns++;
+  send({id:m.id,result:{turn:{id:'turn-'+turns}}});
+  send({method:'item/completed',params:{item:{id:'message-'+turns,type:'agentMessage',text:'index.html written'}}});
+  send(${turnCompleted});
+ }
+}).on('close',()=>process.exit(0));`;
+  let events = '';
+  await withFakeAgent('codex', peer, async () => {
+    const started = await startServer({ port: 0, returnServer: true, isolatedAgentProbe: async () => ({ supported: false, reason: 'Direct test peer' }) });
+    if (!started || typeof started !== 'object' || !('server' in started) || !(started.server instanceof Server) || !('url' in started) || typeof started.url !== 'string') throw Error('Missing server');
+    server = started.server;
+    const post = async (route: string, body: unknown): Promise<Record<string, any>> => {
+      const r = await fetch(started.url + route, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(15000) });
+      const j = await r.json() as Record<string, any>; expect(r.ok, JSON.stringify(j)).toBe(true); return j;
+    };
+    const projectId = 'codex-guard-' + randomUUID();
+    const project = await post('/api/projects', { id: projectId, name: 'Codex run', ...(metadata ? { metadata } : {}) });
+    const run = await post('/api/runs', { projectId, conversationId: project.conversationId, agentId: 'codex', model: 'selected-model', message: 'Make a report' });
+    const stream = await fetch(started.url + '/api/runs/' + run.runId + '/events', { signal: AbortSignal.timeout(15000) });
+    events = await stream.text();
+  });
+  return events;
+}
+
+it('reports the Codex in-thread missing-document failure with the dedicated error code', async () => {
+  const events = await runCodexPeer(`{method:'turn/completed',params:{turn:{status:'completed'}}}`, { kind: 'report' });
+  expect(events).toContain('"status":"failed"');
+  expect(events).toContain('"code":"DOCUMENT_NOT_SAVED"');
+  expect(events).toContain('"retryable":true');
+  expect(events).not.toContain('AGENT_EXECUTION_FAILED');
+});
+
+it('keeps other Codex failures on their existing error code', async () => {
+  const events = await runCodexPeer(`{method:'turn/completed',params:{turn:{status:'failed',error:{message:'turn exploded'}}}}`, { kind: 'report' });
+  expect(events).toContain('turn exploded');
+  expect(events).toContain('"code":"AGENT_EXECUTION_FAILED"');
+  expect(events).not.toContain('DOCUMENT_NOT_SAVED');
+});

@@ -82,3 +82,16 @@ it('allows a legitimate clarification without requiring an entry', async () => {
   expect(result.success).toBe(true);
   expect(result.exists).toBe(false);
 });
+
+it('tags only the missing-document failure with the dedicated error code', async () => {
+  const missing = await runPeer('missing');
+  expect(missing.events.filter(event => event.type === 'error')).toEqual([
+    expect.objectContaining({ code: 'DOCUMENT_NOT_SAVED', message: 'Document generation completed without saving index.html in the project root.' }),
+  ]);
+  const child = spawn(process.execPath, ['-e', 'process.stdin.resume()'], { stdio: 'pipe', windowsHide: true });
+  const closed = once(child, 'close', { signal: AbortSignal.timeout(5000) });
+  const events: Record<string, unknown>[] = [];
+  attachCodexAppServerSession({ child, prompt: 'x', cwd: tmpdir(), model: 'default', onEvent: event => events.push(event) });
+  await closed;
+  expect(events).toEqual([{ type: 'error', message: 'An explicit Codex model is required' }]);
+});

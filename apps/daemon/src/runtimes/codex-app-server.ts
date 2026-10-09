@@ -3,6 +3,15 @@ import { missingDocumentArtifact, documentRecoveryPrompt } from '../document-com
 import { attachCodexAppServerClient, codexRecord, CodexRpcError } from './codex-app-server-client.js';
 import { codexNeedsDangerFullAccessSandbox } from './defs/codex.js';
 
+/** Marks the one in-thread delivery failure the daemon reports as DOCUMENT_NOT_SAVED. */
+export class CodexDocumentNotSavedError extends CodexRpcError {
+  readonly code = 'DOCUMENT_NOT_SAVED';
+  constructor() {
+    super('Document generation completed without saving index.html in the project root.');
+    this.name = 'CodexDocumentNotSavedError';
+  }
+}
+
 type SessionOptions = {
   readonly child: ChildProcess;
   readonly prompt: string;
@@ -91,7 +100,7 @@ export function attachCodexAppServerSession(options: SessionOptions) {
     if (finished || aborted) return;
     fatal = true;
     finished = true;
-    onEvent({ type: 'error', message: error.message });
+    onEvent({ type: 'error', message: error.message, ...(error instanceof CodexDocumentNotSavedError ? { code: error.code } : {}) });
     stop();
   };
   const timer = setTimeout(() => fail(new CodexRpcError('App-server initialization timed out')), 30_000);
@@ -211,7 +220,7 @@ export function attachCodexAppServerSession(options: SessionOptions) {
         const artifact = options.expectedArtifactPath;
         if (artifact && missingDocumentArtifact(artifact, turnText)) {
           if (artifactRecoveryAttempted) {
-            fail(new CodexRpcError('Document generation completed without saving index.html in the project root.'));
+            fail(new CodexDocumentNotSavedError());
             return;
           }
           // A completed model turn is not delivery. Keep the same thread so
