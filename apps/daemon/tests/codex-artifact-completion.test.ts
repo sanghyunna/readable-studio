@@ -7,11 +7,12 @@ import { expect, it } from 'vitest';
 import { attachCodexAppServerSession } from '../src/runtimes/codex-app-server.js';
 import { expectedDocumentArtifact } from '../src/document-completion.js';
 import { finalGenReportEvents } from './helpers/final-gen-report-events.js';
+import { finalGenReadonlyDeltas } from './helpers/final-gen-readonly-events.js';
 
-async function runPeer(mode: 'recover' | 'missing' | 'question', report?: keyof typeof finalGenReportEvents) {
+async function runPeer(mode: 'recover' | 'missing' | 'question' | 'readonly', report?: keyof typeof finalGenReportEvents) {
   const cwd = mkdtempSync(path.join(tmpdir(), 'codex-artifact-'));
   const expectedArtifactPath = expectedDocumentArtifact({ cwd, metadata: { kind: 'report' }, sessionMode: 'design', pluginAuthoring: false })!;
-  const deltas = report ? finalGenReportEvents[report].flatMap(event => 'type' in event && event.type === 'text_delta' ? [event.delta] : []) : [];
+  const deltas = mode === 'readonly' ? finalGenReadonlyDeltas : report ? finalGenReportEvents[report].flatMap(event => 'type' in event && event.type === 'text_delta' ? [event.delta] : []) : [];
   const fixture = `
 const {createInterface}=require('node:readline');
 const {writeFileSync}=require('node:fs');
@@ -26,8 +27,8 @@ createInterface({input:process.stdin}).on('line',line=>{
   send({id:m.id,result:{turn:{id:'turn-'+turns}}});
   send({method:'turn/started',params:{turn:{id:'turn-'+turns}}});
   if(turns===2 && ${JSON.stringify(mode)}==='recover')writeFileSync(${JSON.stringify(expectedArtifactPath)},'<!doctype html><html>real output</html>');
-  const text=${JSON.stringify(mode)}==='question'?'<question-form id="brief">{"questions":[{"id":"topic","question":"Topic?","options":[{"label":"A","value":"a"},{"label":"B","value":"b"}]}]}</question-form>':'index.html written';
-  if(turns===1 && ${JSON.stringify(!!report)}) {
+  const text=${JSON.stringify(mode)}==='readonly'?'<!-- readable:no-document-required reason="read-only" -->':${JSON.stringify(mode)}==='question'?'<question-form id="brief">{"questions":[{"id":"topic","question":"Topic?","options":[{"label":"A","value":"a"},{"label":"B","value":"b"}]}]}</question-form>':'index.html written';
+  if(turns===1 && ${JSON.stringify(!!report || mode === 'readonly')}) {
     for(const delta of ${JSON.stringify(deltas)}) send({method:'item/agentMessage/delta',params:{itemId:'message-'+turns,delta}});
   } else send({method:'item/completed',params:{item:{id:'message-'+turns,type:'agentMessage',text}}});
   send({method:'turn/completed',params:{turn:{status:'completed'}}});
@@ -75,6 +76,13 @@ it('fails honestly if the corrective turn still produces no entry', async () => 
   expect(result.success).toBe(false);
   expect(result.fatal).toBe(true);
   expect(result.events.some(event => event.type === 'error')).toBe(true);
+});
+
+it('accepts the captured read-only answer and a corrective intent signal without creating a file', async () => {
+  const result = await runPeer('readonly');
+  expect(result.success).toBe(true);
+  expect(result.fatal).toBe(false);
+  expect(result.exists).toBe(false);
 });
 
 it('allows a legitimate clarification without requiring an entry', async () => {

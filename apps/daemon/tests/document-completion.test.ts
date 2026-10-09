@@ -32,7 +32,16 @@ it('preserves existing files, chat, plugin authoring and unclassified question s
   writeFileSync(path.join(cwd, 'index.html'), 'existing');
   expect(expectedDocumentArtifact(options)).toBeUndefined();
 });
-it('allows only a renderable question form to substitute for the artifact', () => {
+it.each(['read-only', 'no-file-changes', 'question'])('accepts an explicit artifact-free completion for %s', reason => {
+  const artifact = path.join(root(), 'index.html');
+  expect(missingDocumentArtifact(artifact, `Answer\n<!-- readable:no-document-required reason="${reason}" -->`)).toBe(false);
+});
+it('does not exempt malformed or non-terminal intent signals', () => {
+  const artifact = path.join(root(), 'index.html');
+  expect(missingDocumentArtifact(artifact, '<!-- readable:no-document-required reason="done" -->')).toBe(true);
+  expect(missingDocumentArtifact(artifact, '<!-- readable:no-document-required reason="read-only" -->\nindex.html written')).toBe(true);
+});
+it('allows a renderable question form to substitute for the artifact', () => {
   const artifact = path.join(root(), 'index.html');
   expect(missingDocumentArtifact(artifact, 'Which date should I use?')).toBe(true);
   expect(missingDocumentArtifact(artifact, '<question-form>{"questions":[{"id":"date","question":"Date?","options":[{"label":"A","value":"a"},{"label":"B","value":"b"}]}]}</question-form>')).toBe(false);

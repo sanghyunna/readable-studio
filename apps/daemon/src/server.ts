@@ -258,7 +258,7 @@ import { narrowProjectCritiqueOverride } from './critique/spawn-inputs.js';
 import { createCopilotStreamHandler } from './copilot-stream.js';
 import { createJsonEventStreamHandler } from './json-event-stream.js';
 import { attachCodexAppServerSession } from './runtimes/codex-app-server.js';
-import { expectedDocumentArtifact, missingDocumentArtifact, documentRecoveryPrompt } from './document-completion.js';
+import { expectedDocumentArtifact, missingDocumentArtifact, documentRecoveryPrompt, documentIntentPrompt } from './document-completion.js';
 import {
   antigravityAuthGuidance,
   antigravityQuotaGuidance,
@@ -2403,7 +2403,7 @@ function persistRunEventToAssistantMessage(db, run, event, data) {
   }
 }
 
-function runSseEventToPersistedAgentEvent(event, data) {
+export function runSseEventToPersistedAgentEvent(event, data) {
   if (event === 'start') {
     return {
       kind: 'status',
@@ -2421,10 +2421,16 @@ function runSseEventToPersistedAgentEvent(event, data) {
       : typeof data?.message === 'string'
         ? data.message
         : '';
+    const code = typeof data?.error?.code === 'string'
+      ? data.error.code
+      : typeof data?.code === 'string'
+        ? data.code
+        : '';
     return {
       kind: 'status',
       label: 'error',
       ...(message ? { detail: message } : {}),
+      ...(code ? { code } : {}),
     };
   }
   if (event !== 'agent') return null;
@@ -10220,6 +10226,7 @@ async function startServerWithProbeLifetime({
             ? `# Instructions\n\n${formOverride}${ECHO_GUARD}\n\n---\n`
             : '',
       `# User request\n\n${userRequestPrompt}${attachmentHint}${commentHint}`,
+      run.expectedDocumentArtifact ? `\n\n${documentIntentPrompt()}` : '',
       promptImagePaths.length
         ? `\n\n${promptImagePaths.map((p) => `@${p}`).join(' ')}`
         : '',
