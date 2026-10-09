@@ -3686,7 +3686,7 @@ export function ProjectView({
           textBuffer.appendContent(delta);
         },
         onAgentEvent: (ev: AgentEvent) => {
-          if (ev.kind === 'text') textBuffer.appendTextEvent(ev.text);
+          if (ev.kind === 'text') textBuffer.appendTextEvent(ev.text, ev.timestamp);
           else pushEvent(ev);
         },
         onToolInputDelta: (id: string, name: string, delta: string) => {
@@ -6818,8 +6818,9 @@ export function createBufferedTextUpdates({
     scheduleFlush();
   };
 
-  const appendTextEvent = (delta: string) => {
+  const appendTextEvent = (delta: string, timestamp?: number) => {
     if (disposed) return;
+    if (!pendingTextEventDelta) pendingTextTimestamp = timestamp;
     pendingTextEventDelta += delta;
     needsFlush = true;
     scheduleFlush();
@@ -6828,8 +6829,7 @@ export function createBufferedTextUpdates({
   const appendEvent = (ev: AgentEvent) => {
     if (disposed) return;
     if (ev.kind === 'text') {
-      if (!pendingTextEventDelta) pendingTextTimestamp = ev.timestamp;
-      appendTextEvent(ev.text);
+      appendTextEvent(ev.text, ev.timestamp);
       return;
     }
     flush();
