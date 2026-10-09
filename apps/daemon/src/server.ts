@@ -12264,6 +12264,12 @@ async function startServerWithProbeLifetime({
       trackingSubstantiveOutput = true;
       acpSession = attachCodexAppServerSession({
         child, prompt: composed, cwd: effectiveCwd, model: agentOptions.model,
+        // A new file-backed plugin document must deliver its stable entry.
+        // Existing projects can legitimately run read-only turns, and plugin
+        // authoring has its own generated-plugin completion contract.
+        ...(run.appliedPluginSnapshotId && !isPluginAuthoringRun(db, run) &&
+          !fs.existsSync(path.join(effectiveCwd, 'index.html'))
+          ? { expectedArtifactPath: path.join(effectiveCwd, 'index.html') } : {}),
         onEvent: sendAgentEvent,
       });
     } else if (def.streamFormat === 'json-event-stream') {

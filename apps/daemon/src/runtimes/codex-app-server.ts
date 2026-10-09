@@ -1,4 +1,6 @@
 import { execFile, type ChildProcess } from 'node:child_process';
+import { existsSync, statSync } from 'node:fs';
+import { emittedRenderableQuestionForm } from '../question-form-detect.js';
 import { attachCodexAppServerClient, codexRecord, CodexRpcError } from './codex-app-server-client.js';
 import { codexNeedsDangerFullAccessSandbox } from './defs/codex.js';
 
@@ -7,6 +9,7 @@ type SessionOptions = {
   readonly prompt: string;
   readonly cwd: string;
   readonly model: string;
+  readonly expectedArtifactPath?: string;
   readonly onEvent: (event: Record<string, unknown>) => void;
 };
 
@@ -22,6 +25,8 @@ export function attachCodexAppServerSession(options: SessionOptions) {
   let aborted = false;
   let threadId = '';
   let turnId = '';
+  let artifactRecoveryAttempted = false;
+  let turnText = '';
   const textByItem = new Map<string, string>();
   const reasoningByItem = new Map<string, { summary: Map<number, string>; content: Map<number, string>; completed: boolean }>();
   let lastReasoningPart = '';
@@ -95,6 +100,7 @@ export function attachCodexAppServerSession(options: SessionOptions) {
     if (!delta) return;
     const boundary = lastTextItem && lastTextItem !== id && !lastText.endsWith('\n') && !delta.startsWith('\n') ? '\n' : '';
     endThinkingBlock();
+    turnText += boundary + delta;
     onEvent({ type: 'text_delta', delta: boundary + delta });
     lastTextItem = id;
     lastText = delta;
@@ -203,6 +209,20 @@ export function attachCodexAppServerSession(options: SessionOptions) {
         if (turn.status !== 'completed') { fail(new CodexRpcError(String(codexRecord(turn.error).message ?? `Codex turn ${String(turn.status)}`))); return; }
         finishSummary();
         for (const id of reasoningByItem.keys()) flushRawReasoning(id);
+        const artifact = options.expectedArtifactPath;
+        if (artifact && (!existsSync(artifact) || statSync(artifact).size === 0) && !emittedRenderableQuestionForm(turnText)) {
+          if (artifactRecoveryAttempted) {
+            fail(new CodexRpcError('Document generation completed without saving index.html in the project root.'));
+            return;
+          }
+          // A completed model turn is not delivery. Keep the same thread so
+          // failed writes and the original brief remain available for repair.
+          artifactRecoveryAttempted = true;
+          turnText = '';
+          endThinkingBlock();
+          expectedId = client.request('turn/start', { threadId, input: [{ type: 'text', text: `The required deliverable is missing: ${artifact}. Your previous turn did not save a non-empty index.html in the project root. Review failed tool results, correct the write, and verify the file on disk before claiming completion. Continue the original document request now; do not stop at a receipt. If required user information is genuinely missing, ask using a question-form instead.` }] });
+          return;
+        }
         finished = true;
         stop();
         break;
