@@ -36,9 +36,36 @@ export function attachCodexAppServerSession(options: SessionOptions) {
     onEvent({ type: 'thinking_delta', delta: (lastReasoningPart && lastReasoningPart !== key ? '\n\n' : '') + delta });
     lastReasoningPart = key;
   };
+  let previousSummary: string | undefined;
+  let activeSummary: { id: string; index: number; text: string; emitted: number } | undefined;
+  const finishSummary = () => {
+    if (!activeSummary) return;
+    const { id, index, text, emitted } = activeSummary;
+    if (text.trim() !== previousSummary) emitReasoning(id, index, text.slice(emitted));
+    previousSummary = text.trim();
+    activeSummary = undefined;
+  };
+  const emitSummary = (id: string, index: number, delta: string) => {
+    if (!delta) return;
+    if (activeSummary && (activeSummary.id !== id || activeSummary.index !== index)) finishSummary();
+    activeSummary ??= { id, index, text: '', emitted: 0 };
+    activeSummary.text += delta;
+    // Hold only a possible duplicate prefix. Once it differs, stream normally.
+    if (activeSummary.emitted || previousSummary === undefined || !previousSummary.startsWith(activeSummary.text.trim())) {
+      emitReasoning(id, index, activeSummary.text.slice(activeSummary.emitted));
+      activeSummary.emitted = activeSummary.text.length;
+    }
+  };
+  const endThinkingBlock = () => {
+    finishSummary();
+    previousSummary = undefined;
+    lastReasoningPart = '';
+  };
   const flushRawReasoning = (id: string) => {
     const item = reasoningItem(id);
     if (item.summary.size === 0 && !item.completed) {
+      finishSummary();
+      previousSummary = undefined;
       for (const [index, text] of item.content) emitReasoning(id, index, text);
     }
     item.completed = true;
@@ -67,7 +94,7 @@ export function attachCodexAppServerSession(options: SessionOptions) {
   const emitText = (id: string, delta: string) => {
     if (!delta) return;
     const boundary = lastTextItem && lastTextItem !== id && !lastText.endsWith('\n') && !delta.startsWith('\n') ? '\n' : '';
-    lastReasoningPart = '';
+    endThinkingBlock();
     onEvent({ type: 'text_delta', delta: boundary + delta });
     lastTextItem = id;
     lastText = delta;
@@ -133,17 +160,18 @@ export function attachCodexAppServerSession(options: SessionOptions) {
             if (Array.isArray(item.summary)) item.summary.forEach((text, index) => {
               if (typeof text !== 'string') return;
               const prior = reasoning.summary.get(index) ?? '';
-              if (text.startsWith(prior)) emitReasoning(id, index, text.slice(prior.length));
+              if (text.startsWith(prior)) emitSummary(id, index, text.slice(prior.length));
               reasoning.summary.set(index, text);
             });
             if (Array.isArray(item.content)) item.content.forEach((text, index) => {
               if (typeof text === 'string') reasoning.content.set(index, text);
             });
+            if (activeSummary?.id === id) finishSummary();
             flushRawReasoning(id);
           }
         }
         if (item.type === 'commandExecution') {
-          lastReasoningPart = '';
+          endThinkingBlock();
           if (message.method === 'item/started') onEvent({ type: 'tool_use', id, name: 'Bash', input: { command: item.command } });
           else onEvent({ type: 'tool_result', toolUseId: id, content: item.aggregatedOutput ?? '', isError: item.status === 'failed' || (typeof item.exitCode === 'number' && item.exitCode !== 0) });
         }
@@ -159,7 +187,7 @@ export function attachCodexAppServerSession(options: SessionOptions) {
         const parts = summary ? item.summary : item.content;
         parts.set(index, (parts.get(index) ?? '') + params.delta);
         // Raw reasoning may precede a summary of the same item; prefer the summary.
-        if (summary) emitReasoning(params.itemId, index, params.delta);
+        if (summary) emitSummary(params.itemId, index, params.delta);
         break;
       }
       case 'thread/tokenUsage/updated': {
@@ -173,6 +201,7 @@ export function attachCodexAppServerSession(options: SessionOptions) {
       case 'turn/completed': {
         const turn = codexRecord(params.turn);
         if (turn.status !== 'completed') { fail(new CodexRpcError(String(codexRecord(turn.error).message ?? `Codex turn ${String(turn.status)}`))); return; }
+        finishSummary();
         for (const id of reasoningByItem.keys()) flushRawReasoning(id);
         finished = true;
         stop();

@@ -49,9 +49,40 @@ test('same captured item resent with its deltas and completion appears once', as
 test('completed-only captured reasoning still delivers every summary part once', async () => {
   expect(thinking(await replay([...reasoning, ...reasoning]))).toBe(expected);
 });
-test('identical text in distinct items is retained, and chunks within one part are not separated', async () => {
-  const delta = (itemId: string, delta: string) => ({ method: 'item/reasoning/summaryTextDelta', params: { itemId, summaryIndex: 0, delta } });
-  expect(thinking(await replay([delta('one', 'same'), delta('one', 'same'), delta('two', 'samesame')]))).toBe('samesame\n\nsamesame');
+const summaryDelta = (itemId: string, delta: string, summaryIndex = 0) => ({ method: 'item/reasoning/summaryTextDelta', params: { itemId, summaryIndex, delta } });
+test('adjacent identical summaries in distinct items appear once without deduping chunks', async () => {
+  expect(thinking(await replay([summaryDelta('one', 'same'), summaryDelta('one', 'same'), summaryDelta('two', 'same'), summaryDelta('two', 'same')]))).toBe('samesame');
+});
+test('attempt3 packaged SSE sequence loses only the adjacent duplicate summary', async () => {
+  // SSE has no item IDs: assign distinct IDs to exercise the path identity dedupe cannot cover.
+  const events = JSON.parse(readFileSync(new URL('../../../mocks/fixtures/thinking-claude-codex/codex-duplicate-attempt3.events.json', import.meta.url), 'utf8'));
+  const frames = events.flatMap((event: Record<string, unknown>, index: number) => {
+    if (event.type === 'thinking_delta') return [summaryDelta(`summary-${index}`, String(event.delta).replace(/^\n\n/, ''))];
+    if (event.type === 'text_delta') return [{ method: 'item/agentMessage/delta', params: { itemId: 'answer', delta: event.delta } }];
+    if (event.type === 'tool_use' || event.type === 'tool_result') return [{ method: event.type === 'tool_use' ? 'item/started' : 'item/completed', params: { item: { type: 'commandExecution', id: event.id ?? event.toolUseId, command: (event.input as { command: string } | undefined)?.command, aggregatedOutput: event.content, status: 'completed' } } }];
+    return [];
+  });
+  const actual = (await replay(frames)).filter(event => event.type === 'thinking_delta' || event.type === 'text_delta');
+  const expected = events.filter((event: Record<string, unknown>, index: number) => (event.type === 'thinking_delta' || event.type === 'text_delta') && index !== 3);
+  expect(actual).toEqual(expected);
+  const golden = new URL('../../../mocks/golden/codex-duplicate-attempt3.events.json', import.meta.url);
+  if (process.env.MOCKS_GOLDEN_UPDATE === '1') writeFileSync(golden, JSON.stringify(actual, null, 2) + '\n');
+  expect(actual).toEqual(JSON.parse(readFileSync(golden, 'utf8')));
+});
+test('trim-equal indexed summaries are suppressed; different prefix extensions and non-adjacent repeats stay', async () => {
+  const frames = [summaryDelta('one', ' A '), summaryDelta('one', 'A', 1), summaryDelta('two', 'A'), summaryDelta('two', 'B'), summaryDelta('three', 'A')];
+  expect(thinking(await replay(frames))).toBe(' A \n\nAB\n\nA');
+});
+test.each(['text', 'tool'])('a %s boundary permits an identical summary in the next thinking block', async boundary => {
+  const separator = boundary === 'text'
+    ? { method: 'item/agentMessage/delta', params: { itemId: 'answer', delta: 'ANSWER_SENTINEL' } }
+    : { method: 'item/started', params: { item: { type: 'commandExecution', id: 'tool', command: 'read' } } };
+  const events = await replay([summaryDelta('one', 'A'), summaryDelta('two', 'A'), separator, summaryDelta('three', 'A')]);
+  expect(events.filter(e => e.type === 'thinking_delta')).toEqual([{ type: 'thinking_delta', delta: 'A' }, { type: 'thinking_delta', delta: 'A' }]);
+});
+test('completed-only adjacent duplicates are suppressed but shorter different summaries are flushed', async () => {
+  const complete = (id: string, summary: string[]) => ({ method: 'item/completed', params: { item: { type: 'reasoning', id, summary, content: [] } } });
+  expect(thinking(await replay([complete('one', ['ALPHA']), complete('two', ['  ALPHA  ']), summaryDelta('three', 'AL'), complete('three', ['AL']), complete('four', ['ALPHA'])]))).toBe('ALPHA\n\nAL\n\nALPHA');
 });
 test('completion contributes only a missing suffix, not the already-streamed prefix', async () => {
   const frame = reasoning[0];

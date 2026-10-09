@@ -32,6 +32,29 @@ test('captured Codex daemon events aggregate into separate summary paragraphs wi
   } finally { buffer.cancel(); }
 });
 
+test('attempt3 Codex replay renders one summary before prose and preserves the later thinking block', () => {
+  const source = JSON.parse(readFileSync(resolve(process.cwd(), '../../mocks/fixtures/thinking-claude-codex/codex-duplicate-attempt3.events.json'), 'utf8')) as { type: string; delta?: string }[];
+  const events = JSON.parse(readFileSync(resolve(process.cwd(), '../../mocks/golden/codex-duplicate-attempt3.events.json'), 'utf8')) as { type: string; delta?: string }[];
+  vi.stubGlobal('requestAnimationFrame', () => 1);
+  vi.stubGlobal('cancelAnimationFrame', () => {});
+  let message: ChatMessage = { id: 'codex-duplicate', role: 'assistant', content: '', events: [], createdAt: 1 };
+  const buffer = createBufferedTextUpdates({ updateMessage: update => { message = update(message); }, persistSoon: () => {} });
+  try {
+    for (const event of events) {
+      if (event.type === 'thinking_delta') buffer.appendEvent({ kind: 'thinking', text: event.delta! });
+      if (event.type === 'text_delta') { buffer.appendContent(event.delta!); buffer.appendEvent({ kind: 'text', text: event.delta! }); }
+    }
+    buffer.flush();
+    const view = render(<AssistantMessage message={message} streaming={false} projectId="fixture" />);
+    view.container.querySelectorAll('.thinking-toggle').forEach(toggle => fireEvent.click(toggle));
+    const bodies = [...view.container.querySelectorAll('.thinking-body')];
+    const sourceSummaries = source.filter(event => event.type === 'thinking_delta');
+    expect(bodies.map(body => [...body.querySelectorAll('p')].map(p => p.textContent)))
+      .toEqual(sourceSummaries.filter((_, index) => index !== 1).map(event => [event.delta!.replaceAll('**', '')]));
+    expect(message.content).toBe(source.filter(event => event.type === 'text_delta').map(event => event.delta).join(''));
+  } finally { buffer.cancel(); }
+});
+
 test('thinking before any prose and after buffered prose survives projection and renders as separate expandable blocks', () => {
   vi.stubGlobal('requestAnimationFrame', () => 1);
   vi.stubGlobal('cancelAnimationFrame', () => {});
