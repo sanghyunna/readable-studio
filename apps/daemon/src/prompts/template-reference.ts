@@ -8,6 +8,16 @@ export function isTemplateReferenceProject(metadata: {
   return metadata?.kind === 'template' || metadata?.templateRef != null;
 }
 
+export const FACT_FIDELITY_POLICY = {
+  factSources: ['user-request', 'user-attachments'],
+  outsideFacts: 'forbidden',
+  suppliedFacts: 'preserve-all-verbatim',
+  unsuppliedFields: 'omit',
+} as const;
+
+export const FACT_FIDELITY_CONTRACT = `<readable-fact-fidelity>${JSON.stringify(FACT_FIDELITY_POLICY)}</readable-fact-fidelity>
+Use ONLY facts supplied in the user's request, attachments, or later answers. Do not add outside facts, including names, authors, attributions, dates, years, numbers, or claims, even when familiar or seemingly obvious. Omit unsupplied fields. Carry EVERY supplied fact into the delivered document verbatim, including years, dates, names, titles, numbers, and conditions. Layout and surrounding connective copy may change, but must not replace, drop, or enrich those facts. Before delivery, compare the artifact against the user's material for missing or altered facts and unsupplied additions.`;
+
 export const TEMPLATE_CONTENT_POLICY = {
   version: 1,
   templateRole: 'structure-and-visual-style-only',
@@ -38,10 +48,10 @@ In a hidden-template message, only the text after the user-content-source marker
 // Also carried immediately before the user-content marker by the web composer.
 // Keep the gate schema aligned; the prose may evolve independently.
 export const TEMPLATE_CONTENT_GATE = `## Template content decision (apply before responding)
-<readable-template-content-gate>{"version":1,"source":"user-content-only","askWhen":["no-substantive-content","explicitly-requested-content-missing"],"optionalFields":"omit","otherwise":"generate","output":"index.html"}</readable-template-content-gate>
+<readable-template-content-gate>{"version":1,"source":"user-content-only","askWhen":["no-substantive-content","explicitly-requested-content-missing"],"optionalFields":"omit","otherwise":"generate","output":"index.html","factFidelity":${JSON.stringify(FACT_FIDELITY_POLICY)}}</readable-template-content-gate>
 
 Use this decision procedure, not a completeness questionnaire:
-1. Read only the user's own material for facts. A topic/title or "fill this template" with no substantive material is missing content: ask for the actual text/data. A request to analyze or report results also needs the actual results, not invented numbers.
+1. Read only the user's own material for facts. Never add outside names, authors, attributions, years, numbers, or other facts. Preserve every supplied fact verbatim, including years; omit unsupplied fields. A topic/title or "fill this template" with no substantive material is missing content: ask for the actual text/data. A request to analyze or report results also needs the actual results, not invented numbers.
 2. Otherwise, for each proposed question, identify the content the user explicitly asked to include that cannot be written from their material. Try deleting that unsupplied field. If the requested document still communicates the supplied material faithfully, the field is optional: OMIT it and DELETE the question. Do not ask for permission to omit it. A generic subject/name supplied by the user is usable as written; a more formal or specific name is not required.
 3. Ask through one <question-form> and stop ONLY if no substantive user content exists or explicitly requested content is still missing after that test. Never ask to complete the template's example slots, enrich the document, or confirm supplied facts.
 4. In every other case, the decision is GENERATE: preserve every user fact, adapt the selected structure, and deliver index.html now. Do not emit a question form, offer alternatives, request confirmation, or stop after a receipt. Check the saved artifact for omitted user facts and surviving sample content before finishing.

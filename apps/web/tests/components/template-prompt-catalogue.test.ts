@@ -35,6 +35,7 @@ describe('all shipped hidden template submissions', () => {
       version: 1, source: 'user-content-only',
       askWhen: ['no-substantive-content', 'explicitly-requested-content-missing'],
       optionalFields: 'omit', otherwise: 'generate', output: 'index.html',
+      factFidelity: { factSources: ['user-request', 'user-attachments'], outsideFacts: 'forbidden', suppliedFacts: 'preserve-all-verbatim', unsuppliedFields: 'omit' },
     });
     expect(prompt.indexOf(gate[0])).toBeGreaterThan(prompt.indexOf('</readable-template-reference>'));
     expect(prompt.indexOf(gate[0])).toBeLessThan(prompt.indexOf('<readable-user-content-source/>'));

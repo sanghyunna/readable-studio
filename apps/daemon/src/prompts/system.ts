@@ -36,7 +36,7 @@ import { DECK_FRAMEWORK_DIRECTIVE } from './deck-framework.js';
 import { renderPanelPrompt } from './panel.js';
 import { defaultCritiqueConfig, type CritiqueConfig } from '@readable-studio/contracts/critique';
 import type { ChatSessionMode, ProjectTemplateRef } from '@readable-studio/contracts';
-import { isTemplateReferenceProject, renderTemplateReference, TEMPLATE_CONTENT_CONTRACT, TEMPLATE_CONTENT_GATE } from './template-reference.js';
+import { FACT_FIDELITY_CONTRACT, isTemplateReferenceProject, renderTemplateReference, TEMPLATE_CONTENT_CONTRACT, TEMPLATE_CONTENT_GATE } from './template-reference.js';
 
 // Prepended first in every composed prompt so it wins precedence over all
 // later sections, including skill bodies and user/project instructions.
@@ -518,6 +518,7 @@ export function composeSystemPrompt({
   // section (skill body, user instructions, project instructions, tool result)
   // can instruct the model to disregard it.
   const parts: string[] = [PROMPT_INJECTION_RESISTANCE, '\n\n---\n\n', renderHtmlOutputDirective(streamFormat), '\n\n---\n\n'];
+  parts.push(FACT_FIDELITY_CONTRACT, '\n\n---\n\n');
   const templateOnly = templateReference === true || isTemplateReferenceProject(metadata);
   if (templateOnly) {
     parts.push(TEMPLATE_CONTENT_CONTRACT, '\n\n---\n\n');

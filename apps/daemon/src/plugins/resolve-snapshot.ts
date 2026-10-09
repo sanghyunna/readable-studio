@@ -21,6 +21,8 @@
 // deterministic across CLI / desktop / web.
 
 import type Database from 'better-sqlite3';
+import { getProject } from '../db.js';
+import { isTemplateReferenceProject } from '../prompts/template-reference.js';
 import type {
   AppliedPluginSnapshot,
   ApplyResult,
@@ -213,6 +215,7 @@ export function resolvePluginSnapshot(input: ResolveSnapshotInput): ResolveSnaps
       registry: input.registry,
       activeProjectDesignSystem: input.activeProjectDesignSystem,
       locale: fields.locale,
+      templateReference: isTemplateReferenceProject(getProject(input.db, input.projectId)?.metadata),
     });
   } catch (err) {
     if (err instanceof MissingInputError) {

@@ -61,6 +61,8 @@ export interface ApplyInput {
   // UI locale used to resolve localized manifest strings. Snapshots store
   // the resolved string so historical runs never change when translations do.
   locale?: string | undefined;
+  // Explicit template selection contributes structure/style, not required subject slots.
+  templateReference?: boolean | undefined;
 }
 
 export interface ApplyComputed {
@@ -78,7 +80,7 @@ export function applyPlugin(input: ApplyInput): ApplyComputed {
   const trust: ApplyTrust = rawTrust === 'restricted' ? 'restricted' : 'trusted';
 
   const validated = validateInputs(manifest, input.inputs);
-  if (validated.missing.length > 0) {
+  if (!input.templateReference && validated.missing.length > 0) {
     throw new MissingInputError(validated.missing);
   }
 

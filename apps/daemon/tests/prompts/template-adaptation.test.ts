@@ -32,6 +32,7 @@ describe('template discovery routing', () => {
       version: 1, source: 'user-content-only',
       askWhen: ['no-substantive-content', 'explicitly-requested-content-missing'],
       optionalFields: 'omit', otherwise: 'generate', output: 'index.html',
+      factFidelity: { factSources: ['user-request', 'user-attachments'], outsideFacts: 'forbidden', suppliedFacts: 'preserve-all-verbatim', unsuppliedFields: 'omit' },
     });
     expect(policyOf(prompt).contentSources).toEqual(['user-request', 'user-attachments']);
   });

@@ -1,4 +1,6 @@
 import type http from 'node:http';
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import net from 'node:net';
 import { once } from 'node:events';
 import { readFile } from 'node:fs/promises';
@@ -34,7 +36,20 @@ async function post<T>(route: string, body: unknown): Promise<T> {
   return payload;
 }
 
+const catalogueFiles = execFileSync('fd', ['--absolute-path', '--type', 'f', '--glob', 'readable-studio.json', path.resolve('..', '..', 'plugins/_official/examples')], { encoding: 'utf8', windowsHide: true }).trim().split(/\r?\n/).filter(Boolean);
+const requiredTemplates = catalogueFiles.map((file) => JSON.parse(readFileSync(file, 'utf8'))).filter((manifest) => manifest.readable?.inputs?.some((field: { required?: boolean; default?: unknown }) => field.required === true && (field.default == null || field.default === '')));
+
 describe('template-based workspace/session creation', () => {
+  it.each(requiredTemplates.map((manifest) => [manifest.name]))('%s permits missing subject slots only through explicit template selection', async (pluginId) => {
+    const body = { title: 'Library announcement', pendingPrompt: 'Library reading club on 2025-10-18 at 2 PM; free participation.', pluginId, pluginInputs: {} };
+    const ordinary = await fetch(`${baseUrl}/api/sessions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(15_000) });
+    expect(ordinary.status).toBe(422);
+    const rejected = await ordinary.json() as { error: { code: string } };
+    expect(rejected.error.code).toBe('missing-input');
+    const selected = await post<CreateSessionResponse>('/api/sessions', { ...body, metadata: { templateRef: { id: pluginId, name: pluginId, boundary: 0 } } });
+    expect(selected.appliedPluginSnapshotId).toBeTruthy();
+    expect(selected.workspace.metadata?.templateRef?.id).toBe(pluginId);
+  });
   it.each(['/api/sessions', '/api/projects'])('%s keeps saved rendering bytes with a seed provenance notice', async (route) => {
     const db = openDatabase('', { dataDir });
     const id = route.endsWith('sessions') ? 'saved-session-template' : 'saved-project-template';
