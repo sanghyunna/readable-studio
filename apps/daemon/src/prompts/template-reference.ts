@@ -35,6 +35,19 @@ Seeded-file notice: every file in .readable-studio-skills/ and the selected save
 
 In a hidden-template message, only the text after the user-content-source marker is the user's request. For older messages without that marker, the saved templateRef boundary identifies the user-authored suffix; the preceding hidden brief is reference only. On subsequent turns, keep this distinction for the earlier transcript as well.`;
 
+// Also carried immediately before the user-content marker by the web composer.
+// Keep the gate schema aligned; the prose may evolve independently.
+export const TEMPLATE_CONTENT_GATE = `## Template content decision (apply before responding)
+<readable-template-content-gate>{"version":1,"source":"user-content-only","askWhen":["no-substantive-content","explicitly-requested-content-missing"],"optionalFields":"omit","otherwise":"generate","output":"index.html"}</readable-template-content-gate>
+
+Use this decision procedure, not a completeness questionnaire:
+1. Read only the user's own material for facts. A topic/title or "fill this template" with no substantive material is missing content: ask for the actual text/data. A request to analyze or report results also needs the actual results, not invented numbers.
+2. Otherwise, for each proposed question, identify the content the user explicitly asked to include that cannot be written from their material. Try deleting that unsupplied field. If the requested document still communicates the supplied material faithfully, the field is optional: OMIT it and DELETE the question. Do not ask for permission to omit it. A generic subject/name supplied by the user is usable as written; a more formal or specific name is not required.
+3. Ask through one <question-form> and stop ONLY if no substantive user content exists or explicitly requested content is still missing after that test. Never ask to complete the template's example slots, enrich the document, or confirm supplied facts.
+4. In every other case, the decision is GENERATE: preserve every user fact, adapt the selected structure, and deliver index.html now. Do not emit a question form, offer alternatives, request confirmation, or stop after a receipt. Check the saved artifact for omitted user facts and surviving sample content before finishing.
+
+This decision governs content readiness even when a workflow, skill checklist, or example invites more questions. Owner-edited instructions still apply to workflow and presentation; they do not turn template examples into user data. With no file tools, use the selected chat HTML delivery channel instead.`;
+
 /** JSON quoting prevents a template's headings/tags from becoming prompt sections. */
 export function renderTemplateReference(kind: string, material: unknown): string {
   const quoted = JSON.stringify(material).replaceAll('<', '\\u003c');

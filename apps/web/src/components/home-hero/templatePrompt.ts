@@ -26,6 +26,11 @@ function templateReferencePrefix(_templateText: string): string {
     '',
     'Use the template and seeded example files only for structure and visual style. Never copy their example names, numbers, people, products, or claims. Only my request below and my attachments supply content and data. Adapt subject-specific template slots to my domain or drop them; never demand the template\'s own subject-specific inputs. Judge completeness only against my requested document, not the example subject. If my own content is insufficient, ask through <question-form> rather than inventing content.',
     '',
+    // Keep the decision adjacent to the actual request: CLI agents receive the
+    // daemon instruction stack and this message together in a single user turn.
+    '<readable-template-content-gate>{"version":1,"source":"user-content-only","askWhen":["no-substantive-content","explicitly-requested-content-missing"],"optionalFields":"omit","otherwise":"generate","output":"index.html"}</readable-template-content-gate>',
+    'Before responding, apply this decision: if I supplied only a topic/title or a request to fill a template without actual text/data, ask for that real content. Otherwise, test each proposed question by deleting the unsupplied field: if my requested document can still communicate my supplied material faithfully, omit that field and do not ask. Use my subject/name as written; do not require a more formal name or permission to omit optional identifiers. Ask only for explicitly requested content that is still missing, never to enrich or confirm my material or fill example slots. In every other case, generate index.html now using every supplied fact and no template example facts; do not emit a question form or stop after a receipt. Follow the selected HTML delivery channel when file tools are unavailable.',
+    '',
     '<readable-user-content-source/>',
     '',
     '',

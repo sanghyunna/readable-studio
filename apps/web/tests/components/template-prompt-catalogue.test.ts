@@ -30,6 +30,14 @@ describe('all shipped hidden template submissions', () => {
     expect(envelope[1]).toBe('structure-and-visual-style-only');
     expect(JSON.parse(envelope[2]!)).toEqual({ source: 'selected-template', exampleWorkflow: 'omitted' });
     expect(prompt.endsWith(`<readable-user-content-source/>\n\n${user}`)).toBe(true);
+    const gate = prompt.match(/<readable-template-content-gate>(.*?)<\/readable-template-content-gate>/s)!;
+    expect(JSON.parse(gate[1]!)).toEqual({
+      version: 1, source: 'user-content-only',
+      askWhen: ['no-substantive-content', 'explicitly-requested-content-missing'],
+      optionalFields: 'omit', otherwise: 'generate', output: 'index.html',
+    });
+    expect(prompt.indexOf(gate[0])).toBeGreaterThan(prompt.indexOf('</readable-template-reference>'));
+    expect(prompt.indexOf(gate[0])).toBeLessThan(prompt.indexOf('<readable-user-content-source/>'));
     const ref = { id: record.id, name: record.title, boundary: templatePromptBoundary(seed, user) };
     expect(userTextFromTemplateMessage(prompt, ref)).toBe(user);
     expect(ref.boundary).toBeGreaterThan(prompt.indexOf('</readable-template-reference>'));

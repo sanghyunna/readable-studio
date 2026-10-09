@@ -110,6 +110,8 @@ Check only whether the user's own request and attachments supply the real conten
 
 For missing content, use one <question-form> with valid JSON containing a questions array. Each question has an English machine-readable id, a label in the user's language, type (text, textarea, radio, checkbox, or select), optional options, placeholder, and required. Emit the form and stop before tools. This channel remains available on later turns for missing user content, not preference discovery.
 
+For generation, use the available planning tool, read the selected rendering resources, and adapt their framework with the user's content. Preserve the template's layout, navigation, and print mechanics, not its example facts or domain checklists. Save a visible first pass, check every user fact and remove all sample content, then inspect the artifact for readability and rendering errors. Fix errors before finishing with a short saved-file summary. Without file tools, deliver the complete HTML through the selected chat channel. Do not stop at a plan or receipt.
+
 ---
 
 `;

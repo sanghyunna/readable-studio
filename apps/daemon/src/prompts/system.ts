@@ -31,12 +31,12 @@
  */
 import { OFFICIAL_DESIGNER_PROMPT } from './official-system.js';
 import { renderHtmlOutputDirective } from './html-output-policy.js';
-import { DISCOVERY_AND_PHILOSOPHY, DISCOVERY_WORKFLOW_AND_PHILOSOPHY, TEMPLATE_DISCOVERY_BRIEF } from './discovery.js';
+import { DISCOVERY_AND_PHILOSOPHY, TEMPLATE_DISCOVERY_BRIEF } from './discovery.js';
 import { DECK_FRAMEWORK_DIRECTIVE } from './deck-framework.js';
 import { renderPanelPrompt } from './panel.js';
 import { defaultCritiqueConfig, type CritiqueConfig } from '@readable-studio/contracts/critique';
 import type { ChatSessionMode, ProjectTemplateRef } from '@readable-studio/contracts';
-import { isTemplateReferenceProject, renderTemplateReference, TEMPLATE_CONTENT_CONTRACT } from './template-reference.js';
+import { isTemplateReferenceProject, renderTemplateReference, TEMPLATE_CONTENT_CONTRACT, TEMPLATE_CONTENT_GATE } from './template-reference.js';
 
 // Prepended first in every composed prompt so it wins precedence over all
 // later sections, including skill bodies and user/project instructions.
@@ -584,16 +584,18 @@ Whenever generated HTML contains Korean copy, regardless of the UI locale, apply
   parts.push(FILE_ENCODING_RULE);
   parts.push('\n\n---\n\n');
 
-  // Template content completeness is not ordinary preference discovery.
-  // Route at composition, rather than stacking conflicting asking rules.
+  // The settings resolver always supplies effective bodies, including defaults.
+  // Templates have their own workflow; do not also inject the generic discovery
+  // philosophy/charter, even quoted. Preserve every owner-edited body verbatim.
+  const discovery = editablePromptBodies?.['discovery-workflow'] ?? DISCOVERY_AND_PHILOSOPHY;
   parts.push(templateOnly
-    ? TEMPLATE_DISCOVERY_BRIEF + DISCOVERY_WORKFLOW_AND_PHILOSOPHY
-    : editablePromptBodies?.['discovery-workflow'] ?? DISCOVERY_AND_PHILOSOPHY, '\n\n---\n\n');
+    ? TEMPLATE_DISCOVERY_BRIEF + (discovery === DISCOVERY_AND_PHILOSOPHY ? '' : discovery)
+    : discovery, '\n\n---\n\n');
 
   const charter = editablePromptBodies?.['designer-charter'] ?? BASE_SYSTEM_PROMPT;
-  parts.push(templateOnly
-    ? renderTemplateReference('workflow-background', charter)
-    : '# Identity and workflow charter (background)\n\n' + charter);
+  if (!templateOnly || charter !== BASE_SYSTEM_PROMPT) {
+    parts.push('# Identity and workflow charter (background)\n\n' + charter);
+  }
 
   if (memoryBody && memoryBody.trim().length > 0) {
     parts.push(
@@ -803,6 +805,10 @@ Whenever generated HTML contains Korean copy, regardless of the UI locale, apply
     "any text after it is lost. If you feel the urge to simulate a dialogue, " +
     "stop and ask the user a real question instead.",
   );
+
+  // Codex receives this stack inside a user turn, not a separate system role.
+  // Repeat the decision after all workflow/reference material, near the request.
+  if (templateOnly) parts.push('\n\n---\n\n', TEMPLATE_CONTENT_GATE);
 
   return parts.join('');
 }
