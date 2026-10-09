@@ -34,7 +34,11 @@ const railFolders = [
   { id: 'folder-3', name: 'Archive deck', createdAt: 1, updatedAt: 1, sessions: [] },
 ];
 const rail = { folders: railFolders, recents: [railSession, sR2], generatedAt: 1 };
-const listedFolders = [railFolders[0], railFolders[2], railFolders[1]].map(({ sessions, ...rest }) => rest);
+const listedFolders = [railFolders[0], railFolders[2], railFolders[1]].map((f) => {
+  if (!f) throw new Error('unexpected missing folder');
+  const { sessions, ...rest } = f;
+  return rest;
+});
 const withName = (s: { folderId: string | null }, folderName: string | null) => ({ ...s, folderName });
 
 const requests: RequestRecord[] = [];

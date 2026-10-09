@@ -593,7 +593,7 @@ describe('GET /api/amr/models when AMR is unavailable', () => {
     } finally {
       process.env.PATH = originalPath;
       if (originalVelaBin !== undefined) process.env.VELA_BIN = originalVelaBin;
-      await writeAppConfig(dataDir, previous);
+      await writeAppConfig(dataDir, previous as unknown as Record<string, unknown>);
     }
   });
 });
