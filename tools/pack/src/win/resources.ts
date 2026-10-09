@@ -24,25 +24,30 @@ function nativeIsolatorPaths(workspaceRoot: string): {
 
 async function createResourceTreeCacheKey(config: ToolPackConfig): Promise<string> {
   const nativeIsolator = nativeIsolatorPaths(config.workspaceRoot);
+  const inputs = {
+    assetsCommunityPets: join(config.workspaceRoot, "assets", "community-pets"),
+    assetsFrames: join(config.workspaceRoot, "assets", "frames"),
+    offlineCdn: join(config.workspaceRoot, "vendor", "offline-cdn"),
+    craft: join(config.workspaceRoot, "craft"),
+    designSystems: join(config.workspaceRoot, "design-systems"),
+    designTemplates: join(config.workspaceRoot, "design-templates"),
+    nodeExecutable: process.execPath,
+    nativeIsolatorBinary: nativeIsolator.binary,
+    nativeIsolatorBuildScript: nativeIsolator.buildScript,
+    nativeIsolatorSource: nativeIsolator.source,
+    pluginOfficial: join(config.workspaceRoot, "plugins", "_official"),
+    pluginPreviews: join(config.workspaceRoot, "data", "plugin-previews"),
+    pluginRegistry: join(config.workspaceRoot, "plugins", "registry"),
+    skills: join(config.workspaceRoot, "skills"),
+    sevenZipDll: winResources.sevenZipDll,
+    sevenZipExe: winResources.sevenZipExe,
+  };
+  const tasks = Object.entries(inputs).map(async ([name, path]) => [name, await hashPath(path)] as const);
+  await Promise.allSettled(tasks);
   return hashJson({
-    assetsCommunityPets: await hashPath(join(config.workspaceRoot, "assets", "community-pets")),
-    assetsFrames: await hashPath(join(config.workspaceRoot, "assets", "frames")),
-    offlineCdn: await hashPath(join(config.workspaceRoot, "vendor", "offline-cdn")),
-    craft: await hashPath(join(config.workspaceRoot, "craft")),
-    designSystems: await hashPath(join(config.workspaceRoot, "design-systems")),
-    designTemplates: await hashPath(join(config.workspaceRoot, "design-templates")),
-    nodeExecutable: await hashPath(process.execPath),
-    nativeIsolatorBinary: await hashPath(nativeIsolator.binary),
-    nativeIsolatorBuildScript: await hashPath(nativeIsolator.buildScript),
-    nativeIsolatorSource: await hashPath(nativeIsolator.source),
+    ...Object.fromEntries(await Promise.all(tasks)),
     node: "win.resource-tree",
-    pluginOfficial: await hashPath(join(config.workspaceRoot, "plugins", "_official")),
-    pluginPreviews: await hashPath(join(config.workspaceRoot, "data", "plugin-previews")),
-    pluginRegistry: await hashPath(join(config.workspaceRoot, "plugins", "registry")),
     schemaVersion: RESOURCE_TREE_CACHE_SCHEMA_VERSION,
-    skills: await hashPath(join(config.workspaceRoot, "skills")),
-    sevenZipDll: await hashPath(winResources.sevenZipDll),
-    sevenZipExe: await hashPath(winResources.sevenZipExe),
   });
 }
 

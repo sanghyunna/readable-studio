@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 
 import { createCommandInvocation, createPackageManagerInvocation } from "@readable-studio/platform";
@@ -55,7 +56,37 @@ import type {
   WinPaths,
 } from "./types.js";
 
+import packagedAppLock from "./packaged-app-lock.json" with { type: "json" };
+
 const execFileAsync = promisify(execFile);
+
+// Registry packages retain the HEAD artifact's complete graph and integrity pins.
+// Workspace tarballs are regenerated from source, so only their lock entries vary.
+export async function writePackagedAppLock(appRoot: string): Promise<void> {
+  const manifest = JSON.parse(await readFile(join(appRoot, "package.json"), "utf8"));
+  const lock = structuredClone(packagedAppLock) as {
+    version: string; packages: Record<string, { version?: string; resolved?: string; integrity?: string; dependencies?: Record<string, string> }>;
+  };
+  lock.version = manifest.version;
+  lock.packages[""]!.version = manifest.version;
+  lock.packages[""]!.dependencies = manifest.dependencies;
+  for (const [name, spec] of Object.entries(manifest.dependencies) as Array<[string, string]>) {
+    if (!name.startsWith("@readable-studio/")) continue;
+    const entry = lock.packages[`node_modules/${name}`];
+    if (!entry) throw new Error(`packaged app lock is missing ${name}`);
+    const tarball = resolve(appRoot, spec.slice("file:".length));
+    // Windows ships bsdtar. Never resolve Git's GNU tar through PATH: GNU tar
+    // interprets drive-qualified archive names as remote host:path references.
+    const { stdout } = await execFileAsync(join(process.env.SystemRoot!, "System32", "tar.exe"),
+      ["-xOf", tarball, "package/package.json"], { timeout: 10_000, windowsHide: true });
+    const packedManifest = JSON.parse(stdout);
+    entry.version = packedManifest.version;
+    entry.dependencies = packedManifest.dependencies;
+    entry.resolved = spec.replaceAll("\\", "/");
+    entry.integrity = `sha512-${createHash("sha512").update(await readFile(tarball)).digest("base64")}`;
+  }
+  await writeFile(join(appRoot, "package-lock.json"), `${JSON.stringify(lock, null, 2)}\n`);
+}
 
 async function runPnpm(config: ToolPackConfig, args: string[], extraEnv: NodeJS.ProcessEnv = {}): Promise<void> {
   const profiling = isBuildProfilingEnabled() && args.includes("-r");
@@ -77,9 +108,9 @@ async function runPnpm(config: ToolPackConfig, args: string[], extraEnv: NodeJS.
   }
 }
 
-async function runNpmInstall(appRoot: string): Promise<void> {
+async function runNpmInstall(appRoot: string, locked: boolean): Promise<void> {
   const invocation = createCommandInvocation({
-    args: ["install", "--omit=dev", "--package-lock"],
+    args: [locked ? "ci" : "install", "--omit=dev", "--package-lock", "--no-audit", "--no-fund", "--prefer-offline"],
     command: process.platform === "win32" ? "npm.cmd" : "npm",
   });
   await measureBuildStep("packaged-app:npm-install", () => execFileAsync(invocation.command, invocation.args, {
@@ -178,25 +209,28 @@ export async function collectWorkspaceTarballs(
     build: async ({ entryRoot }: { entryRoot: string }): Promise<PackedTarballsCacheMetadata> => {
       const tarballsRoot = join(entryRoot, "tarballs");
       await mkdir(tarballsRoot, { recursive: true });
+      const packages = INTERNAL_PACKAGES.filter((packageInfo) => shouldInstallInternalPackageForWinPrebundle({
+        packageName: packageInfo.name, webOutputMode: config.webOutputMode,
+      }));
       const packedTarballs: PackedTarballInfo[] = [];
-      for (const packageInfo of INTERNAL_PACKAGES) {
-        if (
-          !shouldInstallInternalPackageForWinPrebundle({
-            packageName: packageInfo.name,
-            webOutputMode: config.webOutputMode,
-          })
-        ) {
-          continue;
-        }
-
-        const beforeEntries = new Set(await readdir(tarballsRoot));
-        await runPnpm(config, ["-C", packageInfo.directory, "pack", "--pack-destination", tarballsRoot]);
-        const newEntries = (await readdir(tarballsRoot)).filter((entry) => !beforeEntries.has(entry));
-        if (newEntries.length !== 1 || newEntries[0] == null) {
-          throw new Error(`expected one tarball for ${packageInfo.name}, got ${newEntries.length}`);
-        }
-        packedTarballs.push({ fileName: newEntries[0], packageName: packageInfo.name });
+      // Each pack has its own destination: concurrent readdir diffs on the shared
+      // tarballs root would incorrectly attribute another package's output.
+      for (let offset = 0; offset < packages.length; offset += 4) {
+        const tasks = packages.slice(offset, offset + 4).map(async (packageInfo) => {
+          const destination = join(entryRoot, "packing", packageInfo.name.replaceAll("/", "-"));
+          await mkdir(destination, { recursive: true });
+          await runPnpm(config, ["-C", packageInfo.directory, "pack", "--pack-destination", destination]);
+          const entries = await readdir(destination);
+          if (entries.length !== 1 || entries[0] == null) {
+            throw new Error(`expected one tarball for ${packageInfo.name}, got ${entries.length}`);
+          }
+          await cp(join(destination, entries[0]), join(tarballsRoot, entries[0]));
+          return { fileName: entries[0], packageName: packageInfo.name };
+        });
+        await Promise.allSettled(tasks);
+        packedTarballs.push(...await Promise.all(tasks));
       }
+      await rm(join(entryRoot, "packing"), { recursive: true });
       return { tarballs: packedTarballs };
     },
   };
@@ -413,7 +447,8 @@ export async function createWinPackagedAppCacheKey(
     prebundle: shouldUseWinStandalonePrebundle(config.webOutputMode),
     prebundlePolicies: WIN_PREBUNDLE_POLICIES,
     prebundleRuntimeDependencies: WIN_PREBUNDLE_RUNTIME_DEPENDENCIES,
-    schemaVersion: 6,
+    schemaVersion: 7,
+    packagedAppLock,
     piPackage,
     piPatch: await hashPath(await resolvePiPackagePatch(config.workspaceRoot)),
     databricksCli,
@@ -451,12 +486,17 @@ export async function prepareWinPackagedApp(
         packagedVersion,
         { usePrebundle },
       );
-      if (usePrebundle) {
-        await buildPrebundledStandaloneRuntime(config, appPaths);
-      }
-      await stageDatabricksCli(appRoot);
-      await runNpmInstall(appRoot);
-      await measureBuildStep("packaged-app:patch-pi", () => patchPiPackage(appRoot, config.workspaceRoot));
+      const install = async () => {
+        if (usePrebundle) await writePackagedAppLock(appRoot);
+        await runNpmInstall(appRoot, usePrebundle);
+        await measureBuildStep("packaged-app:patch-pi", () => patchPiPackage(appRoot, config.workspaceRoot));
+      };
+      // These producers write disjoint app subtrees. Drain them before cache
+      // failure cleanup; npm must complete before applying the Pi patch.
+      const tasks = [install(), stageDatabricksCli(appRoot),
+        ...(usePrebundle ? [buildPrebundledStandaloneRuntime(config, appPaths)] : [])];
+      await Promise.allSettled(tasks);
+      await Promise.all(tasks);
       // Execute Pi only after cache finalization below: a failed cache build
       // deletes this temporary tree, including the evidence needed to debug it.
       const nativeValidationError = await validateNodeNativeModuleOutput(appRoot);

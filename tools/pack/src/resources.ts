@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { cp } from "node:fs/promises";
+import { copyTreeConcurrent } from "./copy-tree.js";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -65,9 +65,8 @@ export async function copyBundledResourceTrees({
   workspaceRoot: string;
   resourceRoot: string;
 }): Promise<void> {
-  for (const entry of BUNDLED_RESOURCE_TREES) {
-    await cp(join(workspaceRoot, entry.from), join(resourceRoot, entry.to), {
-      recursive: true,
-    });
-  }
+  const results = await Promise.allSettled(BUNDLED_RESOURCE_TREES.map((entry) =>
+    copyTreeConcurrent(join(workspaceRoot, entry.from), join(resourceRoot, entry.to))
+  ));
+  for (const result of results) if (result.status === "rejected") throw result.reason;
 }
