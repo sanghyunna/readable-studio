@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { hashJson } from "../src/cache.js";
 import { resolveToolPackConfig } from "../src/config.js";
 import { buildWinPortableZipCacheKeyInput } from "../src/win/builder.js";
-import { resolvePortableZipCompression, resolvePortableZipThreads } from "../src/win/zip.js";
+import { resolvePortableZipCompression, resolvePortableZipShards, resolvePortableZipThreads } from "../src/win/zip.js";
 
 vi.mock("node:os", async (importOriginal) => ({
   ...await importOriginal<typeof import("node:os")>(),
@@ -68,6 +68,7 @@ describe("opt-in portable compression", () => {
     const threads = resolvePortableZipThreads(true);
     // Then it uses available cores without exceeding the 20-thread budget
     expect(threads).toBe(processors === 2 ? 2 : 20);
+    expect(resolvePortableZipShards(true)).toBe(threads);
   });
 
   it("leaves the archiver's thread setting untouched when the flag is off", () => {

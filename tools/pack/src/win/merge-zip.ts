@@ -1,5 +1,6 @@
 import { open } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
+import { availableParallelism } from "node:os";
 
 type Entry = { name: string; offset: number; end: number; central: Buffer; source: FileHandle };
 
@@ -79,11 +80,10 @@ export async function mergeWinZipShards(paths: readonly string[], output: string
     const centralSize = all.reduce((sum, entry) => sum + entry.central.length, 0);
     if (all.length >= 0xffff || localSize + centralSize + 22 >= 0xffffffff) return false;
     target = await open(output, "wx");
-    const buffer = Buffer.alloc(1024 * 1024);
-    const write = async (bytes: Buffer) => {
+    const write = async (bytes: Buffer, position: number) => {
       let done = 0;
       while (done < bytes.length) {
-        const result = await target!.write(bytes, done, bytes.length - done, null);
+        const result = await target!.write(bytes, done, bytes.length - done, position + done);
         if (result.bytesWritten === 0) throw new Error("ZIP merge write made no progress");
         done += result.bytesWritten;
       }
@@ -91,24 +91,40 @@ export async function mergeWinZipShards(paths: readonly string[], output: string
     let position = 0;
     for (const entry of all) {
       entry.central.writeUInt32LE(position, 42);
-      let cursor = entry.offset;
-      while (cursor < entry.end) {
-        const length = Math.min(buffer.length, entry.end - cursor);
-        const { bytesRead } = await entry.source.read(buffer, 0, length, cursor);
-        if (bytesRead === 0) throw new Error("truncated ZIP shard local record");
-        await write(buffer.subarray(0, bytesRead));
-        cursor += bytesRead;
-        position += bytesRead;
-      }
+      position += entry.end - entry.offset;
     }
-    for (const entry of all) await write(entry.central);
+    let next = 0;
+    let failed = false;
+    const workers = Array.from({ length: Math.min(20, availableParallelism(), all.length) }, async () => {
+      const buffer = Buffer.alloc(1024 * 1024);
+      while (!failed && next < all.length) {
+        const entry = all[next++]!;
+        let cursor = entry.offset;
+        let destination = entry.central.readUInt32LE(42);
+        try {
+          while (cursor < entry.end) {
+            const length = Math.min(buffer.length, entry.end - cursor);
+            const { bytesRead } = await entry.source.read(buffer, 0, length, cursor);
+            if (bytesRead === 0) throw new Error("truncated ZIP shard local record");
+            await write(buffer.subarray(0, bytesRead), destination);
+            cursor += bytesRead;
+            destination += bytesRead;
+          }
+        } catch (error) { failed = true; throw error; }
+      }
+    });
+    // Drain all I/O before closing handles, including on failure.
+    const results = await Promise.allSettled(workers);
+    for (const result of results) if (result.status === "rejected") throw result.reason;
+    // One central-directory write replaces one write per archived file.
+    await write(Buffer.concat(all.map((entry) => entry.central)), localSize);
     const footer = Buffer.alloc(22);
     footer.writeUInt32LE(0x06054b50, 0);
     footer.writeUInt16LE(all.length, 8);
     footer.writeUInt16LE(all.length, 10);
     footer.writeUInt32LE(centralSize, 12);
     footer.writeUInt32LE(localSize, 16);
-    await write(footer);
+    await write(footer, localSize + centralSize);
     return true;
   } finally {
     await target?.close();

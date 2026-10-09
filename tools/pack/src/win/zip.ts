@@ -24,19 +24,27 @@ async function collectPortableArchiveFiles(
   excludedEntries: ReadonlySet<string>,
   relativeRoot = "",
 ): Promise<string[]> {
-  const entries = await readdir(join(root, relativeRoot), { withFileTypes: true });
+  const directories = [relativeRoot];
   const files: string[] = [];
-  for (const entry of entries) {
-    const relativePath = relativeRoot.length === 0 ? entry.name : `${relativeRoot}/${entry.name}`;
-    if (excludedEntries.has(relativePath)) continue;
-    if (entry.isDirectory()) {
-      files.push(...await collectPortableArchiveFiles(root, excludedEntries, relativePath));
-      continue;
-    }
-    if (relativePath.includes("\n") || relativePath.includes("\r")) {
-      throw new Error(`portable ZIP paths must not contain newlines: ${JSON.stringify(relativePath)}`);
-    }
-    files.push(relativePath);
+  const concurrency = Math.min(20, availableParallelism());
+  for (let cursor = 0; cursor < directories.length;) {
+    const batch = directories.slice(cursor, cursor + concurrency);
+    cursor += batch.length;
+    await Promise.all(batch.map(async (directory) => {
+      const entries = await readdir(join(root, directory), { withFileTypes: true });
+      for (const entry of entries) {
+        const relativePath = directory.length === 0 ? entry.name : `${directory}/${entry.name}`;
+        if (excludedEntries.has(relativePath)) continue;
+        if (entry.isDirectory()) {
+          directories.push(relativePath);
+          continue;
+        }
+        if (relativePath.includes("\n") || relativePath.includes("\r")) {
+          throw new Error(`portable ZIP paths must not contain newlines: ${JSON.stringify(relativePath)}`);
+        }
+        files.push(relativePath);
+      }
+    }));
   }
   return files.sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
 }
@@ -87,7 +95,9 @@ export function resolvePortableZipThreads(fastBuild = false): number | undefined
 
 export function resolvePortableZipShards(fastBuild = false): number | undefined {
   const threads = resolvePortableZipThreads(fastBuild);
-  return threads != null && threads > 1 ? Math.min(4, threads) : undefined;
+  // ZIP compression workers cannot hide a single reader's file-open waits.
+  // Allocate the budget to independent readers rather than idle workers.
+  return threads != null && threads > 1 ? threads : undefined;
 }
 
 export function parseSevenZipTiming(stdout: string): { cpuSeconds: number; wallSeconds: number; averageBusyCores: number } | null {

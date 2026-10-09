@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { access, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
+import { availableParallelism, tmpdir } from "node:os";
+import { compileFunction } from "node:vm";
 import path, { join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
@@ -174,6 +175,34 @@ async function runFixture(options: {
 }
 
 describe("web standalone afterPack hook", () => {
+  it("overlaps leaf work within the CPU budget and drains a failed batch", async () => {
+    const source = await readFile(join(import.meta.dirname, "../resources/web-standalone-after-pack.cjs"), "utf8");
+    const loaded: { exports: unknown } = { exports: {} };
+    compileFunction(`${source}\nmodule.exports = visitPaths;`, ["require", "module", "exports"])(require, loaded, loaded.exports);
+    const visitPaths = loaded.exports as (root: string, visit: (current: string) => Promise<string[] | void>) => Promise<void>;
+    const width = Math.min(20, availableParallelism());
+    let active = 0;
+    let peak = 0;
+    let completed = 0;
+    let release: (() => void) | undefined;
+    const barrier = new Promise<void>((resolve) => { release = resolve; });
+    const failure = new Error("leaf failed");
+    await expect(visitPaths("root", async (current) => {
+      if (current === "root") return Array.from({ length: width + 1 }, (_, i) => String(i));
+      active += 1;
+      peak = Math.max(peak, active);
+      if (active === width) release!();
+      // All workers enter before any finishes; no sleep or timing assumption.
+      await barrier;
+      active -= 1;
+      completed += 1;
+      if (current === "0") throw failure;
+    })).rejects.toBe(failure);
+    expect(peak).toBe(width);
+    expect(active).toBe(0);
+    expect(completed).toBe(width);
+  });
+
   it("packages every declared Hub thumbnail and its coverage manifest", async () => {
     const repoRoot = path.resolve(import.meta.dirname, "../../..");
     const sourceRoot = join(repoRoot, "apps/web/public/template-thumbnails");

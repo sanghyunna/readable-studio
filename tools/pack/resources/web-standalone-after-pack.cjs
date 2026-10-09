@@ -1,5 +1,6 @@
-const { access, cp, lstat, mkdir, readFile, readlink, readdir, realpath, rm, stat, symlink, writeFile } = require("node:fs/promises");
+const { access, copyFile, cp, lstat, mkdir, readFile, readlink, readdir, realpath, rm, stat, symlink, writeFile } = require("node:fs/promises");
 const { createRequire } = require("node:module");
+const { availableParallelism } = require("node:os");
 const path = require("node:path");
 
 const CONFIG_ENV = "READABLE_TOOLS_PACK_WEB_STANDALONE_HOOK_CONFIG";
@@ -137,22 +138,64 @@ function resolveRootAppNodeModulesRoot(resourcesRoot) {
   return path.join(resourcesRoot, "app", "node_modules");
 }
 
+// Bound filesystem operations, not just top-level subtrees: a large Next
+// package otherwise leaves one reader serially opening thousands of files.
+async function visitPaths(root, visit) {
+  const pending = [root];
+  const concurrency = Math.min(20, availableParallelism());
+  let cursor = 0;
+  while (cursor < pending.length) {
+    const batch = pending.slice(cursor, cursor + concurrency);
+    cursor += batch.length;
+    const results = await Promise.allSettled(batch.map(visit));
+    for (const result of results) {
+      if (result.status === "rejected") throw result.reason;
+      if (result.value) pending.push(...result.value);
+    }
+  }
+}
+
+async function childPaths(current) {
+  const entries = await readdir(current, { withFileTypes: true }).catch(() => []);
+  return entries.map((entry) => path.join(current, entry.name));
+}
+
 async function sizePathBytes(filePath) {
-  let metadata;
-  try {
-    metadata = await lstat(filePath);
-  } catch {
-    return 0;
-  }
-
-  if (!metadata.isDirectory()) return metadata.size;
-
-  const entries = await readdir(filePath, { withFileTypes: true }).catch(() => []);
   let total = 0;
-  for (const entry of entries) {
-    total += await sizePathBytes(path.join(filePath, entry.name));
-  }
+  await visitPaths(filePath, async (current) => {
+    const metadata = await lstat(current).catch(() => null);
+    if (metadata == null) return;
+    if (metadata.isDirectory()) return childPaths(current);
+    total += metadata.size;
+  });
   return total;
+}
+
+async function copyTree(sourcePath, destinationPath, options) {
+  const entryTypes = new Map();
+  await visitPaths(sourcePath, async (current) => {
+    const destination = path.join(destinationPath, path.relative(sourcePath, current));
+    const entry = entryTypes.get(current);
+    entryTypes.delete(current);
+    // The destination was removed by copyRequired. Plain leaves need neither
+    // cp's destination/source validation walks nor a second metadata lookup.
+    if (entry?.isFile()) {
+      await copyFile(current, destination);
+      return;
+    }
+    const metadata = await (options.dereference ? stat(current) : lstat(current));
+    if (metadata.isDirectory()) {
+      await mkdir(destination, { recursive: true, mode: metadata.mode });
+      // Unlike best-effort audit walks, a copy must fail on unreadable sources.
+      const entries = await readdir(current, { withFileTypes: true });
+      return entries.map((child) => {
+        const childPath = path.join(current, child.name);
+        entryTypes.set(childPath, child);
+        return childPath;
+      });
+    }
+    await cp(current, destination, options);
+  });
 }
 
 async function copyRequired(sourcePath, destinationPath, options = {}) {
@@ -161,7 +204,7 @@ async function copyRequired(sourcePath, destinationPath, options = {}) {
   }
   await rm(destinationPath, { force: true, recursive: true });
   await mkdir(path.dirname(destinationPath), { recursive: true });
-  await cp(sourcePath, destinationPath, {
+  await copyTree(sourcePath, destinationPath, {
     dereference: options.dereference === true,
     recursive: true,
     verbatimSymlinks: options.dereference === true ? false : true,
@@ -435,10 +478,16 @@ async function pruneBrokenSymlinks(root, current = root, removedPaths = [], reas
 
   if (!metadata.isDirectory()) return removedPaths;
 
-  const entries = await readdir(current, { withFileTypes: true }).catch(() => []);
-  for (const entry of entries) {
-    await pruneBrokenSymlinks(root, path.join(current, entry.name), removedPaths, reason);
-  }
+  await visitPaths(current, async (entryPath) => {
+    const entryMetadata = await lstat(entryPath).catch(() => null);
+    if (entryMetadata == null) return;
+    if (entryMetadata.isSymbolicLink()) {
+      try { await stat(entryPath); }
+      catch { await removePathAndRecord(entryPath, reason, removedPaths); }
+    } else if (entryMetadata.isDirectory()) {
+      return childPaths(entryPath);
+    }
+  });
   return removedPaths;
 }
 
@@ -455,30 +504,17 @@ async function pruneMatchingFilesSummary(root, includeRelativePath, reason) {
     root,
   };
 
-  async function visit(current) {
-    let metadata;
-    try {
-      metadata = await lstat(current);
-    } catch {
-      return;
-    }
-
-    if (metadata.isDirectory()) {
-      const entries = await readdir(current, { withFileTypes: true }).catch(() => []);
-      for (const entry of entries) {
-        await visit(path.join(current, entry.name));
-      }
-      return;
-    }
+  await visitPaths(root, async (current) => {
+    const metadata = await lstat(current).catch(() => null);
+    if (metadata == null) return;
+    if (metadata.isDirectory()) return childPaths(current);
 
     const relativePath = path.relative(root, current);
     if (relativePath.length === 0 || !includeRelativePath(relativePath)) return;
     summary.bytes += metadata.size;
     summary.count += 1;
     await rm(current, { force: true });
-  }
-
-  await visit(root);
+  });
   return summary.count > 0 ? [summary] : [];
 }
 
@@ -508,37 +544,32 @@ async function collectClosureStats(
   stats = { brokenSymlinks: [], externalSymlinks: [], forbiddenEntries: [], symlinks: 0 },
   platformName = process.platform,
 ) {
-  let metadata;
-  try {
-    metadata = await lstat(current);
-  } catch {
-    return stats;
-  }
-
-  const relativePath = path.relative(root, current);
-  if (relativePath.length > 0 && isForbiddenCopiedEntry(relativePath, platformName)) {
-    stats.forbiddenEntries.push(relativePath.split(path.sep).join("/"));
-  }
-
-  if (metadata.isSymbolicLink()) {
-    stats.symlinks += 1;
-    try {
-      await stat(current);
-      if (!(await isWithinPhysicalPath(root, current))) {
-        stats.externalSymlinks.push(relativePath.split(path.sep).join("/"));
-      }
-    } catch {
-      stats.brokenSymlinks.push(relativePath.split(path.sep).join("/"));
+  await visitPaths(current, async (entryPath) => {
+    const metadata = await lstat(entryPath).catch(() => null);
+    if (metadata == null) return;
+    const relativePath = path.relative(root, entryPath);
+    if (relativePath.length > 0 && isForbiddenCopiedEntry(relativePath, platformName)) {
+      stats.forbiddenEntries.push(relativePath.split(path.sep).join("/"));
     }
-    return stats;
-  }
-
-  if (!metadata.isDirectory()) return stats;
-
-  const entries = await readdir(current, { withFileTypes: true }).catch(() => []);
-  for (const entry of entries) {
-    await collectClosureStats(root, path.join(current, entry.name), stats, platformName);
-  }
+    if (!metadata.isDirectory() && stats.sizeRoots) {
+      for (const [sizeRoot, total] of stats.sizeRoots) {
+        if (isWithin(sizeRoot, entryPath)) stats.sizeRoots.set(sizeRoot, total + metadata.size);
+      }
+    }
+    if (metadata.isSymbolicLink()) {
+      stats.symlinks += 1;
+      try {
+        await stat(entryPath);
+        if (!(await isWithinPhysicalPath(root, entryPath))) {
+          stats.externalSymlinks.push(relativePath.split(path.sep).join("/"));
+        }
+      } catch {
+        stats.brokenSymlinks.push(relativePath.split(path.sep).join("/"));
+      }
+    } else if (metadata.isDirectory()) {
+      return childPaths(entryPath);
+    }
+  });
   return stats;
 }
 
@@ -571,7 +602,10 @@ async function auditCopiedStandalone(config, installResult, platformName) {
     resolvedModules[moduleName] = resolvedPath;
   }
 
-  const closureStats = await collectClosureStats(installResult.destinationRoot, installResult.destinationRoot, undefined, platformName);
+  const webNextRoot = path.join(webNodeModulesRoot, "next");
+  const sizeRoots = new Map([installResult.destinationRoot, nodeModulesRoot, webNextRoot, webNodeModulesRoot].map((root) => [root, 0]));
+  const closureStats = await collectClosureStats(installResult.destinationRoot, installResult.destinationRoot,
+    { brokenSymlinks: [], externalSymlinks: [], forbiddenEntries: [], symlinks: 0, sizeRoots }, platformName);
   if (closureStats.brokenSymlinks.length > 0) {
     throw new Error(`[tools-pack web-standalone] copied standalone has broken symlinks: ${closureStats.brokenSymlinks.join(", ")}`);
   }
@@ -584,17 +618,17 @@ async function auditCopiedStandalone(config, installResult, platformName) {
 
   return {
     brokenSymlinks: closureStats.brokenSymlinks,
-    bytes: await sizePathBytes(installResult.destinationRoot),
+    bytes: sizeRoots.get(installResult.destinationRoot),
     destinationRoot: installResult.destinationRoot,
     destinationWebRoot: installResult.destinationWebRoot,
     externalSymlinks: closureStats.externalSymlinks,
     forbiddenEntries: closureStats.forbiddenEntries,
-    nodeModulesBytes: await sizePathBytes(nodeModulesRoot),
+    nodeModulesBytes: sizeRoots.get(nodeModulesRoot),
     resolvedModules,
     serverPath,
     symlinks: closureStats.symlinks,
-    webNextBytes: await sizePathBytes(path.join(webNodeModulesRoot, "next")),
-    webNodeModulesBytes: await sizePathBytes(webNodeModulesRoot),
+    webNextBytes: sizeRoots.get(webNextRoot),
+    webNodeModulesBytes: sizeRoots.get(webNodeModulesRoot),
   };
 }
 
