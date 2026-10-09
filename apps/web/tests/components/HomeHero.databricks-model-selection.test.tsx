@@ -80,6 +80,7 @@ interface HarnessProps {
   submitDisabled?: boolean;
   interactionLocked?: boolean;
   submitting?: boolean;
+  submitLoading?: boolean;
   onProjectSubmit?: () => void;
 }
 
@@ -91,6 +92,7 @@ function SubmitHarness({
   submitDisabled = false,
   interactionLocked = false,
   submitting = false,
+  submitLoading = false,
   onProjectSubmit = vi.fn(),
 }: HarnessProps) {
   const [currentConfig, setCurrentConfig] = useState(config);
@@ -107,6 +109,7 @@ function SubmitHarness({
       onPromptChange={vi.fn()}
       onSubmit={handleSubmit}
       submitting={submitting}
+      submitLoading={submitLoading}
       activePluginTitle={null}
       activeChipId={null}
       onClearActivePlugin={vi.fn()}
@@ -168,6 +171,26 @@ async function settle(): Promise<void> {
 }
 
 describe('HomeHero model-selection submission gate', () => {
+  it('disables Enter and Send visibly while loading, then sends exactly once when ready', async () => {
+    const onProjectSubmit = vi.fn();
+    const config = { ...baseConfig, agentId: 'codex', agentModels: { codex: { model: 'gpt-5' } } };
+    const view = render(<SubmitHarness config={config} agents={[codexAgent]} submitLoading onProjectSubmit={onProjectSubmit} />);
+    await settle();
+    setHomeHeroPrompt('Retain this draft');
+    const send = screen.getByTestId('home-hero-submit') as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
+    expect(send.getAttribute('aria-busy')).toBe('true');
+    expect(send.querySelector('[data-spinner]')).not.toBeNull();
+    pressEnterInHomeHero();
+    fireEvent.click(send);
+    expect(onProjectSubmit).not.toHaveBeenCalled();
+    expect(homeHeroPromptText()).toBe('Retain this draft');
+    view.rerender(<SubmitHarness config={config} agents={[codexAgent]} onProjectSubmit={onProjectSubmit} />);
+    expect(send.disabled).toBe(false);
+    expect(onProjectSubmit).not.toHaveBeenCalled();
+    pressEnterInHomeHero();
+    expect(onProjectSubmit).toHaveBeenCalledTimes(1);
+  });
   it('routes a click with an unselected Databricks model through the existing warning without submitting', async () => {
     const onProjectSubmit = vi.fn();
     render(<SubmitHarness onProjectSubmit={onProjectSubmit} submitReady={false} />);

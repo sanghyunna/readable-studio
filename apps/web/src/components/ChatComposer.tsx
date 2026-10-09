@@ -154,6 +154,7 @@ interface Props {
   sessionMode?: ChatSessionMode;
   onSessionModeChange?: (mode: ChatSessionMode) => void;
   sendDisabled?: boolean;
+  modelSelectionLoading?: boolean;
   /** Shared execution-policy gate invoked immediately before submission. */
   modelSelectionGuard?: () => boolean;
   initialDraft?: string;
@@ -311,6 +312,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       activeProjectFileName = null,
       streaming,
       sendDisabled = false,
+      modelSelectionLoading = false,
       modelSelectionGuard,
       initialDraft,
       draftStorageKey,
@@ -1745,7 +1747,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
 
     async function submit() {
       const prompt = draft.trim();
-      if (sendDisabled) return;
+      if (sendDisabled || modelSelectionLoading) return;
       if (modelSelectionGuard && !modelSelectionGuard()) return;
       // Intercept `/pet …` and `/mcp` before sending so the slash command
       // never hits the agent — these are local UX hooks, not model prompts.
@@ -2240,12 +2242,13 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
                   });
                   void submit();
                 }}
-                disabled={sendDisabled || !hasComposerPayload}
-                aria-label={t('chat.send')}
-                title={t('chat.send')}
-                data-tooltip={t('chat.send')}
+                disabled={sendDisabled || modelSelectionLoading || !hasComposerPayload}
+                aria-busy={modelSelectionLoading ? true : undefined}
+                aria-label={t(modelSelectionLoading ? 'common.loading' : 'chat.send')}
+                title={t(modelSelectionLoading ? 'common.loading' : 'chat.send')}
+                data-tooltip={t(modelSelectionLoading ? 'common.loading' : 'chat.send')}
               >
-                <Icon name="send" size={13} />
+                <Icon name={modelSelectionLoading ? 'spinner' : 'send'} size={13} />
                 <span>{t('chat.send')}</span>
               </button>
             ) : null}

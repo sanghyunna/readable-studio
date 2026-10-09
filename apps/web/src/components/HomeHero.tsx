@@ -199,6 +199,7 @@ interface Props {
   pendingPluginId: string | null;
   pendingChipId: string | null;
   submitDisabled?: boolean;
+  submitLoading?: boolean;
   submitReady?: boolean;
   continueDisabled?: boolean;
   onPickPlugin: (record: InstalledPluginRecord, nextPrompt: string | null) => void;
@@ -315,6 +316,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     pendingPluginId,
     pendingChipId,
     submitDisabled = false,
+    submitLoading = false,
     submitReady,
     continueDisabled,
     onPickPlugin,
@@ -373,7 +375,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   // validation path so its model label warning can explain the block. The
   // button only stays disabled for blockers HomeHero itself owns or is told
   // are non-attemptable.
-  const canAttemptSubmit = !interactionLocked && !submitting && !submitDisabled
+  const canAttemptSubmit = !interactionLocked && !submitting && !submitDisabled && !submitLoading
     && (prompt.trim().length > 0 || stagedFiles.length > 0 || templateChip !== null);
   const canSubmit = canAttemptSubmit && (submitReady ?? true);
   const previewHomeFile = useMemo(() => {
@@ -1719,11 +1721,12 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
               onClick={onSubmit}
               onAnimationEnd={() => setSendAttention(false)}
               disabled={!canAttemptSubmit}
-              title={canAttemptSubmit ? t('homeHero.run') : t('homeHero.typeSomethingToRun')}
-              data-tooltip={canAttemptSubmit ? t('homeHero.run') : t('homeHero.typeSomethingToRun')}
-              aria-label={t(submitting ? 'hub.starting' : 'homeHero.run')}
+              title={submitLoading ? t('common.loading') : canAttemptSubmit ? t('homeHero.run') : t('homeHero.typeSomethingToRun')}
+              data-tooltip={submitLoading ? t('common.loading') : canAttemptSubmit ? t('homeHero.run') : t('homeHero.typeSomethingToRun')}
+              aria-label={t(submitLoading ? 'common.loading' : submitting ? 'hub.starting' : 'homeHero.run')}
+              aria-busy={submitLoading || submitting ? true : undefined}
             >
-              {submitting ? (
+              {submitting || submitLoading ? (
                 <span data-spinner aria-hidden>
                   <Icon name="spinner" size={16} />
                 </span>

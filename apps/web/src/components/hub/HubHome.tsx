@@ -47,6 +47,7 @@ interface Props {
   /** Rich creation payload; HomeView owns all composer submission state. */
   onSubmit?: (payload: PluginLoopSubmit) => Promise<boolean> | boolean | void;
   modelSelectionGuard?: () => boolean;
+  modelSelectionLoading?: boolean;
   /** @deprecated compatibility for callers not yet migrated to the rich payload. */
   onSubmitPrompt?: (prompt: string, options?: { designSystemId: string | null }) => unknown;
   /** Open a project itself, including projects with no sessions. */
@@ -103,6 +104,7 @@ export function HubHome({
   projectsLoading = false,
   onSubmit,
   modelSelectionGuard,
+  modelSelectionLoading,
   onSubmitPrompt,
   onOpenProject,
   onViewAllProjects,
@@ -159,6 +161,7 @@ export function HubHome({
             surface="hub"
             richDataEnabled={Boolean(onSubmit)}
             modelSelectionGuard={modelSelectionGuard}
+            modelSelectionLoading={modelSelectionLoading}
             projects={projects}
             projectsLoading={projectsLoading}
             designSystems={designSystems}

@@ -326,6 +326,7 @@ interface Props {
   routeConversationId?: string | null;
   config: AppConfig;
   agents: AgentInfo[];
+  agentsLoading?: boolean;
   // Mentionable functional skills — already filtered by config.disabledSkills
   // upstream, so this drives only the chat composer's @-picker scope. For
   // resolving an existing project's `skillId` (which can also point at a
@@ -928,6 +929,7 @@ export function ProjectView({
   routeConversationId = null,
   config: globalConfig,
   agents,
+  agentsLoading = false,
   skills,
   designTemplates,
   designSystems,
@@ -6029,6 +6031,7 @@ export function ProjectView({
               onDeleteConversation={handleDeleteConversation}
               config={config}
               agents={agents}
+              agentsLoading={agentsLoading}
               daemonLive={daemonLive}
               onModeChange={onModeChange}
               onAgentChange={onAgentChange}

@@ -60,6 +60,22 @@ function renderComposer(
 }
 
 describe('ChatComposer explicit model guard', () => {
+  it('disables send with a loading affordance and preserves Enter until discovery resolves', () => {
+    const onSend = vi.fn();
+    const props = { projectId: 'project-1', projectFiles: [], streaming: false,
+      initialDraft: 'hello', onEnsureProject: async () => 'project-1', onSend, onStop: vi.fn() };
+    const view = render(<ChatComposer {...props} modelSelectionLoading />);
+    const send = screen.getByTestId('chat-send') as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
+    expect(send.getAttribute('aria-busy')).toBe('true');
+    fireEvent.keyDown(screen.getByTestId('chat-composer-input'), { key: 'Enter' });
+    fireEvent.click(send);
+    expect(onSend).not.toHaveBeenCalled();
+    view.rerender(<ChatComposer {...props} />);
+    expect(send.disabled).toBe(false);
+    fireEvent.keyDown(screen.getByTestId('chat-composer-input'), { key: 'Enter' });
+    expect(onSend).toHaveBeenCalledTimes(1);
+  });
   it('blocks button submission and emits visible-feedback signal when unselected', () => {
     const warned = vi.fn();
     window.addEventListener(MODEL_SELECTION_REQUIRED_EVENT, warned, { once: true });

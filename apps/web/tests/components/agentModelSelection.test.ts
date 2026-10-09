@@ -4,6 +4,7 @@ import {
   effectiveAgentModelChoice,
   effectiveReasoningOptions,
   hasRequiredModelSelection,
+  isModelSelectionLoading,
 } from '../../src/components/agentModelSelection';
 import type { AgentInfo } from '../../src/types';
 
@@ -30,6 +31,14 @@ const codexAgent: AgentInfo = {
 };
 
 describe('agent model selection', () => {
+  it('blocks only an unresolved selected agent during discovery, never a resolved or BYOK selection', () => {
+    const config = { mode: 'daemon' as const, agentId: 'codex' };
+    expect(isModelSelectionLoading(config, [], true)).toBe(true);
+    expect(isModelSelectionLoading(config, [amrAgent], true)).toBe(true);
+    expect(isModelSelectionLoading(config, [codexAgent], true)).toBe(false);
+    expect(isModelSelectionLoading(config, [], false)).toBe(false);
+    expect(isModelSelectionLoading({ ...config, mode: 'api' }, [], true)).toBe(false);
+  });
   it('does not replace a stale saved AMR model with a catalog default', () => {
     expect(
       effectiveAgentModelChoice(amrAgent, {

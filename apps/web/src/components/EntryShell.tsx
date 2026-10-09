@@ -63,7 +63,7 @@ import {
 import type { PluginUseAction } from './plugins-home/useActions';
 import type { IntegrationTab } from './IntegrationsView';
 import { InlineModelSwitcher } from './InlineModelSwitcher';
-import { composerReasoningOptions, requireModelSelection } from './agentModelSelection';
+import { composerReasoningOptions, isModelSelectionLoading, requireModelSelection } from './agentModelSelection';
 import type { EntrySettingsSection } from './EntrySettingsMenu';
 import type { CreateInput, ProjectImportHandlers } from './project-create';
 import type { PluginLoopSubmit } from './PluginLoopHome';
@@ -496,6 +496,7 @@ export function EntryShell({
                 defaultDesignSystemId={defaultDesignSystemId}
                 onSubmit={handlePluginLoopSubmit}
                 modelSelectionGuard={() => requireModelSelection(config, agents)}
+                modelSelectionLoading={isModelSelectionLoading(config, agents, agentsLoading)}
                 onViewAllProjects={() => changeView('projects')}
                 onBrowseRegistry={() => changeView('plugins')}
                 onOpenMcp={() => openIntegrationTab('mcp')}

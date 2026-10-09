@@ -73,6 +73,16 @@ export function hasRequiredModelSelection(
   return Boolean(resolveAgentModelChoice(agent, config.agentModels?.[config.agentId]));
 }
 
+/** Streaming discovery can still be resolving the remembered agent's catalogue. */
+export function isModelSelectionLoading(
+  config: Pick<AppConfig, 'mode' | 'agentId'>,
+  agents: readonly AgentInfo[],
+  agentsLoading: boolean,
+): boolean {
+  return config.mode === 'daemon' && agentsLoading
+    && !agents.some((agent) => agent.id === config.agentId);
+}
+
 /** Shared submission gate for both Hub and workspace composers. */
 export function requireModelSelection(
   config: Pick<AppConfig, 'mode' | 'model' | 'agentId' | 'agentModels'>,

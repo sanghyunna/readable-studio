@@ -59,6 +59,7 @@ import { userTextFromTemplateMessage } from './home-hero/templatePrompt';
 import { InlineModelSwitcher } from './InlineModelSwitcher';
 import {
   composerReasoningOptions,
+  isModelSelectionLoading,
   requireModelSelection,
 } from './agentModelSelection';
 import type { ProviderModelsCache } from './providerModelsCache';
@@ -481,6 +482,7 @@ interface Props {
    * (tests, screenshot harnesses) simply render no pair.
    */
   agents?: AgentInfo[];
+  agentsLoading?: boolean;
   daemonLive?: boolean;
   providerModelsCache?: ProviderModelsCache;
   onProviderModelsCacheChange?: Dispatch<SetStateAction<ProviderModelsCache>>;
@@ -630,6 +632,7 @@ export function ChatPane({
   designSystemPicker,
   config,
   agents,
+  agentsLoading = false,
   daemonLive = false,
   providerModelsCache,
   onProviderModelsCacheChange,
@@ -1438,6 +1441,7 @@ export function ChatPane({
         const switcherProps = {
           config,
           agents,
+          agentsLoading,
           providerModelsCache,
           onProviderModelsCacheChange,
           daemonLive,
@@ -1478,6 +1482,7 @@ export function ChatPane({
       streaming={streaming}
       sendDisabled={sendDisabled}
       modelSelectionGuard={modelSelectionGuard}
+      modelSelectionLoading={Boolean(config && isModelSelectionLoading(config, agents ?? [], agentsLoading))}
       initialDraft={initialDraft}
       draftStorageKey={composerDraftStorageKey}
       onEnsureProject={onEnsureProject}

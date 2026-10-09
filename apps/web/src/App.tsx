@@ -2179,6 +2179,7 @@ function AppInner() {
         routeConversationId={route.kind === 'project' ? route.conversationId : null}
         config={config}
         agents={agents}
+        agentsLoading={agentsLoading}
         skills={enabledFunctionalSkills}
         designTemplates={designTemplates}
         designSystems={designSystems}

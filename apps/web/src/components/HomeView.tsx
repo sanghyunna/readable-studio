@@ -230,6 +230,7 @@ interface Props {
   onSubmit: (payload: PluginLoopSubmit) => Promise<boolean> | boolean | void;
   /** Reject before submission can consume draft state or apply plugin context. */
   modelSelectionGuard?: () => boolean;
+  modelSelectionLoading?: boolean;
   /**
    * Hub open-to-edit: submitting an EMPTY prompt with exactly one HTML/Markdown
    * file staged hands that file here instead of starting an agent run. No
@@ -276,6 +277,7 @@ export function HomeView({
   defaultDesignSystemId = null,
   onSubmit,
   modelSelectionGuard,
+  modelSelectionLoading = false,
   onOpenDocument,
   onOpenProject,
   onViewAllProjects,
@@ -1480,6 +1482,7 @@ export function HomeView({
       return false;
     }
     if (submitInFlightRef.current) return false;
+    if (modelSelectionLoading) return false;
     if (modelSelectionGuard && !modelSelectionGuard()) return false;
     submitInFlightRef.current = true;
     setSubmitInFlight(true);
@@ -1789,6 +1792,7 @@ export function HomeView({
         pendingPluginId={pendingApplyId}
         pendingChipId={pendingChipId}
         submitDisabled={blocked}
+        submitLoading={modelSelectionLoading}
         continueDisabled={
           Boolean(pendingApplyId) ||
           Boolean(pendingAuthoringChipId) ||
