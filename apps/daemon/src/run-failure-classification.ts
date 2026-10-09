@@ -311,7 +311,7 @@ function processExitDetail(
   }
   if (errorCode.startsWith('AGENT_EXIT_')) return 'exit_code';
   if (errorCode === 'AGENT_TERMINATED_UNKNOWN') return 'terminated_unknown';
-  if (errorCode === 'AGENT_EXECUTION_FAILED') return 'execution_failed';
+  if (errorCode === 'AGENT_EXECUTION_FAILED' || errorCode === 'DOCUMENT_NOT_SAVED') return 'execution_failed';
   return 'unknown';
 }
 
@@ -538,7 +538,8 @@ export function classifyRunFailure(
   if (
     errorCode.startsWith('AGENT_EXIT_') ||
     errorCode === 'AGENT_TERMINATED_UNKNOWN' ||
-    errorCode === 'AGENT_EXECUTION_FAILED'
+    errorCode === 'AGENT_EXECUTION_FAILED' ||
+    errorCode === 'DOCUMENT_NOT_SAVED'
   ) {
     return classification(
       'process_exit',

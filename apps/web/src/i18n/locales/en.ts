@@ -63,6 +63,7 @@ export function getEn(): Dict {
   'chat.amrError.rechargeCta': 'Top up AMR',
   'chat.antigravityError.launchTerminalCta': 'Sign in via terminal',
   'chat.antigravityError.launchSwitchModelCta': 'Switch model in terminal',
+  'chat.documentNotSaved': 'The document file (index.html) was not saved, so generation could not be completed. Please try again.',
   'chat.connectionDropped': 'The connection to the model service dropped before the response finished — usually an unstable network or proxy. Please retry.',
   'chat.kimiError.usageLimitMessage': 'The Kimi account usage limit is reached. Retry after the limit resets.',
   'chat.kimiError.usageLimitWindowMessage': 'The Kimi account usage limit is reached. It resets when the current 7-day window ends. Retry after the limit resets.',

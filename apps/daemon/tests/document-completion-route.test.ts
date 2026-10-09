@@ -36,6 +36,9 @@ require('node:readline').createInterface({input:process.stdin}).once('line',()=>
       expect(events.match(/event: end\n/g)).toHaveLength(1);
       expect(events).toContain('"status":"failed"');
       expect(events).toContain('Document generation completed without saving index.html');
+      expect(events).toContain('"code":"DOCUMENT_NOT_SAVED"');
+      expect(events).toContain('"retryable":true');
+      expect(events).not.toContain('AGENT_EXECUTION_FAILED');
       // The original and exactly one corrective attempt both delivered text.
       expect(events.split(text.slice(0, 8)).length - 1).toBe(2);
     });

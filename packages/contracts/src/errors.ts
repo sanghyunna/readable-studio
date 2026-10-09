@@ -25,6 +25,10 @@ export const API_ERROR_CODES = [
   // triage can count this failure class by code.
   'AGENT_CONNECTION_DROPPED',
   'AGENT_PROMPT_TOO_LARGE',
+  // A document-generation run finished (after one corrective attempt) without
+  // saving a non-empty index.html in the project root. Retryable; the web maps
+  // the code to localized copy.
+  'DOCUMENT_NOT_SAVED',
   'AMR_MODEL_UNAVAILABLE',
   'AMR_AUTH_REQUIRED',
   'AMR_INSUFFICIENT_BALANCE',

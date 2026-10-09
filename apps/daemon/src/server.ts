@@ -12714,7 +12714,7 @@ async function startServerWithProbeLifetime({
         }
         status = 'failed';
         code = 1;
-        run.errorCode = 'AGENT_EXECUTION_FAILED';
+        run.errorCode = 'DOCUMENT_NOT_SAVED';
         run.error = 'Document generation completed without saving index.html in the project root.';
         send('error', createSseErrorPayload(run.errorCode, run.error, { retryable: true }));
       }

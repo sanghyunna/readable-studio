@@ -2026,6 +2026,7 @@ export interface Dict {
   'chat.antigravityError.launchTerminalCta': string;
   'chat.antigravityError.launchSwitchModelCta': string;
   'chat.connectionDropped': string;
+  'chat.documentNotSaved': string;
   'chat.kimiError.usageLimitMessage': string;
   'chat.kimiError.usageLimitWindowMessage': string;
   'chat.kimiError.usageLimitResetMessage': string;

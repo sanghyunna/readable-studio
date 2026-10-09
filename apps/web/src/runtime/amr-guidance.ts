@@ -66,6 +66,7 @@ export type RunFailureMessageKey =
   | 'chat.amrError.authMessage'
   | 'chat.amrError.balanceMessage'
   | 'chat.connectionDropped'
+  | 'chat.documentNotSaved'
   | 'chat.kimiError.usageLimitMessage'
   | 'chat.kimiError.usageLimitWindowMessage'
   | 'chat.kimiError.usageLimitResetMessage'
@@ -209,6 +210,16 @@ export function resolveRunFailureUi(
     return {
       primaryAction: 'retry',
       messageKey: 'chat.connectionDropped',
+      secondaryRetry: false,
+      showSwitchCard: false,
+    };
+  }
+  // A document run that ended without saving index.html: plain retry with
+  // localized copy instead of the raw English daemon message.
+  if (code === 'DOCUMENT_NOT_SAVED') {
+    return {
+      primaryAction: 'retry',
+      messageKey: 'chat.documentNotSaved',
       secondaryRetry: false,
       showSwitchCard: false,
     };

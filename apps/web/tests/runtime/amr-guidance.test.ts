@@ -54,6 +54,17 @@ describe('resolveRunFailureUi', () => {
     }
   });
 
+  it('localizes a document that was not saved for any agent', () => {
+    for (const agent of ['claude', 'codex', null]) {
+      expect(resolveRunFailureUi('DOCUMENT_NOT_SAVED', agent)).toMatchObject({
+        primaryAction: 'retry',
+        messageKey: 'chat.documentNotSaved',
+        secondaryRetry: false,
+        showSwitchCard: false,
+      });
+    }
+  });
+
   it('offers authorize-and-retry for an unauthorized AMR run (no card)', () => {
     const ui = resolveRunFailureUi('AMR_AUTH_REQUIRED', 'amr');
     expect(ui).toMatchObject({
