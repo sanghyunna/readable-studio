@@ -41,10 +41,11 @@ export function lintDocumentContrast(html: string): ContrastIssue[] {
   const $ = load(html.replace(/^\uFEFF/, ''));
   const styles = new Map<object, Record<string, { value: string; rank: number }>>();
   const apply = (selector: string, body: string, rank: number) => {
-    // Only the static selector subset; :root is safe. Do not evaluate slide state.
-    if (/[:]/.test(selector.replace(/:root/g, 'html')) || /[\\@]/.test(selector)) return;
+    // Structural pseudo classes are static; never evaluate active slide state.
+    const structural = /:(?:first|last|only)-(?:child|of-type)\b/g;
+    if (/[:]/.test(selector.replace(/:root/g, 'html').replace(structural, '')) || /[\\@]/.test(selector)) return;
     const target = selector.replace(/:root/g, 'html');
-    if (!/^[\w\s.#*>+~\[\]="'|^-]+$/.test(target)) return;
+    if (!/^[\w\s.#*>+~\[\]="'|^-]+$/.test(target.replace(structural, ''))) return;
     $(target).each((_, element) => {
       const computed = styles.get(element) ?? {};
       for (const [key, value, important] of declarations(body)) {

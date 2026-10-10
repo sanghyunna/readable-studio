@@ -26,6 +26,10 @@ it('preserves computed inherited variables and inline/important precedence', () 
 it('does not infer contrast over separate background images', () => {
   expect(lintDocumentContrast('<div style="background-color:white;background-image:url(image.png);color:white">unknown</div>')).toEqual([]);
 });
+it('resolves static structural pseudo backgrounds without false positives', () => {
+  const html = '<style>main{background:white;color:black}section:first-child{background:black;color:white}p{color:white}</style><main><section><p>safe cover</p></section><section><p>lost value</p></section></main>';
+  expect(lintDocumentContrast(html).map(issue => issue.text)).toEqual(['lost value']);
+});
 it('ships the machine-consumed contrast contract sentinel', () => {
   for (const locale of ['ko', 'en']) {
     const sentinel = composeSystemPrompt({ locale }).match(/<readable-contrast-contract>(.*?)<\/readable-contrast-contract>/s);
