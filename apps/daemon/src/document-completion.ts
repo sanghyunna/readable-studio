@@ -8,13 +8,14 @@ export function expectedDocumentArtifact(options: {
   sessionMode: string;
   pluginAuthoring: boolean;
   appliedPluginSnapshotId?: string;
+  checkExisting?: boolean;
 }): string | undefined {
   if (!options.cwd || options.pluginAuthoring || options.sessionMode === 'chat') return;
   const artifact = path.join(options.cwd, 'index.html');
   const metadata = options.metadata;
   const document = ['deck', 'report', 'website', 'prototype', 'template'].includes(metadata?.kind ?? '')
     || metadata?.intent === 'report' || !!metadata?.templateRef;
-  if (document && !existsSync(artifact)) return artifact;
+  if (document && (options.checkExisting || !existsSync(artifact))) return artifact;
 }
 
 export function missingDocumentArtifact(artifact: string | undefined, text: string): boolean {

@@ -259,6 +259,7 @@ import { createCopilotStreamHandler } from './copilot-stream.js';
 import { createJsonEventStreamHandler } from './json-event-stream.js';
 import { attachCodexAppServerSession } from './runtimes/codex-app-server.js';
 import { expectedDocumentArtifact, missingDocumentArtifact, documentRecoveryPrompt, documentIntentPrompt } from './document-completion.js';
+import { lintDocumentContrast, contrastRecoveryPrompt } from './document-contrast.js';
 import {
   antigravityAuthGuidance,
   antigravityQuotaGuidance,
@@ -12732,6 +12733,33 @@ async function startServerWithProbeLifetime({
         run.errorCode = 'DOCUMENT_NOT_SAVED';
         run.error = 'Document generation completed without saving index.html in the project root.';
         send('error', createSseErrorPayload(run.errorCode, run.error, { retryable: true }));
+      }
+      // Share the single corrective-attempt budget with missing-file recovery.
+      // Existing template seeds must also be checked, not only newly created files.
+      const contrastArtifact = expectedDocumentArtifact({
+        cwd, metadata: projectRecord?.metadata, sessionMode: runSessionMode,
+        pluginAuthoring: isPluginAuthoringRun(db, run), checkExisting: true,
+      });
+      if (status === 'succeeded' && !run.cancelRequested && !design.runs.isTerminal(run.status) &&
+        contrastArtifact && fs.existsSync(contrastArtifact) &&
+        !emittedRenderableQuestionForm(clarifyingQuestionText) &&
+        !/<!-- readable:no-document-required reason="(?:read-only|no-file-changes|question)" -->\s*$/.test(clarifyingQuestionText)) {
+        try {
+          const issues = lintDocumentContrast(fs.readFileSync(contrastArtifact, 'utf8'));
+          if (issues.length && !run.documentRecoveryAttempted) {
+            run.documentRecoveryAttempted = true;
+            const recovery = contrastRecoveryPrompt(contrastArtifact, issues);
+            chatBody = { ...chatBody, message: `${message}\n\n${recovery}`, currentPrompt: `${currentPrompt ?? message}\n\n${recovery}` };
+            await isolatedToolBroker?.close();
+            await closeManagedPi();
+            cleanupPromptFile();
+            restartSameRunAfterRetry();
+            return;
+          }
+          if (issues.length) console.warn('[document-contrast] Remaining near-invisible text after one recovery:', contrastArtifact, issues);
+        } catch (error) {
+          console.warn('[document-contrast] Static check failed; completing normally:', contrastArtifact, error);
+        }
       }
       // Persist only the authoritative session path returned by Pi get_state
       // after agent_end and agent_settled. Scoping it to the conversation and

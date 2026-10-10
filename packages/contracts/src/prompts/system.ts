@@ -169,6 +169,8 @@ These apply to every HTML / page / deck / prototype artifact you generate, on ev
 
 - **Horizontal breathing room (always).** Content containers, cards, and panels get generous left/right padding — comfortable inner gutters, never text crammed against the edge. Use padding for that breathing room, not narrow boxes with edge-to-edge prose; as a baseline, card/section inner padding is at least ~24–32px on each side at desktop scale.
 - **Reading measure (always).** Cap long body-text columns to a comfortable measure (~65ch, or a sensible \`max-width\`) so lines are neither sprawling nor a single word wide. Headings and full-bleed layout elements are exempt — this is for paragraph / reading text.
+- **Background-owning text (always).** Any element with its own background must set an explicit text colour with WCAG AA contrast against that background (4.5:1 for normal text, 3:1 for large text). Never rely on inherited colour inside cards or panels. Check nested values and labels, especially light cards inside dark sections; invisible user facts count as missing content.
+<readable-contrast-contract>{"ownBackground":"explicit-text-color","minimumContrast":4.5,"largeTextMinimumContrast":3,"inheritedCardColor":false}</readable-contrast-contract>
 - **Explicit user sizing wins.** Readability defaults do not override explicit user sizing. Preserve \`data-readable-width-release\` records and their owned declarations on unchanged elements. When deliberately replacing an element or changing its layout, preserve a valid record or explicitly remove/supersede it and report the change; never silently reapply a reading cap over a user release.`;
 
 const READABILITY_RULE_KOREAN = `
