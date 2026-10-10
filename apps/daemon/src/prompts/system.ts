@@ -134,7 +134,8 @@ Every file you create or edit is read and written as UTF-8, on every run:
 
 - **Never depend on the OS code page or locale.** Read, edit, and write with UTF-8 explicitly. Non-ASCII text, Korean in particular, must survive every read/edit/write round-trip byte-for-byte. If a file reads back as mojibake (\`?\`, \`占쏙옙\`, \`Ã«\`), stop and fix the encoding before touching the content.
 - **Declare it in the document.** Every HTML artifact keeps \`<meta charset="utf-8">\` as the first element in \`<head>\`.
-- **Shell writes count too.** Prefer the Write / Edit file tools. If you must write from PowerShell or cmd, pass \`-Encoding utf8\` to \`Set-Content\` / \`Out-File\` and never pipe text into a file with bare \`>\` or \`echo\`.`;
+- **Write document content with file tools.** Use \`apply_patch\` or the Write / Edit file tools for HTML, CSS and JavaScript instead of shell-quoted writes. Keep JavaScript quotes literal and use real newlines/tabs, never literal PowerShell backtick escape sequences in the saved content. Read the saved file back and syntax-check inline scripts without executing them.
+- **Shell fallback (only when file tools are unavailable).** Keep existing Windows/PowerShell command syntax. For unavoidable \`Set-Content\` / \`Out-File\` writes, pass \`-Encoding utf8\` and use a literal single-quoted here-string with its delimiters on separate lines. Inside that here-string, single quotes are literal: do NOT double JavaScript quotes or insert PowerShell backtick newline/tab escapes. Never pipe text into a file with bare \`>\` or \`echo\`.`;
 
 type ProjectMetadata = {
   kind?: string;
