@@ -260,6 +260,7 @@ import { createJsonEventStreamHandler } from './json-event-stream.js';
 import { attachCodexAppServerSession } from './runtimes/codex-app-server.js';
 import { expectedDocumentArtifact, missingDocumentArtifact, documentRecoveryPrompt, documentIntentPrompt } from './document-completion.js';
 import { lintDocumentContrast, contrastRecoveryPrompt } from './document-contrast.js';
+import { documentFactRequest, missingDocumentYears, documentYearRecoveryPrompt } from './document-fact-check.js';
 import {
   antigravityAuthGuidance,
   antigravityQuotaGuidance,
@@ -9928,6 +9929,12 @@ async function startServerWithProbeLifetime({
         pluginAuthoring: isPluginAuthoringRun(db, run),
       }) ?? null;
     }
+    // Preserve the current user request before a corrective turn appends host text.
+    if (run.documentFactRequest === undefined) {
+      run.documentFactRequest = documentFactRequest(
+        currentPrompt ?? message, projectRecord?.metadata?.templateRef?.boundary,
+      );
+    }
     const runContextPrompt = renderRunContextPrompt(context, projectRecord?.metadata);
     const cwdHint = cwd
       ? formatDesignFilesWorkspaceHint(cwd, existingProjectFiles, existingProjectFolders)
@@ -12745,7 +12752,20 @@ async function startServerWithProbeLifetime({
         !emittedRenderableQuestionForm(clarifyingQuestionText) &&
         !/<!-- readable:no-document-required reason="(?:read-only|no-file-changes|question)" -->\s*$/.test(clarifyingQuestionText)) {
         try {
-          const issues = lintDocumentContrast(fs.readFileSync(contrastArtifact, 'utf8'));
+          const html = fs.readFileSync(contrastArtifact, 'utf8');
+          const missingYears = missingDocumentYears(run.documentFactRequest, html);
+          if (missingYears.length && !run.documentRecoveryAttempted) {
+            run.documentRecoveryAttempted = true;
+            const recovery = documentYearRecoveryPrompt(contrastArtifact, missingYears);
+            chatBody = { ...chatBody, message: `${message}\n\n${recovery}`, currentPrompt: `${currentPrompt ?? message}\n\n${recovery}` };
+            await isolatedToolBroker?.close();
+            await closeManagedPi();
+            cleanupPromptFile();
+            restartSameRunAfterRetry();
+            return;
+          }
+          if (missingYears.length) console.warn('[document-fact-check] Missing years after one recovery:', contrastArtifact, missingYears);
+          const issues = lintDocumentContrast(html);
           if (issues.length && !run.documentRecoveryAttempted) {
             run.documentRecoveryAttempted = true;
             const recovery = contrastRecoveryPrompt(contrastArtifact, issues);
@@ -12758,7 +12778,7 @@ async function startServerWithProbeLifetime({
           }
           if (issues.length) console.warn('[document-contrast] Remaining near-invisible text after one recovery:', contrastArtifact, issues);
         } catch (error) {
-          console.warn('[document-contrast] Static check failed; completing normally:', contrastArtifact, error);
+          console.warn('[document-contrast] Static document checks failed; completing normally:', contrastArtifact, error);
         }
       }
       // Persist only the authoritative session path returned by Pi get_state
