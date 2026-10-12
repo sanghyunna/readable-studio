@@ -8,7 +8,7 @@ import type { DataImportCandidate, DataImportCandidatesResponse, DataImportState
 
 const MARKER = 'data-import.json';
 const OFFER_OWNER = `${process.pid}:${Date.now()}`;
-interface Decision { state: DataImportState; offeredBy?: string; sourceRoot?: string; sourceData?: string; error?: string; requestedAt?: string }
+interface Decision { state: DataImportState; offeredBy?: string; sourceRoot?: string; sourceData?: string; error?: string; requestedAt?: string; restartRequested?: boolean }
 export interface DataImportRouteOptions {
   dataRoot: string;
   /** Packaged host supplies READABLE_UPDATE_ROOT; fixed data layout is the fallback. */
@@ -96,7 +96,7 @@ export async function discoverDataImports(options: DataImportRouteOptions): Prom
 
 export function registerDataImportRoutes(app: Express, options: DataImportRouteOptions): void {
   // Serialize decision writes so concurrent renderer/CLI requests cannot select
-  // different sources or replace an accepted request with a decline.
+  // different sources or race confirmation against cancellation.
   let serial: Promise<unknown> = Promise.resolve();
   const locked = <T>(fn: () => Promise<T>): Promise<T> => {
     const result = serial.then(fn, fn); serial = result.catch(() => undefined); return result;
@@ -124,10 +124,20 @@ export function registerDataImportRoutes(app: Express, options: DataImportRouteO
   app.post('/api/data-import/request', async (req, res) => {
     try {
       const action = req.body?.action;
-      if (action !== 'decline' && (!['import', 'stop-source'].includes(action) || typeof req.body?.from !== 'string')) { res.status(400).json({ error: 'Invalid import request' }); return; }
+      if (action !== 'decline' && action !== 'restart' && (!['import', 'stop-source'].includes(action) || typeof req.body?.from !== 'string')) { res.status(400).json({ error: 'Invalid import request' }); return; }
       const result = await locked(async () => {
         const previous = await decision(options.dataRoot);
-        if (previous?.state === 'done' || previous?.state === 'pending') throw new Error('이미 가져오기를 요청했습니다. 앱을 다시 시작해 주세요.');
+        if (previous?.state === 'done') throw new Error('이미 가져오기를 요청했습니다. 앱을 다시 시작해 주세요.');
+        if (action === 'restart') {
+          if (previous?.state !== 'pending') throw new Error('먼저 가져올 작업 폴더를 선택해 주세요.');
+          await record(options.dataRoot, { ...previous, restartRequested: true });
+          return { state: 'pending', restartRequired: true };
+        }
+        if (previous?.state === 'pending') {
+          if (action !== 'decline') throw new Error('이미 가져오기를 요청했습니다. 앱을 다시 시작해 주세요.');
+          await rm(path.join(options.dataRoot, MARKER));
+          return { state: 'declined', restartRequired: false };
+        }
         if (!(await empty(options.dataRoot))) throw new Error('현재 폴더에 작업이 있어 덮어쓰지 않았습니다.');
         if (action === 'decline') {
           await record(options.dataRoot, { state: 'declined' }); return { state: 'declined', restartRequired: false };

@@ -18,7 +18,7 @@ export interface DataImportCandidatesResponse {
   /** Diagnostics for unreadable candidates; never silently treated as empty. */
   warnings?: string[];
 }
-export type DataImportRequest = { action: 'import' | 'stop-source'; from: string } | { action: 'decline' };
+export type DataImportRequest = { action: 'import' | 'stop-source'; from: string } | { action: 'decline' | 'restart' };
 export interface DataImportRequestResponse {
   state: 'pending' | 'declined';
   restartRequired: boolean;

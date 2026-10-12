@@ -12,6 +12,8 @@ export function DataImportModal({ onResolved }: { onResolved: () => void }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const inFlight = useRef(false);
   const dialog = useRef<HTMLElement>(null);
   useEffect(() => {
     let active = true;
@@ -42,20 +44,32 @@ export function DataImportModal({ onResolved }: { onResolved: () => void }) {
   const runningSource = result?.runningSource;
 
   async function request(body: DataImportRequest) {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setBusy(true); setError('');
+    let restartAccepted = false;
     try {
       const response = await fetch('/api/data-import/request', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       if ([502, 503, 504].includes(response.status)) throw new TypeError('Backend unreachable');
       const value = await response.json();
       if (!response.ok) throw new Error(value.error || t('dataImport.safeFailure'));
-      if (value.restartRequired) setPending(true);
-      else onResolved();
+      if (body.action === 'restart') {
+        restartAccepted = true;
+        setRestarting(true);
+      } else if (value.restartRequired) setPending(true);
+      else {
+        setPending(false);
+        setResult({ state: 'declined', candidates: [] });
+        onResolved();
+      }
     } catch (cause) {
       setError(body.action === 'stop-source' ? t('dataImport.stopFailure')
         : cause instanceof TypeError || cause instanceof SyntaxError
           ? t('connection.reconnecting') : cause instanceof Error ? cause.message : t('dataImport.safeFailure'));
     }
-    finally { setBusy(false); }
+    finally {
+      if (!restartAccepted) { inFlight.current = false; setBusy(false); }
+    }
   }
   // The check itself is invisible: the Hub stays usable until there is
   // actually something to offer, a failure to report, or a pending restart.
@@ -72,7 +86,7 @@ export function DataImportModal({ onResolved }: { onResolved: () => void }) {
         else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
       }}>
       <header className={styles.head}>
-        <h2 id="data-import-title">{t(pending ? 'dataImport.restarting' : runningSource ? 'dataImport.sourceRunning' : result?.state === 'failed' ? 'dataImport.failed' : 'dataImport.title')}</h2>
+        <h2 id="data-import-title">{t(pending ? restarting ? 'dataImport.restarting' : 'dataImport.restartTitle' : runningSource ? 'dataImport.sourceRunning' : result?.state === 'failed' ? 'dataImport.failed' : 'dataImport.title')}</h2>
         <p>{t(pending ? 'dataImport.restartHint' : runningSource ? 'dataImport.stopHint' : 'dataImport.description')}</p>
       </header>
       {!pending && !runningSource && result?.candidates.length ? <div className={styles.candidates} role="group" aria-label={t('dataImport.folders')}>
@@ -88,9 +102,12 @@ export function DataImportModal({ onResolved }: { onResolved: () => void }) {
           <ul>{runningSource.processes.map(row => <li key={row.pid}><span>PID {row.pid}</span><span className={styles.executablePath}>{row.executablePath}</span></li>)}</ul>
         </details> : null}
       </div> : null}
-      {!pending && (error || (!runningSource && result?.error)) ? <p className={styles.error} role="alert">{runningSource ? error : <>{t('dataImport.safeFailure')}<br />{error || result?.error}</>}</p> : null}
-      {result?.warnings?.length ? <p className={styles.error} role="status">{t('dataImport.unreadable')}<br />{result.warnings.join('\n')}</p> : null}
-      {!pending && (result || error) ? <footer className={styles.actions}>
+      {(error || (!pending && !runningSource && result?.error)) ? <p className={styles.error} role="alert">{pending || runningSource ? error : <>{t('dataImport.safeFailure')}<br />{error || result?.error}</>}</p> : null}
+      {!pending && result?.warnings?.length ? <p className={styles.error} role="status">{t('dataImport.unreadable')}<br />{result.warnings.join('\n')}</p> : null}
+      {pending ? <footer className={styles.actions}>
+        <Button variant="ghost" disabled={busy} onClick={() => void request({ action: 'decline' })}>{t('dataImport.cancelImport')}</Button>
+        <Button variant="primary" disabled={busy} onClick={() => void request({ action: 'restart' })}>{t('dataImport.restart')}</Button>
+      </footer> : (result || error) ? <footer className={styles.actions}>
         <Button variant="ghost" disabled={busy} onClick={() => void request({ action: 'decline' })}>{t('dataImport.startFresh')}</Button>
         {runningSource ? <Button variant="primary" disabled={busy} onClick={() => void request({ action: 'stop-source', from: runningSource.sourceData })}>{t(busy ? 'dataImport.requesting' : 'dataImport.stopSource')}</Button>
           : selected ? <Button variant="primary" disabled={busy} onClick={() => void request({ action: 'import', from: selected })}>{t(busy ? 'dataImport.requesting' : 'dataImport.import')}</Button> : null}

@@ -1,4 +1,5 @@
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
+import { watch, type FSWatcher } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
 import { copyFile, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
@@ -7,8 +8,10 @@ import { once } from 'node:events';
 import path from 'node:path';
 import { runPendingDataImport } from '../src/data-import.js';
 
+vi.mock('node:fs',async importOriginal=>({...await importOriginal<typeof import('node:fs')>(),watch:vi.fn()}));
+vi.mock('node:fs/promises',async importOriginal=>({...await importOriginal<typeof import('node:fs/promises')>(),readFile:vi.fn((...args: Parameters<typeof readFile>)=>importOriginal<typeof import('node:fs/promises')>().then(fs=>fs.readFile(...args)))}));
 const roots: string[] = [];
-afterEach(async () => { await Promise.all(roots.splice(0).map(p => rm(p, { recursive: true, force: true }))); });
+afterEach(async () => { vi.useRealTimers();vi.mocked(readFile).mockReset();vi.mocked(readFile).mockImplementation(async(...args: Parameters<typeof readFile>)=>(await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')).readFile(...args)); await Promise.all(roots.splice(0).map(p => rm(p, { recursive: true, force: true }))); });
 const hash = (s: string | Buffer) => `sha256:${createHash('sha256').update(s).digest('hex')}`;
 async function treeHashes(root: string) {
   const entries = await readdir(root, { recursive: true, withFileTypes: true });
@@ -107,17 +110,30 @@ it('recovers a crash between the two publication renames', async () => {
   const f=await fixture(); await rename(f.dataRoot,`${f.dataRoot}.import-empty`);
   expect((await runPendingDataImport({...f,listProcessImages:async()=>[]})).status).toBe('done');
 });
-it('requests a graceful host restart on an atomic pending marker write', async () => {
+it('does not restart for queued imports and requests a graceful host restart exactly once after confirmation', async () => {
   const f=await fixture(); await writeFile(path.join(f.dataRoot,'data-import.json'),JSON.stringify({state:'declined'}));
-  let signal!:()=>void;
-  const restarted = new Promise<void>(resolve=>{signal=resolve;});
-  const result=await runPendingDataImport({...f,onRestartRequested:signal});
+  let changed!:(event:string,name:string)=>void;
+  const close=vi.fn();
+  vi.mocked(watch).mockImplementation(((_root:unknown,_options:unknown,listener:typeof changed)=>{changed=listener;return {close} as unknown as FSWatcher;}) as typeof watch);
+  const restarted=vi.fn();
+  const result=await runPendingDataImport({...f,onRestartRequested:restarted});
+  vi.useFakeTimers();
   try {
-    await writeFile(path.join(f.dataRoot,'request.tmp'),JSON.stringify({state:'pending'}));
-    await rename(path.join(f.dataRoot,'request.tmp'),path.join(f.dataRoot,'data-import.json'));
-    await restarted;
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify({state:'pending'}));
+    changed('rename','data-import.json');
+    await vi.runAllTimersAsync();
+    expect(restarted).not.toHaveBeenCalled();
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify({state:'pending',restartRequested:true}));
+    changed('rename','data-import.json');
+    changed('change','data-import.json');
+    await vi.runAllTimersAsync();
+    expect(restarted).toHaveBeenCalledTimes(1);
+    changed('change','data-import.json');
+    await vi.runAllTimersAsync();
+    expect(restarted).toHaveBeenCalledTimes(1);
   } finally { result.stopWatching(); }
-}, 5000);
+  expect(close).toHaveBeenCalledTimes(1);
+});
 it('detects an actual legacy process image under the source folder', async () => {
   const f=await fixture();const executable=path.join(f.sourceRoot,'legacy.exe');await copyFile(process.execPath,executable);
   const child=spawn(executable,['-e',"process.stdout.write('ready');process.stdin.resume()"],{stdio:['pipe','pipe','pipe'],windowsHide:true});

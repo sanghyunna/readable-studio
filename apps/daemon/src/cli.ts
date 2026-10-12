@@ -7830,12 +7830,21 @@ is the same one Settings → About → Export diagnostics produces.
 
 async function runDataImport(args) {
   const strings = new Set(['daemon-url', 'from', 'prompt-file']);
-  const flags = parseFlags(args, { string: strings, boolean: new Set(['json', 'help', 'h', 'stop-source']) });
+  const flags = parseFlags(args, { string: strings, boolean: new Set(['json', 'help', 'h', 'stop-source', 'cancel']) });
   if (flags.help || flags.h || positionalArgs(args, strings)[0] !== 'import') {
-    console.log('Usage: readable data import [--from <folder>] [--stop-source] [--json]');
+    console.log('Usage: readable data import [--from <folder>] [--stop-source] [--cancel] [--json]');
+    console.log('Queueing an import never restarts the app. Close and reopen Readable Studio manually, or confirm restart in the desktop app. Use --cancel to cancel a queued import.');
     return;
   }
   const base = await cliDaemonBaseUrl(flags);
+  if (flags.cancel) {
+    const response = await fetch(`${base}/api/data-import/request`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'decline' }) });
+    if (!response.ok) return structuredHttpFailure(response);
+    const result = await response.json();
+    if (flags.json) return process.stdout.write(JSON.stringify(result) + '\n');
+    console.log('Import cancelled.');
+    return;
+  }
   const candidatesResponse = await fetch(`${base}/api/data-import/candidates`);
   if (!candidatesResponse.ok) return structuredHttpFailure(candidatesResponse);
   const candidates = await candidatesResponse.json();
@@ -7864,7 +7873,7 @@ async function runDataImport(args) {
   if (!response.ok) return structuredHttpFailure(response);
   const result = await response.json();
   if (flags.json) return process.stdout.write(JSON.stringify(result) + '\n');
-  console.log('Import requested. Readable Studio will restart to copy and verify your work.');
+  console.log('Import queued. Close and reopen Readable Studio manually, or confirm restart in the desktop app to copy and verify your work.');
 }
 
 async function runVersion(args) {

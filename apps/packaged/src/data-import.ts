@@ -8,7 +8,7 @@ import { DatabaseSync } from 'node:sqlite';
 const MARKER = 'data-import.json';
 const hash = (value: string | Buffer) => `sha256:${createHash('sha256').update(value).digest('hex')}`;
 const quote = (value: string) => `"${value.replaceAll('"', '""')}"`;
-type Decision = { state: string; sourceRoot?: string; sourceData?: string; requestedAt?: string; error?: string; rowCounts?: Record<string, number> };
+type Decision = { state: string; sourceRoot?: string; sourceData?: string; requestedAt?: string; restartRequested?: boolean; error?: string; rowCounts?: Record<string, number> };
 export interface DataImportOptions {
   /** Daemon data directory, NOT the namespace or installation directory. */
   dataRoot: string;
@@ -213,7 +213,7 @@ export async function runPendingDataImport(options: DataImportOptions): Promise<
       watcher = watch(dataRoot, { persistent: false }, (_event, name) => {
         if (name?.toString() !== MARKER || requested) return;
         void readDecision(dataRoot).then(async decision => {
-          if (decision?.state !== 'pending' || requested) return;
+          if (decision?.state !== 'pending' || decision.restartRequested !== true || requested) return;
           requested = true;
           await options.onRestartRequested!();
         }).catch(error => { console.error('[data-import] restart request failed', error); });

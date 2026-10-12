@@ -28,6 +28,9 @@ export interface Dict {
   'dataImport.startFresh': string;
   'dataImport.requesting': string;
   'dataImport.restarting': string;
+  'dataImport.restartTitle': string;
+  'dataImport.restart': string;
+  'dataImport.cancelImport': string;
   'dataImport.restartHint': string;
   'dataImport.failed': string;
   'dataImport.safeFailure': string;
