@@ -125,6 +125,7 @@ async function main(): Promise<void> {
     dataLock.release();
     startupTiming.flush();
     flushStartupTimingOnFailure = null;
+    app.quit();
     return;
   }
   startupTiming.mark("packaged-paths-resolved");

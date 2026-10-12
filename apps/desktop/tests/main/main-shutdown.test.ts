@@ -23,9 +23,12 @@ it('concurrent normal-close callers wait for the packaged shutdown hook before e
   const listenerStart = source.lastIndexOf('  app.on("before-quit", (event) => {');
   const listenerEnd = source.indexOf('\n  });', listenerStart) + '\n  });'.length;
   const listeners = ts.transpile(source.slice(listenerStart, listenerEnd), { target: ts.ScriptTarget.ES2022 });
-  vm.runInContext(code + listeners + '\nglobalThis.quit = shutdownAndExit; globalThis.stop = shutdown;', context);
+  const closeStart = source.indexOf('  app.on("window-all-closed",');
+  const closeEnd = source.indexOf('\n  });', closeStart) + '\n  });'.length;
+  const closeListener = ts.transpile(source.slice(closeStart, closeEnd), { target: ts.ScriptTarget.ES2022 });
+  vm.runInContext(code + listeners + closeListener + '\nglobalThis.quit = shutdownAndExit; globalThis.stop = shutdown;', context);
   const quit = context.quit as () => void;
-  quit();
+  app.emit('window-all-closed');
   await entered.promise;
   quit();
   const event = { preventDefault: vi.fn() };
