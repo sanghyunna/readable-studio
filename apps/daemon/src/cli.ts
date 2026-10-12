@@ -168,6 +168,15 @@ const RAIL_FILTERS = ['all', 'attention', 'running'];
 const RAIL_SORTS = ['recent', 'name'];
 const SESSION_VERB_FLAGS = {
   'prompt-file': ['session new'],
+  title: ['session new', 'session rename'],
+  folder: ['session new', 'session list', 'session move'],
+  recent: ['session list'],
+  limit: ['session list'],
+  mode: ['session new'],
+  skill: ['session new'],
+  'design-system': ['session new'],
+  name: ['folder create', 'folder rename'],
+  sessions: ['folder delete'],
   query: ['session list', 'session tree'],
   state: ['session list', 'session tree'],
   sort: ['session tree', 'folder list'],
@@ -432,7 +441,7 @@ function printRootHelp() {
   readable shortcut <capabilities|create> [desktop|startMenu] [--json]
       Query portable shortcut support or create a Desktop/Start Menu shortcut.
 
-  readable session <new|list|tree|info|rename|move|delete> [args]
+  readable session <new|list|tree|info|rename|move|pin|unpin|pins|delete> [args]
       Create, list, rename, move and delete the sessions shown in the left
       rail, through the same routes the rail uses.
 
@@ -6668,7 +6677,13 @@ function railNarrow(rail, { query, filter = 'all' }) {
       .filter((f) => f.sessions.length > 0);
     recents = recents.filter((s) => railMatchesFilter(s.state, filter));
   }
-  return { ...rail, folders, recents };
+  const visibleIds = new Set([...folders.flatMap((f) => f.sessions), ...recents].map((s) => s.id));
+  return { ...rail, folders, recents, pinned: (rail.pinned ?? []).filter((id) => visibleIds.has(id)) };
+}
+
+function railPinnedSessions(rail) {
+  const sessions = new Map([...rail.folders.flatMap((f) => f.sessions), ...rail.recents].map((s) => [s.id, s]));
+  return (rail.pinned ?? []).map((id) => sessions.get(id)).filter(Boolean);
 }
 
 function railFolderName(rail, folderId) {
@@ -6687,7 +6702,7 @@ async function runSession(args) {
                           Sessions, most recent first, with folder name and state.
   readable session tree   [--query "<text>"] [--state all|attention|running]
                           [--sort recent|name] [--json]
-                          Folders with their sessions, then recents.
+                          Pinned shortcuts first, then folders and recents.
                           These flags match the left rail: --query is its search
                           (session title, or a folder name that keeps all of that
                           folder's sessions; untitled sessions match "${RAIL_UNTITLED_LABEL}" or "${RAIL_UNTITLED_LABEL_EN}"),
@@ -6700,6 +6715,11 @@ async function runSession(args) {
                           Moving changes only where the session is listed. Its files,
                           working folder, checkpoints, comments, tabs, run history and
                           agent resume state are the same before and after.
+  readable session pin    <id> [--json]    Add a shortcut without moving the session.
+  readable session unpin  <id> [--json]    Remove only the shortcut.
+  readable session pins   [--json]         List pinned sessions, oldest pin first.
+                          --json emits { pinned: [...] } with full rail session objects;
+                          pin/unpin --json emit { pinned: [...] } with session ids.
   readable session delete <id> [--json]`;
   const { sub, flags, client, id, need, out } = await sessionCliClient(args, usage, 'session');
   const folderLabel = (s) => s.folderName ?? (s.folderId == null ? RAIL_NO_PROJECT_LABEL : s.folderId);
@@ -6759,12 +6779,29 @@ async function runSession(args) {
       const data = railNarrow(await readRail(), { query: flags.query, filter });
       if (sort) data.folders = railSortFolders(data.folders, sort);
       if (flags.json) return process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
+      const pinnedIds = new Set(data.pinned);
+      const row = (s, mark = true) => `  ${s.id}\t${s.title ?? '-'}\t${s.state}${mark && pinnedIds.has(s.id) ? '\t[pinned]' : ''}`;
+      console.log('Pinned');
+      for (const s of railPinnedSessions(data)) console.log(row(s, false));
       for (const f of data.folders) {
         console.log(`${f.id}\t${f.name}`);
-        for (const s of f.sessions ?? []) console.log(`  ${s.id}\t${s.title ?? '-'}\t${s.state}`);
+        for (const s of f.sessions ?? []) console.log(row(s));
       }
       console.log('recent');
-      for (const s of data?.recents ?? []) console.log(`  ${s.id}\t${s.title ?? '-'}\t${s.state}`);
+      for (const s of data?.recents ?? []) console.log(row(s));
+      return;
+    }
+    case 'pin':
+    case 'unpin': {
+      const path = `/api/sessions/${need(`readable session ${sub} <id>`)}/pin`;
+      const data = await sessionCliCall(client, path, sub === 'pin' ? 'PUT' : 'DELETE', undefined, `session-${sub}-failed`);
+      return out(data, `[session] ${sub === 'pin' ? 'pinned' : 'unpinned'} ${id}`);
+    }
+    case 'pins': {
+      const pinned = railPinnedSessions(await readRail());
+      if (flags.json) return process.stdout.write(`${JSON.stringify({ pinned }, null, 2)}\n`);
+      if (pinned.length === 0) return console.log('No pinned sessions.');
+      for (const s of pinned) console.log(`${s.id}\t${s.title ?? '-'}\t${s.state}`);
       return;
     }
     case 'info': {

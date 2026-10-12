@@ -1,5 +1,6 @@
 import type { Express } from 'express';
-import type { OkResponse, SessionsResponse } from '@readable-studio/contracts';
+import type { OkResponse, SessionPinsResponse, SessionsResponse } from '@readable-studio/contracts';
+import { updateSessionPin } from '../app-config.js';
 import { initializeConversationSelection, recentConversationSelection } from '../conversation-selection.js';
 import { countConversationsInWorkspace, getConversation, updateConversation } from '../db.js';
 import type { CreateWorkspaceWithSeed } from '../project-routes.js';
@@ -91,6 +92,32 @@ export function registerSessionRoutes(app: Express, ctx: RegisterSessionRoutesDe
       session: initializeConversationSelection(db, conversation.id, recent, lastRun),
     };
     res.json(body);
+  });
+
+  app.put('/api/sessions/:id/pin', async (req, res) => {
+    if (!getConversation(db, req.params.id)) {
+      return sendApiError(res, 404, 'CONVERSATION_NOT_FOUND', 'session not found');
+    }
+    try {
+      const ids = await updateSessionPin(ctx.paths.RUNTIME_DATA_DIR, req.params.id, true);
+      railEvents.emit('session-pinned', [req.params.id]);
+      const body: SessionPinsResponse = { pinned: ids.filter((id) => getConversation(db, id) !== null) };
+      res.json(body);
+    } catch (err: any) {
+      sendApiError(res, err instanceof RangeError ? 400 : 500,
+        err instanceof RangeError ? 'BAD_REQUEST' : 'INTERNAL_ERROR', String(err?.message || err));
+    }
+  });
+
+  app.delete('/api/sessions/:id/pin', async (req, res) => {
+    try {
+      const ids = await updateSessionPin(ctx.paths.RUNTIME_DATA_DIR, req.params.id, false);
+      railEvents.emit('session-unpinned', [req.params.id]);
+      const body: SessionPinsResponse = { pinned: ids.filter((id) => getConversation(db, id) !== null) };
+      res.json(body);
+    } catch (err: any) {
+      sendApiError(res, 500, 'INTERNAL_ERROR', String(err?.message || err));
+    }
   });
 
   app.patch('/api/sessions/:id', (req, res) => {

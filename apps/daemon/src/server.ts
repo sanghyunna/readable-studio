@@ -5321,7 +5321,7 @@ async function startServerWithProbeLifetime({
     createWorkspaceWithSeed: projectRoutes.createWorkspaceWithSeed,
   });
   registerFolderRoutes(app, { db, http: httpDeps, ids: idDeps, paths: pathDeps, projectStore: projectStoreDeps });
-  registerRailRoutes(app, { db, design, http: httpDeps });
+  registerRailRoutes(app, { db, design, http: httpDeps, paths: pathDeps });
   registerDesktopApprovalRoutes(app, desktopApprovalBroker, sendDesktopApprovalError);
   registerShortcutRoutes(app, desktopApprovalToken);
   registerTerminalRoutes(app, {

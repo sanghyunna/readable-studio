@@ -33,7 +33,7 @@ const railFolders = [
   { id: 'folder-2', name: 'Notes', createdAt: 1, updatedAt: 9, sessions: [sB1] },
   { id: 'folder-3', name: 'Archive deck', createdAt: 1, updatedAt: 1, sessions: [] },
 ];
-const rail = { folders: railFolders, recents: [railSession, sR2], generatedAt: 1 };
+const rail = { folders: railFolders, recents: [railSession, sR2], pinned: ['s-a1', 'session-1'], generatedAt: 1 };
 const listedFolders = [railFolders[0], railFolders[2], railFolders[1]].map((f) => {
   if (!f) throw new Error('unexpected missing folder');
   const { sessions, ...rest } = f;
@@ -72,6 +72,12 @@ beforeAll(async () => {
     }
     if (method === 'GET' && url.startsWith('/api/sessions?')) return json(response, { sessions: [railSession] });
     if (method === 'GET' && url === '/api/rail') return json(response, rail);
+    if (url === '/api/sessions/session-1/pin' && (method === 'PUT' || method === 'DELETE')) {
+      return json(response, { pinned: method === 'PUT' ? rail.pinned : ['s-a1'] });
+    }
+    if (method === 'PUT' && url === '/api/sessions/missing/pin') {
+      return json(response, { error: { code: 'CONVERSATION_NOT_FOUND', message: 'session not found' } }, 404);
+    }
     if (method === 'GET' && url === '/api/sessions/s-a1') {
       return json(response, { session: { ...session, id: 's-a1', projectId: 'ws-s-a1', folderId: KNOWN_FOLDER, title: 'Deck draft' } });
     }
@@ -137,6 +143,36 @@ function sent() {
 }
 
 describe('readable session', () => {
+  it('pins, unpins, and lists titled shortcuts in pin order', async () => {
+    const pinned = await runCli(['session', 'pin', 'session-1', '--json']);
+    expect(pinned.code).toBe(0);
+    expect(JSON.parse(pinned.stdout)).toEqual({ pinned: rail.pinned });
+    const unpinned = await runCli(['session', 'unpin', 'session-1', '--json']);
+    expect(unpinned.code).toBe(0);
+    expect(JSON.parse(unpinned.stdout)).toEqual({ pinned: ['s-a1'] });
+    const pins = await runCli(['session', 'pins', '--json']);
+    expect(pins.code).toBe(0);
+    expect(JSON.parse(pins.stdout)).toEqual({ pinned: [sA1, railSession] });
+    const text = await runCli(['session', 'pins']);
+    expect(text.code).toBe(0);
+    expect(text.stdout.trim().split('\n')).toEqual(['s-a1\tDeck draft\trunning', 'session-1\tDraft\tidle']);
+    expect(sent()).toEqual([
+      ['PUT', '/api/sessions/session-1/pin'], ['DELETE', '/api/sessions/session-1/pin'],
+      ['GET', '/api/rail'], ['GET', '/api/rail'],
+    ]);
+  }, 60_000);
+
+  it('renders a Pinned section before folders without removing original rows', async () => {
+    const tree = await runCli(['session', 'tree']);
+    expect(tree.code).toBe(0);
+    const lines = tree.stdout.trim().split('\n');
+    expect(lines.slice(0, 3)).toEqual(['Pinned', '  s-a1\tDeck draft\trunning', '  session-1\tDraft\tidle']);
+    expect(lines.filter((line) => line === '  s-a1\tDeck draft\trunning\t[pinned]')).toHaveLength(1);
+    expect(lines.filter((line) => line === '  session-1\tDraft\tidle\t[pinned]')).toHaveLength(1);
+    const filtered = JSON.parse((await runCli(['session', 'tree', '--state', 'running', '--json'])).stdout);
+    expect(filtered.pinned).toEqual(['s-a1']);
+  }, 60_000);
+
   it('creates sessions with flags, a prompt file, and stdin, printing the raw envelope under --json', async () => {
     const promptFile = path.join(tempRoot, 'prompt.txt');
     await writeFile(promptFile, 'Build a landing page\nwith two sections');
@@ -299,7 +335,7 @@ describe('readable --help', () => {
   it('lists the session and folder commands', async () => {
     const result = await runCli(['--help'], undefined, false);
     expect(result.code).toBe(0);
-    expect(result.stdout).toMatch(/^ {2}readable session <new\|list\|tree\|info\|rename\|move\|delete>/m);
+    expect(result.stdout).toMatch(/^ {2}readable session <new\|list\|tree\|info\|rename\|move\|pin\|unpin\|pins\|delete>/m);
     expect(result.stdout).toMatch(/^ {2}readable folder <create\|list\|rename\|delete>/m);
   }, 60_000);
 });
@@ -335,10 +371,11 @@ describe('readable session/folder usage errors', () => {
     for (const args of [
       ['folder', 'create', '--name', 'pf', '--prompt-file', '-'],
       ['session', 'rename', 'session-1', '--title', 'x', '--prompt-file', '-'],
+      ['session', 'pin', 'session-1', '--prompt-file', '-'],
     ]) {
       const result = await runCli(args, '');
       expect(result.code, args.join(' ')).toBe(2);
-      expect(result.stderr.split('\n')[0]).toMatch(/^--prompt-file is not accepted by readable (folder create|session rename)$/);
+      expect(result.stderr.split('\n')[0]).toMatch(/^--prompt-file is not accepted by readable (folder create|session rename|session pin)$/);
     }
     expect(sent()).toEqual([]);
   }, 60_000);
@@ -358,11 +395,22 @@ describe('readable session/folder usage errors', () => {
       ['session', 'rename', 'missing', '--title', 'x'],
       ['session', 'move', 'missing', '--folder', KNOWN_FOLDER],
       ['session', 'delete', 'missing'],
+      ['session', 'pin', 'missing'],
     ]) {
       const result = await runCli(args);
       expect(result.code, args.join(' ')).toBe(1);
       expect(JSON.parse(result.stderr.trim()).error.code, args.join(' ')).toBe('session-not-found');
     }
+  }, 60_000);
+
+  it('requires an id for pin and unpin and rejects unrelated flags', async () => {
+    for (const args of [
+      ['session', 'pin'], ['session', 'unpin'],
+      ['session', 'pins', '--query', 'draft'], ['session', 'pin', 'session-1', '--state', 'running'],
+    ]) {
+      expect((await runCli(args)).code, args.join(' ')).toBe(2);
+    }
+    expect(sent()).toEqual([]);
   }, 60_000);
 });
 

@@ -1,5 +1,6 @@
 import type { Express } from 'express';
 import type { RailResponse, RailSession, RailSessionState, RailSseEvent } from '@readable-studio/contracts';
+import { readAppConfig, updateSessionPin } from '../app-config.js';
 import {
   countConversationsInWorkspace,
   deleteConversation,
@@ -12,7 +13,7 @@ import {
 import { railEvents } from '../rail-events.js';
 import type { RouteDeps } from '../server-context.js';
 
-export interface RegisterRailRoutesDeps extends RouteDeps<'db' | 'design' | 'http'> {}
+export interface RegisterRailRoutesDeps extends RouteDeps<'db' | 'design' | 'http' | 'paths'> {}
 
 function railStateFromStatus(value: unknown): RailSessionState {
   switch (value) {
@@ -93,6 +94,7 @@ export async function deleteSessionWithWorkspace(
   if (!conversation) return false;
   const workspaceId = conversation.projectId;
   deleteConversation(db, sessionId);
+  await updateSessionPin(ctx.paths.RUNTIME_DATA_DIR, sessionId, false);
   if (countConversationsInWorkspace(db, workspaceId) === 0) {
     const workspace = ctx.projectStore.getProject(db, workspaceId);
     if (workspace && typeof workspace.metadata?.baseDir !== 'string') {
@@ -107,9 +109,11 @@ export function registerRailRoutes(app: Express, ctx: RegisterRailRoutesDeps) {
   const { db, design } = ctx;
   const { sendApiError, createSseResponse } = ctx.http;
 
-  app.get('/api/rail', (_req, res) => {
+  app.get('/api/rail', async (_req, res) => {
     try {
       const sessions = buildRailSessions(db, design);
+      const sessionIds = new Set(sessions.map((session) => session.id));
+      const config = await readAppConfig(ctx.paths.RUNTIME_DATA_DIR);
       const folders = listFolders(db).map((folder) => {
         const folderSessions = sessions.filter((s) => s.folderId === folder.id);
         return { ...folder, sessionCount: folderSessions.length, sessions: folderSessions };
@@ -117,6 +121,7 @@ export function registerRailRoutes(app: Express, ctx: RegisterRailRoutesDeps) {
       const body: RailResponse = {
         folders,
         recents: sessions.filter((s) => s.folderId === null),
+        pinned: (config.pinnedSessionIds ?? []).filter((id) => sessionIds.has(id)),
         generatedAt: Date.now(),
       };
       res.json(body);

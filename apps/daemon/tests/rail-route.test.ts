@@ -1,4 +1,6 @@
 import type http from 'node:http';
+import { readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { RailSseEvent } from '@readable-studio/contracts';
 import { closeDatabase } from '../src/db.js';
@@ -73,6 +75,72 @@ describe('rail route and rail events', () => {
     expect(railFolder.sessions.map((s: any) => s.id)).toEqual([inFolder.id]);
     expect(rail.recents.map((s: any) => s.id)).toContain(standalone.id);
     expect(rail.recents.every((s: any) => s.folderId === null)).toBe(true);
+    expect(rail.pinned).toEqual([]);
+  });
+
+  it('pins shortcuts in insertion order, idempotently, without moving sessions', async () => {
+    const folder = (await json('POST', '/api/folders', { name: 'Pinned project' })).body.folder;
+    const first = (await json('POST', '/api/sessions', { title: 'First pin', folderId: folder.id })).body.session;
+    const second = (await json('POST', '/api/sessions', { title: 'Second pin' })).body.session;
+    expect(await json('PUT', `/api/sessions/${second.id}/pin`)).toEqual({ status: 200, body: { pinned: [second.id] } });
+    expect((await json('PUT', `/api/sessions/${first.id}/pin`)).body).toEqual({ pinned: [second.id, first.id] });
+    expect((await json('PUT', `/api/sessions/${second.id}/pin`)).body).toEqual({ pinned: [second.id, first.id] });
+    const rail = (await json('GET', '/api/rail')).body;
+    expect(rail.pinned).toEqual([second.id, first.id]);
+    expect(rail.folders.find((f: any) => f.id === folder.id).sessions.map((s: any) => s.id)).toContain(first.id);
+    expect(rail.recents.map((s: any) => s.id)).toContain(second.id);
+    expect((await json('DELETE', `/api/sessions/${second.id}/pin`)).body).toEqual({ pinned: [first.id] });
+    expect((await json('DELETE', `/api/sessions/${second.id}/pin`)).body).toEqual({ pinned: [first.id] });
+    expect((await json('DELETE', '/api/sessions/missing/pin')).status).toBe(200);
+    await json('DELETE', `/api/sessions/${first.id}/pin`);
+  });
+
+  it('rejects a missing session pin with the session error code', async () => {
+    expect(await json('PUT', '/api/sessions/missing/pin')).toMatchObject({
+      status: 404, body: { error: { code: 'CONVERSATION_NOT_FOUND' } },
+    });
+  });
+
+  it('keeps pins on move and rename, and prunes session and folder deletions', async () => {
+    const folder = (await json('POST', '/api/folders', { name: 'Pin lifecycle' })).body.folder;
+    const session = (await json('POST', '/api/sessions', { title: 'Keep pin' })).body.session;
+    await json('PUT', `/api/sessions/${session.id}/pin`);
+    await json('PATCH', `/api/sessions/${session.id}`, { folderId: folder.id });
+    await json('PATCH', `/api/sessions/${session.id}`, { title: 'Renamed pin' });
+    expect((await json('GET', '/api/rail')).body.pinned).toEqual([session.id]);
+    await json('DELETE', `/api/sessions/${session.id}`);
+    expect((await json('GET', '/api/rail')).body.pinned).toEqual([]);
+    const inFolder = (await json('POST', '/api/sessions', { title: 'Delete with folder', folderId: folder.id })).body.session;
+    await json('PUT', `/api/sessions/${inFolder.id}/pin`);
+    await json('DELETE', `/api/folders/${folder.id}?sessions=delete`);
+    expect((await json('GET', '/api/rail')).body.pinned).toEqual([]);
+    const config = JSON.parse(await readFile(path.join(process.env.READABLE_DATA_DIR!, 'app-config.json'), 'utf8'));
+    expect(config.pinnedSessionIds).toEqual([]);
+  });
+
+  it('filters stale pins from rail and cleans them through unpin', async () => {
+    const session = (await json('POST', '/api/sessions', { title: 'Existing pin' })).body.session;
+    const file = path.join(process.env.READABLE_DATA_DIR!, 'app-config.json');
+    const config = JSON.parse(await readFile(file, 'utf8'));
+    await writeFile(file, JSON.stringify({ ...config, pinnedSessionIds: ['deleted-session', session.id] }));
+    expect((await json('GET', '/api/rail')).body.pinned).toEqual([session.id]);
+    expect((await json('DELETE', '/api/sessions/deleted-session/pin')).body).toEqual({ pinned: [session.id] });
+    await json('DELETE', `/api/sessions/${session.id}/pin`);
+  });
+
+  it('emits SSE pin and unpin events, including idempotent requests', async () => {
+    const session = (await json('POST', '/api/sessions', { title: 'Pin events' })).body.session;
+    const stream = await openRailEvents();
+    try {
+      for (const method of ['PUT', 'PUT', 'DELETE', 'DELETE']) {
+        await json(method, `/api/sessions/${session.id}/pin`);
+        const reason = method === 'PUT' ? 'session-pinned' : 'session-unpinned';
+        expect(await stream.next((event) => event.reason === reason && event.ids.includes(session.id)))
+          .toMatchObject({ type: 'rail-changed', reason, ids: [session.id] });
+      }
+    } finally {
+      stream.close();
+    }
   });
 
   it('emits rail-changed for every session and folder mutation', async () => {

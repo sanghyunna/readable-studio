@@ -106,6 +106,8 @@ export interface AppConfigPrefs {
   disabledDesignSystems?: string[];
   // Ordered plugin record ids; unique, non-empty, at most TEMPLATE_FAVORITES_MAX.
   templateFavorites?: string[];
+  // Daemon-owned shortcuts, oldest pin first; not writable through app config.
+  pinnedSessionIds?: string[];
   installationId?: string | null;
   telemetry?: TelemetryPrefs;
   privacyDecisionAt?: number | null;
@@ -497,6 +499,10 @@ function filterAllowedKeys(obj: Record<string, unknown>): AppConfigPrefs {
       .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
       .map((id) => normalizeAgentId(id) ?? id.trim()))];
   }
+  // Pins share the ordered, unique, non-empty 200-id validation with favorites,
+  // but only the session pin endpoints may mutate them.
+  const pins = validateTemplateFavorites(obj.pinnedSessionIds);
+  if (pins !== undefined) result.pinnedSessionIds = pins;
   return result as AppConfigPrefs;
 }
 
@@ -516,6 +522,7 @@ function applyConfigDefaults(prefs: AppConfigPrefs): AppConfigPrefs {
     // Explicit defaults prevent clients from substituting the full catalog.
     enabledAgentIds: prefs.enabledAgentIds ?? [...DEFAULT_ENABLED_AGENT_IDS],
     templateFavorites: prefs.templateFavorites ?? [],
+    pinnedSessionIds: prefs.pinnedSessionIds ?? [],
     telemetry: prefs.telemetry ?? { metrics: false, content: false },
   };
 }
@@ -614,6 +621,22 @@ export async function writeAppConfig(
     applyConfigValue({}, 'performanceProfile', partial.performanceProfile);
   }
   return withConfigLock(dataDir, () => doWrite(dataDir, partial));
+}
+
+export async function updateSessionPin(dataDir: string, sessionId: string, pinned: boolean): Promise<string[]> {
+  return withConfigLock(dataDir, async () => {
+    const config = await doRead(dataDir);
+    const ids = config.pinnedSessionIds ?? [];
+    if (pinned && !ids.includes(sessionId)) {
+      if (ids.length >= TEMPLATE_FAVORITES_MAX) throw new RangeError('At most 200 sessions may be pinned');
+      ids.push(sessionId);
+    } else if (!pinned) {
+      config.pinnedSessionIds = ids.filter((id) => id !== sessionId);
+    }
+    config.pinnedSessionIds ??= ids;
+    await persistAppConfig(dataDir, config);
+    return config.pinnedSessionIds;
+  });
 }
 
 async function doWrite(
