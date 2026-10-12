@@ -27,7 +27,7 @@ vi.mock('../../src/state/projects', async (original) => ({
 }));
 vi.mock('../../src/state/rail', async (original) => ({
   ...await original<typeof import('../../src/state/rail')>(),
-  fetchRail: async () => ({ ok: true as const, rail: { folders: [], recents: [], generatedAt: 1 } }),
+  fetchRail: async () => ({ ok: true as const, rail: { folders: [], recents: [], pinned: [], generatedAt: 1 } }),
   subscribeRailEvents: () => () => undefined,
 }));
 vi.mock('../../src/providers/registry', async (original) => ({

@@ -34,7 +34,7 @@ it('still returns ok:true with the same object for a valid rail body', async () 
   const body = {
     folders: [{ id: 'f', name: 'F', createdAt: 1, updatedAt: 1, sessions: [] }],
     recents: [],
-    generatedAt: 1,
+    pinned: [], generatedAt: 1,
   };
   vi.mocked(globalThis.fetch).mockResolvedValue(jsonResponse(body));
 

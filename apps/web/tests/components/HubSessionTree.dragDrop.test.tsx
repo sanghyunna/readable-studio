@@ -21,7 +21,7 @@ beforeEach(() => {
  vi.stubGlobal('fetch', request.mockImplementation(async (_url: string, init?: RequestInit) => {
   if(init?.method === 'PATCH') { folderId = JSON.parse(String(init.body)).folderId; return {ok: true, json: async () => ({session: {id: 's', folderId}})}; }
   const session = {id: 's', workspaceId: 'w', folderId, title: 'Session', updatedAt: 1, createdAt: 1, state: 'idle', workspaceSessionCount: 1, messageCount: 0};
-  return {ok: true, json: async () => ({folders: [{id: 'f', name: 'Folder', updatedAt: 1, createdAt: 1, sessions: folderId === 'f' ? [session] : []}], recents: folderId === null ? [session] : [], generatedAt: 1})};
+  return {ok: true, json: async () => ({folders: [{id: 'f', name: 'Folder', updatedAt: 1, createdAt: 1, sessions: folderId === 'f' ? [session] : []}], recents: folderId === null ? [session] : [], pinned: [], generatedAt: 1})};
  }));
 });
 afterEach(() => {cleanup(); vi.unstubAllGlobals(); window.localStorage.clear();});

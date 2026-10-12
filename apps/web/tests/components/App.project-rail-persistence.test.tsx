@@ -239,7 +239,7 @@ beforeEach(() => {
       : [conversation('c3', 'project-2', 'Plan comparison')],
   );
   fetchRail.mockImplementation(async () => ({ ok: true, rail: {
-    folders: await Promise.all(PROJECTS.map(async (project) => ({ ...project, sessions: (await listConversations(project.id)).map((session: ReturnType<typeof conversation>) => ({ ...session, workspaceId: project.id, folderId: project.id, state: 'idle', workspaceSessionCount: 2 })) }))), recents: [], generatedAt: 1,
+    folders: await Promise.all(PROJECTS.map(async (project) => ({ ...project, sessions: (await listConversations(project.id)).map((session: ReturnType<typeof conversation>) => ({ ...session, workspaceId: project.id, folderId: project.id, state: 'idle', workspaceSessionCount: 2 })) }))), recents: [], pinned: [], generatedAt: 1,
   } }));
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }));
   globalThis.ResizeObserver = ResizeObserverMock as typeof ResizeObserver;

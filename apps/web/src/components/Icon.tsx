@@ -58,6 +58,8 @@ export type IconName =
   | 'palette'
   | 'palette-filled'
   | 'pencil'
+  | 'pin'
+  | 'pin-filled'
   | 'plus'
   | 'plus-filled'
   | 'puzzle'
@@ -116,6 +118,14 @@ export function Icon({ name, size = 14, strokeWidth = 1.6, ...rest }: Props) {
     ...rest,
   };
   switch (name) {
+    case 'pin':
+    case 'pin-filled':
+      return (
+        <svg {...common}>
+          <path d="M9 3h6l-1 6 4 4v2H6v-2l4-4-1-6Z" fill={name === 'pin-filled' ? 'currentColor' : 'none'} />
+          <path d="M12 15v6" />
+        </svg>
+      );
     case 'at-sign':
       return (
         <svg {...common}>

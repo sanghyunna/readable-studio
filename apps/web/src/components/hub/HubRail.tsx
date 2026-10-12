@@ -9,7 +9,6 @@ import type { AppTheme } from '../../types';
 import { ProjectRail } from '../ProjectRail';
 import { Icon } from '../Icon';
 import { HUB_SESSION_DRAG_TYPE } from './HubSessionTree';
-import { HubOpenWork } from './HubOpenWork';
 import { HubRailFooter } from './HubRailFooter';
 import { useHubRail } from './HubRailContext';
 import { HubSessionTree } from './HubSessionTree';
@@ -155,14 +154,10 @@ export function HubRail({
               searching={Boolean(query.trim())}
               onClearFilter={() => rail.setQuery('')}
               compactByDefault
-              openWork={
-                <HubOpenWork
-                  items={rail.openWork}
-                  currentSessionId={rail.currentSessionId}
-                  onOpen={rail.openOpenWork}
-                  onClose={rail.closeOpenWork}
-                />
-              }
+              pinnedIds={rail.pinnedIds}
+              pinnedSessions={rail.pinnedSessions}
+              pinPendingIds={rail.pinPendingIds}
+              onTogglePin={(session) => { void rail.togglePin(session); }}
               collapsed={railCollapsed}
               currentSessionId={rail.currentSessionId}
               onOpenSession={rail.openSession}

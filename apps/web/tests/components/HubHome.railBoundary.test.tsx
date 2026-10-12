@@ -37,7 +37,7 @@ vi.mock('../../src/state/rail', async (importOriginal) => ({
         ...c, workspaceId: project.id, folderId: project.id, workspaceSessionCount: 1,
         state: c.latestRun?.status === 'running' ? 'running' : 'idle',
       })),
-    }))), recents: [], generatedAt: 1,
+    }))), recents: [], pinned: [], generatedAt: 1,
   }}; } catch { return { ok: false, aborted: options.signal?.aborted ?? false }; }
   },
   renameSession: async (id: string, title: string) => { patchConversation('p1', id, {title}); return {}; },
@@ -75,7 +75,6 @@ function seedSessions() {
 
 afterEach(() => {
   cleanup();
-  window.sessionStorage.removeItem('readable-studio:hub-open-work');
   window.localStorage.removeItem('readable-studio:hub-rail-collapsed');
   window.localStorage.removeItem('readable-studio:hub-rail-width');
   vi.resetAllMocks();
@@ -88,7 +87,7 @@ function RailReadout() {
   return (
     <>
       <output data-testid="rail-readout">
-        {`${rail.railCollapsed ? 'collapsed' : 'expanded'}:${rail.openWork.map((item) => item.sessionId).join(',')}`}
+        {`${rail.railCollapsed ? 'collapsed' : 'expanded'}:${rail.pinnedIds.join(',')}`}
       </output>
       <output data-testid="pending-chip">{rail.commandChip?.nonce ?? ''}</output>
       <button data-testid="consume-old-chip" onClick={() => rail.consumeCommandChip(1)}>Consume</button>
@@ -151,11 +150,10 @@ describe('hub rail boundary', () => {
     expect(screen.getByTestId('rail-readout').textContent).toBe('expanded:');
     fireEvent.click(screen.getByTestId('hub-session-c1'));
     expect(onOpenSession).toHaveBeenCalledWith('p1', 'c1');
-    expect(screen.getByTestId('hub-open-work-c1')).toBeTruthy();
-    expect(screen.getByTestId('rail-readout').textContent).toBe('expanded:c1');
+    expect(screen.getByTestId('rail-readout').textContent).toBe('expanded:');
     fireEvent.click(screen.getByTestId('hub-rail-toggle'));
     expect(theRail().dataset['projectRailState']).toBe('collapsed');
-    expect(screen.getByTestId('rail-readout').textContent).toBe('collapsed:c1');
+    expect(screen.getByTestId('rail-readout').textContent).toBe('collapsed:');
     expect(window.localStorage.getItem('readable-studio:hub-rail-collapsed')).toBe('true');
   });
 
@@ -202,7 +200,6 @@ describe('hub rail boundary', () => {
     expect(screen.queryByTestId('hub-live-region')).toBeNull();
     await act(async () => { view.rerender(<ShellWithHub />); });
     expect(theRail()).toBe(rail);
-    expect(screen.getByTestId('hub-open-work-c1')).toBeTruthy();
     expect((screen.getByTestId('hub-search') as HTMLInputElement).value).toBe('Session one');
     expect(resizer.getAttribute('aria-valuenow')).toBe('420');
     expect(listConversations).toHaveBeenCalledTimes(PROJECTS.length);
@@ -282,7 +279,6 @@ describe('hub rail boundary', () => {
     expect(deleteConversation).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
     expect(screen.getByTestId('hub-session-c1')).toBeTruthy();
-    expect(screen.getByTestId('hub-open-work-c1')).toBeTruthy();
     act(() => vi.advanceTimersByTime(HUB_DELETE_UNDO_MS));
     expect(deleteConversation).not.toHaveBeenCalled();
   });

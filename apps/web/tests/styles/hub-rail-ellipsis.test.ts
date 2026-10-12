@@ -34,7 +34,7 @@ describe('Hub rail long-name truncation contract', () => {
       '.hub__nav',
       '.hub__nav-list',
       '.hub-tree',
-      '.hub-open',
+      '.hub-pinned',
       '.hub-tree__body',
       '.hub-tree__node',
       '.hub-tree__group',
@@ -65,10 +65,10 @@ describe('Hub rail long-name truncation contract', () => {
     expect(declarations('.hub-row--project > .hub-row__actions')).toContain('grid-area: actions;');
   });
 
-  it('keeps open-work and nested-session names as the shrinking flex item', () => {
+  it('keeps pinned and nested-session names as the shrinking flex item', () => {
     const title = declarations('.hub-row__title');
 
-    expect(declarations('.hub-row--open')).toContain('min-height: 32px;');
+    expect(declarations('.hub-row--pinned')).toContain('min-height: 32px;');
     expect(declarations('.hub-row--session')).toContain('min-height: 32px;');
     expect(title).toContain('flex: 1;');
     expect(declarations('.hub-row__actions')).toContain('flex: none;');

@@ -22,7 +22,7 @@ function railBody(overrides: Partial<RailResponse> = {}): RailResponse {
       sessions: [railSession('s1', 'f1', 10)],
     }],
     recents: [railSession('s2', null, 20), railSession('s3', null, 15, null)],
-    generatedAt: 1,
+    pinned: [], generatedAt: 1,
     ...overrides,
   };
 }

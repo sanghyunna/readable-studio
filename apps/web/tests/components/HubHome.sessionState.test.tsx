@@ -66,7 +66,7 @@ function session(id: string, over: Partial<RailSession> = {}): RailSession {
 }
 
 function rail(recents: RailSession[]): RailResponse {
-  return { folders: [], recents, generatedAt: 1 };
+  return { folders: [], recents, pinned: [], generatedAt: 1 };
 }
 
 function renderHub() {

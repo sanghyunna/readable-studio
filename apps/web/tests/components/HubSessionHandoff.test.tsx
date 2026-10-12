@@ -33,7 +33,7 @@ vi.mock('../../src/state/rail', async (importOriginal) => ({
         ...c, workspaceId: project.id, folderId: project.id, workspaceSessionCount: 1,
         state: c.latestRun?.status === 'running' ? 'running' : 'idle',
       })),
-    }))), recents: [], generatedAt: 1,
+    }))), recents: [], pinned: [], generatedAt: 1,
   }}),
 }));
 

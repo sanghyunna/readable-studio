@@ -21,7 +21,7 @@ import {
 } from '../../src/state/projects';
 
 vi.mock('../../src/state/sessions', () => ({ createSession: vi.fn(), importClaudeDesignZipIntoFolder: vi.fn() }));
-vi.mock('../../src/state/rail', async (original) => ({ ...await original<typeof import('../../src/state/rail')>(), fetchRail: async () => ({ ok: true, rail: { folders: [], recents: [], generatedAt: 1 } }) }));
+vi.mock('../../src/state/rail', async (original) => ({ ...await original<typeof import('../../src/state/rail')>(), fetchRail: async () => ({ ok: true, rail: { folders: [], recents: [], pinned: [], generatedAt: 1 } }) }));
 vi.mock('../../src/components/InlineModelSwitcher', () => ({ InlineModelSwitcher: () => null }));
 vi.mock('../../src/components/DesignsTab', () => ({
   DesignsTab: ({ onNewProject }: { onNewProject: () => void }) => (

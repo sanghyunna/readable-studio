@@ -62,7 +62,7 @@ const RAIL: RailResponse = {
     },
   ],
   recents: [],
-  generatedAt: 1,
+  pinned: [], generatedAt: 1,
 };
 
 const PROJECTS: Project[] = [

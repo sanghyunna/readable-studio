@@ -17,7 +17,6 @@ import {
   useState,
   type DragEvent as ReactDragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
-  type ReactNode,
 } from 'react';
 
 import { createPortal } from 'react-dom';
@@ -54,8 +53,10 @@ interface Props {
   moveFolders?: HubFolderNode[];
   /** Open one folder when this tree is used in the compact hub rail, preferring live work. */
   compactByDefault?: boolean;
-  /** Content placed after the shared filters and before the folder tree. */
-  openWork?: ReactNode;
+  pinnedIds?: string[];
+  pinnedSessions?: HubSessionNode[];
+  pinPendingIds?: string[];
+  onTogglePin?: (session: HubSessionNode) => void;
   /**
    * The rail is showing glyphs only. Sessions are not rendered inline, so a
    * folder's sessions and the recents are reached through shared-row flyouts.
@@ -309,7 +310,10 @@ export function HubSessionTree({
   tree,
   moveFolders = tree.folders,
   compactByDefault = false,
-  openWork,
+  pinnedIds = [],
+  pinnedSessions = [],
+  pinPendingIds = [],
+  onTogglePin,
   collapsed: railCollapsed = false,
   searching = false,
   railStatus = 'ready',
@@ -551,13 +555,15 @@ export function HubSessionTree({
   // A row removed underneath an open menu would leave the menu anchored to a
   // detached node and its focus-restore target gone.
   useEffect(() => {
-    if (menu && !rows.some((row) => row.key === menu.rowKey)) setMenu(null);
-    if (renaming && !rows.some((row) => row.key === renaming)) setRenaming(null);
+    const exists = (key: string) => rows.some((row) => row.key === key)
+      || pinnedSessions.some((session) => `pin:${session.id}` === key);
+    if (menu && !exists(menu.rowKey)) setMenu(null);
+    if (renaming && !exists(renaming)) setRenaming(null);
     if (flyout && flyout.folderId !== RECENTS_KEY && !rows.some((row) => row.key === `p:${flyout.folderId}`)) setFlyout(null);
     // A confirmation whose subject is already gone would delete nothing and
     // strand focus on a detached row.
     if (confirming && !rows.some((row) => row.key === confirming.rowKey)) setConfirming(null);
-  }, [rows, menu, renaming, flyout, confirming]);
+  }, [rows, pinnedSessions, menu, renaming, flyout, confirming]);
 
   useEffect(() => () => {
     if (typeAheadTimerRef.current) clearTimeout(typeAheadTimerRef.current);
@@ -864,7 +870,10 @@ export function HubSessionTree({
 
   const indexOfKey = (key: string) => rows.findIndex((row) => row.key === key);
 
-  const menuRow = menu ? (rows.find((row) => row.key === menu.rowKey) ?? null) : null;
+  const menuRow: FlatRow | null = menu ? (rows.find((row) => row.key === menu.rowKey)
+    ?? pinnedSessions.flatMap((session): FlatRow[] => `pin:${session.id}` === menu.rowKey
+      ? [{ key: menu.rowKey, kind: 'session', folder: moveFolders.find((folder) => folder.id === session.folderId) ?? null, session }]
+      : [])[0] ?? null) : null;
 
   // HubMenu dismisses before invoking an action. Keep this page's anchor in
   // the closure so the action can replace the dismissed page in the same turn.
@@ -961,6 +970,16 @@ export function HubSessionTree({
       icon: 'file',
       onSelect: () => onOpenSession(session),
     });
+    if (onTogglePin) {
+      const pinned = pinnedIds.includes(session.id);
+      items.push({
+        kind: 'action',
+        id: pinned ? 'unpin' : 'pin',
+        label: t(pinned ? 'hub.unpin' : 'hub.pin'),
+        icon: pinned ? 'pin-filled' : 'pin',
+        onSelect: () => onTogglePin(session),
+      });
+    }
     if (onRenameSession) {
       items.push({
         kind: 'action',
@@ -1014,6 +1033,8 @@ export function HubSessionTree({
     onPeekSession,
     onDeleteSession,
     onMoveSession,
+    onTogglePin,
+    pinnedIds,
     openMovePage,
     openRootPage,
     confirmDeleteFolder,
@@ -1191,22 +1212,25 @@ export function HubSessionTree({
   const treeEmpty = tree.folders.length === 0 && tree.recents.length === 0;
   const narrowed = filter !== 'all' || searching;
 
-  const sessionRow = (session: HubSessionNode, folder: HubFolderNode | null) => {
-    const sessionKey = `s:${session.id}`;
+  const sessionRow = (session: HubSessionNode, folder: HubFolderNode | null, shortcut = false) => {
+    const sessionKey = `${shortcut ? 'pin' : 's'}:${session.id}`;
     const sessionIndex = indexOfKey(sessionKey);
     const labelKey = stateLabelKey(session.state);
     const sessionRenaming = renaming === sessionKey;
+    const pinned = pinnedIds.includes(session.id);
     return (
       <div
         key={session.id}
         ref={registerRow(sessionKey)}
-        role="treeitem"
-        aria-level={folder ? 2 : 1}
+        role={shortcut ? 'listitem' : 'treeitem'}
+        aria-level={shortcut ? undefined : folder ? 2 : 1}
+        aria-label={shortcut ? session.title : undefined}
         aria-current={session.id === currentSessionId ? 'true' : undefined}
         aria-roledescription={onMoveSession ? t('hub.dragSession') : undefined}
-        {...(labelKey ? { 'aria-describedby': `hub-state-${session.id}` } : {})}
-        tabIndex={cursor === sessionIndex ? 0 : -1}
-        data-testid={`hub-session-${session.id}`}
+        {...(labelKey ? { 'aria-describedby': `hub-state-${sessionKey}` } : {})}
+        tabIndex={shortcut || cursor === sessionIndex ? 0 : -1}
+        data-testid={`hub-${shortcut ? 'pinned' : 'session'}-${session.id}`}
+        data-initial={initialGlyph(session.title)}
         data-row-key={sessionKey}
         data-session-id={session.id}
         data-folder={folder ? folder.id : 'none'}
@@ -1214,18 +1238,28 @@ export function HubSessionTree({
         data-dragging={draggingId === session.id ? 'true' : undefined}
         data-tooltip={session.title}
         draggable={Boolean(onMoveSession) && !sessionRenaming}
-        className={`hub-row hub-row--session readable-tooltip${
+        className={`hub-row hub-row--session${shortcut ? ' hub-row--pinned' : ''} readable-tooltip${
           session.id === currentSessionId ? ' is-current' : ''
         }${menu?.rowKey === sessionKey ? ' is-menu-open' : ''}`}
-        onFocus={() => syncCursorToFocus(sessionKey)}
+        onFocus={shortcut ? undefined : () => syncCursorToFocus(sessionKey)}
         onClick={(event) => {
           // Nested inside the folder treeitem, so opening a session must not
           // also toggle its folder.
           event.stopPropagation();
-          setCursor(sessionIndex);
+          if (!shortcut) setCursor(sessionIndex);
           onOpenSession(session);
         }}
-        onKeyDown={(event) => onKeyDown(event, sessionIndex)}
+        onKeyDown={(event) => {
+          if (!shortcut) { onKeyDown(event, sessionIndex); return; }
+          if (event.target !== event.currentTarget) return;
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onOpenSession(session);
+          } else if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+            event.preventDefault();
+            setMenu({ rowKey: sessionKey, anchor: event.currentTarget, page: 'root' });
+          }
+        }}
         onContextMenu={(event) => openContextMenu(event, sessionKey, sessionIndex)}
         onDragStart={onMoveSession ? (event) => onSessionDragStart(event, session) : undefined}
         onDragEnd={onMoveSession ? onSessionDragEnd : undefined}
@@ -1237,7 +1271,7 @@ export function HubSessionTree({
         )}
         {labelKey ? (
           <span
-            id={`hub-state-${session.id}`}
+            id={`hub-state-${sessionKey}`}
             className={`hub-row__state hub-row__state--${session.state}`}
           >
             {t(labelKey)}
@@ -1250,6 +1284,22 @@ export function HubSessionTree({
           </span>
         )}
         <span className="hub-row__actions">
+          {onTogglePin ? (
+            <button
+              type="button"
+              className={`hub-row__action${pinned && !shortcut ? ' is-pinned' : ''}`}
+              data-testid={`hub-pin-${session.id}`}
+              aria-label={t(pinned ? 'hub.unpinSession' : 'hub.pinSession', { name: session.title })}
+              aria-pressed={pinned}
+              disabled={pinPendingIds.includes(session.id)}
+              onClick={(event) => {
+                event.stopPropagation();
+                onTogglePin(session);
+              }}
+            >
+              <Icon name={pinned ? 'pin-filled' : 'pin'} size={14} />
+            </button>
+          ) : null}
           {onPeekSession ? (
             <button
               type="button"
@@ -1259,14 +1309,14 @@ export function HubSessionTree({
               aria-label={t('hub.peekSession', { name: session.title })}
               onClick={(event) => {
                 event.stopPropagation();
-                setCursor(sessionIndex);
+                if (!shortcut) setCursor(sessionIndex);
                 onPeekSession(session);
               }}
             >
               <Icon name="info" size={14} />
             </button>
           ) : null}
-          {onRenameSession || onDeleteSession || onMoveSession ? (
+          {onRenameSession || onDeleteSession || onMoveSession || onTogglePin ? (
             <button
               type="button"
               tabIndex={-1}
@@ -1278,7 +1328,7 @@ export function HubSessionTree({
               onClick={(event) => {
                 event.stopPropagation();
                 const anchor = event.currentTarget as HTMLElement;
-                setCursor(sessionIndex);
+                if (!shortcut) setCursor(sessionIndex);
                 setMenu((prev) =>
                   prev?.rowKey === sessionKey ? null : { rowKey: sessionKey, anchor, page: 'root' },
                 );
@@ -1315,7 +1365,14 @@ export function HubSessionTree({
 
   return (
     <div className="hub-tree">
-      {openWork}
+      {pinnedSessions.length > 0 ? (
+        <section className="hub-pinned" role="list" aria-label={t('hub.pinned')} data-testid="hub-pinned">
+          <p className="hub-pinned__label">{t('hub.pinned')}</p>
+          {pinnedSessions.map((session) => sessionRow(
+            session, moveFolders.find((folder) => folder.id === session.folderId) ?? null, true,
+          ))}
+        </section>
+      ) : null}
       <div className="hub-tree__filters" role="group" aria-label={t('hub.filterLabel')}>
         <button
           type="button"

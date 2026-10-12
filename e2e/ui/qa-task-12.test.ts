@@ -89,7 +89,6 @@ async function gotoHub(page: Page) {
   const stale = await evaluateStorageSeed(page, () => {
     const had = window.localStorage.getItem('readable-studio:hub-rail-collapsed') === 'true';
     window.localStorage.removeItem('readable-studio:hub-rail-collapsed');
-    window.sessionStorage.removeItem('readable-studio:hub-open-work');
     return had;
   }, undefined);
   // A previous test may have left the rail collapsed; reload once so the rendered

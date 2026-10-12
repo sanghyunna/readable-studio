@@ -27,7 +27,7 @@ vi.mock('../../src/state/rail', async (importOriginal) => ({
         workspaceId: 'p1', folderId: 'p1', workspaceSessionCount: 1, state: 'idle',
       }],
     }],
-    recents: [], generatedAt: 1,
+    recents: [], pinned: [], generatedAt: 1,
   } }),
 }));
 beforeEach(() => applyPerformanceProfileToDocument('low'));

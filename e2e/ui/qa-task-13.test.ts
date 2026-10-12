@@ -429,12 +429,10 @@ test('canonical start proves R1-R11 and R14 from rendered paint and geometry', a
   await more.click();
   await expect(primarySessions).toHaveCount(12);
   await expect(more).toHaveCount(0);
-  // The reference includes open work, so open the legitimately running session
-  // through the same user path rather than synthesizing rail state in HubHome.
-  await page.getByTestId(`hub-session-${primaryProject.sessions[0]?.id}`).click();
-  await page.goBack();
-  await expect(page.locator('[data-project-rail]')).toBeVisible();
-  await expect(page.getByTestId('hub-open-work')).toBeVisible();
+  const pinnedRow = page.getByTestId(`hub-session-${primaryProject.sessions[0]?.id}`);
+  await pinnedRow.hover();
+  await pinnedRow.getByTestId(`hub-pin-${primaryProject.sessions[0]?.id}`).click();
+  await expect(page.getByTestId('hub-pinned')).toBeVisible();
   await captureCanonical(page, 'start');
 });
 

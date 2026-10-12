@@ -4,7 +4,7 @@
 // This is the boundary between "who owns the rail's state" and "who renders
 // it". AppInner owns ONE instance outside the keyed surface and every rail
 // consumer reads it through `useHubRail()`. Nothing in here assumes it lives
-// inside the hub's DOM: the daemon reads, the open-work / rail-width
+// inside the hub's DOM: the daemon reads, the rail-width
 // persistence, the keyboard bindings and the undo window are all keyed off
 // `window`, not off a component ancestor.
 //
@@ -38,9 +38,9 @@ import {
   renameFolder as renameFolderRequest,
   renameSession as renameSessionRequest,
   subscribeRailEvents,
+  setSessionPinned,
 } from '../../state/rail';
 import type { HubPaletteEntry } from './HubCommandPalette';
-import type { HubOpenWorkItem } from './HubOpenWork';
 import type {
   HubFolderNode,
   HubRailTree,
@@ -49,7 +49,6 @@ import type {
   HubSessionsStatus,
 } from './types';
 
-const OPEN_WORK_STORAGE_KEY = 'readable-studio:hub-open-work';
 /**
  * The rail's Ctrl/Cmd+I shortcut is owned by the hub's keyboard layer, which
  * dispatches this event rather than reaching into inspector state directly.
@@ -87,16 +86,6 @@ function loadRailWidth(): number {
 function narrowRailQuery(): MediaQueryList | null {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return null;
   return window.matchMedia(NARROW_RAIL_QUERY);
-}
-
-function loadOpenWorkIds(): string[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const value = JSON.parse(window.sessionStorage.getItem(OPEN_WORK_STORAGE_KEY) ?? '[]');
-    return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : [];
-  } catch {
-    return [];
-  }
 }
 
 function toSessionNode(session: RailSession, untitled: string): HubSessionNode {
@@ -156,7 +145,6 @@ const EMPTY_TREE: HubRailTree = { folders: [], recents: [] };
 
 export type HubPendingSessionDeletion = {
   readonly session: HubSessionNode;
-  readonly wasOpen: boolean;
   readonly wasPeeked: boolean;
 };
 
@@ -248,10 +236,11 @@ export interface HubRailController {
   readonly running: HubRailSessionEntry | null;
   readonly announcement: string;
 
-  readonly openWork: HubOpenWorkItem[];
+  readonly pinnedIds: string[];
+  readonly pinnedSessions: HubSessionNode[];
+  readonly pinPendingIds: string[];
+  readonly togglePin: (session: HubSessionNode) => Promise<void>;
   readonly openSession: (session: HubSessionNode) => void;
-  readonly openOpenWork: (item: HubOpenWorkItem) => void;
-  readonly closeOpenWork: (item: HubOpenWorkItem) => void;
 
   readonly peeked: HubRailSessionEntry | null;
   readonly peekSession: (session: HubSessionNode) => void;
@@ -324,16 +313,16 @@ export function useHubRailController({
   const [commandChip, setCommandChip] = useState<HubCommandChip | null>(null);
   const commandChipNonceRef = useRef(0);
   const paletteReturnRef = useRef<HTMLElement | null>(null);
-  // Open work is client-side: which sessions the user is holding open. The
-  // daemon has no concept of an open tab, so this must not be inferred from it.
-  const [openWorkIds, setOpenWorkIds] = useState<string[]>(loadOpenWorkIds);
-  const openWorkIdsRef = useRef(openWorkIds);
-  const updateOpenWorkIds = useCallback((update: (current: string[]) => string[]) => {
-    const next = update(openWorkIdsRef.current);
-    openWorkIdsRef.current = next;
-    window.sessionStorage.setItem(OPEN_WORK_STORAGE_KEY, JSON.stringify(next));
-    setOpenWorkIds(next);
-  }, []);
+  const [serverPinnedIds, setServerPinnedIds] = useState<string[]>([]);
+  const [pinChanges, setPinChanges] = useState<Record<string, boolean>>({});
+  const pinChangesRef = useRef(pinChanges);
+  const pinnedIds = useMemo(() => {
+    const ids = serverPinnedIds.filter((id) => pinChanges[id] !== false);
+    for (const [id, pinned] of Object.entries(pinChanges)) {
+      if (pinned && !ids.includes(id)) ids.push(id);
+    }
+    return ids;
+  }, [serverPinnedIds, pinChanges]);
   // The stored preference and the rendered state are deliberately separate:
   // below the narrow breakpoint the rail is forced collapsed WITHOUT rewriting
   // the preference, so widening the window restores what the user chose.
@@ -467,6 +456,7 @@ export function useHubRailController({
     if (result.ok) {
       railLoadedRef.current = true;
       setRailTree(toRailTree(result.rail, untitledLabel.current));
+      setServerPinnedIds(result.rail.pinned);
       setRailStatus('ready');
       return;
     }
@@ -723,46 +713,34 @@ export function useHubRailController({
   const openSession = useCallback(
     (session: HubSessionNode) => {
       setAnnouncement(t('hub.liveWorking', { project: '', session: session.title }));
-      updateOpenWorkIds((prev) =>
-        prev.includes(session.id) ? prev : [session.id, ...prev],
-      );
       onOpenSession(session.workspaceId, session.id);
     },
-    [onOpenSession, t, updateOpenWorkIds],
+    [onOpenSession, t],
   );
 
-  const openWork = useMemo<HubOpenWorkItem[]>(
-    () =>
-      openWorkIds.flatMap((id) => {
-        const entry = sessionIndex.get(id);
-        if (!entry) return [];
-        return [
-          {
-            sessionId: entry.session.id,
-            projectId: entry.session.workspaceId,
-            title: entry.session.title,
-            projectName: entry.project.name,
-          },
-        ];
-      }),
-    [openWorkIds, sessionIndex],
+  const pinnedSessions = useMemo(
+    () => pinnedIds.flatMap((id) => {
+      const entry = sessionIndex.get(id);
+      return entry ? [entry.session] : [];
+    }),
+    [pinnedIds, sessionIndex],
   );
-
-  const openOpenWork = useCallback(
-    (item: HubOpenWorkItem) => {
-      const entry = sessionIndex.get(item.sessionId);
-      if (entry) openSession(entry.session);
-    },
-    [openSession, sessionIndex],
-  );
-
-  const closeOpenWork = useCallback(
-    (item: HubOpenWorkItem) => {
-      updateOpenWorkIds((prev) => prev.filter((id) => id !== item.sessionId));
-      setAnnouncement(t('hub.closedOpenWork', { name: item.title }));
-    },
-    [t, updateOpenWorkIds],
-  );
+  const togglePin = useCallback(async (session: HubSessionNode) => {
+    if (session.id in pinChangesRef.current) return;
+    const pinned = !pinnedIds.includes(session.id);
+    invalidateRailRead();
+    pinChangesRef.current = { ...pinChangesRef.current, [session.id]: pinned };
+    setPinChanges(pinChangesRef.current);
+    const result = await setSessionPinned(session.id, pinned);
+    if (!mountedRef.current) return;
+    if (result) setServerPinnedIds(result.pinned);
+    else setAnnouncement(t('hub.pinFailed'));
+    const next = { ...pinChangesRef.current };
+    delete next[session.id];
+    pinChangesRef.current = next;
+    setPinChanges(next);
+    void loadRail();
+  }, [invalidateRailRead, loadRail, pinnedIds, t]);
 
   const peeked = peekedSessionId ? (sessionIndex.get(peekedSessionId) ?? null) : null;
 
@@ -837,12 +815,9 @@ export function useHubRailController({
   const restorePendingSession = useCallback(
     (pending: HubPendingSessionDeletion) => {
       setRemovedSessionIds((prev) => prev.filter((id) => id !== pending.session.id));
-      if (pending.wasOpen) {
-        updateOpenWorkIds((prev) => prev.includes(pending.session.id) ? prev : [...prev, pending.session.id]);
-      }
       if (pending.wasPeeked) setPeekedSessionId(pending.session.id);
     },
-    [updateOpenWorkIds],
+    [],
   );
 
   const commitPendingSessionDeletion = useCallback(() => {
@@ -880,17 +855,15 @@ export function useHubRailController({
       commitPendingSessionDeletion();
       const pending = {
         session,
-        wasOpen: openWorkIdsRef.current.includes(session.id),
         wasPeeked: peekedSessionId === session.id,
       } satisfies HubPendingSessionDeletion;
       setRemovedSessionIds((prev) => (prev.includes(session.id) ? prev : [...prev, session.id]));
-      updateOpenWorkIds((prev) => prev.filter((id) => id !== session.id));
       setPeekedSessionId((prev) => (prev === session.id ? null : prev));
       pendingSessionDeletionRef.current = pending;
       setPendingSessionDeletion(pending);
       setAnnouncement(t('hub.sessionDeleted', { name: session.title }));
     },
-    [commitPendingSessionDeletion, peekedSessionId, t, updateOpenWorkIds],
+    [commitPendingSessionDeletion, peekedSessionId, t],
   );
 
   const createFolder = useCallback(async (name: string): Promise<HubFolderNode | null> => {
@@ -927,7 +900,6 @@ export function useHubRailController({
       const ids = new Set(folder.sessions.map((session) => session.id));
       setSelectedFolderState((current) => (current?.id === folder.id ? null : current));
       if (sessions === 'delete') {
-        updateOpenWorkIds((prev) => prev.filter((id) => !ids.has(id)));
         setPeekedSessionId((prev) => (prev && ids.has(prev) ? null : prev));
       }
       const result = await mutateRail(
@@ -945,7 +917,7 @@ export function useHubRailController({
       );
       return result !== null;
     },
-    [mutateRail, updateOpenWorkIds],
+    [mutateRail],
   );
 
   return {
@@ -967,10 +939,11 @@ export function useHubRailController({
     retrySessions,
     running,
     announcement,
-    openWork,
+    pinnedIds,
+    pinnedSessions,
+    pinPendingIds: Object.keys(pinChanges),
+    togglePin,
     openSession,
-    openOpenWork,
-    closeOpenWork,
     peeked,
     peekSession,
     openPeekedSession,

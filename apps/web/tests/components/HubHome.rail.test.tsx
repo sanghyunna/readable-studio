@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-// The rail's stateful half: open work, the inspector, and the daemon-backed
+// The rail's stateful half: pinning, the inspector, and the daemon-backed
 // row mutations. A delete that leaves a ghost row or a stale count is the
 // failure this file exists to catch.
 
@@ -35,7 +35,7 @@ vi.mock('../../src/state/rail', async (importOriginal) => ({
         ...c, workspaceId: project.id, folderId: project.id, workspaceSessionCount: 1,
         state: c.latestRun?.status === 'running' ? 'running' : 'idle',
       })),
-    }))), recents: [], generatedAt: 1,
+    }))), recents: [], pinned: [], generatedAt: 1,
   }}),
   renameSession: async (id: string, title: string) => { patchConversation('p1', id, {title}); return {}; },
   deleteSession: async (id: string) => deleteConversation('p1', id),
@@ -48,7 +48,6 @@ import type { Project } from '../../src/types';
 
 afterEach(() => {
   cleanup();
-  window.sessionStorage.removeItem('readable-studio:hub-open-work');
   window.localStorage.removeItem('readable-studio:hub-rail-collapsed');
   window.localStorage.removeItem('readable-studio:hub-rail-width');
   listConversations.mockReset();
@@ -195,44 +194,14 @@ describe('HubHome rail', () => {
     expect(onNewProject).toHaveBeenCalledTimes(1);
   });
 
-  it('has no open-work section until a session is opened, then lists it', async () => {
+  it('opens a session without creating a second navigation group', async () => {
     seedTwoSessions();
-    renderHub();
-    await screen.findByTestId('hub-session-c1');
-    expect(screen.queryByTestId('hub-open-work')).toBeNull();
-
-    fireEvent.click(screen.getByTestId('hub-session-c1'));
-    expect(screen.getByTestId('hub-open-work')).toBeTruthy();
-    expect(screen.getByTestId('hub-open-work-c1')).toBeTruthy();
-  });
-
-  it('restores open work after the hub unmounts for workspace navigation', async () => {
-    seedTwoSessions();
-    const first = renderHub();
+    const onOpenSession = vi.fn();
+    renderHub({ onOpenSession });
     await screen.findByTestId('hub-session-c1');
     fireEvent.click(screen.getByTestId('hub-session-c1'));
-    first.unmount();
-
-    renderHub();
-    await screen.findByTestId('hub-session-c1');
-    expect(screen.getByTestId('hub-open-work-c1')).toBeTruthy();
-  });
-
-  it('removes the row the close action names and leaves the others alone', async () => {
-    seedTwoSessions();
-    renderHub();
-    await screen.findByTestId('hub-session-c1');
-    fireEvent.click(screen.getByTestId('hub-session-c1'));
-    fireEvent.click(screen.getByTestId('hub-session-c2'));
-    expect(screen.getByTestId('hub-open-work-c1')).toBeTruthy();
-    expect(screen.getByTestId('hub-open-work-c2')).toBeTruthy();
-
-    fireEvent.click(screen.getByTestId('hub-close-open-c1'));
-    expect(screen.queryByTestId('hub-open-work-c1')).toBeNull();
-    expect(screen.getByTestId('hub-open-work-c2')).toBeTruthy();
-    // Closing open work is not deleting: the session stays in the tree.
-    expect(screen.getByTestId('hub-session-c1')).toBeTruthy();
-    expect(deleteConversation).not.toHaveBeenCalled();
+    expect(onOpenSession).toHaveBeenCalledWith('p1', 'c1');
+    expect(screen.queryByTestId('hub-pinned')).toBeNull();
   });
 
   it('peeks a session into the inspector without navigating', async () => {
@@ -312,12 +281,10 @@ describe('HubHome rail', () => {
     fireEvent.click(screen.getByTestId('hub-menu-session-c2'));
     fireEvent.click(screen.getByTestId('hub-row-menu-delete'));
     expect(screen.queryByTestId('hub-session-c2')).toBeNull();
-    expect(screen.queryByTestId('hub-open-work-c2')).toBeNull();
     expect(screen.queryByTestId('hub-inspector')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
     expect(screen.getByTestId('hub-session-c2')).toBeTruthy();
-    expect(screen.getByTestId('hub-open-work-c2')).toBeTruthy();
     expect(screen.getByTestId('hub-inspector')).toBeTruthy();
     expect(deleteConversation).not.toHaveBeenCalled();
   });

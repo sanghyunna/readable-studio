@@ -34,7 +34,6 @@ import { fileURLToPath } from 'node:url';
 test.describe.configure({ mode: 'serial' });
 
 const STORAGE_KEY = 'readable-studio:config';
-const OPEN_WORK_KEY = 'readable-studio:hub-open-work';
 /** Matches HUB_SESSION_PAGE in apps/web/src/components/hub/types.ts. */
 const SESSION_PAGE = 5;
 
@@ -222,15 +221,14 @@ async function daemonProjects(
   return ((await response.json()) as { projects: Array<{ id: string; name: string }> }).projects;
 }
 
-async function gotoHub(page: Page, openWorkIds: string[] = []): Promise<void> {
+async function gotoHub(page: Page): Promise<void> {
   await page.setViewportSize({ width: 1440, height: 940 });
   await addStorageInitScript(page,
-    ({ key, value, openKey, open }) => {
+    ({ key, value }) => {
       window.localStorage.setItem(key, JSON.stringify(value));
       window.localStorage.removeItem('readable-studio:workspace-tabs:v1');
-      window.sessionStorage.setItem(openKey, JSON.stringify(open));
     },
-    { key: STORAGE_KEY, value: HOME_CONFIG, openKey: OPEN_WORK_KEY, open: openWorkIds },
+    { key: STORAGE_KEY, value: HOME_CONFIG },
   );
   await page.goto('/');
   await expect(page.getByTestId('entry-view-home')).toHaveAttribute('data-active', 'true');
@@ -442,34 +440,24 @@ test('exactly one sort control opens a menu whose name option sorts the tree', a
   await expect(page.getByTestId('hub-sort-menu')).toHaveCount(0);
 });
 
-test('open work renders held-open sessions and close removes only that row', async ({ page }) => {
-  // Both held sessions come from small projects, so the tree renders their
-  // rows on the first page - this test asserts open work is a HOLD rather than
-  // a delete, which means reading the row back out of the tree.
+test('pinned shortcuts stay in their folders and unpin independently', async ({ page }) => {
   const held = [seeded[1]!.sessions[0]!, seeded[3]!.sessions[0]!];
-  await gotoHub(page, held.map((s) => s.id));
-
-  const openWork = page.getByTestId('hub-open-work');
-  await expect(openWork).toBeVisible();
-  const first = page.getByTestId(`hub-open-work-${held[0]!.id}`);
-  const second = page.getByTestId(`hub-open-work-${held[1]!.id}`);
-  await expect(first).toBeVisible();
-  await expect(second).toBeVisible();
-  await expect(first).toContainText(held[0]!.title);
-
-  // ACCEPTANCE: the close action REMOVES the row - and only that one.
-  await page.getByTestId(`hub-close-open-${held[0]!.id}`).click();
-  await expect(first).toHaveCount(0);
-  await expect(second).toBeVisible();
-
-  // Closing open work is putting a session away, NOT deleting it: the tree row
-  // and the daemon record both survive.
-  await expect(page.getByTestId(`hub-session-${held[0]!.id}`)).toBeVisible();
-
-  // Closing the last held session retires the whole section rather than
-  // leaving an empty labelled box.
-  await page.getByTestId(`hub-close-open-${held[1]!.id}`).click();
-  await expect(page.getByTestId('hub-open-work')).toHaveCount(0);
+  await gotoHub(page);
+  for (const session of held) {
+    const row = page.getByTestId(`hub-session-${session.id}`);
+    await row.hover();
+    await row.getByTestId(`hub-pin-${session.id}`).click();
+    await expect(page.getByTestId(`hub-pinned-${session.id}`)).toBeVisible();
+    await expect(row).toBeVisible();
+  }
+  for (const session of held) {
+    const shortcut = page.getByTestId(`hub-pinned-${session.id}`);
+    await shortcut.hover();
+    await shortcut.getByTestId(`hub-pin-${session.id}`).click();
+    await expect(shortcut).toHaveCount(0);
+    await expect(page.getByTestId(`hub-session-${session.id}`)).toBeVisible();
+  }
+  await expect(page.getByTestId('hub-pinned')).toHaveCount(0);
 });
 
 test('peek opens the inspector; Space peeks the focused row; Escape restores focus', async ({

@@ -67,7 +67,7 @@ function railBody(folderSessions: RailSession[], recents: RailSession[]): RailRe
       ? [{ id: 'fast', name: '빠른 프로젝트', createdAt: 1, updatedAt: 100, sessions: folderSessions }]
       : [],
     recents,
-    generatedAt: 1,
+    pinned: [], generatedAt: 1,
   };
 }
 

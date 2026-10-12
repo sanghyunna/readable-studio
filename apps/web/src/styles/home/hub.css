@@ -488,7 +488,7 @@
 
 .hub-tree {
   display: grid;
-  /* Optional open-work and status rows must not stretch the filters/body. */
+  /* Optional pinned and status rows must not stretch the filters/body. */
   grid-auto-rows: auto;
   align-content: start;
   min-inline-size: 0;
@@ -759,6 +759,7 @@
   pointer-events: none;
 }
 
+.hub-row__action.is-pinned,
 .hub-row:hover .hub-row__action,
 .hub-row--session.is-current .hub-row__action,
 .hub-row:focus-within .hub-row__action,
@@ -810,14 +811,14 @@
   outline: none;
 }
 
-/* ---- open work ---- */
+/* ---- pinned shortcuts ---- */
 
-.hub-open {
+.hub-pinned {
   min-inline-size: 0;
   padding: 0 8px 4px;
 }
 
-.hub-open__label {
+.hub-pinned__label {
   display: flex;
   align-items: center;
   margin: 0;
@@ -828,27 +829,27 @@
   letter-spacing: 0.01em;
 }
 
-.hub-row--open {
+.hub-row--pinned {
   padding-left: 14px;
   min-height: 32px;
 }
 
-.hub-row--open .hub-row__title {
+.hub-row--pinned .hub-row__title {
   font-size: 12.5px;
   font-weight: 450;
   color: var(--text-muted);
 }
 
-.hub-row--open.is-current .hub-row__title {
+.hub-row--pinned.is-current .hub-row__title {
   color: var(--text);
   font-weight: 600;
 }
 
-.hub-row--open.is-current {
+.hub-row--pinned.is-current {
   background: var(--hub-accent-fill);
 }
 
-.hub-row--open.is-current::before {
+.hub-row--pinned.is-current::before {
   content: '';
   position: absolute;
   inset-block: 6px;
@@ -1525,7 +1526,7 @@
 [data-project-rail-state='collapsed'] .hub-tree__group-label,
 [data-project-rail-state='collapsed'] .hub-tree__empty,
 [data-project-rail-state='collapsed'] .hub-tree__group,
-[data-project-rail-state='collapsed'] .hub-open__label,
+[data-project-rail-state='collapsed'] .hub-pinned__label,
 [data-project-rail-state='collapsed'] .hub-row__title,
 [data-project-rail-state='collapsed'] .hub-row__state,
 [data-project-rail-state='collapsed'] .hub-row__meta,
@@ -1635,13 +1636,13 @@
 }
 
 [data-project-rail-state='collapsed'] .hub-tree__body,
-[data-project-rail-state='collapsed'] .hub-open {
+[data-project-rail-state='collapsed'] .hub-pinned {
   padding-inline: 4px;
 }
 
-/* The open-work group keeps a rule under it so its glyphs read as a distinct
+/* The pinned group keeps a rule under it so its glyphs read as a distinct
    list rather than merging into the project column. */
-[data-project-rail-state='collapsed'] .hub-open {
+[data-project-rail-state='collapsed'] .hub-pinned {
   border-bottom: 1px solid var(--border-subtle);
   margin-bottom: 8px;
   padding-bottom: 8px;
@@ -1680,23 +1681,23 @@
   color: var(--text-muted);
 }
 
-[data-project-rail-state='collapsed'] .hub-row--open::before {
+[data-project-rail-state='collapsed'] .hub-row--pinned::before {
   color: var(--hub-accent);
 }
 
-[data-project-rail-state='collapsed'] .hub-row--open.is-current,
+[data-project-rail-state='collapsed'] .hub-row--pinned.is-current,
 [data-project-rail-state='collapsed'] .hub-row--project[data-current='true'] {
   background: var(--hub-accent-fill);
 }
 
-[data-project-rail-state='collapsed'] .hub-row--open.is-current::before,
+[data-project-rail-state='collapsed'] .hub-row--pinned.is-current::before,
 [data-project-rail-state='collapsed'] .hub-row--project[data-current='true']::before {
   color: var(--hub-accent);
 }
 
-/* Expanded open-work rows use this pseudo-element as an absolutely positioned
+/* Expanded pinned rows use this pseudo-element as an absolutely positioned
    selection bar. In the collapsed rail it becomes the visible glyph again. */
-[data-project-rail-state='collapsed'] .hub-row--open.is-current::before {
+[data-project-rail-state='collapsed'] .hub-row--pinned.is-current::before {
   position: static;
   inset: auto;
   width: auto;
@@ -1704,7 +1705,7 @@
   background: none;
 }
 
-[data-project-rail-state='collapsed'] .hub-row--open.is-current::before,
+[data-project-rail-state='collapsed'] .hub-row--pinned.is-current::before,
 [data-project-rail-state='collapsed'] .hub-row--project[data-state='running'] {
   box-shadow: inset 2px 0 0 var(--hub-accent);
 }
@@ -1723,9 +1724,9 @@
   color: var(--warning);
 }
 
-/* The inset current marker on an open-work row is drawn by ::before in the
+/* The inset current marker on an pinned row is drawn by ::before in the
    expanded rail, which the glyph now occupies. */
-[data-project-rail-state='collapsed'] .hub-row--open.is-current::after,
+[data-project-rail-state='collapsed'] .hub-row--pinned.is-current::after,
 [data-project-rail-state='collapsed'] .hub-row--session.is-current::after {
   content: none;
 }
@@ -1790,11 +1791,11 @@
     padding-bottom: 2px;
   }
 
-  .hub-open {
+  .hub-pinned {
     padding-bottom: 2px;
   }
 
-  .hub-open__label {
+  .hub-pinned__label {
     padding-block: 5px 4px;
   }
 

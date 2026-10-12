@@ -210,7 +210,7 @@ describe('ProjectView conversation delete', () => {
         })),
       }],
       recents: [],
-      generatedAt: 1,
+      pinned: [], generatedAt: 1,
     });
     fetchRail.mockImplementation(async () => ({ ok: true, rail: railFixture() }));
     listConversations.mockImplementation(async () => stored);

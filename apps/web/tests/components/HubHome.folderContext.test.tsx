@@ -60,7 +60,7 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     requests.push({ url, init });
-    const payload = url === '/api/rail' ? { folders: [folder], recents: [], generatedAt: 1 }
+    const payload = url === '/api/rail' ? { folders: [folder], recents: [], pinned: [], generatedAt: 1 }
       : url === '/api/sessions' ? { workspace, session }
       : url === '/api/import/claude-design' ? { project: workspace, conversationId: session.id, entryFile: 'index.html' }
       : url === `/api/sessions/${session.id}` ? { session: { ...session, folderId: folder.id } }

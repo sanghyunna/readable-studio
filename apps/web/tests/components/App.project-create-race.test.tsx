@@ -6,7 +6,7 @@ import type { ProjectImportHandlers } from '../../src/components/project-create'
 
 import { createSession } from '../../src/state/sessions';
 vi.mock('../../src/state/sessions', () => ({ createSession: vi.fn() }));
-vi.mock('../../src/state/rail', async (original) => ({ ...await original<typeof import('../../src/state/rail')>(), fetchRail: async () => ({ ok: true, rail: { folders: [], recents: [], generatedAt: 1 } }) }));
+vi.mock('../../src/state/rail', async (original) => ({ ...await original<typeof import('../../src/state/rail')>(), fetchRail: async () => ({ ok: true, rail: { folders: [], recents: [], pinned: [], generatedAt: 1 } }) }));
 
 import { App } from '../../src/App';
 import type { AgentInfo, AppConfig, Project } from '../../src/types';

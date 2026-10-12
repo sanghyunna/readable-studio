@@ -36,7 +36,7 @@ const { designsTabRender, libraryPlugin, listConversations } = vi.hoisted(() => 
 
 vi.mock('../../src/state/rail', async (original) => ({
   ...await original<typeof import('../../src/state/rail')>(),
-  fetchRail: async () => ({ ok: true, rail: { folders: [], recents: [{ id: 'live-session', workspaceId: 'live-project', folderId: null, title: 'Live session', createdAt: 1, updatedAt: 1, messageCount: 1, state: 'running', workspaceSessionCount: 1 }], generatedAt: 1 } }),
+  fetchRail: async () => ({ ok: true, rail: { folders: [], recents: [{ id: 'live-session', workspaceId: 'live-project', folderId: null, title: 'Live session', createdAt: 1, updatedAt: 1, messageCount: 1, state: 'running', workspaceSessionCount: 1 }], pinned: [], generatedAt: 1 } }),
 }));
 vi.mock('../../src/state/projects', async () => {
   const actual = await vi.importActual<typeof import('../../src/state/projects')>(

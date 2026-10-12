@@ -3,7 +3,7 @@
 // The hub only ever renders data the daemon already returns from
 // `GET /api/rail`: folders (UI: projects) with their sessions, and standalone
 // sessions (recents) with title/sessionMode/messageCount/updatedAt/state. Archive, unread,
-// pinning, cross-project search, artifact lineage and session thumbnails do
+// cross-project search, artifact lineage and session thumbnails do
 // NOT exist server-side and must not be invented here.
 
 /** Session state the hub is allowed to render, derived from `latestRun.status`. */

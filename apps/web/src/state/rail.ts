@@ -28,6 +28,7 @@ export async function fetchRail(options: { signal?: AbortSignal } = {}): Promise
     if (
       !Array.isArray(body?.folders) ||
       !Array.isArray(body?.recents) ||
+      !Array.isArray(body?.pinned) ||
       !body.folders.every((f) => f && Array.isArray((f as Record<string, unknown>).sessions))
     ) {
       return { ok: false, aborted: false };
@@ -89,6 +90,10 @@ async function sendJson<T>(url: string, method: string, body?: unknown): Promise
 
 const sessionUrl = (id: string) => `/api/sessions/${encodeURIComponent(id)}`;
 const folderUrl = (id: string) => `/api/folders/${encodeURIComponent(id)}`;
+
+export async function setSessionPinned(sessionId: string, pinned: boolean): Promise<{ pinned: string[] } | null> {
+  return sendJson<{ pinned: string[] }>(`${sessionUrl(sessionId)}/pin`, pinned ? 'PUT' : 'DELETE');
+}
 
 /** `PATCH /api/sessions/:id { folderId }`; `null` = "No project". */
 export async function moveSession(sessionId: string, folderId: string | null): Promise<Conversation | null> {

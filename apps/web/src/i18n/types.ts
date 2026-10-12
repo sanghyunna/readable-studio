@@ -969,8 +969,11 @@ export interface Dict {
   'hub.sessionInfo': string;
   'hub.peekSession': string;
   'hub.rowMenu': string;
-  'hub.closeOpenWork': string;
-  'hub.closedOpenWork': string;
+  'hub.pin': string;
+  'hub.unpin': string;
+  'hub.pinSession': string;
+  'hub.unpinSession': string;
+  'hub.pinFailed': string;
   'hub.inspectorTitle': string;
   'hub.inspectorClose': string;
   'hub.inspectorState': string;
@@ -986,7 +989,7 @@ export interface Dict {
   'hub.sessionsStale': string;
   'hub.retrySessions': string;
   'hub.sessionsFailed': string;
-  'hub.openWork': string;
+  'hub.pinned': string;
   'hub.projects': string;
   'hub.results': string;
   'hub.searchPlaceholder': string;
