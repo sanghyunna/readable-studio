@@ -7,6 +7,29 @@ import { I18nProvider } from '../../src/i18n';
 const candidate={sourceRoot:'D:\\Old',sourceData:'D:\\Old\\ReadableStudioData\\namespaces\\rg\\data',projectCount:2,modifiedAt:'2026-09-28T00:00:00Z'};
 afterEach(()=>{cleanup();vi.unstubAllGlobals();vi.useRealTimers();});
 function reply(body:unknown){return {ok:true,json:async()=>body};}
+it('shows request-time running source before confirmation and waits for explicit restart after stop',async()=>{
+  const runningSource={sourceRoot:candidate.sourceRoot,sourceData:candidate.sourceData,processes:[{pid:123,executablePath:'D:\\Old\\Readable Studio.exe'}]};
+  const fetcher=vi.fn().mockResolvedValueOnce(reply({state:'offered',candidates:[candidate]}))
+    .mockResolvedValueOnce(new Response(JSON.stringify({error:'SOURCE_RUNNING: blocked',code:'SOURCE_RUNNING',runningSource}),{status:409}))
+    .mockResolvedValueOnce(reply({state:'pending',restartRequired:true}))
+    .mockResolvedValueOnce(reply({state:'pending',restartRequired:true}));
+  vi.stubGlobal('fetch',fetcher);const resolved=vi.fn();
+  await act(async()=>{render(<I18nProvider initial="ko"><DataImportModal onResolved={resolved}/></I18nProvider>);});
+  await act(async()=>{fireEvent.click(screen.getByRole('button',{name:'가져오기'}));});
+  expect(screen.getByRole('button',{name:'이전 버전 종료 후 가져오기'})).toBeTruthy();
+  expect(screen.getByText('PID 123')).toBeTruthy();
+  expect(screen.queryByRole('button',{name:'다시 시작하기'})).toBeNull();
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  await act(async()=>{fireEvent.click(screen.getByRole('button',{name:'이전 버전 종료 후 가져오기'}));});
+  expect(screen.getByRole('button',{name:'가져오지 않기'})).toBeTruthy();
+  expect(screen.getByRole('button',{name:'다시 시작하기'})).toBeTruthy();
+  expect(fetcher).toHaveBeenCalledTimes(3);
+  expect(resolved).not.toHaveBeenCalled();
+  await act(async()=>{fireEvent.click(screen.getByRole('button',{name:'다시 시작하기'}));});
+  expect(fetcher.mock.calls.slice(1).map(call=>JSON.parse(String(call[1]?.body)))).toEqual([
+    {action:'import',from:candidate.sourceData},{action:'stop-source',from:candidate.sourceData},{action:'restart'},
+  ]);
+});
 it('gates welcome until a decision, posts selected source, and remains gated for restart',async()=>{
   const resolved=vi.fn(); const fetcher=vi.fn(async(_url:string,options?:RequestInit)=>reply(options?.method==='POST'?{state:'pending',restartRequired:true}:{state:'offered',candidates:[candidate]}));vi.stubGlobal('fetch',fetcher);
   await act(async()=>{render(<DataImportModal onResolved={resolved}/>);});

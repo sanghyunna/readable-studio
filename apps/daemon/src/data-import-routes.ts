@@ -4,7 +4,7 @@ import os from 'node:os';
 import { listWindowsExecutableProcesses, processesInsideRoot, stopProcessesInsideRoot, type ExecutableProcess } from '@readable-studio/platform';
 import Database from 'better-sqlite3';
 import type { Express } from 'express';
-import type { DataImportCandidate, DataImportCandidatesResponse, DataImportState } from '@readable-studio/contracts';
+import type { DataImportCandidate, DataImportCandidatesResponse, DataImportSourceRunningError, DataImportState } from '@readable-studio/contracts';
 
 const MARKER = 'data-import.json';
 const OFFER_OWNER = `${process.pid}:${Date.now()}`;
@@ -158,10 +158,16 @@ export function registerDataImportRoutes(app: Express, options: DataImportRouteO
         const from = path.resolve(req.body.from);
         const candidate = found.candidates.find(item => item.sourceData.toLowerCase() === from.toLowerCase() || item.sourceRoot.toLowerCase() === from.toLowerCase());
         if (!candidate) throw new Error('이전 작업 폴더를 찾지 못했습니다. 원본 폴더가 그대로 있는지 확인해 주세요.');
+        const processes = processesInsideRoot(candidate.sourceRoot, await listProcesses());
+        if (processes.length) {
+          const error = 'SOURCE_RUNNING: 이전 버전이 실행 중입니다. 이전 버전을 닫은 뒤 다시 가져와 주세요.';
+          await record(options.dataRoot, { state: 'failed', error, sourceRoot: candidate.sourceRoot, sourceData: candidate.sourceData });
+          return { code: 'SOURCE_RUNNING', error, runningSource: { sourceRoot: candidate.sourceRoot, sourceData: candidate.sourceData, processes } } satisfies DataImportSourceRunningError;
+        }
         await record(options.dataRoot, { state: 'pending', sourceRoot: candidate.sourceRoot, sourceData: candidate.sourceData, requestedAt: new Date().toISOString() });
         return { state: 'pending', restartRequired: true };
       });
-      res.json(result);
+      res.status('code' in result ? 409 : 200).json(result);
     } catch (error) { res.status(409).json({ error: error instanceof Error ? error.message : String(error) }); }
   });
 }

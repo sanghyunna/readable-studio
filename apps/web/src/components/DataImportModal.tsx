@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button, ToggleCard } from '@readable-studio/components';
-import type { DataImportCandidatesResponse, DataImportRequest } from '@readable-studio/contracts';
+import type { DataImportCandidatesResponse, DataImportRequest, DataImportSourceRunningError } from '@readable-studio/contracts';
 import { useI18n } from '../i18n';
 import styles from './DataImportModal.module.css';
 
@@ -52,6 +52,13 @@ export function DataImportModal({ onResolved }: { onResolved: () => void }) {
       const response = await fetch('/api/data-import/request', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       if ([502, 503, 504].includes(response.status)) throw new TypeError('Backend unreachable');
       const value = await response.json();
+      if (!response.ok && value.code === 'SOURCE_RUNNING' && value.runningSource) {
+        const blocked = value as DataImportSourceRunningError;
+        setPending(false);
+        setResult({ state: 'failed', candidates: [], error: blocked.error, runningSource: blocked.runningSource });
+        setSelected(blocked.runningSource.sourceData);
+        return;
+      }
       if (!response.ok) throw new Error(value.error || t('dataImport.safeFailure'));
       if (body.action === 'restart') {
         restartAccepted = true;

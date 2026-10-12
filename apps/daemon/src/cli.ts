@@ -7870,7 +7870,15 @@ async function runDataImport(args) {
     return;
   }
   const response = await fetch(`${base}/api/data-import/request`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: flags['stop-source'] ? 'stop-source' : 'import', from }) });
-  if (!response.ok) return structuredHttpFailure(response);
+  if (!response.ok) {
+    const blocked = await response.clone().json().catch(() => null);
+    if (blocked?.code === 'SOURCE_RUNNING') {
+      process.stderr.write(JSON.stringify({ error: { code: blocked.code, message: blocked.error, data: { runningSource: blocked.runningSource } } }) + '\n');
+      process.exitCode = 1;
+      return;
+    }
+    return structuredHttpFailure(response);
+  }
   const result = await response.json();
   if (flags.json) return process.stdout.write(JSON.stringify(result) + '\n');
   console.log('Import queued. Close and reopen Readable Studio manually, or confirm restart in the desktop app to copy and verify your work.');

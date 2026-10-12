@@ -60,6 +60,43 @@ it('refuses to stop a source containing the current application',async()=>{
   expect((await fetch(`${f.url}/request`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'stop-source',from:f.sourceData})})).status).toBe(409);
   expect(terminateProcess).not.toHaveBeenCalled();
 });
+it('blocks the import request while its source runs, then queues only after stopping it',async()=>{
+  let rows: Array<{pid:number;executablePath:string}>=[];
+  const terminateProcess=vi.fn(async()=>{rows=[];});
+  const f=await fixture({listProcesses:async()=>rows,terminateProcess});
+  rows=[{pid:100,executablePath:path.join(f.sourceRoot,'Readable Studio.exe')}];
+  const post=(action:string)=>fetch(`${f.url}/request`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action,from:f.sourceRoot})});
+  const blocked=await post('import');
+  expect(blocked.status).toBe(409);
+  expect(await blocked.json()).toMatchObject({code:'SOURCE_RUNNING',runningSource:{sourceRoot:f.sourceRoot,sourceData:f.sourceData,processes:rows}});
+  const marker=JSON.parse(await readFile(path.join(f.dataRoot,'data-import.json'),'utf8'));
+  expect(marker).toMatchObject({state:'failed',sourceRoot:f.sourceRoot});
+  expect(marker).not.toHaveProperty('restartRequested');
+  expect((await post('restart')).status).toBe(409);
+  expect(await(await post('stop-source')).json()).toEqual({state:'pending',restartRequired:true});
+  expect(terminateProcess).toHaveBeenCalledOnce();
+  expect(JSON.parse(await readFile(path.join(f.dataRoot,'data-import.json'),'utf8'))).not.toHaveProperty('restartRequested');
+});
+it('returns the running source as structured CLI JSON without requesting restart',async()=>{
+  let rows: Array<{pid:number;executablePath:string}>=[];
+  const f=await fixture({listProcesses:async()=>rows});
+  rows=[{pid:100,executablePath:path.join(f.sourceRoot,'Readable Studio.exe')}];
+  const source=readFileSync(new URL('../src/cli.ts',import.meta.url),'utf8');
+  const code=source.slice(source.indexOf('async function runDataImport('),source.indexOf('\nasync function runVersion('));
+  const output=vi.fn(); const errors=vi.fn(); const cliFetch=vi.fn(fetch);
+  const cliProcess={stdout:{write:output},stderr:{write:errors},exitCode:0};
+  const context=vm.createContext({fetch:cliFetch,console,process:cliProcess,
+    parseFlags:()=>({from:f.sourceRoot,json:true}),positionalArgs:()=>['import'],
+    cliDaemonBaseUrl:async()=>f.url.replace('/api/data-import',''),
+    structuredHttpFailure:()=>{throw new Error('Unstructured CLI failure');},
+  });
+  await vm.runInContext(code+'\nrunDataImport([])',context);
+  expect(JSON.parse(errors.mock.calls[0]![0])).toMatchObject({error:{code:'SOURCE_RUNNING',data:{runningSource:{sourceRoot:f.sourceRoot,sourceData:f.sourceData,processes:rows}}}});
+  expect(cliProcess.exitCode).toBe(1);
+  expect(output).not.toHaveBeenCalled();
+  expect(cliFetch.mock.calls.map(([url])=>String(url))).toEqual([`${f.url}/candidates`,`${f.url}/request`]);
+  expect(JSON.parse(await readFile(path.join(f.dataRoot,'data-import.json'),'utf8'))).not.toHaveProperty('restartRequested');
+});
 it('lets the CLI cancel pending imports without requesting restart',async()=>{
   const f=await fixture();
   await writeFile(path.join(f.dataRoot,'data-import.json'),JSON.stringify({state:'pending',sourceRoot:f.sourceRoot,sourceData:f.sourceData,restartRequested:true}));

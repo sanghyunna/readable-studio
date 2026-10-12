@@ -23,3 +23,8 @@ export interface DataImportRequestResponse {
   state: 'pending' | 'declined';
   restartRequired: boolean;
 }
+export interface DataImportSourceRunningError {
+  code: 'SOURCE_RUNNING';
+  error: string;
+  runningSource: NonNullable<DataImportCandidatesResponse['runningSource']>;
+}
