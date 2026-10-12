@@ -78,6 +78,13 @@ describe('Hub rail long-name truncation contract', () => {
     expect(declarations("[data-project-rail-state='collapsed'] .hub-row__title")).toContain('display: none;');
     expect(declarations("[data-project-rail-state='collapsed'] .hub-row")).toContain('padding: 0;');
   });
+
+  it('does not add an initial beside the collapsed folder icon', () => {
+    expect(declarations("[data-project-rail-state='collapsed'] .hub-row:not(.hub-row--folder)::before"))
+      .toContain('content: attr(data-initial);');
+    expect(declarations("[data-project-rail-state='collapsed'] .hub-row--folder::before"))
+      .toContain('content: none;');
+  });
 });
 
 describe('Hub rail search affordance contract', () => {

@@ -1674,7 +1674,7 @@
   display: none;
 }
 
-[data-project-rail-state='collapsed'] .hub-row::before {
+[data-project-rail-state='collapsed'] .hub-row:not(.hub-row--folder)::before {
   content: attr(data-initial);
   font-size: 13px;
   font-weight: 650;
