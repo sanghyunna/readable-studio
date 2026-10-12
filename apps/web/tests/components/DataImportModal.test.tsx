@@ -15,18 +15,43 @@ it('gates welcome until a decision, posts selected source, and remains gated for
   expect(JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body))).toEqual({action:'import',from:candidate.sourceData});
   expect(resolved).not.toHaveBeenCalled();expect(screen.queryAllByRole('button')).toHaveLength(0);
 });
-it('shows the blocked source and processes, and terminates that source before retrying',async()=>{
+it('offers one primary recovery action, shows the source once, and automatically queues import after termination',async()=>{
   const runningSource={sourceRoot:candidate.sourceRoot,sourceData:candidate.sourceData,processes:[{pid:123,executablePath:'D:\\Old\\Readable Studio.exe'}]};
-  const fetcher=vi.fn(async(_url:string,options?:RequestInit)=>reply(options?.method==='POST'?{state:'pending',restartRequired:true}:{state:'failed',candidates:[],error:'SOURCE_RUNNING',runningSource}));
+  const fetcher=vi.fn(async(_url:string,options?:RequestInit)=>reply(options?.method==='POST'?{state:'pending',restartRequired:true}:{state:'failed',candidates:[candidate],error:`SOURCE_RUNNING: ${candidate.sourceRoot} PID 123 D:\\Old\\Readable Studio.exe`,runningSource}));
   vi.stubGlobal('fetch',fetcher);
   const resolved=vi.fn();
   await act(async()=>{render(<DataImportModal onResolved={resolved}/>);});
-  expect(screen.getByText(candidate.sourceRoot)).toBeTruthy();
-  expect(screen.getByText(/123.*Readable Studio\.exe/)).toBeTruthy();
-  await act(async()=>{fireEvent.click(screen.getByRole('button',{name:getEn()['dataImport.stopSource']}));});
+  expect(screen.getAllByText(candidate.sourceRoot)).toHaveLength(1);
+  expect(screen.getByText('PID 123')).toBeTruthy();
+  expect(screen.getByText(runningSource.processes[0]!.executablePath)).toBeTruthy();
+  expect(screen.queryByRole('alert')).toBeNull();
+  const primary=screen.getByRole('dialog').querySelectorAll('button.primary');
+  expect(primary).toHaveLength(1);
+  expect(primary[0]!.textContent).toBe(getEn()['dataImport.stopSource']);
+  await act(async()=>{fireEvent.click(primary[0]!);});
   expect(JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body))).toEqual({action:'stop-source',from:candidate.sourceData});
   expect(screen.queryAllByRole('button')).toHaveLength(0);
+  expect(fetcher).toHaveBeenCalledTimes(2); // stop-source itself queues pending import; no second import POST.
   expect(resolved).not.toHaveBeenCalled();
+});
+it.each([409,503])('keeps a single retry action after termination fails (%s)',async(status)=>{
+  const runningSource={sourceRoot:candidate.sourceRoot,sourceData:candidate.sourceData,processes:[{pid:123,executablePath:'D:\\Old\\Readable Studio.exe'}]};
+  const fetcher=vi.fn().mockResolvedValueOnce(reply({state:'failed',candidates:[],error:'SOURCE_RUNNING',runningSource}))
+    .mockResolvedValueOnce(new Response(JSON.stringify({error:'Access denied'}),{status}))
+    .mockResolvedValueOnce(reply({state:'pending',restartRequired:true}));
+  vi.stubGlobal('fetch',fetcher);const resolved=vi.fn();
+  await act(async()=>{render(<DataImportModal onResolved={resolved}/>);});
+  const primary=screen.getByRole('dialog').querySelector('button.primary')!;
+  await act(async()=>{fireEvent.click(primary);});
+  expect(screen.getByRole('alert')).toBeTruthy();
+  expect(primary.hasAttribute('disabled')).toBe(false);
+  expect(screen.getByRole('dialog').querySelectorAll('button.primary')).toHaveLength(1);
+  expect(resolved).not.toHaveBeenCalled();
+  await act(async()=>{fireEvent.click(primary);});
+  expect(fetcher.mock.calls.slice(1).map(call=>JSON.parse(String(call[1]?.body)))).toEqual([
+    {action:'stop-source',from:candidate.sourceData},{action:'stop-source',from:candidate.sourceData},
+  ]);
+  expect(screen.queryAllByRole('button')).toHaveLength(0);expect(resolved).not.toHaveBeenCalled();
 });
 it('records decline before allowing welcome',async()=>{
   const resolved=vi.fn();const fetcher=vi.fn(async(_url:string,options?:RequestInit)=>reply(options?.method==='POST'?{state:'declined',restartRequired:false}:{state:'offered',candidates:[candidate]}));vi.stubGlobal('fetch',fetcher);

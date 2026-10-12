@@ -39,6 +39,8 @@ export function DataImportModal({ onResolved }: { onResolved: () => void }) {
   }, [onResolved]);
   useEffect(() => { dialog.current?.focus(); }, [result, error]);
 
+  const runningSource = result?.runningSource;
+
   async function request(body: DataImportRequest) {
     setBusy(true); setError('');
     try {
@@ -49,8 +51,9 @@ export function DataImportModal({ onResolved }: { onResolved: () => void }) {
       if (value.restartRequired) setPending(true);
       else onResolved();
     } catch (cause) {
-      setError(cause instanceof TypeError || cause instanceof SyntaxError
-        ? t('connection.reconnecting') : cause instanceof Error ? cause.message : t('dataImport.safeFailure'));
+      setError(body.action === 'stop-source' ? t('dataImport.stopFailure')
+        : cause instanceof TypeError || cause instanceof SyntaxError
+          ? t('connection.reconnecting') : cause instanceof Error ? cause.message : t('dataImport.safeFailure'));
     }
     finally { setBusy(false); }
   }
@@ -62,32 +65,35 @@ export function DataImportModal({ onResolved }: { onResolved: () => void }) {
     <section ref={dialog} tabIndex={-1} className={`modal ${styles.modal}`} role="dialog" aria-modal="true" aria-labelledby="data-import-title" data-testid="data-import-modal"
       onKeyDown={event => {
         if (event.key !== 'Tab') return;
-        const controls = Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href]') ?? []);
+        const controls = Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], summary') ?? []);
         const first = controls[0]; const last = controls.at(-1);
         if (!first) { event.preventDefault(); return; }
         if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.current)) { event.preventDefault(); last?.focus(); }
         else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
       }}>
       <header className={styles.head}>
-        <h2 id="data-import-title">{t(pending ? 'dataImport.restarting' : result?.state === 'failed' ? 'dataImport.failed' : 'dataImport.title')}</h2>
-        <p>{t(pending ? 'dataImport.restartHint' : 'dataImport.description')}</p>
+        <h2 id="data-import-title">{t(pending ? 'dataImport.restarting' : runningSource ? 'dataImport.sourceRunning' : result?.state === 'failed' ? 'dataImport.failed' : 'dataImport.title')}</h2>
+        <p>{t(pending ? 'dataImport.restartHint' : runningSource ? 'dataImport.stopHint' : 'dataImport.description')}</p>
       </header>
-      {!pending && result?.candidates.length ? <div className={styles.candidates} role="group" aria-label={t('dataImport.folders')}>
+      {!pending && !runningSource && result?.candidates.length ? <div className={styles.candidates} role="group" aria-label={t('dataImport.folders')}>
         {result.candidates.map(candidate => <ToggleCard key={candidate.sourceData} className={styles.candidate} pressed={selected === candidate.sourceData} disabled={busy} onPressedChange={() => setSelected(candidate.sourceData)}>
           <span className={styles.path}>{candidate.sourceRoot}</span>
           <span className={styles.meta}>{t('dataImport.projects', { count: String(candidate.projectCount) })} · <time dateTime={candidate.modifiedAt}>{new Date(candidate.modifiedAt).toLocaleString(locale)}</time></span>
         </ToggleCard>)}
       </div> : null}
-      {!pending && result?.runningSource ? <div className={styles.runningSource} role="status">
-        <p className={styles.path}>{result.runningSource.sourceRoot}</p>
-        <ul>{result.runningSource.processes.map(row => <li key={row.pid}>PID {row.pid}: {row.executablePath}</li>)}</ul>
+      {!pending && runningSource ? <div className={styles.runningSource}>
+        <p className={styles.sourcePath}>{runningSource.sourceRoot}</p>
+        {runningSource.processes.length ? <details className={styles.processDetails}>
+          <summary>{t('dataImport.processDetails', { count: String(runningSource.processes.length) })}</summary>
+          <ul>{runningSource.processes.map(row => <li key={row.pid}><span>PID {row.pid}</span><span className={styles.executablePath}>{row.executablePath}</span></li>)}</ul>
+        </details> : null}
       </div> : null}
-      {!pending && (result?.error || error) ? <p className={styles.error} role="alert">{t('dataImport.safeFailure')}<br />{error || result?.error}</p> : null}
+      {!pending && (error || (!runningSource && result?.error)) ? <p className={styles.error} role="alert">{runningSource ? error : <>{t('dataImport.safeFailure')}<br />{error || result?.error}</>}</p> : null}
       {result?.warnings?.length ? <p className={styles.error} role="status">{t('dataImport.unreadable')}<br />{result.warnings.join('\n')}</p> : null}
       {!pending && (result || error) ? <footer className={styles.actions}>
         <Button variant="ghost" disabled={busy} onClick={() => void request({ action: 'decline' })}>{t('dataImport.startFresh')}</Button>
-        {result?.runningSource?.processes.length ? <Button variant="primary" disabled={busy} onClick={() => void request({ action: 'stop-source', from: result.runningSource!.sourceData })}>{t(busy ? 'dataImport.requesting' : 'dataImport.stopSource')}</Button> : null}
-        {selected ? <Button variant="primary" disabled={busy} onClick={() => void request({ action: 'import', from: selected })}>{t(busy ? 'dataImport.requesting' : 'dataImport.import')}</Button> : null}
+        {runningSource ? <Button variant="primary" disabled={busy} onClick={() => void request({ action: 'stop-source', from: runningSource.sourceData })}>{t(busy ? 'dataImport.requesting' : 'dataImport.stopSource')}</Button>
+          : selected ? <Button variant="primary" disabled={busy} onClick={() => void request({ action: 'import', from: selected })}>{t(busy ? 'dataImport.requesting' : 'dataImport.import')}</Button> : null}
       </footer> : null}
     </section>
   </div>;

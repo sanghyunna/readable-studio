@@ -21,6 +21,10 @@ export interface Dict {
   'dataImport.projects': string;
   'dataImport.import': string;
   'dataImport.stopSource': string;
+  'dataImport.sourceRunning': string;
+  'dataImport.stopHint': string;
+  'dataImport.processDetails': string;
+  'dataImport.stopFailure': string;
   'dataImport.startFresh': string;
   'dataImport.requesting': string;
   'dataImport.restarting': string;
