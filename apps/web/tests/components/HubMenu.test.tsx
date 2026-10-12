@@ -37,6 +37,21 @@ function MenuFixture({ items = ITEMS }: { readonly items?: readonly HubMenuItem[
 }
 
 describe('HubMenu semantics', () => {
+  it('places session flyouts beside the collapsed rail without covering later glyphs', () => {
+    const anchor = document.createElement('button');
+    document.body.append(anchor);
+    vi.spyOn(anchor, 'getBoundingClientRect').mockReturnValue({
+      x: 4, y: 120, left: 4, right: 40, top: 120, bottom: 158,
+      width: 36, height: 38, toJSON: () => ({}),
+    });
+    render(<HubMenu title="Sessions" items={[]} anchor={anchor} onClose={vi.fn()} testId="flyout">
+      <div role="tree">Session</div>
+    </HubMenu>);
+    expect(screen.getByTestId('flyout').style.left).toBe('46px');
+    expect(screen.getByTestId('flyout').style.top).toBe('120px');
+    anchor.remove();
+  });
+
   it('renders action, exclusive choice, and independent toggle with only their valid ARIA states', () => {
     // Given / When: a menu contains each supported item kind.
     render(<MenuFixture />);

@@ -112,12 +112,13 @@ export function HubMenu({ id, title, items, children, anchor, point = null, retu
       const maxLeft = Math.max(MENU_MARGIN, window.innerWidth - width - MENU_MARGIN);
       // A context menu hangs off the pointer, so its "anchor rect" is the
       // pointer itself - the same clamp then keeps it inside the viewport.
-      const left = point ? point.x : box.left;
+      const left = point ? point.x : children ? box.right + MENU_GAP : box.left;
       const openBelowFrom = point ? point.y : box.bottom;
       const openAboveFrom = point ? point.y : box.top;
       const below = openBelowFrom + MENU_GAP;
-      const top =
-        below + height > window.innerHeight - MENU_MARGIN
+      const top = children && !point
+        ? Math.max(MENU_MARGIN, Math.min(box.top, window.innerHeight - height - MENU_MARGIN))
+        : below + height > window.innerHeight - MENU_MARGIN
           ? Math.max(MENU_MARGIN, openAboveFrom - height - MENU_GAP)
           : below;
       setRect({ left: Math.min(Math.max(MENU_MARGIN, left), maxLeft), top });
