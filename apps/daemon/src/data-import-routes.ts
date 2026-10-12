@@ -1,6 +1,7 @@
 import { copyFile, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
+import { listWindowsExecutableProcesses, processesInsideRoot, stopProcessesInsideRoot, type ExecutableProcess } from '@readable-studio/platform';
 import Database from 'better-sqlite3';
 import type { Express } from 'express';
 import type { DataImportCandidate, DataImportCandidatesResponse, DataImportState } from '@readable-studio/contracts';
@@ -13,6 +14,9 @@ export interface DataImportRouteOptions {
   /** Packaged host supplies READABLE_UPDATE_ROOT; fixed data layout is the fallback. */
   appRoot?: string;
   namespace?: string;
+  /** Native process seams; the endpoint still authenticates the selected root. */
+  listProcesses?: () => Promise<ExecutableProcess[]>;
+  terminateProcess?: (target: ExecutableProcess) => Promise<void>;
 }
 function inside(root: string, value: string): boolean {
   const relative = path.relative(root, value);
@@ -97,11 +101,17 @@ export function registerDataImportRoutes(app: Express, options: DataImportRouteO
   const locked = <T>(fn: () => Promise<T>): Promise<T> => {
     const result = serial.then(fn, fn); serial = result.catch(() => undefined); return result;
   };
+  const listProcesses = options.listProcesses ?? (() => listWindowsExecutableProcesses(/readable.*studio/i));
   app.get('/api/data-import/candidates', async (_req, res) => {
     try {
       const result = await locked(async (): Promise<DataImportCandidatesResponse> => {
         const previous = await decision(options.dataRoot);
-        if (previous && (previous.state !== 'offered' || previous.offeredBy !== OFFER_OWNER)) return { state: previous.state === 'offered' ? 'unavailable' : previous.state, candidates: [], ...(previous.error ? { error: previous.error } : {}) };
+        if (previous && (previous.state !== 'offered' || previous.offeredBy !== OFFER_OWNER)) {
+          const runningSource = previous.state === 'failed' && previous.error?.startsWith('SOURCE_RUNNING') && previous.sourceRoot && previous.sourceData
+            ? { sourceRoot: await realpath(previous.sourceRoot), sourceData: previous.sourceData, processes: processesInsideRoot(await realpath(previous.sourceRoot), await listProcesses()) }
+            : undefined;
+          return { state: previous.state === 'offered' ? 'unavailable' : previous.state, candidates: [], ...(previous.error ? { error: previous.error } : {}), ...(runningSource ? { runningSource } : {}) };
+        }
         if (!layout(options) || !(await empty(options.dataRoot))) return { state: 'unavailable', candidates: [] };
         const found = await discoverDataImports(options);
         if (!found.candidates.length) return { state: 'unavailable', ...found };
@@ -114,13 +124,25 @@ export function registerDataImportRoutes(app: Express, options: DataImportRouteO
   app.post('/api/data-import/request', async (req, res) => {
     try {
       const action = req.body?.action;
-      if (action !== 'decline' && (action !== 'import' || typeof req.body?.from !== 'string')) { res.status(400).json({ error: 'Invalid import request' }); return; }
+      if (action !== 'decline' && (!['import', 'stop-source'].includes(action) || typeof req.body?.from !== 'string')) { res.status(400).json({ error: 'Invalid import request' }); return; }
       const result = await locked(async () => {
         const previous = await decision(options.dataRoot);
         if (previous?.state === 'done' || previous?.state === 'pending') throw new Error('이미 가져오기를 요청했습니다. 앱을 다시 시작해 주세요.');
         if (!(await empty(options.dataRoot))) throw new Error('현재 폴더에 작업이 있어 덮어쓰지 않았습니다.');
         if (action === 'decline') {
           await record(options.dataRoot, { state: 'declined' }); return { state: 'declined', restartRequired: false };
+        }
+        if (action === 'stop-source') {
+          if (previous?.state !== 'failed' || !previous.error?.startsWith('SOURCE_RUNNING') || !previous.sourceRoot || !previous.sourceData) throw new Error('The selected source does not match the blocked import');
+          const from = path.resolve(req.body.from).toLowerCase();
+          if (![previous.sourceRoot, previous.sourceData].some(value => path.resolve(value).toLowerCase() === from)) throw new Error('The selected source does not match the blocked import');
+          const sourceRoot = await realpath(previous.sourceRoot);
+          const sourceData = await realpath(previous.sourceData);
+          const current = layout(options);
+          if (!current || !inside(sourceRoot, sourceData) || inside(sourceRoot, await realpath(current.appRoot)) || inside(sourceRoot, process.execPath)) throw new Error('현재 버전이 있는 폴더의 프로세스는 종료할 수 없습니다. 이전 버전을 직접 닫아 주세요.');
+          await stopProcessesInsideRoot(sourceRoot, { list: listProcesses, ...(options.terminateProcess ? { terminate: options.terminateProcess } : {}) });
+          await record(options.dataRoot, { state: 'pending', sourceRoot, sourceData, requestedAt: new Date().toISOString() });
+          return { state: 'pending', restartRequired: true };
         }
         const found = await discoverDataImports(options);
         const from = path.resolve(req.body.from);

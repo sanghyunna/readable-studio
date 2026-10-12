@@ -1,10 +1,9 @@
 import { createHash } from 'node:crypto';
-import { execFile } from 'node:child_process';
+import { listWindowsExecutableProcesses, processesInsideRoot } from '@readable-studio/platform';
 import { createReadStream, watch, type FSWatcher } from 'node:fs';
 import { copyFile, lstat, mkdir, readFile, readdir, realpath, rename, rm, statfs, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { promisify } from 'node:util';
 
 const MARKER = 'data-import.json';
 const hash = (value: string | Buffer) => `sha256:${createHash('sha256').update(value).digest('hex')}`;
@@ -56,14 +55,7 @@ async function saveDecision(root: string, decision: Decision): Promise<void> {
 /** Unlike a stamp/lock scan this also sees <=1.2.1, which never wrote data.lock.
  * Failure to enumerate processes is a refusal, never evidence of quiescence. */
 async function processImages(): Promise<string[]> {
-  if (process.platform !== 'win32') throw new Error('Windows process inspection is required');
-  const { stdout } = await promisify(execFile)('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
-    "$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); Get-CimInstance Win32_Process | Select-Object Name,ExecutablePath,ProcessId | ConvertTo-Json -Compress"],
-  { encoding: 'utf8', windowsHide: true, timeout: 15000, maxBuffer: 8 * 1024 * 1024 });
-  const raw = JSON.parse(stdout) as { Name: string; ExecutablePath: string | null; ProcessId: number } | { Name: string; ExecutablePath: string | null; ProcessId: number }[];
-  const rows = Array.isArray(raw) ? raw : [raw];
-  if (rows.some(row => /readable.*studio/i.test(row.Name) && !row.ExecutablePath)) throw new Error('Cannot inspect a running Readable Studio process');
-  return rows.flatMap(row => row.ExecutablePath && row.ProcessId !== process.pid ? [row.ExecutablePath] : []);
+  return (await listWindowsExecutableProcesses(/readable.*studio/i)).map(row => row.executablePath);
 }
 
 async function digest(file: string): Promise<string> {
@@ -246,7 +238,9 @@ export async function runPendingDataImport(options: DataImportOptions): Promise<
     const target = await realpath(dataRoot);
     if (!inside(sourceRoot, sourceData) || [target, staging, scratch, empty].some(owned => inside(sourceData, owned) || inside(owned, sourceData))) throw new Error('Source and destination overlap');
     const ensureStopped = async () => {
-      if ((await (options.listProcessImages ?? processImages)()).some(image => inside(sourceRoot, path.resolve(image)))) throw new Error('SOURCE_RUNNING: 이전 버전이 실행 중입니다. 이전 버전을 닫은 뒤 다시 가져와 주세요.');
+      const images = await (options.listProcessImages ?? processImages)();
+      const running = processesInsideRoot(sourceRoot, images.map(executablePath => ({ pid: -1, executablePath })));
+      if (running.length) throw new Error(`SOURCE_RUNNING: 이전 버전이 실행 중입니다. 이전 버전을 닫은 뒤 다시 가져와 주세요.\n${sourceRoot}\n${running.map(row => row.executablePath).join('\n')}`);
     };
     await ensureStopped();
     if (await exists(path.join(dataRoot, 'app.sqlite'))) assertEmpty(path.join(dataRoot, 'app.sqlite'));

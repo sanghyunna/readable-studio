@@ -7830,9 +7830,9 @@ is the same one Settings → About → Export diagnostics produces.
 
 async function runDataImport(args) {
   const strings = new Set(['daemon-url', 'from', 'prompt-file']);
-  const flags = parseFlags(args, { string: strings, boolean: new Set(['json', 'help', 'h']) });
+  const flags = parseFlags(args, { string: strings, boolean: new Set(['json', 'help', 'h', 'stop-source']) });
   if (flags.help || flags.h || positionalArgs(args, strings)[0] !== 'import') {
-    console.log('Usage: readable data import [--from <folder>] [--json]');
+    console.log('Usage: readable data import [--from <folder>] [--stop-source] [--json]');
     return;
   }
   const base = await cliDaemonBaseUrl(flags);
@@ -7851,11 +7851,16 @@ async function runDataImport(args) {
   if (!from) {
     if (flags.json) return process.stdout.write(JSON.stringify(candidates) + '\n');
     for (const item of candidates.candidates) console.log(`${item.sourceRoot} (${item.projectCount} projects, ${item.modifiedAt})`);
+    if (candidates.runningSource) {
+      console.log(`Running source: ${candidates.runningSource.sourceRoot}`);
+      for (const item of candidates.runningSource.processes) console.log(`PID ${item.pid}: ${item.executablePath}`);
+      console.log('Stop the selected old version and retry: readable data import --from <folder> --stop-source');
+    }
     if (!candidates.candidates.length) console.log(`Import: ${candidates.state}${candidates.error ? ` - ${candidates.error}` : ''}`);
     else console.log('Select a folder with: readable data import --from <folder>');
     return;
   }
-  const response = await fetch(`${base}/api/data-import/request`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'import', from }) });
+  const response = await fetch(`${base}/api/data-import/request`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: flags['stop-source'] ? 'stop-source' : 'import', from }) });
   if (!response.ok) return structuredHttpFailure(response);
   const result = await response.json();
   if (flags.json) return process.stdout.write(JSON.stringify(result) + '\n');

@@ -20,6 +20,7 @@ export interface Dict {
   'dataImport.folders': string;
   'dataImport.projects': string;
   'dataImport.import': string;
+  'dataImport.stopSource': string;
   'dataImport.startFresh': string;
   'dataImport.requesting': string;
   'dataImport.restarting': string;

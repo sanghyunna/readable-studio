@@ -28,7 +28,7 @@ export function DataImportModal({ onResolved }: { onResolved: () => void }) {
       const raw = (body ?? {}) as Partial<DataImportCandidatesResponse>;
       const value = { ...raw, candidates: Array.isArray(raw.candidates) ? raw.candidates : [] } as DataImportCandidatesResponse;
       setResult(value);
-      setSelected(value.candidates[0]?.sourceData ?? '');
+      setSelected(value.runningSource?.sourceData ?? value.candidates[0]?.sourceData ?? '');
       if (value.state === 'pending') setPending(true);
       else if (value.state !== 'offered' && value.state !== 'failed') onResolved();
     }).catch(() => {
@@ -50,7 +50,7 @@ export function DataImportModal({ onResolved }: { onResolved: () => void }) {
       else onResolved();
     } catch (cause) {
       setError(cause instanceof TypeError || cause instanceof SyntaxError
-        ? t('connection.reconnecting') : t('dataImport.safeFailure'));
+        ? t('connection.reconnecting') : cause instanceof Error ? cause.message : t('dataImport.safeFailure'));
     }
     finally { setBusy(false); }
   }
@@ -78,10 +78,15 @@ export function DataImportModal({ onResolved }: { onResolved: () => void }) {
           <span className={styles.meta}>{t('dataImport.projects', { count: String(candidate.projectCount) })} · <time dateTime={candidate.modifiedAt}>{new Date(candidate.modifiedAt).toLocaleString(locale)}</time></span>
         </ToggleCard>)}
       </div> : null}
-      {result?.error || error ? <p className={styles.error} role="alert">{t('dataImport.safeFailure')}<br />{error || result?.error}</p> : null}
+      {!pending && result?.runningSource ? <div className={styles.runningSource} role="status">
+        <p className={styles.path}>{result.runningSource.sourceRoot}</p>
+        <ul>{result.runningSource.processes.map(row => <li key={row.pid}>PID {row.pid}: {row.executablePath}</li>)}</ul>
+      </div> : null}
+      {!pending && (result?.error || error) ? <p className={styles.error} role="alert">{t('dataImport.safeFailure')}<br />{error || result?.error}</p> : null}
       {result?.warnings?.length ? <p className={styles.error} role="status">{t('dataImport.unreadable')}<br />{result.warnings.join('\n')}</p> : null}
       {!pending && (result || error) ? <footer className={styles.actions}>
         <Button variant="ghost" disabled={busy} onClick={() => void request({ action: 'decline' })}>{t('dataImport.startFresh')}</Button>
+        {result?.runningSource?.processes.length ? <Button variant="primary" disabled={busy} onClick={() => void request({ action: 'stop-source', from: result.runningSource!.sourceData })}>{t(busy ? 'dataImport.requesting' : 'dataImport.stopSource')}</Button> : null}
         {selected ? <Button variant="primary" disabled={busy} onClick={() => void request({ action: 'import', from: selected })}>{t(busy ? 'dataImport.requesting' : 'dataImport.import')}</Button> : null}
       </footer> : null}
     </section>

@@ -15,6 +15,19 @@ it('gates welcome until a decision, posts selected source, and remains gated for
   expect(JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body))).toEqual({action:'import',from:candidate.sourceData});
   expect(resolved).not.toHaveBeenCalled();expect(screen.queryAllByRole('button')).toHaveLength(0);
 });
+it('shows the blocked source and processes, and terminates that source before retrying',async()=>{
+  const runningSource={sourceRoot:candidate.sourceRoot,sourceData:candidate.sourceData,processes:[{pid:123,executablePath:'D:\\Old\\Readable Studio.exe'}]};
+  const fetcher=vi.fn(async(_url:string,options?:RequestInit)=>reply(options?.method==='POST'?{state:'pending',restartRequired:true}:{state:'failed',candidates:[],error:'SOURCE_RUNNING',runningSource}));
+  vi.stubGlobal('fetch',fetcher);
+  const resolved=vi.fn();
+  await act(async()=>{render(<DataImportModal onResolved={resolved}/>);});
+  expect(screen.getByText(candidate.sourceRoot)).toBeTruthy();
+  expect(screen.getByText(/123.*Readable Studio\.exe/)).toBeTruthy();
+  await act(async()=>{fireEvent.click(screen.getByRole('button',{name:getEn()['dataImport.stopSource']}));});
+  expect(JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body))).toEqual({action:'stop-source',from:candidate.sourceData});
+  expect(screen.queryAllByRole('button')).toHaveLength(0);
+  expect(resolved).not.toHaveBeenCalled();
+});
 it('records decline before allowing welcome',async()=>{
   const resolved=vi.fn();const fetcher=vi.fn(async(_url:string,options?:RequestInit)=>reply(options?.method==='POST'?{state:'declined',restartRequired:false}:{state:'offered',candidates:[candidate]}));vi.stubGlobal('fetch',fetcher);
   await act(async()=>{render(<DataImportModal onResolved={resolved}/>);});

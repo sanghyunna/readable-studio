@@ -6,6 +6,7 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 
 import { setTimeout as sleep } from "node:timers/promises";
 
 export * from "./isolated-process.js";
+export * from "./process-images.js";
 export * from "./secret-encryption.js";
 
 export type CommandInvocation = {

@@ -12,6 +12,7 @@ export function getKo(): Dict {
   'dataImport.folders': '이전 작업 폴더',
   'dataImport.projects': '프로젝트 {count}개',
   'dataImport.import': '가져오기',
+  'dataImport.stopSource': '이전 버전 종료',
   'dataImport.startFresh': '새로 시작',
   'dataImport.requesting': '준비 중...',
   'dataImport.restarting': '작업 내역을 가져오기 위해 다시 시작합니다',

@@ -12,6 +12,7 @@ export function getEn(): Dict {
   'dataImport.folders': 'Earlier work folders',
   'dataImport.projects': '{count} projects',
   'dataImport.import': 'Import',
+  'dataImport.stopSource': 'Close old version and retry',
   'dataImport.startFresh': 'Start fresh',
   'dataImport.requesting': 'Preparing...',
   'dataImport.restarting': 'Restarting to import your work',
