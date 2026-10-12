@@ -45,9 +45,12 @@ describe('rail session contracts', () => {
     const rail: RailResponse = {
       folders: [{ id: 'f1', name: 'Folder', createdAt: 1, updatedAt: 2, sessions: [session] }],
       recents: [],
+      pinned: ['c1'],
       generatedAt: 3,
     };
     expect(rail.folders[0]?.sessions[0]?.folderId).toBe('f1');
+    // A pin is a shortcut: the pinned session is still listed in its folder.
+    expect(rail.pinned).toEqual(['c1']);
   });
 
   it('pins the folder delete policy and SSE reason values', () => {

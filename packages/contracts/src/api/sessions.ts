@@ -64,7 +64,23 @@ export interface RailFolder extends SessionFolder {
 export interface RailResponse {
   folders: RailFolder[];
   recents: RailSession[];
+  /**
+   * Pinned session ids, oldest pin first. A pin is a shortcut: the session
+   * still appears in its folder or in recents. Only ids of existing sessions.
+   */
+  pinned: string[];
   generatedAt: number;
+}
+
+/**
+ * Response body for `PUT /api/sessions/:id/pin` (pin) and
+ * `DELETE /api/sessions/:id/pin` (unpin). Both are idempotent.
+ *
+ * @example
+ * { "pinned": ["c1", "c7"] }
+ */
+export interface SessionPinsResponse {
+  pinned: string[];
 }
 
 /** Response body for `GET /api/sessions?folder=<id|none>&limit=<n>`. */
@@ -151,6 +167,8 @@ export type RailSseEvent =
         | 'session-updated'
         | 'session-moved'
         | 'session-deleted'
+        | 'session-pinned'
+        | 'session-unpinned'
         | 'folder-created'
         | 'folder-updated'
         | 'folder-deleted';
