@@ -48,6 +48,70 @@ afterEach(() => {
 });
 
 describe('ManualEditMoveFrame', () => {
+  it.each([false, true])('releases a removed interior capture owner without pointerup (dragging=%s)', (dragging) => {
+    const callbacks = {
+      onMoveStart: vi.fn(), onMovePreview: vi.fn(), onMoveCommit: vi.fn(), onMoveCancel: vi.fn(),
+      onPressStart: vi.fn(), onActivate: vi.fn(), onSurfaceDoubleClick: vi.fn(), onBurstCancel: vi.fn(() => false),
+    };
+    const props = {
+      rect: { left: 100, top: 50, width: 200, height: 100 },
+      scale: 1, label: 'Move element', ...callbacks,
+    };
+    const { container, rerender } = render(<ManualEditMoveFrame {...props} mode="selected" />);
+    const interior = container.querySelector('[data-region="interior"]') as HTMLElement;
+    interior.setPointerCapture = vi.fn();
+    interior.releasePointerCapture = vi.fn();
+    const queued: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => queued.push(callback));
+    const cancelAnimationFrame = vi.fn();
+    vi.stubGlobal('cancelAnimationFrame', cancelAnimationFrame);
+    fireEvent.pointerDown(interior, { pointerId: 22, clientX: 200, clientY: 100 });
+    if (dragging) fireEvent.pointerMove(interior, { pointerId: 22, clientX: 220, clientY: 110, shiftKey: true });
+    expect(document.querySelectorAll('[data-readable-pointer-drag-shield]')).toHaveLength(1);
+
+    rerender(<ManualEditMoveFrame {...props} mode="editing" />);
+
+    expect(interior.isConnected).toBe(false);
+    expect(document.querySelectorAll('[data-readable-pointer-drag-shield]')).toHaveLength(0);
+    expect(interior.setPointerCapture).toHaveBeenCalledWith(22);
+    expect(interior.releasePointerCapture).toHaveBeenCalledWith(22);
+    expect(callbacks.onMoveCancel).toHaveBeenCalledTimes(dragging ? 1 : 0);
+    if (dragging) expect(cancelAnimationFrame).toHaveBeenCalledWith(1);
+    queued.forEach(callback => callback(0));
+    fireEvent.keyUp(window, { key: 'Shift', shiftKey: false });
+    expect(callbacks.onMovePreview).not.toHaveBeenCalled();
+    expect(callbacks.onMoveCommit).not.toHaveBeenCalled();
+    expect(callbacks.onActivate).not.toHaveBeenCalled();
+  });
+
+  it('commits a ring drag whose capture owner survives editing to selected mode', () => {
+    const callbacks = {
+      onMoveStart: vi.fn(), onMovePreview: vi.fn(), onMoveCommit: vi.fn(), onMoveCancel: vi.fn(),
+      onPressStart: vi.fn(), onActivate: vi.fn(), onSurfaceDoubleClick: vi.fn(), onBurstCancel: vi.fn(() => false),
+    };
+    const props = {
+      rect: { left: 100, top: 50, width: 200, height: 100 },
+      scale: 1, label: 'Move element', ...callbacks,
+    };
+    const { container, rerender } = render(<ManualEditMoveFrame {...props} mode="editing" />);
+    const ring = container.querySelector('[data-region="ring"]') as HTMLElement;
+    ring.setPointerCapture = vi.fn();
+    ring.releasePointerCapture = vi.fn();
+    fireEvent.pointerDown(ring, { pointerId: 23, clientX: 100, clientY: 50 });
+    fireEvent.pointerMove(ring, { pointerId: 23, clientX: 120, clientY: 60 });
+
+    rerender(<ManualEditMoveFrame {...props} mode="selected" />);
+
+    expect(container.querySelector('[data-region="ring"]')).toBe(ring);
+    expect(document.querySelectorAll('[data-readable-pointer-drag-shield]')).toHaveLength(1);
+    expect(ring.releasePointerCapture).not.toHaveBeenCalled();
+    fireEvent.pointerUp(ring, { pointerId: 23, clientX: 130, clientY: 70 });
+    expect(callbacks.onMoveCommit).toHaveBeenCalledWith({ delta: { x: 30, y: 20 }, shiftKey: false, axis: null });
+    expect(callbacks.onMoveCancel).not.toHaveBeenCalled();
+    expect(ring.releasePointerCapture).toHaveBeenCalledWith(23);
+    expect(document.querySelectorAll('[data-readable-pointer-drag-shield]')).toHaveLength(0);
+  });
+
   it.each(['up', 'cancel', 'lost-capture', 'escape', 'unmount'])('releases the iframe drag shield on %s', (ending) => {
     const { interior, unmount, onMoveCancel } = renderFrame();
     fireEvent.pointerDown(interior!, { pointerId: 21, clientX: 200, clientY: 100 });

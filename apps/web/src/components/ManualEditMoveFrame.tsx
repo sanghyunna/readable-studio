@@ -278,6 +278,17 @@ export function ManualEditMoveFrame({
   };
 
   useLayoutEffect(() => {
+    const drag = dragRef.current;
+    if (!drag || drag.target.isConnected) return;
+    const dragging = drag.dragging;
+    endDrag();
+    pendingUpdateRef.current = null;
+    latestDeltaRef.current = null;
+    shiftAxisRef.current = null;
+    if (dragging) onMoveCancel();
+  });
+
+  useLayoutEffect(() => {
     if (!flushPendingRef) return;
     flushPendingRef.current = flushPendingPreview;
     return () => { flushPendingRef.current = null; };

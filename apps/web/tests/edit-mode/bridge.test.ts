@@ -2386,10 +2386,18 @@ describe('manual edit bridge target normalization', () => {
   });
 
   it('re-broadcasts targets on scroll so a selected element rect does not go stale', async () => {
+    vi.useFakeTimers();
     const posts: Array<{ type?: string }> = [];
+    let frame: FrameRequestCallback | undefined;
     const dom = new JSDOM(
       `<main><h1 data-readable-source-path="path-0-0">Title</h1></main>${buildManualEditBridge(true)}`,
-      { runScripts: 'dangerously', url: 'http://localhost' },
+      {
+        runScripts: 'dangerously', url: 'http://localhost',
+        beforeParse(window) {
+          window.requestAnimationFrame = (callback) => { frame = callback; return 1; };
+          window.cancelAnimationFrame = () => { frame = undefined; };
+        },
+      },
     );
     dom.window.parent.postMessage = ((message: unknown) => {
       posts.push(message as { type?: string });
@@ -2398,17 +2406,201 @@ describe('manual edit bridge target normalization', () => {
     dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
       data: { type: 'readable-edit-mode', enabled: true },
     }));
-    await dom.discover();
+    await dom.loaded;
+    await vi.runAllTimersAsync();
+    frame?.(0);
+    frame = undefined;
 
     const countBeforeScroll = posts.filter((message) => message.type === 'readable-edit-targets').length;
     expect(countBeforeScroll).toBeGreaterThan(0);
 
     dom.window.document.dispatchEvent(new dom.window.Event('scroll'));
 
+    expect(posts.filter((message) => message.type === 'readable-edit-targets')).toHaveLength(countBeforeScroll);
+    expect(frame).toBeDefined();
+    frame!(16);
     const countAfterScroll = posts.filter((message) => message.type === 'readable-edit-targets').length;
-    expect(countAfterScroll).toBeGreaterThan(countBeforeScroll);
+    expect(countAfterScroll).toBe(countBeforeScroll + 1);
 
     dom.window.close();
+  });
+});
+
+describe('manual edit bridge viewport frames', () => {
+  async function fixture() {
+    vi.useFakeTimers();
+    const frames = new Map<number, FrameRequestCallback>();
+    let sequence = 0;
+    const requestFrame = vi.fn((callback: FrameRequestCallback) => {
+      const id = ++sequence;
+      frames.set(id, callback);
+      return id;
+    });
+    const cancelFrame = vi.fn((id: number) => { frames.delete(id); });
+    const dom = new JSDOM(
+      `<main data-readable-id="canvas"><h1 data-readable-id="title">Title</h1><p data-readable-id="sibling">Sibling</p></main>${buildManualEditBridge(true)}`,
+      {
+        runScripts: 'dangerously', url: 'http://localhost',
+        beforeParse(window) {
+          window.Date = Date;
+          window.requestAnimationFrame = requestFrame;
+          window.cancelAnimationFrame = cancelFrame;
+          window.HTMLElement.prototype.getBoundingClientRect = () => ({
+            x: 0, y: 0, width: 120, height: 40,
+            top: 0, right: 120, bottom: 40, left: 0, toJSON: () => ({}),
+          } as DOMRect);
+        },
+      },
+    );
+    const post = vi.spyOn(dom.window.parent, 'postMessage').mockImplementation(() => {});
+    const step = () => {
+      const pending = [...frames.values()];
+      frames.clear();
+      pending.forEach((callback) => callback(16));
+    };
+    await dom.loaded;
+    await vi.runAllTimersAsync();
+    step();
+    post.mockClear();
+    requestFrame.mockClear();
+    cancelFrame.mockClear();
+    const send = (data: object) => dom.window.dispatchEvent(new dom.window.MessageEvent('message', { data }));
+    const burst = () => {
+      dom.window.document.querySelector('main')!.dispatchEvent(new dom.window.Event('scroll'));
+      dom.window.dispatchEvent(new dom.window.Event('resize'));
+      dom.window.document.dispatchEvent(new dom.window.Event('scroll'));
+    };
+    const targetPosts = () => post.mock.calls.filter(([message]) => message.type === 'readable-edit-targets');
+    return { dom, frames, requestFrame, cancelFrame, post, step, send, burst, targetPosts };
+  }
+
+  it('coalesces mixed viewport bursts and measures every target at the frame boundary', async () => {
+    const f = await fixture();
+    const title = f.dom.window.document.querySelector('h1')!;
+    const sibling = f.dom.window.document.querySelector('p')!;
+    let y = 20;
+    const rect = vi.fn(() => ({
+      x: 10, y, width: 120, height: 40,
+      top: y, right: 130, bottom: y + 40, left: 10, toJSON: () => ({}),
+    } as DOMRect));
+    title.getBoundingClientRect = rect;
+    sibling.getBoundingClientRect = rect;
+    const style = vi.spyOn(f.dom.window, 'getComputedStyle');
+    f.burst();
+    f.burst();
+    expect(f.targetPosts()).toHaveLength(0);
+    expect(rect).not.toHaveBeenCalled();
+    expect(style).not.toHaveBeenCalled();
+    expect(f.requestFrame).toHaveBeenCalledTimes(1);
+    y = 90;
+    f.step();
+    expect(f.targetPosts()).toHaveLength(1);
+    const targets = f.targetPosts()[0]![0].targets;
+    expect(targets.map((target: { id: string }) => target.id)).toEqual(['canvas', 'title', 'sibling']);
+    for (const id of ['title', 'sibling']) {
+      expect(targets.find((target: { id: string }) => target.id === id).rect).toEqual({ x: 10, y: 90, width: 120, height: 40 });
+    }
+    f.step();
+    expect(f.targetPosts()).toHaveLength(1);
+    y = 140;
+    f.burst();
+    expect(f.targetPosts()).toHaveLength(1);
+    f.step();
+    expect(f.targetPosts()).toHaveLength(2);
+    expect(f.targetPosts()[1]![0].targets.find((target: { id: string }) => target.id === 'sibling').rect.y).toBe(140);
+    expect(f.requestFrame).toHaveBeenCalledTimes(2);
+  });
+
+  it('cancels pending viewport work on disable and schedules fresh work after re-enable', async () => {
+    const f = await fixture();
+    f.burst();
+    expect(f.targetPosts()).toHaveLength(0);
+    f.send({ type: 'readable-edit-mode', enabled: false });
+    expect(f.cancelFrame).toHaveBeenCalledTimes(1);
+    expect(f.frames.size).toBe(0);
+    f.post.mockClear();
+    const geometry = vi.spyOn(f.dom.window.HTMLElement.prototype, 'getBoundingClientRect');
+    f.burst();
+    f.step();
+    expect(f.post).not.toHaveBeenCalled();
+    expect(geometry).not.toHaveBeenCalled();
+    f.send({ type: 'readable-edit-mode', enabled: true });
+    await vi.runAllTimersAsync();
+    f.step();
+    f.post.mockClear();
+    f.burst();
+    expect(f.targetPosts()).toHaveLength(0);
+    f.step();
+    expect(f.targetPosts()).toHaveLength(1);
+  });
+
+  it('cancels viewport work on pagehide and resumes on persisted pageshow', async () => {
+    const f = await fixture();
+    f.burst();
+    expect(f.targetPosts()).toHaveLength(0);
+    f.dom.window.dispatchEvent(new f.dom.window.PageTransitionEvent('pagehide', { persisted: true }));
+    expect(f.cancelFrame).toHaveBeenCalledTimes(1);
+    f.post.mockClear();
+    const geometry = vi.spyOn(f.dom.window.HTMLElement.prototype, 'getBoundingClientRect');
+    f.burst();
+    f.step();
+    expect(f.post).not.toHaveBeenCalled();
+    expect(geometry).not.toHaveBeenCalled();
+    f.dom.window.dispatchEvent(new f.dom.window.PageTransitionEvent('pageshow', { persisted: true }));
+    f.step();
+    f.post.mockClear();
+    f.burst();
+    expect(f.targetPosts()).toHaveLength(0);
+    f.step();
+    expect(f.targetPosts()).toHaveLength(1);
+  });
+
+  it.each([false, true])('does zero viewport work while typing, queued before entry: %s', async (queued) => {
+    const f = await fixture();
+    if (queued) {
+      f.burst();
+      expect(f.targetPosts()).toHaveLength(0);
+    }
+    await f.dom.nextMutation(() => f.send({ type: 'readable-edit-begin-text-edit', id: 'title' }));
+    expect(f.dom.window.document.querySelector('h1')!.getAttribute('data-readable-editing')).toBe('true');
+    f.post.mockClear();
+    f.requestFrame.mockClear();
+    const geometry = vi.spyOn(f.dom.window.HTMLElement.prototype, 'getBoundingClientRect');
+    const style = vi.spyOn(f.dom.window, 'getComputedStyle');
+    f.burst();
+    f.step();
+    expect(f.post).not.toHaveBeenCalled();
+    expect(f.requestFrame).not.toHaveBeenCalled();
+    expect(geometry).not.toHaveBeenCalled();
+    expect(style).not.toHaveBeenCalled();
+    expect(f.frames.size).toBe(0);
+    await f.dom.nextMutation(() => f.send({ type: 'readable-edit-end-text-edit', cancel: true }));
+    f.step();
+    f.post.mockClear();
+    f.burst();
+    expect(f.targetPosts()).toHaveLength(0);
+    f.step();
+    expect(f.targetPosts()).toHaveLength(1);
+  });
+
+  it('keeps viewport frames independent of the preview-write mute and observed layout slot', async () => {
+    const f = await fixture();
+    await f.dom.nextMutation(() => f.send({
+      type: 'readable-edit-preview-style', id: 'title', styles: { width: '150px' }, version: 1,
+    }));
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    f.burst();
+    expect(f.targetPosts()).toHaveLength(0);
+    f.step();
+    expect(f.targetPosts()).toHaveLength(1);
+    await vi.runAllTimersAsync();
+    expect(f.frames.size).toBe(1);
+    f.burst();
+    expect(f.frames.size).toBe(2);
+    f.step();
+    expect(f.targetPosts()).toHaveLength(3);
+    f.step();
+    expect(f.targetPosts()).toHaveLength(3);
   });
 });
 
@@ -3105,6 +3297,141 @@ describe('manual edit bridge rich-text editing', () => {
       '*',
     );
 
+    dom.window.close();
+  });
+});
+
+describe('manual edit bridge Delete forwarding', () => {
+  it.each([
+    ['text', '<p data-readable-id="selected">Text</p>', 'document'],
+    ['text', '<p data-readable-id="selected">Text</p>', 'object'],
+    ['link', '<a data-readable-id="selected" href="/">Link</a>', 'body'],
+    ['link', '<a data-readable-id="selected" href="/">Link</a>', 'object'],
+    ['shape', '<img data-readable-id="selected" alt="Preview">', 'document'],
+    ['shape', '<img data-readable-id="selected" alt="Preview">', 'object'],
+  ])('forwards Delete once for object-selected %s (%s) from %s focus', (_kind, markup, focus) => {
+    const dom = new JSDOM(
+      `<main>${markup}<p data-readable-id="sibling">Sibling</p></main>${buildManualEditBridge(true)}`,
+      { runScripts: 'dangerously', url: 'http://localhost' },
+    );
+    const postMessage = vi.spyOn(dom.window.parent, 'postMessage');
+    const select = (id: string, revision: number) => dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
+      data: { type: 'readable-edit-selected-target', id, revision },
+    }));
+    select('selected', 17);
+    postMessage.mockClear();
+    const document = dom.window.document;
+    const target = focus === 'object' ? document.querySelector('[data-readable-id="selected"]')!
+      : focus === 'body' ? document.body : document;
+    const artifactKeydown = vi.fn();
+    document.addEventListener('keydown', artifactKeydown, true);
+    for (const repeat of [false, true, true]) {
+      const event = new dom.window.KeyboardEvent('keydown', {
+        bubbles: true, cancelable: true, key: 'Delete', repeat,
+      });
+      target.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(true);
+    }
+    expect(postMessage).toHaveBeenCalledExactlyOnceWith({
+      type: 'readable-edit-delete', targetId: 'selected', revision: 17,
+    }, '*');
+    expect(artifactKeydown).not.toHaveBeenCalled();
+
+    // A held key must not delete the next positional sibling after host selection changes.
+    select('sibling', 18);
+    postMessage.mockClear();
+    document.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
+      bubbles: true, cancelable: true, key: 'Delete', repeat: true,
+    }));
+    expect(postMessage).not.toHaveBeenCalled();
+    document.dispatchEvent(new dom.window.KeyboardEvent('keyup', { key: 'Delete', bubbles: true }));
+    document.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
+      bubbles: true, cancelable: true, key: 'Delete',
+    }));
+    expect(postMessage).toHaveBeenCalledExactlyOnceWith({
+      type: 'readable-edit-delete', targetId: 'sibling', revision: 18,
+    }, '*');
+    dom.window.close();
+  });
+
+  it.each([
+    '<input id="native">',
+    '<textarea id="native"></textarea>',
+    '<select id="native"><option>Choice</option></select>',
+    '<div contenteditable=""><span id="native">Text</span></div>',
+    '<div contenteditable="true"><span id="native">Text</span></div>',
+    '<div contenteditable="plaintext-only"><span id="native">Text</span></div>',
+    ...[
+      'slider', 'spinbutton', 'textbox', 'searchbox', 'scrollbar', 'listbox', 'option',
+      'combobox', 'menu', 'menubar', 'menuitem', 'menuitemcheckbox', 'menuitemradio',
+      'tree', 'treegrid', 'treeitem', 'grid', 'gridcell', 'columnheader', 'rowheader',
+      'row', 'tab', 'tablist', 'radiogroup',
+    ].map((role) => `<div role="${role}"><span id="native">Widget</span></div>`),
+  ])('leaves native Delete and repeats untouched in %s', (markup) => {
+    const dom = new JSDOM(
+      `<main><img data-readable-id="selected" alt="Preview">${markup}</main>${buildManualEditBridge(true)}`,
+      { runScripts: 'dangerously', url: 'http://localhost' },
+    );
+    dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
+      data: { type: 'readable-edit-selected-target', id: 'selected', revision: 9 },
+    }));
+    const postMessage = vi.spyOn(dom.window.parent, 'postMessage');
+    const native = dom.window.document.querySelector('#native') as HTMLElement;
+    native.focus();
+    const artifactKeydown = vi.fn();
+    dom.window.document.addEventListener('keydown', artifactKeydown, true);
+    for (const repeat of [false, true]) {
+      const event = new dom.window.KeyboardEvent('keydown', {
+        bubbles: true, cancelable: true, key: 'Delete', repeat,
+      });
+      native.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+    }
+    expect(postMessage).not.toHaveBeenCalled();
+    expect(artifactKeydown).toHaveBeenCalledTimes(2);
+    dom.window.close();
+  });
+
+  it.each([
+    ['disabled', {}],
+    ['no selection', {}],
+    ['no host selection', {}],
+    ['no selected element', {}],
+    ['inline editing', {}],
+    ['Ctrl', { ctrlKey: true }],
+    ['Meta', { metaKey: true }],
+    ['Alt', { altKey: true }],
+    ['IME', { isComposing: true }],
+    ['Backspace', { key: 'Backspace' }],
+    ['other key', { key: 'Enter' }],
+  ] as const)('leaves %s keys native without posting Delete', (state, options) => {
+    const dom = new JSDOM(
+      `<main><p data-readable-id="selected">Text</p></main>${buildManualEditBridge(true)}`,
+      { runScripts: 'dangerously', url: 'http://localhost' },
+    );
+    if (state !== 'no selection' && state !== 'no host selection') dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
+      data: { type: 'readable-edit-selected-target', id: 'selected', revision: 9 },
+    }));
+    if (state === 'disabled') dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
+      data: { type: 'readable-edit-mode', enabled: false },
+    }));
+    const selected = dom.window.document.querySelector('[data-readable-id="selected"]')!;
+    if (state === 'no host selection') selected.setAttribute('data-readable-edit-selected', '');
+    if (state === 'no selected element') selected.removeAttribute('data-readable-edit-selected');
+    if (state === 'inline editing') dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
+      data: { type: 'readable-edit-begin-text-edit', id: 'selected' },
+    }));
+    if (state === 'inline editing') expect(selected.getAttribute('data-readable-editing')).toBe('true');
+    const postMessage = vi.spyOn(dom.window.parent, 'postMessage');
+    const artifactKeydown = vi.fn();
+    dom.window.document.addEventListener('keydown', artifactKeydown, true);
+    const event = new dom.window.KeyboardEvent('keydown', {
+      bubbles: true, cancelable: true, key: 'Delete', ...options,
+    });
+    dom.window.document.dispatchEvent(event);
+    expect(postMessage).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+    expect(artifactKeydown).toHaveBeenCalledOnce();
     dom.window.close();
   });
 });

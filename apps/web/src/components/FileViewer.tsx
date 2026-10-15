@@ -134,6 +134,7 @@ import { RESIZE_HANDLE_DIRECTIONS, resizeCssCommitStyles, type ResizeHandleDirec
 import {
   buildManualEditMovementCandidates,
   createManualEditSnapLatch,
+  refreshManualEditMovementGuides,
   resolveManualEditMovement,
   type ManualEditMovementResult,
   type ManualEditMovementSession,
@@ -151,7 +152,7 @@ import {
   readManualEditStyles,
 } from '../edit-mode/source-patches';
 import { appendManualEditHistory } from '../edit-mode/history';
-import { MANUAL_EDIT_STYLE_PROPS, type ManualEditActivationMessage, type ManualEditBeginTextEditMessage, type ManualEditBridgeMessage, type ManualEditDuplicatePlan, type ManualEditEndTextEditMessage, type ManualEditHistoryEntry, type ManualEditHoverAtMessage, type ManualEditPatch, type ManualEditRect, type ManualEditResizeConstraint, type ManualEditResizeRequest, type ManualEditStyles, type ManualEditTarget } from '../edit-mode/types';
+import { MANUAL_EDIT_STYLE_PROPS, type ManualEditActivationMessage, type ManualEditBeginTextEditMessage, type ManualEditBridgeMessage, type ManualEditDeleteMessage, type ManualEditDuplicatePlan, type ManualEditEndTextEditMessage, type ManualEditHistoryEntry, type ManualEditHoverAtMessage, type ManualEditPatch, type ManualEditRect, type ManualEditResizeConstraint, type ManualEditResizeRequest, type ManualEditStyles, type ManualEditTarget } from '../edit-mode/types';
 import {
   isManualEditNudgeBlocked,
   isManualEditNudgeKey,
@@ -3796,6 +3797,8 @@ function HtmlViewer({
     setManualEditFrozenSource(null);
     manualEditInFlightSourceRef.current = null;
     manualEditSaveGenerationRef.current = 0;
+    previewScrollRestoreRef.current = null;
+    previewScrollPositionRef.current = { frameLeft: 0, frameTop: 0, canvasLeft: 0, canvasTop: 0 };
   }, [projectId, file.name]);
   useEffect(() => {
     onCommentModeChange?.(commentPanelOpen);
@@ -3889,6 +3892,7 @@ function HtmlViewer({
       return;
     }
     const apply = () => {
+      if (previewScrollRestoreRef.current !== snapshot) return;
       const previewBody = previewBodyRef.current;
       if (typeof previewBody?.scrollTo === 'function') {
         previewBody.scrollTo(snapshot.hostLeft, snapshot.hostTop);
@@ -3958,6 +3962,11 @@ function HtmlViewer({
   const redoManualEditRef = useRef<() => Promise<void>>(async () => {});
   const manualEditSessionFlushRef = useRef(flushManualEditSession);
   manualEditSessionFlushRef.current = flushManualEditSession;
+  const manualEditDeleteInFlightRef = useRef(false);
+  const manualEditDeleteRef = useRef(deleteManualEditTarget);
+  manualEditDeleteRef.current = deleteManualEditTarget;
+  const manualEditDocumentIdentityRef = useRef('');
+  manualEditDocumentIdentityRef.current = `${projectId}\u0000${file.name}`;
   const manualEditPendingStyleRef = useRef<ManualEditPendingStyleSave | null>(null);
   // Drag-start snapshot for resize-handle style math. The live selected target
   // mutates per preview ack (rect + cssSize), which would shift the delta
@@ -4597,6 +4606,7 @@ function HtmlViewer({
   }, [basePreviewSrcUrl, filesRefreshKey, useUrlLoadPreview]);
 
   useEffect(() => {
+    if (manualEditFrozenSource !== null) return;
     setInlinedSource(null);
     if (useUrlLoadPreview) return;
     if (!source || effectiveDeck || !hasRelativeAssetRefs(source)) return;
@@ -4607,7 +4617,7 @@ function HtmlViewer({
     return () => {
       cancelled = true;
     };
-  }, [source, effectiveDeck, projectId, file.name, reloadKey, useUrlLoadPreview]);
+  }, [source, effectiveDeck, projectId, file.name, reloadKey, useUrlLoadPreview, manualEditFrozenSource]);
 
   const captureModeActive = drawOverlayOpen;
   const useLazySrcDocTransport = !manualEditRequiresSrcDoc && !captureModeActive && useUrlLoadPreview;
@@ -4795,6 +4805,13 @@ function HtmlViewer({
         canvasLeft: Number(data.canvasLeft || 0),
         canvasTop: Number(data.canvasTop || 0),
       };
+      const snapshot = previewScrollRestoreRef.current;
+      if (snapshot && (
+        snapshot.frameLeft !== previewScrollPositionRef.current.frameLeft ||
+        snapshot.frameTop !== previewScrollPositionRef.current.frameTop ||
+        snapshot.canvasLeft !== previewScrollPositionRef.current.canvasLeft ||
+        snapshot.canvasTop !== previewScrollPositionRef.current.canvasTop
+      )) previewScrollRestoreRef.current = null;
     }
     function onRestoreRequest(ev: MessageEvent) {
       if (!isOurPreviewIframeSource(ev.source)) return;
@@ -5392,6 +5409,14 @@ function HtmlViewer({
             manualEditTargetMessageSequenceRef.current = sequence;
           }
         }
+        const movement = activeManualEditMovementRef.current;
+        if (movement?.latestResult && !manualEditCtrlRef.current) {
+          setManualEditSnapGuides(refreshManualEditMovementGuides(
+            movement.session,
+            movement.latestResult,
+            data.targets,
+          ));
+        }
         setManualEditTargets(data.targets);
         const pendingDuplicate = manualEditPendingDuplicateSelectionRef.current;
         const pendingOwnsSelection = pendingDuplicate
@@ -5565,6 +5590,11 @@ function HtmlViewer({
         // priority for in-progress typing).
         if (data.redo) void redoManualEditRef.current();
         else void undoManualEditRef.current();
+        return;
+      }
+      if (data.type === 'readable-edit-delete') {
+        if (!isActivePreviewIframeSource(ev.source)) return;
+        void manualEditDeleteRef.current(data);
         return;
       }
       if (data.type === 'readable-edit-nudge') {
@@ -6745,6 +6775,39 @@ function HtmlViewer({
     return flushManualEditStyleSave();
   }
 
+  async function deleteManualEditTarget(command?: Pick<ManualEditDeleteMessage, 'targetId' | 'revision'>): Promise<void> {
+    const busy = () => !manualEditModeRef.current || manualEditSavingRef.current
+      || manualEditHistoryOperationRef.current
+      || activeManualEditMovementRef.current?.session.source === 'pointer'
+      || manualEditResizeFlushRef.current !== null;
+    if (busy() || manualEditDeleteInFlightRef.current) return;
+    manualEditDeleteInFlightRef.current = true;
+    try {
+      const targetId = command?.targetId ?? selectedManualEditTargetIdRef.current;
+      const revision = command?.revision ?? manualEditPreviewRevisionRef.current;
+      if (!targetId || targetId !== selectedManualEditTargetIdRef.current
+        || revision !== manualEditPreviewRevisionRef.current) return;
+      const documentIdentity = manualEditDocumentIdentityRef.current;
+      const documentEpoch = manualEditPreviewDocRef.current;
+      const selectionIntent = manualEditActionSeqRef.current;
+      const isCurrent = () => !busy()
+        && documentIdentity === manualEditDocumentIdentityRef.current
+        && documentEpoch === manualEditPreviewDocRef.current
+        && selectionIntent === manualEditActionSeqRef.current
+        && targetId === selectedManualEditTargetIdRef.current
+        && revision === manualEditPreviewRevisionRef.current;
+      await flushKeyboardBurst();
+      // Selection intent changes before its own async flush finishes. Check it
+      // before touching the session so a new selection's edits are never flushed.
+      if (!isCurrent()) return;
+      if (!(await flushManualEditSession())) return;
+      if (!isCurrent()) return;
+      await applyManualEdit({ id: targetId, kind: 'remove-element' }, t('manualEdit.deleteElement'));
+    } finally {
+      manualEditDeleteInFlightRef.current = false;
+    }
+  }
+
   async function exitManualEditModeAfterFlush(actionSeq = ++manualEditActionSeqRef.current): Promise<boolean> {
     const ok = await flushManualEditSession();
     if (actionSeq !== manualEditActionSeqRef.current) return false;
@@ -7014,6 +7077,7 @@ function HtmlViewer({
     syncManualEditDirty();
     setInlinedSource(null);
     if (patch.kind !== 'set-style') {
+      capturePreviewScrollPosition();
       setManualEditFrozenSource(result.source);
     }
     // Bridge flush acknowledgements can arrive before React renders the commit.
@@ -7043,7 +7107,19 @@ function HtmlViewer({
       setSelectedManualEditTarget(null);
       clearManualEditResizeFeedback();
       clearManualEditMovement();
-      setManualEditTargets((current) => current.filter((target) => target.id !== patch.id));
+      const removedIds = new Set([patch.id]);
+      let expanded = true;
+      while (expanded) {
+        expanded = false;
+        for (const target of manualEditTargets) {
+          if (target.parentId && removedIds.has(target.parentId) && !removedIds.has(target.id)) {
+            removedIds.add(target.id);
+            expanded = true;
+          }
+        }
+      }
+      setManualEditTargets((current) => current.filter((target) => !removedIds.has(target.id)));
+      setManualEditHoverTarget((current) => current && removedIds.has(current.id) ? null : current);
       setManualEditDraft(emptyManualEditDraft(result.source));
       postSelectedManualEditTargetToIframe(null);
     } else {
@@ -7479,7 +7555,7 @@ function HtmlViewer({
     // — matching the iframe adapter, which nudges any selected object.
     if (manualEditMoveMode !== 'selected' && (manualEditMoveMode !== 'editing' || manualEditRichFormat.editing)) return;
     function onKeyDown(e: KeyboardEvent) {
-      if (!isManualEditNudgeKey(e.key)) return;
+      if (e.key !== 'Delete' && !isManualEditNudgeKey(e.key)) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const target = e.target as HTMLElement | null;
       if (!target?.closest('[data-readable-edit-selected-surface]')) return;
@@ -7488,6 +7564,13 @@ function HtmlViewer({
       // movement session (or nothing is selected), leave the arrow untouched.
       if (!selectedManualEditTargetRef.current) return;
       if (activeManualEditMovementRef.current?.session.source === 'pointer') return;
+      if (e.key === 'Delete') {
+        if (manualEditRichFormat.editing) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (!e.repeat) void manualEditDeleteRef.current();
+        return;
+      }
       if (keyboardBurstCancelledKeysRef.current.has(e.key)) {
         // Browser repeats of a key whose burst Escape just cancelled: consumed
         // (the overlay owns arrows) but never nudged, until the real keyup.
@@ -9542,7 +9625,10 @@ function HtmlViewer({
             onStyleChange: (id, styleUpdates, label) => { void handleManualEditStyleChange(id, styleUpdates, label); },
             invalidStyleMessage: t('manualEdit.error.invalidStyleValue'),
           })}
-          onApplyPatch={(patch, label) => { void applyManualEdit(patch, label); }}
+          onApplyPatch={(patch, label) => {
+            if (patch.kind === 'remove-element') void manualEditDeleteRef.current({ targetId: patch.id, revision: manualEditPreviewRevisionRef.current });
+            else void applyManualEdit(patch, label);
+          }}
           onPickImage={pickManualEditImage}
           onError={setManualEditError}
           onUndo={() => { void undoManualEdit(); }}
@@ -9631,7 +9717,10 @@ function HtmlViewer({
                 });
               }}
               onRichFormat={sendManualEditRichFormat}
-              onApplyPatch={(patch, label) => { void applyManualEdit(patch, label); }}
+              onApplyPatch={(patch, label) => {
+                if (patch.kind === 'remove-element') void manualEditDeleteRef.current({ targetId: patch.id, revision: manualEditPreviewRevisionRef.current });
+                else void applyManualEdit(patch, label);
+              }}
               onPickImage={pickManualEditImage}
               onError={setManualEditError}
               onUndo={() => { void undoManualEdit(); }}
@@ -10967,16 +11056,29 @@ async function inlineRelativeAssets(
     const href = readHtmlAttr(tag, 'href');
     if (!rel || !/\bstylesheet\b/i.test(rel) || !href) continue;
     replacements.push(
-      fetchProjectRelativeText(projectId, fileName, href).then((css) =>
-        css == null
-          ? null
-          : {
-              from: tag,
-              to:
-                `<style data-readable-inline-asset="${escapeHtmlAttr(href)}">\n` +
-                `${css.replace(/<\/style/gi, '<\\/style')}\n</style>`,
-            },
-      ),
+      fetchProjectRelativeText(projectId, fileName, href).then((css) => {
+        if (css == null) return null;
+        const stylesheetPath = resolveProjectRelativePath(fileName, href)!;
+        const stylesheetUrl = new URL(projectRawUrl(projectId, stylesheetPath), window.location.href);
+        const resolveCssRef = (ref: string) => {
+          if (/^(?:[a-z][a-z\d+.-]*:|#|\/)/i.test(ref)) return ref;
+          return new URL(ref, stylesheetUrl).href
+            .replace(/'/g, '%27').replace(/"/g, '%22').replace(/\(/g, '%28').replace(/\)/g, '%29');
+        };
+        const rebasedCss = css
+          .replace(/url\((\s*)(?:(['"])((?:\\.|[^\\])*?)\2|([^'"\s)]*))(\s*)\)/gi,
+            (_match, leading: string, quote: string | undefined, quoted: string | undefined, bare: string | undefined, trailing: string) => {
+              const ref = quoted ?? bare ?? '';
+              return `url(${leading}${quote ?? ''}${resolveCssRef(ref)}${quote ?? ''}${trailing})`;
+            })
+          .replace(/(@import\s+)(['"])((?:\\.|[^\\])*?)\2/gi,
+            (_match, prefix: string, quote: string, ref: string) => `${prefix}${quote}${resolveCssRef(ref)}${quote}`);
+        return {
+          from: tag,
+          to: `<style data-readable-inline-asset="${escapeHtmlAttr(href)}">\n`
+            + `${rebasedCss.replace(/<\/style/gi, '<\\/style')}\n</style>`,
+        };
+      }),
     );
   }
 

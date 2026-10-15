@@ -80,6 +80,11 @@ export interface ManualEditMovementSession {
   latch: ManualEditSnapLatch;
   /** Set once the duplicate has escaped the stationary-original release band. */
   stationaryOriginalEscaped?: boolean;
+  /** Live viewport geometry for drawing only; snapping keeps its start snapshot. */
+  guideGeometry?: {
+    offset: Readonly<{ x: number; y: number }>;
+    targets: readonly Pick<ManualEditTarget, 'id' | 'rect'>[];
+  };
 }
 
 export interface ManualEditMovementResult {
@@ -354,27 +359,54 @@ function resolveAxis(
 function buildGuide(
   session: ManualEditMovementSession,
   match: ManualEditSnapMatch,
-  movingRect: Readonly<ManualEditRect>,
+  translatedRect: Readonly<ManualEditRect>,
 ): ManualEditSnapGuide | null {
   const candidate = session.candidates.find((c) => c.id === match.targetId);
   if (!candidate) return null;
+  const offset = session.guideGeometry?.offset;
+  const movingRect = offset
+    ? { ...translatedRect, x: translatedRect.x + offset.x, y: translatedRect.y + offset.y }
+    : translatedRect;
+  const candidateRect = session.guideGeometry?.targets.find((target) => target.id === match.targetId)?.rect
+    ?? candidate.rect;
   if (match.axis === 'x') {
-    const at = edgeValue(candidate.rect, 'x', match.targetEdge);
+    const at = edgeValue(candidateRect, 'x', match.targetEdge);
     return {
       axis: 'x',
       x1: at,
       x2: at,
-      y1: Math.min(movingRect.y, candidate.rect.y),
-      y2: Math.max(movingRect.y + movingRect.height, candidate.rect.y + candidate.rect.height),
+      y1: Math.min(movingRect.y, candidateRect.y),
+      y2: Math.max(movingRect.y + movingRect.height, candidateRect.y + candidateRect.height),
     };
   }
-  const at = edgeValue(candidate.rect, 'y', match.targetEdge);
+  const at = edgeValue(candidateRect, 'y', match.targetEdge);
   return {
     axis: 'y',
     y1: at,
     y2: at,
-    x1: Math.min(movingRect.x, candidate.rect.x),
-    x2: Math.max(movingRect.x + movingRect.width, candidate.rect.x + candidate.rect.width),
+    x1: Math.min(movingRect.x, candidateRect.x),
+    x2: Math.max(movingRect.x + movingRect.width, candidateRect.x + candidateRect.width),
+  };
+}
+
+/** Refresh drawing after a viewport broadcast without resolving or changing snaps. */
+export function refreshManualEditMovementGuides(
+  session: ManualEditMovementSession,
+  result: ManualEditMovementResult,
+  targets: readonly Pick<ManualEditTarget, 'id' | 'rect'>[],
+): ManualEditMovementResult['guides'] {
+  const moving = targets.find((target) => target.id === session.targetId);
+  if (!moving) return result.guides;
+  session.guideGeometry = {
+    offset: {
+      x: moving.rect.x - result.translatedRect.x,
+      y: moving.rect.y - result.translatedRect.y,
+    },
+    targets,
+  };
+  return {
+    vertical: result.matches.x ? buildGuide(session, result.matches.x, result.translatedRect) : null,
+    horizontal: result.matches.y ? buildGuide(session, result.matches.y, result.translatedRect) : null,
   };
 }
 

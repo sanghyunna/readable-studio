@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildManualEditMovementCandidates,
   createManualEditSnapLatch,
+  refreshManualEditMovementGuides,
   resolveManualEditMovement,
   type ManualEditMovementSession,
   type ManualEditSnapCandidate,
@@ -244,6 +245,34 @@ describe('magnetic edge alignment', () => {
     const result = resolveManualEditMovement(session({ candidates: [cand('c', r(105, 180, 80, 200))] }), { x: 0, y: 0 });
     expect(result.guides.vertical).toEqual({ axis: 'x', x1: 105, x2: 105, y1: 180, y2: 380 });
     expect(result.guides.horizontal).toBeNull();
+  });
+
+  it('refreshes scrolled guide geometry without changing movement or snap decisions', () => {
+    const movement = session({
+      startRect: r(830, 485, 80, 80),
+      candidates: [cand('peer', r(730, 625, 100, 80))],
+    });
+    const result = resolveManualEditMovement(movement, { x: -96, y: 0 });
+    const before = JSON.stringify(result);
+    const latch = JSON.stringify(movement.latch);
+    const guides = refreshManualEditMovementGuides(movement, result, [
+      makeTarget('target-1', r(730, 365, 80, 80)),
+      makeTarget('peer', r(730, 505, 100, 80)),
+    ]);
+
+    expect(guides.vertical).toEqual({ axis: 'x', x1: 730, x2: 730, y1: 365, y2: 585 });
+    expect(JSON.stringify(result)).toBe(before);
+    expect(JSON.stringify(movement.latch)).toBe(latch);
+    const next = resolveManualEditMovement(movement, { x: -95, y: 2 });
+    const { guides: _guides, ...nextMovement } = next;
+    const unchanged = resolveManualEditMovement(session({
+      startRect: r(830, 485, 80, 80),
+      candidates: [cand('peer', r(730, 625, 100, 80))],
+      latch: JSON.parse(latch),
+    }), { x: -95, y: 2 });
+    const { guides: _unchangedGuides, ...unchangedMovement } = unchanged;
+    expect(nextMovement).toEqual(unchangedMovement);
+    expect(next.guides.vertical).toEqual({ axis: 'x', x1: 730, x2: 730, y1: 367, y2: 585 });
   });
 
   it.each<[number, number, boolean]>([

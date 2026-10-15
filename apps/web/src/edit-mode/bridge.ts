@@ -1812,6 +1812,7 @@ export function buildManualEditBridge(enabled: boolean): string {
       enabled = nextEnabled;
       document.documentElement.toggleAttribute('data-readable-edit-mode', enabled);
       if (!enabled) {
+        cancelViewportTargets();
         nativeObjectClick = null;
         removeDuplicateRoot();
         clearSelectedTarget();
@@ -2002,7 +2003,7 @@ export function buildManualEditBridge(enabled: boolean): string {
     return false;
   }
   // Keydown never bubbles out of this cross-document iframe to the host, so
-  // forward history shortcuts and arrow nudges when an object is selected.
+  // forward history shortcuts, Delete, and arrow nudges when an object is selected.
   // Inline text editing, native controls, ARIA widgets, and IME composition
   // keep the browser's native keyboard behavior.
   document.addEventListener('keydown', function(ev){
@@ -2040,6 +2041,12 @@ export function buildManualEditBridge(enabled: boolean): string {
       return;
     }
     if (isEditing) return;
+    if (ev.key === 'Delete' && selectedEl && hostSelectedTargetId && !(ev.ctrlKey || ev.metaKey || ev.altKey) && !isNudgeBlocked(ev.target, ev.isComposing)) {
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      if (!ev.repeat) window.parent.postMessage({ type: 'readable-edit-delete', targetId: hostSelectedTargetId, revision: hostRevision }, '*');
+      return;
+    }
     if (ev.key === 'Escape' && selectedEl && hostSelectedTargetId && !isNudgeBlocked(ev.target, ev.isComposing)) {
       ev.preventDefault();
       ev.stopImmediatePropagation();
@@ -2083,10 +2090,8 @@ export function buildManualEditBridge(enabled: boolean): string {
     if (document.visibilityState === 'hidden') finalizeHeldNudgeBurst();
   });
   document.addEventListener('selectionchange', postSelectionState);
-  window.addEventListener('resize', postTargets);
-  // ponytail: no throttle -- postTargets is a cheap querySelectorAll + getBoundingClientRect
-  // pass; add rAF/debounce here if a scroll-heavy preview page measurably regresses.
-  document.addEventListener('scroll', postTargets, true);
+  window.addEventListener('resize', queueViewportTargets);
+  document.addEventListener('scroll', queueViewportTargets, true);
   // Deck slide navigation, transition settle, media loads, and content growth
   // reflow the page without firing resize or scroll; without re-measurement the
   // host overlays (resize handles, inspector panel, hover icon) keep rendering
@@ -2094,6 +2099,7 @@ export function buildManualEditBridge(enabled: boolean): string {
   var suppressObservedLayoutUntil = 0;
   var queuedTargetsPost = false;
   var targetsFrame = null;
+  var viewportTargetsFrame = null;
   var targetsQuietTimer = null;
   var layoutMutationObserver = null;
   var layoutResizeObserver = null;
@@ -2103,11 +2109,23 @@ export function buildManualEditBridge(enabled: boolean): string {
   var cancelFrame = window.cancelAnimationFrame
     ? window.cancelAnimationFrame.bind(window)
     : window.clearTimeout.bind(window);
+  function cancelViewportTargets(){
+    if (viewportTargetsFrame !== null) cancelFrame(viewportTargetsFrame);
+    viewportTargetsFrame = null;
+  }
+  function queueViewportTargets(){
+    if (!hasLiveLayoutDocument() || !enabled || activeTextEditFinish || viewportTargetsFrame !== null) return;
+    viewportTargetsFrame = scheduleFrame(function(){
+      viewportTargetsFrame = null;
+      postTargets();
+    });
+  }
   function stopObservingLayout(){
     layoutSuspended = true;
     if (layoutMutationObserver) layoutMutationObserver.disconnect();
     if (layoutResizeObserver) layoutResizeObserver.disconnect();
     if (targetsFrame !== null) cancelFrame(targetsFrame);
+    cancelViewportTargets();
     if (targetsQuietTimer !== null) window.clearTimeout(targetsQuietTimer);
     targetsFrame = null;
     targetsQuietTimer = null;

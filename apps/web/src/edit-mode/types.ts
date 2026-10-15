@@ -386,6 +386,12 @@ export interface ManualEditNudgeMessage {
   revision: number;
 }
 
+export interface ManualEditDeleteMessage {
+  type: 'readable-edit-delete';
+  targetId: string;
+  revision: number;
+}
+
 export interface ManualEditBurstCancelMessage {
   type: 'readable-edit-burst-cancel';
 }
@@ -487,6 +493,7 @@ export type ManualEditBridgeMessage =
   | ManualEditTextFlushedMessage
   | ManualEditUndoMessage
   | ManualEditNudgeMessage
+  | ManualEditDeleteMessage
   | ManualEditBurstCancelMessage
   | ManualEditNudgeCommitMessage
   | ManualEditNudgeKeyupMessage
