@@ -68,17 +68,16 @@ export interface ComposerProjectImports {
 /**
  * The exact request the modal's Template tab sent with its defaults: no name
  * typed (auto-named), responsive target, no companion surfaces, no animations,
- * the workspace default design system, first conversation in design mode.
+ * no selected design system, first conversation in design mode.
  */
 export function buildTemplateCreateInput(
   template: ProjectTemplate,
-  defaultDesignSystemId: string | null,
   name: string,
 ): CreateInput {
   return {
     name,
     skillId: null,
-    designSystemId: defaultDesignSystemId,
+    designSystemId: null,
     metadata: {
       kind: 'template',
       platform: 'responsive',

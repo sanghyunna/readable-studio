@@ -519,6 +519,7 @@ function filterAllowedKeys(obj: Record<string, unknown>): AppConfigPrefs {
 function applyConfigDefaults(prefs: AppConfigPrefs): AppConfigPrefs {
   return {
     ...prefs,
+    designSystemId: prefs.designSystemId ?? null,
     // Explicit defaults prevent clients from substituting the full catalog.
     enabledAgentIds: prefs.enabledAgentIds ?? [...DEFAULT_ENABLED_AGENT_IDS],
     templateFavorites: prefs.templateFavorites ?? [],

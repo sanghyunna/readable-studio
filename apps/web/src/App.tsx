@@ -1486,7 +1486,6 @@ function AppInner() {
   const handleCreateFromTemplate = useCallback((template: ProjectTemplate, folderId: string | null) => {
     const input = buildTemplateCreateInput(
       template,
-      configRef.current.designSystemId,
       `${t('hubImport.templateProjectName')} \u00b7 ${new Date().toLocaleDateString()}`,
     );
     const pluginId = defaultScenarioPluginIdForProjectMetadata(input.metadata);
