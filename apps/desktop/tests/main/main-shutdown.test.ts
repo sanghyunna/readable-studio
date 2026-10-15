@@ -13,11 +13,12 @@ it('concurrent normal-close callers wait for the packaged shutdown hook before e
   const hook = Promise.withResolvers<void>();
   const entered = Promise.withResolvers<void>();
   const exit = vi.fn();
+  const disposeThumbnailCdn = vi.fn();
   const app = Object.assign(new EventEmitter(), { quit() {} });
   const context = vm.createContext({
     options: { beforeShutdown: () => { entered.resolve(); return hook.promise; } },
     approvalLoop: null, shortcutLoop: null, secretStorage: null, ipcServer: null, desktop: null,
-    disposeMenu() {}, removeDiagnosticsIpc() {}, crashEvidence: { dispose() {} },
+    disposeMenu() {}, removeDiagnosticsIpc() {}, disposeThumbnailCdn, crashEvidence: { dispose() {} },
     app, console, process: { exit },
   });
   const listenerStart = source.lastIndexOf('  app.on("before-quit", (event) => {');
@@ -38,6 +39,7 @@ it('concurrent normal-close callers wait for the packaged shutdown hook before e
   expect(exit).not.toHaveBeenCalled();
   hook.resolve();
   await (context.stop as () => Promise<void>)();
+  expect(disposeThumbnailCdn).toHaveBeenCalledOnce();
   await new Promise<void>(resolve => setImmediate(resolve));
   expect(exit).toHaveBeenCalledWith(0);
   const finishedEvent = { preventDefault: vi.fn() };

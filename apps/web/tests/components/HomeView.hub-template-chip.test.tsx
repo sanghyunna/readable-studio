@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import type { InstalledPluginRecord } from '@readable-studio/contracts';
+import type { InstalledPluginRecord, UserDesignTemplateSummary } from '@readable-studio/contracts';
 import { HomeView } from '../../src/components/HomeView';
 import type { PluginLoopSubmit } from '../../src/components/PluginLoopHome';
 import { I18nProvider } from '../../src/i18n';
@@ -32,6 +32,13 @@ const DECK_B = catalogueRecord('deck-swiss-international');
 const ACREAGE = catalogueRecord('acreage-farming');
 const SAAS = catalogueRecord('saas-landing');
 const WAITLIST = catalogueRecord('waitlist-page');
+const USER_DECK: UserDesignTemplateSummary = {
+  id: 'user-personal-deck', name: 'Personal deck', description: 'PRIVATE_TEMPLATE_BODY_481',
+  source: 'user', mode: 'deck', userImported: true,
+  previewType: 'html', designSystemRequired: false, defaultFor: [], triggers: [],
+  upstream: null, hasBody: true, examplePrompt: '', aggregatesExamples: false,
+  thumbnail: { status: 'pending', source: null, updatedAt: '2026-10-14' },
+};
 const LIBRARY_REQUEST = "우리 동네 도서관 10월 독서모임 안내: 2025-10-18 토 오후 2시, 3층 세미나실, 선정 도서 '소년이 온다', 참가비 없음, 주민 누구나, 사전 신청 없이 방문";
 const APPLY_RESULT = {
   query: '', contextItems: [], inputs: [], assets: [], mcpServers: [],
@@ -56,6 +63,7 @@ async function renderHub(ordinaryPlugin = false) {
     if (url === '/api/plugins') {
       return Response.json({ plugins: [DECK, DECK_B, ACREAGE, SAAS, WAITLIST] });
     }
+    if (url === '/api/design-templates') return Response.json({ designTemplates: [USER_DECK] });
     const record = [DECK, DECK_B, ACREAGE, SAAS, WAITLIST].find((item) => url === `/api/plugins/${encodeURIComponent(item.id)}/apply`);
     if (record) {
       return Response.json({ ...APPLY_RESULT, appliedPlugin: { ...APPLY_RESULT.appliedPlugin, pluginId: record.id } });
@@ -100,6 +108,38 @@ async function pickDeckCard() {
 }
 
 describe('Hub template chip - 91df2d0 hidden-brief regression', () => {
+  it('starts an imported deck through its skill and hidden template reference, without a plugin', async () => {
+    const { submit } = await renderHub();
+    await act(async () => { fireEvent.click(deckCard(USER_DECK.id)); });
+    expect(screen.getByTestId('home-hero-template-chip').textContent).toContain(USER_DECK.name);
+    expect(homeHeroPromptText().trim()).toBe('');
+    expect(homeHeroPromptText()).not.toContain(USER_DECK.description);
+    expectCardSelected(deckCard(USER_DECK.id), true);
+    await act(async () => { setHomeHeroPrompt(LIBRARY_REQUEST); });
+    const payload = await submit();
+    expect(payload).toMatchObject({
+      skillId: USER_DECK.id, projectKind: 'deck', projectMetadata: { kind: 'deck' },
+      pluginId: null, pluginType: null, appliedPluginSnapshotId: null,
+      templateRef: { id: USER_DECK.id, name: USER_DECK.name },
+    });
+    expect(payload.templateRef?.boundary).toBe(templatePromptBoundary(USER_DECK.description, LIBRARY_REQUEST));
+    expect(payload.prompt).toBe(composeTemplatePrompt(USER_DECK.description, LIBRARY_REQUEST));
+    expect(userTextFromTemplateMessage(payload.prompt, payload.templateRef)).toBe(LIBRARY_REQUEST);
+    expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith('/apply'))).toHaveLength(0);
+  });
+
+  it('deselects an imported deck card without losing the user text or keeping its skill route', async () => {
+    const { submit } = await renderHub();
+    await act(async () => { setHomeHeroPrompt(LIBRARY_REQUEST); });
+    await act(async () => { fireEvent.click(deckCard(USER_DECK.id)); });
+    expect(homeHeroPromptText()).toBe(LIBRARY_REQUEST);
+    await act(async () => { fireEvent.click(deckCard(USER_DECK.id)); });
+    expect(screen.queryByTestId('home-hero-template-chip')).toBeNull();
+    expectCardSelected(deckCard(USER_DECK.id), false);
+    expect(homeHeroPromptText()).toBe(LIBRARY_REQUEST);
+    expect(await submit()).toMatchObject({ skillId: null, templateRef: null, prompt: LIBRARY_REQUEST });
+  });
+
   it('sends unrelated library content through the SaaS template without required slots or ordinary apply', async () => {
     const { onSubmit } = await renderHub();
     fireEvent.click(screen.getAllByTestId('hub-template-carousel-tab')

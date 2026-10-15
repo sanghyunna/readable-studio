@@ -2862,6 +2862,54 @@
   scroll-snap-align: start;
 }
 
+.home-hero__user-template-badge {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+  word-break: keep-all;
+}
+.is-user-template .home-hero__template-check {
+  right: 48px;
+}
+.home-hero__user-template-menu {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 2;
+  padding: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-panel);
+  color: var(--text-muted);
+}
+.home-hero__user-template-add .home-hero__template-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+.home-hero__user-template-error {
+  color: var(--danger-text);
+  font-size: 12px;
+  word-break: keep-all;
+}
+.home-hero__user-template-dialog {
+  width: min(100%, 384px);
+  padding: 24px;
+  word-break: keep-all;
+}
+.home-hero__user-template-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
 .home-hero__template-card {
   appearance: none;
   width: 100%;

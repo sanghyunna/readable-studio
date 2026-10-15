@@ -724,6 +724,8 @@ describe('HomeView prompt handoff', () => {
     expect(fetchMock.mock.calls.some(([url]) => (
       typeof url === 'string' && url.includes('/api/plugins/example-web-prototype/apply')
     ))).toBe(false);
+    fireEvent.click(screen.getByTestId('home-hero-footer-option-designSystem'));
+    fireEvent.mouseDown(await within(await screen.findByTestId('project-ds-picker-popover')).findByText('Refly Design System'));
     expect(
       screen.getByTestId('home-hero-footer-option-designSystem').textContent,
     ).toContain('Refly Design System');
@@ -780,7 +782,7 @@ describe('HomeView prompt handoff', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('defaults to "No design system" (不指定) when the user has no personal default and submits a null designSystemId', async () => {
+  it.each([null, 'default', 'neutral-modern', 'ds-refly'])('starts without a design system despite saved workspace preference %s and submits null', async (savedDefault) => {
     const fetchMock = vi.fn<typeof fetch>(async (url) => {
       if (typeof url === 'string' && url === '/api/plugins') {
         return new Response(JSON.stringify({ plugins: [WEB_PROTOTYPE_PLUGIN] }), {
@@ -805,8 +807,12 @@ describe('HomeView prompt handoff', () => {
     render(
       <HomeView
         projects={[]}
-        designSystems={[REFLY_DESIGN_SYSTEM]}
-        defaultDesignSystemId={null}
+        designSystems={[
+          REFLY_DESIGN_SYSTEM,
+          { ...REFLY_DESIGN_SYSTEM, id: 'default', title: 'Neutral Modern', source: 'built-in', isEditable: false },
+          { ...REFLY_DESIGN_SYSTEM, id: 'neutral-modern', title: 'Neutral Modern', source: 'built-in', isEditable: false },
+        ]}
+        defaultDesignSystemId={savedDefault}
         onSubmit={onSubmit}
         onOpenProject={() => undefined}
         onViewAllProjects={() => undefined}
@@ -843,7 +849,7 @@ describe('HomeView prompt handoff', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('lets the user explicitly pick "No design system" to override a personal default and submit a null designSystemId', async () => {
+  it('lets the user clear an explicit personal selection and submit a null designSystemId', async () => {
     const fetchMock = vi.fn<typeof fetch>(async (url) => {
       if (typeof url === 'string' && url === '/api/plugins') {
         return new Response(JSON.stringify({ plugins: [WEB_PROTOTYPE_PLUGIN] }), {
@@ -877,7 +883,9 @@ describe('HomeView prompt handoff', () => {
     await clearActiveTypeChip();
     fireEvent.click(await screen.findByTestId('home-hero-rail-prototype'));
 
-    // The personal default pre-selects, as before.
+    expect(screen.getByTestId('home-hero-footer-option-designSystem').textContent).toContain('No design system');
+    fireEvent.click(screen.getByTestId('home-hero-footer-option-designSystem'));
+    fireEvent.mouseDown(await within(await screen.findByTestId('project-ds-picker-popover')).findByText('Refly Design System'));
     await waitFor(() => {
       expect(
         screen.getByTestId('home-hero-footer-option-designSystem').textContent,
@@ -939,6 +947,8 @@ describe('HomeView prompt handoff', () => {
 
     await clearActiveTypeChip();
     fireEvent.click(await screen.findByTestId('home-hero-rail-prototype'));
+    fireEvent.click(screen.getByTestId('home-hero-footer-option-designSystem'));
+    fireEvent.mouseDown(await within(await screen.findByTestId('project-ds-picker-popover')).findByText('Refly Design System'));
     fireEvent.click(await screen.findByTestId('home-hero-plugin-preset'));
 
     screen.getByTestId('home-hero-input');

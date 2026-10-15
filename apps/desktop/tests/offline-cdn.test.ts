@@ -32,3 +32,26 @@ it('leaves unsupported URLs and unavailable infrastructure alone, logging failur
   expect(log).toHaveBeenCalled(); expect(callback).toHaveBeenLastCalledWith({});
   log.mockRestore(); dispose();
 });
+
+it('restricts thumbnail traffic to daemon and resolved offline resources without changing the main session', async () => {
+  const onBeforeRequest = vi.fn();
+  const target = { webRequest: { onBeforeRequest } };
+  const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ lib: 'chartjs', major: 4, path: 'chart.js' })));
+  const dispose = installOfflineCdnHooks(
+    { defaultSession: target, fromPartition: () => target }, 'thumbnail',
+    async () => ({ webOrigin: 'http://127.0.0.1:17573', apiOrigin: 'http://127.0.0.1:17456' }),
+    fetchImpl, { restrictToOrigins: true },
+  );
+  const callback = vi.fn();
+  const handler = onBeforeRequest.mock.calls[0][1];
+  await handler({ url: 'https://example.com/tracker' }, callback);
+  expect(callback).toHaveBeenLastCalledWith({ cancel: true });
+  await handler({ url: 'http://127.0.0.1:17456/pages/cover.html' }, callback);
+  expect(callback).toHaveBeenLastCalledWith({});
+  await handler({ url: 'https://unpkg.com/chart.js' }, callback);
+  expect(callback).toHaveBeenLastCalledWith({ redirectURL: 'http://127.0.0.1:17573/offline-cdn/chartjs/4/chart.js' });
+  await handler({ url: 'http://127.0.0.1:17573/offline-cdn/chartjs/4/chart.js' }, callback);
+  expect(callback).toHaveBeenLastCalledWith({});
+  expect(fetchImpl).toHaveBeenCalledOnce();
+  dispose();
+});

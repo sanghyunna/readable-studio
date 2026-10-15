@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { BrowserWindow, Menu, app, dialog, globalShortcut, shell, type MenuItemConstructorOptions } from "electron";
+import { BrowserWindow, Menu, app, dialog, globalShortcut, session, shell, type MenuItemConstructorOptions } from "electron";
 
 import {
   APP_KEYS,
@@ -50,6 +50,8 @@ import {
 } from "./diagnostics.js";
 import { applyDesktopBaselineZoom } from "./zoom.js";
 import { startCrashEvidence } from "./crash-evidence.js";
+import { createHtmlThumbnailRenderer } from "./html-thumbnail-render.js";
+import { installOfflineCdnHooks } from "./offline-cdn.js";
 export { startCrashEvidence } from "./crash-evidence.js";
 
 // Re-export pure URL-policy helpers so the packaged workspace's
@@ -652,6 +654,7 @@ export async function runDesktopMain(
   let disposeMenu: () => void = () => undefined;
   let removeDiagnosticsIpc: () => void = () => undefined;
   let ipcServer: JsonIpcServerHandle | null = null;
+  let disposeThumbnailCdn: () => void = () => undefined;
   let shutdownComplete = false;
   let shutdownPromise: Promise<void> | null = null;
 
@@ -668,6 +671,7 @@ export async function runDesktopMain(
       removeDiagnosticsIpc();
       await secretStorage?.close();
       await ipcServer?.close().catch(() => undefined);
+      disposeThumbnailCdn();
       await desktop?.close().catch(() => undefined);
       crashEvidence.dispose();
       await approvalLoop?.done.catch(() => undefined);
@@ -719,6 +723,22 @@ export async function runDesktopMain(
     shutdownAndExit();
   });
 
+  const thumbnailSession = session.fromPartition("readable-studio-html-thumbnail");
+  disposeThumbnailCdn = installOfflineCdnHooks(
+    { defaultSession: thumbnailSession, fromPartition: () => thumbnailSession },
+    "readable-studio-html-thumbnail",
+    async () => {
+      const apiOrigin = await (options.discoverDaemonUrl ?? createDaemonDiscovery(runtime))();
+      // The daemon serves offline assets too. Its HTTP origin works in this
+      // isolated session without the packaged defaultSession protocol handler.
+      return apiOrigin ? { apiOrigin, webOrigin: apiOrigin } : null;
+    },
+    globalThis.fetch,
+    { restrictToOrigins: true },
+  );
+  const renderHtmlThumbnail = createHtmlThumbnailRenderer(options => new BrowserWindow({
+    ...options, webPreferences: { ...options.webPreferences, session: thumbnailSession },
+  }));
   ipcServer = await createJsonIpcServer({
     socketPath: runtime.ipc,
     handler: async (message: unknown) => {
@@ -746,6 +766,13 @@ export async function runDesktopMain(
           return await activeDesktop.click(request.input as DesktopClickInput);
         case SIDECAR_MESSAGES.EXPORT_PDF:
           return await activeDesktop.exportPdf(request.input as DesktopExportPdfInput);
+        case SIDECAR_MESSAGES.RENDER_HTML_THUMBNAIL: {
+          const daemonUrl = await (options.discoverDaemonUrl ?? createDaemonDiscovery(runtime))();
+          if (!daemonUrl || new URL(request.input.url).origin !== new URL(daemonUrl).origin) {
+            return { ok: false, code: "THUMBNAIL_RENDER_FAILED", error: "Thumbnail URL must use the daemon origin" };
+          }
+          return await renderHtmlThumbnail(request.input);
+        }
         case SIDECAR_MESSAGES.SHUTDOWN:
           setImmediate(() => {
             shutdownAndExit();

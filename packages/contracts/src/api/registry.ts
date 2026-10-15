@@ -272,8 +272,75 @@ export interface SkillResponse {
 // frontmatter, same preview behavior) but live under a separate registry
 // root so the EntryView Templates surface and the Settings → Skills surface
 // stay decoupled. See specs/current/skills-and-design-templates.md.
-export type DesignTemplateSummary = SkillSummary;
-export type DesignTemplateDetail = SkillDetail;
+export type DesignTemplateSummary = SkillSummary & DesignTemplateUserFields;
+export type DesignTemplateDetail = SkillDetail & DesignTemplateUserFields;
+
+// User-imported deck templates (ZIP import). Built-in entries omit both
+// fields; user-imported entries carry `userImported: true` plus the cover
+// thumbnail state read from the template's import.json.
+export type DesignTemplateThumbnailStatus = 'ready' | 'pending' | 'failed';
+export type DesignTemplateThumbnailSource = 'zip' | 'rendered' | null;
+
+export interface DesignTemplateThumbnailState {
+  status: DesignTemplateThumbnailStatus;
+  source: DesignTemplateThumbnailSource;
+  updatedAt: string;
+}
+
+export interface DesignTemplateUserFields {
+  userImported?: boolean;
+  thumbnail?: DesignTemplateThumbnailState;
+  /** Cover HTML path relative to pages/, preserving nested paths and extensions. */
+  cover?: string;
+}
+
+export interface DesignTemplateImportPage {
+  file: string;
+  use?: string;
+}
+
+// On-disk `<data>/design-templates/<id>/import.json`.
+export interface DesignTemplateImportManifest {
+  schemaVersion: 1;
+  id: string;
+  name: string;
+  originalFileName: string;
+  importedAt: string;
+  sha256: string;
+  pages: DesignTemplateImportPage[];
+  cover: string;
+  thumbnail: DesignTemplateThumbnailState;
+}
+
+export type UserDesignTemplateSummary = DesignTemplateSummary & {
+  userImported: true;
+  thumbnail: DesignTemplateThumbnailState;
+};
+
+// POST /api/design-templates/import (multipart field `file`, .zip).
+export interface DesignTemplateImportResponse {
+  template: UserDesignTemplateSummary;
+}
+
+// PATCH /api/design-templates/:id — rename keeps the id.
+export interface DesignTemplateRenameRequest {
+  name: string;
+}
+
+export interface DesignTemplateRenameResponse {
+  template: UserDesignTemplateSummary;
+}
+
+// DELETE /api/design-templates/:id (user-imported only).
+export interface DesignTemplateDeleteResponse {
+  ok: true;
+  id: string;
+}
+
+// POST /api/design-templates/:id/thumbnails — re-request thumbnails.
+export interface DesignTemplateThumbnailsResponse {
+  template: UserDesignTemplateSummary;
+}
 
 export interface DesignTemplatesResponse {
   designTemplates: DesignTemplateSummary[];

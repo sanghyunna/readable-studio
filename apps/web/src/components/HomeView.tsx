@@ -15,6 +15,7 @@ import type {
   McpServerConfig,
   InstalledPluginRecord,
   ProjectKind,
+  UserDesignTemplateSummary,
 } from '@readable-studio/contracts';
 import { DEFAULT_UNSELECTED_SCENARIO_PLUGIN_ID } from '@readable-studio/contracts';
 import { projectKindToTracking } from '@readable-studio/contracts/analytics';
@@ -322,12 +323,14 @@ export function HomeView({
   // Hub template card pick. The template brief is kept OUT of the composer
   // text (the user only sees a removable chip) and is prepended to the user's
   // own words at submit time, so the agent still receives the full brief.
-  const [hiddenTemplate, setHiddenTemplate] = useState<HiddenTemplate | null>(null);
+  const [hiddenTemplate, setHiddenTemplate] = useState<(HiddenTemplate & { userImported?: true }) | null>(null);
   // The Hub composer always starts a design-mode project: mode is a
   // creation-time choice and now lives in the New Project flow, so the
   // composer no longer carries a mode toggle.
   const sessionMode: ChatSessionMode = 'design';
-  const [designSystemId, setDesignSystemId] = useState<string | null>(defaultDesignSystemId);
+  // A workspace preference is not a choice for this new session. Keep it for
+  // picker ordering, but only an explicit composer pick selects a system.
+  const [designSystemId, setDesignSystemId] = useState<string | null>(null);
   const [activeSkill, setActiveSkill] = useState<SkillSummary | null>(null);
   const [selectedPluginContexts, setSelectedPluginContexts] = useState<SelectedPluginContext[]>([]);
   const [selectedMcpContexts, setSelectedMcpContexts] = useState<SelectedMcpContext[]>([]);
@@ -1024,6 +1027,35 @@ export function HomeView({
     }
   }
 
+  function useUserDeckTemplate(template: UserDesignTemplateSummary) {
+    if (rejectDraftMutationDuringSubmit()) return;
+    if (hiddenTemplate?.id === template.id) {
+      clearHiddenTemplate();
+      return;
+    }
+    runWithReplacementConfirmation(localizeSkillName(locale, template), null, async () => {
+      activePluginApplyRequestRef.current += 1;
+      setActive(null);
+      setActiveSkill(null);
+      setPendingApplyId(null);
+      setPendingChipId(null);
+      setFallbackProjectKind('deck');
+      setFallbackProjectMetadata(null);
+      setHiddenTemplate({
+        id: template.id,
+        name: localizeSkillName(locale, template),
+        text: template.description,
+        userImported: true,
+      });
+      setError(null);
+      inputRef.current?.pulseSend();
+      focusPromptAtEnd();
+    }, {
+      before: hiddenTemplate?.id ?? active?.record.id ?? null,
+      after: template.id,
+    });
+  }
+
   function handlePromptChange(nextPrompt: string) {
     if (rejectDraftMutationDuringSubmit()) return;
     setPrompt(nextPrompt);
@@ -1640,8 +1672,8 @@ export function HomeView({
     ) ?? { kind: submittedProjectKind };
     // Scenario plugins (chips / preset cards) and explicit skill picks are
     // mutually exclusive routing sources — never send both (#2972).
-    const resolvedSkillId = submittedActive ? null : activeSkill?.id ?? null;
-    const routedPluginId = activeSkill
+    const resolvedSkillId = template?.userImported ? template.id : submittedActive ? null : activeSkill?.id ?? null;
+    const routedPluginId = template?.userImported || activeSkill
       ? null
       : sessionMode === 'design'
         ? submittedActive?.record.id ?? DEFAULT_UNSELECTED_SCENARIO_PLUGIN_ID
@@ -1751,7 +1783,7 @@ export function HomeView({
         activeSkillTitle={activeSkill ? localizeSkillName(locale, activeSkill) : null}
         activeChipId={active?.chipId ?? null}
         showActivePluginChip={showActivePluginChip && !hiddenTemplate}
-        templateChip={hiddenTemplate ? { name: hiddenTemplate.name } : null}
+        templateChip={hiddenTemplate ? { id: hiddenTemplate.id, name: hiddenTemplate.name } : null}
         onClearTemplateChip={clearHiddenTemplate}
         folderChip={surface === 'hub' ? selectedFolder : null}
         onClearFolderChip={onClearSelectedFolder}
@@ -1806,6 +1838,7 @@ export function HomeView({
         }
         onPickPlugin={(record, nextPrompt) => addPluginContext(record, nextPrompt)}
         onPickExamplePlugin={useExamplePlugin}
+        onPickUserDeckTemplate={useUserDeckTemplate}
         onPickSkill={useSkill}
         onPickMcp={useMcpServer}
         onPickChip={pickChip}

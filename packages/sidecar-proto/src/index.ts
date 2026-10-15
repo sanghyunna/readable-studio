@@ -111,6 +111,7 @@ export const SIDECAR_MESSAGES = Object.freeze({
   EXPORT_PDF: "export-pdf",
   MINT_IMPORT_TOKEN: "mint-import-token",
   REGISTER_DESKTOP_AUTH: "register-desktop-auth",
+  RENDER_HTML_THUMBNAIL: "render-html-thumbnail",
   SCREENSHOT: "screenshot",
   SHUTDOWN: "shutdown",
   SHOW: "show",
@@ -231,6 +232,24 @@ export type DesktopExportPdfResult = {
   path?: string;
 };
 
+export type DesktopRenderHtmlThumbnailInput = {
+  url: string;
+  width: number;
+  height: number;
+  outWidth: number;
+  outHeight: number;
+  timeoutMs: number;
+};
+
+export type DesktopRenderHtmlThumbnailResult =
+  | { ok: true; imageBase64: string; mime: 'image/webp' | 'image/png' }
+  | { ok: false; error: string; code: 'THUMBNAIL_RENDER_FAILED' | 'THUMBNAIL_RENDER_TIMEOUT' };
+
+export type DesktopRenderHtmlThumbnailMessage = {
+  type: typeof SIDECAR_MESSAGES.RENDER_HTML_THUMBNAIL;
+  input: DesktopRenderHtmlThumbnailInput;
+};
+
 export type SidecarStatusMessage = { type: typeof SIDECAR_MESSAGES.STATUS };
 export type SidecarShutdownMessage = { type: typeof SIDECAR_MESSAGES.SHUTDOWN };
 export type DesktopEvalMessage = { input: DesktopEvalInput; type: typeof SIDECAR_MESSAGES.EVAL };
@@ -290,7 +309,8 @@ export type DesktopSidecarMessage =
   | DesktopConsoleMessage
   | DesktopShowMessage
   | DesktopClickMessage
-  | DesktopExportPdfMessage;
+  | DesktopExportPdfMessage
+  | DesktopRenderHtmlThumbnailMessage;
 
 export type ShutdownResult = {
   accepted: true;
@@ -469,6 +489,28 @@ function normalizeDesktopScreenshotInput(input: unknown): DesktopScreenshotInput
   return { path: normalizeNonEmptyString(value.path, "desktop screenshot path") };
 }
 
+function normalizeDesktopRenderHtmlThumbnailInput(input: unknown): DesktopRenderHtmlThumbnailInput {
+  const value = assertObject(input, "desktop HTML thumbnail input");
+  assertKnownKeys(value, ["url", "width", "height", "outWidth", "outHeight", "timeoutMs"], "desktop HTML thumbnail input");
+  const url = normalizeNonEmptyString(value.url, "desktop HTML thumbnail URL");
+  const parsed = new URL(url);
+  if (parsed.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(parsed.hostname) || parsed.username || parsed.password) {
+    throw new Error("desktop HTML thumbnail URL must be a local daemon HTTP URL");
+  }
+  const integer = (key: string, max: number): number => {
+    const number = value[key];
+    if (typeof number !== "number" || !Number.isSafeInteger(number) || number <= 0 || number > max) {
+      throw new Error(`desktop HTML thumbnail ${key} must be a positive integer at most ${max}`);
+    }
+    return number;
+  };
+  return {
+    url, width: integer("width", 1920), height: integer("height", 1080),
+    outWidth: integer("outWidth", 480), outHeight: integer("outHeight", 270),
+    timeoutMs: integer("timeoutMs", 10000),
+  };
+}
+
 function normalizeDesktopClickInput(input: unknown): DesktopClickInput {
   const value = assertObject(input, "desktop click input");
   assertKnownKeys(value, ["selector"], "desktop click input");
@@ -572,6 +614,9 @@ export function normalizeDesktopSidecarMessage(input: unknown): DesktopSidecarMe
     case SIDECAR_MESSAGES.EXPORT_PDF:
       assertKnownKeys(value, ["input", "type"], "desktop sidecar message");
       return { input: normalizeDesktopExportPdfInput(value.input), type };
+    case SIDECAR_MESSAGES.RENDER_HTML_THUMBNAIL:
+      assertKnownKeys(value, ["input", "type"], "desktop sidecar message");
+      return { input: normalizeDesktopRenderHtmlThumbnailInput(value.input), type };
     default:
       throw new SidecarContractError(SIDECAR_ERROR_CODES.UNKNOWN_MESSAGE, `unknown desktop sidecar message: ${type}`);
   }

@@ -33,7 +33,7 @@
 //    static card shaped like its hub type instead of a glyph or a blank
 //    iframe; see `TemplatePlaceholderThumb`.
 
-import type { InstalledPluginRecord } from '@readable-studio/contracts';
+import type { InstalledPluginRecord, UserDesignTemplateSummary } from '@readable-studio/contracts';
 
 import { fetchDaemonConfig } from '../../state/config';
 import { inferPluginPreview, type PluginPreviewSpec } from '../plugins-home/preview';
@@ -43,6 +43,7 @@ export interface HubTemplateCarouselItem {
   // The creation chip the preset is filed under; the pick handler binds the
   // plugin AND stamps this chip, exactly as a chip-scoped preset pick does.
   chipId: string;
+  userTemplate?: UserDesignTemplateSummary;
 }
 
 // Same-origin daemon path ("/api/..."), as opposed to an absolute or

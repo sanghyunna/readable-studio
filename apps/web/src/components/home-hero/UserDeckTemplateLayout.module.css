@@ -1,0 +1,6 @@
+@media (max-width: 560px) {
+  .deck {
+    display: flex;
+    flex-direction: column;
+  }
+}

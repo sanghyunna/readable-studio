@@ -7,6 +7,7 @@ import { splitResearchSubcommand } from './research/cli-args.js';
 import { resolveDaemonUrl } from './daemon-url.js';
 import { readCurrentAppVersionInfo } from './app-version.js';
 import { DESIGN_SYSTEMS_USAGE, isDesignSystemsHelpArg } from './design-systems-cli-help.js';
+import { DESIGN_TEMPLATES_USAGE, isDesignTemplatesHelpArg } from './design-templates-cli-help.js';
 import { parseDesignSystemRenameArgs } from './design-system-rename-args.js';
 import { runProviderCli } from './provider-cli.js';
 import { runDatabricksCli } from './databricks-cli.js';
@@ -315,6 +316,7 @@ const SUBCOMMAND_MAP = {
   atoms: runAtoms,
   skills: runSkills,
   'design-systems': runDesignSystems,
+  'design-templates': runDesignTemplates,
   craft: runCraft,
   fonts: runFonts,
   diagnostics: runDiagnostics,
@@ -7785,6 +7787,114 @@ Renames an editable (user-created) design system. Built-in systems are read-only
   if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
   const renamed = data.designSystem ?? data;
   console.log(`Renamed ${parsed.id} -> ${renamed.title ?? parsed.title}`);
+}
+
+// readable design-templates import <zip> | list [--user] | rename <id> <name>
+//   | remove <id> | thumbnails <id>   [--json] [--daemon-url <url>]
+//
+// CLI mirror of the Hub's user-imported deck templates. Calls the same
+// /api/design-templates endpoints as the web UI. Distinct from
+// `readable templates`, which manages project snapshot templates.
+async function runDesignTemplates(args) {
+  const sub = args[0];
+  if (!sub || isDesignTemplatesHelpArg(sub) || args.includes('--help') || args.includes('-h')) {
+    console.log(DESIGN_TEMPLATES_USAGE);
+    process.exit(sub ? 0 : 2);
+  }
+  const rest = args.slice(1);
+  let flags;
+  try {
+    flags = parseFlags(rest, {
+      string: LIBRARY_STRING_FLAGS,
+      boolean: new Set([...LIBRARY_BOOLEAN_FLAGS, 'user']),
+    });
+  } catch (err) {
+    console.error(err.message);
+    process.exit(2);
+  }
+  const positional = [];
+  for (let i = 0; i < rest.length; i++) {
+    const value = rest[i];
+    if (value.startsWith('--')) {
+      if (!value.includes('=') && LIBRARY_STRING_FLAGS.has(value.slice(2))) i++;
+      continue;
+    }
+    positional.push(value);
+  }
+  const base = (await libraryDaemonUrl(flags)).replace(/\/$/, '');
+  const usage = (line) => {
+    console.error(`Usage: readable design-templates ${line}`);
+    process.exit(2);
+  };
+  const send = async (apiPath, init) => {
+    const resp = await fetch(`${base}${apiPath}`, init);
+    if (!resp.ok) return structuredHttpFailure(resp, 'design-template-request-failed');
+    return resp.json();
+  };
+  const templatePath = (id) => `/api/design-templates/${encodeURIComponent(id)}`;
+  const describe = (t) =>
+    `${t?.id}\t${t?.displayName?.en ?? t?.name ?? t?.title ?? t?.id}${t?.thumbnail ? `\tthumbnail:${t.thumbnail.status}` : ''}`;
+  switch (sub) {
+    case 'import': {
+      const zipPath = positional[0];
+      if (!zipPath) return usage('import <zip>');
+      const resolved = path.resolve(zipPath);
+      let buf;
+      try {
+        buf = readFileSync(resolved);
+      } catch (err) {
+        console.error(`cannot read ${resolved}: ${err.message ?? err}`);
+        process.exit(2);
+      }
+      const form = new FormData();
+      form.append('file', new Blob([buf], { type: 'application/zip' }), path.basename(resolved));
+      const data = await send('/api/design-templates/import', { method: 'POST', body: form });
+      if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+      console.log(`Imported ${describe(data?.template)}`);
+      return;
+    }
+    case 'list': {
+      const data = await send('/api/design-templates');
+      const all = Array.isArray(data?.designTemplates) ? data.designTemplates : [];
+      const rows = flags.user ? all.filter((t) => t?.userImported === true) : all;
+      if (flags.json) return process.stdout.write(JSON.stringify({ designTemplates: rows }, null, 2) + '\n');
+      for (const t of rows) console.log(describe(t));
+      return;
+    }
+    case 'rename': {
+      const [id, ...nameParts] = positional;
+      const name = nameParts.join(' ').trim();
+      if (!id || !name) return usage('rename <id> <name>');
+      const data = await send(templatePath(id), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+      console.log(`Renamed ${describe(data?.template)}`);
+      return;
+    }
+    case 'remove': {
+      const id = positional[0];
+      if (!id) return usage('remove <id>');
+      const data = await send(templatePath(id), { method: 'DELETE' });
+      if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+      console.log(`Removed ${data?.id ?? id}`);
+      return;
+    }
+    case 'thumbnails': {
+      const id = positional[0];
+      if (!id) return usage('thumbnails <id>');
+      const data = await send(`${templatePath(id)}/thumbnails`, { method: 'POST' });
+      if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+      console.log(`Thumbnails requested ${describe(data?.template)}`);
+      return;
+    }
+    default:
+      console.error(`unknown subcommand: readable design-templates ${sub}`);
+      console.error(DESIGN_TEMPLATES_USAGE);
+      process.exit(2);
+  }
 }
 
 async function runStatus(args) {

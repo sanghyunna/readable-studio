@@ -7,8 +7,10 @@
 // composed with the recent-projects strip and plugins section
 // without owning their data lifecycles.
 
+import userDeckLayout from './home-hero/UserDeckTemplateLayout.module.css';
 import {
   forwardRef,
+  memo,
   useCallback,
   useEffect,
   useId,
@@ -31,6 +33,7 @@ import type {
   InputFieldSpec,
   InstalledPluginRecord,
   McpServerConfig,
+  UserDesignTemplateSummary,
 } from '@readable-studio/contracts';
 import { Button } from '@readable-studio/components';
 import { DesignSystemPicker } from './DesignSystemPicker';
@@ -102,6 +105,9 @@ import type { StagedFileItem } from './composer/stagedFiles';
 import { CaretFloatingLayer } from './composer/CaretFloatingLayer';
 import { pluginsWithVisualReferences } from '../utils/visualPluginContext';
 import { isHubEditableDocumentName } from './hub/drop-to-edit';
+import { useUserDeckTemplates } from './home-hero/useUserDeckTemplates';
+import { UserDeckTemplateControls } from './home-hero/UserDeckTemplateControls';
+import { useInView } from './plugins-home/useInView';
 
 export interface HomeHeroSubmitHandler {
   (): void;
@@ -128,6 +134,7 @@ export interface ExamplePromptInfo {
 }
 
 interface Props {
+  onPickUserDeckTemplate?: (template: UserDesignTemplateSummary) => void;
   active?: boolean;
   surface?: 'default' | 'hub';
   submitting?: boolean;
@@ -154,7 +161,7 @@ interface Props {
   onClearActiveChip?: () => void;
   /** Hub template card pick held outside the composer text (see
    *  home-hero/templatePrompt.ts). Renders as a removable chip. */
-  templateChip?: { name: string } | null;
+  templateChip?: { id?: string; name: string } | null;
   onClearTemplateChip?: () => void;
   /** Hub only: the rail's selected project, rendered as the project pill. */
   folderChip?: { readonly id: string; readonly name: string } | null;
@@ -321,6 +328,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     continueDisabled,
     onPickPlugin,
     onPickExamplePlugin = () => undefined,
+    onPickUserDeckTemplate,
     onPickSkill = () => undefined,
     onPickMcp = () => undefined,
     onPickChip,
@@ -334,6 +342,8 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
 ) {
   const { locale, t } = useI18n();
   const analytics = useAnalytics();
+  const trackRef = useRef(analytics.track);
+  trackRef.current = analytics.track;
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [mentionTab, setMentionTab] = useState<HomeMentionTab>('all');
   const [hoveredPlugin, setHoveredPlugin] = useState<InstalledPluginRecord | null>(null);
@@ -351,11 +361,6 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   // binds a plugin or stamps an active badge.
   const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null);
   const [selectedPromptExample, setSelectedPromptExample] = useState<SelectedPromptExample | null>(null);
-  // Hub template rail: collapsed is a persisted opt-out (see templateCarousel.ts).
-  const [templateRailCollapsed, setTemplateRailCollapsed] = useState(readTemplateCarouselCollapsed);
-  // Hub template rail: the creation-type tab (deck / report / website) is
-  // persisted next to the collapse opt-out.
-  const [templateRailTab, setTemplateRailTab] = useState<HubTemplateTabId>(readTemplateCarouselTab);
   const [previewHomeFileKey, setPreviewHomeFileKey] = useState<string | null>(null);
   const stagedFilePreviewsRef = useRef<Map<string, { file: File; url: string }>>(new Map());
   // Lexical-driven @-trigger state (replaces the old end-anchored
@@ -600,61 +605,8 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     );
   }, [activeExamplePlugins, activeChipId, selectedSubcategory, pluginOptions]);
 
-  // Hub template rail contents: the selected tab's FULL curated set - every
-  // template of that creation type, uncapped, in the curated / visual-appeal
-  // order the chip view uses. The rail never follows the active chip: a card
-  // pick must leave the rail (tab column, set, arrows) exactly as it was, so
-  // a mis-click is undone by clicking another card or the chip's (x).
-  // Starred templates lead the rail (in starring order); the list is the
-  // daemon-owned `templateFavorites` so it survives a reload.
-  const [templateFavorites, setTemplateFavorites] = useState<string[]>([]);
-  // A star pressed before the initial read resolves must not be undone by
-  // that read: the user's list is newer than the one on disk.
-  const templateFavoritesTouchedRef = useRef(false);
-  const templateFavoritesRef = useRef(templateFavorites);
-  templateFavoritesRef.current = templateFavorites;
-  useEffect(() => {
-    if (surface !== 'hub') return;
-    let cancelled = false;
-    void fetchTemplateFavorites().then((list) => {
-      if (!cancelled && !templateFavoritesTouchedRef.current) setTemplateFavorites(list);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [surface]);
-  const hubTemplateItems = useMemo<HubTemplateCarouselItem[]>(() => {
-    if (surface !== 'hub') return [];
-    const items = homeHeroExamplePluginsForChip(templateRailTab, pluginOptions, locale, { limit: Infinity })
-      .map((record) => ({ record, chipId: templateRailTab }));
-    return sortHubTemplateItemsByFavorite(items, templateFavorites);
-  }, [surface, templateRailTab, pluginOptions, locale, templateFavorites]);
-  function toggleHubTemplateFavorite(id: string) {
-    // Optimistic: the star and the order flip at once; the write follows.
-    templateFavoritesTouchedRef.current = true;
-    const next = toggleTemplateFavorite(templateFavoritesRef.current, id);
-    templateFavoritesRef.current = next;
-    setTemplateFavorites(next);
-    void persistTemplateFavorites(next);
-  }
-  // The rail (with its tab column) stays mounted while ANY tab has templates,
-  // so an empty tab still leaves the other two reachable.
-  const hubTemplateRailVisible = useMemo(() => {
-    if (surface !== 'hub') return false;
-    return hubTemplateItems.length > 0 || HUB_TEMPLATE_TAB_IDS.some(
-      (id) => homeHeroExamplePluginsForChip(id, pluginOptions, locale, { limit: 1 }).length > 0,
-    );
-  }, [surface, hubTemplateItems.length, pluginOptions, locale]);
-  // Per-type totals shown on the tab buttons so each tab reads as "open this
-  // set" rather than a static label.
-  const hubTemplateTabCounts = useMemo<Record<HubTemplateTabId, number>>(() => {
-    const counts = { deck: 0, report: 0, prototype: 0 };
-    if (surface !== 'hub') return counts;
-    for (const id of HUB_TEMPLATE_TAB_IDS) {
-      counts[id] = homeHeroExamplePluginsForChip(id, pluginOptions, locale, { limit: Infinity }).length;
-    }
-    return counts;
-  }, [surface, pluginOptions, locale]);
+  // The rail owns its data and persisted preferences independently of typing.
+  const hubTemplateRailVisible = surface === 'hub';
 
   // First-run guide, beat 1: pulse the Prototype chip for brand-new users.
   // The settle delay lets the hero finish its entrance before the sheen.
@@ -1018,14 +970,14 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   // Hub template chip (x) and a re-click on the selected card share this
   // path: the host drops the hidden brief + plugin binding (keeping the typed
   // text) and the local example-prompt bookkeeping is reset with it.
-  function clearTemplateChip() {
+  const clearTemplateChip = useCallback(() => {
     if (interactionLocked) return;
     setSelectedPromptExample(null);
     onExamplePromptStatusChange?.(null);
     onClearTemplateChip();
-  }
+  }, [interactionLocked, onExamplePromptStatusChange, onClearTemplateChip]);
 
-  function pickExamplePluginPreset(record: InstalledPluginRecord, chipId: string, promptText: string) {
+  const pickExamplePluginPreset = useCallback((record: InstalledPluginRecord, chipId: string, promptText: string) => {
     if (interactionLocked) return;
     // Clicking the already-selected Hub card toggles it off, exactly like
     // pressing the chip's (x); a different card still switches the pick.
@@ -1033,7 +985,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
       clearTemplateChip();
       return;
     }
-    trackHomeChatComposerClick(analytics.track, {
+    trackHomeChatComposerClick(trackRef.current, {
       page_name: 'home',
       area: 'chat_composer',
       element: 'example_prompt',
@@ -1051,7 +1003,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
       brief: briefForPluginPreset(record, chipId),
     });
     onPickExamplePlugin(record, chipId, promptText);
-  }
+  }, [interactionLocked, surface, templateChip, activePluginRecord, clearTemplateChip, onExamplePromptStatusChange, onPickExamplePlugin]);
 
   // The task-type rail (原型 / 幻灯片 / 报告 / …). Records which
   // task type the user picked before delegating to the host's chip handler.
@@ -1819,23 +1771,9 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
 
       {hubTemplateRailVisible ? (
         <HubTemplateCarousel
-          items={hubTemplateItems}
-          favorites={templateFavorites}
-          onToggleFavorite={toggleHubTemplateFavorite}
-          collapsed={templateRailCollapsed}
-          tab={templateRailTab}
-          tabCounts={hubTemplateTabCounts}
-          onTabChange={(next) => {
-            writeTemplateCarouselTab(next);
-            setTemplateRailTab(next);
-          }}
-          onToggle={() => {
-            setTemplateRailCollapsed((current) => {
-              writeTemplateCarouselCollapsed(!current);
-              return !current;
-            });
-          }}
-          activePluginId={activePluginRecord?.id ?? null}
+          pluginOptions={pluginOptions}
+          onPickUserDeckTemplate={onPickUserDeckTemplate}
+          activePluginId={templateChip?.id ?? activeSkillId ?? activePluginRecord?.id ?? null}
           pendingPluginId={interactionLocked ? '__locked__' : pendingPluginId}
           locale={locale}
           onPick={pickExamplePluginPreset}
@@ -1968,39 +1906,86 @@ function PluginPromptPresets({
 // column is its own single Tab stop: ArrowUp/ArrowDown walk the tabs and
 // select as they go. The column and the set never change on a card pick;
 // the picked card only carries the selection check.
-function HubTemplateCarousel({
+const HubTemplateCarousel = memo(function HubTemplateCarousel({
+  pluginOptions,
+  onPickUserDeckTemplate,
   activePluginId,
-  collapsed,
-  favorites,
-  items,
   locale,
   onPick,
-  onTabChange,
-  onToggle,
-  onToggleFavorite,
   pendingPluginId,
   pulseFirstPreset = false,
-  tab,
-  tabCounts,
 }: {
+  pluginOptions: InstalledPluginRecord[];
+  onPickUserDeckTemplate?: (template: UserDesignTemplateSummary) => void;
   activePluginId: string | null;
-  collapsed: boolean;
-  favorites: readonly string[];
-  items: HubTemplateCarouselItem[];
   locale: Locale;
   onPick: (record: InstalledPluginRecord, chipId: string, promptText: string) => void;
-  onTabChange: (tab: HubTemplateTabId) => void;
-  onToggle: () => void;
-  onToggleFavorite: (id: string) => void;
   pendingPluginId: string | null;
   pulseFirstPreset?: boolean;
-  tab: HubTemplateTabId;
-  tabCounts: Record<HubTemplateTabId, number>;
 }) {
   const { t } = useI18n();
+  const userDecks = useUserDeckTemplates(true);
+  const [collapsed, setCollapsed] = useState(readTemplateCarouselCollapsed);
+  const [tab, setTab] = useState<HubTemplateTabId>(readTemplateCarouselTab);
+  const [favorites, setFavorites] = useState<string[]>([]);
+  const favoritesTouchedRef = useRef(false);
+  const favoritesRef = useRef(favorites);
+  favoritesRef.current = favorites;
+  useEffect(() => {
+    let cancelled = false;
+    void fetchTemplateFavorites().then((list) => {
+      if (!cancelled && !favoritesTouchedRef.current) {
+        setFavorites((current) => current.length === list.length
+          && current.every((id, index) => id === list[index]) ? current : list);
+      }
+    });
+    return () => { cancelled = true; };
+  }, []);
+  const items = useMemo<HubTemplateCarouselItem[]>(() => {
+    const next = homeHeroExamplePluginsForChip(tab, pluginOptions, locale, { limit: Infinity })
+      .map((record): HubTemplateCarouselItem => ({ record, chipId: tab }));
+    if (tab === 'deck') {
+      for (const template of userDecks.templates) next.push({
+        chipId: 'deck', userTemplate: template,
+        record: {
+          id: template.id, title: localizeSkillName(locale, template), version: '1.0.0', sourceKind: 'local',
+          source: template.id, trust: 'restricted', capabilitiesGranted: [],
+          fsPath: '', installedAt: 0, updatedAt: 0,
+          manifest: { name: template.id, title: template.name, version: '1.0.0' },
+        },
+      });
+    }
+    return sortHubTemplateItemsByFavorite(next, favorites);
+  }, [tab, pluginOptions, locale, favorites, userDecks.templates]);
+  const tabCounts = useMemo<Record<HubTemplateTabId, number>>(() => {
+    const counts = { deck: 0, report: 0, prototype: 0 };
+    for (const id of HUB_TEMPLATE_TAB_IDS) {
+      counts[id] = homeHeroExamplePluginsForChip(id, pluginOptions, locale, { limit: Infinity }).length;
+    }
+    counts.deck += userDecks.templates.length;
+    return counts;
+  }, [pluginOptions, locale, userDecks.templates.length]);
+  function onTabChange(next: HubTemplateTabId) {
+    writeTemplateCarouselTab(next);
+    setTab(next);
+  }
+  function onToggle() {
+    setCollapsed((current) => {
+      writeTemplateCarouselCollapsed(!current);
+      return !current;
+    });
+  }
+  function onToggleFavorite(id: string) {
+    favoritesTouchedRef.current = true;
+    const next = toggleTemplateFavorite(favoritesRef.current, id);
+    favoritesRef.current = next;
+    setFavorites(next);
+    void persistTemplateFavorites(next);
+  }
   const railId = useId();
   const tabIdPrefix = useId();
   const railRef = useRef<HTMLDivElement | null>(null);
+  const zipInput = useRef<HTMLInputElement>(null);
   const tabListRef = useRef<HTMLDivElement | null>(null);
   const [focusIndex, setFocusIndex] = useState(0);
 
@@ -2188,7 +2173,7 @@ function HubTemplateCarousel({
         aria-hidden={collapsed}
       >
         <div className="accordion-collapsible-inner">
-          <div className="home-hero__templates-deck">
+          <div className={`home-hero__templates-deck ${userDeckLayout.deck}`}>
             <div
                 ref={tabListRef}
                 className="home-hero__templates-tabs"
@@ -2243,6 +2228,8 @@ function HubTemplateCarousel({
               >
                 {items.map((item, index) => (
                   <HubTemplateCard
+                    onPickUserDeckTemplate={onPickUserDeckTemplate}
+                    onManageUserTemplate={(name) => userDecks.manage(item.record.id, name)}
                     key={item.record.id}
                     item={item}
                     locale={locale}
@@ -2257,7 +2244,23 @@ function HubTemplateCarousel({
                     onToggleFavorite={onToggleFavorite}
                   />
                 ))}
+                {tab === 'deck' ? <div role="listitem" className="home-hero__template-item">
+                  <Button variant="ghost" className="home-hero__template-card home-hero__user-template-add"
+                    data-testid="user-deck-add" disabled={userDecks.progress !== null}
+                    onClick={() => zipInput.current?.click()}>
+                    <span className="home-hero__template-thumb"><Icon name="plus" size={24} /></span>
+                    <span className="home-hero__template-title">{userDecks.progress === null
+                      ? t('homeHero.userTemplateAdd')
+                      : t('homeHero.userTemplateUploading', { progress: userDecks.progress })}</span>
+                  </Button>
+                </div> : null}
               </div>
+              <input ref={zipInput} type="file" accept=".zip" hidden data-testid="user-deck-zip-input"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = '';
+                  if (file) userDecks.importZip(file);
+                }} />
               {/* Kept mounted and toggled by class so the fade can play; the
                   hidden arrow is disabled and inert so it is neither a tab stop
                   nor a click target. */}
@@ -2289,15 +2292,20 @@ function HubTemplateCarousel({
           </div>
         </div>
       </div>
+      {userDecks.error ? <p role="alert" className="home-hero__user-template-error">
+        {t('homeHero.userTemplateImportError', { message: userDecks.error })}
+      </p> : null}
     </section>
   );
-}
+});
 
 // The list item is a wrapper: the pick button and the favorite star are
 // SIBLINGS (a button cannot nest a button). Two same-size overlays sit on
 // the thumb's corners: the star top-LEFT, the selection check top-RIGHT, so
 // they never cover each other. A star press never reaches the pick handler.
 function HubTemplateCard({
+  onPickUserDeckTemplate,
+  onManageUserTemplate,
   active,
   disabled,
   favorite,
@@ -2310,6 +2318,8 @@ function HubTemplateCard({
   pulse,
   tabIndex,
 }: {
+  onPickUserDeckTemplate?: (template: UserDesignTemplateSummary) => void;
+  onManageUserTemplate: (name?: string) => Promise<boolean>;
   active: boolean;
   disabled: boolean;
   favorite: boolean;
@@ -2324,6 +2334,7 @@ function HubTemplateCard({
 }) {
   const { t } = useI18n();
   const { record, chipId } = item;
+  const { ref: visibleRef, inView } = useInView<HTMLSpanElement>({ rootMargin: '0px', once: false });
   // Shipped images paint immediately, including on offline machines. The
   // live preview mounts only when the static image is absent or fails.
   const [failedThumbnail, setFailedThumbnail] = useState<string | null>(null);
@@ -2339,7 +2350,7 @@ function HubTemplateCard({
   return (
     <div
       role="listitem"
-      className={`home-hero__template-item${favorite ? ' is-favorite' : ''}`}
+      className={`home-hero__template-item${favorite ? ' is-favorite' : ''}${item.userTemplate ? ' is-user-template' : ''}`}
       data-testid="hub-template-item"
       data-plugin-id={record.id}
     >
@@ -2353,11 +2364,23 @@ function HubTemplateCard({
       tabIndex={tabIndex}
       aria-pressed={active}
       onFocus={onFocus}
-      onClick={() => onPick(record, chipId, seedPrompt)}
+      onClick={() => item.userTemplate
+        ? onPickUserDeckTemplate?.(item.userTemplate)
+        : onPick(record, chipId, seedPrompt)}
       title={description ? `${title} · ${description}` : title}
     >
-      <span className="home-hero__template-thumb" aria-hidden>
-        {preview.kind === 'media' && preview.poster?.startsWith('/template-thumbnails/') ? (
+      <span ref={visibleRef} className="home-hero__template-thumb" aria-hidden>
+        {item.userTemplate ? (
+          item.userTemplate.thumbnail.status === 'ready' && failedThumbnail !== record.id ? <img
+            className="home-hero__template-img" alt="" decoding="async"
+            src={`/api/design-templates/${encodeURIComponent(record.id)}/thumbnail?v=${encodeURIComponent(item.userTemplate.thumbnail.updatedAt)}`}
+            onError={() => setFailedThumbnail(record.id)} />
+          : <span className="plugins-home__html"><span className="plugins-home__html-frame">
+            {inView && item.userTemplate.cover ? <iframe className="plugins-home__html-iframe" title={`${title} preview`}
+              src={`/api/design-templates/${encodeURIComponent(record.id)}/pages/${item.userTemplate.cover.split('/').map(encodeURIComponent).join('/')}`}
+              sandbox="allow-scripts" tabIndex={-1} /> : null}
+          </span></span>
+        ) : preview.kind === 'media' && preview.poster?.startsWith('/template-thumbnails/') ? (
           <img
             className="home-hero__template-img"
             src={preview.poster}
@@ -2375,12 +2398,14 @@ function HubTemplateCard({
         ) : (
           <PreviewSurface pluginId={record.id} pluginTitle={title} preview={preview} eager />
         )}
+        {item.userTemplate ? <span className="home-hero__user-template-badge">{t('homeHero.userTemplateBadge')}</span> : null}
       </span>
       <span className="home-hero__template-title">
         <Icon name="sparkles" size={13} />
         <span>{title}</span>
       </span>
     </button>
+    {item.userTemplate ? <UserDeckTemplateControls name={title} onManage={onManageUserTemplate} /> : null}
     <button
       type="button"
       className={`home-hero__template-fav${favorite ? ' is-on' : ''}`}

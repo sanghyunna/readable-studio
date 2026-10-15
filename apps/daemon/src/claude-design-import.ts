@@ -7,11 +7,11 @@ const EOCD_SIG = 0x06054b50;
 const CENTRAL_SIG = 0x02014b50;
 const LOCAL_SIG = 0x04034b50;
 
-const MAX_FILES = 5000;
-const MAX_TOTAL_BYTES = 100 * 1024 * 1024;
-const MAX_FILE_BYTES = 25 * 1024 * 1024;
+export const MAX_FILES = 5000;
+export const MAX_TOTAL_BYTES = 100 * 1024 * 1024;
+export const MAX_FILE_BYTES = 25 * 1024 * 1024;
 
-type ZipEntry = {
+export type ZipEntry = {
   name: string;
   method: number;
   compressedSize: number;
@@ -180,7 +180,7 @@ function normalizeDesignCanvasWheelHandling(source: string): {
   return { result, wheelMatched, gestureMatched };
 }
 
-function readCentralDirectory(zip: Buffer): ZipEntry[] {
+export function readCentralDirectory(zip: Buffer): ZipEntry[] {
   const eocdOffset = findEndOfCentralDirectory(zip);
   const entryCount = zip.readUInt16LE(eocdOffset + 10);
   const centralSize = zip.readUInt32LE(eocdOffset + 12);
@@ -229,7 +229,7 @@ function findEndOfCentralDirectory(zip: Buffer): number {
   throw new Error('invalid zip: missing central directory');
 }
 
-function readEntryBody(zip: Buffer, entry: ZipEntry): Buffer {
+export function readEntryBody(zip: Buffer, entry: ZipEntry): Buffer {
   const offset = entry.localOffset;
   if (zip.readUInt32LE(offset) !== LOCAL_SIG) {
     throw new Error(`invalid zip local header: ${entry.name}`);
@@ -253,7 +253,7 @@ function readEntryBody(zip: Buffer, entry: ZipEntry): Buffer {
   return inflateRawSync(compressed, { maxOutputLength: cap });
 }
 
-function sanitizeZipPath(name: string): string {
+export function sanitizeZipPath(name: string): string {
   if (name.includes('\0')) throw new Error('invalid zip file name');
   if (/^[A-Za-z]:/.test(name) || name.startsWith('/')) {
     throw new Error('absolute zip paths are not allowed');

@@ -22,6 +22,7 @@ import {
 } from "@readable-studio/sidecar";
 
 import { readCurrentAppVersionInfo } from "../app-version.js";
+import { retryPendingTemplateThumbnails } from "../design-template-thumbnails.js";
 import { setUpdateQuitHandler } from '../update-apply-routes.js';
 import { startDaemonRuntime, type StartedDaemonRuntime } from "../daemon-startup.js";
 import {
@@ -196,6 +197,7 @@ export async function startDaemonSidecar(runtime: SidecarRuntimeContext<SidecarS
           // HMAC token signed with this secret, closing the
           // renderer→arbitrary-baseDir→shell.openPath bypass.
           setDesktopAuthSecret(Buffer.from(request.input.secret, "base64"));
+          void retryPendingTemplateThumbnails();
           return { accepted: true };
         case SIDECAR_MESSAGES.MINT_IMPORT_TOKEN:
           return mintImportTokenForCli(request.input.baseDir);

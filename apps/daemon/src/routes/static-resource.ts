@@ -27,8 +27,21 @@ import { renderDesignSystemShowcase } from '../design-system-showcase.js';
 import { readAppConfig, DEFAULT_ENABLED_AGENT_IDS } from '../app-config.js';
 import { installFromTarget, uninstallById } from '../library-install.js';
 import type { RouteDeps } from '../server-context.js';
+import { configureTemplateThumbnails } from '../design-template-thumbnails.js';
+import {
+  DesignTemplateImportError,
+  deleteUserDesignTemplate,
+  findUserTemplateCoverThumbnail,
+  importDesignTemplateZip,
+  markUserTemplateThumbnailsPending,
+  readUserTemplateManifest,
+  renameUserDesignTemplate,
+  requireUserImportedTemplate,
+} from '../design-template-import.js';
 
 export interface RegisterStaticResourceRoutesDeps extends RouteDeps<'http' | 'paths' | 'resources'> {
+  // Disk-backed multer instance used by POST /api/design-templates/import.
+  uploads?: { importUpload?: any };
   tokenContractRebuild?: {
     maybeStartForImportedDesignSystem?: (
       designSystemId: string,
@@ -58,6 +71,10 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
     mimeFor,
   } = ctx.resources;
   const { isLocalSameOrigin, resolvedPortRef, sendApiError } = ctx.http;
+  configureTemplateThumbnails({
+    root: USER_DESIGN_TEMPLATES_DIR,
+    origin: () => `http://127.0.0.1:${resolvedPortRef.current}`,
+  });
   const requireLocalOrigin = (req: any, res: any) => {
     if (isLocalSameOrigin(req, resolvedPortRef.current)) return true;
     sendApiError(res, 403, 'FORBIDDEN', 'local origin required');
@@ -186,14 +203,49 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
   // (so the web client can reuse SkillSummary types) but rooted at
   // DESIGN_TEMPLATE_ROOTS so the listing stays focused on template-style
   // entries without bleeding functional skills into the EntryView gallery.
+  // User-imported deck templates carry an import.json beside SKILL.md; the
+  // listing surfaces `userImported` + thumbnail state from it.
+  const userTemplateFields = async (template: { source?: string; dir?: string }) => {
+    if (template.source !== 'user' || !template.dir) return {};
+    const manifest = await readUserTemplateManifest(template.dir);
+    return manifest ? { userImported: true as const, thumbnail: manifest.thumbnail, cover: manifest.cover } : {};
+  };
+  const findDesignTemplate = async (id: string) => findSkillById(await listAllDesignTemplates(), id);
+  const userTemplateSummary = async (id: string) => {
+    invalidateSkillListCache();
+    const template = await findDesignTemplate(id);
+    if (!template) throw new DesignTemplateImportError(500, 'INTERNAL_ERROR', 'imported design template was not found in catalog');
+    const { body, dir: _dir, ...rest } = template;
+    return {
+      ...rest,
+      hasBody: typeof body === 'string' && body.length > 0,
+      ...(await userTemplateFields(template)),
+    };
+  };
+  const sendTemplateError = (res: any, err: unknown) => {
+    if (err instanceof DesignTemplateImportError) {
+      return sendApiError(res, err.status, err.code, err.message);
+    }
+    sendApiError(res, 500, 'INTERNAL_ERROR', String(err));
+  };
+  const resolveUserTemplate = async (id: string) => {
+    const existing = await findDesignTemplate(id);
+    return requireUserImportedTemplate(
+      USER_DESIGN_TEMPLATES_DIR,
+      id,
+      Boolean(existing && existing.source !== 'user'),
+    );
+  };
+
   app.get('/api/design-templates', async (_req, res) => {
     try {
       const templates = await listAllDesignTemplates();
       res.json({
-        designTemplates: templates.map(({ body, dir: _dir, ...rest }) => ({
+        designTemplates: await Promise.all(templates.map(async ({ body, dir, ...rest }) => ({
           ...rest,
           hasBody: typeof body === 'string' && body.length > 0,
-        })),
+          ...(await userTemplateFields({ source: rest.source, dir })),
+        }))),
       });
     } catch (err: any) {
       res.status(500).json({ error: String(err) });
@@ -206,9 +258,117 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
       const template = findSkillById(templates, req.params.id);
       if (!template) return res.status(404).json({ error: 'design template not found' });
       const { dir: _dir, ...serializable } = template;
-      res.json(serializable);
+      res.json({ ...serializable, ...(await userTemplateFields(template)) });
     } catch (err: any) {
       res.status(500).json({ error: String(err) });
+    }
+  });
+
+  // POST /api/design-templates/import - multipart `file` (.zip) holding
+  // HTML pages + PROMPT.md. Lands as `<data>/design-templates/user-<slug>/`.
+  const importUpload = ctx.uploads?.importUpload;
+  app.post(
+    '/api/design-templates/import',
+    (req, res, next) => {
+      if (!requireLocalOrigin(req, res)) return;
+      if (!importUpload) return sendApiError(res, 500, 'INTERNAL_ERROR', 'upload middleware unavailable');
+      importUpload.single('file')(req, res, (err: unknown) => {
+        if (err) return sendApiError(res, 400, 'BAD_REQUEST', err instanceof Error ? err.message : String(err));
+        next();
+      });
+    },
+    async (req: any, res) => {
+      const file = req.file as { path: string; originalname: string } | undefined;
+      try {
+        if (!file) return sendApiError(res, 400, 'BAD_REQUEST', 'zip file required (multipart field "file")');
+        if (!/\.zip$/i.test(file.originalname)) {
+          return sendApiError(res, 400, 'BAD_REQUEST', 'design template import expects a .zip file');
+        }
+        const zip = await fs.promises.readFile(file.path);
+        const result = await importDesignTemplateZip({
+          root: USER_DESIGN_TEMPLATES_DIR,
+          zip,
+          originalFileName: file.originalname,
+        });
+        res.status(201).json({ template: await userTemplateSummary(result.id) });
+      } catch (err) {
+        sendTemplateError(res, err);
+      } finally {
+        if (file) await fs.promises.rm(file.path, { force: true });
+      }
+    },
+  );
+
+  app.patch('/api/design-templates/:id', async (req, res) => {
+    if (!requireLocalOrigin(req, res)) return;
+    try {
+      const { dir, manifest } = await resolveUserTemplate(req.params.id);
+      await renameUserDesignTemplate(dir, manifest, req.body?.name);
+      res.json({ template: await userTemplateSummary(manifest.id) });
+    } catch (err) {
+      sendTemplateError(res, err);
+    }
+  });
+
+  app.delete('/api/design-templates/:id', async (req, res) => {
+    if (!requireLocalOrigin(req, res)) return;
+    try {
+      const { dir, manifest } = await resolveUserTemplate(req.params.id);
+      await deleteUserDesignTemplate(dir);
+      invalidateSkillListCache();
+      res.json({ ok: true, id: manifest.id });
+    } catch (err) {
+      sendTemplateError(res, err);
+    }
+  });
+
+  app.post('/api/design-templates/:id/thumbnails', async (req, res) => {
+    if (!requireLocalOrigin(req, res)) return;
+    try {
+      const { dir, manifest } = await resolveUserTemplate(req.params.id);
+      await markUserTemplateThumbnailsPending(dir, manifest);
+      res.json({ template: await userTemplateSummary(manifest.id) });
+    } catch (err) {
+      sendTemplateError(res, err);
+    }
+  });
+
+  app.get('/api/design-templates/:id/thumbnail', async (req, res) => {
+    try {
+      const { dir } = await resolveUserTemplate(req.params.id);
+      const cover = await findUserTemplateCoverThumbnail(dir);
+      if (!cover) return sendApiError(res, 404, 'NOT_FOUND', 'thumbnail not available');
+      res.type(path.extname(cover)).setHeader('Cache-Control', 'no-cache');
+      res.sendFile(path.basename(cover), { root: path.dirname(cover) });
+    } catch (err) {
+      if (err instanceof DesignTemplateImportError && err.status === 403) {
+        return sendApiError(res, 404, 'NOT_FOUND', 'thumbnail not available');
+      }
+      sendTemplateError(res, err);
+    }
+  });
+
+  app.get('/api/design-templates/:id/pages/*splat', async (req, res) => {
+    try {
+      const splat = req.params.splat;
+      const relative = (Array.isArray(splat) ? splat.join('/') : String(splat ?? '')).replace(/\\/g, '/');
+      if (!relative || relative.split('/').some((part) => part === '..' || part === '.' || part.startsWith('.'))
+        || path.isAbsolute(relative) || relative.includes(':') || relative.includes('\0')) {
+        return sendApiError(res, 403, 'FORBIDDEN', 'unsafe template page path');
+      }
+      const { dir } = await resolveUserTemplate(req.params.id);
+      const pagesRoot = await fs.promises.realpath(path.join(dir, 'pages'));
+      const file = await fs.promises.realpath(path.resolve(pagesRoot, relative));
+      const within = path.relative(pagesRoot, file);
+      if (within.startsWith('..') || path.isAbsolute(within)) {
+        return sendApiError(res, 403, 'FORBIDDEN', 'unsafe template page path');
+      }
+      if (!(await fs.promises.stat(file)).isFile()) return sendApiError(res, 404, 'NOT_FOUND', 'page not found');
+      res.type(mimeFor(file)).setHeader('Cache-Control', 'no-cache');
+      res.sendFile(within, { root: pagesRoot });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return sendApiError(res, 404, 'NOT_FOUND', 'page not found');
+      sendTemplateError(res, err);
     }
   });
 

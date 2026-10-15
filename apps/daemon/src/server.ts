@@ -175,6 +175,7 @@ import {
 } from './design-systems.js';
 import { createDesignSystemGenerationJobStore } from './design-system-generation-jobs.js';
 import { prepareDesignTokenContractRebuild } from './design-token-contract-rebuild.js';
+import { selectsUserImportedTemplate as selectsUserImportedTemplateIn } from './design-template-import.js';
 import {
   applyDiffReviewDecisionToCwd,
   applyPlugin,
@@ -4017,6 +4018,13 @@ async function startServerWithProbeLifetime({
     }
     next();
   });
+  const standaloneExportJson = express.json({ limit: Infinity });
+  app.use((req, res, next) => {
+    if (req.method === 'POST' && /^\/api\/exports\/standalone-html\/?$/.test(req.path)) {
+      return standaloneExportJson(req, res, next);
+    }
+    next();
+  });
   app.use(express.json({ limit: '4mb' }));
   if (hostedRequestBodyGuard) app.use(hostedRequestBodyGuard);
   const projectPreviewScopes = createProjectPreviewScopeRegistry();
@@ -4086,6 +4094,10 @@ async function startServerWithProbeLifetime({
   // stored project.skillId regardless of which surface created the project
   // after the skills/design-templates split. Keep in sync with
   // SKILL_ROOTS + DESIGN_TEMPLATE_ROOTS above.
+  function selectsUserImportedTemplate(skillId, metadata) {
+    return selectsUserImportedTemplateIn(USER_DESIGN_TEMPLATES_DIR, skillId, metadata);
+  }
+
   async function listAllSkillLikeEntries() {
     return listSkills(ALL_SKILL_LIKE_ROOTS);
   }
@@ -5359,6 +5371,7 @@ async function startServerWithProbeLifetime({
   registerOfflineCdnRoutes(app, DAEMON_RESOURCE_ROOT ?? path.join(PROJECT_ROOT, 'vendor'));
   registerStaticResourceRoutes(app, {
     http: httpDeps,
+    uploads: uploadDeps,
     paths: pathDeps,
     resources: {
       listAllSkills,
@@ -6235,6 +6248,27 @@ async function startServerWithProbeLifetime({
     try {
       const plugins = applyBakedPreviews(listInstalledPlugins(db), PLUGIN_PREVIEWS_DIR);
       res.json({ plugins });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  // Plan §3.DD1 — `readable plugin stats`. Aggregates the installed-
+  // plugin roster + the applied_plugin_snapshots roster into one
+  // health/inventory report. Pure helpers in plugins/stats.ts;
+  // the route wires the SQLite reads + merges on the way out.
+  app.get('/api/plugins/stats', async (_req, res) => {
+    try {
+      const { pluginInventoryStats, snapshotInventoryStats } = await import('./plugins/stats.js');
+      const installed = listInstalledPlugins(db);
+      const inventoryRows = db.prepare(
+        `SELECT status, project_id, run_id, applied_at FROM applied_plugin_snapshots`,
+      ).all() as Array<{ status: 'fresh' | 'stale'; project_id: string | null; run_id: string | null; applied_at: number }>;
+      res.json({
+        plugins:   pluginInventoryStats(installed),
+        snapshots: snapshotInventoryStats(inventoryRows),
+        generatedAt: Date.now(),
+      });
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
@@ -7469,27 +7503,6 @@ async function startServerWithProbeLifetime({
       const snap = getSnapshot(db, req.params.snapshotId);
       if (!snap) return res.status(404).json({ error: 'snapshot not found' });
       res.json(snap);
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
-
-  // Plan §3.DD1 — `readable plugin stats`. Aggregates the installed-
-  // plugin roster + the applied_plugin_snapshots roster into one
-  // health/inventory report. Pure helpers in plugins/stats.ts;
-  // the route wires the SQLite reads + merges on the way out.
-  app.get('/api/plugins/stats', async (_req, res) => {
-    try {
-      const { pluginInventoryStats, snapshotInventoryStats } = await import('./plugins/stats.js');
-      const installed = listInstalledPlugins(db);
-      const inventoryRows = db.prepare(
-        `SELECT status, project_id, run_id, applied_at FROM applied_plugin_snapshots`,
-      ).all() as Array<{ status: 'fresh' | 'stale'; project_id: string | null; run_id: string | null; applied_at: number }>;
-      res.json({
-        plugins:   pluginInventoryStats(installed),
-        snapshots: snapshotInventoryStats(inventoryRows),
-        generatedAt: Date.now(),
-      });
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
@@ -9352,6 +9365,7 @@ async function startServerWithProbeLifetime({
     if (
       typeof appliedPluginSnapshotId === 'string'
       && appliedPluginSnapshotId.length > 0
+      && !selectsUserImportedTemplate(effectiveSkillId, metadata)
     ) {
       try {
         const snap = getSnapshot(db, appliedPluginSnapshotId);
@@ -10813,6 +10827,7 @@ async function startServerWithProbeLifetime({
           reasoning: safeReasoning,
           service: databricksService,
           fetch,
+          send,
         });
         activeDatabricksRuntimes.add(runtime);
         const close = async () => {
@@ -12903,7 +12918,7 @@ async function startServerWithProbeLifetime({
         const hasPin =
           typeof projectRow?.appliedPluginSnapshotId === 'string'
           && projectRow.appliedPluginSnapshotId.length > 0;
-        if (!hasPin) {
+        if (!hasPin && !selectsUserImportedTemplate(projectRow?.skillId, projectRow?.metadata)) {
           const fallbackPluginId = defaultScenarioPluginIdForProjectMetadata(projectRow?.metadata);
           if (fallbackPluginId && getInstalledPlugin(db, fallbackPluginId)) {
             runResolveBody = { ...requestBody, pluginId: fallbackPluginId };
@@ -14262,6 +14277,7 @@ async function startServerWithProbeLifetime({
         daemonUrl = url;
         resolve(returnServer ? { url, server, shutdown: shutdownDaemonRuns } : url);
         setImmediate(runSnapshotGcStartupSweep);
+        void import('./design-template-thumbnails.js').then(({ retryPendingTemplateThumbnails }) => retryPendingTemplateThumbnails());
       });
     } catch (error) {
       cleanupDaemonBackgroundWork();

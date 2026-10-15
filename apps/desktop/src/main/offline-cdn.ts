@@ -1,4 +1,4 @@
-type RequestResult = { redirectURL?: string };
+type RequestResult = { redirectURL?: string; cancel?: boolean };
 type RequestSession = { webRequest: { onBeforeRequest(filter: { urls: string[] }, listener: ((details: { url: string }, callback: (result: RequestResult) => void) => Promise<void>) | null): void } };
 
 const CDN_HOSTS = ['cdnjs.cloudflare.com', 'cdn.jsdelivr.net', 'unpkg.com', 'use.fontawesome.com', 'maxcdn.bootstrapcdn.com', 'stackpath.bootstrapcdn.com', 'kit.fontawesome.com', 'ka-f.fontawesome.com'];
@@ -9,13 +9,27 @@ export function installOfflineCdnHooks(
   designPartition: string,
   discoverOrigins: () => Promise<{ webOrigin: string; apiOrigin: string } | null>,
   fetchImpl: typeof globalThis.fetch = globalThis.fetch,
+  options: { restrictToOrigins?: boolean } = {},
 ): () => void {
   const targets = new Set([sessions.defaultSession, sessions.fromPartition(designPartition)]);
-  const filter = { urls: CDN_HOSTS.flatMap(host => [`https://${host}/*`, `http://${host}/*`]) };
+  const filter = { urls: options.restrictToOrigins ? ['<all_urls>'] : CDN_HOSTS.flatMap(host => [`https://${host}/*`, `http://${host}/*`]) };
   for (const target of targets) target.webRequest.onBeforeRequest(filter, async (details, callback) => {
-    let result: RequestResult = {};
+    let result: RequestResult = options.restrictToOrigins ? { cancel: true } : {};
     try {
       const origins = await discoverOrigins();
+      if (options.restrictToOrigins) {
+        const url = new URL(details.url);
+        if (['data:', 'blob:', 'about:'].includes(url.protocol) ||
+          (origins && (url.origin === new URL(origins.apiOrigin).origin ||
+            (url.origin === new URL(origins.webOrigin).origin && url.pathname.startsWith('/offline-cdn/'))))) {
+          callback({});
+          return;
+        }
+        if (!CDN_HOSTS.includes(url.hostname)) {
+          callback(result);
+          return;
+        }
+      }
       if (origins) {
         const endpoint = new URL('/api/offline-cdn/resolve', origins.apiOrigin);
         endpoint.searchParams.set('url', details.url);
@@ -25,7 +39,7 @@ export function installOfflineCdnHooks(
         if (resolution) result = { redirectURL: new URL(`/offline-cdn/${resolution.lib}/${resolution.major}/${resolution.path}`, origins.webOrigin).toString() };
       }
     } catch (error) {
-      console.warn('Offline CDN redirect unavailable; leaving original request unchanged.', error);
+      if (!options.restrictToOrigins) console.warn('Offline CDN redirect unavailable; leaving original request unchanged.', error);
     }
     callback(result);
   });

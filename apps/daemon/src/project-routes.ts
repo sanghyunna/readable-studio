@@ -36,6 +36,7 @@ import {
   writeProjectManifest,
 } from './project-locations.js';
 import { auditDesignSystemPackage } from './design-system-package-audit.js';
+import { selectsUserImportedTemplate } from './design-template-import.js';
 import {
   ProjectCheckpointConflictError,
   ProjectCheckpointError,
@@ -1298,7 +1299,15 @@ export function registerProjectRoutes(
           && body.appliedPluginSnapshotId.trim().length > 0;
     let resolveBody =
       explicitPlugin ? (body as Record<string, unknown>) : null;
-    if (!resolveBody && initialSessionMode === 'design') {
+    if (
+      !resolveBody
+      && initialSessionMode === 'design'
+      && !selectsUserImportedTemplate(
+        path.join(ctx.paths.RUNTIME_DATA_DIR, 'design-templates'),
+        normalizedSkillId,
+        projectMetadata,
+      )
+    ) {
       const fallbackPluginId = defaultScenarioPluginIdForProjectMetadata(projectMetadata);
       if (fallbackPluginId && getInstalledPlugin(db, fallbackPluginId)) {
         resolveBody = { ...body, pluginId: fallbackPluginId };
