@@ -7,13 +7,15 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { createLocalBashOperations } from '@earendil-works/pi-coding-agent';
-import { resolvePiPowerShell } from '../../src/runtimes/pi-powershell.js';
+let resolvePiPowerShell: typeof import('../../src/runtimes/pi-powershell.js').resolvePiPowerShell;
 
-beforeEach(() => {
+beforeEach(async () => {
+  vi.resetModules();
   vi.spyOn(childProcess, 'spawn');
-  vi.spyOn(childProcess, 'spawnSync');
+  vi.spyOn(childProcess, 'execFile');
   vi.spyOn(fs, 'existsSync');
   syncBuiltinESMExports();
+  ({ resolvePiPowerShell } = await import('../../src/runtimes/pi-powershell.js'));
 });
 
 afterEach(() => {
@@ -30,7 +32,7 @@ for (const env of [{}, { systemroot: 'C:\\Windows', PATH: '' }]) {
     let executable: string;
     let result: { exitCode: number | null };
     try {
-      executable = resolvePiPowerShell(shellEnv);
+      executable = await resolvePiPowerShell(shellEnv);
       // When: the same Pi backend and isolated home used by the managed runtime execute.
       result = await createLocalBashOperations({ shellPath: executable }).exec(
         "[Console]::Write(('NATIVE_' + (6 * 7)))", process.cwd(),
@@ -48,39 +50,87 @@ for (const env of [{}, { systemroot: 'C:\\Windows', PATH: '' }]) {
     expect(call[1]).toEqual(['-c', "[Console]::Write(('NATIVE_' + (6 * 7)))"]);
     expect(call[2]).toMatchObject({ windowsHide: true, detached: false });
     expect(call[2]?.shell ?? false).toBe(false);
-    const probe = vi.mocked(childProcess.spawnSync).mock.calls.at(-1);
+    const probe = vi.mocked(childProcess.execFile).mock.calls.at(-1);
     assert.ok(probe);
     expect(Array.isArray(probe[1])).toBe(true);
-    expect(probe[2]).toMatchObject({ windowsHide: true, shell: false, timeout: 5000, maxBuffer: 4096 });
+    expect(probe[1]).toEqual(['-NoProfile', '-NonInteractive', '-c', expect.any(String)]);
+    expect(probe[2]).toMatchObject({ windowsHide: true, shell: false, timeout: 30000, maxBuffer: 4096 });
   });
 }
 
-test('prefers SystemRoot over WINDIR and does not search PATH', () => {
+function mockProbe(...results: Array<{ error?: NodeJS.ErrnoException; stdout: string }>) {
+  let index = 0;
+  vi.mocked(childProcess.execFile).mockImplementation((...args: unknown[]) => {
+    const callback = args.at(-1) as (error: NodeJS.ErrnoException | null, stdout: string, stderr: string) => void;
+    const result = results[Math.min(index++, results.length - 1)]!;
+    callback(result.error ?? null, result.stdout, '');
+    return {} as childProcess.ChildProcess;
+  });
+}
+
+test('prefers SystemRoot over WINDIR and does not search PATH', async () => {
   // Given: distinct, available OS roots and a successful native readiness probe.
   vi.spyOn(fs, 'existsSync').mockReturnValue(true);
-  vi.mocked(childProcess.spawnSync).mockReturnValue({ pid: 1, output: [], stdout: 'READABLE_PI_POWERSHELL', stderr: '', status: 0, signal: null });
+  mockProbe({ stdout: 'READABLE_PI_POWERSHELL' });
   // When: resolving the interpreter.
-  const result = resolvePiPowerShell({ SystemRoot: 'D:\\OS', WINDIR: 'E:\\Windows', PATH: 'X:\\Git\\bin' });
+  const result = await resolvePiPowerShell({ SystemRoot: 'D:\\OS', WINDIR: 'E:\\Windows', PATH: 'X:\\Git\\bin' });
   // Then: the native SystemRoot location wins deterministically.
   expect(result).toBe(path.win32.join('D:\\OS', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'));
 });
 
-test('rejects an existing but unexecutable candidate before trying the next OS root', () => {
+test('rejects an existing but unexecutable candidate before trying the next OS root', async () => {
   // Given: existence is not proof of interpreter readiness.
   vi.spyOn(fs, 'existsSync').mockReturnValue(true);
-  vi.mocked(childProcess.spawnSync)
-    .mockReturnValueOnce({ pid: 1, output: [], stdout: '', stderr: 'blocked', status: 1, signal: null })
-    .mockReturnValueOnce({ pid: 2, output: [], stdout: 'READABLE_PI_POWERSHELL', stderr: '', status: 0, signal: null });
+  mockProbe({ error: new Error('blocked'), stdout: '' }, { stdout: 'READABLE_PI_POWERSHELL' });
   // When: resolving from competing OS locations.
-  const result = resolvePiPowerShell({ SystemRoot: 'D:\\Blocked', WINDIR: 'E:\\Windows' });
+  const result = await resolvePiPowerShell({ SystemRoot: 'D:\\Blocked', WINDIR: 'E:\\Windows' });
   // Then: the validated candidate, not the first existing file, wins.
   expect(result).toBe('E:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
 });
 
-test('reports failure when no candidate passes the PowerShell readiness probe', () => {
+test('reports failure when no candidate passes the PowerShell readiness probe', async () => {
   // Given: a file can exist without being PowerShell.
   vi.spyOn(fs, 'existsSync').mockReturnValue(true);
-  vi.mocked(childProcess.spawnSync).mockReturnValue({ pid: 1, output: [], stdout: 'wrong-runtime', stderr: '', status: 0, signal: null });
+  mockProbe({ stdout: 'wrong-runtime' });
   // When / Then: resolution cannot silently declare the wrong interpreter usable.
-  expect(() => resolvePiPowerShell({})).toThrow();
+  await expect(resolvePiPowerShell({})).rejects.toThrow('returned unexpected output');
+});
+
+test('probes without profiles or interaction and allows thirty seconds', async () => {
+  vi.mocked(fs.existsSync).mockReturnValue(true);
+  mockProbe({ stdout: 'READABLE_PI_POWERSHELL' });
+  await resolvePiPowerShell({});
+  expect(childProcess.execFile).toHaveBeenCalledWith(
+    'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
+    ['-NoProfile', '-NonInteractive', '-c', expect.any(String)],
+    expect.objectContaining({ timeout: 30000, windowsHide: true, shell: false }),
+    expect.any(Function),
+  );
+});
+
+test('reuses the first successful resolution without another probe', async () => {
+  vi.mocked(fs.existsSync).mockReturnValue(true);
+  mockProbe({ stdout: 'READABLE_PI_POWERSHELL' });
+  const first = await resolvePiPowerShell({ SystemRoot: 'D:\\OS' });
+  expect(await resolvePiPowerShell({})).toBe(first);
+  expect(childProcess.execFile).toHaveBeenCalledTimes(1);
+});
+
+test('reports elapsed timeout distinctly from not found and retries failures', async () => {
+  vi.mocked(fs.existsSync).mockReturnValue(false);
+  await expect(resolvePiPowerShell({})).rejects.toThrow('not found');
+  vi.mocked(fs.existsSync).mockReturnValue(true);
+  vi.spyOn(Date, 'now').mockReturnValueOnce(1000).mockReturnValueOnce(31025);
+  mockProbe({ error: Object.assign(new Error('killed'), { killed: true, signal: 'SIGTERM' }), stdout: '' });
+  await expect(resolvePiPowerShell({})).rejects.toThrow(/PowerShell is starting slowly.*30 s.*30025 ms/);
+  mockProbe({ stdout: 'READABLE_PI_POWERSHELL' });
+  await expect(resolvePiPowerShell({})).resolves.toBe('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
+});
+
+test('retries unexpected output on the next resolution', async () => {
+  vi.mocked(fs.existsSync).mockReturnValue(true);
+  mockProbe({ stdout: 'wrong-runtime' }, { stdout: 'READABLE_PI_POWERSHELL' });
+  await expect(resolvePiPowerShell({})).rejects.toThrow('returned unexpected output');
+  await expect(resolvePiPowerShell({})).resolves.toBe('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
+  expect(childProcess.execFile).toHaveBeenCalledTimes(2);
 });

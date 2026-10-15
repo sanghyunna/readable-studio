@@ -7,8 +7,9 @@ export default function registerPowerShell(pi: ExtensionAPI): void {
     // Retain Pi's output cap, timeout, abort, hidden spawn and process-tree cleanup.
     // Resolve on execution so an unavailable interpreter is a visible tool error,
     // not an extension-load failure that silently removes the shell capability.
+    // The resolver shares an asynchronous probe and caches only successful results.
     operations: {
-      exec: (command, cwd, options) => createLocalBashOperations({ shellPath: resolvePiPowerShell() })
+      exec: async (command, cwd, options) => createLocalBashOperations({ shellPath: await resolvePiPowerShell() })
         .exec(command, cwd, options),
     },
   });
