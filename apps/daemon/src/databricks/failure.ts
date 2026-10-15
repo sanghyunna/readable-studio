@@ -7,9 +7,9 @@ const hints: Record<DatabricksFailureReason, string> = {
   'model-not-found': 'The model was not found. Rescan and register an available endpoint.',
   'bad-request': 'The endpoint rejected the request shape. Check the protocol and supported parameters.',
   'rate-limit': 'The endpoint rate limit was reached. Retry later.',
-  'upstream-server': 'The upstream service failed. Retry later.',
+  'upstream-server': 'The Databricks server is not responding. Please try again shortly.',
   'upstream-rejected': 'The upstream service rejected the request. Check endpoint configuration.',
-  transport: 'The gateway could not be reached or the connection was interrupted. Check network access and retry.',
+  transport: 'The Databricks server is not responding. Please try again shortly.',
   relay: 'The local relay rejected the request. Restart the run; if it repeats, report a runtime defect.',
   'invalid-response': 'The gateway returned an invalid or interrupted response. Retry; if it repeats, check protocol compatibility.',
   'runtime-unavailable': 'The bundled Pi engine is missing or invalid. Re-extract a complete portable build; this is not a workspace authentication failure.',
@@ -68,7 +68,7 @@ export function upstreamFailure(status: number, payload: unknown, privateValues:
     : errorType === 'permission_error' ? 'permission-denied' : errorType === 'not_found_error' ? 'model-not-found'
     : errorType === 'invalid_request_error' ? 'bad-request' : errorType === 'rate_limit_error' ? 'rate-limit'
     : ['api_error', 'overloaded_error'].includes(String(errorType)) ? 'upstream-server' : 'upstream-rejected';
-  const reason: DatabricksFailureReason = status === 401 ? 'auth' : status === 403 ? 'permission-denied'
+  const reason: DatabricksFailureReason = status === 401 || status === 403 && tokenAuthRejected(payload) ? 'auth' : status === 403 ? 'permission-denied'
     : status === 404 ? 'model-not-found' : [400, 413, 422].includes(status) ? 'bad-request'
     : status === 429 ? 'rate-limit' : status >= 500 ? 'upstream-server' : streamReason;
   const candidates: unknown[] = [];
@@ -87,6 +87,22 @@ export function upstreamFailure(status: number, payload: unknown, privateValues:
   return failureDetail(reason, status, message);
 }
 
+/** Positive token evidence only: permission failures must never trigger refresh/retry. */
+export function tokenAuthRejected(payload: unknown): boolean {
+  if (!record(payload)) return false;
+  const error = record(payload.error) ? payload.error : {};
+  if ([payload.error_code, error.error_code].some(code => typeof code === 'string'
+    && /^(?:UNAUTHENTICATED|INVALID_TOKEN)$/i.test(code))) return true;
+  if ([payload.message, error.message].some(message => typeof message === 'string'
+    && /(?:\b(?:access )?token (?:is )?expired\b|\binvalid access token\b|^expired[.!]?$)/i.test(message.trim()))) return true;
+  if (Array.isArray(payload.details)) return payload.details.some(detail => {
+    if (!record(detail) || !record(detail.metadata) || typeof detail.metadata.upstream_body !== 'string') return false;
+    try { return tokenAuthRejected(JSON.parse(detail.metadata.upstream_body)); }
+    catch { return false; }
+  });
+  return false;
+}
+
 /** Bound error-body consumption independently of the inference body/stream limit. */
 export async function readUpstreamError(response: Response): Promise<unknown> {
   if (!response.body) return undefined;
@@ -101,8 +117,9 @@ export async function readUpstreamError(response: Response): Promise<unknown> {
       if (size > 64 * 1024) return undefined;
       chunks.push(value);
     }
-    try { return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown; }
-    catch { return undefined; } // Non-JSON errors still retain the HTTP reason/status.
+    const text = Buffer.concat(chunks).toString('utf8');
+    try { return JSON.parse(text) as unknown; }
+    catch { return tokenAuthRejected({ message: text }) ? { message: text } : undefined; }
   } catch { return undefined; } // A broken error body must not erase its received HTTP status.
   finally {
     try { await reader.cancel(); }

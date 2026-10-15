@@ -24,6 +24,32 @@ export interface NamedProbeInput {
   readonly onAttempt: () => void;
 }
 
+/** One small request; only an explicit effort rejection permits a lower-level retry. */
+export async function probeClaudeMessages(name: string, workspace: WorkspaceScanOptions): Promise<string[] | null> {
+  return withDeadline(async signal => {
+    for (const level of ['high', 'medium']) {
+      const response = await workspace.fetch(new URL('/ai-gateway/anthropic/v1/messages', workspace.binding.host).toString(), {
+        method: 'POST', redirect: 'error', signal,
+        headers: { Authorization: `Bearer ${workspace.bearer}`, 'Content-Type': 'application/json', 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({ model: name, max_tokens: 16, messages: [{ role: 'user', content: 'Reply OK.' }],
+          thinking: { type: 'adaptive' }, output_config: { effort: level } }),
+      });
+      if (response.ok) {
+        const payload = record(await response.json());
+        if (payload.type === 'message' && Array.isArray(payload.content)) return [level];
+        throw new DatabricksServiceError('DATABRICKS_UPSTREAM_UNAVAILABLE', true);
+      }
+      const payload = record(await readUpstreamError(response));
+      const message = String(record(payload.error).message ?? payload.message ?? '');
+      if ([400, 422].includes(response.status) && level === 'high' && /effort/i.test(message)
+        && /unsupported|not supported|invalid|allowed|must be/i.test(message)) continue;
+      if ([400, 404, 405, 422].includes(response.status)) return null;
+      throw new DatabricksServiceError('DATABRICKS_UPSTREAM_UNAVAILABLE', true);
+    }
+    return null;
+  }, workspace.requestTimeoutMs ?? 15_000, workspace.signal);
+}
+
 export async function probeNamed(input: NamedProbeInput): Promise<NamedProbeResult> {
   const { name, request, workspace } = input;
   try {

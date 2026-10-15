@@ -595,6 +595,7 @@ function AssistantMessageImpl({
             return <LiveCodeBox key={b.id} name={b.name} raw={b.raw} />;
           }
           if (b.kind === "status") {
+            if (b.label === "retrying" && !streaming) return null;
             // Suppress this message's gray error pill ONLY when ChatPane is
             // rendering the top-level error card for it (the last failed run).
             // Other failed turns — older history, or once a follow-up makes
@@ -1702,6 +1703,19 @@ function StatusPill({
   detail?: string | undefined;
 }) {
   const t = useT();
+  if (label === "retrying") {
+    let progress: { provider?: string; attempt?: number; maxRetries?: number };
+    try { progress = JSON.parse(detail ?? "null"); }
+    catch { return null; }
+    if (progress?.provider !== "databricks" || !Number.isInteger(progress.attempt) || !Number.isInteger(progress.maxRetries)) return null;
+    return (
+      <div className="status-pill" data-status={label} role="status">
+        <span className="status-label">{t("chat.databricksError.retryMessage", {
+          attempt: progress.attempt!, maxRetries: progress.maxRetries!,
+        })}</span>
+      </div>
+    );
+  }
   const notice = STATUS_NOTICES[label];
   const variant = notice?.variant;
   return (
@@ -2162,6 +2176,16 @@ function buildBlocks(events: AgentEvent[], endedAt?: number): Block[] {
     if (ev.kind === "tool_result") resultByToolId.set(ev.toolUseId, ev);
   }
   for (const ev of events) {
+    if (ev.kind === "text" || ev.kind === "thinking" || ev.kind === "tool_use"
+      || (ev.kind === "status" && (ev.label === "retrying" || ev.label === "retry_complete"))) {
+      for (let i = out.length - 1; i >= 0; i--) {
+        if (out[i]?.kind === "status" && (out[i] as Extract<Block, { kind: "status" }>).label === "retrying") out.splice(i, 1);
+      }
+    }
+    if (ev.kind === "status" && ev.label === "retrying" && ev.detail) {
+      out.push({ kind: "status", label: ev.label, detail: ev.detail });
+      continue;
+    }
     const previous = out[out.length - 1];
     const closesThinking = ev.kind === 'text' || ev.kind === 'tool_use' || (ev.kind === 'status' && isStatusNotice(ev.label));
     if (previous?.kind === 'thinking' && closesThinking) {

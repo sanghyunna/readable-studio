@@ -19,6 +19,7 @@ import type {
   DatabricksRegisteredEndpoint,
   DatabricksEndpoint,
 } from '@readable-studio/contracts';
+import { fetchDatabricksModels } from '../providers/databricks';
 
 /**
  * Display rule shared with the `readable databricks models` CLI: the UC name
@@ -87,6 +88,57 @@ export function notifyDatabricksModelsChanged(models: AgentModelOption[]): void 
   window.dispatchEvent(
     new CustomEvent(DATABRICKS_MODELS_CHANGED_EVENT, { detail: { models } }),
   );
+}
+
+let refreshInFlight: Promise<AgentModelOption[] | null> | null = null;
+
+/**
+ * Refetches the registered catalogue and publishes it through
+ * `DATABRICKS_MODELS_CHANGED_EVENT`. The daemon learns Claude thinking levels
+ * in the background, so the browser's list can be stale. Concurrent callers
+ * share one request; a failure keeps the cached list and resolves `null`.
+ */
+export function refreshDatabricksModels(): Promise<AgentModelOption[] | null> {
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = fetchDatabricksModels()
+    .then((response) => {
+      const models = response.models.map(registeredEndpointToModelOption);
+      notifyDatabricksModelsChanged(models);
+      return models;
+    })
+    .catch((error: unknown) => {
+      console.warn('Databricks model catalogue refresh failed; keeping the cached list.', error);
+      return null;
+    })
+    .finally(() => {
+      refreshInFlight = null;
+    });
+  return refreshInFlight;
+}
+
+/** Follow-up refetch delays after selecting a model whose levels are not known yet. */
+export const DATABRICKS_REASONING_FOLLOW_UP_DELAYS_MS = [3_000, 15_000] as const;
+
+/**
+ * Bounded follow-up for a selected model without thinking levels: refetch at
+ * each delay, stop as soon as the model advertises levels, never loop.
+ * Returns the cancel function.
+ */
+export function scheduleDatabricksReasoningFollowUp(modelId: string): () => void {
+  let cancelled = false;
+  const cancel = () => {
+    cancelled = true;
+    timers.forEach(clearTimeout);
+  };
+  const timers = DATABRICKS_REASONING_FOLLOW_UP_DELAYS_MS.map((delay) =>
+    setTimeout(() => {
+      if (cancelled) return;
+      void refreshDatabricksModels().then((models) => {
+        if (models?.find((model) => model.id === modelId)?.reasoningOptions?.length) cancel();
+      });
+    }, delay),
+  );
+  return cancel;
 }
 
 export function databricksModelsFromEvent(event: Event): AgentModelOption[] | null {

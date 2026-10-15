@@ -84,7 +84,8 @@ test('real Pi renders unknown foundation limits, negotiates its wire shape and e
 for (const status of [400, 401, 429, 500]) test(`tools rejection ${status} is bounded and diagnostics never expose private prose`, async () => {
   const runtime = runtimeFixture('openai-completions');
   let calls = 0;
-  const relay = await createDatabricksRelay({ runtime, fetch: async () => {
+  const delays: number[] = [];
+  const relay = await createDatabricksRelay({ runtime, delay: async milliseconds => { delays.push(milliseconds); }, fetch: async () => {
     calls++;
     return Response.json({ error: { message: `Unsupported parameter: tools; ${runtime.apiKey} ${runtime.model} ${runtime.baseUrl}` } }, { status });
   } });
@@ -92,7 +93,8 @@ for (const status of [400, 401, 429, 500]) test(`tools rejection ${status} is bo
     const response = await fetch(`${relay.baseUrl}/chat/completions`, { method: 'POST', headers: { authorization: `Bearer ${relay.capabilityKey}` }, body: JSON.stringify({ model: relay.modelAlias, messages: [], tools }) });
     assert.equal(response.status, status);
     const text = await response.text();
-    assert.equal(calls, status === 400 ? 5 : 1);
+    assert.equal(calls, status === 400 ? 5 : status === 429 || status >= 500 ? 11 : 1);
+    assert.deepEqual(delays, status === 429 || status >= 500 ? Array(10).fill(5000) : []);
     for (const secret of [runtime.apiKey, runtime.model, new URL(runtime.baseUrl).hostname]) assert.equal(text.includes(secret), false);
     if (status === 400) assert.equal(JSON.parse(text).error.upstreamMessage.includes('tools'), true);
   } finally { await relay.close(); }

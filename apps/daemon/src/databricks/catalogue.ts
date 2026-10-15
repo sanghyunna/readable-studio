@@ -15,6 +15,10 @@ export interface DatabricksWireCapabilities {
   responsesPath?: string;
   /** Accepted native protocol; fixed workspace path, not an upstream-supplied URL. */
   api?: 'anthropic-messages';
+  /** Only levels accepted by the cheap native Messages probe. */
+  acceptedLevels?: string[];
+  /** A completed probe, including definitive protocol rejection. */
+  probedAt?: string;
   /** Version of the documented surfaces exhausted before artifact fallback. */
   toolSurfaceVersion?: 2;
   tools?: 'supported' | 'unsupported' | 'unknown';
@@ -39,7 +43,8 @@ export function applyLearnedDatabricksProtocol(entry: CatalogueEntry): void {
   if (entry.wireCapabilities?.api !== 'anthropic-messages') return;
   entry.endpoint.api = 'anthropic-messages';
   entry.endpoint.reasoningOptions = entry.wireCapabilities.effortUnsupported ? []
-    : resolveDatabricksReasoningOptions(entry.endpoint.api,
+    : entry.wireCapabilities.acceptedLevels?.map(id => ({ id, label: id === 'xhigh' ? 'Extra high' : id.charAt(0).toUpperCase() + id.slice(1) }))
+    ?? resolveDatabricksReasoningOptions(entry.endpoint.api,
       (entry.endpoint.servedModelName?.split(', ') ?? []).map((name) => ({ name })));
   entry.basePath = '/ai-gateway/anthropic';
   entry.endpoint.protocolEvidence = { advertised: entry.endpoint.protocolEvidence?.advertised ?? [],
@@ -94,7 +99,6 @@ function servedModels(resource: DiscoveredResource): Array<{ name?: string; meta
     models.push({ ...(typeof value === 'string' && value.trim() ? { name: value } : {}), metadata });
   };
   const config = record(resource.metadata.config);
-  if (resource.measuredApi) add(resource.name, {});
   if (resource.kind === 'uc-model-service') {
     const destinations = record(config.routing).destinations;
     if (Array.isArray(destinations)) for (const raw of destinations) {
@@ -117,12 +121,17 @@ function servedModels(resource: DiscoveredResource): Array<{ name?: string; meta
   if (!models.length && resource.kind === 'serving-endpoint' && resource.metadata.endpoint_type === 'FOUNDATION_MODEL_API') {
     add(resource.name.replace(/^databricks-/, ''), {});
   }
+  if (!models.length && resource.measuredApi) add(resource.name, {});
   return models;
 }
 
 export function normalizeResource(secret: string, profileId: string, resource: DiscoveredResource, previous?: CatalogueEntry): CatalogueEntry {
   // Enumeration is not revalidation of a permission-limited named invocation.
-  if (previous?.provenance === 'manual') return structuredClone(previous);
+  if (previous?.provenance === 'manual') {
+    const entry = structuredClone(previous);
+    applyLearnedDatabricksProtocol(entry);
+    return entry;
+  }
   const id = opaqueId(secret, 'dbe', profileId, resource.kind, resource.name);
   const { api, evidence: protocolEvidence } = protocolDecision(resource);
   const ready = record(resource.metadata.state).ready;

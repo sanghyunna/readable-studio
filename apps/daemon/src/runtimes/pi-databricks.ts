@@ -24,6 +24,7 @@ export interface DatabricksPiRuntimeOptions {
   packageRoot?: string;
   env?: NodeJS.ProcessEnv;
   fetch?: typeof fetch;
+  send?: Parameters<typeof attachPiRpcSession>[0]['send'];
 }
 
 export interface DatabricksPiInvocation {
@@ -118,6 +119,10 @@ export async function createDatabricksPiRuntime(options: DatabricksPiRuntimeOpti
     relay = await createDatabricksRelay({
       runtime,
       ...(options.fetch !== undefined ? { fetch: options.fetch } : {}),
+      onRetry: (progress) => options.send?.('agent', {
+        type: 'status', label: 'retrying', detail: JSON.stringify({ provider: 'databricks', ...progress }),
+      }),
+      onRetryEnd: () => options.send?.('agent', { type: 'status', label: 'retry_complete' }),
     });
     const config = renderDatabricksPiProvider(runtime, relay, options.reasoning);
     await Promise.all([

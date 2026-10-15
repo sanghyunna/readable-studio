@@ -147,7 +147,7 @@ test('documented shape: Responses summary rejection retries without summary and 
   try { await (await post(relay, { tools, reasoning_effort: 'high' })).text(); } finally { await relay.close(); }
 });
 
-for (const native of [false, true]) test(`unrelated 400 keeps existing retry behavior and does not disable reasoning feature (native=${native})`, async () => {
+for (const native of [false, true]) test(`unrelated 400 fails without retry and does not disable reasoning feature (native=${native})`, async () => {
   const runtime = Object.assign(runtimeFixture(native ? 'anthropic-messages' : 'openai-completions'), { model: `unrelated-400-${native}`, servedModelName: 'gpt-5.6-luna' });
   let calls = 0;
   const relay = await createDatabricksRelay({ runtime, fetch: async (_url, init) => {
@@ -157,7 +157,10 @@ for (const native of [false, true]) test(`unrelated 400 keeps existing retry beh
     return Response.json(native ? { type: 'message', content: [], stop_reason: 'end_turn' } : result);
   } });
   try {
-    const response = await post(relay, native ? { thinking: { type: 'adaptive' }, output_config: { effort: 'high' } } : { tools, reasoning_effort: 'high' }, native);
-    expect(response.status).toBe(200); await response.text(); expect(calls).toBe(2);
+    const body = native ? { thinking: { type: 'adaptive' }, output_config: { effort: 'high' } } : { tools, reasoning_effort: 'high' };
+    const response = await post(relay, body, native);
+    expect(response.status).toBe(400); await response.text(); expect(calls).toBe(1);
+    const next = await post(relay, body, native);
+    expect(next.status).toBe(200); await next.text(); expect(calls).toBe(2);
   } finally { await relay.close(); }
 });

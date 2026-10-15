@@ -12,6 +12,7 @@ import { createCopilotStreamHandler } from '../src/copilot-stream.js';
 import { createQoderStreamHandler } from '../src/qoder-stream.js';
 import { startDatabricksPiSession } from '../src/runtimes/pi-databricks.js';
 import { withDeadline } from '../src/databricks/client.js';
+import { applyLearnedDatabricksProtocol, normalizeResource } from '../src/databricks/catalogue.js';
 import { runtimeFixture, runtimeServiceFixture } from './databricks/runtime-fixture.js';
 import * as storage from '../src/db.js';
 import { exportProjectTranscript } from '../src/transcript-export.js';
@@ -103,11 +104,24 @@ test('Claude, Copilot and Qoder wire reasoning reaches the daemon event sink bef
 
 // Real managed Pi 0.83.0 process + real local relay + real RPC parser.
 // Only upstream HTTP is substituted. No provider credentials or user install.
-for (const dialect of ['chat-reasoning-content', 'chat-typed-summary', 'messages-thinking', 'messages-translated',
+for (const dialect of ['chat-reasoning-content', 'chat-typed-summary', 'messages-thinking', 'messages-translated', 'messages-task-only-learned',
   'responses-summary', 'responses-reasoning-text', 'responses-summary-first', 'responses-raw-first'] as const) {
   test(`Databricks ${dialect} must emit thinking_delta through managed Pi RPC`, async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'thinking-delivery-'));
     const runtime = runtimeFixture(dialect === 'messages-thinking' ? 'anthropic-messages' : 'openai-completions');
+    if (dialect === 'messages-task-only-learned') {
+      const entry = normalizeResource('secret', 'profile', { kind: 'serving-endpoint', name: 'corporate-claude',
+        metadata: { task: 'llm/v1/chat', config: { served_entities: [{ foundation_model: { name: 'databricks-claude-sonnet-5' } }] } } });
+      expect(entry.endpoint.api).toBe('openai-completions');
+      entry.wireCapabilities = { api: 'anthropic-messages', acceptedLevels: ['high'], probedAt: new Date().toISOString(),
+        responsesUnsupported: false, chatTokensField: 'max_tokens', requiredOutputBudget: false, omittedFields: [] };
+      applyLearnedDatabricksProtocol(entry);
+      runtime.api = entry.endpoint.api!;
+      runtime.baseUrl = `https://workspace.example${entry.basePath}`;
+      runtime.model = entry.upstreamName;
+      runtime.wireCapabilities = entry.wireCapabilities;
+      runtime.reasoningOptions = entry.endpoint.reasoningOptions!.map(option => option.id);
+    }
     if (dialect.startsWith('chat-')) runtime.baseUrl = 'https://workspace.example/serving-endpoints/reasoning-fixture/invocations';
     if (dialect === 'messages-translated') runtime.wireCapabilities = { responsesUnsupported: true,
       chatTokensField: 'max_completion_tokens', requiredOutputBudget: false, omittedFields: [] };
@@ -149,15 +163,18 @@ for (const dialect of ['chat-reasoning-content', 'chat-typed-summary', 'messages
       const chunk = (delta: unknown, finish_reason: string | null = null) => ({ id: 'chat_reasoning', object: 'chat.completion.chunk', created: 1, model: runtime.model, choices: [{ index: 0, delta, finish_reason }] });
       wire = sse([chunk({ role: 'assistant', ...reasoning }), chunk({ content: answer }), chunk(reasoning), chunk({}, 'stop'), '[DONE]']);
     }
-    const fixtureFetch: typeof fetch = async (input) => {
+    const fixtureFetch: typeof fetch = async (input, init) => {
       routes.push(new URL(String(input)).pathname);
+      if (dialect === 'messages-task-only-learned') {
+        expect(JSON.parse(String(init?.body))).toMatchObject({ thinking: { type: 'adaptive' }, output_config: { effort: 'high' } });
+      }
       return new Response(wire, { headers: { 'content-type': 'text/event-stream' } });
     };
     let turn: Awaited<ReturnType<typeof startDatabricksPiSession>> | undefined;
     try {
       const cwd = path.join(root, 'project'); await mkdir(cwd);
       turn = await startDatabricksPiSession({ dataRoot: root, cwd, sessionKey: 'reasoning-test', model: runtime.appModelId,
-        reasoning: 'high', service, fetch: fixtureFetch, prompt: 'Return the fixture answer.', send: (_channel, event) => events.push(event) });
+        ...(dialect === 'messages-task-only-learned' ? {} : { reasoning: 'high' }), service, fetch: fixtureFetch, prompt: 'Return the fixture answer.', send: (_channel, event) => events.push(event) });
       // When: the real Pi turn consumes the relay stream.
       const completed = turn.completed;
       await withDeadline(() => completed, 20000);

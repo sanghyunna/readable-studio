@@ -1,12 +1,20 @@
 import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import { databricksFailure } from '../../src/databricks-routes.js';
 import { createDatabricksRelay } from '../../src/databricks/relay.js';
 import { createDatabricksPiRuntime, startDatabricksPiSession } from '../../src/runtimes/pi-databricks.js';
 import { withDeadline } from '../../src/databricks/client.js';
 import { runtimeFixture, runtimeServiceFixture } from './runtime-fixture.js';
+import { failureDetail } from '../../src/databricks/failure.js';
+
+vi.mock('node:timers/promises', () => ({ setTimeout: vi.fn(async () => undefined) }));
+
+test('transport failure explains server unavailability without blaming configuration', () => {
+  expect(failureDetail('transport')).toMatchObject({ reason: 'transport', upstreamStatus: null, retryable: true });
+  expect(failureDetail('transport').message).toContain('The Databricks server is not responding.');
+});
 
 test('missing portable Pi engine is a local runtime failure, not an upstream outage', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'databricks-missing-engine-'));
@@ -49,7 +57,7 @@ for (const api of ['anthropic-messages', 'openai-completions'] as const) {
         });
         try {
           await withDeadline(() => turn.completed, 25_000);
-          expect(calls).toBe(1);
+          expect(calls).toBe(stream ? 1 : 11);
           expect(turn.session.hasFatalError()).toBe(true);
           const errorEvents = events.filter((event) => event.channel === 'error' || event.payload.type === 'error');
           expect(errorEvents.length).toBeGreaterThan(0);

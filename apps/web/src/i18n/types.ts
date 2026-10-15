@@ -1066,6 +1066,17 @@ export interface Dict {
   'homeHero.templateRailNext': string;
   'homeHero.templateFavoriteAdd': string;
   'homeHero.templateFavoriteRemove': string;
+  'homeHero.userTemplateBadge': string;
+  'homeHero.userTemplateAdd': string;
+  'homeHero.userTemplateUploading': string;
+  'homeHero.userTemplateImportError': string;
+  'homeHero.userTemplateManage': string;
+  'homeHero.userTemplateRename': string;
+  'homeHero.userTemplateDelete': string;
+  'homeHero.userTemplateDeleteConfirm': string;
+  'homeHero.userTemplateName': string;
+  'homeHero.userTemplateCancel': string;
+  'homeHero.userTemplateSave': string;
   'homeHero.subtitlePrefix': string;
   'homeHero.placeholder': string;
   'homeHero.placeholderOpenDocument': string;
@@ -2031,6 +2042,7 @@ export interface Dict {
   'chat.amrCard.chipAutoRetry': string;
   'chat.amrCard.switchCta': string;
   'chat.amrError.authMessage': string;
+  'chat.messageSaveFailed': string;
   'chat.amrError.balanceMessage': string;
   'chat.amrError.authorizeCta': string;
   'chat.amrError.rechargeCta': string;
@@ -2045,6 +2057,10 @@ export interface Dict {
   'chat.kimiError.providerMessage': string;
   'chat.databricksError.responseMessage': string;
   'chat.databricksError.providerMessage': string;
+  'chat.databricksError.unavailableMessage': string;
+  'chat.databricksError.retryMessage': string;
+  'chat.databricksError.authMessage': string;
+  'chat.databricksError.permissionMessage': string;
   'chat.tabComments': string;
   'chat.commentsSoon': string;
   'chat.comments.attached': string;

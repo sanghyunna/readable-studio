@@ -63,6 +63,8 @@ import {
 } from './agentModelSelection';
 import {
   isDatabricksManagedAgent,
+  refreshDatabricksModels,
+  scheduleDatabricksReasoningFollowUp,
 } from './databricksModels';
 import { DatabricksAddModelsModal } from './DatabricksAddModelsModal';
 import { DatabricksAddModelsRow } from './DatabricksAddModelsRow';
@@ -470,6 +472,20 @@ export function InlineModelSwitcher({
     setOpen(false);
     setDatabricksModalOpen(true);
   }, []);
+  // The daemon learns Claude thinking levels after registration. Only the
+  // model-picking mount follows up (ChatPane mounts several variants), once
+  // per selected model that has no levels yet, bounded by the helper.
+  const databricksFollowUpModelId =
+    databricksManaged &&
+    (variant === 'model' || variant === 'combined') &&
+    currentModelId &&
+    !currentAgent?.models?.find((m) => m.id === currentModelId)?.reasoningOptions?.length
+      ? currentModelId
+      : null;
+  useEffect(() => {
+    if (!databricksFollowUpModelId) return;
+    return scheduleDatabricksReasoningFollowUp(databricksFollowUpModelId);
+  }, [databricksFollowUpModelId]);
 
   useEffect(() => {
     if (variant !== 'model') return;
@@ -704,6 +720,8 @@ export function InlineModelSwitcher({
           : null,
       );
     }
+    // Cheap, de-duplicated GET; the cached list stays visible until it lands.
+    if (nextOpen && databricksManaged) void refreshDatabricksModels();
     if (nextOpen && showAmrReminder) {
       setShowAmrReminderInPopover(true);
       setAmrReminderSeen(true);
@@ -712,7 +730,7 @@ export function InlineModelSwitcher({
       setShowAmrReminderInPopover(false);
     }
     setOpen(nextOpen);
-  }, [open, showAmrReminder]);
+  }, [open, showAmrReminder, databricksManaged]);
 
   useEffect(() => {
     if (!open || config.mode !== 'daemon' || config.agentId === 'amr') {

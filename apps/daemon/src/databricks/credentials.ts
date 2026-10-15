@@ -31,9 +31,15 @@ export class DatabricksCredentials {
 
   /** Daemon-only bearer acquisition. Never serialize or log this return value. */
   async acquire(binding: DatabricksConnectionBinding): Promise<string> {
+    return (await this.acquireToken(binding)).token;
+  }
+
+  /** Reuses expiry-aware caching; forced refreshes still share an in-flight acquisition. */
+  async acquireToken(binding: DatabricksConnectionBinding, force = false): Promise<{ token: string; expiresAt: number }> {
     const key = this.key(binding);
+    if (force) this.cached.delete(key);
     const cached = this.cached.get(key);
-    if (cached && cached.expiresAt > this.now() + this.safetyMarginMs) return cached.value;
+    if (cached && cached.expiresAt > this.now() + this.safetyMarginMs) return { token: cached.value, expiresAt: cached.expiresAt };
     let pending = this.pending.get(key);
     if (!pending) {
       pending = this.refresh(binding).then((bearer) => {
@@ -46,7 +52,7 @@ export class DatabricksCredentials {
     }
     const bearer = await pending;
     if (bearer.expiresAt <= this.now() + this.safetyMarginMs) throw new DatabricksServiceError('DATABRICKS_AUTH_REQUIRED');
-    return bearer.value;
+    return { token: bearer.value, expiresAt: bearer.expiresAt };
   }
 
   /** Persist only after workspace validation. The binding is the non-secret reference. */

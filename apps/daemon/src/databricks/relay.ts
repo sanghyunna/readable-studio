@@ -27,6 +27,9 @@ export interface DatabricksRelay {
 export interface DatabricksRelayOptions {
   runtime: DatabricksRuntimeResolution;
   fetch?: typeof fetch;
+  delay?: (milliseconds: number, value: undefined, options: { signal: AbortSignal }) => Promise<void>;
+  onRetry?: (progress: { attempt: number; maxRetries: number; delayMs: number }) => void;
+  onRetryEnd?: () => void;
 }
 
 const MAX_BODY_BYTES = 32 * 1024 * 1024;
@@ -44,6 +47,14 @@ class UpstreamStreamError extends Error {
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function transientTransport(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const code = 'code' in error ? error.code : undefined;
+  return typeof code === 'string' && /^(?:ECONNRESET|ETIMEDOUT|ECONNREFUSED|EAI_AGAIN|UND_ERR_(?:CONNECT_TIMEOUT|HEADERS_TIMEOUT|SOCKET))$/.test(code)
+    || /^(?:socket hang up|terminated)$/.test(error.message)
+    || transientTransport(error.cause);
 }
 
 /** Translate the managed Pi Chat dialect without changing its selected effort. */
@@ -435,6 +446,12 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
     const timeout = setTimeout(abort, 10 * 60_000);
     timeout.unref();
     let upstreamStatus: number | null = null;
+    let retrying = false;
+    const endRetry = () => {
+      if (!retrying) return;
+      retrying = false;
+      options.onRetryEnd?.();
+    };
     let lastAttempt: { routeKind: DatabricksRouteKind; endpoint: URL; body: Record<string, unknown> } | undefined;
     let captureRecorded = false;
     const captureAttempt = async (original: DatabricksFailureDetail, upstreamBody: unknown): Promise<DatabricksFailureDetail> => {
@@ -484,6 +501,8 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
       let carriedTools = false;
       let rejected: unknown;
       let parameterHint: string | undefined;
+      let authRetried = false;
+      let forceRefresh = false;
       const corrections = new Set<string>();
       const correctOnce = (correction: string) => {
         if (corrections.has(correction)) return false;
@@ -507,9 +526,17 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
         return false;
       };
       let transientRetries = 0;
-      const retryTransient = async (status: number): Promise<boolean> => {
-        if (![400, 429].includes(status) && status < 500 || transientRetries >= 3) return false;
-        await backoff(1000 * 2 ** transientRetries++, undefined, { signal: controller.signal });
+      const retryTransient = async (result?: Response): Promise<boolean> => {
+        if (result && result.status !== 429 && (result.status < 500 || result.status > 599) || transientRetries >= 10) return false;
+        controller.signal.throwIfAborted();
+        const retryAfter = result?.headers.get('retry-after');
+        const requestedDelay = retryAfter == null ? NaN : /^\d+(?:\.\d+)?$/.test(retryAfter.trim())
+          ? Number(retryAfter) * 1000 : Date.parse(retryAfter) - Date.now();
+        const delayMs = requestedDelay > 5000 && requestedDelay <= 60000 ? requestedDelay : 5000;
+        transientRetries++;
+        retrying = true;
+        options.onRetry?.({ attempt: transientRetries, maxRetries: 10, delayMs });
+        await (options.delay ?? backoff)(delayMs, undefined, { signal: controller.signal });
         return true;
       };
       // Validation corrections do not spend the transient retry allowance.
@@ -557,6 +584,16 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
         if (!record(outboundBody)) throw new Error('Invalid serialized request');
         lastAttempt = { endpoint, body: outboundBody, routeKind: invocation && route === upstream.pathname ? 'serving-invocations'
           : messagesSurface ? 'anthropic-messages' : responses ? 'openai-responses' : 'chat-completions' };
+        if (runtime.tokenProvider) {
+          try {
+            const bearer = await runtime.tokenProvider(forceRefresh);
+            forceRefresh = false;
+            headers.Authorization = `Bearer ${bearer.token}`;
+            if (!privateValues.includes(bearer.token)) privateValues.push(bearer.token);
+          } catch {
+            throw new UpstreamStreamError(failureDetail('auth', upstreamStatus), undefined);
+          }
+        }
         const outboundHeaders: Record<string, string> = { ...headers, ...(messagesSurface ? { 'anthropic-version': '2023-06-01' } : {}) };
         // The Databricks Messages effort examples explicitly negotiate this beta.
         // Do not enable thinking or alter the selected mode/budget on idle turns.
@@ -565,11 +602,17 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
           && typeof outboundBody.output_config.effort === 'string' && !unsupportedEffortBeta.has(featureKey)
           && !headers['anthropic-beta']?.split(',').map(value => value.trim()).includes(EFFORT_BETA);
         if (addEffortBeta) outboundHeaders['anthropic-beta'] = [headers['anthropic-beta'], EFFORT_BETA].filter(Boolean).join(',');
-        result = await upstreamFetch(endpoint, {
-          method: 'POST', redirect: 'error', signal: controller.signal,
-          headers: outboundHeaders,
-          body: serializedWire,
-        });
+        try {
+          result = await upstreamFetch(endpoint, {
+            method: 'POST', redirect: 'error', signal: controller.signal,
+            headers: outboundHeaders,
+            body: serializedWire,
+          });
+        } catch (error) {
+          upstreamStatus = null;
+          if (transientTransport(error) && await retryTransient()) continue;
+          throw error;
+        }
         upstreamStatus = result.status;
         if (controller.signal.aborted) {
           await result.body?.cancel();
@@ -577,6 +620,15 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
         }
         if (result.ok) break;
         rejected = await readUpstreamError(result);
+        if (result.status === 401 || result.status === 403) {
+          if (upstreamFailure(result.status, rejected, privateValues).reason === 'auth'
+            && runtime.tokenProvider && !authRetried) {
+            authRetried = true;
+            forceRefresh = true;
+            continue;
+          }
+          break;
+        }
         const message = record(rejected) ? rejected.message ?? (record(rejected.error) ? rejected.error.message : undefined) : undefined;
         const rejectionText = JSON.stringify(rejected);
         // Gateways can wrap schema validation in a 5xx without naming the
@@ -605,7 +657,7 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
           if (outputLimit === 8192) outputLimit = 8191;
           continue;
         }
-        if (namedProfile) { if (await retryTransient(result.status)) continue; break; }
+        if (namedProfile) { if (await retryTransient(result)) continue; break; }
         parameterHint = undefined;
         // A missing route is safe to probe elsewhere, but auth/transport/server
         // failures never establish capability and never replay inference.
@@ -614,7 +666,7 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
           break;
         }
         if (result.status !== 400 || typeof message !== 'string') {
-          if (await retryTransient(result.status)) continue;
+          if (await retryTransient(result)) continue;
           break;
         }
         const detail = record(rejected) && record(rejected.error) ? rejected.error : rejected;
@@ -684,7 +736,7 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
             continue;
           }
         }
-        if (await retryTransient(result.status)) continue;
+        if (await retryTransient(result)) continue;
         break;
       }
       const learnCompleted = async () => {
@@ -699,12 +751,13 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
         }
         if (corrections.size || carriedTools) await runtime.onCapabilitiesLearned?.(learned);
       };
+      endRetry();
       if (!result.ok) {
         const original = upstreamFailure(result.status, rejected, privateValues);
         const captured = await captureAttempt(original, rejected);
         const detail = !captured.upstreamMessage && parameterHint ? failureDetail(original.reason, result.status, parameterHint) : captured;
         // Report the authoritative HTTP failure even if credential invalidation fails.
-        try { if (result.status === 401) await runtime.onAuthRejected?.(); }
+        try { if (original.reason === 'auth') await runtime.onAuthRejected?.(); }
         finally { sendError(response, result.status >= 400 && result.status <= 599 ? result.status : 502, detail); }
       } else if (result.headers.get('content-type')?.includes('text/event-stream')) {
         await forwardStream(result, response, controller.signal, responses, messagesSurface && !anthropic);
@@ -738,6 +791,7 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
         if (!controller.signal.aborted && !response.writableEnded) sendError(response, 502, detail);
       }
     } finally {
+      endRetry();
       clearTimeout(timeout);
       response.off('close', abort);
       request.off('aborted', abort);

@@ -34,6 +34,8 @@ for (const status of [200, 400]) test(`preserves GPT-OSS tools and high effort w
     expect(response.status).toBe(status);
     expect(sent).toEqual([{ path: '/ai-gateway/openai/v1/chat/completions', body: {
       model: runtime.model, messages: [{ role: 'user', content: 'OK' }], reasoning_effort: 'high', tools,
+      // The fail-fast 400 path still carries the real turn's effective output budget.
+      ...(status === 400 ? { max_completion_tokens: runtime.capabilities.maxTokens } : {}),
     } }]);
     if (status === 400) {
       expect(result).toMatchObject({ error: { reason: 'bad-request', retryable: false, upstreamStatus: 400 } });

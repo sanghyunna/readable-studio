@@ -74,6 +74,9 @@ export type RunFailureMessageKey =
   | 'chat.kimiError.providerMessage'
   | 'chat.databricksError.responseMessage'
   | 'chat.databricksError.providerMessage'
+  | 'chat.databricksError.unavailableMessage'
+  | 'chat.databricksError.authMessage'
+  | 'chat.databricksError.permissionMessage'
   | null;
 
 export interface RunFailureUi {
@@ -190,9 +193,16 @@ export function resolveRunFailureUi(
   }
   if (agentId === 'databricks' || agentId === 'pi' && /Databricks/i.test(detail ?? '')) {
     const status = detail?.match(/\bHTTP\s+(\d{3})\b/i)?.[1];
+    const unavailable = /\[(?:transport|upstream-server|upstream-unavailable);/i.test(detail ?? '')
+      || /\b5\d{2}\s+upstream-error\b/i.test(detail ?? '');
     return {
       primaryAction: 'retry', secondaryRetry: false, showSwitchCard: false,
-      messageKey: status ? 'chat.databricksError.providerMessage' : 'chat.databricksError.responseMessage',
+      messageKey: code === 'DATABRICKS_AUTH_REQUIRED' || /\[auth;/i.test(detail ?? '') || status === '401'
+        ? 'chat.databricksError.authMessage'
+        : code === 'DATABRICKS_PERMISSION_DENIED' || /\[permission-denied;/i.test(detail ?? '') || status === '403'
+          ? 'chat.databricksError.permissionMessage'
+        : unavailable ? 'chat.databricksError.unavailableMessage'
+        : status ? 'chat.databricksError.providerMessage' : 'chat.databricksError.responseMessage',
       ...(status ? { messageVars: { status } } : {}),
     };
   }

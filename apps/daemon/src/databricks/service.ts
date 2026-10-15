@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { parseDatabricksNames, type DatabricksNamedScanRequest } from '@readable-studio/contracts';
 import { runNamedScan } from './named-scan.js';
+import { probeClaudeMessages } from './named-probe.js';
+import { normalizeDatabricksModelIdentity } from './capabilities.js';
 import type {
   DatabricksAuthState, DatabricksCapabilities, DatabricksDisableRequest, DatabricksEnableRequest,
   DatabricksLoginRequest, DatabricksLoginResponse,
@@ -29,6 +31,7 @@ export interface DatabricksRuntimeResolution {
   /** Metadata identity, not the user-chosen serving alias. */
   servedModelName?: string;
   apiKey: string;
+  tokenProvider?: (force?: boolean) => Promise<{ token: string; expiresAt: number }>;
   onAuthRejected?: () => Promise<void>;
   wireCapabilities?: DatabricksWireCapabilities;
   onCapabilitiesLearned?: (learned: DatabricksWireCapabilities) => Promise<void>;
@@ -92,6 +95,8 @@ export class LocalDatabricksService implements DatabricksService {
   private readonly jobs = new Map<string, ScanJob>();
   private readonly listeners = new Map<string, Set<(event: DatabricksScanEvent) => void>>();
   private readonly cursors = new Map<string, { scanId: string; revision: number; offset: number }>();
+  private readonly claudeProbes = new Map<string, Promise<void>>();
+  private readonly claudeRetryAt = new Map<string, number>();
   private inspection: Promise<void> | undefined;
   private inspectionExpiresAt = 0;
   private inspectionIssues: DatabricksProfilesResponse['issues'] = [];
@@ -315,7 +320,11 @@ export class LocalDatabricksService implements DatabricksService {
     this.jobs.set(snapshot.scanId, job);
     job.finished = runNamedScan(request, { store: this.store, snapshot, signal: job.controller.signal,
       workspace: async () => ({ binding, bearer: await this.bearer(binding), fetch: this.fetch }),
-      emit: () => this.emit(snapshot) }).catch((error: unknown) => {
+      emit: () => this.emit(snapshot) }).then(async () => {
+      for (const entry of (await this.store.read()).entries) {
+        if (snapshot.endpoints.some(endpoint => endpoint.id === entry.endpoint.id)) this.scheduleClaudeProbe(entry);
+      }
+    }).catch((error: unknown) => {
       snapshot.state = job.controller.signal.aborted ? 'cancelled' : 'failed';
       snapshot.completedAt = new Date(this.now()).toISOString(); snapshot.revision++;
       snapshot.issues = [issueFor(error)];
@@ -444,8 +453,51 @@ export class LocalDatabricksService implements DatabricksService {
 
   async listModels(request: DatabricksModelsRequest = {}): Promise<DatabricksModelsResponse> {
     const generation = await this.store.read();
+    for (const entry of generation.entries) {
+      applyLearnedDatabricksProtocol(entry);
+      if (entry.endpoint.enabled && (!request.profileId || entry.endpoint.profileId === request.profileId)) this.scheduleClaudeProbe(entry);
+    }
     return { revision: generation.revision, issues: [], models: generation.entries.map((entry) => entry.endpoint)
       .filter((endpoint): endpoint is DatabricksRegisteredEndpoint => endpoint.enabled && !!endpoint.appModelId && (!request.profileId || endpoint.profileId === request.profileId)) };
+  }
+
+  private scheduleClaudeProbe(entry: CatalogueEntry): Promise<void> | undefined {
+    const key = `${entry.endpoint.id}:${entry.configurationId ?? ''}`;
+    const pending = this.claudeProbes.get(key);
+    if (pending) return pending;
+    const identities = entry.endpoint.servedModelName?.split(', ') ?? [];
+    if (entry.endpoint.api !== 'openai-completions' || entry.wireCapabilities?.api || entry.wireCapabilities?.probedAt
+      || !identities.length || !identities.every(name => /^claude-(?:sonnet|opus|haiku)-/.test(normalizeDatabricksModelIdentity(name)))
+      || this.now() < (this.claudeRetryAt.get(key) ?? 0)) return;
+    const probe = (async () => {
+      const binding = await this.binding(entry.endpoint.profileId);
+      const levels = await probeClaudeMessages(entry.upstreamName, {
+        ...this.options.scanOptions, binding, bearer: await this.bearer(binding), fetch: this.fetch,
+      });
+      await this.store.update(generation => {
+        const current = generation.entries.find(candidate => candidate.endpoint.id === entry.endpoint.id);
+        if (!current || current.configurationId !== entry.configurationId) return;
+        current.wireCapabilities = {
+          responsesUnsupported: false, chatTokensField: 'max_completion_tokens', requiredOutputBudget: false, omittedFields: [],
+          ...current.wireCapabilities, probedAt: new Date(this.now()).toISOString(),
+          ...(levels ? { api: 'anthropic-messages' as const, acceptedLevels: levels } : {}),
+        };
+        if (levels) {
+          delete current.wireCapabilities.effortUnsupported;
+          if (current.wireCapabilities.namedProfile) current.wireCapabilities.namedProfile = {
+            ...current.wireCapabilities.namedProfile, api: 'anthropic-messages', tokenField: 'max_tokens', reasoning: levels,
+          };
+          applyLearnedDatabricksProtocol(current);
+          for (const scan of generation.scans) scan.endpoints = scan.endpoints.map(endpoint =>
+            endpoint.id === current.endpoint.id ? structuredClone(current.endpoint) : endpoint);
+        }
+      });
+    })().catch(() => {
+      // Auth, transport, rate limits and server failures are not capability evidence.
+      this.claudeRetryAt.set(key, this.now() + 60_000);
+    }).finally(() => { this.claudeProbes.delete(key); });
+    this.claudeProbes.set(key, probe);
+    return probe;
   }
 
   private candidate(generation: CatalogueGeneration, endpointId: string, request: DatabricksEnableRequest): { entry: CatalogueEntry; scan: DatabricksScanResponse } {
@@ -466,7 +518,9 @@ export class LocalDatabricksService implements DatabricksService {
       if (entry.endpoint.availability !== 'compatible') throw new DatabricksServiceError('DATABRICKS_VERIFICATION_REQUIRED');
       entry.endpoint.enabled = true;
     });
-    const endpoint = generation.entries.find((entry) => entry.endpoint.id === endpointId)!.endpoint as DatabricksRegisteredEndpoint;
+    const entry = generation.entries.find((entry) => entry.endpoint.id === endpointId)!;
+    this.scheduleClaudeProbe(entry);
+    const endpoint = entry.endpoint as DatabricksRegisteredEndpoint;
     return { endpoint, appModelId: endpoint.appModelId, revision: generation.revision };
   }
 
@@ -481,7 +535,12 @@ export class LocalDatabricksService implements DatabricksService {
   }
 
   async resolveRuntime(appModelId: string): Promise<DatabricksRuntimeResolution> {
-    const generation = await this.store.read();
+    let generation = await this.store.read();
+    const pendingEntry = generation.entries.find(candidate => candidate.endpoint.appModelId === appModelId && candidate.endpoint.enabled);
+    if (pendingEntry) {
+      const pending = this.claudeProbes.get(`${pendingEntry.endpoint.id}:${pendingEntry.configurationId ?? ''}`);
+      if (pending) { await pending; generation = await this.store.read(); }
+    }
     const entry = generation.entries.find((candidate) => candidate.endpoint.appModelId === appModelId && candidate.endpoint.enabled);
     if (!entry) throw new DatabricksServiceError('DATABRICKS_SCAN_EXPIRED');
     if (entry.endpoint.availability !== 'compatible') throw new DatabricksServiceError('DATABRICKS_VERIFICATION_REQUIRED');
@@ -489,6 +548,7 @@ export class LocalDatabricksService implements DatabricksService {
   }
 
   private async runtime(entry: CatalogueEntry): Promise<DatabricksRuntimeResolution> {
+    applyLearnedDatabricksProtocol(entry);
     if (!entry.endpoint.api) throw new DatabricksServiceError('DATABRICKS_UNSUPPORTED_DIALECT');
     const binding = await this.binding(entry.endpoint.profileId);
     const apiKey = await this.bearer(binding);
@@ -496,6 +556,16 @@ export class LocalDatabricksService implements DatabricksService {
       appModelId: entry.endpoint.appModelId!, endpointId: entry.endpoint.id, profileId: binding.id,
       api: entry.endpoint.api, baseUrl: `${binding.host}${entry.basePath}`, model: entry.upstreamName,
       apiKey,
+      ...(binding.mode !== 'workspace-token' ? { tokenProvider: async (force = false) => {
+        try {
+          const bearer = await this.credentials.acquireToken(binding, force);
+          this.auth.set(binding.id, 'authenticated');
+          return bearer;
+        } catch {
+          this.auth.set(binding.id, 'auth-required');
+          throw new DatabricksServiceError('DATABRICKS_AUTH_REQUIRED');
+        }
+      } } : {}),
       ...(entry.endpoint.servedModelName ? { servedModelName: entry.endpoint.servedModelName } : {}),
       ...(entry.wireCapabilities ? { wireCapabilities: entry.wireCapabilities } : {}),
       captureFailure: (capture) => writeDatabricksFailureCapture(this.options.dataRoot, capture),
@@ -503,7 +573,11 @@ export class LocalDatabricksService implements DatabricksService {
         await this.store.update((generation) => {
           const current = generation.entries.find((candidate) => candidate.endpoint.id === entry.endpoint.id);
           if (!current || current.configurationId !== entry.configurationId) return;
-          current.wireCapabilities = learned;
+          current.wireCapabilities = {
+            ...(current.wireCapabilities?.acceptedLevels ? { acceptedLevels: current.wireCapabilities.acceptedLevels } : {}),
+            ...(current.wireCapabilities?.probedAt ? { probedAt: current.wireCapabilities.probedAt } : {}),
+            ...learned,
+          };
           applyLearnedDatabricksProtocol(current);
           if (learned.effortUnsupported) current.endpoint.reasoningOptions = [];
           if (learned.tools) current.endpoint.capabilities.tools = learned.tools;
@@ -530,11 +604,17 @@ export class LocalDatabricksService implements DatabricksService {
 
   async verify(endpointId: string, request: DatabricksVerifyRequest): Promise<DatabricksVerificationResponse> {
     if (request.allowInference !== true) throw new DatabricksServiceError('DATABRICKS_VERIFICATION_REQUIRED');
-    const { entry } = this.candidate(await this.store.read(), endpointId, request);
+    let { entry } = this.candidate(await this.store.read(), endpointId, request);
+    await this.scheduleClaudeProbe(entry);
+    entry = this.candidate(await this.store.read(), endpointId, request).entry;
     const runtime = await this.runtime(entry);
     const checks: DatabricksVerificationResponse['checks'] = { streaming: 'not-run', tools: 'not-run', effort: 'not-run' };
     let issue: DatabricksVerificationResponse['issue'];
     for (const check of ['streaming', 'tools', 'effort'] as const) {
+      if (check === 'effort' && entry.wireCapabilities?.probedAt) {
+        checks.effort = entry.wireCapabilities.acceptedLevels?.length ? 'passed' : 'failed';
+        continue;
+      }
       try { checks[check] = await this.verifyCheck(runtime, check) ? 'passed' : 'failed'; }
       catch (error) { checks[check] = 'inconclusive'; issue = issueFor(error); }
     }
