@@ -133,6 +133,7 @@ import {
   patchConversation,
   patchProject,
   saveMessage,
+  type SaveMessageResult,
   startGeneratedPluginShareTask,
   cacheTabsLocally,
   persistTabsToDaemonNow,
@@ -1274,6 +1275,8 @@ export function ProjectView({
   const reattachCancelControllersRef = useRef<Map<string, AbortController>>(new Map());
   const completedReattachRunsRef = useRef<Set<string>>(new Set());
   const pendingPersistPromisesRef = useRef<Set<Promise<unknown>>>(new Set());
+  const messageSaveFailedTextRef = useRef(t('chat.messageSaveFailed'));
+  messageSaveFailedTextRef.current = t('chat.messageSaveFailed');
   const startingQueuedChatSendIdRef = useRef<string | null>(null);
   const [queuedAutoStartTick, setQueuedAutoStartTick] = useState(0);
   const skillCache = useRef<Map<string, string>>(new Map());
@@ -2456,10 +2459,16 @@ export function ProjectView({
     locale,
   ]);
 
-  const trackPersist = (promise: Promise<unknown> | null | undefined) => {
-    if (!promise) return;
-    pendingPersistPromisesRef.current.add(promise);
-    promise.finally(() => pendingPersistPromisesRef.current.delete(promise));
+  const reportMessageSaveFailure = () => {
+    // One stable value: repeated failures from streamed chunks keep the same
+    // state instead of stacking notices.
+    setError(messageSaveFailedTextRef.current);
+  };
+  const trackPersist = (
+    promise: Promise<SaveMessageResult> | null | undefined,
+    options?: SaveMessageOptions,
+  ) => {
+    trackMessagePersist(pendingPersistPromisesRef.current, promise, reportMessageSaveFailure, options);
   };
 
   const persistMessage = useCallback(
@@ -2474,7 +2483,7 @@ export function ProjectView({
       // a runId — or the run finishes terminally — this guard lets the row
       // through normally.
       if (isPhantomDaemonRunMessage(m)) return;
-      trackPersist(saveMessage(project.id, activeConversationId, m, options));
+      trackPersist(saveMessage(project.id, activeConversationId, m, options), options);
     },
     [project.id, activeConversationId],
   );
@@ -2485,7 +2494,7 @@ export function ProjectView({
       setMessages((curr) => {
         const found = curr.find((m) => m.id === messageId);
         if (found && !isPhantomDaemonRunMessage(found)) {
-          trackPersist(saveMessage(project.id, activeConversationId, found, options));
+          trackPersist(saveMessage(project.id, activeConversationId, found, options), options);
         }
         return curr;
       });
@@ -2513,7 +2522,7 @@ export function ProjectView({
         // The runId-arriving update from onRunCreated passes through because
         // the updater sets runId before this check runs.
         if (persist && saved && activeConversationId && !isPhantomDaemonRunMessage(saved)) {
-          trackPersist(saveMessage(project.id, activeConversationId, saved, persistOptions));
+          trackPersist(saveMessage(project.id, activeConversationId, saved, persistOptions), persistOptions);
         }
         return next;
       });
@@ -2534,7 +2543,7 @@ export function ProjectView({
       ) {
         setMessages((curr) => [...curr, message]);
       }
-      if (persist) trackPersist(saveMessage(project.id, conversationId, message, options));
+      if (persist) trackPersist(saveMessage(project.id, conversationId, message, options), options);
     },
     [activeConversationId, project.id],
   );
@@ -2552,7 +2561,7 @@ export function ProjectView({
       ) {
         setMessages((curr) => curr.map((item) => (item.id === message.id ? message : item)));
       }
-      if (persist) trackPersist(saveMessage(project.id, conversationId, message, options));
+      if (persist) trackPersist(saveMessage(project.id, conversationId, message, options), options);
     },
     [activeConversationId, project.id],
   );
@@ -3947,7 +3956,7 @@ export function ProjectView({
             latestAssistantMsg = pinnedAssistant;
             // The view may already be on a different project/conversation;
             // pin the daemon run to the original row so returning can reattach.
-            void saveMessage(project.id, runConversationId, pinnedAssistant);
+            trackPersist(saveMessage(project.id, runConversationId, pinnedAssistant));
             updateMessageById(assistantId, (prev) => ({ ...prev, runId, runStatus: 'queued' }));
           },
           onRunStatus: (runStatus) => {
@@ -6192,7 +6201,7 @@ export function ProjectView({
           onCommentModeChange={setCommentInspectorActive}
           manualEditPortalId={manualEditInspectorPortalId}
           onManualEditInspectorChange={setManualEditInspectorActive}
-          chatConfig={config}
+          chatConfig={{ ...config, designSystemId: project.designSystemId ?? null }}
           chatAgentsById={agentsById}
           chatLocale={locale}
           conversations={conversations}
@@ -6702,6 +6711,35 @@ export function shouldClearActiveRunRefs(
   completedConversationId: string,
 ): boolean {
   return currentConversationId === completedConversationId;
+}
+
+// Tracks one message PUT until it settles so stop/cleanup can await pending
+// writes. The tracked promise is the handled continuation, never the raw save,
+// so a rejecting save cannot surface as an unhandled rejection. Foreground
+// failures are reported; keepalive (unload) writes stay quiet best-effort.
+export function trackMessagePersist(
+  pending: Set<Promise<unknown>>,
+  save: Promise<SaveMessageResult> | null | undefined,
+  onFailure: (result: SaveMessageResult) => void,
+  options?: SaveMessageOptions,
+): void {
+  if (!save) return;
+  const report = (result: SaveMessageResult) => {
+    if (!result.ok && !options?.keepalive) onFailure(result);
+  };
+  const handled: Promise<void> = save.then(
+    (result) => {
+      // Tolerate legacy void-returning mocks/callers: only a result that says
+      // ok:false is a failure.
+      if (result && typeof result === 'object') report(result);
+    },
+    () => report({ ok: false, status: null }),
+  );
+  pending.add(handled);
+  void handled.then(
+    () => pending.delete(handled),
+    () => pending.delete(handled),
+  );
 }
 
 // @dsp func-efcc04ea

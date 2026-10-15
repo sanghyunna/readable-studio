@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { streamViaDaemon } from '../../providers/daemon';
+import { useT } from '../../i18n';
 import { listMessages, saveMessage } from '../../state/projects';
 import { appendErrorStatusEvent } from '../../runtime/chat-events';
 import { agentModelDisplayName } from '../../utils/agentLabels';
@@ -76,6 +77,9 @@ export function useConversationChat(
   ctx: ConversationChatContext,
 ): UseConversationChatResult {
   const { config, agentsById, locale } = ctx;
+  const t = useT();
+  const messageSaveFailedTextRef = useRef(t('chat.messageSaveFailed'));
+  messageSaveFailedTextRef.current = t('chat.messageSaveFailed');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -126,7 +130,12 @@ export function useConversationChat(
 
   const persist = useCallback(
     (message: ChatMessage) => {
-      void saveMessage(projectId, conversationId, message);
+      // saveMessage never rejects; a failed save keeps the message in memory
+      // and surfaces through `error`. Re-setting the same text is a no-op, so
+      // repeated failures do not spam, and success never touches `error`.
+      void saveMessage(projectId, conversationId, message).then((result) => {
+        if (!result.ok) setError(messageSaveFailedTextRef.current);
+      });
     },
     [projectId, conversationId],
   );

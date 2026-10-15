@@ -597,17 +597,23 @@ export interface SaveMessageOptions {
   keepalive?: boolean;
 }
 
+// Machine-consumed outcome of a message PUT. `status` is the HTTP status for a
+// non-ok response and null when the request never produced one (network
+// failure, aborted unload). saveMessage resolves with this instead of
+// rejecting so callers decide how loudly to surface the failure.
+export type SaveMessageResult = { ok: true } | { ok: false; status: number | null };
+
 export async function saveMessage(
   projectId: string,
   conversationId: string,
   message: ChatMessage,
   options: SaveMessageOptions = {},
-): Promise<void> {
+): Promise<SaveMessageResult> {
   try {
     const body = options.telemetryFinalized
       ? { ...message, telemetryFinalized: true }
       : message;
-    await fetch(
+    const resp = await fetch(
       `/api/projects/${encodeURIComponent(projectId)}/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(message.id)}`,
       {
         method: 'PUT',
@@ -616,8 +622,10 @@ export async function saveMessage(
         ...(options.keepalive ? { keepalive: true } : {}),
       },
     );
+    return resp.ok ? { ok: true } : { ok: false, status: resp.status };
   } catch {
-    // best-effort persistence — UI keeps the message in-memory either way
+    // The UI keeps the message in-memory either way; callers surface this.
+    return { ok: false, status: null };
   }
 }
 

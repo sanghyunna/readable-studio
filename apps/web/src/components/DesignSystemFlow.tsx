@@ -782,7 +782,7 @@ export function DesignSystemDetailView({
   initialRevisionJob,
   onInitialRevisionJobConsumed,
 }: DetailProps) {
-  const { locale } = useI18n();
+  const { locale, t } = useI18n();
   const [system, setSystem] = useState<DesignSystemDetail | null>(null);
   const [body, setBody] = useState('');
   const [tab, setTab] = useState<ReviewTab>('system');
@@ -1254,9 +1254,15 @@ export function DesignSystemDetailView({
   const persistProjectMessage = useCallback(
     (projectId: string, conversationId: string | null, message: ChatMessage) => {
       if (!conversationId) return;
-      void saveMessage(projectId, conversationId, message);
+      const reportFailure = () => setChatError(t('chat.messageSaveFailed'));
+      void saveMessage(projectId, conversationId, message).then(
+        (result) => {
+          if (result && typeof result === 'object' && !result.ok) reportFailure();
+        },
+        reportFailure,
+      );
     },
-    [],
+    [t],
   );
 
   const persistWorkspaceTabsState = useCallback(

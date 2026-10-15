@@ -15,6 +15,7 @@ import {
   pickLocalFolderPath,
   publishGeneratedPluginToGitHub,
   rollbackConversation,
+  saveMessage,
 } from '../../src/state/projects';
 
 describe('conversation listing availability', () => {
@@ -554,5 +555,30 @@ describe('pickLocalFolderPath', () => {
     )));
 
     await expect(pickLocalFolderPath()).rejects.toThrow('cross-origin request rejected');
+  });
+});
+
+describe('saveMessage', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const message = { id: 'msg/1', role: 'user' as const, content: 'hello', createdAt: 1 };
+  it('returns ok for a successful PUT and preserves the request body', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(saveMessage('p 1', 'c/1', message, { telemetryFinalized: true })).resolves.toEqual({ ok: true });
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe('/api/projects/p%201/conversations/c%2F1/messages/msg%2F1');
+    expect(init?.method).toBe('PUT');
+    expect(JSON.parse(String(init?.body))).toEqual({ ...message, telemetryFinalized: true });
+    expect(init && 'keepalive' in init).toBe(false);
+  });
+  it('maps an HTTP failure to its status without rejecting', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => new Response('nope', { status: 503 })));
+    await expect(saveMessage('p', 'c', message)).resolves.toEqual({ ok: false, status: 503 });
+  });
+  it('maps a network failure to a null status without rejecting, including keepalive writes', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => { throw new TypeError('connection refused'); });
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(saveMessage('p', 'c', message, { keepalive: true })).resolves.toEqual({ ok: false, status: null });
+    expect(fetchMock.mock.calls[0]![1]?.keepalive).toBe(true);
   });
 });
