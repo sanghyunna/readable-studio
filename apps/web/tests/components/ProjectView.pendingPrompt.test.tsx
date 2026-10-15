@@ -97,7 +97,9 @@ vi.mock('../../src/components/AvatarMenu', () => ({
 }));
 
 vi.mock('../../src/components/FileWorkspace', () => ({
-  FileWorkspace: () => <div data-testid="file-workspace" />,
+  FileWorkspace: ({ chatConfig }: { chatConfig: AppConfig }) => (
+    <div data-testid="file-workspace" data-design-system-id={chatConfig.designSystemId ?? 'none'} />
+  ),
 }));
 
 vi.mock('../../src/components/Loading', () => ({
@@ -150,12 +152,13 @@ const conversation = (projectId: string): Conversation => ({
 function renderProjectView(
   currentProject: Project,
   onClearPendingPrompt = vi.fn(),
+  currentConfig = config,
 ) {
   return render(
     <ProjectView
       project={currentProject}
       routeFileName={null}
-      config={config}
+      config={currentConfig}
       agents={[] as AgentInfo[]}
       skills={[] as SkillSummary[]}
       designTemplates={[] as SkillSummary[]}
@@ -191,6 +194,19 @@ describe('ProjectView pending prompt seeding', () => {
     cleanup();
     vi.clearAllMocks();
   });
+
+  it.each([null, 'user:explicit-brand'])(
+    'restores side-chat design system %s from the project rather than the workspace default',
+    async (designSystemId) => {
+      renderProjectView(
+        { ...project('restored'), designSystemId },
+        vi.fn(),
+        { ...config, designSystemId: 'default' },
+      );
+      const workspace = await screen.findByTestId('file-workspace');
+      expect(workspace.getAttribute('data-design-system-id')).toBe(designSystemId ?? 'none');
+    },
+  );
 
   it('prefills chat once when the project has a pending prompt and requests persistence clear', async () => {
     const onClearPendingPrompt = vi.fn();

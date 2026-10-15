@@ -109,6 +109,21 @@ function renderPane(extra: Partial<React.ComponentProps<typeof ChatPane>> = {}) 
 }
 
 describe('workspace chat composer: agent + model execution pair', () => {
+  it('shows learned Databricks thinking levels and sends the selected level', () => {
+    const onAgentModelChange = vi.fn();
+    renderPane({
+      config: { ...CONFIG, agentId: 'databricks', agentModels: { databricks: { model: 'dbm-claude' } } },
+      agents: [{ id: 'databricks', name: 'Databricks', available: true, models: [
+        { id: 'dbm-claude', label: 'Claude', source: 'databricks', reasoningOptions: [{ id: 'high', label: 'High' }] },
+      ] } as AgentInfo],
+      onAgentModelChange,
+    });
+    fireEvent.click(screen.getByTestId('inline-model-switcher-reasoning-trigger'));
+    expect(screen.queryByTestId('inline-model-switcher-reasoning-option-low')).toBeNull();
+    fireEvent.click(screen.getByTestId('inline-model-switcher-reasoning-option-high'));
+    expect(onAgentModelChange).toHaveBeenCalledWith('databricks', { reasoning: 'high' });
+  });
+
   it('replaces the workspace mode button with agent, model, and thinking controls', () => {
     renderPane();
 

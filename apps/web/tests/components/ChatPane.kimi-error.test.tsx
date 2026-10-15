@@ -121,3 +121,19 @@ it('renders an exhausted HTTP 400 in the Korean error box', () => {
   const card = renderFailed('AGENT_EXECUTION_FAILED', 'Databricks [bad-request; HTTP 400]: request rejected', 'databricks');
   expect(card?.textContent).toContain(getKo()['chat.databricksError.providerMessage'].replace('{status}', '400'));
 });
+
+it.each([
+  'Databricks [transport; no upstream response]: The Databricks server is not responding.',
+  'Databricks [upstream-server; HTTP 503]: The upstream service failed.',
+  '503 upstream-error',
+])('renders server exhaustion in Korean: %s', detail => {
+  const card = renderFailed('AGENT_EXECUTION_FAILED', detail, 'databricks');
+  expect(card?.textContent).toContain('Databricks 서버가 응답하지 않습니다. 잠시 후 다시 시도해 주세요.');
+  expect(card?.textContent).not.toContain('프로토콜');
+});
+
+it('formats the Korean Databricks retry progress with the current and maximum counts', () => {
+  const copy = getKo()['chat.databricksError.retryMessage']
+    .replace('{attempt}', '3').replace('{maxRetries}', '10');
+  expect(copy).toBe('Databricks 서버 응답이 불안정해 다시 시도하는 중입니다 (3/10)');
+});

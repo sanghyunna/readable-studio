@@ -2,6 +2,7 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ComponentProps } from 'react';
 
 import { readConversationsFromListMock } from '../helpers/hub-conversations-mock';
 
@@ -87,6 +88,9 @@ import { HubRailOverlays } from '../../src/components/hub/HubRailOverlays';
 import { useHubRailController } from '../../src/components/hub/useHubRailController';
 import { navigate } from '../../src/router';
 import type { Project, SkillSummary } from '../../src/types';
+import { setHomeHeroPrompt, homeHeroPromptText } from '../helpers/home-hero-lexical';
+import { writeHomeGuideStage } from '../../src/components/home-hero/firstRunGuide';
+import { templatePromptBoundary } from '../../src/components/home-hero/templatePrompt';
 
 class ResizeObserverMock {
   observe() {}
@@ -122,8 +126,8 @@ const skills: SkillSummary[] = [{
   aggregatesExamples: false,
 }];
 
-function renderEntryShell(projects: Project[] = [project]) {
-  const onCreateProject = vi.fn(() => true);
+function renderEntryShell(projects: Project[] = [project], model = '') {
+  const onCreateProject = vi.fn<ComponentProps<typeof EntryShell>['onCreateProject']>(() => true);
   const onOpenSettings = vi.fn();
   const onNewProject = vi.fn();
   const onCreateFromTemplate = vi.fn(() => true);
@@ -152,7 +156,7 @@ function renderEntryShell(projects: Project[] = [project]) {
           templates={[]}
           defaultDesignSystemId={null}
           config={{
-            mode: 'api', apiKey: '', baseUrl: '', model: '', agentId: null,
+            mode: 'api', apiKey: '', baseUrl: '', model, agentId: null,
             skillId: null, designSystemId: null,
           }}
           agents={[]}
@@ -200,6 +204,42 @@ afterEach(() => {
 });
 
 describe('EntryShell production hub wiring', () => {
+  it('creates the imported deck project request with a skill and no plugin fields', async () => {
+    const template = {
+      id: 'user-board-deck', name: 'Board deck', description: 'PRIVATE_DECK_BODY_723',
+      source: 'user', mode: 'deck', userImported: true,
+      thumbnail: { status: 'pending', source: null, updatedAt: '2026-10-14' },
+    };
+    writeHomeGuideStage('done');
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      if (input === '/api/plugins') return Response.json({ plugins: [] });
+      if (input === '/api/design-templates') return Response.json({ designTemplates: [template] });
+      return Response.json({});
+    }));
+    const { onCreateProject } = renderEntryShell([project], 'test-api-model');
+    const title = await screen.findByText(template.name);
+    await act(async () => { fireEvent.click(title.closest('button')!); });
+    expect(homeHeroPromptText().trim()).toBe('');
+    expect(homeHeroPromptText()).not.toContain(template.description);
+    await act(async () => { setHomeHeroPrompt('Our revenue was 42 this quarter.'); });
+    await act(async () => { fireEvent.click(screen.getByTestId('home-hero-submit')); });
+    expect(onCreateProject).toHaveBeenCalledOnce();
+    const request = onCreateProject.mock.calls[0]![0];
+    expect(request).toMatchObject({
+      skillId: template.id,
+      metadata: {
+        kind: 'deck',
+        templateRef: {
+          id: template.id, name: template.name,
+          boundary: templatePromptBoundary(template.description, 'Our revenue was 42 this quarter.'),
+        },
+      },
+    });
+    expect(request).not.toHaveProperty('pluginId');
+    expect(request).not.toHaveProperty('pluginType');
+    expect(request).not.toHaveProperty('appliedPluginSnapshotId');
+  });
+
   it('does not start the hidden project grid fan-out while loading live work at scale', async () => {
     const projects = Array.from({ length: 543 }, (_, index): Project => ({
       id: `idle-${index}`,

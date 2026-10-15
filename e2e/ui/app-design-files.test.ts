@@ -31,6 +31,7 @@ test.beforeEach(async ({ page }) => {
         telemetry: { metrics: false, content: false, artifactManifest: false },
       }),
     );
+    window.localStorage.setItem('readable-studio:welcome-modal-shown', '1');
   }, STORAGE_KEY);
 
   await page.route('**/api/app-config', async (route) => {

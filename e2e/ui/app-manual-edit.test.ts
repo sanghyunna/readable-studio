@@ -8,6 +8,10 @@ import type { Locator, Page, Response } from '@playwright/test';
 import { T } from '@/timeouts';
 import { waitForSaveResponse } from '@/playwright/manual-edit-events';
 import { issue41SelectionPaintHtml, magneticEdgeAlignmentHtml, semanticSvgDeckVisualHtml } from '../resources/manual-edit.ts';
+import {
+  armDeletePreviewLoad, assertNativeDelete, captureDeleteWrites, deleteFrame, deletePreview, enterDeleteEditMode,
+  focusDeleteOwner, pressDeleteBurst, runDeleteJourney, selectDeleteTarget, type DeleteFixture,
+} from '@/playwright/direct-edit-delete';
 
 const STORAGE_KEY = 'readable-studio:config';
 const ACTIVE_ARTIFACT_PREVIEW_SELECTOR = '[data-testid="artifact-preview-frame"]:visible, [data-testid="artifact-preview-frame-url-load"]:visible, [data-testid="artifact-preview-frame-srcdoc"]:visible';
@@ -216,6 +220,388 @@ test('[P0] manual edit explicit Discard restores without writing', async ({ page
     body: JSON.stringify({ rendererWriteCount: rendererWrites.length, sourceRestored: true }),
     contentType: 'application/json',
   });
+});
+
+const deleteImageSource = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><path fill="#fa0" d="M0 0h24v24H0z"/></svg>';
+const deleteLinkedCss = '.linked-proof{background-color:rgb(12,34,56);background-image:url("../images/pattern.svg")}';
+// The removable object and its survivor are id-less siblings, so a positional
+// ID that drifts to the next sibling would delete the survivor instead.
+const deleteHtmlSource = `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="assets/css/proof.css"></head>
+<body style="margin:0;font-family:Arial"><h1>Delete verifier</h1>
+<div class="linked-proof" style="height:80px">Linked stylesheet</div><img class="linked-image" src="assets/images/pattern.svg">
+<input aria-label="Native input" value="Native"><textarea aria-label="Native textarea">Native</textarea>
+<div style="height:1400px"></div><a class="delete-object" href="#proof" style="display:block;padding:24px">Delete this link</a>
+<p class="survivor">Keep this sibling</p><div style="height:1400px"></div></body></html>`;
+
+async function seedDeleteFile(page: Page, projectId: string, name: string, content: string, kind?: 'html' | 'deck') {
+  const response = await page.request.post(`/api/projects/${projectId}/files`, {
+    data: {
+      name,
+      content,
+      ...(kind ? { artifactManifest: { schema: 'readable-studio.artifact-manifest.v1', kind, title: name, entry: name,
+        renderer: kind === 'deck' ? 'deck-html' : 'html', exports: ['html'] } } : {}),
+    },
+    timeout: 15_000,
+  });
+  expect(response.ok(), `${name}: ${response.status()}`).toBeTruthy();
+}
+
+async function openDeleteFixture(page: Page, projectId: string, fileName: string, content: string, kind: 'html' | 'deck' = 'html'): Promise<DeleteFixture> {
+  await seedDeleteFile(page, projectId, fileName, content, kind);
+  await page.goto(`/projects/${projectId}/files/${fileName}`);
+  await openDesignFile(page, fileName);
+  const readSource = async () => {
+    const response = await page.request.get(`/api/projects/${projectId}/files/${fileName}`);
+    expect(response.ok()).toBeTruthy();
+    return response.text();
+  };
+  expect(await readSource()).toBe(content);
+  return { projectId, fileName, targetSelector: '.delete-object', survivorSelector: '.survivor', originalSource: content, readSource };
+}
+
+async function createDeleteProject(page: Page, name: string) {
+  await routeMockAgents(page);
+  const projectId = await createEmptyProject(page, name);
+  await seedDeleteFile(page, projectId, 'assets/images/pattern.svg', deleteImageSource);
+  await seedDeleteFile(page, projectId, 'assets/css/proof.css', deleteLinkedCss);
+  return projectId;
+}
+
+for (const owner of ['host', 'iframe'] as const) {
+  for (const finish of ['save', 'discard'] as const) {
+    test(`[P0] manual edit Delete key removes the selected object from ${owner} focus then ${finish}s`, async ({ page }, testInfo) => {
+      test.setTimeout(90_000);
+      const projectId = await createDeleteProject(page, `Delete ${owner} ${finish}`);
+      const fixture = await openDeleteFixture(page, projectId, `${owner}-${finish}.html`, deleteHtmlSource);
+      const result = await runDeleteJourney({
+        page, fixture, owner, finish, linked: true, scroll: true,
+        screenshot: async (state) => { await page.screenshot({ path: testInfo.outputPath(`${owner}-${finish}-${state}.png`) }); },
+      });
+      if (finish === 'save') {
+        const saved = await fixture.readSource();
+        expect(saved).not.toContain('Delete this link');
+        expect(saved).toContain('Keep this sibling');
+      }
+      await testInfo.attach('delete-journey', { body: JSON.stringify({ ...result, writes: undefined }), contentType: 'application/json' });
+    });
+  }
+}
+
+test('[P0] manual edit Delete key keeps a non-first deck slide and discards without writing', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
+  await routeMockAgents(page);
+  const projectId = await createEmptyProject(page, 'Delete deck slide');
+  const template = readFileSync(new URL('../../templates/deck-framework.html', import.meta.url), 'utf8');
+  const deck = template.replace('<!-- SLOT: deck title -->', 'Delete slide context')
+    .replace('<!-- SLOT: slide 1 content -->', '<h1>First slide</h1>')
+    .replace('<!-- SLOT: slide 2 content -->', '<h1 class="delete-object">Delete slide title</h1><p class="survivor">Keep slide sibling</p>');
+  const fixture = await openDeleteFixture(page, projectId, 'context-deck.html', deck, 'deck');
+  await page.getByLabel('Next slide', { exact: true }).click();
+  await expect(deleteFrame(page).locator('#deck-cur')).toHaveText('02');
+  const result = await runDeleteJourney({
+    page, fixture, owner: 'iframe', finish: 'discard', slide: '02',
+    screenshot: async (state) => { await page.screenshot({ path: testInfo.outputPath(`deck-${state}.png`) }); },
+  });
+  await testInfo.attach('delete-journey', { body: JSON.stringify({ ...result, writes: undefined }), contentType: 'application/json' });
+});
+
+for (const owner of ['host', 'iframe'] as const) {
+  test(`[P0] manual edit Delete key from ${owner} focus keeps a pending style edit across undo`, async ({ page }) => {
+    const projectId = await createDeleteProject(page, `Delete pending ${owner}`);
+    const fixture = await openDeleteFixture(page, projectId, `pending-${owner}.html`, deleteHtmlSource);
+    const capture = captureDeleteWrites(page, projectId);
+    try {
+      const target = deleteFrame(page).locator('.delete-object');
+      await enterDeleteEditMode(page);
+      await selectDeleteTarget(page, '.delete-object', owner);
+      // The inspector accepts hex input; the computed value is rgb.
+      await page.locator('.manual-edit-left-inspector').getByLabel('Text color value', { exact: true }).fill('#ef4444');
+      await expect(target).toHaveCSS('color', 'rgb(239, 68, 68)');
+      await focusDeleteOwner(page, owner);
+      const deleted = await armDeletePreviewLoad(page);
+      await pressDeleteBurst(page);
+      await deleted();
+      await expect(target).toHaveCount(0, { timeout: T.medium });
+      await expect(deleteFrame(page).locator('.survivor')).toHaveCount(1);
+      await deletePreview(page).focus();
+      const undone = await armDeletePreviewLoad(page);
+      await page.keyboard.press('Control+z');
+      await undone();
+      await expect(target).toHaveCount(1, { timeout: T.medium });
+      await expect(target).toHaveCSS('color', 'rgb(239, 68, 68)');
+      expect(capture.writes).toHaveLength(0);
+      const exited = page.locator('.manual-edit-left-inspector').waitFor({ state: 'detached', timeout: T.medium });
+      await page.getByRole('button', { name: 'Discard changes', exact: true }).click();
+      await exited;
+      expect(capture.writes).toHaveLength(0);
+      expect(await fixture.readSource()).toBe(fixture.originalSource);
+    } finally {
+      capture.stop();
+    }
+  });
+}
+
+test('[P0] manual edit Delete key stays native in text controls, inline editing and IME', async ({ page }, testInfo) => {
+  const projectId = await createDeleteProject(page, 'Delete native');
+  const fixture = await openDeleteFixture(page, projectId, 'native.html', deleteHtmlSource);
+  const capture = captureDeleteWrites(page, projectId);
+  try {
+    await enterDeleteEditMode(page);
+    await selectDeleteTarget(page, '.delete-object', 'iframe');
+    for (const selector of ['input', 'textarea']) {
+      const control = deleteFrame(page).locator(selector);
+      await control.focus();
+      await page.keyboard.press('Home');
+      await page.keyboard.press('Delete');
+      await expect(control).toHaveValue('ative');
+      await expect(deleteFrame(page).locator('.delete-object')).toHaveCount(1);
+    }
+    await focusDeleteOwner(page, 'iframe');
+    const ime = await deleteFrame(page).locator('body').evaluate((body) => {
+      const event = new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true, isComposing: true });
+      body.dispatchEvent(event);
+      return { prevented: event.defaultPrevented, remaining: body.querySelectorAll('.delete-object').length };
+    });
+    expect(ime).toEqual({ prevented: false, remaining: 1 });
+    await assertNativeDelete(page, '.delete-object');
+    await expect(deleteFrame(page).locator('.survivor')).toHaveCount(1);
+    const exited = page.locator('.manual-edit-left-inspector').waitFor({ state: 'detached', timeout: T.medium });
+    await page.getByRole('button', { name: 'Discard changes', exact: true }).click();
+    await exited;
+    expect(capture.writes).toHaveLength(0);
+    expect(await fixture.readSource()).toBe(fixture.originalSource);
+    await testInfo.attach('delete-native', { body: JSON.stringify({ writes: capture.writes.length, ime }), contentType: 'application/json' });
+  } finally {
+    capture.stop();
+  }
+});
+
+for (const owner of ['host', 'iframe'] as const) {
+  test(`[P0] manual edit Delete key on a protected last body child from ${owner} focus shows the generic error without writing`, async ({ page }, testInfo) => {
+    await routeMockAgents(page);
+    const projectId = await createEmptyProject(page, `Delete protected ${owner}`);
+    const source = '<!doctype html><html><body><p class="protected">Only body child</p></body></html>';
+    const fixture = await openDeleteFixture(page, projectId, 'protected.html', source);
+    const capture = captureDeleteWrites(page, projectId);
+    try {
+      await enterDeleteEditMode(page);
+      await selectDeleteTarget(page, '.protected', owner);
+      await page.keyboard.press('Delete');
+      // manualEdit.error.applyFailed, the canonical generic rejection.
+      await expect(page.locator('.manual-edit-left-inspector').getByRole('alert')).toHaveText('Could not apply this edit. Check the value and try again.');
+      await expect(deleteFrame(page).locator('.protected')).toHaveCount(1);
+      expect(capture.writes).toHaveLength(0);
+      expect(await fixture.readSource()).toBe(source);
+      await page.screenshot({ path: testInfo.outputPath(`protected-${owner}.png`) });
+    } finally {
+      capture.stop();
+    }
+  });
+}
+
+test('[P0] manual edit Delete selection surface fits a narrow responsive viewport', async ({ page }, testInfo) => {
+  const projectId = await createDeleteProject(page, 'Delete narrow');
+  await page.setViewportSize({ width: 720, height: 900 });
+  await openDeleteFixture(page, projectId, 'narrow.html', deleteHtmlSource);
+  await enterDeleteEditMode(page);
+  await selectDeleteTarget(page, '.delete-object', 'host');
+  await page.screenshot({ path: testInfo.outputPath('narrow-selected.png') });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+});
+
+const dragScrollHtml = `<!doctype html><html><head><meta charset="utf-8"><style>
+body{margin:0;font-family:Arial}.stage{position:relative;width:600px;height:420px;margin-top:240px;background:#f8fafc}
+.box{position:absolute;width:80px;height:60px}.src{left:40px;top:60px;background:#bfdbfe}.tgt{left:260px;top:220px;background:#bbf7d0}
+</style></head><body><section class="stage" data-readable-id="ds-stage" data-readable-label="Scroll stage">
+<div class="box src" data-readable-id="ds-source" data-readable-label="Scroll source"><span>Source</span></div>
+<div class="box tgt" data-readable-id="ds-target" data-readable-label="Scroll target" data-readable-edit="container"><span>Target</span></div>
+</section><div style="height:2400px"></div></body></html>`;
+
+const ghostParentHtml = `<!doctype html><html><head><meta charset="utf-8"><style>
+body{margin:0;font-family:Arial}.stage{position:relative;width:600px;height:420px;background:#f8fafc}
+.parent{position:absolute;left:40px;top:40px;width:200px;height:160px;background:#fde68a}
+.child{position:absolute;left:20px;top:100px;width:80px;height:40px;background:#fca5a5}
+.mover{position:absolute;left:360px;top:260px;width:80px;height:60px;background:#bbf7d0}
+</style></head><body><section class="stage" data-readable-id="gp-stage" data-readable-label="Ghost stage">
+<div class="parent" data-readable-id="gp-parent" data-readable-label="Ghost parent" data-readable-edit="container"><span class="parent-label">Parent</span>
+<div class="child" data-readable-id="gp-child" data-readable-label="Ghost child" data-readable-edit="container">Child</div></div>
+<div class="mover" data-readable-id="gp-mover" data-readable-label="Ghost mover" data-readable-edit="container">Mover</div>
+</section></body></html>`;
+
+type ScreenBox = { x: number; y: number; width: number; height: number };
+
+async function screenBox(locator: Locator): Promise<ScreenBox> {
+  const box = await locator.boundingBox();
+  if (!box) throw new Error('element has no bounding box');
+  return box;
+}
+
+// Resolves after the preview document paints two frames, so a scroll or a
+// once-per-frame viewport flush has reached the host.
+async function previewFrames(page: Page) {
+  await deleteFrame(page).locator('body').evaluate(() => new Promise<void>((done) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => done()));
+  }));
+  await page.evaluate(() => new Promise<void>((done) => { requestAnimationFrame(() => requestAnimationFrame(() => done())); }));
+}
+
+test('[P0] manual edit pointer drag with scroll keeps hover and snap guides on the final geometry', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
+  await routeMockAgents(page);
+  const projectId = await createEmptyProject(page, 'Drag scroll geometry');
+  await seedHtmlArtifact(page, projectId, 'drag-scroll.html', dragScrollHtml);
+  await page.goto(`/projects/${projectId}/files/drag-scroll.html`);
+  await openDesignFile(page, 'drag-scroll.html');
+  const frame = artifactPreviewFrame(page);
+  const source = frame.locator('[data-readable-id="ds-source"]');
+  const target = frame.locator('[data-readable-id="ds-target"]');
+  await expect(source).toBeVisible();
+  await page.getByTestId('manual-edit-mode-toggle').click();
+  await selectPreviewElementThroughBridge(page, frame, '[data-readable-id="ds-target"]', 'Shape');
+  // Selection may scroll the target into view; start from a known small scroll.
+  await frame.locator('body').evaluate(() => window.scrollTo(0, 40));
+  await previewFrames(page);
+  const moveSurface = page.getByRole('group', { name: 'Move element' }).locator('[data-region="interior"]');
+  await expect(moveSurface).toBeVisible();
+  const guide = page.locator('[data-testid="manual-edit-snap-guide"][data-axis="x"]');
+  const surface = await screenBox(moveSurface);
+  const start = { x: surface.x + surface.width / 2, y: surface.y + surface.height / 2 };
+  const scrollBefore = await frame.locator('body').evaluate(() => scrollY);
+
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(start.x - 60, start.y, { steps: 4 });
+  await expect(guide).toHaveCount(0);
+  // Scroll the preview mid-drag; every overlay must follow the scrolled geometry.
+  await frame.locator('body').evaluate(() => window.scrollBy(0, 120));
+  await previewFrames(page);
+  const scrollAfter = await frame.locator('body').evaluate(() => scrollY);
+  expect(scrollAfter - scrollBefore).toBeGreaterThan(60);
+  const srcBox = await screenBox(source);
+  const tgtMid = await screenBox(target);
+  // Land the target's left edge 4 screen px right of the source's left edge.
+  const finalX = start.x - 60 - (tgtMid.x - srcBox.x) + 4;
+  await page.mouse.move(finalX, start.y, { steps: 6 });
+  await expect(guide).toHaveCount(1, { timeout: T.medium });
+  await previewFrames(page);
+  // The vertical guide sits on the source's current (scrolled) left edge and
+  // spans the two current rects, not their pre-scroll positions. Soft, so the
+  // commit and hover checks below still report when the guide is stale.
+  let guideReading: Record<string, unknown> = {};
+  const guideDrift = async () => {
+    const srcLive = await screenBox(source);
+    const tgtLive = await screenBox(target);
+    const guideBox = await screenBox(guide);
+    guideReading = { guideBox, srcLive, tgtLive, scrollBefore, scrollAfter };
+    const spanTop = Math.min(srcLive.y, tgtLive.y);
+    const spanBottom = Math.max(srcLive.y + srcLive.height, tgtLive.y + tgtLive.height);
+    return Math.max(Math.abs(guideBox.x - srcLive.x), Math.abs(guideBox.y - spanTop), Math.abs(guideBox.y + guideBox.height - spanBottom));
+  };
+  await expect.configure({ soft: true }).poll(guideDrift, { timeout: T.short, message: 'snap guide tracks scrolled geometry' }).toBeLessThanOrEqual(3);
+  await testInfo.attach('drag-scroll-guide-reading', { body: JSON.stringify(guideReading), contentType: 'application/json' });
+  await page.screenshot({ path: testInfo.outputPath('drag-scroll-guide.png') });
+  await page.mouse.up();
+  await expect(guide).toHaveCount(0);
+  await expect.poll(async () => Math.abs((await screenBox(target)).x - (await screenBox(source)).x), { timeout: T.medium }).toBeLessThanOrEqual(1);
+
+  // Hover follows the final scrolled geometry: hovering the source's current
+  // position paints the source and places the host affordance on its rect.
+  const srcFinal = await screenBox(source);
+  await page.mouse.move(srcFinal.x + srcFinal.width / 2, srcFinal.y + srcFinal.height / 2);
+  await expect(source).toHaveAttribute('data-readable-runtime-hovered', 'true');
+  const hoverOpen = page.getByTestId('manual-edit-hover-open');
+  await expect(hoverOpen).toBeVisible();
+  const hoverBox = await screenBox(hoverOpen);
+  const hoverReading = { hoverBox, srcFinal };
+  expect(hoverBox.x + hoverBox.width, JSON.stringify(hoverReading)).toBeGreaterThanOrEqual(srcFinal.x - 4);
+  expect(hoverBox.x, JSON.stringify(hoverReading)).toBeLessThanOrEqual(srcFinal.x + srcFinal.width + 4);
+  expect(hoverBox.y + hoverBox.height, JSON.stringify(hoverReading)).toBeGreaterThanOrEqual(srcFinal.y - 4);
+  expect(hoverBox.y, JSON.stringify(hoverReading)).toBeLessThanOrEqual(srcFinal.y + srcFinal.height + 4);
+  await page.screenshot({ path: testInfo.outputPath('drag-scroll-hover.png') });
+  await testInfo.attach('drag-scroll-geometry', { body: JSON.stringify({ ...guideReading, ...hoverReading }), contentType: 'application/json' });
+});
+
+test('[P0] manual edit Delete of a parent leaves no removed descendant in layers, snap candidates or hover', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
+  await routeMockAgents(page);
+  const projectId = await createEmptyProject(page, 'Delete parent descendants');
+  const fixture = await openDeleteFixture(page, projectId, 'ghost-parent.html', ghostParentHtml);
+  const capture = captureDeleteWrites(page, projectId);
+  try {
+    const frame = deleteFrame(page);
+    const parent = frame.locator('[data-readable-id="gp-parent"]');
+    const child = frame.locator('[data-readable-id="gp-child"]');
+    const mover = frame.locator('[data-readable-id="gp-mover"]');
+    const guides = page.locator('[data-testid="manual-edit-snap-guide"]');
+    const moveSurface = page.getByRole('group', { name: 'Move element' }).locator('[data-region="interior"]');
+    await enterDeleteEditMode(page);
+    const childBox = await screenBox(child);
+
+    // Drags the mover so its left edge lands 3 screen px right of the child's
+    // left edge, reads the guides, then returns to the start before release.
+    const probeSnap = async () => {
+      await selectDeleteTarget(page, '[data-readable-id="gp-mover"]', 'host');
+      const surface = await screenBox(moveSurface);
+      const moverBox = await screenBox(mover);
+      const start = { x: surface.x + surface.width / 2, y: surface.y + surface.height / 2 };
+      await page.mouse.move(start.x, start.y);
+      await page.mouse.down();
+      await page.mouse.move(start.x - (moverBox.x - childBox.x) + 3, start.y, { steps: 8 });
+      await previewFrames(page);
+      const xGuides = await guides.evaluateAll((nodes) => nodes.filter((node) => node.getAttribute('data-axis') === 'x')
+        .map((node) => node.getBoundingClientRect().left));
+      await page.mouse.move(start.x, start.y, { steps: 4 });
+      await page.mouse.up();
+      await expect(guides).toHaveCount(0);
+      return xGuides;
+    };
+    // Control: before deletion the descendant edges are live snap candidates.
+    const guidesBefore = await probeSnap();
+    expect(guidesBefore.some((left) => Math.abs(left - childBox.x) <= 2), JSON.stringify({ guidesBefore, childBox })).toBe(true);
+
+    await parent.click({ position: { x: 150, y: 10 } });
+    await expect(parent).toHaveAttribute('data-readable-edit-selected', 'true');
+    await focusDeleteOwner(page, 'host');
+    await page.screenshot({ path: testInfo.outputPath('ghost-parent-selected.png') });
+    const deleted = await armDeletePreviewLoad(page);
+    await page.keyboard.press('Delete');
+    await deleted();
+    await expect(parent).toHaveCount(0, { timeout: T.medium });
+    await expect(child).toHaveCount(0);
+    await expect(mover).toHaveCount(1);
+    await previewFrames(page);
+
+    // Layers: no row or host label names a removed element.
+    await expect(page.locator('.manual-edit-layer-row').filter({ hasText: /Ghost (parent|child)/ })).toHaveCount(0);
+    await expect(page.getByText(/Ghost (parent|child)/)).toHaveCount(0);
+    // Hover: pointing at the removed child's former rect hovers no removed id
+    // and the host affordance does not open on it.
+    await page.mouse.move(childBox.x + childBox.width / 2, childBox.y + childBox.height / 2);
+    await previewFrames(page);
+    const hovered = await frame.locator('[data-readable-runtime-hovered="true"]').evaluateAll((nodes) =>
+      nodes.map((node) => node.getAttribute('data-readable-id')));
+    expect(hovered.filter((id) => id === 'gp-parent' || id === 'gp-child')).toEqual([]);
+    const hoverOpen = page.getByTestId('manual-edit-hover-open');
+    if (await hoverOpen.count()) {
+      const hoverBox = await screenBox(hoverOpen);
+      const insideChild = hoverBox.x >= childBox.x - 4 && hoverBox.x <= childBox.x + childBox.width + 4
+        && hoverBox.y >= childBox.y - 4 && hoverBox.y <= childBox.y + childBox.height + 4;
+      expect(insideChild, JSON.stringify({ hoverBox, childBox, hovered })).toBe(false);
+    }
+    // Snap candidates: the same drag no longer snaps to the removed child.
+    const guidesAfter = await probeSnap();
+    expect(guidesAfter.filter((left) => Math.abs(left - childBox.x) <= 2), JSON.stringify({ guidesAfter, childBox })).toEqual([]);
+    await page.screenshot({ path: testInfo.outputPath('ghost-parent-deleted.png') });
+
+    const exited = page.locator('.manual-edit-left-inspector').waitFor({ state: 'detached', timeout: T.medium });
+    await page.getByRole('button', { name: 'Discard changes', exact: true }).click();
+    await exited;
+    expect(capture.writes).toHaveLength(0);
+    expect(await fixture.readSource()).toBe(fixture.originalSource);
+    await testInfo.attach('ghost-descendants', { body: JSON.stringify({ guidesBefore, guidesAfter, hovered, childBox }), contentType: 'application/json' });
+  } finally {
+    capture.stop();
+  }
 });
 
 test('[P0] manual edit Save conflict retains local actions', async ({ page }, testInfo) => {
