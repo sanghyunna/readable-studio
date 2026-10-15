@@ -8,7 +8,7 @@ export class WidthReleaseExportUnsupportedError extends Error {
   }
 }
 
-import { MAX_STANDALONE_HTML_SOURCE_BYTES, StandaloneHtmlLimitError, StandaloneHtmlResolutionError } from './standalone-html.js';
+import { StandaloneHtmlResolutionError } from './standalone-html.js';
 
 export async function resolveHtmlExportSource({
   projectId,
@@ -34,7 +34,6 @@ export async function resolveHtmlExportSource({
   const distRelPath = ownerDir === '.' ? 'dist/index.html' : `${ownerDir}/dist/index.html`;
   try {
     const meta = await resolveProjectFilePath(projectsRoot, projectId, distRelPath, metadata);
-    if (meta.size > MAX_STANDALONE_HTML_SOURCE_BYTES) throw new StandaloneHtmlLimitError('Vite dist HTML is too large');
     if (!meta.mime.startsWith('text/html')) return { html, relPath };
     const file = await readProjectFile(projectsRoot, projectId, distRelPath, metadata);
     if (load(html)('[data-readable-width-release]').length > 0) throw new WidthReleaseExportUnsupportedError();
@@ -43,7 +42,7 @@ export async function resolveHtmlExportSource({
       relPath: distRelPath,
     };
   } catch (error) {
-    if (error instanceof StandaloneHtmlLimitError || error instanceof StandaloneHtmlResolutionError || error instanceof WidthReleaseExportUnsupportedError) throw error;
+    if (error instanceof StandaloneHtmlResolutionError || error instanceof WidthReleaseExportUnsupportedError) throw error;
     return { html, relPath };
   }
 }

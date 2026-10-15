@@ -4,9 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   bundleStandaloneHtml,
-  MAX_STANDALONE_HTML_BYTES,
   MAX_STANDALONE_READ_CONCURRENCY,
-  StandaloneHtmlLimitError,
   type StandaloneSource,
 } from '../src/standalone-html.js';
 
@@ -224,109 +222,52 @@ describe('bundleStandaloneHtml', () => {
     expect(report.html).toContain('src="data:image/png;base64,');
   });
 
-  it('enforces the 500-reference ceiling', async () => {
-    const html = `<!doctype html>${'<img src="missing.png">'.repeat(501)}`;
-    await expect(bundleStandaloneHtml(source(html, {}))).rejects.toBeInstanceOf(StandaloneHtmlLimitError);
+  it('exports source HTML larger than two MiB', async () => {
+    const text = 'x'.repeat(2 * 1024 * 1024 + 1);
+    const report = await bundleStandaloneHtml(source(`<!doctype html><p>${text}</p>`, {}));
+    expect(report.html).toContain(text);
   });
 
-  it('rejects an oversized asset before reading it', async () => {
-    const read = vi.fn(async () => Buffer.alloc(0));
-    const oversized: StandaloneSource = {
+  it('exports more than 500 distinct references', async () => {
+    const files = Object.fromEntries(Array.from({ length: 501 }, (_, index) => [`${index}.png`, PNG]));
+    const html = `<!doctype html>${Object.keys(files).map((name) => `<img src="${name}">`).join('')}`;
+    const report = await bundleStandaloneHtml(source(html, files));
+    expect(report.html.match(/data:image\/png;base64,/g)).toHaveLength(501);
+    expect(report.missingLocalReferences).toEqual([]);
+  });
+
+  it('does not reject assets by size metadata', async () => {
+    const read = vi.fn(async () => PNG);
+    const report = await bundleStandaloneHtml({
       html: '<!doctype html><img src="huge.png">',
       entryPath: 'index.html',
-      resolve: async () => ({ path: 'huge.png', mime: 'image/png', size: MAX_STANDALONE_HTML_BYTES + 1, read }),
-    };
-    await expect(bundleStandaloneHtml(oversized)).rejects.toBeInstanceOf(StandaloneHtmlLimitError);
-    expect(read).not.toHaveBeenCalled();
-  });
-
-  it('preserves module graph size errors as payload limits', async () => {
-    const oversized: StandaloneSource = {
-      html: '<!doctype html><script type="module">import "./huge.js"</script>',
-      entryPath: 'index.html',
-      resolve: async () => ({
-        path: 'huge.js',
-        mime: 'text/javascript',
-        size: MAX_STANDALONE_HTML_BYTES + 1,
-        read: async () => Buffer.alloc(0),
-      }),
-    };
-    await expect(bundleStandaloneHtml(oversized)).rejects.toBeInstanceOf(StandaloneHtmlLimitError);
-  });
-
-  it('rejects a module data URL that projects above 100 MiB before reading it', async () => {
-    const imageRead = vi.fn(async () => Buffer.alloc(0));
-    const moduleSource: StandaloneSource = {
-      html: '<!doctype html><script type="module">import image from "./huge.png"; window.image = image;</script>',
-      entryPath: 'index.html',
-      resolve: async (reference) => reference === './huge.png'
-        ? { path: 'huge.png', mime: 'image/png', size: 79 * 1024 * 1024, read: imageRead }
-        : null,
-    };
-    await expect(bundleStandaloneHtml(moduleSource)).rejects.toBeInstanceOf(StandaloneHtmlLimitError);
-    expect(imageRead).not.toHaveBeenCalled();
-  });
-
-  it('checks the bytes returned by a source instead of trusting its size hint', async () => {
-    const mismatched: StandaloneSource = {
-      html: '<!doctype html><script src="huge.js"></script>',
-      entryPath: 'index.html',
-      resolve: async () => ({
-        path: 'huge.js',
-        mime: 'text/javascript',
-        size: 1,
-        read: async () => Buffer.alloc(MAX_STANDALONE_HTML_BYTES + 1),
-      }),
-    };
-    await expect(bundleStandaloneHtml(mismatched)).rejects.toBeInstanceOf(StandaloneHtmlLimitError);
-  });
-
-  it('rejects aggregate data-URI expansion above 100 MiB after one deduplicated read', async () => {
-    const bytes = Buffer.alloc(170 * 1024);
-    const read = vi.fn(async () => bytes);
-    const aggregate: StandaloneSource = {
-      html: `<!doctype html>${'<img src="same.bin">'.repeat(500)}`,
-      entryPath: 'index.html',
-      resolve: async () => ({ path: 'same.bin', mime: 'application/octet-stream', size: bytes.length, read }),
-    };
-    await expect(bundleStandaloneHtml(aggregate)).rejects.toBeInstanceOf(StandaloneHtmlLimitError);
+      resolve: async () => ({ path: 'huge.png', mime: 'image/png', size: 110 * 1024 * 1024, read }),
+    });
+    expect(report.html).toContain(PNG.toString('base64'));
     expect(read).toHaveBeenCalledTimes(1);
   });
 
-  it('rejects the next aggregate classic script before reading it', async () => {
-    const bytes = Buffer.alloc(60 * 1024 * 1024, 0x20);
-    const reads: string[] = [];
-    const aggregate: StandaloneSource = {
-      html: '<!doctype html><script src="a.js"></script><script src="b.js"></script>',
+  it('does not reject module assets by projected data URL size', async () => {
+    const read = vi.fn(async () => PNG);
+    const report = await bundleStandaloneHtml({
+      html: '<!doctype html><script type="module">import image from "./huge.png"; window.image = image;</script>',
       entryPath: 'index.html',
-      resolve: async (reference) => ({
-        path: reference,
-        mime: 'text/javascript',
-        size: bytes.length,
-        read: async () => {
-          reads.push(reference);
-          return bytes;
-        },
-      }),
-    };
-    await expect(bundleStandaloneHtml(aggregate)).rejects.toBeInstanceOf(StandaloneHtmlLimitError);
-    expect(reads).toEqual(['a.js']);
+      resolve: async () => ({ path: 'huge.png', mime: 'image/png', size: 110 * 1024 * 1024, read }),
+    });
+    expect(report.html).toContain('data:image/png;base64,');
+    expect(read).toHaveBeenCalledTimes(1);
   });
 
-  it('accepts a classic-script result immediately below 100 MiB', async () => {
-    const bytes = Buffer.alloc(MAX_STANDALONE_HTML_BYTES - 1024, 0x20);
+  it('deduplicates reads for repeated embedded assets', async () => {
+    const read = vi.fn(async () => PNG);
     const report = await bundleStandaloneHtml({
-      html: '<!doctype html><script src="large.js"></script>',
+      html: '<!doctype html>' + '<img src="same.png">'.repeat(501),
       entryPath: 'index.html',
-      resolve: async () => ({
-        path: 'large.js',
-        mime: 'text/javascript',
-        size: bytes.length,
-        read: async () => bytes,
-      }),
+      resolve: async () => ({ path: 'same.png', mime: 'image/png', size: PNG.length, read }),
     });
-    expect(report.outputBytes).toBeLessThan(MAX_STANDALONE_HTML_BYTES);
-  }, 60_000);
+    expect(report.html.match(/data:image\/png;base64,/g)).toHaveLength(501);
+    expect(read).toHaveBeenCalledTimes(1);
+  });
 
   it('reads each file once and never exceeds eight concurrent reads', async () => {
     let active = 0;
@@ -349,7 +290,7 @@ describe('bundleStandaloneHtml', () => {
             reads.set(resolved, (reads.get(resolved) ?? 0) + 1);
             active += 1;
             peak = Math.max(peak, active);
-            await new Promise((resolveDelay) => setTimeout(resolveDelay, 5));
+            await new Promise<void>((resolveRead) => queueMicrotask(resolveRead));
             active -= 1;
             return Buffer.from(body);
           },

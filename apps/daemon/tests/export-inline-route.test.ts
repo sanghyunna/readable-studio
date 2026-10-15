@@ -186,10 +186,6 @@ describe('GET /api/projects/:id/export/*?inline=1 route', () => {
     expect(broken.status).toBe(422);
     expect(((await broken.json()) as { error: { code: string } }).error.code).toBe('BUNDLE_FAILED');
 
-    const oversized = await post({ kind: 'inline', html: 'x'.repeat(2 * 1024 * 1024 + 1) });
-    expect(oversized.status).toBe(413);
-    expect(((await oversized.json()) as { error: { code: string } }).error.code).toBe('PAYLOAD_TOO_LARGE');
-
     const missingProject = await post({ kind: 'project', projectId: 'missing-project', filePath: 'index.html' });
     expect(missingProject.status).toBe(404);
     expect(((await missingProject.json()) as { error: { code: string } }).error.code).toBe('FILE_NOT_FOUND');
@@ -463,18 +459,18 @@ describe('GET /api/projects/:id/export/*?inline=1 route', () => {
     expect(((await response.json()) as { error: { code: string } }).error.code).toBe('BAD_REQUEST');
   });
 
-  it('returns 413 instead of falling back when Vite dist HTML is oversized', async () => {
+  it('exports Vite dist HTML larger than two MiB', async () => {
     const dir = path.join(projectsRoot, projectId, 'oversized-vite');
     await mkdir(path.join(dir, 'dist'), { recursive: true });
     await writeFile(path.join(dir, 'entry.html'), '<!doctype html><script type="module" src="/src/main.ts"></script>');
-    await writeFile(path.join(dir, 'dist', 'index.html'), Buffer.alloc(2 * 1024 * 1024 + 1, 0x20));
+    await writeFile(path.join(dir, 'dist', 'index.html'), `<!doctype html><p>${'x'.repeat(2 * 1024 * 1024 + 1)}</p>`);
     const response = await fetch(`${baseUrl}/api/exports/standalone-html`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ source: { kind: 'project', projectId, filePath: 'oversized-vite/entry.html' } }),
     });
-    expect(response.status).toBe(413);
-    expect(((await response.json()) as { error: { code: string } }).error.code).toBe('PAYLOAD_TOO_LARGE');
+    expect(response.status).toBe(200);
+    expect((await response.text()).length).toBeGreaterThan(2 * 1024 * 1024);
   });
 
   it('exports a nested Vite dev HTML entry through its sibling built dist artifact', async () => {
@@ -532,29 +528,67 @@ describe('GET /api/projects/:id/export/*?inline=1 route', () => {
     }
   });
 
-  it('returns 413 PAYLOAD_TOO_LARGE when the owner file blows past the candidates cap', async () => {
-    // Generated owner has 501 references, one above the standalone limit.
+  it('exports owner files with more than 500 references', async () => {
     const dir = path.join(projectsRoot, projectId);
     const huge = '<!doctype html><html><head>' +
       '<link rel="stylesheet" href="a.css">'.repeat(501) +
       '</head></html>';
     await writeFile(path.join(dir, 'too-many-tags.html'), huge);
     const res = await fetch(exportUrl('too-many-tags.html'));
-    expect(res.status).toBe(413);
-    const body = (await res.json()) as { error: { code: string } };
-    expect(body.error.code).toBe('PAYLOAD_TOO_LARGE');
+    expect(res.status).toBe(200);
+    expect((await res.text()).match(/href="a.css"/g)).toHaveLength(501);
   });
 
-  it('returns 413 (not 415) for an oversize non-HTML file — proves owner cap fires pre-buffer', async () => {
-    // Source size is checked from stat metadata before MIME or buffer reads.
+  it('rejects non-HTML files by MIME regardless of source size', async () => {
     const dir = path.join(projectsRoot, projectId);
     const overCap = 2 * 1024 * 1024 + 1;
     await writeFile(path.join(dir, 'huge.txt'), Buffer.alloc(overCap, 0x61));
     const res = await fetch(exportUrl('huge.txt'));
-    expect(res.status).toBe(413);
+    expect(res.status).toBe(415);
     const body = (await res.json()) as { error: { code: string } };
-    expect(body.error.code).toBe('PAYLOAD_TOO_LARGE');
+    expect(body.error.code).toBe('UNSUPPORTED_MEDIA_TYPE');
   });
+
+  it('accepts inline HTML larger than four MiB only on the export route', async () => {
+    const html = `<!doctype html><p>${'x'.repeat(4 * 1024 * 1024 + 1)}</p>`;
+    const response = await fetch(`${baseUrl}/api/exports/standalone-html`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ source: { kind: 'inline', html } }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain(html.slice(15));
+    const other = await fetch(`${baseUrl}/api/projects`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: html }),
+    });
+    expect(other.status).toBe(413);
+  });
+
+  it('exports a complete local asset larger than 100 MiB', async () => {
+    const dir = path.join(projectsRoot, projectId);
+    const bytes = Buffer.alloc(110 * 1024 * 1024, 0x61);
+    await writeFile(path.join(dir, 'large.bin'), bytes);
+    await writeFile(path.join(dir, 'large.html'), '<!doctype html><img src="large.bin">');
+    const started = performance.now();
+    const response = await fetch(`${baseUrl}/api/exports/standalone-html`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ source: { kind: 'project', projectId, filePath: 'large.html' } }),
+    });
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    const prefix = 'src="data:application/octet-stream;base64,';
+    const start = body.indexOf(prefix) + prefix.length;
+    const end = body.indexOf('"', start);
+    expect(start).toBeGreaterThan(prefix.length);
+    expect(end - start).toBe(4 * Math.ceil(bytes.length / 3));
+    expect(Buffer.from(body.slice(start, end), 'base64').equals(bytes)).toBe(true);
+    expect(body.endsWith('</body></html>')).toBe(true);
+    expect(Number(response.headers.get('content-length'))).toBe(Buffer.byteLength(body));
+    console.log(JSON.stringify({ fixtureBytes: bytes.length, outputBytes: Buffer.byteLength(body), elapsedMs: performance.now() - started, peakRssKiB: process.resourceUsage().maxRSS }));
+  }, 60_000);
 
   it('rejects an invalid project id (chars outside isSafeId char class) with 400 BAD_REQUEST', async () => {
     // PR #1312 round-2 review (lefarcen P3 @ export-inline-route.test.ts:287):

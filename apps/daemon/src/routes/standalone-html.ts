@@ -1,5 +1,7 @@
 import { lstat, readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 
 import {
   STANDALONE_HTML_EXPORT_HEADERS,
@@ -17,7 +19,6 @@ import { getInstalledPlugin } from '../plugins/registry.js';
 import { isSafeId, mimeFor, resolveProjectDir } from '../projects.js';
 import {
   bundleStandaloneHtml,
-  MAX_STANDALONE_HTML_SOURCE_BYTES,
   StandaloneHtmlBundleError,
   StandaloneHtmlLimitError,
   StandaloneHtmlResolutionError,
@@ -175,7 +176,6 @@ export async function createProjectStandaloneSource(
   } catch (error: any) {
     throw new StandaloneHtmlSourceError(error?.code === 'ENOENT' ? 404 : 400, error?.code === 'ENOENT' ? 'FILE_NOT_FOUND' : 'BAD_REQUEST', String(error));
   }
-  if (meta.size > MAX_STANDALONE_HTML_SOURCE_BYTES) throw new StandaloneHtmlLimitError('source HTML is too large');
   if (!meta.mime.startsWith('text/html')) throw new StandaloneHtmlSourceError(415, 'UNSUPPORTED_MEDIA_TYPE', 'standalone export requires an HTML file');
   const file = await deps.projectFiles.readProjectFile(deps.paths.PROJECTS_DIR, projectId, filePath, project?.metadata);
   const selected = await resolveHtmlExportSource({
@@ -252,7 +252,7 @@ export async function bundleProjectStandaloneHtml(deps: StandaloneRouteDeps, pro
   return bundleStandaloneHtml(await createProjectStandaloneSource(deps, projectId, filePath));
 }
 
-function sendHtml(res: any, report: StandaloneBundleReport): void {
+async function sendHtml(res: any, report: StandaloneBundleReport): Promise<void> {
   res.status(200);
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename="standalone.html"');
@@ -263,7 +263,16 @@ function sendHtml(res: any, report: StandaloneBundleReport): void {
   res.setHeader(STANDALONE_HTML_EXPORT_HEADERS.missingLocalReferenceCount, String(report.missingLocalReferences.length));
   res.setHeader(STANDALONE_HTML_EXPORT_HEADERS.skippedSystemFontCount, String(report.skippedSystemFonts.length));
   res.setHeader('Content-Length', String(report.outputBytes));
-  res.end(report.html);
+  // Encode bounded chunks instead of allocating another full output Buffer.
+  await pipeline(Readable.from((function* () {
+    for (let start = 0; start < report.html.length;) {
+      let end = Math.min(start + 64 * 1024, report.html.length);
+      const last = report.html.charCodeAt(end - 1);
+      if (end < report.html.length && last >= 0xd800 && last <= 0xdbff) end -= 1;
+      yield report.html.slice(start, end);
+      start = end;
+    }
+  })()), res);
 }
 
 export function registerStandaloneHtmlRoutes(app: Express, deps: StandaloneRouteDeps): void {
@@ -274,7 +283,7 @@ export function registerStandaloneHtmlRoutes(app: Express, deps: StandaloneRoute
         throw new StandaloneHtmlSourceError(400, 'BAD_REQUEST', 'request must contain only source');
       }
       const source = assertSource(request?.source);
-      sendHtml(res, await bundleStandaloneHtml(await createSource(deps, source)));
+      await sendHtml(res, await bundleStandaloneHtml(await createSource(deps, source)));
     } catch (error) {
       if (error instanceof WidthReleaseExportUnsupportedError) return deps.http.sendApiError(res, 422, error.code, error.message);
       if (error instanceof StandaloneHtmlSourceError) return deps.http.sendApiError(res, error.status, error.code, error.message);

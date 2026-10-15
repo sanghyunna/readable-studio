@@ -1,5 +1,6 @@
 import { BrowserWindow, nativeImage, screen, type WebContents } from 'electron';
 import type { ReadableStudioHostCaptureResult } from '@readable-studio/host';
+import { hiddenCaptureWindowOptions } from './html-thumbnail-render.js';
 
 export type PreviewSource = { srcdoc: string; src: string; sandbox: string | null; baseUrl: string; width: number; height: number };
 export type FrameMetrics = { height: number; width: number; clientWidth: number; viewportHeight: number };
@@ -114,7 +115,7 @@ export function electronCaptureSurface(contents: WebContents, clip: Electron.Rec
     },
     async createWindow(preview) {
       const origin = BrowserWindow.fromWebContents(contents)?.getBounds();
-      const win = new BrowserWindow({ show: false, x: origin?.x, y: origin?.y, width: Math.max(500, Math.ceil(preview.width)), height: Math.ceil(preview.height), webPreferences: { offscreen: true, sandbox: true, contextIsolation: true, nodeIntegration: false } });
+      const win = new BrowserWindow({ ...hiddenCaptureWindowOptions(Math.max(500, Math.ceil(preview.width)), Math.ceil(preview.height)), x: origin?.x, y: origin?.y });
       try {
         const safeBase = preview.baseUrl.replaceAll('&', '&amp;').replaceAll('"', '&quot;');
         const escape = (text: string) => text.replaceAll('&', '&amp;').replaceAll('"', '&quot;');

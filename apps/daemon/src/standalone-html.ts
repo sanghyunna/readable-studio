@@ -6,9 +6,6 @@ import { build, type Loader, type Plugin } from 'esbuild';
 import { embedUsedSystemFonts } from './font-embed-runtime.js';
 import { injectStandaloneDeckKeyDedupe } from './standalone-deck-nav.js';
 
-export const MAX_STANDALONE_HTML_SOURCE_BYTES = 2 * 1024 * 1024;
-export const MAX_STANDALONE_REFERENCES = 500;
-export const MAX_STANDALONE_HTML_BYTES = 100 * 1024 * 1024;
 export const MAX_STANDALONE_READ_CONCURRENCY = 8;
 
 export interface StandaloneSourceFile {
@@ -187,50 +184,21 @@ function ownerFromBase(entryPath: string, href: string): string {
 }
 
 export async function bundleStandaloneHtml(source: StandaloneSource): Promise<StandaloneBundleReport> {
-  const ownerBytes = Buffer.byteLength(source.html, 'utf8');
-  if (ownerBytes > MAX_STANDALONE_HTML_SOURCE_BYTES) {
-    throw new StandaloneHtmlLimitError(`source HTML exceeds ${MAX_STANDALONE_HTML_SOURCE_BYTES} bytes`);
-  }
-
   const external = new Set<string>();
   const missing = new Set<string>();
   const missingKeys = new Set<string>();
   const fileReads = new Map<string, Promise<Buffer>>();
-  const readReservations = new Map<string, number>();
   const dataUris = new Map<string, Promise<string | null>>();
-  let candidateCount = 0;
-  let embeddedBytes = ownerBytes;
   let effectiveOwner = source.entryPath;
   let externalBase = false;
   let activeReads = 0;
   const readWaiters: Array<() => void> = [];
-
-  const noteCandidate = () => {
-    candidateCount += 1;
-    if (candidateCount > MAX_STANDALONE_REFERENCES) {
-      throw new StandaloneHtmlLimitError(`more than ${MAX_STANDALONE_REFERENCES} static references`);
-    }
-  };
 
   const noteMissing = (reference: string, ownerPath: string) => {
     const key = localReferenceKey(reference, ownerPath);
     if (missingKeys.has(key)) return;
     missingKeys.add(key);
     missing.add(reference);
-  };
-
-  const adjustBytes = (delta: number) => {
-    embeddedBytes += delta;
-    if (embeddedBytes > MAX_STANDALONE_HTML_BYTES) {
-      throw new StandaloneHtmlLimitError(`standalone HTML exceeds ${MAX_STANDALONE_HTML_BYTES} bytes`);
-    }
-  };
-
-  const releaseReadReservation = (file: StandaloneSourceFile) => {
-    const reserved = readReservations.get(file.path);
-    if (reserved === undefined) return;
-    readReservations.delete(file.path);
-    adjustBytes(-reserved);
   };
 
   const withReadSlot = async <T>(operation: () => Promise<T>): Promise<T> => {
@@ -249,24 +217,7 @@ export async function bundleStandaloneHtml(source: StandaloneSource): Promise<St
   const read = (file: StandaloneSourceFile) => {
     let pending = fileReads.get(file.path);
     if (!pending) {
-      if (file.size > MAX_STANDALONE_HTML_BYTES) {
-        pending = Promise.reject(new StandaloneHtmlLimitError(`asset ${file.path} exceeds ${MAX_STANDALONE_HTML_BYTES} bytes`));
-      } else {
-        adjustBytes(file.size);
-        readReservations.set(file.path, file.size);
-        pending = withReadSlot(async () => {
-          const bytes = await file.read();
-          if (bytes.length > MAX_STANDALONE_HTML_BYTES) {
-            throw new StandaloneHtmlLimitError(`asset ${file.path} exceeds ${MAX_STANDALONE_HTML_BYTES} bytes`);
-          }
-          const reserved = readReservations.get(file.path);
-          if (reserved !== undefined && reserved !== bytes.length) {
-            adjustBytes(bytes.length - reserved);
-            readReservations.set(file.path, bytes.length);
-          }
-          return bytes;
-        });
-      }
+      pending = withReadSlot(() => file.read());
       fileReads.set(file.path, pending);
     }
     return pending;
@@ -276,8 +227,6 @@ export async function bundleStandaloneHtml(source: StandaloneSource): Promise<St
     try {
       return await read(file);
     } catch (error) {
-      if (error instanceof StandaloneHtmlLimitError) throw error;
-      releaseReadReservation(file);
       noteMissing(reference, ownerPath);
       return null;
     }
@@ -286,7 +235,6 @@ export async function bundleStandaloneHtml(source: StandaloneSource): Promise<St
   const resolve = async (reference: string, ownerPath: string) => {
     const kind = classifyReference(reference);
     if (kind === 'ignored') return { kind } as const;
-    noteCandidate();
     if (kind === 'external' || externalBase) {
       external.add(reference);
       return { kind: 'external' } as const;
@@ -299,7 +247,7 @@ export async function bundleStandaloneHtml(source: StandaloneSource): Promise<St
       }
       return { kind: 'file', file } as const;
     } catch (error) {
-      if (error instanceof StandaloneHtmlLimitError || error instanceof StandaloneHtmlResolutionError) throw error;
+      if (error instanceof StandaloneHtmlResolutionError) throw error;
       noteMissing(reference, ownerPath);
       return { kind: 'missing' } as const;
     }
@@ -309,10 +257,6 @@ export async function bundleStandaloneHtml(source: StandaloneSource): Promise<St
     const result = await resolve(reference, ownerPath);
     if (result.kind !== 'file') return reference;
     const mimePrefix = `data:${mimeFor(result.file)};base64,`;
-    const projectedUriBytes = Buffer.byteLength(mimePrefix, 'utf8') + 4 * Math.ceil(result.file.size / 3);
-    if (embeddedBytes + Math.max(0, projectedUriBytes - Buffer.byteLength(reference, 'utf8')) > MAX_STANDALONE_HTML_BYTES) {
-      throw new StandaloneHtmlLimitError(`standalone HTML exceeds ${MAX_STANDALONE_HTML_BYTES} bytes`);
-    }
     let pending = dataUris.get(result.file.path);
     if (!pending) {
       pending = (async () => {
@@ -324,8 +268,6 @@ export async function bundleStandaloneHtml(source: StandaloneSource): Promise<St
     }
     const uri = await pending;
     if (uri === null) return reference;
-    releaseReadReservation(result.file);
-    adjustBytes(Buffer.byteLength(`${uri}${referenceFragment(reference)}`, 'utf8') - Buffer.byteLength(reference, 'utf8'));
     return `${uri}${referenceFragment(reference)}`;
   };
 
@@ -342,20 +284,13 @@ export async function bundleStandaloneHtml(source: StandaloneSource): Promise<St
           noteMissing(reference, ownerPath);
           return match[0];
         }
-        const importBytes = Buffer.byteLength(match[0], 'utf8');
-        adjustBytes(-importBytes);
+
         const bytes = await readLocal(result.file, reference, ownerPath);
-        if (!bytes) {
-          adjustBytes(importBytes);
-          return match[0];
-        }
+        if (!bytes) return match[0];
         const nextStack = new Set(stack).add(result.file.path);
         const imported = await processCss(bytes.toString('utf8'), result.file.path, nextStack);
         const media = (match[6] ?? '').trim();
-        const replacement = media ? `@media ${media}{\n${imported}\n}` : imported;
-        releaseReadReservation(result.file);
-        adjustBytes(bytes.length + Buffer.byteLength(replacement, 'utf8') - Buffer.byteLength(imported, 'utf8'));
-        return replacement;
+        return media ? `@media ${media}{\n${imported}\n}` : imported;
       },
       importRanges,
     );
@@ -376,24 +311,7 @@ export async function bundleStandaloneHtml(source: StandaloneSource): Promise<St
       ? path.posix.join(path.posix.dirname(ownerPath), '__readable_inline_module__.js')
       : ownerPath;
     const files = new Map<string, StandaloneSourceFile>();
-    const dataUrlReservations = new Map<string, number>();
-    let fatalError: StandaloneHtmlLimitError | StandaloneHtmlResolutionError | undefined;
-    const reserveModuleDataUrl = (file: StandaloneSourceFile) => {
-      if (loaderFor(file.path) !== 'dataurl' || dataUrlReservations.has(file.path)) return;
-      const projected = Buffer.byteLength(`data:${mimeFor(file)};base64,`, 'utf8') + 4 * Math.ceil(file.size / 3);
-      const pendingRaw = readReservations.get(file.path) ?? (fileReads.has(file.path) ? 0 : file.size);
-      const reservation = Math.max(0, projected - pendingRaw);
-      adjustBytes(reservation);
-      dataUrlReservations.set(file.path, reservation);
-    };
-    const reconcileModuleDataUrl = (file: StandaloneSourceFile, actualBytes: number) => {
-      const reservation = dataUrlReservations.get(file.path);
-      if (reservation === undefined) return;
-      const projected = Buffer.byteLength(`data:${mimeFor(file)};base64,`, 'utf8') + 4 * Math.ceil(actualBytes / 3);
-      const next = Math.max(0, projected - (readReservations.get(file.path) ?? 0));
-      adjustBytes(next - reservation);
-      dataUrlReservations.set(file.path, next);
-    };
+    let fatalError: StandaloneHtmlResolutionError | undefined;
     const plugin: Plugin = {
       name: 'readable-studio-standalone',
       setup(esbuild) {
@@ -406,17 +324,15 @@ export async function bundleStandaloneHtml(source: StandaloneSource): Promise<St
           try {
             result = await resolve(args.path, importer);
           } catch (error) {
-            if (error instanceof StandaloneHtmlLimitError || error instanceof StandaloneHtmlResolutionError) fatalError = error;
+            if (error instanceof StandaloneHtmlResolutionError) fatalError = error;
             throw error;
           }
           if (result.kind !== 'file') return { path: args.path, external: true };
           try {
-            reserveModuleDataUrl(result.file);
             const bytes = await readLocal(result.file, args.path, importer);
             if (!bytes) return { path: args.path, external: true };
-            reconcileModuleDataUrl(result.file, bytes.length);
           } catch (error) {
-            if (error instanceof StandaloneHtmlLimitError || error instanceof StandaloneHtmlResolutionError) fatalError = error;
+            if (error instanceof StandaloneHtmlResolutionError) fatalError = error;
             throw error;
           }
           files.set(result.file.path, result.file);
@@ -447,12 +363,10 @@ export async function bundleStandaloneHtml(source: StandaloneSource): Promise<St
       });
       const js = result.outputFiles.find((file) => file.path.endsWith('.js'))?.text ?? '';
       const css = result.outputFiles.find((file) => file.path.endsWith('.css'))?.text;
-      for (const file of files.values()) releaseReadReservation(file);
-      for (const reservation of dataUrlReservations.values()) adjustBytes(-reservation);
       return { js, css };
     } catch (error) {
       if (fatalError) throw fatalError;
-      if (error instanceof StandaloneHtmlLimitError || error instanceof StandaloneHtmlResolutionError) throw error;
+      if (error instanceof StandaloneHtmlResolutionError) throw error;
       throw new StandaloneHtmlBundleError(error instanceof Error ? error.message : String(error));
     }
   };
@@ -476,19 +390,12 @@ export async function bundleStandaloneHtml(source: StandaloneSource): Promise<St
     const href = tag.attr('href')!;
     const result = await resolve(href, effectiveOwner);
     if (result.kind !== 'file') continue;
-    const originalTagBytes = Buffer.byteLength($.html(element), 'utf8');
-    adjustBytes(-originalTagBytes);
     const bytes = await readLocal(result.file, href, effectiveOwner);
-    if (!bytes) {
-      adjustBytes(originalTagBytes);
-      continue;
-    }
+    if (!bytes) continue;
     const css = await processCss(bytes.toString('utf8'), result.file.path, new Set([result.file.path]));
     const attrs = ['media', 'title', 'nonce'].flatMap((name) => tag.attr(name) == null ? [] : [`${name}="${tag.attr(name)}"`]);
     if (tag.is('[disabled]')) attrs.push('disabled');
     const replacement = `<style data-readable-bundled-from="${href.replace(/"/g, '&quot;')}"${attrs.length ? ` ${attrs.join(' ')}` : ''}>${css.replace(/<\/style/gi, '<\\/style')}</style>`;
-    releaseReadReservation(result.file);
-    adjustBytes(bytes.length + Buffer.byteLength(replacement, 'utf8') - Buffer.byteLength(css, 'utf8'));
     tag.replaceWith(replacement);
   }
 
@@ -507,13 +414,8 @@ export async function bundleStandaloneHtml(source: StandaloneSource): Promise<St
     const src = tag.attr('src')!;
     const result = await resolve(src, effectiveOwner);
     if (result.kind !== 'file') continue;
-    const originalTagBytes = Buffer.byteLength($.html(element), 'utf8');
-    adjustBytes(-originalTagBytes);
     const bytes = await readLocal(result.file, src, effectiveOwner);
-    if (!bytes) {
-      adjustBytes(originalTagBytes);
-      continue;
-    }
+    if (!bytes) continue;
     const contents = bytes.toString('utf8');
     let injectedCss = '';
     if ((tag.attr('type') ?? '').toLowerCase() === 'module') {
@@ -526,20 +428,16 @@ export async function bundleStandaloneHtml(source: StandaloneSource): Promise<St
     } else {
       tag.removeAttr('src integrity crossorigin').html(contents.replace(/<\/script/gi, '<\\/script'));
     }
-    releaseReadReservation(result.file);
-    adjustBytes(Buffer.byteLength($.html(element), 'utf8') + Buffer.byteLength(injectedCss, 'utf8'));
   }
   for (const element of $('script[type="module"]:not([src])').toArray()) {
     const tag = $(element);
     const original = tag.html() ?? '';
-    const originalTagBytes = Buffer.byteLength($.html(element), 'utf8');
     const bundled = await bundleModule(original, effectiveOwner);
     tag.html(bundled.js.replace(/<\/script/gi, '<\\/script'));
     const injectedCss = bundled.css
       ? `<style data-readable-bundled-module-css>${bundled.css.replace(/<\/style/gi, '<\\/style')}</style>`
       : '';
     if (injectedCss) tag.before(injectedCss);
-    adjustBytes(Buffer.byteLength($.html(element), 'utf8') + Buffer.byteLength(injectedCss, 'utf8') - originalTagBytes);
   }
 
   const urlAttributes: Array<[string, string]> = [
@@ -577,16 +475,15 @@ export async function bundleStandaloneHtml(source: StandaloneSource): Promise<St
     if (result.kind === 'file') tag.remove();
   }
 
+  // DOM attributes now own the encoded assets; release raw-byte caches before
+  // serializing the complete document.
+  fileReads.clear();
+  dataUris.clear();
   let html = $.html();
   html = injectStandaloneDeckKeyDedupe(html);
-  const fontResult = await embedUsedSystemFonts(html, [], {
-    maxTotalBytes: Math.max(0, MAX_STANDALONE_HTML_BYTES - Buffer.byteLength(html, 'utf8')),
-  });
+  const fontResult = await embedUsedSystemFonts(html, [], { maxTotalBytes: Infinity });
   html = fontResult.html;
   const outputBytes = Buffer.byteLength(html, 'utf8');
-  if (outputBytes > MAX_STANDALONE_HTML_BYTES) {
-    throw new StandaloneHtmlLimitError(`standalone HTML exceeds ${MAX_STANDALONE_HTML_BYTES} bytes`);
-  }
   return {
     html,
     outputBytes,
