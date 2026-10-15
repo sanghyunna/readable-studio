@@ -18,6 +18,8 @@ import {
   resolveSourceRuntimeRoot,
 } from "@readable-studio/sidecar";
 
+import { resolveHiddenConsoleLauncherPath, resolveTsxLoaderPath } from "./sidecar-launch.js";
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export const WORKSPACE_ROOT = path.resolve(__dirname, "../../..");
@@ -61,17 +63,14 @@ export type ToolDevConfig = {
       sidecarEntryPath: string;
     };
   };
+  /** Windows-only launcher hop that gives sidecars a hidden, inheritable console. */
+  hiddenConsoleLauncherPath: string | null;
   namespace: string;
   namespaceRoot: string;
   toolsDevRoot: string;
-  tsxCliPath: string;
+  tsxLoaderPath: string;
   workspaceRoot: string;
 };
-
-function resolveTsxCliPath(): string {
-  const require = createRequire(import.meta.url);
-  return require.resolve("tsx/cli");
-}
 
 function resolveElectronBinaryPath(workspaceRoot: string): string {
   const packageJsonPath = path.join(workspaceRoot, "apps/desktop/package.json");
@@ -189,10 +188,11 @@ export function resolveToolDevConfig(options: ToolDevOptions = {}): ToolDevConfi
         sidecarEntryPath: path.join(WORKSPACE_ROOT, "apps/web/sidecar/index.ts"),
       },
     },
+    hiddenConsoleLauncherPath: process.platform === "win32" ? resolveHiddenConsoleLauncherPath() : null,
     namespace,
     namespaceRoot,
     toolsDevRoot,
-    tsxCliPath: resolveTsxCliPath(),
+    tsxLoaderPath: resolveTsxLoaderPath(),
     workspaceRoot: WORKSPACE_ROOT,
   };
 }

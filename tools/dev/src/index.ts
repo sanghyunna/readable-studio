@@ -73,6 +73,7 @@ import { planDesktopApprovalLifecycle } from "./desktop-approval-rotation.js";
 import { loadWorkspaceLocalEnv } from "./local-env.js";
 import { ensureWindowsNativeIsolator } from "./native-isolator-build.js";
 import { resolveSharedPortsFromRunningState } from "./shared-ports.js";
+import { createSidecarLaunchArgs } from "./sidecar-launch.js";
 
 type CliOptions = ToolDevOptions & {
   expr?: string;
@@ -409,7 +410,12 @@ async function spawnSidecarRuntime(request: {
   const { args: stampArgs, env } = createAppStamp(request.config, request.appName);
   const sidecarConfig = request.config.apps[request.appName];
   const spawned = await spawnBackgroundProcess({
-    args: [request.config.tsxCliPath, sidecarConfig.sidecarEntryPath, ...stampArgs],
+    args: createSidecarLaunchArgs({
+      entryPath: sidecarConfig.sidecarEntryPath,
+      hiddenConsoleLauncherPath: request.config.hiddenConsoleLauncherPath,
+      stampArgs,
+      tsxLoaderPath: request.config.tsxLoaderPath,
+    }),
     command: process.execPath,
     cwd: request.config.workspaceRoot,
     detached: true,

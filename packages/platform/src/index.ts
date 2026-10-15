@@ -1,4 +1,4 @@
-import { execFile, execFileSync, spawn, type ChildProcess, type StdioOptions } from "node:child_process";
+import { execFile, execFileSync, spawn, type ChildProcess, type SpawnOptions, type StdioOptions } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { copyFile, mkdir, readFile, rename, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -729,17 +729,25 @@ async function waitForChildSpawn(child: ChildProcess): Promise<void> {
   });
 }
 
-// @dsp func-3a05eff5
-export async function spawnBackgroundProcess(request: SpawnProcessRequest): Promise<{ pid: number }> {
-  const invocation = createCommandInvocation(request);
-  const child = spawn(invocation.command, invocation.args, {
+export function createBackgroundSpawnOptions(
+  request: SpawnProcessRequest,
+  invocation: CommandInvocation,
+  platform: NodeJS.Platform = process.platform,
+): SpawnOptions {
+  return {
     cwd: request.cwd,
     detached: request.detached ?? true,
     env: request.env,
     stdio: createLoggedStdio(request.logFd),
-    windowsHide: process.platform === "win32",
+    windowsHide: platform === "win32",
     windowsVerbatimArguments: invocation.windowsVerbatimArguments,
-  });
+  };
+}
+
+// @dsp func-3a05eff5
+export async function spawnBackgroundProcess(request: SpawnProcessRequest): Promise<{ pid: number }> {
+  const invocation = createCommandInvocation(request);
+  const child = spawn(invocation.command, invocation.args, createBackgroundSpawnOptions(request, invocation));
   await waitForChildSpawn(child);
   if (child.pid == null) throw new Error(`failed to spawn background process: ${invocation.command}`);
   child.unref();
@@ -811,7 +819,7 @@ async function listWindowsProcessSnapshots(): Promise<ProcessSnapshot[]> {
     "Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId, CommandLine | ConvertTo-Json -Compress",
   ].join("; ");
   const stdout = await new Promise<string>((resolveList, rejectList) => {
-    execFile("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", command], { encoding: "utf8", maxBuffer: 8 * 1024 * 1024 }, (error, out) => {
+    execFile("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", command], { encoding: "utf8", maxBuffer: 8 * 1024 * 1024, windowsHide: true }, (error, out) => {
       if (error) rejectList(error);
       else resolveList(out);
     });
