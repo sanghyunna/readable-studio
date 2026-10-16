@@ -37,6 +37,14 @@ describe('portable Databricks CLI selection', () => {
     await expect(resolveDatabricksCli('relative.cmd', options)).rejects.toMatchObject({ code: 'DATABRICKS_CLI_UNSUPPORTED' });
   });
 
+  it('uses only the bundled CLI for app-owned browser login even when PATH has another CLI', async () => {
+    const { installed, bundled, options } = await layout();
+    expect(await resolveDatabricksCli(null, options)).toEqual({ path: installed, source: 'path' });
+    expect(await resolveDatabricksCli(null, { ...options, preferBundled: true })).toEqual({ path: bundled, source: 'bundled' });
+    await rm(bundled);
+    expect(await resolveDatabricksCli(null, { ...options, preferBundled: true })).toBeNull();
+  });
+
   it.each(['override', 'path', 'bundled'] as const)('reports %s through the service and public status without exposing paths', async (source) => {
     const { root, override, installed, bundled, options } = await layout();
     if (source === 'bundled') options.env.PATH = '';

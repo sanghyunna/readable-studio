@@ -35,14 +35,14 @@ export class DatabricksLogins {
     // One browser authorization at a time prevents competing CLI config writes.
     if ([...this.jobs.values()].some(active)) throw new DatabricksServiceError('DATABRICKS_STALE_REVISION', true);
     const loginId = randomUUID();
-    const deadlineMs = this.options.deadlineMs ?? 600_000;
+    const deadlineMs = this.options.deadlineMs ?? 300_000;
     const job: LoginJob = { controller: new AbortController(), snapshot: {
       loginId, state: 'starting', createdAt: new Date(this.clock.now()).toISOString(),
       deadlineAt: new Date(this.clock.now() + deadlineMs).toISOString(), completedAt: null, profileId: null, issues: [],
     } };
     this.jobs.set(loginId, job);
     job.deadline = this.clock.setTimeout(() => this.finish(job, 'timed-out'), deadlineMs);
-    void this.run(job, host, `readable-${loginId}`, deadlineMs);
+    void this.run(job, host, request.profile ?? 'DEFAULT', deadlineMs);
     return structuredClone(job.snapshot);
   }
 
@@ -64,6 +64,7 @@ export class DatabricksLogins {
     job.snapshot.state = state;
     job.snapshot.completedAt = new Date(this.clock.now()).toISOString();
     job.snapshot.issues = error === undefined ? [] : [issueFor(error)];
+    delete job.snapshot.authUrl;
     if (job.deadline !== undefined) this.clock.clearTimeout(job.deadline);
     if (job.poll !== undefined) this.clock.clearTimeout(job.poll);
     // AbortSignal is passed into native spawn, so cancellation kills the CLI, not just polling.
@@ -72,12 +73,25 @@ export class DatabricksLogins {
 
   private async run(job: LoginJob, host: string, profileName: string, deadlineMs: number): Promise<void> {
     try {
-      const status = await this.client.probe();
+      const status = await this.client.probe(true);
       if (!active(job)) return;
       if (status.cli !== 'ready') throw new DatabricksServiceError(status.cli === 'missing' ? 'DATABRICKS_CLI_MISSING' : 'DATABRICKS_CLI_UNSUPPORTED');
-      const login = this.client.login(host, profileName, job.controller.signal, deadlineMs);
+      let output = '';
+      const login = this.client.login(host, profileName, job.controller.signal, deadlineMs, (chunk) => {
+        // CLI output can split a URL across chunks. Keep only a bounded tail.
+        output = (output + chunk).slice(-16384);
+        for (const match of output.matchAll(/https:\/\/[^\s<>"']+/g)) {
+          try {
+            const url = new URL(match[0]);
+            // Only browser authorization URLs, never arbitrary CLI output.
+            if (!url.username && !url.password && /\/authorize\/?$/i.test(url.pathname)
+              && !url.searchParams.has('access_token') && !url.searchParams.has('token')) job.snapshot.authUrl = url.href;
+          } catch { /* Incomplete URL: the next output chunk completes it. */ }
+        }
+      });
       job.snapshot.state = 'waiting-for-browser';
-      void login.catch((error: unknown) => this.finish(job, 'failed', error));
+      await login;
+      if (!active(job)) return;
       await this.poll(job, host, profileName);
     } catch (error) { this.finish(job, 'failed', error); }
   }

@@ -15,6 +15,7 @@ import type { DatabricksService } from './databricks/service.js';
 import { databricksNamedRequest, publicNamedResult } from './databricks-named-http.js';
 import { databricksWorkspaceOrigin, issueFor } from './databricks/client.js';
 import { DatabricksRuntimeError, serviceFailureDetail } from './databricks/failure.js';
+import { registerDatabricksLoginRoutes } from './databricks-login-routes.js';
 
 export interface RegisterDatabricksRoutesDeps {
   http: { requireLocalDaemonRequest: RequestHandler };
@@ -69,6 +70,7 @@ function profile(value: DatabricksProfile): DatabricksProfile {
   const id = publicId(value.id);
   return {
     id, label: displayLabel(value.label), workspaceLabel: displayLabel(value.workspaceLabel),
+    ...(value.connectionMode === undefined ? {} : { connectionMode: choice(value.connectionMode, ['cli-profile', 'workspace-token']) }),
     ...(value.displayName === undefined ? {} : { displayName: displayLabel(value.displayName) }),
     ...(value.workspaceDisplayLabel === undefined ? {} : { workspaceDisplayLabel: displayLabel(value.workspaceDisplayLabel) }),
     isDefault: boolean(value.isDefault),
@@ -146,7 +148,8 @@ export const databricksPublic = {
     return { loginId: publicId(value.loginId),
       state: choice(value.state, ['starting', 'waiting-for-browser', 'authenticated', 'cancelled', 'timed-out', 'failed']),
       createdAt, deadlineAt, completedAt: timestamp(value.completedAt),
-      profileId: value.profileId === null ? null : publicId(value.profileId), issues: value.issues.map(issue) };
+      profileId: value.profileId === null ? null : publicId(value.profileId), issues: value.issues.map(issue),
+      ...(value.authUrl ? { authUrl: value.authUrl } : {}) };
   },
   setup(value: DatabricksSetupResponse): DatabricksSetupResponse {
     return { profile: profile(value.profile), status: databricksPublic.status(value.status) };
@@ -242,6 +245,7 @@ export function registerDatabricksRoutes(app: Express, ctx: RegisterDatabricksRo
   const { service } = ctx;
   const noStore: RequestHandler = (_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); };
   const guards = [noStore, ctx.http.requireLocalDaemonRequest];
+  registerDatabricksLoginRoutes(app, service, guards);
   function route<T>(method: 'get' | 'post' | 'put' | 'delete', path: string, run: (req: Request) => Promise<T>, sanitize: (value: T) => T, status = 200): void {
     app[method](`/api/databricks${path}`, ...guards, async (req, res) => {
       try { res.status(status).json(sanitize(await run(req))); }
@@ -256,9 +260,6 @@ export function registerDatabricksRoutes(app: Express, ctx: RegisterDatabricksRo
   }
   route('get', '/status', () => service.status(), databricksPublic.status);
   route('post', '/setup', (req) => service.setup(databricksSetupRequest(req.body)), databricksPublic.setup);
-  route('post', '/login', (req) => service.startLogin(databricksLoginRequest(req.body)), databricksPublic.login, 202);
-  route('get', '/login/:loginId', (req) => service.getLogin(databricksInputId(req.params.loginId)), databricksPublic.login);
-  route('delete', '/login/:loginId', (req) => service.cancelLogin(databricksInputId(req.params.loginId)), databricksPublic.login);
   route('post', '/probe', (req) => service.probe(optionalProfile(req.body)), databricksPublic.profiles);
   route('put', '/client', (req) => {
     const body = input(req.body, ['executableId']);

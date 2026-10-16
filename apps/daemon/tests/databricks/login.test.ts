@@ -45,8 +45,8 @@ describe('Databricks browser SSO jobs', () => {
     f.authenticate();
     await vi.advanceTimersByTimeAsync(1000);
     expect(f.logins.get(snapshot.loginId)).toMatchObject({ state: 'authenticated', profileId, issues: [] });
-    expect(f.connected).toHaveBeenCalledWith(host, `readable-${snapshot.loginId}`, expect.any(AbortSignal));
-    expect(f.runner.mock.calls.some(([, args]) => JSON.stringify(args) === JSON.stringify(['auth', 'login', '--host', host, '--profile', `readable-${snapshot.loginId}`]))).toBe(true);
+    expect(f.connected).toHaveBeenCalledWith(host, 'DEFAULT', expect.any(AbortSignal));
+    expect(f.runner.mock.calls.some(([, args]) => JSON.stringify(args) === JSON.stringify(['auth', 'login', '--host', host, '--profile', 'DEFAULT']))).toBe(true);
     expect(f.runner.mock.calls.filter(([, args]) => args[1] === 'token')).toHaveLength(3);
     expect(vi.getTimerCount()).toBe(0);
   });
@@ -104,6 +104,48 @@ describe('Databricks browser SSO jobs', () => {
     f.logins.cancel(snapshot.loginId);
     await vi.advanceTimersByTimeAsync(0);
     expect(f.runner.mock.calls.some(([, args]) => args[1] === 'login')).toBe(false);
+  });
+
+  it('preserves a supplied profile, streams a split authorization URL, and verifies only after CLI exit', async () => {
+    const f = fixture();
+    const snapshot = f.logins.start({ host, profile: 'team-dev' });
+    await vi.advanceTimersByTimeAsync(0);
+    const call = f.runner.mock.calls.find(([, args]) => args[1] === 'login')!;
+    expect(call[1]).toEqual(['auth', 'login', '--host', host, '--profile', 'team-dev']);
+    call[2].onOutput?.('Open https://workspace.example/oidc/oauth2/v2.0/auth');
+    call[2].onOutput?.('orize?state=opaque\n');
+    expect(f.logins.get(snapshot.loginId).authUrl).toBe('https://workspace.example/oidc/oauth2/v2.0/authorize?state=opaque');
+    f.authenticate();
+    expect(f.runner.mock.calls.filter(([, args]) => args[1] === 'token')).toHaveLength(0);
+    f.exit(0);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.logins.get(snapshot.loginId).state).toBe('authenticated');
+    expect(f.runner.mock.calls.find(([, args]) => args[1] === 'token')![1]).toEqual(['auth', 'token', '--profile', 'team-dev']);
+  });
+
+  it('bounds the default browser challenge to five minutes', async () => {
+    const f = fixture();
+    const logins = new DatabricksLogins(f.client, f.connected, { clock: f.options.clock });
+    const snapshot = logins.start({ host });
+    expect(Date.parse(snapshot.deadlineAt) - Date.parse(snapshot.createdAt)).toBe(300_000);
+    await vi.advanceTimersByTimeAsync(300_000);
+    expect(logins.get(snapshot.loginId).state).toBe('timed-out');
+    expect(f.kill).toHaveBeenCalledOnce();
+  });
+
+  it('never presents an OIDC discovery error URL as browser authorization', async () => {
+    const f = fixture();
+    const snapshot = f.logins.start({ host, profile: 'team-dev' });
+    await vi.advanceTimersByTimeAsync(0);
+    const call = f.runner.mock.calls.find(([, args]) => args[1] === 'login')!;
+    call[2].onOutput?.('Get https://workspace.example/oidc/.well-known/oauth-authorization-server: network failure\n');
+    expect(f.logins.get(snapshot.loginId).authUrl).toBeUndefined();
+    call[2].onOutput?.('Open https://workspace.example/oidc/v1/authorize?state=opaque\n');
+    expect(f.logins.get(snapshot.loginId).authUrl).toContain('/authorize?');
+    f.exit(1);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.logins.get(snapshot.loginId)).toMatchObject({ state: 'failed' });
+    expect(f.logins.get(snapshot.loginId).authUrl).toBeUndefined();
   });
 
 });

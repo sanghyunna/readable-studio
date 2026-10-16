@@ -11,7 +11,7 @@ import type {
   DatabricksRegisteredEndpoint, DatabricksScanEvent, DatabricksScanPageRequest, DatabricksScanRequest,
   DatabricksScanResponse, DatabricksSetupRequest, DatabricksSetupResponse, DatabricksStatusResponse, DatabricksVerificationResponse, DatabricksVerifyRequest,
 } from '@readable-studio/contracts';
-import { DatabricksClient, DatabricksServiceError, issueFor, withDeadline, type DatabricksClientOptions } from './client.js';
+import { DatabricksClient, DatabricksServiceError, databricksLoginProfile, issueFor, withDeadline, type DatabricksClientOptions } from './client.js';
 import { DatabricksCredentials, type DatabricksConnectionBinding } from './credentials.js';
 import { DatabricksLogins, type DatabricksLoginOptions } from './login.js';
 import { applyLearnedDatabricksProtocol, normalizeResource, opaqueId, type CatalogueEntry, type DatabricksWireCapabilities } from './catalogue.js';
@@ -109,9 +109,11 @@ export class LocalDatabricksService implements DatabricksService {
       const generation = await this.store.update((next) => {
         if (signal.aborted) throw new DatabricksServiceError('DATABRICKS_AUTH_REQUIRED');
         const id = opaqueId(next.secret, 'dbc', profileName, host);
-        next.bindings.push({ id, profileName, host, isDefault: false });
+        if (!next.bindings.some((binding) => binding.id === id)) next.bindings.push({ id, profileName, host, isDefault: profileName === 'DEFAULT' });
       });
       const binding = generation.bindings.find((entry) => entry.profileName === profileName && entry.host === host)!;
+      await this.credentials.forget(binding);
+      this.inspectionExpiresAt = 0;
       this.auth.set(binding.id, 'authenticated');
       return binding.id;
     }, options.loginOptions);
@@ -236,7 +238,7 @@ export class LocalDatabricksService implements DatabricksService {
       + (binding.mode !== 'workspace-token' ? 2 : 0) + (binding.isDefault ? 1 : 0);
     const bindings = generation.bindings.sort((a, b) => priority(b) - priority(a));
     const profiles = bindings.map((binding, index) => ({
-      id: binding.id, label: binding.profileName || 'Workspace connection', workspaceLabel: binding.host,
+      id: binding.id, connectionMode: binding.mode ?? 'cli-profile', label: binding.profileName || 'Workspace connection', workspaceLabel: binding.host,
       displayName: binding.profileName || 'Workspace connection', workspaceDisplayLabel: binding.host,
       isDefault: index === 0, auth: this.auth.get(binding.id) ?? (binding.mode === 'workspace-token' ? 'auth-required' : 'unchecked') as DatabricksAuthState,
     }));
@@ -258,7 +260,9 @@ export class LocalDatabricksService implements DatabricksService {
     return { profiles: (await this.status()).profiles, issues };
   }
 
-  async startLogin(request: DatabricksLoginRequest): Promise<DatabricksLoginResponse> { return this.logins.start(request); }
+  async startLogin(request: DatabricksLoginRequest): Promise<DatabricksLoginResponse> {
+    return this.logins.start({ ...request, profile: await databricksLoginProfile(request.host, request.profile) });
+  }
   async getLogin(loginId: string): Promise<DatabricksLoginResponse> { return this.logins.get(loginId); }
   async cancelLogin(loginId: string): Promise<DatabricksLoginResponse> { return this.logins.cancel(loginId); }
 

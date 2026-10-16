@@ -18,17 +18,17 @@ function cli(args: string[], signal?: AbortSignal) {
   });
   return { finished, output: () => output, progress: () => progress };
 }
-function noCredentials(text: string) {
+function noCredentials(text: string, allowHost = false) {
   expect(text).not.toContain(secrets.access_token);
-  for (const key of Object.keys(secrets)) expect(text).not.toContain(`"${key}"`);
+  for (const key of Object.keys(secrets).filter(key => !allowHost || key !== 'host')) expect(text).not.toContain(`"${key}"`);
 }
 function noSecrets(text: string) { for (const secret of Object.values(secrets)) expect(text).not.toContain(secret); }
 
 const verbs = [
   [['status'], status, 0],
-  [['login', '--host', secrets.host], login(), 0],
-  [['login', 'status', ids.scan], login('authenticated'), 0],
-  [['login', 'cancel', ids.scan], login('cancelled'), 130],
+  [['login', '--host', secrets.host], { state: 'started', loginId: ids.scan, host: secrets.host, profile: 'team-dev' }, 0],
+  [['login', 'status', ids.scan], { state: 'succeeded', profileId: ids.profile }, 0],
+  [['login', 'cancel', ids.scan], { state: 'cancelled' }, 0],
   [['setup', '--mode', 'cli-profile', '--profile', ids.profile], { profile: status.profiles[0]!, status }, 0],
   [['profiles'], { profiles: status.profiles, issues: [] }, 0],
   [['probe', '--profile', ids.profile], { profiles: status.profiles, issues: [] }, 0],
@@ -54,7 +54,7 @@ describe('readable databricks CLI', () => {
       const invocation = cli([...args]);
       expect(await invocation.finished).toEqual({ exitCode });
       expect(JSON.parse(invocation.output())).toEqual(expected);
-      noCredentials(invocation.output()); noSecrets(invocation.progress());
+      noCredentials(invocation.output(), args[0] === 'login' && args[1] === '--host'); noSecrets(invocation.progress());
     });
   }
 
@@ -63,7 +63,7 @@ describe('readable databricks CLI', () => {
     harness.service.getLogin.mockResolvedValueOnce(login('timed-out'));
     const invocation = cli(['login', 'status', ids.scan]);
     expect(await invocation.finished).toEqual({ exitCode: 1 });
-    expect(JSON.parse(invocation.output()).state).toBe('timed-out');
+    expect(JSON.parse(invocation.output()).state).toBe('timeout');
   });
 
   it('sends stdin credentials only to setup and succeeds without a CLI', async () => {
@@ -217,7 +217,7 @@ describe('readable databricks CLI', () => {
   }
 
   for (const args of [
-    ['login'], ['login', '--host', 'http://workspace.example'], ['login', 'cancel'],
+    ['login', '--profile', 'bad\nprofile'], ['login', '--host', 'http://workspace.example'], ['login', 'cancel'],
     ['setup'], ['setup', '--mode', 'workspace-token', '--host', secrets.host],
     ['setup', '--mode', 'cli-profile', '--token-stdin'],
     ['setup', '--mode', 'workspace-token', '--host', secrets.host, '--token', secrets.access_token],
@@ -264,5 +264,73 @@ describe('readable databricks CLI', () => {
       stdout: (text) => { output += text; }, stderr: () => {},
     });
     expect(result).toEqual({ exitCode: 1 }); expect(JSON.parse(output).error.code).toBe('DATABRICKS_UPSTREAM_UNAVAILABLE');
+  });
+});
+
+describe('readable databricks login CLI', () => {
+  function fake(body: unknown) {
+    const calls: { url: string; method?: string; body?: unknown }[] = [];
+    let output = ''; let progress = '';
+    const dependencies = {
+      resolveDaemonUrl: async () => 'http://127.0.0.1:7456',
+      fetch: vi.fn<typeof fetch>(async (url, init) => {
+        calls.push({ url: String(url), ...(init?.method ? { method: init.method } : {}), ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}) });
+        return Response.json(body);
+      }),
+      stdout: (text: string) => { output += text; }, stderr: (text: string) => { progress += text; },
+    };
+    return { dependencies, calls, output: () => output, progress: () => progress };
+  }
+
+  it.each([['login', '--help'], ['login', 'status', '-h']])('prints usage for %j with exit 0 and no request', async (...args) => {
+    const harness = fake({});
+    expect(await runDatabricksCli(args, harness.dependencies)).toEqual({ exitCode: 0 });
+    expect(harness.calls).toEqual([]);
+    expect(harness.progress().length).toBeGreaterThan(0);
+  });
+
+  it.each([
+    [['login', '--host', 'notaurl'], 'host'], [['login', '--host', 'http://bogus-qa.invalid'], 'host'],
+    [['login', '--profile', 'bad/name'], 'profile'],
+  ])('names the invalid login field for %j', async (args, field) => {
+    const harness = fake({});
+    expect(await runDatabricksCli([...args, '--json'], harness.dependencies)).toEqual({ exitCode: 2 });
+    expect(JSON.parse(harness.output()).error).toMatchObject({ code: 'BAD_REQUEST', field });
+    expect(harness.calls).toEqual([]);
+  });
+
+  it('accepts the login request from --prompt-file - and posts it to the UI endpoint', async () => {
+    const harness = fake({ state: 'started', loginId: ids.scan, host: secrets.host });
+    const result = await runDatabricksCli(['login', '--prompt-file', '-', '--json'], { ...harness.dependencies, readStdin: async () => JSON.stringify({ host: secrets.host, profile: 'team-dev' }) });
+    expect(result).toEqual({ exitCode: 0 });
+    expect(harness.calls).toEqual([{ url: 'http://127.0.0.1:7456/api/databricks/login', method: 'POST', body: { host: new URL(secrets.host).origin, profile: 'team-dev' } }]);
+  });
+
+  it.each([['{nope'], [JSON.stringify({ host: secrets.host, token: 'x' })], [JSON.stringify({ host: 'http://plain.example' })]])('rejects an invalid --prompt-file body %s before transport', async (stdin) => {
+    const harness = fake({});
+    expect(await runDatabricksCli(['login', '--prompt-file', '-', '--json'], { ...harness.dependencies, readStdin: async () => stdin })).toEqual({ exitCode: 2 });
+    expect(JSON.parse(harness.output()).error.code).toBe('BAD_REQUEST');
+    expect(harness.calls).toEqual([]);
+  });
+
+  it.each([
+    [['login'], { state: 'needs-input', profile: 'DEFAULT' }, 1],
+    [['login', 'status', ids.scan], { state: 'waiting-browser', authUrl: 'https://login.example/authorize' }, 0],
+    [['login', 'cancel', ids.scan], { state: 'cancelled' }, 0],
+  ] as const)('renders %j as text, not JSON, in human mode', async (args, body, exitCode) => {
+    const harness = fake(body);
+    expect(await runDatabricksCli([...args], harness.dependencies)).toEqual({ exitCode });
+    const text = harness.output() + harness.progress();
+    expect(text.trim().length).toBeGreaterThan(0);
+    expect(() => JSON.parse(text)).toThrow();
+  });
+
+  it.each([
+    ['status', 'cancelled', 1], ['status', 'succeeded', 0], ['status', 'failed', 1],
+    ['cancel', 'cancelled', 0], ['cancel', 'failed', 1],
+  ] as const)('login %s reporting %s exits with documented code %i', async (verb, state, exitCode) => {
+    const harness = fake({ state });
+    expect(await runDatabricksCli(['login', verb, ids.scan, '--json'], harness.dependencies)).toEqual({ exitCode });
+    expect(JSON.parse(harness.output()).state).toBe(state);
   });
 });

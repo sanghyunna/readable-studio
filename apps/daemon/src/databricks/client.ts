@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
-import { access, constants } from 'node:fs/promises';
+import { access, constants, readFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { delimiter, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { wellKnownUserToolchainBins } from '@readable-studio/platform';
@@ -28,15 +29,37 @@ export function databricksWorkspaceOrigin(host: unknown): string {
   if (typeof host !== 'string' || /[\s\\\x00-\x1f\x7f]/.test(host)) throw new DatabricksServiceError('DATABRICKS_AUTH_REQUIRED');
   let url: URL;
   try { url = new URL(host); } catch { throw new DatabricksServiceError('DATABRICKS_AUTH_REQUIRED'); }
-  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== '/') {
+  if (url.protocol !== 'https:' || url.port || /^https:\/\/[^/]*:\d+/i.test(host) || url.username || url.password || url.search || url.hash || url.pathname !== '/') {
     throw new DatabricksServiceError('DATABRICKS_AUTH_REQUIRED');
   }
   return url.origin;
 }
 
+/** Read config independently of CLI discovery, which may omit invalid profiles. */
+export async function databricksLoginProfile(host: string, requested?: string, configFile = process.env.DATABRICKS_CONFIG_FILE ?? join(homedir(), '.databrickscfg')): Promise<string> {
+  let config = '';
+  try { config = await readFile(configFile, 'utf8'); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new DatabricksServiceError('DATABRICKS_UPSTREAM_UNAVAILABLE'); }
+  const profiles = new Map<string, string>();
+  let section = '';
+  for (const line of config.split(/\r?\n/)) {
+    const heading = /^\s*\[([^\]]+)\]\s*$/.exec(line);
+    if (heading) { section = heading[1]!; profiles.set(section, ''); }
+    const entry = /^\s*host\s*=\s*(\S+)\s*$/i.exec(line);
+    if (entry && section) profiles.set(section, entry[1]!.replace(/\/$/, '').toLowerCase());
+  }
+  if (requested && (!profiles.has(requested) || profiles.get(requested) === host.toLowerCase())) return requested;
+  const matching = [...profiles].find(([, value]) => value === host.toLowerCase());
+  if (matching) return matching[0];
+  const base = `readable-${new URL(host).hostname.replace(/[^\p{L}\p{N}_.-]/gu, '-').slice(0, 100)}`;
+  let name = base;
+  for (let index = 2; profiles.has(name); index++) name = `${base}-${index}`;
+  return name;
+}
+
 export interface CliResult { stdout: string; stderr: string; exitCode: number; }
 export type DatabricksSubprocessRunner = (executable: string, args: readonly string[], options: {
-  signal: AbortSignal; timeoutMs: number;
+  signal: AbortSignal; timeoutMs: number; onOutput?: (chunk: string) => void;
 }) => Promise<CliResult>;
 
 /** Native executable only: no cmd.exe, shell quoting, terminal, or stdin. */
@@ -50,6 +73,7 @@ export const runDatabricksProcess: DatabricksSubprocessRunner = (executable, arg
   let stdout = '';
   let stderr = '';
   const collect = (which: 'stdout' | 'stderr', chunk: string) => {
+    options.onOutput?.(chunk);
     if (which === 'stdout') stdout += chunk;
     else stderr += chunk;
     if (stdout.length + stderr.length > 4 * 1024 * 1024) {
@@ -71,6 +95,7 @@ export interface DatabricksExecutableOptions {
   sourceRoot?: string;
   runner?: DatabricksSubprocessRunner;
   timeoutMs?: number;
+  preferBundled?: boolean;
 }
 
 export async function resolveDatabricksCli(override?: string | null, options: DatabricksExecutableOptions = {}): Promise<DatabricksExecutable | null> {
@@ -93,6 +118,7 @@ export async function resolveDatabricksCli(override?: string | null, options: Da
     candidates.push({ path: join(appRoot, 'vendor', 'databricks', 'databricks.exe'), source: 'bundled' });
   }
   const timeoutMs = options.timeoutMs ?? 3000;
+  if (options.preferBundled) candidates.splice(0, candidates.length, ...candidates.filter(candidate => candidate.source === 'bundled'));
   for (const candidate of candidates) {
     try {
       await access(candidate.path, constants.X_OK);
@@ -144,7 +170,9 @@ export function classifyCliFailure(stderr: string): DatabricksServiceError {
   if (/keyring|credential manager|secret service|keychain/i.test(stderr)) return new DatabricksServiceError('DATABRICKS_KEYRING_UNAVAILABLE', true);
   if (/unknown command|unknown flag|not supported|unsupported/i.test(stderr)) return new DatabricksServiceError('DATABRICKS_CLI_UNSUPPORTED');
   if (/timeout|network|connection|dial tcp|dns|unreachable|TLS/i.test(stderr)) return new DatabricksServiceError('DATABRICKS_UPSTREAM_UNAVAILABLE', true);
-  return new DatabricksServiceError('DATABRICKS_AUTH_REQUIRED');
+  if (/permission[ _]denied|access denied|\bforbidden\b/i.test(stderr)) return new DatabricksServiceError('DATABRICKS_PERMISSION_DENIED');
+  if (/\b(?:token|authentication|credentials?)\b[^\n]*(?:expired|invalid)|\b(?:expired|invalid)\b[^\n]*(?:token|credentials?)|profile[^\n]*(?:not found|does not exist|missing)|not logged in|(?:login|log in|sign in|authentication) (?:is )?required|unauthenticated|unauthorized|cannot configure default credentials/i.test(stderr)) return new DatabricksServiceError('DATABRICKS_AUTH_REQUIRED');
+  return new DatabricksServiceError('DATABRICKS_UPSTREAM_UNAVAILABLE', true);
 }
 
 function supportedDatabricksVersion(stdout: string): string | null {
@@ -165,11 +193,11 @@ export class DatabricksClient {
   private state: { cli: DatabricksCliState; version: string | null } = { cli: 'missing', version: null };
   constructor(private readonly options: DatabricksClientOptions = {}) {}
 
-  async probe(): Promise<{ cli: DatabricksCliState; version: string | null; cliSource: DatabricksCliSource | null }> {
+  async probe(preferBundled = false): Promise<{ cli: DatabricksCliState; version: string | null; cliSource: DatabricksCliSource | null }> {
     this.executable = null;
     this.cliSource = null;
     try {
-      const resolved = await (this.options.resolveExecutable ?? ((override) => resolveDatabricksCli(override, this.options)))(this.options.executablePath);
+      const resolved = await (this.options.resolveExecutable ?? ((override) => resolveDatabricksCli(override, { ...this.options, preferBundled })))(preferBundled ? undefined : this.options.executablePath);
       this.executable = typeof resolved === 'string' ? resolved : resolved?.path ?? null;
       this.cliSource = typeof resolved === 'string' ? this.options.executablePath ? 'override' : 'path' : resolved?.source ?? null;
       if (!this.executable) { this.state = { cli: 'missing', version: null }; return this.status(); }
@@ -194,11 +222,11 @@ export class DatabricksClient {
   }
 
   /** The CLI opens its own browser. Explicit profile avoids any stdin prompt. */
-  async login(host: string, profileName: string, signal: AbortSignal, timeoutMs: number): Promise<void> {
+  async login(host: string, profileName: string, signal: AbortSignal, timeoutMs: number, onOutput?: (chunk: string) => void): Promise<void> {
     host = databricksWorkspaceOrigin(host);
     if (!this.executable || this.state.cli !== 'ready') throw new DatabricksServiceError('DATABRICKS_CLI_MISSING');
     const result = await withDeadline((bounded) => (this.options.runner ?? runDatabricksProcess)(this.executable!,
-      ['auth', 'login', '--host', host, '--profile', profileName], { signal: bounded, timeoutMs }), timeoutMs, signal);
+      ['auth', 'login', '--host', host, '--profile', profileName], { signal: bounded, timeoutMs, ...(onOutput ? { onOutput } : {}) }), timeoutMs, signal);
     if (result.exitCode !== 0) throw classifyCliFailure(result.stderr);
     // A zero exit is not proof of authentication. The login job polls auth token JSON.
   }

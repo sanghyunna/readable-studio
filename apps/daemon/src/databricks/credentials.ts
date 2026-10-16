@@ -35,14 +35,17 @@ export class DatabricksCredentials {
   }
 
   /** Reuses expiry-aware caching; forced refreshes still share an in-flight acquisition. */
-  async acquireToken(binding: DatabricksConnectionBinding, force = false): Promise<{ token: string; expiresAt: number }> {
+  async acquireToken(binding: DatabricksConnectionBinding, force = false, beforeRefresh?: () => Promise<void>): Promise<{ token: string; expiresAt: number }> {
     const key = this.key(binding);
     if (force) this.cached.delete(key);
     const cached = this.cached.get(key);
     if (cached && cached.expiresAt > this.now() + this.safetyMarginMs) return { token: cached.value, expiresAt: cached.expiresAt };
     let pending = this.pending.get(key);
     if (!pending) {
-      pending = this.refresh(binding).then((bearer) => {
+      pending = (async () => {
+        await beforeRefresh?.();
+        return this.refresh(binding);
+      })().then((bearer) => {
         if (this.pending.get(key) === pending) this.cached.set(key, bearer);
         return bearer;
       }).finally(() => {

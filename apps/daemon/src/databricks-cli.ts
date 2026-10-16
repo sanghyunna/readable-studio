@@ -6,17 +6,20 @@ import {
   type DatabricksModelResponse, type DatabricksModelsResponse, type DatabricksProbeRequest,
   type DatabricksScanEvent, type DatabricksScanRequest, type DatabricksScanResponse,
   type DatabricksVerifyRequest,
+  type DatabricksManagedLoginStart, type DatabricksManagedLoginStatus,
   splitDatabricksModelName, matchesDatabricksModelSearch,
 } from '@readable-studio/contracts';
 import { resolveDaemonUrl } from './daemon-url.js';
 import { databricksNamedRequest } from './databricks-named-http.js';
 import { DatabricksServiceError } from './databricks/client.js';
-import { databricksFailure, databricksInputId, DatabricksInputError, databricksPublic, databricksSetupRequest, databricksLoginRequest } from './databricks-routes.js';
+import { databricksFailure, databricksInputId, DatabricksInputError, databricksPublic, databricksSetupRequest } from './databricks-routes.js';
+import { managedLoginInput } from './databricks-login-routes.js';
 
 export const DATABRICKS_CLI_USAGE = `Usage:
   readable databricks status|profiles [--json]
   readable databricks probe [--profile <id>] [--json]
-  readable databricks login --host <https-workspace-url> [--json]
+  readable databricks login [--host <https-workspace-url>] [--profile <name>] [--json]
+  readable databricks login --prompt-file <JSON-path|-> [--json]   (JSON: {"host"?: string, "profile"?: string})
   readable databricks login status <login-id> [--json]
   readable databricks login cancel <login-id> [--json]
   readable databricks setup --mode cli-profile [--profile <id>] [--json]
@@ -37,7 +40,52 @@ All commands accept --daemon-url <loopback-origin>. Setup reads a token only fro
 Workspace tokens remain in daemon memory for this session; re-enter them after daemon restart.
 Login returns a job immediately; login status reports browser SSO progress, and login cancel stops it.
 Scan waits for completion; --follow emits typed NDJSON events ending with a done snapshot.
+Exit codes:
+  0    success; login started; login status is waiting or succeeded; login cancel cancelled the sign-in
+  1    failed or needs attention (login needs --host, sign-in failed, timed out or was cancelled,
+       login cancel found the sign-in already ended, authentication required, verification failed)
+  2    usage error (unknown command or flag, invalid --host, --profile or --prompt-file)
+  3    scan partially completed
+  64   the local Readable daemon is not running
+  130  interrupted (Ctrl+C) or scan cancelled
 `;
+const LOGIN_USAGE = DATABRICKS_CLI_USAGE.split('\n').filter((line) => line.startsWith('  readable databricks login')).join('\n');
+
+/** Login input errors name the field so the CLI can say exactly what to fix. */
+class DatabricksLoginInputError extends DatabricksInputError {
+  constructor(readonly field: 'host' | 'profile' | 'prompt-file') {
+    super(field === 'host' ? 'The --host must be an https:// Databricks workspace URL, for example https://adb-123.azuredatabricks.net.'
+      : field === 'profile' ? 'The --profile must be 1-128 letters, digits, spaces, dots, dashes or underscores.'
+        : 'The --prompt-file must contain JSON like {"host": "https://<workspace-url>", "profile": "<name>"}.');
+  }
+}
+function loginInput(host: unknown, profile: unknown) {
+  if (host !== undefined) { try { managedLoginInput({ host }); } catch { throw new DatabricksLoginInputError('host'); } }
+  if (profile !== undefined) { try { managedLoginInput({ profile }); } catch { throw new DatabricksLoginInputError('profile'); } }
+  return managedLoginInput({ ...(host === undefined ? {} : { host }), ...(profile === undefined ? {} : { profile }) });
+}
+function loginText(command: string, result: DatabricksManagedLoginStart | DatabricksManagedLoginStatus): string {
+  if (command === 'login') {
+    const start = result as DatabricksManagedLoginStart;
+    if (start.state === 'needs-input') return `No Databricks profile${start.profile ? ` named "${start.profile}"` : ''} was found. Pass --host https://<workspace-url> to sign in.`;
+    return `Browser sign-in started for ${start.host ?? start.profile ?? 'Databricks'}.${start.loginId ? `\nCheck progress: readable databricks login status ${start.loginId}\nCancel: readable databricks login cancel ${start.loginId}` : ''}`;
+  }
+  const status = result as DatabricksManagedLoginStatus;
+  // The daemon sends issue codes, never localized text; the CLI renders English from codes.
+  const reason = status.issues?.length ? ` (${status.issues.map((issue) => issue.code).join(', ')})` : '';
+  const text = status.state === 'waiting-browser' ? `Waiting for browser sign-in.${status.authUrl ? `\nIf the browser did not open, visit: ${status.authUrl}` : ''}`
+    : status.state === 'succeeded' ? `Databricks sign-in succeeded.${status.profileId ? ` Profile: ${status.profileId}` : ''}`
+      : status.state === 'cancelled' ? 'Databricks sign-in was cancelled.'
+        : status.state === 'timeout' ? `Databricks sign-in timed out${reason}. Run readable databricks login again.`
+          : `Databricks sign-in failed${reason}. Run readable databricks login again.`;
+  if (command === 'login cancel' && status.state !== 'cancelled') return `The sign-in had already ended. ${text}`;
+  return text;
+}
+function loginExitCode(command: string, result: DatabricksManagedLoginStart | DatabricksManagedLoginStatus): number {
+  if (command === 'login') return result.state === 'started' ? 0 : 1;
+  if (command === 'login cancel') return result.state === 'cancelled' ? 0 : 1;
+  return result.state === 'waiting-browser' || result.state === 'succeeded' ? 0 : 1;
+}
 
 export interface DatabricksCliDependencies {
   fetch?: typeof fetch;
@@ -66,7 +114,7 @@ function parse(args: string[]) {
   const allowed: Record<string, string[]> = {
     status: [], profiles: [], probe: ['profile'], scan: ['profile', 'scopes', 'follow'],
     add: ['profile', 'names', 'prompt-file', 'allow-inference', 'check-only', 'check-reasoning', 'kind', 'api'],
-    login: ['host'], 'login status': [], 'login cancel': [],
+    login: ['host', 'profile', 'prompt-file'], 'login status': [], 'login cancel': [],
     'scan status': ['cursor', 'limit'], 'scan cancel': [], lookup: ['profile', 'kind'], models: ['profile', 'search'],
     enable: ['scan', 'revision'], disable: ['revision'], remove: ['revision'], select: [], verify: ['scan', 'revision', 'allow-inference'],
     disconnect: [], client: ['executable', 'clear'], setup: ['mode', 'host', 'profile', 'token-stdin'],
@@ -96,7 +144,7 @@ function parse(args: string[]) {
   // Validate all input before resolving the daemon or performing any mutation.
   if (['scan', 'lookup', 'add'].includes(command)) id('profile');
   if (command === 'add' && (!flags.has('allow-inference') || Number(flags.has('names')) + Number(flags.has('prompt-file')) + positional.length !== 1)) return usage();
-  if (text('profile')) id('profile');
+  if (text('profile') && command !== 'login') id('profile');
   if (text('scopes')) text('scopes')!.split(',').forEach(databricksInputId);
   if (text('cursor')) id('cursor');
   if (text('limit') && (!/^\d+$/.test(text('limit')!) || Number(text('limit')) < 1 || Number(text('limit')) > 1000)) return usage();
@@ -104,7 +152,10 @@ function parse(args: string[]) {
   if (['enable', 'verify'].includes(command)) id('scan');
   if (command === 'lookup' && !['serving-endpoint', 'uc-model-service'].includes(text('kind') ?? '')) return usage();
   if (command === 'verify' && !flags.has('allow-inference')) return usage();
-  if (command === 'login') databricksLoginRequest({ host: text('host') });
+  if (command === 'login') {
+    if (flags.has('prompt-file') && (flags.has('host') || flags.has('profile'))) return usage();
+    loginInput(text('host'), text('profile'));
+  }
   if (command === 'setup') {
     if (text('mode') === 'cli-profile') {
       if (flags.has('host') || flags.has('token-stdin')) return usage();
@@ -117,13 +168,13 @@ function parse(args: string[]) {
   return { command, flags, text, id, revision, target: positional[0] };
 }
 
-type PublicResult = ReturnType<(typeof databricksPublic)[Exclude<keyof typeof databricksPublic, 'event'>]>;
+type PublicResult = ReturnType<(typeof databricksPublic)[Exclude<keyof typeof databricksPublic, 'event'>]> | DatabricksManagedLoginStart | DatabricksManagedLoginStatus;
 export function databricksExitCode(result: PublicResult): number {
   if ('status' in result) return databricksExitCode(result.status);
   if ('state' in result) {
     if (result.state === 'cancelled') return 130;
-    if (result.state === 'failed' || result.state === 'timed-out') return 1;
-    if (result.state === 'partial') return result.issues.some((issue) => issue.action === 'sign-in') ? 1 : 3;
+    if (result.state === 'failed' || result.state === 'timed-out' || result.state === 'timeout' || result.state === 'needs-input') return 1;
+    if (result.state === 'partial' && 'issues' in result) return result.issues.some((issue) => issue.action === 'sign-in') ? 1 : 3;
   }
   if ('cli' in result) {
     if (result.setupRequired !== undefined) return result.setupRequired ? 1 : 0;
@@ -139,7 +190,8 @@ export function databricksExitCode(result: PublicResult): number {
 export async function runDatabricksCli(args: string[], dependencies: DatabricksCliDependencies = {}): Promise<{ exitCode: number }> {
   const stdout = dependencies.stdout ?? ((text: string) => { process.stdout.write(text); });
   const stderr = dependencies.stderr ?? ((text: string) => { process.stderr.write(text); });
-  if (args.length === 1 && ['help', '--help', '-h'].includes(args[0]!)) { stderr(DATABRICKS_CLI_USAGE); return { exitCode: 0 }; }
+  if ((args.length === 1 && args[0] === 'help') || args.some((arg) => arg === '--help' || arg === '-h')) { stderr(DATABRICKS_CLI_USAGE); return { exitCode: 0 }; }
+  const json = args.includes('--json');
   const controller = new AbortController();
   const interrupt = () => controller.abort();
   if (!dependencies.signal) process.once('SIGINT', interrupt);
@@ -153,6 +205,16 @@ export async function runDatabricksCli(args: string[], dependencies: DatabricksC
   try {
     const options = parse(args);
     follow = options.flags.has('follow');
+    let loginRequest = options.command === 'login' ? loginInput(options.text('host'), options.text('profile')) : undefined;
+    if (options.command === 'login' && options.text('prompt-file')) {
+      const path = options.text('prompt-file')!;
+      let supplied: unknown;
+      try { supplied = JSON.parse(path === '-' ? await (dependencies.readStdin ?? readTokenStdin)() : await readFile(path, 'utf8')); }
+      catch { throw new DatabricksLoginInputError('prompt-file'); }
+      if (!supplied || typeof supplied !== 'object' || Array.isArray(supplied) || Object.keys(supplied).some((key) => !['host', 'profile'].includes(key))) throw new DatabricksLoginInputError('prompt-file');
+      const body = supplied as { host?: unknown; profile?: unknown };
+      loginRequest = loginInput(body.host, body.profile);
+    }
     const base = new URL(await (dependencies.resolveDaemonUrl ?? ((flagUrl?: string) => resolveDaemonUrl({ flagUrl: flagUrl ?? null })))(options.text('daemon-url')));
     if (!['http:', 'https:'].includes(base.protocol) || !['localhost', '127.0.0.1', '[::1]'].includes(base.hostname)
       || base.username || base.password || base.pathname !== '/' || base.search || base.hash) return usage();
@@ -181,14 +243,21 @@ export async function runDatabricksCli(args: string[], dependencies: DatabricksC
     };
     request = async <T>(path: string, method: string, body?: unknown): Promise<T> => (await send(path, method, body)).json() as Promise<T>;
     const call = async <T>(path: string, method: string, sanitize: (value: T) => T, body?: unknown) => sanitize(await request!<T>(`/api/databricks${path}`, method, body));
-    const profile: DatabricksProbeRequest = options.text('profile') ? { profileId: options.id('profile') } : {};
+    const profile: DatabricksProbeRequest = options.text('profile') && options.command !== 'login' ? { profileId: options.id('profile') } : {};
     let result: PublicResult;
     if (controller.signal.aborted) throw new Error('Cancelled');
     switch (options.command) {
       case 'status': result = await call('/status', 'GET', databricksPublic.status); break;
-      case 'login': result = await call('/login', 'POST', databricksPublic.login, databricksLoginRequest({ host: options.text('host') })); break;
-      case 'login status': result = await call(`/login/${options.target}`, 'GET', databricksPublic.login); break;
-      case 'login cancel': result = await call(`/login/${options.target}`, 'DELETE', databricksPublic.login); break;
+      case 'login': result = await call<DatabricksManagedLoginStart>('/login', 'POST', value => ({
+        state: value.state, ...(value.loginId ? { loginId: value.loginId } : {}),
+        ...(value.host ? { host: value.host } : {}), ...(value.profile ? { profile: value.profile } : {}),
+      }), loginRequest); break;
+      case 'login status': case 'login cancel': result = await call<DatabricksManagedLoginStatus>(
+        `/login/${options.target}${options.command === 'login cancel' ? '/cancel' : ''}`,
+        options.command === 'login cancel' ? 'POST' : 'GET', value => ({
+          state: value.state, ...(value.authUrl ? { authUrl: value.authUrl } : {}), ...(value.profileId ? { profileId: value.profileId } : {}),
+          ...(value.issues?.length ? { issues: value.issues } : {}),
+        }), options.command === 'login cancel' ? {} : undefined); break;
       case 'setup': {
         const body = databricksSetupRequest(options.text('mode') === 'cli-profile'
           ? { mode: 'cli-profile', ...profile }
@@ -302,6 +371,11 @@ export async function runDatabricksCli(args: string[], dependencies: DatabricksC
         }
       }
     }
+    if (options.command.startsWith('login')) {
+      const login = result as DatabricksManagedLoginStart | DatabricksManagedLoginStatus;
+      if (json) print(login); else (loginExitCode(options.command, login) === 0 ? stdout : stderr)(`${loginText(options.command, login)}\n`);
+      return { exitCode: loginExitCode(options.command, login) };
+    }
     if (!follow) {
       if (options.command === 'models' && !options.flags.has('json') && 'models' in result) {
         for (const endpoint of result.models) {
@@ -331,6 +405,11 @@ export async function runDatabricksCli(args: string[], dependencies: DatabricksC
       print({ error: { code: 'daemon-not-running', message, retryable: true } });
       stderr(`${message}\n`);
       return { exitCode: 64 };
+    }
+    if (error instanceof DatabricksLoginInputError) {
+      if (json) print({ error: { code: 'BAD_REQUEST', message: error.message, field: error.field, retryable: false } });
+      stderr(`${error.message}\n\n${LOGIN_USAGE}\n`);
+      return { exitCode: 2 };
     }
     print(databricksFailure(error));
     stderr(error instanceof DatabricksInputError ? DATABRICKS_CLI_USAGE : 'Databricks command failed\n');

@@ -9,9 +9,9 @@ afterEach(async () => { await harness?.close(); harness = undefined; });
 const enable = { scanId: ids.scan, expectedRevision: 2 };
 const routes = [
   ['GET', '/status', undefined, status, 200],
-  ['POST', '/login', { host: secrets.host }, login(), 202],
-  ['GET', `/login/${ids.scan}`, undefined, login('authenticated'), 200],
-  ['DELETE', `/login/${ids.scan}`, undefined, login('cancelled'), 200],
+  ['POST', '/login', { host: secrets.host }, { state: 'started', loginId: ids.scan, host: secrets.host, profile: 'team-dev' }, 202],
+  ['GET', `/login/${ids.scan}`, undefined, { state: 'succeeded', profileId: ids.profile }, 200],
+  ['POST', `/login/${ids.scan}/cancel`, {}, { state: 'cancelled' }, 200],
   ['POST', '/setup', { mode: 'workspace-token', host: secrets.host, token: secrets.access_token }, { profile: status.profiles[0]!, status }, 200],
   ['POST', '/setup', { mode: 'cli-profile', profileId: ids.profile }, { profile: status.profiles[0]!, status }, 200],
   ['POST', '/probe', { profileId: ids.profile }, { profiles: status.profiles, issues: [] }, 200],
@@ -52,9 +52,9 @@ async function send(method: string, path: string, body?: unknown, headers: Recor
   });
 }
 
-function noCredentialsOrRawFields(text: string) {
+function noCredentialsOrRawFields(text: string, allowHost = false) {
   expect(text).not.toContain(secrets.access_token);
-  for (const key of Object.keys(secrets)) expect(text).not.toContain(`"${key}"`);
+  for (const key of Object.keys(secrets).filter(key => !allowHost || key !== 'host')) expect(text).not.toContain(`"${key}"`);
 }
 function noSecrets(text: string) {
   noCredentialsOrRawFields(text);
@@ -69,7 +69,7 @@ describe('Databricks HTTP surface', () => {
       expect(response.status).toBe(code);
       expect(response.headers.get('cache-control')).toBe('no-store');
       const text = await response.text();
-      noCredentialsOrRawFields(text);
+      noCredentialsOrRawFields(text, path === '/login');
       const payload = path.endsWith('/events') ? JSON.parse(text.split('\n').find((line) => line.startsWith('data: '))!.slice(6)) : JSON.parse(text);
       expect(payload).toEqual(expected);
       expect(harness.guard).toHaveBeenCalledOnce();
@@ -156,7 +156,7 @@ describe('Databricks HTTP surface', () => {
   });
 
   for (const [method, path, body] of [
-    ['POST', '/login', {}],
+    ['POST', '/login', { profile: 'bad\nprofile' }],
     ['POST', '/login', { host: 'http://workspace.example' }],
     ['POST', '/login', { host: secrets.host, token: secrets.access_token }],
     ['POST', '/setup', { mode: 'workspace-token', host: secrets.host }],
