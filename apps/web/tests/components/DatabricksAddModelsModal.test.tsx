@@ -20,7 +20,7 @@ import { StrictMode, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   DatabricksEndpoint,
-  DatabricksLoginResponse,
+  DatabricksManagedLoginStatus,
   DatabricksProfile,
   DatabricksRegisteredEndpoint,
   DatabricksScanResponse,
@@ -54,7 +54,7 @@ const databricksClient = vi.hoisted(() => ({
   cancelDatabricksLogin: vi.fn(),
 }));
 
-vi.mock('../../src/providers/databricks', () => databricksClient);
+vi.mock('../../src/providers/databricks', async importOriginal => ({ ...await importOriginal<typeof import('../../src/providers/databricks')>(), ...databricksClient }));
 
 const profile: DatabricksProfile = {
   id: 'prof-main',
@@ -568,7 +568,7 @@ describe('DatabricksAddModelsModal', () => {
 
     const guided = await screen.findByTestId('databricks-guided-state');
     expect(guided.textContent).toContain('Sign in to Databricks');
-    expect(guided.textContent).toContain('databricks auth login');
+    expect(within(guided).getByRole('button', { name: 'Sign in' })).toBeTruthy();
     expect(screen.getByTestId('databricks-scan-start').hasAttribute('disabled')).toBe(true);
   });
 
@@ -1018,19 +1018,13 @@ describe('DatabricksAddModelsModal setup step', () => {
   });
 
   describe('browser sign-in', () => {
-    const loginJob = (overrides: Partial<DatabricksLoginResponse> = {}): DatabricksLoginResponse => ({
-      loginId: 'login-1',
-      state: 'waiting-for-browser',
-      createdAt: '2026-09-10T04:00:00.000Z',
-      deadlineAt: '2026-09-10T04:10:00.000Z',
-      completedAt: null,
-      profileId: null,
-      issues: [],
+    const loginJob = (overrides: Partial<DatabricksManagedLoginStatus> = {}): DatabricksManagedLoginStatus => ({
+      state: 'waiting-browser',
       ...overrides,
     });
 
     beforeEach(() => {
-      databricksClient.startDatabricksLogin.mockResolvedValue(loginJob());
+      databricksClient.startDatabricksLogin.mockResolvedValue({ state: 'started', loginId: 'login-1' });
       databricksClient.cancelDatabricksLogin.mockResolvedValue(loginJob({ state: 'cancelled' }));
     });
 
@@ -1039,7 +1033,7 @@ describe('DatabricksAddModelsModal setup step', () => {
         .mockResolvedValueOnce(setupRequiredStatus)
         .mockResolvedValueOnce({ ...readyStatus, setupRequired: false });
       databricksClient.fetchDatabricksLogin.mockResolvedValue(
-        loginJob({ state: 'authenticated', completedAt: '2026-09-10T04:01:00.000Z', profileId: profile.id }),
+        loginJob({ state: 'succeeded' }),
       );
 
       renderModal();
@@ -1058,15 +1052,16 @@ describe('DatabricksAddModelsModal setup step', () => {
       expect(databricksClient.setupDatabricks).not.toHaveBeenCalled();
     });
 
-    it('asks for the workspace URL instead of starting a sign-in without one', async () => {
+    it('asks for the workspace URL when the daemon has no default connection', async () => {
       databricksClient.fetchDatabricksStatus.mockResolvedValue(setupRequiredStatus);
+      databricksClient.startDatabricksLogin.mockResolvedValue({ state: 'needs-input' });
 
       renderModal();
       await screen.findByTestId('databricks-setup-step');
       fireEvent.click(screen.getByTestId('databricks-login-start'));
 
-      expect(await screen.findByText('Enter the full https:// workspace URL.')).toBeTruthy();
-      expect(databricksClient.startDatabricksLogin).not.toHaveBeenCalled();
+      expect(await screen.findByRole('textbox', { name: 'Workspace URL' })).toBeTruthy();
+      expect(databricksClient.startDatabricksLogin).toHaveBeenCalledWith({ host: undefined, profile: undefined });
     });
 
     it('shows the failure inline and stays on the setup step when the CLI sign-in fails', async () => {
@@ -1074,7 +1069,6 @@ describe('DatabricksAddModelsModal setup step', () => {
       databricksClient.fetchDatabricksLogin.mockResolvedValue(
         loginJob({
           state: 'failed',
-          completedAt: '2026-09-10T04:01:00.000Z',
           issues: [{ code: 'DATABRICKS_CLI_MISSING', action: 'install-cli', retryable: false }],
         }),
       );
@@ -1086,7 +1080,6 @@ describe('DatabricksAddModelsModal setup step', () => {
 
       const error = await screen.findByTestId('databricks-login-error');
       expect(error.getAttribute('role')).toBe('alert');
-      expect(error.textContent).toContain('Install the Databricks CLI.');
       expect(screen.getByTestId('databricks-setup-step')).toBeTruthy();
       expect(screen.queryByTestId('databricks-login-progress')).toBeNull();
       expect(databricksClient.fetchDatabricksStatus).toHaveBeenCalledTimes(1);
@@ -1095,7 +1088,7 @@ describe('DatabricksAddModelsModal setup step', () => {
 
     it('cancels a sign-in that is waiting for the browser through the daemon', async () => {
       databricksClient.fetchDatabricksStatus.mockResolvedValue(setupRequiredStatus);
-      databricksClient.fetchDatabricksLogin.mockImplementation(() => new Promise<DatabricksLoginResponse>(() => {}));
+      databricksClient.fetchDatabricksLogin.mockImplementation(() => new Promise<DatabricksManagedLoginStatus>(() => {}));
 
       renderModal();
       await screen.findByTestId('databricks-setup-step');

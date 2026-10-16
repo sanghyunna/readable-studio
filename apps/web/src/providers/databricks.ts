@@ -10,8 +10,9 @@ import type {
   DatabricksEnableRequest,
   DatabricksEndpointResponse,
   DatabricksErrorResponse,
-  DatabricksLoginRequest,
-  DatabricksLoginResponse,
+  DatabricksManagedLoginRequest,
+  DatabricksManagedLoginStart,
+  DatabricksManagedLoginStatus,
   DatabricksLookupRequest,
   DatabricksModelResponse,
   DatabricksModelsRequest,
@@ -99,16 +100,16 @@ export function setupDatabricks(req: DatabricksSetupRequest): Promise<Databricks
  * opaque login job. Poll `fetchDatabricksLogin` until the state settles; no
  * credential ever crosses this client.
  */
-export function startDatabricksLogin(req: DatabricksLoginRequest): Promise<DatabricksLoginResponse> {
-  return request<DatabricksLoginResponse>('/login', jsonInit('POST', req));
+export function startDatabricksLogin(req: DatabricksManagedLoginRequest = {}): Promise<DatabricksManagedLoginStart> {
+  return request<DatabricksManagedLoginStart>('/login', jsonInit('POST', req));
 }
 
-export function fetchDatabricksLogin(loginId: string): Promise<DatabricksLoginResponse> {
-  return request<DatabricksLoginResponse>(`/login/${encodeURIComponent(loginId)}`);
+export function fetchDatabricksLogin(loginId: string): Promise<DatabricksManagedLoginStatus> {
+  return request<DatabricksManagedLoginStatus>(`/login/${encodeURIComponent(loginId)}`);
 }
 
-export function cancelDatabricksLogin(loginId: string): Promise<DatabricksLoginResponse> {
-  return request<DatabricksLoginResponse>(`/login/${encodeURIComponent(loginId)}`, { method: 'DELETE' });
+export function cancelDatabricksLogin(loginId: string): Promise<DatabricksManagedLoginStatus> {
+  return request<DatabricksManagedLoginStatus>(`/login/${encodeURIComponent(loginId)}/cancel`, jsonInit('POST', {}));
 }
 
 export function probeDatabricks(

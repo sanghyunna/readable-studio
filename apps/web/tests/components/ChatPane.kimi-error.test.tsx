@@ -6,7 +6,7 @@
  * the raw English text.
  */
 
-import { cleanup, render } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { forwardRef } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -32,6 +32,9 @@ vi.mock('../../src/components/AssistantMessage', () => ({
 vi.mock('../../src/components/ChatComposer', () => ({
   ChatComposer: forwardRef((_props, _ref) => <div data-testid="composer" />),
 }));
+vi.mock('../../src/components/databricks/DatabricksLoginButton', () => ({
+  DatabricksLoginButton: ({ onSuccess }: { onSuccess?: () => void }) => <button onClick={onSuccess}>Databricks browser login</button>,
+}));
 
 vi.mock('../../src/analytics/events', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/analytics/events')>();
@@ -43,7 +46,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-function renderFailed(code: string, detail: string, agentId = 'kimi') {
+function renderFailed(code: string, detail: string, agentId = 'kimi', onRetry = vi.fn()) {
   const message = {
     id: 'msg-failed',
     role: 'assistant',
@@ -64,7 +67,7 @@ function renderFailed(code: string, detail: string, agentId = 'kimi') {
       onEnsureProject={async () => 'project-1'}
       onSend={vi.fn()}
       onStop={vi.fn()}
-      onRetry={vi.fn()}
+      onRetry={onRetry}
       conversations={[
         { projectId: 'project-1', id: 'conv-1', title: 'Current', createdAt: 1, updatedAt: 1 },
       ]}
@@ -120,6 +123,13 @@ it('renders a failed Databricks empty response in the Korean error box', () => {
 it('renders an exhausted HTTP 400 in the Korean error box', () => {
   const card = renderFailed('AGENT_EXECUTION_FAILED', 'Databricks [bad-request; HTTP 400]: request rejected', 'databricks');
   expect(card?.textContent).toContain(getKo()['chat.databricksError.providerMessage'].replace('{status}', '400'));
+});
+
+it('offers direct login on an expired Databricks session and retries the failed run after success', () => {
+  const retry = vi.fn();
+  renderFailed('DATABRICKS_AUTH_REQUIRED', 'Databricks [auth; HTTP 401]: rejected', 'databricks', retry);
+  fireEvent.click(screen.getByRole('button', { name: 'Databricks browser login' }));
+  expect(retry).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: 'msg-failed' }));
 });
 
 it.each([

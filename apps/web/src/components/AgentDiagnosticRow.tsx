@@ -5,6 +5,7 @@ import type { AgentDiagnostic, AgentFixIntent } from '../types';
 import { Icon } from './Icon';
 import type { IconName } from './Icon';
 import styles from './AgentDiagnosticRow.module.css';
+import { DatabricksLoginButton } from './databricks/DatabricksLoginButton';
 
 // Handlers the host wires per fix intent. Each is optional: a button is only
 // rendered when both the diagnostic carries the intent AND the host provides
@@ -102,7 +103,7 @@ export function AgentDiagnosticRow({ diagnostic, agentId, handlers = {}, classNa
     const extras: ResolvedAction[] = [];
     let message = t(`settings.agentDiagnostic.${diagnostic.reason}`);
     if (diagnostic.reason === 'auth-unknown') {
-      message = t('settings.agentDiagnostic.databricks-no-models');
+      message = t('databricks.diagnostic.noModels');
       if (handlers.onOpenDatabricksSettings) {
         extras.push({
           key: 'openDatabricksSettings',
@@ -137,11 +138,11 @@ export function AgentDiagnosticRow({ diagnostic, agentId, handlers = {}, classNa
 
   // An exact English equivalent adds no context to the translated headline.
   const englishKey = isDatabricks && diagnostic.reason === 'auth-unknown'
-    ? 'settings.agentDiagnostic.databricks-no-models'
+    ? 'databricks.diagnostic.noModels'
     : `settings.agentDiagnostic.${diagnostic.reason}` as const;
   const englishMessage = getEn()[englishKey];
   const tooltip = [
-    diagnostic.message !== message && diagnostic.message !== englishMessage
+    isDatabricks ? message : diagnostic.message !== message && diagnostic.message !== englishMessage
       ? diagnostic.message : undefined,
     diagnostic.detail,
     ...(diagnostic.searchedDirs && diagnostic.searchedDirs.length > 0
@@ -162,6 +163,9 @@ export function AgentDiagnosticRow({ diagnostic, agentId, handlers = {}, classNa
       <span className={styles.message} title={tooltip || undefined}>
         {message}
       </span>
+      {isDatabricks && (diagnostic.reason === 'auth-missing' || diagnostic.reason === 'auth-unknown') ? (
+        <DatabricksLoginButton onSuccess={handlers.onRescan} />
+      ) : null}
       {allActions.length > 0 ? (
         <div className={styles.actions}>
           {allActions.map((action) => (

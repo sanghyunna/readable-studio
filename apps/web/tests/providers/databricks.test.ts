@@ -29,8 +29,8 @@ describe('Databricks browser sign-in transport', () => {
     await expect(cancelDatabricksLogin('login 1')).resolves.toEqual(job);
     const calls = fetchMock.mock.calls as unknown as Array<[string, RequestInit]>;
     expect(calls[0]![0]).toBe('/api/databricks/login/login%201');
-    expect(calls[1]![0]).toBe('/api/databricks/login/login%201');
-    expect(calls[1]![1].method).toBe('DELETE');
+    expect(calls[1]![0]).toBe('/api/databricks/login/login%201/cancel');
+    expect(calls[1]![1].method).toBe('POST');
   });
 
   it('surfaces the sanitized daemon error when a second sign-in is already running', async () => {

@@ -37,7 +37,6 @@ import type {
   DatabricksEndpointApi,
   DatabricksEndpointKind,
   DatabricksIssue,
-  DatabricksLoginResponse,
   DatabricksNamedInputResult,
   DatabricksNamedReason,
   DatabricksNamedScanRequest,
@@ -48,19 +47,18 @@ import type {
 } from '@readable-studio/contracts';
 import { DatabricksNamesError, matchesDatabricksModelSearch, parseDatabricksNames } from '@readable-studio/contracts';
 import { useT } from '../i18n';
+import { DatabricksLoginButton } from './databricks/DatabricksLoginButton';
+import { DatabricksModelDetails } from './databricks/DatabricksModelDetails';
 import { modalContent, modalOverlay, useFadingSurface } from '../motion';
 import {
-  cancelDatabricksLogin,
   cancelDatabricksScan,
   disableDatabricksModel,
   enableDatabricksModel,
-  fetchDatabricksLogin,
   fetchDatabricksModels,
   fetchDatabricksScan,
   fetchDatabricksStatus,
   probeDatabricks,
   setupDatabricks,
-  startDatabricksLogin,
   startDatabricksScan,
   streamDatabricksScanEvents,
   type DatabricksSetupResponse,
@@ -70,8 +68,6 @@ import { openExternalUrl } from '../providers/registry';
 import {
   notifyDatabricksModelsChanged,
   registeredEndpointToModelOption,
-  databricksProtocolDescription,
-  databricksLimitDescription,
   displayDatabricksModelName,
 } from './databricksModels';
 import { Icon } from './Icon';
@@ -156,7 +152,7 @@ function kindLabel(t: Translate, kind: DatabricksEndpointKind): string {
 }
 
 function apiLabel(t: Translate, api: DatabricksEndpointApi): string {
-  if (api === 'openai-completions') return 'OpenAI-compatible Chat';
+  if (api === 'openai-completions') return t('databricks.api.openai');
   if (api === 'anthropic-messages') return t('databricks.api.anthropic');
   return t('databricks.api.unknown');
 }
@@ -234,14 +230,6 @@ const namedFailureKeys: Record<DatabricksNamedReason, Parameters<Translate>[0]> 
 function isScanSettled(state: DatabricksScanResponse['state']): boolean {
   return state === 'complete' || state === 'partial' || state === 'failed' || state === 'cancelled';
 }
-
-function isLoginActive(state: DatabricksLoginResponse['state']): boolean {
-  return state === 'starting' || state === 'waiting-for-browser';
-}
-
-// The daemon verifies the CLI's auth state once a second; polling faster only
-// re-reads the same snapshot.
-const LOGIN_POLL_MS = 1000;
 
 function errorMessage(err: unknown, fallback: string): string {
   return err instanceof Error && err.message ? err.message : fallback;
@@ -333,13 +321,6 @@ function DatabricksAddModelsModalBody({
   const hostRef = useRef<HTMLInputElement | null>(null);
   const mountedRef = useRef(true);
 
-  // Browser sign-in through the installed CLI. The daemon owns the CLI
-  // process; the modal only holds the opaque job id it polls and can cancel.
-  const [loggingIn, setLoggingIn] = useState(false);
-  const [loginError, setLoginError] = useState<string | null>(null);
-  const loginAbortRef = useRef<AbortController | null>(null);
-  const activeLoginIdRef = useRef<string | null>(null);
-
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -428,9 +409,6 @@ function DatabricksAddModelsModalBody({
       if (namedScanIdRef.current) void cancelDatabricksScan(namedScanIdRef.current).catch(() => undefined);
       const runningScanId = activeScanIdRef.current;
       if (runningScanId) void cancelDatabricksScan(runningScanId).catch(() => undefined);
-      loginAbortRef.current?.abort();
-      const runningLoginId = activeLoginIdRef.current;
-      if (runningLoginId) void cancelDatabricksLogin(runningLoginId).catch(() => undefined);
     },
     [stopScanStream],
   );
@@ -797,85 +775,6 @@ function DatabricksAddModelsModalBody({
     [host, runScan, settingUp, t, token],
   );
 
-  const cancelLogin = useCallback(() => {
-    const runningLoginId = activeLoginIdRef.current;
-    loginAbortRef.current?.abort();
-    loginAbortRef.current = null;
-    activeLoginIdRef.current = null;
-    setLoggingIn(false);
-    if (runningLoginId) void cancelDatabricksLogin(runningLoginId).catch(() => undefined);
-  }, []);
-
-  // Runs `databricks auth login` through the daemon for the host in the setup
-  // form, waits for the CLI to confirm the browser sign-in, then re-reads
-  // status so the new profile is selectable without a manual re-check.
-  const runLogin = useCallback(async () => {
-    if (loggingIn) return;
-    const normalizedHost = normalizeWorkspaceHost(host);
-    if (!normalizedHost) {
-      setHostError(t('databricks.setup.hostInvalid'));
-      hostRef.current?.focus();
-      return;
-    }
-    setHostError(null);
-    setLoginError(null);
-    setLoggingIn(true);
-    const controller = new AbortController();
-    loginAbortRef.current = controller;
-    try {
-      let job = await startDatabricksLogin({ host: normalizedHost });
-      if (controller.signal.aborted) {
-        void cancelDatabricksLogin(job.loginId).catch(() => undefined);
-        return;
-      }
-      activeLoginIdRef.current = job.loginId;
-      while (isLoginActive(job.state)) {
-        job = await fetchDatabricksLogin(job.loginId);
-        if (controller.signal.aborted) return;
-        if (!isLoginActive(job.state)) break;
-        await new Promise<void>((resolve) => {
-          const timer = setTimeout(resolve, LOGIN_POLL_MS);
-          controller.signal.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true });
-        });
-        if (controller.signal.aborted) return;
-      }
-      activeLoginIdRef.current = null;
-      switch (job.state) {
-        case 'authenticated': {
-          const profileId = job.profileId;
-          await loadStatus();
-          if (controller.signal.aborted) return;
-          if (profileId) setSelectedProfileId(profileId);
-          setHost('');
-          setStepOverride('scan');
-          return;
-        }
-        case 'timed-out':
-          setLoginError(t('databricks.login.timedOut'));
-          return;
-        case 'failed':
-          setLoginError(issueActionText(t, job.issues[0]) ?? t('databricks.login.failed'));
-          return;
-        case 'cancelled':
-        case 'starting':
-        case 'waiting-for-browser':
-          return;
-      }
-    } catch (err) {
-      if (!controller.signal.aborted) {
-        const runningLoginId = activeLoginIdRef.current;
-        if (runningLoginId) void cancelDatabricksLogin(runningLoginId).catch(() => undefined);
-        setLoginError(errorMessage(err, t('databricks.login.failed')));
-      }
-    } finally {
-      if (loginAbortRef.current === controller) {
-        loginAbortRef.current = null;
-        activeLoginIdRef.current = null;
-        setLoggingIn(false);
-      }
-    }
-  }, [host, loadStatus, loggingIn, t]);
-
   // One unified list: everything the latest scan returned, followed by models
   // registered earlier that this scan did not (or has not yet) reached.
   const rows = useMemo<DatabricksEndpoint[]>(() => {
@@ -930,7 +829,7 @@ function DatabricksAddModelsModalBody({
       return {
         title: t('databricks.auth.keyringTitle'),
         body: t('databricks.auth.keyringBody'),
-        command: 'databricks auth login --host <workspace-url> --profile <profile-name>',
+        command: 'login',
       };
     }
     if (status.auth === 'unreachable' && authenticatedProfiles.length === 0) {
@@ -944,20 +843,21 @@ function DatabricksAddModelsModalBody({
       return {
         title: t('databricks.auth.unsupportedTitle'),
         body: t('databricks.auth.unsupportedBody'),
-        command: 'databricks auth login --host <workspace-url> --profile <profile-name>',
+        command: 'login',
       };
     }
     if (authenticatedProfiles.length === 0 && profiles.every((profile) => profile.auth !== 'unchecked')) {
       return {
         title: t('databricks.auth.requiredTitle'),
         body: t('databricks.auth.requiredBody'),
-        command: 'databricks auth login --host <workspace-url> --profile <profile-name>',
+        command: 'login',
       };
     }
     return null;
   })();
 
   const statusIssueTexts = (status?.issues ?? [])
+    .map(issue => status?.cli === 'ready' && issue.code === 'DATABRICKS_CLI_UNSUPPORTED' ? { ...issue, action: 'sign-in' as const } : issue)
     .map((issue) => issueActionText(t, issue))
     .filter((text): text is string => text !== null);
 
@@ -966,7 +866,7 @@ function DatabricksAddModelsModalBody({
       <div className={styles.guidedText}>
         <strong>{guided.title}</strong>
         <p>{guided.body}</p>
-        {guided.command ? <code className={styles.command}>{guided.command}</code> : null}
+        {guided.command && step !== 'setup' ? <DatabricksLoginButton onSuccess={loadStatus} /> : null}
         {statusIssueTexts.map((text, index) => <p key={index}>{text}</p>)}
       </div>
     </div>
@@ -1137,19 +1037,14 @@ function DatabricksAddModelsModalBody({
                 </div>
               </form>
 
+              <DatabricksLoginButton host={normalizeWorkspaceHost(host) ?? undefined} onSuccess={async (profileId) => {
+                await loadStatus();
+                if (profileId) setSelectedProfileId(profileId);
+                setStepOverride('scan');
+              }} />
               <p className={styles.note}>
                 <Icon name="terminal" size={13} />
                 <span>{t('databricks.setup.cliFootnote')}</span>
-                <button
-                  type="button"
-                  className={styles.quietAction}
-                  disabled={loggingIn || settingUp}
-                  onClick={() => void runLogin()}
-                  data-testid="databricks-login-start"
-                >
-                  <Icon name={loggingIn ? 'spinner' : 'external-link'} size={12} />
-                  <span>{t('databricks.login.action')}</span>
-                </button>
                 {status?.cli === 'missing' && installUrl ? (
                   <button
                     type="button"
@@ -1162,38 +1057,6 @@ function DatabricksAddModelsModalBody({
                 ) : null}
               </p>
 
-              {loggingIn ? (
-                <div
-                  className={styles.status}
-                  role="status"
-                  aria-live="polite"
-                  data-testid="databricks-login-progress"
-                >
-                  <Icon name="spinner" size={14} />
-                  <span>{t('databricks.login.waiting')}</span>
-                  <span className={styles.quietActions}>
-                    <button
-                      type="button"
-                      className={styles.quietAction}
-                      onClick={cancelLogin}
-                      data-testid="databricks-login-cancel"
-                    >
-                      <Icon name="stop" size={12} />
-                      <span>{t('databricks.login.cancel')}</span>
-                    </button>
-                  </span>
-                </div>
-              ) : null}
-
-              {loginError ? (
-                <div className={styles.error} role="alert" data-testid="databricks-login-error">
-                  <Icon name="alert-triangle" size={14} />
-                  <div>
-                    <strong>{t('databricks.login.failed')}</strong>
-                    {loginError !== t('databricks.login.failed') ? <p>{loginError}</p> : null}
-                  </div>
-                </div>
-              ) : null}
             </section>
           ) : guided && profiles.length === 0 ? (
             <div className={styles.guided} role="status" data-testid="databricks-guided-state">
@@ -1203,7 +1066,7 @@ function DatabricksAddModelsModalBody({
               <div className={styles.guidedText}>
                 <strong>{guided.title}</strong>
                 <p>{guided.body}</p>
-                {guided.command ? <code className={styles.command}>{guided.command}</code> : null}
+                {guided.command ? <DatabricksLoginButton onSuccess={loadStatus} /> : null}
                 {statusIssueTexts.length > 0 ? (
                   <ul className={styles.issueList}>
                     {statusIssueTexts.map((text, index) => (
@@ -1559,10 +1422,10 @@ function DatabricksAddModelsModalBody({
                               <span className={styles.pill}>{kindLabel(t, endpoint.kind)}</span>
                               <span className={styles.pill}>{apiLabel(t, endpoint.api)}</span>
                               <span className={styles.pill} data-limit="contextWindow" data-limit-state={endpoint.capabilities.contextWindow === null ? 'unknown' : 'known'}>
-                                Context {endpoint.capabilities.contextWindow?.toLocaleString() ?? 'unknown'} {endpoint.capabilities.limitSources?.contextWindow === 'advertised' || endpoint.capabilities.limitSources?.contextWindow === 'default' ? t('databricks.named.limitUnconfirmed') : ''}
+                                {endpoint.capabilities.contextWindow === null ? t('settings.databricksModelsLimitUnknown') : t('settings.databricksModelsContext', { value: endpoint.capabilities.contextWindow.toLocaleString() })} {endpoint.capabilities.limitSources?.contextWindow === 'advertised' || endpoint.capabilities.limitSources?.contextWindow === 'default' ? t('databricks.named.limitUnconfirmed') : ''}
                               </span>
                               <span className={styles.pill} data-limit="maxTokens" data-limit-state={endpoint.capabilities.maxTokens === null ? 'unknown' : 'known'}>
-                                Output {endpoint.capabilities.maxTokens?.toLocaleString() ?? 'unknown'} {endpoint.capabilities.limitSources?.maxTokens === 'default' ? t('databricks.named.limitUnconfirmed') : ''}
+                                {endpoint.capabilities.maxTokens === null ? t('settings.databricksModelsLimitUnknown') : t('settings.databricksModelsOutput', { value: endpoint.capabilities.maxTokens.toLocaleString() })} {endpoint.capabilities.limitSources?.maxTokens === 'default' ? t('databricks.named.limitUnconfirmed') : ''}
                               </span>
                               <span
                                 className={
@@ -1584,8 +1447,7 @@ function DatabricksAddModelsModalBody({
                                 <span className={styles.pill}>{t('databricks.capability.images')}</span>
                               ) : null}
                             </span>
-                            <small>{databricksProtocolDescription(endpoint)}</small>
-                            <small>{databricksLimitDescription(endpoint)}</small>
+                            <DatabricksModelDetails endpoint={endpoint} />
                             {endpoint.capabilities.tools === 'unsupported' ? <small>{t('databricks.capability.artifactDelivery')}</small> : null}
                             {issueText ? <span className={styles.rowIssue}>{issueText}</span> : null}
                             {rowErrors[endpoint.id] ? (

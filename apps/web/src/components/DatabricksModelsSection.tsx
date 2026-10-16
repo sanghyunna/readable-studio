@@ -18,8 +18,10 @@ import {
   fetchDatabricksModels,
   fetchDatabricksStatus,
 } from '../providers/databricks';
-import { notifyDatabricksModelsChanged, registeredEndpointToModelOption, databricksProtocolDescription, databricksLimitDescription, displayDatabricksModelName } from './databricksModels';
+import { notifyDatabricksModelsChanged, registeredEndpointToModelOption, displayDatabricksModelName } from './databricksModels';
+import { DatabricksModelDetails } from './databricks/DatabricksModelDetails';
 import { Icon } from './Icon';
+import { DatabricksLoginButton } from './databricks/DatabricksLoginButton';
 import styles from './DatabricksModelsSection.module.css';
 
 type PendingAction =
@@ -141,6 +143,7 @@ export function DatabricksModelsSection() {
         <div>
           <h3>{t('settings.databricksModels')}</h3>
           <p className="hint">{t('settings.databricksModelsDescription')}</p>
+          <DatabricksLoginButton onSuccess={load} />
         </div>
       </div>
 
@@ -240,8 +243,7 @@ export function DatabricksModelsSection() {
                           : t('settings.databricksModelsLimitUnknown')}
                         {output && model.capabilities.limitSources?.maxTokens === 'default' ? ` ${t('databricks.named.limitUnconfirmed')}` : ''}
                       </small>
-                      <small className={styles.rowMeta}>{databricksProtocolDescription(model)}</small>
-                      <small className={styles.rowMeta}>{databricksLimitDescription(model)}</small>
+                      <DatabricksModelDetails endpoint={model} className={styles.rowMeta} />
                       {rowError?.id === model.id ? (
                         <span className="settings-rescan-status-inline error" role="alert">
                           {rowError.message}

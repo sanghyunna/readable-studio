@@ -61,8 +61,21 @@ describe('AgentDiagnosticRow', () => {
 
   it('renders Korean Databricks setup guidance', () => {
     render(<I18nProvider initial="ko"><AgentDiagnosticRow agentId="databricks" diagnostic={databricksNoModels} /></I18nProvider>);
-    expect(screen.getByRole('group').textContent).toBe(getKo()['settings.agentDiagnostic.databricks-no-models']);
+    expect(screen.getByText(getKo()['databricks.diagnostic.noModels'])).toBeTruthy();
+    expect(screen.getByRole('button', { name: getKo()['databricks.login.action'] })).toBeTruthy();
     expect(screen.getByRole('group').textContent).not.toContain(databricksNoModels.message);
+  });
+  it('uses shipped Korean copy for Databricks tooltip and action accessible names', () => {
+    render(<I18nProvider initial="ko"><AgentDiagnosticRow agentId="databricks" diagnostic={databricksNoModels} handlers={{ onRescan: vi.fn(), onOpenDocs: vi.fn(), onOpenDatabricksSettings: vi.fn() }} /></I18nProvider>);
+    expect(screen.getByText(getKo()['databricks.diagnostic.noModels']).getAttribute('title')).toBe(getKo()['databricks.diagnostic.noModels']);
+    for (const control of screen.getByRole('group').querySelectorAll('[title][aria-label]')) {
+      expect(control.getAttribute('title')).toBe(control.getAttribute('aria-label'));
+      expect(Object.values(getKo())).toContain(control.getAttribute('aria-label'));
+    }
+  });
+  it('offers app-managed login for a Databricks authentication error in the picker diagnostics', () => {
+    render(<AgentDiagnosticRow agentId="databricks" diagnostic={{ ...databricksNoModels, reason: 'auth-missing' }} />);
+    expect(screen.getByRole('button', { name: en['databricks.login.action'] })).toBeTruthy();
   });
   it('renders localized copy and tags the reason', () => {
     render(<AgentDiagnosticRow diagnostic={notOnPath} />);
@@ -123,7 +136,7 @@ describe('AgentDiagnosticRow', () => {
         handlers={{ onOpenDatabricksSettings }}
       />,
     );
-    expect(screen.getByText(en['settings.agentDiagnostic.databricks-no-models'])).toBeTruthy();
+    expect(screen.getByText(en['databricks.diagnostic.noModels'])).toBeTruthy();
     const btn = screen.getByRole('button', { name: en['settings.databricksModels'] });
     fireEvent.click(btn);
     expect(onOpenDatabricksSettings).toHaveBeenCalledTimes(1);
@@ -139,7 +152,7 @@ describe('AgentDiagnosticRow', () => {
       />,
     );
     expect(screen.getByText(en['settings.agentDiagnostic.not-executable'])).toBeTruthy();
-    expect(screen.getByText(en['settings.agentDiagnostic.not-executable']).getAttribute('title')).toContain(databricksPackageDamaged.message);
+    expect(screen.getByText(en['settings.agentDiagnostic.not-executable']).getAttribute('title')).toBe(en['settings.agentDiagnostic.not-executable']);
     const btn = screen.getByRole('button', { name: en['common.exportZip'] });
     fireEvent.click(btn);
     expect(onReDownloadPortablePackage).toHaveBeenCalledTimes(1);

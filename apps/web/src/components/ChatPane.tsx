@@ -45,6 +45,7 @@ import { AssistantMessage, type InlineQuestionCardState } from './AssistantMessa
 import { AssumptionLedger } from './AssumptionLedger';
 import { CollapsibleErrorText } from './CollapsibleErrorText';
 import { amrRechargeUrlForProfile, resolveRunFailureUi } from '../runtime/amr-guidance';
+import { DatabricksLoginButton } from './databricks/DatabricksLoginButton';
 import { RESUME_CONTINUE_PROMPT } from '../runtime/resume';
 import {
   ChatComposer,
@@ -1835,6 +1836,11 @@ export function ChatPane({
               {displayError ? (
                 <div className="msg error">
                   <CollapsibleErrorText className="chat-error-text" text={displayError} />
+                  {runFailureUi?.messageKey === 'chat.databricksError.authMessage' ? (
+                    <DatabricksLoginButton connectionId={agents?.find(agent => agent.id === 'databricks')?.models?.find(model => model.id === config?.agentModels?.databricks?.model)?.connectionId} onSuccess={() => {
+                      if (retryAssistant && onRetry) onRetry(retryAssistant);
+                    }} />
+                  ) : null}
                   {errorRecovery}
                   {errorDiagnosticText || showErrorActions || (retryAssistant && onRetry && runFailureUi) ? (
                     <div className="chat-error-actions">
