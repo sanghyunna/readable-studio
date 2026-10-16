@@ -396,8 +396,14 @@ function printRootHelp() {
       Configure and verify an ephemeral hosted provider credential. Secrets are
       read only from identity/key files or stdin; use --json for automation.
 
-  readable databricks <status|profiles|probe|scan|lookup|models|add|enable|disable|select|verify|disconnect|client> [options]
-      Manage Databricks profiles and scanned serving endpoints through the local daemon.
+  readable databricks <status|profiles|probe|login|setup|scan|lookup|models|add|enable|disable|remove|select|verify|disconnect|client> [options]
+      Sign in to Databricks and manage profiles and scanned serving endpoints
+      through the local daemon. Run readable databricks --help for exit codes.
+
+  readable update <check|download|status|apply|cancel|config> [options]
+      Check for, download and apply portable-app updates, and configure the
+      update server; status --watch follows download progress. Run
+      readable update --help for exit codes.
 
   readable export html --project <id> --file <path> [--output <path>] [--force] [--json]
       Save a self-contained HTML artifact through the local daemon.
@@ -8038,37 +8044,244 @@ async function runVersion(args) {
   console.log(version);
 }
 
+// Function declarations, not consts: SUBCOMMAND_MAP dispatch runs under top-level await,
+// so later const/class bindings are still in TDZ when runUpdate executes.
+function updateUsage() {
+  return `Usage:
+  readable update check [--json]
+  readable update download|status|apply|cancel [--json]
+  readable update status --watch [--json]
+  readable update config [--enable|--disable] [--server-url <https-url>] [--prompt-file <JSON-path|->] [--json]
+
+  config --server-url verifies the server (same as Connect in Settings) before saving;
+  --server-url "" clears it. --prompt-file accepts {"enabled": bool, "serverUrl": string|null}.
+  status --watch follows download progress until the update is ready, fails or is
+  cancelled (exits at once when nothing is downloading); --json prints one status
+  object per line. Ctrl+C stops watching without cancelling the download.
+  All commands accept --daemon-url <url>.
+
+Exit codes:
+  0   success (check: a result was returned, whether or not an update exists;
+      status --watch: the update is ready or nothing is downloading)
+  1   update unavailable or refused (not configured, sign-in needed, server unreachable, ...);
+      status --watch: the download failed or was cancelled
+  2   usage error (unknown action or flag, invalid --server-url or --prompt-file)
+  64  the local Readable daemon is not running (or stopped while watching)
+  130 status --watch interrupted with Ctrl+C (the download continues)
+`;
+}
+function updateExit() { return { failed: 1, usage: 2, daemon: RECOVERABLE_EXIT_CODES['daemon-not-running'] }; }
+// Daemon routes return stable codes; the CLI owns the human wording.
+function updateMessage(code) {
+  return {
+  'unreachable': 'The update server could not be reached.',
+  'invalid-response': 'The update server returned an unexpected response.',
+  'not-logged-in': 'Sign in to the Databricks workspace that hosts the update server.',
+  'app-not-accessible': 'Your Databricks account cannot access the update server app.',
+  'forbidden': 'Access to the update server was denied.',
+  'no-release': 'No release has been published on the update server yet.',
+  'not-configured': 'No update server is configured. Set one with: readable update config --server-url <https-url>',
+  'disabled': 'Automatic updates are disabled.',
+  'timeout': 'The update check timed out.',
+  'unsupported-layout': 'Updates can only be downloaded and applied in the packaged portable app.',
+  'update-in-progress': 'An update is already in progress.',
+  'already-current': 'Readable Studio is already up to date.',
+  'not-ready': 'No downloaded update is ready. Run: readable update download',
+  'version-mismatch': 'The downloaded update does not match the offered version. Download it again.',
+  'source-changed': 'The update server changed since this update was offered. Run: readable update check',
+  'cancelled': 'The update was cancelled.',
+  'disk-extract-failed': 'The update could not be extracted to disk.',
+  'helper-not-acknowledged': 'The update helper did not start.',
+  'invalid-server-url': 'The server URL must be an https:// URL without credentials, query or fragment.',
+  'invalid-config-file': 'The --prompt-file must contain JSON like {"enabled": true, "serverUrl": "https://..."}.',
+  'daemon-not-running': 'Cannot reach the local Readable daemon. Start Readable Studio or run readable daemon start --headless; use --daemon-url for a nondefault daemon.',
+  }[code];
+}
+function updateFailure(code, exitCode, extra = {}) {
+  return Object.assign(new Error(code), { updateFailure: true, code, exitCode, extra });
+}
+function updateReasonText(code, host) {
+  const text = updateMessage(code) ?? `Update failed (${code}).`;
+  if (code !== 'not-logged-in') return text;
+  return `${text}\nRun: readable databricks login${host ? ` --host ${host}` : ''}`;
+}
+function updateStatusText(status) {
+  if (status.error) return `Update failed: ${updateReasonText(status.error, status.host)}`;
+  const version = status.version ? ` ${status.version}` : '';
+  const mb = (bytes) => (bytes / 1048576).toFixed(1);
+  switch (status.state) {
+    case 'idle': return 'No update activity.';
+    case 'checking': return 'Checking for updates...';
+    case 'available': return `Update${version} is available. Run: readable update download`;
+    case 'downloading': return `Downloading update${version}: ${mb(status.received)} of ${mb(status.total)} MB${status.total > 0 ? ` (${Math.floor((status.received / status.total) * 100)}%)` : ''}.`;
+    case 'verifying': return `Verifying update${version}...`;
+    case 'ready': return status.extraction ? `Applying update${version}...` : `Update${version} is ready. Run: readable update apply`;
+    case 'failed': return `Update failed: ${status.error ? updateReasonText(status.error, status.host) : 'unknown error.'}`;
+    default: return `Update state: ${status.state}`;
+  }
+}
+function updateServerUrl(value) {
+  let parsed;
+  try { parsed = new URL(value); } catch { throw updateFailure('invalid-server-url', updateExit().usage); }
+  if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.search || parsed.hash) throw updateFailure('invalid-server-url', updateExit().usage);
+  return parsed.href.replace(/\/+$/, '');
+}
+async function updateDaemonFetch(url, init) {
+  try { return await fetch(url, init); } catch (error) {
+    if (error?.name === 'TimeoutError') throw updateFailure('timeout', updateExit().failed);
+    throw updateFailure('daemon-not-running', updateExit().daemon);
+  }
+}
+async function updateJson(response) {
+  try { return await response.json(); } catch { throw updateFailure('invalid-response', updateExit().failed); }
+}
+
 async function runUpdate(args) {
-  const flags = parseFlags(args, { string: new Set(['daemon-url']), boolean: new Set(['json', 'help', 'h']) });
-  if (flags.help || flags.h) return console.log('Usage: readable update check|apply [--json]');
-  const action = positionalArgs(args, new Set(['daemon-url']))[0];
-  if (action !== 'check' && action !== 'apply') {
-    console.error('Usage: readable update check|apply [--json]');
-    process.exitCode = 2;
-    return;
-  }
-  const base = await cliDaemonBaseUrl(flags);
-  if (action === 'apply') {
-    const url = `${base}/api/update/apply`;
-    try {
-      const response = await fetch(url, { method: 'POST' });
-      const result = await response.json();
-      if (flags.json) process.stdout.write(JSON.stringify(result) + '\n');
-      else console.log(response.ok ? `Applying ${result.targetVersion}; Readable Studio will quit.` : result.error ?? result.unavailable);
-      if (!response.ok) process.exitCode = 1;
-    } catch (error) { surfaceFetchError(error, url); process.exitCode = 3; }
-    return;
-  }
-  let data;
+  const json = args.includes('--json');
+  const fail = (failure) => {
+    const message = failure.code === 'usage' ? failure.extra.message : updateReasonText(failure.code, failure.extra.host);
+    if (json) process.stdout.write(JSON.stringify({ error: failure.code, ...(failure.extra.host ? { host: failure.extra.host } : {}), ...(failure.code === 'usage' ? { message } : {}) }) + '\n');
+    else console.error(failure.code === 'usage' ? `${message}\n\n${updateUsage()}` : message);
+    process.exitCode = failure.exitCode;
+  };
+  const usageFailure = (message) => updateFailure('usage', updateExit().usage, { message });
   try {
-    const response = await fetch(`${base}/api/update/check`, { signal: AbortSignal.timeout(6000) });
-    data = response.ok ? await response.json() : { unavailable: 'offline' };
+    let flags;
+    try {
+      flags = parseFlags(args, { string: new Set(['daemon-url', 'server-url', 'prompt-file']), boolean: new Set(['json', 'help', 'h', 'enable', 'disable', 'watch']) });
+    } catch (error) { throw usageFailure(error instanceof Error ? error.message : String(error)); }
+    if (flags.help || flags.h || args.includes('-h')) { console.log(updateUsage()); return; }
+    const positionals = positionalArgs(args, new Set(['daemon-url', 'server-url', 'prompt-file']));
+    const action = positionals[0];
+    if (!['check', 'download', 'status', 'apply', 'cancel', 'config'].includes(action)) throw usageFailure(action ? `unknown update action: ${action}` : 'missing update action');
+    if (positionals.length > 1) throw usageFailure(`unexpected argument: ${positionals[1]}`);
+    if (action !== 'config' && (flags.enable || flags.disable || flags['server-url'] !== undefined || flags['prompt-file'] !== undefined)) throw usageFailure(`--enable, --disable, --server-url and --prompt-file apply only to update config`);
+    if (flags.enable && flags.disable) throw usageFailure('Choose --enable or --disable, not both.');
+    if (flags.watch && action !== 'status') throw usageFailure('--watch applies only to update status');
+    const base = await cliDaemonBaseUrl(flags);
+    if (action === 'config') return await runUpdateConfig(flags, base, json);
+    if (action === 'status' && flags.watch) return await runUpdateWatch(base, json);
+    if (action === 'check') {
+      // The daemon check covers CLI probes, per-profile app lookups, token and a 15 s server fetch.
+      const response = await updateDaemonFetch(`${base}/api/update/check`, { signal: AbortSignal.timeout(120_000) });
+      if (!response.ok) throw updateFailure('invalid-response', updateExit().failed);
+      const data = await updateJson(response);
+      if (json) process.stdout.write(JSON.stringify(data) + '\n');
+      else if ('unavailable' in data) console.error(updateReasonText(data.unavailable, data.host));
+      else console.log(data.isNewer ? `New version ${data.latest} is available (current ${data.current}). Run: readable update download` : `Up to date (${data.current}).`);
+      if ('unavailable' in data) process.exitCode = updateExit().failed;
+      return;
+    }
+    const response = await updateDaemonFetch(`${base}/api/update/${action}`, { method: action === 'status' ? 'GET' : 'POST' });
+    const result = await updateJson(response);
+    if (json) process.stdout.write(JSON.stringify(result) + '\n');
+    if (!response.ok) {
+      process.exitCode = updateExit().failed;
+      if (!json) console.error(updateReasonText(result.error ?? result.unavailable ?? 'invalid-response', result.host));
+      return;
+    }
+    if (json) return;
+    if (action === 'apply') console.log(`Applying ${result.targetVersion}; Readable Studio will quit and restart.`);
+    else if (action === 'cancel') console.log(result.state === 'idle' ? 'Update download cancelled.' : updateStatusText(result));
+    else console.log(updateStatusText(result));
   } catch (error) {
-    data = { unavailable: error?.name === 'TimeoutError' ? 'timeout' : 'offline' };
+    if (error?.updateFailure) return fail(error);
+    throw error;
   }
-  if (flags.json) return process.stdout.write(JSON.stringify(data) + '\n');
-  if ('unavailable' in data) return console.log(`Update check unavailable: ${data.unavailable}`);
-  console.log(data.isNewer ? `New version ${data.latest}: ${data.releaseUrl}` : `Up to date (${data.current}).`);
+}
+
+// Follows the same SSE stream as the UI. Ctrl+C only detaches; the daemon keeps downloading.
+async function runUpdateWatch(base, json) {
+  const controller = new AbortController();
+  const interrupt = () => { process.exitCode = 130; controller.abort(); };
+  process.once('SIGINT', interrupt);
+  try {
+    const response = await updateDaemonFetch(`${base}/api/update/events`, { signal: controller.signal });
+    if (!response.ok || !response.body) {
+      const result = await updateJson(response);
+      throw updateFailure(typeof result.error === 'string' ? result.error : 'invalid-response', updateExit().failed, typeof result.host === 'string' ? { host: result.host } : {});
+    }
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let lastText = '';
+    let active = false;
+    let applying = false;
+    for await (const chunk of response.body) {
+      buffer += decoder.decode(chunk, { stream: true }).replace(/\r\n/g, '\n');
+      let end;
+      while ((end = buffer.indexOf('\n\n')) >= 0) {
+        const data = buffer.slice(0, end).split('\n').filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trimStart()).join('\n');
+        buffer = buffer.slice(end + 2);
+        if (!data) continue;
+        let status;
+        try { status = JSON.parse(data); } catch { throw updateFailure('invalid-response', updateExit().failed); }
+        if (status.extraction) applying = true;
+        if (json) process.stdout.write(JSON.stringify(status) + '\n');
+        else {
+          const text = applying && status.state === 'ready' && !status.extraction && !status.error
+            ? `Restarting into the new version${status.version ? ` ${status.version}` : ''}...`
+            : updateStatusText(status);
+          if (text !== lastText) console.log(text);
+          lastText = text;
+        }
+        if (!status.error && (status.extraction || ['checking', 'downloading', 'verifying'].includes(status.state))) { active = true; continue; }
+        // A cancelled download publishes idle; idle before any activity means nothing to watch.
+        const cancelled = active && status.state === 'idle';
+        if (status.state === 'failed' || status.error || cancelled) process.exitCode = updateExit().failed;
+        if (cancelled && !json) console.error(updateReasonText('cancelled'));
+        return;
+      }
+    }
+    throw updateFailure('daemon-not-running', updateExit().daemon);
+  } catch (error) {
+    if (controller.signal.aborted) return;
+    // A stream that breaks mid-watch means the daemon went away.
+    throw error?.updateFailure ? error : updateFailure('daemon-not-running', updateExit().daemon);
+  } finally {
+    process.off('SIGINT', interrupt);
+    controller.abort();
+  }
+}
+
+async function runUpdateConfig(flags, base, json) {
+  const url = `${base}/api/app-config`;
+  const response = await updateDaemonFetch(url);
+  if (!response.ok) throw updateFailure('invalid-response', updateExit().failed);
+  const prefs = (await updateJson(response)).config ?? {};
+  let autoUpdate = prefs.autoUpdate ?? { enabled: false, serverUrl: null };
+  let suppliedUrl;
+  let enabled = autoUpdate.enabled;
+  if (flags['prompt-file'] !== undefined) {
+    let supplied;
+    try { supplied = JSON.parse(await readPromptFromFlags(flags)); } catch { throw updateFailure('invalid-config-file', updateExit().usage); }
+    if (!supplied || typeof supplied !== 'object' || Array.isArray(supplied)
+      || Object.keys(supplied).some((key) => !['enabled', 'serverUrl'].includes(key))
+      || (supplied.enabled !== undefined && typeof supplied.enabled !== 'boolean')
+      || (supplied.serverUrl !== undefined && supplied.serverUrl !== null && typeof supplied.serverUrl !== 'string')) throw updateFailure('invalid-config-file', updateExit().usage);
+    if (supplied.enabled !== undefined) enabled = supplied.enabled;
+    if (supplied.serverUrl !== undefined) suppliedUrl = supplied.serverUrl ?? '';
+  }
+  if (typeof flags['server-url'] === 'string') suppliedUrl = flags['server-url'];
+  if (flags.enable) enabled = true;
+  if (flags.disable) enabled = false;
+  const changed = flags.enable || flags.disable || suppliedUrl !== undefined || flags['prompt-file'] !== undefined;
+  if (changed) {
+    const serverUrl = suppliedUrl === undefined ? autoUpdate.serverUrl : suppliedUrl.trim() ? updateServerUrl(suppliedUrl.trim()) : null;
+    if (enabled && !serverUrl) throw updateFailure('not-configured', updateExit().failed);
+    // Same rule as Settings: enabling or connecting a new URL validates it; disabling or clearing does not.
+    if (serverUrl && (enabled || suppliedUrl !== undefined)) {
+      const health = await updateDaemonFetch(`${base}/api/update/health`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ serverUrl }) });
+      if (!health.ok) {
+        const body = await updateJson(health);
+        throw updateFailure(typeof body.error === 'string' ? body.error : 'invalid-response', updateExit().failed, typeof body.host === 'string' ? { host: body.host } : {});
+      }
+    }
+    autoUpdate = { enabled, serverUrl };
+    const saved = await updateDaemonFetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ autoUpdate }) });
+    if (!saved.ok) throw updateFailure('invalid-response', updateExit().failed);
+  }
+  if (json) process.stdout.write(JSON.stringify(autoUpdate) + '\n');
+  else console.log(`Automatic updates ${autoUpdate.enabled ? 'enabled' : 'disabled'}; server: ${autoUpdate.serverUrl ?? '(not configured)'}${changed && autoUpdate.serverUrl && (enabled || suppliedUrl !== undefined) ? ' (connection verified)' : ''}`);
 }
 
 // ---------------------------------------------------------------------------
