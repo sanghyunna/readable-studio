@@ -229,6 +229,11 @@
     inset 0 1px 0 color-mix(in srgb, var(--text) 8%, transparent);
 }
 
+.headerSubtitle {
+  /* Composite separately so Windows ClearType does not tint fractional-position glyphs. */
+  transform: translateZ(0);
+}
+
 .promptCard {
   display: grid;
   gap: 10px;

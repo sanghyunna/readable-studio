@@ -2,6 +2,56 @@
   word-break: keep-all;
   overflow-wrap: anywhere;
 }
+.section button { inline-size: 100%; }
+.section .actions { inline-size: 100%; }
+.download { min-inline-size: 0; }
+.notes { white-space: pre-wrap; margin-block: var(--radius-control); }
+.banner .notes {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.banner[hidden] { display: none; }
+.server {
+  display: grid;
+  gap: var(--radius-control);
+  margin-block: var(--radius-surface);
+}
+.server input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+.server input[aria-invalid='true']:focus {
+  outline: thin solid var(--danger);
+  box-shadow: none;
+}
+.fieldError {
+  color: var(--danger);
+}
+.progress {
+  display: grid;
+  gap: var(--radius-control);
+  inline-size: 100%;
+  padding: var(--radius-control);
+  margin-block-start: var(--radius-control);
+  background: var(--bg-subtle);
+  border-radius: var(--radius-control);
+  box-sizing: border-box;
+}
+.progress progress { inline-size: 100%; accent-color: var(--accent); }
+.progress[data-working='true'] progress {
+  animation: update-working 1.2s cubic-bezier(0.23, 1, 0.32, 1) infinite alternate;
+}
+@keyframes update-working {
+  from { opacity: 0.45; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .progress[data-working='true'] progress { animation: none; }
+}
+:global(html[data-performance-profile='low']) .progress[data-working='true'] progress {
+  animation: none !important;
+}
 .metadata {
   display: grid;
   gap: var(--radius-surface);
@@ -20,11 +70,22 @@
   gap: var(--radius-control);
   margin-block: var(--radius-surface);
 }
-.result { color: var(--text-muted); }
+.result {
+  color: var(--text-muted);
+  margin-block-start: var(--radius-surface);
+}
+.server .result { margin-block-start: 0; }
+.actions .result { flex-basis: 100%; margin-block-start: 0; }
+.result[role='alert'] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--radius-control);
+  word-break: keep-all;
+}
 .result a, .banner a { color: var(--accent); }
 .banner {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   position: fixed;
   inset-inline-end: var(--radius-surface);
@@ -37,4 +98,66 @@
   border-radius: var(--radius-md);
   word-break: keep-all;
   overflow-wrap: anywhere;
+  max-inline-size: calc(100vw - 2 * var(--radius-surface));
+  inline-size: min(64ch, calc(100vw - 2 * var(--radius-surface)));
+  box-sizing: border-box;
+}
+.banner .download {
+  display: flex;
+  align-items: center;
+  gap: var(--radius-surface);
+  inline-size: 100%;
+}
+.banner .download:has([data-applying]) {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+.banner .download:has([data-applying]) .actions {
+  align-self: flex-end;
+}
+.summary {
+  flex: 1;
+  min-inline-size: 0;
+  display: grid;
+  gap: calc(var(--radius-control) / 2);
+}
+.discardNotice { white-space: normal; }
+.banner .title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.banner .title[data-applying] {
+  white-space: normal;
+}
+.banner [data-update-message] {
+  display: block;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.banner .actions {
+  flex: none;
+  flex-wrap: nowrap;
+  align-items: center;
+  margin: 0;
+}
+.banner button { white-space: nowrap; }
+.banner .progress {
+  display: grid;
+}
+.banner .progress progress {
+  min-inline-size: 0;
+  block-size: var(--radius-control);
+}
+.banner .progress span { white-space: normal; }
+.banner .result { display: block; margin: 0; min-inline-size: 0; }
+
+/* Short Hub viewports need the bottom edge for the template carousel. */
+@media (max-height: 760px) {
+  .banner {
+    inset-block-end: auto;
+    inset-block-start: calc(4 * var(--radius-surface));
+  }
 }

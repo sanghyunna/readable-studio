@@ -32,6 +32,7 @@ import {
   trackSettingsView,
 } from '../analytics/events';
 import { LOCALE_LABEL, LOCALES, useI18n } from '../i18n';
+import { getEn } from '../i18n/locales/en';
 import type { Locale } from '../i18n';
 import type { Dict } from '../i18n/types';
 import { AgentIcon } from './AgentIcon';
@@ -519,26 +520,14 @@ const API_KEY_CONSOLE_LINKS: Record<ApiProtocol, { host: string; url: string }> 
   },
 };
 
-const AGENT_SHORT_DESCRIPTIONS: Record<string, string> = {
-  claude: 'Anthropic official CLI',
-  codex: 'OpenAI official CLI',
-  'cursor-agent': 'Cursor command line',
-  gemini: 'Google official CLI',
-  opencode: 'Open-source agent CLI',
-  qwen: 'Qwen coding CLI',
-  copilot: 'GitHub coding CLI',
-  devin: 'Cognition terminal CLI',
-  kimi: 'Moonshot Kimi CLI',
-  qoder: 'Alibaba coding CLI',
-  pi: 'Inflection chat CLI',
-  kiro: 'Kiro agent CLI',
-  kilo: 'Kilo Code CLI',
-  vibe: 'Mistral open-source CLI',
-  deepseek: 'DeepSeek terminal UI',
-  hermes: 'ACP agent CLI',
-  'grok-build': 'xAI coding CLI',
-  reasonix: 'DeepSeek native coding CLI',
-};
+function agentShortDescription(
+  t: (key: keyof Dict) => string,
+  agentId: string,
+): string | undefined {
+  const key = `settings.agentDescription.${agentId}` as keyof Dict;
+  if (!(key in getEn())) return undefined;
+  return t(key);
+}
 
 function cleanAgentVersionLabel(
   name: string,
@@ -2639,6 +2628,17 @@ export function SettingsDialog({
     const reasoningValue =
       choice.reasoning ??
       selected.reasoningOptions?.[0]?.id ?? '';
+    const reasoningLabels: Record<string, string> = {
+      default: t('inlineSwitcher.reasoningDefault'),
+      none: t('inlineSwitcher.reasoningNone'),
+      off: t('inlineSwitcher.reasoningOff'),
+      minimal: t('inlineSwitcher.reasoningMinimal'),
+      low: t('inlineSwitcher.reasoningLow'),
+      medium: t('inlineSwitcher.reasoningMedium'),
+      high: t('inlineSwitcher.reasoningHigh'),
+      xhigh: t('inlineSwitcher.reasoningXHigh'),
+      max: t('inlineSwitcher.reasoningMax'),
+    };
     const customActive =
       allowCustomModel &&
       hasModels &&
@@ -2751,7 +2751,7 @@ export function SettingsDialog({
               >
                 {selected.reasoningOptions!.map((r) => (
                   <option key={r.id} value={r.id}>
-                    {r.label}
+                    {reasoningLabels[r.id] ?? r.label}
                   </option>
                 ))}
               </select>
@@ -2850,7 +2850,7 @@ export function SettingsDialog({
               <span className="kicker">{t('settings.kicker')}</span>
               <div className="modal-head-line">
                 <h2>{activeHeader.title}</h2>
-                <p className="subtitle">{activeHeader.subtitle}</p>
+                <p className={`subtitle ${styles.headerSubtitle}`}>{activeHeader.subtitle}</p>
               </div>
             </>
           )}
@@ -3050,7 +3050,7 @@ export function SettingsDialog({
               className={`settings-nav-item${activeSection === 'update' ? ' active' : ''}`}
               onClick={() => setActiveSection('update')}
             >
-              <Icon name="settings" size={18} />
+              <Icon name="download" size={18} />
               <span>
                 <strong>{t('update.title')}</strong>
                 <small>{t('update.subtitle')}</small>
@@ -3244,7 +3244,7 @@ export function SettingsDialog({
                           const running =
                             active && agentTestState.status === 'running';
                           const isAmrAgent = a.id === 'amr';
-                          const description = AGENT_SHORT_DESCRIPTIONS[a.id];
+                          const description = agentShortDescription(t, a.id);
                           const agentName = displayAgentName(a);
                           const diagnosticHandlers = diagnosticHandlersForAgent(a);
                           const modelSummary = agentModelSummary(a);
@@ -3484,7 +3484,7 @@ export function SettingsDialog({
                           const installUrl = sanitizeHttpsUrl(a.installUrl);
                           const docsUrl = sanitizeHttpsUrl(a.docsUrl);
                           const hasLinks = Boolean(installUrl || docsUrl);
-                          const description = AGENT_SHORT_DESCRIPTIONS[a.id];
+                          const description = agentShortDescription(t, a.id);
                           const agentName = displayAgentName(a);
                           const diagnosticHandlers = diagnosticHandlersForAgent(a);
                           const cardLabel = `${agentName} · ${a.path ? t('settings.codeAgentUnavailable') : t('common.notInstalled')}`;

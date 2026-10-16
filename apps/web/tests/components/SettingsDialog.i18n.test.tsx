@@ -25,7 +25,7 @@ import { getEn } from '../../src/i18n/locales/en';
 import { getKo } from '../../src/i18n/locales/ko';
 const en = getEn();
 const ko = getKo();
-import type { AppConfig } from '../../src/types';
+import type { AgentInfo, AppConfig } from '../../src/types';
 
 const config: AppConfig = {
   mode: 'api',
@@ -51,6 +51,106 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
   vi.restoreAllMocks();
   analyticsTrackMock.mockReset();
+});
+
+describe('SettingsDialog agent subtitle localization', () => {
+  it('renders Korean subtitles for installed and unavailable agents', () => {
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({}))) as typeof fetch;
+
+    render(
+      <I18nProvider initial="ko">
+        <SettingsDialog
+          initial={{ ...config, mode: 'daemon', agentId: 'codex' }}
+          agents={[
+            {
+              id: 'codex',
+              name: 'Codex CLI',
+              bin: 'codex',
+              available: true,
+              version: '0.80.0',
+            } as AgentInfo,
+            {
+              id: 'cursor-agent',
+              name: 'Cursor Agent',
+              bin: 'cursor-agent',
+              available: false,
+            } as AgentInfo,
+          ]}
+          daemonLive
+          appVersionInfo={null}
+          initialSection="execution"
+          onPersist={vi.fn()}
+          onClose={vi.fn()}
+          onRefreshAgents={vi.fn()}
+        />
+      </I18nProvider>,
+    );
+
+    expect(screen.getByText(ko['settings.agentDescription.codex'])).toBeTruthy();
+    expect(screen.queryByText(en['settings.agentDescription.codex'])).toBeNull();
+    expect(screen.getByText(ko['settings.agentDescription.cursor-agent'])).toBeTruthy();
+    expect(screen.queryByText(en['settings.agentDescription.cursor-agent'])).toBeNull();
+  });
+
+  it('keeps English subtitles unchanged in English locale', () => {
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({}))) as typeof fetch;
+
+    render(
+      <I18nProvider initial="en">
+        <SettingsDialog
+          initial={{ ...config, mode: 'daemon', agentId: 'codex' }}
+          agents={[
+            {
+              id: 'codex',
+              name: 'Codex CLI',
+              bin: 'codex',
+              available: true,
+              version: '0.80.0',
+            } as AgentInfo,
+          ]}
+          daemonLive
+          appVersionInfo={null}
+          initialSection="execution"
+          onPersist={vi.fn()}
+          onClose={vi.fn()}
+          onRefreshAgents={vi.fn()}
+        />
+      </I18nProvider>,
+    );
+
+    expect(screen.getByText(en['settings.agentDescription.codex'])).toBeTruthy();
+    expect(screen.queryByText(ko['settings.agentDescription.codex'])).toBeNull();
+  });
+
+  it('preserves brand names that are identical in Korean and English', () => {
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({}))) as typeof fetch;
+
+    render(
+      <I18nProvider initial="ko">
+        <SettingsDialog
+          initial={{ ...config, mode: 'daemon', agentId: 'kimi' }}
+          agents={[
+            {
+              id: 'kimi',
+              name: 'Kimi CLI',
+              bin: 'kimi',
+              available: true,
+              version: '1.0.0',
+            } as AgentInfo,
+          ]}
+          daemonLive
+          appVersionInfo={null}
+          initialSection="execution"
+          onPersist={vi.fn()}
+          onClose={vi.fn()}
+          onRefreshAgents={vi.fn()}
+        />
+      </I18nProvider>,
+    );
+
+    expect(screen.getByText(ko['settings.agentDescription.kimi'])).toBeTruthy();
+    expect(ko['settings.agentDescription.kimi']).toBe(en['settings.agentDescription.kimi']);
+  });
 });
 
 describe('SettingsDialog Korean chrome', () => {

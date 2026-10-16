@@ -390,6 +390,18 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
     vi.unstubAllGlobals();
   });
 
+  it('localizes Codex reasoning choices without changing their wire values', () => {
+    render(<I18nProvider initial="ko"><SettingsDialog
+      initial={{ ...baseConfig, mode: 'daemon', agentId: 'codex' }}
+      agents={[{ ...availableAgents[0]!, reasoningOptions: [{ id: 'default', label: 'Default' }, { id: 'high', label: 'High' }] }]}
+      daemonLive appVersionInfo={null} initialSection="execution" onPersist={vi.fn()} onClose={vi.fn()} onRefreshAgents={vi.fn()}
+    /></I18nProvider>);
+    const select = screen.getByRole('combobox', { name: ko['settings.reasoningPicker'] });
+    const options = within(select).getAllByRole('option') as HTMLOptionElement[];
+    expect(options.map(option => option.value)).toEqual(['default', 'high']);
+    expect(options.map(option => option.textContent)).toEqual([ko['inlineSwitcher.reasoningDefault'], ko['inlineSwitcher.reasoningHigh']]);
+  });
+
   it('renders BYOK protocol tabs and toggles API key visibility', () => {
     renderSettingsDialog();
 
