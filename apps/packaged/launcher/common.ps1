@@ -58,3 +58,25 @@ function Get-UpdateArguments([string]$Script, [string]$Root, [string]$Staging, [
         '-Root', $Root, '-Staging', $Staging, '-TargetVersion', $TargetVersion, '-WaitPid', [string]$WaitPid, '-Namespace', $Namespace)
     return (($values | ForEach-Object { [ReadableStudio.Launcher.Program]::Quote($_) }) -join ' ')
 }
+function Complete-UpdateOperation($Worker, $Operation, $Form, [string]$Root) {
+    try {
+        $result = @($Worker.EndInvoke($Operation))
+        if ($result -contains 'rolled-back') {
+            $Form.SetMessage("업데이트를 적용하지 못해 이전 버전으로 되돌렸습니다.`n작업 내역은 그대로입니다.", $false)
+            return 1
+        }
+        if ($result -contains 'app-open') {
+            $Form.SetMessage("업데이트를 준비하지 못했습니다.`n앱을 열어 둔 채 다시 시도해 주세요. 작업 내역은 그대로입니다.", $false)
+            return 1
+        }
+        if ($Worker.HadErrors) { throw $Worker.Streams.Error[0].Exception }
+        $Form.Close()
+        return 0
+    } catch {
+        [IO.File]::WriteAllText((Join-Path $Root 'update-error.log'), $_.Exception.ToString())
+        # Reuse the form already owned by Application.Run. Starting another
+        # message loop from its timer callback would discard this notice.
+        $Form.SetMessage("업데이트를 완료하지 못했습니다.`nReadable Studio를 다시 실행해 주세요. 작업 내역은 그대로입니다.", $false)
+        return 1
+    }
+}

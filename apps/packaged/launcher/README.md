@@ -41,7 +41,7 @@ published payload's data lock (which precedes its single-instance lock).
 | State | Action |
 | --- | --- |
 | No journal; app executable exists | Launch normally; no running-app barrier |
-| Live helper (PID and start time match), or mutex held | Korean progress window; no launch |
+| Live helper (PID and start time match), or mutex held | Korean progress window; wait for ownership to end, then launch the settled payload |
 | Confirmed, app exists, cleanup pending | Delete old payload or defer locked cleanup; reuse confirmed live app or launch; no recovery/failure notice |
 | Confirmed and finished, nothing pending | Reuse confirmed live app or launch normally |
 | Complete with no old/staging payload, or finished/rolled-back with no old payload | Launch normally; no running-app barrier |
@@ -49,8 +49,26 @@ published payload's data lock (which precedes its single-instance lock).
 | Known incomplete state, payload still running | Korean notice naming state and asking user to close app and retry; no destructive operation |
 | Unknown/corrupt state or missing launchable app | Korean state/action notice; preserve all payload directories |
 
+If a new payload fails to start, the helper restores and immediately starts the
+previous payload while keeping the progress notice visible. Recovery uses a new
+receipt ID and the restored payload's configured version. Only that successful
+startup permits deletion of `app.failed`; locked files remain pending for the
+next launch. Legacy failed-payload leftovers can also be removed before another
+update when its requesting process is verified as this installation's running
+app. The rollback notice replaces the progress text in the existing message
+loop, and technical failures stay in the update logs.
+
 `app.old` and `app.failed` must be resolved before beginning another update.
-The updater never enumerates or changes `ReadableStudioData`.
+Completed and rolled-back attempts remove handoff receipts, temporary files and
+the journal backup, while retaining the durable journal and app-ready receipt.
+Helper-driven launcher stubs remain alive until readiness or process exit and
+never open a second failure notice. The 180-second timeout is only the ceiling
+for a process that remains alive without confirming readiness.
+
+Payload processes use `ReadableStudioData\namespaces\<namespace>` as their working
+directory, including normal launches, so relative driver/cache writes cannot land
+in the portable install root. The launcher creates that directory if needed; it
+does not enumerate or change existing user data.
 
 ## Tests
 
@@ -60,6 +78,15 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File apps/packaged/launcher/t
 
 The harness compiles the shipped launcher, tests its decision table and the real
 Windows locked-file cleanup/retry behavior, and rejects confirmed rollback.
+Recovery tests exercise an invalid executable through the real launcher, start
+a receipt-writing fake previous payload, verify failed-payload cleanup and the
+next update, and render notice labels only on the private desktop. Helper
+tests invoke the shipped timer callback with controllable worker/form fakes.
+Attempt tests cover consecutive successful and rolled-back swaps, legacy handoff
+debris, early payload exit, manual launches during apply, icon ownership and
+disabled progress acknowledgement. The private-desktop host contains every
+descendant in a kill-on-close job and audits the job and interactive desktop.
+All assertion groups emit JSON counts.
 Integration-only checkpoints use `READABLE_UPDATE_TEST_ID` and
 `READABLE_UPDATE_TEST_POINT` with named event handles installed by the controller
 before helper launch; normal launches do not set these variables.

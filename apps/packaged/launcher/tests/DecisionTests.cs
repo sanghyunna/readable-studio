@@ -52,6 +52,6 @@ public static class DecisionTests {
             try { tx.Rollback(); throw new Exception("Confirmed rollback allowed"); }
             catch (UpdateFailure e) { if (e.Code != "confirmed-rollback") throw; count++; }
         }
-        Console.WriteLine("PASS: " + count + " launcher assertions"); return 0;
+        Console.WriteLine(new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(new { total = count, passed = count, failed = 0 })); return 0;
     }
 }

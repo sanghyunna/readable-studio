@@ -29,6 +29,7 @@ namespace ReadableStudio.Launcher {
         public string to;
         public bool done;
         public bool confirmed;
+        public int readyPid;
         public string error;
     }
     public sealed class Receipt {
@@ -41,6 +42,7 @@ namespace ReadableStudio.Launcher {
     public sealed class Transaction : IDisposable {
         public readonly string Root;
         public Journal State;
+        public event Action ReadyObserved;
         readonly Mutex gate;
         bool held;
         static readonly JavaScriptSerializer Json = new JavaScriptSerializer();
@@ -131,9 +133,23 @@ namespace ReadableStudio.Launcher {
             State.step = "rolled-back"; State.done = true; State.pid = 0; Save();
         }
         public void BeginCleanup() {
+            Receipt receipt = ReadReceipt();
+            if (Matches(receipt)) State.readyPid = receipt.pid;
             State.confirmed = true; State.step = "cleanup"; State.from = "app.old"; State.to = null; State.done = false; Save();
         }
         public void Cleanup() {
+            if (State.step == "rolled-back") {
+                if (!Ready()) throw new UpdateFailure("unconfirmed-recovery", "Restored startup must be confirmed before failed payload cleanup.");
+                try { RemoveFailedPayload(); State.error = null; }
+                catch (Win32Exception error) {
+                    if (error.NativeErrorCode != 5 && error.NativeErrorCode != 32 && error.NativeErrorCode != 33) throw;
+                    State.error = error.Message;
+                    File.AppendAllText(FileAt("update-broker.log"), "failed payload cleanup pending: " + error + "\n");
+                }
+                State.pid = 0; Save();
+                ClearAttemptFiles();
+                return;
+            }
             if (!State.confirmed) throw new UpdateFailure("unconfirmed-cleanup", "Successful startup must be confirmed before cleanup.");
             // Confirmation is irreversible. A locked old file is maintenance,
             // not an update failure; retain the journal and retry next launch.
@@ -142,23 +158,105 @@ namespace ReadableStudio.Launcher {
                 if (Exists("app.old")) PayloadDeletion.Remove(FileAt("app.old"));
             } catch (Win32Exception error) {
                 if (error.NativeErrorCode != 5 && error.NativeErrorCode != 32 && error.NativeErrorCode != 33) throw;
-                State.step = "cleanup"; State.done = false; State.pid = 0; State.error = error.Message; Save(); return;
+                State.step = "cleanup"; State.done = false; State.pid = 0; State.error = error.Message; Save(); ClearAttemptFiles(); return;
             }
             State.step = "finished"; State.done = true; State.pid = 0; State.error = null; Save();
+            ClearAttemptFiles();
+        }
+        public void ClearAttemptFiles() {
+            if (!held) throw new UpdateFailure("unlocked-write", "Attempt cleanup requires the installation mutex.");
+            // The daemon consumes the journal and owns .update-failed-apply.json.
+            // Rollback receipts remain available until recovery is fully cleaned.
+            foreach (string name in new[] { "update-helper-ready.json", "update-helper-ready.json.tmp", "update-helper-ready.json.previous", "update-ready.json.tmp",
+                "update-journal.json.tmp", "update-journal.json.previous" }) File.Delete(FileAt(name));
+            if (State != null && State.confirmed) {
+                foreach (string name in new[] { "update-ready.json", "update-error.log", "update-launcher-error.log", "update-broker-error.log", "update-barrier-error.log" })
+                    File.Delete(FileAt(name));
+            }
+        }
+        void RemoveFailedPayload() {
+            // Callers prove health either with a readiness receipt, or the
+            // running payload process that requested the next update.
+            if (State == null || State.step != "rolled-back" || Exists("app.old") || !File.Exists(FileAt("app\\Readable Studio.exe")))
+                throw new UpdateFailure("unsafe-failed-cleanup", "Previous payload recovery is not complete.");
+            CheckDirectory("app"); CheckDirectory("app.failed");
+            if (Exists("app.failed")) {
+                PayloadDeletion.Remove(FileAt("app.failed"));
+                File.AppendAllText(FileAt("update-broker.log"), "removed failed payload after healthy rollback id=" + State.id + "\n");
+            }
+        }
+        public void PrepareNextUpdate(int requestingPid) {
+            if (State != null) {
+                string decision = Decision(State, File.Exists(FileAt("app\\Readable Studio.exe")), Exists("app.old"), true);
+                // Legacy handoff failures left "prepared" behind before any
+                // rename. A dead owner and untouched app need no recovery swap.
+                if (decision != "launch" && !(decision == "cancel" && State.step == "prepared"))
+                    throw new UpdateFailure("unfinished-update", "An unfinished update must be recovered by the launcher first.");
+            }
+            if (Exists("app.failed") && State != null && State.step == "rolled-back") {
+                bool healthy = Ready();
+                if (!healthy && requestingPid > 0) {
+                    try {
+                        using (var process = Process.GetProcessById(requestingPid))
+                            healthy = !process.HasExited && String.Equals(process.MainModule.FileName, FileAt("app\\Readable Studio.exe"), StringComparison.OrdinalIgnoreCase);
+                    } catch (ArgumentException) { }
+                }
+                if (healthy) RemoveFailedPayload();
+            }
+            if (Exists("app.old") || Exists("app.failed"))
+                throw new UpdateFailure("previous-payload", "A previous payload still needs recovery or removal.");
+            ClearAttemptFiles();
+        }
+        public bool RecoverAndLaunch(int timeout) {
+            if (!TryLock()) throw new UpdateFailure("recovery-locked", "Could not reclaim update mutex for recovery.");
+            Read();
+            if (State.confirmed) return true;
+            RequireEmpty(45000);
+            Rollback();
+            // A distinct receipt proves the restored payload, never the failed
+            // version's stale receipt. Its version comes from the restored app.
+            var config = Json.Deserialize<Dictionary<string, object>>(File.ReadAllText(FileAt("app\\resources\\readable-studio-config.json")));
+            State.target = (string)config["appVersion"];
+            State.id = Guid.NewGuid().ToString(); Claim();
+            var start = CreateStartInfo(FileAt("app\\Readable Studio.exe"), "", true);
+            start.CreateNoWindow = true;
+            start.EnvironmentVariables["READABLE_UPDATE_TRANSACTION"] = State.id;
+            start.EnvironmentVariables["READABLE_UPDATE_TARGET"] = State.target;
+            bool ready = StartAndWaitReady(start, timeout);
+            if (!TryLock()) throw new UpdateFailure("recovery-locked", "Could not reclaim update mutex after recovery.");
+            if (ready) Cleanup();
+            return ready;
         }
         public bool FocusConfirmedApp() {
-            if (State == null || !State.confirmed || !Ready()) return false;
-            Receipt receipt = Json.Deserialize<Receipt>(File.ReadAllText(FileAt("update-ready.json")));
-            return ExistingApp.Show(receipt.pid, FileAt("app\\Readable Studio.exe"));
+            if (State == null || !State.confirmed) return false;
+            Receipt receipt = ReadReceipt();
+            int pid = Matches(receipt) ? receipt.pid : State.readyPid;
+            return pid > 0 && ExistingApp.Show(pid, FileAt("app\\Readable Studio.exe"));
         }
-        public bool Ready() {
+        Receipt ReadReceipt() {
             string path = FileAt("update-ready.json");
-            if (!File.Exists(path)) return false;
-            Receipt receipt = Json.Deserialize<Receipt>(File.ReadAllText(path));
-            return receipt != null && receipt.id == State.id && receipt.version == State.target;
+            try {
+                using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                using (var reader = new StreamReader(stream, Encoding.UTF8))
+                    return Json.Deserialize<Receipt>(reader.ReadToEnd());
+            } catch (FileNotFoundException) { return null; }
+            catch (IOException error) {
+                int code = error.HResult & 0xffff;
+                if (code == 32 || code == 33) return null;
+                throw;
+            }
         }
+        bool Matches(Receipt receipt) {
+            return State != null && receipt != null && receipt.id == State.id && receipt.version == State.target;
+        }
+        public bool Ready() { return Matches(ReadReceipt()); }
         public ProcessStartInfo CreateStartInfo(string executable, string arguments, bool restoreNamespace) {
-            var start = new ProcessStartInfo(executable, arguments) { UseShellExecute = false, WorkingDirectory = Root };
+            var start = new ProcessStartInfo(executable, arguments) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = Root };
+            if (String.Equals(executable, FileAt("app\\Readable Studio.exe"), StringComparison.OrdinalIgnoreCase)) {
+                string launchNamespace = restoreNamespace ? State.launchNamespace : (Environment.GetEnvironmentVariable("READABLE_PACKAGED_NAMESPACE") ?? "rg");
+                start.WorkingDirectory = FileAt(Path.Combine("ReadableStudioData", "namespaces", launchNamespace));
+                Directory.CreateDirectory(start.WorkingDirectory);
+            }
             if (restoreNamespace) {
                 start.EnvironmentVariables["READABLE_PACKAGED_NAMESPACE"] = State.launchNamespace;
                 File.AppendAllText(FileAt("update-broker.log"), "launcher relaunch namespace=" + State.launchNamespace + " image=" + executable + "\n");
@@ -166,6 +264,12 @@ namespace ReadableStudio.Launcher {
             return start;
         }
         public bool LaunchAndWaitReady(int timeout) {
+            return StartAndWaitReady(CreateStartInfo(FileAt("Readable Studio.exe"), "--readable-update-start=" + State.id, true), timeout, true);
+        }
+        public bool StartAndWaitReady(ProcessStartInfo start, int timeout) {
+            return StartAndWaitReady(start, timeout, false);
+        }
+        bool StartAndWaitReady(ProcessStartInfo start, int timeout, bool waitForStubExit) {
             using (var signal = new ManualResetEventSlim(false))
             using (var watcher = new FileSystemWatcher(Root, "update-ready.json")) {
                 watcher.Created += delegate { signal.Set(); };
@@ -173,14 +277,28 @@ namespace ReadableStudio.Launcher {
                 watcher.Renamed += delegate { signal.Set(); };
                 watcher.EnableRaisingEvents = true;
                 Unlock();
-                var start = CreateStartInfo(FileAt("Readable Studio.exe"), "--readable-update-start=" + State.id, true);
-                using (var child = Process.Start(start)) { }
-                var deadline = Stopwatch.StartNew();
-                while (true) {
-                    signal.Reset();
-                    if (Ready()) return true;
-                    int remaining = timeout - (int)deadline.ElapsedMilliseconds;
-                    if (remaining <= 0 || !signal.Wait(remaining)) return false;
+                using (var child = new Process { StartInfo = start, EnableRaisingEvents = true }) {
+                    child.Exited += delegate { signal.Set(); };
+                    child.Start();
+                    var deadline = Stopwatch.StartNew();
+                    while (true) {
+                        signal.Reset();
+                        if (Ready()) {
+                            if (ReadyObserved != null) ReadyObserved();
+                            // Both helper and stub consume this receipt. Keep it
+                            // until the stub has acknowledged startup and exited.
+                            if (waitForStubExit && !child.WaitForExit(Math.Max(0, timeout - (int)deadline.ElapsedMilliseconds))) return false;
+                            return true;
+                        }
+                        // Helper-driven stubs remain alive until readiness.
+                        // Any earlier process exit is a failed startup, even 0.
+                        if (child.HasExited) return false;
+                        int remaining = timeout - (int)deadline.ElapsedMilliseconds;
+                        if (remaining <= 0) return false;
+                        // A rename notification can precede release of its sharing
+                        // handle. Closing that handle emits no further file event.
+                        signal.Wait(Math.Min(remaining, 100));
+                    }
                 }
             }
         }
@@ -255,16 +373,41 @@ namespace ReadableStudio.Launcher {
         }
     }
     public sealed class Notice : Form {
+        [DllImport("user32.dll")] static extern IntPtr GetSystemMenu(IntPtr window, bool reset);
+        [DllImport("user32.dll")] static extern uint EnableMenuItem(IntPtr menu, uint item, uint flags);
+        readonly Label label;
+        readonly ProgressBar progressBar;
+        readonly Button close;
         protected override bool ShowWithoutActivation { get { return true; } }
+        protected override void OnHandleCreated(EventArgs e) {
+            base.OnHandleCreated(e);
+            EnableMenuItem(GetSystemMenu(Handle, false), 0xf060, close.Enabled ? 0u : 1u);
+        }
         protected override CreateParams CreateParams { get { var p = base.CreateParams; p.ExStyle |= 0x08000000; return p; } }
         public Notice(string message, bool progress) {
-            Text = "Readable Studio 업데이트"; ClientSize = new Size(470, 175); FormBorderStyle = FormBorderStyle.FixedDialog;
+            Text = "Readable Studio 업데이트"; FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false; MinimizeBox = false; StartPosition = FormStartPosition.CenterScreen;
-            Font = new Font("Malgun Gothic", 10); Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
-            var label = new Label { Text = message, Location = new Point(22, 22), Size = new Size(425, 82) }; Controls.Add(label);
-            if (progress) Controls.Add(new ProgressBar { Style = ProgressBarStyle.Marquee, Location = new Point(22, 108), Size = new Size(425, 14) });
-            var close = new Button { Text = "확인", Location = new Point(365, 138), Size = new Size(82, 27) };
+            Font = new Font("Malgun Gothic", 10); Icon = Icon.ExtractAssociatedIcon(typeof(Notice).Assembly.Location);
+            label = new Label { Location = new Point(22, 22), AutoSize = true, UseMnemonic = false }; Controls.Add(label);
+            progressBar = new ProgressBar { Style = ProgressBarStyle.Marquee }; Controls.Add(progressBar);
+            close = new Button { Text = "확인", Size = new Size(82, 27) };
             close.Click += delegate { Close(); }; Controls.Add(close);
+            SetMessage(message, progress);
+        }
+        public void SetMessage(string message, bool progress) {
+            // Measure complete lines; do not give Label a wrapping width that
+            // splits Korean words. Product notices supply their own line breaks.
+            Size text = TextRenderer.MeasureText(message, Font, Size.Empty, TextFormatFlags.NoPrefix);
+            label.Text = message;
+            label.MinimumSize = text;
+            int width = Math.Max(470, text.Width + 44), bottom = 22 + text.Height + 24;
+            progressBar.Visible = progress; progressBar.Location = new Point(22, bottom); progressBar.Size = new Size(width - 44, 14);
+            close.Visible = !progress; close.Enabled = !progress;
+            if (progress) bottom += 30;
+            close.Location = new Point(width - 104, bottom);
+            ClientSize = new Size(width, bottom + 49);
+            if (IsHandleCreated) EnableMenuItem(GetSystemMenu(Handle, false), 0xf060, progress ? 1u : 0u);
+            if (IsHandleCreated && !Visible) Show();
         }
     }
     public static class Barrier {
@@ -363,40 +506,66 @@ namespace ReadableStudio.Launcher {
             b.Append('\\', slashes * 2); return b.Append('"').ToString();
         }
         public static void Show(string message, bool progress) { Application.Run(new Notice(message, progress)); }
+        static void WaitForUpdate(Transaction tx) {
+            tx.Unlock();
+            File.AppendAllText(tx.FileAt("update-broker.log"), "manual launch deferred during update\n");
+            using (var notice = new Notice("업데이트 진행 중\n완료되면 앱이 다시 시작됩니다.", true))
+            using (var timer = new System.Windows.Forms.Timer { Interval = 100 }) {
+                timer.Tick += delegate {
+                    var state = tx.Read();
+                    if (Transaction.Alive(state) || !tx.TryLock()) return;
+                    tx.Unlock(); notice.Close();
+                };
+                timer.Start();
+                Application.Run(notice);
+            }
+        }
         [STAThread] public static int Main(string[] args) {
             string root = AppDomain.CurrentDomain.BaseDirectory;
+            bool helperStart = args.Length > 0 && args[0].StartsWith("--readable-update-start=", StringComparison.Ordinal);
             Application.EnableVisualStyles();
             try {
                 if (args.Length == 1 && args[0] == "--readable-barrier") { Barrier.Wait(root); return 0; }
                 using (var tx = new Transaction(root)) {
-                    if (!tx.TryLock()) { Show("업데이트 진행 중\n완료되면 앱이 다시 시작됩니다.", true); return 0; }
+                    if (!tx.TryLock()) {
+                        if (helperStart) return 1;
+                        WaitForUpdate(tx); return Main(args);
+                    }
                     Journal state = tx.Read();
                     bool internalStart = state != null && state.step == "complete" && args.Length > 0 && args[0] == "--readable-update-start=" + state.id && Transaction.Alive(state);
+                    if (helperStart && !internalStart) return 1;
                     bool restoreNamespace = internalStart;
                     if (internalStart) args = args.Skip(1).ToArray();
                     else {
                         // A valid ready receipt can precede BeginCleanup's durable
                         // write. Promote it before considering any reverse move.
-                        if (state != null && !Transaction.Alive(state) && !state.confirmed && tx.Ready()) tx.BeginCleanup();
+                        if (state != null && !Transaction.Alive(state) && !state.confirmed && tx.Ready()) {
+                            if (state.step == "rolled-back") tx.Cleanup();
+                            else tx.BeginCleanup();
+                        }
                         string decision = Transaction.Decision(state, File.Exists(tx.FileAt("app\\Readable Studio.exe")), tx.Exists("app.old"), tx.Exists("app.staging"));
-                        if (decision == "active") { tx.Unlock(); Show("업데이트 진행 중\n완료되면 앱이 다시 시작됩니다.", true); return 0; }
+                        if (decision == "active") { WaitForUpdate(tx); return Main(args); }
                         if (decision == "invalid") throw new UpdateFailure("invalid-layout", "업데이트 상태: " + (state == null ? "기록 없음" : state.step) + ". 앱 폴더를 보존하고 지원팀에 문의해 주세요.");
                         if (decision == "cleanup") { restoreNamespace = true; tx.Claim(); tx.BeginCleanup(); tx.Cleanup(); }
                         else if (decision != "launch") {
                             restoreNamespace = true;
                             if (Barrier.Holders(tx.FileAt("app")).Length != 0 || Barrier.Holders(tx.FileAt("app.old")).Length != 0)
                                 throw new UpdateFailure("running-incomplete", "업데이트 상태: " + state.step + ". 실행 중인 Readable Studio를 닫고 다시 실행해 주세요.");
-                            tx.RequireEmpty(45000);
-                            tx.Claim(); tx.Rollback();
-                            Show("중단된 업데이트를 되돌렸습니다.\n기존 버전으로 시작합니다. 데이터는 보존되었습니다.", false);
+                            tx.Claim();
+                            if (!tx.RecoverAndLaunch(180000)) throw new UpdateFailure("recovery-start-failed", "Restored payload did not confirm startup.");
+                            tx.Unlock();
+                            Show("업데이트를 적용하지 못해 이전 버전으로 되돌렸습니다.\n작업 내역은 그대로입니다.", false);
+                            return 0;
                         }
                         if (tx.FocusConfirmedApp()) return 0;
                     }
                     string exe = tx.FileAt("app\\Readable Studio.exe");
                     if (!File.Exists(exe)) throw new UpdateFailure("missing-exe", "app 폴더에서 실행 파일을 찾을 수 없습니다.");
                     var start = tx.CreateStartInfo(exe, String.Join(" ", args.Select(Quote)), restoreNamespace);
-                    start.WorkingDirectory = Environment.CurrentDirectory;
-                    if (internalStart) { start.EnvironmentVariables["READABLE_UPDATE_TRANSACTION"] = state.id; start.EnvironmentVariables["READABLE_UPDATE_TARGET"] = state.target; }
+                    if (internalStart) {
+                        start.EnvironmentVariables["READABLE_UPDATE_TRANSACTION"] = state.id; start.EnvironmentVariables["READABLE_UPDATE_TARGET"] = state.target;
+                        return tx.StartAndWaitReady(start, 180000) ? 0 : 1;
+                    }
                     using (var child = Process.Start(start)) { }
                 }
                 return 0;
@@ -404,7 +573,11 @@ namespace ReadableStudio.Launcher {
                 if (args.Length == 1 && args[0] == "--readable-barrier") {
                     File.WriteAllText(Path.Combine(root, "update-barrier-error.log"), error.ToString()); return 1;
                 }
-                Show("업데이트를 완료하지 못했습니다. 데이터는 보존되었습니다.\n" + error.Message, false); return 1;
+                File.WriteAllText(Path.Combine(root, "update-launcher-error.log"), error.ToString());
+                // The waiting helper owns the progress UI and automatic
+                // recovery. Do not block its failure signal behind a dialog.
+                if (helperStart) return 1;
+                Show("앱을 시작하지 못했습니다.\nReadable Studio를 다시 실행해 주세요. 작업 내역은 그대로입니다.", false); return 1;
             }
         }
     }

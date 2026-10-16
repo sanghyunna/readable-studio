@@ -12,9 +12,10 @@ Add-Type -AssemblyName System.Windows.Forms,System.Drawing
 Import-Launcher $Root
 [Windows.Forms.Application]::EnableVisualStyles()
 $form = [ReadableStudio.Launcher.Notice]::new("업데이트 진행 중`n앱을 종료하고 새 버전을 준비하고 있습니다.", $true)
+$appReady = [Threading.ManualResetEventSlim]::new($false)
 $worker = [PowerShell]::Create()
 [void]$worker.AddScript({
-    param($Root, $Staging, $TargetVersion, $WaitPid, $Common, $Namespace)
+    param($Root, $Staging, $TargetVersion, $WaitPid, $Common, $Namespace, $AppReady)
     $ErrorActionPreference = 'Stop'
     . $Common
     function Stop-At([string]$Point) {
@@ -26,25 +27,29 @@ $worker = [PowerShell]::Create()
         finally { $hit.Dispose(); $release.Dispose() }
     }
     $tx = [ReadableStudio.Launcher.Transaction]::new($Root)
+    if ($null -ne $AppReady) { $tx.add_ReadyObserved({ $AppReady.Set() }) }
+    $claimed = $false
     try {
         Assert-UpdatePaths $Root $Staging
         if (-not $tx.TryLock()) { throw 'Another update owns this installation.' }
         [void]$tx.Read()
-        if ($null -ne $tx.State -and [ReadableStudio.Launcher.Transaction]::Decision($tx.State, $true, $tx.Exists('app.old'), $true) -ne 'launch') {
-            throw 'An unfinished update must be recovered by the launcher first.'
-        }
-        if ($tx.Exists('app.old') -or $tx.Exists('app.failed')) { throw 'A previous payload still needs recovery or removal.' }
+        $tx.PrepareNextUpdate($WaitPid)
         $tx.State = [ReadableStudio.Launcher.Journal]::new()
         $tx.State.id = [Guid]::NewGuid().ToString()
         if ($env:READABLE_UPDATE_TEST_ID) { $tx.State.id = $env:READABLE_UPDATE_TEST_ID }
         $tx.State.target = $TargetVersion
         $tx.State.launchNamespace = $Namespace
         $tx.Claim()
+        $claimed = $true
         if ($env:READABLE_UPDATE_HANDOFF_ID) {
             $ready = Join-Path $Root 'update-helper-ready.json'
             $temporary = $ready + '.tmp'
             [IO.File]::WriteAllText($temporary, (@{id=$env:READABLE_UPDATE_HANDOFF_ID;pid=$PID;namespace=$Namespace} | ConvertTo-Json -Compress))
-            if ([IO.File]::Exists($ready)) { [IO.File]::Replace($temporary, $ready, $null) }
+            if ([IO.File]::Exists($ready)) {
+                # PowerShell coerces a null string to "", not a null backup path.
+                [IO.File]::Replace($temporary, $ready, $ready + '.previous')
+                [IO.File]::Delete($ready + '.previous')
+            }
             else { [IO.File]::Move($temporary, $ready) }
         }
         Stop-At 'prepared'
@@ -64,7 +69,7 @@ $worker = [PowerShell]::Create()
         Stop-At 'new-move'
         $tx.State.step = 'complete'; $tx.State.done = $true; $tx.Save()
         [IO.File]::AppendAllText((Join-Path $Root 'update-broker.log'), "helper relaunch namespace=$Namespace`n")
-        if (-not $tx.LaunchAndWaitReady(180000)) { throw '새 버전 시작을 확인하지 못했습니다. 앱을 닫고 다시 실행해 주세요.' }
+        if (-not $tx.LaunchAndWaitReady(180000)) { throw "Version $TargetVersion failed to confirm startup." }
         if (-not $tx.TryLock()) { throw 'Could not reclaim update mutex.' }
         [void]$tx.Read()
         if (-not $tx.Ready()) { throw '새 버전 실행 정보가 일치하지 않습니다.' }
@@ -83,27 +88,44 @@ $worker = [PowerShell]::Create()
             $tx.State.step = 'cleanup'; $tx.State.pid = 0; $tx.State.error = $failure.Message; $tx.Save()
             return
         }
+        if ($claimed -and $tx.Exists('app.old')) {
+            if (-not $tx.TryLock()) { throw $failure }
+            if ($tx.Exists('app')) { Stop-PayloadProcesses $Root }
+            if ($tx.RecoverAndLaunch(180000)) {
+                [IO.File]::AppendAllText((Join-Path $Root 'update-error.log'), "`nUpdate to $TargetVersion failed; rolled back to $($tx.State.target).`n")
+                return 'rolled-back'
+            }
+        }
+        if ($claimed -and $tx.State.step -eq 'prepared' -and $tx.TryLock()) {
+            # No payload move happened. Leave a terminal journal so another
+            # apply does not inherit an abandoned "prepared" attempt.
+            $tx.State.step = 'rolled-back'; $tx.State.done = $true; $tx.State.pid = 0
+            $tx.State.error = $failure.Message; $tx.Save(); $tx.ClearAttemptFiles()
+        }
+        if ($WaitPid -gt 0) {
+            try {
+                $requester = [Diagnostics.Process]::GetProcessById($WaitPid)
+                try {
+                    if (-not $requester.HasExited -and [string]::Equals($requester.MainModule.FileName, (Join-Path $Root 'app\Readable Studio.exe'), [StringComparison]::OrdinalIgnoreCase)) {
+                        return 'app-open'
+                    }
+                } finally { $requester.Dispose() }
+            } catch [ArgumentException] { }
+        }
         throw $failure
     } finally { $tx.Dispose() }
-}).AddArgument($Root).AddArgument($Staging).AddArgument($TargetVersion).AddArgument($WaitPid).AddArgument((Join-Path $PSScriptRoot 'common.ps1')).AddArgument($Namespace)
+}).AddArgument($Root).AddArgument($Staging).AddArgument($TargetVersion).AddArgument($WaitPid).AddArgument((Join-Path $PSScriptRoot 'common.ps1')).AddArgument($Namespace).AddArgument($appReady)
 $operation = $worker.BeginInvoke()
 $script:exitCode = 0
 $timer = [Windows.Forms.Timer]::new(); $timer.Interval = 100
 $timer.add_Tick({
+    if ($null -ne $appReady -and $appReady.IsSet) { $form.Hide() }
     if (-not $operation.IsCompleted) { return }
     $timer.Stop()
-    try {
-        [void]$worker.EndInvoke($operation)
-        if ($worker.HadErrors) { throw $worker.Streams.Error[0].Exception }
-    } catch {
-        [IO.File]::WriteAllText((Join-Path $Root 'update-error.log'), $_.Exception.ToString())
-        $script:exitCode = 1
-        $form.Hide()
-        [ReadableStudio.Launcher.Program]::Show("업데이트가 중단되었습니다. 앱을 닫고 Readable Studio를 다시 실행하면 복구합니다.`n" + $_.Exception.Message, $false)
-    } finally { $form.Close() }
+    $script:exitCode = Complete-UpdateOperation $worker $operation $form $Root
 })
 $form.add_FormClosing({ if (-not $operation.IsCompleted) { $_.Cancel = $true } })
 $timer.Start()
 try { [Windows.Forms.Application]::Run($form) }
-finally { $timer.Dispose(); $worker.Dispose(); $form.Dispose() }
+finally { $timer.Dispose(); $worker.Dispose(); $form.Dispose(); $appReady.Dispose() }
 exit $script:exitCode

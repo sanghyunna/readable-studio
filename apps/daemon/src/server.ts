@@ -5272,9 +5272,12 @@ async function startServerWithProbeLifetime({
   };
 
   // External services
-  registerUpdateRoutes(app);
+  const updateSourceDependencies = {
+    config: async () => (await readAppConfig(RUNTIME_DATA_DIR)).autoUpdate ?? { enabled: false, serverUrl: null },
+  };
+  registerUpdateRoutes(app, updateSourceDependencies);
   registerDataImportRoutes(app, { dataRoot: RUNTIME_DATA_DIR });
-  registerUpdateApplyRoutes(app);
+  registerUpdateApplyRoutes(app, { source: updateSourceDependencies });
   registerSystemPromptRoutes(app, { paths: pathDeps });
   registerMcpRoutes(app, {
     http: httpDeps,
