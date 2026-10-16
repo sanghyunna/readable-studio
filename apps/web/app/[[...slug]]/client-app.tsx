@@ -1,9 +1,13 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import { useEffect, useState } from 'react';
 
 import { installErrorHandlers } from '../../src/analytics/error-tracking';
 import { installWebObservability } from '../../src/observability/install';
+import { detectInitialLocale, type Locale } from '../../src/i18n';
+import { getEn } from '../../src/i18n/locales/en';
+import { getKo } from '../../src/i18n/locales/ko';
 
 function isHostedComposition(): boolean {
   return typeof document !== 'undefined'
@@ -24,10 +28,14 @@ if (typeof window !== 'undefined' && !isHostedComposition()) {
 // from trying to evaluate browser-only code while still emitting a real
 // shell HTML the daemon can serve as the SPA fallback.
 function ProductLoadingShell() {
+  // Keep the server and first hydration render identical; locale detection
+  // needs browser storage and the desktop host, before the provider mounts.
+  const [locale, setLocale] = useState<Locale | null>(null);
+  useEffect(() => { setLocale(detectInitialLocale()); }, []);
   return (
     <div className="readable-loading-shell" role="status" aria-live="polite">
       <img src="/app-icon.svg" alt="" width="72" height="72" />
-      <span>Loading Readable Studio…</span>
+      <span>{locale ? (locale === 'ko' ? getKo() : getEn())['common.loadingApp'] : null}</span>
     </div>
   );
 }

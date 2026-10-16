@@ -29,7 +29,7 @@ body {
   place-content: center;
   justify-items: center;
   gap: 16px;
-  color: color-mix(in srgb, var(--blue-bg) 78%, transparent);
+  color: var(--white);
   background:
     radial-gradient(circle at 24% 22%, color-mix(in srgb, var(--purple) 28%, transparent) 0%, color-mix(in srgb, var(--purple) 0%, transparent) 46%),
     radial-gradient(circle at 86% 18%, color-mix(in srgb, var(--green) 16%, transparent) 0%, color-mix(in srgb, var(--green) 0%, transparent) 40%),

@@ -658,10 +658,10 @@ export function DesignFilesPanel({
         <ToggleButton
           className="df-row-select"
           pressed={isSelected}
-          aria-label={`Select ${f.name}`}
+          aria-label={t('designFiles.selectFile', { name: f.name })}
           onPressedChange={() => toggleSelect(f.name)}
         >
-          Select
+          {t('designFiles.select')}
         </ToggleButton>
         <button
           type="button"
