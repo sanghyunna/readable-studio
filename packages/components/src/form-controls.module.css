@@ -10,7 +10,8 @@
 }
 
 .control::placeholder {
-  color: var(--text-faint);
+  color: var(--text-placeholder-engraved);
+  opacity: 1;
 }
 
 .control:focus {

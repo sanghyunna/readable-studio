@@ -1453,7 +1453,7 @@ export function HubSessionTree({
       ) : null}
 
       {treeEmpty && railStatus === 'loading' ? (
-        <p role="presentation" className="hub-tree__note" data-testid="hub-sessions-loading">
+        <p role="presentation" className="hub-tree__note hub__nav-loading" data-testid="hub-sessions-loading">
           {t('common.loading')}
         </p>
       ) : null}

@@ -2443,13 +2443,22 @@ function workspaceContextIcon(item: WorkspaceContextItem): IconName {
   return 'file';
 }
 
-function workspaceContextTitle(item: WorkspaceContextItem): string {
+function workspaceContextTitle(item: WorkspaceContextItem, t: TranslateFn): string {
+  const kindKeys = {
+    file: 'chat.contextKindFile',
+    browser: 'chat.contextKindBrowser',
+    'design-files': 'chat.contextKindDesignFiles',
+    'design-system': 'chat.contextKindDesignSystem',
+    folder: 'chat.contextKindFolder',
+    terminal: 'chat.contextKindTerminal',
+    'side-chat': 'chat.contextKindSideChat',
+  } as const;
   return [
-    workspaceContextKindLabel(item.kind),
-    item.path ? `path: ${item.path}` : null,
-    item.absolutePath ? `absolute: ${item.absolutePath}` : null,
-    item.url ? `url: ${item.url}` : null,
-    item.title ? `title: ${item.title}` : null,
+    t(kindKeys[item.kind]),
+    item.path ? `${t('chat.contextPath')}: ${item.path}` : null,
+    item.absolutePath ? `${t('chat.contextAbsolutePath')}: ${item.absolutePath}` : null,
+    item.url ? `${t('chat.contextUrl')}: ${item.url}` : null,
+    item.title ? `${t('chat.contextTitle')}: ${item.title}` : null,
   ].filter(Boolean).join(' | ');
 }
 
@@ -2598,7 +2607,7 @@ function StagedRunContexts({
       {workspaceItems.map((workspaceItem) => {
         const kindLabel =
           workspaceItem.id === currentWorkspaceContextId
-            ? 'Current'
+            ? t('chat.currentContext')
             : workspaceContextKindLabel(workspaceItem.kind);
         return (
           <div
@@ -2608,8 +2617,8 @@ function StagedRunContexts({
             <span className="staged-icon" aria-hidden>
               <Icon name={workspaceContextIcon(workspaceItem)} size={12} />
             </span>
-            <span className="staged-name" title={workspaceContextTitle(workspaceItem)}>
-              <span className="staged-context-kind">{kindLabel}</span>
+            <span className="staged-name" title={workspaceContextTitle(workspaceItem, t)}>
+              <span className="staged-context-kind">{kindLabel}{' '}</span>
               {workspaceItem.label}
             </span>
             <button
@@ -4259,7 +4268,7 @@ function MentionPopover({
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => onPickWorkspaceContext(item)}
-                  title={workspaceContextTitle(item)}
+                  title={workspaceContextTitle(item, t)}
                 >
                   <Icon name={workspaceContextIcon(item)} size={12} />
                   <span className="mention-item-body">

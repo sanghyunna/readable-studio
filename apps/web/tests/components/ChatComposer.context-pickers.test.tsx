@@ -241,12 +241,12 @@ describe('ChatComposer context pickers', () => {
     const view = renderComposer({ activeWorkspaceContext: fileContext, onSend });
     await flushMounts();
 
-    expect(screen.getByTestId('staged-contexts').textContent).toContain('Currentindex.html');
+    expect(screen.getByTestId('staged-contexts').textContent).toContain(`Current ${fileContext.label}`);
     fireEvent.click(screen.getByLabelText('Remove index.html'));
     await waitFor(() => expect(screen.queryByText('index.html')).toBeNull());
 
     view.rerender(composerElement({ activeWorkspaceContext: browserContext, onSend }));
-    await waitFor(() => expect(screen.getByTestId('staged-contexts').textContent).toContain('CurrentDribbble'));
+    await waitFor(() => expect(screen.getByTestId('staged-contexts').textContent).toContain(`Current ${browserContext.label}`));
 
     await typeAndSettle('Use the current tab.');
     fireEvent.click(screen.getByTestId('chat-send'));
@@ -385,7 +385,7 @@ describe('ChatComposer context pickers', () => {
       .getByTestId('chat-composer-input')
       .querySelector('.composer-inline-mention');
     expect(pill?.getAttribute('data-mention-kind')).toBe('workspace');
-    expect(screen.getByTestId('staged-contexts').textContent).toContain('BrowserDribbble');
+    expect(screen.getByTestId('staged-contexts').textContent).toContain(`Browser ${browserContext.label}`);
 
     fireEvent.click(screen.getByTestId('chat-send'));
 

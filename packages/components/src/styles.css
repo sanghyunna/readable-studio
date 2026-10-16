@@ -97,7 +97,10 @@ input, textarea, select {
   width: 100%;
   transition: border-color 120ms ease, box-shadow 120ms ease;
 }
-input::placeholder, textarea::placeholder { color: var(--text-faint); }
+input::placeholder, textarea::placeholder {
+  color: var(--text-placeholder-engraved);
+  opacity: 1;
+}
 input:focus, textarea:focus, select:focus {
   outline: none;
   border-color: var(--selected);

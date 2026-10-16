@@ -5,6 +5,16 @@ import { resolve } from 'node:path';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HubSessionTree } from '../../src/components/hub/HubSessionTree';
+import { HubRail } from '../../src/components/hub/HubRail';
+
+vi.mock('../../src/components/hub/HubRailContext', () => ({
+  useHubRail: () => ({
+    railCollapsed: false, narrow: false, railWidth: 292, query: '',
+    tree: { folders: [], recents: [] }, allTree: { folders: [], recents: [] },
+    railStatus: 'ready', selectedFolder: null, pinnedIds: [], pinnedSessions: [],
+    pinPendingIds: [], searchRef: { current: null },
+  }),
+}));
 
 const css = readFileSync(resolve(process.cwd(), 'src/styles/home/hub.css'), 'utf8');
 function rule(selector: string): string {
@@ -26,6 +36,37 @@ afterEach(() => {
 });
 
 describe('Hub rail layout and disclosure contract', () => {
+  it('aligns the session loading placeholder with section headings', () => {
+    const style = document.createElement('style');
+    style.textContent = [rule('.hub-tree__body'), rule('.hub-tree__section-head'), rule('.hub__nav-loading')].join('\n')
+      .replaceAll('var(--hub-rail-inline-inset)', '12px')
+      .replaceAll('calc(12px * 2 / 3)', '8px')
+      .replaceAll('calc(12px * 5 / 3)', '20px');
+    document.head.append(style);
+    render(<HubSessionTree tree={{ folders: [], recents: [] }} railStatus="loading" currentSessionId={null} onOpenSession={vi.fn()} />);
+    const loading = screen.getByTestId('hub-sessions-loading');
+    const heading = document.querySelector('.hub-tree__section-head')!;
+    const headingInset = parseFloat(getComputedStyle(heading).paddingLeft)
+      + parseFloat(getComputedStyle(heading.closest('.hub-tree__body')!).paddingLeft);
+    expect(parseFloat(getComputedStyle(loading).paddingLeft)).toBe(headingInset);
+  });
+
+  it('aligns the actual project-reload placeholder with nested section headings', () => {
+    const style = document.createElement('style');
+    style.textContent = [rule('.hub-tree__body'), rule('.hub-tree__section-head'), rule('.hub__nav-loading')].join('\n')
+      .replaceAll('var(--hub-rail-inline-inset)', '12px')
+      .replaceAll('calc(12px * 2 / 3)', '8px')
+      .replaceAll('calc(12px * 5 / 3)', '20px');
+    document.head.append(style);
+    const view = render(<HubRail projectsLoading />);
+    const loadingInset = parseFloat(getComputedStyle(document.querySelector('.hub__nav-loading')!).paddingLeft);
+    view.rerender(<HubRail projectsLoading={false} />);
+    const heading = document.querySelector('.hub-tree__section-head')!;
+    const headingInset = parseFloat(getComputedStyle(heading).paddingLeft)
+      + parseFloat(getComputedStyle(heading.closest('.hub-tree__body')!).paddingLeft);
+    expect(loadingInset).toBe(headingInset);
+  });
+
   it('assigns the flexible track to the tree, not the divider', () => {
     applyRules('.hub__nav');
     const nav = document.createElement('nav');

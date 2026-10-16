@@ -115,17 +115,13 @@
   --text-muted: #63605a;
   --text-soft: #6a6761;
   --text-faint: #6b6862;
-  /* Placeholder ink is its own rung below the muted scale: --text-soft read
-     as already-typed copy to users, so the composer placeholder needs a
-     distinct, clearly fainter value that still keeps >= 3:1 on the composer
-     glass surface. Dark's ink scale is inverted for placeholders (--text-faint
-     is 1.78:1, too dim to read; --text-soft is 2.91:1 and reads as typed
-     text), so the dark rung sits between them at ~3.9:1 against the glass
-     while typed --text stays at 14:1. Two scheme tokens + light-dark() at the
-     use site keep the themed blocks - and the theme token parity contract -
-     untouched. */
-  --text-placeholder-light: #8d8a83;
-  --text-placeholder-dark: #7a766f;
+  /* Dedicated composer scheme rungs keep >= 4.5:1 on default-theme glass
+     while staying clearly below typed ink. The composer blends its scheme
+     rung with the theme-owned engraved hint so named palettes retain their
+     own polarity and >= 3:1 floor. Explicit and system dark use the same
+     dark rung without depending on light-dark() support. */
+  --text-placeholder-light: #6a6761;
+  --text-placeholder-dark: #8f8b85;
   /* Placeholder ink for the ENGRAVED (음각) control tier. The rung above is
      tuned against composer glass; an engraved well is a DARKER backdrop than
      that glass, so the same ink lands lower there. Measured in a real browser

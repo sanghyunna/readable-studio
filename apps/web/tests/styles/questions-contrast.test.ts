@@ -192,7 +192,8 @@ describe('Questions actual bundled theme contrast recipes', () => {
   it('reproduces the exact browser failure when the old Button hover surface wins (negative control)', () => {
     const oldCss = postcss.parse(css);
     oldCss.walkRules(rule => { if (rule.selectors.includes(hoverSelector)) rule.walkDecls('background', decl => { decl.remove(); }); });
-    const vars = themeVars('solarized-dark');
+    // Reproduce the historical palette, independently of later ink lifts.
+    const vars = { ...themeVars('solarized-dark'), '--text': '#839496', '--text-strong': '#93a1a1' };
     for (const reverse of [false, true]) {
       const samples = rowSamples(vars, oldCss.toString(), reverse);
       expect(samples[0]!.text).toBeGreaterThanOrEqual(4.5);
@@ -202,7 +203,12 @@ describe('Questions actual bundled theme contrast recipes', () => {
     }
   });
   it('rejects the old low-contrast group and label ink (negative control)', () => {
-    const solarized = measurements.find(m => m.id === 'solarized-dark')!;
+    const vars = { ...themeVars('solarized-dark'), '--text': '#839496', '--text-strong': '#93a1a1', '--text-faint': '#3f5961' };
+    const field = over(resolveColor(vars['--hub-control-engraved']!, vars), resolveColor(vars['--bg']!, vars));
+    const solarized = {
+      old: contrast(resolveColor(vars['--text-faint']!, vars), field),
+      oldBody: contrast(resolveColor(vars['--text']!, vars), field),
+    };
     expect(() => expect(solarized.old).toBeGreaterThanOrEqual(4.5)).toThrow();
     // Base body ink also fails on the resting well, independently of hover.
     expect(() => expect(solarized.oldBody).toBeGreaterThanOrEqual(4.5)).toThrow();

@@ -1149,7 +1149,7 @@
   left: 9px;
   pointer-events: none;
   user-select: none;
-  color: var(--text-faint);
+  color: var(--text-placeholder-engraved);
   font-size: 13.5px;
   line-height: 1.6;
   overflow: hidden;
@@ -2420,7 +2420,6 @@
   color: var(--text-muted);
 }
 .staged-context-kind {
-  margin-right: 3px;
   color: var(--text-muted);
   font-weight: 650;
 }
