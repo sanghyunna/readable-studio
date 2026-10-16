@@ -1,5 +1,33 @@
 /** Expected check failures are results, never UI exceptions. */
-export type UpdateUnavailableReason = 'offline' | 'rate-limited' | 'malformed' | 'timeout' | 'disabled';
+export type UpdateUnavailableReason = 'unreachable' | 'invalid-response' | 'not-logged-in' | 'app-not-accessible' | 'forbidden' | 'no-release' | 'not-configured' | 'disabled' | 'timeout';
+export interface AutoUpdateConfig { enabled: boolean; serverUrl: string | null }
+export interface UpdateManifest {
+  version: string;
+  fileName: string;
+  size: number;
+  sha256: string;
+  notes: string;
+  publishedAt: string;
+}
+export interface UpdateStatus {
+  /** Withdrawal, ready cancellation, or failed apply preparation clears staged bytes and returns idle with null version and zero received/total. */
+  state: 'idle' | 'checking' | 'available' | 'downloading' | 'verifying' | 'ready' | 'failed';
+  received: number;
+  total: number;
+  version: string | null;
+  error: string | null;
+  /** Most recent staged download removed because its release was withdrawn or replaced.
+   * The stable event id lets clients remember dismissal without hiding later notices. */
+  discardedDownload?: { id: string; version: string };
+  /** Durable rollback event; matching version and digest must not be automatically offered again. */
+  failedApply?: { id: string; version: string; sha256: string; releaseUrl: string };
+  host?: string | undefined;
+  /** Source of the offer, including a recovered verified download. */
+  releaseUrl?: string | undefined;
+  notes?: string | undefined;
+  /** Apply preparation reports extracted app files independently of downloaded bytes. */
+  extraction?: { completed: number; total: number; completedBytes?: number; totalBytes?: number } | undefined;
+}
 export interface UpdateCheckAvailable {
   current: string;
   latest: string;
@@ -11,11 +39,14 @@ export interface UpdateCheckAvailable {
   notes: string;
   checkedAt: string;
 }
-export interface UpdateCheckUnavailable { unavailable: UpdateUnavailableReason }
+export interface UpdateCheckUnavailable { unavailable: UpdateUnavailableReason; host?: string }
 export type UpdateCheckResult = UpdateCheckAvailable | UpdateCheckUnavailable;
 
 export interface UpdateApplyAccepted { status: 'applying'; targetVersion: string }
-export interface UpdateApplyError { error: string }
+export interface UpdateApplyError {
+  /** Includes release-withdrawn (409), invalid-package (500), version-mismatch (409), and disk-extract-failed (500). These discard staged bytes. */
+  error: string;
+}
 export type UpdateApplyResult = UpdateApplyAccepted | UpdateApplyError | UpdateCheckUnavailable;
 
 const SEMVER = /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;

@@ -51,6 +51,7 @@ export interface DatabricksCapabilities {
 }
 
 export interface DatabricksProfile {
+  connectionMode?: DatabricksConnectionMode;
   id: string;
   label: string;
   workspaceLabel: string;
@@ -118,7 +119,7 @@ export interface DatabricksSetupRequest {
 }
 
 /** Browser SSO is owned by the installed CLI; no credentials cross this contract. */
-export interface DatabricksLoginRequest { host: string; }
+export interface DatabricksLoginRequest { host: string; profile?: string; }
 export type DatabricksLoginState = 'starting' | 'waiting-for-browser' | 'authenticated' | 'cancelled' | 'timed-out' | 'failed';
 export interface DatabricksLoginResponse {
   loginId: string;
@@ -129,6 +130,8 @@ export interface DatabricksLoginResponse {
   /** Available only after the CLI authentication state has been verified. */
   profileId: string | null;
   issues: DatabricksIssue[];
+  /** Browser authorization link only; never a bearer token. */
+  authUrl?: string;
 }
 
 export interface DatabricksSetupResponse {

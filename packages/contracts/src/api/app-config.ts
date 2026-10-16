@@ -25,6 +25,7 @@ export interface AgentScanCompletion {
 }
 
 export interface AppConfigPrefs {
+  autoUpdate?: import('./update.js').AutoUpdateConfig;
   readonly agentScan?: AgentScanCompletion;
   readonly performanceProfile?: PerformanceProfile;
   onboardingCompleted?: boolean;

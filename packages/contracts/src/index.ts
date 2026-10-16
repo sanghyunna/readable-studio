@@ -12,6 +12,7 @@ export * from './api/context.js';
 export * from './api/comments.js';
 export * from './api/connectionTest.js';
 export * from './api/databricks.js';
+export * from './api/databricks-login.js';
 export * from './api/files.js';
 export * from './api/finalize.js';
 export * from './api/fonts.js';

@@ -56,9 +56,9 @@ describe('Databricks contracts', () => {
   });
 
   it('freezes browser login request, progress states and credential-free response', () => {
-    expectTypeOf<DatabricksLoginRequest>().toEqualTypeOf<{ host: string }>();
+    expectTypeOf<DatabricksLoginRequest>().toEqualTypeOf<{ host: string; profile?: string }>();
     expectTypeOf<DatabricksLoginState>().toEqualTypeOf<'starting' | 'waiting-for-browser' | 'authenticated' | 'cancelled' | 'timed-out' | 'failed'>();
-    expectTypeOf<keyof DatabricksLoginResponse>().toEqualTypeOf<'loginId' | 'state' | 'createdAt' | 'deadlineAt' | 'completedAt' | 'profileId' | 'issues'>();
+    expectTypeOf<keyof DatabricksLoginResponse>().toEqualTypeOf<'loginId' | 'state' | 'createdAt' | 'deadlineAt' | 'completedAt' | 'profileId' | 'issues' | 'authUrl'>();
     expectTypeOf<DatabricksLoginResponse['profileId']>().toEqualTypeOf<string | null>();
   });
 
