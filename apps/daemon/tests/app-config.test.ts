@@ -40,6 +40,7 @@ describe('app-config', () => {
   describe('readAppConfig', () => {
     it('returns default telemetry when config file does not exist', async () => {
       expect(await readAppConfig(dataDir)).toEqual({
+        autoUpdate: { enabled: false, serverUrl: null },
         performanceProfile: 'full',
         designSystemId: null,
         pinnedSessionIds: [],
@@ -61,19 +62,19 @@ describe('app-config', () => {
     it('returns default telemetry for corrupted JSON without crashing', async () => {
       await writeFile(path.join(dataDir, 'app-config.json'), '{not valid');
       const cfg = await readAppConfig(dataDir);
-      expect(cfg).toEqual({ performanceProfile: 'full', designSystemId: null, pinnedSessionIds: [], enabledAgentIds: AGENT_DEFS.map((agent) => agent.id), telemetry: DEFAULT_TELEMETRY, templateFavorites: [] });
+      expect(cfg).toEqual({ autoUpdate: { enabled: false, serverUrl: null }, performanceProfile: 'full', designSystemId: null, pinnedSessionIds: [], enabledAgentIds: AGENT_DEFS.map((agent) => agent.id), telemetry: DEFAULT_TELEMETRY, templateFavorites: [] });
     });
 
     it('returns default telemetry when file contains a JSON array', async () => {
       await writeFile(path.join(dataDir, 'app-config.json'), '[1,2,3]');
       const cfg = await readAppConfig(dataDir);
-      expect(cfg).toEqual({ performanceProfile: 'full', designSystemId: null, pinnedSessionIds: [], enabledAgentIds: AGENT_DEFS.map((agent) => agent.id), telemetry: DEFAULT_TELEMETRY, templateFavorites: [] });
+      expect(cfg).toEqual({ autoUpdate: { enabled: false, serverUrl: null }, performanceProfile: 'full', designSystemId: null, pinnedSessionIds: [], enabledAgentIds: AGENT_DEFS.map((agent) => agent.id), telemetry: DEFAULT_TELEMETRY, templateFavorites: [] });
     });
 
     it('returns default telemetry when file contains a JSON primitive', async () => {
       await writeFile(path.join(dataDir, 'app-config.json'), '"hello"');
       const cfg = await readAppConfig(dataDir);
-      expect(cfg).toEqual({ performanceProfile: 'full', designSystemId: null, pinnedSessionIds: [], enabledAgentIds: AGENT_DEFS.map((agent) => agent.id), telemetry: DEFAULT_TELEMETRY, templateFavorites: [] });
+      expect(cfg).toEqual({ autoUpdate: { enabled: false, serverUrl: null }, performanceProfile: 'full', designSystemId: null, pinnedSessionIds: [], enabledAgentIds: AGENT_DEFS.map((agent) => agent.id), telemetry: DEFAULT_TELEMETRY, templateFavorites: [] });
     });
 
     it('filters out unknown keys from stored file', async () => {
@@ -82,7 +83,7 @@ describe('app-config', () => {
         JSON.stringify({ agentId: 'claude', rogue: 'value', __proto: 'x' }),
       );
       const cfg = await readAppConfig(dataDir);
-      expect(cfg).toEqual({ performanceProfile: 'full', designSystemId: null, pinnedSessionIds: [], agentId: 'claude', enabledAgentIds: AGENT_DEFS.map((agent) => agent.id), telemetry: DEFAULT_TELEMETRY, templateFavorites: [] });
+      expect(cfg).toEqual({ autoUpdate: { enabled: false, serverUrl: null }, performanceProfile: 'full', designSystemId: null, pinnedSessionIds: [], agentId: 'claude', enabledAgentIds: AGENT_DEFS.map((agent) => agent.id), telemetry: DEFAULT_TELEMETRY, templateFavorites: [] });
       expect(cfg).not.toHaveProperty('rogue');
       expect(cfg).not.toHaveProperty('__proto');
     });
@@ -98,7 +99,7 @@ describe('app-config', () => {
         }),
       );
       const cfg = await readAppConfig(dataDir);
-      expect(cfg).toEqual({ performanceProfile: 'full', designSystemId: null, pinnedSessionIds: [], enabledAgentIds: AGENT_DEFS.map((agent) => agent.id), telemetry: DEFAULT_TELEMETRY, templateFavorites: [] });
+      expect(cfg).toEqual({ autoUpdate: { enabled: false, serverUrl: null }, performanceProfile: 'full', designSystemId: null, pinnedSessionIds: [], enabledAgentIds: AGENT_DEFS.map((agent) => agent.id), telemetry: DEFAULT_TELEMETRY, templateFavorites: [] });
     });
 
     it('preserves an explicit telemetry opt-out across reads', async () => {
@@ -151,6 +152,7 @@ describe('app-config', () => {
       });
       const cfg = await readAppConfig(dataDir);
       expect(cfg).toEqual({
+        autoUpdate: { enabled: false, serverUrl: null },
         performanceProfile: 'full',
         designSystemId: null,
         pinnedSessionIds: [],
@@ -171,7 +173,7 @@ describe('app-config', () => {
         designSystemId: { id: 'bad' },
       });
       const cfg = await readAppConfig(dataDir);
-      expect(cfg).toEqual({ performanceProfile: 'full', designSystemId: null, pinnedSessionIds: [], enabledAgentIds: AGENT_DEFS.map((agent) => agent.id), offeredAgentIds: AGENT_DEFS.map((agent) => agent.id), telemetry: DEFAULT_TELEMETRY, templateFavorites: [] });
+      expect(cfg).toEqual({ autoUpdate: { enabled: false, serverUrl: null }, performanceProfile: 'full', designSystemId: null, pinnedSessionIds: [], enabledAgentIds: AGENT_DEFS.map((agent) => agent.id), offeredAgentIds: AGENT_DEFS.map((agent) => agent.id), telemetry: DEFAULT_TELEMETRY, templateFavorites: [] });
     });
 
     it('merges with existing config', async () => {

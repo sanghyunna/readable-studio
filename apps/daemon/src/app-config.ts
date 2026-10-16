@@ -17,6 +17,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import path from 'node:path';
 import type { AgentScanCompletion, PerformanceProfile } from '@readable-studio/contracts';
 import { expandHomePrefix } from './home-expansion.js';
+import { invalidateUpdateSource } from './update-download.js';
 import {
   AGENT_DEFS,
   DEFAULT_ENABLED_AGENT_IDS,
@@ -94,6 +95,7 @@ export interface ProjectLocationPrefs {
 }
 
 export interface AppConfigPrefs {
+  autoUpdate?: import('@readable-studio/contracts').AutoUpdateConfig;
   readonly agentScan?: AgentScanCompletion;
   readonly performanceProfile?: PerformanceProfile;
   onboardingCompleted?: boolean;
@@ -125,14 +127,16 @@ export interface AppConfigPrefs {
 export class InvalidAppConfigError extends Error {
   readonly name = 'InvalidAppConfigError';
   readonly code = 'VALIDATION_FAILED';
-  readonly key = 'performanceProfile';
+  readonly key: 'performanceProfile' | 'autoUpdate';
 
-  constructor() {
-    super('performanceProfile must be full or low (null resets to full)');
+  constructor(key: 'performanceProfile' | 'autoUpdate' = 'performanceProfile') {
+    super(key === 'autoUpdate' ? 'autoUpdate requires enabled and a valid HTTPS serverUrl' : 'performanceProfile must be full or low (null resets to full)');
+    this.key = key;
   }
 }
 
 const ALLOWED_KEYS: ReadonlySet<keyof AppConfigPrefs> = new Set([
+  'autoUpdate',
   'agentScan',
   'performanceProfile',
   'onboardingCompleted',
@@ -360,6 +364,21 @@ function applyConfigValue(
   key: keyof AppConfigPrefs,
   value: unknown,
 ): void {
+  if (key === 'autoUpdate') {
+    if (!value || typeof value !== 'object' || !('enabled' in value) || typeof value.enabled !== 'boolean' || !('serverUrl' in value)) throw new InvalidAppConfigError('autoUpdate');
+    let serverUrl: string | null = null;
+    if (value.serverUrl !== null) {
+      if (typeof value.serverUrl !== 'string') throw new InvalidAppConfigError('autoUpdate');
+      try {
+        const url = new URL(value.serverUrl.trim());
+        if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) throw new InvalidAppConfigError('autoUpdate');
+        serverUrl = url.href.replace(/\/+$/, '');
+      } catch { throw new InvalidAppConfigError('autoUpdate'); }
+    }
+    if (value.enabled && !serverUrl) throw new InvalidAppConfigError('autoUpdate');
+    target[key] = { enabled: value.enabled, serverUrl };
+    return;
+  }
   if (key === 'agentScan') {
     if (typeof value === 'object' && value !== null &&
         'completedAt' in value && typeof value.completedAt === 'string' &&
@@ -533,7 +552,7 @@ export async function readAppConfig(dataDir: string): Promise<AppConfigPrefs> {
 }
 
 async function doRead(dataDir: string): Promise<AppConfigPrefs> {
-  const base: AppConfigPrefs = { performanceProfile: 'full', ...await readAppConfigFileOnly(dataDir) };
+  const base: AppConfigPrefs = { performanceProfile: 'full', autoUpdate: { enabled: false, serverUrl: null }, ...await readAppConfigFileOnly(dataDir) };
   // Offered history is catalog metadata, never permission to probe. Preserve
   // explicit selections even when a new adapter becomes discoverable.
   if (base.enabledAgentIds !== undefined) {
@@ -621,6 +640,9 @@ export async function writeAppConfig(
   if (Object.prototype.hasOwnProperty.call(partial, 'performanceProfile')) {
     applyConfigValue({}, 'performanceProfile', partial.performanceProfile);
   }
+  if (Object.prototype.hasOwnProperty.call(partial, 'autoUpdate')) {
+    applyConfigValue({}, 'autoUpdate', partial.autoUpdate);
+  }
   return withConfigLock(dataDir, () => doWrite(dataDir, partial));
 }
 
@@ -658,6 +680,10 @@ async function doWrite(
     ])];
   }
   await persistAppConfig(dataDir, next);
+  if (Object.prototype.hasOwnProperty.call(partial, 'autoUpdate')
+    && existing.autoUpdate?.serverUrl !== (next.autoUpdate as AppConfigPrefs['autoUpdate'])?.serverUrl) {
+    await invalidateUpdateSource((next.autoUpdate as AppConfigPrefs['autoUpdate'])?.serverUrl ?? null);
+  }
   // Mirror the identity bits to the channel-root installation file so they
   // survive a namespace-scoped data-dir wipe. Only fires when the caller
   // explicitly touched `installationId` (avoiding noisy writes on every
