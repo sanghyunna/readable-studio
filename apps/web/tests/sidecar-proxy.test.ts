@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   createDaemonProxyHandler,
@@ -178,6 +178,26 @@ describe('packaged standalone metadata', () => {
 });
 
 describe('resolveStandaloneServerEntry', () => {
+  it.each(['argument', 'environment'])('anchors a relative standalone %s to the web package instead of cwd', async (source) => {
+    const webRoot = await mkdtemp(join(tmpdir(), 'readable-studio-web-relative-'));
+    const copiedWebRoot = join(webRoot, 'copied', 'apps', 'web');
+    const previousRoot = process.env.READABLE_WEB_STANDALONE_ROOT;
+    const cwd = vi.spyOn(process, 'cwd').mockReturnValue(join(webRoot, 'ReadableStudioData', 'namespaces', 'rg'));
+    try {
+      await mkdir(copiedWebRoot, { recursive: true });
+      await writeFile(join(copiedWebRoot, 'server.js'), '', 'utf8');
+      if (source === 'environment') process.env.READABLE_WEB_STANDALONE_ROOT = 'copied';
+      expect(source === 'argument'
+        ? resolveStandaloneServerEntry(webRoot, 'copied')
+        : resolveStandaloneServerEntry(webRoot)).toBe(join(copiedWebRoot, 'server.js'));
+    } finally {
+      cwd.mockRestore();
+      if (previousRoot == null) delete process.env.READABLE_WEB_STANDALONE_ROOT;
+      else process.env.READABLE_WEB_STANDALONE_ROOT = previousRoot;
+      await rm(webRoot, { force: true, recursive: true });
+    }
+  });
+
   it('resolves the traced monorepo standalone server entry', async () => {
     const previousDistDir = process.env.READABLE_WEB_DIST_DIR;
     delete process.env.READABLE_WEB_DIST_DIR;

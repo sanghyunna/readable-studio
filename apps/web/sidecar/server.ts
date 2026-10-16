@@ -191,7 +191,7 @@ function resolveWebDistDir(webRoot: string): string {
 function resolveConfiguredStandaloneRoot(): string | null {
   const configured = process.env[WEB_STANDALONE_ROOT_ENV];
   if (configured == null || configured.length === 0) return null;
-  return isAbsolute(configured) ? configured : join(process.cwd(), configured);
+  return configured;
 }
 
 export function resolveStandaloneServerEntry(
@@ -202,7 +202,9 @@ export function resolveStandaloneServerEntry(
     ? null
     : isAbsolute(standaloneRoot)
       ? standaloneRoot
-      : join(process.cwd(), standaloneRoot);
+      // Packaged config supplies installation-anchored absolute paths. Direct
+      // sidecar overrides are relative to the module's stable web package root.
+      : join(webRoot ?? resolveWebRoot(), standaloneRoot);
   const candidates = [
     ...(configuredRoot == null
       ? []

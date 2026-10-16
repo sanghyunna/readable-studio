@@ -25,6 +25,7 @@ import {
   resolveDefaultPackagedNodeCommandRelativePath,
   resolveEarlyPackagedElectronPaths,
 } from "../src/config.js";
+import { resolvePackagedNamespacePaths } from "../src/paths.js";
 
 describe("isPortableAppLayout", () => {
   it.each([
@@ -83,6 +84,7 @@ describe("readPackagedConfig namespaceBaseRoot resolution", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     restoreEnv();
     restoreExecPath();
     restoreResourcesPath();
@@ -228,6 +230,41 @@ describe("readPackagedConfig namespaceBaseRoot resolution", () => {
     writeConfig({ namespace: "rg", portable: true });
     expect((await readPackagedConfig()).namespaceBaseRoot).toBe(join(top, "ReadableStudioData", "namespaces"));
     expect(resolveEarlyPackagedElectronPaths()?.electronUserDataRoot).toBe(join(top, "ReadableStudioData", "namespaces", "rg", "user-data"));
+  });
+
+  it.each(["flat", "launcher"])("anchors relative overrides to the %s installation despite a changed cwd", async (layout) => {
+    const top = configDir;
+    if (layout === "launcher") writeFileSync(join(top, "Readable Studio.exe"), "launcher fixture");
+    stubExecPath(join(top, ...(layout === "launcher" ? ["app"] : []), "Readable Studio.exe"));
+    writeConfig({
+      namespace: "rg",
+      portable: true,
+      namespaceBaseRoot: "ReadableStudioData/namespaces",
+      resourceRoot: "resources/readable-studio",
+      webStandaloneRoot: "resources/readable-studio-web-standalone",
+      webOutputMode: "standalone",
+    });
+    const namespaceRoot = join(top, "ReadableStudioData", "namespaces", "rg");
+    for (const cwd of [top, namespaceRoot, join(top, "shortcut-start-in")]) {
+      vi.spyOn(process, "cwd").mockReturnValue(cwd);
+      const config = await readPackagedConfig();
+      expect(config.namespaceBaseRoot).toBe(join(top, "ReadableStudioData", "namespaces"));
+      expect(resolvePackagedNamespacePaths(config).dataRoot).toBe(join(namespaceRoot, "data"));
+      expect(resolveEarlyPackagedElectronPaths()?.electronUserDataRoot).toBe(join(namespaceRoot, "user-data"));
+      expect(config.resourceRoot).toBe(join(top, "resources", "readable-studio"));
+      expect(config.webStandaloneRoot).toBe(join(top, "resources", "readable-studio-web-standalone"));
+    }
+  });
+
+  it.each(["flat", "launcher"])("anchors an explicit relative config path to the %s installation", async (layout) => {
+    if (layout === "launcher") writeFileSync(join(configDir, "Readable Studio.exe"), "launcher fixture");
+    stubExecPath(join(configDir, ...(layout === "launcher" ? ["app"] : []), "Readable Studio.exe"));
+    writeConfig({ namespace: "rg", portable: true });
+    process.env[PACKAGED_CONFIG_PATH_ENV] = "readable-studio-config.json";
+    vi.spyOn(process, "cwd").mockReturnValue(join(configDir, "ReadableStudioData", "namespaces", "rg"));
+
+    expect((await readPackagedConfig()).namespaceBaseRoot).toBe(join(configDir, "ReadableStudioData", "namespaces"));
+    expect(resolveEarlyPackagedElectronPaths()?.electronUserDataRoot).toBe(join(configDir, "ReadableStudioData", "namespaces", "rg", "user-data"));
   });
 
   it("keeps legacy flat data beside the exe when its folder is named app without a parent launcher", async () => {

@@ -144,7 +144,7 @@ export function resolveEarlyPackagedElectronPaths(
   const explicit = process.env[PACKAGED_CONFIG_PATH_ENV];
   const candidates = explicit == null || explicit.length === 0
     ? [join(process.resourcesPath, "readable-studio-config.json")]
-    : [resolve(explicit)];
+    : [resolve(resolvePortableTopFolder(), explicit)];
   for (const configPath of candidates) {
     let rawText: string;
     try {
@@ -203,7 +203,7 @@ function resolveDefaultConfigPath(): string {
 async function readRawPackagedConfig(): Promise<RawPackagedConfig> {
   const explicit = process.env[PACKAGED_CONFIG_PATH_ENV];
   if (explicit != null && explicit.length > 0) {
-    const config = await readJsonIfExists(resolve(explicit));
+    const config = await readJsonIfExists(resolve(resolvePortableTopFolder(), explicit));
     if (config == null) throw new Error(`packaged config not found at ${explicit}`);
     return config;
   }
@@ -221,7 +221,9 @@ function resolveOptionalPath(value: unknown, field: string): string | undefined 
   if (typeof value !== "string" || value.trim().length === 0) {
     throw new Error(`packaged config ${field} must be a non-empty path string`);
   }
-  return resolve(value);
+  // Existing relative overrides are installation-relative, including when the
+  // launcher selects a namespace cwd or a shortcut supplies another start-in.
+  return resolve(resolvePortableTopFolder(), value);
 }
 
 // Config DTOs use null for optional scalar values consumed by runtime options;
