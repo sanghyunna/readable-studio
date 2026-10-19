@@ -7,18 +7,28 @@ import type {
   TrackingRunResult,
 } from '@readable-studio/contracts/analytics';
 
-// Counts automatic same-run retry attempts, not the initial run. Issue #3543
-// scopes the first implementation to at most one automatic same-run retry, so
-// the default caps retries at a single attempt (attemptCount >= 1 suppresses
-// with attempt_limit_reached).
-export const DEFAULT_SAFE_RUN_RETRY_MAX_ATTEMPTS = 1;
+// Counts retries, excluding the initial execution (eleven executions total).
+export const DEFAULT_SAFE_RUN_RETRY_MAX_ATTEMPTS = 10;
+export const SAFE_RUN_RETRY_DELAY_MS = 5000;
 export const SAFE_RUN_RETRY_STRATEGY: TrackingRunRetryStrategy = 'same_run_transient';
+
+export function safeRunRetryDelayMs(retryAfter?: string | null, nowMs = Date.now()): number {
+  if (!retryAfter?.trim()) return SAFE_RUN_RETRY_DELAY_MS;
+  const value = retryAfter.trim();
+  const delay = /^\d+(?:\.\d+)?$/.test(value)
+    ? Number(value) * 1000
+    : Date.parse(value) - nowMs;
+  return delay >= SAFE_RUN_RETRY_DELAY_MS && delay <= 60000
+    ? delay
+    : SAFE_RUN_RETRY_DELAY_MS;
+}
 
 export interface RunRetryFailureSignal {
   failure_category?: TrackingRunFailureCategory;
   failure_detail?: TrackingRunFailureDetail;
   failure_stage?: TrackingRunFailureStage;
   retryable?: boolean;
+  retry_after?: string;
 }
 
 export interface RunRetrySideEffectState {
@@ -30,6 +40,7 @@ export interface RunRetrySideEffectState {
 
 export interface RunRetryPolicyInput {
   result: TrackingRunResult;
+  agentId?: string;
   failure?: RunRetryFailureSignal;
   attemptCount: number;
   maxAttempts?: number;
@@ -67,11 +78,15 @@ function isTransientRetryCategory(
   category: TrackingRunFailureCategory | undefined,
   detail: TrackingRunFailureDetail | undefined,
   stage: TrackingRunFailureStage | undefined,
+  agentId: string | undefined,
 ): boolean {
   if (category === 'rate_limit') return detail !== 'hard_quota';
+  // Databricks owns credential refresh and retains its original outer
+  // eligibility, not just its original one-retry budget.
+  if (category === 'auth') return agentId !== 'databricks' && detail !== 'missing_api_key';
   if (category === 'upstream_unavailable') return true;
   if (category === 'empty_output') return stage === undefined || stage === 'first_token_wait';
-  if (category === 'timeout') return stage === 'first_token_wait';
+  if (category === 'timeout') return agentId !== 'databricks' || stage === 'first_token_wait';
   return false;
 }
 
@@ -107,6 +122,7 @@ export function decideSafeRunRetry(
       failure.failure_category,
       failure.failure_detail,
       failure.failure_stage,
+      input.agentId,
     )
   ) {
     return suppress('unsupported_category');
@@ -117,6 +133,7 @@ export function decideSafeRunRetry(
       failure.failure_category,
       failure.failure_detail,
       failure.failure_stage,
+      input.agentId,
     )
   ) {
     return suppress('unsupported_category');

@@ -2,6 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { protectNativeWrites } from './run-native-writes.js';
 import {
   normalizeRunToolBundleForRun,
@@ -17,6 +18,7 @@ export interface ChatRunServiceOptions {
   ttlMs?: number;
   shutdownGraceMs?: number;
   runsLogDir?: string | null;
+  retryDelay?: (ms: number, signal: AbortSignal) => Promise<void>;
 }
 
 function readString(value) {
@@ -45,6 +47,7 @@ export function createChatRunService({
   // external coding agent can `tail` the file in its own shell during
   // a long Readable Studio generation, instead of polling blindly and giving up.
   runsLogDir = null,
+  retryDelay = (ms, signal) => delay(ms, undefined, { signal }),
 }: ChatRunServiceOptions) {
   const runs = new Map();
   const retiringRunIds = new Set<string>();
@@ -121,6 +124,8 @@ export function createChatRunService({
       nativeWrites: null,
       finishPromise: null,
       cancelRequested: false,
+      retryWaitController: null,
+      retrySideEffects: {},
       eventsLogPath: resolvedRunsLogDir ? path.join(resolvedRunsLogDir, id, 'events.jsonl') : null,
       eventsLogStream: null,
       eventsLogClosePromise: null,
@@ -252,6 +257,14 @@ export function createChatRunService({
   };
 
   const emit = (run, event, data) => {
+    if ((event === 'stdout' && data?.chunk?.length) ||
+      (event === 'agent' && (data?.type === 'text_delta' || data?.type === 'thinking_delta') && data.delta?.length)) {
+      run.retrySideEffects.userVisibleOutputSeen = true;
+    }
+    if (event === 'agent' && data?.type === 'tool_use') run.retrySideEffects.toolCallSeen = true;
+    if (event === 'artifact' || event === 'agent' && data?.type === 'artifact') {
+      run.retrySideEffects.artifactWriteSeen = true;
+    }
     if (event === 'error') {
       const details = extractErrorDetails(data);
       if (details.error) run.error = details.error;
@@ -352,6 +365,8 @@ export function createChatRunService({
       status = 'failed';
       code = 1;
     }
+    run.flushPendingRetryError?.(status);
+    run.flushPendingRetryError = null;
     if (run.abortFallbackTimer) clearTimeout(run.abortFallbackTimer);
     run.abortFallbackTimer = null;
     run.projectFileVersions = null;
@@ -469,6 +484,7 @@ export function createChatRunService({
     if (!TERMINAL_RUN_STATUSES.has(run.status)) {
       run.cancelRequested = true;
       run.updatedAt = Date.now();
+      run.retryWaitController?.abort();
       // Prefer RPC-level abort for agents that support it. Pi owns its full
       // settle/state/SIGTERM/SIGKILL lifecycle; ACP still needs this caller's
       // process-signal fallback.
@@ -500,11 +516,27 @@ export function createChatRunService({
     return waitForChildExit(run.child, Math.max(0, timeoutMs));
   };
 
+  const waitForRetry = async (run, delayMs) => {
+    if (run.cancelRequested || TERMINAL_RUN_STATUSES.has(run.status)) return false;
+    const controller = new AbortController();
+    run.retryWaitController = controller;
+    try {
+      await retryDelay(delayMs, controller.signal);
+      return !controller.signal.aborted && !run.cancelRequested && !TERMINAL_RUN_STATUSES.has(run.status);
+    } catch (error) {
+      if (!controller.signal.aborted) throw error;
+      return false;
+    } finally {
+      if (run.retryWaitController === controller) run.retryWaitController = null;
+    }
+  };
+
   const shutdownActive = async ({ graceMs = shutdownGraceMs } = {}) => {
     const activeRuns = Array.from(runs.values()).filter((run) => !TERMINAL_RUN_STATUSES.has(run.status));
     await Promise.all(activeRuns.map(async (run) => {
       run.cancelRequested = true;
       run.updatedAt = Date.now();
+      run.retryWaitController?.abort();
       if (run.acpSession?.abort) {
         try {
           run.acpSession.abort();
@@ -527,6 +559,7 @@ export function createChatRunService({
   };
 
   const disposeRun = (run) => {
+    run.retryWaitController?.abort();
     if (run.nativeWrites) void run.nativeWrites.dispose();
     if (run.cleanupTimer) clearTimeout(run.cleanupTimer);
     run.cleanupTimer = null;
@@ -578,6 +611,7 @@ export function createChatRunService({
     cancelAndWait,
     shutdownActive,
     wait,
+    waitForRetry,
     emit,
     finish,
     noteFileWriteConflict,

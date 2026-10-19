@@ -295,7 +295,7 @@ import {
 } from './isolated-agent-runtime.js';
 import { deriveRunErrorCode, runResultFromStatus } from './run-result.js';
 import { classifyRunFailure, isResumableFailure } from './run-failure-classification.js';
-import { decideSafeRunRetry } from './run-retry-policy.js';
+import { decideSafeRunRetry, safeRunRetryDelayMs } from './run-retry-policy.js';
 import {
   amrUserIdForRunAnalytics,
   hasExplicitRequestedModelForAnalytics,
@@ -10360,7 +10360,30 @@ async function startServerWithProbeLifetime({
     let clarifyingQuestionText = '';
     let agentRollbackRequested = false;
     const rollbackDetector = new RollingAgentRollbackDetector();
+    let retryCoordinatorReady = false;
+    let retryAttemptFinalized = false;
+    let pendingAttemptError = null;
+    let pendingRetryAfter: string | undefined;
     const emitRunEvent = (event, data) => {
+      if (retryAttemptFinalized || design.runs.isTerminal(run.status)) return;
+      if (event === 'error' && retryCoordinatorReady && run.status === 'running') {
+        pendingAttemptError = data;
+        run.error = data?.error?.message ?? data?.message ?? run.error;
+        run.errorCode = data?.error?.code ?? data?.code ?? run.errorCode;
+        return;
+      }
+      if (run.retryStatusPending && (
+        event === 'stdout' && data?.chunk?.length ||
+        event === 'agent' && (
+          (data?.type === 'text_delta' || data?.type === 'thinking_delta') && data.delta?.length ||
+          data?.type === 'tool_use' || data?.type === 'artifact'
+        )
+      )) {
+        run.retryStatusPending = false;
+        const completed = { type: 'status', label: 'retry_complete' };
+        persistRunEventToAssistantMessage(db, run, 'agent', completed);
+        design.runs.emit(run, 'agent', completed);
+      }
       if (
         ((event === 'agent' && data?.type === 'text_delta' && typeof data.delta === 'string') ||
           (event === 'stdout' && typeof data?.chunk === 'string')) &&
@@ -10480,7 +10503,36 @@ async function startServerWithProbeLifetime({
         ...(errorCode ? { error_code: errorCode } : {}),
       };
     };
-    const restartSameRunAfterRetry = () => {
+    const stopAttemptChild = async (previousChild, previousSession) => {
+      if (!previousChild || previousChild.exitCode !== null || previousChild.signalCode !== null) return;
+      if (previousSession?.abort) previousSession.abort();
+      if (previousSession?.ownsAbortLifecycle === true) return;
+      if (process.platform === 'win32' && previousChild.pid) {
+        await new Promise<void>((resolve, reject) => {
+          execFile('taskkill.exe', ['/PID', String(previousChild.pid), '/T', '/F'],
+            { windowsHide: true, timeout: 5000 }, (error) => {
+              if (error && previousChild.exitCode === null && previousChild.signalCode === null) reject(error);
+              else resolve();
+            });
+        });
+      } else {
+        // `killed` means a signal was sent, not that the child exited.
+        const forceKill = setTimeout(() => {
+          if (previousChild.exitCode === null && previousChild.signalCode === null) previousChild.kill('SIGKILL');
+        }, 3000);
+        forceKill.unref?.();
+        previousChild.once('close', () => clearTimeout(forceKill));
+        previousChild.kill('SIGTERM');
+      }
+    };
+    const restartSameRunAfterRetry = (delayMs?: number) => {
+      const previousChild = run.child;
+      const previousSession = run.acpSession;
+      const previousChildClosed = previousChild && previousChild.exitCode === null && previousChild.signalCode === null
+        ? new Promise<void>((resolve) => previousChild.once('close', () => resolve()))
+        : Promise.resolve();
+      // A watchdog retry owns shutdown before releasing the run's handles.
+      // Killing only cmd.exe on Windows leaves the CLI holding stdout open.
       run.status = 'queued';
       run.updatedAt = Date.now();
       run.child = null;
@@ -10493,20 +10545,25 @@ async function startServerWithProbeLifetime({
       run.analyticsTelemetry = {
         startRequestedAt: run.analyticsTelemetry?.startRequestedAt ?? run.createdAt,
       };
-      void startChatRun(chatBody, run).catch((err) => {
+      void (async () => {
+        if (delayMs !== undefined) await stopAttemptChild(previousChild, previousSession);
+        if (delayMs !== undefined && !await design.runs.waitForRetry(run, delayMs)) return;
+        await previousChildClosed;
+        if (run.cancelRequested || design.runs.isTerminal(run.status)) return;
+        if (delayMs !== undefined) {
+          await isolatedToolBroker?.close();
+          await closeManagedPi();
+          cleanupPromptFile();
+          if (run.cancelRequested || design.runs.isTerminal(run.status)) return;
+        }
+        await startChatRun(chatBody, run);
+      })().catch((err) => {
         const message = err instanceof Error ? err.message : String(err);
-        design.runs.emit(
-          run,
-          'error',
-          createSseErrorPayload('AGENT_EXECUTION_FAILED', message),
-        );
-        // Route the retried-start failure through the same finalizer as child
-        // close/error so it emits terminal retry telemetry (run_retry_finished
-        // with retry_result: 'failed') and sets run.retryFinalResult, instead
-        // of finishing directly and leaving run_finished to report the fallback
-        // retry_final_result: 'not_attempted'. retryAttemptCount is already 1
-        // here, so decideSafeRunRetry suppresses with attempt_limit_reached and
-        // cannot trigger another restart loop.
+        if (run.cancelRequested || design.runs.isTerminal(run.status)) return;
+        retryAttemptFinalized = false;
+        pendingAttemptError = createSseErrorPayload('AGENT_EXECUTION_FAILED', message);
+        run.error = message;
+        run.errorCode = 'AGENT_EXECUTION_FAILED';
         finishWithRetryDecision('failed', 1, null);
       });
     };
@@ -10558,6 +10615,7 @@ async function startServerWithProbeLifetime({
       return 'unknown';
     };
     const finishWithRetryDecision = (status, code = null, signal = null) => {
+      if (retryAttemptFinalized || design.runs.isTerminal(run.status)) return false;
       if (status === 'succeeded' && run.fileWriteConflict) {
         status = 'failed';
         code = 1;
@@ -10585,16 +10643,27 @@ async function startServerWithProbeLifetime({
         },
         ...(errorCode ? { errorCode } : {}),
         agentId: run.agentId,
-        events: run.events,
+        events: pendingAttemptError
+          ? [...run.events, { event: 'error', data: pendingAttemptError }]
+          : run.events,
       });
+      const retryAfter = pendingRetryAfter ?? pendingAttemptError?.retry_after ??
+        pendingAttemptError?.error?.retry_after ??
+        pendingAttemptError?.error?.details?.retry_after ??
+        pendingAttemptError?.details?.retry_after;
+      if (typeof retryAfter === 'string') failure.retry_after = retryAfter;
       const sideEffects = {
         ...scanRunEventsForRetrySideEffects(run.events),
+        ...run.retrySideEffects,
         cancelRequested: !!run.cancelRequested,
       };
       const decision = decideSafeRunRetry({
         result,
         failure,
+        agentId: def.id,
         attemptCount: run.retryAttemptCount ?? 0,
+        // The Databricks relay already owns its ten-retry budget.
+        ...(def.id === 'databricks' ? { maxAttempts: 1 } : {}),
         ...(run.isolationFallbackReason ? { maxAttempts: 0 } : {}),
         sideEffects,
       });
@@ -10606,7 +10675,21 @@ async function startServerWithProbeLifetime({
           ...retryAnalyticsBase(decision, failure, errorCode),
           retry_reason: decision.retryReason,
         });
-        restartSameRunAfterRetry();
+        const delayMs = safeRunRetryDelayMs(failure.retry_after);
+        run.retryStatusPending = true;
+        send('agent', {
+          type: 'status',
+          label: 'retrying',
+          detail: JSON.stringify({
+            attempt: decision.retryAttemptIndex,
+            maxRetries: decision.retryMaxAttempts,
+            delayMs,
+            agentId: run.agentId,
+          }),
+        });
+        retryAttemptFinalized = true;
+        pendingAttemptError = null;
+        restartSameRunAfterRetry(delayMs);
         return true;
       }
       // Resume-on-failure: a terminal *resumable* failure (transient mid-stream
@@ -10657,6 +10740,15 @@ async function startServerWithProbeLifetime({
         });
       }
       finalizeRetryTelemetry(status, decision, failure, errorCode);
+      if (status === 'failed') {
+        pendingAttemptError = pendingAttemptError ??
+          createSseErrorPayload(errorCode ?? 'AGENT_EXECUTION_FAILED', run.error ?? 'Agent execution failed.');
+      }
+      if (run.retryStatusPending) {
+        run.retryStatusPending = false;
+        send('agent', { type: 'status', label: 'retry_complete' });
+      }
+      retryAttemptFinalized = true;
       const rpcCloseReason = deriveRpcCloseReason(status, code, signal);
       design.runs.emit(run, 'diagnostic', {
         type: 'runtime_close',
@@ -10668,6 +10760,14 @@ async function startServerWithProbeLifetime({
       pendingRpcCloseReason = null;
       design.runs.finish(run, status, code, signal);
       return false;
+    };
+    retryCoordinatorReady = true;
+    run.flushPendingRetryError = (status) => {
+      if (status === 'failed' && pendingAttemptError) {
+        persistRunEventToAssistantMessage(db, run, 'error', pendingAttemptError);
+        design.runs.emit(run, 'error', pendingAttemptError);
+      }
+      pendingAttemptError = null;
     };
     const mcpServers: AcpMcpServer[] = [];
 
@@ -11314,12 +11414,13 @@ async function startServerWithProbeLifetime({
       const retried = finishWithRetryDecision('failed', 1, null);
       if (retried) {
         watchdogRetryRestarted = true;
+        return;
       }
-      if (acpSession?.abort) {
-        acpSession.abort();
-      }
-      if (child && !child.killed) child.kill('SIGTERM');
-      scheduleForcedChildShutdown();
+      // Exhausting the retry budget must stop the same tree as a retry.
+      // SIGTERM'ing the Windows wrapper first loses the descendants' owner.
+      void stopAttemptChild(child, acpSession).catch((err) => {
+        console.error('Failed to stop stalled agent process tree:', err);
+      });
     };
     const activeInactivityTimeoutMs = () =>
       resolveActiveInactivityTimeoutMs({
@@ -12122,7 +12223,7 @@ async function startServerWithProbeLifetime({
           const message = String((ev as any).message || 'Claude Code stream error');
           const failureText = [
             message,
-            typeof (ev as any).code === 'string' ? (ev as any).code : '',
+            typeof (ev as any).code === 'string' ? `error code: ${(ev as any).code}` : '',
             agentStdoutTail,
             agentStderrTail,
           ].join('\n');
@@ -12150,7 +12251,7 @@ async function startServerWithProbeLifetime({
             agentStreamError,
             {
               retryable: diagnostic?.retryable
-                ?? (serviceCode === 'AGENT_AUTH_REQUIRED' || serviceCode === 'RATE_LIMITED'),
+                ?? (serviceCode !== null),
               ...(diagnostic ? { details: { detail: diagnostic.detail } } : {}),
             },
           ));
@@ -12189,15 +12290,10 @@ async function startServerWithProbeLifetime({
       child.stdout.on('data', (chunk) => qoder.feed(chunk));
       child.on('close', () => qoder.flush());
     } else if (def.streamFormat === 'copilot-stream-json') {
+      trackingSubstantiveOutput = true;
       const copilot = createCopilotStreamHandler((ev) => {
-        lastAgentEventPhase = summarizeAgentEventForInactivity(ev);
-        noteAgentActivity();
-        noteFirstTokenFromAgentEvent(ev);
-        if (ev?.type === 'text_delta' && typeof ev.delta === 'string') {
-          emitGuardedTextDelta(ev.delta);
-          return;
-        }
-        send('agent', ev);
+        if (typeof ev.retry_after === 'string') pendingRetryAfter = ev.retry_after;
+        sendAgentEvent(ev);
       });
       child.stdout.on('data', (chunk) => copilot.feed(chunk));
       child.on('close', () => copilot.flush());

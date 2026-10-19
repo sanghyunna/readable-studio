@@ -105,23 +105,45 @@ export function createCopilotStreamHandler(onEvent: EventSink) {
         });
         return;
 
-      case 'result':
+      case 'result': {
         // `result` puts usage / exitCode at the top level, not under `data`.
         // Treat a missing exitCode as success when `success: true` is set —
         // strict `=== 0` would otherwise mis-flag turns where Copilot emits
         // usage without a numeric exit code as `error`.
+        const failed = obj.success === false || !(obj.success === true || obj.exitCode === 0);
+        if (failed) emitError(obj);
         onEvent({
           type: 'usage',
           usage: obj.usage ?? null,
-          stopReason:
-            obj.success === true || obj.exitCode === 0 ? 'completed' : 'error',
+          stopReason: failed ? 'error' : 'completed',
           durationMs: isRecord(obj.usage) ? obj.usage.sessionDurationMs ?? null : null,
         });
+        return;
+      }
+
+      case 'error':
+      case 'session.error':
+        emitError(obj);
         return;
 
       default:
         return;
     }
+  }
+
+  function emitError(obj: Record<string, unknown>) {
+    const data = isRecord(obj.data) ? obj.data : {};
+    const error = isRecord(obj.error) ? obj.error : isRecord(data.error) ? data.error : {};
+    onEvent({
+      type: 'error',
+      message: error.message ?? data.message ?? obj.message ??
+        (typeof obj.error === 'string' ? obj.error : undefined) ??
+        (typeof data.error === 'string' ? data.error : undefined) ?? 'Copilot generation failed',
+      raw: JSON.stringify(obj),
+      ...(typeof (obj.retry_after ?? data.retry_after ?? error.retry_after) === 'string'
+        ? { retry_after: obj.retry_after ?? data.retry_after ?? error.retry_after }
+        : {}),
+    });
   }
 
   return { feed, flush };

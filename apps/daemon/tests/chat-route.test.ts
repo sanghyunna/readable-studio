@@ -1,4 +1,5 @@
 import type http from 'node:http';
+import type { ChildProcess } from 'node:child_process';
 import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import {
@@ -11,7 +12,8 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { setTimeout as delay } from 'node:timers/promises';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   resolveChatExtraAllowedDirs,
   resolveResearchCommandContract,
@@ -27,6 +29,37 @@ import { withFakeAgent } from './helpers/fake-agent.js';
 
 const FAKE_VELA_FIXTURE = resolve(process.cwd(), 'tests', 'fixtures', 'fake-vela.mjs');
 
+const stalledWatchdog = vi.hoisted(() => ({
+  onReady: null as ((child: ChildProcess) => void) | null,
+  delays: [] as number[],
+}));
+
+vi.mock('../src/runs.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/runs.js')>();
+  return {
+    ...actual,
+    createChatRunService: (options: Parameters<typeof actual.createChatRunService>[0]) => {
+      const service = actual.createChatRunService({
+        ...options,
+        retryDelay: async (ms, signal) => {
+          if (stalledWatchdog.onReady) stalledWatchdog.delays.push(ms);
+          else await delay(ms, undefined, { signal });
+        },
+      });
+      return {
+        ...service,
+        emit: (run: { child: ChildProcess }, event: string, data: Record<string, unknown>) => {
+          const result = service.emit(run, event, data);
+          if (event === 'agent' && data.type === 'status' && data.label === 'running') {
+            stalledWatchdog.onReady?.(run.child);
+          }
+          return result;
+        },
+      };
+    },
+  };
+});
+
 describe('/api/chat', () => {
   let server: http.Server;
   let baseUrl: string;
@@ -34,6 +67,95 @@ describe('/api/chat', () => {
   const originalPath = process.env.PATH;
   const originalAgentHome = process.env.READABLE_AGENT_HOME;
   const tempDirs: string[] = [];
+
+  async function assertStalledRunFails(ignoreSigterm: boolean) {
+    const previous = process.env.READABLE_CHAT_RUN_INACTIVITY_TIMEOUT_MS;
+    process.env.READABLE_CHAT_RUN_INACTIVITY_TIMEOUT_MS = '500';
+    const fixtureDir = mkdtempSync(join(tmpdir(), 'readable-watchdog-tree-'));
+    tempDirs.push(fixtureDir);
+    const pidLog = join(fixtureDir, 'pids');
+    const closed: Promise<void>[] = [];
+    let expireWatchdog: (() => void) | undefined;
+    const realSetTimeout = globalThis.setTimeout;
+    const timerSpy = vi.spyOn(globalThis, 'setTimeout').mockImplementation((callback, ms, ...args) => {
+      if (callback.name === 'failForInactivity' && ms === 500) {
+        expireWatchdog = () => callback(...args);
+        return { unref() { return this; } } as NodeJS.Timeout;
+      }
+      return realSetTimeout(callback, ms, ...args);
+    });
+    stalledWatchdog.delays = [];
+    stalledWatchdog.onReady = (child) => {
+      closed.push(new Promise<void>((done) => child.once('close', () => done())));
+      queueMicrotask(() => {
+        expect(expireWatchdog).toBeDefined();
+        expireWatchdog!();
+      });
+    };
+    try {
+      await withFakeAgent('opencode', `
+const fs = require('node:fs');
+fs.appendFileSync(${JSON.stringify(pidLog)}, process.pid + '\\n');
+process.on('SIGTERM', () => ${ignoreSigterm ? '{}' : 'process.exit(143)'});
+if (process.platform === 'win32') {
+  const descendant = require('node:child_process').spawn(process.execPath,
+    ['-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);"],
+    { stdio: 'inherit', windowsHide: true });
+  fs.appendFileSync(${JSON.stringify(pidLog)}, descendant.pid + '\\n');
+}
+console.log(JSON.stringify({ type: 'step_start' }));
+setInterval(() => {}, 1000);
+`, async () => {
+        const response = await fetch(`${baseUrl}/api/runs`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ agentId: 'opencode', model: 'openai/gpt-5', message: 'hello' }),
+        });
+        expect(response.status).toBe(202);
+        const { runId } = await response.json() as { runId: string };
+        const eventsResponse = await fetch(`${baseUrl}/api/runs/${runId}/events`, {
+          signal: AbortSignal.timeout(15_000),
+        });
+        const body = await eventsResponse.text();
+        const events = body.split(/\r?\n\r?\n/).flatMap((frame) => {
+          const event = /^event: ?(.+)$/m.exec(frame)?.[1];
+          const data = /^data: ?(.+)$/m.exec(frame)?.[1];
+          return event && data ? [{ event, data: JSON.parse(data) }] : [];
+        });
+        expect(events.filter(({ event }) => event === 'start')).toHaveLength(11);
+        expect(events.filter(({ event }) => event === 'error')).toHaveLength(1);
+        expect(events.filter(({ event }) => event === 'end')).toHaveLength(1);
+        expect(events.filter(({ event }) => event === 'run_retry_finished')).toEqual([
+          expect.objectContaining({ data: expect.objectContaining({ retry_result: 'failed', retry_attempt_index: 10 }) }),
+        ]);
+        const retries = events.filter(({ event, data }) => event === 'agent' && data.label === 'retrying');
+        expect(retries.map(({ data }) => JSON.parse(data.detail))).toEqual(
+          Array.from({ length: 10 }, (_, index) => ({
+            attempt: index + 1, maxRetries: 10, delayMs: 5000, agentId: 'opencode',
+          })),
+        );
+        expect(stalledWatchdog.delays).toEqual(Array(10).fill(5000));
+        expect(body).toContain('Agent stalled without emitting any new output');
+        expect(body).toContain('Phase details: spawned agent opencode;');
+        expect(body).not.toContain('spawned agent binary');
+        expect(body).toContain('stdout arrived: yes');
+        const status = await (await fetch(`${baseUrl}/api/runs/${runId}`)).json() as { status: string };
+        expect(status.status).toBe('failed');
+        expect(closed).toHaveLength(11);
+        await Promise.all(closed);
+        const pids = readFileSync(pidLog, 'utf8').trim().split(/\r?\n/).map(Number);
+        expect(pids).toHaveLength(process.platform === 'win32' ? 22 : 11);
+        for (const pid of pids) {
+          expect(() => process.kill(pid, 0), `stalled descendant ${pid} survived`).toThrow();
+        }
+      });
+    } finally {
+      timerSpy.mockRestore();
+      stalledWatchdog.onReady = null;
+      if (previous == null) delete process.env.READABLE_CHAT_RUN_INACTIVITY_TIMEOUT_MS;
+      else process.env.READABLE_CHAT_RUN_INACTIVITY_TIMEOUT_MS = previous;
+    }
+  }
 
   async function createPluginFixture(args: {
     pluginId: string;
@@ -1879,52 +2001,7 @@ process.exit(0);
   });
 
   it('fails stalled json-stream runs after the inactivity timeout elapses', async () => {
-    const previous = process.env.READABLE_CHAT_RUN_INACTIVITY_TIMEOUT_MS;
-    process.env.READABLE_CHAT_RUN_INACTIVITY_TIMEOUT_MS = '500';
-    try {
-      await withFakeAgent(
-        'opencode',
-        `
-console.log(JSON.stringify({ type: 'step_start' }));
-process.on('SIGTERM', () => process.exit(143));
-setInterval(() => {}, 1000);
-`,
-        async () => {
-          const createResponse = await fetch(`${baseUrl}/api/runs`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              agentId: 'opencode',
-              model: 'openai/gpt-5',
-              message: 'hello',
-            }),
-          });
-          expect(createResponse.status).toBe(202);
-          const { runId } = await createResponse.json() as { runId: string };
-
-          const eventsController = new AbortController();
-          const eventsResponse = await fetch(`${baseUrl}/api/runs/${runId}/events`, {
-            signal: eventsController.signal,
-          });
-          const eventsBody = await readSseUntil(eventsResponse, 'event: error');
-          eventsController.abort();
-          const statusBody = await waitForRunStatus(baseUrl, runId);
-
-          expect(eventsBody).toContain('event: error');
-          expect(eventsBody).toContain('Agent stalled without emitting any new output');
-          expect(eventsBody).toContain('Phase details: spawned agent opencode;');
-          expect(eventsBody).not.toContain('spawned agent binary');
-          expect(eventsBody).toMatch(/stdout arrived: (yes|no)/);
-          expect(statusBody.status).toBe('failed');
-        },
-      );
-    } finally {
-      if (previous == null) {
-        delete process.env.READABLE_CHAT_RUN_INACTIVITY_TIMEOUT_MS;
-      } else {
-        process.env.READABLE_CHAT_RUN_INACTIVITY_TIMEOUT_MS = previous;
-      }
-    }
+    await assertStalledRunFails(false);
   });
 
   it('keeps Claude stream runs alive while structured output is still flowing', async () => {
@@ -2054,48 +2131,7 @@ setTimeout(() => {
   });
 
   it('marks stalled runs failed even when the child ignores SIGTERM', async () => {
-    const previous = process.env.READABLE_CHAT_RUN_INACTIVITY_TIMEOUT_MS;
-    process.env.READABLE_CHAT_RUN_INACTIVITY_TIMEOUT_MS = '500';
-    try {
-      await withFakeAgent(
-        'opencode',
-        `
-console.log(JSON.stringify({ type: 'step_start' }));
-process.on('SIGTERM', () => {});
-setInterval(() => {}, 1000);
-`,
-        async () => {
-          const createResponse = await fetch(`${baseUrl}/api/runs`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              agentId: 'opencode',
-              model: 'openai/gpt-5',
-              message: 'hello',
-            }),
-          });
-          expect(createResponse.status).toBe(202);
-          const { runId } = await createResponse.json() as { runId: string };
-
-          const eventsController = new AbortController();
-          const eventsResponse = await fetch(`${baseUrl}/api/runs/${runId}/events`, {
-            signal: eventsController.signal,
-          });
-          const eventsBody = await readSseUntil(eventsResponse, 'event: error');
-          eventsController.abort();
-          const statusBody = await waitForRunStatus(baseUrl, runId);
-
-          expect(eventsBody).toContain('Agent stalled without emitting any new output');
-          expect(statusBody.status).toBe('failed');
-        },
-      );
-    } finally {
-      if (previous == null) {
-        delete process.env.READABLE_CHAT_RUN_INACTIVITY_TIMEOUT_MS;
-      } else {
-        process.env.READABLE_CHAT_RUN_INACTIVITY_TIMEOUT_MS = previous;
-      }
-    }
+    await assertStalledRunFails(true);
   });
 
   it('marks submitted discovery form answers as the active turn before the transcript', async () => {

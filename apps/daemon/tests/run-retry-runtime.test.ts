@@ -3,11 +3,31 @@ import { randomUUID } from 'node:crypto';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { closeHttpServer } from '../src/daemon-startup.js';
 import { startServer } from '../src/server.js';
 import { cleanupFakeAgentDir, writeExecutableScript } from './helpers/fake-agent.js';
+
+const watchdog = vi.hoisted(() => ({ onReady: null as (() => void) | null }));
+
+vi.mock('../src/runs.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/runs.js')>();
+  return {
+    ...actual,
+    createChatRunService: (options: Parameters<typeof actual.createChatRunService>[0]) => {
+      const service = actual.createChatRunService({ ...options, retryDelay: async () => {} });
+      return {
+        ...service,
+        emit: (run: unknown, event: string, data: Record<string, unknown>) => {
+          const result = service.emit(run, event, data);
+          if (event === 'agent' && data.model === 'claude-stall-ready') watchdog.onReady?.();
+          return result;
+        },
+      };
+    },
+  };
+});
 
 type StartedServer = {
   url: string;
@@ -42,6 +62,8 @@ describe('same-run retry runtime', () => {
   let binDir: string | null = null;
 
   afterEach(async () => {
+    watchdog.onReady = null;
+    vi.restoreAllMocks();
     await Promise.resolve(started?.shutdown?.());
     if (started?.server) {
       await closeHttpServer(started.server);
@@ -86,7 +108,7 @@ describe('same-run retry runtime', () => {
       run_id: run.id,
       retry_of_run_id: run.id,
       retry_attempt_index: 1,
-      retry_max_attempts: 1,
+      retry_max_attempts: 10,
       retry_strategy: 'same_run_transient',
       retry_reason: 'transient_failure',
       failure_category: 'upstream_unavailable',
@@ -114,12 +136,9 @@ describe('same-run retry runtime', () => {
     delete process.env.LANGFUSE_SECRET_KEY;
     delete process.env.LANGFUSE_BASE_URL;
     delete process.env.READABLE_TELEMETRY_RELAY_URL;
-    // Trip the no-output inactivity watchdog quickly so the first (silent)
-    // attempt stalls at first_token_wait and the same-run retry can fire. Kept
-    // comfortably above node cold-start so the recovered retry attempt's own
-    // watchdog does not also trip before it emits its first token.
+    // Advance the watchdog only after the first peer reports readiness.
+    // Cold process startup and the recovered peer never race a real deadline.
     process.env.READABLE_CHAT_RUN_INACTIVITY_TIMEOUT_MS = '400';
-
     started = await startServer({ port: 0, returnServer: true }) as StartedServer;
     await putConfig(started.url, {
       agentId: 'claude',
@@ -129,6 +148,21 @@ describe('same-run retry runtime', () => {
       privacyDecisionAt: Date.now(),
     });
 
+    let expireWatchdog: (() => void) | undefined;
+    const realSetTimeout = globalThis.setTimeout;
+    vi.spyOn(globalThis, 'setTimeout').mockImplementation((callback, ms, ...args) => {
+      if (callback.name === 'failForInactivity' && ms === 400) {
+        expireWatchdog = () => callback(...args);
+        return { unref() { return this; } } as NodeJS.Timeout;
+      }
+      return realSetTimeout(callback, ms, ...args);
+    });
+    watchdog.onReady = () => {
+      queueMicrotask(() => {
+        expect(expireWatchdog).toBeDefined();
+        expireWatchdog!();
+      });
+    };
     const run = await createAndWaitForRun(started.url);
     expect(run.status).toBe('succeeded');
     expect(run.id).toBeTruthy();
@@ -144,7 +178,7 @@ describe('same-run retry runtime', () => {
       run_id: run.id,
       retry_of_run_id: run.id,
       retry_attempt_index: 1,
-      retry_max_attempts: 1,
+      retry_max_attempts: 10,
       retry_strategy: 'same_run_transient',
       retry_reason: 'transient_failure',
       failure_category: 'timeout',
@@ -208,23 +242,35 @@ if (process.argv.includes('--help')) {
   console.log('Usage: claude -p [--include-partial-messages] [--add-dir DIR]');
   process.exit(0);
 }
+if (process.argv.includes('__readable_capability_probe__')) process.exit(0);
+if (process.argv[process.argv.indexOf('--output-format') + 1] === 'text') {
+  console.log('{}');
+  process.exit(0);
+}
+if (process.argv.includes('--safe-mode')) {
+  console.log(JSON.stringify({ type: 'control_response', response: {
+    request_id: 'models-capability-check', subtype: 'success',
+    response: { models: [{ value: 'sonnet', displayName: 'Sonnet' }] }
+  } }));
+  process.exit(0);
+}
 let attempts = 0;
 try { attempts = Number(fs.readFileSync(counterPath, 'utf8')) || 0; } catch {}
 fs.writeFileSync(counterPath, String(attempts + 1));
 if (attempts === 0) {
   process.stderr.write('HTTP 503 Service Unavailable: upstream provider unavailable before first token.\\n');
-  setTimeout(() => process.exit(1), 20);
+  process.stderr.write('', () => process.exit(1));
 } else {
   console.log(JSON.stringify({ type: 'system', subtype: 'init', model: 'claude-retry-test' }));
   console.log(JSON.stringify({
     type: 'assistant',
     message: {
       id: 'msg-retry-success',
-      content: [{ type: 'text', text: 'Recovered after retry.' }],
+      content: [{ type: 'text', text: 'Recovered after retry.\\n<!-- readable:no-document-required reason="question" -->' }],
       stop_reason: 'end_turn'
     }
   }));
-  setTimeout(() => process.exit(0), 20);
+  process.stdout.write('', () => process.exit(0));
 }
 `);
 }
@@ -246,23 +292,36 @@ if (process.argv.includes('--help')) {
   console.log('Usage: claude -p [--include-partial-messages] [--add-dir DIR]');
   process.exit(0);
 }
+if (process.argv.includes('__readable_capability_probe__')) process.exit(0);
+if (process.argv[process.argv.indexOf('--output-format') + 1] === 'text') {
+  console.log('{}');
+  process.exit(0);
+}
+if (process.argv.includes('--safe-mode')) {
+  console.log(JSON.stringify({ type: 'control_response', response: {
+    request_id: 'models-capability-check', subtype: 'success',
+    response: { models: [{ value: 'sonnet', displayName: 'Sonnet' }] }
+  } }));
+  process.exit(0);
+}
 let attempts = 0;
 try { attempts = Number(fs.readFileSync(counterPath, 'utf8')) || 0; } catch {}
 fs.writeFileSync(counterPath, String(attempts + 1));
 fs.appendFileSync(argsLogPath, JSON.stringify(process.argv.slice(2)) + '\\n');
 if (attempts === 0) {
-  setTimeout(() => process.exit(0), 60000);
+  console.log(JSON.stringify({ type: 'system', subtype: 'init', model: 'claude-stall-ready' }));
+  process.stdin.resume();
 } else {
   console.log(JSON.stringify({ type: 'system', subtype: 'init', model: 'claude-retry-test' }));
   console.log(JSON.stringify({
     type: 'assistant',
     message: {
       id: 'msg-retry-stall-success',
-      content: [{ type: 'text', text: 'Recovered after watchdog retry.' }],
+      content: [{ type: 'text', text: 'Recovered after watchdog retry.\\n<!-- readable:no-document-required reason="question" -->' }],
       stop_reason: 'end_turn'
     }
   }));
-  setTimeout(() => process.exit(0), 20);
+  process.stdout.write('', () => process.exit(0));
 }
 `);
   return { bin, argsLogPath };
@@ -317,17 +376,13 @@ async function createAndWaitForRun(url: string): Promise<RunStatus> {
 }
 
 async function waitForRun(url: string, runId: string): Promise<RunStatus> {
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < 10_000) {
-    const response = await fetch(`${url}/api/runs/${encodeURIComponent(runId)}`);
-    expect(response.status).toBe(200);
-    const run = await response.json() as RunStatus;
-    if (run.status === 'failed' || run.status === 'succeeded' || run.status === 'canceled') {
-      return run;
-    }
-    await delay(100);
-  }
-  throw new Error(`run ${runId} did not finish`);
+  const events = await fetch(`${url}/api/runs/${encodeURIComponent(runId)}/events`, {
+    signal: AbortSignal.timeout(10_000),
+  });
+  expect(await events.text()).toContain('event: end');
+  const response = await fetch(`${url}/api/runs/${encodeURIComponent(runId)}`);
+  expect(response.status).toBe(200);
+  return await response.json() as RunStatus;
 }
 
 async function readRunEvents(file: string): Promise<RunEvent[]> {
@@ -351,8 +406,4 @@ async function readClaudeAttemptArgs(file: string): Promise<string[][]> {
 function sessionIdArg(args: string[]): string | null {
   const index = args.indexOf('--session-id');
   return index >= 0 ? args[index + 1] ?? null : null;
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

@@ -6,7 +6,11 @@ import type {
 } from '@readable-studio/contracts/analytics';
 
 import { classifyAmrAccountFailure } from './integrations/vela-errors.js';
-import { classifyAgentServiceFailure } from './runtimes/auth.js';
+import {
+  classifyAgentServiceFailure,
+  isAgentPermissionDeniedText,
+  isAgentTokenExpiryFailureText,
+} from './runtimes/auth.js';
 import type { RunResult, RunStatusForAnalytics } from './run-result.js';
 
 export interface RunEventForFailureClassification {
@@ -117,7 +121,7 @@ function collectFailureText(input: RunFailureClassificationInput): string {
 }
 
 function isHardQuotaText(text: string): boolean {
-  return /\b(session limit|usage limit|limit reached|quota|billing (?:hard )?limit|insufficient[ _-]?(?:quota|credit|funds)|exceeded your current quota)\b/i
+  return /\b(session limit|usage limit|hard[ _-]quota|billing (?:hard )?limit|insufficient[ _-]?(?:quota|credit|funds)|exceeded your current quota|quota(?:[ _-]limit)?(?: (?:is|has been|was))?[ _-](?:exceeded|reached|exhausted)|(?:exceeded|exhausted)[ _-]quota)\b/i
     .test(text);
 }
 
@@ -167,6 +171,7 @@ function isPromptTooLargeText(text: string): boolean {
 }
 
 function isUpstreamDetailText(text: string): boolean {
+  if (/\b(ECONNRESET|ECONNREFUSED|ECONNABORTED|EPIPE|ENETUNREACH|EAI_AGAIN|ENOTFOUND|fetch failed|network (?:error|connection (?:dropped|lost))|connection (?:dropped|lost))\b/i.test(text)) return true;
   return /\b(stream disconnected before completion|response\.completed|Transport error: network error|Upstream request failed|websocket closed|socket connection was closed unexpectedly|tls handshake eof|Connection reset by (?:peer|server)|TLS close_notify|Broken pipe|remote host|远程主机强迫关闭|No route to host|Connection refused|error sending request|Provider returned error|high demand|upstream_error|http2: response body closed|AMR model catalog is unavailable|statusCode[\"']?\s*:\s*(?:400|404)|400 Bad Request|404 Not Found)\b/i
     .test(text);
 }
@@ -177,6 +182,9 @@ function isUpstreamClientErrorText(text: string): boolean {
 }
 
 function modelUnavailableDetail(text: string): TrackingRunFailureDetail | null {
+  if (/\b((?:invalid|unknown)[ _-]model(?:[ _-]name)?|model_not_found|model .{0,80}does not exist)\b/i.test(text)) {
+    return 'model_not_found';
+  }
   if (/\brequires a newer version of codex\b/i.test(text)) {
     return 'cli_version_incompatible';
   }
@@ -187,7 +195,7 @@ function modelUnavailableDetail(text: string): TrackingRunFailureDetail | null {
   if (/\b(model .*not supported|requested model is not supported|supported api model names|not supported when using codex)\b/i.test(text)) {
     return 'model_not_supported';
   }
-  if (/\b(model (?:is )?(?:unavailable|not available|unsupported|not found)|selected model is not available|not have access|no access|model .*not found|no healthy deployments)\b/i.test(text)) {
+  if (/\b(model (?:is )?(?:unavailable|not available|unsupported|not found)|selected model is not available|model .*not found|no healthy deployments)\b/i.test(text)) {
     return 'model_not_found';
   }
   return null;
@@ -368,6 +376,18 @@ export function classifyRunFailure(
   const retryableHint = latestRetryable(input.events);
   const amrFailure = classifyAmrAccountFailure(text);
 
+  // Permanent failures must win even when wrapped in auth/permission errors
+  // or accompanied by an optimistic adapter retryable hint.
+  if (isHardQuotaText(text)) {
+    return classification('rate_limit', 'hard_quota', 'session_init', false, 'none');
+  }
+  const modelDetail = errorCode === 'AMR_MODEL_UNAVAILABLE'
+    ? 'model_not_found'
+    : modelUnavailableDetail(text);
+  if (modelDetail) {
+    return classification('model_unavailable', modelDetail, 'model_select', false, 'switch_model');
+  }
+
   if (
     errorCode === 'AMR_INSUFFICIENT_BALANCE' ||
     amrFailure?.code === 'AMR_INSUFFICIENT_BALANCE'
@@ -379,6 +399,16 @@ export function classifyRunFailure(
       false,
       'recharge',
     );
+  }
+
+  if (isAgentTokenExpiryFailureText(text)) {
+    const retryable = input.agentId !== 'databricks' || retryableHint !== false;
+    return classification('auth', authDetail(text), 'session_init', retryable, retryable ? 'retry' : 'login');
+  }
+
+  if (isAgentPermissionDeniedText(text)) {
+    const retryable = input.agentId !== 'databricks' || retryableHint !== false;
+    return classification('auth', 'permission_denied', 'session_init', retryable, retryable ? 'retry' : 'login');
   }
 
   if (
@@ -403,19 +433,6 @@ export function classifyRunFailure(
       'prompt_send',
       false,
       'reduce_context',
-    );
-  }
-
-  const modelDetail = errorCode === 'AMR_MODEL_UNAVAILABLE'
-    ? 'model_not_found'
-    : modelUnavailableDetail(text);
-  if (modelDetail) {
-    return classification(
-      'model_unavailable',
-      modelDetail,
-      'model_select',
-      false,
-      'switch_model',
     );
   }
 
@@ -451,7 +468,7 @@ export function classifyRunFailure(
   }
 
   if (errorCode === 'RATE_LIMITED' || serviceFailure === 'RATE_LIMITED') {
-    const retryable = retryableHint ?? !isHardQuotaText(text);
+    const retryable = retryableHint ?? true;
     return classification(
       'rate_limit',
       isHardQuotaText(text) ? 'hard_quota' : 'rate_limit_429',
@@ -463,6 +480,7 @@ export function classifyRunFailure(
 
   if (
     errorCode === 'UPSTREAM_UNAVAILABLE' ||
+    errorCode === 'AGENT_CONNECTION_DROPPED' ||
     serviceFailure === 'UPSTREAM_UNAVAILABLE' ||
     isUpstreamDetailText(text)
   ) {

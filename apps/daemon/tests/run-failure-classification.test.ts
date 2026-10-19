@@ -13,21 +13,7 @@ vi.mock('../src/integrations/vela-errors.js', () => ({
   },
 }));
 
-vi.mock('../src/runtimes/auth.js', () => ({
-  classifyAgentServiceFailure(text: string) {
-    const value = String(text || '').toLowerCase();
-    if (value.includes('authentication required') || value.includes('not authenticated')) {
-      return 'AGENT_AUTH_REQUIRED' as const;
-    }
-    if (value.includes('http 429') || value.includes('too many requests') || value.includes('session limit')) {
-      return 'RATE_LIMITED' as const;
-    }
-    if (value.includes('503 upstream unavailable') || value.includes('upstream unavailable')) {
-      return 'UPSTREAM_UNAVAILABLE' as const;
-    }
-    return null;
-  },
-}));
+import { decideSafeRunRetry } from '../src/run-retry-policy.js';
 
 import {
   classifyRunFailure,
@@ -75,6 +61,89 @@ function classify(
 }
 
 describe('classifyRunFailure', () => {
+  it('retains the stable Claude connection-drop diagnostic as a transient failure', () => {
+    const failure = classify('AGENT_CONNECTION_DROPPED',
+      'Claude Code lost its connection to the Anthropic API before the response finished.',
+      [errorEvent('AGENT_CONNECTION_DROPPED',
+        'Claude Code lost its connection to the Anthropic API before the response finished.', true)]);
+    expect(failure).toMatchObject({ failure_category: 'upstream_unavailable', retryable: true });
+  });
+
+  it.each([
+    'Databricks [permission-denied; HTTP 403]: Access was denied. Check model permissions.',
+    'Databricks [auth; HTTP 401]: Authentication was rejected. Sign in again or replace the expired token.',
+  ])('honors a Databricks adapter terminal hint: %s', (message) => {
+    const failure = classifyRunFailure({
+      result: 'failed',
+      agentId: 'databricks',
+      status: { status: 'failed', error: message, exitCode: 1 },
+      events: [errorEvent('AGENT_EXECUTION_FAILED', message, false)],
+    });
+    expect(failure).toMatchObject({ failure_category: 'auth', retryable: false });
+  });
+
+  it.each([
+    ['ECONNRESET', 'upstream_unavailable'],
+    ['EPIPE: broken pipe', 'upstream_unavailable'],
+    ['fetch failed: network connection dropped', 'upstream_unavailable'],
+    ['Response timeout before output', 'timeout'],
+    ['Token expired', 'auth'],
+    ['access_token_expired', 'auth'],
+    ['Token refresh failed', 'auth'],
+    ['Token refresh error', 'auth'],
+    ['refresh_token_reused', 'auth'],
+    ['Failed to refresh access token', 'auth'],
+    ['Your access token could not be refreshed', 'auth'],
+    ['HTTP 429 Too Many Requests', 'rate_limit'],
+    ['rate_limit_exceeded', 'rate_limit'],
+    ['HTTP 500 Internal Server Error', 'upstream_unavailable'],
+    ['HTTP 503 Service Unavailable', 'upstream_unavailable'],
+    ['overload', 'upstream_unavailable'],
+    ['overloaded_error', 'upstream_unavailable'],
+    ['Permission denied', 'auth'],
+    ['HTTP 403 Forbidden', 'auth'],
+    ['HTTP 403: You do not have access to this model', 'auth'],
+    ['EACCES: open failed', 'auth'],
+    ['spawn failed: spawn EPERM', 'auth'],
+  ])('retries transient failure %s before output', (message, category) => {
+    const failure = classify('AGENT_EXECUTION_FAILED', message);
+    if (!failure) throw new Error('Expected failure classification');
+    expect(failure).toMatchObject({ failure_category: category, retryable: true });
+    expect(decideSafeRunRetry({ result: 'failed', attemptCount: 0, failure }).shouldRetry).toBe(true);
+    expect(decideSafeRunRetry({
+      result: 'failed', attemptCount: 0, failure, sideEffects: { userVisibleOutputSeen: true },
+    }).shouldRetry).toBe(false);
+  });
+
+  it.each([
+    'Unknown model: made-up-model',
+    'invalid model name: made-up-model',
+    'model_not_found: made-up-model',
+    'HTTP 403 invalid model: made-up-model',
+    'model "made-up-model" does not exist',
+  ])('fails fast for invalid model %s despite a retryable hint', (message) => {
+    expect(classify('AGENT_EXECUTION_FAILED', message, [errorEvent('AGENT_EXECUTION_FAILED', message, true)]))
+      .toMatchObject({ failure_category: 'model_unavailable', retryable: false });
+  });
+
+  it.each([
+    'HTTP 429 quota exceeded',
+    'HTTP 403 weekly (7-day) usage limit reached; permission denied',
+    'Token expired; weekly usage limit reached',
+  ])('hard quota overrides transient signals: %s', (message) => {
+    expect(classify('AGENT_AUTH_REQUIRED', message, [errorEvent('RATE_LIMITED', message, true)]))
+      .toMatchObject({ failure_category: 'rate_limit', failure_detail: 'hard_quota', retryable: false });
+  });
+
+  it.each(['Not logged in', 'Missing API key', 'Authentication required'])('does not retry missing login: %s', (message) => {
+    expect(classify('AGENT_AUTH_REQUIRED', message)).toMatchObject({ retryable: false });
+  });
+
+  it('does not treat a temporary request quota as exhausted account quota', () => {
+    expect(classify('RATE_LIMITED', 'HTTP 429: temporary request quota; retry shortly'))
+      .toMatchObject({ failure_category: 'rate_limit', failure_detail: 'rate_limit_429', retryable: true });
+  });
+
   it('does not classify successful runs as failures', () => {
     expect(
       classifyRunFailure({
@@ -202,7 +271,8 @@ describe('classifyRunFailure', () => {
     ).toMatchObject({
       failure_category: 'auth',
       failure_detail: 'refresh_token_reused',
-      user_action: 'login',
+      retryable: true,
+      user_action: 'retry',
     });
   });
 

@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_SAFE_RUN_RETRY_MAX_ATTEMPTS,
   SAFE_RUN_RETRY_STRATEGY,
+  SAFE_RUN_RETRY_DELAY_MS,
+  safeRunRetryDelayMs,
   decideSafeRunRetry,
   type RunRetryPolicyInput,
 } from '../src/run-retry-policy.js';
@@ -22,6 +24,29 @@ function decide(input: Partial<RunRetryPolicyInput> = {}) {
 }
 
 describe('decideSafeRunRetry', () => {
+  it('keeps Databricks outer retry categories at their original boundary', () => {
+    for (const agentId of ['claude', 'databricks']) {
+      expect(decide({
+        agentId,
+        failure: { failure_category: 'auth', failure_detail: 'permission_denied', retryable: true },
+      }).shouldRetry).toBe(agentId === 'claude');
+      expect(decide({
+        agentId,
+        failure: { failure_category: 'auth', failure_detail: 'auth_required', retryable: true },
+      }).shouldRetry).toBe(agentId === 'claude');
+      expect(decide({
+        agentId,
+        failure: { failure_category: 'timeout', failure_stage: 'tool_execution', retryable: true },
+      }).shouldRetry).toBe(agentId === 'claude');
+    }
+    expect(decide({
+      agentId: 'databricks', maxAttempts: 1,
+      failure: { failure_category: 'timeout', failure_stage: 'first_token_wait', retryable: true },
+    }).shouldRetry).toBe(true);
+    expect(decide({ agentId: 'databricks', maxAttempts: 1 }).shouldRetry).toBe(true);
+    expect(decide({ agentId: 'databricks', maxAttempts: 1, attemptCount: 1 }).shouldRetry).toBe(false);
+  });
+
   it('allows retryable transient upstream failures before side effects', () => {
     expect(decide()).toEqual({
       shouldRetry: true,
@@ -112,7 +137,6 @@ describe('decideSafeRunRetry', () => {
 
   it('suppresses non-transient categories even when the classifier marks them retryable', () => {
     for (const failure_category of [
-      'auth',
       'prompt_too_large',
       'model_unavailable',
       'tool_error',
@@ -134,15 +158,21 @@ describe('decideSafeRunRetry', () => {
     }
   });
 
-  it('allows at most one automatic same-run retry by default', () => {
+  it('allows ten retries and stops after the eleventh execution', () => {
+    expect(DEFAULT_SAFE_RUN_RETRY_MAX_ATTEMPTS).toBe(10);
     expect(decide({ attemptCount: 0 })).toMatchObject({
       shouldRetry: true,
       retryAttemptIndex: 1,
       retryMaxAttempts: DEFAULT_SAFE_RUN_RETRY_MAX_ATTEMPTS,
     });
-    expect(decide({ attemptCount: 1 })).toMatchObject({
+    expect(decide({ attemptCount: 9 })).toMatchObject({
+      shouldRetry: true,
+      retryAttemptIndex: 10,
+      retryMaxAttempts: 10,
+    });
+    expect(decide({ attemptCount: 10 })).toMatchObject({
       shouldRetry: false,
-      retryAttemptIndex: 2,
+      retryAttemptIndex: 11,
       retryMaxAttempts: DEFAULT_SAFE_RUN_RETRY_MAX_ATTEMPTS,
       retrySuppressedReason: 'attempt_limit_reached',
     });
@@ -201,5 +231,25 @@ describe('decideSafeRunRetry', () => {
         }).shouldRetry,
       ).toBe(false);
     }
+  });
+});
+
+describe('safeRunRetryDelayMs', () => {
+  const now = Date.UTC(2026, 9, 19);
+
+  it.each([
+    [undefined, 5000], [null, 5000], ['', 5000],
+    ['5', 5000], ['60', 60000], ['5.5', 5500], ['30', 30000],
+    ['4.999', 5000], ['60.001', 5000], ['0', 5000], ['-5', 5000],
+    ['NaN', 5000], ['Infinity', 5000], ['garbage', 5000], ['5 seconds', 5000],
+    ['0x10', 5000], ['+10', 5000], ['1e1', 5000],
+    [new Date(now + 5000).toUTCString(), 5000],
+    [new Date(now + 60000).toUTCString(), 60000],
+    [new Date(now + 4000).toUTCString(), 5000],
+    [new Date(now + 61000).toUTCString(), 5000],
+    [new Date(now - 1000).toUTCString(), 5000],
+  ])('parses %s as %i ms', (value, expected) => {
+    expect(SAFE_RUN_RETRY_DELAY_MS).toBe(5000);
+    expect(safeRunRetryDelayMs(value, now)).toBe(expected);
   });
 });
