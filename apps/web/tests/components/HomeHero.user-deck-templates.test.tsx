@@ -141,3 +141,18 @@ it('rejects non-ZIP files in the wizard', async () => {
   fireEvent.change(screen.getByTestId('template-upload-file'), { target: { files: [new File(['html'], 'page.html')] } });
   expect(screen.getByRole('alert')).toBeTruthy();
 });
+
+it('keeps the rail at the far left after cards load until the user scrolls', async () => {
+  hub();
+  await screen.findByText('Sample deck');
+  const rail = screen.getByTestId('hub-template-carousel-rail');
+  // Something (focus, snap, layout) scrolls the freshly populated rail to its end.
+  rail.scrollLeft = 500;
+  fireEvent.scroll(rail);
+  expect(rail.scrollLeft).toBe(0);
+  // A real user gesture releases the pin.
+  fireEvent.wheel(rail, { deltaX: 120 });
+  rail.scrollLeft = 300;
+  fireEvent.scroll(rail);
+  expect(rail.scrollLeft).toBe(300);
+});

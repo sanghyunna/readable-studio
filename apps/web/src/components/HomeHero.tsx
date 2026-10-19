@@ -1991,15 +1991,35 @@ const HubTemplateCarousel = memo(function HubTemplateCarousel({
   const railRef = useRef<HTMLDivElement | null>(null);
   const tabListRef = useRef<HTMLDivElement | null>(null);
   const [focusIndex, setFocusIndex] = useState(0);
+  // The rail starts at its far left on mount and on every tab change. Cards
+  // arrive after mount (and focus, scroll snap or layout can then push the
+  // rail to its end), so the start position is pinned: any scroll before the
+  // first user gesture (wheel, pointer, touch, key, arrow) snaps back to 0.
+  const railPinnedRef = useRef(true);
+  const releaseRailPin = useCallback(() => { railPinnedRef.current = false; }, []);
   useLayoutEffect(() => {
+    railPinnedRef.current = true;
     if (railRef.current) railRef.current.scrollLeft = 0;
   }, [tab]);
+  useEffect(() => {
+    const rail = railRef.current;
+    if (!rail) return;
+    const holdStart = () => {
+      if (railPinnedRef.current && rail.scrollLeft !== 0) rail.scrollLeft = 0;
+    };
+    rail.addEventListener('scroll', holdStart, { passive: true });
+    return () => rail.removeEventListener('scroll', holdStart);
+  }, [collapsed]);
+  useLayoutEffect(() => {
+    if (railPinnedRef.current && railRef.current) railRef.current.scrollLeft = 0;
+  }, [items]);
   useLayoutEffect(() => {
     if (!newTemplateId) return;
     const rail = railRef.current;
     const card = Array.from(rail?.querySelectorAll<HTMLElement>('[data-testid="hub-template-item"]') ?? [])
       .find((node) => node.dataset.pluginId === newTemplateId);
     if (!rail || !card) return;
+    railPinnedRef.current = false;
     rail.scrollLeft = Math.max(0, card.offsetLeft - rail.offsetLeft);
     setNewTemplateId(null);
   }, [items, newTemplateId]);
@@ -2061,6 +2081,7 @@ const HubTemplateCarousel = memo(function HubTemplateCarousel({
   function pageRail(direction: -1 | 1) {
     const rail = railRef.current;
     if (!rail) return;
+    releaseRailPin();
     const card = rail.querySelector<HTMLElement>('[data-testid="hub-template-item"]');
     const cardWidth = card?.getBoundingClientRect().width ?? 0;
     const page = Math.max(cardWidth, rail.clientWidth - cardWidth);
@@ -2138,6 +2159,7 @@ const HubTemplateCarousel = memo(function HubTemplateCarousel({
   }
 
   function handleRailKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    releaseRailPin();
     if (event.key === 'ArrowRight') {
       event.preventDefault();
       moveFocus(focusIndex + 1);
@@ -2245,6 +2267,9 @@ const HubTemplateCarousel = memo(function HubTemplateCarousel({
                 role="list"
                 aria-labelledby={`${tabIdPrefix}-${tab}`}
                 onKeyDown={handleRailKeyDown}
+                onWheel={releaseRailPin}
+                onPointerDown={releaseRailPin}
+                onTouchStart={releaseRailPin}
               >
                 {items.map((item, index) => (
                   <HubTemplateCard
@@ -2428,7 +2453,7 @@ function HubTemplateCard({
     {item.userTemplate ? <UserDeckTemplateControls name={title} onManage={onManageUserTemplate} /> : null}
     <button
       type="button"
-      className={`home-hero__template-fav${favorite ? ' is-on' : ''}`}
+      className={`home-hero__template-fav${favorite ? ' is-on' : ''}${item.userTemplate ? ` ${userDeckLayout.userFav}` : ''}`}
       data-testid="hub-template-favorite"
       data-plugin-id={record.id}
       aria-pressed={favorite}

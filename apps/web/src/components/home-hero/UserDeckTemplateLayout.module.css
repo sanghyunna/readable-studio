@@ -13,3 +13,20 @@
   min-width: 0;
   word-break: keep-all;
 }
+
+/* Favorite star on a user template: covers are arbitrary colors, so the star
+   gets a panel-tinted disc and ring (same tokens as the hover state) instead
+   of relying on a drop shadow. Doubled class beats the global star rule. */
+button.userFav.userFav {
+  color: var(--text);
+  background: color-mix(in srgb, var(--bg-panel) 82%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--text) 28%, transparent);
+}
+
+button.userFav.userFav:focus-visible {
+  box-shadow: 0 0 0 2px var(--hub-accent);
+}
+
+button.userFav.userFav:global(.is-on) {
+  color: var(--amber);
+}
