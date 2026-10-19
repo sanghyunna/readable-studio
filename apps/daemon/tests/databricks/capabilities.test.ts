@@ -91,7 +91,10 @@ describe('Databricks model maxima', () => {
     const result = normalizeResource('secret', 'profile', {
       kind: 'uc-model-service', name: 'system.ai.private-chat', metadata: {},
     }).endpoint;
-    expect(result.label).toBe('system.ai.private-chat');
+    // Display label drops the UC prefix (databricks-names receipt); the service
+    // identity stays in displayName and is the only name capability limits see.
+    expect(result.label).toBe('private-chat');
+    expect(result.displayName).toBe('system.ai.private-chat');
     expect(result.label).not.toMatch(/\(|context|fallback|unknown/);
     expect(result.servedModelName).toBeUndefined();
     expect(result.capabilities).toMatchObject({ contextWindow: null, maxTokens: null,

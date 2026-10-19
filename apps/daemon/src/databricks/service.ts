@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { parseDatabricksNames, type DatabricksNamedScanRequest } from '@readable-studio/contracts';
 import { runNamedScan } from './named-scan.js';
-import { probeClaudeMessages } from './named-probe.js';
-import { normalizeDatabricksModelIdentity } from './capabilities.js';
+import { CLAUDE_EFFORT_PROBE_VERSION, probeClaudeMessages } from './named-probe.js';
+import { normalizeDatabricksModelIdentity, resolveDatabricksReasoningOptions } from './capabilities.js';
 import type {
   DatabricksAuthState, DatabricksCapabilities, DatabricksDisableRequest, DatabricksEnableRequest,
   DatabricksLoginRequest, DatabricksLoginResponse,
@@ -14,7 +14,7 @@ import type {
 import { DatabricksClient, DatabricksServiceError, databricksLoginProfile, issueFor, withDeadline, type DatabricksClientOptions } from './client.js';
 import { DatabricksCredentials, type DatabricksConnectionBinding } from './credentials.js';
 import { DatabricksLogins, type DatabricksLoginOptions } from './login.js';
-import { applyLearnedDatabricksProtocol, normalizeResource, opaqueId, type CatalogueEntry, type DatabricksWireCapabilities } from './catalogue.js';
+import { applyLearnedDatabricksProtocol, databricksCatalogueLabel, distinguishDatabricksModelLabels, normalizeResource, opaqueId, type CatalogueEntry, type DatabricksWireCapabilities } from './catalogue.js';
 import { lookupResource, objectValue, requestJson, scanWorkspace, type DatabricksFetch, type WorkspaceScanOptions } from './scan.js';
 import { DatabricksStore, type CatalogueGeneration } from './store.js';
 import { EncryptedConnectionSecretStorage, type ConnectionSecretStorage } from './secret-storage.js';
@@ -458,11 +458,12 @@ export class LocalDatabricksService implements DatabricksService {
   async listModels(request: DatabricksModelsRequest = {}): Promise<DatabricksModelsResponse> {
     const generation = await this.store.read();
     for (const entry of generation.entries) {
+      entry.endpoint.label = databricksCatalogueLabel(entry.endpoint, entry.ucModelName);
       applyLearnedDatabricksProtocol(entry);
       if (entry.endpoint.enabled && (!request.profileId || entry.endpoint.profileId === request.profileId)) this.scheduleClaudeProbe(entry);
     }
-    return { revision: generation.revision, issues: [], models: generation.entries.map((entry) => entry.endpoint)
-      .filter((endpoint): endpoint is DatabricksRegisteredEndpoint => endpoint.enabled && !!endpoint.appModelId && (!request.profileId || endpoint.profileId === request.profileId)) };
+    return { revision: generation.revision, issues: [], models: distinguishDatabricksModelLabels(generation.entries.map((entry) => entry.endpoint)
+      .filter((endpoint): endpoint is DatabricksRegisteredEndpoint => endpoint.enabled && !!endpoint.appModelId && (!request.profileId || endpoint.profileId === request.profileId))) };
   }
 
   private scheduleClaudeProbe(entry: CatalogueEntry): Promise<void> | undefined {
@@ -470,12 +471,16 @@ export class LocalDatabricksService implements DatabricksService {
     const pending = this.claudeProbes.get(key);
     if (pending) return pending;
     const identities = entry.endpoint.servedModelName?.split(', ') ?? [];
-    if (entry.endpoint.api !== 'openai-completions' || entry.wireCapabilities?.api || entry.wireCapabilities?.probedAt
+    if ((entry.endpoint.api !== 'openai-completions' && entry.wireCapabilities?.api !== 'anthropic-messages')
+      || entry.wireCapabilities?.effortProbeVersion === CLAUDE_EFFORT_PROBE_VERSION
       || !identities.length || !identities.every(name => /^claude-(?:sonnet|opus|haiku)-/.test(normalizeDatabricksModelIdentity(name)))
       || this.now() < (this.claudeRetryAt.get(key) ?? 0)) return;
+    const candidates = resolveDatabricksReasoningOptions('anthropic-messages',
+      identities.map(name => ({ name: normalizeDatabricksModelIdentity(name) }))).map(option => option.id);
+    if (!candidates.length) return;
     const probe = (async () => {
       const binding = await this.binding(entry.endpoint.profileId);
-      const levels = await probeClaudeMessages(entry.upstreamName, {
+      const levels = await probeClaudeMessages(entry.upstreamName, candidates, {
         ...this.options.scanOptions, binding, bearer: await this.bearer(binding), fetch: this.fetch,
       });
       await this.store.update(generation => {
@@ -483,7 +488,7 @@ export class LocalDatabricksService implements DatabricksService {
         if (!current || current.configurationId !== entry.configurationId) return;
         current.wireCapabilities = {
           responsesUnsupported: false, chatTokensField: 'max_completion_tokens', requiredOutputBudget: false, omittedFields: [],
-          ...current.wireCapabilities, probedAt: new Date(this.now()).toISOString(),
+          ...current.wireCapabilities, probedAt: new Date(this.now()).toISOString(), effortProbeVersion: CLAUDE_EFFORT_PROBE_VERSION,
           ...(levels ? { api: 'anthropic-messages' as const, acceptedLevels: levels } : {}),
         };
         if (levels) {
@@ -580,6 +585,7 @@ export class LocalDatabricksService implements DatabricksService {
           current.wireCapabilities = {
             ...(current.wireCapabilities?.acceptedLevels ? { acceptedLevels: current.wireCapabilities.acceptedLevels } : {}),
             ...(current.wireCapabilities?.probedAt ? { probedAt: current.wireCapabilities.probedAt } : {}),
+            ...(current.wireCapabilities?.effortProbeVersion !== undefined ? { effortProbeVersion: current.wireCapabilities.effortProbeVersion } : {}),
             ...learned,
           };
           applyLearnedDatabricksProtocol(current);

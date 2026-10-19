@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto';
 import { servingTask } from './serving-task.js';
 import type { DatabricksNamedProfile } from './named-profile.js';
-import type { DatabricksEndpoint, DatabricksEndpointApi } from '@readable-studio/contracts';
+import { splitDatabricksModelName, type DatabricksEndpoint, type DatabricksEndpointApi } from '@readable-studio/contracts';
 import type { DiscoveredResource } from './scan.js';
 import { databricksEndpointLabel, resolveDatabricksCapabilities, resolveDatabricksReasoningOptions } from './capabilities.js';
 
@@ -19,6 +19,8 @@ export interface DatabricksWireCapabilities {
   acceptedLevels?: string[];
   /** A completed probe, including definitive protocol rejection. */
   probedAt?: string;
+  /** Version of the complete candidate-level effort probe. */
+  effortProbeVersion?: number;
   /** Version of the documented surfaces exhausted before artifact fallback. */
   toolSurfaceVersion?: 2;
   tools?: 'supported' | 'unsupported' | 'unknown';
@@ -31,6 +33,8 @@ export interface DatabricksWireCapabilities {
 }
 
 export interface CatalogueEntry {
+  /** Display-only UC name retained from the enumeration's known schema boundary. */
+  ucModelName?: string;
   provenance?: 'manual';
   endpoint: DatabricksEndpoint;
   configurationId?: string;
@@ -53,6 +57,28 @@ export function applyLearnedDatabricksProtocol(entry: CatalogueEntry): void {
 
 export function opaqueId(secret: string, prefix: string, ...identity: string[]): string {
   return `${prefix}_${createHmac('sha256', secret).update(JSON.stringify(identity)).digest('hex').slice(0, 32)}`;
+}
+
+export function databricksCatalogueLabel(endpoint: DatabricksEndpoint, ucModelName?: string): string {
+  const label = endpoint.servedModelName ?? endpoint.displayName ?? endpoint.label;
+  const fullName = endpoint.displayName;
+  if (endpoint.kind !== 'uc-model-service' || !fullName || label !== fullName) return label;
+  // Old catalogues still identify UC services positively. Only their service
+  // path is split; periods in endpoint aliases or served model names are literal.
+  return ucModelName ?? splitDatabricksModelName(fullName).model;
+}
+
+export function distinguishDatabricksModelLabels<T extends DatabricksEndpoint>(models: readonly T[]): T[] {
+  return models.map(endpoint => {
+    const collisions = models.filter(other => other.label === endpoint.label);
+    if (collisions.length < 2) return endpoint;
+    const name = endpoint.displayName ?? endpoint.label;
+    const sameName = collisions.filter(other => (other.displayName ?? other.label) === name);
+    const sameKind = sameName.filter(other => other.kind === endpoint.kind);
+    const suffix = sameName.length < 2 ? name
+      : `${name}; ${endpoint.kind}${sameKind.length > 1 ? `; ${endpoint.profileId}` : ''}`;
+    return { ...endpoint, label: `${endpoint.label} (${suffix})` };
+  });
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -139,6 +165,11 @@ export function normalizeResource(secret: string, profileId: string, resource: D
   const models = servedModels(resource);
   const modelName = [...new Set(models.flatMap((model) => model.name ? [model.name] : []))].join(', ') || undefined;
   const capabilities = resolveDatabricksCapabilities(resource.metadata, models);
+  const { catalog_name: catalog, schema_name: schema } = resource.metadata;
+  const ucPrefix = typeof catalog === 'string' && typeof schema === 'string' ? `${catalog}.${schema}.` : undefined;
+  const ucModelName = resource.kind === 'uc-model-service'
+    ? resource.ucModelName ?? (ucPrefix && resource.name.startsWith(ucPrefix) ? resource.name.slice(ucPrefix.length) : undefined)
+    : undefined;
   const endpoint: DatabricksEndpoint = {
     id, profileId, label: databricksEndpointLabel(modelName ?? resource.name), displayName: resource.name,
     ...(modelName ? { servedModelName: modelName } : {}),
@@ -150,6 +181,7 @@ export function normalizeResource(secret: string, profileId: string, resource: D
     reasoningOptions: resolveDatabricksReasoningOptions(api, models),
     ...(!api ? { issue: { code: 'DATABRICKS_VERIFICATION_REQUIRED' as const, action: 'verify' as const, retryable: false } } : {}),
   };
+  endpoint.label = databricksCatalogueLabel(endpoint, ucModelName);
   const configurationId = opaqueId(secret, 'dbcfg', JSON.stringify(resource.metadata), resource.measuredApi ?? '');
   const wireCapabilities = previous?.configurationId === configurationId && previous.wireCapabilities
     ? { ...previous.wireCapabilities } : undefined;
@@ -163,6 +195,7 @@ export function normalizeResource(secret: string, profileId: string, resource: D
   }
   const entry: CatalogueEntry = {
     endpoint, upstreamName: resource.name, configurationId,
+    ...(ucModelName ? { ucModelName } : {}),
     ...(wireCapabilities ? { wireCapabilities } : {}),
     basePath: api === 'anthropic-messages' ? '/ai-gateway/anthropic'
       : resource.kind === 'serving-endpoint' ? `/serving-endpoints/${encodeURIComponent(resource.name)}/invocations` : '/ai-gateway/openai/v1',

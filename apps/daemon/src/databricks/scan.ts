@@ -14,6 +14,7 @@ export interface DiscoveredResource {
   kind: DatabricksEndpointKind;
   name: string;
   metadata: Record<string, unknown>;
+  ucModelName?: string;
   measuredApi?: ReturnType<typeof measuredGatewayApi>;
 }
 export interface WorkspaceScanResult {
@@ -173,13 +174,15 @@ export async function scanWorkspace(options: WorkspaceScanOptions): Promise<Work
             const name = resourceName(record).replace(/^model-services\//, '');
             try {
               const resource = await lookupResource({ ...options, signal }, 'uc-model-service', name);
+              if (name.startsWith(`${parent}.`)) resource.ucModelName = name.slice(parent.length + 1);
               add(resource, signal);
             } catch (error) {
               check(signal);
               complete = false;
               recordIssue(error);
               // Retain the candidate without claiming protocol compatibility.
-              add({ kind: 'uc-model-service', name, metadata: record }, signal);
+              add({ kind: 'uc-model-service', name, metadata: record,
+                ...(name.startsWith(`${parent}.`) ? { ucModelName: name.slice(parent.length + 1) } : {}) }, signal);
             }
           });
         } catch (error) { check(signal); complete = false; recordIssue(error); }

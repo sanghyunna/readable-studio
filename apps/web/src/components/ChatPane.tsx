@@ -1036,13 +1036,13 @@ export function ChatPane({
     // of recomputing distance from the just-grown scrollHeight: a single
     // streamed chunk can add 100+ px in one render, which made the
     // post-content distance check skip auto-scroll even when the user
-    // was glued to the bottom. We deliberately use the tighter 80px
-    // cutoff tracked by the ref (not the wider 120px jump-button
-    // threshold) so a deliberate ~90px scroll-up isn't snapped back the
+    // was glued to the bottom. We use the bottom boundary tracked by the ref
+    // (not the wider 120px jump-button threshold) so deliberate scroll-up
+    // isn't snapped back the
     // next time content streams in. Issue #983.
 
     // A brand-new user turn from a local send: switch to "anchor to top"
-    // mode and smooth-scroll their message to the top of the viewport.
+    // mode and reveal their message at the top of the viewport.
     const lastUser = [...messages].reverse().find((m) => m.role === 'user');
     const prevUserId = prevLastUserIdRef.current;
     prevLastUserIdRef.current = lastUser?.id;
@@ -1063,7 +1063,10 @@ export function ChatPane({
     // manual scrollback and accordion expansion already clear it.
     if (anchorActiveRef.current) {
       const latest = messages[messages.length - 1];
-      if (streaming && latest?.role === 'assistant' && latest.content.length > 0) {
+      if (streaming && latest?.role === 'assistant' && (
+        latest.content.length > 0 ||
+        latest.events?.some((event) => event.kind === 'thinking' && event.text.length > 0)
+      )) {
         anchorActiveRef.current = false;
         resetTailSpacer();
         pinnedToBottomRef.current = true;
@@ -1157,7 +1160,7 @@ export function ChatPane({
         const distance =
           target.scrollHeight - target.scrollTop - target.clientHeight;
         setScrolledFromBottom(distance > 120);
-        pinnedToBottomRef.current = distance < 80;
+        pinnedToBottomRef.current = distance <= 2;
       });
     }
 
@@ -1165,7 +1168,7 @@ export function ChatPane({
       const distance =
         target.scrollHeight - target.scrollTop - target.clientHeight;
       savedChatScrollRef.current =
-        distance < 50
+        distance <= 2
           ? { pinnedToBottom: true }
           : { pinnedToBottom: false, scrollTop: target.scrollTop };
     }
@@ -1181,7 +1184,7 @@ export function ChatPane({
         const pinnedTop = lastUserMsgTopInContent(target);
         if (
           pinnedTop !== null &&
-          Math.abs(target.scrollTop - (pinnedTop - ANCHOR_TOP_PADDING)) > 40
+          Math.abs(target.scrollTop - (pinnedTop - ANCHOR_TOP_PADDING)) > 2
         ) {
           anchorActiveRef.current = false;
         }
@@ -1197,7 +1200,7 @@ export function ChatPane({
       // and trip React's "Maximum update depth exceeded" guard.
       const next = distance > 120;
       setScrolledFromBottom((prev) => (prev === next ? prev : next));
-      pinnedToBottomRef.current = distance < 80;
+      pinnedToBottomRef.current = distance <= 2;
     }
     syncScrollable(el);
     el.addEventListener('scroll', onScroll);
@@ -1392,7 +1395,7 @@ export function ChatPane({
     spacer.style.height = `${needed}px`;
   }
 
-  // Smooth-scroll the anchored message to the top. Called ONCE per turn (on
+  // Reveal the anchored message at the top. Called ONCE per turn (on
   // send). The message then stays at the top on its own as the reply streams
   // below it, so we never re-scroll — re-scrolling each chunk is what caused
   // the scroll-down fight and the settle jitter.
@@ -1402,7 +1405,9 @@ export function ChatPane({
     const msgTopInContent = lastUserMsgTopInContent(el);
     if (msgTopInContent === null) return;
     const target = Math.max(0, msgTopInContent - ANCHOR_TOP_PADDING);
-    el.scrollTo({ top: target, behavior: 'smooth' });
+    // Animated intermediate positions look like manual scrollback to onScroll,
+    // releasing the anchor before the first thinking/prose delta arrives.
+    el.scrollTo({ top: target, behavior: 'auto' });
   }
 
   function jumpToBottom() {
@@ -1794,6 +1799,7 @@ export function ChatPane({
               ) : null}
               <ChatRows
                 messages={messages}
+                agents={agents}
                 streaming={streaming}
                 liveToolInput={liveToolInput}
                 projectId={projectId}
@@ -2072,6 +2078,7 @@ function ChatConversationLoading({ t }: { t: TranslateFn }) {
 
 function ChatRows({
   messages,
+  agents,
   streaming,
   liveToolInput,
   projectId,
@@ -2112,6 +2119,7 @@ function ChatRows({
   scrollContainerRef,
 }: {
   messages: ChatMessage[];
+  agents?: AgentInfo[];
   streaming: boolean;
   liveToolInput?: Record<string, { name: string; text: string; seq?: number }>;
   projectId: string | null;
@@ -2217,6 +2225,7 @@ function ChatRows({
     return (
       <AssistantMessage
         message={m}
+        agents={agents}
         streaming={messageStreaming}
         // Only the streaming row consumes live tool input. Non-streaming rows
         // get a stable `undefined`, so adding `liveToolInput` to the memo

@@ -81,7 +81,9 @@ export interface DatabricksIssue {
 export interface DatabricksEndpoint {
   id: string;
   profileId: string;
-  /** Preferred model label: served model when known, otherwise service name. */
+  /** Display-only model label: served model when known, otherwise service name.
+   * UC prefixes are omitted; registered collisions are qualified. Never a request id.
+   */
   label: string;
   /** Real schema-qualified UC service name, or the serving endpoint's own name. */
   displayName?: string;

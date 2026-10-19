@@ -14,7 +14,7 @@ afterEach(cleanup);
 
 const endpoint: DatabricksRegisteredEndpoint = {
   id: `dbe_${'a'.repeat(32)}`, profileId: `dbc_${'b'.repeat(32)}`, appModelId: `dbm_${'c'.repeat(32)}`,
-  label: 'Serving endpoint 7e5e5', displayName: 'app_dev.default.oai-luna-model-service',
+  label: 'gpt-5.6-luna', displayName: 'app_dev.default.oai-luna-model-service',
   servedModelName: 'gpt-5.6-luna', kind: 'uc-model-service', api: 'openai-completions',
   enabled: true, availability: 'compatible', evidence: 'metadata',
   capabilities: { tools: 'unknown', images: 'unknown', contextWindow: null, maxTokens: null },
@@ -34,7 +34,7 @@ describe('displayDatabricksModelName', () => {
     expect(displayDatabricksModelName(byName('system.ai.gpt-oss-120b'))).toEqual({
       model: 'gpt-oss-120b', path: 'system.ai', title: 'system.ai.gpt-oss-120b', secondary: null,
     });
-    expect(displayDatabricksModelName({ label: 'qwen3-next-80b-a3b-instruct', displayName: 'system.ai.qwen3-next-80b-a3b-instruct', servedModelName: 'qwen3-next-80b-a3b-instruct' })).toEqual({
+    expect(displayDatabricksModelName({ kind: 'uc-model-service', label: 'qwen3-next-80b-a3b-instruct', displayName: 'system.ai.qwen3-next-80b-a3b-instruct', servedModelName: 'qwen3-next-80b-a3b-instruct' })).toEqual({
       model: 'qwen3-next-80b-a3b-instruct', path: 'system.ai', title: 'system.ai.qwen3-next-80b-a3b-instruct', secondary: null,
     });
   });
@@ -43,7 +43,7 @@ describe('displayDatabricksModelName', () => {
     expect(displayDatabricksModelName(byName('app_dev.default.oai-luna-model-service'))).toEqual({
       model: 'oai-luna-model-service', path: 'app_dev.default', title: 'app_dev.default.oai-luna-model-service', secondary: 'gpt-5.6-luna',
     });
-    expect(displayDatabricksModelName({ label: 'claude-sonnet-4-5', displayName: 'app_dev.default.c-sonnet-model-service', servedModelName: 'claude-sonnet-4-5' })).toEqual({
+    expect(displayDatabricksModelName({ kind: 'uc-model-service', label: 'claude-sonnet-4-5', displayName: 'app_dev.default.c-sonnet-model-service', servedModelName: 'claude-sonnet-4-5' })).toEqual({
       model: 'c-sonnet-model-service', path: 'app_dev.default', title: 'app_dev.default.c-sonnet-model-service', secondary: 'claude-sonnet-4-5',
     });
   });
@@ -81,9 +81,10 @@ describe('Databricks composer identity', () => {
   it('retains the real service as secondary DTO identity and falls back to it when model metadata is absent', () => {
     expect(registeredEndpointToModelOption(endpoint).label).toBe(endpoint.servedModelName);
     expect(endpoint.displayName).toBe('app_dev.default.oai-luna-model-service');
-    const { servedModelName: _model, ...withoutModel } = endpoint;
-    expect(registeredEndpointToModelOption(withoutModel).label).toBe(endpoint.displayName);
+    const { servedModelName: _model, ...raw } = endpoint;
+    const withoutModel = { ...raw, label: 'oai-luna-model-service' };
+    expect(registeredEndpointToModelOption(withoutModel).label).toBe('oai-luna-model-service');
     const { displayName: _service, ...legacy } = withoutModel;
-    expect(registeredEndpointToModelOption(legacy).label).toBe(endpoint.label);
+    expect(registeredEndpointToModelOption(legacy).label).toBe(legacy.label);
   });
 });

@@ -1,4 +1,5 @@
 import type { DatabricksEndpointApi } from '@readable-studio/contracts';
+import { distinguishDatabricksModelLabels } from '../../databricks/catalogue.js';
 import type { DatabricksService } from '../../databricks/service.js';
 import { rememberLiveModels } from '../models.js';
 import type { AgentDiagnostic, RuntimeAgentDef, RuntimeModelOption } from '../types.js';
@@ -25,7 +26,7 @@ export function databricksReasoningLevels(api: DatabricksEndpointApi, configured
 
 export async function registeredDatabricksModels(service: DatabricksRuntimeService): Promise<RuntimeModelOption[]> {
   const catalogue = await service.listModels();
-  return catalogue.models.map((endpoint) => ({
+  return distinguishDatabricksModelLabels(catalogue.models).map((endpoint) => ({
     id: endpoint.appModelId,
     label: endpoint.label,
     source: 'databricks',

@@ -22,14 +22,16 @@ import type {
 import { fetchDatabricksModels } from '../providers/databricks';
 
 /**
- * Display rule shared with the `readable databricks models` CLI: the UC name
- * (`displayName`, else `label`) is the full title; `catalog.schema` is the
- * de-emphasized path and the remainder is the prominent model name. A served
- * model that differs from that name is secondary information, never the title.
+ * Model-management lists retain the full title and show the UC path separately.
+ * Only UC services have a path; periods in serving endpoint names are literal.
+ * A differing served model remains secondary information.
  */
-export function displayDatabricksModelName(endpoint: Pick<DatabricksEndpoint, 'label' | 'displayName' | 'servedModelName'>) {
+export function displayDatabricksModelName(endpoint: Pick<DatabricksEndpoint, 'kind' | 'label' | 'displayName' | 'servedModelName'>) {
   const title = endpoint.displayName ?? endpoint.label;
-  const split = splitDatabricksModelName(title);
+  const split = endpoint.kind === 'serving-endpoint' ? { model: title, path: null }
+    : endpoint.label !== title && title.endsWith(`.${endpoint.label}`)
+      ? { model: endpoint.label, path: title.slice(0, -(endpoint.label.length + 1)) }
+    : splitDatabricksModelName(title);
   const secondary = endpoint.servedModelName && endpoint.servedModelName !== split.model ? endpoint.servedModelName : null;
   return { model: split.model, path: split.path, title, secondary };
 }
@@ -67,13 +69,13 @@ export function isDatabricksActionId(id: string | null | undefined): boolean {
   return id === DATABRICKS_ADD_MODELS_ACTION_ID;
 }
 
-/** A registered endpoint becomes one ordinary dropdown row keyed by its app alias. */
+/** The daemon owns display labels, including collision suffixes; ids stay opaque. */
 export function registeredEndpointToModelOption(
   endpoint: DatabricksRegisteredEndpoint,
 ): AgentModelOption {
   return {
     id: endpoint.appModelId,
-    label: endpoint.servedModelName ?? endpoint.displayName ?? endpoint.label,
+    label: endpoint.label,
     source: 'databricks',
     connectionId: endpoint.profileId,
     endpointId: endpoint.id,

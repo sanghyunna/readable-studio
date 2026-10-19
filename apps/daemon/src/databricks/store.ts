@@ -2,8 +2,8 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { DatabricksScanResponse } from '@readable-studio/contracts';
-import type { CatalogueEntry } from './catalogue.js';
-import { databricksEndpointLabel, resolveDatabricksCapabilities, resolveDatabricksReasoningOptions } from './capabilities.js';
+import { databricksCatalogueLabel, type CatalogueEntry } from './catalogue.js';
+import { resolveDatabricksCapabilities, resolveDatabricksReasoningOptions } from './capabilities.js';
 import type { DatabricksConnectionBinding } from './credentials.js';
 import { DatabricksServiceError } from './client.js';
 
@@ -63,7 +63,7 @@ export class DatabricksStore {
           }, contextWindow: endpoint.capabilities.contextWindow ?? resolved.contextWindow,
           maxTokens: endpoint.capabilities.maxTokens ?? resolved.maxTokens };
         }
-        if (endpoint.displayName) endpoint.label = databricksEndpointLabel(endpoint.servedModelName ?? endpoint.displayName);
+        if (endpoint.displayName) endpoint.label = databricksCatalogueLabel(endpoint, entry?.ucModelName);
       }
       return this.current = generation;
     } catch (error) {
