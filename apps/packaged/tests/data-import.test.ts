@@ -144,6 +144,21 @@ it('detects an actual legacy process image under the source folder', async () =>
     expect(result.status).toBe('failed');expect(result.error?.startsWith('SOURCE_RUNNING:')).toBe(true);
   } finally { child.stdin.end();await exited; }
 },20000);
+it('imports 1.3.3 au-rel133 work left in the running install folder', async () => {
+  const f=await fixture();const install=path.join(f.root,'new');
+  const sourceRoot=path.join(install,'ReadableStudioData/namespaces/au-rel133');const sourceData=path.join(sourceRoot,'data');
+  await mkdir(sourceRoot,{recursive:true});await rename(f.sourceData,sourceData);
+  await writeFile(path.join(f.dataRoot,'data-import.json'),JSON.stringify({state:'pending',sourceRoot,sourceData,requestedAt:new Date().toISOString()}));
+  const before=await treeHashes(sourceData);
+  const result=await runPendingDataImport({dataRoot:f.dataRoot,listProcessImages:async()=>[path.join(install,'Readable Studio.exe'),path.join(install,'app','Readable Studio.exe')]});
+  expect(result.status).toBe('done');
+  const db=new DatabaseSync(path.join(f.dataRoot,'app.sqlite'));
+  expect(db.prepare('SELECT id FROM projects').all().map(row=>row.id)).toEqual(['p']);
+  const session=db.prepare('SELECT session_id FROM agent_sessions').get()!;db.close();
+  expect(await readFile(path.join(f.dataRoot,'databricks/sessions',f.sessionHash,String(session.session_id)),'utf8')).toContain(f.dataRoot.replaceAll('\\','\\\\'));
+  expect(await treeHashes(sourceData)).toEqual(before);
+  expect(JSON.parse(await readFile(path.join(sourceRoot,'imported.json'),'utf8')).destination).toBe(f.dataRoot);
+});
 it('refuses a legacy running image without relying on data.lock', async () => {
   const f=await fixture();
   expect((await runPendingDataImport({...f,listProcessImages:async()=>[path.join(f.sourceRoot,'Readable Studio.exe')]})).status).toBe('failed');

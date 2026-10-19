@@ -150,6 +150,70 @@ it('never reoffers after done or an earlier process offered',async()=>{
     const response=await(await fetch(`${f.url}/candidates`)).json() as DataImportCandidatesResponse;expect(response.candidates).toEqual([]);expect(response.state).not.toBe('offered');
   }
 });
+// 1.3.3 shipped with namespace au-rel133; the release namespace is rg.
+async function rgFixture(listProcesses: DataImportRouteOptions['listProcesses'] = async()=>[]) {
+  const base=path.resolve('../../.tmp/data-import-route-tests'); await mkdir(base,{recursive:true});
+  const root=await mkdtemp(path.join(base,'ns-'));roots.push(root);
+  const appRoot=path.join(root,'current');const dataRoot=path.join(appRoot,'ReadableStudioData/namespaces/rg/data');
+  await mkdir(dataRoot,{recursive:true});
+  const seed=async(data:string,id:string,updatedAt=1)=>{await mkdir(data,{recursive:true});const db=openDatabase(data,{dataDir:data});insertProject(db,{id,name:id,createdAt:1,updatedAt});closeDatabase();};
+  const app=express();app.use(express.json());registerDataImportRoutes(app,{dataRoot,appRoot,listProcesses});
+  const server=app.listen(0,'127.0.0.1');servers.push(server);await once(server,'listening');
+  const address=server.address();if(!address||typeof address==='string')throw new Error('no address');
+  const url=`http://127.0.0.1:${address.port}/api/data-import`;
+  const post=(body:unknown)=>fetch(`${url}/request`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+  const candidates=async()=>await(await fetch(`${url}/candidates`)).json() as DataImportCandidatesResponse;
+  return {root,appRoot,dataRoot,seed,url,post,candidates};
+}
+it('offers 1.3.3 au-rel133 work from a sibling extract to an empty rg install',async()=>{
+  const f=await rgFixture();const sourceRoot=path.join(f.root,'v133');const sourceData=path.join(sourceRoot,'ReadableStudioData/namespaces/au-rel133/data');
+  await f.seed(sourceData,'from133');
+  const offer=await f.candidates();
+  expect(offer.state).toBe('offered');expect(offer.candidates.map(c=>[c.sourceRoot,c.sourceData,c.projectCount])).toEqual([[sourceRoot,sourceData,1]]);
+  expect(await(await f.post({action:'import',from:sourceRoot})).json()).toEqual({state:'pending',restartRequired:true});
+  expect(JSON.parse(await readFile(path.join(f.dataRoot,'data-import.json'),'utf8'))).toMatchObject({state:'pending',sourceRoot,sourceData});
+});
+it('offers au-rel133 work left in the current install folder without treating the running app as the source',async()=>{
+  let appRoot='';const f=await rgFixture(async()=>[{pid:4242,executablePath:path.join(appRoot,'app','Readable Studio.exe')}]);appRoot=f.appRoot;
+  const sourceRoot=path.join(f.appRoot,'ReadableStudioData/namespaces/au-rel133');const sourceData=path.join(sourceRoot,'data');
+  await f.seed(sourceData,'from133');
+  const offer=await f.candidates();
+  expect(offer.state).toBe('offered');expect(offer.candidates.map(c=>[c.sourceRoot,c.sourceData,c.projectCount])).toEqual([[sourceRoot,sourceData,1]]);
+  expect(await(await f.post({action:'import',from:sourceData})).json()).toEqual({state:'pending',restartRequired:true});
+  expect(JSON.parse(await readFile(path.join(f.dataRoot,'data-import.json'),'utf8'))).toMatchObject({state:'pending',sourceRoot,sourceData});
+});
+it('rejects an extract-root import selector shared by split rg/au-rel133 namespaces and accepts exact data paths',async()=>{
+  const f=await rgFixture();const sourceRoot=path.join(f.root,'v133');
+  const rgData=path.join(sourceRoot,'ReadableStudioData/namespaces/rg/data');const auData=path.join(sourceRoot,'ReadableStudioData/namespaces/au-rel133/data');
+  await f.seed(rgData,'old',1);await f.seed(auData,'new',2);
+  const offer=await f.candidates();
+  expect(offer.state).toBe('offered');expect(offer.candidates.map(c=>c.sourceData).sort()).toEqual([auData,rgData].sort());
+  const ambiguous=await f.post({action:'import',from:sourceRoot});
+  expect(ambiguous.status).toBe(409);expect(JSON.stringify(await ambiguous.json())).toContain('--from');
+  const marker=JSON.parse(await readFile(path.join(f.dataRoot,'data-import.json'),'utf8'));expect(marker).toEqual({state:'offered',offeredBy:expect.any(String)});
+  expect(await(await f.post({action:'import',from:auData})).json()).toEqual({state:'pending',restartRequired:true});
+  expect(JSON.parse(await readFile(path.join(f.dataRoot,'data-import.json'),'utf8'))).toMatchObject({state:'pending',sourceRoot,sourceData:auData});
+});
+it('does not widen discovery to other namespaces',async()=>{
+  const f=await rgFixture();
+  await f.seed(path.join(f.root,'qa','ReadableStudioData/namespaces/au-rel134/data'),'qa');
+  await f.seed(path.join(f.appRoot,'ReadableStudioData/namespaces/other/data'),'other');
+  expect(await f.candidates()).toEqual({state:'unavailable',candidates:[],warnings:[]});
+});
+it('never merges a split rg/au-rel133 install and reports the au-rel133 work instead',async()=>{
+  const f=await rgFixture();const sourceData=path.join(f.appRoot,'ReadableStudioData/namespaces/au-rel133/data');
+  await f.seed(f.dataRoot,'rgWork',1);await f.seed(sourceData,'newer133',2);
+  const digest=async(file:string)=>createHash('sha256').update(await readFile(file)).digest('hex');
+  const before=[await digest(path.join(f.dataRoot,'app.sqlite')),await digest(path.join(sourceData,'app.sqlite'))];
+  const status=await f.candidates();
+  expect(status.state).toBe('unavailable');expect(status.candidates).toEqual([]);
+  expect(status.warnings).toHaveLength(1);expect(status.warnings![0]).toContain(sourceData);expect(status.warnings![0]).toContain('SPLIT_NAMESPACE');
+  await expect(readFile(path.join(f.dataRoot,'data-import.json'))).rejects.toMatchObject({code:'ENOENT'});
+  expect((await f.post({action:'import',from:sourceData})).status).toBe(409);
+  await writeFile(path.join(f.dataRoot,'data-import.json'),JSON.stringify({state:'done'}));
+  const done=await f.candidates();expect(done.state).toBe('done');expect(done.warnings?.[0]).toContain(sourceData);
+  expect([await digest(path.join(f.dataRoot,'app.sqlite')),await digest(path.join(sourceData,'app.sqlite'))]).toEqual(before);
+});
 it('does not overwrite a destination with projects',async()=>{
   const f=await fixture();const db=openDatabase(f.dataRoot,{dataDir:f.dataRoot});insertProject(db,{id:'new',name:'New work',createdAt:1,updatedAt:1});closeDatabase();
   expect((await(await fetch(`${f.url}/candidates`)).json() as DataImportCandidatesResponse).state).toBe('unavailable');
