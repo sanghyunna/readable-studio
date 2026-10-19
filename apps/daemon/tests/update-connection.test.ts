@@ -138,7 +138,7 @@ describe('diagnoseUpdateConnection', () => {
   ])('classifies an unreachable host (%o) as %s instead of workspace-not-found and never fetches a token', async (cause, failure) => {
     const tokens: string[][] = [];
     const base = cli({ apps: { DEFAULT: [] } });
-    const runner: DatabricksSubprocessRunner = async (exe, args, ...rest) => { if (args[0] === 'auth' && args[1] === 'token') tokens.push(args); return base(exe, args, ...rest); };
+    const runner: DatabricksSubprocessRunner = async (exe, args, ...rest) => { if (args[0] === 'auth' && args[1] === 'token') tokens.push([...args]); return base(exe, args, ...rest); };
     const reach = async () => { throw new TypeError('fetch failed', { cause }); };
     const report = await diagnoseUpdateConnection('https://127.0.0.1:9', { token: createUpdateTokenProvider({ resolveCli: bundled, runner, reach }), fetch: http({}) });
     expect(report).toMatchObject({ ok: false, failure });
