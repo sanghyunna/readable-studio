@@ -956,11 +956,11 @@
   to { background-position: -100% center; }
 }
 .shimmer-text {
-  color: color-mix(in srgb, var(--text) 45%, transparent);
+  color: var(--text-muted);
   background: linear-gradient(120deg,
-    transparent 40%,
-    var(--text-muted) 50%,
-    transparent 60%
+    var(--text-muted) 40%,
+    var(--text) 50%,
+    var(--text-muted) 60%
   );
   background-size: 200% 100%;
   -webkit-background-clip: text;
@@ -982,7 +982,12 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .shimmer-text { animation: none; }
+  .shimmer-text {
+    color: var(--text-muted);
+    background: none;
+    -webkit-text-fill-color: var(--text-muted);
+    animation: none;
+  }
 }
 
 /* Status pills */
