@@ -4,13 +4,15 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from 'vitest';
-import { normalizeResource } from '../../src/databricks/catalogue.js';
+import { applyLearnedDatabricksProtocol, normalizeResource } from '../../src/databricks/catalogue.js';
 import { DatabricksStore } from '../../src/databricks/store.js';
 import { createDatabricksService } from '../../src/databricks/service.js';
 import { createDatabricksPiRuntime } from '../../src/runtimes/pi-databricks.js';
 import { chatStream, completed, json, namedFixture } from './named-fixture.js';
 
-async function fixture(statuses: number[] = [200], model = 'databricks-claude-sonnet-5', enabled = true) {
+const sonnetLevels = ['low', 'medium', 'high', 'xhigh', 'max'];
+
+async function fixture(statuses: number[] = [200], model = 'databricks-claude-sonnet-5', enabled = true, cachedVersion?: number | null) {
   const root = await mkdtemp(join(tmpdir(), 'claude-probe-'));
   const requests: Record<string, unknown>[] = [];
   const server = createServer(async (request, response) => {
@@ -19,7 +21,8 @@ async function fixture(statuses: number[] = [200], model = 'databricks-claude-so
     requests.push(JSON.parse(text));
     expect(request.url).toBe('/ai-gateway/anthropic/v1/messages');
     const status = statuses.shift() ?? 200;
-    response.writeHead(status, { 'content-type': 'application/json' });
+    if (status === 0) { request.socket.destroy(); return; }
+    response.writeHead(status === 1400 ? 400 : status, { 'content-type': 'application/json' });
     const body = requests.at(-1)!;
     if (status === 200 && body.stream) {
       response.end('data: {"type":"message_stop"}\n\n');
@@ -27,7 +30,7 @@ async function fixture(statuses: number[] = [200], model = 'databricks-claude-so
     }
     response.end(JSON.stringify(status === 200 ? { type: 'message', content: body.tools
       ? [{ type: 'tool_use', name: 'readable_probe', input: { ok: true } }] : [{ type: 'text', text: 'OK' }] }
-      : { error: { message: status === 422 ? 'output_config.effort high is unsupported' : 'Messages unavailable' } }));
+      : { error: { message: status === 422 ? 'output_config.effort is unsupported' : status === 1400 ? "output_config.effort: Input should be 'high'" : 'Messages unavailable' } }));
   });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
@@ -36,6 +39,14 @@ async function fixture(statuses: number[] = [200], model = 'databricks-claude-so
   const entry = normalizeResource('secret', 'profile', { kind: 'serving-endpoint', name: 'corporate-alias',
     metadata: { task: 'llm/v1/chat', config: { served_entities: [{ foundation_model: { name: model } }] } } });
   entry.endpoint.enabled = enabled;
+  if (cachedVersion !== undefined) {
+    entry.wireCapabilities = {
+      responsesUnsupported: false, chatTokensField: 'max_completion_tokens', requiredOutputBudget: false, omittedFields: [],
+      api: 'anthropic-messages', acceptedLevels: ['high'], probedAt: new Date().toISOString(),
+      ...(cachedVersion === null ? {} : { effortProbeVersion: cachedVersion }),
+    };
+    applyLearnedDatabricksProtocol(entry);
+  }
   const store = new DatabricksStore(root);
   await store.update(next => {
     next.bindings = [{ id: 'profile', host: 'https://workspace.example', profileName: 'test', isDefault: true }];
@@ -51,12 +62,12 @@ async function fixture(statuses: number[] = [200], model = 'databricks-claude-so
       stdout: args[0] === '--version' ? 'Databricks CLI v0.278.0' : JSON.stringify({ access_token: 'token', expiry: '2099-01-01T00:00:00Z' }), stderr: '', exitCode: 0,
     }) } };
   const service = createDatabricksService(options);
-  return { service, root, requests, entry, advance: () => { now += 60_001; },
+  return { service, root, requests, entry, advance: (ms = 60_001) => { now += ms; },
     restart: () => createDatabricksService(options),
     close: async () => { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); await rm(root, { recursive: true, force: true }); } };
 }
 
-test('task-only Claude lazily probes once, persists measured high and launches Pi with thinking high', async () => {
+test('task-only Claude probes every recipe level, persists them and passes selected thinking levels to Pi', async () => {
   const f = await fixture();
   try {
     const before = await f.service.listModels();
@@ -65,28 +76,31 @@ test('task-only Claude lazily probes once, persists measured high and launches P
     await Promise.all([f.service.listModels(), f.service.listModels()]);
     const runtime = await f.service.resolveRuntime(f.entry.endpoint.appModelId!);
     expect(runtime.api).toBe('anthropic-messages');
-    expect(runtime.reasoningOptions).toEqual(['high']);
-    expect(f.requests).toHaveLength(1);
+    expect(runtime.reasoningOptions).toEqual(sonnetLevels);
+    expect(f.requests).toHaveLength(5);
     await runtime.onCapabilitiesLearned!({ api: 'anthropic-messages', responsesUnsupported: false,
       chatTokensField: 'max_tokens', requiredOutputBudget: false, omittedFields: [], tools: 'supported', toolsCompletionVersion: 1 });
-    expect((await f.service.listModels()).models[0]?.reasoningOptions?.map(option => option.id)).toEqual(['high']);
-    expect(f.requests[0]).toMatchObject({ max_tokens: 16, thinking: { type: 'adaptive' }, output_config: { effort: 'high' } });
+    expect((await f.service.listModels()).models[0]?.reasoningOptions?.map(option => option.id)).toEqual(sonnetLevels);
+    expect(f.requests.map(body => body.output_config)).toEqual(sonnetLevels.map(effort => ({ effort })));
+    expect(f.requests[0]).toMatchObject({ max_tokens: 16, thinking: { type: 'adaptive' } });
     expect(f.requests[0]).not.toHaveProperty('reasoning_effort');
     const saved = (await new DatabricksStore(f.root).read()).entries[0]!;
-    expect(saved.wireCapabilities).toMatchObject({ api: 'anthropic-messages', acceptedLevels: ['high'], probedAt: expect.any(String) });
+    expect(saved.wireCapabilities).toMatchObject({ api: 'anthropic-messages', acceptedLevels: sonnetLevels, probedAt: expect.any(String), effortProbeVersion: 1 });
     const normalized = normalizeResource('secret', 'profile', { kind: 'serving-endpoint', name: 'corporate-alias',
       metadata: { task: 'llm/v1/chat', config: { served_entities: [{ foundation_model: { name: 'databricks-claude-sonnet-5' } }] } } }, saved);
-    expect(normalized.endpoint.reasoningOptions?.map(option => option.id)).toEqual(['high']);
+    expect(normalized.endpoint.reasoningOptions?.map(option => option.id)).toEqual(sonnetLevels);
     const changed = normalizeResource('secret', 'profile', { kind: 'serving-endpoint', name: 'corporate-alias',
       metadata: { task: 'llm/v1/chat', config: { served_entities: [{ foundation_model: { name: 'gpt-oss-120b' } }] } } }, saved);
     expect(changed.wireCapabilities).toBeUndefined();
     expect(changed.endpoint.api).toBe('openai-completions');
     const restarted = f.restart();
-    expect((await restarted.listModels()).models[0]?.reasoningOptions?.map(option => option.id)).toEqual(['high']);
-    const pi = await createDatabricksPiRuntime({ dataRoot: f.root, cwd: f.root, sessionKey: 'learned', model: f.entry.endpoint.appModelId!, service: restarted });
-    try { expect(pi.invocation.args.slice(pi.invocation.args.indexOf('--thinking'), pi.invocation.args.indexOf('--thinking') + 2)).toEqual(['--thinking', 'high']); }
-    finally { await pi.close(); }
-    expect(f.requests).toHaveLength(1);
+    expect((await restarted.listModels()).models[0]?.reasoningOptions?.map(option => option.id)).toEqual(sonnetLevels);
+    for (const reasoning of sonnetLevels) {
+      const pi = await createDatabricksPiRuntime({ dataRoot: f.root, cwd: f.root, sessionKey: 'learned', model: f.entry.endpoint.appModelId!, service: restarted, reasoning });
+      try { expect(pi.invocation.args.slice(pi.invocation.args.indexOf('--thinking'), pi.invocation.args.indexOf('--thinking') + 2)).toEqual(['--thinking', reasoning]); }
+      finally { await pi.close(); }
+    }
+    expect(f.requests).toHaveLength(5);
   } finally { await f.close(); }
 });
 
@@ -94,8 +108,8 @@ test('registration schedules the same one-shot probe without waiting for the pic
   const f = await fixture([200], 'databricks-claude-sonnet-5', false);
   try {
     await f.service.enable(f.entry.endpoint.id, { scanId: 'scan', expectedRevision: 1 });
-    expect((await f.service.resolveRuntime(f.entry.endpoint.appModelId!)).reasoningOptions).toEqual(['high']);
-    expect(f.requests).toHaveLength(1);
+    expect((await f.service.resolveRuntime(f.entry.endpoint.appModelId!)).reasoningOptions).toEqual(sonnetLevels);
+    expect(f.requests).toHaveLength(5);
   } finally { await f.close(); }
 });
 
@@ -116,9 +130,15 @@ test('manual alias registration probes the served Claude identity, not the alias
   await f.service.enable(endpoint.id, { scanId: scan.scanId, expectedRevision: scan.revision });
   const runtime = await f.service.resolveRuntime(endpoint.appModelId!);
   expect(runtime.api).toBe('anthropic-messages');
-  expect(runtime.reasoningOptions).toEqual(['high']);
-  expect(runtime.wireCapabilities?.namedProfile).toMatchObject({ api: 'anthropic-messages', reasoning: ['high'] });
-  expect(messages).toHaveLength(1);
+  expect(runtime.reasoningOptions).toEqual(sonnetLevels);
+  expect(runtime.wireCapabilities?.namedProfile).toMatchObject({ api: 'anthropic-messages', reasoning: sonnetLevels });
+  expect(messages).toHaveLength(5);
+  const saved = await new DatabricksStore(f.dataRoot).read();
+  expect(saved.scans.at(-1)?.endpoints[0]?.reasoningOptions?.map(option => option.id)).toEqual(sonnetLevels);
+  const restarted = f.restart();
+  await restarted.listModels();
+  expect((await restarted.resolveRuntime(endpoint.appModelId!)).wireCapabilities?.namedProfile?.reasoning).toEqual(sonnetLevels);
+  expect(messages).toHaveLength(5);
 });
 
 test('explicit verification learns Messages once and reuses its measured effort check', async () => {
@@ -127,17 +147,26 @@ test('explicit verification learns Messages once and reuses its measured effort 
     const result = await f.service.verify(f.entry.endpoint.id, { scanId: 'scan', expectedRevision: 1, allowInference: true });
     expect(result.endpoint.api).toBe('anthropic-messages');
     expect(result.checks.effort).toBe('passed');
-    expect(f.requests.filter(body => body.max_tokens === 16)).toHaveLength(1);
-    expect(f.requests).toHaveLength(3);
+    expect(f.requests.filter(body => body.max_tokens === 16)).toHaveLength(5);
+    expect(f.requests).toHaveLength(7);
   } finally { await f.close(); }
 });
 
-test('an explicit high-effort rejection tries only medium and advertises only that accepted level', async () => {
-  const f = await fixture([422, 200]);
+test('an explicitly rejected level is excluded without skipping the remaining recipe levels', async () => {
+  const f = await fixture([200, 422, 200, 200, 200]);
   try {
     await f.service.listModels();
-    expect((await f.service.resolveRuntime(f.entry.endpoint.appModelId!)).reasoningOptions).toEqual(['medium']);
-    expect(f.requests.map(body => body.output_config)).toEqual([{ effort: 'high' }, { effort: 'medium' }]);
+    expect((await f.service.resolveRuntime(f.entry.endpoint.appModelId!)).reasoningOptions).toEqual(['low', 'high', 'xhigh', 'max']);
+    expect(f.requests.map(body => body.output_config)).toEqual(sonnetLevels.map(effort => ({ effort })));
+  } finally { await f.close(); }
+});
+
+test('a per-value enum rejection ("Input should be") does not end the probe before the accepted level', async () => {
+  const f = await fixture([1400, 1400, 200, 1400, 1400]);
+  try {
+    await f.service.listModels();
+    expect((await f.service.resolveRuntime(f.entry.endpoint.appModelId!)).reasoningOptions).toEqual(['high']);
+    expect(f.requests.map(body => body.output_config)).toEqual(sonnetLevels.map(effort => ({ effort })));
   } finally { await f.close(); }
 });
 
@@ -153,18 +182,58 @@ test('definitive Messages rejection stays Chat and is not probed after restart',
   } finally { await f.close(); }
 });
 
-test('transient 503 is debounced and retried later rather than persisted as definitive', async () => {
-  const f = await fixture([503, 200]);
+test.each([401, 403, 429, 503, 0])('failure %s during discovery does not persist a partial list and respects the retry gate', async status => {
+  const f = await fixture([200, status]);
   try {
     await f.service.listModels();
     expect((await f.service.resolveRuntime(f.entry.endpoint.appModelId!)).api).toBe('openai-completions');
     await f.service.listModels();
     await f.service.resolveRuntime(f.entry.endpoint.appModelId!);
-    expect(f.requests).toHaveLength(1);
-    f.advance();
+    expect(f.requests).toHaveLength(2);
+    expect((await new DatabricksStore(f.root).read()).entries[0]?.wireCapabilities).toBeUndefined();
+    f.advance(59_999);
+    await f.service.listModels();
+    await f.service.resolveRuntime(f.entry.endpoint.appModelId!);
+    expect(f.requests).toHaveLength(2);
+    f.advance(2);
+    await f.service.listModels();
+    expect((await f.service.resolveRuntime(f.entry.endpoint.appModelId!)).reasoningOptions).toEqual(sonnetLevels);
+    expect(f.requests).toHaveLength(7);
+  } finally { await f.close(); }
+});
+
+test.each([null, 0])('old singleton cache with probe version %s is reverified once on listing', async version => {
+  const f = await fixture([200], 'databricks-claude-sonnet-5', true, version);
+  try {
+    await f.service.listModels();
+    expect((await f.service.resolveRuntime(f.entry.endpoint.appModelId!)).reasoningOptions).toEqual(sonnetLevels);
+    expect(f.requests).toHaveLength(5);
+    const restarted = f.restart();
+    await restarted.listModels();
+    expect((await restarted.resolveRuntime(f.entry.endpoint.appModelId!)).reasoningOptions).toEqual(sonnetLevels);
+    expect(f.requests).toHaveLength(5);
+  } finally { await f.close(); }
+});
+
+test('a truly single-level endpoint retains exactly its accepted level after restart', async () => {
+  const f = await fixture([422, 422, 200, 422, 422]);
+  try {
     await f.service.listModels();
     expect((await f.service.resolveRuntime(f.entry.endpoint.appModelId!)).reasoningOptions).toEqual(['high']);
-    expect(f.requests).toHaveLength(2);
+    expect(f.requests).toHaveLength(5);
+    const restarted = f.restart();
+    await restarted.listModels();
+    expect((await restarted.resolveRuntime(f.entry.endpoint.appModelId!)).reasoningOptions).toEqual(['high']);
+    expect(f.requests).toHaveLength(5);
+  } finally { await f.close(); }
+});
+
+test('family recipes probe only low, medium and high', async () => {
+  const f = await fixture([200], 'anthropic/claude-opus-4-5');
+  try {
+    await f.service.listModels();
+    expect((await f.service.resolveRuntime(f.entry.endpoint.appModelId!)).reasoningOptions).toEqual(['low', 'medium', 'high']);
+    expect(f.requests.map(body => body.output_config)).toEqual(['low', 'medium', 'high'].map(effort => ({ effort })));
   } finally { await f.close(); }
 });
 
