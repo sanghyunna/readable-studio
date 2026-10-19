@@ -3,7 +3,7 @@ import { createServer, type Server } from 'node:http';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DatabricksSubprocessRunner } from '../src/databricks/client.js';
 import { diagnoseUpdateConnection, registerUpdateRoutes } from '../src/update-routes.js';
-import { createUpdateTokenProvider, UpdateSourceError } from '../src/update-source.js';
+import { createUpdateTokenProvider, UpdateSourceError, type UpdateTokenProviderOptions } from '../src/update-source.js';
 
 const serverUrl = 'https://updates-1.aws.databricksapps.com';
 const workspace = 'https://adb-1.azuredatabricks.net';
@@ -35,6 +35,8 @@ function cli(options: { profiles?: { name: string; host: string }[]; apps?: Reco
     return { stdout: '', stderr: 'unknown command', exitCode: 1 };
   };
 }
+/** Hosts are reachable unless a test says otherwise; no test may touch the real network. */
+const provider = (options: UpdateTokenProviderOptions) => createUpdateTokenProvider({ reach: async () => {}, ...options });
 const bundled = async () => ({ path: 'C:\\Readable Studio\\resources\\app\\vendor\\databricks\\databricks.exe', source: 'bundled' as const });
 
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
@@ -101,25 +103,25 @@ describe('diagnoseUpdateConnection', () => {
   });
 
   it('reports a CLI that is neither bundled nor installed', async () => {
-    const report = await diagnoseUpdateConnection(serverUrl, { token: createUpdateTokenProvider({ resolveCli: async () => null }), fetch: http({}) });
+    const report = await diagnoseUpdateConnection(serverUrl, { token: provider({ resolveCli: async () => null }), fetch: http({}) });
     expect(report).toMatchObject({ ok: false, failure: 'cli-missing' });
     expect(report.steps).toContainEqual(expect.objectContaining({ step: 'cli', ok: false }));
   });
 
   it('reports not signed in with the workspace host to sign in to', async () => {
-    const report = await diagnoseUpdateConnection(serverUrl, { token: createUpdateTokenProvider({ resolveCli: bundled, runner: cli({ apps: { DEFAULT: 'auth' } }) }), fetch: http({}) });
+    const report = await diagnoseUpdateConnection(serverUrl, { token: provider({ resolveCli: bundled, runner: cli({ apps: { DEFAULT: 'auth' } }) }), fetch: http({}) });
     expect(report).toMatchObject({ ok: false, failure: 'not-logged-in', host: workspace });
     expect(report.steps).toContainEqual(expect.objectContaining({ step: 'workspace', ok: false, detail: expect.stringContaining('DEFAULT') }));
   });
 
   it('reports not signed in when there are no CLI profiles at all', async () => {
-    const report = await diagnoseUpdateConnection(serverUrl, { token: createUpdateTokenProvider({ resolveCli: bundled, runner: cli({ profiles: [] }) }), fetch: http({}) });
+    const report = await diagnoseUpdateConnection(serverUrl, { token: provider({ resolveCli: bundled, runner: cli({ profiles: [] }) }), fetch: http({}) });
     expect(report).toMatchObject({ failure: 'not-logged-in' });
     expect(report.steps).toContainEqual(expect.objectContaining({ step: 'profiles', ok: false }));
   });
 
   it('reports the workspace that owns the app as not found among signed-in profiles', async () => {
-    const report = await diagnoseUpdateConnection(serverUrl, { token: createUpdateTokenProvider({ resolveCli: bundled, runner: cli({
+    const report = await diagnoseUpdateConnection(serverUrl, { token: provider({ resolveCli: bundled, runner: cli({
       profiles: [{ name: 'DEFAULT', host: workspace }, { name: 'OTHER', host: 'https://adb-2.azuredatabricks.net' }],
       apps: { DEFAULT: [{ url: 'https://another.databricksapps.com' }], OTHER: [] },
     }) }), fetch: http({}) });
@@ -129,14 +131,29 @@ describe('diagnoseUpdateConnection', () => {
     expect(workspaces).toContain('OTHER');
   });
 
+  it.each([
+    [{ code: 'ECONNREFUSED' }, 'unreachable'],
+    [{ code: 'ENOTFOUND' }, 'dns'],
+    [{ code: 'ETIMEDOUT' }, 'timeout'],
+  ])('classifies an unreachable host (%o) as %s instead of workspace-not-found and never fetches a token', async (cause, failure) => {
+    const tokens: string[][] = [];
+    const base = cli({ apps: { DEFAULT: [] } });
+    const runner: DatabricksSubprocessRunner = async (exe, args, ...rest) => { if (args[0] === 'auth' && args[1] === 'token') tokens.push(args); return base(exe, args, ...rest); };
+    const reach = async () => { throw new TypeError('fetch failed', { cause }); };
+    const report = await diagnoseUpdateConnection('https://127.0.0.1:9', { token: createUpdateTokenProvider({ resolveCli: bundled, runner, reach }), fetch: http({}) });
+    expect(report).toMatchObject({ ok: false, failure });
+    expect(report.steps.at(-1)).toMatchObject({ step: 'health', ok: false });
+    expect(tokens).toEqual([]);
+  });
+
   it('reports a profile without permission to list apps as forbidden', async () => {
-    const report = await diagnoseUpdateConnection(serverUrl, { token: createUpdateTokenProvider({ resolveCli: bundled, runner: cli({ apps: { DEFAULT: 'denied' } }) }), fetch: http({}) });
+    const report = await diagnoseUpdateConnection(serverUrl, { token: provider({ resolveCli: bundled, runner: cli({ apps: { DEFAULT: 'denied' } }) }), fetch: http({}) });
     expect(report).toMatchObject({ failure: 'forbidden' });
   });
 
   it('verifies every step on success, names what it found and never exposes the token', async () => {
     const fetcher = http({ '/api/v1/health': () => Response.json(healthy), '/api/v1/latest': () => Response.json(manifest) });
-    const report = await diagnoseUpdateConnection(`${serverUrl}/`, { token: createUpdateTokenProvider({ resolveCli: bundled, runner: cli() }), fetch: fetcher });
+    const report = await diagnoseUpdateConnection(`${serverUrl}/`, { token: provider({ resolveCli: bundled, runner: cli() }), fetch: fetcher });
     expect(report).toMatchObject({
       ok: true, serverUrl, host: workspace, profile: 'DEFAULT', latest: '1.3.4',
       cli: { path: 'C:\\Readable Studio\\resources\\app\\vendor\\databricks\\databricks.exe', source: 'bundled', version: '0.250.0' },
@@ -149,7 +166,7 @@ describe('diagnoseUpdateConnection', () => {
   });
 
   it('labels a PATH executable as installed', async () => {
-    const report = await diagnoseUpdateConnection(serverUrl, { token: createUpdateTokenProvider({ resolveCli: async () => ({ path: 'C:\\tools\\databricks.exe', source: 'path' }), runner: cli() }),
+    const report = await diagnoseUpdateConnection(serverUrl, { token: provider({ resolveCli: async () => ({ path: 'C:\\tools\\databricks.exe', source: 'path' }), runner: cli() }),
       fetch: http({ '/api/v1/health': () => Response.json(healthy), '/api/v1/latest': () => Response.json(manifest) }) });
     expect(report.cli).toMatchObject({ source: 'installed' });
   });

@@ -61,6 +61,7 @@ export interface Dict {
   'update.retry': string;
   'update.dismiss': string;
   'update.reason.invalid-url': string;
+  'update.reason.not-https': string;
   'update.reason.app-not-accessible': string;
   'update.reason.version-mismatch': string;
   'update.reason.release-withdrawn': string;

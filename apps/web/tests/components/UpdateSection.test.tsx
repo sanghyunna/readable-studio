@@ -289,12 +289,13 @@ it('disables restart while apply is pending and maps a busy response', async () 
   expect(screen.getByRole('alert').textContent).toBe('update.reason.update-in-progress');
 });
 
-it.each(['http://example.com', 'garbage'])('rejects invalid server input locally: %s', async (url) => {
+it.each([['http://example.com', 'not-https'], ['garbage', 'invalid-url']])('rejects invalid server input locally: %s', async (url, kind) => {
   const fetcher = setup(false);
   await act(async () => { render(<UpdateSection currentVersion="1.3.3" />); });
   fireEvent.change(screen.getByRole('textbox'), { target: { value: url } });
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'update.connect' })));
-  expect(screen.getByRole('alert').textContent).toBe('update.reason.invalid-url');
+  expect(screen.getByRole('alert').textContent).toBe(`update.reason.${kind}`);
+  expect(screen.getByText('update.connection.details')).toBeTruthy();
   expect(fetcher.mock.calls.some(([path]) => path === '/api/update/health' || path === '/api/update/connection')).toBe(false);
 });
 
@@ -335,10 +336,11 @@ it('associates local validation with the URL input and clears it on edit', async
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'update.connect' })));
   expect(input.getAttribute('aria-invalid')).toBe('true');
   expect(screen.getByRole('alert').className.split(' ')).toContain(styles.fieldError);
-  expect(document.getElementById(input.getAttribute('aria-describedby')!)?.textContent).toBe('update.reason.invalid-url');
+  expect(document.getElementById(input.getAttribute('aria-describedby')!)?.textContent).toBe('update.reason.not-https');
   expect(input.parentElement?.contains(screen.getByRole('alert'))).toBe(true);
   fireEvent.change(input, { target: { value: result.releaseUrl } });
-  expect(screen.queryByText('update.reason.invalid-url')).toBeNull();
+  expect(screen.queryByText('update.reason.not-https')).toBeNull();
+  expect(screen.queryByText('update.connection.details')).toBeNull();
 });
 
 it('preserves a URL typed before app config resolves', async () => {

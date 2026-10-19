@@ -2,6 +2,8 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { acquireUpdateToken } from '../src/update-source.js';
 import { DatabricksClient, DatabricksServiceError } from '../src/databricks/client.js';
 
+// The reachability probe must not touch the real network for the fake app hosts below.
+vi.mock('../src/update-http.js', () => ({ createUpdateHttpClient: () => ({ fetch: async () => new Response('x'), destroy: async () => {} }) }));
 afterEach(() => vi.restoreAllMocks());
 it('distinguishes an authenticated workspace without the app from missing login', async () => {
   vi.spyOn(DatabricksClient.prototype, 'probe').mockResolvedValue({ cli: 'ready', version: '0.300.0', cliSource: 'bundled' });

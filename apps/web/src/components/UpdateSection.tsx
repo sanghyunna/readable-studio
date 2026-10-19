@@ -27,7 +27,7 @@ function reasonKey(reason: string): ReasonKey {
     'download-failed': 'update.reason.download-failed', 'unsupported-layout': 'update.reason.unsupported-layout',
     'already-current': 'update.reason.already-current',
     'disk-extract-failed': 'update.reason.disk-extract-failed', 'helper-not-acknowledged': 'update.reason.helper-not-acknowledged',
-    'invalid-url': 'update.reason.invalid-url', 'app-not-accessible': 'update.reason.app-not-accessible',
+    'invalid-url': 'update.reason.invalid-url', 'not-https': 'update.reason.not-https', 'app-not-accessible': 'update.reason.app-not-accessible',
     'update-in-progress': 'update.reason.update-in-progress', 'version-mismatch': 'update.reason.version-mismatch',
     'source-changed': 'update.reason.source-changed', cancelled: 'update.reason.cancelled',
     'not-ready': 'update.reason.not-ready',
@@ -69,7 +69,8 @@ function normalizeServerUrl(input: string): string | null {
   if (!input.trim()) return null;
   let parsed: URL;
   try { parsed = new URL(input.trim()); } catch { throw new Error('invalid-url'); }
-  if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error('invalid-url');
+  if (parsed.protocol !== 'https:') throw new Error('not-https');
+  if (parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error('invalid-url');
   return parsed.href.replace(/\/+$/, '');
 }
 async function requestConnection(serverUrl: string): Promise<ConnectionReport> {
@@ -322,11 +323,12 @@ export function UpdateSection({ currentVersion, onApply, renderDatabricksLogin }
   const [error, setError] = useState<string | null>(null);
   const [host, setHost] = useState<string>();
   const [connection, setConnection] = useState<ConnectionView | null>(null);
+  const [localLog, setLocalLog] = useState<ConnectionReport | null>(null);
   const [superseded, setSuperseded] = useState(false);
   const inputErrorId = useId();
-  const inputError = error === 'invalid-url' || error === 'not-configured';
+  const inputError = error === 'invalid-url' || error === 'not-https' || error === 'not-configured';
   const clearPrevious = () => {
-    setSuperseded(true); setResult(null); setError(null); setConnection(null);
+    setSuperseded(true); setResult(null); setError(null); setConnection(null); setLocalLog(null);
   };
   useEffect(() => {
     void request<{ config: { autoUpdate?: AutoUpdateConfig } }>('/api/app-config').then((value) => {
@@ -360,7 +362,12 @@ export function UpdateSection({ currentVersion, onApply, renderDatabricksLogin }
   const connect = async () => {
     clearPrevious();
     let serverUrl: string | null;
-    try { serverUrl = normalizeServerUrl(url); } catch (fault) { setError(fault instanceof Error ? fault.message : 'invalid-url'); return; }
+    try { serverUrl = normalizeServerUrl(url); } catch (fault) {
+      const failure = fault instanceof Error && fault.message === 'not-https' ? 'not-https' : 'invalid-url';
+      setError(failure);
+      setLocalLog({ ok: false, serverUrl: null, failure, timeoutMs: CONNECTION_TIMEOUT_MS, elapsedMs: 0, steps: [{ step: 'url', ok: false, elapsedMs: 0, detail: url.trim() }] });
+      return;
+    }
     if (!serverUrl) { setError('not-configured'); return; }
     setSaving('connection'); setConnection({ state: 'checking' });
     const report = await requestConnection(serverUrl);
@@ -378,6 +385,7 @@ export function UpdateSection({ currentVersion, onApply, renderDatabricksLogin }
     {saving === 'toggle' && config.enabled ? <p role="status" className={styles.result} data-update-automatic-status>{t('update.automaticChecking')}</p> : null}
     <label className={styles.server}>{t('update.serverUrl')}<Input type="url" value={url} aria-invalid={inputError || undefined} aria-describedby={inputError ? inputErrorId : undefined} placeholder="https://…databricksapps.com" onChange={(event) => { urlEdited.current = true; setUrl(event.target.value); clearPrevious(); }} />
       {inputError ? <span id={inputErrorId} role="alert" className={styles.fieldError}>{t(reasonKey(error!))}</span> : null}
+      {inputError && localLog ? <ConnectionLog report={localLog} /> : null}
     </label>
     <Button disabled={busy || !!saving || !url.trim()} aria-busy={saving === 'connection' || undefined} onClick={() => void connect()}>{t(saving === 'connection' ? 'update.connecting' : 'update.connect')}</Button>
     {connection ? <ConnectionResult view={connection} retry={() => void connect()} renderDatabricksLogin={renderDatabricksLogin} /> : null}

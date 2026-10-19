@@ -43,6 +43,16 @@ function networkDetail(error: unknown): string {
 export interface UpdateTokenProviderOptions {
   resolveCli?: (override?: string | null) => Promise<DatabricksExecutable | null>;
   runner?: DatabricksSubprocessRunner;
+  /** Unauthenticated reachability probe of the app host; any HTTP answer counts as reachable. Resolves or throws a network error. */
+  reach?: (serverUrl: string, signal?: AbortSignal, fetcher?: typeof fetch) => Promise<void>;
+}
+async function probeReachable(serverUrl: string, signal?: AbortSignal, fetcher?: typeof fetch): Promise<void> {
+  const client = fetcher ? undefined : createUpdateHttpClient();
+  try {
+    const timeout = AbortSignal.timeout(10_000);
+    const response = await (fetcher ?? client!.fetch)(`${serverUrl}/api/v1/health`, { redirect: 'manual', signal: signal ? AbortSignal.any([signal, timeout]) : timeout } as { signal: AbortSignal });
+    await response.body?.cancel();
+  } finally { await client?.destroy(); }
 }
 
 /**
@@ -63,6 +73,7 @@ export function createUpdateTokenProvider(options: UpdateTokenProviderOptions = 
   const discover = async (serverUrl: string, context: UpdateTraceContext): Promise<DatabricksConnectionBinding> => {
     const trace = context.trace ?? (() => {});
     let start = performance.now();
+    start = performance.now();
     const probe = await client.probe();
     if (probe.cli !== 'ready') {
       trace({ step: 'cli', ok: false, elapsedMs: since(start), detail: probe.cli === 'missing'
@@ -108,6 +119,13 @@ export function createUpdateTokenProvider(options: UpdateTokenProviderOptions = 
     }
     if (failure && failure.reason !== 'not-logged-in') throw failure;
     if (authenticated) {
+      // Before claiming "workspace not found", confirm the host is reachable at all (unauthenticated; no token is sent).
+      start = performance.now();
+      try { await (options.reach ?? probeReachable)(serverUrl, context.signal); }
+      catch (error) {
+        trace({ step: 'health', ok: false, elapsedMs: since(start), detail: `${serverUrl} is not reachable: ${networkDetail(error)}` });
+        throw new UpdateSourceError('unreachable', undefined, networkFailure(error));
+      }
       trace({ step: 'workspace', ok: false, elapsedMs: 0, detail: 'no signed-in profile lists this app URL' });
       throw new UpdateSourceError('app-not-accessible', undefined, 'workspace-not-found');
     }
@@ -142,8 +160,12 @@ export const acquireUpdateToken: UpdateTokenProvider = (serverUrl, force) => cre
 
 export class DatabricksUpdateSource {
   private tokenTraced = false;
-  constructor(readonly base: string, private readonly token: UpdateTokenProvider = createUpdateTokenProvider(), private readonly fetcher?: typeof fetch,
-    private readonly context: UpdateTraceContext = {}) {}
+  private readonly token: UpdateTokenProvider;
+  constructor(readonly base: string, token?: UpdateTokenProvider, private readonly fetcher?: typeof fetch,
+    private readonly context: UpdateTraceContext = {}) {
+    // An injected fetch also serves the default provider's reachability probe.
+    this.token = token ?? createUpdateTokenProvider(fetcher ? { reach: (url, signal) => probeReachable(url, signal, fetcher) } : {});
+  }
 
   /** Trace token acquisition once per source, and again only for a forced refresh. */
   private bearer(force: boolean) {
