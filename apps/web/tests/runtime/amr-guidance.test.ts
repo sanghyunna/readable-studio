@@ -31,7 +31,9 @@ describe('resolveRunFailureUi', () => {
       const ui = resolveRunFailureUi(code, 'claude');
       expect(ui.showSwitchCard).toBe(false);
       expect(ui.primaryAction).toBe('retry');
-      expect(ui.messageKey).toBeNull();
+      expect(ui.messageKey).toBe(
+        code === 'RATE_LIMITED' ? 'chat.rateLimitMessage' : null,
+      );
     }
     expect(resolveRunFailureUi('UNAUTHORIZED', null).showSwitchCard).toBe(false);
   });
