@@ -61,6 +61,31 @@ export const PROMPT_WITH_FRONT_MATTER = [
   '',
 ].join('\n');
 
+// Root PROMPT.md + kit/*.html (no single wrapper folder to strip): every HTML,
+// including nested ones and .htm, must survive as a page with its kit/ path.
+export const KIT_PROMPT = [
+  '---',
+  'name: Kit Pack',
+  'description: Kit pages for an annual report',
+  'cover: kit/cover.html',
+  'pages:',
+  '  - file: kit/report.htm',
+  '    use: Body section',
+  '---',
+  'KIT_PROMPT_MARKER_902: keep the cover sober.',
+  '',
+].join('\n');
+
+export function kitTemplateEntries(prompt = KIT_PROMPT) {
+  return [
+    { name: 'PROMPT.md', body: prompt },
+    { name: 'kit/cover.html', body: '<!doctype html><link rel="stylesheet" href="assets/shared.css"><h1>Kit cover</h1>' },
+    { name: 'kit/report.htm', body: '<!doctype html><link rel="stylesheet" href="assets/shared.css"><h1>Kit report</h1>' },
+    { name: 'kit/nested/detail.html', body: '<!doctype html><link rel="stylesheet" href="../assets/shared.css"><h1>Kit detail</h1>' },
+    { name: 'kit/assets/shared.css', body: 'h1{color:#0a0a0a}' },
+  ];
+}
+
 export function validTemplateEntries(prompt = PROMPT_WITH_FRONT_MATTER) {
   return [
     { name: 'PROMPT.md', body: prompt },

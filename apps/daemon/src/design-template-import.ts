@@ -7,12 +7,13 @@
 // without a separate registry.
 import { createHash, randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type {
   DesignTemplateImportManifest,
   DesignTemplateImportPage,
   DesignTemplateThumbnailState,
+  DesignTemplateType,
 } from '@readable-studio/contracts';
 import {
   MAX_FILES,
@@ -31,8 +32,40 @@ export const ALLOWED_TEMPLATE_EXTENSIONS = new Set([
 ]);
 
 const IMPORT_MANIFEST = 'import.json';
-const USER_TEMPLATE_PAGE_INSTRUCTION =
-  'Choose the page layout that fits each slide; these pages show structure and style only; their example text is not factual input.';
+const PAGE_INSTRUCTION_TAIL = 'these pages show structure and style only; their example text is not factual input.';
+
+// SKILL.md shape per Hub type. `report` is not a SkillMode (skills.ts would
+// infer one from the body, possibly `deck`), so reports pin `prototype` like
+// the built-in report templates; hubType carries the Hub category.
+const TEMPLATE_TYPE_PROFILES: Record<DesignTemplateType, {
+  mode: 'deck' | 'prototype';
+  hubType: DesignTemplateType;
+  noun: string;
+  triggers: string[];
+  instruction: string;
+}> = {
+  deck: {
+    mode: 'deck', hubType: 'deck', noun: 'deck', triggers: ['deck', 'slides'],
+    instruction: `Choose the page layout that fits each slide; ${PAGE_INSTRUCTION_TAIL}`,
+  },
+  report: {
+    mode: 'prototype', hubType: 'report', noun: 'report', triggers: ['report', 'document'],
+    instruction: `Choose the page layout that fits each section of the report; ${PAGE_INSTRUCTION_TAIL}`,
+  },
+  website: {
+    mode: 'prototype', hubType: 'website', noun: 'website', triggers: ['website', 'web page'],
+    instruction: `Choose the page layout that fits each page of the website; ${PAGE_INSTRUCTION_TAIL}`,
+  },
+};
+
+export function isDesignTemplateType(value: unknown): value is DesignTemplateType {
+  return value === 'deck' || value === 'report' || value === 'website';
+}
+
+// Pre-wizard manifests carry no type: they are decks.
+export function templateTypeOf(manifest: Pick<DesignTemplateImportManifest, 'type'>): DesignTemplateType {
+  return isDesignTemplateType(manifest.type) ? manifest.type : 'deck';
+}
 
 export class DesignTemplateImportError extends Error {
   constructor(
@@ -124,10 +157,11 @@ export function renderUserTemplateSkillMd(
   description: string,
   promptBody: string,
 ): string {
+  const profile = TEMPLATE_TYPE_PROFILES[templateTypeOf(manifest)];
   const triggers = Array.from(
-    new Set([manifest.name.toLowerCase(), ...slugifyTemplateName(manifest.name).split('-').filter((w) => w.length > 2), 'deck', 'slides']),
+    new Set([manifest.name.toLowerCase(), ...slugifyTemplateName(manifest.name).split('-').filter((w) => w.length > 2), ...profile.triggers]),
   ).filter(Boolean);
-  const descLines = (description || 'User-imported deck template.').split(/\r?\n/).map((l) => `  ${l}`);
+  const descLines = (description || `User-imported ${profile.noun} template.`).split(/\r?\n/).map((l) => `  ${l}`);
   const pageLines = manifest.pages.map((p) => `- \`pages/${p.file}\`${p.file === manifest.cover ? ' (cover)' : ''}${p.use ? ` \u2014 ${p.use}` : ''}`);
   return [
     '---',
@@ -139,8 +173,8 @@ export function renderUserTemplateSkillMd(
     'triggers:',
     ...triggers.map((t) => `  - ${yamlScalar(t)}`),
     'readable:',
-    '  mode: deck',
-    '  hubType: deck',
+    `  mode: ${profile.mode}`,
+    `  hubType: ${profile.hubType}`,
     '  preview:',
     '    type: html',
     `    entry: ${yamlScalar(`pages/${manifest.cover}`)}`,
@@ -149,13 +183,13 @@ export function renderUserTemplateSkillMd(
     '',
     `# ${manifest.name}`,
     '',
-    'This is a user-imported deck template. Its example pages live under `pages/` in this template folder (shared files keep their original relative layout there).',
+    `This is a user-imported ${profile.noun} template. Its example pages live under \`pages/\` in this template folder (shared files keep their original relative layout there).`,
     '',
     '## Pages',
     '',
     ...pageLines,
     '',
-    USER_TEMPLATE_PAGE_INSTRUCTION,
+    profile.instruction,
     '',
     '## Template instructions (PROMPT.md)',
     '',
@@ -177,22 +211,22 @@ async function uniqueTemplateId(root: string, base: string): Promise<string> {
   throw new DesignTemplateImportError(409, 'CONFLICT', `too many templates named ${base}`);
 }
 
-export interface ImportDesignTemplateZipInput {
-  root: string;
-  zip: Buffer;
+// A validated, parsed template ZIP held in memory. Shared by the one-shot
+// import and the upload-wizard sessions so there is a single ZIP parser.
+export interface PreparedDesignTemplate {
   originalFileName: string;
+  sha256: string;
+  /** Pages + assets written under pages/ (PROMPT.md and thumbnail excluded). */
+  pageFiles: ZipFile[];
+  prompt: ZipFile;
+  thumbnail?: ZipFile;
+  pages: DesignTemplateImportPage[];
+  suggestedName: string;
+  suggestedCover: string;
 }
 
-export interface ImportDesignTemplateZipResult {
-  id: string;
-  dir: string;
-  manifest: DesignTemplateImportManifest;
-}
-
-export async function importDesignTemplateZip(
-  input: ImportDesignTemplateZipInput,
-): Promise<ImportDesignTemplateZipResult> {
-  const files = readTemplateZip(input.zip);
+export function prepareDesignTemplateZip(zip: Buffer, originalFileName: string): PreparedDesignTemplate {
+  const files = readTemplateZip(zip);
 
   const disallowed = files.find((f) => !ALLOWED_TEMPLATE_EXTENSIONS.has(path.extname(f.path).toLowerCase()));
   if (disallowed) throw bad(`file type not allowed in template zip: ${disallowed.path}`);
@@ -204,11 +238,8 @@ export async function importDesignTemplateZip(
   const htmlPaths = pageFiles.filter((f) => /\.html?$/i.test(f.path)).map((f) => f.path);
   if (htmlPaths.length === 0) throw bad('template zip must contain at least one .html page');
 
-  const promptRaw = promptFile.body.toString('utf8');
-  const { data: fm, body: promptBody } = parseFrontmatter(promptRaw);
-  const zipBaseName = path.basename(input.originalFileName || 'template.zip').replace(/\.zip$/i, '');
-  const name = asString(fm.name) ?? (zipBaseName || 'Imported template');
-  const description = asString(fm.description) ?? `User-imported deck template (${htmlPaths.length} page${htmlPaths.length === 1 ? '' : 's'}).`;
+  const { data: fm } = parseFrontmatter(promptFile.body.toString('utf8'));
+  const name = asString(fm.name) ?? (zipBaseName(originalFileName) || 'Imported template');
 
   const fmPages = new Map<string, string | undefined>();
   if (Array.isArray(fm.pages)) {
@@ -225,59 +256,175 @@ export async function importDesignTemplateZip(
   const coverCandidate = asString(fm.cover)?.replace(/^\.?\//, '');
   const cover = coverCandidate && htmlPaths.includes(coverCandidate) ? coverCandidate : htmlPaths[0]!;
 
-  const sha256 = createHash('sha256').update(input.zip).digest('hex');
-  const slug = slugifyTemplateName(name) || slugifyTemplateName(zipBaseName) || `template-${sha256.slice(0, 8)}`;
+  return {
+    originalFileName,
+    sha256: createHash('sha256').update(zip).digest('hex'),
+    pageFiles,
+    prompt: promptFile,
+    ...(thumbnailFile ? { thumbnail: thumbnailFile } : {}),
+    pages,
+    suggestedName: name,
+    suggestedCover: cover,
+  };
+}
+
+function zipBaseName(originalFileName: string): string {
+  return path.basename(originalFileName || 'template.zip').replace(/\.zip$/i, '');
+}
+
+// Writes pages/** and PROMPT.md of a prepared ZIP into a hidden staging dir.
+export async function writePreparedTemplateFiles(dir: string, prepared: PreparedDesignTemplate): Promise<void> {
+  for (const f of prepared.pageFiles) {
+    const target = safeJoin(path.join(dir, 'pages'), f.path);
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, f.body);
+  }
+  await writeFile(path.join(dir, 'PROMPT.md'), prepared.prompt.body);
+}
+
+export interface FinalizeDesignTemplateInput {
+  root: string;
+  /** Hidden dir already holding pages/**, PROMPT.md and optional thumbnails/cover.*. */
+  stagingDir: string;
+  type: DesignTemplateType;
+  name: string;
+  cover: string;
+  pages: DesignTemplateImportPage[];
+  originalFileName: string;
+  sha256: string;
+  thumbnail: DesignTemplateThumbnailState;
+}
+
+// Writes import.json + SKILL.md into the staging dir and renames it into
+// place as `<root>/user-<slug>`, so the listing only ever sees a complete
+// template. On failure the two generated files are removed again and the
+// staging dir is left for the caller to retry or discard.
+export async function finalizeDesignTemplateDir(
+  input: FinalizeDesignTemplateInput,
+): Promise<ImportDesignTemplateZipResult> {
+  const { data: fm, body: promptBody } = parseFrontmatter(await readFile(path.join(input.stagingDir, 'PROMPT.md'), 'utf8'));
+  const count = input.pages.length;
+  const description = asString(fm.description)
+    ?? `User-imported ${TEMPLATE_TYPE_PROFILES[input.type].noun} template (${count} page${count === 1 ? '' : 's'}).`;
+  const slug = slugifyTemplateName(input.name)
+    || slugifyTemplateName(zipBaseName(input.originalFileName))
+    || `template-${input.sha256.slice(0, 8)}`;
   await mkdir(input.root, { recursive: true });
   const id = await uniqueTemplateId(input.root, `user-${slug}`);
-
-  const thumbnail: DesignTemplateThumbnailState = thumbnailFile
-    ? { status: 'ready', source: 'zip', updatedAt: nowIso() }
-    : { status: 'pending', source: null, updatedAt: nowIso() };
   const manifest: DesignTemplateImportManifest = {
     schemaVersion: 1,
     id,
-    name,
+    name: input.name,
     originalFileName: input.originalFileName,
     importedAt: nowIso(),
-    sha256,
-    pages,
-    cover,
-    thumbnail,
+    sha256: input.sha256,
+    pages: input.pages,
+    cover: input.cover,
+    thumbnail: input.thumbnail,
+    type: input.type,
   };
-
-  // Stage under a dot-dir (ignored by the listing until it has a SKILL.md
-  // and skipped by name) and rename into place so a failed import never
-  // leaves a half-written template visible.
-  const staging = path.join(input.root, `.import-${randomBytes(6).toString('hex')}`);
   const dir = path.join(input.root, id);
   try {
-    for (const f of pageFiles) {
-      const target = safeJoin(path.join(staging, 'pages'), f.path);
-      await mkdir(path.dirname(target), { recursive: true });
-      await writeFile(target, f.body);
-    }
-    await writeFile(path.join(staging, 'PROMPT.md'), promptFile.body);
-    if (thumbnailFile) {
-      await mkdir(path.join(staging, 'thumbnails'), { recursive: true });
-      await writeFile(
-        path.join(staging, 'thumbnails', `cover${path.extname(thumbnailFile.path).toLowerCase()}`),
-        thumbnailFile.body,
-      );
-    }
-    await writeFile(path.join(staging, IMPORT_MANIFEST), `${JSON.stringify(manifest, null, 2)}\n`);
-    await writeFile(path.join(staging, 'SKILL.md'), renderUserTemplateSkillMd(manifest, description, promptBody));
-    await rename(staging, dir);
+    await writeFile(path.join(input.stagingDir, IMPORT_MANIFEST), `${JSON.stringify(manifest, null, 2)}\n`);
+    await writeFile(path.join(input.stagingDir, 'SKILL.md'), renderUserTemplateSkillMd(manifest, description, promptBody));
+    await rename(input.stagingDir, dir);
   } catch (err) {
-    await rm(staging, { recursive: true, force: true });
+    await rm(path.join(input.stagingDir, IMPORT_MANIFEST), { force: true });
+    await rm(path.join(input.stagingDir, 'SKILL.md'), { force: true });
     throw err;
   }
-
-  if (thumbnail.status === 'pending') {
+  if (manifest.thumbnail.status === 'pending') {
     requestTemplateThumbnails({ templateDir: dir, id }).catch((err) => {
       console.warn(`[design-template-import] thumbnail request failed for ${id}`, err);
     });
   }
   return { id, dir, manifest };
+}
+
+export interface ImportDesignTemplateZipInput {
+  root: string;
+  zip: Buffer;
+  originalFileName: string;
+}
+
+export interface ImportDesignTemplateZipResult {
+  id: string;
+  dir: string;
+  manifest: DesignTemplateImportManifest;
+}
+
+// One-shot import (POST /api/design-templates/import, CLI import without
+// options): suggested name and cover, deck type.
+export async function importDesignTemplateZip(
+  input: ImportDesignTemplateZipInput,
+): Promise<ImportDesignTemplateZipResult> {
+  const prepared = prepareDesignTemplateZip(input.zip, input.originalFileName);
+  await mkdir(input.root, { recursive: true });
+  // Stage under a dot-dir (skipped by the listing, which only reads
+  // <root>/<dir>/SKILL.md) and rename into place so a failed import never
+  // leaves a half-written template visible.
+  const staging = path.join(input.root, `.import-${randomBytes(6).toString('hex')}`);
+  try {
+    await writePreparedTemplateFiles(staging, prepared);
+    if (prepared.thumbnail) {
+      await mkdir(path.join(staging, 'thumbnails'), { recursive: true });
+      await writeFile(
+        path.join(staging, 'thumbnails', `cover${path.extname(prepared.thumbnail.path).toLowerCase()}`),
+        prepared.thumbnail.body,
+      );
+    }
+    return await finalizeDesignTemplateDir({
+      root: input.root,
+      stagingDir: staging,
+      type: 'deck',
+      name: prepared.suggestedName,
+      cover: prepared.suggestedCover,
+      pages: prepared.pages,
+      originalFileName: input.originalFileName,
+      sha256: prepared.sha256,
+      thumbnail: prepared.thumbnail
+        ? { status: 'ready', source: 'zip', updatedAt: nowIso() }
+        : { status: 'pending', source: null, updatedAt: nowIso() },
+    });
+  } catch (err) {
+    await rm(staging, { recursive: true, force: true });
+    throw err;
+  }
+}
+
+// Shared page-path guard for the persistent template pages route and the
+// upload-session pages route. Rejects traversal, dot segments, absolute and
+// drive-qualified paths before any filesystem access.
+export function assertSafeTemplatePagePath(splat: unknown): string {
+  const relative = (Array.isArray(splat) ? splat.join('/') : String(splat ?? '')).replace(/\\/g, '/');
+  if (!relative || relative.split('/').some((part) => part === '..' || part === '.' || part.startsWith('.'))
+    || path.isAbsolute(relative) || relative.includes(':') || relative.includes('\0')) {
+    throw new DesignTemplateImportError(403, 'FORBIDDEN', 'unsafe template page path');
+  }
+  return relative;
+}
+
+// Resolves a safe relative path inside pagesDir through realpath so a
+// symlink cannot escape it. 404 when missing or not a regular file.
+export async function resolveTemplatePageFile(
+  pagesDir: string,
+  relative: string,
+): Promise<{ root: string; within: string; file: string }> {
+  try {
+    const root = await realpath(pagesDir);
+    const file = await realpath(path.resolve(root, relative));
+    const within = path.relative(root, file);
+    if (within.startsWith('..') || path.isAbsolute(within)) {
+      throw new DesignTemplateImportError(403, 'FORBIDDEN', 'unsafe template page path');
+    }
+    if (!(await stat(file)).isFile()) throw new DesignTemplateImportError(404, 'NOT_FOUND', 'page not found');
+    return { root, within, file };
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') {
+      throw new DesignTemplateImportError(404, 'NOT_FOUND', 'page not found');
+    }
+    throw err;
+  }
 }
 
 function safeJoin(root: string, relPath: string): string {

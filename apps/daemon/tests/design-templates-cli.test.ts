@@ -202,3 +202,124 @@ describe('readable design-templates CLI', () => {
     expect(requests).toHaveLength(0);
   });
 });
+
+const SESSION = 'a'.repeat(32);
+const ANALYSIS = {
+  sessionId: SESSION,
+  expiresAt: '2026-10-19T01:00:00.000Z',
+  originalFileName: 'kit.zip',
+  prompt: { file: 'PROMPT.md' },
+  suggestedName: 'Kit Pack',
+  suggestedCoverPageId: 'page-1',
+  pages: [
+    { id: 'page-1', file: 'kit/cover.html', previewUrl: `/api/design-template-uploads/${SESSION}/pages/kit/cover.html`, thumbnailUrl: `/api/design-template-uploads/${SESSION}/thumbnails/page-1`, thumbnail: { status: 'pending', source: null, updatedAt: '2026-10-19T00:00:00.000Z' } },
+    { id: 'page-2', file: 'kit/report.htm', previewUrl: `/api/design-template-uploads/${SESSION}/pages/kit/report.htm`, thumbnailUrl: `/api/design-template-uploads/${SESSION}/thumbnails/page-2`, thumbnail: { status: 'pending', source: null, updatedAt: '2026-10-19T00:00:00.000Z' } },
+  ],
+};
+
+describe('readable design-templates upload wizard CLI', () => {
+  const uploadResponder: Responder = (req) => {
+    if (req.url === '/api/design-template-uploads/analyse') return { status: 201, body: ANALYSIS };
+    if (req.url.endsWith('/finalize')) return { status: 201, body: { template: { ...SUMMARY, templateType: 'report' } } };
+    if (req.method === 'DELETE') return { status: 200, body: { ok: true } };
+    return { status: 200, body: ANALYSIS };
+  };
+  const writeZip = () => {
+    const zipPath = join(tmp, 'kit.zip');
+    writeFileSync(zipPath, buildTemplateZip(validTemplateEntries()));
+    return zipPath;
+  };
+
+  it('help advertises the wizard subcommands and flags', () => {
+    for (const token of ['analyse', 'inspect-upload', 'finalize', 'cancel-upload', '--type', '--name', '--cover-page', '--cover', '--prompt-file']) {
+      expect(DESIGN_TEMPLATES_USAGE).toContain(token);
+    }
+  });
+
+  it('analyse uploads the zip to the analyse endpoint and prints --json', async () => {
+    responder = uploadResponder;
+    const result = await runCli(['design-templates', 'analyse', writeZip(), '--json']);
+    expect(result.code).toBe(0);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({ method: 'POST', url: '/api/design-template-uploads/analyse' });
+    expect(requests[0]!.body.toString('latin1')).toContain('name="file"; filename="kit.zip"');
+    expect(JSON.parse(result.stdout)).toEqual(ANALYSIS);
+  });
+
+  it('inspect-upload GETs the session and cancel-upload DELETEs it', async () => {
+    responder = uploadResponder;
+    const inspect = await runCli(['design-templates', 'inspect-upload', SESSION, '--json']);
+    expect(inspect.code).toBe(0);
+    expect(requests[0]).toMatchObject({ method: 'GET', url: `/api/design-template-uploads/${SESSION}` });
+    expect(JSON.parse(inspect.stdout).pages).toHaveLength(2);
+    const cancel = await runCli(['design-templates', 'cancel-upload', SESSION, '--json']);
+    expect(cancel.code).toBe(0);
+    expect(requests[1]).toMatchObject({ method: 'DELETE', url: `/api/design-template-uploads/${SESSION}` });
+    expect(JSON.parse(cancel.stdout)).toEqual({ ok: true });
+  });
+
+  it('finalize POSTs {type,name,coverPageId} from flags or --prompt-file', async () => {
+    responder = uploadResponder;
+    const flags = await runCli(['design-templates', 'finalize', SESSION, '--type', 'report', '--name', 'Kit Report', '--cover-page', 'page-2', '--json']);
+    expect(flags.code).toBe(0);
+    expect(requests[0]).toMatchObject({ method: 'POST', url: `/api/design-template-uploads/${SESSION}/finalize` });
+    expect(JSON.parse(requests[0]!.body.toString('utf8'))).toEqual({ type: 'report', name: 'Kit Report', coverPageId: 'page-2' });
+    expect(JSON.parse(flags.stdout).template.templateType).toBe('report');
+
+    const file = join(tmp, 'finalize.json');
+    writeFileSync(file, JSON.stringify({ type: 'website', name: 'Kit Site', coverPageId: 'page-1' }));
+    const fromFile = await runCli(['design-templates', 'finalize', SESSION, '--prompt-file', file, '--json']);
+    expect(fromFile.code).toBe(0);
+    expect(JSON.parse(requests[1]!.body.toString('utf8'))).toEqual({ type: 'website', name: 'Kit Site', coverPageId: 'page-1' });
+  });
+
+  it('finalize rejects an invalid type, missing fields and --prompt-file overlap without a request', async () => {
+    responder = uploadResponder;
+    const file = join(tmp, 'overlap.json');
+    writeFileSync(file, JSON.stringify({ type: 'deck', name: 'A', coverPageId: 'page-1' }));
+    for (const args of [
+      ['finalize', SESSION, '--type', 'slides', '--name', 'A', '--cover-page', 'page-1'],
+      ['finalize', SESSION, '--type', 'deck', '--name', 'A'],
+      ['finalize', SESSION, '--prompt-file', file, '--name', 'B'],
+    ]) {
+      const result = await runCli(['design-templates', ...args]);
+      expect(result.code).toBe(2);
+    }
+    expect(requests).toHaveLength(0);
+  });
+
+  it('import with --type/--name/--cover analyses then finalizes with the mapped page id', async () => {
+    responder = uploadResponder;
+    const result = await runCli(['design-templates', 'import', writeZip(), '--type', 'report', '--name', 'Kit Report', '--cover', './kit/report.htm', '--json']);
+    expect(result.code).toBe(0);
+    expect(requests.map((r) => `${r.method} ${r.url}`)).toEqual([
+      'POST /api/design-template-uploads/analyse',
+      `POST /api/design-template-uploads/${SESSION}/finalize`,
+    ]);
+    expect(JSON.parse(requests[1]!.body.toString('utf8'))).toEqual({ type: 'report', name: 'Kit Report', coverPageId: 'page-2' });
+    expect(JSON.parse(result.stdout).template.templateType).toBe('report');
+  });
+
+  it('import fills omitted options from the analysis and cancels on an unknown --cover', async () => {
+    responder = uploadResponder;
+    const typed = await runCli(['design-templates', 'import', writeZip(), '--type', 'website', '--json']);
+    expect(typed.code).toBe(0);
+    expect(JSON.parse(requests[1]!.body.toString('utf8'))).toEqual({ type: 'website', name: 'Kit Pack', coverPageId: 'page-1' });
+
+    requests.length = 0;
+    const unknown = await runCli(['design-templates', 'import', writeZip(), '--cover', 'kit/missing.html', '--json']);
+    expect(unknown.code).toBe(2);
+    expect(requests.map((r) => `${r.method} ${r.url}`)).toEqual([
+      'POST /api/design-template-uploads/analyse',
+      `DELETE /api/design-template-uploads/${SESSION}`,
+    ]);
+  });
+});
+
+describe('readable design-templates legacy argument errors', () => {
+  it('rename without a name still exits 2', async () => {
+    const result = await runCli(['design-templates', 'rename', 'user-x']);
+    expect(result.code).toBe(2);
+    expect(requests).toHaveLength(0);
+  });
+});

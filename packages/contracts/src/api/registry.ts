@@ -287,11 +287,19 @@ export interface DesignTemplateThumbnailState {
   updatedAt: string;
 }
 
+// Hub category of a user-imported template. Manifests written before the
+// upload wizard carry no type and are read as 'deck'.
+export type DesignTemplateType = 'deck' | 'report' | 'website';
+
 export interface DesignTemplateUserFields {
   userImported?: boolean;
   thumbnail?: DesignTemplateThumbnailState;
+  /** Normalised type of a user-imported template (missing manifest type = deck). */
+  templateType?: DesignTemplateType;
   /** Cover HTML path relative to pages/, preserving nested paths and extensions. */
   cover?: string;
+  /** ISO timestamp when the template was imported. */
+  importedAt?: string;
 }
 
 export interface DesignTemplateImportPage {
@@ -310,6 +318,8 @@ export interface DesignTemplateImportManifest {
   pages: DesignTemplateImportPage[];
   cover: string;
   thumbnail: DesignTemplateThumbnailState;
+  /** Missing = 'deck' (pre-wizard imports). */
+  type?: DesignTemplateType;
 }
 
 export type UserDesignTemplateSummary = DesignTemplateSummary & {
@@ -320,6 +330,50 @@ export type UserDesignTemplateSummary = DesignTemplateSummary & {
 // POST /api/design-templates/import (multipart field `file`, .zip).
 export interface DesignTemplateImportResponse {
   template: UserDesignTemplateSummary;
+}
+
+// Upload wizard: POST /api/design-template-uploads/analyse (multipart `file`)
+// extracts the ZIP into a 60-minute session without registering anything;
+// GET /api/design-template-uploads/:sessionId re-reads it with live page
+// thumbnail states; POST .../:sessionId/finalize registers the template;
+// DELETE .../:sessionId cancels (idempotent).
+export interface DesignTemplateUploadPage {
+  /** Opaque id, stable within the session; not a file path. */
+  id: string;
+  /** Normalised ZIP-relative path, e.g. kit/cover.html. */
+  file: string;
+  /** PROMPT.md pages[].use metadata. */
+  use?: string;
+  /** Daemon URL serving this page (and its relative assets) for live preview. */
+  previewUrl: string;
+  /** 404 while pending/failed; read `thumbnail` for the state. */
+  thumbnailUrl: string;
+  thumbnail: DesignTemplateThumbnailState;
+}
+
+export interface DesignTemplateUploadAnalysisResponse {
+  sessionId: string;
+  /** ISO time, 60 minutes after analyse. */
+  expiresAt: string;
+  originalFileName: string;
+  /** Path of the PROMPT.md actually found (after wrapper-folder removal). */
+  prompt: { file: string };
+  suggestedName: string;
+  suggestedCoverPageId: string;
+  /** Every HTML page, in ZIP order. */
+  pages: DesignTemplateUploadPage[];
+}
+
+export interface DesignTemplateUploadFinalizeRequest {
+  type: DesignTemplateType;
+  name: string;
+  coverPageId: string;
+}
+
+export type DesignTemplateUploadFinalizeResponse = DesignTemplateImportResponse;
+
+export interface DesignTemplateUploadCancelResponse {
+  ok: true;
 }
 
 // PATCH /api/design-templates/:id — rename keeps the id.

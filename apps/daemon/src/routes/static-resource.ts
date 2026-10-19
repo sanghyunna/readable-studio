@@ -30,6 +30,7 @@ import type { RouteDeps } from '../server-context.js';
 import { configureTemplateThumbnails } from '../design-template-thumbnails.js';
 import {
   DesignTemplateImportError,
+  assertSafeTemplatePagePath,
   deleteUserDesignTemplate,
   findUserTemplateCoverThumbnail,
   importDesignTemplateZip,
@@ -37,7 +38,11 @@ import {
   readUserTemplateManifest,
   renameUserDesignTemplate,
   requireUserImportedTemplate,
+  resolveTemplatePageFile,
+  templateTypeOf,
 } from '../design-template-import.js';
+import { DesignTemplateUploadSessions } from '../design-template-uploads.js';
+import { registerDesignTemplateUploadRoutes } from '../design-template-upload-routes.js';
 
 export interface RegisterStaticResourceRoutesDeps extends RouteDeps<'http' | 'paths' | 'resources'> {
   // Disk-backed multer instance used by POST /api/design-templates/import.
@@ -208,7 +213,9 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
   const userTemplateFields = async (template: { source?: string; dir?: string }) => {
     if (template.source !== 'user' || !template.dir) return {};
     const manifest = await readUserTemplateManifest(template.dir);
-    return manifest ? { userImported: true as const, thumbnail: manifest.thumbnail, cover: manifest.cover } : {};
+    return manifest
+      ? { userImported: true as const, thumbnail: manifest.thumbnail, cover: manifest.cover, templateType: templateTypeOf(manifest), importedAt: manifest.importedAt }
+      : {};
   };
   const findDesignTemplate = async (id: string) => findSkillById(await listAllDesignTemplates(), id);
   const userTemplateSummary = async (id: string) => {
@@ -350,26 +357,26 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
 
   app.get('/api/design-templates/:id/pages/*splat', async (req, res) => {
     try {
-      const splat = req.params.splat;
-      const relative = (Array.isArray(splat) ? splat.join('/') : String(splat ?? '')).replace(/\\/g, '/');
-      if (!relative || relative.split('/').some((part) => part === '..' || part === '.' || part.startsWith('.'))
-        || path.isAbsolute(relative) || relative.includes(':') || relative.includes('\0')) {
-        return sendApiError(res, 403, 'FORBIDDEN', 'unsafe template page path');
-      }
+      const relative = assertSafeTemplatePagePath(req.params.splat);
       const { dir } = await resolveUserTemplate(req.params.id);
-      const pagesRoot = await fs.promises.realpath(path.join(dir, 'pages'));
-      const file = await fs.promises.realpath(path.resolve(pagesRoot, relative));
-      const within = path.relative(pagesRoot, file);
-      if (within.startsWith('..') || path.isAbsolute(within)) {
-        return sendApiError(res, 403, 'FORBIDDEN', 'unsafe template page path');
-      }
-      if (!(await fs.promises.stat(file)).isFile()) return sendApiError(res, 404, 'NOT_FOUND', 'page not found');
+      const { root, within, file } = await resolveTemplatePageFile(path.join(dir, 'pages'), relative);
       res.type(mimeFor(file)).setHeader('Cache-Control', 'no-cache');
-      res.sendFile(within, { root: pagesRoot });
+      res.sendFile(within, { root });
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return sendApiError(res, 404, 'NOT_FOUND', 'page not found');
       sendTemplateError(res, err);
     }
+  });
+
+  // Upload wizard: analyse -> inspect -> finalize | cancel, delegating to the
+  // same ZIP parser and template writer as the one-shot import above.
+  registerDesignTemplateUploadRoutes(app, {
+    sessions: new DesignTemplateUploadSessions({ root: USER_DESIGN_TEMPLATES_DIR }),
+    importUpload,
+    requireLocalOrigin,
+    sendApiError,
+    sendTemplateError,
+    userTemplateSummary,
+    mimeFor,
   });
 
   // POST /api/skills/import — write a new SKILL.md under USER_SKILLS_DIR

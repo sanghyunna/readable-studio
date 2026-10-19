@@ -400,9 +400,10 @@ function printRootHelp() {
       Sign in to Databricks and manage profiles and scanned serving endpoints
       through the local daemon. Run readable databricks --help for exit codes.
 
-  readable update <check|download|status|apply|cancel|config> [options]
+  readable update <check|download|status|apply|cancel|config|diagnose> [options]
       Check for, download and apply portable-app updates, and configure the
-      update server; status --watch follows download progress. Run
+      update server; status --watch follows download progress; diagnose
+      explains the update server connection step by step. Run
       readable update --help for exit codes.
 
   readable export html --project <id> --file <path> [--output <path>] [--force] [--json]
@@ -7795,12 +7796,15 @@ Renames an editable (user-created) design system. Built-in systems are read-only
   console.log(`Renamed ${parsed.id} -> ${renamed.title ?? parsed.title}`);
 }
 
-// readable design-templates import <zip> | list [--user] | rename <id> <name>
-//   | remove <id> | thumbnails <id>   [--json] [--daemon-url <url>]
+// readable design-templates import <zip> [--type] [--name] [--cover] | list [--user]
+//   | rename <id> <name> | remove <id> | thumbnails <id>
+//   | analyse <zip> | inspect-upload <sessionId> | cancel-upload <sessionId>
+//   | finalize <sessionId> --type --name --cover-page   [--json] [--daemon-url <url>]
 //
-// CLI mirror of the Hub's user-imported deck templates. Calls the same
-// /api/design-templates endpoints as the web UI. Distinct from
-// `readable templates`, which manages project snapshot templates.
+// CLI mirror of the Hub's user-imported templates and its upload wizard.
+// Calls the same /api/design-templates and /api/design-template-uploads
+// endpoints as the web UI. Distinct from `readable templates`, which manages
+// project snapshot templates.
 async function runDesignTemplates(args) {
   const sub = args[0];
   if (!sub || isDesignTemplatesHelpArg(sub) || args.includes('--help') || args.includes('-h')) {
@@ -7808,10 +7812,11 @@ async function runDesignTemplates(args) {
     process.exit(sub ? 0 : 2);
   }
   const rest = args.slice(1);
+  const stringFlags = new Set([...LIBRARY_STRING_FLAGS, 'type', 'name', 'cover', 'cover-page', 'prompt-file']);
   let flags;
   try {
     flags = parseFlags(rest, {
-      string: LIBRARY_STRING_FLAGS,
+      string: stringFlags,
       boolean: new Set([...LIBRARY_BOOLEAN_FLAGS, 'user']),
     });
   } catch (err) {
@@ -7822,11 +7827,63 @@ async function runDesignTemplates(args) {
   for (let i = 0; i < rest.length; i++) {
     const value = rest[i];
     if (value.startsWith('--')) {
-      if (!value.includes('=') && LIBRARY_STRING_FLAGS.has(value.slice(2))) i++;
+      if (!value.includes('=') && stringFlags.has(value.slice(2))) i++;
       continue;
     }
     positional.push(value);
   }
+  const TEMPLATE_TYPES = ['deck', 'report', 'website'];
+  const failUsage = (message) => {
+    console.error(message);
+    process.exit(2);
+  };
+  // finalize: {type,name,coverPageId}; import: {type?,name?,cover?}. Flags and
+  // --prompt-file are alternatives; the same field from both is a usage error.
+  const readSelection = async (fieldFlags) => {
+    const fromFlags = {};
+    for (const [field, flag] of Object.entries(fieldFlags)) {
+      if (typeof flags[flag] === 'string') fromFlags[field] = flags[flag];
+    }
+    if (flags['prompt-file'] === undefined) return fromFlags;
+    let parsed;
+    try {
+      parsed = JSON.parse(await readPromptFromFlags({ 'prompt-file': flags['prompt-file'] }));
+    } catch (err) {
+      return failUsage(`invalid --prompt-file: ${err.message ?? err}`);
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return failUsage('--prompt-file must contain a JSON object');
+    const out = {};
+    for (const field of Object.keys(fieldFlags)) {
+      if (parsed[field] === undefined) continue;
+      if (field in fromFlags) return failUsage(`--${fieldFlags[field]} and --prompt-file both set "${field}"`);
+      if (typeof parsed[field] !== 'string') return failUsage(`--prompt-file field "${field}" must be a string`);
+      out[field] = parsed[field];
+    }
+    return { ...out, ...fromFlags };
+  };
+  const checkType = (type) => {
+    if (type !== undefined && !TEMPLATE_TYPES.includes(type)) failUsage(`--type must be one of ${TEMPLATE_TYPES.join(', ')}`);
+  };
+  const readZipForm = (zipPath) => {
+    const resolved = path.resolve(zipPath);
+    let buf;
+    try {
+      buf = readFileSync(resolved);
+    } catch (err) {
+      console.error(`cannot read ${resolved}: ${err.message ?? err}`);
+      process.exit(2);
+    }
+    const form = new FormData();
+    form.append('file', new Blob([buf], { type: 'application/zip' }), path.basename(resolved));
+    return form;
+  };
+  const uploadPath = (sessionId) => `/api/design-template-uploads/${encodeURIComponent(sessionId)}`;
+  const describeAnalysis = (a) => [
+    `session ${a?.sessionId} (expires ${a?.expiresAt})`,
+    `name: ${a?.suggestedName}`,
+    ...(Array.isArray(a?.pages) ? a.pages : []).map((p) =>
+      `${p.id === a.suggestedCoverPageId ? '*' : ' '} ${p.id}\t${p.file}\tthumbnail:${p.thumbnail?.status}`),
+  ].join('\n');
   const base = (await libraryDaemonUrl(flags)).replace(/\/$/, '');
   const usage = (line) => {
     console.error(`Usage: readable design-templates ${line}`);
@@ -7843,20 +7900,80 @@ async function runDesignTemplates(args) {
   switch (sub) {
     case 'import': {
       const zipPath = positional[0];
-      if (!zipPath) return usage('import <zip>');
-      const resolved = path.resolve(zipPath);
-      let buf;
-      try {
-        buf = readFileSync(resolved);
-      } catch (err) {
-        console.error(`cannot read ${resolved}: ${err.message ?? err}`);
-        process.exit(2);
+      if (!zipPath) return usage('import <zip> [--type deck|report|website] [--name <name>] [--cover <zip-relative-html>]');
+      const options = await readSelection({ type: 'type', name: 'name', cover: 'cover' });
+      checkType(options.type);
+      const form = readZipForm(zipPath);
+      let data;
+      if (Object.keys(options).length === 0) {
+        // Compatibility path: suggested name/cover, deck type.
+        data = await send('/api/design-templates/import', { method: 'POST', body: form });
+      } else {
+        const analysis = await send(`/api/design-template-uploads/analyse`, { method: 'POST', body: form });
+        const cancel = () => fetch(`${base}${uploadPath(analysis.sessionId)}`, { method: 'DELETE' }).catch(() => undefined);
+        let coverPageId = analysis.suggestedCoverPageId;
+        if (options.cover !== undefined) {
+          const wanted = options.cover.replace(/\\/g, '/').replace(/^\.?\//, '');
+          const page = (analysis.pages ?? []).find((p) => p.file === wanted);
+          if (!page) {
+            await cancel();
+            return failUsage(`--cover ${options.cover} is not an HTML page of the zip (pages: ${(analysis.pages ?? []).map((p) => p.file).join(', ')})`);
+          }
+          coverPageId = page.id;
+        }
+        const resp = await fetch(`${base}${uploadPath(analysis.sessionId)}/finalize`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: options.type ?? 'deck', name: options.name ?? analysis.suggestedName, coverPageId }),
+        });
+        if (!resp.ok) {
+          await cancel();
+          return structuredHttpFailure(resp, 'design-template-request-failed');
+        }
+        data = await resp.json();
       }
-      const form = new FormData();
-      form.append('file', new Blob([buf], { type: 'application/zip' }), path.basename(resolved));
-      const data = await send('/api/design-templates/import', { method: 'POST', body: form });
       if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
       console.log(`Imported ${describe(data?.template)}`);
+      return;
+    }
+    case 'analyse': {
+      const zipPath = positional[0];
+      if (!zipPath) return usage('analyse <zip>');
+      const data = await send('/api/design-template-uploads/analyse', { method: 'POST', body: readZipForm(zipPath) });
+      if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+      console.log(describeAnalysis(data));
+      return;
+    }
+    case 'inspect-upload': {
+      const sessionId = positional[0];
+      if (!sessionId) return usage('inspect-upload <sessionId>');
+      const data = await send(uploadPath(sessionId));
+      if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+      console.log(describeAnalysis(data));
+      return;
+    }
+    case 'finalize': {
+      const sessionId = positional[0];
+      const line = 'finalize <sessionId> --type deck|report|website --name <name> --cover-page <pageId> | --prompt-file <path|->';
+      if (!sessionId) return usage(line);
+      const selection = await readSelection({ type: 'type', name: 'name', coverPageId: 'cover-page' });
+      if (!selection.type || !selection.name || !selection.coverPageId) return usage(line);
+      checkType(selection.type);
+      const data = await send(`${uploadPath(sessionId)}/finalize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: selection.type, name: selection.name, coverPageId: selection.coverPageId }),
+      });
+      if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+      console.log(`Imported ${describe(data?.template)}`);
+      return;
+    }
+    case 'cancel-upload': {
+      const sessionId = positional[0];
+      if (!sessionId) return usage('cancel-upload <sessionId>');
+      const data = await send(uploadPath(sessionId), { method: 'DELETE' });
+      if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+      console.log(`Cancelled upload ${sessionId}`);
       return;
     }
     case 'list': {
@@ -8052,7 +8169,11 @@ function updateUsage() {
   readable update download|status|apply|cancel [--json]
   readable update status --watch [--json]
   readable update config [--enable|--disable] [--server-url <https-url>] [--prompt-file <JSON-path|->] [--json]
+  readable update diagnose [--server-url <https-url>] [--json]
 
+  diagnose runs the same bounded connection check as Connect in Settings (default:
+  the configured server) without saving, and prints each step: Databricks CLI
+  (bundled/installed), profiles, matched workspace, HTTP status and elapsed ms.
   config --server-url verifies the server (same as Connect in Settings) before saving;
   --server-url "" clears it. --prompt-file accepts {"enabled": bool, "serverUrl": string|null}.
   status --watch follows download progress until the update is ready, fails or is
@@ -8153,14 +8274,15 @@ async function runUpdate(args) {
     if (flags.help || flags.h || args.includes('-h')) { console.log(updateUsage()); return; }
     const positionals = positionalArgs(args, new Set(['daemon-url', 'server-url', 'prompt-file']));
     const action = positionals[0];
-    if (!['check', 'download', 'status', 'apply', 'cancel', 'config'].includes(action)) throw usageFailure(action ? `unknown update action: ${action}` : 'missing update action');
+    if (!['check', 'download', 'status', 'apply', 'cancel', 'config', 'diagnose'].includes(action)) throw usageFailure(action ? `unknown update action: ${action}` : 'missing update action');
     if (positionals.length > 1) throw usageFailure(`unexpected argument: ${positionals[1]}`);
-    if (action !== 'config' && (flags.enable || flags.disable || flags['server-url'] !== undefined || flags['prompt-file'] !== undefined)) throw usageFailure(`--enable, --disable, --server-url and --prompt-file apply only to update config`);
+    if (action !== 'config' && (flags.enable || flags.disable || (flags['server-url'] !== undefined && action !== 'diagnose') || flags['prompt-file'] !== undefined)) throw usageFailure(`--enable, --disable and --prompt-file apply only to update config; --server-url to config and diagnose`);
     if (flags.enable && flags.disable) throw usageFailure('Choose --enable or --disable, not both.');
     if (flags.watch && action !== 'status') throw usageFailure('--watch applies only to update status');
     const base = await cliDaemonBaseUrl(flags);
     if (action === 'config') return await runUpdateConfig(flags, base, json);
     if (action === 'status' && flags.watch) return await runUpdateWatch(base, json);
+    if (action === 'diagnose') return await runUpdateDiagnose(flags, base, json);
     if (action === 'check') {
       // The daemon check covers CLI probes, per-profile app lookups, token and a 15 s server fetch.
       const response = await updateDaemonFetch(`${base}/api/update/check`, { signal: AbortSignal.timeout(120_000) });
@@ -8241,6 +8363,42 @@ async function runUpdateWatch(base, json) {
     process.off('SIGINT', interrupt);
     controller.abort();
   }
+}
+
+function updateConnectionMessage(report) {
+  const seconds = Math.round((report.timeoutMs ?? 25000) / 1000);
+  switch (report.failure) {
+    case 'invalid-url': return 'The update server URL is not valid. Paste the full https:// address.';
+    case 'not-https': return 'The update server URL must start with https://.';
+    case 'dns': return 'The server name could not be resolved. Check the URL for typos and your internet or VPN connection.';
+    case 'unreachable': return 'The server could not be reached. Check your internet or VPN connection and proxy settings, then retry.';
+    case 'timeout': return `No answer within ${seconds} s, so the check stopped. Check the network and retry.`;
+    case 'cli-missing': return 'Databricks CLI was not found (neither bundled nor installed). Install the Databricks CLI or download Readable Studio again.';
+    case 'not-logged-in': return `Not signed in to Databricks, or the token expired. Run: readable databricks login${report.host ? ` --host ${report.host}` : ''}`;
+    case 'workspace-not-found': return 'None of the signed-in Databricks profiles owns this app. Check the URL, or sign in to the workspace that hosts it.';
+    case 'forbidden': return 'Access to the update server app was denied (HTTP 403). Ask a workspace admin for CAN USE permission on the app.';
+    case 'not-update-server': return 'This address is not a Readable Studio update server (HTTP 404 or another service). Check the URL you were given.';
+    case 'app-stopped': return 'The update server app is stopped (HTTP 503). Ask a workspace admin to start the app.';
+    default: return 'The update server returned an unexpected response. Retry later; if it persists, share this log with an admin.';
+  }
+}
+
+// Same bounded check as Settings > Connect; never saves configuration.
+async function runUpdateDiagnose(flags, base, json) {
+  const serverUrl = typeof flags['server-url'] === 'string' ? flags['server-url'].trim() : undefined;
+  // The daemon bounds the check itself; this deadline only guards a stalled daemon.
+  const response = await updateDaemonFetch(`${base}/api/update/connection`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(serverUrl === undefined ? {} : { serverUrl }), signal: AbortSignal.timeout(60_000) });
+  if (!response.ok) throw updateFailure('invalid-response', updateExit().failed);
+  const report = await updateJson(response);
+  if (json) process.stdout.write(JSON.stringify(report) + '\n');
+  else {
+    console.log(`Update server connection check: ${report.serverUrl ?? '(no URL)'}`);
+    for (const step of report.steps ?? []) console.log(`  ${(step.ok ? '[ok]' : '[FAIL]').padEnd(6)} ${String(step.step).padEnd(9)} ${step.detail} (${step.elapsedMs} ms)`);
+    if (report.ok) console.log(`Connected in ${report.elapsedMs} ms: Readable Studio update server${report.host ? `, workspace ${report.host}${report.profile ? ` (profile ${report.profile})` : ''}` : ''}; ${report.latest ? `latest release ${report.latest}` : 'no release published yet'}.`);
+    else console.error(`Connection check failed (${report.failure}) after ${report.elapsedMs} ms: ${updateConnectionMessage(report)}`);
+  }
+  if (!report.ok) process.exitCode = updateExit().failed;
 }
 
 async function runUpdateConfig(flags, base, json) {

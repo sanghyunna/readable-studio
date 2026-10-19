@@ -17,6 +17,35 @@ export function configureTemplateThumbnails(options: ThumbnailRuntime): void {
   runtime = options;
 }
 
+function imageExtension(image: Buffer): 'png' | 'webp' | null {
+  return image.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex')) ? 'png'
+    : image.toString('ascii', 0, 4) === 'RIFF' && image.toString('ascii', 8, 12) === 'WEBP' ? 'webp'
+      : null;
+}
+
+export type TemplatePageRender =
+  | { status: 'ready'; image: Buffer; ext: 'png' | 'webp' }
+  | { status: 'pending' }
+  | { status: 'failed'; error: string };
+
+// Renders one daemon-served page (path relative to the daemon origin, e.g. an
+// upload-session preview URL) through the same serial desktop renderer as the
+// cover thumbnails. Never throws: no desktop = pending, anything else = failed.
+export async function renderTemplatePageThumbnail(daemonPath: string): Promise<TemplatePageRender> {
+  const current = runtime;
+  if (!current) return { status: 'pending' };
+  try {
+    const image = await (current.render ?? renderHtmlThumbnail)(`${current.origin()}${daemonPath}`);
+    if (!Buffer.isBuffer(image)) {
+      return image.code === 'desktop-unavailable' ? { status: 'pending' } : { status: 'failed', error: image.error };
+    }
+    const ext = imageExtension(image);
+    return ext ? { status: 'ready', image, ext } : { status: 'failed', error: 'renderer returned neither PNG nor WebP' };
+  } catch (error) {
+    return { status: 'failed', error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 export async function requestTemplateThumbnails(opts: {
   templateDir: string;
   id: string;
@@ -38,9 +67,7 @@ export async function requestTemplateThumbnails(opts: {
         ? { status: 'pending', source: null, updatedAt }
         : { status: 'failed', source: null, updatedAt, error: image.error };
     } else {
-      const ext = image.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex')) ? 'png'
-        : image.toString('ascii', 0, 4) === 'RIFF' && image.toString('ascii', 8, 12) === 'WEBP' ? 'webp'
-          : null;
+      const ext = imageExtension(image);
       if (!ext) throw new Error('renderer returned neither PNG nor WebP');
       const thumbnails = path.join(opts.templateDir, 'thumbnails');
       // Do not recreate a template deleted while its renderer was running.
