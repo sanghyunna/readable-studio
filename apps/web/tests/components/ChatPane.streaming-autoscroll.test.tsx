@@ -74,7 +74,7 @@ async function sentTurn() {
       get: () => top,
       set: (value: number) => { top = Math.max(0, Math.min(value, log.scrollHeight - 400)); },
     },
-    scrollTo: { value: (options: ScrollToOptions) => { log.scrollTop = options.top ?? top; } },
+    scrollTo: { value: vi.fn((options: ScrollToOptions) => { log.scrollTop = options.top ?? top; }) },
   });
   Object.defineProperty(spacer, 'offsetHeight', { get: () => Number.parseFloat(spacer.style.height) || 0 });
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
@@ -89,11 +89,12 @@ async function sentTurn() {
   fireEvent.scroll(log);
   return {
     log, spacer,
-    update(chunk: number, streaming = true) {
+    update(chunk: number, streaming = true, thinking = false) {
       contentHeight = 1120 + chunk * 120;
       view.rerender(<ChatPane {...props} streaming={streaming} messages={[
         ...history, prompt,
-        { id: 'a2', role: 'assistant', content: 'incremental output '.repeat(chunk), createdAt: 4 },
+        { id: 'a2', role: 'assistant', content: thinking ? '' : 'incremental output '.repeat(chunk), createdAt: 4,
+          events: thinking ? [{ kind: 'thinking', text: 'Reasoning line\n\n'.repeat(chunk) }] : undefined },
       ]} />);
     },
     growAfterRender() { contentHeight += 160; },
@@ -114,6 +115,32 @@ async function resize(log: HTMLElement) {
 function distance(log: HTMLElement) { return log.scrollHeight - log.clientHeight - log.scrollTop; }
 
 describe('local-send streaming auto-scroll', () => {
+  it('reveals the prompt without animated intermediate scroll events that cancel thinking follow', async () => {
+    const turn = await sentTurn();
+    expect(turn.log.scrollTo).toHaveBeenCalledWith({ top: 988, behavior: 'auto' });
+  });
+
+  it('follows thinking-only output, preserves scrollback, and resumes when the user returns to the bottom', async () => {
+    const turn = await sentTurn();
+    turn.update(5, true, true);
+    await resize(turn.log);
+    expect(distance(turn.log)).toBe(0);
+    turn.log.scrollTop -= 30;
+    fireEvent.scroll(turn.log);
+    const manualTop = turn.log.scrollTop;
+    turn.update(6, true, true);
+    await resize(turn.log);
+    expect(turn.log.scrollTop).toBe(manualTop);
+    turn.log.scrollTop = turn.log.scrollHeight;
+    fireEvent.scroll(turn.log);
+    turn.update(7, true, true);
+    await resize(turn.log);
+    expect(distance(turn.log)).toBe(0);
+    turn.update(8, false, true);
+    await resize(turn.log);
+    expect(distance(turn.log)).toBe(0);
+  });
+
   it('keeps the initial prompt at the top while the assistant is still empty', async () => {
     // Given a locally sent prompt, revealed above a reserved tail.
     const turn = await sentTurn();

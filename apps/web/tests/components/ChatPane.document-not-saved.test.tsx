@@ -79,20 +79,21 @@ function renderFailed(code: string, detail: string, agentId = 'claude') {
 
 describe('ChatPane missing document failures', () => {
   it.each([
-    ['DOCUMENT_NOT_SAVED', 'claude', 'chat.documentNotSaved'],
-    ['AGENT_CONNECTION_DROPPED', 'claude', 'chat.connectionDropped'],
-    ['AMR_AUTH_REQUIRED', 'amr', 'chat.amrError.authMessage'],
-    ['AMR_INSUFFICIENT_BALANCE', 'amr', 'chat.amrError.balanceMessage'],
-    ['RATE_LIMITED', 'kimi', 'chat.kimiError.usageLimitMessage'],
-    ['AGENT_AUTH_REQUIRED', 'kimi', 'chat.kimiError.authMessage'],
-  ])('localizes persisted %s after an unmount and reload', async (code, agentId, key) => {
+    ['DOCUMENT_NOT_SAVED', 'claude', 'chat.documentNotSaved', 'Upstream diagnostic'],
+    ['AGENT_CONNECTION_DROPPED', 'claude', 'chat.connectionDropped', 'Upstream diagnostic'],
+    ['AMR_AUTH_REQUIRED', 'amr', 'chat.amrError.authMessage', 'Upstream diagnostic'],
+    ['AMR_INSUFFICIENT_BALANCE', 'amr', 'chat.amrError.balanceMessage', 'Upstream diagnostic'],
+    ['RATE_LIMITED', 'kimi', 'chat.rateLimitMessage', 'Upstream diagnostic'],
+    ['RATE_LIMITED', 'kimi', 'chat.kimiError.usageLimitMessage', 'The Kimi account usage limit is reached (HTTP 403). Retry after the limit resets.'],
+    ['AGENT_AUTH_REQUIRED', 'kimi', 'chat.kimiError.authMessage', 'Upstream diagnostic'],
+  ])('localizes persisted %s after an unmount and reload', async (code, agentId, key, detail) => {
     const { getKo } = await import('../../src/i18n/locales/ko');
     const expected = (getKo() as unknown as Record<string, string>)[key]!;
-    renderFailed(code!, 'Upstream diagnostic', agentId);
+    renderFailed(code!, detail, agentId);
     cleanup();
-    const card = renderFailed(code!, 'Upstream diagnostic', agentId);
+    const card = renderFailed(code!, detail, agentId);
     expect(card?.textContent).toContain(expected);
-    expect(card?.textContent).not.toContain('Upstream diagnostic');
+    expect(card?.textContent).not.toContain(detail);
   });
 
   it('shows the Korean not-saved message for DOCUMENT_NOT_SAVED', () => {

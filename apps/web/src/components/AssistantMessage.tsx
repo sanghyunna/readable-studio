@@ -47,6 +47,7 @@ import { AgentIcon } from "./AgentIcon";
 import { filterImplicitProducedFiles } from "../produced-files";
 import type {
   AgentEvent,
+  AgentInfo,
   ChatMessage,
   ProjectFile,
   SkillSummary,
@@ -118,6 +119,7 @@ function ActionNoticeView({ notice }: { notice: ActionNotice | null }) {
 
 interface Props {
   message: ChatMessage;
+  agents?: AgentInfo[];
   streaming: boolean;
   // Live-only streaming tool-input partials keyed by tool-use id (raw,
   // mid-token JSON accumulated from `input_json_delta`). Used to render an
@@ -190,6 +192,7 @@ interface Props {
 // cheap.
 const ASSISTANT_MESSAGE_COMPARED_PROPS: Array<keyof Props> = [
   'message',
+  'agents',
   'streaming',
   'showConversationTodoCard',
   'conversationTodoInput',
@@ -245,6 +248,7 @@ export const AssistantMessage = memo(AssistantMessageImpl, areAssistantMessagePr
  */
 function AssistantMessageImpl({
   message,
+  agents,
   streaming,
   liveToolInput,
   showConversationTodoCard = false,
@@ -467,7 +471,9 @@ function AssistantMessageImpl({
     | Extract<AgentEvent, { kind: "usage" }>
     | undefined;
   const roleName = assistantRoleName(message, t);
-  const roleModel = assistantRunModel(message);
+  const recordedModel = assistantRunModel(message);
+  const roleModel = agents?.find(agent => agent.id === 'databricks')?.models
+    ?.find(model => model.id === recordedModel)?.label ?? recordedModel;
   const roleIconId = agentIconId(message.agentId, message.agentName);
   const hasEmptyResponse = events.some(
     (e) => e.kind === "status" && e.label === "empty_response"
@@ -1649,7 +1655,13 @@ function SystemReminderBlock({
 
 function ThinkingBlock({ text, streaming, durationMs }: { text: string; streaming?: boolean; durationMs?: number }) {
   const t = useT();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const followingRef = useRef(true);
+  useEffect(() => {
+    const body = bodyRef.current;
+    if (open && body && followingRef.current) body.scrollTop = body.scrollHeight;
+  }, [text, open]);
   const isThinking = streaming === true;
   // Prefer persisted observation times. Legacy events retain the live-only
   // measurement, and unknown historical durations keep the plain fallback.
@@ -1672,7 +1684,7 @@ function ThinkingBlock({ text, streaming, durationMs }: { text: string; streamin
       : t("assistant.thought");
   return (
     <div className="thinking-block">
-      <button className="thinking-toggle" onClick={() => setOpen((o) => !o)}>
+      <button className="thinking-toggle" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         <span className={`thinking-status${isThinking ? ' op-status-running' : open ? ' thinking-status-active' : ''}`} aria-hidden>
           {isThinking
             ? <Icon name="spinner" size={14} />
@@ -1688,7 +1700,10 @@ function ThinkingBlock({ text, streaming, durationMs }: { text: string; streamin
       </button>
       <AnimatedCollapsible open={open} className="accordion-collapsible">
         <div className="accordion-collapsible-inner">
-          <div className="thinking-body">{renderMarkdown(text)}</div>
+          <div className="thinking-body" ref={bodyRef} onScroll={(event) => {
+            const body = event.currentTarget;
+            followingRef.current = body.scrollHeight - body.clientHeight - body.scrollTop <= 2;
+          }}>{renderMarkdown(text)}</div>
         </div>
       </AnimatedCollapsible>
     </div>
@@ -1707,10 +1722,10 @@ function StatusPill({
     let progress: { provider?: string; attempt?: number; maxRetries?: number };
     try { progress = JSON.parse(detail ?? "null"); }
     catch { return null; }
-    if (progress?.provider !== "databricks" || !Number.isInteger(progress.attempt) || !Number.isInteger(progress.maxRetries)) return null;
+    if (!Number.isInteger(progress?.attempt) || !Number.isInteger(progress?.maxRetries)) return null;
     return (
       <div className="status-pill" data-status={label} role="status">
-        <span className="status-label">{t("chat.databricksError.retryMessage", {
+        <span className="status-label">{t(progress.provider === "databricks" ? "chat.databricksError.retryMessage" : "chat.retryMessage", {
           attempt: progress.attempt!, maxRetries: progress.maxRetries!,
         })}</span>
       </div>
