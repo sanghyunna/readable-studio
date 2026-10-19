@@ -136,12 +136,11 @@ it.each(['full', 'low'] as const)('initializes cold Claude streaming capabilitie
   // Given no speculative detection and a CLI with partial streaming support.
   const started = await startWithProfileFile(JSON.stringify({ performanceProfile: profile, enabledAgentIds: ['claude'] }));
   agentCapabilities.delete('claude');
-  detectAgentsMock.mockImplementation(async () => {
-    agentCapabilities.set('claude', { partialMessages: true, addDir: true });
-    return [];
-  });
   try {
+    // Run preparation probes `--help` on demand (ensureAgentCapabilities);
+    // it does not wait for a full detectAgents() scan.
     await withFakeAgent('claude', `
+if (process.argv.includes('--help')) { console.log('Usage: claude -p [--include-partial-messages] [--add-dir DIR]'); process.exit(0); }
 console.log(JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: JSON.stringify({ partialMessages: process.argv.includes('--include-partial-messages') }) }] } }));
 `, async () => {
       // When a caller starts chat without visiting an agent surface first.

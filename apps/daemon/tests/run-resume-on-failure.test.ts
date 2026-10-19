@@ -1,11 +1,27 @@
 import type { Server } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { startServer } from '../src/server.js';
+import { cleanupFakeAgentDir, writeExecutableScript } from './helpers/fake-agent.js';
+
+// Same-run retries wait 5 s between attempts (up to 10 retries). Record the
+// requested delay but resolve immediately so the real retry loop still runs.
+const retryClock = vi.hoisted(() => ({
+  delay: vi.fn<(ms: number, signal: AbortSignal) => Promise<void>>(),
+}));
+
+vi.mock('../src/runs.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/runs.js')>();
+  return {
+    ...actual,
+    createChatRunService: (options: Parameters<typeof actual.createChatRunService>[0]) =>
+      actual.createChatRunService({ ...options, retryDelay: retryClock.delay }),
+  };
+});
 
 // Phase B red spec for resume-on-failure (continue an interrupted run instead
 // of discarding it). A run that produced output AND then hit a *resumable*
@@ -39,13 +55,17 @@ describe('resume-on-failure runtime', () => {
   let started: StartedServer | null = null;
   let binDir: string | null = null;
 
+  beforeEach(() => {
+    retryClock.delay.mockReset().mockResolvedValue(undefined);
+  });
+
   afterEach(async () => {
     await Promise.resolve(started?.shutdown?.());
     if (started?.server) {
       await new Promise<void>((resolve) => started?.server.close(() => resolve()));
     }
     started = null;
-    if (binDir) await rm(binDir, { recursive: true, force: true });
+    if (binDir) await cleanupFakeAgentDir(binDir);
     binDir = null;
     restoreEnv(originalEnv);
   });
@@ -79,6 +99,8 @@ describe('resume-on-failure runtime', () => {
     const failed = await sendRunAndWait(started.url, conversationId);
     expect(failed.status).toBe('failed');
     expect(failed.resumable).toBe(true);
+    // Committed tool work suppresses the blind same-run retry.
+    expect(retryClock.delay).not.toHaveBeenCalled();
 
     // Turn 2: a follow-up in the SAME conversation must resume the persisted
     // session rather than starting fresh.
@@ -131,12 +153,13 @@ describe('resume-on-failure runtime', () => {
     expect(failed.status).toBe('failed');
     expect(failed.resumable).not.toBe(true);
 
-    // It exercised the auto-retry path (initial + one same-run retry) and no
-    // attempt resumed a session.
+    // It exercised the global same-run retry path (initial + ten retries, each
+    // after the 5 s policy delay) and no attempt resumed a session.
     const sessionStarts = (await readArgs(argsLogPath)).filter(
       (args) => args.includes('--session-id') || args.includes('--resume'),
     );
-    expect(sessionStarts.length).toBeGreaterThanOrEqual(2);
+    expect(sessionStarts).toHaveLength(11);
+    expect(retryClock.delay.mock.calls.map(([ms]) => ms)).toEqual(Array(10).fill(5000));
     for (const args of sessionStarts) {
       expect(args).not.toContain('--resume');
     }
@@ -199,10 +222,9 @@ async function writeResumableClaude(
   dir: string,
   name: string,
 ): Promise<{ bin: string; argsLogPath: string }> {
-  const bin = path.join(dir, name);
   const counterPath = path.join(dir, `${name}-attempts`);
   const argsLogPath = path.join(dir, `${name}-args.jsonl`);
-  await writeFile(bin, `#!/usr/bin/env node
+  const bin = await writeExecutableScript(dir, name, `#!/usr/bin/env node
 const fs = require('node:fs');
 const counterPath = ${JSON.stringify(counterPath)};
 const argsLogPath = ${JSON.stringify(argsLogPath)};
@@ -212,6 +234,10 @@ if (process.argv.includes('--version')) {
 }
 if (process.argv.includes('--help')) {
   console.log('Usage: claude -p [--include-partial-messages] [--add-dir DIR]');
+  process.exit(0);
+}
+// Background memory/model/capability calls are not chat turns.
+if (!process.argv.includes('--session-id') && !process.argv.includes('--resume')) {
   process.exit(0);
 }
 let attempts = 0;
@@ -232,6 +258,8 @@ if (attempts === 0) {
   process.stderr.write('Upstream request failed: HTTP 503 stream disconnected before completion.\\n');
   setTimeout(() => process.exit(1), 20);
 } else {
+  // A prototype turn only succeeds once it saves the document in the project root.
+  fs.writeFileSync('index.html', '<!doctype html><title>Recovered</title><p>Recovered after resume.</p>');
   console.log(JSON.stringify({
     type: 'assistant',
     message: {
@@ -242,8 +270,7 @@ if (attempts === 0) {
   }));
   setTimeout(() => process.exit(0), 20);
 }
-`, 'utf8');
-  await chmod(bin, 0o755);
+`);
   return { bin, argsLogPath };
 }
 
@@ -254,9 +281,8 @@ async function writeNoOutputUpstreamClaude(
   dir: string,
   name: string,
 ): Promise<{ bin: string; argsLogPath: string }> {
-  const bin = path.join(dir, name);
   const argsLogPath = path.join(dir, `${name}-args.jsonl`);
-  await writeFile(bin, `#!/usr/bin/env node
+  const bin = await writeExecutableScript(dir, name, `#!/usr/bin/env node
 const fs = require('node:fs');
 const argsLogPath = ${JSON.stringify(argsLogPath)};
 if (process.argv.includes('--version')) {
@@ -267,12 +293,15 @@ if (process.argv.includes('--help')) {
   console.log('Usage: claude -p [--include-partial-messages] [--add-dir DIR]');
   process.exit(0);
 }
+// Background memory/model/capability calls are not chat turns.
+if (!process.argv.includes('--session-id') && !process.argv.includes('--resume')) {
+  process.exit(0);
+}
 fs.appendFileSync(argsLogPath, JSON.stringify(process.argv.slice(2)) + '\\n');
 console.log(JSON.stringify({ type: 'system', subtype: 'init', model: 'claude-resume-test' }));
 process.stderr.write('Upstream request failed: HTTP 503 before first token.\\n');
 setTimeout(() => process.exit(1), 20);
-`, 'utf8');
-  await chmod(bin, 0o755);
+`);
   return { bin, argsLogPath };
 }
 
@@ -282,10 +311,10 @@ async function writeTextOnlyUpstreamClaude(
   dir: string,
   name: string,
 ): Promise<{ bin: string }> {
-  const bin = path.join(dir, name);
-  await writeFile(bin, `#!/usr/bin/env node
+  const bin = await writeExecutableScript(dir, name, `#!/usr/bin/env node
 if (process.argv.includes('--version')) { console.log('claude-code 1.0.0-resume-textonly'); process.exit(0); }
 if (process.argv.includes('--help')) { console.log('Usage: claude -p [--include-partial-messages]'); process.exit(0); }
+if (!process.argv.includes('--session-id') && !process.argv.includes('--resume')) process.exit(0);
 console.log(JSON.stringify({ type: 'system', subtype: 'init', model: 'claude-resume-test' }));
 console.log(JSON.stringify({
   type: 'assistant',
@@ -293,8 +322,7 @@ console.log(JSON.stringify({
 }));
 process.stderr.write('Upstream request failed: HTTP 503 stream disconnected before completion.\\n');
 setTimeout(() => process.exit(1), 20);
-`, 'utf8');
-  await chmod(bin, 0o755);
+`);
   return { bin };
 }
 
@@ -356,17 +384,16 @@ async function sendRunAndWait(url: string, encoded: string): Promise<RunStatus> 
 }
 
 async function waitForRun(url: string, runId: string): Promise<RunStatus> {
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < 10_000) {
-    const response = await fetch(`${url}/api/runs/${encodeURIComponent(runId)}`);
-    expect(response.status).toBe(200);
-    const run = await response.json() as RunStatus;
-    if (run.status === 'failed' || run.status === 'succeeded' || run.status === 'canceled') {
-      return run;
-    }
-    await delay(100);
-  }
-  throw new Error(`run ${runId} did not finish`);
+  // The SSE stream replays from the start and closes after the terminal `end`.
+  const events = await fetch(`${url}/api/runs/${encodeURIComponent(runId)}/events`, {
+    signal: AbortSignal.timeout(15_000),
+  });
+  expect(events.status).toBe(200);
+  const body = await events.text();
+  expect(body).toContain('event: end');
+  const response = await fetch(`${url}/api/runs/${encodeURIComponent(runId)}`);
+  expect(response.status).toBe(200);
+  return await response.json() as RunStatus;
 }
 
 async function readArgs(file: string): Promise<string[][]> {
@@ -381,8 +408,4 @@ async function readArgs(file: string): Promise<string[][]> {
 function flagValue(args: string[], flag: string): string | null {
   const index = args.indexOf(flag);
   return index >= 0 ? args[index + 1] ?? null : null;
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

@@ -92,11 +92,18 @@ describe('POST /api/runs headless fallbacks', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           projectId,
+          // The daemon never picks a model; the fake catalogue advertises this one.
+          model: 'test/model',
           message: 'Headless prompt',
         }),
       });
       expect(runResponse.status).toBe(202);
       const runBody = await runResponse.json() as { runId: string };
+      // Agent selection is deferred past the 202 so a headless run can be
+      // queued/cancelled during cold discovery. The SSE stream replays from the
+      // start; its `start` event is emitted once the agent has been resolved.
+      const startEvent = await readUntilRunEvent(started.url, runBody.runId, 'start');
+      expect(startEvent).toContain('"agentId":"opencode"');
       const statusResponse = await fetch(
         `${started.url}/api/runs/${encodeURIComponent(runBody.runId)}`,
       );
@@ -110,6 +117,34 @@ describe('POST /api/runs headless fallbacks', () => {
     }
   });
 });
+
+async function readUntilRunEvent(url: string, runId: string, eventName: string): Promise<string> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const response = await fetch(`${url}/api/runs/${encodeURIComponent(runId)}/events`, {
+      signal: controller.signal,
+    });
+    expect(response.status).toBe(200);
+    const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
+    let buffer = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += value;
+      const frames = buffer.split('\n\n');
+      buffer = frames.pop() ?? '';
+      const match = frames.find((frame) => frame.split('\n').includes(`event: ${eventName}`));
+      if (match) return match;
+      const end = frames.find((frame) => frame.split('\n').includes('event: end'));
+      if (end) throw new Error(`run ${runId} ended before ${eventName}: ${frames.join('\n\n')}`);
+    }
+    throw new Error(`run ${runId} stream closed before ${eventName}`);
+  } finally {
+    clearTimeout(timeout);
+    controller.abort();
+  }
+}
 
 async function startTestServer(): Promise<StartedServer> {
   return await startServer({ port: 0, returnServer: true }) as StartedServer;
@@ -172,6 +207,11 @@ async function writeFakeOpencode(dir: string): Promise<string> {
   const runnerPath = path.join(dir, 'opencode-runner.cjs');
   const body = `if (process.argv.includes('--version')) {
   console.log('opencode 0.0.0');
+  process.exit(0);
+}
+if (process.argv[2] === 'auth' && process.argv[3] === 'list') {
+  // Discovery only marks OpenCode available after a verified credential count.
+  console.log('Credentials\\n\\u2514 1 credentials');
   process.exit(0);
 }
 if (process.argv[2] === 'models') {
