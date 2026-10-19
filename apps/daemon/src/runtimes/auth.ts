@@ -178,6 +178,15 @@ export type AgentServiceFailureCode =
   | 'RATE_LIMITED'
   | 'UPSTREAM_UNAVAILABLE';
 
+export function isAgentTokenExpiryFailureText(text: string): boolean {
+  return /\b(?:(?:(?:access|refresh|oauth)[ _-]?)?token[ _-](?:(?:has|is)[ _-])?expired|expired[ _-](?:access[ _-]|refresh[ _-])?token|session expired|token.{0,40}(?:refresh.{0,20}(?:failed|failure|error)|could not be refreshed)|(?:failed|unable) to refresh.{0,20}token|refresh token (?:was )?(?:already used|expired|invalid)|refresh_token_reused)\b/i.test(text);
+}
+
+export function isAgentPermissionDeniedText(text: string): boolean {
+  return /\b(permission denied|access denied|not have access|no access|forbidden|EACCES|EPERM)\b/i.test(text) ||
+    new RegExp(`${STATUS_CTX}403\\b`, 'i').test(text);
+}
+
 // A bare HTTP status number (`500`, `429`, …) is too noisy to trust on its own
 // — agent stderr is full of unrelated numbers (`line 500`, `read 502 bytes`,
 // `took 503ms`, `exit code 401`, `process exited with code 429`). Only treat a
@@ -203,13 +212,13 @@ const AGENT_AUTH_FAILURE_RE = new RegExp(
 
 // Quota / rate limit / billing balance — the wall the hosted gateway avoids.
 const AGENT_RATE_FAILURE_RE = new RegExp(
-  `(\\b(rate[ _-]?limit|too many requests|quota|insufficient[ _-]?(?:quota|balance|credit|funds)|credit balance is too low|exceeded your current quota|usage limit|session limit|limit reached|billing (?:hard )?limit)\\b|${STATUS_CTX}429\\b)`,
+  `(\\b(rate[ _-]?limit(?:[ _-]exceeded)?|too[ _-]many[ _-]requests|quota|insufficient[ _-]?(?:quota|balance|credit|funds)|credit balance is too low|exceeded your current quota|usage limit|session limit|limit reached|billing (?:hard )?limit)\\b|${STATUS_CTX}429\\b)`,
   'i',
 );
 
 // Upstream model/provider problems: overloaded, 5xx, temporarily unavailable.
 const AGENT_UPSTREAM_FAILURE_RE = new RegExp(
-  `(\\b(overloaded(?:_error)?|service (?:is )?(?:temporarily )?unavailable|bad gateway|gateway timeout|internal server error|upstream (?:error|unavailable)|provider (?:error|unavailable)|temporarily unavailable|model is currently overloaded|5xx)\\b|${STATUS_CTX}5\\d\\d\\b|\\b5\\d\\d\\s+(?:bad gateway|service unavailable|internal server error|gateway timeout))`,
+  `(\\b(overload(?:ed)?(?:_error)?|service (?:is )?(?:temporarily )?unavailable|bad gateway|gateway timeout|internal server error|upstream (?:error|unavailable)|provider (?:error|unavailable)|temporarily unavailable|model is currently overloaded|5xx)\\b|${STATUS_CTX}5\\d\\d\\b|\\b5\\d\\d\\s+(?:bad gateway|service unavailable|internal server error|gateway timeout))`,
   'i',
 );
 
@@ -223,7 +232,7 @@ export function classifyAgentServiceFailure(
 ): AgentServiceFailureCode | null {
   const value = String(text || '');
   if (!value.trim()) return null;
-  if (AGENT_AUTH_FAILURE_RE.test(value)) return 'AGENT_AUTH_REQUIRED';
+  if (isAgentTokenExpiryFailureText(value) || AGENT_AUTH_FAILURE_RE.test(value)) return 'AGENT_AUTH_REQUIRED';
   if (AGENT_RATE_FAILURE_RE.test(value)) return 'RATE_LIMITED';
   if (AGENT_UPSTREAM_FAILURE_RE.test(value)) return 'UPSTREAM_UNAVAILABLE';
   return null;

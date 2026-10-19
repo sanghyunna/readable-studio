@@ -111,10 +111,8 @@ describe('claude-stream role-marker guard scope', () => {
       },
     }) + '\n');
 
-    expect(events).toContainEqual({
-      type: 'text_delta',
-      delta: 'Not logged in · Please run /login',
-    });
+    // Provider error text is a diagnostic, never answer text or a clean turn end.
+    expect(events.filter((e) => e.type === 'text_delta' || e.type === 'turn_end')).toEqual([]);
     expect(events).toContainEqual({
       type: 'error',
       message: 'Not logged in · Please run /login',

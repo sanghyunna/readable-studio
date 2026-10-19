@@ -341,6 +341,18 @@ export function createClaudeStreamHandler(onEvent: EventSink) {
     // covered it (older Claude Code without --include-partial-messages
     // delivers text only here; newer builds stream it and would duplicate).
     if (obj.type === 'assistant' && isRecord(obj.message) && Array.isArray(obj.message.content)) {
+      // Synthetic provider failures are diagnostics, not generated content or
+      // clean turn endings. Classify them before emitting either signal.
+      if (typeof obj.error === 'string' && obj.error.trim()) {
+        onEvent({
+          type: 'error',
+          message: assistantText(obj.message.content) || obj.error,
+          code: obj.error,
+        });
+        currentMessageStreamedText = false;
+        currentMessageStreamedThinking = false;
+        return;
+      }
       const explicitMsgId = typeof obj.message.id === 'string' ? obj.message.id : null;
       const textMsgId = explicitMsgId ?? (currentMessageStreamedText ? currentMessageId : null);
       const thinkingMsgId = explicitMsgId ?? (currentMessageStreamedThinking ? currentMessageId : null);
@@ -387,13 +399,6 @@ export function createClaudeStreamHandler(onEvent: EventSink) {
       // close stream-json input stdin.
       if (stopReason) {
         onEvent({ type: 'turn_end', stopReason });
-      }
-      if (typeof obj.error === 'string' && obj.error.trim()) {
-        onEvent({
-          type: 'error',
-          message: assistantText(obj.message.content) || obj.error,
-          code: obj.error,
-        });
       }
       currentMessageStreamedText = false;
       currentMessageStreamedThinking = false;

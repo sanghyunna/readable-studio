@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { isAgentTokenExpiryFailureText } from './runtimes/auth.js';
 
 const MAX_LOG_BYTES = 256 * 1024;
 const MAX_WORK_DIRS = 256;
@@ -8,7 +9,7 @@ const MAX_WORK_DIRS = 256;
 interface KimiProviderFailure {
   code: 'RATE_LIMITED' | 'AGENT_AUTH_REQUIRED' | 'AGENT_EXECUTION_FAILED';
   message: string;
-  retryable: false;
+  retryable: boolean;
   details: { source: 'kimi_session_log'; statusCode: number; action?: 'login'; reset?: string };
 }
 
@@ -26,10 +27,7 @@ function providerSummary(message: string): string {
 
 function describeFailure(statusCode: number, message: string): KimiProviderFailure {
   const details: KimiProviderFailure['details'] = { source: 'kimi_session_log', statusCode };
-  if (statusCode === 401 || /unauthorized|authentication failed|invalid (?:api key|token)|expired (?:token|session)/i.test(message)) {
-    return { code: 'AGENT_AUTH_REQUIRED', message: `Kimi login failed (HTTP ${statusCode}). Log in to Kimi again and retry.`, retryable: false, details: { ...details, action: 'login' } };
-  }
-  if (statusCode === 429 || /(?:usage|weekly|quota|rate)[ -]limit|quota.{0,20}(?:exceeded|reached)/i.test(message)) {
+  if (/(?:usage|weekly|quota)[ -]limit|quota.{0,20}(?:exceeded|reached|exhausted)|insufficient[ _-]quota/i.test(message)) {
     // Reset descriptions are allowlisted too; do not copy a provider's whole
     // sentence, which may contain account identifiers or subscription links.
     const reset = /reset when the current 7-day window ends/i.test(message)
@@ -41,7 +39,24 @@ function describeFailure(statusCode: number, message: string): KimiProviderFailu
       : reset ? ` Reset: ${reset}.` : '';
     return { code: 'RATE_LIMITED', message: `The Kimi account usage limit is reached (HTTP ${statusCode}).${resetMessage} Retry after the limit resets.`, retryable: false, details };
   }
-  return { code: 'AGENT_EXECUTION_FAILED', message: `Kimi provider error (HTTP ${statusCode}): ${providerSummary(message)}.`, retryable: false, details };
+  if (/\b(?:invalid model|unknown model|model not found)\b/i.test(message)) {
+    return { code: 'AGENT_EXECUTION_FAILED', message: `Kimi provider error (HTTP ${statusCode}): ${providerSummary(message)}.`, retryable: false, details };
+  }
+  if (isAgentTokenExpiryFailureText(message)) {
+    return { code: 'AGENT_AUTH_REQUIRED', message: `Kimi token expired or token refresh failed (HTTP ${statusCode}).`, retryable: true, details };
+  }
+  if (statusCode === 401 || /unauthorized|authentication failed|invalid (?:api key|token)/i.test(message)) {
+    return { code: 'AGENT_AUTH_REQUIRED', message: `Kimi login failed (HTTP ${statusCode}). Log in to Kimi again and retry.`, retryable: false, details: { ...details, action: 'login' } };
+  }
+  if (statusCode === 429 || /rate[ _-]limit|too[ _-]many[ _-]requests/i.test(message)) {
+    return { code: 'RATE_LIMITED', message: `Kimi rate limit: too many requests (HTTP ${statusCode}).`, retryable: true, details };
+  }
+  return {
+    code: 'AGENT_EXECUTION_FAILED',
+    message: `Kimi provider error (HTTP ${statusCode}): ${providerSummary(message)}.`,
+    retryable: statusCode === 403 || statusCode === 408 || statusCode >= 500,
+    details,
+  };
 }
 
 function parseFailure(log: string): KimiProviderFailure | null {

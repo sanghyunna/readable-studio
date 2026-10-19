@@ -38,13 +38,23 @@ describe('resolveRunFailureUi for Kimi provider failures', () => {
   });
 
   it('keeps the raw text for non-Kimi agents and unrecognized Kimi failures', () => {
-    expect(resolveRunFailureUi('RATE_LIMITED', 'claude', RATE_LIMIT).messageKey).toBeNull();
+    expect(resolveRunFailureUi('RATE_LIMITED', 'claude', RATE_LIMIT).messageKey).toBe(
+      'chat.quotaExhaustedMessage',
+    );
     expect(resolveRunFailureUi('AGENT_AUTH_REQUIRED', 'codex', AUTH).messageKey).toBeNull();
     expect(
       resolveRunFailureUi('AGENT_EXECUTION_FAILED', 'kimi', 'Kimi exited unexpectedly').messageKey,
     ).toBeNull();
-    expect(resolveRunFailureUi('RATE_LIMITED', 'kimi').messageKey).toBe(
-      'chat.kimiError.usageLimitMessage',
+    expect(resolveRunFailureUi('RATE_LIMITED', 'kimi').messageKey).toBe('chat.rateLimitMessage');
+  });
+
+  it('distinguishes temporary request quota from exhausted account quota', () => {
+    expect(
+      resolveRunFailureUi('RATE_LIMITED', 'claude', 'HTTP 429: temporary request quota; retry shortly')
+        .messageKey,
+    ).toBe('chat.rateLimitMessage');
+    expect(resolveRunFailureUi('RATE_LIMITED', 'claude', 'HTTP 429 quota exceeded').messageKey).toBe(
+      'chat.quotaExhaustedMessage',
     );
   });
 });

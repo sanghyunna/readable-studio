@@ -4,6 +4,26 @@ import { createCopilotStreamHandler } from '../src/copilot-stream.js';
 import { mapPiRpcEvent } from '../src/pi-rpc.js';
 
 describe('structured agent stream fixtures', () => {
+  it.each([
+    ['unknown', 'API Error: 503 Service Unavailable'],
+    ['overloaded_error', ''],
+  ])('emits only an error for a Claude assistant failure wrapper (%s)', (code, text) => {
+    const events: unknown[] = [];
+    const handler = createClaudeStreamHandler((event: unknown) => events.push(event));
+    handler.feed(`${JSON.stringify({
+      type: 'assistant', error: code, parent_tool_use_id: null,
+      session_id: 'error-session', uuid: 'error-frame',
+      message: {
+        id: 'error-message', type: 'message', role: 'assistant', model: '<synthetic>',
+        content: text ? [{ type: 'text', text }] : [],
+        stop_reason: 'stop_sequence', stop_sequence: '',
+        usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+      },
+    })}\n`);
+    handler.flush();
+    expect(events).toEqual([{ type: 'error', message: text || code, code }]);
+  });
+
   it('emits TodoWrite tool_use from Claude Code stream JSON', () => {
     const events: unknown[] = [];
     const handler = createClaudeStreamHandler((event: unknown) => events.push(event));
@@ -863,5 +883,23 @@ describe('structured agent stream fixtures', () => {
       stopReason: 'completed',
       durationMs: 1234,
     });
+  });
+
+  it.each([
+    { type: 'result', success: false, exitCode: 1, error: 'HTTP 503 upstream unavailable' },
+    { type: 'result', success: false, exitCode: 0, error: 'HTTP 503 upstream unavailable' },
+    { type: 'error', data: { message: 'HTTP 503 upstream unavailable', retry_after: '12' } },
+    { type: 'session.error', data: { message: 'HTTP 503 upstream unavailable' } },
+  ])('emits a normal error signal for a failed Copilot frame: $type', (frame) => {
+    const events: Record<string, unknown>[] = [];
+    const handler = createCopilotStreamHandler((event) => events.push(event));
+    handler.feed(`${JSON.stringify(frame)}\n`);
+    handler.flush();
+    expect(events.filter((event) => event.type === 'error')).toEqual([
+      expect.objectContaining({ type: 'error', message: 'HTTP 503 upstream unavailable' }),
+    ]);
+    if (frame.type === 'error') {
+      expect(events).toContainEqual(expect.objectContaining({ retry_after: '12' }));
+    }
   });
 });

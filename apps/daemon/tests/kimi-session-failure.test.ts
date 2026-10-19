@@ -6,6 +6,9 @@ import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { test } from 'vitest';
 import { attachAcpSession } from '../src/acp.js';
+import { readKimiSessionFailure } from '../src/kimi-session-failure.js';
+import { classifyRunFailure } from '../src/run-failure-classification.js';
+import { decideSafeRunRetry } from '../src/run-retry-policy.js';
 
 const SESSION = 'session_f200b5fd-a757-460d-89dd-969036f9c873';
 // Sanitized Kimi 0.27.0 session-log format from the diagnosis, including the
@@ -15,6 +18,42 @@ function fixture(statusCode: number, message: string) {
   return `2026-10-06T06:26:14.902Z WARN  llm request failed  errorMessage=${JSON.stringify(`${statusCode} ${message}`)} statusCode=${statusCode}\n` +
     `2026-10-06T06:26:14.959Z WARN  acp: turn ended with failed reason  error=${JSON.stringify(error)}\n`;
 }
+
+test.each([
+  [429, 'Too many requests', true],
+  [429, 'Rate limit exceeded', true],
+  [429, 'Weekly (7-day) usage limit reached', false],
+  [403, 'Weekly (7-day) usage limit reached', false],
+  [403, 'Permission denied', true],
+  [401, 'Token expired', true],
+  [401, 'Token refresh failed', true],
+  [401, 'Invalid API key', false],
+  [502, 'Bad gateway', true],
+  [503, 'Service unavailable', true],
+  [408, 'Request timeout', true],
+  [404, 'Unknown model', false],
+  [429, 'Unknown model', false],
+  [401, 'Token expired for invalid model', false],
+])('Kimi HTTP %i %s retains its retry decision', (status, message, retryable) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'readable-kimi-policy-'));
+  try {
+    const logs = path.join(home, '.kimi-code', 'sessions', 'wd_policy', SESSION, 'logs');
+    fs.mkdirSync(logs, { recursive: true });
+    fs.writeFileSync(path.join(logs, 'kimi-code.log'), fixture(status, message));
+    const recovered = readKimiSessionFailure(SESSION, { HOME: home, USERPROFILE: home });
+    assert.ok(recovered);
+    assert.equal(recovered.retryable, retryable);
+    const failure = classifyRunFailure({
+      result: 'failed',
+      status: { status: 'failed', error: recovered.message, errorCode: recovered.code },
+      events: [{ event: 'error', data: { error: recovered } }],
+    });
+    assert.ok(failure);
+    assert.equal(decideSafeRunRetry({ result: 'failed', attemptCount: 0, failure }).shouldRetry, retryable);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
 const QUOTA = fixture(403, "You've reached your weekly (7-day) usage limit. Your quota will reset when the current 7-day window ends.");
 const AUTH = fixture(401, 'Invalid API key sk-secret12345678901234567890 for account owner@example.com');
 

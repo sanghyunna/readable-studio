@@ -66,6 +66,9 @@ export type RunFailureMessageKey =
   | 'chat.amrError.authMessage'
   | 'chat.amrError.balanceMessage'
   | 'chat.connectionDropped'
+  | 'chat.rateLimitMessage'
+  | 'chat.quotaExhaustedMessage'
+  | 'chat.invalidModelMessage'
   | 'chat.documentNotSaved'
   | 'chat.kimiError.usageLimitMessage'
   | 'chat.kimiError.usageLimitWindowMessage'
@@ -95,6 +98,7 @@ export interface RunFailureUi {
 }
 
 type KimiFailureCopy = Pick<RunFailureUi, 'messageKey' | 'messageVars'>;
+const HARD_QUOTA_TEXT = /\b(session limit|usage limit|weekly limit|(?:account|usage|billing)\s+quota|quota\s+(?:exhausted|exceeded|reached)|insufficient[ _-]?(?:quota|credit|funds)|exceeded your(?: current)? quota)\b/i;
 
 // Kimi failures recovered from the ACP session log arrive as plain-English
 // daemon messages (apps/daemon/src/kimi-session-failure.ts). The persisted run
@@ -104,7 +108,7 @@ function resolveKimiFailureCopy(
   code: string | null | undefined,
   detail: string | null | undefined,
 ): KimiFailureCopy | null {
-  if (code === 'RATE_LIMITED') {
+  if (HARD_QUOTA_TEXT.test(detail ?? '')) {
     if (/resets when the current 7-day window ends/i.test(detail ?? '')) {
       return { messageKey: 'chat.kimiError.usageLimitWindowMessage' };
     }
@@ -113,6 +117,9 @@ function resolveKimiFailureCopy(
       return { messageKey: 'chat.kimiError.usageLimitResetMessage', messageVars: { reset } };
     }
     return { messageKey: 'chat.kimiError.usageLimitMessage' };
+  }
+  if (code === 'RATE_LIMITED') {
+    return { messageKey: 'chat.rateLimitMessage' };
   }
   if (code === 'AGENT_AUTH_REQUIRED') {
     return { messageKey: 'chat.kimiError.authMessage' };
@@ -140,6 +147,21 @@ export function resolveRunFailureUi(
   agentId: string | null | undefined,
   detail?: string | null,
 ): RunFailureUi {
+  // Databricks keeps its existing provider-specific copy and recovery actions.
+  if (agentId !== 'databricks'
+    && !(agentId === 'pi' && /Databricks/i.test(detail ?? ''))
+    && !(agentId === 'amr' && (code === 'AMR_AUTH_REQUIRED' || code === 'AMR_INSUFFICIENT_BALANCE'))) {
+    const invalidModel = /\b(?:invalid[ _-]model|unknown[ _-]model|model_not_found|model(?: name)? .{0,100}(?:not found|does not exist)|model not found)\b/i.test(detail ?? '');
+    if (invalidModel || HARD_QUOTA_TEXT.test(detail ?? '') && agentId !== 'kimi') {
+      const switchModel = !invalidModel && agentId === 'antigravity' && code === 'RATE_LIMITED';
+      return {
+        primaryAction: switchModel ? 'launch-terminal-switch-model' : 'retry',
+        messageKey: invalidModel ? 'chat.invalidModelMessage' : 'chat.quotaExhaustedMessage',
+        secondaryRetry: switchModel,
+        showSwitchCard: false,
+      };
+    }
+  }
   if (agentId === 'amr') {
     if (code === 'AMR_AUTH_REQUIRED') {
       return {
@@ -216,6 +238,14 @@ export function resolveRunFailureUi(
   // localized "lost connection — retry" message instead of the raw SDK string.
   // Not an AMR-promotable case: the break is the user's own network path, which
   // switching model service wouldn't fix.
+  if (code === 'RATE_LIMITED') {
+    return {
+      primaryAction: 'retry',
+      messageKey: 'chat.rateLimitMessage',
+      secondaryRetry: false,
+      showSwitchCard: false,
+    };
+  }
   if (code === 'AGENT_CONNECTION_DROPPED') {
     return {
       primaryAction: 'retry',
