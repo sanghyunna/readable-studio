@@ -332,7 +332,8 @@ describe('Hub template carousel', () => {
       expect(viewport.classList.contains('is-at-start')).toBe(true);
       expect(viewport.classList.contains('is-at-end')).toBe(false);
 
-      // Midway: both.
+      // Midway: both. A wheel gesture releases the load-time left pin, as a user would.
+      fireEvent.wheel(rail);
       layoutRail(rail, { scrollWidth: 1800, clientWidth: 600, scrollLeft: 500 });
       expect(prev.disabled || next.disabled).toBe(false);
       expect(prev.tabIndex === 0 && next.tabIndex === 0).toBe(true);
