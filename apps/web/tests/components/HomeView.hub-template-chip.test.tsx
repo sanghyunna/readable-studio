@@ -57,13 +57,13 @@ afterEach(() => {
   window.localStorage.clear();
 });
 
-async function renderHub(ordinaryPlugin = false) {
+async function renderHub(ordinaryPlugin = false, userTemplate = USER_DECK) {
   writeHomeGuideStage('done');
   vi.stubGlobal('fetch', vi.fn(async (url: RequestInfo | URL) => {
     if (url === '/api/plugins') {
       return Response.json({ plugins: [DECK, DECK_B, ACREAGE, SAAS, WAITLIST] });
     }
-    if (url === '/api/design-templates') return Response.json({ designTemplates: [USER_DECK] });
+    if (url === '/api/design-templates') return Response.json({ designTemplates: [userTemplate] });
     const record = [DECK, DECK_B, ACREAGE, SAAS, WAITLIST].find((item) => url === `/api/plugins/${encodeURIComponent(item.id)}/apply`);
     if (record) {
       return Response.json({ ...APPLY_RESULT, appliedPlugin: { ...APPLY_RESULT.appliedPlugin, pluginId: record.id } });
@@ -108,6 +108,20 @@ async function pickDeckCard() {
 }
 
 describe('Hub template chip - 91df2d0 hidden-brief regression', () => {
+  it.each([
+    ['report', 'report', 'prototype'],
+    ['website', 'prototype', 'prototype'],
+  ] as const)('starts an imported %s with its matching project kind', async (templateType, tab, projectKind) => {
+    const { submit } = await renderHub(false, { ...USER_DECK, templateType });
+    fireEvent.click(screen.getAllByTestId('hub-template-carousel-tab').find((node) => node.getAttribute('data-tab-id') === tab)!);
+    await act(async () => { fireEvent.click(deckCard(USER_DECK.id)); });
+    await act(async () => { setHomeHeroPrompt(LIBRARY_REQUEST); });
+    expect(await submit()).toMatchObject({
+      skillId: USER_DECK.id, projectKind,
+      projectMetadata: templateType === 'report' ? { kind: 'prototype', intent: 'report' } : { kind: projectKind },
+      pluginId: null, templateRef: { id: USER_DECK.id },
+    });
+  });
   it('starts an imported deck through its skill and hidden template reference, without a plugin', async () => {
     const { submit } = await renderHub();
     await act(async () => { fireEvent.click(deckCard(USER_DECK.id)); });

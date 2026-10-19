@@ -109,11 +109,10 @@ function resolveHubTemplateCardPreview(record: InstalledPluginRecord, liveFallba
 
 // Favorites first, in the order they were starred; everything else keeps
 // its incoming (curated) order.
-export function sortHubTemplateItemsByFavorite<T extends { record: { id: string } }>(
+export function sortHubTemplateItemsByFavorite<T extends { record: { id: string }; userTemplate?: { name: string; importedAt?: string } }>(
   items: readonly T[],
   favorites: readonly string[],
 ): T[] {
-  if (favorites.length === 0) return [...items];
   const rank = new Map<string, number>();
   favorites.forEach((id, index) => {
     if (!rank.has(id)) rank.set(id, index);
@@ -121,7 +120,10 @@ export function sortHubTemplateItemsByFavorite<T extends { record: { id: string 
   const starred = items
     .filter((item) => rank.has(item.record.id))
     .sort((a, b) => rank.get(a.record.id)! - rank.get(b.record.id)!);
-  const rest = items.filter((item) => !rank.has(item.record.id));
+  const rest = items.filter((item) => !rank.has(item.record.id)).sort((a, b) => {
+    if (Boolean(a.userTemplate) !== Boolean(b.userTemplate)) return a.userTemplate ? -1 : 1;
+    return (b.userTemplate?.importedAt ?? '').localeCompare(a.userTemplate?.importedAt ?? '');
+  });
   return [...starred, ...rest];
 }
 
@@ -171,6 +173,9 @@ const STORAGE_KEY = 'readable-studio:hub-template-carousel';
 // scan every deck / report / website template without leaving the Hub.
 export const HUB_TEMPLATE_TAB_IDS = ['deck', 'report', 'prototype'] as const;
 export type HubTemplateTabId = (typeof HUB_TEMPLATE_TAB_IDS)[number];
+export function userTemplateTab(template: { templateType?: string }): HubTemplateTabId {
+  return template.templateType === 'website' ? 'prototype' : template.templateType === 'report' ? 'report' : 'deck';
+}
 export const DEFAULT_HUB_TEMPLATE_TAB: HubTemplateTabId = 'deck';
 
 export function isHubTemplateTabId(value: unknown): value is HubTemplateTabId {

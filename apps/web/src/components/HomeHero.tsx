@@ -81,6 +81,7 @@ import {
   readTemplateCarouselCollapsed,
   readTemplateCarouselTab,
   sortHubTemplateItemsByFavorite,
+  userTemplateTab,
   toggleTemplateFavorite,
   writeTemplateCarouselCollapsed,
   writeTemplateCarouselTab,
@@ -89,6 +90,7 @@ import {
   type HubTemplateTabId,
 } from './home-hero/templateCarousel';
 import { TemplatePlaceholderThumb } from './home-hero/TemplatePlaceholderThumb';
+import { TemplateUploadWizard } from './home-hero/TemplateUploadWizard';
 import { curatedPluginPriorityForChip } from './plugins-home/curatedPriority';
 import { sortByVisualAppeal } from './plugins-home/visualScore';
 import { applyFacetSelection } from './plugins-home/facets';
@@ -1925,6 +1927,8 @@ const HubTemplateCarousel = memo(function HubTemplateCarousel({
 }) {
   const { t } = useI18n();
   const userDecks = useUserDeckTemplates(true);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [newTemplateId, setNewTemplateId] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(readTemplateCarouselCollapsed);
   const [tab, setTab] = useState<HubTemplateTabId>(readTemplateCarouselTab);
   const [favorites, setFavorites] = useState<string[]>([]);
@@ -1944,9 +1948,9 @@ const HubTemplateCarousel = memo(function HubTemplateCarousel({
   const items = useMemo<HubTemplateCarouselItem[]>(() => {
     const next = homeHeroExamplePluginsForChip(tab, pluginOptions, locale, { limit: Infinity })
       .map((record): HubTemplateCarouselItem => ({ record, chipId: tab }));
-    if (tab === 'deck') {
-      for (const template of userDecks.templates) next.push({
-        chipId: 'deck', userTemplate: template,
+    {
+      for (const template of userDecks.templates.filter((item) => userTemplateTab(item) === tab)) next.push({
+        chipId: tab, userTemplate: template,
         record: {
           id: template.id, title: localizeSkillName(locale, template), version: '1.0.0', sourceKind: 'local',
           source: template.id, trust: 'restricted', capabilitiesGranted: [],
@@ -1962,9 +1966,9 @@ const HubTemplateCarousel = memo(function HubTemplateCarousel({
     for (const id of HUB_TEMPLATE_TAB_IDS) {
       counts[id] = homeHeroExamplePluginsForChip(id, pluginOptions, locale, { limit: Infinity }).length;
     }
-    counts.deck += userDecks.templates.length;
+    for (const template of userDecks.templates) counts[userTemplateTab(template)] += 1;
     return counts;
-  }, [pluginOptions, locale, userDecks.templates.length]);
+  }, [pluginOptions, locale, userDecks.templates]);
   function onTabChange(next: HubTemplateTabId) {
     writeTemplateCarouselTab(next);
     setTab(next);
@@ -1985,9 +1989,20 @@ const HubTemplateCarousel = memo(function HubTemplateCarousel({
   const railId = useId();
   const tabIdPrefix = useId();
   const railRef = useRef<HTMLDivElement | null>(null);
-  const zipInput = useRef<HTMLInputElement>(null);
   const tabListRef = useRef<HTMLDivElement | null>(null);
   const [focusIndex, setFocusIndex] = useState(0);
+  useLayoutEffect(() => {
+    if (railRef.current) railRef.current.scrollLeft = 0;
+  }, [tab]);
+  useLayoutEffect(() => {
+    if (!newTemplateId) return;
+    const rail = railRef.current;
+    const card = Array.from(rail?.querySelectorAll<HTMLElement>('[data-testid="hub-template-item"]') ?? [])
+      .find((node) => node.dataset.pluginId === newTemplateId);
+    if (!rail || !card) return;
+    rail.scrollLeft = Math.max(0, card.offsetLeft - rail.offsetLeft);
+    setNewTemplateId(null);
+  }, [items, newTemplateId]);
 
   function tabLabel(id: HubTemplateTabId): string {
     switch (id) {
@@ -2146,10 +2161,15 @@ const HubTemplateCarousel = memo(function HubTemplateCarousel({
       aria-label={t('homeHero.templateCarouselTitle')}
     >
       <div className="home-hero__templates-head">
+        <div className={userDeckLayout.entries}>
         <span className="home-hero__templates-title">
           <Icon name="sparkles" size={14} />
           <span>{t('homeHero.templateCarouselTitle')}</span>
         </span>
+        <Button variant="ghost" aria-haspopup="dialog" onClick={() => setUploadOpen(true)}>
+          <Icon name="upload" size={14} />{t('homeHero.uploadTitle')}
+        </Button>
+        </div>
         <button
           type="button"
           className="home-hero__templates-toggle"
@@ -2244,23 +2264,15 @@ const HubTemplateCarousel = memo(function HubTemplateCarousel({
                     onToggleFavorite={onToggleFavorite}
                   />
                 ))}
-                {tab === 'deck' ? <div role="listitem" className="home-hero__template-item">
+                <div role="listitem" className="home-hero__template-item">
                   <Button variant="ghost" className="home-hero__template-card home-hero__user-template-add"
-                    data-testid="user-deck-add" disabled={userDecks.progress !== null}
-                    onClick={() => zipInput.current?.click()}>
+                    data-testid="user-deck-add" aria-haspopup="dialog"
+                    onClick={() => setUploadOpen(true)}>
                     <span className="home-hero__template-thumb"><Icon name="plus" size={24} /></span>
-                    <span className="home-hero__template-title">{userDecks.progress === null
-                      ? t('homeHero.userTemplateAdd')
-                      : t('homeHero.userTemplateUploading', { progress: userDecks.progress })}</span>
+                    <span className="home-hero__template-title">{t('homeHero.userTemplateAdd')}</span>
                   </Button>
-                </div> : null}
+                </div>
               </div>
-              <input ref={zipInput} type="file" accept=".zip" hidden data-testid="user-deck-zip-input"
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  event.target.value = '';
-                  if (file) userDecks.importZip(file);
-                }} />
               {/* Kept mounted and toggled by class so the fade can play; the
                   hidden arrow is disabled and inert so it is neither a tab stop
                   nor a click target. */}
@@ -2295,6 +2307,14 @@ const HubTemplateCarousel = memo(function HubTemplateCarousel({
       {userDecks.error ? <p role="alert" className="home-hero__user-template-error">
         {t('homeHero.userTemplateImportError', { message: userDecks.error })}
       </p> : null}
+      {uploadOpen && <TemplateUploadWizard onClose={() => setUploadOpen(false)} onComplete={(template) => {
+        userDecks.upsert(template);
+        onTabChange(userTemplateTab(template));
+        writeTemplateCarouselCollapsed(false);
+        setCollapsed(false);
+        setNewTemplateId(template.id);
+        setUploadOpen(false);
+      }} />}
     </section>
   );
 });

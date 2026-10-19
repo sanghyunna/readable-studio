@@ -1039,8 +1039,8 @@ export function HomeView({
       setActiveSkill(null);
       setPendingApplyId(null);
       setPendingChipId(null);
-      setFallbackProjectKind('deck');
-      setFallbackProjectMetadata(null);
+      setFallbackProjectKind(template.templateType === 'website' || template.templateType === 'report' ? 'prototype' : 'deck');
+      setFallbackProjectMetadata(template.templateType === 'report' ? { kind: 'prototype', intent: 'report' } : null);
       setHiddenTemplate({
         id: template.id,
         name: localizeSkillName(locale, template),
