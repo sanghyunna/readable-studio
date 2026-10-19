@@ -1,18 +1,48 @@
-import type { UpdateManifest, UpdateUnavailableReason } from '@readable-studio/contracts';
+import type { UpdateConnectionFailure, UpdateConnectionReport, UpdateConnectionStep, UpdateManifest, UpdateUnavailableReason } from '@readable-studio/contracts';
 import { compareUpdateVersions } from '@readable-studio/contracts';
-import { DatabricksClient, DatabricksServiceError } from './databricks/client.js';
+import { DatabricksClient, DatabricksServiceError, resolveDatabricksCli, type DatabricksExecutable, type DatabricksSubprocessRunner } from './databricks/client.js';
 import { DatabricksCredentials, type DatabricksConnectionBinding } from './databricks/credentials.js';
 import { createUpdateHttpClient } from './update-http.js';
 
+/** `reason` is the legacy check/health vocabulary; `failure` is the finer connection-check classification. */
 export class UpdateSourceError extends Error {
-  constructor(readonly reason: UpdateUnavailableReason, readonly host?: string) { super(reason); }
+  constructor(readonly reason: UpdateUnavailableReason, readonly host?: string, readonly failure?: UpdateConnectionFailure) { super(reason); }
 }
-export type UpdateTokenProvider = (serverUrl: string, force?: boolean) => Promise<{ token: string; host: string }>;
+/** A diagnostic step plus facts the connection report lifts out. Never carries a token. */
+export type UpdateTraceEvent = UpdateConnectionStep & { cli?: UpdateConnectionReport['cli']; profile?: string; host?: string };
+export interface UpdateTraceContext { trace?: (event: UpdateTraceEvent) => void; signal?: AbortSignal }
+export type UpdateTokenProvider = (serverUrl: string, force?: boolean, context?: UpdateTraceContext) => Promise<{ token: string; host: string }>;
+
+const since = (start: number) => Math.max(0, Math.round(performance.now() - start));
+const errorCode = (error: unknown) => error instanceof DatabricksServiceError ? error.code : error instanceof Error ? error.name : 'unknown';
 
 function tokenFailure(error: unknown, host?: string): UpdateSourceError {
-  return new UpdateSourceError(error instanceof DatabricksServiceError && error.code === 'DATABRICKS_AUTH_REQUIRED'
-    ? 'not-logged-in' : error instanceof DatabricksServiceError && error.code === 'DATABRICKS_PERMISSION_DENIED'
-      ? 'forbidden' : 'unreachable', host);
+  if (error instanceof UpdateSourceError) return error;
+  const code = error instanceof DatabricksServiceError ? error.code : undefined;
+  return code === 'DATABRICKS_AUTH_REQUIRED' ? new UpdateSourceError('not-logged-in', host, 'not-logged-in')
+    : code === 'DATABRICKS_PERMISSION_DENIED' ? new UpdateSourceError('forbidden', host, 'forbidden')
+      : code === 'DATABRICKS_CLI_MISSING' || code === 'DATABRICKS_CLI_UNSUPPORTED' ? new UpdateSourceError('unreachable', host, 'cli-missing')
+        : new UpdateSourceError('unreachable', host, 'unreachable');
+}
+
+function networkFailure(error: unknown): UpdateConnectionFailure {
+  const fault = error as { name?: string; message?: string; cause?: { code?: string; name?: string; message?: string } } | null;
+  const code = fault?.cause?.code;
+  if (fault?.name === 'TimeoutError' || fault?.name === 'AbortError' || fault?.cause?.name === 'TimeoutError'
+    || code === 'UND_ERR_CONNECT_TIMEOUT' || code === 'UND_ERR_HEADERS_TIMEOUT' || code === 'ETIMEDOUT') return 'timeout';
+  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN' || code === 'EAI_NONAME') return 'dns';
+  // Databricks Apps redirect requests without a valid workspace bearer to the sign-in page.
+  if (/redirect/i.test(`${fault?.message ?? ''} ${fault?.cause?.message ?? ''}`)) return 'not-logged-in';
+  return 'unreachable';
+}
+function networkDetail(error: unknown): string {
+  const fault = error as { name?: string; message?: string; cause?: { code?: string; message?: string } } | null;
+  return [fault?.cause?.code ?? fault?.name, fault?.cause?.message ?? fault?.message].filter(Boolean).join(': ') || 'network error';
+}
+
+export interface UpdateTokenProviderOptions {
+  resolveCli?: (override?: string | null) => Promise<DatabricksExecutable | null>;
+  runner?: DatabricksSubprocessRunner;
 }
 
 /**
@@ -20,44 +50,77 @@ function tokenFailure(error: unknown, host?: string): UpdateSourceError {
  * configured CLI profiles; accept only the workspace whose Apps list contains
  * this exact app URL. Never send a workspace bearer to an unconfirmed app.
  */
-function createUpdateTokenProvider(): UpdateTokenProvider {
-  const client = new DatabricksClient();
+export function createUpdateTokenProvider(options: UpdateTokenProviderOptions = {}): UpdateTokenProvider {
+  let resolvedCli: DatabricksExecutable | null = null;
+  const resolveCli = options.resolveCli ?? ((override?: string | null) => resolveDatabricksCli(override));
+  const client = new DatabricksClient({
+    resolveExecutable: async (override) => (resolvedCli = await resolveCli(override)),
+    ...(options.runner ? { runner: options.runner } : {}),
+  });
   const credentials = new DatabricksCredentials(client, () => Date.now());
   let binding: DatabricksConnectionBinding | undefined;
   let pending: Promise<DatabricksConnectionBinding> | undefined;
-  const discover = async (serverUrl: string): Promise<DatabricksConnectionBinding> => {
+  const discover = async (serverUrl: string, context: UpdateTraceContext): Promise<DatabricksConnectionBinding> => {
+    const trace = context.trace ?? (() => {});
+    let start = performance.now();
     const probe = await client.probe();
-    if (probe.cli !== 'ready') throw new UpdateSourceError('unreachable');
+    if (probe.cli !== 'ready') {
+      trace({ step: 'cli', ok: false, elapsedMs: since(start), detail: probe.cli === 'missing'
+        ? 'Databricks CLI not found (neither bundled nor installed)' : `Databricks CLI ${resolvedCli?.path ?? ''} is ${probe.cli}${probe.version ? ` (v${probe.version})` : ''}` });
+      throw new UpdateSourceError('unreachable', undefined, 'cli-missing');
+    }
+    const source = probe.cliSource === 'bundled' ? 'bundled' : probe.cliSource === 'override' ? 'override' : 'installed';
+    const path = resolvedCli?.path ?? '(path not reported)';
+    trace({ step: 'cli', ok: true, elapsedMs: since(start), detail: `${path} (${source}, v${probe.version ?? '?'})`, cli: { path, source, version: probe.version } });
+    start = performance.now();
     let profiles: { name: string; host: string }[] = [];
     try {
-      const raw = await client.json(['auth', 'profiles', '--output', 'json']) as { profiles?: { name: string; host: string }[] };
+      const raw = await client.json(['auth', 'profiles', '--output', 'json'], context.signal) as { profiles?: { name: string; host: string }[] };
       profiles = (raw.profiles ?? []).filter((p) => typeof p.name === 'string' && typeof p.host === 'string');
-    } catch (error) { throw tokenFailure(error); }
+    } catch (error) {
+      trace({ step: 'profiles', ok: false, elapsedMs: since(start), detail: `databricks auth profiles failed (${errorCode(error)})` });
+      throw tokenFailure(error);
+    }
     profiles.sort((a, b) => Number(b.name === 'DEFAULT') - Number(a.name === 'DEFAULT'));
+    trace({ step: 'profiles', ok: profiles.length > 0, elapsedMs: since(start),
+      detail: profiles.length ? profiles.map((p) => `${p.name} (${p.host})`).join(', ') : 'no profiles in .databrickscfg' });
     let authenticated = false;
     let failure: UpdateSourceError | undefined;
     for (const profile of profiles) {
+      start = performance.now();
+      const label = `${profile.name} ${profile.host}`;
       try {
-        const raw = await client.json(['apps', 'list', '--profile', profile.name, '--output', 'json']) as { apps?: { url?: string }[] } | { url?: string }[];
+        const raw = await client.json(['apps', 'list', '--profile', profile.name, '--output', 'json'], context.signal) as { apps?: { url?: string }[] } | { url?: string }[];
         authenticated = true;
         const apps = Array.isArray(raw) ? raw : raw.apps ?? [];
-        if (!apps.some((app) => app.url?.replace(/\/+$/, '') === serverUrl)) continue;
+        if (!apps.some((app) => app.url?.replace(/\/+$/, '') === serverUrl)) {
+          trace({ step: 'workspace', ok: true, elapsedMs: since(start), detail: `${label}: app not listed (${apps.length} apps)` });
+          continue;
+        }
+        trace({ step: 'workspace', ok: true, elapsedMs: since(start), detail: `${label}: app found`, profile: profile.name, host: profile.host });
         return { id: profile.name, profileName: profile.name, host: profile.host, isDefault: profile.name === 'DEFAULT' };
       } catch (error) {
         const fault = tokenFailure(error, profile.host);
+        trace({ step: 'workspace', ok: false, elapsedMs: since(start), detail: `${label}: ${fault.failure === 'not-logged-in' ? 'not signed in or token expired'
+          : fault.failure === 'forbidden' ? 'permission denied' : `failed (${errorCode(error)})`}` });
         if (!failure || fault.reason !== 'not-logged-in') failure = fault;
       }
     }
     if (failure && failure.reason !== 'not-logged-in') throw failure;
-    throw new UpdateSourceError(authenticated ? 'app-not-accessible' : 'not-logged-in', authenticated ? undefined : profiles[0]?.host);
+    if (authenticated) {
+      trace({ step: 'workspace', ok: false, elapsedMs: 0, detail: 'no signed-in profile lists this app URL' });
+      throw new UpdateSourceError('app-not-accessible', undefined, 'workspace-not-found');
+    }
+    throw new UpdateSourceError('not-logged-in', profiles[0]?.host, 'not-logged-in');
   };
-  return async (serverUrl, force = false) => {
+  return async (serverUrl, force = false, context = {}) => {
     if (!binding) {
-      pending ??= discover(serverUrl);
+      pending ??= discover(serverUrl, context);
       try { binding = await pending; }
       finally { pending = undefined; }
     }
     const confirmed = binding;
+    const start = performance.now();
     try {
       const bearer = await credentials.acquireToken(confirmed, force, async () => {
         const raw = await client.json(['auth', 'profiles', '--output', 'json']) as { profiles?: { name: string; host: string }[] };
@@ -67,36 +130,60 @@ function createUpdateTokenProvider(): UpdateTokenProvider {
           throw new DatabricksServiceError(profile ? 'DATABRICKS_UPSTREAM_UNAVAILABLE' : 'DATABRICKS_AUTH_REQUIRED', !!profile);
         }
       });
+      context.trace?.({ step: 'token', ok: true, elapsedMs: since(start), detail: `profile ${confirmed.profileName}${force ? ' (refreshed)' : ''}` });
       return { token: bearer.token, host: confirmed.host };
-    } catch (error) { throw tokenFailure(error, confirmed.host); }
+    } catch (error) {
+      context.trace?.({ step: 'token', ok: false, elapsedMs: since(start), detail: `profile ${confirmed.profileName}: ${errorCode(error)}` });
+      throw tokenFailure(error, confirmed.host);
+    }
   };
 }
 export const acquireUpdateToken: UpdateTokenProvider = (serverUrl, force) => createUpdateTokenProvider()(serverUrl, force);
 
 export class DatabricksUpdateSource {
-  constructor(readonly base: string, private readonly token: UpdateTokenProvider = createUpdateTokenProvider(), private readonly fetcher?: typeof fetch) {}
+  private tokenTraced = false;
+  constructor(readonly base: string, private readonly token: UpdateTokenProvider = createUpdateTokenProvider(), private readonly fetcher?: typeof fetch,
+    private readonly context: UpdateTraceContext = {}) {}
+
+  /** Trace token acquisition once per source, and again only for a forced refresh. */
+  private bearer(force: boolean) {
+    const context = this.tokenTraced && !force ? (this.context.signal ? { signal: this.context.signal } : {}) : this.context;
+    this.tokenTraced = true;
+    return context.trace || context.signal ? this.token(this.base, force, context) : this.token(this.base, force);
+  }
 
   async request(path: string, init: RequestInit = {}): Promise<Response> {
-    let bearer = await this.token(this.base);
+    let bearer = await this.bearer(false);
     const client = this.fetcher ? undefined : createUpdateHttpClient();
+    const step = path === 'health' || path === 'latest' ? path : undefined;
+    const started = performance.now();
     try {
       const headers = new Headers(init.headers);
       headers.set('Authorization', `Bearer ${bearer.token}`);
-      const send = () => (this.fetcher ?? client!.fetch)(`${this.base}/api/v1/${path}`, {
-        ...init, redirect: 'error', signal: init.signal ?? AbortSignal.timeout(15_000),
-        headers: Object.fromEntries(headers.entries()),
-      });
+      const send = () => {
+        const timeout = AbortSignal.timeout(15_000);
+        return (this.fetcher ?? client!.fetch)(`${this.base}/api/v1/${path}`, {
+          ...init, redirect: 'error', signal: init.signal ?? (this.context.signal ? AbortSignal.any([this.context.signal, timeout]) : timeout),
+          headers: Object.fromEntries(headers.entries()),
+        });
+      };
       let response = await send();
       if (response.status === 401) {
         await response.body?.cancel();
-        bearer = await this.token(this.base, true);
+        bearer = await this.bearer(true);
         headers.set('Authorization', `Bearer ${bearer.token}`);
         response = await send();
       }
-      if (response.status === 401) throw new UpdateSourceError('not-logged-in', bearer.host);
-      if (response.status === 403) throw new UpdateSourceError('forbidden');
-      if (response.status === 404) throw new UpdateSourceError('no-release');
-      if (!response.ok) throw new UpdateSourceError('unreachable');
+      const status = response.status;
+      const fault = status === 401 ? new UpdateSourceError('not-logged-in', bearer.host, 'not-logged-in')
+        : status === 403 ? new UpdateSourceError('forbidden', undefined, 'forbidden')
+          : status === 404 ? new UpdateSourceError('no-release', undefined, path === 'health' ? 'not-update-server' : undefined)
+            // A stopped Databricks App answers from the Apps proxy with 502/503/504.
+            : status === 502 || status === 503 || status === 504 ? new UpdateSourceError('unreachable', undefined, 'app-stopped')
+              : !response.ok ? new UpdateSourceError('unreachable', undefined, 'invalid-response') : undefined;
+      if (step) this.context.trace?.({ step, ok: !fault || (step === 'latest' && status === 404), elapsedMs: since(started), httpStatus: status,
+        detail: `GET /api/v1/${path} -> ${status}${step === 'latest' && status === 404 ? ' (no release yet)' : ''}` });
+      if (fault) throw fault;
       // The transport must stay alive until a streamed body has been consumed.
       if (client) {
         const body = response.body;
@@ -114,24 +201,28 @@ export class DatabricksUpdateSource {
     } catch (error) {
       await client?.destroy();
       if (error instanceof UpdateSourceError) throw error;
-      throw new UpdateSourceError('unreachable');
+      const failure = networkFailure(error);
+      if (step) this.context.trace?.({ step, ok: false, elapsedMs: since(started), detail: `GET /api/v1/${path} failed: ${networkDetail(error)}` });
+      throw new UpdateSourceError('unreachable', undefined, failure);
     }
   }
 
   async latest(): Promise<UpdateManifest> {
     let value: UpdateManifest;
     try { value = await (await this.request('latest')).json() as UpdateManifest; }
-    catch (error) { if (error instanceof UpdateSourceError) throw error; throw new UpdateSourceError('invalid-response'); }
+    catch (error) { if (error instanceof UpdateSourceError) throw error; throw new UpdateSourceError('invalid-response', undefined, 'invalid-response'); }
     if (!value || compareUpdateVersions(value.version, value.version) === null
       || value.fileName !== 'Readable-Studio-win-x64-portable.zip'
       || !Number.isSafeInteger(value.size) || value.size <= 0
       || typeof value.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(value.sha256)
-      || typeof value.notes !== 'string' || typeof value.publishedAt !== 'string' || !Number.isFinite(Date.parse(value.publishedAt))) throw new UpdateSourceError('invalid-response');
+      || typeof value.notes !== 'string' || typeof value.publishedAt !== 'string' || !Number.isFinite(Date.parse(value.publishedAt))) throw new UpdateSourceError('invalid-response', undefined, 'invalid-response');
     return value;
   }
 
   async health(): Promise<void> {
-    const value = await (await this.request('health')).json() as Record<string, unknown>;
-    if (!value || value.ok !== true || value.service !== 'readable-studio-update-server' || value.apiVersion !== 1) throw new UpdateSourceError('invalid-response');
+    let value: Record<string, unknown> | null;
+    try { value = await (await this.request('health')).json() as Record<string, unknown> | null; }
+    catch (error) { if (error instanceof UpdateSourceError) throw error; throw new UpdateSourceError('invalid-response', undefined, 'invalid-response'); }
+    if (!value || value.ok !== true || value.service !== 'readable-studio-update-server' || value.apiVersion !== 1) throw new UpdateSourceError('invalid-response', undefined, 'not-update-server');
   }
 }

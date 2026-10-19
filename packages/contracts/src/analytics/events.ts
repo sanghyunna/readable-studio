@@ -219,6 +219,7 @@ export type TrackingRunFailureCategory =
   | 'unknown';
 export type TrackingRunFailureDetail =
   | 'auth_required'
+  | 'permission_denied'
   | 'stale_profile'
   | 'refresh_token_reused'
   | 'missing_api_key'

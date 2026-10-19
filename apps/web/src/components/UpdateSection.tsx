@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Button, Input, Switch } from '@readable-studio/components';
-import { compareUpdateVersions, type AutoUpdateConfig, type UpdateCheckAvailable, type UpdateCheckResult, type UpdateStatus } from '@readable-studio/contracts';
+import { compareUpdateVersions, type AutoUpdateConfig, type UpdateCheckAvailable, type UpdateCheckResult, type UpdateConnectionFailure, type UpdateConnectionReport, type UpdateStatus } from '@readable-studio/contracts';
 import { useI18n } from '../i18n';
 import type { Dict } from '../i18n/types';
 import { DatabricksLoginButton } from './databricks/DatabricksLoginButton';
@@ -60,6 +60,74 @@ async function checkUpdate(automatic = false): Promise<UpdateCheckResult> {
 }
 interface LoginSlot {
   renderDatabricksLogin?: (host: string | undefined, onSuccess: () => void) => ReactNode;
+}
+/** The daemon bounds the check; the extra slack only guards a stalled daemon. */
+const CONNECTION_TIMEOUT_MS = 25_000;
+type ConnectionReport = Omit<UpdateConnectionReport, 'failure'> & { failure?: UpdateConnectionFailure | 'daemon-unreachable' };
+type ConnectionView = { state: 'checking' } | { state: 'done'; report: ConnectionReport };
+function normalizeServerUrl(input: string): string | null {
+  if (!input.trim()) return null;
+  let parsed: URL;
+  try { parsed = new URL(input.trim()); } catch { throw new Error('invalid-url'); }
+  if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error('invalid-url');
+  return parsed.href.replace(/\/+$/, '');
+}
+async function requestConnection(serverUrl: string): Promise<ConnectionReport> {
+  const started = Date.now();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CONNECTION_TIMEOUT_MS + 5_000);
+  const local = (failure: ConnectionReport['failure']): ConnectionReport =>
+    ({ ok: false, serverUrl, failure, timeoutMs: CONNECTION_TIMEOUT_MS, elapsedMs: Date.now() - started, steps: [] });
+  try {
+    const response = await fetch('/api/update/connection', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ serverUrl }), signal: controller.signal,
+    });
+    const value = await response.json().catch(() => null) as ConnectionReport | null;
+    return response.ok && value && typeof value === 'object' && Array.isArray(value.steps) ? value : local('invalid-response');
+  } catch {
+    return local(controller.signal.aborted ? 'timeout' : 'daemon-unreachable');
+  } finally { clearTimeout(timer); }
+}
+function ConnectionLog({ report }: { report: ConnectionReport }) {
+  const { t } = useI18n();
+  return <details className={styles.log}>
+    <summary>{t('update.connection.details')}</summary>
+    <ol>{report.steps.map((step, index) => <li key={index} data-ok={step.ok}>
+      <span className={styles.logStep}>{t(`update.connection.step.${step.step}`)}</span>
+      <span className={styles.logOutcome}>{t(step.ok ? 'update.connection.stepOk' : 'update.connection.stepFailed')}</span>
+      {step.httpStatus ? <span>HTTP {step.httpStatus}</span> : null}
+      <span>{step.elapsedMs} ms</span>
+      <code>{step.detail}</code>
+    </li>)}</ol>
+    <p>{t('update.connection.total', { ms: report.elapsedMs, seconds: Math.round(report.timeoutMs / 1000) })}</p>
+  </details>;
+}
+function ConnectionResult({ view, retry, renderDatabricksLogin }: LoginSlot & { view: ConnectionView; retry: () => void }) {
+  const { t } = useI18n();
+  if (view.state === 'checking') return <div className={styles.connection} data-update-connection="checking" role="status">
+    <div className={styles.progress} aria-busy="true" data-working="true">
+      <progress aria-label={t('update.connecting')} />
+      <span>{t('update.connectingHint', { seconds: CONNECTION_TIMEOUT_MS / 1000 })}</span>
+    </div>
+  </div>;
+  const { report } = view;
+  if (report.ok) return <div className={styles.connection} data-update-connection="ok" role="status">
+    <strong>{t('update.connection.ok')}</strong>
+    <ul className={styles.facts}>
+      <li>{t('update.connection.okServer')}</li>
+      {report.host && report.profile ? <li>{t('update.connection.okWorkspace', { host: report.host, profile: report.profile })}</li> : null}
+      {report.latest !== undefined ? <li>{report.latest ? t('update.connection.okLatest', { version: report.latest }) : t('update.connection.okNoRelease')}</li> : null}
+    </ul>
+    <ConnectionLog report={report} />
+  </div>;
+  const failure = report.failure ?? 'invalid-response';
+  return <div className={styles.connection} data-update-connection="failed">
+    <div role="alert" className={styles.connectionError}>
+      <span data-update-message>{t(`update.connection.failure.${failure}`, { seconds: Math.round(report.timeoutMs / 1000) })}</span>
+      {failure === 'not-logged-in' ? renderDatabricksLogin?.(report.host, retry) ?? <DatabricksLoginButton host={report.host} onSuccess={retry} /> : null}
+    </div>
+    <ConnectionLog report={report} />
+  </div>;
 }
 function UpdateError({ error, host, retry, renderDatabricksLogin }: LoginSlot & { error: string; host?: string; retry: () => void }) {
   const { t } = useI18n();
@@ -253,12 +321,12 @@ export function UpdateSection({ currentVersion, onApply, renderDatabricksLogin }
   const [saving, setSaving] = useState<'toggle' | 'connection' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [host, setHost] = useState<string>();
-  const [connected, setConnected] = useState<'toggle' | 'connection' | null>(null);
+  const [connection, setConnection] = useState<ConnectionView | null>(null);
   const [superseded, setSuperseded] = useState(false);
   const inputErrorId = useId();
   const inputError = error === 'invalid-url' || error === 'not-configured';
   const clearPrevious = () => {
-    setSuperseded(true); setResult(null); setError(null); setConnected(null);
+    setSuperseded(true); setResult(null); setError(null); setConnection(null);
   };
   useEffect(() => {
     void request<{ config: { autoUpdate?: AutoUpdateConfig } }>('/api/app-config').then((value) => {
@@ -274,18 +342,12 @@ export function UpdateSection({ currentVersion, onApply, renderDatabricksLogin }
     if (optimistic) setConfig({ ...config, enabled });
     clearPrevious(); setSaving(optimistic ? 'toggle' : 'connection');
     try {
-      let serverUrl: string | null = null;
-      if (serverInput.trim()) {
-        let parsed: URL;
-        try { parsed = new URL(serverInput.trim()); } catch { throw new Error('invalid-url'); }
-        if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error('invalid-url');
-        serverUrl = parsed.href.replace(/\/+$/, '');
-      }
+      const serverUrl = normalizeServerUrl(serverInput);
       if ((enabled || validate) && !serverUrl) throw new Error('not-configured');
       if (validate) await request('/api/update/health', { serverUrl });
       const response = await fetch('/api/app-config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ autoUpdate: { enabled, serverUrl } }) });
       if (!response.ok) throw new Error('invalid-response');
-      setConfig({ enabled, serverUrl }); setUrl(serverUrl ?? ''); setConnected(validate ? optimistic ? 'toggle' : 'connection' : null);
+      setConfig({ enabled, serverUrl }); setUrl(serverUrl ?? '');
       if (optimistic && enabled) setResult(await checkUpdate());
     } catch (fault) {
       if (optimistic) setConfig(previous);
@@ -294,14 +356,31 @@ export function UpdateSection({ currentVersion, onApply, renderDatabricksLogin }
     finally { setSaving(null); }
   };
   const check = async () => { clearPrevious(); setBusy(true); try { setResult(await checkUpdate()); } finally { setBusy(false); } };
+  // Connect is an explicit diagnosis: progress shows at once and the bounded report always lands beside the button.
+  const connect = async () => {
+    clearPrevious();
+    let serverUrl: string | null;
+    try { serverUrl = normalizeServerUrl(url); } catch (fault) { setError(fault instanceof Error ? fault.message : 'invalid-url'); return; }
+    if (!serverUrl) { setError('not-configured'); return; }
+    setSaving('connection'); setConnection({ state: 'checking' });
+    const report = await requestConnection(serverUrl);
+    try {
+      if (report.ok) {
+        const response = await fetch('/api/app-config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ autoUpdate: { enabled: config.enabled, serverUrl } }) });
+        if (!response.ok) throw new Error('invalid-response');
+        setConfig({ enabled: config.enabled, serverUrl }); setUrl(serverUrl);
+      }
+    } catch (fault) { setError(fault instanceof Error ? fault.message : 'invalid-response'); }
+    finally { setConnection({ state: 'done', report }); setSaving(null); }
+  };
   return <section className={`settings-section ${styles.section}`} aria-label={t('update.title')}>
     <Switch checked={config.enabled} pending={saving === 'toggle'} disabled={busy || saving === 'connection' || (!url.trim() && !config.enabled)} onCheckedChange={(enabled) => void save(enabled, enabled, enabled ? url : config.serverUrl ?? '', true)}>{t('update.automatic')}</Switch>
     {saving === 'toggle' && config.enabled ? <p role="status" className={styles.result} data-update-automatic-status>{t('update.automaticChecking')}</p> : null}
     <label className={styles.server}>{t('update.serverUrl')}<Input type="url" value={url} aria-invalid={inputError || undefined} aria-describedby={inputError ? inputErrorId : undefined} placeholder="https://…databricksapps.com" onChange={(event) => { urlEdited.current = true; setUrl(event.target.value); clearPrevious(); }} />
       {inputError ? <span id={inputErrorId} role="alert" className={styles.fieldError}>{t(reasonKey(error!))}</span> : null}
     </label>
-    <Button disabled={busy || !!saving || !url.trim()} onClick={() => void save(config.enabled, true)}>{t('update.connect')}</Button>
-    {connected === 'connection' ? <p role="status">{t('update.connected')}</p> : null}
+    <Button disabled={busy || !!saving || !url.trim()} aria-busy={saving === 'connection' || undefined} onClick={() => void connect()}>{t(saving === 'connection' ? 'update.connecting' : 'update.connect')}</Button>
+    {connection ? <ConnectionResult view={connection} retry={() => void connect()} renderDatabricksLogin={renderDatabricksLogin} /> : null}
     <dl className={styles.metadata}>
       <div><dt>{t('update.current')}</dt><dd>{currentVersion ?? t('settings.versionUnavailable')}</dd></div>
       <div><dt>{t('update.lastChecked')}</dt><dd>{checkedAt ? <time dateTime={checkedAt}>{new Date(checkedAt).toLocaleString(locale)}</time> : t('update.neverChecked')}</dd></div>

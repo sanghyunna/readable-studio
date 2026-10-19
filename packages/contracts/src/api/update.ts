@@ -1,6 +1,27 @@
 /** Expected check failures are results, never UI exceptions. */
 export type UpdateUnavailableReason = 'unreachable' | 'invalid-response' | 'not-logged-in' | 'app-not-accessible' | 'forbidden' | 'no-release' | 'not-configured' | 'disabled' | 'timeout';
 export interface AutoUpdateConfig { enabled: boolean; serverUrl: string | null }
+/** Why an explicit connection check failed; finer than UpdateUnavailableReason so the UI can name the next action. */
+export type UpdateConnectionFailure = 'invalid-url' | 'not-https' | 'dns' | 'unreachable' | 'timeout' | 'cli-missing' | 'not-logged-in'
+  | 'workspace-not-found' | 'forbidden' | 'not-update-server' | 'app-stopped' | 'invalid-response';
+export type UpdateConnectionStepName = 'url' | 'cli' | 'profiles' | 'workspace' | 'token' | 'health' | 'latest' | 'timeout';
+/** One diagnostic step. `detail` is technical (paths, profile names, HTTP lines) and never carries a token. */
+export interface UpdateConnectionStep { step: UpdateConnectionStepName; ok: boolean; detail: string; elapsedMs: number; httpStatus?: number }
+/** POST /api/update/connection result; always HTTP 200, `ok` tells success. */
+export interface UpdateConnectionReport {
+  ok: boolean;
+  serverUrl: string | null;
+  failure?: UpdateConnectionFailure;
+  /** Matched workspace on success; the workspace to sign in to for not-logged-in. */
+  host?: string;
+  profile?: string;
+  cli?: { path: string; source: 'bundled' | 'installed' | 'override'; version: string | null };
+  /** Latest published version; null means the server has no release yet. */
+  latest?: string | null;
+  timeoutMs: number;
+  elapsedMs: number;
+  steps: UpdateConnectionStep[];
+}
 export interface UpdateManifest {
   version: string;
   fileName: string;

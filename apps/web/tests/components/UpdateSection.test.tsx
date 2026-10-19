@@ -20,6 +20,7 @@ function setup(configured = true) {
     if (url === '/api/version') return Response.json({ version: { version: result.current } });
     if (url === '/api/app-config') return Response.json({ config: { autoUpdate: { enabled: false, serverUrl: configured ? result.releaseUrl : null } } });
     if (url === '/api/update/health') return Response.json({ ok: true });
+    if (url === '/api/update/connection') return Response.json({ ok: true, serverUrl: result.releaseUrl, latest: result.latest, timeoutMs: 25000, elapsedMs: 1, steps: [] });
     if (url.startsWith('/api/update/check')) return Response.json(result);
     if (url === '/api/update/download') return Response.json({ ...idle, state: 'downloading', total: 1234 });
     if (url === '/api/update/apply') return Response.json({ status: 'applying', targetVersion: '1.3.4' });
@@ -191,7 +192,7 @@ it('Settings loads a switch, persists normalized URL and checks health before en
   const input = screen.getByRole('textbox');
   fireEvent.change(input, { target: { value: `${result.releaseUrl}/` } });
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'update.connect' })));
-  expect(fetcher).toHaveBeenCalledWith('/api/update/health', expect.objectContaining({ body: JSON.stringify({ serverUrl: result.releaseUrl }) }));
+  expect(fetcher).toHaveBeenCalledWith('/api/update/connection', expect.objectContaining({ body: JSON.stringify({ serverUrl: result.releaseUrl }) }));
   expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false');
   await act(async () => fireEvent.click(screen.getByRole('switch')));
   expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true');
@@ -294,7 +295,7 @@ it.each(['http://example.com', 'garbage'])('rejects invalid server input locally
   fireEvent.change(screen.getByRole('textbox'), { target: { value: url } });
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'update.connect' })));
   expect(screen.getByRole('alert').textContent).toBe('update.reason.invalid-url');
-  expect(fetcher.mock.calls.some(([path]) => path === '/api/update/health')).toBe(false);
+  expect(fetcher.mock.calls.some(([path]) => path === '/api/update/health' || path === '/api/update/connection')).toBe(false);
 });
 
 it('formats the checked timestamp with the selected UI locale', async () => {
