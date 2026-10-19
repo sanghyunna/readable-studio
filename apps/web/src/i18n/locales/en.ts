@@ -138,6 +138,7 @@ export function getEn(): Dict {
   'chat.connectionDropped': 'The connection to the model service dropped before the response finished — usually an unstable network or proxy. Please retry.',
   'chat.retryMessage': 'Retrying ({attempt}/{maxRetries})',
   'chat.rateLimitMessage': 'The model service is still limiting requests after automatic retries. Please try again later.',
+  'chat.upstreamUnavailableMessage': 'The model service is unavailable. It failed after 10 automatic retries. Please try again later.',
   'chat.quotaExhaustedMessage': 'Your account usage limit or available quota has been exhausted. Check your plan or wait for the limit to reset before retrying.',
   'chat.invalidModelMessage': 'The model name is invalid or could not be found. Check the model name or select another model.',
   'chat.kimiError.usageLimitMessage': 'The Kimi account usage limit is reached. Retry after the limit resets.',

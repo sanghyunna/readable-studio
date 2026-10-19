@@ -138,6 +138,7 @@ export function getKo(): Dict {
   'chat.connectionDropped': '응답이 끝나기 전에 모델 서비스 연결이 끊겼습니다. 대개 불안정한 네트워크나 프록시가 원인입니다. 다시 시도해 주세요.',
   'chat.retryMessage': '재시도 중 ({attempt}/{maxRetries})',
   'chat.rateLimitMessage': '자동으로 재시도했지만 모델 서비스의 요청 제한이 계속되고 있습니다. 잠시 후 다시 시도해 주세요.',
+  'chat.upstreamUnavailableMessage': '모델 서비스가 응답하지 않습니다. 10번 다시 시도했지만 계속 실패했습니다. 잠시 후 다시 시도해 주세요.',
   'chat.quotaExhaustedMessage': '계정의 사용량 한도 또는 이용 가능한 쿼터를 모두 소진했습니다. 요금제를 확인하거나 한도가 초기화된 뒤 다시 시도해 주세요.',
   'chat.invalidModelMessage': '모델 이름이 잘못되었거나 해당 모델을 찾을 수 없습니다. 모델 이름을 확인하거나 다른 모델을 선택해 주세요.',
   'chat.kimiError.usageLimitMessage': 'Kimi 계정의 사용량 한도에 도달했습니다. 한도가 초기화된 뒤 다시 시도하세요.',

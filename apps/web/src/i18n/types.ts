@@ -2207,6 +2207,7 @@ export interface Dict {
   'chat.connectionDropped': string;
   'chat.retryMessage': string;
   'chat.rateLimitMessage': string;
+  'chat.upstreamUnavailableMessage': string;
   'chat.quotaExhaustedMessage': string;
   'chat.invalidModelMessage': string;
   'chat.documentNotSaved': string;

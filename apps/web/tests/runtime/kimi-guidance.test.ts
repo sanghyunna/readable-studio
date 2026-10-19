@@ -57,4 +57,19 @@ describe('resolveRunFailureUi for Kimi provider failures', () => {
       'chat.quotaExhaustedMessage',
     );
   });
+
+  it('localizes an exhausted upstream-unavailable retry run', () => {
+    expect(
+      resolveRunFailureUi(
+        'UPSTREAM_UNAVAILABLE',
+        'cursor-agent',
+        'Error: HTTP 503 Service Unavailable from model provider',
+      ),
+    ).toMatchObject({
+      primaryAction: 'retry',
+      messageKey: 'chat.upstreamUnavailableMessage',
+      secondaryRetry: false,
+      showSwitchCard: false,
+    });
+  });
 });

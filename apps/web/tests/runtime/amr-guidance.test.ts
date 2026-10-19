@@ -32,7 +32,11 @@ describe('resolveRunFailureUi', () => {
       expect(ui.showSwitchCard).toBe(false);
       expect(ui.primaryAction).toBe('retry');
       expect(ui.messageKey).toBe(
-        code === 'RATE_LIMITED' ? 'chat.rateLimitMessage' : null,
+        code === 'RATE_LIMITED'
+          ? 'chat.rateLimitMessage'
+          : code === 'UPSTREAM_UNAVAILABLE'
+            ? 'chat.upstreamUnavailableMessage'
+            : null,
       );
     }
     expect(resolveRunFailureUi('UNAUTHORIZED', null).showSwitchCard).toBe(false);

@@ -67,6 +67,7 @@ export type RunFailureMessageKey =
   | 'chat.amrError.balanceMessage'
   | 'chat.connectionDropped'
   | 'chat.rateLimitMessage'
+  | 'chat.upstreamUnavailableMessage'
   | 'chat.quotaExhaustedMessage'
   | 'chat.invalidModelMessage'
   | 'chat.documentNotSaved'
@@ -260,6 +261,14 @@ export function resolveRunFailureUi(
     return {
       primaryAction: 'retry',
       messageKey: 'chat.documentNotSaved',
+      secondaryRetry: false,
+      showSwitchCard: false,
+    };
+  }
+  if (code === 'UPSTREAM_UNAVAILABLE') {
+    return {
+      primaryAction: 'retry',
+      messageKey: 'chat.upstreamUnavailableMessage',
       secondaryRetry: false,
       showSwitchCard: false,
     };
