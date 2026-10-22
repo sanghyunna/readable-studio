@@ -982,7 +982,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .shimmer-text {
+  .shimmer-text,
+  .shimmer-text.shimmer-prepare {
     color: var(--text-muted);
     background: none;
     -webkit-text-fill-color: var(--text-muted);

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { composeSystemPrompt } from '../../src/prompts/system.js';
 import { DISCOVERY_AND_PHILOSOPHY } from '../../src/prompts/discovery.js';
+import { DECK_FRAMEWORK_DIRECTIVE } from '../../src/prompts/deck-framework.js';
+import { OFFICIAL_DESIGNER_PROMPT } from '../../src/prompts/official-system.js';
 
 const policyOf = (prompt: string) => JSON.parse(prompt.match(/<readable-template-policy>(.*?)<\/readable-template-policy>/s)![1]!);
 
@@ -59,5 +61,33 @@ describe('template subject adaptation', () => {
     expect(policy.missingContent).toBe('question-form');
     expect(policy.missingContentSource).toBe('user-content-only');
     expect(policy.contentSources).toEqual(['user-request', 'user-attachments']);
+  });
+});
+
+describe('template canvas resolution', () => {
+  it('makes template dimensions authoritative in both deck instruction layers', () => {
+    for (const directive of [OFFICIAL_DESIGNER_PROMPT, DECK_FRAMEWORK_DIRECTIVE]) {
+      expect(directive).toContain("Preserve a supplied template's explicit canvas resolution, aspect ratio, and layout");
+      expect(directive).toContain('1920×1080 is only the default when no template defines a canvas size');
+    }
+    expect(DECK_FRAMEWORK_DIRECTIVE).toContain('takes precedence over all copy-verbatim rules and numeric examples below');
+    expect(DECK_FRAMEWORK_DIRECTIVE).toContain('stage dimensions, scale-to-fit calculations, print page size, and density guidance');
+    expect(DECK_FRAMEWORK_DIRECTIVE).toContain('vertical decks without an explicitly sized supplied template');
+  });
+
+  it.each([
+    { resolution: '1280×720', body: 'Use a 1280×720 canvas.' },
+    { resolution: '900×1200', body: 'Use a 900×1200 canvas.' },
+    { resolution: '900×1200', body: 'Use assets/template.html with a 900×1200 canvas.' },
+  ])('keeps $resolution template guidance in the composed deck prompt', ({ resolution, body }) => {
+    const prompt = composeSystemPrompt({
+      skillMode: 'deck',
+      skillBody: body,
+      templateReference: true,
+      metadata: { kind: 'deck' },
+    });
+    expect(prompt).toContain(resolution);
+    expect(prompt).toContain("Preserve a supplied template's explicit canvas resolution, aspect ratio, and layout");
+    expect(prompt).toContain('1920×1080 is only the default when no template defines a canvas size');
   });
 });

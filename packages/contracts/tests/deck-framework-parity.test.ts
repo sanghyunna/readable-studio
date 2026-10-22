@@ -5,6 +5,22 @@ import {
   DECK_FRAMEWORK_DIRECTIVE,
   DECK_SKELETON_HTML,
 } from '../src/prompts/deck-framework.js';
+import { OFFICIAL_DESIGNER_PROMPT } from '../src/prompts/official-system.js';
+import { composeSystemPrompt } from '../src/prompts/system.js';
+
+describe('template canvas resolution parity', () => {
+  it('preserves the supplied canvas in both BYOK deck instruction layers', () => {
+    for (const directive of [OFFICIAL_DESIGNER_PROMPT, DECK_FRAMEWORK_DIRECTIVE]) {
+      expect(directive).toContain("Preserve a supplied template's explicit canvas resolution, aspect ratio, and layout");
+      expect(directive).toContain('1920×1080 is only the default when no template defines a canvas size');
+    }
+    expect(DECK_FRAMEWORK_DIRECTIVE).toContain('takes precedence over all copy-verbatim rules and numeric examples below');
+    expect(DECK_FRAMEWORK_DIRECTIVE).toContain('vertical decks without an explicitly sized supplied template');
+    const prompt = composeSystemPrompt({ skillMode: 'deck', skillBody: 'Use a 1280×720 canvas.' });
+    expect(prompt).toContain('1280×720');
+    expect(prompt).toContain("Preserve a supplied template's explicit canvas resolution, aspect ratio, and layout");
+  });
+});
 
 describe('deck framework chrome byte synchronization', () => {
   const template = readFileSync(new URL('../../../templates/deck-framework.html', import.meta.url), 'utf8');

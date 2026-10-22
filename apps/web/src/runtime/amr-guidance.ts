@@ -148,6 +148,19 @@ export function resolveRunFailureUi(
   agentId: string | null | undefined,
   detail?: string | null,
 ): RunFailureUi {
+  if (code === 'AGENT_MODEL_UNAVAILABLE') {
+    return { primaryAction: 'retry', messageKey: 'chat.invalidModelMessage', secondaryRetry: false, showSwitchCard: false };
+  }
+  if (code === 'AGENT_QUOTA_EXHAUSTED') {
+    const switchModel = agentId === 'antigravity';
+    return {
+      primaryAction: switchModel ? 'launch-terminal-switch-model' : 'retry',
+      secondaryRetry: switchModel, showSwitchCard: false,
+      ...(agentId === 'kimi'
+        ? resolveKimiFailureCopy(code, detail) ?? { messageKey: 'chat.kimiError.usageLimitMessage' }
+        : { messageKey: 'chat.quotaExhaustedMessage' }),
+    };
+  }
   // Databricks keeps its existing provider-specific copy and recovery actions.
   if (agentId !== 'databricks'
     && !(agentId === 'pi' && /Databricks/i.test(detail ?? ''))

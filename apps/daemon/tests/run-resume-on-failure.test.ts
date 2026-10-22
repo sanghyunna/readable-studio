@@ -70,7 +70,7 @@ describe('resume-on-failure runtime', () => {
     restoreEnv(originalEnv);
   });
 
-  it('marks a resumable failure with output as resumable and resumes the session next turn', async () => {
+  it('automatically resumes committed tool work inside the same run', async () => {
     binDir = await mkdtemp(path.join(os.tmpdir(), 'readable-resume-on-failure-bin-'));
     const { bin: fakeClaude, argsLogPath } = await writeResumableClaude(
       binDir,
@@ -94,18 +94,14 @@ describe('resume-on-failure runtime', () => {
 
     const conversationId = await createConversation(started.url);
 
-    // Turn 1: emits a text block (so the side-effect gate suppresses a
-    // from-scratch retry) and then fails with an upstream 503.
-    const failed = await sendRunAndWait(started.url, conversationId);
-    expect(failed.status).toBe('failed');
-    expect(failed.resumable).toBe(true);
-    // Committed tool work suppresses the blind same-run retry.
-    expect(retryClock.delay).not.toHaveBeenCalled();
-
-    // Turn 2: a follow-up in the SAME conversation must resume the persisted
-    // session rather than starting fresh.
     const recovered = await sendRunAndWait(started.url, conversationId);
     expect(recovered.status).toBe('succeeded');
+    expect(retryClock.delay.mock.calls.map(([ms]) => ms)).toEqual([5000]);
+    const events = (await readFile(recovered.eventsLogPath, 'utf8')).trim().split('\n')
+      .map((line) => JSON.parse(line) as { event: string; data: Record<string, unknown> });
+    expect(events.filter((entry) => entry.event === 'end')).toHaveLength(1);
+    expect(events.filter((entry) => entry.event === 'error')).toHaveLength(0);
+    expect(events.filter((entry) => entry.event === 'agent' && entry.data.type === 'tool_use')).toHaveLength(1);
 
     const attempts = (await readArgs(argsLogPath)).filter(
       (args) => args.includes('--session-id') || args.includes('--resume'),
@@ -165,7 +161,7 @@ describe('resume-on-failure runtime', () => {
     }
   });
 
-  it('does not flag a text-only drop with no committed block as resumable', async () => {
+  it('retries a text-only drop ten times without duplicating the partial text', async () => {
     binDir = await mkdtemp(path.join(os.tmpdir(), 'readable-resume-textonly-bin-'));
     const { bin: fakeClaude } = await writeTextOnlyUpstreamClaude(binDir, 'claude-textonly');
 
@@ -186,13 +182,17 @@ describe('resume-on-failure runtime', () => {
 
     const conversationId = await createConversation(started.url);
 
-    // Streamed text (so the side-effect gate suppresses the blind retry) but NO
-    // committed tool_use / artifact block. A few tokens reaching the UI is not a
-    // resume boundary — there may be nothing committed to continue — so the run
-    // must NOT be resumable even though it produced "output".
     const failed = await sendRunAndWait(started.url, conversationId);
     expect(failed.status).toBe('failed');
     expect(failed.resumable).not.toBe(true);
+    expect(retryClock.delay.mock.calls.map(([ms]) => ms)).toEqual(Array(10).fill(5000));
+    const events = (await readFile(failed.eventsLogPath, 'utf8')).trim().split('\n')
+      .map((line) => JSON.parse(line) as { event: string; data: Record<string, unknown> });
+    const text = events.filter((entry) => entry.event === 'agent' && entry.data.type === 'text_delta')
+      .map((entry) => String(entry.data.delta)).join('');
+    expect(text).toBe('Half an answer before the drop.\nThe completed paragraph remains visible.\n');
+    expect(events.filter((entry) => entry.event === 'error')).toHaveLength(1);
+    expect(events.filter((entry) => entry.event === 'end')).toHaveLength(1);
   });
 });
 
@@ -318,7 +318,7 @@ if (!process.argv.includes('--session-id') && !process.argv.includes('--resume')
 console.log(JSON.stringify({ type: 'system', subtype: 'init', model: 'claude-resume-test' }));
 console.log(JSON.stringify({
   type: 'assistant',
-  message: { id: 'msg-textonly', content: [{ type: 'text', text: 'Half an answer before the drop.' }], stop_reason: null }
+  message: { id: 'msg-textonly', content: [{ type: 'text', text: 'Half an answer before the drop.\\nThe completed paragraph remains visible.\\n' }], stop_reason: null }
 }));
 process.stderr.write('Upstream request failed: HTTP 503 stream disconnected before completion.\\n');
 setTimeout(() => process.exit(1), 20);

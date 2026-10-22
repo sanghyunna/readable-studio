@@ -174,15 +174,16 @@ it('shows indeterminate Hub progress before bytes arrive', async () => {
   expect(screen.getByRole('button', { name: 'update.cancel' })).toBeTruthy();
 });
 
-it('keeps Hub authentication recovery beside the secondary action', async () => {
+it('routes Hub authentication failures to update settings through a compact toast', async () => {
   const fetcher = setup();
   const original = fetcher.getMockImplementation()!;
   fetcher.mockImplementation((url, init) => url.startsWith('/api/update/check')
     ? Promise.resolve(Response.json({ unavailable: 'not-logged-in' })) : original(url, init));
-  await act(async () => { render(<UpdateLaunchBanner ready />); });
-  const login = screen.getByRole('button', { name: 'login' });
-  expect(login.parentElement).toBe(screen.getByRole('button', { name: 'update.later' }).parentElement);
-  expect(screen.getAllByRole('button')).toHaveLength(2);
+  const openSettings = vi.fn();
+  await act(async () => { render(<UpdateLaunchBanner ready setupVisible onOpenUpdateSettings={openSettings} />); });
+  expect(screen.queryByRole('button', { name: 'login' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'update.enableAutomatic' }));
+  expect(openSettings).toHaveBeenCalledOnce();
 });
 
 it('Settings loads a switch, persists normalized URL and checks health before enabling', async () => {

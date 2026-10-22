@@ -134,3 +134,33 @@ it('preserves Antigravity model switching while localizing confirmed quota', () 
     primaryAction: 'launch-terminal-switch-model', messageKey: 'chat.quotaExhaustedMessage', secondaryRetry: true,
   });
 });
+
+it.each(['claude', 'kimi', 'pi'])('uses the structured quota cause in the final Korean %s payload', (agentId) => {
+  const ui = resolveRunFailureUi('AGENT_QUOTA_EXHAUSTED', agentId,
+    'AI 서비스 사용량 또는 크레딧이 소진되었습니다. 한도 초기화나 충전 후 다시 시도해 주세요.');
+  expect(ui.messageKey).toBe(agentId === 'kimi' ? 'chat.kimiError.usageLimitMessage' : 'chat.quotaExhaustedMessage');
+  expect(getKo()[ui.messageKey!]).not.toBe(getKo()['chat.rateLimitMessage']);
+});
+
+it.each(['claude', 'kimi', 'pi'])('uses the structured model cause in the final Korean %s payload', (agentId) => {
+  const ui = resolveRunFailureUi('AGENT_MODEL_UNAVAILABLE', agentId,
+    '선택한 모델을 사용할 수 없습니다. 모델 이름을 확인하고 다른 모델을 선택해 주세요.');
+  expect(ui.messageKey).toBe('chat.invalidModelMessage');
+  expect(getKo()[ui.messageKey!]).not.toBe(getKo()['chat.upstreamUnavailableMessage']);
+});
+
+it('preserves Antigravity model switching for a structured hard-quota failure', () => {
+  expect(resolveRunFailureUi('AGENT_QUOTA_EXHAUSTED', 'antigravity', '사용량 소진')).toMatchObject({
+    primaryAction: 'launch-terminal-switch-model', messageKey: 'chat.quotaExhaustedMessage', secondaryRetry: true,
+  });
+});
+
+it.each(['ko', 'en'] as const)('localizes machine causes without depending on %s provider prose', locale => {
+  const dict = locale === 'ko' ? getKo() : getEn();
+  const quota = resolveRunFailureUi('AGENT_QUOTA_EXHAUSTED', 'claude', 'opaque provider detail');
+  const model = resolveRunFailureUi('AGENT_MODEL_UNAVAILABLE', 'pi', 'HTTP 503 / 429');
+  expect(quota.messageKey).toBe('chat.quotaExhaustedMessage');
+  expect(model.messageKey).toBe('chat.invalidModelMessage');
+  expect(dict[quota.messageKey!]).toBeTruthy();
+  expect(dict[model.messageKey!]).toBeTruthy();
+});

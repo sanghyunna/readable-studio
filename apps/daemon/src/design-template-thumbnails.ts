@@ -2,6 +2,7 @@ import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { DesignTemplateImportManifest } from '@readable-studio/contracts';
 import { renderHtmlThumbnail, waitForDesktopRenderer } from './desktop-render-client.js';
+import { DEFAULT_TEMPLATE_VIEWPORT, readTemplatePageViewport, templateThumbnailOptions, type TemplateViewport } from './design-template-viewport.js';
 
 type ThumbnailRuntime = {
   root: string;
@@ -31,11 +32,11 @@ export type TemplatePageRender =
 // Renders one daemon-served page (path relative to the daemon origin, e.g. an
 // upload-session preview URL) through the same serial desktop renderer as the
 // cover thumbnails. Never throws: no desktop = pending, anything else = failed.
-export async function renderTemplatePageThumbnail(daemonPath: string): Promise<TemplatePageRender> {
+export async function renderTemplatePageThumbnail(daemonPath: string, viewport: TemplateViewport = DEFAULT_TEMPLATE_VIEWPORT): Promise<TemplatePageRender> {
   const current = runtime;
   if (!current) return { status: 'pending' };
   try {
-    const image = await (current.render ?? renderHtmlThumbnail)(`${current.origin()}${daemonPath}`);
+    const image = await (current.render ?? renderHtmlThumbnail)(`${current.origin()}${daemonPath}`, templateThumbnailOptions(viewport));
     if (!Buffer.isBuffer(image)) {
       return image.code === 'desktop-unavailable' ? { status: 'pending' } : { status: 'failed', error: image.error };
     }
@@ -58,8 +59,10 @@ export async function requestTemplateThumbnails(opts: {
   try {
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as DesignTemplateImportManifest;
     const coverPath = manifest.cover.split('/').map(encodeURIComponent).join('/');
+    const viewport = await readTemplatePageViewport(path.join(opts.templateDir, 'pages'), manifest.cover);
     const image = await (current.render ?? renderHtmlThumbnail)(
       `${current.origin()}/api/design-templates/${encodeURIComponent(opts.id)}/pages/${coverPath}`,
+      templateThumbnailOptions(viewport),
     );
     const updatedAt = new Date().toISOString();
     if (!Buffer.isBuffer(image)) {

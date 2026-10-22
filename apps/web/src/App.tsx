@@ -2394,7 +2394,11 @@ function AppInner() {
       <MemoryToast onOpenMemory={() => openSettings('memory')} />
       {!dataImportResolved ? <DataImportModal onResolved={resolveDataImport} /> : <WelcomeModal />}
       <OneDriveNotice />
-      <UpdateLaunchBanner ready={hubSettled} />
+      <UpdateLaunchBanner
+        ready={hubSettled}
+        setupVisible={route.kind === 'home' && route.view === 'home' && !settingsOpen}
+        onOpenUpdateSettings={() => openSettings('update', { highlight: 'update-server-url' })}
+      />
     </HubRailProvider>
     </MotionConfig>
   );

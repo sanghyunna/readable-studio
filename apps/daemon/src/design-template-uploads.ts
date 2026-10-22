@@ -24,6 +24,7 @@ import {
   type ImportDesignTemplateZipResult,
 } from './design-template-import.js';
 import { renderTemplatePageThumbnail } from './design-template-thumbnails.js';
+import { DEFAULT_TEMPLATE_VIEWPORT, readTemplatePageViewport, type TemplateViewport } from './design-template-viewport.js';
 
 export const UPLOAD_SESSION_TTL_MS = 60 * 60_000;
 const SWEEP_INTERVAL_MS = 5 * 60_000;
@@ -37,6 +38,7 @@ interface StoredPage {
   id: string;
   file: string;
   use?: string;
+  viewport?: TemplateViewport;
   thumbnail: StoredThumbnail;
   /** Extension of thumbnails/<id>.<ext> once ready. */
   image?: 'png' | 'webp';
@@ -142,6 +144,7 @@ export class DesignTemplateUploadSessions {
     this.creating.add(sessionId);
     try {
       await writePreparedTemplateFiles(path.join(dir, 'template'), prepared);
+      for (const page of pages) page.viewport = await readTemplatePageViewport(path.join(dir, 'template', 'pages'), page.file);
       await mkdir(path.join(dir, 'thumbnails'), { recursive: true });
       // A ZIP thumbnail illustrates the suggested cover only; every other
       // page still gets its own rendered image.
@@ -352,7 +355,8 @@ export class DesignTemplateUploadSessions {
       for (const page of session.meta.pages) {
         if (session.cancelled) return;
         if (page.thumbnail.status !== 'pending') continue;
-        const result = await renderTemplatePageThumbnail(uploadPreviewUrl(sessionId, page.file));
+        page.viewport ??= await readTemplatePageViewport(path.join(session.dir, 'template', 'pages'), page.file);
+        const result = await renderTemplatePageThumbnail(uploadPreviewUrl(sessionId, page.file), page.viewport);
         if (session.cancelled || result.status === 'pending') return;
         const updatedAt = new Date(this.now()).toISOString();
         if (result.status === 'ready') {
@@ -385,6 +389,7 @@ export class DesignTemplateUploadSessions {
         id: page.id,
         file: page.file,
         ...(page.use ? { use: page.use } : {}),
+        viewport: page.viewport ?? DEFAULT_TEMPLATE_VIEWPORT,
         previewUrl: uploadPreviewUrl(meta.sessionId, page.file),
         thumbnailUrl: `/api/design-template-uploads/${meta.sessionId}/thumbnails/${page.id}`,
         thumbnail: { status: page.thumbnail.status, source: page.thumbnail.source, updatedAt: page.thumbnail.updatedAt },

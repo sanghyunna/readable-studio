@@ -1,7 +1,7 @@
 import type { Express } from 'express';
 import { compareUpdateVersions, type AutoUpdateConfig, type UpdateCheckResult, type UpdateConnectionFailure, type UpdateConnectionReport, type UpdateConnectionStep, type UpdateUnavailableReason } from '@readable-studio/contracts';
 import { readCurrentAppVersionInfo } from './app-version.js';
-import { DatabricksUpdateSource, UpdateSourceError, type UpdateTokenProvider, type UpdateTraceEvent } from './update-source.js';
+import { DatabricksUpdateSource, resolveUpdateConfigDefaults, UpdateSourceError, type UpdateTokenProvider, type UpdateTraceEvent } from './update-source.js';
 import { readAppConfig } from './app-config.js';
 import { resolve } from 'node:path';
 import { updateDownload } from './update-download.js';
@@ -99,7 +99,7 @@ export async function diagnoseUpdateConnection(input: unknown, deps: UpdateCheck
   } finally { clearTimeout(timer); }
 }
 export async function updateConfig(): Promise<AutoUpdateConfig> {
-  return (await readAppConfig(process.env.READABLE_DATA_DIR ?? resolve('.readable-studio'))).autoUpdate ?? { enabled: false, serverUrl: null };
+  return resolveUpdateConfigDefaults((await readAppConfig(process.env.READABLE_DATA_DIR ?? resolve('.readable-studio'))).autoUpdate ?? { enabled: false, serverUrl: null });
 }
 export async function checkForUpdate(deps: UpdateCheckDependencies = {}, automatic = false): Promise<UpdateCheckResult> {
   const config = await (deps.config ?? updateConfig)();

@@ -63,7 +63,7 @@ type Started = { url: string; server: Server; shutdown: () => Promise<void> };
 type Event = { event: string; data: Record<string, unknown> };
 type Status = {
   id: string; status: string; assistantMessageId: string; conversationId: string;
-  eventsLogPath: string; error: string | null;
+  eventsLogPath: string; error: string | null; errorCode: string | null;
 };
 
 function deferred<T>() {
@@ -89,9 +89,12 @@ describe('global same-run retry coordinator', () => {
     binDir = undefined;
   });
 
-  async function prepare(failures: number, failure = 'HTTP 503 Service Unavailable', visible = false, copilot = false, wrapperCode?: string, databricks = false) {
+  async function prepare(failures: number, failure = 'HTTP 503 Service Unavailable', visible = false, copilot = false, wrapperCode?: string, databricks = false, replayOnly = false, terminalFailure?: string, orderedBoundary?: 'tool_use' | 'thinking_delta') {
     binDir = await mkdtemp(path.join(os.tmpdir(), 'readable-global-retry-'));
     const counter = path.join(binDir, 'attempts');
+    const partialReply = orderedBoundary
+      ? 'Let me inspect the current configuration.\nThen apply the smallest fix.'
+      : 'Partial answer.\nThis response was already delivered.\n' + (replayOnly ? '<!-- readable:no-document-required reason="question" -->' : '');
     const bin = await writeExecutableScript(binDir, 'claude-global-retry', `
 const fs = require('node:fs');
 if (process.argv.includes('--version')) { console.log('claude-code 1.0.0'); process.exit(0); }
@@ -113,6 +116,7 @@ process.stdin.once('data', (input) => {
   let count = 0;
   try { count = Number(fs.readFileSync(${JSON.stringify(counter)}, 'utf8')); } catch {}
   fs.appendFileSync(${JSON.stringify(counter + '.args')}, JSON.stringify(process.argv.slice(2)) + '\\n');
+  fs.appendFileSync(${JSON.stringify(counter + '.prompts')}, JSON.stringify(input.toString()) + '\\n');
   fs.writeFileSync(${JSON.stringify(counter)}, String(count + 1));
   if (count < ${failures}) {
     if (${databricks}) {
@@ -139,9 +143,25 @@ process.stdin.once('data', (input) => {
     }
     const fail = () => process.stderr.write(${JSON.stringify(failure + '\n')}, () => process.exit(1));
     ${visible
-      ? `process.stdout.write(JSON.stringify({ type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Partial answer.' } } }) + '\\n', fail);`
+      ? `process.stdout.write(JSON.stringify({ type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: ${JSON.stringify(partialReply)} } } }) + '\\n', fail);`
       : 'fail();'}
   } else {
+    if (${JSON.stringify(orderedBoundary)} !== undefined) {
+      const boundary = ${JSON.stringify(orderedBoundary)} === 'tool_use'
+        ? { type: 'tool_use', id: 'ordered-tool', name: 'Read', input: { file_path: 'README.md' } }
+        : { type: 'thinking', thinking: 'Checking the existing setup.' };
+      const frames = [
+        { type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Let me inspect ' } } },
+        { type: 'assistant', message: { id: 'ordered-boundary', content: [boundary], stop_reason: null } },
+        { type: 'assistant', message: { id: 'ordered-final', content: [{ type: 'text', text: 'Done.\\n<!-- readable:no-document-required reason="question" -->' }], stop_reason: 'end_turn' } },
+      ];
+      process.stdout.write(frames.map((frame) => JSON.stringify(frame)).join('\\n') + '\\n', () => process.exit(0));
+      return;
+    }
+    if (${JSON.stringify(terminalFailure)} !== undefined) {
+      process.stderr.write(${JSON.stringify((terminalFailure ?? '') + '\n')}, () => process.exit(1));
+      return;
+    }
     if (${copilot}) {
       const frames = [
         { type: 'assistant.message_delta', data: { deltaContent: 'Recovered.\\n<!-- readable:no-document-required reason="question" -->' } },
@@ -150,7 +170,10 @@ process.stdin.once('data', (input) => {
       process.stdout.write(frames.map((frame) => JSON.stringify(frame)).join('\\n') + '\\n', () => process.exit(0));
       return;
     }
-    const frame = { type: 'assistant', message: { content: [{ type: 'text', text: 'Recovered.\\n<!-- readable:no-document-required reason="question" -->' }], stop_reason: 'end_turn' } };
+    if (${visible}) process.stdout.write(JSON.stringify({ type: 'assistant', message: {
+      id: 'retry-thinking', content: [{ type: 'thinking', thinking: 'Continuing the interrupted response.' }], stop_reason: null,
+    } }) + '\\n');
+    const frame = { type: 'assistant', message: { content: [{ type: 'text', text: ${JSON.stringify(replayOnly ? partialReply : (visible ? partialReply : '') + 'Recovered.\n<!-- readable:no-document-required reason="question" -->')} }], stop_reason: 'end_turn' } };
     process.stdout.write(JSON.stringify(frame) + '\\n', () => process.exit(0));
   }
 });
@@ -251,6 +274,9 @@ process.stdin.once('data', (input) => {
     ['code-only HTTP 529', '', '529'],
     ['code-only HTTP 429', '', '429'],
     ['code-only connection reset', '', 'ECONNRESET'],
+    ['expired token', 'Token expired', 'authentication_error'],
+    ['refresh failure', 'Failed to refresh access token', 'authentication_error'],
+    ['permission denied', 'Permission denied', 'permission_error'],
   ])('retries a real Claude assistant error wrapper: %s', async (_label, message, code) => {
     const counter = await prepare(1, message, false, false, code);
     const run = await launch();
@@ -313,8 +339,26 @@ process.stdin.once('data', (input) => {
     expect(events.filter(({ event }) => event === 'end')).toHaveLength(1);
   });
 
-  it('cancels during the retry wait without a new spawn', async () => {
-    const counter = await prepare(11);
+  it.each([
+    ['Weekly usage limit exceeded: quota exhausted', /사용량|한도|크레딧/, 'AGENT_QUOTA_EXHAUSTED'],
+    ['Unknown model name: unavailable-model', /모델/, 'AGENT_MODEL_UNAVAILABLE'],
+    ['HTTP 503: Unknown model name: unavailable-model', /모델/, 'AGENT_MODEL_UNAVAILABLE'],
+  ])('fails fast for a real Claude error wrapper with Korean guidance: %s', async (message, guidance, errorCode) => {
+    const counter = await prepare(11, message, false, false, 'unknown');
+    const run = await launch();
+    const { status, events } = await finish(run.runId);
+    expect(status.status).toBe('failed');
+    expect(await readFile(counter, 'utf8')).toBe('1');
+    expect(retryClock.delay).not.toHaveBeenCalled();
+    expect(status.error).toMatch(guidance);
+    expect(status.errorCode).toBe(errorCode);
+    expect(events.find(({ event }) => event === 'error')?.data.error).toMatchObject({ code: errorCode, retryable: false });
+    expect(events.filter(({ event }) => event === 'error')).toHaveLength(1);
+    expect(events.filter(({ event }) => event === 'end')).toHaveLength(1);
+  });
+
+  it.each([false, true])('cancels during the retry wait without a new spawn (partial output: %s)', async (visible) => {
+    const counter = await prepare(11, 'HTTP 503 Service Unavailable', visible);
     const waiting = deferred<AbortSignal>();
     retryClock.delay.mockImplementation((_ms, signal) => {
       waiting.resolve(signal);
@@ -335,17 +379,32 @@ process.stdin.once('data', (input) => {
     expect(events.filter(({ event }) => event === 'end')).toHaveLength(1);
   });
 
-  it('does not replay an attempt after visible output', async () => {
-    const counter = await prepare(11, 'HTTP 503 Service Unavailable', true);
+  it('continues partial output in the same session without replaying the prefix', async () => {
+    const counter = await prepare(1, 'HTTP 503 Service Unavailable', true);
     const run = await launch();
     const { status, events } = await finish(run.runId);
-    expect(status.status).toBe('failed');
-    expect(await readFile(counter, 'utf8'), await readFile(`${counter}.args`, 'utf8')).toBe('1');
-    expect(retryClock.delay).not.toHaveBeenCalled();
-    expect(events.filter(({ event }) => event === 'error')).toHaveLength(1);
-    expect(events.filter(({ event }) => event === 'run_retry_attempted')).toHaveLength(0);
+    expect(status.status, JSON.stringify(events)).toBe('succeeded');
+    expect(await readFile(counter, 'utf8')).toBe('2');
+    expect(retryClock.delay.mock.calls.map(([ms]) => ms)).toEqual([5000]);
+    expect(events.filter(({ event }) => event === 'error')).toHaveLength(0);
+    expect(events.filter(({ event }) => event === 'end')).toHaveLength(1);
+    const attempts = (await readFile(`${counter}.args`, 'utf8')).trim().split('\n').map((line) => JSON.parse(line) as string[]);
+    const sessionId = attempts[0]![attempts[0]!.indexOf('--session-id') + 1];
+    expect(attempts[1]).toContain('--resume');
+    expect(attempts[1]![attempts[1]!.indexOf('--resume') + 1]).toBe(sessionId);
+    const prompts = await readFile(`${counter}.prompts`, 'utf8');
+    expect(prompts).toContain('Answer a question without writing files.');
+    expect(prompts).toContain('Partial answer.');
+    const text = events.filter(({ event, data }) => event === 'agent' && data.type === 'text_delta')
+      .map(({ data }) => String(data.delta)).join('');
+    expect(text).toBe('Partial answer.\nThis response was already delivered.\nRecovered.\n<!-- readable:no-document-required reason="question" -->');
+    const db = openDatabase(process.cwd(), { dataDir: process.env.READABLE_DATA_DIR! });
+    const messages = listMessages(db, run.conversationId);
+    expect(messages.filter((entry) => entry.role === 'assistant')).toHaveLength(1);
+    expect(messages.find((entry) => entry.id === run.assistantMessageId)?.content).toBe(text);
+    expect(listConversations(db, run.projectId)).toHaveLength(1);
     expect(events).toContainEqual(expect.objectContaining({
-      event: 'agent', data: expect.objectContaining({ type: 'text_delta', delta: 'Partial answer.' }),
+      event: 'agent', data: expect.objectContaining({ type: 'text_delta', delta: 'Partial answer.\nThis response was already delivered.\n' }),
     }));
   });
 
@@ -356,6 +415,50 @@ process.stdin.once('data', (input) => {
     expect(status.status).toBe('succeeded');
     expect(await readFile(counter, 'utf8')).toBe('2');
     expect(retryClock.delay.mock.calls.map(([ms]) => ms)).toEqual([12000]);
+    expect(events.filter(({ event }) => event === 'error')).toHaveLength(0);
+    expect(events.filter(({ event }) => event === 'end')).toHaveLength(1);
+  });
+
+  it('does not report replay-only output as successful continuation', async () => {
+    const counter = await prepare(1, 'HTTP 503 Service Unavailable', true, false, undefined, false, true);
+    const run = await launch();
+    const { status, events } = await finish(run.runId);
+    expect(status.status).toBe('failed');
+    expect(await readFile(counter, 'utf8')).toBe('11');
+    expect(retryClock.delay.mock.calls.map(([ms]) => ms)).toEqual(Array(10).fill(5000));
+    const text = events.filter(({ event, data }) => event === 'agent' && data.type === 'text_delta')
+      .map(({ data }) => String(data.delta)).join('');
+    expect(text).toBe('Partial answer.\nThis response was already delivered.\n<!-- readable:no-document-required reason="question" -->');
+    expect(events.filter(({ event }) => event === 'error')).toHaveLength(1);
+    expect(events.filter(({ event }) => event === 'end')).toHaveLength(1);
+  });
+
+  it('does not reuse an earlier transient failure to retry a new unknown failure', async () => {
+    const counter = await prepare(1, 'HTTP 503 Service Unavailable', false, false, undefined, false, false,
+      'Client request was rejected by policy.');
+    const run = await launch();
+    const { status, events } = await finish(run.runId);
+    expect(status.status).toBe('failed');
+    expect(await readFile(counter, 'utf8')).toBe('2');
+    expect(retryClock.delay.mock.calls.map(([ms]) => ms)).toEqual([5000]);
+    expect(status.error).toBe('Client request was rejected by policy.');
+    expect(events.filter(({ event }) => event === 'error')).toHaveLength(1);
+    expect(events.filter(({ event }) => event === 'end')).toHaveLength(1);
+  });
+
+  it.each(['tool_use', 'thinking_delta'] as const)('preserves pending continuation text before the %s boundary', async (boundary) => {
+    const counter = await prepare(1, 'HTTP 503 Service Unavailable', true, false, undefined, false, false, undefined, boundary);
+    const run = await launch();
+    const { status, events } = await finish(run.runId);
+    expect(status.status, JSON.stringify(events)).toBe('succeeded');
+    expect(await readFile(counter, 'utf8')).toBe('2');
+    const boundaryIndex = events.findIndex(({ event, data }) => event === 'agent' && data.type === boundary);
+    expect(boundaryIndex).toBeGreaterThan(-1);
+    const text = (entries: Event[]) => entries.filter(({ event, data }) => event === 'agent' && data.type === 'text_delta')
+      .map(({ data }) => String(data.delta)).join('');
+    const prefix = 'Let me inspect the current configuration.\nThen apply the smallest fix.Let me inspect ';
+    expect(text(events.slice(0, boundaryIndex))).toBe(prefix);
+    expect(text(events)).toBe(prefix + 'Done.\n<!-- readable:no-document-required reason="question" -->');
     expect(events.filter(({ event }) => event === 'error')).toHaveLength(0);
     expect(events.filter(({ event }) => event === 'end')).toHaveLength(1);
   });

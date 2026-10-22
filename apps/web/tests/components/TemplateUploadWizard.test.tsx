@@ -13,6 +13,7 @@ const analysis = {
     previewUrl: `/api/design-template-uploads/session-1/pages/kit/page-${index}.html`,
     thumbnailUrl: `/api/design-template-uploads/session-1/thumbnails/p${index}`,
     thumbnail: { status: 'failed', source: null, updatedAt: '' },
+    viewport: index === 0 ? { width: 1280, height: 720 } : { width: 900, height: 1200 },
   })),
 };
 let calls: Array<{ url: string; init?: RequestInit }>;
@@ -146,13 +147,22 @@ it('mounts fallback frames only for visible page thumbnails', async () => {
   ));
   expect(document.querySelectorAll('iframe')).toHaveLength(1);
   expect(screen.getByTitle('kit/page-0.html').getAttribute('sandbox')).toBe('');
-  expect(screen.getByTitle('kit/page-0.html').getAttribute('width')).toBe('1920');
-  expect(screen.getByTitle('kit/page-0.html').getAttribute('height')).toBe('1080');
+  expect(screen.getByTitle('kit/page-0.html').getAttribute('width')).toBe('1280');
+  expect(screen.getByTitle('kit/page-0.html').getAttribute('height')).toBe('720');
+  expect((first.node as HTMLElement).style.aspectRatio).toBe('1280 / 720');
+  const second = observations[1]!;
+  act(() => second.callback(
+    [{ target: second.node, isIntersecting: true } as IntersectionObserverEntry],
+    {} as IntersectionObserver,
+  ));
+  expect(screen.getByTitle('kit/page-1.html').getAttribute('width')).toBe('900');
+  expect(screen.getByTitle('kit/page-1.html').getAttribute('height')).toBe('1200');
+  expect((second.node as HTMLElement).style.aspectRatio).toBe('900 / 1200');
   act(() => first.callback(
     [{ target: first.node, isIntersecting: false } as IntersectionObserverEntry],
     {} as IntersectionObserver,
   ));
-  expect(document.querySelectorAll('iframe')).toHaveLength(0);
+  expect(document.querySelectorAll('iframe')).toHaveLength(1);
 });
 it('deletes the previous session before replacing a ZIP', async () => {
   wizard();

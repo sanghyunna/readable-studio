@@ -2,6 +2,7 @@ import type { Express } from 'express';
 import type { RouteDeps } from './server-context.js';
 import { proxyDispatcherRequestInit } from './connectionTest.js';
 import { InvalidAppConfigError } from './app-config.js';
+import { resolveUpdateConfigDefaults } from './update-source.js';
 
 export interface RegisterMediaRoutesDeps extends RouteDeps<'http' | 'paths' | 'appConfig' | 'nativeDialogs' | 'research'> {}
 
@@ -19,6 +20,7 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
     }
     try {
       const config = await readAppConfig(RUNTIME_DATA_DIR);
+      config.autoUpdate = await resolveUpdateConfigDefaults(config.autoUpdate ?? { enabled: false, serverUrl: null });
       res.json({ config });
     } catch (err: any) {
       res

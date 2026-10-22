@@ -36,6 +36,7 @@ export interface RunRetrySideEffectState {
   userVisibleOutputSeen?: boolean;
   toolCallSeen?: boolean;
   artifactWriteSeen?: boolean;
+  nativeResumeAvailable?: boolean;
 }
 
 export interface RunRetryPolicyInput {
@@ -139,9 +140,9 @@ export function decideSafeRunRetry(
     return suppress('unsupported_category');
   }
   if (attemptCount >= retryMaxAttempts) return suppress('attempt_limit_reached');
-  if (sideEffects.userVisibleOutputSeen) return suppress('user_visible_output_seen');
-  if (sideEffects.toolCallSeen) return suppress('tool_call_seen');
-  if (sideEffects.artifactWriteSeen) return suppress('artifact_write_seen');
+  if (input.agentId === 'databricks' && sideEffects.userVisibleOutputSeen) return suppress('user_visible_output_seen');
+  if (!sideEffects.nativeResumeAvailable && sideEffects.toolCallSeen) return suppress('tool_call_seen');
+  if (!sideEffects.nativeResumeAvailable && sideEffects.artifactWriteSeen) return suppress('artifact_write_seen');
 
   return {
     ...base,

@@ -344,6 +344,8 @@ export interface DesignTemplateUploadPage {
   file: string;
   /** PROMPT.md pages[].use metadata. */
   use?: string;
+  /** Authored fixed canvas; absent on sessions created before canvas detection. */
+  viewport?: { width: number; height: number };
   /** Daemon URL serving this page (and its relative assets) for live preview. */
   previewUrl: string;
   /** 404 while pending/failed; read `thumbnail` for the state. */

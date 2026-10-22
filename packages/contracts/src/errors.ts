@@ -16,6 +16,9 @@ export const API_ERROR_CODES = [
   'AGENT_UNAVAILABLE',
   'AGENT_AUTH_REQUIRED',
   'AGENT_EXECUTION_FAILED',
+  // Terminal generation causes stay distinct from transient 429/5xx failures.
+  'AGENT_QUOTA_EXHAUSTED',
+  'AGENT_MODEL_UNAVAILABLE',
   // The agent's connection to its model provider was established and then
   // dropped or kept resetting mid-response (e.g. "socket connection was closed
   // unexpectedly", ECONNRESET, "Unable to connect to API", ETIMEDOUT). Distinct

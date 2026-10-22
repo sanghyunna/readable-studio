@@ -4,6 +4,7 @@ import { stat } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { dirname, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
+import { setTimeout as delay } from 'node:timers/promises';
 import { chromium, type Browser, type Page } from '@playwright/test';
 
 export type HiddenDesktopInput = { executablePath: string; namespace: string; debugPort: number };
@@ -34,13 +35,14 @@ export type HiddenDesktop = {
 
 // The host retains the native handles. A suspended child enters the job before it
 // can create descendants; closing that job contains failures of the JS driver too.
-const native = String.raw`
+export const hiddenDesktopNativeSource = String.raw`
 using System;
 using System.IO;
 using System.Text;
 using System.ComponentModel;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Security.AccessControl;
 using System.Threading;
 using Microsoft.Win32.SafeHandles;
 public class HiddenRuntime {
@@ -65,6 +67,8 @@ public class HiddenRuntime {
  [DllImport("user32.dll",EntryPoint="GetUserObjectInformationW",CharSet=CharSet.Unicode,SetLastError=true)]
  static extern bool ObjectInfo(IntPtr h,int index,StringBuilder b,uint length,out uint needed);
  [DllImport("user32.dll")] static extern bool CloseDesktop(IntPtr h);
+ [DllImport("user32.dll",SetLastError=true)] static extern bool GetUserObjectSecurity(IntPtr h,ref uint information,byte[] descriptor,uint size,out uint needed);
+ [DllImport("user32.dll",SetLastError=true)] static extern bool SetUserObjectSecurity(IntPtr h,ref uint information,byte[] descriptor);
  delegate bool WindowCallback(IntPtr window,IntPtr parameter);
  [DllImport("user32.dll",SetLastError=true)] static extern bool EnumDesktopWindows(IntPtr desktop,WindowCallback callback,IntPtr parameter);
  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window,out uint pid);
@@ -114,6 +118,28 @@ public class HiddenRuntime {
   finally{CloseDesktop(h);}
  }
  static void Check(bool ok,string label){if(!ok)throw new Win32Exception(Marshal.GetLastWin32Error(),label);}
+ static void GrantPackageStartupAccess(IntPtr desktop) {
+  uint information=4,needed;
+  GetUserObjectSecurity(desktop,ref information,null,0,out needed);
+  var bytes=new byte[needed];
+  Check(GetUserObjectSecurity(desktop,ref information,bytes,needed,out needed),"GetUserObjectSecurity");
+  var descriptor=new RawSecurityDescriptor(bytes,0);
+  foreach(var sid in new[]{"S-1-15-2-1","S-1-15-2-2"}) {
+   CommonAce target=null;
+   foreach(GenericAce entry in descriptor.DiscretionaryAcl) {
+    var ace=entry as CommonAce;
+    if(ace!=null && ace.AceQualifier==AceQualifier.AccessAllowed && ace.SecurityIdentifier.Value==sid) {
+     if(target!=null)throw new InvalidOperationException("Ambiguous package desktop ACL");
+     target=ace;
+    }
+   }
+   if(target==null)throw new InvalidOperationException("Missing package desktop ACL");
+   // AppContainer startup needs CREATEWINDOW and WRITEOBJECTS on our desktop.
+   target.AccessMask|=0x82;
+  }
+  bytes=new byte[descriptor.BinaryLength];descriptor.GetBinaryForm(bytes,0);
+  Check(SetUserObjectSecurity(desktop,ref information,bytes),"SetUserObjectSecurity");
+ }
  void JobInfo<T>(int kind,T info) {
   int size=Marshal.SizeOf(info);IntPtr p=Marshal.AllocHGlobal(size);
   try{Marshal.StructureToPtr(info,p,false);Check(SetInformationJobObject(job,kind,p,(uint)size),"SetInformationJobObject");}
@@ -122,6 +148,7 @@ public class HiddenRuntime {
  public void Start(string exe,string name,string cwd,int debugPort) {
   desktop=CreateDesktop(name,IntPtr.Zero,IntPtr.Zero,0,0x10000000,IntPtr.Zero);
   Check(desktop!=IntPtr.Zero,"CreateDesktopW");
+  GrantPackageStartupAccess(desktop);
   job=CreateJobObject(IntPtr.Zero,null);Check(job!=IntPtr.Zero,"CreateJobObject");
   var limit=new LIMIT();limit.basic.flags=0x2000;JobInfo(9,limit);
   port=CreateIoCompletionPort(new IntPtr(-1),IntPtr.Zero,IntPtr.Zero,1);
@@ -166,6 +193,25 @@ function bounded<T>(promise: Promise<T>, ms: number, label: string): Promise<T> 
   });
 }
 
+export async function waitForCdpEndpoint(debugPort: number, signal: AbortSignal): Promise<string> {
+  while (true) {
+    signal.throwIfAborted();
+    try {
+      const response = await fetch(`http://127.0.0.1:${debugPort}/json/version`, {
+        signal: AbortSignal.any([signal, AbortSignal.timeout(1000)]), redirect: 'error',
+      });
+      if (response.ok) {
+        const body = await response.json() as { webSocketDebuggerUrl?: unknown };
+        if (typeof body?.webSocketDebuggerUrl === 'string') {
+          const endpoint = new URL(body.webSocketDebuggerUrl);
+          if (endpoint.protocol === 'ws:' && endpoint.hostname === '127.0.0.1' && Number(endpoint.port) === debugPort) return endpoint.href;
+        }
+      }
+    } catch { signal.throwIfAborted(); }
+    await delay(250, undefined, { signal });
+  }
+}
+
 export async function launchHiddenDesktop(input: HiddenDesktopInput): Promise<HiddenDesktop> {
   if (process.platform !== 'win32') throw new Error('Private desktops require Windows');
   if (!/^[a-zA-Z0-9][a-zA-Z0-9-]{0,70}$/.test(input.namespace)) throw new Error('Invalid private namespace');
@@ -184,7 +230,7 @@ export async function launchHiddenDesktop(input: HiddenDesktopInput): Promise<Hi
 $ProgressPreference='SilentlyContinue'
 [Console]::OutputEncoding=New-Object System.Text.UTF8Encoding
 Add-Type -TypeDefinition @'
-${native}
+${hiddenDesktopNativeSource}
 '@
 $runtime=New-Object HiddenRuntime
 $failure=$null
@@ -210,10 +256,9 @@ if($failure -or -not $closed){exit 1}`;
   let failure = '';
   let started: { rootPid: number; before: string; after: string; handles: HiddenDesktop['nativeHandles'] } | undefined;
   let endpoint: string | undefined;
+  const endpointAbort = new AbortController();
   let startResolve: () => void;
   const start = new Promise<void>((done) => { startResolve = done; });
-  let readyResolve: () => void;
-  const ready = new Promise<void>((done) => { readyResolve = done; });
   const lines = createInterface({ input: host.stdout });
   lines.on('line', line => {
     logs.push(line);
@@ -223,8 +268,6 @@ if($failure -or -not $closed){exit 1}`;
     }
     if (line.startsWith('CLOSED ')) cleanup = JSON.parse(line.slice(7));
     if (line.startsWith('FAIL ')) failure = line.slice(5);
-    endpoint ??= /DevTools listening on (ws:\/\/\S+)/.exec(line)?.[1];
-    if (started && endpoint) readyResolve();
   });
   host.stderr.on('data', data => logs.push(String(data)));
   const exited = new Promise<void>((done, reject) => {
@@ -233,6 +276,7 @@ if($failure -or -not $closed){exit 1}`;
   });
   let closing: Promise<CleanupReceipt> | undefined;
   const close = () => closing ??= (async () => {
+    endpointAbort.abort();
     // Disconnect CDP first; the native host, not Chromium, owns tree shutdown.
     if (browser) {
       await bounded(browser.close(), 10_000, 'CDP disconnect timed out')
@@ -273,7 +317,8 @@ if($failure -or -not $closed){exit 1}`;
     // Native compilation/launch is separate from the CDP availability deadline.
     await bounded(Promise.race([start, exited.then(() => { throw new Error(failure || logs.join('\n')); })]),
       30_000, 'Native launch timed out');
-    await bounded(Promise.race([ready, exited.then(() => { throw new Error(failure || logs.join('\n')); })]),
+    endpoint = await bounded(Promise.race([waitForCdpEndpoint(input.debugPort, endpointAbort.signal),
+      exited.then(() => { throw new Error(failure || logs.join('\n')); })]),
       timeout, 'CDP readiness timed out');
     browser = await chromium.connectOverCDP(endpoint!, { timeout });
     const context = browser.contexts()[0];

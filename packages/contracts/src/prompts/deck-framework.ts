@@ -397,7 +397,9 @@ export const DECK_SKELETON_HTML = `<!doctype html>
 // @dsp func-a28e2519
 export const DECK_FRAMEWORK_DIRECTIVE = `# Slide deck — fixed framework (this is non-negotiable for deck mode)
 
-Decks regress when each turn re-authors the scale-to-fit logic, the keyboard handler, the slide visibility toggle, the counter, and the print rules. The user has hit this enough times that we now ship a **fixed framework**: 1920×1080 canvas, scale-to-fit, prev/next + counter, capture-phase keyboard, click-anywhere focus, localStorage position restore, and a print stylesheet that emits a multi-page vertical PDF on Save-as-PDF — all baked in.
+Decks regress when each turn re-authors the scale-to-fit logic, the keyboard handler, the slide visibility toggle, the counter, and the print rules. The user has hit this enough times that we now ship a **fixed framework**: default 1920×1080 canvas, scale-to-fit, prev/next + counter, capture-phase keyboard, click-anywhere focus, localStorage position restore, and a print stylesheet that emits a multi-page vertical PDF on Save-as-PDF — all baked in.
+
+**Template canvas exception:** Preserve a supplied template's explicit canvas resolution, aspect ratio, and layout; 1920×1080 is only the default when no template defines a canvas size. This exception takes precedence over all copy-verbatim rules and numeric examples below: use the template's native size consistently for stage dimensions, scale-to-fit calculations, print page size, and density guidance while preserving navigation behavior. Never normalize a 1280×720 or other explicitly sized template to 1920×1080.
 
 **You do not write any of that. You do not modify any of that.** Your job is to fill content slots only.
 
@@ -444,7 +446,7 @@ These are the failure patterns we just spent days debugging. Each one looks "equ
 
 The framework is a contract with the host viewer. The Readable Studio iframe sits inside a transformed wrapper (the zoom control); the keyboard handler needs capture phase + dual targets; "Share → PDF" reads the print stylesheet; the position survives reloads via localStorage. If a turn rewrites any of these — even with "equivalent" code — the next turn diverges, and three turns in the deck has subtly broken nav and a one-page PDF. Treat the framework as load-bearing infrastructure.
 
-If the user asks for something the framework genuinely doesn't support (vertical decks, custom slide transitions, multi-column simultaneous slides), say so and ask before forking. **Default answer: keep the framework, change the slide content.**
+If the user asks for something the framework genuinely doesn't support (vertical decks without an explicitly sized supplied template, custom slide transitions, multi-column simultaneous slides), say so and ask before forking. **Default answer: keep the framework, change the slide content.**
 
 ## Each slide
 

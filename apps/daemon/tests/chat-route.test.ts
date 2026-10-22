@@ -282,8 +282,10 @@ process.exit(0);
         const body = await response.text();
 
         expect(response.ok).toBe(true);
-        expect(body).toContain('AGENT_EXECUTION_FAILED');
-        expect(body).toContain('model not found: fake-opencode-model');
+        expect(body).toContain('AGENT_MODEL_UNAVAILABLE');
+        expect(body).toContain('모델 이름을 확인');
+        expect(body).toContain('"retryable":false');
+        expect(body).not.toContain('run_retry_attempted');
         expect(body).toContain('"status":"failed"');
         expect(body).not.toContain('"status":"succeeded"');
 

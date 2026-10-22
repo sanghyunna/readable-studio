@@ -45,6 +45,10 @@ describe('decideSafeRunRetry', () => {
     }).shouldRetry).toBe(true);
     expect(decide({ agentId: 'databricks', maxAttempts: 1 }).shouldRetry).toBe(true);
     expect(decide({ agentId: 'databricks', maxAttempts: 1, attemptCount: 1 }).shouldRetry).toBe(false);
+    expect(decide({ agentId: 'databricks', sideEffects: { userVisibleOutputSeen: true } })).toMatchObject({
+      shouldRetry: false,
+      retrySuppressedReason: 'user_visible_output_seen',
+    });
   });
 
   it('allows retryable transient upstream failures before side effects', () => {
@@ -192,10 +196,9 @@ describe('decideSafeRunRetry', () => {
     });
   });
 
-  it('suppresses retries after user-visible output, tools, or artifact writes', () => {
+  it('continues visible text and requires native resume after tools or artifact writes', () => {
     expect(decide({ sideEffects: { userVisibleOutputSeen: true } })).toMatchObject({
-      shouldRetry: false,
-      retrySuppressedReason: 'user_visible_output_seen',
+      shouldRetry: true,
     });
     expect(decide({ sideEffects: { toolCallSeen: true } })).toMatchObject({
       shouldRetry: false,
@@ -204,6 +207,12 @@ describe('decideSafeRunRetry', () => {
     expect(decide({ sideEffects: { artifactWriteSeen: true } })).toMatchObject({
       shouldRetry: false,
       retrySuppressedReason: 'artifact_write_seen',
+    });
+    expect(decide({ sideEffects: { toolCallSeen: true, nativeResumeAvailable: true } })).toMatchObject({
+      shouldRetry: true,
+    });
+    expect(decide({ sideEffects: { artifactWriteSeen: true, nativeResumeAvailable: true } })).toMatchObject({
+      shouldRetry: true,
     });
   });
 

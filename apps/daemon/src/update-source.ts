@@ -1,6 +1,6 @@
-import type { UpdateConnectionFailure, UpdateConnectionReport, UpdateConnectionStep, UpdateManifest, UpdateUnavailableReason } from '@readable-studio/contracts';
+import type { AutoUpdateConfig, UpdateConnectionFailure, UpdateConnectionReport, UpdateConnectionStep, UpdateManifest, UpdateUnavailableReason } from '@readable-studio/contracts';
 import { compareUpdateVersions } from '@readable-studio/contracts';
-import { DatabricksClient, DatabricksServiceError, resolveDatabricksCli, type DatabricksExecutable, type DatabricksSubprocessRunner } from './databricks/client.js';
+import { DatabricksClient, DatabricksServiceError, resolveDatabricksCli, withDeadline, type DatabricksExecutable, type DatabricksSubprocessRunner } from './databricks/client.js';
 import { DatabricksCredentials, type DatabricksConnectionBinding } from './databricks/credentials.js';
 import { createUpdateHttpClient } from './update-http.js';
 
@@ -46,6 +46,56 @@ export interface UpdateTokenProviderOptions {
   /** Unauthenticated reachability probe of the app host; any HTTP answer counts as reachable. Resolves or throws a network error. */
   reach?: (serverUrl: string, signal?: AbortSignal, fetcher?: typeof fetch) => Promise<void>;
 }
+
+function updateAppUrl(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const text = value.trim();
+  if (/[\s\\\x00-\x1f\x7f]/.test(text)) return null;
+  try {
+    const url = new URL(text.includes('://') ? text : `https://${text}`);
+    return url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash && !url.port && url.pathname === '/'
+      ? url.origin : null;
+  } catch { return null; }
+}
+
+/** Let the CLI select its current workspace; App URLs cannot be derived from workspace hosts. */
+export function createDefaultUpdateServerResolver(options: Pick<UpdateTokenProviderOptions, 'resolveCli' | 'runner'> = {}): () => Promise<string | null> {
+  let cached: { url: string | null; expiresAt: number } | undefined;
+  let pending: Promise<string | null> | undefined;
+  const discover = async (): Promise<string | null> => {
+    const client = new DatabricksClient({
+      resolveExecutable: options.resolveCli ?? (() => resolveDatabricksCli()),
+      ...(options.runner ? { runner: options.runner } : {}),
+      timeoutMs: 5000,
+    });
+    try {
+      return await withDeadline(async (signal) => {
+        if ((await client.probe()).cli !== 'ready' || signal.aborted) return null;
+        const app = await client.json(['apps', 'get', 'readable-studio-updates', '--output', 'json'], signal);
+        if (!app || typeof app !== 'object' || !('url' in app) || typeof app.url !== 'string' || !app.url.trim()
+          || ('name' in app && app.name !== 'readable-studio-updates')) return null;
+        return updateAppUrl(app.url);
+      }, 10_000);
+    } catch { return null; }
+  };
+  return () => {
+    if (cached && cached.expiresAt > Date.now()) return Promise.resolve(cached.url);
+    pending ??= discover().then((url) => {
+      cached = { url, expiresAt: Date.now() + 60_000 };
+      return url;
+    }).finally(() => { pending = undefined; });
+    return pending;
+  };
+}
+
+const defaultUpdateServer = createDefaultUpdateServerResolver();
+
+export async function resolveUpdateConfigDefaults(config: AutoUpdateConfig, resolveServer = defaultUpdateServer): Promise<AutoUpdateConfig> {
+  if (config.serverUrl) return config;
+  const serverUrl = await resolveServer();
+  return serverUrl ? { enabled: true, serverUrl } : config;
+}
+
 async function probeReachable(serverUrl: string, signal?: AbortSignal, fetcher?: typeof fetch): Promise<void> {
   const client = fetcher ? undefined : createUpdateHttpClient();
   try {
@@ -104,7 +154,7 @@ export function createUpdateTokenProvider(options: UpdateTokenProviderOptions = 
         const raw = await client.json(['apps', 'list', '--profile', profile.name, '--output', 'json'], context.signal) as { apps?: { url?: string }[] } | { url?: string }[];
         authenticated = true;
         const apps = Array.isArray(raw) ? raw : raw.apps ?? [];
-        if (!apps.some((app) => app.url?.replace(/\/+$/, '') === serverUrl)) {
+        if (!apps.some((app) => updateAppUrl(app.url) === serverUrl)) {
           trace({ step: 'workspace', ok: true, elapsedMs: since(start), detail: `${label}: app not listed (${apps.length} apps)` });
           continue;
         }

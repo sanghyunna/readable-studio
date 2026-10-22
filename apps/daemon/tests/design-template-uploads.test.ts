@@ -54,6 +54,28 @@ async function expectStatus(promise: Promise<unknown>, status: number) {
 }
 
 describe('design template upload analyse', () => {
+  it('uses each template page canvas for previews and captures instead of a 1080p viewport', async () => {
+    const analysis = await analyse([
+      { name: 'PROMPT.md', body: 'Native page dimensions' },
+      { name: 'wide.html', body: '<link rel="stylesheet" href="assets/deck.css"><main class="slide">720p</main>' },
+      { name: 'assets/deck.css', body: ':root{--canvasW:1280px;--canvasH:720px}.slide{width:var(--canvasW);height:var(--canvasH)}' },
+      { name: 'portrait.html', body: '<main style="width:900px;height:1200px">Portrait</main>' },
+      { name: 'responsive.html', body: '<main style="width:100%;min-height:100vh">Responsive</main>' },
+    ]);
+    await sessions.whenIdle(analysis.sessionId);
+    expect(analysis.pages.map((page) => page.viewport)).toEqual([
+      { width: 1280, height: 720 }, { width: 900, height: 1200 }, { width: 1920, height: 1080 },
+    ]);
+    expect(render.mock.calls.map((call) => call[1])).toEqual([
+      { width: 1280, height: 720, outWidth: 480, outHeight: 270 },
+      { width: 900, height: 1200, outWidth: 360, outHeight: 480 },
+      { width: 1920, height: 1080, outWidth: 480, outHeight: 270 },
+    ]);
+    const resumed = new DesignTemplateUploadSessions({ root, now: () => clock });
+    expect((await resumed.get(analysis.sessionId)).pages[1]!.viewport).toEqual({ width: 900, height: 1200 });
+    resumed.dispose();
+  });
+
   it('lists every HTML of a root PROMPT.md + kit/*.html zip and registers nothing', async () => {
     const analysis = await analyse();
     expect(analysis.sessionId).toMatch(/^[a-f0-9]{32}$/);

@@ -1,14 +1,16 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Button, Input, Switch } from '@readable-studio/components';
 import { compareUpdateVersions, type AutoUpdateConfig, type UpdateCheckAvailable, type UpdateCheckResult, type UpdateConnectionFailure, type UpdateConnectionReport, type UpdateStatus } from '@readable-studio/contracts';
 import { useI18n } from '../i18n';
 import type { Dict } from '../i18n/types';
 import { DatabricksLoginButton } from './databricks/DatabricksLoginButton';
+import { Toast } from './Toast';
 import styles from './UpdateSection.module.css';
 
 let lastCheck: UpdateCheckResult | null = null;
 let lastCheckedAt: string | null = null;
+let checkGeneration = 0;
 const listeners = new Set<() => void>();
 const statusListeners = new Set<(status: UpdateStatus) => void>();
 let lastStatus: UpdateStatus | null = null;
@@ -44,19 +46,31 @@ async function request<T>(url: string, body?: unknown): Promise<T> {
   if (value === null || typeof value !== 'object') throw new Error('invalid-response');
   return value as T;
 }
-async function checkUpdate(automatic = false): Promise<UpdateCheckResult> {
+async function checkUpdate(automatic = false): Promise<UpdateCheckResult | null> {
+  const generation = ++checkGeneration;
   let result: UpdateCheckResult;
   try { result = await request<UpdateCheckResult>(`/api/update/check${automatic ? '?automatic=1' : ''}`); }
   catch { result = { unavailable: 'unreachable' }; }
   // Malformed payloads (null, {}) are treated as a neutral no-op, never rendered.
   if (!result || typeof result !== 'object' || !('unavailable' in result || 'isNewer' in result)) result = { unavailable: 'disabled' };
+  if (generation !== checkGeneration) return null;
   if (!('unavailable' in result && result.unavailable === 'disabled')) {
-    try { publishStatus(await request<UpdateStatus>('/api/update/status')); } catch {}
+    let status: UpdateStatus | null = null;
+    try { status = await request<UpdateStatus>('/api/update/status'); } catch {}
+    if (generation !== checkGeneration) return null;
+    if (status) publishStatus(status);
     lastCheck = result;
     lastCheckedAt = 'checkedAt' in result ? result.checkedAt : new Date().toISOString();
     listeners.forEach((listener) => listener());
   }
   return result;
+}
+function acknowledgeConnection() {
+  // A successful settings connection supersedes any older startup request.
+  checkGeneration++;
+  if (!isConnectionFailure(lastCheck)) return;
+  lastCheck = null;
+  listeners.forEach((listener) => listener());
 }
 interface LoginSlot {
   renderDatabricksLogin?: (host: string | undefined, onSuccess: () => void) => ReactNode;
@@ -302,8 +316,9 @@ function DownloadAction({ update, recovered, onApply, onStatus, renderDatabricks
 export interface UpdateSectionProps extends LoginSlot {
   currentVersion: string | null;
   onApply?: (update: UpdateCheckAvailable) => void;
+  focusServerUrl?: boolean;
 }
-export function UpdateSection({ currentVersion, onApply, renderDatabricksLogin }: UpdateSectionProps) {
+export function UpdateSection({ currentVersion, onApply, renderDatabricksLogin, focusServerUrl = false }: UpdateSectionProps) {
   const { t, locale } = useI18n();
   const candidate = useRecoveredUpdate();
   const recovered = candidate?.version && (!currentVersion || compareUpdateVersions(candidate.version, currentVersion) === 1) ? candidate : null;
@@ -350,14 +365,22 @@ export function UpdateSection({ currentVersion, onApply, renderDatabricksLogin }
       const response = await fetch('/api/app-config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ autoUpdate: { enabled, serverUrl } }) });
       if (!response.ok) throw new Error('invalid-response');
       setConfig({ enabled, serverUrl }); setUrl(serverUrl ?? '');
-      if (optimistic && enabled) setResult(await checkUpdate());
+      if (validate || !enabled) acknowledgeConnection();
+      if (optimistic && enabled) {
+        const checked = await checkUpdate();
+        if (checked) setResult(checked);
+      }
     } catch (fault) {
       if (optimistic) setConfig(previous);
       setError(fault instanceof Error ? fault.message : 'unreachable'); setHost((fault as { host?: string }).host);
     }
     finally { setSaving(null); }
   };
-  const check = async () => { clearPrevious(); setBusy(true); try { setResult(await checkUpdate()); } finally { setBusy(false); } };
+  const check = async () => {
+    clearPrevious(); setBusy(true);
+    try { const checked = await checkUpdate(); if (checked) setResult(checked); }
+    finally { setBusy(false); }
+  };
   // Connect is an explicit diagnosis: progress shows at once and the bounded report always lands beside the button.
   const connect = async () => {
     clearPrevious();
@@ -376,6 +399,7 @@ export function UpdateSection({ currentVersion, onApply, renderDatabricksLogin }
         const response = await fetch('/api/app-config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ autoUpdate: { enabled: config.enabled, serverUrl } }) });
         if (!response.ok) throw new Error('invalid-response');
         setConfig({ enabled: config.enabled, serverUrl }); setUrl(serverUrl);
+        acknowledgeConnection();
       }
     } catch (fault) { setError(fault instanceof Error ? fault.message : 'invalid-response'); }
     finally { setConnection({ state: 'done', report }); setSaving(null); }
@@ -383,7 +407,7 @@ export function UpdateSection({ currentVersion, onApply, renderDatabricksLogin }
   return <section className={`settings-section ${styles.section}`} aria-label={t('update.title')}>
     <Switch checked={config.enabled} pending={saving === 'toggle'} disabled={busy || saving === 'connection' || (!url.trim() && !config.enabled)} onCheckedChange={(enabled) => void save(enabled, enabled, enabled ? url : config.serverUrl ?? '', true)}>{t('update.automatic')}</Switch>
     {saving === 'toggle' && config.enabled ? <p role="status" className={styles.result} data-update-automatic-status>{t('update.automaticChecking')}</p> : null}
-    <label className={styles.server}>{t('update.serverUrl')}<Input type="url" value={url} aria-invalid={inputError || undefined} aria-describedby={inputError ? inputErrorId : undefined} placeholder="https://…databricksapps.com" onChange={(event) => { urlEdited.current = true; setUrl(event.target.value); clearPrevious(); }} />
+    <label className={styles.server}>{t('update.serverUrl')}<Input type="url" autoFocus={focusServerUrl} value={url} aria-invalid={inputError || undefined} aria-describedby={inputError ? inputErrorId : undefined} placeholder="https://…databricksapps.com" onChange={(event) => { urlEdited.current = true; setUrl(event.target.value); clearPrevious(); }} />
       {inputError ? <span id={inputErrorId} role="alert" className={styles.fieldError}>{t(reasonKey(error!))}</span> : null}
       {inputError && localLog ? <ConnectionLog report={localLog} /> : null}
     </label>
@@ -410,13 +434,19 @@ export function UpdateSection({ currentVersion, onApply, renderDatabricksLogin }
         {result.isNewer && (!candidate?.discardedDownload || !!candidate.version) && (!currentVersion || compareUpdateVersions(result.latest, currentVersion) === 1) ? <DownloadAction key={`${result.releaseUrl}:${result.latest}`} update={result} recovered={candidate?.version === result.latest && candidate.releaseUrl === result.releaseUrl ? candidate : undefined} onApply={onApply} renderDatabricksLogin={renderDatabricksLogin} /> : candidate?.discardedDownload ? null : t('update.upToDate', { version: runningVersion ?? t('settings.versionUnavailable') })}</div> : null}
   </section>;
 }
-export function UpdateLaunchBanner({ ready, renderDatabricksLogin }: LoginSlot & { ready: boolean }) {
+function isConnectionFailure(result: UpdateCheckResult | null) {
+  return !!result && 'unavailable' in result && !['disabled', 'not-configured', 'no-release'].includes(result.unavailable);
+}
+export function UpdateLaunchBanner({ ready, renderDatabricksLogin, setupVisible = false, onOpenUpdateSettings }: LoginSlot & { ready: boolean; setupVisible?: boolean; onOpenUpdateSettings?: () => void }) {
   const { t } = useI18n();
   const candidate = useRecoveredUpdate(ready);
   const started = useRef(false);
   const [result, setResult] = useState<UpdateCheckResult | null>(null);
   const [currentVersion, setCurrentVersion] = useState<string | null>(null);
   const [initialCheckDone, setInitialCheckDone] = useState(false);
+  const [startupCheckFailed, setStartupCheckFailed] = useState(false);
+  const [setupDismissed, setSetupDismissed] = useState(false);
+  const dismissSetup = useCallback(() => setSetupDismissed(true), []);
   const runningVersion = result && 'current' in result ? result.current : currentVersion;
   const recovered = candidate?.version && (!runningVersion || compareUpdateVersions(candidate.version, runningVersion) === 1) ? candidate : null;
   const [dismissedNotice, setDismissedNotice] = useState(() => typeof window === 'undefined' ? null : localStorage.getItem('update.dismissedDiscard'));
@@ -431,7 +461,6 @@ export function UpdateLaunchBanner({ ready, renderDatabricksLogin }: LoginSlot &
   const [dismissed, setDismissed] = useState(false);
   const [hidden, setHidden] = useState(false);
   const onStatus = (status: UpdateStatus) => { if (status.state === 'ready' || status.state === 'idle' || status.state === 'failed') setHidden(false); };
-  const check = () => { void checkUpdate(true).then(setResult).catch(() => {}); };
   useEffect(() => {
     if (!ready || started.current) return;
     started.current = true;
@@ -461,14 +490,15 @@ export function UpdateLaunchBanner({ ready, renderDatabricksLogin }: LoginSlot &
     listeners.add(syncCheck);
     readVersion();
     void checkUpdate(true).then((next) => {
-      if (disposed) return;
+      if (disposed || !next) return;
       if ('current' in next) acceptCurrent(next.current);
+      setStartupCheckFailed(isConnectionFailure(next));
       setResult(next);
     }).finally(() => { if (!disposed) setInitialCheckDone(true); });
     return () => { disposed = true; started.current = false; statusListeners.delete(syncStatus); listeners.delete(syncCheck); };
   }, [ready]);
   useEffect(() => {
-    const sync = () => { setResult(lastCheck); };
+    const sync = () => { setResult(lastCheck); if (!isConnectionFailure(lastCheck)) setStartupCheckFailed(false); };
     listeners.add(sync);
     return () => { listeners.delete(sync); };
   }, []);
@@ -480,19 +510,18 @@ export function UpdateLaunchBanner({ ready, renderDatabricksLogin }: LoginSlot &
   </aside>;
   if (candidate?.discardedDownload && !candidate.version && !eligibleOffer) return null;
   if (!recovered && candidate?.failedApply && result && 'latest' in result && result.latest === candidate.failedApply.version && result.sha256 === candidate.failedApply.sha256) return null;
+  if (!recovered && isConnectionFailure(result)) return initialCheckDone && startupCheckFailed && setupVisible && !setupDismissed && onOpenUpdateSettings ? <Toast
+    message={t('update.setupFailed')}
+    actionLabel={t('update.enableAutomatic')}
+    ttlMs={10_000}
+    onDismiss={dismissSetup}
+    onAction={() => { dismissSetup(); onOpenUpdateSettings(); }}
+  /> : null;
   if (dismissed || (!recovered && (!result || ('unavailable' in result && ['disabled', 'not-configured', 'no-release'].includes(result.unavailable)) || ('isNewer' in result && !result.isNewer)))) return null;
   if (!recovered && result && 'isNewer' in result && !eligibleOffer) return null;
   const secondaryAction = (active: boolean) => <Button onClick={() => active ? setHidden(true) : setDismissed(true)}>{t(active ? 'update.hide' : 'update.later')}</Button>;
   return <aside role="status" hidden={hidden} className={styles.banner}>
     {recovered ? <DownloadAction key={`${recovered.releaseUrl}:${recovered.version}`} recovered={recovered} onStatus={onStatus} secondaryAction={secondaryAction} renderDatabricksLogin={renderDatabricksLogin} />
-      : result && 'unavailable' in result ? <div className={styles.download}>
-        <div className={styles.summary}><div role="alert" className={styles.result}><span data-update-message>{t(reasonKey(result.unavailable))}</span></div></div>
-        <div className={styles.actions}>
-          {result.unavailable === 'not-logged-in' ? renderDatabricksLogin?.(result.host, check) ?? <DatabricksLoginButton host={result.host} onSuccess={check} />
-            : <Button variant="primary" onClick={check}>{t('update.check')}</Button>}
-          {secondaryAction(false)}
-        </div>
-      </div>
       : result && 'latest' in result ? <DownloadAction update={result} onStatus={onStatus} secondaryAction={secondaryAction} renderDatabricksLogin={renderDatabricksLogin} /> : null}
   </aside>;
 }

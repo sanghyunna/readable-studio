@@ -17,16 +17,18 @@ type SessionOptions = {
   readonly prompt: string;
   readonly cwd: string;
   readonly model: string;
+  readonly resumeSessionId?: string;
+  readonly refreshAuth?: boolean;
   readonly expectedArtifactPath?: string;
   readonly onEvent: (event: Record<string, unknown>) => void;
 };
 
-/** One composed (bounded-history) prompt per thread; never chooses a default model. */
+/** A composed prompt or continuation in a persistent thread; never chooses a default model. */
 export function attachCodexAppServerSession(options: SessionOptions) {
   const { child, onEvent } = options;
   const stdin = child.stdin;
   if (!stdin) throw new CodexRpcError('App-server requires piped stdin');
-  let phase: 'initialize' | 'thread' | 'turn' = 'initialize';
+  let phase: 'initialize' | 'account' | 'thread' | 'turn' = 'initialize';
   let expectedId = 1;
   let finished = false;
   let fatal = false;
@@ -113,6 +115,13 @@ export function attachCodexAppServerSession(options: SessionOptions) {
     lastTextItem = id;
     lastText = delta;
   };
+  const startThread = () => {
+    phase = 'thread';
+    const params = { model: options.model, cwd: options.cwd, approvalPolicy: 'never', sandbox: codexNeedsDangerFullAccessSandbox() ? 'danger-full-access' : 'workspace-write' };
+    expectedId = options.resumeSessionId
+      ? client.request('thread/resume', { ...params, threadId: options.resumeSessionId })
+      : client.request('thread/start', { ...params, ephemeral: false });
+  };
   const client = attachCodexAppServerClient(child, message => {
     if (finished) return;
     const params = codexRecord(message.params);
@@ -126,12 +135,18 @@ export function attachCodexAppServerSession(options: SessionOptions) {
       switch (phase) {
         case 'initialize':
           client.notify('initialized', {});
-          phase = 'thread';
-          expectedId = client.request('thread/start', { model: options.model, cwd: options.cwd, approvalPolicy: 'never', sandbox: codexNeedsDangerFullAccessSandbox() ? 'danger-full-access' : 'workspace-write', ephemeral: true });
+          if (options.refreshAuth) {
+            phase = 'account';
+            expectedId = client.request('account/read', { refreshToken: true });
+          } else startThread();
+          return;
+        case 'account':
+          if (!result.account && result.requiresOpenaiAuth !== false) { fail(new CodexRpcError('Authentication required')); return; }
+          startThread();
           return;
         case 'thread': {
           const thread = codexRecord(result.thread);
-          if (typeof thread.id !== 'string') { fail(new CodexRpcError('Missing app-server thread ID')); return; }
+          if (typeof thread.id !== 'string' || !thread.id.trim()) { fail(new CodexRpcError('Missing app-server thread ID')); return; }
           threadId = thread.id;
           onEvent({ type: 'status', label: 'thread_started', threadId });
           phase = 'turn';
@@ -248,6 +263,7 @@ export function attachCodexAppServerSession(options: SessionOptions) {
   return {
     hasFatalError: () => fatal,
     completedSuccessfully: () => finished && !fatal && !aborted,
+    getSessionId: () => threadId || undefined,
     ownsAbortLifecycle: true,
     abort() {
       if (aborted) return;

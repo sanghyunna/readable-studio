@@ -23,7 +23,7 @@ function atRuleDeclarations(source: string, atRuleName: string, selector: string
   postcss.parse(source).walkAtRules(atRule => {
     if (atRule.name !== atRuleName) return;
     atRule.walkRules(rule => {
-      if (rule.selector !== selector) return;
+      if (!rule.selectors.includes(selector)) return;
       rule.walkDecls(decl => { result[decl.prop] = decl.value; });
     });
   });
@@ -73,5 +73,12 @@ describe('shimmer-text legibility', () => {
     expect(reduced['-webkit-text-fill-color']).toBe('var(--text-muted)');
     expect(reduced.background).toBe('none');
     expect(reduced.animation).toBe('none');
+  });
+
+  it('clears the preparing gradient at the same specificity when motion is reduced', () => {
+    const preparing = atRuleDeclarations(codeCss, 'media', '.shimmer-text.shimmer-prepare');
+    expect(preparing.background).toBe('none');
+    expect(preparing['-webkit-text-fill-color']).toBe('var(--text-muted)');
+    expect(preparing.animation).toBe('none');
   });
 });

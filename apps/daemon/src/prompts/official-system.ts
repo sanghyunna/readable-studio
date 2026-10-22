@@ -78,7 +78,7 @@ Object.assign(window, { Terminal, Line, Spacer, Bold });
 Avoid \`type="module"\` on script imports — it breaks Babel transpilation.
 
 ## Decks (slide presentations)
-For decks, the host injects a **fixed framework** (1920×1080 canvas, scale-to-fit, prev/next, counter, keyboard, position-restore, print-to-PDF) at the end of this prompt — see "Slide deck — fixed framework". Copy that skeleton verbatim and only fill in slide content. Do not invent your own scaling/nav script.
+For decks, the host injects a **fixed framework** (scale-to-fit, prev/next, counter, keyboard, position-restore, print-to-PDF) at the end of this prompt — see "Slide deck — fixed framework". Preserve a supplied template's explicit canvas resolution, aspect ratio, and layout; 1920×1080 is only the default when no template defines a canvas size. Copy the skeleton with that canvas exception and only fill in slide content. Do not invent your own scaling/nav script.
 
 Tag each slide with \`data-screen-label="01 Title"\` etc. so the user can reference them. Slide numbers are **1-indexed**.
 

@@ -1,20 +1,89 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { createServer as httpsServer } from 'node:https';
 import { createServer } from 'node:net';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { expect, type Page, type Request } from '@playwright/test';
+import type { DesignTemplateUploadAnalysisResponse } from '@readable-studio/contracts';
 import { HiddenLaunchError, launchHiddenDesktop, type HiddenDesktop } from '../lib/packaged-hidden-desktop.ts';
 import { resolvePackagedAppRoot } from './direct-edit-delete-packaged.ts';
 import { captureProcesses, daemonUrlFromProcesses, runCli } from './portable-qa-runtime.ts';
 import { runCommand, validateEvidenceRoot, workspaceRoot } from './portable-qa-support.ts';
+import { CODEX_FALLBACK_RETRY_RUN, createFakeAgentRuntimes, GLOBAL_RETRY_RUN } from '../lib/fake-agents.ts';
 
-const names = ['template-import', 'standalone-large', 'databricks-fake', 'neutral-modern'] as const;
+const names = ['template-import', 'standalone-large', 'databricks-fake', 'neutral-modern', 'global-retry'] as const;
 type Options = { zipPath: string; namespace: string; evidenceRoot: string; journeys: string[] };
 type Result = { name: string; status: 'PASSED' | 'FAILED' | 'SKIPPED'; boundary: string;
   error?: string; elapsedMs: number; screenshots: string[]; details: Record<string, unknown> };
+type RetryScenario = keyof typeof GLOBAL_RETRY_RUN.prompts;
+export type RetryCaseEvidence = {
+  run: { id: string; conversationId: string | null; assistantMessageId: string | null; status: string; errorCode?: string | null };
+  attempts: Array<{ attempt: number; startedAt: number; args: string[]; sessionId: string; isolated?: boolean; method?: string }>;
+  events: Array<{ event: string; data: Record<string, unknown> }>;
+  messages: Array<{ id: string; role: string; content: string; runId?: string }>;
+  conversations: Array<{ id: string }>;
+  runs: Array<{ id: string }>;
+};
+
+export function verifyGlobalRetryCase(scenario: RetryScenario, value: RetryCaseEvidence): number[] {
+  const succeeds = scenario === 'transient' || scenario === 'codex-fallback';
+  const retryCount = succeeds ? 1 : scenario === 'exhausted' ? 10 : 0;
+  const executions = retryCount + (scenario === 'codex-fallback' ? 2 : 1);
+  assert.equal(value.attempts.length, executions, 'Unexpected CLI execution count');
+  assert.deepEqual(value.attempts.map(attempt => attempt.attempt),
+    Array.from({ length: executions }, (_, index) => index + 1));
+  const retryStatuses = value.events.filter(event => event.event === 'agent'
+    && event.data.type === 'status' && event.data.label === 'retrying')
+    .map(event => JSON.parse(String(event.data.detail)));
+  assert.deepEqual(retryStatuses.map(status => ({
+    attempt: status.attempt, maxRetries: status.maxRetries, delayMs: status.delayMs,
+  })), Array.from({ length: retryCount }, (_, index) => ({ attempt: index + 1, maxRetries: 10, delayMs: 5000 })));
+  const providerAttempts = scenario === 'codex-fallback' ? value.attempts.slice(1) : value.attempts;
+  const gaps = providerAttempts.slice(1).map((attempt, index) => attempt.startedAt - providerAttempts[index]!.startedAt);
+  assert.ok(gaps.every(gap => gap >= 4900), 'A retry ran before the real five seconds elapsed');
+  assert.equal(value.run.status, succeeds ? 'succeeded' : 'failed');
+  assert.equal(value.events.filter(event => event.event === 'error').length, succeeds ? 0 : 1);
+  assert.equal(value.events.filter(event => event.event === 'end').length, 1);
+  if (scenario === 'quota' || scenario === 'invalid-model') {
+    const code = scenario === 'quota' ? 'AGENT_QUOTA_EXHAUSTED' : 'AGENT_MODEL_UNAVAILABLE';
+    assert.equal(value.run.errorCode, code, 'Run status lost its terminal cause');
+    const error = value.events.find(event => event.event === 'error')?.data.error;
+    assert.ok(error && typeof error === 'object' && 'code' in error && 'retryable' in error);
+    assert.equal(error.code, code, 'CLI SSE error lost its terminal cause');
+    assert.equal(error.retryable, false);
+  }
+  assert.deepEqual(value.runs.map(run => run.id), [value.run.id], 'Retries created another run');
+  assert.deepEqual(value.conversations.map(conversation => conversation.id), [value.run.conversationId], 'Retries created another conversation');
+  const users = value.messages.filter(message => message.role === 'user');
+  const assistants = value.messages.filter(message => message.role === 'assistant');
+  assert.equal(users.length, 1, 'Retries duplicated the user message');
+  assert.equal(users[0]!.content, GLOBAL_RETRY_RUN.prompts[scenario]);
+  assert.equal(assistants.length, 1, 'Retries duplicated the assistant message');
+  assert.equal(assistants[0]!.id, value.run.assistantMessageId);
+  assert.equal(assistants[0]!.runId, value.run.id);
+  if (succeeds) {
+    assert.equal(assistants[0]!.content.split(GLOBAL_RETRY_RUN.partial).length - 1, 1, 'Retry duplicated the partial output');
+    assert.equal(assistants[0]!.content.split(GLOBAL_RETRY_RUN.continuation).length - 1, 1, 'Retry lost the continuation');
+    if (scenario === 'transient') {
+      const resumed = value.attempts[1]!;
+      assert.ok(resumed.args.includes('--resume'), 'Partial output did not resume the Claude session');
+      assert.equal(resumed.args[resumed.args.indexOf('--resume') + 1], value.attempts[0]!.sessionId);
+    } else {
+      assert.deepEqual(value.attempts.map(attempt => attempt.isolated), [true, false, false], 'Isolation recovery was replayed');
+      assert.deepEqual(value.attempts.map(attempt => attempt.method), ['initialize', 'thread/start', 'thread/resume']);
+      assert.deepEqual(value.attempts.slice(1).map(attempt => attempt.sessionId),
+        [CODEX_FALLBACK_RETRY_RUN.threadId, CODEX_FALLBACK_RETRY_RUN.threadId], 'Committed Codex work changed native thread');
+      assert.equal(value.events.filter(event => event.event === 'start').length, 3);
+      for (const type of ['tool_use', 'tool_result']) {
+        assert.equal(value.events.filter(event => event.event === 'agent' && event.data.type === type).length, 1,
+          `Retry duplicated committed ${type}`);
+      }
+    }
+  }
+  return gaps;
+}
 
 export async function parseOptions(argv: readonly string[]): Promise<Options> {
   const values = new Map<string, string>();
@@ -49,10 +118,11 @@ async function freePort() {
 /** Stored ZIP entries keep this fixture independent of daemon-private ZIP code. */
 function templateZip(): Buffer {
   const files: Record<string, string> = {
-    'PROMPT.md': '---\nname: Release QA Deck\ncover: slide-1.html\ndescription: Fixed-size QA slides\npages:\n  - file: slide-1.html\n    use: cover\n---\nUse these layouts with the supplied content.\n',
+    'PROMPT.md': '---\nname: Release QA Deck\ncover: slide-1.html\ndescription: Fixed-size QA slides\npages:\n  - file: slide-1.html\n    use: cover\n  - file: slide-2.html\n  - file: slide-3.html\n  - file: responsive.html\n---\nUse these layouts with the supplied content.\n',
     'assets/deck.css': 'html,body{margin:0;width:1280px;height:720px;background:#163a66;color:#fff;font:48px Arial}h1{padding:100px}p{padding:0 100px;color:#ffcc55}',
     ...Object.fromEntries([1, 2, 3].map(n => [`slide-${n}.html`,
-      `<!doctype html><html><head><link rel="stylesheet" href="assets/deck.css"></head><body><h1>Release QA ${n}</h1><p>Visible golden slide content</p></body></html>`])),
+      `<!doctype html><html${n === 3 ? ' style="width:900px;height:1200px"' : ''}><head><link rel="stylesheet" href="assets/deck.css"></head><body${n === 3 ? ' style="width:900px;height:1200px"' : ''}><h1>Release QA ${n}</h1><p>Visible golden slide content</p></body></html>`])),
+    'responsive.html': '<!doctype html><html><body><h1>Responsive QA default</h1></body></html>',
   };
   const bodies: Buffer[] = [], directory: Buffer[] = [];
   let offset = 0;
@@ -179,6 +249,7 @@ export async function runReleaseQa(options: Options) {
   const scratch = await mkdtemp(join(scratchBase, 'portable-'));
   const results: Result[] = [], captured: unknown[] = [];
   let runtime: HiddenDesktop | undefined, fake: Awaited<ReturnType<typeof fakeWorkspace>> | undefined;
+  let launchLogs: readonly string[] | undefined;
   let lifecycle: unknown, cleanup: unknown, fatal: unknown, manifest: unknown;
   const priorCa = process.env.NODE_EXTRA_CA_CERTS;
   const priorPath = process.env.PATH;
@@ -329,6 +400,10 @@ export async function runReleaseQa(options: Options) {
         return { width: image.naturalWidth, height: image.naturalHeight, colors: colors.size };
       }, `data:${thumbnail.headers()['content-type']};base64,${body.toString('base64')}`);
       assert.ok((r.details.thumbnailPixels as { colors: number }).colors > 10, 'Thumbnail is blank');
+      assert.deepEqual({
+        width: (r.details.thumbnailPixels as { width: number }).width,
+        height: (r.details.thumbnailPixels as { height: number }).height,
+      }, { width: 480, height: 270 }, 'Cover thumbnail did not use the 1280 × 720 page');
       // PNG evidence is renderer-decoded even when the API serves WebP.
       await page.evaluate(async data => {
         const image = new Image(); image.src = data; await image.decode();
@@ -352,6 +427,85 @@ export async function runReleaseQa(options: Options) {
       r.boundary = 'Hub badge and thumbnail';
       await expect(card.getByText('Added by you')).toBeVisible();
       await expect(card.locator('img')).toBeVisible(); await shot('card');
+      r.boundary = 'upload wizard native page dimensions';
+      await page.getByRole('button', { name: 'Upload a template', exact: true }).first().click();
+      const upload = page.getByRole('dialog');
+      await upload.getByRole('button', { name: 'Slide decks', exact: true }).click();
+      await upload.getByRole('button', { name: 'Next', exact: true }).click();
+      await upload.getByTestId('template-upload-file').setInputFiles({
+        name: 'release-qa-dimensions.zip', mimeType: 'application/zip', buffer: templateZip(),
+      });
+      await page.evaluate(() => {
+        const frames: Array<{ file: string; width: string | null; height: string | null }> = [];
+        const observer = new MutationObserver(() => {
+          for (const frame of document.querySelectorAll<HTMLIFrameElement>('[data-testid="template-upload-page"] iframe')) {
+            frames.push({ file: frame.title, width: frame.getAttribute('width'), height: frame.getAttribute('height') });
+          }
+        });
+        observer.observe(document.body, { subtree: true, childList: true, attributes: true });
+        Object.assign(window, { releaseQaTemplateFrames: frames, releaseQaTemplateObserver: observer });
+      });
+      try {
+        const analysed = page.waitForResponse(response => response.request().method() === 'POST'
+          && new URL(response.url()).pathname === '/api/design-template-uploads/analyse');
+        await upload.getByRole('button', { name: 'Next', exact: true }).click();
+        const analysisResponse = await analysed;
+        assert.ok(analysisResponse.ok(), await analysisResponse.text());
+        const analysis: DesignTemplateUploadAnalysisResponse = await analysisResponse.json();
+        const dimensions = [
+          { file: 'slide-1.html', width: 1280, height: 720, outWidth: 480, outHeight: 270 },
+          { file: 'slide-3.html', width: 900, height: 1200, outWidth: 360, outHeight: 480 },
+          { file: 'responsive.html', width: 1920, height: 1080, outWidth: 480, outHeight: 270 },
+        ];
+        for (const dimension of dimensions) {
+          assert.deepEqual(analysis.pages.find(page => page.file === dimension.file)?.viewport,
+            { width: dimension.width, height: dimension.height }, `Wrong uploaded viewport: ${dimension.file}`);
+          const pageCard = upload.getByTestId('template-upload-page').filter({ hasText: dimension.file });
+          await pageCard.scrollIntoViewIfNeeded();
+          await expect(pageCard.locator(':scope > span[aria-hidden="true"]'))
+            .toHaveCSS('aspect-ratio', `${dimension.width} / ${dimension.height}`);
+        }
+        await expect.poll(() => page.evaluate(() =>
+          (window as unknown as { releaseQaTemplateFrames: unknown[] }).releaseQaTemplateFrames))
+          .toEqual(expect.arrayContaining(dimensions.map(dimension => ({
+            file: dimension.file, width: String(dimension.width), height: String(dimension.height),
+          }))));
+        r.details.uploadAnalysis = analysis;
+        r.details.previewFrames = await page.evaluate(() =>
+          (window as unknown as { releaseQaTemplateFrames: unknown[] }).releaseQaTemplateFrames);
+        await shot('upload-native-dimensions');
+        let rendered = analysis;
+        await expect.poll(async () => {
+          rendered = await (await page.request.get(`${daemon}/api/design-template-uploads/${analysis.sessionId}`)).json();
+          return rendered.pages.every(page => page.thumbnail.status === 'ready');
+        }, { timeout: 60_000 }).toBe(true);
+        const thumbnailSizes = [];
+        for (const dimension of dimensions) {
+          const pageInfo = rendered.pages.find(page => page.file === dimension.file)!;
+          const response = await page.request.get(new URL(pageInfo.thumbnailUrl, daemon).href);
+          assert.ok(response.ok(), `${dimension.file}: thumbnail unavailable`);
+          const pixels = await page.evaluate(async data => {
+            const image = new Image(); image.src = data; await image.decode();
+            const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
+            canvas.getContext('2d')!.drawImage(image, 0, 0);
+            return { width: image.naturalWidth, height: image.naturalHeight, png: canvas.toDataURL('image/png') };
+          }, `data:${response.headers()['content-type']};base64,${(await response.body()).toString('base64')}`);
+          assert.deepEqual({ width: pixels.width, height: pixels.height },
+            { width: dimension.outWidth, height: dimension.outHeight }, `Wrong native thumbnail: ${dimension.file}`);
+          thumbnailSizes.push({ file: dimension.file, width: pixels.width, height: pixels.height });
+          await writeFile(join(options.evidenceRoot, `template-${dimension.file}.png`), Buffer.from(pixels.png.split(',')[1]!, 'base64'));
+        }
+        r.details.thumbnailSizes = thumbnailSizes;
+        await upload.getByTestId('template-upload-page').filter({ hasText: 'slide-3.html' }).click();
+        await upload.getByRole('button', { name: 'Next', exact: true }).click();
+        await expect(upload.locator('span[aria-hidden="true"][style*="900 / 1200"]')).toBeVisible();
+        await shot('upload-custom-cover');
+      } finally {
+        await page.evaluate(() =>
+          (window as unknown as { releaseQaTemplateObserver: MutationObserver }).releaseQaTemplateObserver.disconnect());
+        await upload.getByRole('button', { name: 'Cancel', exact: true }).click();
+        await expect(upload).toHaveCount(0);
+      }
       r.boundary = 'rename menu';
       await card.getByRole('button', { name: 'Manage template' }).click();
       await page.getByRole('menuitem', { name: 'Rename', exact: true }).click();
@@ -497,13 +651,164 @@ export async function runReleaseQa(options: Options) {
       r.details.tokenAcquisitions = await readFile(fake.counter, 'utf8');
       await shot('complete');
     });
+    await journey('global-retry', async (r, shot) => {
+      r.boundary = 'isolated fake agent setup';
+      const fakeRoot = join(scratch, 'global-retry-agents');
+      const { claude, codex } = await createFakeAgentRuntimes({ root: fakeRoot, runtimeIds: ['claude', 'codex'] });
+      const codexHome = join(fakeRoot, 'codex-home');
+      await mkdir(codexHome);
+      codex.env.CODEX_HOME = codexHome;
+      const selection = { mode: 'daemon', agentId: 'claude', model: 'sonnet', enabledAgentIds: ['claude'],
+        agentModels: { claude: { model: 'sonnet', reasoning: 'default' } }, agentCliEnv: { claude: claude.env, codex: codex.env } };
+      assert.ok((await page.request.put(`${daemon}/api/app-config`, { data: selection })).ok());
+      await page.evaluate(selection => {
+        localStorage.setItem('readable-studio:locale', 'ko');
+        localStorage.setItem('readable-studio:locale-source', 'manual');
+        const current = JSON.parse(localStorage.getItem('readable-studio:config') ?? '{}');
+        localStorage.setItem('readable-studio:config', JSON.stringify({ ...current, ...selection }));
+      }, selection);
+      await page.reload();
+      await page.locator('.readable-loading-shell').waitFor({ state: 'hidden', timeout: 60_000 });
+      const appRoot = await resolvePackagedAppRoot(scratch);
+      const json = async (path: string) => {
+        const response = await page.request.get(`${daemon}${path}`);
+        assert.ok(response.ok(), `${path}: ${response.status()} ${await response.text()}`);
+        return response.json();
+      };
+      for (const scenario of Object.keys(GLOBAL_RETRY_RUN.prompts) as RetryScenario[]) {
+        const succeeds = scenario === 'transient' || scenario === 'codex-fallback';
+        if (scenario === 'codex-fallback') {
+          const codexSelection = { ...selection, agentId: 'codex', model: 'gpt-5.4-mini', enabledAgentIds: ['codex'],
+            agentModels: { codex: { model: 'gpt-5.4-mini', reasoning: 'default' } } };
+          assert.ok((await page.request.put(`${daemon}/api/app-config`, { data: codexSelection })).ok());
+          await page.evaluate(selection => {
+            const current = JSON.parse(localStorage.getItem('readable-studio:config') ?? '{}');
+            localStorage.setItem('readable-studio:config', JSON.stringify({ ...current, ...selection }));
+          }, codexSelection);
+          await page.reload();
+          await page.locator('.readable-loading-shell').waitFor({ state: 'hidden', timeout: 60_000 });
+        }
+        r.boundary = `${scenario}: workspace entry`;
+        const project = await page.request.post(`${daemon}/api/projects`, { data: {
+          id: randomUUID(), name: `Global retry ${scenario}`, metadata: { kind: 'prototype' }, skipDiscoveryBrief: true,
+        } });
+        assert.ok(project.ok(), await project.text());
+        const created = await project.json();
+        const caseProjectId: string = created.project.id, conversationId: string = created.conversationId;
+        assert.ok(caseProjectId && conversationId, JSON.stringify(created));
+        const caseProjectDir = join(scratch, 'ReadableStudioData', 'namespaces', options.namespace, 'data', 'projects', caseProjectId);
+        const ledgerPath = scenario === 'codex-fallback' ? join(caseProjectDir, CODEX_FALLBACK_RETRY_RUN.ledgerFile)
+          : join(fakeRoot, `${GLOBAL_RETRY_RUN.ledgerPrefix}${scenario}.jsonl`);
+        if (scenario === 'codex-fallback') {
+          const armed = await page.request.post(`${daemon}/api/projects/${caseProjectId}/files`, {
+            data: { name: CODEX_FALLBACK_RETRY_RUN.armFile, content: CODEX_FALLBACK_RETRY_RUN.armToken },
+          });
+          assert.ok(armed.ok(), await armed.text());
+        }
+        await page.evaluate(path => {
+          history.pushState(null, '', path); dispatchEvent(new PopStateEvent('popstate'));
+        }, `/projects/${caseProjectId}/conversations/${conversationId}`);
+        const input = page.getByTestId('chat-composer-input');
+        await expect(input).toBeVisible({ timeout: 30_000 });
+        await shot(`${scenario}-entry`);
+        await input.fill(GLOBAL_RETRY_RUN.prompts[scenario]);
+        const started = page.waitForResponse(response => response.request().method() === 'POST'
+          && new URL(response.url()).pathname === '/api/runs', { timeout: 30_000 });
+        await page.getByTestId('chat-send').click();
+        const response = await started;
+        assert.ok(response.ok(), await response.text());
+        const { runId } = await response.json();
+        assert.ok(runId);
+        let watchSettled = false;
+        const watching = runCli(appRoot, ['run', 'watch', runId, '--json'], daemon)
+          .then(async watched => {
+            await writeFile(join(options.evidenceRoot, `global-retry-${scenario}-watch.jsonl`), watched.stdout);
+            return watched;
+          })
+          .finally(() => { watchSettled = true; });
+        void watching.catch(() => {});
+        try {
+          const progress = page.locator('[data-status="retrying"]');
+          if (succeeds || scenario === 'exhausted') {
+            r.boundary = `${scenario}: calm Korean retry progress`;
+            await expect(progress).toHaveText('재시도 중 (1/10)', { timeout: 30_000 });
+            await expect(page.locator('.chat-error-text')).toHaveCount(0);
+            if (succeeds) {
+              for (const line of GLOBAL_RETRY_RUN.partial.trim().split('\n')) await expect(page.locator('.chat-log')).toContainText(line);
+            }
+            await shot(`${scenario}-retrying`);
+            if (scenario === 'exhausted') {
+              await expect(progress).toHaveText('재시도 중 (10/10)', { timeout: 75_000 });
+              await expect(page.locator('.chat-error-text')).toHaveCount(0);
+              await shot('exhausted-tenth-retry');
+            }
+          }
+          r.boundary = `${scenario}: packaged CLI watch and persisted outcome`;
+          const watched = await watching;
+          await writeFile(join(options.evidenceRoot, `global-retry-${scenario}-watch.jsonl`), watched.stdout);
+          const events = watched.stdout.trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+          const run = await json(`/api/runs/${runId}`);
+          assert.equal(run.id, runId);
+          assert.equal(run.conversationId, conversationId);
+          await expect(progress).toHaveCount(0);
+          if (succeeds) {
+            for (const line of GLOBAL_RETRY_RUN.partial.trim().split('\n')) await expect(page.locator('.chat-log')).toContainText(line);
+            await expect(page.locator('.chat-log')).toContainText(GLOBAL_RETRY_RUN.continuation.trim());
+            await expect(page.locator('.chat-error-text')).toHaveCount(0);
+          } else {
+            const error = page.locator('.chat-error-text');
+            await expect(error).toBeVisible();
+            if (scenario === 'quota') await expect(error).toHaveText('계정의 사용량 한도 또는 이용 가능한 쿼터를 모두 소진했습니다. 요금제를 확인하거나 한도가 초기화된 뒤 다시 시도해 주세요.');
+            if (scenario === 'invalid-model') await expect(error).toHaveText('모델 이름이 잘못되었거나 해당 모델을 찾을 수 없습니다. 모델 이름을 확인하거나 다른 모델을 선택해 주세요.');
+          }
+          await shot(`${scenario}-complete`);
+          const messagesPath = `/api/projects/${caseProjectId}/conversations/${conversationId}/messages`;
+          await expect.poll(async () => (await json(messagesPath)).messages
+            .find((message: { role: string }) => message.role === 'assistant')?.runStatus,
+          { timeout: 15_000 }).toBe(succeeds ? 'succeeded' : 'failed');
+          const attempts = (await readFile(ledgerPath, 'utf8'))
+            .trim().split('\n').map(line => JSON.parse(line));
+          const evidence: RetryCaseEvidence = {
+            run, events, attempts, messages: (await json(messagesPath)).messages,
+            conversations: (await json(`/api/projects/${caseProjectId}/conversations`)).conversations,
+            runs: (await json(`/api/runs?projectId=${caseProjectId}`)).runs,
+          };
+          const attemptGapsMs = verifyGlobalRetryCase(scenario, evidence);
+          if (scenario === 'codex-fallback') {
+            assert.equal(await readFile(join(caseProjectDir, CODEX_FALLBACK_RETRY_RUN.toolFile), 'utf8'), 'saved once\n',
+              'Committed Codex file write was replayed');
+          }
+          r.details[scenario] = { projectId: caseProjectId, conversationId, runId, attemptGapsMs,
+            executions: attempts.length, retryStatuses: events.filter((event: RetryCaseEvidence['events'][number]) =>
+              event.event === 'agent' && event.data.label === 'retrying').length };
+          await writeFile(join(options.evidenceRoot, `global-retry-${scenario}.json`), JSON.stringify(evidence, null, 2));
+        } finally {
+          if (!watchSettled) {
+            await page.request.post(`${daemon}/api/runs/${runId}/cancel`).catch(() => {});
+            await watching.catch(() => {});
+          }
+          if (!r.details[scenario]) {
+            const diagnostics = {
+              run: await json(`/api/runs/${runId}`).catch(() => null),
+              ledger: await readFile(ledgerPath, 'utf8').catch(() => null),
+              messages: await json(`/api/projects/${caseProjectId}/conversations/${conversationId}/messages`).catch(() => null),
+            };
+            r.details[scenario] = diagnostics;
+            await writeFile(join(options.evidenceRoot, `global-retry-${scenario}-diagnostics.json`), JSON.stringify(diagnostics, null, 2));
+          }
+        }
+      }
+    });
     const windowsAfter = await runtime.inspectWindows();
     assert.deepEqual(windowsAfter.activeOwnedWindowPids, []);
     assert.equal(windowsAfter.inputDesktop, runtime.inputDesktopBefore);
     lifecycle = { ...lifecycle as object, windowsAfter, requestCaptureInstalled: true,
       uiNavigation: true, capturedRequests: captured.length };
   } catch (error) {
-    if (error instanceof HiddenLaunchError) cleanup = error.cleanup;
+    if (error instanceof HiddenLaunchError) {
+      cleanup = error.cleanup;
+      launchLogs = error.logs;
+    }
     fatal = error instanceof Error ? error.stack : String(error);
   }
   finally {
@@ -520,11 +825,13 @@ export async function runReleaseQa(options: Options) {
         failed: results.filter(r => r.status === 'FAILED').length + (fatal ? 1 : 0),
         skipped: results.filter(r => r.status === 'SKIPPED').length } };
     await writeFile(join(options.evidenceRoot, 'receipt.json'), JSON.stringify(receipt, null, 2));
-    await writeFile(join(options.evidenceRoot, 'runtime.log'), runtime?.logs.join('\n') ?? String(fatal ?? ''));
+    await writeFile(join(options.evidenceRoot, 'runtime.log'), (runtime?.logs ?? launchLogs)?.join('\n') ?? String(fatal ?? ''));
     const command = `pnpm --filter @readable-studio/e2e exec tsx scripts/release-packaged-qa.ts --zip "${options.zipPath}" --namespace ${options.namespace} --evidence "${options.evidenceRoot}"`;
     await writeFile(join(options.evidenceRoot, 'receipt.md'), `# Packaged release QA\n\nCommand (replace ZIP after integrated build):\n\n\`\`\`powershell\n${command}\n\`\`\`\n\n${results.map(r => `- ${r.name}: ${r.status}; boundary: ${r.boundary}; ${r.elapsedMs} ms. ${r.error ?? ''}`).join('\n')}\n\nLifecycle: ${JSON.stringify(lifecycle)}\n\nCleanup: ${JSON.stringify(cleanup)}\n\nFatal: ${String(fatal ?? 'none')}\n`);
-    // Our extraction only; the supplied root ZIP and owner's app are read-only.
-    await rm(scratch, { recursive: true, force: true }).catch(error => console.error(`Scratch cleanup: ${String(error)}`));
+    // Keep failed runtime logs and native launch evidence for diagnosis.
+    if (receipt.status === 'PASSED') {
+      await rm(scratch, { recursive: true, force: true }).catch(error => console.error(`Scratch cleanup: ${String(error)}`));
+    } else console.error(`Failed runtime preserved: ${scratch}`);
     console.log(JSON.stringify({ status: receipt.status, counts: receipt.counts, cleanup }));
     return receipt;
   }

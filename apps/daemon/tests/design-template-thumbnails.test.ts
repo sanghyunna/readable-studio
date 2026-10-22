@@ -34,13 +34,24 @@ beforeEach(async () => {
 afterEach(async () => { await rm(root, { recursive: true, force: true }); });
 
 describe('cover thumbnail generation', () => {
+  it('captures an imported cover at its own canvas dimensions and aspect ratio', async () => {
+    const dir = await template();
+    await writeFile(path.join(dir, 'pages', 'cover.html'), '<style>.page{width:900px;height:1200px}</style><main class="page">Portrait cover</main>');
+    await requestTemplateThumbnails({ templateDir: dir, id: 'user-deck' });
+    expect(render).toHaveBeenCalledWith(
+      'http://127.0.0.1:12345/api/design-templates/user-deck/pages/cover.html',
+      { width: 900, height: 1200, outWidth: 360, outHeight: 480 },
+    );
+  });
+
   it.each([['webp', webp], ['png', PNG_1PX]])('writes detected %s bytes and ready/rendered state', async (ext, bytes) => {
     const dir = await template();
     render.mockResolvedValue(bytes);
     await requestTemplateThumbnails({ templateDir: dir, id: 'user-deck' });
     expect(await readFile(path.join(dir, 'thumbnails', `cover.${ext}`))).toEqual(bytes);
     expect((await manifest(dir)).thumbnail).toMatchObject({ status: 'ready', source: 'rendered' });
-    expect(render).toHaveBeenCalledWith('http://127.0.0.1:12345/api/design-templates/user-deck/pages/cover.html');
+    expect(render).toHaveBeenCalledWith('http://127.0.0.1:12345/api/design-templates/user-deck/pages/cover.html',
+      { width: 1920, height: 1080, outWidth: 480, outHeight: 270 });
   });
   it('keeps unavailable desktop pending', async () => {
     const dir = await template();

@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
 vi.mock('../src/integrations/vela-errors.js', () => ({
   classifyAmrAccountFailure(text: string) {
@@ -14,6 +17,7 @@ vi.mock('../src/integrations/vela-errors.js', () => ({
 }));
 
 import { decideSafeRunRetry } from '../src/run-retry-policy.js';
+import { AGENT_DEFS, readLocalAgentProfileDefs } from '../src/runtimes/registry.js';
 
 import {
   classifyRunFailure,
@@ -111,7 +115,7 @@ describe('classifyRunFailure', () => {
     expect(failure).toMatchObject({ failure_category: category, retryable: true });
     expect(decideSafeRunRetry({ result: 'failed', attemptCount: 0, failure }).shouldRetry).toBe(true);
     expect(decideSafeRunRetry({
-      result: 'failed', attemptCount: 0, failure, sideEffects: { userVisibleOutputSeen: true },
+      result: 'failed', attemptCount: 0, failure, sideEffects: { toolCallSeen: true },
     }).shouldRetry).toBe(false);
   });
 
@@ -130,9 +134,24 @@ describe('classifyRunFailure', () => {
     'HTTP 429 quota exceeded',
     'HTTP 403 weekly (7-day) usage limit reached; permission denied',
     'Token expired; weekly usage limit reached',
+    'Your credit balance is too low to access the Anthropic API.',
   ])('hard quota overrides transient signals: %s', (message) => {
     expect(classify('AGENT_AUTH_REQUIRED', message, [errorEvent('RATE_LIMITED', message, true)]))
       .toMatchObject({ failure_category: 'rate_limit', failure_detail: 'hard_quota', retryable: false });
+  });
+
+  it.each([
+    ['AGENT_QUOTA_EXHAUSTED', 'AI 서비스 사용량 또는 크레딧이 소진되었습니다.', 'rate_limit', 'hard_quota'],
+    ['AGENT_QUOTA_EXHAUSTED', 'Persisted terminal failure.', 'rate_limit', 'hard_quota'],
+    ['AGENT_QUOTA_EXHAUSTED', 'HTTP 503; Token expired', 'rate_limit', 'hard_quota'],
+    ['AGENT_MODEL_UNAVAILABLE', '선택한 모델을 사용할 수 없습니다.', 'model_unavailable', 'model_not_found'],
+    ['AGENT_MODEL_UNAVAILABLE', 'Persisted terminal failure.', 'model_unavailable', 'model_not_found'],
+    ['AGENT_MODEL_UNAVAILABLE', 'HTTP 503; Token expired', 'model_unavailable', 'model_not_found'],
+  ])('preserves terminal machine code %s independently of message text: %s', (code, message, category, detail) => {
+    const failure = classify(code, message, [errorEvent('UPSTREAM_UNAVAILABLE', 'HTTP 503 overloaded_error', true)]);
+    if (!failure) throw new Error('Expected failure classification');
+    expect(failure).toMatchObject({ failure_category: category, failure_detail: detail, retryable: false });
+    expect(decideSafeRunRetry({ result: 'failed', attemptCount: 0, failure }).shouldRetry).toBe(false);
   });
 
   it.each(['Not logged in', 'Missing API key', 'Authentication required'])('does not retry missing login: %s', (message) => {
@@ -143,6 +162,40 @@ describe('classifyRunFailure', () => {
     expect(classify('RATE_LIMITED', 'HTTP 429: temporary request quota; retry shortly'))
       .toMatchObject({ failure_category: 'rate_limit', failure_detail: 'rate_limit_429', retryable: true });
   });
+
+  it.each([
+    ['Token expired', 'auth', true],
+    ['Token refresh failed', 'auth', true],
+    ['Permission denied', 'auth', true],
+    ['HTTP 503 Service Unavailable', 'upstream_unavailable', true],
+    ['HTTP 429 quota exceeded', 'rate_limit', false],
+    ['Your credit balance is too low to access the Anthropic API.', 'rate_limit', false],
+    ['HTTP 403 invalid model: made-up-model', 'model_unavailable', false],
+  ])('preserves original failure evidence behind a rewritten diagnostic: %s', (originalErrorText, category, retryable) => {
+    const message = category === 'upstream_unavailable'
+      ? 'Agent stream error'
+      : 'Claude Code could not authenticate. Run `claude`, use `/login`, then retry.';
+    const failure = classifyRunFailure({
+      result: 'failed',
+      agentId: 'claude',
+      status: { status: 'failed', error: message, exitCode: 1 },
+      originalErrorText,
+      events: [errorEvent('AGENT_EXECUTION_FAILED', message, true)],
+    });
+    if (!failure) throw new Error('Expected failure classification');
+    expect(failure).toMatchObject({ failure_category: category, retryable });
+    expect(decideSafeRunRetry({ result: 'failed', attemptCount: 0, agentId: 'claude', failure }).shouldRetry)
+      .toBe(retryable);
+  });
+
+  it.each(['ETIMEDOUT', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT'])(
+    'recognizes standard transport timeout code %s', (code) => {
+      const failure = classify('AGENT_EXECUTION_FAILED', `Request failed: ${code}`);
+      if (!failure) throw new Error('Expected failure classification');
+      expect(failure).toMatchObject({ failure_category: 'timeout', failure_detail: 'timeout', retryable: true });
+      expect(decideSafeRunRetry({ result: 'failed', attemptCount: 0, failure }).shouldRetry).toBe(true);
+    },
+  );
 
   it('does not classify successful runs as failures', () => {
     expect(
@@ -804,5 +857,141 @@ describe('classifyRunFailure — signal and interrupt attribution', () => {
       retryable: true,
       user_action: 'retry',
     });
+  });
+});
+
+describe('global retry failure types across the runtime registry', () => {
+  const transientFailures = [
+    ['ETIMEDOUT', 'timeout'],
+    ['UND_ERR_CONNECT_TIMEOUT', 'timeout'],
+    ['UND_ERR_HEADERS_TIMEOUT', 'timeout'],
+    ['UND_ERR_BODY_TIMEOUT', 'timeout'],
+    ['Response timeout before output', 'timeout'],
+    ['Request timed out', 'timeout'],
+    ['ECONNRESET', 'upstream_unavailable'],
+    ['socket hang up', 'upstream_unavailable'],
+    ['stream disconnected before completion', 'upstream_unavailable'],
+    ['TypeError: fetch failed', 'upstream_unavailable'],
+    ['prompt rejected: HTTP 429 Too Many Requests', 'rate_limit'],
+    ['prompt rejected: HTTP 503 Service Unavailable', 'upstream_unavailable'],
+    ['prompt rejected: overloaded_error', 'upstream_unavailable'],
+  ] as const;
+  const cases = [
+    ['ECONNRESET: connection dropped', 'upstream_unavailable', true],
+    ['Response timeout', 'timeout', true],
+    ['ETIMEDOUT', 'timeout', true],
+    ['Token expired', 'auth', true],
+    ['Token refresh failed', 'auth', true],
+    ['HTTP 429 Too Many Requests', 'rate_limit', true],
+    ['HTTP 500 Internal Server Error', 'upstream_unavailable', true],
+    ['HTTP 503 Service Unavailable', 'upstream_unavailable', true],
+    ['overloaded_error', 'upstream_unavailable', true],
+    ['Permission denied', 'auth', true],
+    ['Weekly usage limit reached', 'rate_limit', false],
+    ['Your credit balance is too low to access the Anthropic API.', 'rate_limit', false],
+    ['Unknown model: made-up-model', 'model_unavailable', false],
+  ] as const;
+
+  function checkAgent(agentId: string) {
+    for (const [message, category, transient] of cases) {
+      const retryable = transient && !(agentId === 'databricks' && category === 'auth');
+      const failure = classifyRunFailure({
+        result: 'failed',
+        agentId,
+        status: { status: 'failed', error: message, exitCode: 1 },
+        events: [errorEvent('AGENT_EXECUTION_FAILED', message, retryable)],
+      });
+      if (!failure) throw new Error('Expected failure classification');
+      expect(failure, `${agentId}: ${message}`).toMatchObject({ failure_category: category, retryable });
+      expect(decideSafeRunRetry({ result: 'failed', attemptCount: 0, agentId, failure }).shouldRetry,
+        `${agentId}: ${message}`).toBe(retryable);
+      expect(decideSafeRunRetry({ result: 'failed', attemptCount: 10, agentId, failure }).shouldRetry,
+        `${agentId}: exhausted budget for ${message}`).toBe(false);
+    }
+  }
+
+  it.each(AGENT_DEFS.map((agent) => agent.id))('applies the failure matrix to %s', checkAgent);
+
+  function checkTransientFallback(agentId: string, message: string, category: string) {
+    const failure = classifyRunFailure({
+      result: 'failed',
+      agentId,
+      status: { status: 'failed', error: message, exitCode: 1 },
+      events: [errorEvent('AGENT_EXECUTION_FAILED', message, false)],
+    });
+    if (!failure) throw new Error('Expected failure classification');
+    const retryable = agentId !== 'databricks';
+    expect(failure, `${agentId}: fallback hint for ${message}`)
+      .toMatchObject({ failure_category: category, retryable });
+    expect(decideSafeRunRetry({ result: 'failed', attemptCount: 0, agentId, failure }).shouldRetry,
+      `${agentId}: fallback hint for ${message}`).toBe(retryable);
+  }
+
+  it.each(AGENT_DEFS.map((agent) => agent.id))(
+    'retries documented transient failures despite an undiagnosed adapter fallback for %s',
+    (agentId) => {
+      for (const [message, category] of transientFailures) checkTransientFallback(agentId, message, category);
+    },
+  );
+
+  it.each(transientFailures)('recovers a Pi raw error with fallback retryable:false: %s', (message, category) => {
+    checkTransientFallback('pi', message, category);
+  });
+
+  it.each([
+    ['ECONNRESET; HTTP 429 quota exhausted', 'rate_limit'],
+    ['ECONNRESET; Unknown model: made-up-model', 'model_unavailable'],
+    ['ECONNRESET; HTTP 400 Bad Request', 'upstream_unavailable'],
+    ['ECONNRESET; HTTP 404 Not Found', 'upstream_unavailable'],
+    ['ECONNRESET; Agent stalled without emitting any new output for 120s.', 'upstream_unavailable'],
+    ['HTTP 503; Agent stalled without emitting any new output for 120s.', 'upstream_unavailable'],
+    ['HTTP 429; Agent stalled without emitting any new output for 120s.', 'rate_limit'],
+    ['HTTP 503; Unknown model: made-up-model', 'model_unavailable'],
+    ['HTTP 503; HTTP 400 Bad Request', 'upstream_unavailable'],
+    ['HTTP 503; HTTP 404 Not Found', 'upstream_unavailable'],
+    ['HTTP 503; HTTP 400', 'upstream_unavailable'],
+    ['HTTP 503; HTTP 404', 'upstream_unavailable'],
+    ['HTTP 503; HTTP/1.1 400', 'upstream_unavailable'],
+    ['HTTP 503; HTTP/2 404', 'upstream_unavailable'],
+    ['HTTP 429; HTTP 400', 'rate_limit'],
+    ['HTTP 429; HTTP/1.1 404', 'rate_limit'],
+    ['HTTP 503; Error loading config.toml: unknown variant `priority`', 'process_exit'],
+  ])('keeps permanent errors and intentional watchdog hints authoritative: %s', (message, category) => {
+    expect(classifyRunFailure({
+      result: 'failed', agentId: 'pi',
+      status: { status: 'failed', error: message, exitCode: 1 },
+      events: [errorEvent('AGENT_EXECUTION_FAILED', message, false)],
+    })).toMatchObject({ failure_category: category, retryable: false });
+  });
+
+  it.each([
+    ['HTTP 503; processed 400 files', 'upstream_unavailable'],
+    ['HTTP 503; line 404', 'upstream_unavailable'],
+    ['HTTP 503; HTTP 4000', 'upstream_unavailable'],
+    ['HTTP 429; skipped 404 rows', 'rate_limit'],
+  ])('does not confuse ordinary numbers with permanent HTTP statuses: %s', (message, category) => {
+    expect(classifyRunFailure({
+      result: 'failed', agentId: 'pi',
+      status: { status: 'failed', error: message, exitCode: 1 },
+      events: [errorEvent('AGENT_EXECUTION_FAILED', message, false)],
+    })).toMatchObject({ failure_category: category, retryable: true });
+  });
+
+  it('applies the same failure matrix to a configured local agent profile', () => {
+    const directory = mkdtempSync(path.join(tmpdir(), 'retry-policy-profile-'));
+    const config = path.join(directory, 'agents.local.json');
+    const previousConfig = process.env.READABLE_AGENT_PROFILES_CONFIG;
+    try {
+      writeFileSync(config, JSON.stringify({ agents: [{ id: 'retry-local-fixture', baseAgent: 'claude' }] }));
+      process.env.READABLE_AGENT_PROFILES_CONFIG = config;
+      const profiles = readLocalAgentProfileDefs(AGENT_DEFS);
+      expect(profiles.map((profile) => profile.id)).toEqual(['retry-local-fixture']);
+      checkAgent(profiles[0]!.id);
+      for (const [message, category] of transientFailures) checkTransientFallback(profiles[0]!.id, message, category);
+    } finally {
+      if (previousConfig === undefined) delete process.env.READABLE_AGENT_PROFILES_CONFIG;
+      else process.env.READABLE_AGENT_PROFILES_CONFIG = previousConfig;
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 });

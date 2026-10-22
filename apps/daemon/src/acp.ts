@@ -75,6 +75,7 @@ interface DetectAcpModelsOptions {
 interface AttachAcpSessionOptions {
   child: AcpChildProcess;
   prompt: string;
+  resumeSessionId?: string | null;
   cwd?: string;
   model?: string | null;
   imagePaths?: string[];
@@ -753,6 +754,7 @@ export async function detectAcpModels({
 export function attachAcpSession({
   child,
   prompt,
+  resumeSessionId,
   cwd,
   model,
   imagePaths = [],
@@ -777,6 +779,7 @@ export function attachAcpSession({
   let promptRequestId: JsonRpcId | null = null;
   let setModelRequestId: JsonRpcId | null = null;
   let sessionId: string | null = null;
+  let canLoadSession = false;
   let activeModel: string | null = null;
   let modelConfigId: string | null = null;
   let emittedThinkingStart = false;
@@ -1009,6 +1012,8 @@ export function attachAcpSession({
     }
     const update = asObject(params?.update);
     if (obj.method === 'session/update' && update) {
+      // session/load replays saved history before its response, not new run output.
+      if (resumeSessionId && sessionId === null) return;
       if (update.sessionUpdate !== 'agent_message_chunk' && update.sessionUpdate !== 'agent_thought_chunk') {
         send('agent', {
           type: 'status',
@@ -1129,21 +1134,27 @@ export function attachAcpSession({
       return;
     }
     if (expectedId === 1) {
+      canLoadSession = asObject(result.agentCapabilities)?.loadSession === true;
+      if (resumeSessionId && !canLoadSession) {
+        fail('ACP agent does not support loading the interrupted session.', { retryable: false });
+        return;
+      }
       expectedId = nextId;
+      const sessionMethod = resumeSessionId ? 'session/load' : 'session/new';
       writeRpc(
         nextId,
-        'session/new',
-        buildAcpSessionNewParams(
-          effectiveCwd,
-          mcpServers ? { mcpServers } : {},
-        ),
-        'session/new',
+        sessionMethod,
+        {
+          ...buildAcpSessionNewParams(effectiveCwd, mcpServers ? { mcpServers } : {}),
+          ...(resumeSessionId ? { sessionId: resumeSessionId } : {}),
+        },
+        sessionMethod,
       );
       nextId += 1;
       return;
     }
     if (expectedId === 2) {
-      sessionId = typeof result.sessionId === 'string' ? result.sessionId : null;
+      sessionId = resumeSessionId || (typeof result.sessionId === 'string' ? result.sessionId : null);
       const modelConfig = findModelConfigOption(result.configOptions);
       modelConfigId = modelConfig?.configId ?? null;
       activeModel = currentModelFromSessionResult(result);
@@ -1217,6 +1228,12 @@ export function attachAcpSession({
   }, 'initialize');
 
   return {
+    getSessionId() {
+      return sessionId;
+    },
+    getResumeSessionId() {
+      return canLoadSession ? sessionId : null;
+    },
     hasFatalError() {
       return fatal;
     },

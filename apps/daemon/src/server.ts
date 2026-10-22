@@ -219,6 +219,7 @@ import { composeMemoryBody, extractFromMessage } from './memory.js';
 import { attachAcpSession } from './acp.js';
 import {
   attachPiRpcSession,
+  defaultPiSessionDirectory,
   makePortablePiSessionPath,
   resolvePortablePiSessionPath,
 } from './pi-rpc.js';
@@ -296,6 +297,7 @@ import {
 import { deriveRunErrorCode, runResultFromStatus } from './run-result.js';
 import { classifyRunFailure, isResumableFailure } from './run-failure-classification.js';
 import { decideSafeRunRetry, safeRunRetryDelayMs } from './run-retry-policy.js';
+import { createRetryTextFilter, retryContinuationPrompt } from './run-retry-continuation.js';
 import {
   amrUserIdForRunAnalytics,
   hasExplicitRequestedModelForAnalytics,
@@ -518,6 +520,7 @@ import { registerSocialShareRoutes } from './social-share-routes.js';
 import { registerMemoryRoutes } from './routes/memory.js';
 import { registerSystemPromptRoutes } from './system-prompt-routes.js';
 import { registerUpdateRoutes } from './update-routes.js';
+import { resolveUpdateConfigDefaults } from './update-source.js';
 import { registerDataImportRoutes } from './data-import-routes.js';
 import { registerUpdateApplyRoutes } from './update-apply-routes.js';
 import { registerStaticResourceRoutes } from './routes/static-resource.js';
@@ -5273,7 +5276,7 @@ async function startServerWithProbeLifetime({
 
   // External services
   const updateSourceDependencies = {
-    config: async () => (await readAppConfig(RUNTIME_DATA_DIR)).autoUpdate ?? { enabled: false, serverUrl: null },
+    config: async () => resolveUpdateConfigDefaults((await readAppConfig(RUNTIME_DATA_DIR)).autoUpdate ?? { enabled: false, serverUrl: null }),
   };
   registerUpdateRoutes(app, updateSourceDependencies);
   registerDataImportRoutes(app, { dataRoot: RUNTIME_DATA_DIR });
@@ -9056,6 +9059,7 @@ async function startServerWithProbeLifetime({
     }
     try {
       const config = await readAppConfig(RUNTIME_DATA_DIR);
+      config.autoUpdate = await resolveUpdateConfigDefaults(config.autoUpdate ?? { enabled: false, serverUrl: null });
       res.json({ config });
     } catch (err) {
       res
@@ -9754,6 +9758,7 @@ async function startServerWithProbeLifetime({
   };
 
   const startChatRun = async (chatBody, run) => {
+    const attemptStartEventId = run.nextEventId;
     run.analyticsTelemetry = {
       ...(run.analyticsTelemetry ?? {}),
       startChatRunStartedAt: Date.now(),
@@ -10169,14 +10174,18 @@ async function startServerWithProbeLifetime({
     // create-turn persistence below.
     const agentSupportsSessionResume =
       def.resumesSessionViaCli === true || def.streamFormat === 'pi-rpc';
-    const agentResumeCtx =
+    const storedAgentResumeCtx =
       agentSupportsSessionResume && run.conversationId
         ? resolveAgentResumeContext(db, {
             conversationId: run.conversationId,
             agentId: def.id,
           })
         : { resumeSessionId: null as string | null, newSessionId: undefined as string | undefined, isResuming: false, storedStablePromptHash: null as string | null };
-    const userRequestPrompt = composeChatUserRequestForAgent(
+    const agentResumeCtx = run.retryResumeSessionId
+      ? { ...storedAgentResumeCtx, resumeSessionId: run.retryResumeSessionId,
+          isResuming: true, storedStablePromptHash: run.retryStablePromptHash ?? null }
+      : storedAgentResumeCtx;
+    const originalUserRequestPrompt = composeChatUserRequestForAgent(
       message,
       currentPrompt,
       // Only trim to the latest turn when we are actually resuming an
@@ -10185,6 +10194,9 @@ async function startServerWithProbeLifetime({
       // is seeded with prior context.
       { skipTranscript: agentResumeCtx.isResuming },
     );
+    const userRequestPrompt = run.retryContinuation
+      ? retryContinuationPrompt(originalUserRequestPrompt, run.retryDeliveredText ?? '')
+      : originalUserRequestPrompt;
     // The stable instruction slice (daemon prompt + tool contract + system
     // prompt = design system / skills / memory) is identical across turns of
     // a conversation in the common case. A resumed Claude session already
@@ -10357,16 +10369,30 @@ async function startServerWithProbeLifetime({
     // validate the first complete form block (see
     // `emittedRenderableQuestionForm`).
     const CLARIFYING_QUESTION_BUFFER_CAP = 256 * 1024;
-    let clarifyingQuestionText = '';
+    let clarifyingQuestionText = run.retryContinuation
+      ? (run.retryDeliveredText ?? '').slice(0, CLARIFYING_QUESTION_BUFFER_CAP) : '';
     let agentRollbackRequested = false;
     const rollbackDetector = new RollingAgentRollbackDetector();
     let retryCoordinatorReady = false;
     let retryAttemptFinalized = false;
     let pendingAttemptError = null;
+    let currentAttemptErrorText = '';
+    let retryTextPending = false;
+    let visibleTextThisAttempt = false;
+    let committedWorkThisAttempt = false;
+    const rememberAttemptError = (message, code = undefined) => {
+      currentAttemptErrorText = [typeof message === 'string' ? message : '',
+        typeof code === 'string' ? `error code: ${code}` : ''].filter(Boolean).join('\n');
+    };
+    const retryTextFilter = createRetryTextFilter(run.retryContinuation ? run.retryDeliveredText ?? '' : '');
     let pendingRetryAfter: string | undefined;
     const emitRunEvent = (event, data) => {
       if (retryAttemptFinalized || design.runs.isTerminal(run.status)) return;
+      if (event === 'artifact' || event === 'agent' && (data?.type === 'tool_use' || data?.type === 'artifact')) {
+        committedWorkThisAttempt = true;
+      }
       if (event === 'error' && retryCoordinatorReady && run.status === 'running') {
+        currentAttemptErrorText ||= data?.error?.message ?? data?.message ?? '';
         pendingAttemptError = data;
         run.error = data?.error?.message ?? data?.message ?? run.error;
         run.errorCode = data?.error?.code ?? data?.code ?? run.errorCode;
@@ -10442,6 +10468,11 @@ async function startServerWithProbeLifetime({
       const isAgentText = event === 'agent' && data?.type === 'text_delta' && typeof data.delta === 'string';
       const isPlainText = event === 'stdout' && typeof data?.chunk === 'string';
       if (!isAgentText && !isPlainText) {
+        const outputBoundary = event === 'artifact' || event === 'agent' && (
+          ['tool_use', 'tool_result', 'artifact'].includes(data?.type) ||
+          data?.type === 'thinking_delta' && data.delta?.length
+        );
+        if (retryTextPending && outputBoundary) flushRetryText();
         emitRunEvent(event, data);
         return;
       }
@@ -10450,7 +10481,11 @@ async function startServerWithProbeLifetime({
       emitRollbackTail = isAgentText
         ? (tail) => emitRunEvent('agent', { ...data, delta: tail })
         : (tail) => emitRunEvent('stdout', { ...data, chunk: tail });
-      const visible = filterAgentRollbackText(text);
+      const filteredText = retryTextFilter.push(text);
+      if (text.length) retryTextPending = !filteredText.length;
+      const visible = filterAgentRollbackText(filteredText);
+      if (visible) visibleTextThisAttempt = true;
+      run.retryDeliveredText = (run.retryDeliveredText ?? '') + visible;
       if (visible) emitRollbackTail(visible);
     };
     if (
@@ -10476,6 +10511,14 @@ async function startServerWithProbeLifetime({
       const visible = flushAgentRollbackText();
       if (visible) emitRollbackTail(visible);
     };
+    function flushRetryText() {
+      retryTextPending = false;
+      const visible = filterAgentRollbackText(retryTextFilter.flush());
+      if (!visible) return;
+      visibleTextThisAttempt = true;
+      run.retryDeliveredText = (run.retryDeliveredText ?? '') + visible;
+      emitRollbackTail(visible);
+    }
     const retryAnalyticsBase = (decision, failure, errorCode) => {
       const runProjectKind = resolveRunProjectKindForAnalytics({
         hintProjectKind: null,
@@ -10616,6 +10659,16 @@ async function startServerWithProbeLifetime({
     };
     const finishWithRetryDecision = (status, code = null, signal = null) => {
       if (retryAttemptFinalized || design.runs.isTerminal(run.status)) return false;
+      flushRetryText();
+      if (status === 'succeeded' && run.retryContinuation && !visibleTextThisAttempt &&
+          !committedWorkThisAttempt && !run.retrySideEffects.toolCallSeen && !run.retrySideEffects.artifactWriteSeen) {
+        status = 'failed';
+        code = 1;
+        run.error = 'Agent completed without producing any output after resuming.';
+        run.errorCode = 'AGENT_EXECUTION_FAILED';
+        rememberAttemptError(run.error);
+        pendingAttemptError = createSseErrorPayload(run.errorCode, run.error, { retryable: true });
+      }
       if (status === 'succeeded' && run.fileWriteConflict) {
         status = 'failed';
         code = 1;
@@ -10643,9 +10696,11 @@ async function startServerWithProbeLifetime({
         },
         ...(errorCode ? { errorCode } : {}),
         agentId: run.agentId,
-        events: pendingAttemptError
-          ? [...run.events, { event: 'error', data: pendingAttemptError }]
-          : run.events,
+        originalErrorText: currentAttemptErrorText || undefined,
+        events: [
+          ...run.events.filter((event) => event.id >= attemptStartEventId),
+          ...(pendingAttemptError ? [{ event: 'error', data: pendingAttemptError }] : []),
+        ],
       });
       const retryAfter = pendingRetryAfter ?? pendingAttemptError?.retry_after ??
         pendingAttemptError?.error?.retry_after ??
@@ -10657,6 +10712,17 @@ async function startServerWithProbeLifetime({
         ...run.retrySideEffects,
         cancelRequested: !!run.cancelRequested,
       };
+      const nativeResumeSessionId = def.id === 'databricks' ? null
+        : def.resumesSessionViaCli
+          ? agentResumeCtx.resumeSessionId ?? agentResumeCtx.newSessionId
+          : def.streamFormat === 'pi-rpc'
+            ? acpSession?.getLastSessionPath?.() ?? run.retryResumeSessionId
+            : def.streamFormat === 'acp-json-rpc'
+              ? acpSession?.getResumeSessionId?.() ?? run.retryResumeSessionId
+              : def.streamFormat === 'codex-app-server'
+                ? acpSession?.getSessionId?.() ?? run.retryResumeSessionId
+                : null;
+      sideEffects.nativeResumeAvailable = !!nativeResumeSessionId;
       const decision = decideSafeRunRetry({
         result,
         failure,
@@ -10664,10 +10730,15 @@ async function startServerWithProbeLifetime({
         attemptCount: run.retryAttemptCount ?? 0,
         // The Databricks relay already owns its ten-retry budget.
         ...(def.id === 'databricks' ? { maxAttempts: 1 } : {}),
-        ...(run.isolationFallbackReason ? { maxAttempts: 0 } : {}),
         sideEffects,
       });
       if (decision.shouldRetry && !design.runs.isTerminal(run.status)) {
+        if (def.id !== 'databricks' && (sideEffects.userVisibleOutputSeen || sideEffects.toolCallSeen || sideEffects.artifactWriteSeen)) {
+          run.retryContinuation = true;
+          run.retryResumeSessionId = nativeResumeSessionId;
+          run.retryStablePromptHash = currentStableHash;
+        }
+        run.retryRefreshAuth = failure.failure_category === 'auth';
         run.retryAttemptCount = decision.retryAttemptIndex;
         run.retryFinalResult = undefined;
         run.retrySuppressedReason = undefined;
@@ -10692,30 +10763,8 @@ async function startServerWithProbeLifetime({
         restartSameRunAfterRetry(delayMs);
         return true;
       }
-      // Resume-on-failure: a terminal *resumable* failure (transient mid-stream
-      // drop / inactivity) on a session-resuming runtime is not a dead end.
-      // Persist the live CLI session so the next turn in this conversation
-      // continues it (`--resume <id>`) instead of opening a fresh session, and
-      // flag the run so the chat can surface a Continue affordance. The session
-      // id is the one we actually drove this attempt with: the resumed id when
-      // continuing, otherwise the freshly minted id we passed via --session-id.
-      //
-      // Gate on a real *committed* boundary this attempt, not merely on bytes
-      // having reached the UI. A completed tool_use / artifact
-      // corresponds to a block the agent has committed to its session (Claude
-      // commits a tool_use block before running the tool), so `--resume` has
-      // something concrete to pick up. We deliberately EXCLUDE
-      // `userVisibleOutputSeen`: it flips true on the first streamed text
-      // delta, but a single-turn drop can stream a few tokens with
-      // `output_tokens == 0` and never commit a text block — resuming that
-      // continues from the prior user turn (nothing to pick up), which is
-      // exactly the "resume something with nothing to continue" case this
-      // feature is meant to avoid. A text-only turn that is cut therefore stays
-      // a from-scratch restart (auto-retry above or a manual Retry).
-      // NOTE: `userVisibleOutputSeen` cannot by itself distinguish "half a text
-      // block, zero commit" from "a committed text block then more streaming";
-      // until the stream exposes a committed-text signal, tool/artifact blocks
-      // are the only reliable resume boundary.
+      // After automatic retries are exhausted, keep committed Claude work
+      // available to the existing manual Continue action.
       const committedWorkSeen = !!(
         sideEffects.toolCallSeen ||
         sideEffects.artifactWriteSeen
@@ -10741,6 +10790,14 @@ async function startServerWithProbeLifetime({
       }
       finalizeRetryTelemetry(status, decision, failure, errorCode);
       if (status === 'failed') {
+        if (def.id !== 'databricks' && (failure.failure_detail === 'hard_quota' || failure.failure_category === 'model_unavailable')) {
+          const quotaExhausted = failure.failure_detail === 'hard_quota';
+          run.error = quotaExhausted
+            ? 'AI 서비스 사용량 또는 크레딧이 소진되었습니다. 한도 초기화나 충전 후 다시 시도해 주세요.'
+            : '선택한 모델을 사용할 수 없습니다. 모델 이름을 확인하고 다른 모델을 선택해 주세요.';
+          run.errorCode = quotaExhausted ? 'AGENT_QUOTA_EXHAUSTED' : 'AGENT_MODEL_UNAVAILABLE';
+          pendingAttemptError = createSseErrorPayload(run.errorCode, run.error, { retryable: false });
+        }
         pendingAttemptError = pendingAttemptError ??
           createSseErrorPayload(errorCode ?? 'AGENT_EXECUTION_FAILED', run.error ?? 'Agent execution failed.');
       }
@@ -10763,6 +10820,7 @@ async function startServerWithProbeLifetime({
     };
     retryCoordinatorReady = true;
     run.flushPendingRetryError = (status) => {
+      flushRetryText();
       if (status === 'failed' && pendingAttemptError) {
         persistRunEventToAssistantMessage(db, run, 'error', pendingAttemptError);
         design.runs.emit(run, 'error', pendingAttemptError);
@@ -11404,6 +11462,24 @@ async function startServerWithProbeLifetime({
         stallPayload = createSseErrorPayload('AGENT_EXECUTION_FAILED', message, { retryable: true });
       }
       send('error', stallPayload);
+      if (def.id === 'pi' && !acpSession?.getLastSessionPath?.() &&
+          (run.retrySideEffects.toolCallSeen || run.retrySideEffects.artifactWriteSeen)) {
+        // Pi must settle and capture its owned session before committed work can resume.
+        watchdogRetryRestarted = true;
+        const childClosed = child.exitCode === null && child.signalCode === null
+          ? new Promise<void>((resolve) => child.once('close', () => resolve()))
+          : Promise.resolve();
+        void (async () => {
+          await stopAttemptChild(child, acpSession);
+          await childClosed;
+          finishWithRetryDecision('failed', 1, null);
+        })().catch((error) => {
+          if (run.cancelRequested || design.runs.isTerminal(run.status)) return;
+          rememberAttemptError(error instanceof Error ? error.message : String(error));
+          finishWithRetryDecision('failed', 1, null);
+        });
+        return;
+      }
       // A silent first-token hang is one of the safe transient failure shapes
       // this run is allowed to recover: classifyRunFailure maps the stall text
       // to a retryable `timeout` at `first_token_wait`, and decideSafeRunRetry
@@ -12146,6 +12222,7 @@ async function startServerWithProbeLifetime({
     const sendAgentEvent = (ev) => {
       if (ev?.type === 'error') {
         if (agentStreamError) return;
+        rememberAttemptError(ev.message, ev.code);
         flushVisibleAgentStderr();
         const failureText = [
           String(ev.message || 'Agent stream error'),
@@ -12213,7 +12290,7 @@ async function startServerWithProbeLifetime({
       ? managedPiHandle.invocation.sessionDir
       : managedPiHandle?.invocation.sessionDir
         ? path.dirname(managedPiHandle.invocation.sessionDir)
-        : path.join(effectiveCwd, '.pi', 'sessions');
+        : defaultPiSessionDirectory(effectiveCwd, spawnedAgentEnv ?? process.env);
 
     if (def.streamFormat === 'claude-stream-json') {
       const claude = createClaudeStreamHandler((ev) => {
@@ -12221,6 +12298,7 @@ async function startServerWithProbeLifetime({
           if (agentStreamError) return;
           flushVisibleAgentStderr();
           const message = String((ev as any).message || 'Claude Code stream error');
+          rememberAttemptError(message, (ev as any).code);
           const failureText = [
             message,
             typeof (ev as any).code === 'string' ? `error code: ${(ev as any).code}` : '',
@@ -12318,6 +12396,7 @@ async function startServerWithProbeLifetime({
         child,
         prompt: composed,
         cwd: effectiveCwd,
+        env: spawnedAgentEnv ?? process.env,
         ...(managedPiHandle?.invocation.sessionDir
           ? { sessionDir: managedPiHandle.invocation.sessionDir }
           : {}),
@@ -12335,6 +12414,7 @@ async function startServerWithProbeLifetime({
             sendAgentEvent(payload);
           } else if (channel === 'error') {
             if (agentStreamError) return;
+            rememberAttemptError(payload?.message, payload?.code);
             flushVisibleAgentStderr();
             const streamDiagnostic = formatStreamFailure(payload?.message, 'reading', 'the Pi model connection');
             agentStreamError = streamDiagnostic ?? String(payload?.message || 'Pi session error');
@@ -12375,7 +12455,9 @@ async function startServerWithProbeLifetime({
         ...(def.id === 'amr' ? { modelUnavailableErrorCode: 'AMR_MODEL_UNAVAILABLE' } : {}),
         rejectEmptyPromptCompletion: def.id === 'kimi',
         env: spawnedAgentEnv ?? process.env,
+        resumeSessionId: run.retryResumeSessionId,
         send: (event, data) => {
+          if (event === 'error') rememberAttemptError(data?.error?.message ?? data?.message, data?.error?.code ?? data?.code);
           if (event === 'agent') {
             lastAgentEventPhase = summarizeAgentEventForInactivity(data);
           }
@@ -12409,6 +12491,8 @@ async function startServerWithProbeLifetime({
       trackingSubstantiveOutput = true;
       acpSession = attachCodexAppServerSession({
         child, prompt: composed, cwd: effectiveCwd, model: agentOptions.model,
+        resumeSessionId: run.retryResumeSessionId,
+        refreshAuth: run.retryRefreshAuth === true,
         // Codex can recover in-thread; the shared finalizer also enforces
         // delivery for Claude, Pi/Databricks, ACP and plain-stream adapters.
         ...(run.expectedDocumentArtifact
@@ -12720,6 +12804,7 @@ async function startServerWithProbeLifetime({
       // reopen the closed events-log stream. The run is finalized below
       // regardless (finish() no-ops once terminal).
       if (status === 'failed' && !design.runs.isTerminal(run.status)) {
+        currentAttemptErrorText ||= agentStderrTail.trim();
         const diagnostic = diagnoseClaudeCliFailure({
           agentId: def.id,
           exitCode: code,

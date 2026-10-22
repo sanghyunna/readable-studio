@@ -60,6 +60,35 @@ export const ARTIFACT_DEDUP_RUN = {
   differingHtml: '<!doctype html><html><head><title>Artifact dedup</title></head><body><main><h1>Artifact dedup</h1><p>Different artifact document.</p></main></body></html>',
 } as const;
 
+// Codex's isolated child can write only inside its project, so arm and record
+// this one scenario there through the normal project files API.
+export const CODEX_FALLBACK_RETRY_RUN = {
+  prompt: 'readable-e2e:global-retry:codex-fallback:v1',
+  armFile: 'e2e-codex-fallback.arm',
+  armToken: 'readable-e2e-codex-fallback:armed:v1',
+  ledgerFile: 'e2e-codex-retry.jsonl',
+  toolFile: 'e2e-codex-committed.txt',
+  threadId: 'e2e-codex-retry-thread',
+} as const;
+
+// Claude ledgers stay beside the fake CLI, outside the project's artifact tree.
+export const GLOBAL_RETRY_RUN = {
+  prompts: {
+    transient: 'readable-e2e:global-retry:transient:v1',
+    exhausted: 'readable-e2e:global-retry:exhausted:v1',
+    quota: 'readable-e2e:global-retry:quota:v1',
+    'invalid-model': 'readable-e2e:global-retry:invalid-model:v1',
+    'codex-fallback': CODEX_FALLBACK_RETRY_RUN.prompt,
+  },
+  ledgerPrefix: 'global-retry-',
+  partial: 'Partial retry prefix.\nThis response was already delivered.\n',
+  continuation: ' Continued retry proof.',
+  failures: {
+    quota: 'Weekly usage limit reached: account quota exhausted',
+    'invalid-model': 'Unknown model: nonexistent-retry-model',
+  },
+} as const;
+
 const AGENT_BIN_NAMES: Record<FakeAgentId, string> = {
   claude: 'claude-e2e.cjs',
   codex: 'codex-e2e.cjs',
@@ -135,10 +164,12 @@ function renderFakeAgentScript(agentId: FakeAgentId): string {
 const agentId = ${JSON.stringify(agentId)};
 const args = process.argv.slice(2);
 const { mkdir, writeFile: writeFileFs } = require('node:fs/promises');
-const { existsSync, readFileSync, watch } = require('node:fs');
+const { appendFileSync, existsSync, readFileSync, writeFileSync, watch } = require('node:fs');
 const { isAbsolute, join } = require('node:path');
 const heldQuestion = ${JSON.stringify(HELD_QUESTION_RUN)};
 const artifactDedup = ${JSON.stringify(ARTIFACT_DEDUP_RUN)};
+const globalRetry = ${JSON.stringify(GLOBAL_RETRY_RUN)};
+const codexRetry = ${JSON.stringify(CODEX_FALLBACK_RETRY_RUN)};
 
 if (args.includes('--version')) {
   process.stdout.write(agentId + '-e2e 0.0.0\\n');
@@ -146,20 +177,75 @@ if (args.includes('--version')) {
 } else if (agentId === 'codex' && args[0] === 'app-server') {
   const { createInterface } = require('node:readline');
   const lines = createInterface({ input: process.stdin });
+  const project = process.env.READABLE_PROJECT_DIR || process.cwd();
+  const armPath = join(project, codexRetry.armFile);
+  const armed = existsSync(armPath) && readFileSync(armPath, 'utf8') === codexRetry.armToken;
+  const ledgerPath = join(project, codexRetry.ledgerFile);
+  const isolated = Boolean(process.env.READABLE_ISOLATED_TOOL_BROKER_PIPE);
+  let row, normalAttempt = 0;
+  const send = message => process.stdout.write(JSON.stringify(message) + '\\n');
+  const recordThread = method => {
+    const rows = readFileSync(ledgerPath, 'utf8').trim().split('\\n').map(line => JSON.parse(line));
+    rows[row.attempt - 1] = { ...row, method, sessionId: codexRetry.threadId };
+    writeFileSync(ledgerPath, rows.map(value => JSON.stringify(value)).join('\\n') + '\\n');
+  };
   lines.on('line', (line) => {
     const request = JSON.parse(line);
     if (request.id === undefined) return;
     let result;
     switch (request.method) {
-      case 'initialize': result = { userAgent: 'codex-e2e' }; break;
+      case 'initialize': {
+        if (armed) {
+          const rows = existsSync(ledgerPath) ? readFileSync(ledgerPath, 'utf8').trim().split('\\n').filter(Boolean).map(line => JSON.parse(line)) : [];
+          row = { attempt: rows.length + 1, startedAt: Date.now(), args, isolated,
+            CODEX_HOME: process.env.CODEX_HOME || '', method: 'initialize', sessionId: '' };
+          appendFileSync(ledgerPath, JSON.stringify(row) + '\\n');
+          normalAttempt = rows.filter(value => !value.isolated).length + 1;
+          if (isolated) {
+            process.stderr.write('WARNING: proceeding, even though we could not create PATH aliases: failed to canonicalize CODEX_HOME "'
+              + (process.env.CODEX_HOME || 'C:\\\\isolated\\\\home\\\\.codex')
+              + '": Access is denied. (os error 5)\\nError: Access is denied. (os error 5)\\n', () => process.exit(1));
+            return;
+          }
+        }
+        result = { userAgent: 'codex-e2e' }; break;
+      }
       case 'account/read': result = { account: { type: 'apiKey' } }; break;
       case 'model/list': result = { data: [{ id: 'gpt-5.4-mini', displayName: 'E2E Codex' }], nextCursor: null }; break;
+      case 'thread/start': {
+        if (!armed || normalAttempt !== 1) throw new Error('Retry must resume committed Codex work');
+        recordThread(request.method);
+        result = { thread: { id: codexRetry.threadId } }; break;
+      }
+      case 'thread/resume': {
+        if (!armed || normalAttempt !== 2 || request.params.threadId !== codexRetry.threadId) throw new Error('Wrong Codex retry thread');
+        recordThread(request.method);
+        result = { thread: { id: codexRetry.threadId, turns: [{ items: [{ id: 'committed-tool', type: 'commandExecution', command: 'already written' }] }] } }; break;
+      }
+      case 'turn/start': {
+        if (!armed || !JSON.stringify(request.params).includes(codexRetry.prompt)) throw new Error('Codex retry prompt was not supplied');
+        send({ id: request.id, result: { turn: { id: 'turn-' + row.attempt } } });
+        if (normalAttempt === 1) {
+          send({ method: 'item/agentMessage/delta', params: { itemId: 'partial', delta: globalRetry.partial } });
+          send({ method: 'item/started', params: { item: { id: 'committed-tool', type: 'commandExecution', command: 'write ' + codexRetry.toolFile } } });
+          appendFileSync(join(project, codexRetry.toolFile), 'saved once\\n');
+          send({ method: 'item/completed', params: { item: { id: 'committed-tool', type: 'commandExecution', aggregatedOutput: 'saved once', exitCode: 0, status: 'completed' } } });
+          send({ method: 'turn/completed', params: { turn: { status: 'failed', error: { message: 'HTTP 503 Service Unavailable after committed work' } } } });
+        } else {
+          send({ method: 'item/agentMessage/delta', params: { itemId: 'recovered', delta: globalRetry.partial + globalRetry.continuation + '\\n<!-- readable:no-document-required reason="question" -->' } });
+          send({ method: 'turn/completed', params: { turn: { status: 'completed' } } });
+        }
+        return;
+      }
       default: throw new Error('Unexpected discovery method: ' + request.method);
     }
-    process.stdout.write(JSON.stringify({ id: request.id, result }) + '\\n');
-  });
+    send({ id: request.id, result });
+  }).on('close', () => process.exit(0));
 } else if (agentId === 'claude' && args[0] === '-p' && args.includes('--help')) {
   process.stdout.write('--add-dir --include-partial-messages\\n');
+  process.exitCode = 0;
+} else if (agentId === 'claude' && args[args.indexOf('--output-format') + 1] === 'text') {
+  process.stdout.write('{}\\n');
   process.exitCode = 0;
 } else if ((agentId === 'opencode' || agentId === 'cursor-agent') && args[0] === 'models') {
   process.stdout.write('fake/default\\n');
@@ -196,6 +282,13 @@ async function emitRun(promptText) {
   // Only the latest user section can arm the hold: the promoted answer's
   // transcript still contains the original sentinel in an earlier user turn.
   const latestUserPrompt = promptText.split(/^## user\\r?$/m).at(-1).trim();
+  const retryScenario = Object.entries(globalRetry.prompts)
+    .find(([, sentinel]) => latestUserPrompt.includes(sentinel))?.[0];
+  if (retryScenario) {
+    if (agentId !== 'claude') throw new Error('Global retry fixture requires claude');
+    emitGlobalRetryRun(retryScenario);
+    return;
+  }
   const dedupScenario = Object.entries(artifactDedup.prompts)
     // Memory extraction quotes prior turns but appends its own JSON contract;
     // a sentinel mentioned in that background prompt is not a new user request.
@@ -271,6 +364,37 @@ async function emitRun(promptText) {
   emitSuccess(assistantText, isChunked, isDelayed);
   process.exitCode = 0;
   exitSoon(0);
+}
+
+function emitGlobalRetryRun(scenario) {
+  const ledger = join(__dirname, globalRetry.ledgerPrefix + scenario + '.jsonl');
+  let prior = '';
+  try { prior = readFileSync(ledger, 'utf8'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  const attempt = prior.trim() ? prior.trim().split('\\n').length + 1 : 1;
+  const sessionFlag = args.includes('--resume') ? '--resume' : '--session-id';
+  const sessionId = args.includes(sessionFlag) ? args[args.indexOf(sessionFlag) + 1] : 'fake-global-retry';
+  appendFileSync(ledger, JSON.stringify({ attempt, startedAt: Date.now(), args, sessionId }) + '\\n');
+  writeJson({ type: 'system', subtype: 'init', model: 'fake-claude', session_id: sessionId });
+  if (scenario === 'transient' && attempt > 1) {
+    // Replay is deliberate: the daemon must retain the original prefix once.
+    writeJson({ type: 'assistant', session_id: sessionId, message: { id: 'retry-recovered', content: [{
+      type: 'text', text: globalRetry.partial + globalRetry.continuation + '\\n<!-- readable:no-document-required reason="question" -->',
+    }] } });
+    writeJson({ type: 'result', usage: { input_tokens: 1, output_tokens: 1 }, duration_ms: 1, stop_reason: 'end_turn' });
+    process.stdout.write('', () => process.exit(0));
+    return;
+  }
+  if (scenario === 'transient') {
+    writeJson({ type: 'stream_event', event: { type: 'content_block_delta', index: 0,
+      delta: { type: 'text_delta', text: globalRetry.partial } } });
+  }
+  const code = scenario === 'transient' ? 'ECONNRESET' : scenario === 'exhausted' ? '503' : 'unknown';
+  const text = globalRetry.failures[scenario] || (scenario === 'transient'
+    ? 'ECONNRESET: connection closed unexpectedly' : 'HTTP 503 Service Unavailable');
+  writeJson({ type: 'assistant', error: code, session_id: sessionId,
+    message: { id: 'retry-error', model: '<synthetic>', role: 'assistant',
+      content: [{ type: 'text', text }], stop_reason: 'end_turn' } });
+  process.stdout.write('', () => process.exit(1));
 }
 
 function emitHeldQuestionRun() {

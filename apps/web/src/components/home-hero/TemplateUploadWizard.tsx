@@ -206,6 +206,7 @@ function UploadPagePreview({ page }: { page: DesignTemplateUploadPage }) {
   const [visible, setVisible] = useState(false);
   const [failed, setFailed] = useState(false);
   const [previewWidth, setPreviewWidth] = useState(0);
+  const { width, height } = page.viewport ?? { width: 1920, height: 1080 };
   useEffect(() => {
     const target = node.current;
     if (!target) return;
@@ -224,11 +225,11 @@ function UploadPagePreview({ page }: { page: DesignTemplateUploadPage }) {
     observer.observe(node.current);
     return () => observer.disconnect();
   }, []);
-  return <span ref={node} className={styles.preview} aria-hidden="true">
+  return <span ref={node} className={styles.preview} aria-hidden="true" style={{ aspectRatio: `${width} / ${height}` }}>
     {page.thumbnail.status === 'ready' && !failed
       ? <img src={page.thumbnailUrl} alt="" loading="lazy" onError={() => setFailed(true)} />
       : visible ? <iframe src={page.previewUrl} title={page.file} sandbox="" tabIndex={-1} loading="lazy"
-        width={1920} height={1080} style={{ transform: `scale(${previewWidth / 1920})` }} />
+        width={width} height={height} style={{ transform: `scale(${previewWidth / width})` }} />
         : <Icon name="file" size={28} />}
     <VisuallyHidden>{t('homeHero.uploadCoverTitle')}</VisuallyHidden>
   </span>;

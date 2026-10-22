@@ -189,7 +189,7 @@ export type SettingsSection =
 // One-shot focus hint when opening the dialog. `'amr'` scrolls the AMR agent
 // card into view on the execution section and plays a highlight (plus a
 // sign-in coachmark when the user has not authorized AMR yet).
-export type SettingsHighlight = 'amr' | null;
+export type SettingsHighlight = 'amr' | 'update-server-url' | null;
 
 interface Props {
   initial: AppConfig;
@@ -4201,7 +4201,7 @@ export function SettingsDialog({
           ) : null}
 
           {activeSection === 'update' ? (
-            <UpdateSection currentVersion={appVersionInfo?.version ?? null} />
+            <UpdateSection currentVersion={appVersionInfo?.version ?? null} focusServerUrl={initialHighlight === 'update-server-url'} />
           ) : null}
 
           {activeSection === 'about' ? (

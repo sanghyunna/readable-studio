@@ -25,6 +25,7 @@ export interface RunFailureClassificationInput {
   };
   errorCode?: string;
   agentId?: string | null;
+  originalErrorText?: string;
   events?: RunEventForFailureClassification[];
 }
 
@@ -104,6 +105,8 @@ function latestRetryable(
 
 function collectFailureText(input: RunFailureClassificationInput): string {
   const parts: string[] = [];
+  const originalErrorText = readString(input.originalErrorText);
+  if (originalErrorText) parts.push(originalErrorText);
   const statusError = readString(input.status.error);
   if (statusError) parts.push(statusError);
   const code = normalizeCode(input.errorCode ?? input.status.errorCode);
@@ -121,13 +124,21 @@ function collectFailureText(input: RunFailureClassificationInput): string {
 }
 
 function isHardQuotaText(text: string): boolean {
-  return /\b(session limit|usage limit|hard[ _-]quota|billing (?:hard )?limit|insufficient[ _-]?(?:quota|credit|funds)|exceeded your current quota|quota(?:[ _-]limit)?(?: (?:is|has been|was))?[ _-](?:exceeded|reached|exhausted)|(?:exceeded|exhausted)[ _-]quota)\b/i
+  return /\b(session limit|usage limit|hard[ _-]quota|billing (?:hard )?limit|insufficient[ _-]?(?:quota|credit|funds)|credit balance is too low|exceeded your current quota|quota(?:[ _-]limit)?(?: (?:is|has been|was))?[ _-](?:exceeded|reached|exhausted)|(?:exceeded|exhausted)[ _-]quota)\b/i
     .test(text);
 }
 
 function isTimeoutText(text: string): boolean {
-  return /\b(timed?\s*out|timeout|inactivity|stalled|hung|no new output|without emitting any new output)\b/i
+  return isTransportTimeoutText(text) || /\b(timed?\s*out|timeout|inactivity|stalled|hung|no new output|without emitting any new output)\b/i
     .test(text);
+}
+
+function isTransportTimeoutText(text: string): boolean {
+  return /\b(ETIMEDOUT|UND_ERR_(?:CONNECT|HEADERS|BODY)_TIMEOUT|(?:response|request|connection)[ _-]+(?:timed?[ _-]*out|timeout))\b/i.test(text);
+}
+
+function isInactivityTimeoutText(text: string): boolean {
+  return /inactivity|stalled|hung|no new output|without emitting any new output/i.test(text);
 }
 
 function isEmptyOutputText(text: string): boolean {
@@ -170,14 +181,18 @@ function isPromptTooLargeText(text: string): boolean {
     .test(text);
 }
 
+function isTransientTransportText(text: string): boolean {
+  return /\b(ECONNRESET|ECONNREFUSED|ECONNABORTED|EPIPE|ENETUNREACH|EHOSTUNREACH|ENETDOWN|EAI_AGAIN|ENOTFOUND|UND_ERR_SOCKET|fetch failed|network (?:error|connection (?:dropped|lost))|connection (?:dropped|lost|closed)|socket hang up|stream disconnected before completion|websocket closed|socket connection was closed unexpectedly|connection reset by (?:peer|server)|tls handshake eof|tls close_notify|broken pipe|http2: response body closed)\b/i.test(text);
+}
+
 function isUpstreamDetailText(text: string): boolean {
-  if (/\b(ECONNRESET|ECONNREFUSED|ECONNABORTED|EPIPE|ENETUNREACH|EAI_AGAIN|ENOTFOUND|fetch failed|network (?:error|connection (?:dropped|lost))|connection (?:dropped|lost))\b/i.test(text)) return true;
+  if (isTransientTransportText(text)) return true;
   return /\b(stream disconnected before completion|response\.completed|Transport error: network error|Upstream request failed|websocket closed|socket connection was closed unexpectedly|tls handshake eof|Connection reset by (?:peer|server)|TLS close_notify|Broken pipe|remote host|远程主机强迫关闭|No route to host|Connection refused|error sending request|Provider returned error|high demand|upstream_error|http2: response body closed|AMR model catalog is unavailable|statusCode[\"']?\s*:\s*(?:400|404)|400 Bad Request|404 Not Found)\b/i
     .test(text);
 }
 
 function isUpstreamClientErrorText(text: string): boolean {
-  return /\b(statusCode[\"']?\s*:\s*(?:400|404)|400 Bad Request|404 Not Found)\b/i
+  return /\b(statusCode[\"']?\s*:\s*(?:400|404)|HTTP(?:\/\d(?:\.\d)?)?\s+(?:400|404)|400 Bad Request|404 Not Found)\b/i
     .test(text);
 }
 
@@ -378,10 +393,10 @@ export function classifyRunFailure(
 
   // Permanent failures must win even when wrapped in auth/permission errors
   // or accompanied by an optimistic adapter retryable hint.
-  if (isHardQuotaText(text)) {
+  if (errorCode === 'AGENT_QUOTA_EXHAUSTED' || isHardQuotaText(text)) {
     return classification('rate_limit', 'hard_quota', 'session_init', false, 'none');
   }
-  const modelDetail = errorCode === 'AMR_MODEL_UNAVAILABLE'
+  const modelDetail = errorCode === 'AMR_MODEL_UNAVAILABLE' || errorCode === 'AGENT_MODEL_UNAVAILABLE'
     ? 'model_not_found'
     : modelUnavailableDetail(text);
   if (modelDetail) {
@@ -468,7 +483,8 @@ export function classifyRunFailure(
   }
 
   if (errorCode === 'RATE_LIMITED' || serviceFailure === 'RATE_LIMITED') {
-    const retryable = retryableHint ?? true;
+    const retryable = input.agentId !== 'databricks' && !isUpstreamClientErrorText(text) && !isInactivityTimeoutText(text)
+      ? true : retryableHint ?? true;
     return classification(
       'rate_limit',
       isHardQuotaText(text) ? 'hard_quota' : 'rate_limit_429',
@@ -484,7 +500,11 @@ export function classifyRunFailure(
     serviceFailure === 'UPSTREAM_UNAVAILABLE' ||
     isUpstreamDetailText(text)
   ) {
-    const retryable = retryableHint ?? !isUpstreamClientErrorText(text);
+    const retryable = input.agentId !== 'databricks' &&
+      (isTransientTransportText(text) || errorCode === 'UPSTREAM_UNAVAILABLE' ||
+        errorCode === 'AGENT_CONNECTION_DROPPED' || serviceFailure === 'UPSTREAM_UNAVAILABLE') &&
+      !isUpstreamClientErrorText(text) && !isInactivityTimeoutText(text)
+      ? true : retryableHint ?? !isUpstreamClientErrorText(text);
     return classification(
       'upstream_unavailable',
       upstreamDetail(text),
@@ -505,10 +525,11 @@ export function classifyRunFailure(
   }
 
   if (isTimeoutText(text) || errorCode === 'TIMEOUT') {
-    const retryable = retryableHint ?? true;
+    const retryable = input.agentId !== 'databricks' && isTransportTimeoutText(text) && !isInactivityTimeoutText(text)
+      ? true : retryableHint ?? true;
     return classification(
       'timeout',
-      /inactivity|stalled|hung|no new output|without emitting any new output/i.test(text)
+      isInactivityTimeoutText(text)
         ? 'inactivity_timeout'
         : 'timeout',
       'first_token_wait',

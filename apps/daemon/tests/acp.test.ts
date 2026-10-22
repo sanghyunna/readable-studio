@@ -115,6 +115,118 @@ test('ACP model normalization accepts category-less model configOptions', () => 
   ]);
 });
 
+test.each([true, false, undefined, 'true'])('ACP exposes resumable session identity only for advertised loadSession=%s', (loadSession) => {
+  const child = new FakeAcpChild();
+  const session = attachAcpSession({ child: child as never, prompt: 'hello', send: () => {} });
+
+  assert.equal(session.getSessionId(), null);
+  assert.equal(session.getResumeSessionId(), null);
+  writeAcpResult(child, 1, { agentCapabilities: { loadSession } });
+  writeAcpResult(child, 2, { sessionId: 'session-1' });
+  assert.equal(session.getSessionId(), 'session-1');
+  assert.equal(session.getResumeSessionId(), loadSession === true ? 'session-1' : null);
+  session.abort();
+});
+
+test('ACP loads an existing session without replaying history and preserves model selection', () => {
+  const child = new FakeAcpChild();
+  const writes: string[] = [];
+  const events: Array<{ event: string; payload: unknown }> = [];
+  child.stdin.on('data', (chunk) => writes.push(String(chunk)));
+  const session = attachAcpSession({
+    child: child as never,
+    prompt: 'Continue the interrupted response.',
+    cwd: '/tmp/readable-project',
+    resumeSessionId: 'session-1',
+    model: 'selected-model',
+    send: (event, payload) => events.push({ event, payload }),
+  });
+
+  writeAcpResult(child, 1, { agentCapabilities: { loadSession: true } });
+  assert.deepEqual(parseRpcWrites(writes)[1]?.params, {
+    ...buildAcpSessionNewParams('/tmp/readable-project'), sessionId: 'session-1',
+  });
+  writeAcpUpdate(child, { sessionUpdate: 'agent_message_chunk', content: { text: 'Existing response' } });
+  writeAcpUpdate(child, { sessionUpdate: 'agent_thought_chunk', content: { text: 'Existing thought' } });
+  writeAcpUpdate(child, {
+    sessionUpdate: 'tool_call', toolCallId: 'existing-tool', title: 'Write', status: 'completed',
+    rawInput: { file_path: '/tmp/readable-project/page.html', content: '<html>existing</html>' },
+  });
+  assert.deepEqual(events, [], 'session/load history must not reach the current run');
+  writeAcpResult(child, 2, {
+    configOptions: [{ id: 'model', type: 'select', category: 'model', currentValue: 'old-model', options: [] }],
+  });
+  assert.equal(session.getResumeSessionId(), 'session-1');
+  assert.equal(parseRpcWrites(writes).some(({ method }) => method === 'session/prompt'), false);
+  writeAcpResult(child, 3, {});
+  const requests = parseRpcWrites(writes);
+  assert.deepEqual(requests.map(({ method }) => method), [
+    'initialize', 'session/load', 'session/set_config_option', 'session/prompt',
+  ]);
+  assert.deepEqual(requests[2]?.params, { sessionId: 'session-1', configId: 'model', value: 'selected-model' });
+  assert.deepEqual(requests[3]?.params, {
+    sessionId: 'session-1', prompt: [{ type: 'text', text: 'Continue the interrupted response.' }],
+  });
+  writeAcpUpdate(child, { sessionUpdate: 'agent_message_chunk', content: { text: 'Only new text' } });
+  writeAcpResult(child, 4, { stopReason: 'end_turn' });
+  child.emit('close', 0, null);
+  assert.equal(session.completedSuccessfully(), true);
+  assert.deepEqual(events.filter(({ payload }) => (payload as { type?: string }).type === 'text_delta')
+    .map(({ payload }) => (payload as { delta: string }).delta), ['Only new text']);
+});
+
+test.each([false, undefined, 'true'])('ACP refuses resume without advertised loadSession=%s instead of starting fresh', (loadSession) => {
+  const child = new FakeAcpChild();
+  const writes: string[] = [];
+  const events: Array<{ event: string; payload: unknown }> = [];
+  child.stdin.on('data', (chunk) => writes.push(String(chunk)));
+  const session = attachAcpSession({
+    child: child as never, prompt: 'Continue.', resumeSessionId: 'session-1',
+    send: (event, payload) => events.push({ event, payload }),
+  });
+
+  writeAcpResult(child, 1, { agentCapabilities: { loadSession } });
+  assert.deepEqual(parseRpcWrites(writes).map(({ method }) => method), ['initialize']);
+  assert.equal(session.hasFatalError(), true);
+  assert.equal(session.getResumeSessionId(), null);
+  assert.equal(child.killed, true);
+  const error = events.find(({ event }) => event === 'error')?.payload as { error: { retryable: boolean } };
+  assert.equal(error.error.retryable, false);
+});
+
+test('ACP does not start a new session when loading the previous session fails', () => {
+  const child = new FakeAcpChild();
+  const writes: string[] = [];
+  child.stdin.on('data', (chunk) => writes.push(String(chunk)));
+  const session = attachAcpSession({
+    child: child as never, prompt: 'Continue.', resumeSessionId: 'session-1', send: () => {},
+  });
+
+  writeAcpResult(child, 1, { agentCapabilities: { loadSession: true } });
+  writeAcpError(child, 2, { code: -32602, message: 'Session not found' });
+  assert.deepEqual(parseRpcWrites(writes).map(({ method }) => method), ['initialize', 'session/load']);
+  assert.equal(session.hasFatalError(), true);
+  assert.equal(session.getSessionId(), null);
+  assert.equal(session.getResumeSessionId(), null);
+});
+
+test('ACP loaded history does not turn an empty Kimi completion into a successful turn', () => {
+  const child = new FakeAcpChild();
+  const session = attachAcpSession({
+    child: child as never, prompt: 'Continue.', resumeSessionId: 'session-1',
+    rejectEmptyPromptCompletion: true, send: () => {},
+  });
+
+  writeAcpResult(child, 1, { agentCapabilities: { loadSession: true } });
+  writeAcpUpdate(child, { sessionUpdate: 'agent_message_chunk', content: { text: 'Existing response' } });
+  writeAcpUpdate(child, { sessionUpdate: 'tool_call', toolCallId: 'existing-tool', title: 'edit', status: 'completed' });
+  writeAcpResult(child, 2, {});
+  assert.equal(session.hasFatalError(), false);
+  writeAcpResult(child, 3, { stopReason: 'end_turn' });
+  assert.equal(session.completedSuccessfully(), false);
+  assert.equal(session.hasFatalError(), true);
+});
+
 test('attachAcpSession sets selected models through ACP config options', () => {
   const child = new FakeAcpChild();
   const writes: string[] = [];

@@ -37,6 +37,8 @@ export interface Dict {
   'dataImport.unreadable': string;
   'update.title': string;
   'update.automatic': string;
+  'update.setupFailed': string;
+  'update.enableAutomatic': string;
   'update.serverUrl': string;
   'update.connect': string;
   'update.connected': string;
