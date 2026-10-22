@@ -1,12 +1,14 @@
 import { execFile } from "node:child_process";
-import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { cp, lstat, mkdir, readFile, writeFile } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 import { promisify } from "node:util";
 
 import { RUNTIME_APP_ID } from "@readable-studio/sidecar-proto";
 
 import { forwardBuildProfile, isBuildProfilingEnabled } from "../build-profile.js";
-import { hashJson, hashPath, type CacheNode, ToolPackCache } from "../cache.js";
+import { hashJson, hashPath, privatizeForWrite, type CacheNode, ToolPackCache } from "../cache.js";
+import { createBuildEventWriter } from "../build-events.js";
+import { portableContentInventory } from "../content-equivalence.js";
 import type { ToolPackConfig } from "../config.js";
 import { assertDatabricksCliOutput, DATABRICKS_CLI_RELATIVE_PATH } from "../databricks-cli.js";
 import { assertPiPackageOutput, PI_RPC_ENTRY_RELATIVE_PATH } from "../pi-package.js";
@@ -51,6 +53,7 @@ import {
   resolvePortableZipCompression,
   resolvePortableZipThreads,
   resolvePortableZipShards,
+  resolveWinPortableZipLocalePruneEntries,
 } from "./zip.js";
 import type {
   ElectronBuilderDirCacheMetadata,
@@ -67,7 +70,7 @@ const WIN_ELECTRON_BUILDER_DIR_CACHE_VERSION = 9;
 // input-driven changes — resource tree, baked config fields, version — re-key
 // automatically; this constant covers logic changes whose output happens to be
 // byte-identical for the current config.
-const WIN_PORTABLE_ZIP_CACHE_VERSION = 7;
+const WIN_PORTABLE_ZIP_CACHE_VERSION = 8;
 
 // Pure key-input assembly for the portable-zip cache node, exported for tests.
 // The zip's true inputs are the materialized unpacked tree and the exact
@@ -106,6 +109,96 @@ export function buildWinPortableZipCacheKeyInput(input: {
 
 function isPortableZipCacheHitEligible(config: ToolPackConfig): boolean {
   return !config.signed;
+}
+
+async function finalPortableTreeSnapshot(config: ToolPackConfig, top: string, detach = false): Promise<string> {
+  const excluded = new Set(await resolveWinPortableZipLocalePruneEntries({ config, unpackedRoot: top }));
+  const { stdout } = await execFileAsync("fd", [
+    "--hidden", "--no-ignore", "--type", "f", "--type", "l", "--print0", ".", ".",
+  ], { cwd: top, windowsHide: true, maxBuffer: 16 * 1024 * 1024 });
+  const paths = stdout.split("\0").filter(Boolean)
+    .map((path) => path.replaceAll("\\", "/").replace(/^\.\//, ""))
+    .filter((path) => (path === `${PRODUCT_NAME}.exe` || path.startsWith("app/")) && !excluded.has(path))
+    .sort();
+  const entries = new Array<unknown>(paths.length);
+  let cursor = 0;
+  await Promise.all(Array.from({ length: Math.min(20, paths.length) }, async () => {
+    while (cursor < paths.length) {
+      const index = cursor++;
+      const path = paths[index]!;
+      const absolute = join(top, path);
+      let metadata = await lstat(absolute, { bigint: true });
+      if (!metadata.isFile() || metadata.isSymbolicLink()) {
+        throw new Error(`portable content must be a regular extracted file: ${path}`);
+      }
+      // No source writes may overlap sealing or compression, including detaching
+      // immutable cache links to avoid read-only attributes in extracted ZIPs.
+      if (detach && (metadata.mode & 0o222n) === 0n) {
+        await privatizeForWrite(absolute);
+        metadata = await lstat(absolute, { bigint: true });
+      }
+      entries[index] = [path, metadata.ino, metadata.size, metadata.mtimeNs, metadata.ctimeNs, metadata.mode]
+        .map(String);
+    }
+  }));
+  return hashJson(entries);
+}
+
+async function assertFinalPortableTreeFrozen(config: ToolPackConfig, top: string, frozen: string): Promise<void> {
+  if (await finalPortableTreeSnapshot(config, top) !== frozen) {
+    throw new Error("final portable tree changed during sealing or ZIP compression");
+  }
+}
+
+export async function sealFinalPortableTree(
+  config: ToolPackConfig, top: string, manifestPath: string, frozen?: string,
+): Promise<string> {
+  await assertUpdateLayout(top);
+  const snapshot = frozen ?? await finalPortableTreeSnapshot(config, top, true);
+  const excluded = new Set(await resolveWinPortableZipLocalePruneEntries({ config, unpackedRoot: top }));
+  const inventory = await portableContentInventory(top, (path) =>
+    (path === `${PRODUCT_NAME}.exe` || path.startsWith("app/")) && !excluded.has(path)
+  );
+  await assertFinalPortableTreeFrozen(config, top, snapshot);
+  await writeFile(manifestPath, `${JSON.stringify(inventory.manifest)}\n`, "utf8");
+  const inputHash = hashJson(inventory.manifest.files);
+  await createBuildEventWriter()?.ready({
+    event: "final-tree-ready", node: "final-tree", inputHash, outputRoot: top, files: inventory.manifest.files,
+  });
+  return inputHash;
+}
+
+export async function sealAndBuildWinPortableZip(
+  config: ToolPackConfig,
+  paths: WinPaths,
+  top: string,
+  buildArchive: () => Promise<void>,
+  runSegment: <T>(phase: string, task: () => Promise<T>) => Promise<T>,
+): Promise<void> {
+  const events = createBuildEventWriter();
+  if (events == null) {
+    await runSegment("portable-zip:cache", buildArchive);
+    return;
+  }
+  const frozen = await runSegment("portable-zip:freeze-final-tree", async () => {
+    await assertUpdateLayout(top);
+    return finalPortableTreeSnapshot(config, top, true);
+  });
+  // Compression reads the frozen tree while its SHA inventory is computed.
+  // The real-ZIP gate still compares the extracted ZIP with that sealed inventory.
+  const tasks = [
+    runSegment("portable-zip:seal-final-tree", () =>
+      sealFinalPortableTree(config, top, join(dirname(paths.setupZipPath), "final-tree-manifest.json"), frozen)),
+    runSegment("portable-zip:cache", buildArchive),
+  ] as const;
+  // Drain both branches on failure: never leave an archiver reading a failed build.
+  await Promise.allSettled(tasks);
+  const [sealed] = await Promise.all(tasks);
+  await assertFinalPortableTreeFrozen(config, top, frozen);
+  await events.ready({
+    event: "zip-ready", node: "zip", inputHash: sealed,
+    outputRoot: dirname(paths.setupZipPath), paths: [basename(paths.setupZipPath)],
+  });
 }
 
 function createWinPortableZipNode(input: {
@@ -443,12 +536,15 @@ export async function materializeCachedUnpackedForPortableZip(
     await cp(sourceUnpackedRoot, paths.unpackedRoot, { recursive: true });
   }
   await mkdir(join(paths.unpackedRoot, "resources"), { recursive: true });
+  await privatizeForWrite(join(paths.unpackedRoot, "resources", "readable-studio-config.json"));
   await writeFile(
     join(paths.unpackedRoot, "resources", "readable-studio-config.json"),
     await readFile(paths.packagedConfigPath),
   );
   if (packagedVersion != null) {
+    await privatizeForWrite(join(paths.unpackedRoot, "resources", "app", "package.json"));
     await rewriteUnpackedAppPackageVersion(paths.unpackedRoot, packagedVersion);
+    await privatizeForWrite(paths.unpackedExePath);
     await rewriteWinExecutableVersion(paths.unpackedExePath, packagedVersion);
     await assertMaterializedUnpackedVersionConsistency(paths.unpackedRoot, packagedVersion);
   }
@@ -514,6 +610,7 @@ export async function runElectronBuilder(
   const key = hashJson({ ...electronBuilderKeyInput, node: "win.electron-builder-dir" });
   const node = {
     id: "win.electron-builder-dir",
+    immutable: createBuildEventWriter() != null,
     key,
     outputs: ["builder", ...(config.webOutputMode === "standalone" ? ["web-standalone-after-pack-audit.json"] : [])],
     invalidate: async () => null,
@@ -573,16 +670,18 @@ export async function runElectronBuilder(
   const ensureSignedUnpacked = async (): Promise<void> => {
     if (!config.signed || signedUnpacked) return;
     await runSegment("windows-sign:unpacked-exe", async () => {
+      if (createBuildEventWriter() != null) await privatizeForWrite(materialized.executablePath);
       await signAndVerifyWinFile(materialized.executablePath, { verify: false });
+      if (createBuildEventWriter() != null) await privatizeForWrite(layout.executablePath);
       await signAndVerifyWinFile(layout.executablePath, { verify: false });
     });
     signedUnpacked = true;
   };
+  await ensureSignedUnpacked();
   const archiveSegments: WinPackTiming[] = [];
-  await runSegment("portable-zip:cache", async () => {
+  await sealAndBuildWinPortableZip(config, paths, top, async () => {
     const portableZipNode = createWinPortableZipNode({
       build: async ({ entryRoot }) => {
-        await ensureSignedUnpacked();
         await assertUpdateLayout(top);
         archiveSegments.push(...await buildWinPortableZip(config, paths, layout));
         await cp(paths.setupZipPath, join(entryRoot, "portable.zip"));
@@ -599,7 +698,7 @@ export async function runElectronBuilder(
       signingCacheKey,
     });
     await cache.acquire({ materialize: [{ from: "portable.zip", reuse: true, to: paths.setupZipPath }], node: portableZipNode });
-  });
+  }, runSegment);
   segments.push(...archiveSegments);
   return segments;
 }

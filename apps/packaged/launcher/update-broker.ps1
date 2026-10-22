@@ -1,9 +1,10 @@
-﻿param(
+param(
     [Parameter(Mandatory=$true)][string]$Root,
     [Parameter(Mandatory=$true)][string]$Staging,
     [Parameter(Mandatory=$true)][string]$TargetVersion,
     [Parameter(Mandatory=$true)][int]$WaitPid,
-    [string]$Namespace = 'rg'
+    [string]$Namespace = 'rg',
+    [switch]$NonInteractive
 )
 $ErrorActionPreference = 'Stop'
 try {
@@ -19,7 +20,9 @@ try {
     exit 0
 } catch {
     [IO.File]::WriteAllText((Join-Path $Root 'update-broker-error.log'), $_.Exception.ToString())
-    Add-Type -AssemblyName System.Windows.Forms
-    [void][Windows.Forms.MessageBox]::Show("업데이트 준비 상태를 확인하지 못했습니다. 앱을 다시 실행해 주세요.`n" + $_.Exception.Message, 'Readable Studio 업데이트')
+    if (-not $NonInteractive) {
+        Add-Type -AssemblyName System.Windows.Forms
+        [void][Windows.Forms.MessageBox]::Show("업데이트 준비 상태를 확인하지 못했습니다. 앱을 다시 실행해 주세요.`n" + $_.Exception.Message, 'Readable Studio 업데이트')
+    }
     exit 1
 }

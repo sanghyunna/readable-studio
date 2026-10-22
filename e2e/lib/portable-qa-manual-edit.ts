@@ -35,13 +35,8 @@ export async function runManualEditTransactions(input: ManualEditSession) {
   await page.evaluate((path) => {
     window.history.pushState(null, '', path);
     window.dispatchEvent(new PopStateEvent('popstate'));
-  }, `/projects/${projectId}`);
+  }, `/projects/${encodeURIComponent(projectId)}/files/portable-deck.html`);
   const preview = page.locator(previewSelector).first();
-  const fileButton = page.getByRole('button', { name: /portable-deck\.html/i });
-  await fileButton.waitFor({ state: 'visible', timeout: 30_000 });
-  await fileButton.click();
-  const openButton = page.getByTestId('design-file-preview').getByRole('button', { name: 'Open' });
-  if (await openButton.isVisible()) await openButton.click();
   await preview.waitFor({ state: 'visible', timeout: 60_000 });
   const frame = page.frameLocator(previewSelector);
   const title = frame.locator('[data-readable-id="task30-title"]');

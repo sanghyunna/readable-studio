@@ -1,4 +1,4 @@
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -16,6 +16,40 @@ async function pathExists(path: string): Promise<boolean> {
 }
 
 describe("ToolPackCache", () => {
+  it("keeps mutable packaging entries separate and restores independent writable copies on miss and hit", async () => {
+    const root = await mkdtemp(join(tmpdir(), "readable-cache-plain-"));
+    const cache = new ToolPackCache(join(root, "cache"));
+    let builds = 0;
+    const node = {
+      id: "test.packaging", key: "same-input", immutable: false, outputs: ["payload"],
+      invalidate: async () => null,
+      build: async ({ entryRoot }: { entryRoot: string }) => {
+        builds++;
+        await mkdir(join(entryRoot, "payload"));
+        await writeFile(join(entryRoot, "payload", "value.txt"), "original");
+        return {};
+      },
+    };
+    try {
+      const output = join(root, "out");
+      const materialize = [{ from: "payload", to: output }];
+      const plain = await cache.acquire({ node, materialize });
+      const source = join(plain.entryPath, "payload", "value.txt");
+      expect((await stat(source)).mode & 0o200).not.toBe(0);
+      expect((await stat(join(output, "value.txt"))).ino).not.toBe((await stat(source)).ino);
+      await writeFile(source, "stamped");
+      const hit = await cache.readHit({ node, materialize });
+      expect(hit?.entryPath).toBe(plain.entryPath);
+      expect(await readFile(join(output, "value.txt"), "utf8")).toBe("stamped");
+      await writeFile(join(output, "value.txt"), "private");
+      expect(await readFile(source, "utf8")).toBe("stamped");
+      const sealed = await cache.acquire({ node: { ...node, immutable: true }, materialize: [] });
+      expect(sealed.entryPath).not.toBe(plain.entryPath);
+      expect((await stat(join(sealed.entryPath, "payload", "value.txt"))).mode & 0o200).toBe(0);
+      expect(builds).toBe(2);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("retains a snapshotted build destination only after success and restores a missing hit", async () => {
     const root = await mkdtemp(join(tmpdir(), "readable-cache-retain-"));
     const cache = new ToolPackCache(join(root, "cache"));
@@ -173,7 +207,7 @@ describe("ToolPackCache", () => {
     }
   });
 
-  it("reuses stamped materialized targets until the cache key changes", async () => {
+  it("restores modified materialized targets and invalidates changed keys", async () => {
     const root = await mkdtemp(join(tmpdir(), "readable-studio-tools-pack-cache-reuse-"));
     const cacheRoot = join(root, "cache");
     const out = join(root, "out", "payload");
@@ -197,8 +231,8 @@ describe("ToolPackCache", () => {
       await writeFile(join(out, "value.txt"), "mutated\n", "utf8");
       await cache.acquire({ materialize: [{ from: "payload", reuse: true, to: out }], node: createNode("key-1") });
 
-      expect(await readFile(join(out, "value.txt"), "utf8")).toBe("mutated\n");
-      expect(cache.report().entries.at(-1)?.materialized[0]?.skipped).toBe(true);
+      expect(await readFile(join(out, "value.txt"), "utf8")).toBe("build-1\n");
+      expect(cache.report().entries.at(-1)?.materialized[0]?.skipped).toBeUndefined();
 
       await cache.acquire({ materialize: [{ from: "payload", reuse: true, to: out }], node: createNode("key-2") });
 

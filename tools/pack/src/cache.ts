@@ -1,13 +1,200 @@
 import { createHash, randomUUID } from "node:crypto";
-import { cp, lstat, mkdir, readFile, readdir, readlink, rename, rm, writeFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { chmod, copyFile, cp, link, lstat, mkdir, readFile, readdir, readlink, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative } from "node:path";
 import { performance } from "node:perf_hooks";
 
 import { isBuildProfilingEnabled, measureBuildStep, writeBuildProfile } from "./build-profile.js";
 import { withDirectoryLock } from "./lock.js";
 import { copyTreeConcurrent } from "./copy-tree.js";
+import { removeTree } from "./win/fs.js";
 
-export const CACHE_SCHEMA_VERSION = 1;
+export const CACHE_SCHEMA_VERSION = 3;
+
+export type CacheFile = {
+  path: string;
+  size: number;
+  mtimeMs: number;
+  mode: number;
+  sha256?: string;
+  kind: "file" | "symlink";
+};
+
+// Never chmod the old path: NTFS attributes belong to the shared file, not its
+// directory entry. Node 24's unlink uses Windows POSIX disposition semantics,
+// including IGNORE_READONLY_ATTRIBUTE; unlike rm it has no chmod retry.
+export async function privatizeForWrite(path: string): Promise<void> {
+  const metadata = await lstat(path).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  });
+  if (metadata == null) return;
+  if (!metadata.isFile()) throw new Error(`cannot privatize non-file: ${path}`);
+  const temporary = `${path}.private-${randomUUID()}`;
+  try {
+    await copyFile(path, temporary);
+    await chmod(temporary, metadata.mode | 0o200);
+    await unlink(path);
+    await renameWithRetry(temporary, path);
+  } finally {
+    await rm(temporary, { force: true });
+  }
+}
+
+// Unlike recursive rm, unlink never retries EPERM by clearing the shared NTFS
+// read-only attribute. Do not follow directory links during output cleanup.
+export async function removeMaterializedTree(path: string): Promise<void> {
+  await removeTree(path);
+}
+
+// An explicit write set opts a private output into linking. Mutable workspace
+// build destinations keep the copy contract. No chmod ever touches a link.
+export async function materializeCacheTree(
+  source: string,
+  destination: string,
+  writeSet: readonly string[],
+): Promise<void> {
+  const writable = new Set(writeSet.map(normalizeRelativePath));
+  const metadata = await lstat(source);
+  const entries = metadata.isDirectory()
+    ? await readdir(source, { recursive: true, withFileTypes: true }) : [];
+  if (metadata.isDirectory()) await mkdir(destination, { recursive: true });
+  const files = metadata.isDirectory()
+    ? entries.filter((entry) => !entry.isDirectory()).map((entry) => ({
+      from: join(entry.parentPath, entry.name), symlink: entry.isSymbolicLink(),
+    }))
+    : [{ from: source, symlink: metadata.isSymbolicLink() }];
+  const directories = entries.filter((entry) => entry.isDirectory());
+  let directoryCursor = 0;
+  await Promise.all(Array.from({ length: Math.min(64, directories.length) }, async () => {
+    while (directoryCursor < directories.length) {
+      const entry = directories[directoryCursor++]!;
+      await mkdir(join(destination, relative(source, join(entry.parentPath, entry.name))), { recursive: true });
+    }
+  }));
+  if (!metadata.isDirectory()) await mkdir(dirname(destination), { recursive: true });
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(64, files.length) }, async () => {
+    while (cursor < files.length) {
+      const { from, symlink } = files[cursor++]!;
+      const relativePath = normalizeRelativePath(relative(source, from));
+      const to = relativePath === "" ? destination : join(destination, relativePath);
+      // Dirent already supplies the file kind, and all parent directories exist.
+      // Avoid one lstat and one recursive mkdir for every immutable file.
+      if (symlink) {
+        await cp(from, to, { verbatimSymlinks: true });
+        continue;
+      }
+      if (!writable.has(relativePath)) {
+        try {
+          await link(from, to);
+          continue;
+        } catch (error) {
+          // Cross-volume links and NTFS link-count limits are ordinary copy
+          // fallbacks. Copy reports any genuine source/destination failure.
+          if ((error as NodeJS.ErrnoException).code === "EEXIST") throw error;
+        }
+      }
+      await copyFile(from, to);
+      const file = await lstat(from);
+      await chmod(to, file.mode | 0o200);
+    }
+  });
+  // Drain writes before callers clean up a failed materialization.
+  await Promise.allSettled(workers);
+  await Promise.all(workers);
+}
+
+async function filePaths(root: string): Promise<string[]> {
+  if (!(await lstat(root)).isDirectory()) return [root];
+  return (await readdir(root, { recursive: true, withFileTypes: true }))
+    .filter((entry) => !entry.isDirectory())
+    .map((entry) => join(entry.parentPath, entry.name)).sort();
+}
+
+async function digestFile(path: string): Promise<string> {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(path)) hash.update(chunk);
+  return hash.digest("hex");
+}
+
+async function mapFiles<T>(files: readonly string[], task: (path: string) => Promise<T>): Promise<T[]> {
+  const result: T[] = new Array(files.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(64, files.length) }, async () => {
+    while (cursor < files.length) {
+      const index = cursor++;
+      result[index] = await task(files[index]!);
+    }
+  });
+  // A failed worker must not race staging cleanup or atomic publication.
+  await Promise.allSettled(workers);
+  await Promise.all(workers);
+  return result;
+}
+
+async function setFileWritable(path: string, writable: boolean, mode: number): Promise<number> {
+  await chmod(path, writable ? mode | 0o200 : mode & ~0o222);
+  const sealedMode = writable ? mode | 0o200 : (await lstat(path)).mode;
+  if (!writable && (sealedMode & 0o222) !== 0) {
+    throw new Error(`cache file remains writable: ${path}`);
+  }
+  return sealedMode;
+}
+
+async function inventory(
+  root: string,
+  excludeMetadata = false,
+  seal = false,
+  paths?: readonly string[],
+  hashFile: (path: string) => boolean = () => false,
+): Promise<CacheFile[]> {
+  const files = (paths ?? await filePaths(root)).filter((path) =>
+    !excludeMetadata || !["manifest.json", "complete.json"].includes(normalizeRelativePath(relative(root, path))));
+  return mapFiles(files, async (path) => {
+    const metadata = await lstat(path);
+    const symlink = metadata.isSymbolicLink();
+    const link = symlink ? await readlink(path) : null;
+    const relativePath = normalizeRelativePath(relative(root, path));
+    const file: CacheFile = {
+      path: relativePath,
+      size: link == null ? metadata.size : Buffer.byteLength(link),
+      mtimeMs: metadata.mtimeMs,
+      mode: metadata.mode,
+      ...(hashFile(relativePath) ? { sha256: link == null ? await digestFile(path) : hashText(link) } : {}),
+      kind: symlink ? "symlink" : "file",
+    };
+    // Reuse inventory metadata, and seal only this private staging generation.
+    if (seal && metadata.isFile()) file.mode = await setFileWritable(path, false, metadata.mode);
+    return file;
+  });
+}
+
+// Only whole-tree real-copy destinations may use this pass, never linked trees.
+async function makeCopiedTreeWritable(root: string): Promise<void> {
+  await mapFiles(await filePaths(root), async (path) => {
+    const metadata = await lstat(path);
+    if (metadata.isFile()) await setFileWritable(path, true, metadata.mode);
+  });
+}
+
+async function validatePublishedEntry<T>(root: string, manifest: CacheManifest<T>): Promise<CacheInvalidation | null> {
+  try {
+    const completion = JSON.parse(await readFile(join(root, "complete.json"), "utf8"));
+    if (completion.key !== manifest.key || completion.nodeId !== manifest.nodeId ||
+        completion.schemaVersion !== CACHE_SCHEMA_VERSION ||
+        completion.manifestSha256 !== await digestFile(join(root, "manifest.json"))) {
+      return { reason: "completion marker mismatch" };
+    }
+    const hashedPaths = new Set(manifest.files.filter((file) => file.sha256 != null).map((file) => file.path));
+    if (JSON.stringify(manifest.files) !== JSON.stringify(await inventory(root, true, false, undefined, (path) => hashedPaths.has(path)))) {
+      return { reason: "output manifest mismatch" };
+    }
+    return null;
+  } catch {
+    return { reason: "missing or invalid completion marker" };
+  }
+}
 
 const TRANSIENT_RENAME_CODES = new Set(["EPERM", "EACCES", "EBUSY", "ENOTEMPTY"]);
 const RENAME_RETRY_ATTEMPTS = 10;
@@ -45,6 +232,7 @@ export type CacheInvalidation = {
 
 export type CacheManifest<TMetadata> = {
   createdAt: string;
+  files: CacheFile[];
   key: string;
   nodeId: string;
   outputs: string[];
@@ -78,6 +266,8 @@ export type CacheBuildContext = {
 };
 
 export type CacheNode<TMetadata> = {
+  // Plain packaging retains the original mutable, copy-based cache contract.
+  immutable?: boolean;
   build: (context: CacheBuildContext) => Promise<TMetadata>;
   id: string;
   invalidate: (context: { entryRoot: string; manifest: CacheManifest<TMetadata> }) => Promise<CacheInvalidation | null>;
@@ -88,6 +278,9 @@ export type CacheNode<TMetadata> = {
 export type CacheMaterializeTarget = {
   from: string;
   concurrentTreeCopy?: boolean;
+  // Paths relative to `from` that may be written after materialization.
+  // Supplying this (including []) opts into immutable hardlink materialization.
+  writeSet?: readonly string[];
   // The node's successful build produced and snapshotted this destination.
   // Only trusted workspace producers may set this; hits still require restore.
   retainOnBuild?: boolean;
@@ -102,11 +295,13 @@ export type CacheSeedSource = {
 };
 
 type CacheMaterializationMarker = {
+  files: Omit<CacheFile, "mtimeMs" | "mode">[];
   from: string;
   keyHash: string;
   nodeId: string;
   schemaVersion: number;
   to: string;
+  writeSet?: readonly string[];
 };
 
 function normalizeRelativePath(path: string): string {
@@ -193,6 +388,29 @@ async function materializedTargetIsReusable(target: CacheMaterializeTarget): Pro
   return true;
 }
 
+async function requiredFiles(target: CacheMaterializeTarget): Promise<CacheMaterializationMarker["files"]> {
+  const required = [...new Set((target.reuseRequiredPaths ?? []).flat().map(normalizeRelativePath))];
+  const paths = target.reuseRequiredPaths == null || target.reuseRequiredPaths.length === 0 ? undefined : await mapFiles(required, async (path) => {
+    const absolute = join(target.to, path);
+    const metadata = await lstat(absolute).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    });
+    return metadata == null ? [] : metadata.isDirectory() ? filePaths(absolute) : [absolute];
+  });
+  const files = await inventory(target.to, false, false, paths == null ? undefined : [...new Set(paths.flat())].sort(), () => true);
+  // Marker reuse is about required bytes, not private output timestamps/modes.
+  return files.map(({ path, size, sha256, kind }) => ({ path, size, sha256, kind }));
+}
+
+async function markerMatchesFiles(target: CacheMaterializeTarget, marker: CacheMaterializationMarker): Promise<boolean> {
+  try {
+    return JSON.stringify(marker.files) === JSON.stringify(await requiredFiles(target));
+  } catch {
+    return false;
+  }
+}
+
 export class ToolPackCache {
   readonly #entries: CacheAcquireReport[] = [];
 
@@ -221,7 +439,8 @@ export class ToolPackCache {
     seedFrom?: CacheSeedSource[];
   }): Promise<CacheAcquireResult<TMetadata>> {
     const startedAt = Date.now();
-    const keyHash = hashText(`${node.id}\n${node.key}`);
+    const immutable = node.immutable !== false;
+    const keyHash = hashText(`${node.id}\n${node.key}${immutable ? "" : "\nmutable"}`);
     const entryPath = join(this.root, "entries", safePathToken(node.id), keyHash);
     const manifestPath = join(entryPath, "manifest.json");
     const outputs = node.outputs.map(normalizeRelativePath);
@@ -233,11 +452,13 @@ export class ToolPackCache {
       const markerPath = join(this.root, "materialized", hashText(target.to), "marker.json");
       await mkdir(dirname(markerPath), { recursive: true });
       await writeFile(markerPath, `${JSON.stringify({
+        files: immutable ? await requiredFiles(target) : [],
         from: normalizeRelativePath(target.from),
         keyHash: markerKeyHash,
         nodeId: node.id,
-        schemaVersion: 1,
+        schemaVersion: CACHE_SCHEMA_VERSION,
         to: target.to,
+        writeSet: target.writeSet,
       } satisfies CacheMaterializationMarker, null, 2)}\n`, "utf8");
     };
     const copyFromEntry = async (
@@ -246,32 +467,31 @@ export class ToolPackCache {
       options: { markerKeyHash?: string },
     ): Promise<void> => {
       const sourcePath = join(sourceEntryPath, target.from);
-      await rm(target.to, { force: true, recursive: true });
+      await removeMaterializedTree(target.to);
       await mkdir(dirname(target.to), { recursive: true });
-      if (target.concurrentTreeCopy) await copyTreeConcurrent(sourcePath, target.to);
-      else await cp(sourcePath, target.to, { recursive: true });
+      if (immutable && target.writeSet != null) await materializeCacheTree(sourcePath, target.to, target.writeSet);
+      else {
+        if (target.concurrentTreeCopy) await copyTreeConcurrent(sourcePath, target.to);
+        else await cp(sourcePath, target.to, { recursive: true });
+        if (immutable) await makeCopiedTreeWritable(target.to);
+      }
       if (options.markerKeyHash != null) await writeMarker(target, options.markerKeyHash);
     };
     const materializeTarget = async (target: CacheMaterializeTarget): Promise<void> => {
       const materializeStartedAt = Date.now();
       const normalizedFrom = normalizeRelativePath(target.from);
-      if (status !== "hit" && target.retainOnBuild === true) {
-        if (!(await materializedTargetIsReusable(target))) {
-          throw new Error(`cache node ${node.id} did not retain built destination: ${target.to}`);
-        }
-        await writeMarker(target, keyHash);
-        materialized.push({ durationMs: Date.now() - materializeStartedAt, from: normalizedFrom, skipped: true, to: target.to });
-        return;
-      }
-      if (target.reuse === true && await materializedTargetIsReusable(target)) {
+      if ((target.reuse === true || (status !== "hit" && target.retainOnBuild === true)) &&
+          await materializedTargetIsReusable(target)) {
         const markerPath = join(this.root, "materialized", hashText(target.to), "marker.json");
         const marker = await readMaterializationMarker(markerPath);
         if (
-          marker?.schemaVersion === 1 &&
+          marker?.schemaVersion === CACHE_SCHEMA_VERSION &&
           marker.nodeId === node.id &&
           marker.keyHash === keyHash &&
           marker.from === normalizedFrom &&
-          marker.to === target.to
+          marker.to === target.to &&
+          JSON.stringify(marker.writeSet) === JSON.stringify(target.writeSet) &&
+          (!immutable || await markerMatchesFiles(target, marker))
         ) {
           materialized.push({
             durationMs: Date.now() - materializeStartedAt,
@@ -281,6 +501,14 @@ export class ToolPackCache {
           });
           return;
         }
+      }
+      if (status !== "hit" && target.retainOnBuild === true) {
+        if (!(await materializedTargetIsReusable(target))) {
+          throw new Error(`cache node ${node.id} did not retain built destination: ${target.to}`);
+        }
+        await writeMarker(target, keyHash);
+        materialized.push({ durationMs: Date.now() - materializeStartedAt, from: normalizedFrom, skipped: true, to: target.to });
+        return;
       }
 
       await copyFromEntry(entryPath, target, { markerKeyHash: keyHash });
@@ -299,6 +527,7 @@ export class ToolPackCache {
       const manifest = await readManifest<TMetadata>(join(alias.entryPath, "manifest.json"));
       if (manifest == null) return false;
       if (manifest.schemaVersion !== CACHE_SCHEMA_VERSION || manifest.nodeId !== node.id || manifest.key !== alias.key) return false;
+      if (await validatePublishedEntry(alias.entryPath, manifest) != null) return false;
       const seedOutputs = manifest.outputs.map(normalizeRelativePath);
       if ((await assertOutputsExist(alias.entryPath, seedOutputs)) != null) return false;
       for (const target of source.materialize) {
@@ -324,7 +553,8 @@ export class ToolPackCache {
       const schemaInvalid = !manifestMissing && existingManifest.schemaVersion !== CACHE_SCHEMA_VERSION;
       const idInvalid = !manifestMissing && existingManifest.nodeId !== node.id;
       const keyInvalid = !manifestMissing && existingManifest.key !== node.key;
-      const outputInvalid = existingManifest == null ? { reason: "missing manifest" } : await assertOutputsExist(entryPath, outputs);
+      const outputInvalid = existingManifest == null ? { reason: "missing manifest" }
+        : await assertOutputsExist(entryPath, outputs) ?? (immutable ? await validatePublishedEntry(entryPath, existingManifest) : null);
       const customInvalid = existingManifest == null || schemaInvalid || idInvalid || keyInvalid || outputInvalid != null
         ? null
         : await node.invalidate({ entryRoot: entryPath, manifest: existingManifest });
@@ -359,8 +589,12 @@ export class ToolPackCache {
             { nodeId: node.id });
           const missingOutput = await assertOutputsExist(stagingPath, outputs);
           if (missingOutput != null) throw new Error(`cache node ${node.id} build did not produce ${missingOutput.reason}`);
+          const requiredPaths = materialize.flatMap((target) => (target.reuseRequiredPaths ?? []).flat()
+            .map((path) => normalizeRelativePath(join(target.from, path))));
           const builtManifest: CacheManifest<TMetadata> = {
             createdAt: new Date().toISOString(),
+            files: immutable ? await inventory(stagingPath, true, true, undefined,
+              (path) => requiredPaths.some((required) => path === required || path.startsWith(`${required}/`))) : [],
             key: node.key,
             nodeId: node.id,
             outputs,
@@ -368,7 +602,19 @@ export class ToolPackCache {
             schemaVersion: CACHE_SCHEMA_VERSION,
           };
           await writeManifest(join(stagingPath, "manifest.json"), builtManifest);
-          await rm(entryPath, { force: true, recursive: true });
+          if (immutable) await setFileWritable(join(stagingPath, "manifest.json"), false, 0o644);
+          // The completion marker is the final write, and is sealed before the
+          // directory rename makes any part of this generation visible.
+          await writeFile(join(stagingPath, "complete.json"), `${JSON.stringify({
+            key: node.key, nodeId: node.id, schemaVersion: CACHE_SCHEMA_VERSION,
+            manifestSha256: await digestFile(join(stagingPath, "manifest.json")),
+          })}\n`);
+          if (immutable) await setFileWritable(join(stagingPath, "complete.json"), false, 0o644);
+          // Never rm a published generation: Windows rm may clear attributes on
+          // files still linked by a reader. Leave retired generations for GC.
+          if (await pathExists(entryPath)) {
+            await renameWithRetry(entryPath, `${entryPath}.retired-${randomUUID()}`);
+          }
           await renameWithRetry(stagingPath, entryPath);
           for (const aliasKey of aliases) {
             const aliasPath = aliasPathForKey(aliasKey);
@@ -419,7 +665,8 @@ export class ToolPackCache {
     node: CacheNode<TMetadata>;
   }): Promise<CacheAcquireResult<TMetadata> | null> {
     const startedAt = Date.now();
-    const keyHash = hashText(`${node.id}\n${node.key}`);
+    const immutable = node.immutable !== false;
+    const keyHash = hashText(`${node.id}\n${node.key}${immutable ? "" : "\nmutable"}`);
     const entryPath = join(this.root, "entries", safePathToken(node.id), keyHash);
     const manifestPath = join(entryPath, "manifest.json");
     const outputs = node.outputs.map(normalizeRelativePath);
@@ -431,11 +678,13 @@ export class ToolPackCache {
       if (target.reuse === true && await materializedTargetIsReusable(target)) {
         const marker = await readMaterializationMarker(markerPath);
         if (
-          marker?.schemaVersion === 1 &&
+          marker?.schemaVersion === CACHE_SCHEMA_VERSION &&
           marker.nodeId === node.id &&
           marker.keyHash === keyHash &&
           marker.from === normalizedFrom &&
-          marker.to === target.to
+          marker.to === target.to &&
+          JSON.stringify(marker.writeSet) === JSON.stringify(target.writeSet) &&
+          (!immutable || await markerMatchesFiles(target, marker))
         ) {
           materialized.push({
             durationMs: Date.now() - materializeStartedAt,
@@ -448,17 +697,23 @@ export class ToolPackCache {
       }
 
       const sourcePath = join(entryPath, target.from);
-      await rm(target.to, { force: true, recursive: true });
+      await removeMaterializedTree(target.to);
       await mkdir(dirname(target.to), { recursive: true });
-      if (target.concurrentTreeCopy) await copyTreeConcurrent(sourcePath, target.to);
-      else await cp(sourcePath, target.to, { recursive: true });
+      if (immutable && target.writeSet != null) await materializeCacheTree(sourcePath, target.to, target.writeSet);
+      else {
+        if (target.concurrentTreeCopy) await copyTreeConcurrent(sourcePath, target.to);
+        else await cp(sourcePath, target.to, { recursive: true });
+        if (immutable) await makeCopiedTreeWritable(target.to);
+      }
       await mkdir(dirname(markerPath), { recursive: true });
       await writeFile(markerPath, `${JSON.stringify({
+        files: immutable ? await requiredFiles(target) : [],
         from: normalizedFrom,
         keyHash,
         nodeId: node.id,
-        schemaVersion: 1,
+        schemaVersion: CACHE_SCHEMA_VERSION,
         to: target.to,
+        writeSet: target.writeSet,
       } satisfies CacheMaterializationMarker, null, 2)}\n`, "utf8");
       materialized.push({
         durationMs: Date.now() - materializeStartedAt,
@@ -479,6 +734,7 @@ export class ToolPackCache {
       if (existingManifest.nodeId !== node.id) return null;
       if (existingManifest.key !== node.key) return null;
       if ((await assertOutputsExist(entryPath, outputs)) != null) return null;
+      if (immutable && await validatePublishedEntry(entryPath, existingManifest) != null) return null;
       if ((await node.invalidate({ entryRoot: entryPath, manifest: existingManifest })) != null) return null;
 
       for (const target of materialize) {

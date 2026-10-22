@@ -1,4 +1,5 @@
 import { EventEmitter, once } from "node:events";
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,6 +15,43 @@ vi.mock("../src/lock.js", async (importOriginal) => {
 beforeEach(() => vi.clearAllMocks());
 
 describe("cache producer concurrency", () => {
+  it("does not expose a partial generation while its producer is held", async () => {
+    const root = await mkdtemp(join(tmpdir(), "readable-cache-publish-"));
+    const cache = new ToolPackCache(join(root, "cache"));
+    const events = new EventEmitter();
+    const staged = once(events, "staged", { signal: AbortSignal.timeout(3000) });
+    const release = Promise.withResolvers<void>();
+    const keyHash = createHash("sha256").update("atomic\none").digest("hex");
+    const published = join(cache.root, "entries", "atomic", keyHash);
+    const acquisition = cache.acquire({
+      materialize: [],
+      node: {
+        id: "atomic", key: "one", outputs: ["payload"], invalidate: async () => null,
+        build: async ({ entryRoot }) => {
+          await writeFile(join(entryRoot, "payload"), "partial");
+          events.emit("staged", entryRoot);
+          await release.promise;
+          await writeFile(join(entryRoot, "payload"), "complete");
+          return {};
+        },
+      },
+    });
+    try {
+      const [staging] = await staged;
+      await expect(readFile(join(published, "payload"))).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(readFile(join(staging, "complete.json"))).rejects.toMatchObject({ code: "ENOENT" });
+      release.resolve();
+      const result = await acquisition;
+      expect(result.entryPath).toBe(published);
+      expect(await readFile(join(published, "payload"), "utf8")).toBe("complete");
+      expect(JSON.parse(await readFile(join(published, "complete.json"), "utf8")).key).toBe("one");
+    } finally {
+      release.resolve();
+      await Promise.allSettled([acquisition]);
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("uses the same destination lock across different nodes and readHit restores", async () => {
     const root = await mkdtemp(join(tmpdir(), "readable-cache-destination-lock-"));
     const cache = new ToolPackCache(join(root, "cache"));

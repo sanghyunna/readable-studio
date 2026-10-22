@@ -13,7 +13,7 @@ import { registerDataImportRoutes, type DataImportRouteOptions } from '../src/da
 const roots: string[]=[]; const servers: Server[]=[];
 afterEach(async()=>{closeDatabase();await Promise.all(servers.splice(0).map(server=>new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()))));await Promise.all(roots.splice(0).map(root=>rm(root,{recursive:true,force:true})));});
 async function fixture(processOptions: Pick<DataImportRouteOptions, 'listProcesses' | 'terminateProcess'> = {}) {
-  const base=path.resolve('../../.tmp/data-import-route-tests'); await mkdir(base,{recursive:true});
+  const base=path.join(process.env.READABLE_DATA_DIR!,'data-import-route-tests'); await mkdir(base,{recursive:true});
   const root=await mkdtemp(path.join(base,'case-'));roots.push(root);
   const sourceRoot=path.join(root,'old');const sourceData=path.join(sourceRoot,'ReadableStudioData/namespaces/test/data');
   const appRoot=path.join(root,'new');const dataRoot=path.join(appRoot,'ReadableStudioData/namespaces/test/data');
@@ -152,7 +152,7 @@ it('never reoffers after done or an earlier process offered',async()=>{
 });
 // 1.3.3 shipped with namespace au-rel133; the release namespace is rg.
 async function rgFixture(listProcesses: DataImportRouteOptions['listProcesses'] = async()=>[]) {
-  const base=path.resolve('../../.tmp/data-import-route-tests'); await mkdir(base,{recursive:true});
+  const base=path.join(process.env.READABLE_DATA_DIR!,'data-import-route-tests'); await mkdir(base,{recursive:true});
   const root=await mkdtemp(path.join(base,'ns-'));roots.push(root);
   const appRoot=path.join(root,'current');const dataRoot=path.join(appRoot,'ReadableStudioData/namespaces/rg/data');
   await mkdir(dataRoot,{recursive:true});

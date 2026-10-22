@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
@@ -8,7 +8,8 @@ import { createCommandInvocation, createPackageManagerInvocation } from "@readab
 import { SIDECAR_ENV } from "@readable-studio/sidecar-proto";
 
 import { forwardPnpmProfile, isBuildProfilingEnabled, measureBuildStep } from "../build-profile.js";
-import { hashJson, hashPath, ToolPackCache } from "../cache.js";
+import { createBuildEventWriter } from "../build-events.js";
+import { hashJson, hashPath, privatizeForWrite, removeMaterializedTree, ToolPackCache } from "../cache.js";
 import type { ToolPackConfig } from "../config.js";
 import { assertDatabricksCliOutput, stageDatabricksCli } from "../databricks-cli.js";
 import databricksCli from "../databricks-cli.json" with { type: "json" };
@@ -46,7 +47,7 @@ import {
   PRODUCT_NAME,
 } from "./constants.js";
 import { readPackagedVersion, writePackagedConfig } from "./manifest.js";
-import { pathExists, removeTree } from "./fs.js";
+import { pathExists } from "./fs.js";
 import type {
   PackedTarballInfo,
   PackedTarballsCacheMetadata,
@@ -108,16 +109,144 @@ async function runPnpm(config: ToolPackConfig, args: string[], extraEnv: NodeJS.
   }
 }
 
+export type InstallProcessProgress = { identity: string; cpu: number; io: number };
+
+async function sampleInstallProcessTree(pid: number): Promise<InstallProcessProgress[]> {
+  const { stdout } = await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
+    "$ErrorActionPreference='Stop'; @(Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CreationDate,KernelModeTime,UserModeTime,ReadTransferCount,WriteTransferCount,OtherTransferCount) | ConvertTo-Json -Compress",
+  ], { windowsHide: true, timeout: 10_000, maxBuffer: 8 * 1024 * 1024 });
+  const rows = JSON.parse(stdout) as Array<{
+    ProcessId: number; ParentProcessId: number; CreationDate: string;
+    KernelModeTime: number; UserModeTime: number;
+    ReadTransferCount: number; WriteTransferCount: number; OtherTransferCount: number;
+  }>;
+  const descendants = new Set([pid]);
+  for (let previousSize = 0; previousSize !== descendants.size;) {
+    previousSize = descendants.size;
+    for (const row of rows) if (descendants.has(row.ParentProcessId)) descendants.add(row.ProcessId);
+  }
+  return rows.filter((row) => descendants.has(row.ProcessId)).map((row) => ({
+    identity: `${row.ProcessId}:${row.CreationDate}`,
+    cpu: Number(row.KernelModeTime) + Number(row.UserModeTime),
+    io: Number(row.ReadTransferCount) + Number(row.WriteTransferCount) + Number(row.OtherTransferCount),
+  }));
+}
+
+async function terminateInstallProcessTree(pid: number): Promise<void> {
+  await execFileAsync(join(process.env.SystemRoot!, "System32", "taskkill.exe"),
+    ["/PID", String(pid), "/T", "/F"], { windowsHide: true, timeout: 10_000 });
+}
+
+export function watchPackagedAppInstall(
+  child: ChildProcess,
+  options: {
+    sample?: (pid: number) => Promise<InstallProcessProgress[]>;
+    terminate?: (pid: number) => Promise<void>;
+  } = {},
+): Promise<void> {
+  const step = "packaged-app:npm-install";
+  const sample = options.sample ?? sampleInstallProcessTree;
+  const terminate = options.terminate ?? terminateInstallProcessTree;
+  return new Promise((resolve, reject) => {
+    let lastProgress = Date.now();
+    let idleSamples = 0;
+    let previous = new Map<string, InstallProcessProgress>();
+    let stopped = false;
+    let failure: Error | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let pendingSample: Promise<void> | undefined;
+    let outputTail = "";
+    const onOutput = (chunk: Buffer | string): void => {
+      lastProgress = Date.now();
+      idleSamples = 0;
+      outputTail = (outputTail + String(chunk)).slice(-16_384);
+    };
+    const finish = (error?: Error): void => {
+      if (stopped) return;
+      stopped = true;
+      clearTimeout(timer);
+      child.stdout?.off("data", onOutput);
+      child.stderr?.off("data", onOutput);
+      // Drain an in-flight observer before returning to cache staging cleanup.
+      void (pendingSample ?? Promise.resolve()).then(() => error ? reject(error) : resolve());
+    };
+    child.stdout?.on("data", onOutput);
+    child.stderr?.on("data", onOutput);
+    child.once("error", (error) => finish(new Error(`${step}: ${error.message}`)));
+    child.once("close", (code, signal) => finish(failure ?? (code === 0 ? undefined
+      : new Error(`${step} exited ${code ?? signal}\n${outputTail}`))));
+    const check = async (): Promise<void> => {
+      if (stopped || child.pid == null) return;
+      try {
+        const current = await sample(child.pid);
+        if (stopped) return;
+        const progressed = current.some((row) => {
+          const old = previous.get(row.identity);
+          return row.cpu > (old?.cpu ?? 0) || row.io > (old?.io ?? 0);
+        });
+        if (progressed) {
+          lastProgress = Date.now();
+          idleSamples = 0;
+        } else idleSamples++;
+        previous = new Map(current.map((row) => [row.identity, row]));
+        // Retain the 120 s stall window, but require three consecutive reliable
+        // idle observations. A failed CIM sample is not evidence of a stall.
+        if (Date.now() - lastProgress >= 120_000 && idleSamples >= 3) {
+          failure = new Error(`${step}: no output or child CPU/IO progress for 120 s (PID ${child.pid})`);
+        }
+      } catch {
+        if (stopped) return;
+        idleSamples = 0;
+      }
+      if (failure != null) {
+        // Keep staging owned until close, even if taskkill fails. Bound the wait
+        // and identify survivors instead of silently returning with a writer alive.
+        timer = setTimeout(() => {
+          pendingSample = (async () => {
+            let survivors: string;
+            try {
+              survivors = (await sample(child.pid!)).map((row) => row.identity.split(":")[0]).join(", ") || "none observed";
+            } catch (error) {
+              survivors = `unknown (root PID ${child.pid}; observation failed: ${String(error)})`;
+            }
+            if (!stopped) finish(new Error(`${failure!.message}; child did not close within 30 s; surviving PIDs: ${survivors}`));
+          })();
+        }, 30_000);
+        try {
+          await terminate(child.pid);
+        } catch (error) {
+          // A natural exit can race taskkill. Its close event owns completion.
+          if (!stopped) {
+            failure = new Error(`${failure.message}; process-tree termination failed: ${String(error)}`);
+          }
+        }
+      } else if (!stopped) {
+        timer = setTimeout(() => { pendingSample = check(); }, 5_000);
+      }
+    };
+    timer = setTimeout(() => { pendingSample = check(); }, 0);
+  });
+}
+
 async function runNpmInstall(appRoot: string, locked: boolean): Promise<void> {
   const invocation = createCommandInvocation({
     args: [locked ? "ci" : "install", "--omit=dev", "--package-lock", "--no-audit", "--no-fund", "--prefer-offline"],
     command: process.platform === "win32" ? "npm.cmd" : "npm",
   });
-  await measureBuildStep("packaged-app:npm-install", () => execFileAsync(invocation.command, invocation.args, {
-    cwd: appRoot, windowsHide: true,
-    env: process.env,
-    windowsVerbatimArguments: invocation.windowsVerbatimArguments,
-  }));
+  await measureBuildStep("packaged-app:npm-install", () => {
+    if (createBuildEventWriter() == null) {
+      return execFileAsync(invocation.command, invocation.args, {
+        cwd: appRoot, windowsHide: true, env: process.env,
+        windowsVerbatimArguments: invocation.windowsVerbatimArguments,
+      }).then(() => undefined);
+    }
+    const child = spawn(invocation.command, invocation.args, {
+      cwd: appRoot, windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
+      env: process.env,
+      windowsVerbatimArguments: invocation.windowsVerbatimArguments,
+    });
+    return watchPackagedAppInstall(child);
+  });
 }
 
 async function runEsbuild(config: ToolPackConfig, args: string[]): Promise<void> {
@@ -271,23 +400,29 @@ async function writeAssembledAppEntrypoints(
   paths: Pick<WinPaths, "assembledAppRoot" | "assembledMainEntryPath" | "assembledPackageJsonPath" | "tarballsRoot">,
   packedTarballs: PackedTarballInfo[],
   packagedVersion: string,
-  options: { dependencies?: Record<string, string>; usePrebundle?: boolean } = {},
+  options: { dependencies?: Record<string, string>; usePrebundle?: boolean; stampOnly?: boolean } = {},
 ): Promise<void> {
   const packageVersion = electronBuilderVersionForAppVersion(packagedVersion);
   await mkdir(paths.assembledAppRoot, { recursive: true });
-  await cp(
-    join(config.workspaceRoot, "apps", "desktop", "dist", "main", "preload.cjs"),
-    join(paths.assembledAppRoot, "preload.cjs"),
-  );
-  // Desktop main resolves the splash page from `<appRoot>/assets/` when it
-  // runs as the standalone prebundle (see resolveSplashHtmlPath in
-  // apps/desktop/src/main/runtime.ts); the prebundle excludes the desktop
-  // tarball, so the assets must be staged here explicitly.
-  await cp(
-    join(config.workspaceRoot, "apps", "desktop", "assets"),
-    join(paths.assembledAppRoot, "assets"),
-    { recursive: true },
-  );
+  if (!options.stampOnly) {
+    await cp(
+      join(config.workspaceRoot, "apps", "desktop", "dist", "main", "preload.cjs"),
+      join(paths.assembledAppRoot, "preload.cjs"),
+    );
+    // Desktop main resolves the splash page from `<appRoot>/assets/` when it
+    // runs as the standalone prebundle (see resolveSplashHtmlPath in
+    // apps/desktop/src/main/runtime.ts); the prebundle excludes the desktop
+    // tarball, so the assets must be staged here explicitly.
+    await cp(
+      join(config.workspaceRoot, "apps", "desktop", "assets"),
+      join(paths.assembledAppRoot, "assets"),
+      { recursive: true },
+    );
+  }
+  if (options.stampOnly && createBuildEventWriter() != null) {
+    await privatizeForWrite(paths.assembledPackageJsonPath);
+    await privatizeForWrite(paths.assembledMainEntryPath);
+  }
   await writeFile(
     paths.assembledPackageJsonPath,
     `${JSON.stringify(
@@ -464,12 +599,14 @@ export async function prepareWinPackagedApp(
   cache: ToolPackCache,
 ): Promise<PackagedAppCacheResult> {
   const packagedVersion = await readPackagedVersion(config);
-  await removeTree(join(config.roots.output.namespaceRoot, "assembled"));
+  await removeMaterializedTree(join(config.roots.output.namespaceRoot, "assembled"));
   const packedTarballs = tarballs.tarballs;
   const key = await createWinPackagedAppCacheKey(config, tarballs.key, packedTarballs);
   const usePrebundle = shouldUseWinStandalonePrebundle(config.webOutputMode);
+  const immutable = createBuildEventWriter() != null;
   const node = {
     id: "win.packaged-app",
+    immutable,
     key,
     outputs: ["app"],
     invalidate: async ({ entryRoot }: { entryRoot: string }) => {
@@ -505,27 +642,23 @@ export async function prepareWinPackagedApp(
     },
   };
   const manifest = await cache.acquire({
-    materialize: [],
+    materialize: immutable ? [{ from: "app", to: paths.assembledAppRoot, writeSet: ["main.cjs", "package.json"] }] : [],
     node,
   });
-  await assertDatabricksCliOutput(join(manifest.entryPath, "app"));
-  await assertPiPackageIntegrity(join(manifest.entryPath, "app"));
-  if (usePrebundle) await assertWinDaemonRuntimeAssets(join(manifest.entryPath, "app", WIN_PREBUNDLED_APP_DIR_NAME, "daemon"));
+  const appRoot = immutable ? paths.assembledAppRoot : join(manifest.entryPath, "app");
+  await assertDatabricksCliOutput(appRoot);
+  await assertPiPackageIntegrity(appRoot);
+  if (usePrebundle) await assertWinDaemonRuntimeAssets(join(appRoot, WIN_PREBUNDLED_APP_DIR_NAME, "daemon"));
   await writeAssembledAppEntrypoints(
     config,
-    {
-      ...paths,
-      assembledAppRoot: join(manifest.entryPath, "app"),
-      assembledMainEntryPath: join(manifest.entryPath, "app", "main.cjs"),
-      assembledPackageJsonPath: join(manifest.entryPath, "app", "package.json"),
-    },
+    { ...paths, assembledAppRoot: appRoot, assembledMainEntryPath: join(appRoot, "main.cjs"), assembledPackageJsonPath: join(appRoot, "package.json") },
     packedTarballs,
     packagedVersion,
-    { usePrebundle },
+    { usePrebundle, stampOnly: true },
   );
   // Mandatory on both misses and hits, against the final path and entrypoints.
   // Failure still stops packaging, but the cache payload remains inspectable.
-  await measureBuildStep("packaged-app:assert-pi", () => assertPiPackageOutput(join(manifest.entryPath, "app")));
+  await measureBuildStep("packaged-app:assert-pi", () => assertPiPackageOutput(appRoot));
   await writePackagedConfig(
     config,
     paths,
@@ -538,5 +671,5 @@ export async function prepareWinPackagedApp(
         }
       : {},
   );
-  return { appRoot: join(manifest.entryPath, "app"), key, packagedVersion };
+  return { appRoot, key, packagedVersion };
 }

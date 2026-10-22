@@ -29,6 +29,7 @@ type NativeBrowserWindow = {
   getContentBounds(): Rectangle;
   getContentSize(): number[];
   setContentSize(width: number, height: number, animate: boolean): void;
+  setSize(width: number, height: number, animate: boolean): void;
 };
 type NativeCapture = {
   readonly base64: string;
@@ -44,9 +45,17 @@ function readNativeState(window: NativeBrowserWindow): NativeState {
   };
 }
 
-function setNativeState(window: NativeBrowserWindow, state: ObservedNativeState): ObservedNativeState {
+export function setNativeState(window: NativeBrowserWindow, state: ObservedNativeState): ObservedNativeState {
   window.webContents.setZoomFactor(state.zoomFactor);
   window.setContentSize(state.contentWidth, state.contentHeight, false);
+  const [actualWidth = -1, actualHeight = -1] = window.getContentSize();
+  if (actualWidth !== state.contentWidth || actualHeight !== state.contentHeight) {
+    // Windows frameless Electron windows can apply setContentSize to the outer
+    // bounds. Compensate the measured non-client frame, not a fixed DPI offset.
+    const bounds = window.getBounds();
+    window.setSize(bounds.width + state.contentWidth - actualWidth,
+      bounds.height + state.contentHeight - actualHeight, false);
+  }
   const [contentWidth = -1, contentHeight = -1] = window.getContentSize();
   return { contentHeight, contentWidth, zoomFactor: window.webContents.getZoomFactor() };
 }

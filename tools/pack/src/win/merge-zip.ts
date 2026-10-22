@@ -35,6 +35,9 @@ async function entries(file: FileHandle): Promise<Entry[] | null> {
     if (central.readUInt32LE(cursor) !== 0x02014b50) throw new Error("invalid ZIP shard central record");
     const length = 46 + central.readUInt16LE(cursor + 28) + central.readUInt16LE(cursor + 30) + central.readUInt16LE(cursor + 32);
     const record = Buffer.from(central.subarray(cursor, cursor + length));
+    // Cache protection (read-only, hidden/system and host permission bits) is
+    // not payload metadata. Portable files are ordinary writable archive files.
+    record.writeUInt32LE((record.readUInt32LE(38) & 0x10) !== 0 ? 0x10 : 0x20, 38);
     const offset = record.readUInt32LE(42);
     if (offset === 0xffffffff || record.readUInt32LE(20) === 0xffffffff || record.readUInt32LE(24) === 0xffffffff) return null;
     const name = record.subarray(46, 46 + record.readUInt16LE(28)).toString("utf8");
@@ -51,9 +54,11 @@ async function entries(file: FileHandle): Promise<Entry[] | null> {
 }
 
 // Preserve each complete local record (including compressed bytes/descriptors)
-// and central metadata. Only central offsets and the final end record change.
+// and timestamps. Normalize external attributes and recompute central offsets.
 // Handles remain open: merging must not replace 24k source opens with 24k shard opens.
-export async function mergeWinZipShards(paths: readonly string[], output: string): Promise<boolean> {
+export async function mergeWinZipShards(
+  paths: readonly string[], output: string, legacyShardOrder?: ReadonlyMap<string, number>,
+): Promise<boolean> {
   const sources: FileHandle[] = [];
   let target: FileHandle | undefined;
   try {
@@ -69,7 +74,9 @@ export async function mergeWinZipShards(paths: readonly string[], output: string
     all.sort((a, b) => {
       const left = a.name.toUpperCase();
       const right = b.name.toUpperCase();
-      return left < right ? -1 : left > right ? 1 : 0;
+      return left < right ? -1 : left > right ? 1
+        : (legacyShardOrder?.get(a.name.replaceAll("\\", "/")) ?? 0)
+          - (legacyShardOrder?.get(b.name.replaceAll("\\", "/")) ?? 0);
     });
     const names = new Set<string>();
     for (const entry of all) {

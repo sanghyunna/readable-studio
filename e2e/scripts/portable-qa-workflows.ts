@@ -11,16 +11,20 @@ import {
   assertPortableBoundaries,
   captureProcesses,
   closePortable,
+  copySealedPortableTree,
   daemonUrlFromProcesses,
   extractPortable,
   launchPortable,
+  portableAppRoot,
   registrySnapshot,
   runCli,
+  smokePortableLauncher,
   type AppCapture,
   type NetworkTrap,
 } from './portable-qa-runtime.ts';
 import {
   canonicalProductName,
+  createQaNamespaces,
   toRecord,
   writeEvidence,
   type Options,
@@ -39,6 +43,7 @@ type DeckSeed = {
   readonly evidenceRoot: string;
   readonly extractionRoot: string;
   readonly projectId: string;
+  readonly namespace: string;
 };
 
 async function seedDeck(input: DeckSeed): Promise<void> {
@@ -59,7 +64,7 @@ function projectFilePath(input: DeckSession): string {
     input.extractionRoot,
     'ReadableStudioData',
     'namespaces',
-    'task30-a',
+    input.namespace,
     'data',
     'projects',
     input.projectId,
@@ -99,7 +104,34 @@ async function editDeckAndExport(input: DeckSession) {
   return { ...manualEdit, exportPath };
 }
 
-async function finishColdStart(page: Page): Promise<void> {
+export async function finishColdStart(page: Page): Promise<void> {
+  const dataImport = page.getByTestId('data-import-modal');
+  const declineImport = async () => {
+    await dataImport.getByRole('button', { name: /^(Start fresh|새로 시작|Do not import|가져오지 않기)$/u }).click();
+    await dataImport.waitFor({ state: 'detached', timeout: 30_000 });
+  };
+  // Settle the import gate while the namespace is still empty. Creating the
+  // CLI fixture first makes the product correctly reject a later decline.
+  const importState = await page.evaluate(async () => {
+    const response = await fetch('/api/data-import/candidates');
+    if (!response.ok) throw new Error(`data import status returned ${response.status}`);
+    return (await response.json() as { state: string }).state;
+  });
+  if (['offered', 'failed', 'pending'].includes(importState)) {
+    await dataImport.waitFor({ state: 'visible', timeout: 30_000 });
+    await declineImport();
+  }
+
+  // Welcome mounts only after the import gate resolves, and its capability
+  // probe may omit it. Handle actual overlays, not an assumed showing order.
+  const welcome = page.getByTestId('welcome-modal');
+  const dismissWelcome = async () => {
+    await page.keyboard.press('Escape');
+    await welcome.waitFor({ state: 'detached', timeout: 30_000 });
+  };
+  await page.addLocatorHandler(welcome, dismissWelcome);
+  if (await welcome.isVisible()) await dismissWelcome();
+
   const skip = page.getByRole('button', { name: /Skip for now/i });
   if (await skip.isVisible()) await skip.click();
   const privacyDialog = page.getByRole('dialog').filter({ hasText: /improve Readable Studio/i });
@@ -109,13 +141,45 @@ async function finishColdStart(page: Page): Promise<void> {
   await page.getByTestId('home-hero').waitFor({ state: 'visible', timeout: 30_000 });
 }
 
+export async function runLaunch(
+  options: Options,
+  extractionRoot: string,
+  trap: NetworkTrap,
+): Promise<Pick<FullRunResult, 'detail' | 'lifecycle'>> {
+  const registryBefore = await registrySnapshot();
+  const namespaces = createQaNamespaces(options.mode);
+  await smokePortableLauncher(extractionRoot, options.evidenceRoot, trap, options.offline, namespaces.launcher);
+  await writeEvidence(options.evidenceRoot, 'network.json', { proxyAttempts: trap.attempts });
+  assert.deepEqual(trap.attempts, [], 'portable launcher attempted external network access');
+  const registryAfter = await registrySnapshot();
+  assert.deepEqual(registryAfter, registryBefore, 'portable launch changed product registry keys');
+  await writeEvidence(options.evidenceRoot, 'registry.json', { after: registryAfter, before: registryBefore });
+  return {
+    detail: { launcher: 'passed', status: 'passed' },
+    lifecycle: {
+      extractionRoots: [extractionRoot],
+      listenerPorts: [],
+      rootPids: [],
+      runtimePaths: [join(extractionRoot, 'ReadableStudioData', 'namespaces', namespaces.launcher)],
+    },
+  };
+}
+
 export async function runFull(options: Options, extractionRoot: string, trap: NetworkTrap): Promise<FullRunResult> {
   const registryBefore = await registrySnapshot();
-  const primary = await launchPortable(extractionRoot, 'task30-a', trap, options.offline);
+  const namespaces = createQaNamespaces(options.mode);
+  let primary: AppCapture | null = null;
   let secondary: AppCapture | null = null;
-  let secondaryRoot: string | null = null;
+  let succeeded = false;
+  // Copy the verified pristine extraction before either instance writes user data.
+  // The real ZIP gate extracts the archive exactly once.
+  let secondaryRoot: string | null = options.mode == null
+    ? null : await copySealedPortableTree(extractionRoot, options.sealedManifestPath!);
   try {
+    await smokePortableLauncher(extractionRoot, options.evidenceRoot, trap, options.offline, namespaces.launcher);
+    primary = await launchPortable(extractionRoot, namespaces.primary, trap, options.offline);
     assert.equal(await primary.page.title(), canonicalProductName);
+    await finishColdStart(primary.page);
     await primary.page.screenshot({ path: join(options.evidenceRoot, 'cold-start.png'), fullPage: true });
     process.stdout.write('[portable-qa] cold start ready\n');
     const primaryPid = primary.app.process().pid;
@@ -135,8 +199,7 @@ export async function runFull(options: Options, extractionRoot: string, trap: Ne
     assert.equal(typeof appliedPlugin.snapshotId, 'string', 'bundled plugin apply did not generate a snapshot');
     process.stdout.write('[portable-qa] CLI and bundled plugin ready\n');
 
-    await seedDeck({ daemonUrl, evidenceRoot: options.evidenceRoot, extractionRoot, projectId });
-    await finishColdStart(primary.page);
+    await seedDeck({ daemonUrl, evidenceRoot: options.evidenceRoot, extractionRoot, projectId, namespace: primary.namespace });
     const workflow = await editDeckAndExport({
       daemonUrl,
       electronApp: primary.app,
@@ -144,13 +207,14 @@ export async function runFull(options: Options, extractionRoot: string, trap: Ne
       extractionRoot,
       page: primary.page,
       projectId,
+      namespace: primary.namespace,
     });
     const { exportPath } = workflow;
     await primary.page.screenshot({ path: join(options.evidenceRoot, 'edited-reloaded.png'), fullPage: true });
     process.stdout.write('[portable-qa] explicit Save, Discard, conflict, undo, reload, and export ready\n');
 
-    secondaryRoot = await extractPortable(options.zipPath);
-    secondary = await launchPortable(secondaryRoot, 'task30-b', trap, options.offline);
+    secondaryRoot ??= await extractPortable(options.zipPath);
+    secondary = await launchPortable(secondaryRoot, namespaces.secondary, trap, options.offline);
     assert.equal(await secondary.page.title(), canonicalProductName);
     await finishColdStart(secondary.page);
     const secondaryPid = secondary.app.process().pid;
@@ -171,13 +235,15 @@ export async function runFull(options: Options, extractionRoot: string, trap: Ne
     assert.deepEqual(registryAfter, registryBefore, 'portable launch changed product registry keys');
     await writeEvidence(options.evidenceRoot, 'commands.json', { created, help, pluginApply, pluginList, secondaryProjects });
     await writeEvidence(options.evidenceRoot, 'paths.json', {
-      executable: join(extractionRoot, `${canonicalProductName}.exe`),
+      executable: join(portableAppRoot(extractionRoot), `${canonicalProductName}.exe`),
+      launcher: join(extractionRoot, `${canonicalProductName}.exe`),
       exportPath,
-      namespaceA: join(extractionRoot, 'ReadableStudioData', 'namespaces', 'task30-a'),
-      namespaceB: join(secondaryRoot, 'ReadableStudioData', 'namespaces', 'task30-b'),
+      namespaceA: join(extractionRoot, 'ReadableStudioData', 'namespaces', namespaces.primary),
+      namespaceB: join(secondaryRoot, 'ReadableStudioData', 'namespaces', namespaces.secondary),
     });
     await writeEvidence(options.evidenceRoot, 'registry.json', { after: registryAfter, before: registryBefore });
     const { actionEvidence, ...workflowDetail } = workflow;
+    succeeded = true;
     return {
       actionEvidence,
       detail: { daemonUrl, projectId, ...workflowDetail, status: 'passed' },
@@ -186,14 +252,38 @@ export async function runFull(options: Options, extractionRoot: string, trap: Ne
         listenerPorts: [Number(new URL(daemonUrl).port), Number(new URL(secondaryDaemonUrl).port)],
         rootPids: [primaryPid, secondaryPid],
         runtimePaths: [
-          join(extractionRoot, 'ReadableStudioData', 'namespaces', 'task30-a'),
-          join(secondaryRoot, 'ReadableStudioData', 'namespaces', 'task30-b'),
+          join(extractionRoot, 'ReadableStudioData', 'namespaces', namespaces.primary),
+          join(secondaryRoot, 'ReadableStudioData', 'namespaces', namespaces.secondary),
         ],
       },
     };
+  } catch (error) {
+    if (secondary != null && secondaryRoot != null && !secondary.page.isClosed()) {
+      for (const app of ['desktop', 'web', 'daemon']) {
+        const log = await readFile(join(secondaryRoot, 'ReadableStudioData', 'namespaces',
+          secondary.namespace, 'logs', app, 'latest.log'), 'utf8');
+        await writeFile(join(options.evidenceRoot, `namespace-b-${app}.log`), log, 'utf8');
+      }
+      await secondary.page.screenshot({ path: join(options.evidenceRoot, 'namespace-b-failure.png'), fullPage: true });
+      await writeEvidence(options.evidenceRoot, 'namespace-b-failure.json', {
+        console: secondary.consoleMessages,
+        requests: secondary.networkRequests,
+        page: await secondary.page.evaluate(() => ({
+          url: location.href,
+          body: document.body.innerText,
+          homeHero: document.querySelectorAll('[data-testid="home-hero"]').length,
+          welcome: document.querySelectorAll('[data-testid="welcome-modal"]').length,
+          welcomeShown: localStorage.getItem('readable-studio:welcome-modal-shown'),
+        })),
+      });
+    }
+    throw error;
   } finally {
     if (secondary != null) await closePortable(secondary.app);
-    if (secondaryRoot != null) await rm(secondaryRoot, { force: true, recursive: true });
-    await closePortable(primary.app);
+    if (secondaryRoot != null) {
+      if (succeeded) await rm(secondaryRoot, { force: true, recursive: true });
+      else process.stderr.write(`[portable-qa] preserved failed secondary extraction at ${secondaryRoot}\n`);
+    }
+    if (primary != null) await closePortable(primary.app);
   }
 }

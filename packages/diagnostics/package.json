@@ -18,7 +18,7 @@
   "scripts": {
     "build": "node ./esbuild.config.mjs && tsc -p tsconfig.json --emitDeclarationOnly",
     "test": "vitest run -c vitest.config.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit --incremental --tsBuildInfoFile ../../.tmp/typecheck/diagnostics.typecheck.tsbuildinfo"
   },
   "dependencies": {
     "jszip": "3.10.1"

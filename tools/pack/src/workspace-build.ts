@@ -4,6 +4,7 @@ import { dirname, join, relative } from "node:path";
 import { availableParallelism } from "node:os";
 
 import { measureBuildStep, writeBuildProfile } from "./build-profile.js";
+import { createBuildEventWriter, type BuildOutputFile } from "./build-events.js";
 import { hashJson, hashPath, ToolPackCache } from "./cache.js";
 import type { ToolPackConfig } from "./config.js";
 import { copyTreeConcurrent } from "./copy-tree.js";
@@ -89,11 +90,10 @@ async function readPackageManager(workspaceRoot: string): Promise<unknown> {
 }
 
 async function createWorkspaceBuildCacheKey(config: ToolPackConfig): Promise<string> {
-  const packageHashes: Record<string, string> = {};
-  for (const packageInfo of WORKSPACE_BUILD_PACKAGES) {
-    packageHashes[packageInfo.name] = await measureBuildStep("workspace:hash-package", () =>
-      hashPackageSourcePath(join(config.workspaceRoot, packageInfo.directory)), { package: packageInfo.name });
-  }
+  const packageHashes = Object.fromEntries(await Promise.all(WORKSPACE_BUILD_PACKAGES.map(async (packageInfo) => [
+    packageInfo.name, await measureBuildStep("workspace:hash-package", () =>
+      hashPackageSourcePath(join(config.workspaceRoot, packageInfo.directory)), { package: packageInfo.name }),
+  ])));
   const nodeId = `${config.platform}.workspace-build`;
 
   const keyInput = {
@@ -285,7 +285,7 @@ async function copyWorkspaceBuildArtifactsToCache(
   entryRoot: string,
   artifacts = workspaceBuildArtifacts(config),
 ): Promise<void> {
-  for (const artifact of artifacts) {
+  const copies = artifacts.map(async (artifact) => {
     const sourcePath = join(config.workspaceRoot, artifact.workspacePath);
     // Strip dangling symlinks first: that clears any leftover from a
     // previous build whose target moved (e.g. a renamed `.pnpm/<pkg>@<ver>`
@@ -299,7 +299,9 @@ async function copyWorkspaceBuildArtifactsToCache(
     await mkdir(dirname(targetPath), { recursive: true });
     await measureBuildStep("workspace:cache-copy", () => copyTreeConcurrent(sourcePath, targetPath, { dereference: true }),
       { artifact: artifact.workspacePath });
-  }
+  });
+  await Promise.allSettled(copies);
+  await Promise.all(copies);
 }
 
 async function missingWorkspaceBuildOutput(config: ToolPackConfig): Promise<string | null> {
@@ -406,7 +408,7 @@ async function readWorkspaceBuildInputs(config: ToolPackConfig): Promise<Record<
 function workspaceWebEnvironment(): Record<string, string | undefined> {
   return Object.fromEntries(Object.entries(process.env)
     .filter(([name]) => (name.startsWith("READABLE_") || name.startsWith("NEXT_") || name === "NODE_ENV")
-      && name !== "READABLE_TOOLS_PACK_PROFILE")
+      && !["READABLE_TOOLS_PACK_PROFILE", "READABLE_BUILD_EVENTS", "READABLE_BUILD_RUN_ID"].includes(name))
     .sort(([left], [right]) => left.localeCompare(right)));
 }
 
@@ -416,18 +418,45 @@ function workspaceWebEnvironment(): Record<string, string | undefined> {
 export async function ensureWorkspacePackageBuilds(
   config: ToolPackConfig,
   build: (packageInfo: WorkspacePackage) => Promise<void>,
+  options: { packages?: readonly string[] } = {},
+): Promise<void> {
+  const events = createBuildEventWriter();
+  try {
+    await buildWorkspacePackages(config, build, options, events);
+  } catch (error) {
+    await events?.failed("workspace", null, error);
+    throw error;
+  }
+}
+
+async function buildWorkspacePackages(
+  config: ToolPackConfig,
+  build: (packageInfo: WorkspacePackage) => Promise<void>,
+  options: { packages?: readonly string[] },
+  events: ReturnType<typeof createBuildEventWriter>,
 ): Promise<void> {
   const commonInputs = await readWorkspaceBuildInputs(config);
   const webEnvironment = workspaceWebEnvironment();
   const packages = new Map(WORKSPACE_BUILD_PACKAGES.map((info) => [info.name as string, info]));
   const sourceKeys = new Map<string, string>();
   const dependencies = new Map<string, string[]>();
-  for (const info of WORKSPACE_BUILD_PACKAGES) {
+  await Promise.all(WORKSPACE_BUILD_PACKAGES.map(async (info) => {
     const manifest = JSON.parse(await readFile(join(config.workspaceRoot, info.directory, "package.json"), "utf8")) as BuildPackageManifest;
     dependencies.set(info.name, Object.keys({ ...manifest.dependencies, ...manifest.devDependencies, ...manifest.optionalDependencies })
       .filter((name) => packages.has(name)).sort());
+  }));
+  const selected = new Set<string>();
+  const select = (name: string): void => {
+    if (!packages.has(name)) throw new Error(`unknown workspace build package: ${name}`);
+    if (selected.has(name)) return;
+    selected.add(name);
+    for (const dependency of dependencies.get(name)!) select(dependency);
+  };
+  for (const name of options.packages ?? packages.keys()) select(name);
+  const selectedPackages = WORKSPACE_BUILD_PACKAGES.filter((info) => selected.has(info.name));
+  await Promise.all(selectedPackages.map(async (info) => {
     sourceKeys.set(info.name, await hashPackageSourcePath(join(config.workspaceRoot, info.directory)));
-  }
+  }));
   const keys = new Map<string, string>();
   const visiting = new Set<string>();
   const keyFor = (info: WorkspacePackage): string => {
@@ -446,13 +475,21 @@ export async function ensureWorkspacePackageBuilds(
     keys.set(info.name, key);
     return key;
   };
-  for (const info of WORKSPACE_BUILD_PACKAGES) keyFor(info); // Validate cycles before starting any producer.
+  for (const info of selectedPackages) keyFor(info); // Validate cycles before starting any producer.
+  const workspaceInputHash = await events?.graphReady(selectedPackages.map((info) => ({
+    name: info.name, dir: join(config.workspaceRoot, info.directory),
+    dependencies: dependencies.get(info.name)!, inputHash: keys.get(info.name)!,
+  })));
 
   const artifacts = workspaceBuildArtifacts(config);
   const outputFiles = workspaceBuildOutputFiles(config);
+  const workspaceFiles: BuildOutputFile[] = [];
   let active = 0;
   const waiters: Array<() => void> = [];
-  const concurrency = Math.min(20, availableParallelism());
+  const budget = Number(process.env.READABLE_BUILD_CONCURRENCY);
+  const concurrency = Math.min(20, availableParallelism(),
+    Number.isInteger(budget) && budget > 0 ? budget : Infinity);
+  process.stderr.write(`[tools-pack workspace] concurrency=${concurrency}\n`);
   const tasks = new Map<string, Promise<void>>();
   const start = (info: WorkspacePackage): Promise<void> => {
     const existing = tasks.get(info.name);
@@ -496,7 +533,18 @@ export async function ensureWorkspacePackageBuilds(
             },
           },
         });
+        const receipt = await events?.ready({
+          event: "node-ready", node: info.name, inputHash: keys.get(info.name)!,
+          outputRoot: join(config.workspaceRoot, info.directory),
+          paths: owned.map((artifact) => relative(info.directory, artifact.workspacePath)),
+        });
+        if (receipt != null) {
+          workspaceFiles.push(...receipt.files.map((file) => ({ ...file, path: `${info.directory}/${file.path}` })));
+        }
         process.stderr.write(`[tools-pack workspace] package=${info.name} status=${cache.report().entries.at(-1)!.status}\n`);
+      } catch (error) {
+        await events?.failed(info.name, keys.get(info.name)!, error);
+        throw error;
       } finally {
         const next = waiters.shift();
         if (next == null) active -= 1;
@@ -506,7 +554,12 @@ export async function ensureWorkspacePackageBuilds(
     tasks.set(info.name, task);
     return task;
   };
-  const started = WORKSPACE_BUILD_PACKAGES.map(start);
+  const started = selectedPackages.map(start);
   await Promise.allSettled(started); // Drain producers before the caller restores mutable generated inputs.
   await Promise.all(started);
+  await events?.ready({
+    event: "workspace-ready", node: "workspace",
+    inputHash: workspaceInputHash ?? null,
+    outputRoot: config.workspaceRoot, files: workspaceFiles,
+  });
 }

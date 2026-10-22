@@ -10,11 +10,13 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    // These suites mutate process-wide env/PATH and bind real local servers.
-    // Keep files serial so fake agent binaries stay scoped to their tests.
-    fileParallelism: false,
+    // chdir and PATH mutations require a separate process for each file.
+    pool: 'forks',
+    isolate: true,
+    fileParallelism: true,
     include: ['tests/**/*.test.{ts,tsx,js,mjs,cjs}'],
     setupFiles: ['tests/setup.ts'],
+    globalSetup: ['tests/global-setup.ts'],
     testTimeout: 20_000,
   },
 });

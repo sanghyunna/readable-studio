@@ -1,19 +1,24 @@
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { EventEmitter, once } from "node:events";
 import { MessageChannel } from "node:worker_threads";
-import { tmpdir } from "node:os";
+import { availableParallelism, tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("node:os", async (importOriginal) => ({
   ...await importOriginal<typeof import("node:os")>(),
-  availableParallelism: () => 2,
+  availableParallelism: vi.fn(() => 2),
 }));
 
-afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); });
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+  vi.mocked(availableParallelism).mockReturnValue(2);
+});
 
 import { ToolPackCache } from "../src/cache.js";
+import type { BuildEvent, BuildReceipt } from "../src/build-events.js";
 import type { ToolPackConfig } from "../src/config.js";
 import { ensureWorkspaceBuildArtifacts, ensureWorkspacePackageBuilds } from "../src/workspace-build.js";
 
@@ -81,25 +86,25 @@ const OUTPUT_FILES = [
 async function writeWorkspace(root: string): Promise<void> {
   await writeFile(join(root, "package.json"), `${JSON.stringify({ packageManager: "pnpm@10.33.2" }, null, 2)}\n`, "utf8");
   await writeFile(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n", "utf8");
-  for (const directory of PACKAGE_DIRS) {
+  await Promise.all(PACKAGE_DIRS.map(async (directory) => {
     await mkdir(join(root, directory, "src"), { recursive: true });
     await writeFile(join(root, directory, "package.json"), `${JSON.stringify({ name: `@readable-studio/${directory.split("/")[1]}`, scripts: { build: "fixture-build" } }, null, 2)}\n`, "utf8");
     await writeFile(join(root, directory, "src", "index.ts"), "export const value = 1;\n", "utf8");
-  }
+  }));
 }
 
 async function writeOutputs(root: string, value: string): Promise<void> {
-  for (const file of OUTPUT_FILES) {
+  await Promise.all(OUTPUT_FILES.map(async (file) => {
     await mkdir(join(root, file, ".."), { recursive: true });
     await writeFile(join(root, file), `${value}\n`, "utf8");
-  }
+  }));
 }
 
 async function writePackageOutputs(root: string, directory: string, value: string): Promise<void> {
-  for (const file of OUTPUT_FILES.filter((file) => file.startsWith(`${directory}/`))) {
+  await Promise.all(OUTPUT_FILES.filter((file) => file.startsWith(`${directory}/`)).map(async (file) => {
     await mkdir(join(root, file, ".."), { recursive: true });
     await writeFile(join(root, file), value);
-  }
+  }));
 }
 
 function createConfig(root: string, cacheRoot: string): ToolPackConfig {
@@ -134,7 +139,171 @@ function createConfig(root: string, cacheRoot: string): ToolPackConfig {
   };
 }
 
-describe("dependency-keyed workspace package builds", () => {
+// Same real-I/O reasoning as the artifact tests below: no test here asserts on elapsed time.
+describe("dependency-keyed workspace package builds", { timeout: 60_000 }, () => {
+  it.each([
+    ["1", 1], ["3", 3], ["30", 17], [undefined, 17],
+    ["invalid", 17], ["0", 17], ["-1", 17], ["1.5", 17],
+  ] as const)("limits controllable producers with budget %s to %i", async (budget, limit) => {
+    const root = await mkdtemp(join(tmpdir(), "readable-package-budget-"));
+    const signals = PACKAGE_DIRS.map(() => new EventEmitter());
+    // Waits are event-only: a wall-clock abort here would race real fs work that
+    // slows down under machine load. The per-test timeout below is the bounded backstop.
+    const starts = signals.map((signal) => once(signal, "start"));
+    const releaseFirst = Promise.withResolvers<void>();
+    const releaseAll = Promise.withResolvers<void>();
+    let active = 0;
+    let peak = 0;
+    let started = 0;
+    vi.stubEnv("READABLE_BUILD_CONCURRENCY", budget);
+    vi.mocked(availableParallelism).mockReturnValue(20);
+    try {
+      await writeWorkspace(root);
+      const work = ensureWorkspacePackageBuilds(createConfig(root, join(root, ".cache")), async (info) => {
+        const index = started++;
+        active += 1;
+        peak = Math.max(peak, active);
+        signals[index]!.emit("start");
+        try {
+          await (index === 0 ? Promise.race([releaseFirst.promise, releaseAll.promise]) : releaseAll.promise);
+          await writePackageOutputs(root, info.directory, "built");
+        } finally { active -= 1; }
+      });
+      try {
+        await Promise.all(starts.slice(0, limit));
+        expect(started).toBe(limit);
+        expect(active).toBe(limit);
+        if (limit < PACKAGE_DIRS.length) {
+          releaseFirst.resolve();
+          await starts[limit];
+          expect(active).toBe(limit);
+        }
+      } finally { releaseAll.resolve(); await work; }
+      expect(started).toBe(PACKAGE_DIRS.length);
+      expect(peak).toBe(limit);
+    } finally { releaseFirst.resolve(); releaseAll.resolve(); await rm(root, { recursive: true, force: true }); }
+    // Budget 1 serializes all producers through real cache/receipt fs work, so the default
+    // 5s is load-dependent; 60s only bounds a genuine hang.
+  }, 60_000);
+
+  it("publishes dependency receipts before dependent start and builds only the selected ancestor closure", async () => {
+    const root = await mkdtemp(join(tmpdir(), "readable-selected-ready-"));
+    const eventPath = join(root, "events.jsonl");
+    const signals = new EventEmitter();
+    const dependencyStarted = once(signals, "dependency", { signal: AbortSignal.timeout(10_000) });
+    const dependentStarted = once(signals, "dependent", { signal: AbortSignal.timeout(10_000) });
+    const releaseDependency = Promise.withResolvers<void>();
+    const built: string[] = [];
+    const readEvents = async (): Promise<BuildEvent[]> =>
+      (await readFile(eventPath, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as BuildEvent);
+    try {
+      await writeWorkspace(root);
+      await writeFile(join(root, "apps/daemon/package.json"), JSON.stringify({
+        dependencies: { "@readable-studio/contracts": "workspace:*" },
+      }));
+      await writeFile(join(root, "packages/contracts/package.json"), JSON.stringify({
+        devDependencies: { "@readable-studio/registry-protocol": "workspace:*" },
+      }));
+      vi.stubEnv("READABLE_BUILD_EVENTS", eventPath);
+      vi.stubEnv("READABLE_BUILD_RUN_ID", "selected-1");
+      const config = createConfig(root, join(root, ".cache"));
+      const work = ensureWorkspacePackageBuilds(config, async (info) => {
+        built.push(info.name);
+        if (info.name === "@readable-studio/contracts") {
+          signals.emit("dependency");
+          await releaseDependency.promise;
+        }
+        if (info.name === "@readable-studio/daemon") {
+          const events = await readEvents();
+          const dependency = events.find((event) => event.event === "node-ready" && event.node === "@readable-studio/contracts")!;
+          expect(dependency).toBeDefined();
+          const receipt = JSON.parse(await readFile(dependency.receipt!, "utf8")) as BuildReceipt;
+          expect(receipt.inputHash).toBe(dependency.inputHash);
+          expect(receipt.manifestHash).toBe(dependency.outputManifestHash);
+          expect(await readFile(join(receipt.outputRoot, receipt.files[0]!.path), "utf8")).toBe("built");
+          signals.emit("dependent");
+        }
+        await writePackageOutputs(root, info.directory, "built");
+      }, { packages: ["@readable-studio/daemon"] });
+      try {
+        await dependencyStarted;
+        expect(built).not.toContain("@readable-studio/daemon");
+        expect((await readEvents()).filter((event) => event.node === "@readable-studio/contracts")).toHaveLength(0);
+        releaseDependency.resolve();
+        await dependentStarted;
+      } finally { releaseDependency.resolve(); await work; }
+      expect(built).toEqual([
+        "@readable-studio/registry-protocol", "@readable-studio/contracts", "@readable-studio/daemon",
+      ]);
+      const events = await readEvents();
+      expect(events[0]!.event).toBe("graph-ready");
+      expect(events[0]!.packages!.map((info) => info.name).sort()).toEqual([...built].sort());
+      expect(events.at(-1)!.event).toBe("workspace-ready");
+      expect(events.at(-1)!.inputHash).toBe(events[0]!.inputHash);
+      expect(events.filter((event) => event.event === "node-ready")).toHaveLength(3);
+      // Reuse the same production keys in another run, but publish fresh receipts
+      // only after the cache has restored missing checkout outputs.
+      await rm(join(root, "packages/contracts/dist"), { recursive: true });
+      vi.stubEnv("READABLE_BUILD_RUN_ID", "selected-2");
+      const rebuild = vi.fn(async () => { throw new Error("cache should satisfy the selected closure"); });
+      await ensureWorkspacePackageBuilds(config, rebuild, { packages: ["@readable-studio/daemon"] });
+      expect(rebuild).not.toHaveBeenCalled();
+      const restored = (await readEvents()).find((event) =>
+        event.runId === "selected-2" && event.node === "@readable-studio/contracts")!;
+      const receipt = JSON.parse(await readFile(restored.receipt!, "utf8")) as BuildReceipt;
+      expect(receipt.runId).toBe("selected-2");
+      expect(restored.inputHash).toBe(events.find((event) => event.node === "@readable-studio/contracts")!.inputHash);
+      expect(await readFile(join(receipt.outputRoot, receipt.files[0]!.path), "utf8")).toBe("built");
+    } finally { releaseDependency.resolve(); await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("emits failure without workspace readiness and never starts a failed dependency's consumer", async () => {
+    const root = await mkdtemp(join(tmpdir(), "readable-failed-ready-"));
+    try {
+      await writeWorkspace(root);
+      await writeFile(join(root, "apps/daemon/package.json"), JSON.stringify({
+        dependencies: { "@readable-studio/contracts": "workspace:*" },
+      }));
+      const eventsPath = join(root, "events.jsonl");
+      vi.stubEnv("READABLE_BUILD_EVENTS", eventsPath);
+      vi.stubEnv("READABLE_BUILD_RUN_ID", "failure");
+      const build = vi.fn(async () => { throw new Error("builder failed"); });
+      await expect(ensureWorkspacePackageBuilds(createConfig(root, join(root, ".cache")), build, {
+        packages: ["@readable-studio/daemon"],
+      })).rejects.toThrow("builder failed");
+      expect(build).toHaveBeenCalledTimes(1);
+      const events = (await readFile(eventsPath, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as BuildEvent);
+      expect(events.map((event) => event.event)).toEqual(["graph-ready", "failed", "failed"]);
+      expect(events[1]).toMatchObject({ node: "@readable-studio/contracts", error: "builder failed" });
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("does not create event artifacts when READABLE_BUILD_EVENTS is unset", async () => {
+    const root = await mkdtemp(join(tmpdir(), "readable-no-ready-"));
+    try {
+      await writeWorkspace(root);
+      vi.stubEnv("READABLE_BUILD_EVENTS", undefined);
+      vi.stubEnv("READABLE_BUILD_RUN_ID", "unused");
+      await ensureWorkspacePackageBuilds(createConfig(root, join(root, ".cache")), async (info) => {
+        await writePackageOutputs(root, info.directory, "built");
+      }, { packages: ["@readable-studio/contracts"] });
+      expect((await readdir(root)).sort()).toEqual([".cache", "apps", "package.json", "packages", "pnpm-lock.yaml"].sort());
+      expect(await readdir(join(root, "packages/contracts"))).not.toContain("events.jsonl");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("rejects unknown selections before starting a producer", async () => {
+    const root = await mkdtemp(join(tmpdir(), "readable-unknown-package-"));
+    try {
+      await writeWorkspace(root);
+      const build = vi.fn();
+      await expect(ensureWorkspacePackageBuilds(createConfig(root, join(root, ".cache")), build, {
+        packages: ["@readable-studio/not-a-package"],
+      })).rejects.toThrow("unknown workspace build package");
+      expect(build).not.toHaveBeenCalled();
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("starts dependency-ready daemon work while web is still running", async () => {
     const root = await mkdtemp(join(tmpdir(), "readable-package-ready-"));
     const events = new EventEmitter();
@@ -252,7 +421,17 @@ describe("dependency-keyed workspace package builds", () => {
   });
 });
 
-describe("ensureWorkspaceBuildArtifacts", () => {
+describe("workspace preparation entry point", () => {
+  it("requires explicit packages, event destination and run identity", async () => {
+    const { prepareWorkspace } = await import("../scripts/workspace-prepare.js");
+    await expect(prepareWorkspace([])).rejects.toThrow();
+    await expect(prepareWorkspace(["--packages", "@readable-studio/contracts"])).rejects.toThrow();
+    await expect(prepareWorkspace(["--packages", ",", "--events", "events.jsonl", "--run-id", "run"])).rejects.toThrow();
+  });
+});
+
+// Real cache I/O (inventory, seal, publish) is load-dependent; 60s only bounds a genuine hang.
+describe("ensureWorkspaceBuildArtifacts", { timeout: 60_000 }, () => {
   it("builds once and skips when the key and outputs are still valid", async () => {
     const root = await mkdtemp(join(tmpdir(), "readable-studio-workspace-build-"));
     const cache = new ToolPackCache(join(root, ".cache"));

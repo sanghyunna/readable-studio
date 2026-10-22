@@ -39,6 +39,8 @@ const allowedE2eScripts = new Set([
   "e2e/scripts/direct-edit-delete-packaged.ts",
   "e2e/scripts/release-packaged-qa.ts",
   "e2e/scripts/auto-update-packaged.ts",
+  "e2e/scripts/measure-build-verify.ts",
+  "e2e/scripts/verification-baseline.ts",
 ]);
 
 type GuardCheck = {

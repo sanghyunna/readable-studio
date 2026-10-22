@@ -7,6 +7,7 @@ import { _electron as electron, type ElectronApplication } from '@playwright/tes
 import { closePortable, launchEnvironment, type NetworkTrap } from './portable-qa-runtime.ts';
 import {
   canonicalProductName,
+  createQaNamespaces,
   toRecord,
   writeEvidence,
   type Options,
@@ -49,6 +50,7 @@ async function observeFailClosedLaunch(input: FailClosedInput): Promise<FailClos
 }
 
 export async function runBadRoot(options: Options, extractionRoot: string, trap: NetworkTrap): Promise<Record<string, unknown>> {
+  const namespaces = createQaNamespaces(options.mode);
   const executablePath = join(extractionRoot, `${canonicalProductName}.exe`);
   const configPath = join(extractionRoot, 'resources', 'readable-studio-config.json');
   const originalConfigText = await readFile(configPath, 'utf8');
@@ -56,7 +58,7 @@ export async function runBadRoot(options: Options, extractionRoot: string, trap:
   const blockedRoot = join(extractionRoot, 'ReadableStudioData');
   await writeFile(blockedRoot, 'occupied by Task30 bad-root acceptance\n', 'utf8');
   const occupiedRoot = await observeFailClosedLaunch({
-    env: launchEnvironment('task30-bad-root', trap, options.offline),
+    env: await launchEnvironment(namespaces.badRoot, trap, options.offline, extractionRoot),
     evidenceName: 'occupied exe-adjacent data root',
     executablePath,
   });
@@ -64,7 +66,7 @@ export async function runBadRoot(options: Options, extractionRoot: string, trap:
 
   await writeFile(configPath, '{ malformed portable config', 'utf8');
   const malformedConfig = await observeFailClosedLaunch({
-    env: launchEnvironment('task30-malformed', trap, options.offline),
+    env: await launchEnvironment(namespaces.malformed, trap, options.offline, extractionRoot),
     evidenceName: 'malformed portable config',
     executablePath,
   });
@@ -73,7 +75,7 @@ export async function runBadRoot(options: Options, extractionRoot: string, trap:
 
   await writeFile(configPath, `${JSON.stringify({ ...originalConfig, namespaceBaseRoot: join(extractionRoot, '..', 'foreign-namespaces') })}\n`, 'utf8');
   const foreignNamespaceRoot = await observeFailClosedLaunch({
-    env: launchEnvironment('task30-foreign-root', trap, options.offline),
+    env: await launchEnvironment(namespaces.foreignRoot, trap, options.offline, extractionRoot),
     evidenceName: 'foreign namespace root',
     executablePath,
   });
@@ -84,7 +86,7 @@ export async function runBadRoot(options: Options, extractionRoot: string, trap:
   const foreignDataRoot = join(extractionRoot, '..', 'foreign-data');
   const foreignDataOverride = await observeFailClosedLaunch({
     env: {
-      ...launchEnvironment('task30-foreign-data', trap, options.offline),
+      ...await launchEnvironment(namespaces.foreignData, trap, options.offline, extractionRoot),
       READABLE_DATA_DIR: foreignDataRoot,
     },
     evidenceName: 'foreign data root override',

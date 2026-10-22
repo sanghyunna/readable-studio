@@ -1,5 +1,6 @@
-import { access, lstat, readdir, rm, stat } from "node:fs/promises";
+import { access, lstat, readdir, rmdir, stat, unlink } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 export async function pathExists(filePath: string): Promise<boolean> {
   try {
@@ -120,8 +121,49 @@ export async function sumChildDirectorySizes(path: string, includeChild: (name: 
   return total;
 }
 
+async function removeWithRetry(filePath: string, directory = false): Promise<void> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      if (directory) await rmdir(filePath);
+      else await unlink(filePath);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ENOENT") return;
+      if (attempt >= 20 || !["EBUSY", "EPERM", "ENOTEMPTY"].includes(code ?? "")) throw error;
+      await delay(250);
+    }
+  }
+}
+
 export async function removeTree(filePath: string): Promise<void> {
-  await rm(filePath, { force: true, maxRetries: 20, recursive: true, retryDelay: 250 });
+  const metadata = await lstat(filePath).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  });
+  if (metadata == null) return;
+  // Node 24 unlink uses POSIX disposition with IGNORE_READONLY_ATTRIBUTE on
+  // Windows. Never use rm's EPERM chmod fallback: attributes are shared by all
+  // NTFS hardlinks, including the immutable cache entry.
+  if (!metadata.isDirectory()) {
+    await removeWithRetry(filePath);
+    return;
+  }
+  const entries = await readdir(filePath, { recursive: true, withFileTypes: true });
+  const files = entries.filter((entry) => !entry.isDirectory());
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(64, files.length) }, async () => {
+    while (cursor < files.length) {
+      const entry = files[cursor++]!;
+      await removeWithRetry(join(entry.parentPath, entry.name));
+    }
+  });
+  await Promise.allSettled(workers);
+  await Promise.all(workers);
+  const directories = entries.filter((entry) => entry.isDirectory())
+    .map((entry) => join(entry.parentPath, entry.name)).sort((a, b) => b.length - a.length);
+  for (const directory of directories) await removeWithRetry(directory, true);
+  await removeWithRetry(filePath, true);
 }
 
 export async function listDirectories(root: string): Promise<string[]> {

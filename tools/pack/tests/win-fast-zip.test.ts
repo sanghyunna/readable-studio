@@ -79,11 +79,19 @@ describe("opt-in portable compression", () => {
     expect(threads).toBeUndefined();
   });
 
-  it("invalidates flat-layout ZIPs while omitted threads remain absent", () => {
+  it("invalidates flat-layout and pre-normalization ZIPs while omitted threads remain absent", () => {
     const input = buildWinPortableZipCacheKeyInput(legacyKeyInput);
     expect(input).not.toHaveProperty('portableZipThreads');
-    expect(input.portableZipCacheVersion).toBe(7);
+    // Version 8 also invalidates ZIPs carrying immutable-cache protection attributes.
+    expect(input.portableZipCacheVersion).toBe(8);
     expect(hashJson(input)).not.toBe('e5a0b1a239cb7807c9373360437334385d3052b1c9ebf56538b0203fcc280352');
+    expect(hashJson(input)).not.toBe(hashJson({ ...input, portableZipCacheVersion: 7 }));
+  });
+
+  it("isolates an explicit compression override while omitted threads remain absent", () => {
+    const input = buildWinPortableZipCacheKeyInput({ ...legacyKeyInput, portableZipCompression: 1 });
+    expect(input).not.toHaveProperty('portableZipThreads');
+    expect(hashJson(input)).not.toBe(hashJson(buildWinPortableZipCacheKeyInput(legacyKeyInput)));
   });
 
   it("isolates explicitly threaded ZIPs even with the same compression", () => {

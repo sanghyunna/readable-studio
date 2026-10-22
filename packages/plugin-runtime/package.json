@@ -18,7 +18,7 @@
   "scripts": {
     "build": "node ./esbuild.config.mjs && tsc -p tsconfig.json --emitDeclarationOnly",
     "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit --incremental --tsBuildInfoFile ../../.tmp/typecheck/plugin-runtime.typecheck.tsbuildinfo && tsc -p tsconfig.tests.json --noEmit --incremental --tsBuildInfoFile ../../.tmp/typecheck/plugin-runtime.tests.typecheck.tsbuildinfo"
   },
   "dependencies": {
     "@readable-studio/contracts": "workspace:*",

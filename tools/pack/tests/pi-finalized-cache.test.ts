@@ -1,8 +1,9 @@
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { ToolPackCache } from "../src/cache.js";
 import { resolveToolPackConfig } from "../src/config.js";
@@ -43,37 +44,80 @@ vi.mock("../src/pi-package.js", async (importOriginal) => {
   } };
 });
 
-describe("finalized Windows Pi gate", () => {
-  it.each([true, false])("checks the final cache payload on misses and hits, retaining failures (valid=%s)", async (valid) => {
-    const root = await mkdtemp(join(tmpdir(), "readable-pi-finalized-"));
-    try {
-      const workspaceRoot = join(root, "workspace");
-      await mkdir(join(workspaceRoot, "apps", "desktop", "dist", "main"), { recursive: true });
-      await mkdir(join(workspaceRoot, "apps", "desktop", "assets"), { recursive: true });
-      await writeFile(join(workspaceRoot, "apps", "desktop", "dist", "main", "preload.cjs"), "");
-      await writeFile(join(workspaceRoot, "package.json"), JSON.stringify({ pnpm: { patchedDependencies: { [`${piPackage.name}@${piPackage.version}`]: "pi.patch" } } }));
-      await writeFile(join(workspaceRoot, "pi.patch"), "fixture");
-      await writeFile(join(workspaceRoot, "fixture-cli.txt"), `
+describe.each([
+  { valid: true, immutable: true }, { valid: false, immutable: true },
+  { valid: true, immutable: false }, { valid: false, immutable: false },
+])("finalized Windows Pi gate ($valid, immutable=$immutable)", ({ valid, immutable }) => {
+  let root: string;
+  let workspaceRoot: string;
+  let cache: ToolPackCache;
+  const tarballs = { key: "fixture", tarballs: INTERNAL_PACKAGES.map(({ name }, index) => ({ packageName: name, fileName: `${index}.tgz` })) };
+  let originalSnapshot: Array<{ path: string; sha256: string; mode: number }> | undefined;
+  const outputs: Array<{ packagePath: string; configPath: string; namespace: string; version: string }> = [];
+
+  beforeAll(async () => {
+    root = await mkdtemp(join(tmpdir(), "readable-pi-finalized-"));
+    vi.stubEnv("READABLE_BUILD_EVENTS", immutable ? join(root, "events.jsonl") : undefined);
+    vi.stubEnv("READABLE_BUILD_RUN_ID", immutable ? "pi-test" : undefined);
+    workspaceRoot = join(root, "workspace");
+    await mkdir(join(workspaceRoot, "apps", "desktop", "dist", "main"), { recursive: true });
+    await mkdir(join(workspaceRoot, "apps", "desktop", "assets"), { recursive: true });
+    await writeFile(join(workspaceRoot, "apps", "desktop", "dist", "main", "preload.cjs"), "");
+    await writeFile(join(workspaceRoot, "package.json"), JSON.stringify({ pnpm: { patchedDependencies: { [`${piPackage.name}@${piPackage.version}`]: "pi.patch" } } }));
+    await writeFile(join(workspaceRoot, "pi.patch"), "fixture");
+    await writeFile(join(workspaceRoot, "fixture-cli.txt"), `
 if (import.meta.url.includes('.tmp-')) process.exit(19);
 console.log(${JSON.stringify(valid ? piPackage.version : "CLI_FAILED_SENTINEL")});
 process.exitCode = ${valid ? 0 : 7};
 `);
-      const config = { ...resolveToolPackConfig("win", { dir: join(root, "pack"), appVersion: "1.0.4" }), workspaceRoot, webOutputMode: "server" as const };
-      const paths = resolveWinPaths(config);
-      const cache = new ToolPackCache(config.roots.cacheRoot);
-      const tarballs = { key: "fixture", tarballs: INTERNAL_PACKAGES.map(({ name }, index) => ({ packageName: name, fileName: `${index}.tgz` })) };
-      for (const status of ["miss", "hit"]) {
-        const result = prepareWinPackagedApp(config, paths, tarballs, cache);
-        if (valid) await expect(result).resolves.toMatchObject({ packagedVersion: "1.0.4" });
-        else await expect(result).rejects.toMatchObject({ cause: { diagnostics: { exitCode: 7, stdout: "CLI_FAILED_SENTINEL\n" } } });
-        const report = cache.report().entries.at(-1)!;
-        expect(report.status).toBe(status);
-        expect(report.entryPath).not.toContain(".tmp-");
-        expect((await stat(join(report.entryPath, "app", "node_modules", piPackage.name, "dist", "cli.js"))).isFile()).toBe(true);
-        expect((await stat(join(report.entryPath, "manifest.json"))).isFile()).toBe(true);
-      }
-    } finally {
-      await rm(root, { recursive: true, force: true, maxRetries: 5 });
+    const config = resolveToolPackConfig("win", { dir: join(root, "pack"), appVersion: "1.0.4" });
+    cache = new ToolPackCache(config.roots.cacheRoot);
+  });
+
+  afterAll(async () => {
+    vi.unstubAllEnvs();
+    await rm(root, { recursive: true, force: true, maxRetries: 5 });
+  });
+
+  it.each(["miss", "hit"])("checks the private stamped payload on a %s and retains failure evidence", async (status) => {
+    const version = status === "miss" ? "1.0.4" : "1.0.5";
+    const namespace = `cache-${status}`;
+    const stampedConfig = { ...resolveToolPackConfig("win", {
+      dir: join(root, "pack"), appVersion: version, namespace,
+    }), workspaceRoot, webOutputMode: "server" as const };
+    const paths = resolveWinPaths(stampedConfig);
+    const result = prepareWinPackagedApp(stampedConfig, paths, tarballs, cache);
+    if (valid) {
+      const output = await result;
+      expect(output.packagedVersion).toBe(version);
+      expect(output.appRoot).toBe(immutable ? paths.assembledAppRoot : join(cache.report().entries.at(-1)!.entryPath, "app"));
+    }
+    else await expect(result).rejects.toMatchObject({ cause: { diagnostics: { exitCode: 7, stdout: "CLI_FAILED_SENTINEL\n" } } });
+    const report = cache.report().entries.at(-1)!;
+    expect(report.status).toBe(status);
+    expect(report.entryPath).not.toContain(".tmp-");
+    expect((await stat(join(report.entryPath, "app", "node_modules", piPackage.name, "dist", "cli.js"))).isFile()).toBe(true);
+    expect((await stat(join(report.entryPath, "manifest.json"))).isFile()).toBe(true);
+    const manifest = JSON.parse(await readFile(join(report.entryPath, "manifest.json"), "utf8")) as { files: Array<{ path: string }> };
+    const snapshot = await Promise.all([...manifest.files.map(({ path }) => path), "manifest.json", "complete.json"]
+      .map(async (path) => {
+        const file = join(report.entryPath, path);
+        const [bytes, metadata] = await Promise.all([readFile(file), stat(file)]);
+        return { path, sha256: createHash("sha256").update(bytes).digest("hex"), mode: metadata.mode };
+      }));
+    if (status === "miss") {
+      originalSnapshot = snapshot;
+    } else if (immutable) {
+      expect(snapshot).toEqual(originalSnapshot);
+    }
+    expect(snapshot.every(({ mode }) => (mode & 0o200) === 0)).toBe(immutable);
+    if (!immutable) expect(report.materialized).toEqual([]);
+    if (valid && immutable) outputs.push({ packagePath: paths.assembledPackageJsonPath, configPath: paths.packagedConfigPath, namespace, version });
+    for (const output of outputs) {
+      expect(JSON.parse(await readFile(output.packagePath, "utf8")).version).toBe(output.version);
+      expect(JSON.parse(await readFile(output.configPath, "utf8"))).toMatchObject({
+        namespace: output.namespace, appVersion: output.version,
+      });
     }
   });
 });

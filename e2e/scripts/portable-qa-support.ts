@@ -1,7 +1,9 @@
 import { spawn } from 'node:child_process';
-import { rm, writeFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { createReadStream } from 'node:fs';
+import { readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, isAbsolute, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const scriptRoot = dirname(fileURLToPath(import.meta.url));
@@ -9,14 +11,32 @@ export const workspaceRoot = dirname(dirname(scriptRoot));
 export const canonicalProductName = 'Readable Studio';
 export const previewSelector = '[data-testid="artifact-preview-frame"]:visible, [data-testid="artifact-preview-frame-url-load"]:visible, [data-testid="artifact-preview-frame-srcdoc"]:visible';
 
-export type QaCase = 'full' | 'bad-root';
+export type QaCase = 'full' | 'launch' | 'bad-root';
 
 export type Options = {
   readonly case: QaCase;
   readonly evidenceRoot: string;
   readonly offline: boolean;
   readonly zipPath: string;
+  readonly mode?: 'tree-precheck' | 'zip-gate';
+  readonly treePath?: string;
+  readonly sealedManifestPath?: string;
+  readonly zipReceiptPath?: string;
+  readonly runId?: string;
 };
+
+export function createQaNamespaces(mode: Options['mode']) {
+  const prefix = `qa-${mode ?? 'legacy'}-${randomUUID().replaceAll('-', '')}`;
+  return {
+    launcher: `${prefix}-launcher`,
+    primary: `${prefix}-a`,
+    secondary: `${prefix}-b`,
+    badRoot: `${prefix}-bad-root`,
+    malformed: `${prefix}-malformed`,
+    foreignRoot: `${prefix}-foreign-root`,
+    foreignData: `${prefix}-foreign-data`,
+  };
+}
 
 export type CommandResult = {
   readonly args: readonly string[];
@@ -35,7 +55,7 @@ export class PortableQaError extends Error {
 
 export function parseOptions(argv: readonly string[]): Options {
   if (argv.includes('--help') || argv.includes('-h')) {
-    process.stdout.write('Usage: tsx scripts/portable-qa.ts --zip <portable.zip> --case full|bad-root --evidence <dir> [--offline]\n');
+    process.stdout.write('Usage: tsx scripts/portable-qa.ts --zip <portable.zip> --case full|launch|bad-root --evidence <dir> [--offline] [--mode tree-precheck|zip-gate --sealed-manifest <file> --tree <dir> | --zip-receipt <file> --run-id <id>]\n');
     process.exit(0);
   }
   const values = new Map<string, string>();
@@ -46,31 +66,77 @@ export function parseOptions(argv: readonly string[]): Options {
       offline = true;
       continue;
     }
-    if (token !== '--zip' && token !== '--case' && token !== '--evidence') {
+    if (!['--zip', '--case', '--evidence', '--mode', '--tree', '--sealed-manifest', '--zip-receipt', '--run-id'].includes(token ?? '')) {
       throw new PortableQaError(`unknown argument: ${token ?? '<missing>'}`);
     }
     const value = argv[index + 1];
     if (value == null || value.startsWith('--')) throw new PortableQaError(`missing value for ${token}`);
-    values.set(token, value);
+    values.set(token!, value);
     index += 1;
   }
   const zipValue = values.get('--zip');
   const caseValue = values.get('--case');
   const evidenceValue = values.get('--evidence');
-  if (zipValue == null || caseValue == null || evidenceValue == null) {
+  const mode = values.get('--mode');
+  if (mode != null && mode !== 'tree-precheck' && mode !== 'zip-gate') throw new PortableQaError(`invalid --mode: ${mode}`);
+  if ((zipValue == null && mode !== 'tree-precheck') || caseValue == null || evidenceValue == null) {
     throw new PortableQaError('--zip, --case, and --evidence are required');
   }
+  const manifest = values.get('--sealed-manifest');
+  const tree = values.get('--tree');
+  const receipt = values.get('--zip-receipt');
+  const runId = values.get('--run-id');
+  if (mode != null && (manifest == null || (mode === 'tree-precheck' ? tree == null : receipt == null || runId == null))) {
+    throw new PortableQaError('tree-precheck requires --tree and --sealed-manifest; zip-gate requires --sealed-manifest, --zip-receipt, and --run-id');
+  }
+  if (mode != null && caseValue !== 'full' && caseValue !== 'launch') throw new PortableQaError('sealed QA modes require --case full or launch');
   return {
     case: parseCase(caseValue),
     evidenceRoot: resolveFromWorkspace(evidenceValue),
     offline,
-    zipPath: resolveFromWorkspace(zipValue),
+    zipPath: zipValue == null ? '' : resolveFromWorkspace(zipValue),
+    ...(mode == null ? {} : { mode }),
+    ...(tree == null ? {} : { treePath: resolveFromWorkspace(tree) }),
+    ...(manifest == null ? {} : { sealedManifestPath: resolveFromWorkspace(manifest) }),
+    ...(receipt == null ? {} : { zipReceiptPath: resolveFromWorkspace(receipt) }),
+    ...(runId == null ? {} : { runId }),
   };
+}
+
+export async function sha256File(path: string): Promise<string> {
+  const hash = createHash('sha256');
+  for await (const chunk of createReadStream(path)) hash.update(chunk);
+  return hash.digest('hex');
+}
+
+// Wire contract only: e2e never imports the packaging implementation.
+export async function verifyZipReceipt(zipPath: string, receiptPath: string, runId: string): Promise<string> {
+  const receipt = toRecord(JSON.parse(await readFile(receiptPath, 'utf8')), 'ZIP receipt');
+  if (receipt.v !== 1 || receipt.runId !== runId || receipt.node !== 'zip' ||
+      typeof receipt.inputHash !== 'string' || typeof receipt.outputRoot !== 'string' ||
+      !isAbsolute(receipt.outputRoot) || !Array.isArray(receipt.files) || receipt.files.length !== 1) {
+    throw new PortableQaError('invalid ZIP receipt identity');
+  }
+  const manifestHash = createHash('sha256').update(JSON.stringify(receipt.files)).digest('hex');
+  if (receipt.manifestHash !== manifestHash) throw new PortableQaError('invalid ZIP receipt manifest hash');
+  const file = toRecord(receipt.files[0], 'ZIP receipt file');
+  // build-portable.ps1 moves the sealed archive into its drop directory.
+  // The file name, size and full digest bind a relocated copy to this receipt.
+  if (file.path !== basename(zipPath)) {
+    throw new PortableQaError('ZIP receipt points at a different archive');
+  }
+  const metadata = await stat(zipPath);
+  const hash = await sha256File(zipPath);
+  if (!metadata.isFile() || metadata.size !== file.size || hash !== file.sha256) {
+    throw new PortableQaError('ZIP modified after receipt');
+  }
+  return hash;
 }
 
 function parseCase(value: string): QaCase {
   switch (value) {
     case 'full':
+    case 'launch':
     case 'bad-root':
       return value;
     default:

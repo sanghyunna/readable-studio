@@ -123,12 +123,16 @@ export async function patchPiPackage(appRoot: string, workspaceRoot: string): Pr
   await assertPiPackageIntegrity(appRoot);
   const patch = await resolvePiPackagePatch(workspaceRoot);
   const packageRoot = join(appRoot, "node_modules", piPackage.name);
-  // Run outside the repository so git cannot filter ignored node_modules paths.
+  // Job TEMP may itself be inside the workspace. Stop discovery at its parent
+  // so git cannot silently skip the patch using that repository's cwd prefix.
   // --unsafe-paths permits this explicit absolute staging destination, not an index edit.
   await execFileAsync("git", [
     "-c", "core.autocrlf=false", "apply", "--unsafe-paths",
     `--directory=${packageRoot.replaceAll("\\", "/")}`, patch,
-  ], { cwd: tmpdir(), timeout: 10_000, windowsHide: true });
+  ], {
+    cwd: tmpdir(), env: { ...process.env, GIT_CEILING_DIRECTORIES: dirname(tmpdir()) },
+    timeout: 10_000, windowsHide: true,
+  });
   assertPiShutdownPatched(packageRoot);
   await stagePiCliLauncher(appRoot);
 }

@@ -1,16 +1,17 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, link, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { NtExecutable, NtExecutableResource, Resource } from "resedit";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { hashJson } from "../src/cache.js";
 import type { ToolPackConfig } from "../src/config.js";
 import {
   buildWinPortableZipCacheKeyInput,
   materializeCachedUnpackedForPortableZip,
+  sealFinalPortableTree,
 } from "../src/win/builder.js";
 import type { WinPaths } from "../src/win/types.js";
 import { readWinExecutableVersionSnapshot } from "../src/win/version-resource.js";
@@ -63,6 +64,37 @@ describe("Windows portable builder update-feed absence", () => {
 });
 
 describe("materializeCachedUnpackedForPortableZip", () => {
+  it("privatizes all three materialized writes without changing cache content or attributes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "readable-linked-builder-"));
+    const paths = createPaths(root);
+    const sources = [
+      ["Readable Studio.exe", await createVersionedExecutable("0.5.0-beta.1")],
+      ["resources/readable-studio-config.json", Buffer.from('{"namespace":"cache"}')],
+      ["resources/app/package.json", Buffer.from('{"version":"0.5.0-beta.1"}')],
+    ] as const;
+    try {
+      for (const [path, bytes] of sources) {
+        const source = join(root, "cache", path);
+        const target = join(paths.unpackedRoot, path);
+        await mkdir(join(source, ".."), { recursive: true });
+        await mkdir(join(target, ".."), { recursive: true });
+        await writeFile(source, bytes);
+        await chmod(source, 0o444);
+        await link(source, target);
+      }
+      await writeFile(paths.packagedConfigPath, '{"appVersion":"0.5.0-beta.2","namespace":"private"}');
+      await materializeCachedUnpackedForPortableZip(paths, "0.5.0-beta.2");
+      for (const [path, bytes] of sources) {
+        const source = join(root, "cache", path);
+        expect(await readFile(source)).toEqual(bytes);
+        expect((await stat(source)).mode & 0o222).toBe(0);
+        expect((await stat(join(paths.unpackedRoot, path))).ino).not.toBe((await stat(source)).ino);
+      }
+    } finally {
+      for (const [path] of sources) await chmod(join(root, "cache", path), 0o666).catch(() => undefined);
+      await rm(root, { recursive: true, force: true });
+    }
+  });
   it("overwrites cached packaged config and app package version", async () => {
     const root = await mkdtemp(join(tmpdir(), "readable-studio-win-builder-"));
     const cachedUnpackedRoot = join(root, "cache", "builder", "win-unpacked");
@@ -121,6 +153,44 @@ describe("materializeCachedUnpackedForPortableZip", () => {
       });
     } finally {
       await rm(root, { force: true, recursive: true });
+    }
+  });
+});
+
+describe("final portable tree seal", () => {
+  it("seals exactly ZIP content and emits a matching receipt before readiness", async () => {
+    const root = await mkdtemp(join(tmpdir(), "readable-tree-seal-"));
+    const tree = join(root, "tree");
+    const events = join(root, "events.jsonl");
+    vi.stubEnv("READABLE_BUILD_EVENTS", events);
+    vi.stubEnv("READABLE_BUILD_RUN_ID", "seal-test");
+    try {
+      for (const path of ["Readable Studio.exe", "app/Readable Studio.exe",
+        "app/resources/update-helper/update-broker.ps1", "app/resources/update-helper/update-helper.ps1",
+        "app/resources/update-helper/common.ps1", "app/locales/en-US.pak", "app/locales/ko.pak",
+        "app/locales/fr.pak", "not-in-zip.txt"]) {
+        await mkdir(join(tree, path, ".."), { recursive: true });
+        await writeFile(join(tree, path), path);
+      }
+      await chmod(join(tree, "app", "Readable Studio.exe"), 0o444);
+      const manifestPath = join(root, "sealed.txt");
+      const hash = await sealFinalPortableTree({ signed: false } as ToolPackConfig, tree, manifestPath);
+      const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+      expect(manifest.files.map((file: { path: string }) => file.path)).toEqual([
+        "Readable Studio.exe", "app/Readable Studio.exe", "app/locales/en-US.pak", "app/locales/ko.pak",
+        "app/resources/update-helper/common.ps1", "app/resources/update-helper/update-broker.ps1",
+        "app/resources/update-helper/update-helper.ps1",
+      ]);
+      const event = JSON.parse((await readFile(events, "utf8")).trim());
+      const receipt = JSON.parse(await readFile(event.receipt, "utf8"));
+      expect(event).toMatchObject({ event: "final-tree-ready", node: "final-tree", runId: "seal-test", inputHash: hash });
+      expect(receipt.files).toEqual(manifest.files);
+      expect(receipt.manifestHash).toBe(event.outputManifestHash);
+      expect(hashJson(receipt.files)).toBe(event.outputManifestHash);
+      expect((await stat(join(tree, "app", "Readable Studio.exe"))).mode & 0o222).not.toBe(0);
+    } finally {
+      vi.unstubAllEnvs();
+      await rm(root, { recursive: true, force: true });
     }
   });
 });

@@ -4,67 +4,143 @@ param(
     [Parameter(Mandatory = $true)][ValidateRange(1, 2147483647)][int]$RootProcessId,
     [Parameter(Mandatory = $true)][string]$OutputPath,
     [Parameter(Mandatory = $true)][string]$StopPath,
-    [ValidateRange(1, 86400)][int]$MaxSamples = 7200
+    [ValidateRange(1, 86400)][int]$MaxSamples = 7200,
+    [int[]]$ExtraRootProcessIds = @(),
+    [switch]$Append
 )
 
 $ErrorActionPreference = "Stop"
 $EvidenceRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\..\.omo\evidence\build-perf"))
+$ScratchRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\..\.tmp\build-verify-speed")) + [IO.Path]::DirectorySeparatorChar
 $OutputPath = [IO.Path]::GetFullPath($OutputPath)
 $StopPath = [IO.Path]::GetFullPath($StopPath)
 foreach ($path in @($OutputPath, $StopPath)) {
-    if (-not [string]::Equals([IO.Path]::GetDirectoryName($path), $EvidenceRoot, [StringComparison]::OrdinalIgnoreCase)) {
-        throw "Profiler output and stop signal must stay in $EvidenceRoot"
+    if (-not [string]::Equals([IO.Path]::GetDirectoryName($path), $EvidenceRoot, [StringComparison]::OrdinalIgnoreCase) -and
+        -not $path.StartsWith($ScratchRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Profiler output and stop signal must stay in $EvidenceRoot or $ScratchRoot"
     }
 }
 if ([IO.Path]::GetExtension($OutputPath) -ne ".log" -or [IO.Path]::GetExtension($StopPath) -ne ".json") {
     throw "Profiler output must be .log and the stop signal must be .json."
 }
-[IO.Directory]::CreateDirectory($EvidenceRoot) | Out-Null
-# Never replace an existing evidence file, let alone a release archive.
-$stream = [IO.File]::Open($OutputPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::Read)
+[IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($OutputPath)) | Out-Null
+
+# Build the set of watched root PIDs. The primary root is authoritative for the
+# "watched parent PID exited" stop condition, but all roots and their trees are
+# measured.
+$watchedRootPids = [Collections.Generic.HashSet[int]]::new()
+[void]$watchedRootPids.Add($RootProcessId)
+foreach ($extra in $ExtraRootProcessIds) { [void]$watchedRootPids.Add($extra) }
+
+$mode = if ($Append) { [IO.FileMode]::Append } else { [IO.FileMode]::CreateNew }
+$stream = [IO.File]::Open($OutputPath, $mode, [IO.FileAccess]::Write, [IO.FileShare]::Read)
 $writer = [IO.StreamWriter]::new($stream, [Text.UTF8Encoding]::new($false))
 $logicalProcessors = [Environment]::ProcessorCount
-$previous = @{}
+$previous = @{} # pid -> @{ cpuSeconds; readBytes; writeBytes; created }
 $previousElapsed = $null
 $clock = [Diagnostics.Stopwatch]::StartNew()
-$cimSession = $null
+$queryPool = $null
+$queries = @()
+
+function Get-ProcessTree {
+    param([Collections.Generic.HashSet[int]]$roots, [array]$processes)
+    $tree = [Collections.Generic.HashSet[int]]::new($roots)
+    do {
+        $before = $tree.Count
+        foreach ($process in $processes) {
+            $id = [int]$process.ProcessId
+            if ($id -eq $PID) { continue }
+            if ($tree.Contains([int]$process.ParentProcessId)) { [void]$tree.Add($id) }
+        }
+    } while ($tree.Count -ne $before)
+    # PowerShell enumerates returned collections; preserve the HashSet even when
+    # the coordinator has no child jobs yet and the tree contains only one PID.
+    return ,$tree
+}
 
 try {
-    $cimSession = New-CimSession -SessionOption (New-CimSessionOption -Protocol Dcom)
-    $writer.WriteLine((@{
-        record = "metadata"; schemaVersion = 1; rootProcessId = $RootProcessId; recorderProcessId = $PID
-        logicalProcessors = $logicalProcessors; timestampMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
-        nominalSampleIntervalMs = 1000; cpuSource = "Win32_PerfFormattedData_PerfOS_Processor._Total"
-        diskSource = "Win32_PerfFormattedData_PerfDisk_PhysicalDisk"; processCounts = "sampled, not cumulative launches"
-    } | ConvertTo-Json -Compress))
+    # Each local CIM round trip costs hundreds of milliseconds on Windows.
+    # Collect independent classes concurrently so those waits do not turn the
+    # nominal one-second recorder into a two-second recorder.
+    $queryPool = [RunspaceFactory]::CreateRunspacePool(5, 5)
+    $queryPool.Open()
+    foreach ($command in @(
+        'Get-CimInstance Win32_PerfFormattedData_PerfOS_Processor -ErrorAction Stop',
+        'Get-CimInstance Win32_PerfFormattedData_PerfDisk_PhysicalDisk -ErrorAction Stop',
+        'Get-CimInstance Win32_PerfFormattedData_PerfOS_Memory -ErrorAction Stop',
+        'Get-CimInstance Win32_Process -Property ProcessId, ParentProcessId, Name, CreationDate, KernelModeTime, UserModeTime, ReadTransferCount, WriteTransferCount, WorkingSetSize, HandleCount -ErrorAction Stop',
+        'try { Get-CimInstance -Namespace ROOT/StandardCimv2 -ClassName MSFT_NetTCPConnection -OperationTimeoutSec 1 -ErrorAction Stop } catch { }'
+    )) {
+        $query = [PowerShell]::Create()
+        $query.RunspacePool = $queryPool
+        [void]$query.AddScript($command)
+        $queries += $query
+    }
+
+    if (-not $Append) {
+        $writer.WriteLine((@{
+            record = "metadata"; schemaVersion = 2; rootProcessId = $RootProcessId
+            extraRootProcessIds = @($ExtraRootProcessIds)
+            recorderProcessId = $PID; logicalProcessors = $logicalProcessors
+            timestampMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+            nominalSampleIntervalMs = 1000
+            cpuSource = "Win32_PerfFormattedData_PerfOS_Processor"
+            coreSource = "Win32_PerfFormattedData_PerfOS_Processor"
+            memorySource = "Win32_PerfFormattedData_PerfOS_Memory"
+            tcpSource = "MSFT_NetTCPConnection"
+            diskSource = "Win32_PerfFormattedData_PerfDisk_PhysicalDisk"
+            processSource = "Win32_Process"
+        } | ConvertTo-Json -Compress))
+    }
+
     for ($sample = 0; $sample -lt $MaxSamples; $sample++) {
         if ([IO.File]::Exists($StopPath)) { break }
         $collectionStarted = $clock.Elapsed.TotalMilliseconds
         $collectionStartMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
-        # CIM class/property names are stable on localized Windows installations.
-        $cpu = Get-CimInstance -CimSession $cimSession Win32_PerfFormattedData_PerfOS_Processor -Filter "Name='_Total'"
-        $disks = @(Get-CimInstance -CimSession $cimSession Win32_PerfFormattedData_PerfDisk_PhysicalDisk)
-        if ($null -eq $cpu -or $null -eq $cpu.PercentProcessorTime -or $disks.Count -eq 0) {
+
+        # Total and per-core CPU. CIM class/property names are stable on localized
+        # Windows installations, avoiding Korean-localized Get-Counter counter paths.
+        $pending = @($queries | ForEach-Object { $_.BeginInvoke() })
+        $collected = @()
+        for ($index = 0; $index -lt $queries.Count; $index++) {
+            $collected += ,@($queries[$index].EndInvoke($pending[$index]))
+        }
+        $cpus = $collected[0]
+        $cpuTotal = @($cpus | Where-Object { $_.Name -eq '_Total' })
+        $cpuCores = @($cpus | Where-Object { $_.Name -ne '_Total' } | Sort-Object { [int]$_.Name })
+        $disks = $collected[1]
+        $memory = $collected[2]
+        $processes = $collected[3]
+
+        if ($cpuTotal.Count -eq 0 -or $null -eq $cpuTotal[0].PercentProcessorTime -or $disks.Count -eq 0) {
             throw "Windows performance counters are unavailable; refusing to record missing data as idle."
         }
-        $processes = @(Get-CimInstance -CimSession $cimSession Win32_Process -Property ProcessId, ParentProcessId, Name, CreationDate, KernelModeTime, UserModeTime, ReadTransferCount, WriteTransferCount)
-        $root = @($processes | Where-Object { $_.ProcessId -eq $RootProcessId })
-        if ($root.Count -eq 0) {
+
+        # Stop if every watched root PID has exited. If the primary root was never
+        # alive, fail on the first sample so callers do not silently profile nothing.
+        $rootsAlive = @($processes | Where-Object { $watchedRootPids.Contains([int]$_.ProcessId) })
+        if ($rootsAlive.Count -eq 0) {
             if ($sample -eq 0) { throw "Build root PID $RootProcessId is not running." }
             break
         }
+
         $elapsed = $clock.Elapsed.TotalSeconds
         $interval = if ($null -eq $previousElapsed) { $null } else { $elapsed - $previousElapsed }
-        $tree = [Collections.Generic.HashSet[int]]::new()
-        [void]$tree.Add($RootProcessId)
-        do {
-            $before = $tree.Count
-            foreach ($process in $processes) {
-                if ($process.ProcessId -ne $PID -and $tree.Contains([int]$process.ParentProcessId)) {
-                    [void]$tree.Add([int]$process.ProcessId)
-                }
-            }
-        } while ($tree.Count -ne $before)
+        $tree = Get-ProcessTree -roots $watchedRootPids -processes $processes
+
+        # TCP connection counts by state. Numeric states avoid localized strings.
+        $tcpByState = @{ }
+        foreach ($conn in $collected[4]) {
+            $state = [string][int]$conn.State
+            $tcpByState[$state] = 1 + $tcpByState[$state]
+        }
+
+        $commitUsed = $null
+        $commitLimit = $null
+        if ($memory.Count -gt 0) {
+            $commitUsed = [double]$memory[0].CommittedBytes
+            $commitLimit = [double]$memory[0].CommitLimit
+        }
 
         $current = @{}
         $rows = @(foreach ($process in $processes) {
@@ -74,8 +150,10 @@ try {
             }
             $readBytes = if ($null -eq $process.ReadTransferCount) { $null } else { [double]$process.ReadTransferCount }
             $writeBytes = if ($null -eq $process.WriteTransferCount) { $null } else { [double]$process.WriteTransferCount }
+            $workingSet = if ($null -eq $process.WorkingSetSize) { $null } else { [double]$process.WorkingSetSize }
+            $handles = if ($null -eq $process.HandleCount) { $null } else { [int]$process.HandleCount }
             $old = $previous[$id]
-            $current[$id] = @{ cpuSeconds = $cpuSeconds; readBytes = $readBytes; writeBytes = $writeBytes; created = $process.CreationDate }
+            $current[$id] = @{ cpuSeconds = $cpuSeconds; readBytes = $readBytes; writeBytes = $writeBytes; created = $process.CreationDate; workingSet = $workingSet; handles = $handles }
             $cpuPercent = $null
             $readRate = $null
             $writeRate = $null
@@ -90,6 +168,7 @@ try {
                 pid = $id; parentPid = [int]$process.ParentProcessId; name = $process.Name
                 created = $process.CreationDate; cpuSeconds = $cpuSeconds; cpuPercentNormalized = $cpuPercent
                 readBytesPerSecond = $readRate; writeBytesPerSecond = $writeRate
+                workingSetBytes = $workingSet; handleCount = $handles
             }
         })
         $treeRows = @($rows | Where-Object { $tree.Contains($_.pid) })
@@ -97,21 +176,46 @@ try {
         $treeCpu = if ($knownCpuRows.Count -eq 0) { $null } else {
             ($knownCpuRows | Measure-Object -Property cpuPercentNormalized -Sum).Sum
         }
+        $treeWorkingSet = ($treeRows | Where-Object { $null -ne $_.workingSetBytes } | Measure-Object -Property workingSetBytes -Sum).Sum
+        $treeHandles = ($treeRows | Where-Object { $null -ne $_.handleCount } | Measure-Object -Property handleCount -Sum).Sum
         $recorder = $rows | Where-Object { $_.pid -eq $PID }
+
+        $gapMs = $null
+        $gap = $false
+        if ($null -ne $interval -and $interval -gt 0) {
+            $gapMs = [Math]::Max(0, ($elapsed - $previousElapsed) * 1000 - 1000)
+            # Any sample that took materially longer than the nominal 1 s cadence is a gap.
+            $gap = $gapMs -gt 100
+        }
+
+        $coreRecords = @($cpuCores | ForEach-Object {
+            @{ name = $_.Name; percentProcessorTime = [double]$_.PercentProcessorTime }
+        })
+        $activeCores = @($coreRecords | Where-Object { $_.percentProcessorTime -gt 0 } | ForEach-Object { $_.name })
+
+        $diskRecords = @($disks | ForEach-Object {
+            $idle = [double]$_.PercentIdleTime
+            @{ name = $_.Name; readBytesPerSecond = [double]$_.DiskReadBytesPersec; writeBytesPerSecond = [double]$_.DiskWriteBytesPersec
+               readsPerSecond = [double]$_.DiskReadsPersec; writesPerSecond = [double]$_.DiskWritesPersec
+               currentQueueDepth = [double]$_.CurrentDiskQueueLength; percentIdleTime = $idle; percentBusyTime = [Math]::Max(0, 100 - $idle) }
+        })
+
         $record = @{
             record = "sample"; sample = $sample; timestampMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
             collectionStartMs = $collectionStartMs; collectionDurationMs = $clock.Elapsed.TotalMilliseconds - $collectionStarted
-            elapsedSeconds = $elapsed; intervalSeconds = $interval; systemCpuPercentNormalized = [double]$cpu.PercentProcessorTime
+            elapsedSeconds = $elapsed; intervalSeconds = $interval; gapMs = $gapMs; gap = $gap
+            systemCpuPercentNormalized = [double]$cpuTotal[0].PercentProcessorTime
+            cores = $coreRecords; activeCoreCount = $activeCores.Count; activeCores = $activeCores; allCoresActive = ($activeCores.Count -eq $logicalProcessors)
             treeCpuPercentNormalized = $treeCpu; treeCpuCoverage = $knownCpuRows.Count; treeProcessCount = $treeRows.Count
-            childProcessCount = [Math]::Max(0, $treeRows.Count - 1); systemProcessCount = $processes.Count
+            treeWorkingSetBytes = $treeWorkingSet; treeHandleCount = $treeHandles
+            childProcessCount = [Math]::Max(0, $treeRows.Count - $watchedRootPids.Count)
+            systemProcessCount = $processes.Count
             recorderCpuPercentNormalized = $recorder.cpuPercentNormalized
             processes = $treeRows
             topCpuProcesses = @($rows | Where-Object { $null -ne $_.cpuPercentNormalized -and $_.pid -ne 0 } | Sort-Object -Property cpuPercentNormalized -Descending | Select-Object -First 8)
-            disks = @($disks | ForEach-Object {
-                @{ name = $_.Name; readBytesPerSecond = [double]$_.DiskReadBytesPersec; writeBytesPerSecond = [double]$_.DiskWriteBytesPersec
-                   readsPerSecond = [double]$_.DiskReadsPersec; writesPerSecond = [double]$_.DiskWritesPersec
-                   currentQueueDepth = [double]$_.CurrentDiskQueueLength; percentIdleTime = [double]$_.PercentIdleTime }
-            })
+            commitChargeUsedBytes = $commitUsed; commitChargeLimitBytes = $commitLimit
+            tcpConnectionsByState = $tcpByState
+            disks = $diskRecords
         }
         $writer.WriteLine(($record | ConvertTo-Json -Depth 7 -Compress))
         $writer.Flush()
@@ -130,5 +234,6 @@ try {
 } finally {
     $writer.Dispose()
     $clock.Stop()
-    if ($null -ne $cimSession) { Remove-CimSession -CimSession $cimSession }
+    foreach ($query in $queries) { $query.Dispose() }
+    if ($null -ne $queryPool) { $queryPool.Dispose() }
 }

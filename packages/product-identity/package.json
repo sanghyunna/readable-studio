@@ -19,7 +19,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit --incremental --tsBuildInfoFile ../../.tmp/typecheck/product-identity.typecheck.tsbuildinfo && tsc -p tsconfig.tests.json --noEmit --incremental --tsBuildInfoFile ../../.tmp/typecheck/product-identity.tests.typecheck.tsbuildinfo"
   },
   "devDependencies": {
     "@types/node": "24.12.2",
