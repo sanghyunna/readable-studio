@@ -34,7 +34,7 @@ class CursorModelListingError extends Error {
   }
 }
 
-const CURSOR_AGENT_VDI_COLD_START_TIMEOUT_MS = 90_000;
+const CURSOR_AGENT_VDI_COLD_START_TIMEOUT_MS = 180_000;
 
 export const cursorAgentDef = {
     id: 'cursor-agent',

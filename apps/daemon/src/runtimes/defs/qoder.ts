@@ -74,7 +74,7 @@ export const qoderAgentDef = {
     // detector automatically retains the dated fallback below in that case.
     listModels: {
       args: ['--list-models'],
-      timeoutMs: 15_000,
+      timeoutMs: 180_000,
       parse: parseQoderModels,
     },
     fallbackModels: [

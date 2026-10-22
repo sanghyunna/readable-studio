@@ -6,13 +6,13 @@ export const traeCliAgentDef = {
     name: 'Trae CLI',
     bin: 'traecli',
     versionArgs: ['--version'],
-    versionProbeTimeoutMs: 10_000,
+    versionProbeTimeoutMs: 120_000,
     fetchModels: async (resolvedBin, env) =>
       detectAcpModels({
         bin: resolvedBin,
         args: ['acp', 'serve'],
         env,
-        timeoutMs: 15_000,
+        timeoutMs: 180_000,
         defaultModelOption: DEFAULT_MODEL_OPTION,
       }),
     fallbackModels: [DEFAULT_MODEL_OPTION],

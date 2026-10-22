@@ -20,9 +20,9 @@ describe('resolveStandaloneStartupTimeoutMs', () => {
     }
   });
 
-  it('defaults to 120000ms cold-first-launch headroom when env is unset', () => {
+  it('defaults to 600000ms cold-first-launch headroom when env is unset', () => {
     delete process.env[ENV_NAME];
-    expect(resolveStandaloneStartupTimeoutMs()).toBe(120_000);
+    expect(resolveStandaloneStartupTimeoutMs()).toBe(600_000);
   });
 
   it('honors a positive READABLE_STANDALONE_STARTUP_TIMEOUT_MS override', () => {

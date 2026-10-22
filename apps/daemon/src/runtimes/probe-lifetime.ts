@@ -58,8 +58,8 @@ function stopProbeTree(child: ChildProcess, kill: ChildProcess['kill']): Promise
     if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return;
     if (process.platform === 'win32') {
       await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new DOMException('Probe process-tree cleanup timed out', 'TimeoutError')), 2250);
-        execFile('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, timeout: 2000 }, (error) => {
+        const timer = setTimeout(() => reject(new DOMException('Probe process-tree cleanup timed out', 'TimeoutError')), 35_000);
+        execFile('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, timeout: 30_000 }, (error) => {
           clearTimeout(timer);
           if (!error || child.exitCode !== null || child.signalCode !== null) resolve();
           else reject(error);

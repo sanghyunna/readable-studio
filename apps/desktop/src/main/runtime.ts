@@ -371,7 +371,7 @@ export type DesktopRuntimeOptions = {
 };
 
 const DESKTOP_IMPORT_TOKEN_HEADER = "X-Readable-Studio-Desktop-Import-Token";
-const DESKTOP_IMPORT_TOKEN_TTL_MS = 60_000;
+const DESKTOP_IMPORT_TOKEN_TTL_MS = 15 * 60_000;
 
 // @dsp func-8caf710f
 export function mintImportToken(secret: Buffer, baseDir: string): string {

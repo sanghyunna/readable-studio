@@ -16,7 +16,7 @@ export interface ResolveDaemonUrlOptions {
   flagUrl?: string | null;
   /** Defaults to `process.env`; injected for tests. */
   env?: NodeJS.ProcessEnv;
-  /** IPC discovery timeout. Short by default so an absent daemon does not stall CLI startup. */
+  /** Override the IPC and tools-dev discovery deadlines. */
   timeoutMs?: number;
 }
 
@@ -37,9 +37,9 @@ export async function resolveDaemonUrl(
   if (flagUrl != null && flagUrl.length > 0) return flagUrl;
   const envUrl = env.READABLE_DAEMON_URL;
   if (envUrl != null && envUrl.length > 0) return envUrl;
-  const discovered = await discoverDaemonUrlFromIpc(env, options.timeoutMs ?? 800);
+  const discovered = await discoverDaemonUrlFromIpc(env, options.timeoutMs ?? 30_000);
   if (discovered != null) return discovered;
-  const toolsDevUrl = await discoverDaemonUrlFromToolsDev(env, options.timeoutMs ?? 800);
+  const toolsDevUrl = await discoverDaemonUrlFromToolsDev(env, options.timeoutMs ?? 120_000);
   if (toolsDevUrl != null) return toolsDevUrl;
   return DEFAULT_DAEMON_URL;
 }

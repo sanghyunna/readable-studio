@@ -26,7 +26,7 @@ export async function preflightWidthRelease(input: WidthReleasePreflight): Promi
   frame.dataset.readableWidthPreflight = '';
   frame.style.cssText = `position:fixed;left:-100000px;top:0;border:0;visibility:hidden;width:${input.viewportWidth}px;height:${input.viewportHeight}px;pointer-events:none`;
   let timeout: ReturnType<typeof setTimeout> | undefined;
-  const deadline = new Promise<never>((_, reject) => { timeout = setTimeout(() => reject(new Error('resource-timeout')), 5000); });
+  const deadline = new Promise<never>((_, reject) => { timeout = setTimeout(() => reject(new Error('resource-timeout')), 60_000); });
   try {
     await Promise.race([new Promise<void>((resolve, reject) => {
       frame.onload = () => resolve();

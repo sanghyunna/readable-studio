@@ -21,7 +21,7 @@ import { promises as dnsPromises } from 'node:dns';
 import { promises as fsp } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { Agent, EnvHttpProxyAgent, Socks5ProxyAgent } from 'undici';
+import { Agent, EnvHttpProxyAgent, Socks5ProxyAgent, buildConnector } from 'undici';
 import type { Dispatcher, Pool } from 'undici';
 import { compatibleDispatchHandler } from './legacy-dispatch-handler.js';
 import {
@@ -176,16 +176,12 @@ export async function assertExternalAssetUrl(
   return { ok: true };
 }
 
-// Aggressive but not punitive — happy paths usually return in under 2 s.
-// Override with READABLE_CONNECTION_TEST_PROVIDER_TIMEOUT_MS for slow networks
-// or distant providers; invalid values fall back to the default.
-const DEFAULT_PROVIDER_TIMEOUT_MS = 12_000;
+// Allow cold proxy/network startup on low-memory VDI; explicit overrides remain supported.
+const DEFAULT_PROVIDER_TIMEOUT_MS = 180_000;
 const LOOPBACK_NO_PROXY_TOKENS = ['localhost', '127.0.0.1', '[::1]'] as const;
-// CLI boot time is dominated by adapter auth/session restore; the heavy
-// adapters (Codex, Cursor Agent) regularly take 5–10 s on a cold first
-// run, so 45 s leaves headroom without making a hung child invisible.
+// Allow cold CLI boot, session restoration and the first inference on slow VDI.
 // Override with READABLE_CONNECTION_TEST_AGENT_TIMEOUT_MS.
-const DEFAULT_AGENT_TIMEOUT_MS = 45_000;
+const DEFAULT_AGENT_TIMEOUT_MS = 10 * 60_000;
 // Node's `setTimeout` silently clamps any delay above this to ~1 ms
 // (with a TimeoutOverflowWarning), so an override meant to *extend*
 // the budget — e.g. `READABLE_CONNECTION_TEST_AGENT_TIMEOUT_MS=3000000000` —
@@ -314,6 +310,7 @@ function socksProxyAgentOptions(
   options: Pool.Options,
 ): ConstructorParameters<typeof Socks5ProxyAgent>[1] {
   return {
+    connect: buildConnector(options.connectTimeout === undefined ? {} : { timeout: options.connectTimeout }),
     ...(options.bodyTimeout === undefined ? {} : { bodyTimeout: options.bodyTimeout }),
     ...(options.headersTimeout === undefined ? {} : { headersTimeout: options.headersTimeout }),
   };
@@ -464,6 +461,7 @@ class NoProxyAwareMixedProxyAgent {
 }
 
 type ConnectionTestProxyDispatcher =
+  | Agent
   | EnvHttpProxyAgent
   | NoProxyAwareEnvProxyAgent
   | NoProxyAwareMixedProxyAgent
@@ -486,7 +484,7 @@ function envProxyAgentOptions(
 function buildConnectionTestProxyDispatcher(
   env: NodeJS.ProcessEnv = process.env,
   options: Pool.Options = {},
-): ConnectionTestProxyDispatcher | null {
+): ConnectionTestProxyDispatcher {
   const proxyEnv = mergeProxyAwareEnv(
     process.platform,
     resolveSystemProxyEnv(),
@@ -512,7 +510,7 @@ function buildConnectionTestProxyDispatcher(
   if (!httpProxy && !httpsProxy && socksProxy) {
     return new NoProxyAwareSocksProxyAgent(noProxy, socksProxy, options);
   }
-  if (!httpProxy && !httpsProxy) return null;
+  if (!httpProxy && !httpsProxy) return new Agent(options as ConstructorParameters<typeof Agent>[0]);
   const proxyAgent = new EnvHttpProxyAgent(proxyOptions);
   return noProxy?.split(/[\s,]+/).some((token) => token.trim() === '<local>')
     ? new NoProxyAwareEnvProxyAgent(noProxy, proxyAgent, options)
@@ -546,20 +544,19 @@ function socksProxyUrl(proxyUrl: string | undefined): string | undefined {
   }
 }
 
+type FetchDispatcherRequestInit = {
+  dispatcher?: RequestInit extends { dispatcher?: infer D } ? D : Dispatcher;
+};
+
 export function proxyDispatcherRequestInit(
   env: NodeJS.ProcessEnv = process.env,
   options: Pool.Options = {},
 ): {
   close(): Promise<void>;
-  requestInit: Pick<RequestInit, 'dispatcher'>;
+  requestInit: FetchDispatcherRequestInit;
 } {
-  const dispatcher = buildConnectionTestProxyDispatcher(env, options);
-  if (dispatcher == null) {
-    return {
-      async close() {},
-      requestInit: {},
-    };
-  }
+  const transportOptions = { connectTimeout: 120_000, headersTimeout: 2 * 60 * 60_000, bodyTimeout: 2 * 60 * 60_000, ...options };
+  const dispatcher = buildConnectionTestProxyDispatcher(env, transportOptions);
   return {
     close: () => dispatcher.close(),
     requestInit: {
@@ -567,14 +564,15 @@ export function proxyDispatcherRequestInit(
       // Fetch serializes bodies before dispatch; the callback ABI is bridged here.
       dispatcher: {
         dispatch: (options: Dispatcher.DispatchOptions, handler: Dispatcher.DispatchHandler) =>
-          dispatcher.dispatch(options, compatibleDispatchHandler(handler)),
-      } as unknown as NonNullable<RequestInit['dispatcher']>,
+          // Node's bundled fetch also supplies five-minute dispatch defaults.
+          dispatcher.dispatch({ ...options, headersTimeout: transportOptions.headersTimeout, bodyTimeout: transportOptions.bodyTimeout }, compatibleDispatchHandler(handler)),
+      } as unknown as NonNullable<FetchDispatcherRequestInit['dispatcher']>,
     },
   };
 }
 
 const AGENT_COMPLETION_DEBOUNCE_MS = 500;
-const AGENT_KILL_GRACE_MS = 2_000;
+const AGENT_KILL_GRACE_MS = 30_000;
 // Truncates the assistant reply we surface in the success copy so a
 // chatty model can't dump kilobytes into the inline status node.
 const SAMPLE_MAX_CHARS = 120;
@@ -843,7 +841,7 @@ async function validateLocalOpenAiModel(
   parsed: ParsedBaseUrl,
   signal: AbortSignal,
   start: number,
-  requestInit: Pick<RequestInit, 'dispatcher'> = {},
+  requestInit: FetchDispatcherRequestInit = {},
 ): Promise<ConnectionTestResponse | null> {
   if (input.protocol !== 'openai' || !isLoopbackApiHost(parsed.hostname)) {
     return null;
@@ -902,7 +900,7 @@ async function validateSenseAudioNonChatModel(
   input: ProviderTestRequest,
   signal: AbortSignal,
   start: number,
-  requestInit: Pick<RequestInit, 'dispatcher'> = {},
+  requestInit: FetchDispatcherRequestInit = {},
 ): Promise<ConnectionTestResponse | null> {
   if (input.protocol !== 'senseaudio' || !isSenseAudioNonChatModel(input.model)) {
     return null;

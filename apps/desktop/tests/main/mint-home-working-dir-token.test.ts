@@ -1,10 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { mintHomeWorkingDirToken } from "../../src/main/runtime.js";
+import { mintHomeWorkingDirToken, mintImportToken, signDesktopImportToken } from "../../src/main/runtime.js";
 
 const SECRET = Buffer.from("test-desktop-auth-secret");
 
 describe("mintHomeWorkingDirToken", () => {
+  it('keeps a path-bound token valid for fifteen minutes on slow VDI', () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-10-22T00:00:00.000Z'));
+      const baseDir = 'D:\\documents';
+      const token = mintImportToken(SECRET, baseDir);
+      const [nonce, exp] = token.split('~');
+      expect(exp).toBe('2026-10-22T00:15:00.000Z');
+      expect(token).toBe(signDesktopImportToken(SECRET, baseDir, { nonce: nonce!, exp: exp! }));
+      expect(token).not.toBe(signDesktopImportToken(SECRET, 'D:\\other', { nonce: nonce!, exp: exp! }));
+    } finally { vi.useRealTimers(); }
+  });
+
   it("runs the desktop-auth handshake before minting the token", async () => {
     const calls: string[] = [];
     const registerDesktopAuth = vi.fn(async () => {

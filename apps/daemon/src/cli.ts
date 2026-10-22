@@ -1361,7 +1361,7 @@ Wraps GitHub CLI auth for Readable Studio registry publishing. The token stays i
     return;
   }
   const host = typeof flags.host === 'string' ? flags.host : 'github.com';
-  const version = await execGhBuffered(['--version'], { timeout: 10_000 });
+  const version = await execGhBuffered(['--version'], { timeout: 180_000 });
   if (!version.ok) {
     console.error('[plugin login] GitHub CLI is required. Install gh from https://cli.github.com/ and retry.');
     process.exit(1);
@@ -1383,7 +1383,7 @@ Shows the GitHub account gh will use for Readable Studio registry publishing.`);
     return;
   }
   const host = typeof flags.host === 'string' ? flags.host : 'github.com';
-  const auth = await execGhBuffered(['auth', 'status', '--hostname', host], { timeout: 10_000 });
+  const auth = await execGhBuffered(['auth', 'status', '--hostname', host], { timeout: 180_000 });
   if (!auth.ok) {
     if (flags.json) {
       process.stdout.write(JSON.stringify({
@@ -1398,7 +1398,7 @@ Shows the GitHub account gh will use for Readable Studio registry publishing.`);
     if (auth.stderr || auth.stdout) console.error(auth.stderr || auth.stdout);
     process.exit(1);
   }
-  const user = await execGhBuffered(['api', 'user', '--hostname', host], { timeout: 10_000 });
+  const user = await execGhBuffered(['api', 'user', '--hostname', host], { timeout: 180_000 });
   let login = '';
   let name = '';
   try {
@@ -1426,7 +1426,7 @@ async function execFileBuffered(command, args, opts = {}) {
   const { execFile } = await import('node:child_process');
   return new Promise((resolve) => {
     execFile(command, args, {
-      timeout: 30_000,
+      timeout: 180_000,
       maxBuffer: 1024 * 1024,
       ...opts, windowsHide: true,
     }, (error, stdout, stderr) => {
@@ -1715,7 +1715,7 @@ Common options:
       const host = typeof flags.host === 'string'
         ? flags.host
         : inferGithubHost(target ?? 'github.com');
-      const version = await execFileBuffered('gh', ['--version'], { timeout: 10_000 });
+      const version = await execFileBuffered('gh', ['--version'], { timeout: 180_000 });
       if (!version.ok) {
         console.error('[marketplace login] GitHub CLI is required. Install gh from https://cli.github.com/ and retry.');
         process.exit(1);
@@ -2537,15 +2537,6 @@ Lifecycle vocabulary:
     process.exit(2);
   }
   const follow = flags.f === true || flags.follow === true;
-  const url = `${base}/api/plugins/events${Number.isFinite(since) && since > 0 ? `?since=${since}` : ''}`;
-  const resp = await fetch(url, { headers: { accept: 'text/event-stream' } });
-  if (!resp.ok || !resp.body) {
-    console.error(`GET ${url} failed: ${resp.status} ${await resp.text()}`);
-    process.exit(1);
-  }
-  const reader = resp.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
   const renderEvent = (channel, data) => {
     if (!matches(data)) return;
     if (flags.json) {
@@ -2559,44 +2550,26 @@ Lifecycle vocabulary:
     console.log(`${tag} #${id}  ${ts}  ${data?.kind ?? '?'}  pluginId=${data?.pluginId ?? '-'}` +
       (detailKeys ? `  details=${detailKeys}` : ''));
   };
-  // Read until the daemon closes the stream OR --follow keeps it open
-  // forever. Without --follow we still let the daemon drain the
-  // backlog naturally; the route emits all backlog entries first,
-  // and our reader exits when the connection closes (which the
-  // daemon never does on its own, so we add a small idle timer).
   if (!follow) {
-    // Non-follow: drain backlog, then exit after a short idle period
-    // (the route never naturally closes; the SSE backlog is a one-shot
-    // stream of event entries).
-    let lastChunkAt = Date.now();
-    const idleMs = 200;
-    const idleTimer = setInterval(() => {
-      if (Date.now() - lastChunkAt > idleMs) {
-        clearInterval(idleTimer);
-        try { reader.cancel(); } catch { /* ignore */ }
-      }
-    }, 100);
-    try {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        lastChunkAt = Date.now();
-        buffer += decoder.decode(value, { stream: true });
-        const blocks = buffer.split('\n\n');
-        buffer = blocks.pop() ?? '';
-        for (const block of blocks) {
-          const lines = block.split('\n');
-          const ev = lines.find((l) => l.startsWith('event: '))?.slice('event: '.length) ?? 'message';
-          const dat = lines.find((l) => l.startsWith('data: '))?.slice('data: '.length);
-          if (!dat) continue;
-          try { renderEvent(ev, JSON.parse(dat)); } catch { /* ignore */ }
-        }
-      }
-    } finally {
-      clearInterval(idleTimer);
+    const url = `${base}/api/plugins/events/snapshot${Number.isFinite(since) && since > 0 ? `?since=${since}` : ''}`;
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      console.error(`GET ${url} failed: ${resp.status} ${await resp.text()}`);
+      process.exit(1);
     }
+    const data = await resp.json();
+    for (const event of Array.isArray(data?.events) ? data.events : []) renderEvent('backlog', event);
     return;
   }
+  const url = `${base}/api/plugins/events${Number.isFinite(since) && since > 0 ? `?since=${since}` : ''}`;
+  const resp = await fetch(url, { headers: { accept: 'text/event-stream' } });
+  if (!resp.ok || !resp.body) {
+    console.error(`GET ${url} failed: ${resp.status} ${await resp.text()}`);
+    process.exit(1);
+  }
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
   // Follow mode: read forever.
   while (true) {
     const { value, done } = await reader.read();
@@ -3377,8 +3350,8 @@ GitHub API as a last resort. It never publishes to placeholder owners.`);
     steps.push({ label, command: [command, ...args].join(' ') });
     if (flags['dry-run']) return { ok: true, stdout: '', stderr: '' };
     const result = await (command === 'gh'
-      ? execGhBuffered(args, { cwd: opts.cwd ?? absFolder, timeout: opts.timeout ?? 120_000 })
-      : execFileBuffered(command, args, { cwd: opts.cwd ?? absFolder, timeout: opts.timeout ?? 120_000 }));
+      ? execGhBuffered(args, { cwd: opts.cwd ?? absFolder, timeout: opts.timeout ?? 600_000 })
+      : execFileBuffered(command, args, { cwd: opts.cwd ?? absFolder, timeout: opts.timeout ?? 600_000 }));
     steps[steps.length - 1].ok = result.ok;
     steps[steps.length - 1].stdout = result.stdout;
     steps[steps.length - 1].stderr = result.stderr;
@@ -3403,7 +3376,7 @@ GitHub API as a last resort. It never publishes to placeholder owners.`);
   let exists = false;
   const view = flags['dry-run']
     ? { ok: false, stderr: 'dry-run' }
-    : await execGhBuffered(['repo', 'view', repo.fullName], { cwd: absFolder, timeout: 30_000 });
+    : await execGhBuffered(['repo', 'view', repo.fullName], { cwd: absFolder, timeout: 180_000 });
   steps.push({ label: 'check repo', command: `gh repo view ${repo.fullName}`, ok: view.ok, stdout: view.stdout, stderr: view.stderr });
   if (view.ok) {
     exists = true;
@@ -3428,7 +3401,7 @@ GitHub API as a last resort. It never publishes to placeholder owners.`);
   if (exists && !flags['dry-run']) {
     cleanupDir = await mkdtemp(join(os.tmpdir(), 'readable-plugin-publish-sync-'));
     workdir = join(cleanupDir, repo.name);
-    await run('clone repo', 'gh', ['repo', 'clone', repo.fullName, workdir], { cwd: cleanupDir, timeout: 240_000 });
+    await run('clone repo', 'gh', ['repo', 'clone', repo.fullName, workdir], { cwd: cleanupDir, timeout: 600_000 });
     for (const entry of await readdir(workdir)) {
       if (entry === '.git') continue;
       await rm(join(workdir, entry), { recursive: true, force: true });
@@ -3533,8 +3506,8 @@ fork of sanghyunna/readable-studio, pushes a branch, and opens the PR form with 
     steps.push({ label, command: [command, ...args].join(' ') });
     if (flags['dry-run']) return { ok: true, stdout: '', stderr: '' };
     const result = await (command === 'gh'
-      ? execGhBuffered(args, { cwd: opts.cwd ?? process.cwd(), timeout: opts.timeout ?? 180_000 })
-      : execFileBuffered(command, args, { cwd: opts.cwd ?? process.cwd(), timeout: opts.timeout ?? 180_000 }));
+      ? execGhBuffered(args, { cwd: opts.cwd ?? process.cwd(), timeout: opts.timeout ?? 600_000 })
+      : execFileBuffered(command, args, { cwd: opts.cwd ?? process.cwd(), timeout: opts.timeout ?? 600_000 }));
     steps[steps.length - 1].ok = result.ok;
     steps[steps.length - 1].stdout = result.stdout;
     steps[steps.length - 1].stderr = result.stderr;
@@ -3568,7 +3541,7 @@ fork of sanghyunna/readable-studio, pushes a branch, and opens the PR form with 
     '--sparse',
     `https://github.com/${target.owner}/readable-studio.git`,
     checkout,
-  ], { timeout: 240_000 });
+  ], { timeout: 600_000 });
   await run('sparse checkout', 'git', ['sparse-checkout', 'set', 'plugins/community'], { cwd: checkout });
   await run('checkout branch', 'git', ['checkout', '-b', branch], { cwd: checkout });
   const dest = join(checkout, 'plugins', 'community', name);
@@ -3651,14 +3624,14 @@ async function publishToMarketplaceJson({ catalogPath, meta }) {
 }
 
 async function resolvePluginGithubTarget({ host = 'github.com', owner, manifest, purpose }) {
-  const version = await execGhBuffered(['--version'], { timeout: 10_000 });
+  const version = await execGhBuffered(['--version'], { timeout: 180_000 });
   if (!version.ok) {
     console.error('[plugin github] GitHub CLI is required. Install gh from https://cli.github.com/ and retry.');
     process.exit(1);
   }
-  let status = await execGhBuffered(['auth', 'status', '--hostname', host, '--active'], { timeout: 10_000 });
+  let status = await execGhBuffered(['auth', 'status', '--hostname', host, '--active'], { timeout: 180_000 });
   if (!status.ok && /unknown flag: --active/i.test(`${status.stdout}\n${status.stderr}`)) {
-    status = await execGhBuffered(['auth', 'status', '--hostname', host], { timeout: 10_000 });
+    status = await execGhBuffered(['auth', 'status', '--hostname', host], { timeout: 180_000 });
   }
   if (!status.ok) {
     console.error(`[plugin github] gh is not authenticated for ${host}.`);
@@ -3679,7 +3652,7 @@ async function resolvePluginGithubTarget({ host = 'github.com', owner, manifest,
   let source = explicitOwner ? '--owner' : trustedManifestOwner ? 'plugin.repo' : statusLogin ? 'gh auth status' : '';
   let apiError = null;
   if (!resolvedOwner || !login) {
-    const user = await execGhBuffered(['api', 'user', '--hostname', host, '--jq', '.login'], { timeout: 20_000 });
+    const user = await execGhBuffered(['api', 'user', '--hostname', host, '--jq', '.login'], { timeout: 180_000 });
     if (user.ok && user.stdout.trim()) {
       login = user.stdout.trim();
       if (!resolvedOwner) {
@@ -3799,7 +3772,7 @@ function isRepoNotFound(result) {
 
 async function pluginCliValidateFolder(folder) {
   const result = await execFileBuffered(process.execPath, [process.argv[1], 'plugin', 'validate', folder], {
-    timeout: 120_000,
+    timeout: 600_000,
   });
   if (!result.ok) {
     console.error('[plugin validate] failed after manifest normalization');
@@ -5984,7 +5957,7 @@ async function mintCliImportToken(baseDir) {
     result = await requestJsonIpc(
       socketPath,
       { type: SIDECAR_MESSAGES.MINT_IMPORT_TOKEN, input: { baseDir } },
-      { timeoutMs: 800 },
+      { timeoutMs: 30_000 },
     );
   } catch {
     return null;
@@ -8284,8 +8257,7 @@ async function runUpdate(args) {
     if (action === 'status' && flags.watch) return await runUpdateWatch(base, json);
     if (action === 'diagnose') return await runUpdateDiagnose(flags, base, json);
     if (action === 'check') {
-      // The daemon check covers CLI probes, per-profile app lookups, token and a 15 s server fetch.
-      const response = await updateDaemonFetch(`${base}/api/update/check`, { signal: AbortSignal.timeout(120_000) });
+      const response = await updateDaemonFetch(`${base}/api/update/check`);
       if (!response.ok) throw updateFailure('invalid-response', updateExit().failed);
       const data = await updateJson(response);
       if (json) process.stdout.write(JSON.stringify(data) + '\n');
@@ -8372,7 +8344,7 @@ function updateConnectionMessage(report) {
     case 'not-https': return 'The update server URL must start with https://.';
     case 'dns': return 'The server name could not be resolved. Check the URL for typos and your internet or VPN connection.';
     case 'unreachable': return 'The server could not be reached. Check your internet or VPN connection and proxy settings, then retry.';
-    case 'timeout': return `No answer within ${seconds} s, so the check stopped. Check the network and retry.`;
+    case 'timeout': return report.timeoutMs > 0 ? `No answer within ${seconds} s, so the check stopped. Check the network and retry.` : 'The update server request timed out. Check the network and retry.';
     case 'cli-missing': return 'Databricks CLI was not found (neither bundled nor installed). Install the Databricks CLI or download Readable Studio again.';
     case 'not-logged-in': return `Not signed in to Databricks, or the token expired. Run: readable databricks login${report.host ? ` --host ${report.host}` : ''}`;
     case 'workspace-not-found': return 'None of the signed-in Databricks profiles owns this app. Check the URL, or sign in to the workspace that hosts it.';
@@ -8383,12 +8355,11 @@ function updateConnectionMessage(report) {
   }
 }
 
-// Same bounded check as Settings > Connect; never saves configuration.
+// Same cancellable check as Settings > Connect; never saves configuration.
 async function runUpdateDiagnose(flags, base, json) {
   const serverUrl = typeof flags['server-url'] === 'string' ? flags['server-url'].trim() : undefined;
-  // The daemon bounds the check itself; this deadline only guards a stalled daemon.
   const response = await updateDaemonFetch(`${base}/api/update/connection`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(serverUrl === undefined ? {} : { serverUrl }), signal: AbortSignal.timeout(60_000) });
+    body: JSON.stringify(serverUrl === undefined ? {} : { serverUrl }) });
   if (!response.ok) throw updateFailure('invalid-response', updateExit().failed);
   const report = await updateJson(response);
   if (json) process.stdout.write(JSON.stringify(report) + '\n');

@@ -33,12 +33,12 @@ async function probePiPowerShell(env: NodeJS.ProcessEnv): Promise<string> {
     const startedAt = Date.now();
     const probe = await new Promise<{ error: ExecFileException | null; stdout: string }>(resolve => {
       execFile(executable, ['-NoProfile', '-NonInteractive', '-c', "if ($PSVersionTable.PSVersion.Major -ge 5) { [Console]::Write('READABLE_PI_POWERSHELL') } else { exit 1 }"], {
-        env, encoding: 'utf8', windowsHide: true, shell: false, timeout: 30000, maxBuffer: 4096,
+        env, encoding: 'utf8', windowsHide: true, shell: false, timeout: 180000, maxBuffer: 4096,
       }, (error, stdout) => resolve({ error, stdout }));
     });
     if (!probe.error && probe.stdout === 'READABLE_PI_POWERSHELL') return executable;
     if (probe.error?.killed && probe.error.signal === 'SIGTERM' && probe.error.code !== 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
-      timeouts.push(`${executable}: did not respond within 30 s (elapsed ${Date.now() - startedAt} ms)`);
+      timeouts.push(`${executable}: did not respond within 180 s (elapsed ${Date.now() - startedAt} ms)`);
     } else {
       failures.push(`${executable}: ${probe.error?.message ?? 'returned unexpected output'}`);
     }

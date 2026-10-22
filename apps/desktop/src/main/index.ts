@@ -206,7 +206,7 @@ function createWebDiscovery(runtime: SidecarRuntimeContext<SidecarStamp>): () =>
       contract: SIDECAR_CONTRACT,
       namespace: runtime.namespace,
     });
-    const web = await requestJsonIpc<WebStatusSnapshot>(webIpc, { type: SIDECAR_MESSAGES.STATUS }, { timeoutMs: 600 }).catch(() => null);
+    const web = await requestJsonIpc<WebStatusSnapshot>(webIpc, { type: SIDECAR_MESSAGES.STATUS }, { timeoutMs: 60_000 }).catch(() => null);
     return web?.url ?? null;
   };
 }
@@ -221,7 +221,7 @@ function createDaemonDiscovery(runtime: SidecarRuntimeContext<SidecarStamp>): ()
     const daemon = await requestJsonIpc<DaemonStatusSnapshot>(
       daemonIpc,
       { type: SIDECAR_MESSAGES.STATUS },
-      { timeoutMs: 600 },
+      { timeoutMs: 60_000 },
     ).catch(() => null);
     return daemon?.url ?? null;
   };
@@ -516,7 +516,7 @@ export function installDesktopMenu(
 }
 
 const REGISTER_DESKTOP_AUTH_RETRY_DELAYS_MS = [120, 240, 480, 960, 1500];
-const REGISTER_DESKTOP_AUTH_TIMEOUT_MS = 800;
+const REGISTER_DESKTOP_AUTH_TIMEOUT_MS = 60_000;
 
 /**
  * Sends a fresh, per-process secret to the daemon over its sidecar IPC

@@ -109,7 +109,7 @@ function defaultSystemProxyCommandRunner(command: string, args: string[]): strin
   return execFileSync(command, args, {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"],
-    timeout: 2_000,
+    timeout: 30_000,
     windowsHide: true,
   });
 }
@@ -444,10 +444,12 @@ export function resolveSystemProxyEnv(options: ResolveSystemProxyEnvOptions = {}
 
   const platform = options.platform ?? process.platform;
   const runCommand = options.runCommand ?? defaultSystemProxyCommandRunner;
+  let queryFailed = false;
   const tryRun = (command: string, args: string[]): string => {
     try {
       return runCommand(command, args);
     } catch {
+      queryFailed = true;
       return "";
     }
   };
@@ -456,26 +458,15 @@ export function resolveSystemProxyEnv(options: ResolveSystemProxyEnvOptions = {}
     if (platform === "darwin") {
       resolved = parseMacosScutilProxyOutput(tryRun("scutil", ["--proxy"]), platform);
     } else if (platform === "win32") {
+      const settings = tryRun("reg", [
+        "query",
+        "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings",
+      ]);
       resolved = parseWindowsInternetSettingsProxyOutput(
         {
-          proxyEnable: tryRun("reg", [
-            "query",
-            "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings",
-            "/v",
-            "ProxyEnable",
-          ]),
-          proxyOverride: tryRun("reg", [
-            "query",
-            "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings",
-            "/v",
-            "ProxyOverride",
-          ]),
-          proxyServer: tryRun("reg", [
-            "query",
-            "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings",
-            "/v",
-            "ProxyServer",
-          ]),
+          proxyEnable: settings,
+          proxyOverride: settings,
+          proxyServer: settings,
         },
         platform,
       );
@@ -483,7 +474,7 @@ export function resolveSystemProxyEnv(options: ResolveSystemProxyEnvOptions = {}
       resolved = {};
     }
 
-    if (options.cacheKey != null) systemProxyEnvCache.set(options.cacheKey, { ...resolved });
+    if (options.cacheKey != null && !queryFailed) systemProxyEnvCache.set(options.cacheKey, { ...resolved });
     return resolved;
   } catch {
     return {};

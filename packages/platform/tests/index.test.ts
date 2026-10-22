@@ -523,6 +523,22 @@ HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settin
     expect(callCount).toBe(1);
   });
 
+  it("reads Windows proxy settings in one query and retries an unsuccessful cached lookup", () => {
+    let calls = 0;
+    const runCommand = (command: string, args: string[]) => {
+      calls += 1;
+      expect(command).toBe("reg");
+      expect(args).toEqual(["query", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings"]);
+      if (calls === 1) throw new Error("registry lookup timed out");
+      return "ProxyEnable    REG_DWORD    0x1\nProxyServer    REG_SZ    proxy.example:8080\n";
+    };
+    const options = { cacheKey: "platform-vdi-cache", platform: "win32" as const, runCommand };
+    expect(resolveSystemProxyEnv(options)).toEqual({});
+    expect(resolveSystemProxyEnv(options).HTTP_PROXY).toBe("http://proxy.example:8080");
+    expect(resolveSystemProxyEnv(options).HTTP_PROXY).toBe("http://proxy.example:8080");
+    expect(calls).toBe(2);
+  });
+
   it("makes the last proxy env source win case-insensitively", () => {
     const env = mergeProxyAwareEnv(
       "linux",

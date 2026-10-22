@@ -23,7 +23,7 @@ import {
 const AGENT_REQUEST_TTL_MS = 5 * 60_000;
 const APPROVAL_TTL_MS = 2 * 60_000;
 const APPROVAL_LONG_POLL_MS = 25_000;
-const RUN_TERMINATION_TIMEOUT_MS = 5_000;
+const RUN_TERMINATION_TIMEOUT_MS = 60_000;
 const MAX_REASON_LENGTH = 2_000;
 
 type Clock = () => number;

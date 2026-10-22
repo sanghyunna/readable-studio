@@ -11,7 +11,7 @@ export const kiroAgentDef = {
         bin: resolvedBin,
         args: ['acp'],
         env,
-        timeoutMs: 15_000,
+        timeoutMs: 180_000,
         defaultModelOption: DEFAULT_MODEL_OPTION,
       }),
     fallbackModels: [DEFAULT_MODEL_OPTION],

@@ -1818,6 +1818,8 @@ test('attachPiRpcSession abort escalates from SIGTERM to SIGKILL when Pi stays a
 
     session.abort();
     await vi.advanceTimersByTimeAsync(2_000);
+    assert.deepEqual(child.signals, ['SIGTERM']);
+    await vi.advanceTimersByTimeAsync(10_000);
 
     assert.deepEqual(child.signals, ['SIGTERM', 'SIGKILL']);
   } finally {

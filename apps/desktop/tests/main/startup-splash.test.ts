@@ -21,6 +21,20 @@ function fixture() {
 afterEach(() => vi.useRealTimers());
 
 describe('startup splash', () => {
+  it('waits for a healthy renderer that paints after the old fifteen-second ceiling', async () => {
+    vi.useFakeTimers(); vi.setSystemTime(0);
+    const { host, reveal, onTimeout } = fixture();
+    let appMounted = false;
+    const done = runStartupSplash({ ...host, readReadiness: async () => ({ appMounted, splashFinished: true }) });
+    await vi.advanceTimersByTimeAsync(31_000);
+    expect(onTimeout).not.toHaveBeenCalled();
+    expect(reveal).not.toHaveBeenCalled();
+    appMounted = true;
+    await vi.advanceTimersByTimeAsync(160);
+    expect(await done).toBe('ready');
+    expect(reveal).toHaveBeenCalledOnce();
+  });
+
   it.each(['running', 'hung', 'stored'] as const)('reveals before the deadline when the UI and animation are ready and scanning is %s', async (scan) => {
     // Given a parked animation and a scan independent of UI readiness.
     vi.useFakeTimers(); vi.setSystemTime(0);
@@ -95,7 +109,7 @@ describe('startup splash', () => {
     const done = runStartupSplash({ ...host,
       readReadiness: async () => ({ appMounted: true, splashFinished: false }),
     });
-    await vi.advanceTimersByTimeAsync(14999);
+    await vi.advanceTimersByTimeAsync(179999);
     expect(reveal).not.toHaveBeenCalled();
     // When the deadline arrives.
     await vi.advanceTimersByTimeAsync(1);
@@ -110,7 +124,7 @@ describe('startup splash', () => {
     const { host, reveal, onTimeout } = fixture();
     // When the readiness ceiling expires.
     const done = runStartupSplash({ ...host, readReadiness: () => new Promise<never>(() => {}) });
-    await vi.advanceTimersByTimeAsync(15000);
+    await vi.advanceTimersByTimeAsync(180000);
     // Then an honest recovery state replaces indefinite waiting, never a blank window.
     expect(reveal).not.toHaveBeenCalled();
     expect(onTimeout).toHaveBeenCalledOnce();

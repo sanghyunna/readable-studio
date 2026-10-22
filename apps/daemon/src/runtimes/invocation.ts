@@ -36,7 +36,7 @@ export function execAgentFile(
   const invocation = createAgentCommandInvocation(command, args, options.env);
   const pending = execFileP(invocation.command, invocation.args, {
     ...options,
-    timeout: options.timeout && options.timeout > 0 ? options.timeout : 5000,
+    timeout: options.timeout && options.timeout > 0 ? options.timeout : 180_000,
     windowsHide: true,
     cwd: options.cwd ?? os.tmpdir(),
     windowsVerbatimArguments: invocation.windowsVerbatimArguments,

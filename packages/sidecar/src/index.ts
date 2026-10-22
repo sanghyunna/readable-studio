@@ -607,9 +607,13 @@ export async function createJsonIpcServer({
 export async function requestJsonIpc<T = any>(
   socketPath: string,
   payload: unknown,
-  { timeoutMs = 1500 }: { timeoutMs?: number } = {},
+  { timeoutMs = 60_000, signal }: { timeoutMs?: number; signal?: AbortSignal } = {},
 ): Promise<T> {
   return await new Promise<T>((resolveRequest, rejectRequest) => {
+    if (signal?.aborted) {
+      rejectRequest(signal.reason);
+      return;
+    }
     const socket = createConnection(socketPath);
     let settled = false;
     let buffer = "";
@@ -617,7 +621,12 @@ export async function requestJsonIpc<T = any>(
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
+      signal?.removeEventListener("abort", onAbort);
       callback();
+    };
+    const onAbort = () => {
+      socket.destroy();
+      settle(() => rejectRequest(signal?.reason));
     };
     const timeout = setTimeout(() => {
       socket.destroy();
@@ -644,5 +653,6 @@ export async function requestJsonIpc<T = any>(
     socket.on("error", (error) => {
       settle(() => rejectRequest(error));
     });
+    signal?.addEventListener("abort", onAbort, { once: true });
   });
 }

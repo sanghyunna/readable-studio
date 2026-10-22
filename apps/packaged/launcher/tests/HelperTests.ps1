@@ -1,4 +1,4 @@
-param([string]$Source, [string]$Root)
+﻿param([string]$Source, [string]$Root)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $Source 'common.ps1')
 $passed = 0; $failed = 0
@@ -16,7 +16,7 @@ $tokens = $null; $errors = $null
 $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $Source 'update-helper.ps1'), [ref]$tokens, [ref]$errors)
 try {
     # Execute the production successful-recovery branch with a controlled transaction.
-    $recovery = $ast.Find({param($node) $node -is [Management.Automation.Language.IfStatementAst] -and $node.Clauses[0].Item1.Extent.Text -eq '$tx.RecoverAndLaunch(180000)'}, $true)
+    $recovery = $ast.Find({param($node) $node -is [Management.Automation.Language.IfStatementAst] -and $node.Clauses[0].Item1.Extent.Text -eq '$tx.RecoverAndLaunch(2400000)'}, $true)
     $tx = [pscustomobject]@{ State = [pscustomobject]@{ target = '1.3.3' } }
     $TargetVersion = '1.3.4'
     [IO.File]::WriteAllText((Join-Path $Root 'update-error.log'), 'original failure')

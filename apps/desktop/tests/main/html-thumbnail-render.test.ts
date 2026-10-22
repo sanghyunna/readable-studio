@@ -56,6 +56,22 @@ describe('hidden HTML thumbnail renderer', () => {
     expect(f.window.destroy).toHaveBeenCalledOnce();
   });
 
+  it('allows a slow compositor thirty seconds after the readiness deadline', async () => {
+    vi.useFakeTimers();
+    const f = fixture();
+    const capture = Promise.withResolvers<ReturnType<typeof fixture>['image']>();
+    vi.mocked(f.window.webContents.executeJavaScript).mockImplementation(() => new Promise(() => {}));
+    vi.mocked(f.window.webContents.capturePage).mockReturnValue(capture.promise);
+    const result = f.render(input);
+    const settled = vi.fn();
+    void result.then(settled);
+    await vi.advanceTimersByTimeAsync(input.timeoutMs + 5_000);
+    expect(settled).not.toHaveBeenCalled();
+    capture.resolve(f.image);
+    expect((await result).ok).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('destroys after load or capture failure', async () => {
     for (const stage of ['load', 'capture'] as const) {
       const f = fixture();
@@ -76,7 +92,7 @@ describe('hidden HTML thumbnail renderer', () => {
     });
     const result = f.render(input);
     await entered.promise;
-    await vi.advanceTimersByTimeAsync(input.timeoutMs);
+    await vi.advanceTimersByTimeAsync(30_000);
     expect(await result).toMatchObject({ ok: false, code: 'THUMBNAIL_RENDER_TIMEOUT' });
     expect(f.window.destroy).toHaveBeenCalledOnce();
   });

@@ -2130,7 +2130,7 @@ function injectDeckBridge(doc: string, initialSlideIndex = 0): string {
   // fit() then falls back to scale(1) translated off-screen, and with
   // no further resize event the deck stays stuck on a blank/shell-color
   // frame. Two phases: fast nudges for the common case (~1s), then
-  // slower nudges for slower nested layouts (~10s more) before giving up.
+  // slower nudges for slow VDI layout (~60s more) before giving up.
   function chaseFirstLayout(){
     var attempts = 0;
     var settledAt = -1;
@@ -2142,7 +2142,7 @@ function injectDeckBridge(doc: string, initialSlideIndex = 0): string {
         if (settledAt < 0) settledAt = attempts;
         if (attempts - settledAt >= 2) return; // two extra nudges after the first fully-sized frame
       }
-      if (attempts >= 60) return;
+      if (attempts >= 260) return;
       setTimeout(tick, attempts < 20 ? 50 : 250);
     }
     tick();
@@ -2173,7 +2173,7 @@ function injectDeckBridge(doc: string, initialSlideIndex = 0): string {
     if (slidesDisposed || document.hidden || slideObserver) return;
     var list = slides();
     if (!list.length) {
-      if (slideRetryAttempts < 20) {
+      if (slideRetryAttempts < 400) {
         slideRetryAttempts += 1;
         slideRetryTimer = setTimeout(observeSlides, 150);
       }

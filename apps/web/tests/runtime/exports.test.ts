@@ -1067,6 +1067,20 @@ describe('requestPreviewSnapshot', () => {
     vi.useRealTimers();
   });
 
+  it('accepts a slow VDI capture after the old default deadline and clears its timer', async () => {
+    vi.useFakeTimers();
+    const postMessage = vi.fn();
+    const contentWindow = { postMessage };
+    const promise = requestPreviewSnapshot({ contentWindow } as unknown as HTMLIFrameElement);
+    const { id } = postMessage.mock.calls[0]![0] as { id: string };
+    await vi.advanceTimersByTimeAsync(45_000);
+    window.dispatchEvent({ type: 'message', source: contentWindow, data: { type: 'readable-studio:snapshot:result', id, dataUrl: 'data:image/png;base64,abc', w: 100, h: 50 } } as unknown as Event);
+    await expect(promise).resolves.toEqual({ dataUrl: 'data:image/png;base64,abc', w: 100, h: 50 });
+    expect(postMessage).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+    vi.useRealTimers();
+  });
+
   it('ignores messages with a mismatched id', async () => {
     vi.useFakeTimers();
     const postMessageMock = vi.fn();

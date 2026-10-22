@@ -572,6 +572,31 @@ describe('finalizeDesignPackage (pipeline integration)', () => {
     expect(dirEntries).not.toContain('.finalize.lock');
   });
 
+  it('allows synthesis to complete after three minutes with the production default', async () => {
+    const { db, projectsRoot, designSystemsRoot } = setupPipeline();
+    let entered!: () => void;
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      entered();
+      await new Promise<void>((resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+        setTimeout(resolve, 180_000);
+      });
+      return new Response(JSON.stringify({ content: [{ type: 'text', text: '# DESIGN.md\nSlow synthesis\n' }],
+        usage: { input_tokens: 1, output_tokens: 1 } }));
+    };
+    vi.useFakeTimers();
+    try {
+      const pending = finalizeDesignPackage(db, projectsRoot, designSystemsRoot, PROJECT_ID, {
+        apiKey: 'sk-test', model: 'claude-test', fetchImpl,
+      });
+      await started;
+      await vi.advanceTimersByTimeAsync(180_000);
+      const result = await pending;
+      expect(fs.readFileSync(result.designMdPath, 'utf8')).toContain('Slow synthesis');
+    } finally { vi.useRealTimers(); }
+  });
+
   it('uses Google Gemini generateContent when finalize protocol is google', async () => {
     const { db, projectsRoot, designSystemsRoot } = setupPipeline({
       designSystemId: 'shadcn',

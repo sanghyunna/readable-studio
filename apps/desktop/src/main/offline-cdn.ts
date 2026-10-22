@@ -33,7 +33,7 @@ export function installOfflineCdnHooks(
       if (origins) {
         const endpoint = new URL('/api/offline-cdn/resolve', origins.apiOrigin);
         endpoint.searchParams.set('url', details.url);
-        const response = await fetchImpl(endpoint, { signal: AbortSignal.timeout(5000) });
+        const response = await fetchImpl(endpoint, { signal: AbortSignal.timeout(30_000) });
         if (!response.ok) throw new Error(`Offline CDN resolver returned HTTP ${response.status}`);
         const resolution = await response.json() as { lib: string; major: number; path: string } | null;
         if (resolution) result = { redirectURL: new URL(`/offline-cdn/${resolution.lib}/${resolution.major}/${resolution.path}`, origins.webOrigin).toString() };

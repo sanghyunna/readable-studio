@@ -52,7 +52,7 @@ it('does not show missing URL guidance when checking a saved server after cleari
   const check = screen.getByRole('button', { name: 'update.check' });
   expect(check.hasAttribute('disabled')).toBe(false);
   await act(async () => fireEvent.click(check));
-  expect(fetcher).toHaveBeenCalledWith('/api/update/check', {});
+  expect(fetcher).toHaveBeenCalledWith('/api/update/check', expect.objectContaining({ signal: expect.any(AbortSignal) }));
   expect(fetcher.mock.calls.filter(([url]) => url === '/api/app-config')).toHaveLength(1);
   expect(screen.queryByText('update.serverHint')).toBeNull();
 });

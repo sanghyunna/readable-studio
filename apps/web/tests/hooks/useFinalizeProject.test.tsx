@@ -46,6 +46,53 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 describe('useFinalizeProject', () => {
+  it('accepts a slow finalize beyond the former limit and still supports immediate cancellation', async () => {
+    vi.useFakeTimers();
+    try {
+      let complete!: (value: Response) => void;
+      let signal: AbortSignal | undefined;
+      vi.spyOn(globalThis, 'fetch').mockImplementation((_url, init) => {
+        signal = init?.signal ?? undefined;
+        return new Promise<Response>((resolve, reject) => {
+          complete = resolve;
+          signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+        });
+      });
+      const { result } = renderHook(() => useFinalizeProject('p1'));
+      let pending!: Promise<unknown>;
+      act(() => { pending = result.current.trigger(REQUEST); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(180_000); });
+      expect(signal?.aborted).toBe(false);
+      expect(result.current.status).toBe('pending');
+      await act(async () => { complete(jsonResponse(SUCCESS_BODY)); await pending; });
+      expect(result.current.status).toBe('success');
+      act(() => { pending = result.current.trigger(REQUEST); });
+      await act(async () => { result.current.cancel(); await pending; });
+      expect(signal?.aborted).toBe(true);
+      expect(result.current.status).toBe('idle');
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('aborts the owned request on unmount and ignores its late success', async () => {
+    vi.useFakeTimers();
+    try {
+      let complete!: (value: Response) => void;
+      let signal: AbortSignal | undefined;
+      vi.spyOn(globalThis, 'fetch').mockImplementation((_url, init) => {
+        signal = init?.signal ?? undefined;
+        return new Promise<Response>(resolve => { complete = resolve; });
+      });
+      const { result, unmount } = renderHook(() => useFinalizeProject('p1'));
+      let pending!: Promise<unknown>;
+      act(() => { pending = result.current.trigger(REQUEST); });
+      unmount();
+      expect(signal?.aborted).toBe(true);
+      complete(jsonResponse(SUCCESS_BODY));
+      await expect(pending).resolves.toBeNull();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
   it('POSTs the FinalizeAnthropicRequest body verbatim and returns the success response', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse(SUCCESS_BODY));
     const { result } = renderHook(() => useFinalizeProject('p1'));
@@ -244,7 +291,7 @@ describe('useFinalizeProject', () => {
     });
   });
 
-  it('surfaces a TIMEOUT error when the 130 s timeout aborts the in-flight request', async () => {
+  it('surfaces a TIMEOUT error when the twelve-minute timeout aborts the in-flight request', async () => {
     vi.useFakeTimers();
     try {
       let abortFromHandler: AbortSignal | undefined;
@@ -265,11 +312,11 @@ describe('useFinalizeProject', () => {
       act(() => {
         triggerPromise = result.current.trigger(REQUEST);
       });
-      // Advance past the 130 s internal timeout — its callback flips
+      // Advance past the twelve-minute internal timeout — its callback flips
       // timedOutRef and aborts the controller, so the catch should
       // surface a TIMEOUT error rather than the user-cancel idle reset.
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(130_001);
+        await vi.advanceTimersByTimeAsync(12 * 60_000 + 1);
         await triggerPromise;
       });
 
@@ -277,7 +324,7 @@ describe('useFinalizeProject', () => {
       expect(result.current.status).toBe('error');
       expect(result.current.error?.code).toBe('TIMEOUT');
       expect(result.current.error?.message).toBe(
-        'Finalize timed out after 130 s. The daemon may still be running.',
+        'Finalize timed out after 12 minutes. The daemon may still be running.',
       );
     } finally {
       vi.useRealTimers();

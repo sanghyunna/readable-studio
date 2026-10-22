@@ -55,7 +55,7 @@ export const grokBuildAgentDef = {
   // "You are logged in with grok.com" as selectable model names.
   listModels: {
     args: ['models'],
-    timeoutMs: 10_000,
+    timeoutMs: 180_000,
     parse: parseGrokBuildModels,
   },
   fallbackModels: [

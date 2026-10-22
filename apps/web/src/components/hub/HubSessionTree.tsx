@@ -207,7 +207,7 @@ export const HUB_SESSION_SURFACE_REQUEST_KEY = 'readable-studio:session-surface-
  * performance budget. What it must NOT span is the gap to a later, unrelated
  * visit, which is exactly the window the old protocol left wide open.
  */
-export const HUB_SESSION_SURFACE_TTL_MS = 30_000;
+export const HUB_SESSION_SURFACE_TTL_MS = 300_000;
 
 export type HubSessionSurfaceRequest =
   | { projectId: string; kind: 'terminal' }

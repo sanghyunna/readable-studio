@@ -577,7 +577,7 @@ describe('FileViewer manual edit resize handles', () => {
       expect(cancel).toBeTruthy();
       const before = frame.srcdoc;
       if (acknowledged) act(() => window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, data: { ...cancel.resize, type: 'readable-edit-preview-style-applied', id: 'hero', version: cancel.version, ok: true, rect: heroTarget().rect } })));
-      await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
       expect(frame.srcdoc === before).toBe(acknowledged);
       expect(fileSaveCalls(fetchMock)).toHaveLength(0);
     } finally { vi.useRealTimers(); }

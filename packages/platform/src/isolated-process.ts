@@ -24,6 +24,7 @@ export type SpawnIsolatedAgentOptions = {
   cwd: string;
   env?: NodeJS.ProcessEnv;
   helperPath?: string;
+  signal?: AbortSignal;
   readExecutePaths: readonly string[];
   writablePaths: readonly string[];
   broker?: {
@@ -34,6 +35,7 @@ export type SpawnIsolatedAgentOptions = {
 
 export type IsolatedAgentProbeOptions = {
   helperPath?: string;
+  signal?: AbortSignal;
 };
 
 type HelperReady = {
@@ -42,6 +44,9 @@ type HelperReady = {
 };
 
 const MAX_BROKER_FRAME_BYTES = 4 * 1024 * 1024;
+// Cold VDI launches include serialized ACL work on network-backed storage.
+const HELPER_READY_TIMEOUT_MS = 5 * 60_000;
+const HELPER_CLEANUP_TIMEOUT_MS = 3 * 60_000;
 const BROKER_PIPE_PATTERN = /^\\\\\.\\pipe\\LOCAL\\ReadableStudio\.[A-Za-z0-9.-]{1,160}$/u;
 
 const helperCandidates = [
@@ -93,6 +98,7 @@ function helperFailure(error: unknown): string {
 export async function probeIsolatedAgentSupport(
   options: IsolatedAgentProbeOptions = {},
 ): Promise<IsolatedAgentSupport> {
+  options.signal?.throwIfAborted();
   if (process.platform !== "win32") {
     return { reason: `AppContainer isolation is unavailable on ${process.platform}`, supported: false };
   }
@@ -107,10 +113,21 @@ export async function probeIsolatedAgentSupport(
       });
       let output = "";
       let errorOutput = "";
-      const timeout = setTimeout(() => {
+      let failure: unknown;
+      let timeout = setTimeout(() => {
+        failure = new Error("AppContainer capability probe timed out");
         child.kill();
-        rejectProbe(new Error("AppContainer capability probe timed out"));
-      }, 15_000);
+      }, HELPER_READY_TIMEOUT_MS);
+      const onAbort = () => {
+        failure = options.signal?.reason;
+        clearTimeout(timeout);
+        // The native probe has no cancel channel; let its ACL cleanup finish first.
+        timeout = setTimeout(() => child.kill(), HELPER_CLEANUP_TIMEOUT_MS);
+      };
+      const cleanup = () => {
+        clearTimeout(timeout);
+        options.signal?.removeEventListener("abort", onAbort);
+      };
       child.stdout.setEncoding("utf8");
       child.stderr.setEncoding("utf8");
       child.stdout.on("data", (chunk: string) => {
@@ -120,14 +137,17 @@ export async function probeIsolatedAgentSupport(
         errorOutput += chunk;
       });
       child.once("error", (error) => {
-        clearTimeout(timeout);
+        cleanup();
         rejectProbe(error);
       });
-      child.once("exit", (code) => {
-        clearTimeout(timeout);
-        if (code === 0) resolveProbe(output);
+      child.once("close", (code) => {
+        cleanup();
+        if (failure != null) rejectProbe(failure);
+        else if (code === 0) resolveProbe(output);
         else rejectProbe(new Error(errorOutput.trim() || `AppContainer capability probe exited ${code}`));
       });
+      options.signal?.addEventListener("abort", onAbort, { once: true });
+      if (options.signal?.aborted) onAbort();
     });
     const result = JSON.parse(stdout) as IsolatedAgentSupport;
     if (
@@ -140,8 +160,10 @@ export async function probeIsolatedAgentSupport(
     ) {
       throw new Error("AppContainer helper returned an invalid capability result");
     }
+    options.signal?.throwIfAborted();
     return result;
   } catch (error) {
+    options.signal?.throwIfAborted();
     return { reason: helperFailure(error), supported: false };
   }
 }
@@ -149,21 +171,24 @@ export async function probeIsolatedAgentSupport(
 async function waitForReady(
   child: ChildProcessWithoutNullStreams,
   control: Readable,
+  signal?: AbortSignal,
 ): Promise<HelperReady> {
   return await new Promise<HelperReady>((resolveReady, rejectReady) => {
     let buffer = "";
-    const timeout = setTimeout(() => rejectReady(new Error("Windows AppContainer helper did not become ready")), 15_000);
+    const timeout = setTimeout(() => fail(new Error("Windows AppContainer helper did not become ready")), HELPER_READY_TIMEOUT_MS);
     const cleanup = (): void => {
       clearTimeout(timeout);
       control.removeListener("data", onData);
       child.removeListener("error", onError);
       child.removeListener("exit", onExit);
+      signal?.removeEventListener("abort", onAbort);
     };
     const fail = (error: Error): void => {
       cleanup();
       rejectReady(error);
     };
     const onError = (error: Error): void => fail(error);
+    const onAbort = (): void => fail(signal?.reason);
     const onExit = (code: number | null): void => fail(new Error(`Windows AppContainer helper exited before launch (${code})`));
     const onData = (chunk: Buffer | string): void => {
       buffer += chunk.toString();
@@ -184,14 +209,19 @@ async function waitForReady(
     control.on("data", onData);
     child.once("error", onError);
     child.once("exit", onExit);
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) onAbort();
   });
 }
 
 async function closeFailedHelper(child: ChildProcessWithoutNullStreams): Promise<void> {
   child.stdin.end();
-  if (child.exitCode != null) return;
+  // EOF also releases a native broker waiting for its ready acknowledgement.
+  (child.stdio[3] as Duplex | null)?.end();
+  if (child.exitCode != null || child.signalCode != null) return;
   await new Promise<void>((resolveClose) => {
-    const kill = setTimeout(() => child.kill(), 250);
+    // Leave room for the native 2-minute ACL mutex wait and cleanup I/O.
+    const kill = setTimeout(() => child.kill(), HELPER_CLEANUP_TIMEOUT_MS);
     child.once("close", () => {
       clearTimeout(kill);
       resolveClose();
@@ -288,6 +318,7 @@ function canonicalWin32Path(path: string): string | null {
 export async function spawnIsolatedAgent(
   options: SpawnIsolatedAgentOptions,
 ): Promise<ChildProcessWithoutNullStreams> {
+  options.signal?.throwIfAborted();
   validateOptions(options);
   if (options.helperPath && !win32.isAbsolute(options.helperPath)) {
     throw new Error("Windows AppContainer helper path must be absolute");
@@ -297,8 +328,9 @@ export async function spawnIsolatedAgent(
   if (!isolatedHelperPathIsProtected(helper, options.writablePaths)) {
     throw new Error("Windows AppContainer helper must stay outside agent-writable paths");
   }
-  const support = await probeIsolatedAgentSupport({ helperPath: helper });
+  const support = await probeIsolatedAgentSupport({ helperPath: helper, signal: options.signal });
   if (!support.supported) throw new Error(support.reason);
+  options.signal?.throwIfAborted();
 
   const env = options.env ?? process.env;
   const invocation = createCommandInvocation({ args: [...(options.args ?? [])], command: options.command, env });
@@ -313,24 +345,36 @@ export async function spawnIsolatedAgent(
     child.kill();
     throw new Error("Windows AppContainer helper control pipe was not created");
   }
-  await new Promise<void>((resolveSpawn, rejectSpawn) => {
-    child.once("error", rejectSpawn);
-    child.once("spawn", resolveSpawn);
-  });
-  child.stdin.write(
-    `${JSON.stringify({
-      args: invocation.args,
-      command: invocation.command,
-      cwd: options.cwd,
-      env: Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] != null)),
-      readExecutePaths: options.readExecutePaths,
-      ...(options.broker ? { brokerPipeName: options.broker.pipeName } : {}),
-      windowsVerbatimArguments: invocation.windowsVerbatimArguments === true,
-      writablePaths: options.writablePaths,
-    })}\n`,
-  );
   try {
-    await waitForReady(child, control);
+    await new Promise<void>((resolveSpawn, rejectSpawn) => {
+      const cleanup = () => {
+        child.removeListener("error", onError);
+        child.removeListener("spawn", onSpawn);
+        options.signal?.removeEventListener("abort", onAbort);
+      };
+      const onError = (error: Error) => { cleanup(); rejectSpawn(error); };
+      const onSpawn = () => { cleanup(); resolveSpawn(); };
+      const onAbort = () => { cleanup(); rejectSpawn(options.signal?.reason); };
+      child.once("error", onError);
+      child.once("spawn", onSpawn);
+      options.signal?.addEventListener("abort", onAbort, { once: true });
+      if (options.signal?.aborted) onAbort();
+    });
+    options.signal?.throwIfAborted();
+    child.stdin.write(
+      `${JSON.stringify({
+        args: invocation.args,
+        command: invocation.command,
+        cwd: options.cwd,
+        env: Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] != null)),
+        readExecutePaths: options.readExecutePaths,
+        ...(options.broker ? { brokerPipeName: options.broker.pipeName } : {}),
+        windowsVerbatimArguments: invocation.windowsVerbatimArguments === true,
+        writablePaths: options.writablePaths,
+      })}\n`,
+    );
+    await waitForReady(child, control, options.signal);
+    options.signal?.throwIfAborted();
     if (options.broker) {
       attachBrokerControl(child, control, options.broker.handleRequest);
       control.write(Buffer.from([0x06]));

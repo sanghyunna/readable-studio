@@ -8,7 +8,7 @@ import type { DatabricksCliState, DatabricksErrorCode, DatabricksIssue } from '@
 
 interface DatabricksCliDiagnostic {
   category: 'timeout' | 'aborted' | 'spawn' | 'output-limit' | 'cli-exit';
-  cause?: 'connection-closed' | 'tls' | 'http' | 'permission' | 'auth-config' | 'keyring' | 'network' | 'unsupported';
+  cause?: 'connection-closed' | 'tls' | 'http' | 'permission' | 'auth-config' | 'keyring' | 'network' | 'unsupported' | 'not-found';
   elapsedMs?: number;
   exitCode?: number;
   stdoutBytes?: number;
@@ -114,7 +114,8 @@ export interface DatabricksExecutableOptions {
   userToolchainBins?: string[];
   sourceRoot?: string;
   runner?: DatabricksSubprocessRunner;
-  timeoutMs?: number;
+  timeoutMs?: number | null;
+  signal?: AbortSignal;
   preferBundled?: boolean;
 }
 
@@ -137,9 +138,10 @@ export async function resolveDatabricksCli(override?: string | null, options: Da
       : join(options.sourceRoot ?? fileURLToPath(new URL('../../../../', import.meta.url)), '.tmp', 'databricks-cli-acquisition', 'app');
     candidates.push({ path: join(appRoot, 'vendor', 'databricks', 'databricks.exe'), source: 'bundled' });
   }
-  const timeoutMs = options.timeoutMs ?? 3000;
+  const timeoutMs = options.timeoutMs === null ? 0 : options.timeoutMs ?? 120_000;
   if (options.preferBundled) candidates.splice(0, candidates.length, ...candidates.filter(candidate => candidate.source === 'bundled'));
   for (const candidate of candidates) {
+    if (options.signal?.aborted) throw new DatabricksServiceError('DATABRICKS_UPSTREAM_UNAVAILABLE', true, { category: 'aborted' });
     try {
       await access(candidate.path, constants.X_OK);
     } catch (error) {
@@ -147,7 +149,7 @@ export async function resolveDatabricksCli(override?: string | null, options: Da
       throw new DatabricksServiceError('DATABRICKS_UPSTREAM_UNAVAILABLE');
     }
     try {
-      const result = await withDeadline((signal) => (options.runner ?? runDatabricksProcess)(candidate.path, ['--version'], { signal, timeoutMs }), timeoutMs);
+      const result = await withDeadline((signal) => (options.runner ?? runDatabricksProcess)(candidate.path, ['--version'], { signal, timeoutMs }), options.timeoutMs === null ? null : timeoutMs, options.signal);
       if (result.exitCode === 0 && supportedDatabricksVersion(result.stdout)) return candidate;
     } catch (error) {
       // A stale local launcher must not shadow the shipped executable.
@@ -163,12 +165,12 @@ export async function resolveDatabricksExecutable(override?: string | null, opti
 }
 
 /** The race also bounds injected implementations that fail to honor AbortSignal. */
-export async function withDeadline<T>(work: (signal: AbortSignal) => Promise<T>, timeoutMs: number, parent?: AbortSignal): Promise<T> {
+export async function withDeadline<T>(work: (signal: AbortSignal) => Promise<T>, timeoutMs: number | null, parent?: AbortSignal): Promise<T> {
   const controller = new AbortController();
   const abort = () => controller.abort();
   if (parent?.aborted) abort();
   else parent?.addEventListener('abort', abort, { once: true });
-  const timer = setTimeout(abort, timeoutMs);
+  const timer = timeoutMs === null ? undefined : setTimeout(abort, timeoutMs);
   let rejectAbort: (() => void) | undefined;
   try {
     return await Promise.race([
@@ -203,8 +205,8 @@ function supportedDatabricksVersion(stdout: string): string | null {
 export interface DatabricksClientOptions {
   executablePath?: string | null;
   runner?: DatabricksSubprocessRunner;
-  resolveExecutable?: (override?: string | null) => Promise<string | DatabricksExecutable | null>;
-  timeoutMs?: number;
+  resolveExecutable?: (override?: string | null, signal?: AbortSignal) => Promise<string | DatabricksExecutable | null>;
+  timeoutMs?: number | null;
 }
 
 export class DatabricksClient {
@@ -213,15 +215,17 @@ export class DatabricksClient {
   private state: { cli: DatabricksCliState; version: string | null } = { cli: 'missing', version: null };
   constructor(private readonly options: DatabricksClientOptions = {}) {}
 
-  async probe(preferBundled = false): Promise<{ cli: DatabricksCliState; version: string | null; cliSource: DatabricksCliSource | null }> {
+  async probe(preferBundled = false, signal?: AbortSignal): Promise<{ cli: DatabricksCliState; version: string | null; cliSource: DatabricksCliSource | null }> {
     this.executable = null;
     this.cliSource = null;
     try {
-      const resolved = await (this.options.resolveExecutable ?? ((override) => resolveDatabricksCli(override, { ...this.options, preferBundled })))(preferBundled ? undefined : this.options.executablePath);
+      const resolver = this.options.resolveExecutable ?? ((override, signal) => resolveDatabricksCli(override, { ...this.options, preferBundled, ...(signal ? { signal } : {}) }));
+      const override = preferBundled ? undefined : this.options.executablePath;
+      const resolved = await (signal ? resolver(override, signal) : resolver(override));
       this.executable = typeof resolved === 'string' ? resolved : resolved?.path ?? null;
       this.cliSource = typeof resolved === 'string' ? this.options.executablePath ? 'override' : 'path' : resolved?.source ?? null;
       if (!this.executable) { this.state = { cli: 'missing', version: null }; return this.status(); }
-      const result = await this.run(['--version']);
+      const result = await this.run(['--version'], signal);
       const version = /(?:Databricks\s+(?:CLI\s+)?v?)(\d+\.\d+\.\d+)/i.exec(result.stdout)?.[1] ?? null;
       if (result.exitCode !== 0) { this.state = { cli: 'uninvocable', version: null }; return this.status(); }
       const supported = version != null && (Number(version.split('.')[0]) > 0 || Number(version.split('.')[1]) >= 205);
@@ -237,8 +241,8 @@ export class DatabricksClient {
   private async run(args: readonly string[], signal?: AbortSignal): Promise<CliResult> {
     if (!this.executable) throw new DatabricksServiceError('DATABRICKS_CLI_MISSING');
     const executable = this.executable;
-    const timeoutMs = this.options.timeoutMs ?? 15_000;
-    return withDeadline((bounded) => (this.options.runner ?? runDatabricksProcess)(executable, args, { signal: bounded, timeoutMs }), timeoutMs, signal);
+    const timeoutMs = this.options.timeoutMs === null ? 0 : this.options.timeoutMs ?? 120_000;
+    return withDeadline((bounded) => (this.options.runner ?? runDatabricksProcess)(executable, args, { signal: bounded, timeoutMs }), this.options.timeoutMs === null ? null : timeoutMs, signal);
   }
 
   /** The CLI opens its own browser. Explicit profile avoids any stdin prompt. */
@@ -265,7 +269,8 @@ export class DatabricksClient {
     if (result.exitCode !== 0) {
       const failure = classifyCliFailure(result.stderr);
       const http = /(?:\bHTTP(?:\/\d(?:\.\d)?)?|\bstatus(?: code)?)[\s:=]*([45]\d\d)\b/i.exec(result.stderr)?.[1];
-      const cause: DatabricksCliDiagnostic['cause'] = /\bEOF\b|connection (?:closed|reset)|broken pipe/i.test(result.stderr) ? 'connection-closed'
+      const cause: DatabricksCliDiagnostic['cause'] = /RESOURCE_DOES_NOT_EXIST|\bNOT_FOUND\b/i.test(result.stderr) ? 'not-found'
+        : /\bEOF\b|connection (?:closed|reset)|broken pipe/i.test(result.stderr) ? 'connection-closed'
         : /\bTLS\b|x509|certificate/i.test(result.stderr) ? 'tls'
           : http ? 'http'
             : failure.code === 'DATABRICKS_KEYRING_UNAVAILABLE' ? 'keyring'

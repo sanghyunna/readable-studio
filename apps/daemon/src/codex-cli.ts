@@ -6,7 +6,7 @@
 //
 // CodexRunner is injected so tests can stub spawn without poking the
 // global child_process module; production uses defaultCodexRunner which
-// is a thin spawn() wrapper with a 30s timeout.
+// is a thin spawn() wrapper with a three-minute timeout.
 
 import { spawn } from 'node:child_process';
 
@@ -32,8 +32,8 @@ const defaultCodexRunner: CodexRunner = {
       let stderr = '';
       const timer = setTimeout(() => {
         child.kill('SIGKILL');
-        reject(new Error('codex CLI timed out after 30s'));
-      }, 30_000);
+        reject(new Error('codex CLI timed out after 180s'));
+      }, 180_000);
       child.stdout?.on('data', (d) => {
         stdout += String(d);
       });

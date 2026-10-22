@@ -1,0 +1,51 @@
+import { EventEmitter } from 'node:events';
+import { afterEach, expect, it, vi } from 'vitest';
+const { connect } = vi.hoisted(() => ({ connect: vi.fn() }));
+vi.mock('node:net', async original => ({ ...await original<typeof import('node:net')>(), createConnection: connect }));
+import { requestJsonIpc } from '../src/index.js';
+afterEach(() => { vi.useRealTimers(); connect.mockReset(); });
+it('accepts an IPC reply delayed by a busy VDI event loop', async () => {
+  vi.useFakeTimers();
+  const socket = Object.assign(new EventEmitter(), { write: vi.fn(), end: vi.fn(), destroy: vi.fn() });
+  connect.mockReturnValue(socket);
+  const result = requestJsonIpc('test-pipe', { type: 'status' }).then(value => ({ value }), error => ({ error }));
+  socket.emit('connect');
+  await vi.advanceTimersByTimeAsync(31_000);
+  expect(socket.destroy).not.toHaveBeenCalled();
+  socket.emit('data', Buffer.from('{"ok":true,"result":{"ready":true}}\n'));
+  expect(await result).toEqual({ value: { ready: true } });
+  expect(vi.getTimerCount()).toBe(0);
+});
+it('still rejects an explicit caller deadline and destroys the socket', async () => {
+  vi.useFakeTimers();
+  const socket = Object.assign(new EventEmitter(), { write: vi.fn(), end: vi.fn(), destroy: vi.fn() });
+  connect.mockReturnValue(socket);
+  const result = requestJsonIpc('test-pipe', {}, { timeoutMs: 100 }).catch(error => error);
+  await vi.advanceTimersByTimeAsync(100);
+  expect(await result).toBeInstanceOf(Error);
+  expect(socket.destroy).toHaveBeenCalledOnce();
+});
+it('cancels a pending IPC request immediately instead of waiting for its generous deadline', async () => {
+  vi.useFakeTimers();
+  const socket = Object.assign(new EventEmitter(), { write: vi.fn(), end: vi.fn(), destroy: vi.fn() });
+  connect.mockReturnValue(socket);
+  const controller = new AbortController();
+  const result = requestJsonIpc('test-pipe', {}, { signal: controller.signal }).catch(error => error);
+  controller.abort(new Error('child exited'));
+  expect(await result).toEqual(new Error('child exited'));
+  expect(socket.destroy).toHaveBeenCalledOnce();
+  expect(vi.getTimerCount()).toBe(0);
+});
+it('does not connect when already canceled or retain cancellation after success', async () => {
+  const canceled = new AbortController(); canceled.abort(new Error('canceled'));
+  await expect(requestJsonIpc('test-pipe', {}, { signal: canceled.signal })).rejects.toThrow('canceled');
+  expect(connect).not.toHaveBeenCalled();
+  const socket = Object.assign(new EventEmitter(), { write: vi.fn(), end: vi.fn(), destroy: vi.fn() });
+  connect.mockReturnValue(socket);
+  const controller = new AbortController();
+  const result = requestJsonIpc('test-pipe', {}, { signal: controller.signal });
+  socket.emit('data', Buffer.from('{"ok":true,"result":true}\n'));
+  await expect(result).resolves.toBe(true);
+  controller.abort();
+  expect(socket.destroy).not.toHaveBeenCalled();
+});

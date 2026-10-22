@@ -142,7 +142,7 @@ export async function inspectExistingPackagedDesktop(
     status = await requestIpc<DesktopStatusSnapshot>(
       ipcPath,
       { type: SIDECAR_MESSAGES.STATUS },
-      { timeoutMs: 350 },
+      { timeoutMs: 60_000 },
     );
   } catch (error) {
     const message = `inspect-unavailable namespace=${namespace} action=continue error=${error instanceof Error ? error.message : String(error)}`;
@@ -157,7 +157,7 @@ export async function inspectExistingPackagedDesktop(
   }
 
   try {
-    await requestIpc(ipcPath, { type: SIDECAR_MESSAGES.SHOW }, { timeoutMs: 800 });
+    await requestIpc(ipcPath, { type: SIDECAR_MESSAGES.SHOW }, { timeoutMs: 30_000 });
     await writePackagedStartupLog(options.paths, `inspect-found-existing namespace=${namespace} focus=accepted`);
     return { action: "exit", reason: "existing-focused" };
   } catch (error) {

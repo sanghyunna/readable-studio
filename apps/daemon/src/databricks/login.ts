@@ -35,7 +35,7 @@ export class DatabricksLogins {
     // One browser authorization at a time prevents competing CLI config writes.
     if ([...this.jobs.values()].some(active)) throw new DatabricksServiceError('DATABRICKS_STALE_REVISION', true);
     const loginId = randomUUID();
-    const deadlineMs = this.options.deadlineMs ?? 300_000;
+    const deadlineMs = this.options.deadlineMs ?? 30 * 60_000;
     const job: LoginJob = { controller: new AbortController(), snapshot: {
       loginId, state: 'starting', createdAt: new Date(this.clock.now()).toISOString(),
       deadlineAt: new Date(this.clock.now() + deadlineMs).toISOString(), completedAt: null, profileId: null, issues: [],
@@ -73,7 +73,7 @@ export class DatabricksLogins {
 
   private async run(job: LoginJob, host: string, profileName: string, deadlineMs: number): Promise<void> {
     try {
-      const status = await this.client.probe(true);
+      const status = await this.client.probe(true, job.controller.signal);
       if (!active(job)) return;
       if (status.cli !== 'ready') throw new DatabricksServiceError(status.cli === 'missing' ? 'DATABRICKS_CLI_MISSING' : 'DATABRICKS_CLI_UNSUPPORTED');
       let output = '';

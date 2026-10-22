@@ -57,19 +57,19 @@ $worker = [PowerShell]::Create()
             try { $parent = [Diagnostics.Process]::GetProcessById($WaitPid) }
             catch [ArgumentException] { $parent = $null }
             if ($null -ne $parent) {
-                try { if (-not $parent.WaitForExit(45000)) { throw '앱 종료를 기다리고 있습니다. 모든 Readable Studio 창을 닫고 다시 시도해 주세요.' } }
+                try { if (-not $parent.WaitForExit(540000)) { throw '앱 종료를 기다리고 있습니다. 모든 Readable Studio 창을 닫고 다시 시도해 주세요.' } }
                 finally { $parent.Dispose() }
             }
         }
         Stop-PayloadProcesses $Root
-        $tx.RequireEmpty(50000)
+        $tx.RequireEmpty(180000)
         $tx.Move('old-move', 'app', 'app.old')
         Stop-At 'old-move'
         $tx.Move('new-move', 'app.staging', 'app')
         Stop-At 'new-move'
         $tx.State.step = 'complete'; $tx.State.done = $true; $tx.Save()
         [IO.File]::AppendAllText((Join-Path $Root 'update-broker.log'), "helper relaunch namespace=$Namespace`n")
-        if (-not $tx.LaunchAndWaitReady(180000)) { throw "Version $TargetVersion failed to confirm startup." }
+        if (-not $tx.LaunchAndWaitReady(2400000)) { throw "Version $TargetVersion failed to confirm startup." }
         if (-not $tx.TryLock()) { throw 'Could not reclaim update mutex.' }
         [void]$tx.Read()
         if (-not $tx.Ready()) { throw '새 버전 실행 정보가 일치하지 않습니다.' }
@@ -91,7 +91,7 @@ $worker = [PowerShell]::Create()
         if ($claimed -and $tx.Exists('app.old')) {
             if (-not $tx.TryLock()) { throw $failure }
             if ($tx.Exists('app')) { Stop-PayloadProcesses $Root }
-            if ($tx.RecoverAndLaunch(180000)) {
+            if ($tx.RecoverAndLaunch(2400000)) {
                 [IO.File]::AppendAllText((Join-Path $Root 'update-error.log'), "`nUpdate to $TargetVersion failed; rolled back to $($tx.State.target).`n")
                 return 'rolled-back'
             }

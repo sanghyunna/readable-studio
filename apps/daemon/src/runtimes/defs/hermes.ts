@@ -11,7 +11,7 @@ export const hermesAgentDef = {
         bin: resolvedBin,
         args: ['acp', '--accept-hooks'],
         env,
-        timeoutMs: 15_000,
+        timeoutMs: 180_000,
         defaultModelOption: DEFAULT_MODEL_OPTION,
       }),
     // Used only when `fetchModels` (which calls `hermes acp` to enumerate

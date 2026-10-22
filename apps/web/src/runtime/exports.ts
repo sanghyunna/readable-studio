@@ -401,7 +401,7 @@ export type PreviewSnapshotResult =
 // @dsp func-cfc5f271
 export function requestPreviewSnapshotResult(
   iframe: HTMLIFrameElement,
-  timeout = 8000,
+  timeout = 120_000,
   options: { fullDocument?: boolean } = {},
 ): Promise<PreviewSnapshotResult> {
   const win = iframe.contentWindow;
@@ -415,6 +415,7 @@ export function requestPreviewSnapshotResult(
   const id = `snap-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   return new Promise((resolve) => {
     let done = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     function onMsg(ev: MessageEvent) {
       if (ev.source !== win) return;
       const d = ev.data as {
@@ -428,6 +429,7 @@ export function requestPreviewSnapshotResult(
       if (!d || d.type !== 'readable-studio:snapshot:result' || d.id !== id) return;
       if (done) return;
       done = true;
+      clearTimeout(timer);
       window.removeEventListener('message', onMsg);
       if (d.dataUrl && d.w && d.h) resolve({ ok: true, snapshot: { dataUrl: d.dataUrl, w: d.w, h: d.h } });
       else resolve({
@@ -449,7 +451,8 @@ export function requestPreviewSnapshotResult(
       window.removeEventListener('message', onMsg);
       resolve({ ok: false, reason: 'post-message-error' });
     }
-    setTimeout(() => {
+    if (done) return;
+    timer = setTimeout(() => {
       if (!done) {
         done = true;
         window.removeEventListener('message', onMsg);
@@ -462,7 +465,7 @@ export function requestPreviewSnapshotResult(
 // @dsp func-29e34a7d
 export async function requestPreviewSnapshot(
   iframe: HTMLIFrameElement,
-  timeout = 8000,
+  timeout = 120_000,
   options: { fullDocument?: boolean } = {},
 ): Promise<PreviewSnapshot | null> {
   const result = await requestPreviewSnapshotResult(iframe, timeout, options);

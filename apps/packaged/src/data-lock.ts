@@ -51,7 +51,7 @@ $ErrorActionPreference = 'Stop'
 $mutex = [System.Threading.Mutex]::new($false, $env:READABLE_LOCK_MUTEX)
 $held = $false
 try {
-  try { $held = $mutex.WaitOne(10000) }
+  try { $held = $mutex.WaitOne(60000) }
   catch [System.Threading.AbandonedMutexException] { $held = $true }
   if (-not $held) { throw 'Timed out acquiring the data-lock recovery mutex' }
   $path = $env:READABLE_LOCK_PATH

@@ -54,7 +54,7 @@ for (const env of [{}, { systemroot: 'C:\\Windows', PATH: '' }]) {
     assert.ok(probe);
     expect(Array.isArray(probe[1])).toBe(true);
     expect(probe[1]).toEqual(['-NoProfile', '-NonInteractive', '-c', expect.any(String)]);
-    expect(probe[2]).toMatchObject({ windowsHide: true, shell: false, timeout: 30000, maxBuffer: 4096 });
+    expect(probe[2]).toMatchObject({ windowsHide: true, shell: false, timeout: 180000, maxBuffer: 4096 });
   });
 }
 
@@ -96,14 +96,14 @@ test('reports failure when no candidate passes the PowerShell readiness probe', 
   await expect(resolvePiPowerShell({})).rejects.toThrow('returned unexpected output');
 });
 
-test('probes without profiles or interaction and allows thirty seconds', async () => {
+test('probes without profiles or interaction and allows three minutes', async () => {
   vi.mocked(fs.existsSync).mockReturnValue(true);
   mockProbe({ stdout: 'READABLE_PI_POWERSHELL' });
   await resolvePiPowerShell({});
   expect(childProcess.execFile).toHaveBeenCalledWith(
     'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
     ['-NoProfile', '-NonInteractive', '-c', expect.any(String)],
-    expect.objectContaining({ timeout: 30000, windowsHide: true, shell: false }),
+    expect.objectContaining({ timeout: 180000, windowsHide: true, shell: false }),
     expect.any(Function),
   );
 });
@@ -120,9 +120,9 @@ test('reports elapsed timeout distinctly from not found and retries failures', a
   vi.mocked(fs.existsSync).mockReturnValue(false);
   await expect(resolvePiPowerShell({})).rejects.toThrow('not found');
   vi.mocked(fs.existsSync).mockReturnValue(true);
-  vi.spyOn(Date, 'now').mockReturnValueOnce(1000).mockReturnValueOnce(31025);
+  vi.spyOn(Date, 'now').mockReturnValueOnce(1000).mockReturnValueOnce(181025);
   mockProbe({ error: Object.assign(new Error('killed'), { killed: true, signal: 'SIGTERM' }), stdout: '' });
-  await expect(resolvePiPowerShell({})).rejects.toThrow(/PowerShell is starting slowly.*30 s.*30025 ms/);
+  await expect(resolvePiPowerShell({})).rejects.toThrow(/PowerShell is starting slowly.*180 s.*180025 ms/);
   mockProbe({ stdout: 'READABLE_PI_POWERSHELL' });
   await expect(resolvePiPowerShell({})).resolves.toBe('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
 });

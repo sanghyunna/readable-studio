@@ -66,7 +66,7 @@ const HOSTED_PROXY_HEADER_ALLOWLIST = new Set([
   'user-agent',
   'x-readable-studio-csrf',
 ]);
-const SHUTDOWN_TIMEOUT_MS = 3000;
+const SHUTDOWN_TIMEOUT_MS = 30_000;
 const require = createRequire(import.meta.url);
 
 type NextApp = {
@@ -134,8 +134,8 @@ function parsePositiveIntegerEnv(envName: string, defaultValue: number): number 
 }
 
 export function resolveStandaloneStartupTimeoutMs(): number {
-  // 120s default gives cold first-launch headroom while Windows Defender cold-scans the freshly extracted tree.
-  return parsePositiveIntegerEnv(STANDALONE_STARTUP_TIMEOUT_ENV, 120_000);
+  // Network-booted VDI may spend minutes cold-loading Next and scanning extracted files.
+  return parsePositiveIntegerEnv(STANDALONE_STARTUP_TIMEOUT_ENV, 600_000);
 }
 
 export function createStandaloneParentMonitorImport(parentPidEnv = STANDALONE_PARENT_PID_ENV): string {
@@ -668,9 +668,9 @@ async function stopStandaloneChild(child: ChildProcess): Promise<void> {
   }
 }
 
-async function probeStandaloneBackend(origin: string): Promise<boolean> {
+async function probeStandaloneBackend(origin: string, signal: AbortSignal): Promise<boolean> {
   return await new Promise<boolean>((resolveProbe) => {
-    const request = createHttpRequest(new URL("/", origin), { method: "HEAD", timeout: 800, agent: false }, (response) => {
+    const request = createHttpRequest(new URL("/", origin), { method: "HEAD", timeout: 60_000, agent: false, signal }, (response) => {
       response.resume();
       resolveProbe(true);
     });
@@ -689,20 +689,26 @@ async function waitForStandaloneBackendReady(
   timeoutMs = resolveStandaloneStartupTimeoutMs(),
 ): Promise<void> {
   const startedAt = Date.now();
-
-  while (Date.now() - startedAt < timeoutMs) {
-    if (child.exitCode != null || child.signalCode != null) {
-      const elapsedMs = Date.now() - startedAt;
-      const likelyPortRace = elapsedMs <= 200;
-      throw new Error(
-        `standalone Next.js server exited before readiness after ${elapsedMs}ms: code=${child.exitCode} signal=${child.signalCode}`
-        + (likelyPortRace
-          ? "; the reserved startup port may have been claimed before the child process bound it, retry the launch"
-          : ""),
-      );
+  const childExit = new AbortController();
+  const onExit = () => childExit.abort();
+  child.once('exit', onExit);
+  try {
+    while (Date.now() - startedAt < timeoutMs) {
+      if (child.exitCode != null || child.signalCode != null) {
+        const elapsedMs = Date.now() - startedAt;
+        const likelyPortRace = elapsedMs <= 200;
+        throw new Error(
+          `standalone Next.js server exited before readiness after ${elapsedMs}ms: code=${child.exitCode} signal=${child.signalCode}`
+          + (likelyPortRace
+            ? "; the reserved startup port may have been claimed before the child process bound it, retry the launch"
+            : ""),
+        );
+      }
+      if (await probeStandaloneBackend(origin, childExit.signal)) return;
+      if (!childExit.signal.aborted) await new Promise((resolveWait) => setTimeout(resolveWait, 150));
     }
-    if (await probeStandaloneBackend(origin)) return;
-    await new Promise((resolveWait) => setTimeout(resolveWait, 150));
+  } finally {
+    child.off('exit', onExit);
   }
 
   throw new Error(`timed out after ${timeoutMs}ms waiting for standalone Next.js server at ${origin}; override with ${STANDALONE_STARTUP_TIMEOUT_ENV}`);
@@ -777,7 +783,8 @@ async function settleShutdownTask(task: Promise<unknown> | undefined): Promise<v
 }
 
 function stopThenExit(stop: () => Promise<void>): void {
-  const hardExit = setTimeout(() => process.exit(0), SHUTDOWN_TIMEOUT_MS + 1000);
+  // IPC, HTTP, and renderer shutdown drain in sequence.
+  const hardExit = setTimeout(() => process.exit(0), SHUTDOWN_TIMEOUT_MS * 3 + 1000);
   hardExit.unref();
   void stop().finally(() => {
     clearTimeout(hardExit);

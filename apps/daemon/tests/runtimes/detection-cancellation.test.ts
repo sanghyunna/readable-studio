@@ -92,7 +92,7 @@ it('terminates the real child when its probe budget expires', async () => {
     await h.started;
     const closed = h.closed();
     // When time itself crosses the configured deadline.
-    await vi.advanceTimersByTimeAsync(120_000);
+    await vi.advanceTimersByTimeAsync(15 * 60_000);
     const [outcome] = await settled;
     expect(outcome?.status).toBe('fulfilled');
     if (outcome?.status === 'fulfilled') expect(outcome.value[0]).toMatchObject({ available: false,

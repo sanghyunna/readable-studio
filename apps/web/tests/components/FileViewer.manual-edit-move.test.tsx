@@ -42,6 +42,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   manualEditMoveFrameProbe.current = null;
   document.getElementById('manual-edit-test-host')?.remove();
   vi.restoreAllMocks();
@@ -786,6 +787,66 @@ describe('FileViewer manual edit move frame', () => {
     expect(currentSource()).toContain('data-readable-id="pic"');
     expect(currentSource()).toContain('data-readable-id="pic-copy"');
     expect(currentSource()).toContain('translate: 21.5px -2.25px');
+  });
+
+  it.each(['resume after save failure', 'switch document'] as const)('waits for a slow prior save before duplicate: %s', async (outcome) => {
+    let finishSave!: (response: Response) => void;
+    const fetchMock = vi.fn(async (_input: unknown, init?: RequestInit) => {
+      if (init?.method === 'POST') return new Promise<Response>(resolve => { finishSave = resolve; });
+      return new Response(SOURCE);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const view = render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={SOURCE} />);
+    fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
+    const { frame } = await selectManualEditTarget(imageTarget());
+    const update = { delta: { x: 20, y: 0 }, shiftKey: false, axis: null } as const;
+    await act(async () => {
+      manualEditMoveFrameProbe.current!.onMoveStart();
+      manualEditMoveFrameProbe.current!.onMovePreview(update);
+      manualEditMoveFrameProbe.current!.onMoveCommit(update);
+    });
+    await saveChanges();
+    await waitFor(() => expect(fileSaveCalls(fetchMock)).toHaveLength(1));
+    const post = vi.spyOn(frame.contentWindow as Window, 'postMessage');
+    vi.useFakeTimers();
+    await act(async () => {
+      manualEditMoveFrameProbe.current!.onMoveStart();
+      manualEditMoveFrameProbe.current!.onCtrlChange?.(true);
+      manualEditMoveFrameProbe.current!.onMovePreview(update);
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(post.mock.calls.filter(([message]) => message.type === 'readable-edit-duplicate-create')).toHaveLength(0);
+    expect(screen.queryByText('Could not finish the current edit before duplicating. Try again.')).toBeNull();
+    if (outcome === 'switch document') {
+      view.rerender(<FileViewer projectId="project-2" projectKind="prototype"
+        file={{ ...htmlPreviewFile(), name: 'other.html', path: 'other.html' }}
+        liveHtml="<html><body>Another document</body></html>" />);
+    }
+    // A successful save exits editing; a failed save releases its mutex while
+    // preserving the editable source, so the waiting duplicate may proceed.
+    await act(async () => {
+      finishSave(new Response(JSON.stringify({ message: 'disk unavailable' }), { status: 500 }));
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    const creates = post.mock.calls.filter(([message]) => message.type === 'readable-edit-duplicate-create');
+    expect(creates).toHaveLength(outcome === 'switch document' ? 0 : 1);
+    if (outcome === 'switch document') {
+      expect(currentSource()).not.toContain('pic-copy');
+      return;
+    }
+    const create = creates[0]![0];
+    const acknowledge = (message: typeof create) => window.dispatchEvent(new MessageEvent('message', {
+      source: frame.contentWindow,
+      data: { ...message, type: 'readable-edit-duplicate-preview', ok: true,
+        rect: { x: 60, y: 40, width: 200, height: 120 }, placementOffset: { x: 0, y: 0 } },
+    }));
+    await act(async () => { acknowledge(create); });
+    await act(async () => { manualEditMoveFrameProbe.current!.onMoveCommit(update); });
+    const finalUpdate = post.mock.calls.filter(([message]) => message.type === 'readable-edit-duplicate-update').at(-1)?.[0];
+    expect(finalUpdate).toBeTruthy();
+    await act(async () => { acknowledge(finalUpdate); });
+    expect(currentSource()).toContain('data-readable-id="pic-copy"');
+    expect(fileSaveCalls(fetchMock)).toHaveLength(1);
   });
 
   it('captures movement before ending text edit can synchronously mutate the live target', async () => {

@@ -41,7 +41,7 @@ function networkDetail(error: unknown): string {
 }
 
 export interface UpdateTokenProviderOptions {
-  resolveCli?: (override?: string | null) => Promise<DatabricksExecutable | null>;
+  resolveCli?: (override?: string | null, signal?: AbortSignal) => Promise<DatabricksExecutable | null>;
   runner?: DatabricksSubprocessRunner;
   /** Unauthenticated reachability probe of the app host; any HTTP answer counts as reachable. Resolves or throws a network error. */
   reach?: (serverUrl: string, signal?: AbortSignal, fetcher?: typeof fetch) => Promise<void>;
@@ -59,47 +59,61 @@ function updateAppUrl(value: unknown): string | null {
 }
 
 /** Let the CLI select its current workspace; App URLs cannot be derived from workspace hosts. */
-export function createDefaultUpdateServerResolver(options: Pick<UpdateTokenProviderOptions, 'resolveCli' | 'runner'> = {}): () => Promise<string | null> {
+export function createDefaultUpdateServerResolver(options: Pick<UpdateTokenProviderOptions, 'resolveCli' | 'runner'> = {}): (signal?: AbortSignal) => Promise<string | null> {
   let cached: { url: string | null; expiresAt: number } | undefined;
-  let pending: Promise<string | null> | undefined;
-  const discover = async (): Promise<string | null> => {
+  let pending: { promise: Promise<string | null>; controller: AbortController; waiters: number } | undefined;
+  const discover = async (signal?: AbortSignal): Promise<string | null> => {
     const client = new DatabricksClient({
-      resolveExecutable: options.resolveCli ?? (() => resolveDatabricksCli()),
+      resolveExecutable: options.resolveCli ?? ((_, signal) => resolveDatabricksCli(undefined, { timeoutMs: null, ...(signal ? { signal } : {}) })),
       ...(options.runner ? { runner: options.runner } : {}),
-      timeoutMs: 5000,
+      timeoutMs: null,
     });
     try {
       return await withDeadline(async (signal) => {
-        if ((await client.probe()).cli !== 'ready' || signal.aborted) return null;
+        if ((await client.probe(false, signal)).cli !== 'ready' || signal.aborted) return null;
         const app = await client.json(['apps', 'get', 'readable-studio-updates', '--output', 'json'], signal);
         if (!app || typeof app !== 'object' || !('url' in app) || typeof app.url !== 'string' || !app.url.trim()
           || ('name' in app && app.name !== 'readable-studio-updates')) return null;
         return updateAppUrl(app.url);
-      }, 10_000);
+      }, null, signal);
     } catch { return null; }
   };
-  return () => {
+  return (signal) => {
+    if (signal?.aborted) return Promise.resolve(null);
     if (cached && cached.expiresAt > Date.now()) return Promise.resolve(cached.url);
-    pending ??= discover().then((url) => {
-      cached = { url, expiresAt: Date.now() + 60_000 };
-      return url;
-    }).finally(() => { pending = undefined; });
-    return pending;
+    if (!pending) {
+      const controller = new AbortController();
+      const job = { promise: Promise.resolve<string | null>(null), controller, waiters: 0 };
+      job.promise = discover(controller.signal).then((url) => {
+        if (!controller.signal.aborted) cached = { url, expiresAt: Date.now() + 60_000 };
+        return url;
+      }).finally(() => { if (pending === job) pending = undefined; });
+      pending = job;
+    }
+    const job = pending;
+    job.waiters++;
+    return withDeadline(() => job.promise, null, signal).catch(() => null).finally(() => {
+      job.waiters--;
+      if (!job.waiters && pending === job) {
+        pending = undefined;
+        job.controller.abort();
+      }
+    });
   };
 }
 
 const defaultUpdateServer = createDefaultUpdateServerResolver();
 
-export async function resolveUpdateConfigDefaults(config: AutoUpdateConfig, resolveServer = defaultUpdateServer): Promise<AutoUpdateConfig> {
+export async function resolveUpdateConfigDefaults(config: AutoUpdateConfig, resolveServer = defaultUpdateServer, signal?: AbortSignal): Promise<AutoUpdateConfig> {
   if (config.serverUrl) return config;
-  const serverUrl = await resolveServer();
+  const serverUrl = await resolveServer(signal);
   return serverUrl ? { enabled: true, serverUrl } : config;
 }
 
 async function probeReachable(serverUrl: string, signal?: AbortSignal, fetcher?: typeof fetch): Promise<void> {
   const client = fetcher ? undefined : createUpdateHttpClient();
   try {
-    const timeout = AbortSignal.timeout(10_000);
+    const timeout = AbortSignal.timeout(120_000);
     const response = await (fetcher ?? client!.fetch)(`${serverUrl}/api/v1/health`, { redirect: 'manual', signal: signal ? AbortSignal.any([signal, timeout]) : timeout } as { signal: AbortSignal });
     await response.body?.cancel();
   } finally { await client?.destroy(); }
@@ -112,10 +126,11 @@ async function probeReachable(serverUrl: string, signal?: AbortSignal, fetcher?:
  */
 export function createUpdateTokenProvider(options: UpdateTokenProviderOptions = {}): UpdateTokenProvider {
   let resolvedCli: DatabricksExecutable | null = null;
-  const resolveCli = options.resolveCli ?? ((override?: string | null) => resolveDatabricksCli(override));
+  const resolveCli = options.resolveCli ?? ((override?: string | null, signal?: AbortSignal) => resolveDatabricksCli(override, { timeoutMs: null, ...(signal ? { signal } : {}) }));
   const client = new DatabricksClient({
-    resolveExecutable: async (override) => (resolvedCli = await resolveCli(override)),
+    resolveExecutable: async (override, signal) => (resolvedCli = await resolveCli(override, signal)),
     ...(options.runner ? { runner: options.runner } : {}),
+    timeoutMs: null,
   });
   const credentials = new DatabricksCredentials(client, () => Date.now());
   let binding: DatabricksConnectionBinding | undefined;
@@ -124,7 +139,7 @@ export function createUpdateTokenProvider(options: UpdateTokenProviderOptions = 
     const trace = context.trace ?? (() => {});
     let start = performance.now();
     start = performance.now();
-    const probe = await client.probe();
+    const probe = await client.probe(false, context.signal);
     if (probe.cli !== 'ready') {
       trace({ step: 'cli', ok: false, elapsedMs: since(start), detail: probe.cli === 'missing'
         ? 'Databricks CLI not found (neither bundled nor installed)' : `Databricks CLI ${resolvedCli?.path ?? ''} is ${probe.cli}${probe.version ? ` (v${probe.version})` : ''}` });
@@ -151,11 +166,21 @@ export function createUpdateTokenProvider(options: UpdateTokenProviderOptions = 
       start = performance.now();
       const label = `${profile.name} ${profile.host}`;
       try {
-        const raw = await client.json(['apps', 'list', '--profile', profile.name, '--output', 'json'], context.signal) as { apps?: { url?: string }[] } | { url?: string }[];
+        let matched = false;
+        try {
+          const app = await client.json(['apps', 'get', 'readable-studio-updates', '--profile', profile.name, '--output', 'json'], context.signal);
+          matched = !!app && typeof app === 'object' && 'url' in app && updateAppUrl(app.url) === serverUrl;
+        } catch (error) {
+          if (!(error instanceof DatabricksServiceError) || error.diagnostic?.httpStatus !== 404 && error.diagnostic?.cause !== 'not-found') throw error;
+        }
+        if (!matched) {
+          const raw = await client.json(['apps', 'list', '--profile', profile.name, '--output', 'json'], context.signal) as { apps?: { url?: string }[] } | { url?: string }[];
+          const apps = Array.isArray(raw) ? raw : raw.apps ?? [];
+          matched = apps.some((app) => updateAppUrl(app.url) === serverUrl);
+        }
         authenticated = true;
-        const apps = Array.isArray(raw) ? raw : raw.apps ?? [];
-        if (!apps.some((app) => updateAppUrl(app.url) === serverUrl)) {
-          trace({ step: 'workspace', ok: true, elapsedMs: since(start), detail: `${label}: app not listed (${apps.length} apps)` });
+        if (!matched) {
+          trace({ step: 'workspace', ok: true, elapsedMs: since(start), detail: `${label}: app not listed` });
           continue;
         }
         trace({ step: 'workspace', ok: true, elapsedMs: since(start), detail: `${label}: app found`, profile: profile.name, host: profile.host });
@@ -201,13 +226,13 @@ export function createUpdateTokenProvider(options: UpdateTokenProviderOptions = 
     const start = performance.now();
     try {
       const bearer = await credentials.acquireToken(confirmed, force, async () => {
-        const raw = await client.json(['auth', 'profiles', '--output', 'json']) as { profiles?: { name: string; host: string }[] };
+        const raw = await client.json(['auth', 'profiles', '--output', 'json'], context.signal) as { profiles?: { name: string; host: string }[] };
         const profile = raw.profiles?.find((entry) => entry.name === confirmed.profileName);
         if (!profile || new URL(profile.host).origin !== new URL(confirmed.host).origin) {
           binding = undefined;
           throw new DatabricksServiceError(profile ? 'DATABRICKS_UPSTREAM_UNAVAILABLE' : 'DATABRICKS_AUTH_REQUIRED', !!profile);
         }
-      });
+      }, context.signal);
       context.trace?.({ step: 'token', ok: true, elapsedMs: since(start), detail: `profile ${confirmed.profileName}${force ? ' (refreshed)' : ''}` });
       return { token: bearer.token, host: confirmed.host };
     } catch (error) {
@@ -228,14 +253,15 @@ export class DatabricksUpdateSource {
   }
 
   /** Trace token acquisition once per source, and again only for a forced refresh. */
-  private bearer(force: boolean) {
-    const context = this.tokenTraced && !force ? (this.context.signal ? { signal: this.context.signal } : {}) : this.context;
+  private bearer(force: boolean, requestSignal?: AbortSignal | null) {
+    const signal = requestSignal && this.context.signal ? AbortSignal.any([requestSignal, this.context.signal]) : requestSignal ?? this.context.signal;
+    const context = { ...(this.tokenTraced && !force ? {} : this.context), ...(signal ? { signal } : {}) };
     this.tokenTraced = true;
     return context.trace || context.signal ? this.token(this.base, force, context) : this.token(this.base, force);
   }
 
   async request(path: string, init: RequestInit = {}): Promise<Response> {
-    let bearer = await this.bearer(false);
+    let bearer = await this.bearer(false, init.signal);
     const client = this.fetcher ? undefined : createUpdateHttpClient();
     const step = path === 'health' || path === 'latest' ? path : undefined;
     const started = performance.now();
@@ -243,7 +269,7 @@ export class DatabricksUpdateSource {
       const headers = new Headers(init.headers);
       headers.set('Authorization', `Bearer ${bearer.token}`);
       const send = () => {
-        const timeout = AbortSignal.timeout(15_000);
+        const timeout = AbortSignal.timeout(120_000);
         return (this.fetcher ?? client!.fetch)(`${this.base}/api/v1/${path}`, {
           ...init, redirect: 'error', signal: init.signal ?? (this.context.signal ? AbortSignal.any([this.context.signal, timeout]) : timeout),
           headers: Object.fromEntries(headers.entries()),
@@ -252,7 +278,7 @@ export class DatabricksUpdateSource {
       let response = await send();
       if (response.status === 401) {
         await response.body?.cancel();
-        bearer = await this.bearer(true);
+        bearer = await this.bearer(true, init.signal);
         headers.set('Authorization', `Bearer ${bearer.token}`);
         response = await send();
       }

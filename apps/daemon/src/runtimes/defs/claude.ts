@@ -14,7 +14,7 @@ const thinkingDisplayProbes = new Map<string, Promise<boolean>>();
 // instead produce the CLI's recognized-option validation error before inference.
 export async function probeClaudeThinkingDisplaySupport(bin: string, env: NodeJS.ProcessEnv): Promise<boolean> {
   try {
-    await execAgentFile(bin, ['--thinking-display', '__readable_capability_probe__', '-p'], { env, timeout: 5000 });
+    await execAgentFile(bin, ['--thinking-display', '__readable_capability_probe__', '-p'], { env, timeout: 120_000 });
     return false;
   } catch (error) {
     const stderr = error instanceof Error && 'stderr' in error ? error.stderr : null;
@@ -47,7 +47,7 @@ export const claudeAgentDef = {
     versionArgs: ['--version'],
     helpArgs: ['-p', '--help'],
     // Initialize reports selectors even without credentials; check sign-in separately.
-    authProbe: { args: ['auth', 'status', '--json'], timeoutMs: 5000 },
+    authProbe: { args: ['auth', 'status', '--json'], timeoutMs: 180_000 },
     capabilityFlags: {
       // Flag string -> capability key. After probing `--help`, we set
       // `agentCapabilities[id][key] = true` for each substring that matches.

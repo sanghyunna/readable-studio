@@ -19,6 +19,7 @@ import { lookupResource, objectValue, requestJson, scanWorkspace, type Databrick
 import { DatabricksStore, type CatalogueGeneration } from './store.js';
 import { EncryptedConnectionSecretStorage, type ConnectionSecretStorage } from './secret-storage.js';
 import { writeDatabricksFailureCapture, type DatabricksFailureCapture } from './failure-capture.js';
+import { proxyDispatcherRequestInit } from '../connectionTest.js';
 
 /** INTERNAL ONLY: launch-time material. Never return through HTTP, SSE, CLI, or logs. */
 export interface DatabricksRuntimeResolution {
@@ -120,15 +121,21 @@ export class LocalDatabricksService implements DatabricksService {
     this.credentials = new DatabricksCredentials(this.client, this.now, options.safetyMarginMs,
       options.secretStorage ?? new EncryptedConnectionSecretStorage(options.dataRoot));
     this.fetch = async (url, init) => {
-      const response = await (options.fetch ?? fetch)(url, init);
-      if (response.status === 401) {
-        for (const binding of (await this.store.read()).bindings) {
-          if (binding.mode === 'workspace-token' && binding.host === new URL(url).origin) {
-            await this.invalidate(binding, new Headers(init.headers).get('Authorization')?.replace(/^Bearer /, '') ?? '');
+      const transport = options.fetch && options.fetch !== fetch ? undefined : proxyDispatcherRequestInit();
+      try {
+        const response = await (options.fetch ?? fetch)(url, { ...transport?.requestInit, ...init });
+        if (response.status === 401) {
+          for (const binding of (await this.store.read()).bindings) {
+            if (binding.mode === 'workspace-token' && binding.host === new URL(url).origin) {
+              await this.invalidate(binding, new Headers(init.headers).get('Authorization')?.replace(/^Bearer /, '') ?? '');
+            }
           }
         }
+        return response;
+      } finally {
+        // Graceful close drains the response body after headers have been returned.
+        void transport?.close().catch(() => {});
       }
-      return response;
     };
   }
 
@@ -358,7 +365,7 @@ export class LocalDatabricksService implements DatabricksService {
     snapshot.state = 'running'; snapshot.startedAt = new Date(this.now()).toISOString(); snapshot.revision++;
     this.emit(snapshot);
     try {
-      const token = await withDeadline(() => this.bearer(binding), this.options.scanOptions?.branchTimeoutMs ?? 60_000, job.controller.signal);
+      const token = await withDeadline(() => this.bearer(binding), this.options.scanOptions?.branchTimeoutMs ?? 30 * 60_000, job.controller.signal);
       const result = await scanWorkspace({
         ...this.options.scanOptions, binding, bearer: token, fetch: this.fetch, signal: job.controller.signal,
         ...(scopeNames ? { scopeNames } : {}),
@@ -693,7 +700,7 @@ export class LocalDatabricksService implements DatabricksService {
         });
       }
       return anthropic ? payload.type === 'message' && Array.isArray(payload.content) : Array.isArray(payload.choices) && payload.choices.length > 0;
-    }, this.options.scanOptions?.requestTimeoutMs ?? 15_000);
+    }, this.options.scanOptions?.requestTimeoutMs ?? 120_000);
   }
 
   async disconnect(profileId: string): Promise<DatabricksStatusResponse> {

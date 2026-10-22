@@ -39,7 +39,7 @@ export function createChatRunService({
   createSseErrorPayload,
   maxEvents = 2_000,
   ttlMs = 30 * 60 * 1000,
-  shutdownGraceMs = 3_000,
+  shutdownGraceMs = 30_000,
   // Absolute directory under which per-run event JSONL logs are written
   // (one file per run at <runsLogDir>/<runId>/events.jsonl). When null,
   // event persistence is disabled and statusBody.eventsLogPath = null —
@@ -50,6 +50,10 @@ export function createChatRunService({
   retryDelay = (ms, signal) => delay(ms, undefined, { signal }),
 }: ChatRunServiceOptions) {
   const runs = new Map();
+  // Preparation may outlive UI cancellation and even terminal-run retirement.
+  // Keep its cleanup owned until the helper and broker have actually closed.
+  const preparations = new Map<Promise<unknown>, any>();
+  let shuttingDown = false;
   const retiringRunIds = new Set<string>();
   const resolvedRunsLogDir = runsLogDir ? path.resolve(runsLogDir) : null;
 
@@ -124,6 +128,7 @@ export function createChatRunService({
       nativeWrites: null,
       finishPromise: null,
       cancelRequested: false,
+      cancelController: new AbortController(),
       retryWaitController: null,
       retrySideEffects: {},
       eventsLogPath: resolvedRunsLogDir ? path.join(resolvedRunsLogDir, id, 'events.jsonl') : null,
@@ -483,6 +488,7 @@ export function createChatRunService({
   const cancel = (run) => {
     if (!TERMINAL_RUN_STATUSES.has(run.status)) {
       run.cancelRequested = true;
+      run.cancelController.abort();
       run.updatedAt = Date.now();
       run.retryWaitController?.abort();
       // Prefer RPC-level abort for agents that support it. Pi owns its full
@@ -494,7 +500,7 @@ export function createChatRunService({
           run.acpSession.ownsAbortLifecycle !== true
           && !TERMINAL_RUN_STATUSES.has(run.status)
         ) {
-          const graceMs = Number(process.env.PI_ABORT_GRACE_MS) || 3000;
+          const graceMs = Number(process.env.PI_ABORT_GRACE_MS) || 30_000;
           if (run.abortFallbackTimer) clearTimeout(run.abortFallbackTimer);
           run.abortFallbackTimer = setTimeout(() => {
             run.abortFallbackTimer = null;
@@ -510,7 +516,7 @@ export function createChatRunService({
     }
   };
 
-  const cancelAndWait = async (run, { timeoutMs = 5_000 } = {}) => {
+  const cancelAndWait = async (run, { timeoutMs = 45_000 } = {}) => {
     if (TERMINAL_RUN_STATUSES.has(run.status)) killChild(run, 'SIGTERM');
     else cancel(run);
     return waitForChildExit(run.child, Math.max(0, timeoutMs));
@@ -531,10 +537,28 @@ export function createChatRunService({
     }
   };
 
+  const prepare = (run, work, cleanup = async () => {}) => {
+    if (shuttingDown) run.cancelController.abort();
+    const pending = Promise.resolve().then(() => {
+      run.cancelController.signal.throwIfAborted();
+      return work();
+    }).catch(async (error) => {
+      // Also close resources acquired before registration when shutdown wins
+      // before work starts. Keep this cleanup in the tracked lifetime.
+      await cleanup();
+      throw error;
+    }).finally(() => preparations.delete(pending));
+    preparations.set(pending, run);
+    return pending;
+  };
+
   const shutdownActive = async ({ graceMs = shutdownGraceMs } = {}) => {
+    shuttingDown = true;
+    for (const run of preparations.values()) run.cancelController.abort();
     const activeRuns = Array.from(runs.values()).filter((run) => !TERMINAL_RUN_STATUSES.has(run.status));
-    await Promise.all(activeRuns.map(async (run) => {
+    const stoppingRuns = activeRuns.map(async (run) => {
       run.cancelRequested = true;
+      run.cancelController.abort();
       run.updatedAt = Date.now();
       run.retryWaitController?.abort();
       if (run.acpSession?.abort) {
@@ -548,9 +572,13 @@ export function createChatRunService({
       await finish(run, 'canceled', null, 'SIGTERM');
       if (run.child && !(await waitForChildExit(run.child, graceMs))) {
         killChild(run, 'SIGKILL');
-        await waitForChildExit(run.child, 500);
+        await waitForChildExit(run.child, 10_000);
       }
-    }));
+    });
+    // Expected abort rejections belong to the preparation caller. Shutdown
+    // joins their cleanup as well as running children, including canceled runs
+    // no longer present in the active list (or the registry).
+    await Promise.all([...stoppingRuns, Promise.allSettled([...preparations.keys()])]);
   };
 
   const wait = (run) => {
@@ -559,6 +587,7 @@ export function createChatRunService({
   };
 
   const disposeRun = (run) => {
+    run.cancelController.abort();
     run.retryWaitController?.abort();
     if (run.nativeWrites) void run.nativeWrites.dispose();
     if (run.cleanupTimer) clearTimeout(run.cleanupTimer);
@@ -609,6 +638,7 @@ export function createChatRunService({
     stream,
     cancel,
     cancelAndWait,
+    prepare,
     shutdownActive,
     wait,
     waitForRetry,

@@ -3,8 +3,15 @@ import {
   panelEventToSse,
   CRITIQUE_SSE_EVENT_NAMES,
   isPanelEvent,
+  defaultCritiqueConfig,
   type PanelEvent,
 } from '../src/critique';
+
+it('allows ten-minute rounds and enough total time for the default three rounds', () => {
+  const config = defaultCritiqueConfig();
+  expect(config.perRoundTimeoutMs).toBe(600_000);
+  expect(config.totalTimeoutMs).toBeGreaterThanOrEqual(config.perRoundTimeoutMs * config.maxRounds);
+});
 
 describe('CritiqueSseEvent', () => {
   it('panelEventToSse maps PanelEvent.type "run_started" to event "critique.run_started"', () => {

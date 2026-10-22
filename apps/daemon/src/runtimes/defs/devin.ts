@@ -17,7 +17,7 @@ export const devinAgentDef = {
           'acp',
         ],
         env,
-        timeoutMs: 15_000,
+        timeoutMs: 180_000,
         defaultModelOption: DEFAULT_MODEL_OPTION,
       }),
     // Fallback aliases from Devin for Terminal docs

@@ -74,6 +74,24 @@ describe('proxyDispatcherRequestInit', () => {
     vi.resetModules();
   });
 
+  it.each([{}, { HTTP_PROXY: 'http://proxy.example.test:8080' }, { HTTPS_PROXY: 'http://proxy.example.test:8080' }])('uses generous deadlines even when bundled fetch supplies short dispatch defaults (%j)', async env => {
+    const proxySpy = vi.spyOn(platform, 'resolveSystemProxyEnv').mockReturnValue({});
+    const { proxyDispatcherRequestInit } = await import('../src/connectionTest.js');
+    const transport = proxyDispatcherRequestInit(env);
+    try {
+      const dispatch = transport.requestInit.dispatcher as { dispatch(options: unknown, handler: unknown): boolean };
+      expect(dispatch).toBeTruthy();
+      dispatch.dispatch({ origin: 'https://api.example.test', path: '/v1/messages', headersTimeout: 300_000, bodyTimeout: 300_000 }, {});
+      const proxied = 'HTTP_PROXY' in env || 'HTTPS_PROXY' in env;
+      expect(proxied ? envHttpProxyAgentConstructor : directAgentConstructor).toHaveBeenCalledWith(expect.objectContaining({
+        connectTimeout: 120_000, headersTimeout: 7_200_000, bodyTimeout: 7_200_000,
+      }));
+      expect(proxied ? envHttpProxyAgentDispatch : directAgentDispatch).toHaveBeenCalledWith(expect.objectContaining({
+        headersTimeout: 7_200_000, bodyTimeout: 7_200_000,
+      }), {});
+    } finally { await transport.close(); proxySpy.mockRestore(); }
+  });
+
   it('forwards agent timeout options into EnvHttpProxyAgent construction', async () => {
     const proxySpy = vi.spyOn(platform, 'resolveSystemProxyEnv').mockReturnValue({});
     const { proxyDispatcherRequestInit } = await import('../src/connectionTest.js');
@@ -114,7 +132,7 @@ describe('proxyDispatcherRequestInit', () => {
       expect(requestInit.dispatcher).toBeTruthy();
       expect(socks5ProxyAgentConstructor).toHaveBeenCalledWith(
         'socks5://proxy.example.test:1080',
-        {},
+        { connect: expect.any(Function), headersTimeout: 7_200_000, bodyTimeout: 7_200_000 },
       );
       expect(envHttpProxyAgentConstructor).not.toHaveBeenCalled();
       await expect(close()).resolves.toBeUndefined();
@@ -135,7 +153,7 @@ describe('proxyDispatcherRequestInit', () => {
       expect(requestInit.dispatcher).toBeTruthy();
       expect(socks5ProxyAgentConstructor).toHaveBeenCalledWith(
         'socks5://proxy.example.test:1080',
-        {},
+        { connect: expect.any(Function), headersTimeout: 7_200_000, bodyTimeout: 7_200_000 },
       );
       expect(envHttpProxyAgentConstructor).not.toHaveBeenCalled();
       await expect(close()).resolves.toBeUndefined();
@@ -163,6 +181,7 @@ describe('proxyDispatcherRequestInit', () => {
       expect(socks5ProxyAgentConstructor).toHaveBeenCalledWith(
         'socks5://proxy.example.test:1080',
         {
+          connect: expect.any(Function),
           bodyTimeout: 10 * 60 * 1000,
           headersTimeout: 10 * 60 * 1000,
         },
@@ -217,7 +236,7 @@ describe('proxyDispatcherRequestInit', () => {
       }));
       expect(socks5ProxyAgentConstructor).toHaveBeenCalledWith(
         'socks5://system-socks.example.test:1080',
-        {},
+        { connect: expect.any(Function), headersTimeout: 7_200_000, bodyTimeout: 7_200_000 },
       );
 
       const dispatcher = requestInit.dispatcher as {

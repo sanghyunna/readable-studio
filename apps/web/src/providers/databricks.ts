@@ -119,8 +119,8 @@ export function probeDatabricks(
 }
 
 // Bounds the complete operation, including response bodies and silent SSE.
-// The daemon allows 60s for credentials and 60s for discovery branches.
-async function withScanDeadline<T>(work: (signal: AbortSignal) => Promise<T>, parent?: AbortSignal): Promise<T> {
+// Leave room for the daemon's thirty-minute credential/discovery phases.
+async function withScanDeadline<T>(work: (signal: AbortSignal) => Promise<T>, parent?: AbortSignal, timeoutMs = 35 * 60_000): Promise<T> {
   const controller = new AbortController();
   const signal = parent ? AbortSignal.any([parent, controller.signal]) : controller.signal;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -130,7 +130,7 @@ async function withScanDeadline<T>(work: (signal: AbortSignal) => Promise<T>, pa
         timer = setTimeout(() => {
           reject(new DatabricksApiError(504, 'DATABRICKS_UPSTREAM_UNAVAILABLE', 'Databricks scan timed out. Try scanning again.', true));
           controller.abort();
-        }, 150_000);
+        }, timeoutMs);
       }),
       work(signal),
     ]);
@@ -234,7 +234,8 @@ export async function streamDatabricksScanEvents(
   options: DatabricksScanEventsOptions = {},
 ): Promise<boolean> {
   try {
-    return await withScanDeadline(signal => readDatabricksScanEvents(scanId, handlers, signal), options.signal);
+    // Twenty names at fifteen minutes each with two workers can take 150 minutes.
+    return await withScanDeadline(signal => readDatabricksScanEvents(scanId, handlers, signal), options.signal, 4 * 60 * 60_000);
   } catch (error) {
     if (options.signal?.aborted) return false;
     throw error;

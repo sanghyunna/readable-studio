@@ -20,10 +20,10 @@ let pendingRender: Promise<void> = Promise.resolve();
 export async function waitForDesktopRenderer(): Promise<boolean> {
   const namespace = resolveNamespace({ contract: SIDECAR_CONTRACT, namespace: null });
   const pipe = resolveAppIpcPath({ app: APP_KEYS.DESKTOP, contract: SIDECAR_CONTRACT, namespace });
-  const deadline = Date.now() + 15_000;
+  const deadline = Date.now() + 180_000;
   do {
     try {
-      await requestJsonIpc(pipe, { type: SIDECAR_MESSAGES.STATUS }, { timeoutMs: 500 });
+      await requestJsonIpc(pipe, { type: SIDECAR_MESSAGES.STATUS }, { timeoutMs: 30_000 });
       return true;
     } catch {
       await setTimeout(250, undefined, { ref: false });
@@ -41,13 +41,13 @@ export async function renderHtmlThumbnail(
     const input: DesktopRenderHtmlThumbnailInput = {
       url, width: options.width ?? 1920, height: options.height ?? 1080,
       outWidth: options.outWidth ?? 480, outHeight: options.outHeight ?? 270,
-      timeoutMs: options.timeoutMs ?? 10000,
+      timeoutMs: options.timeoutMs ?? 120_000,
     };
     const namespace = resolveNamespace({ contract: SIDECAR_CONTRACT, namespace: options.namespace ?? null });
     const pipe = resolveAppIpcPath({ app: APP_KEYS.DESKTOP, contract: SIDECAR_CONTRACT, namespace });
     try {
       const result = await (options.request ?? requestJsonIpc<DesktopRenderHtmlThumbnailResult>)(
-        pipe, { type: SIDECAR_MESSAGES.RENDER_HTML_THUMBNAIL, input }, { timeoutMs: input.timeoutMs + 2000 },
+        pipe, { type: SIDECAR_MESSAGES.RENDER_HTML_THUMBNAIL, input }, { timeoutMs: input.timeoutMs + 120_000 },
       );
       return result.ok ? Buffer.from(result.imageBase64, 'base64') : result;
     } catch (error) {

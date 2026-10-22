@@ -131,7 +131,7 @@ export function electronCaptureSurface(contents: WebContents, clip: Electron.Rec
           const timeout = setTimeout(() => {
             win.webContents.off('did-frame-finish-load', onLoad);
             reject(new Error('Preview iframe did not finish loading for image export'));
-          }, 15_000);
+          }, 180_000);
           const onLoad = (_event: Electron.Event, isMainFrame: boolean) => {
             if (isMainFrame) return;
             clearTimeout(timeout);

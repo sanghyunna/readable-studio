@@ -83,6 +83,7 @@ export function renderDatabricksPiProvider(
       defaultProvider: 'databricks', defaultModel: relay.modelAlias, defaultThinkingLevel: thinking,
       enabledModels: [`databricks/${relay.modelAlias}`],
       retry: { enabled: false },
+      httpIdleTimeoutMs: 60 * 60_000,
     },
   };
 }

@@ -123,12 +123,14 @@ describe('Databricks browser SSO jobs', () => {
     expect(f.runner.mock.calls.find(([, args]) => args[1] === 'token')![1]).toEqual(['auth', 'token', '--profile', 'team-dev']);
   });
 
-  it('bounds the default browser challenge to five minutes', async () => {
+  it('keeps a slow browser challenge alive beyond five minutes and bounds it to thirty', async () => {
     const f = fixture();
     const logins = new DatabricksLogins(f.client, f.connected, { clock: f.options.clock });
     const snapshot = logins.start({ host });
-    expect(Date.parse(snapshot.deadlineAt) - Date.parse(snapshot.createdAt)).toBe(300_000);
-    await vi.advanceTimersByTimeAsync(300_000);
+    expect(Date.parse(snapshot.deadlineAt) - Date.parse(snapshot.createdAt)).toBe(30 * 60_000);
+    await vi.advanceTimersByTimeAsync(6 * 60_000);
+    expect(logins.get(snapshot.loginId).state).toBe('waiting-for-browser');
+    await vi.advanceTimersByTimeAsync(24 * 60_000);
     expect(logins.get(snapshot.loginId).state).toBe('timed-out');
     expect(f.kill).toHaveBeenCalledOnce();
   });

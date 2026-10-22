@@ -13,7 +13,7 @@ export const kimiAgentDef = {
         bin: resolvedBin,
         args: ['acp'],
         env,
-        timeoutMs: 15_000,
+        timeoutMs: 180_000,
         defaultModelOption: DEFAULT_MODEL_OPTION,
       }),
     // Model selectors are CLI-configured aliases, not a Moonshot API catalogue.

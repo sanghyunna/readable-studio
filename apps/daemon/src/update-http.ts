@@ -6,6 +6,9 @@ export function createUpdateHttpClient(env: NodeJS.ProcessEnv = process.env) {
   const allProxy = env.all_proxy ?? env.ALL_PROXY ?? '';
   const directLoopbackEnv = addLoopbackNoProxyEnv(env);
   const dispatcher = new EnvHttpProxyAgent({
+    connectTimeout: 120_000,
+    headersTimeout: 10 * 60_000,
+    bodyTimeout: 10 * 60_000,
     httpProxy: env.http_proxy ?? env.HTTP_PROXY ?? allProxy,
     httpsProxy: env.https_proxy ?? env.HTTPS_PROXY ?? env.http_proxy ?? env.HTTP_PROXY ?? allProxy,
     noProxy: directLoopbackEnv.no_proxy ?? directLoopbackEnv.NO_PROXY ?? '',

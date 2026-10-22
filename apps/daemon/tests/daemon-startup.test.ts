@@ -1,6 +1,28 @@
-import { describe, expect, it } from 'vitest';
+import type { Server } from 'node:http';
+import { describe, expect, it, vi } from 'vitest';
 
-import { parseDaemonCliStartupArgs } from '../src/daemon-startup.js';
+import { closeHttpServer, parseDaemonCliStartupArgs } from '../src/daemon-startup.js';
+
+it('lets slow active HTTP work drain after five seconds without delaying an early close', async () => {
+  vi.useFakeTimers();
+  try {
+    let closed!: () => void;
+    const closeAllConnections = vi.fn();
+    const server = {
+      listening: true,
+      close: (done: () => void) => { closed = done; },
+      closeIdleConnections: vi.fn(),
+      closeAllConnections,
+    } as unknown as Server;
+    const pending = closeHttpServer(server);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(closeAllConnections).not.toHaveBeenCalled();
+    closed();
+    await pending;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(closeAllConnections).not.toHaveBeenCalled();
+  } finally { vi.useRealTimers(); }
+});
 
 describe('daemon startup CLI parsing', () => {
   it('parses the documented daemon startup flags', () => {

@@ -4,7 +4,7 @@ import type { CrashEvidenceEvent } from "./crash-evidence.js";
 
 export const RECOVERY_LIMIT = 2;
 export const RECOVERY_WINDOW_MS = 60_000;
-export const HANG_GRACE_MS = 10_000;
+export const HANG_GRACE_MS = 60_000;
 
 type RecoveryWindow = EventEmitter & {
   readonly webContents: EventEmitter & {

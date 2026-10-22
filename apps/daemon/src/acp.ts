@@ -8,12 +8,12 @@ import {
 } from './artifact-text-suppression.js';
 
 const ACP_PROTOCOL_VERSION = 1;
-const DEFAULT_TIMEOUT_MS = 15_000;
+const DEFAULT_TIMEOUT_MS = 180_000;
 const MAX_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 // Gap-between-chunks watchdog for an ACP session stage. The timer resets on
 // every line received from the agent, so this bounds *silent* periods, not
 // total runtime. Default kept in line with the outer chat-run inactivity
-// watchdog (10 min) so agents that spend several minutes silently writing
+// watchdog (60 min) so agents that spend several minutes silently writing
 // large artifacts do not get killed before the outer watchdog can apply.
 // Callers can override via `stageTimeoutMs`; the chat server reads
 // `READABLE_ACP_STAGE_TIMEOUT_MS` from the environment.
@@ -21,7 +21,7 @@ const MAX_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 // mirroring the outer chat watchdog's escape-hatch semantics — without this,
 // `READABLE_ACP_STAGE_TIMEOUT_MS=0` would call `setTimeout(..., 0)` and fail every
 // ACP session on the next tick instead of disabling the watchdog.
-const DEFAULT_STAGE_TIMEOUT_MS = 600_000;
+const DEFAULT_STAGE_TIMEOUT_MS = 60 * 60_000;
 const ACP_ARTIFACT_OPEN_PATTERN = String.raw`<\s*(?:\|?\s*DSML[\s,]+artifact\b|artifact\b)`;
 const ACP_GENERATED_FILE_PREFIX_PATTERN =
   String.raw`(?:here\s+is|here'?s)\s+the\s+generated\s+file\s*:?\s*(?:\r?\n|\s)*`;
@@ -937,7 +937,7 @@ export function attachAcpSession({
     // turn, so close it once this prompt is cleanly complete.
     const cleanExitTimer = setTimeout(() => {
       if (!child.killed) child.kill('SIGTERM');
-    }, 500);
+    }, 30_000);
     child.once('close', () => clearTimeout(cleanExitTimer));
   };
 

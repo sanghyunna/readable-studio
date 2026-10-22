@@ -507,7 +507,7 @@ function normalizeDesktopRenderHtmlThumbnailInput(input: unknown): DesktopRender
   return {
     url, width: integer("width", 8192), height: integer("height", 8192),
     outWidth: integer("outWidth", 480), outHeight: integer("outHeight", 480),
-    timeoutMs: integer("timeoutMs", 10000),
+    timeoutMs: integer("timeoutMs", 120_000),
   };
 }
 

@@ -50,12 +50,25 @@ async function setup() {
 }
 
 describe('text-flush acknowledgement failures are not file-save failures', () => {
+  it('allows a slow visible iframe to acknowledge and save after ten seconds', async () => {
+    const harness = await setup();
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    await act(async () => { fireEvent.click(screen.getByTestId('manual-edit-mode-toggle')); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    expect(screen.queryByText(getEn()['manualEdit.error.textFlushFailed'])).toBeNull();
+    harness.resume();
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    await harness.drain();
+    expect(harness.writes).toHaveLength(1);
+    expect(harness.writes[0]).toContain('Unsaved edit');
+    expect(screen.getByTestId('manual-edit-mode-toggle').getAttribute('aria-pressed')).toBe('false');
+  });
   it('reports the local operation on a visible selection timeout without issuing a file write', async () => {
     const harness = await setup();
     vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
     await act(async () => { harness.dispatch({ type: 'readable-edit-select', target: { ...target, id: 'other' } }); });
     expect(harness.requests.filter((request) => request.type === 'readable-edit-end-text-edit')).toEqual([{ type: 'readable-edit-end-text-edit', requestId: 1 }]);
-    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
     expect(harness.writes).toHaveLength(0);
     expect(screen.queryByText(getEn()['manualEdit.error.saveFailed'])).toBeNull();
     expect(screen.getByText(getEn()['manualEdit.error.textFlushFailed'])).toBeTruthy();

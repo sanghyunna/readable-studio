@@ -226,7 +226,8 @@ export async function runDatabricksCli(args: string[], dependencies: DatabricksC
           method, redirect: 'error',
           headers: { 'Content-Type': 'application/json', Accept: stream ? 'text/event-stream' : 'application/json', Origin: base.origin },
           ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-          signal: stream ? AbortSignal.any([controller.signal, AbortSignal.timeout(600_000)]) : AbortSignal.timeout(30_000),
+          // Twenty named models run in two lanes; the caller must outlive all ten probe batches.
+          signal: stream ? AbortSignal.any([controller.signal, AbortSignal.timeout(4 * 60 * 60_000)]) : AbortSignal.timeout(35 * 60_000),
         });
       } catch (error) { daemonUnavailable = true; throw error; }
       if (!response.ok) {

@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { UpdateConnectionFailure, UpdateConnectionReport } from '@readable-studio/contracts';
-import { UpdateSection } from '../../src/components/UpdateSection';
+import { UpdateLaunchBanner, UpdateSection } from '../../src/components/UpdateSection';
 import { I18nProvider } from '../../src/i18n';
 import { getKo } from '../../src/i18n/locales/ko';
 import type { Dict } from '../../src/i18n/types';
@@ -76,25 +76,159 @@ it.each([
   if (failure === 'not-logged-in') expect(screen.getByRole('button', { name: `login:${workspace}` })).toBeTruthy();
 });
 
-it('explains a daemon-side timeout with the limit in seconds', async () => {
-  setup(async () => Response.json(failed('timeout', { timeoutMs: 25_000 })));
+it.each([25_000, 0])('explains a daemon-side timeout without inventing a %i ms discovery deadline', async (timeoutMs) => {
+  setup(async () => Response.json(failed('timeout', { timeoutMs })));
   const button = await mount();
   await act(async () => fireEvent.click(button));
-  expect(panel()!.querySelector('[role="alert"]')?.textContent).toContain(text('update.connection.failure.timeout', { seconds: 25 }));
+  expect(panel()!.querySelector('[role="alert"]')?.textContent).toContain(timeoutMs
+    ? text('update.connection.failure.timeout', { seconds: timeoutMs / 1000 }) : ko['update.reason.timeout']);
 });
 
-it('ends on its own when the daemon never answers', async () => {
-  setup((init) => new Promise<Response>((_resolve, reject) => {
-    init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+it.each([31_000, 60_000])('waits for a successful discovery after %i ms without an arbitrary cutoff', async (delay) => {
+  let signal: AbortSignal | undefined;
+  const fetcher = setup((init) => new Promise<Response>((resolve, reject) => {
+    signal = init?.signal ?? undefined;
+    const timer = setTimeout(() => resolve(Response.json({ ...success, timeoutMs: 0, elapsedMs: delay })), delay);
+    signal?.addEventListener('abort', () => {
+      clearTimeout(timer);
+      reject(new DOMException('aborted', 'AbortError'));
+    });
   }));
   const button = await mount();
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   fireEvent.click(button);
+  await act(async () => { await vi.advanceTimersByTimeAsync(delay - 1); });
+  expect(signal?.aborted).toBe(false);
   expect(panel()?.getAttribute('data-update-connection')).toBe('checking');
-  await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
-  expect(panel()?.getAttribute('data-update-connection')).toBe('failed');
-  expect(panel()!.querySelector('[role="alert"]')?.textContent).toContain(text('update.connection.failure.timeout', { seconds: 25 }));
+  expect(panel()?.querySelector('progress')?.getAttribute('aria-label')).toBe(ko['update.connecting']);
+  expect(screen.getByRole('textbox').hasAttribute('disabled')).toBe(false);
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  expect(panel()?.getAttribute('data-update-connection')).toBe('ok');
   expect(screen.getByRole('button', { name: ko['update.connect'] })).toBeTruthy();
+  expect(fetcher).toHaveBeenCalledWith('/api/app-config', expect.objectContaining({ method: 'PUT' }));
+});
+
+it('aborts the pending connection when Settings unmounts', async () => {
+  let signal: AbortSignal | undefined;
+  setup((init) => new Promise<Response>((_resolve, reject) => {
+    signal = init?.signal ?? undefined;
+    signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+  }));
+  const button = await mount();
+  fireEvent.click(button);
+  await act(async () => cleanup());
+  expect(signal?.aborted).toBe(true);
+});
+
+it('aborts an edited URL request and ignores its late result', async () => {
+  let signal: AbortSignal | undefined;
+  let finish!: (response: Response) => void;
+  const fetcher = setup((init) => new Promise<Response>((resolve) => {
+    signal = init?.signal ?? undefined;
+    finish = resolve;
+  }));
+  const button = await mount();
+  fireEvent.click(button);
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: `${serverUrl}/changed` } });
+  expect(signal?.aborted).toBe(true);
+  await act(async () => finish(Response.json(success)));
+  expect(panel()).toBeNull();
+  expect(screen.getByRole('button', { name: ko['update.connect'] }).hasAttribute('disabled')).toBe(false);
+  expect(fetcher.mock.calls.some(([url, init]) => url === '/api/app-config' && init?.method === 'PUT')).toBe(false);
+});
+
+it.each(['close', 'edit'] as const)('cancels pending enable health on %s and never saves its late response', async (action) => {
+  let signal: AbortSignal | undefined;
+  let finish!: (response: Response) => void;
+  const fetcher = setup(async () => Response.json(success));
+  const original = fetcher.getMockImplementation()!;
+  fetcher.mockImplementation((url, init) => url === '/api/update/health'
+    ? new Promise<Response>((resolve) => { signal = init?.signal ?? undefined; finish = resolve; }) : original(url, init));
+  await mount();
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  fireEvent.click(screen.getByRole('switch'));
+  await act(async () => { await vi.advanceTimersByTimeAsync(31_000); });
+  expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true');
+  if (action === 'close') await act(async () => cleanup());
+  else fireEvent.change(screen.getByRole('textbox'), { target: { value: `${serverUrl}/changed` } });
+  expect(signal?.aborted).toBe(true);
+  await act(async () => finish(Response.json({ ok: true })));
+  expect(fetcher.mock.calls.some(([url, init]) => url === '/api/app-config' && init?.method === 'PUT')).toBe(false);
+  if (action === 'edit') expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false');
+});
+
+it('aborts a pending manual check on close without publishing its late result', async () => {
+  let signal: AbortSignal | undefined;
+  let finish!: (response: Response) => void;
+  const fetcher = setup(async () => Response.json(success));
+  const original = fetcher.getMockImplementation()!;
+  fetcher.mockImplementation((url, init) => url === '/api/update/check'
+    ? new Promise<Response>((resolve) => { signal = init?.signal ?? undefined; finish = resolve; })
+    : url === '/api/app-config' && !init?.method
+      ? Promise.resolve(Response.json({ config: { autoUpdate: { enabled: false, serverUrl } } })) : original(url, init));
+  await mount();
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  fireEvent.click(screen.getByRole('button', { name: ko['update.check'] }));
+  await act(async () => { await vi.advanceTimersByTimeAsync(31_000); });
+  await act(async () => cleanup());
+  expect(signal?.aborted).toBe(true);
+  await act(async () => finish(Response.json({ current: '1.3.5', latest: '99.0.0', isNewer: true, releaseUrl: serverUrl, sha256: 'a'.repeat(64), assetSize: 10 })));
+  await mount();
+  expect(screen.queryByRole('button', { name: ko['update.download'] })).toBeNull();
+});
+
+it('keeps an already saved enable setting when its follow-up check is cancelled', async () => {
+  let finish!: (response: Response) => void;
+  const fetcher = setup(async () => Response.json(success));
+  const original = fetcher.getMockImplementation()!;
+  fetcher.mockImplementation((url, init) => url === '/api/update/health' ? Promise.resolve(Response.json({ ok: true }))
+    : url === '/api/update/check' ? new Promise<Response>((resolve) => { finish = resolve; }) : original(url, init));
+  await mount();
+  await act(async () => fireEvent.click(screen.getByRole('switch')));
+  expect(fetcher).toHaveBeenCalledWith('/api/app-config', expect.objectContaining({ method: 'PUT', body: JSON.stringify({ autoUpdate: { enabled: true, serverUrl } }) }));
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: `${serverUrl}/changed` } });
+  expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true');
+  await act(async () => finish(Response.json({ unavailable: 'unreachable' })));
+  expect(screen.queryByRole('alert')).toBeNull();
+});
+
+it('keeps the global startup check independent when Settings closes', async () => {
+  let startupSignal: AbortSignal | undefined;
+  let connectSignal: AbortSignal | undefined;
+  let finishStartup!: (response: Response) => void;
+  const fetcher = setup((init) => new Promise<Response>((_resolve, reject) => {
+    connectSignal = init?.signal ?? undefined;
+    connectSignal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+  }));
+  const original = fetcher.getMockImplementation()!;
+  fetcher.mockImplementation((url, init) => url === '/api/update/check?automatic=1'
+    ? new Promise<Response>((resolve) => { startupSignal = init?.signal ?? undefined; finishStartup = resolve; }) : original(url, init));
+  const launch = <UpdateLaunchBanner ready setupVisible onOpenUpdateSettings={vi.fn()} />;
+  const view = await act(async () => render(<I18nProvider initial="ko">{launch}<UpdateSection currentVersion="1.3.5" /></I18nProvider>));
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: serverUrl } });
+  fireEvent.click(screen.getByRole('button', { name: ko['update.connect'] }));
+  await act(async () => view.rerender(<I18nProvider initial="ko">{launch}</I18nProvider>));
+  expect(connectSignal?.aborted).toBe(true);
+  expect(startupSignal?.aborted ?? false).toBe(false);
+  await act(async () => finishStartup(Response.json({ unavailable: 'unreachable' })));
+  expect(screen.getByRole('button', { name: ko['update.enableAutomatic'] })).toBeTruthy();
+});
+
+it('aborts initial configuration loading when Settings closes after a long discovery', async () => {
+  let signal: AbortSignal | undefined;
+  let finish!: (response: Response) => void;
+  const fetcher = setup(async () => Response.json(success));
+  const original = fetcher.getMockImplementation()!;
+  fetcher.mockImplementation((url, init) => url === '/api/app-config' && !init?.method
+    ? new Promise<Response>((resolve) => { signal = init?.signal ?? undefined; finish = resolve; }) : original(url, init));
+  const view = await act(async () => render(<I18nProvider initial="ko"><UpdateSection currentVersion="1.3.5" /></I18nProvider>));
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  await act(async () => { await vi.advanceTimersByTimeAsync(31_000); });
+  await act(async () => view.unmount());
+  expect(signal?.aborted).toBe(true);
+  await act(async () => finish(Response.json({ config: { autoUpdate: { enabled: true, serverUrl } } })));
+  expect(screen.queryByRole('textbox')).toBeNull();
+  expect(fetcher.mock.calls.some(([url, init]) => url === '/api/app-config' && init?.method === 'PUT')).toBe(false);
 });
 
 it('explains when the local service itself cannot be reached', async () => {

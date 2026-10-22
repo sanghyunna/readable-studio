@@ -10,6 +10,7 @@
 
 import type { HandoffRequest, HandoffResponse } from '@readable-studio/contracts/api/handoff';
 import { resolveDaemonUrl } from './daemon-url.js';
+import { proxyDispatcherRequestInit } from './connectionTest.js';
 
 interface HandoffCliResult {
   exitCode: number;
@@ -131,6 +132,7 @@ export async function runProjectHandoff(args: string[]): Promise<HandoffCliResul
   if (!options.apiKey) return fail('handoff requires --api-key <key>');
   if (!options.model) return fail('handoff requires --model <model>');
 
+  let proxyDispatcher: ReturnType<typeof proxyDispatcherRequestInit> | undefined;
   try {
     const daemonUrl = (
       await resolveDaemonUrl(options.daemonUrl === undefined ? {} : { flagUrl: options.daemonUrl })
@@ -142,9 +144,11 @@ export async function runProjectHandoff(args: string[]): Promise<HandoffCliResul
       ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
       ...(options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens }),
     };
+    proxyDispatcher = proxyDispatcherRequestInit();
     const resp = await fetch(
       `${daemonUrl}/api/projects/${encodeURIComponent(options.projectId)}/handoff`,
       {
+        ...proxyDispatcher.requestInit,
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),
@@ -172,5 +176,7 @@ export async function runProjectHandoff(args: string[]): Promise<HandoffCliResul
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return fail(message);
+  } finally {
+    await proxyDispatcher?.close();
   }
 }

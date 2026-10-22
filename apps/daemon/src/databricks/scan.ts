@@ -58,7 +58,7 @@ export async function requestJson(options: WorkspaceScanOptions, path: string, s
     }
     try { return objectValue(await response.json()); }
     catch { throw new DatabricksServiceError('DATABRICKS_UPSTREAM_UNAVAILABLE', true); }
-  }, options.requestTimeoutMs ?? 10_000, signal ?? options.signal);
+  }, options.requestTimeoutMs ?? 120_000, signal ?? options.signal);
 }
 
 export async function lookupResource(options: WorkspaceScanOptions, kind: DatabricksEndpointKind, name: string): Promise<DiscoveredResource> {
@@ -129,7 +129,7 @@ export async function scanWorkspace(options: WorkspaceScanOptions): Promise<Work
     return record.name;
   };
   const branch = async (work: (signal: AbortSignal) => Promise<void>) => {
-    try { await withDeadline(work, options.branchTimeoutMs ?? 60_000, options.signal); }
+    try { await withDeadline(work, options.branchTimeoutMs ?? 30 * 60_000, options.signal); }
     catch (error) { if (!options.signal?.aborted) recordIssue(error); }
   };
   await Promise.all([

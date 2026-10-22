@@ -11,7 +11,7 @@ export const piAgentDef = {
     fetchModels: async (resolvedBin, env) => {
       const { stdout } = await execAgentFile(resolvedBin, ['--list-models'], {
         env,
-        timeout: 20_000,
+        timeout: 180_000,
         maxBuffer: 8 * 1024 * 1024,
       });
       // Pi lists only credential-available models. Its no-auth guidance is

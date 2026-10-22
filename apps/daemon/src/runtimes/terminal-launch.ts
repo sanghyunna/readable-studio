@@ -97,7 +97,7 @@ async function launchOnWindows(command: string): Promise<TerminalLaunchResult> {
     await execFileAsync(
       'cmd.exe',
       ['/c', 'start', 'Readable Studio', 'cmd.exe', '/k', command],
-      { timeout: 5_000 },
+      { timeout: 120_000 },
     );
     return { ok: true, platform: 'win32', via: 'cmd /c start' };
   } catch (err) {

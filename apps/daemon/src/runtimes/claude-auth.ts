@@ -23,7 +23,7 @@ export async function probeClaudeAuthStatus(
 ): Promise<AgentAuthProbeResult> {
   try {
     const { stdout } = await execAgentFile(bin, probe.args, {
-      env, timeout: probe.timeoutMs ?? 5000, maxBuffer: 1024 * 1024,
+      env, timeout: probe.timeoutMs ?? 180_000, maxBuffer: 1024 * 1024,
     });
     switch (signedIn(String(stdout))) {
       case true: return { status: 'ok' };

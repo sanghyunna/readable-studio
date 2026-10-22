@@ -36,9 +36,9 @@ import {
   importLocalDesignSystemProject,
 } from './design-system-import.js';
 
-const FETCH_TIMEOUT_MS = 15_000;
+const FETCH_TIMEOUT_MS = 120_000;
 // Whole-import wall-clock ceiling, independent of the per-request timeout.
-const OVERALL_TIMEOUT_MS = 60_000;
+const OVERALL_TIMEOUT_MS = 20 * 60_000;
 const MAX_DOCUMENT_BYTES = 2 * 1024 * 1024;
 const MAX_FILE_BYTES = 256 * 1024;
 const MAX_FILES = 100;

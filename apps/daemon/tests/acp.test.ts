@@ -1055,7 +1055,9 @@ test('attachAcpSession force-terminates the child after a clean prompt completio
 
     // After the grace period elapses, attachAcpSession should SIGTERM the
     // child so child.on('close') can fire and the chat run can finalize.
-    await vi.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(5_000);
+    assert.equal(child.killed, false);
+    await vi.advanceTimersByTimeAsync(25_000);
     assert.equal(child.killed, true);
 
     // The session reports the prompt completed successfully so the consumer
@@ -1125,7 +1127,7 @@ test('attachAcpSession.completedSuccessfully reflects abort and fatal-error stat
   assert.equal(session.completedSuccessfully(), false);
 });
 
-test('attachAcpSession default stage timeout tolerates >3min of silence between chunks', async () => {
+test('attachAcpSession default stage timeout tolerates thirty minutes of silent VDI work', async () => {
   vi.useFakeTimers();
   try {
     const child = new FakeAcpChild();
@@ -1143,10 +1145,8 @@ test('attachAcpSession default stage timeout tolerates >3min of silence between 
     child.stdout.write(`${JSON.stringify({ id: 1, result: {} })}\n`);
     child.stdout.write(`${JSON.stringify({ id: 2, result: { sessionId: 'session-1' } })}\n`);
 
-    // Simulate an agent silently writing a large artifact for ~4 minutes —
-    // longer than the historical 180_000ms default that killed long
-    // generations mid-response.
-    await vi.advanceTimersByTimeAsync(240_000);
+    // No stdout does not establish whether the slow filesystem is progressing.
+    await vi.advanceTimersByTimeAsync(30 * 60_000);
 
     const errors = events.filter((e) => e.event === 'error');
     assert.equal(errors.length, 0, `expected no stage-timeout error, got: ${JSON.stringify(errors)}`);

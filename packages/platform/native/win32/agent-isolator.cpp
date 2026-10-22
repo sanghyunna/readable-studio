@@ -512,7 +512,7 @@ void ChangePathAccess(const std::wstring& path, PSID sid, const GrantSpec* grant
   // ponytail: one named ACL mutex; shard by volume only if launch contention is measurable.
   Handle acl_mutex(CreateMutexW(nullptr, FALSE, L"Local\\ReadableStudio.AgentIsolator.Acl.v1"));
   if (!acl_mutex) ThrowLastError("create AppContainer ACL mutex");
-  const DWORD wait_result = WaitForSingleObject(acl_mutex.get(), 30'000);
+  const DWORD wait_result = WaitForSingleObject(acl_mutex.get(), 120'000);
   if (wait_result != WAIT_OBJECT_0 && wait_result != WAIT_ABANDONED) {
     if (wait_result == WAIT_TIMEOUT) throw std::runtime_error("timed out waiting for AppContainer ACL mutex");
     ThrowLastError("wait for AppContainer ACL mutex");

@@ -485,6 +485,8 @@ describe('mintImportTokenForCli', () => {
     if (result.ok) {
       expect(result.token).toMatch(/~/);
       expect(result.expiresAt).toMatch(/Z$/);
+      expect(Date.parse(result.expiresAt) - Date.now()).toBeGreaterThan(14 * 60_000);
+      expect(Date.parse(result.expiresAt) - Date.now()).toBeLessThanOrEqual(15 * 60_000);
     }
   });
 });

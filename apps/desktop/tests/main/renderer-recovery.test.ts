@@ -45,14 +45,14 @@ describe("renderer recovery", () => {
     expect(window.webContents.reload).not.toHaveBeenCalled();
   });
 
-  it("does not offer recovery when a six-second busy renderer answers the probe", async () => {
+  it("does not offer recovery when a thirty-second busy renderer answers the probe", async () => {
     // Given
     const { window, record } = setup();
     const reply = Promise.withResolvers<unknown>();
     window.webContents.executeJavaScript.mockReturnValueOnce(reply.promise).mockResolvedValue(undefined);
     window.webContents.emit("dom-ready");
     // When
-    await vi.advanceTimersByTimeAsync(6_000);
+    await vi.advanceTimersByTimeAsync(30_000);
     reply.resolve(undefined);
     await vi.advanceTimersByTimeAsync(HANG_GRACE_MS);
     // Then

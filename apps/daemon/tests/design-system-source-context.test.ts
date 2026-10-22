@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   collectDesignSystemSourceContext,
@@ -7,6 +7,23 @@ import {
 } from '../src/design-system-source-context.js';
 
 describe('design system source context', () => {
+  it('keeps GitHub context when each response takes longer than 3.5 seconds', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchFn: FetchLike = (_url, init) => new Promise((resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+        setTimeout(() => resolve({ ok: true, status: 200,
+          json: async () => ({ description: 'Slow repository', default_branch: 'main' }),
+          text: async () => 'Repository content',
+        }), 10_000);
+      });
+      const pending = collectDesignSystemSourceContext({
+        provenance: { githubUrls: ['https://github.com/acme/slow'] },
+      }, { fetch: fetchFn });
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect((await pending).github[0]).toMatchObject({ description: 'Slow repository' });
+    } finally { vi.useRealTimers(); }
+  });
   it('reads GitHub metadata, README, and package context', async () => {
     const fetchFn: FetchLike = async (url) => {
       if (url === 'https://api.github.com/repos/acme/product') {

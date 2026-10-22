@@ -378,6 +378,22 @@ describe('exchangeCodeForToken / refreshAccessToken', () => {
 });
 
 describe('PendingAuthCache', () => {
+  it('accepts a slow sign-in after 20 minutes while keeping state single use and bounded', () => {
+    const cache = new PendingAuthCache();
+    const pending = {
+      serverId: 'slow-vdi', authServerIssuer: 'https://auth.example.com',
+      tokenEndpoint: 'https://auth.example.com/token', clientId: 'client',
+      redirectUri: 'http://127.0.0.1/callback', codeVerifier: 'verifier',
+      createdAt: Date.now() - 20 * 60_000,
+    };
+    try {
+      cache.put('state', pending);
+      expect(cache.consume('state')).toEqual(pending);
+      expect(cache.consume('state')).toBeNull();
+      cache.put('expired', { ...pending, createdAt: Date.now() - 31 * 60_000 });
+      expect(cache.consume('expired')).toBeNull();
+    } finally { cache.stop(); }
+  });
   it('round-trips a value through put/consume', () => {
     const cache = new PendingAuthCache(60_000);
     cache.put('state-1', {

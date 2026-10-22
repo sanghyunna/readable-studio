@@ -211,7 +211,7 @@ namespace ReadableStudio.Launcher {
             if (!TryLock()) throw new UpdateFailure("recovery-locked", "Could not reclaim update mutex for recovery.");
             Read();
             if (State.confirmed) return true;
-            RequireEmpty(45000);
+            RequireEmpty(180000);
             Rollback();
             // A distinct receipt proves the restored payload, never the failed
             // version's stale receipt. Its version comes from the restored app.
@@ -468,7 +468,7 @@ namespace ReadableStudio.Launcher {
         public static void Wait(string root) {
             var deadline = Stopwatch.StartNew();
             while (true) {
-                if (deadline.ElapsedMilliseconds >= 45000) throw new UpdateFailure("barrier-timeout", "Payload holders did not release within 45 seconds.");
+                if (deadline.ElapsedMilliseconds >= 120000) throw new UpdateFailure("barrier-timeout", "Payload holders did not release within 120 seconds.");
                 var ids = Holders(Path.Combine(root, "app")).Concat(Holders(Path.Combine(root, "app.old"))).Distinct().ToArray();
                 if (ids.Length == 0) return;
                 foreach (int id in ids) {
@@ -552,7 +552,7 @@ namespace ReadableStudio.Launcher {
                             if (Barrier.Holders(tx.FileAt("app")).Length != 0 || Barrier.Holders(tx.FileAt("app.old")).Length != 0)
                                 throw new UpdateFailure("running-incomplete", "업데이트 상태: " + state.step + ". 실행 중인 Readable Studio를 닫고 다시 실행해 주세요.");
                             tx.Claim();
-                            if (!tx.RecoverAndLaunch(180000)) throw new UpdateFailure("recovery-start-failed", "Restored payload did not confirm startup.");
+                            if (!tx.RecoverAndLaunch(2400000)) throw new UpdateFailure("recovery-start-failed", "Restored payload did not confirm startup.");
                             tx.Unlock();
                             Show("업데이트를 적용하지 못해 이전 버전으로 되돌렸습니다.\n작업 내역은 그대로입니다.", false);
                             return 0;
@@ -564,7 +564,7 @@ namespace ReadableStudio.Launcher {
                     var start = tx.CreateStartInfo(exe, String.Join(" ", args.Select(Quote)), restoreNamespace);
                     if (internalStart) {
                         start.EnvironmentVariables["READABLE_UPDATE_TRANSACTION"] = state.id; start.EnvironmentVariables["READABLE_UPDATE_TARGET"] = state.target;
-                        return tx.StartAndWaitReady(start, 180000) ? 0 : 1;
+                        return tx.StartAndWaitReady(start, 2400000) ? 0 : 1;
                     }
                     using (var child = Process.Start(start)) { }
                 }

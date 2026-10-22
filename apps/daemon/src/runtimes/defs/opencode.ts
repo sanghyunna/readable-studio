@@ -31,10 +31,10 @@ export const opencodeAgentDef = {
     fallbackBins: ['opencode'],
     versionArgs: ['--version'],
     // auth list reports configured credentials, not merely the public catalogue.
-    authProbe: { args: ['auth', 'list'], timeoutMs: 15_000 },
+    authProbe: { args: ['auth', 'list'], timeoutMs: 180_000 },
     compatibilityProbe: async (resolvedBin, env) => {
       const { stdout, stderr } = await execAgentFile(resolvedBin, ['auth', 'list'], {
-        env, timeout: 15_000, maxBuffer: 1024 * 1024,
+        env, timeout: 180_000, maxBuffer: 1024 * 1024,
       });
       const text = stripVTControlCharacters(`${stdout}\n${stderr}`);
       const count = text.match(/(?:^|\n)\s*└\s+(\d+) credentials?\s*(?:\n|$)/)?.[1];
@@ -54,7 +54,7 @@ export const opencodeAgentDef = {
         if (!models) throw new OpenCodeDiscoveryError('MODELS_MALFORMED');
         return models;
       },
-      timeoutMs: 15_000,
+      timeoutMs: 180_000,
     },
     fallbackModels: [
       DEFAULT_MODEL_OPTION,

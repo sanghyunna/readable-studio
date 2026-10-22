@@ -26,6 +26,7 @@ function cli(options: { profiles?: { name: string; host: string }[]; apps?: Reco
     if (args[0] === '--version') return { stdout: 'Databricks CLI v0.250.0', stderr: '', exitCode: 0 };
     if (args[0] === 'auth' && args[1] === 'profiles') return { stdout: JSON.stringify({ profiles }), stderr: '', exitCode: 0 };
     if (args[0] === 'apps') {
+      if (args[1] === 'get') return { stdout: '', stderr: 'HTTP 404 RESOURCE_DOES_NOT_EXIST', exitCode: 1 };
       const listed = apps[args[3]!] ?? [];
       if (listed === 'auth') return { stdout: '', stderr: 'Error: cannot configure default credentials. not logged in', exitCode: 1 };
       if (listed === 'denied') return { stdout: '', stderr: 'Error: PERMISSION_DENIED: forbidden', exitCode: 1 };
@@ -63,9 +64,9 @@ describe('diagnoseUpdateConnection', () => {
     expect(report.steps.map((step) => step.step)).toEqual(['url', 'timeout']);
   });
 
-  it('defaults to a bounded 25 s check', async () => {
+  it('does not impose a default elapsed-time cutoff on workspace discovery', async () => {
     const report = await diagnoseUpdateConnection('nope', {});
-    expect(report.timeoutMs).toBe(25_000);
+    expect(report.timeoutMs).toBe(0);
   });
 
   it.each([

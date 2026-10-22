@@ -24,7 +24,7 @@ import { PackagedNewerSchemaError, resolvePackagedStartupFailureDialog } from '.
 import type { PackagedNamespacePaths } from "../src/paths.js";
 import { startPackagedSidecars, type PackagedSidecarHandle } from "../src/sidecars.js";
 
-type FixtureBehavior = "source-drain" | "hung-child" | "drain-child" | "concurrent" | "fail" | "newer-schema" | "no-http" | "port-conflict-once" | "ready" | "stale";
+type FixtureBehavior = "source-drain" | "slow-drain" | "hung-child" | "drain-child" | "concurrent" | "fail" | "newer-schema" | "no-http" | "port-conflict-once" | "ready" | "stale";
 
 function fixtureSource(
   app: "daemon" | "web",
@@ -133,7 +133,8 @@ const server = createServer((socket) => {
       probe.once("exit", finish);
       if (process.platform === "win32") execFile("taskkill.exe", ["/PID", String(probe.pid), "/T", "/F"], { windowsHide: true }, error => { if (error) console.error(error); });
       else probe.kill("SIGKILL");
-    } else finish();
+    } else if (behavior === "slow-drain") setTimeout(finish, 3_000);
+    else finish();
   });
 });
 
@@ -324,6 +325,10 @@ describe("startPackagedSidecars", () => {
     } finally { await sidecars?.close(); rmSync(fixture.root, { recursive: true, force: true }); }
   }, 25_000);
   it.each(['hung-child', 'drain-child', 'source-drain'] as const)('normal close leaves no in-flight descendant by PID (%s)', async (behavior) => {
+    const realTimeout = AbortSignal.timeout;
+    const deadline = behavior === 'hung-child'
+      ? vi.spyOn(AbortSignal, 'timeout').mockImplementation(ms => realTimeout(ms === 420_000 ? 100 : ms))
+      : null;
     const fixture = createFixtureHarness(behavior, 'ready');
     let sidecars: PackagedSidecarHandle | null = null;
     let probePid: number | undefined;
@@ -339,6 +344,7 @@ describe("startPackagedSidecars", () => {
       expect(alive(sidecars.daemon.pid!)).toBe(false);
       const elapsedMs = performance.now() - started;
       expect(elapsedMs).toBeLessThan(3_500);
+      if (behavior === 'hung-child') expect(deadline).toHaveBeenCalledWith(420_000);
       if (behavior === 'source-drain') {
         const daemonLog = readFileSync(fixture.daemonLogPath, 'utf8');
         expect(daemonLog).toContain('shutdown requested app=daemon');
@@ -353,8 +359,20 @@ describe("startPackagedSidecars", () => {
         else process.kill(probePid, 'SIGKILL');
       }
       await sidecars?.close();
+      deadline?.mockRestore();
       rmSync(fixture.root, { force: true, recursive: true });
     }
+  }, 15_000);
+
+  it('lets a daemon finish a slow normal shutdown without forced termination', async () => {
+    const fixture = createFixtureHarness('slow-drain', 'ready');
+    let sidecars: PackagedSidecarHandle | null = null;
+    try {
+      sidecars = await fixture.start();
+      await sidecars.close();
+      expect(pidAlive(sidecars.daemon.pid!)).toBe(false);
+      expect(readFileSync(fixture.daemonLogPath, 'utf8')).not.toContain('forcing tree stop');
+    } finally { await sidecars?.close(); rmSync(fixture.root, { recursive: true, force: true }); }
   }, 15_000);
 
   it("forwards corporate CA paths but strips inherited privileges when launching the packaged daemon", async () => {

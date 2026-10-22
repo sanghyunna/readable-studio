@@ -7,6 +7,20 @@ afterEach(() => {
 });
 
 describe('run-scoped tool tokens', () => {
+  it('keeps a slow run authorized for ninety minutes while retaining revocation and expiry', () => {
+    vi.useFakeTimers();
+    const registry = new ToolTokenRegistry();
+    const grant = registry.mint({ runId: 'slow-run', projectId: 'project-a' });
+    vi.advanceTimersByTime(90 * 60_000);
+    expect(registry.validate(grant.token).ok).toBe(true);
+    expect(registry.validate(grant.token, { endpoint: '/unrelated' }).ok).toBe(false);
+    registry.revokeRun('slow-run', 'child_exit');
+    expect(registry.validate(grant.token).ok).toBe(false);
+    const second = registry.mint({ runId: 'expired-run', projectId: 'project-a' });
+    vi.advanceTimersByTime(3 * 60 * 60_000);
+    expect(registry.validate(second.token).ok).toBe(false);
+    registry.clear();
+  });
   it('mints isolated tokens for concurrent runs under the same project', () => {
     const registry = new ToolTokenRegistry();
     const first = registry.mint({ runId: 'run-1', projectId: 'project-a', nowMs: 1_000 });

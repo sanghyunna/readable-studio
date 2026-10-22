@@ -5,9 +5,9 @@ import { installMetaForAgent } from './metadata.js';
 import type { DetectedAgent, RuntimeAgentDef } from './types.js';
 
 const DETECTION_CACHE_TTL_MS = 10_000;
-// Cold Pi has taken 20s; Cursor allows a 90s model command. Leave room for
-// additional auth/version work without letting one agent block its peers.
-const PROBE_BUDGET_MS = 120_000;
+// Cover cold version/compatibility startup and three 180s AMR model attempts.
+// The discovery owner still cancels its own children immediately.
+const PROBE_BUDGET_MS = 15 * 60_000;
 const DETECTION_PROCESS_ENV_KEYS = [
   'PATH',
   'Path',

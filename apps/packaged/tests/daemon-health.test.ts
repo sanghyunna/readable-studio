@@ -2,8 +2,18 @@ import { execFile } from 'node:child_process';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { promisify } from 'node:util';
-import { expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { checkPackagedDaemonHealth } from '../src/sidecars.js';
+
+afterEach(() => vi.restoreAllMocks());
+
+it('accepts a healthy daemon response delayed beyond the previous 1.5-second deadline', async () => {
+  const server = createServer((_req, res) => { setTimeout(() => res.end('{"ok":true}'), 1_700); });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    await expect(checkPackagedDaemonHealth(`http://127.0.0.1:${(server.address() as { port: number }).port}`)).resolves.toBeUndefined();
+  } finally { await new Promise<void>((resolve) => server.close(() => resolve())); }
+});
 
 it.each(['', 'example.com', 'localhost,127.0.0.1,[::1]'])('checks loopback health directly with dead proxy env and NO_PROXY=%s', async (noProxy) => {
   const requests: string[] = [];
@@ -22,12 +32,28 @@ it.each(['', 'example.com', 'localhost,127.0.0.1,[::1]'])('checks loopback healt
 }, 15000);
 
 it('bounds a stalled response body with the health deadline', async () => {
+  const originalTimeout = AbortSignal.timeout;
+  const timeout = vi.spyOn(AbortSignal, 'timeout').mockImplementation(() => originalTimeout(50));
   const server = createServer((_req, res) => { res.writeHead(200); res.write('{"ok":'); });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   try {
-    const requested = once(server, 'request', { signal: AbortSignal.timeout(5000) });
+    const requested = once(server, 'request', { signal: originalTimeout(5000) });
     const result = expect(checkPackagedDaemonHealth(`http://127.0.0.1:${(server.address() as { port: number }).port}`)).rejects.toThrow();
     await requested;
+    await result;
+    expect(timeout).toHaveBeenCalledWith(60_000);
+  } finally { const closed = new Promise<void>((resolve) => server.close(() => resolve())); server.closeAllConnections(); await closed; }
+});
+
+it('cancels a pending recovery health check when the app closes', async () => {
+  const server = createServer((_req, res) => { res.writeHead(200); res.write('{"ok":'); });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const closing = new AbortController();
+    const requested = once(server, 'request', { signal: AbortSignal.timeout(5_000) });
+    const result = expect(checkPackagedDaemonHealth(`http://127.0.0.1:${(server.address() as { port: number }).port}`, closing.signal)).rejects.toThrow();
+    await requested;
+    closing.abort();
     await result;
   } finally { const closed = new Promise<void>((resolve) => server.close(() => resolve())); server.closeAllConnections(); await closed; }
 });

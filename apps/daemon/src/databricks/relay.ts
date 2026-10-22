@@ -15,6 +15,7 @@ import { artifactDeliveryRequest, rejectsTools } from './tool-free.js';
 import { messagesRequest, messagesResponse, MessagesChatStream } from './messages.js';
 import { gatewayChatRequest, gatewayFunctionTool, measuredGatewayApi, nativeMessagesRequest, requestsEffort } from './gateway-surfaces.js';
 import { capturedFailureDetail, createDatabricksFailureCapture, type DatabricksRouteKind } from './failure-capture.js';
+import { proxyDispatcherRequestInit } from '../connectionTest.js';
 
 export interface DatabricksRelay {
   /** Child-visible connection material; neither value grants general proxy access. */
@@ -179,7 +180,6 @@ function sendError(response: ServerResponse, status: number, detail = failureDet
 export async function createDatabricksRelay(options: DatabricksRelayOptions): Promise<DatabricksRelay> {
   const { runtime } = options;
   const namedProfile = runtime.wireCapabilities?.namedProfile;
-  const upstreamFetch = options.fetch ?? fetch;
   const capabilityKey = `dbr_${randomBytes(32).toString('base64url')}`;
   const expectedKey = Buffer.from(capabilityKey);
   const modelAlias = runtime.appModelId;
@@ -190,6 +190,8 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
   if (upstream.protocol !== 'https:' || upstream.username || upstream.password || upstream.search || upstream.hash) {
     throw new Error('Invalid Databricks gateway URL');
   }
+  const transport = options.fetch ? undefined : proxyDispatcherRequestInit();
+  const upstreamFetch: typeof fetch = options.fetch ?? ((url, init) => fetch(url, { ...transport?.requestInit, ...init }));
   const privateValues = [runtime.apiKey, runtime.model, upstream.origin, upstream.hostname].filter(Boolean);
   const cleanString = (value: string): string => privateValues.reduce(
     (text, secret) => text.split(secret).join(secret === runtime.model ? modelAlias : '[redacted]'), value,
@@ -443,7 +445,7 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
     const abort = () => controller.abort();
     response.once('close', abort);
     request.once('aborted', abort);
-    const timeout = setTimeout(abort, 10 * 60_000);
+    const timeout = setTimeout(abort, 2 * 60 * 60_000);
     timeout.unref();
     let upstreamStatus: number | null = null;
     let retrying = false;
@@ -804,9 +806,9 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
     const task = handle(request, response).finally(() => { requests.delete(task); });
     requests.add(task);
   });
-  server.requestTimeout = 30_000;
-  server.headersTimeout = 10_000;
-  const { port } = await listenOnFetchCompatiblePort(server);
+  server.requestTimeout = 10 * 60_000;
+  server.headersTimeout = 120_000;
+  const { port } = await listenOnFetchCompatiblePort(server).catch(async error => { await transport?.close(); throw error; });
   return {
     baseUrl: `http://127.0.0.1:${port}`, capabilityKey, modelAlias,
     close: () => closing ??= (async () => {
@@ -818,7 +820,8 @@ export async function createDatabricksRelay(options: DatabricksRelayOptions): Pr
       });
       for (const controller of active) controller.abort();
       server.closeAllConnections();
-      await Promise.all([listenerClosed, ...requests]);
+      try { await Promise.all([listenerClosed, ...requests]); }
+      finally { await transport?.close(); }
     })(),
   };
 }

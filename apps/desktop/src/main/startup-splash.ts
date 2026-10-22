@@ -14,7 +14,7 @@ export type SplashHost = {
 };
 
 export async function runStartupSplash(host: SplashHost): Promise<'ready' | 'unverified' | 'stopped'> {
-  const deadline = Date.now() + 15_000;
+  const deadline = Date.now() + 180_000;
   let settled = false;
   let readingScan = false;
   let readingReadiness = false;

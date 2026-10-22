@@ -14,7 +14,7 @@
 // reintroduced without a type error.
 
 import { JSDOM } from 'jsdom';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import type { DesktopExportPdfInput } from '@readable-studio/sidecar-proto';
 
 import {
@@ -22,6 +22,7 @@ import {
   pdfFilenameFromDocument,
   savePrintReadyDocumentAsPdf,
   waitForPrintableContent,
+  waitForPrintReadyHandshake,
   type PrintReadyPdfTarget,
 } from '../../src/main/pdf-export.js';
 
@@ -296,6 +297,25 @@ describe('pdfFilenameFromDocument', () => {
 });
 
 describe('waitForPrintableContent', () => {
+  test('accepts a print handshake after thirty seconds and clears its deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      const handshake = Promise.withResolvers<unknown>();
+      const webContents = {
+        executeJavaScript: vi.fn<Parameters<typeof waitForPrintReadyHandshake>[0]['executeJavaScript']>()
+          .mockReturnValue(handshake.promise),
+      };
+      const result = waitForPrintReadyHandshake(webContents, 'nonce');
+      const settled = vi.fn();
+      void result.then(settled, settled);
+      await vi.advanceTimersByTimeAsync(31_000);
+      expect(settled).not.toHaveBeenCalled();
+      handshake.resolve(true);
+      await expect(result).resolves.toBeUndefined();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+
   test('waits for fonts, document images, CSS image URLs, and stable animation frames', async () => {
     const scripts: string[] = [];
     const window = {

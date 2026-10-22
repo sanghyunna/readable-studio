@@ -1185,11 +1185,22 @@ function McpOAuthControl({ serverId }: { serverId: string }) {
 
   function startPoll() {
     stopPoll();
-    let elapsed = 0;
-    pollTimer.current = setInterval(() => {
-      elapsed += 2000;
+    const deadline = Date.now() + 31 * 60_000;
+    let pending = false;
+    const timer = setInterval(() => {
+      if (Date.now() >= deadline) {
+        stopPoll();
+        setBusy('idle');
+        setPendingAuthUrl(null);
+        return;
+      }
+      if (pending) return;
+      pending = true;
       void (async () => {
-        const data = await refresh();
+        const data = await fetchMcpOAuthStatus(serverId);
+        pending = false;
+        if (pollTimer.current !== timer) return;
+        if (data) setStatus(data);
         // Auto-stop when the daemon reports connected — handles the
         // Electron / system-browser case where postMessage can never
         // reach back across processes, so polling IS the delivery
@@ -1201,9 +1212,8 @@ function McpOAuthControl({ serverId }: { serverId: string }) {
           stopPoll();
         }
       })();
-      // Top out at 5 minutes — same as the daemon-side state cache TTL.
-      if (elapsed >= 5 * 60 * 1000) stopPoll();
     }, 2000);
+    pollTimer.current = timer;
   }
 
   const onConnect = async () => {

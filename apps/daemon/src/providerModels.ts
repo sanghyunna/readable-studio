@@ -17,7 +17,7 @@ type ProviderModelsInput = ProviderModelsRequest & {
   requestInit?: Pick<RequestInit, 'dispatcher'>;
 };
 
-const PROVIDER_MODELS_TIMEOUT_MS = 12_000;
+const PROVIDER_MODELS_TIMEOUT_MS = 120_000;
 
 function appendVersionedApiPath(baseUrl: string, suffix: string): string {
   const url = new URL(baseUrl);

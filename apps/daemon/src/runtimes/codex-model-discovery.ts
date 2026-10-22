@@ -28,7 +28,7 @@ export async function discoverCodexCatalog(bin: string, env: RuntimeEnv): Promis
     const request = (method: string, params: unknown) => {
       expectedId = client.request(method, params);
     };
-    const timer = setTimeout(() => finish(new Error('Model discovery timed out')), 10_000);
+    const timer = setTimeout(() => finish(new Error('Model discovery timed out')), 180_000);
     child.stderr.setEncoding('utf8');
     child.stderr.on('data', (chunk: string) => { stderr = (stderr + chunk).slice(-4000); });
     child.on('close', () => {

@@ -41,7 +41,7 @@ export async function fetchModels(
     } else if (def.listModels) {
       const { stdout, stderr } = await execAgentFile(resolvedBin, def.listModels.args, {
         env,
-        timeout: def.listModels.timeoutMs ?? 5000,
+        timeout: def.listModels.timeoutMs ?? 180_000,
         maxBuffer: 8 * 1024 * 1024,
       });
       const failure = discoveryFailure({ stdout, stderr });

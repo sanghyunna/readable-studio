@@ -16,7 +16,7 @@ export function registerShortcutRoutes(app: Express, token: string | null, onDes
     const b = Buffer.from(token);
     return a.length === b.length && timingSafeEqual(a, b);
   };
-  const capabilities = (): ShortcutCapabilities => token && Date.now() - lastPoll < 30_000
+  const capabilities = (): ShortcutCapabilities => token && Date.now() - lastPoll < 120_000
     ? { desktop: true, startMenu: true, taskbar: false, startPinned: false }
     : { desktop: false, startMenu: false, taskbar: false, startPinned: false,
         reason: token ? 'desktop-unavailable' : 'unsupported' };
@@ -38,7 +38,7 @@ export function registerShortcutRoutes(app: Express, token: string | null, onDes
         if (queued !== -1) jobs.splice(queued, 1);
         resolve(value);
       };
-      const timer = setTimeout(() => finish({ status: 'failed', location, reason: 'desktop-unavailable' }), 15_000);
+      const timer = setTimeout(() => finish({ status: 'failed', location, reason: 'desktop-unavailable' }), 120_000);
       pending.set(job.id, { location, finish });
       jobs.push(job);
       for (const notify of listeners) notify();

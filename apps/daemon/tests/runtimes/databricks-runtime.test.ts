@@ -104,6 +104,7 @@ for (const api of ['openai-completions', 'anthropic-messages'] as const) {
       assert.notEqual(provider.apiKey, resolution.apiKey);
       assert.equal(provider.models[0].id, resolution.appModelId);
       assert.equal(settings.defaultModel, resolution.appModelId);
+      assert.equal(settings.httpIdleTimeoutMs, 60 * 60_000);
       assert.deepEqual(settings.enabledModels, [`databricks/${resolution.appModelId}`]);
       assert.equal(modelsText.includes(resolution.apiKey), false);
       assert.equal(modelsText.includes(resolution.model), false);

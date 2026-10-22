@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { EventEmitter, once } from 'node:events';
-import { Server } from 'node:http';
+import { Server, request } from 'node:http';
 import { test, vi } from 'vitest';
 import { createDatabricksRelay } from '../../src/databricks/relay.js';
 import { runtimeFixture } from './runtime-fixture.js';
@@ -89,5 +89,41 @@ test('relay close cancels a pending stream read and awaits its asynchronous disp
   } finally {
     release();
     await relay.close();
+  }
+});
+
+test('a live upstream request remains usable beyond the former ten-minute relay deadline', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  let entered!: () => void;
+  const requested = new Promise<void>(resolve => { entered = resolve; });
+  let release!: (response: Response) => void;
+  const upstream = new Promise<Response>(resolve => { release = resolve; });
+  let signal: AbortSignal | null | undefined;
+  const relay = await createDatabricksRelay({ runtime: runtimeFixture(), fetch: async (_url, init) => {
+    signal = init?.signal;
+    entered();
+    return upstream;
+  } });
+  const response = new Promise<string>((resolve, reject) => {
+    const client = request(`${relay.baseUrl}/v1/messages`, { method: 'POST', headers: {
+      authorization: `Bearer ${relay.capabilityKey}`, 'content-type': 'application/json',
+    } }, incoming => {
+      let text = '';
+      incoming.setEncoding('utf8'); incoming.on('data', chunk => { text += chunk; });
+      incoming.on('end', () => resolve(text)); incoming.on('error', reject);
+    });
+    client.on('error', reject);
+    client.end(JSON.stringify({ model: relay.modelAlias, messages: [{ role: 'user', content: 'OK' }], max_tokens: 16 }));
+  });
+  try {
+    await requested;
+    await vi.advanceTimersByTimeAsync(11 * 60_000);
+    assert.equal(signal?.aborted, false);
+    release(Response.json({ type: 'message', role: 'assistant', content: [{ type: 'text', text: 'OK' }], stop_reason: 'end_turn' }));
+    assert.ok((await response).includes('OK'));
+  } finally {
+    release(Response.json({ error: { message: 'cleanup' } }, { status: 400 }));
+    await relay.close();
+    vi.useRealTimers();
   }
 });

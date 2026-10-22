@@ -457,7 +457,7 @@ export class PendingAuthCache {
   private store = new Map<string, PendingAuthState>();
   private timer: ReturnType<typeof setInterval> | null = null;
 
-  constructor(private readonly ttlMs: number = 10 * 60 * 1000) {}
+  constructor(private readonly ttlMs: number = 30 * 60 * 1000) {}
 
   put(state: string, value: PendingAuthState): void {
     this.store.set(state, value);

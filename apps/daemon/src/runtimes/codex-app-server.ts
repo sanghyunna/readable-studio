@@ -91,12 +91,12 @@ export function attachCodexAppServerSession(options: SessionOptions) {
   const terminateOwnedTree = () => {
     if (child.exitCode !== null || child.signalCode !== null) return;
     if (process.platform === 'win32' && child.pid) {
-      execFile('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, timeout: 5000 }, error => {
+      execFile('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, timeout: 30_000 }, error => {
         if (error && child.exitCode === null && child.signalCode === null) onEvent({ type: 'error', message: `Codex shutdown failed: ${error.message}` });
       });
     } else child.kill('SIGTERM');
   };
-  const boundShutdown = () => { shutdownTimer ??= setTimeout(terminateOwnedTree, 5000); };
+  const boundShutdown = () => { shutdownTimer ??= setTimeout(terminateOwnedTree, 30_000); };
   const stop = () => { clearTimeout(timer); stdin.end(); boundShutdown(); };
   const fail = (error: Error) => {
     if (finished || aborted) return;
@@ -105,7 +105,7 @@ export function attachCodexAppServerSession(options: SessionOptions) {
     onEvent({ type: 'error', message: error.message, ...(error instanceof CodexDocumentNotSavedError ? { code: error.code } : {}) });
     stop();
   };
-  const timer = setTimeout(() => fail(new CodexRpcError('App-server initialization timed out')), 30_000);
+  const timer = setTimeout(() => fail(new CodexRpcError('App-server initialization timed out')), 300_000);
   const emitText = (id: string, delta: string) => {
     if (!delta) return;
     const boundary = lastTextItem && lastTextItem !== id && !lastText.endsWith('\n') && !delta.startsWith('\n') ? '\n' : '';

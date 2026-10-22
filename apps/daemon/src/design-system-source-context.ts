@@ -46,7 +46,7 @@ type ParsedGitHubRepo = {
 
 const DEFAULT_MAX_REPOS = 3;
 const DEFAULT_MAX_README_CHARS = 720;
-const DEFAULT_FETCH_TIMEOUT_MS = 3500;
+const DEFAULT_FETCH_TIMEOUT_MS = 60_000;
 
 export async function collectDesignSystemSourceContext(
   input: UserDesignSystemInput,

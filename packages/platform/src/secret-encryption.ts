@@ -20,7 +20,7 @@ export function secretEncryptionPipe(dataRoot: string): string {
 }
 
 const MAX_FRAME = 128 * 1024;
-const TIMEOUT_MS = 5000;
+const TIMEOUT_MS = 60_000;
 type EncryptionRequest = { operation: 'encrypt' | 'decrypt'; value: string };
 type EncryptionResponse = { ok: true; value: string } | { ok: false };
 

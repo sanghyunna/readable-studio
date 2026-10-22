@@ -24,7 +24,7 @@ it('finds the workspace by exact App URL across DEFAULT and configured CLI profi
     return { access_token: 'private-bearer', expiry: new Date(Date.now() + 3600000).toISOString() };
   });
   expect(await acquireUpdateToken('https://updates.databricksapps.com')).toEqual({ token: 'private-bearer', host: 'https://updates-workspace.azuredatabricks.net' });
-  expect(calls.filter((args) => args[0] === 'apps').map((args) => args[3])).toEqual(['DEFAULT', 'UPDATE']);
+  expect(calls.filter((args) => args[0] === 'apps' && args[1] === 'list').map((args) => args[3])).toEqual(['DEFAULT', 'UPDATE']);
   expect(json).toHaveBeenCalledWith(['auth', 'token', '--profile', 'UPDATE']);
 });
 it('returns the default workspace login target when no profile can authenticate', async () => {

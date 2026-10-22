@@ -1009,10 +1009,11 @@ function temporarilyExposeIframeForSnapshot(iframe: HTMLIFrameElement): () => vo
 }
 
 async function requestPreviewSnapshotWithRetry(iframe: HTMLIFrameElement, fullDocument: boolean): Promise<{ dataUrl: string; w: number; h: number } | null> {
-  const timeouts = [1500, 3000, 6000];
-  for (const timeout of timeouts) {
-    const result = await requestPreviewSnapshotResult(iframe, timeout, { fullDocument });
+  // A timed-out bridge still renders; repeating it can pile up expensive captures.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const result = await requestPreviewSnapshotResult(iframe, 120_000, { fullDocument });
     if (result.ok) return result.snapshot;
+    if (result.reason === 'timeout') return null;
     if (result.reason === 'render-error') throw new Error(result.error || 'Image snapshot failed');
     await waitForAnimationFrame();
   }
@@ -5804,7 +5805,7 @@ function HtmlViewer({
           || data.sourceRevision !== baseline.sourceRevision || data.sequence !== version) return;
         settle(data);
       };
-      const timeout = setTimeout(() => settle(null), 1500);
+      const timeout = setTimeout(() => settle(null), 30_000);
       window.addEventListener('message', onFinal);
       const request = manualEditResizeRequest(direction, size, true);
       if (size.styles && target.attributes['data-readable-width-release']) {
@@ -5901,7 +5902,7 @@ function HtmlViewer({
     manualEditResizeCancelTimeoutRef.current = setTimeout(() => {
       manualEditResizeCancelTimeoutRef.current = null;
       if (manualEditResizeBaselineRef.current === baseline) recoverManualEditResizePreview();
-    }, 1500);
+    }, 30_000);
     if (!previewStyleToIframe(target.id, {}, nextManualEditPreviewVersion(), false, {
       axes: [], requested: baseline.startRect, stage: 'cancel',
     })) recoverManualEditResizePreview();
@@ -6043,12 +6044,13 @@ function HtmlViewer({
     movement.session.stationaryOriginalEscaped = undefined;
   }
 
-  async function waitForManualEditSaveIdle(): Promise<boolean> {
-    for (let attempt = 0; attempt < 200; attempt += 1) {
+  async function waitForManualEditSaveIdle(isCurrent: () => boolean): Promise<boolean> {
+    const deadline = Date.now() + 120_000;
+    while (isCurrent() && Date.now() < deadline) {
       if (!manualEditSavingRef.current) return true;
-      await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 50));
     }
-    return !manualEditSavingRef.current;
+    return isCurrent() && !manualEditSavingRef.current;
   }
 
   function duplicatePreparationIsCurrent(
@@ -6112,7 +6114,7 @@ function HtmlViewer({
       const timeoutId = window.setTimeout(() => {
         duplicate.ackWaiters.delete(sequence);
         resolve(false);
-      }, 1000);
+      }, 30_000);
       duplicate.ackWaiters.set(sequence, { resolve, timeoutId });
     });
   }
@@ -6215,7 +6217,9 @@ function HtmlViewer({
       // the source snapshot. The CAS on the eventual write is the final guard.
       await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
       if (!duplicatePreparationIsCurrent(movement, duplicate)) return;
-      if (!(await waitForManualEditSaveIdle())) {
+      const saveIdle = await waitForManualEditSaveIdle(() => duplicatePreparationIsCurrent(movement, duplicate));
+      if (!duplicatePreparationIsCurrent(movement, duplicate)) return;
+      if (!saveIdle) {
         failManualEditDuplicate(movement, duplicate, t('manualEdit.error.finishBeforeDuplicateFailed'));
         return;
       }
@@ -6728,7 +6732,7 @@ function HtmlViewer({
         if (document.visibilityState !== 'hidden') {
           timeout = window.setTimeout(() => {
             if (document.visibilityState !== 'hidden') finish(false);
-          }, 3000);
+          }, 30_000);
         }
         win.postMessage({ type: 'readable-edit-end-text-edit', requestId } satisfies ManualEditEndTextEditMessage, '*');
       };

@@ -108,6 +108,7 @@ describe("isolated process capability probe", () => {
           },
         }));
         child.emit("exit", 0);
+        child.emit("close", 0);
       });
       return child;
     });

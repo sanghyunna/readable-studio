@@ -1,7 +1,7 @@
 import { execAgentFile } from './shared.js';
 import type { RuntimeAgentDef, RuntimeModelOption } from '../types.js';
 
-const AMR_MODELS_TIMEOUT_MS = 10_000;
+const AMR_MODELS_TIMEOUT_MS = 180_000;
 const AMR_MODELS_RETRY_DELAYS_MS = [250, 750] as const;
 export type VelaModelJsonSource = 'preset' | 'remote';
 

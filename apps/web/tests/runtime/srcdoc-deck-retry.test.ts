@@ -33,8 +33,8 @@ function deckHarness() {
     dom,
     pending,
     retryCount: () => retryCount,
-    runRetries: () => {
-      for (let i = 0; i < 100; i += 1) {
+    runRetries: (count = 500) => {
+      for (let i = 0; i < count; i += 1) {
         const entry = [...pending].find(([, timer]) => timer.delay === 150);
         if (!entry) return;
         pending.delete(entry[0]);
@@ -50,8 +50,17 @@ it('bounds retry work when the document never contains slides', () => {
   // When every scheduled discovery retry runs deterministically.
   harness.runRetries();
   // Then discovery stops after a finite budget without a pending retry.
-  expect(harness.retryCount()).toBeLessThanOrEqual(20);
+  expect(harness.retryCount()).toBeLessThanOrEqual(400);
   expect([...harness.pending.values()].filter((timer) => timer.delay === 150)).toHaveLength(0);
+});
+
+it('discovers slides created after the old three-second retry budget', () => {
+  const harness = deckHarness();
+  harness.runRetries(40);
+  harness.dom.window.document.body.innerHTML = '<section class="slide active">Late slide</section>';
+  harness.runRetries(1);
+  expect([...harness.pending.values()].filter(timer => timer.delay === 150)).toHaveLength(0);
+  expect([...harness.pending.values()].some(timer => timer.delay === 100)).toBe(true);
 });
 
 it('cancels pending discovery when the document is disposed', () => {
@@ -86,7 +95,7 @@ it('resumes discovery when a hidden document becomes visible', () => {
   // Then exactly one retry resumes, still within the original budget.
   expect([...harness.pending.values()].filter((timer) => timer.delay === 150)).toHaveLength(1);
   harness.runRetries();
-  expect(harness.retryCount()).toBe(20);
+  expect(harness.retryCount()).toBe(400);
 });
 
 it('keeps discovery stopped when visibility changes after disposal', () => {

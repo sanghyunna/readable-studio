@@ -30,7 +30,7 @@ function Stop-PayloadProcesses([string]$Root) {
         }
         $deadline = [Diagnostics.Stopwatch]::StartNew()
         foreach ($process in $owned) {
-            $remaining = [Math]::Max(0, 1500 - [int]$deadline.ElapsedMilliseconds)
+            $remaining = [Math]::Max(0, 420000 - [int]$deadline.ElapsedMilliseconds)
             if ($process.WaitForExit($remaining)) {
                 [IO.File]::AppendAllText($log, "payload process exited pid=$($process.Id)`n")
                 continue
@@ -43,7 +43,7 @@ function Stop-PayloadProcesses([string]$Root) {
         }
         $deadline.Restart()
         foreach ($process in $owned) {
-            if (-not $process.WaitForExit([Math]::Max(0, 2000 - [int]$deadline.ElapsedMilliseconds))) { throw $failure }
+            if (-not $process.WaitForExit([Math]::Max(0, 30000 - [int]$deadline.ElapsedMilliseconds))) { throw $failure }
         }
         foreach ($candidate in (Get-CimInstance Win32_Process)) {
             if ($candidate.ExecutablePath -and $candidate.ExecutablePath.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { throw $failure }

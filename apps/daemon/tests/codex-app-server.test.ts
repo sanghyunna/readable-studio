@@ -1,6 +1,7 @@
-import { spawn } from 'node:child_process';
+import { ChildProcess, spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { expect, it } from 'vitest';
+import { PassThrough } from 'node:stream';
+import { expect, it, vi } from 'vitest';
 import { attachCodexAppServerSession } from '../src/runtimes/codex-app-server.js';
 
 const fixture = `
@@ -26,6 +27,28 @@ createInterface({input:process.stdin}).on('line',line=>{
  }
 }).on('close',()=>process.exit(0));
 `;
+
+it('accepts a Codex session that initializes after two minutes on VDI', async () => {
+  vi.useFakeTimers();
+  const child = Object.assign(new ChildProcess(), {
+    stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough(),
+  });
+  const events: Record<string, unknown>[] = [];
+  try {
+    const session = attachCodexAppServerSession({ child, prompt: 'test', cwd: process.cwd(), model: 'selected-model', onEvent: event => events.push(event) });
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(session.hasFatalError()).toBe(false);
+    child.stdout.write(`${JSON.stringify({ id: 1, result: {} })}\n`);
+    child.stdout.write(`${JSON.stringify({ id: 2, result: { thread: { id: 'slow-thread' } } })}\n`);
+    child.stdout.write(`${JSON.stringify({ id: 3, result: { turn: { id: 'turn' } } })}\n`);
+    child.stdout.write(`${JSON.stringify({ method: 'turn/completed', params: { turn: { status: 'completed' } } })}\n`);
+    expect(session.completedSuccessfully()).toBe(true);
+    expect(events.some(event => event.type === 'error')).toBe(false);
+  } finally {
+    child.emit('close', 0, null);
+    vi.useRealTimers();
+  }
+});
 
 it('delivers multiple incremental text events before a streamed turn completes', async () => {
   // Given a real stdio peer that withholds completion until the consumer receives deltas.

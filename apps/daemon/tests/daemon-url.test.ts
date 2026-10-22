@@ -119,4 +119,21 @@ describe("resolveDaemonUrl", () => {
       await ipc?.close();
     }
   });
+
+  it('keeps waiting for a live IPC endpoint that responds after the former 800ms limit', async () => {
+    const socketPath = process.platform === 'win32'
+      ? namedPipePath(`readable-studio-daemon-url-slow-${process.pid}-${Date.now()}`)
+      : path.join(ipcBaseDir, 'daemon-slow.sock');
+    const ipc = await createJsonIpcServer({
+      socketPath,
+      handler: async () => {
+        await new Promise(resolve => setTimeout(resolve, 1_200));
+        return { url: 'http://127.0.0.1:54322' };
+      },
+    });
+    try {
+      await expect(resolveDaemonUrl({ env: { [SIDECAR_ENV.IPC_PATH]: socketPath } }))
+        .resolves.toBe('http://127.0.0.1:54322');
+    } finally { await ipc.close(); }
+  });
 });

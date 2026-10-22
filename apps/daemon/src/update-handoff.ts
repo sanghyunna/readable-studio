@@ -7,7 +7,7 @@ export function waitForUpdateHelper(root: string, id: string, broker: ChildProce
   return new Promise((resolve, reject) => {
     const path = join(root, 'update-helper-ready.json');
     const watcher = watch(root, (_event, filename) => { if (String(filename).startsWith('update-helper-ready.json')) check(); });
-    const timer = setTimeout(() => finish(new Error('업데이트 준비를 확인하지 못했습니다. 앱을 종료하지 않고 다시 시도해 주세요.')), 30_000);
+    const timer = setTimeout(() => finish(new Error('업데이트 준비를 확인하지 못했습니다. 앱을 종료하지 않고 다시 시도해 주세요.')), 10 * 60_000);
     const exited = (code: number | null) => { if (code !== 0) finish(new Error(`업데이트 준비 프로세스가 종료되었습니다 (${code}).`)); };
     broker.once('exit', exited);
     function finish(error?: Error, pid?: number) {

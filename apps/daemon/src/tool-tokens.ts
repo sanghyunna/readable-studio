@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 
-export const DEFAULT_TOOL_TOKEN_TTL_MS = 15 * 60 * 1000;
+export const DEFAULT_TOOL_TOKEN_TTL_MS = 3 * 60 * 60 * 1000;
 
 export const CHAT_TOOL_ENDPOINTS = [
   '/api/tools/design-systems/read',

@@ -62,7 +62,7 @@ describe('Trae CLI runtime adapter', () => {
         bin: '/opt/bin/traecli',
         args: ['acp', 'serve'],
         env,
-        timeoutMs: 15_000,
+        timeoutMs: 180_000,
         defaultModelOption: DEFAULT_MODEL_OPTION,
       }),
     );

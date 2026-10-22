@@ -519,7 +519,7 @@ import { createTerminalService } from './terminals.js';
 import { registerSocialShareRoutes } from './social-share-routes.js';
 import { registerMemoryRoutes } from './routes/memory.js';
 import { registerSystemPromptRoutes } from './system-prompt-routes.js';
-import { registerUpdateRoutes } from './update-routes.js';
+import { registerUpdateRoutes, updateRequestSignal } from './update-routes.js';
 import { resolveUpdateConfigDefaults } from './update-source.js';
 import { registerDataImportRoutes } from './data-import-routes.js';
 import { registerUpdateApplyRoutes } from './update-apply-routes.js';
@@ -1980,7 +1980,7 @@ async function resolveProjectChildDirectory(projectRoot, relativePath) {
 
 function execFileBuffered(command, args, opts = {}) {
   return new Promise((resolve) => {
-    execFile(command, args, { timeout: 120_000, maxBuffer: 1024 * 1024, ...opts, windowsHide: true }, (error, stdout, stderr) => {
+    execFile(command, args, { timeout: 600_000, maxBuffer: 1024 * 1024, ...opts, windowsHide: true }, (error, stdout, stderr) => {
       resolve({
         ok: !error,
         code: error?.code,
@@ -2284,7 +2284,7 @@ export function selectPromptImagePaths(
 }
 
 async function ensureGhReady() {
-  const version = await execGhBuffered(['--version'], { timeout: 10_000 });
+  const version = await execGhBuffered(['--version'], { timeout: 180_000 });
   if (!version.ok) {
     return {
       ok: false,
@@ -2294,7 +2294,7 @@ async function ensureGhReady() {
       log: [version.stderr || version.stdout || 'gh --version failed'],
     };
   }
-  const auth = await execGhBuffered(['auth', 'status', '--hostname', 'github.com'], { timeout: 10_000 });
+  const auth = await execGhBuffered(['auth', 'status', '--hostname', 'github.com'], { timeout: 180_000 });
   if (!auth.ok) {
     return {
       ok: false,
@@ -3311,7 +3311,7 @@ function openNativeFolderDialog() {
       );
     } else if (platform === 'win32') {
       const command = buildWindowsFolderDialogCommand();
-      execFile(command.command, command.args, { timeout: 120_000, windowsHide: true }, (err, stdout) => {
+      execFile(command.command, command.args, { timeout: 30 * 60_000, windowsHide: true }, (err, stdout) => {
         resolve(parseFolderDialogStdout(err, stdout));
       });
     } else {
@@ -3636,7 +3636,7 @@ async function runPluginShareTask(task, folder) {
     ...share.argv,
     folder,
     '--json',
-  ], { timeout: task.action === 'publish-github' ? 240_000 : 300_000 });
+  ], { timeout: 60 * 60_000 });
   let payload = null;
   try {
     payload = result.stdout ? JSON.parse(result.stdout) : null;
@@ -3760,7 +3760,7 @@ export interface StartServerOptions {
   hostedPiRuntime?: HostedPiRuntimeAdapter;
 }
 
-const DEFAULT_CHAT_RUN_INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000;
+const DEFAULT_CHAT_RUN_INACTIVITY_TIMEOUT_MS = 60 * 60 * 1000;
 const MAX_CHAT_RUN_INACTIVITY_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 // Reserved post-artifact quiet-period window. No producer currently flips the
 // matching run-watchdog flag, so runs use the standard inactivity timeout.
@@ -3934,7 +3934,7 @@ export function applyClaudeStreamJsonRunBookkeeping(
 
 function resolveChatRunShutdownGraceMs() {
   const raw = Number(process.env.READABLE_CHAT_RUN_SHUTDOWN_GRACE_MS);
-  if (!Number.isFinite(raw)) return 3_000;
+  if (!Number.isFinite(raw)) return 30_000;
   return Math.max(0, Math.floor(raw));
 }
 
@@ -3969,6 +3969,7 @@ async function startServerWithProbeLifetime({
   const desktopApprovalToken = consumeDesktopApprovalToken(process.env);
   const isolatedAgentSupport = desktopApprovalToken
     ? await isolatedAgentProbe({
+        signal: probeLifetime.shutdown.signal,
         helperPath: PACKAGED_AGENT_ISOLATOR_PATH && fs.existsSync(PACKAGED_AGENT_ISOLATOR_PATH)
           ? PACKAGED_AGENT_ISOLATOR_PATH
           : undefined,
@@ -5227,6 +5228,7 @@ async function startServerWithProbeLifetime({
     prepareDeployPreflight,
   };
   const appConfigDeps = { readAppConfig, writeAppConfig };
+  const updateAbort = new AbortController();
   const nativeDialogDeps = { openNativeFolderDialog };
   const researchDeps = { searchResearch, ResearchError };
   const authDeps = {
@@ -5276,7 +5278,8 @@ async function startServerWithProbeLifetime({
 
   // External services
   const updateSourceDependencies = {
-    config: async () => resolveUpdateConfigDefaults((await readAppConfig(RUNTIME_DATA_DIR)).autoUpdate ?? { enabled: false, serverUrl: null }),
+    config: async (signal?: AbortSignal) => resolveUpdateConfigDefaults((await readAppConfig(RUNTIME_DATA_DIR)).autoUpdate ?? { enabled: false, serverUrl: null }, undefined, signal ?? updateAbort.signal),
+    signal: updateAbort.signal,
   };
   registerUpdateRoutes(app, updateSourceDependencies);
   registerDataImportRoutes(app, { dataRoot: RUNTIME_DATA_DIR });
@@ -5478,6 +5481,7 @@ async function startServerWithProbeLifetime({
   });
 
   registerMediaRoutes(app, {
+    updateSignal: updateAbort.signal,
     db,
     design,
     http: httpDeps,
@@ -8432,7 +8436,7 @@ async function startServerWithProbeLifetime({
         return sendApiError(res, 502, 'UPSTREAM_UNAVAILABLE', err.message, init);
       }
 
-      // The blocking call hit our 120s AbortController timeout - or the
+      // The blocking call hit its AbortController timeout - or the
       // caller passed an already-aborted signal. Either way, surface as
       // 503 with the shared UPSTREAM_UNAVAILABLE code (no dedicated
       // TIMEOUT code in the contracts ApiErrorCode union).
@@ -8593,7 +8597,7 @@ async function startServerWithProbeLifetime({
         'publish-repo',
         folder,
         '--json',
-      ], { timeout: 240_000 });
+      ], { timeout: 60 * 60_000 });
       const payload = result.stdout ? JSON.parse(result.stdout) : null;
       if (!result.ok || !payload?.ok) {
         res.status(500).json({
@@ -8632,7 +8636,7 @@ async function startServerWithProbeLifetime({
         'readable-studio-pr',
         folder,
         '--json',
-      ], { timeout: 300_000 });
+      ], { timeout: 60 * 60_000 });
       const payload = result.stdout ? JSON.parse(result.stdout) : null;
       if (!result.ok || !payload?.ok) {
         res.status(500).json({
@@ -9057,9 +9061,10 @@ async function startServerWithProbeLifetime({
     if (!isLocalSameOrigin(req, resolvedPort)) {
       return res.status(403).json({ error: 'cross-origin request rejected' });
     }
+    const signal = updateRequestSignal(req, res, updateAbort.signal);
     try {
       const config = await readAppConfig(RUNTIME_DATA_DIR);
-      config.autoUpdate = await resolveUpdateConfigDefaults(config.autoUpdate ?? { enabled: false, serverUrl: null });
+      config.autoUpdate = await resolveUpdateConfigDefaults(config.autoUpdate ?? { enabled: false, serverUrl: null }, undefined, signal);
       res.json({ config });
     } catch (err) {
       res
@@ -10553,7 +10558,7 @@ async function startServerWithProbeLifetime({
       if (process.platform === 'win32' && previousChild.pid) {
         await new Promise<void>((resolve, reject) => {
           execFile('taskkill.exe', ['/PID', String(previousChild.pid), '/T', '/F'],
-            { windowsHide: true, timeout: 5000 }, (error) => {
+            { windowsHide: true, timeout: 30_000 }, (error) => {
               if (error && previousChild.exitCode === null && previousChild.signalCode === null) reject(error);
               else resolve();
             });
@@ -11087,7 +11092,7 @@ async function startServerWithProbeLifetime({
       //
       // Why not a fresh `vela model list` per run: that authoritative call
       // needs network reachability to the AMR gateway AND `$HOME` (the offline
-      // `preset`/`--version` calls need neither), takes up to ~10s, and only
+      // `preset`/`--version` calls need neither), may take minutes on VDI, and only
       // retries a narrow set of network errors. Running it blocking on every
       // turn turned any transient gateway/timeout/HOME hiccup into a hard
       // "AMR model … is not available from Vela" — even for a logged-in user
@@ -11344,7 +11349,7 @@ async function startServerWithProbeLifetime({
     const runStartTimeMs = Date.now();
     const inactivityTimeoutMs = resolveChatRunInactivityTimeoutMs();
     const artifactQuietPeriodMs = resolveChatRunArtifactQuietPeriodMs();
-    const inactivityKillGraceMs = 3_000;
+    const inactivityKillGraceMs = 30_000;
     let inactivityTimer = null;
     let childStdoutSeen = false;
     let lastAgentEventPhase = 'spawn pending';
@@ -11632,6 +11637,15 @@ async function startServerWithProbeLifetime({
       }
     }
 
+    if (run.cancelRequested || design.runs.isTerminal(run.status)) {
+      await isolatedToolBroker?.close();
+      await closeManagedPi();
+      cleanupPromptFile();
+      revokeToolToken('child_exit');
+      unregisterChatAgentEventSink();
+      return;
+    }
+
     run.status = 'running';
     run.updatedAt = Date.now();
     send('start', {
@@ -11726,18 +11740,35 @@ async function startServerWithProbeLifetime({
         ].filter((candidate) => typeof candidate === 'string' && fs.existsSync(candidate))
           .map((candidate) => path.resolve(candidate))
           .filter((candidate) => !systemReadRoots.some((root) => candidate.toLowerCase() === root || candidate.toLowerCase().startsWith(`${root}${path.sep}`))))];
-        child = await isolatedAgentSpawn({
-          args,
-          command: agentLaunch.launchPath,
-          cwd: managedPiHandle?.invocation.cwd ?? effectiveCwd,
-          env,
-          helperPath: PACKAGED_AGENT_ISOLATOR_PATH && fs.existsSync(PACKAGED_AGENT_ISOLATOR_PATH)
-            ? PACKAGED_AGENT_ISOLATOR_PATH
-            : undefined,
-          broker: isolatedToolBroker.ipc,
-          readExecutePaths,
-          writablePaths: [effectiveCwd, isolatedToolBroker.paths.root],
-        });
+        child = await design.runs.prepare(run, async () => {
+          const preparedChild = await isolatedAgentSpawn({
+            signal: run.cancelController.signal,
+            args,
+            command: agentLaunch.launchPath,
+            cwd: managedPiHandle?.invocation.cwd ?? effectiveCwd,
+            env,
+            helperPath: PACKAGED_AGENT_ISOLATOR_PATH && fs.existsSync(PACKAGED_AGENT_ISOLATOR_PATH)
+              ? PACKAGED_AGENT_ISOLATOR_PATH
+              : undefined,
+            broker: isolatedToolBroker.ipc,
+            readExecutePaths,
+            writablePaths: [effectiveCwd, isolatedToolBroker.paths.root],
+          });
+          if (run.cancelRequested || design.runs.isTerminal(run.status)) {
+            const closed = preparedChild.exitCode !== null || preparedChild.signalCode !== null
+              ? Promise.resolve() : new Promise<void>((resolve) => preparedChild.once('close', () => resolve()));
+            await stopAttemptChild(preparedChild, null);
+            await closed;
+            throw new DOMException('Run canceled during isolated child preparation', 'AbortError');
+          }
+          // Transfer ownership before preparation settles so shutdown can
+          // never observe neither a pending helper nor a running child.
+          run.child = preparedChild;
+          return preparedChild;
+        }, () => isolatedToolBroker?.close());
+        if (run.cancelRequested || design.runs.isTerminal(run.status)) {
+          throw new DOMException('Run canceled during isolated child preparation', 'AbortError');
+        }
         if (stdinMode === 'ignore') child.stdin.end();
       } else {
         child = spawn(invocation.command, invocation.args, {
@@ -11841,6 +11872,10 @@ async function startServerWithProbeLifetime({
       cleanupPromptFile();
       revokeToolToken('child_exit');
       unregisterChatAgentEventSink();
+      if (run.cancelRequested || design.runs.isTerminal(run.status)) {
+        clearInactivityWatchdog();
+        return;
+      }
       const isolationFailed = !managedPiHandle && agentRollbackIsolationEnabled;
       const fallbackReason = isolationFailed ? isolationLaunchFailureReason(err) : null;
       if (fallbackReason && !run.isolationFallbackReason && !run.cancelRequested && !design.runs.isTerminal(run.status)) {
@@ -14393,6 +14428,7 @@ async function startServerWithProbeLifetime({
       routineService?.stop();
     };
     const shutdownDaemonRuns = () => {
+      updateAbort.abort();
       if (daemonShutdownPromise) return daemonShutdownPromise;
       daemonShuttingDown = true;
       // HTTP close and explicit shutdown may race; both must join probe cleanup.

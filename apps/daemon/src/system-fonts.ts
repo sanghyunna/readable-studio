@@ -236,13 +236,8 @@ async function computeSystemFonts(timeoutMs: number): Promise<SystemFontsRespons
     // empty so the picker falls back to curated fonts instead of erroring.
     return { fonts: [], platform };
   }
-  try {
-    const fonts = await enumerateWindowsFonts(timeoutMs);
-    return { fonts, platform: 'win32' };
-  } catch (err) {
-    console.warn('[system-fonts] enumeration failed:', (err as Error)?.message || err);
-    return { fonts: [], platform: 'win32' };
-  }
+  const fonts = await enumerateWindowsFonts(timeoutMs);
+  return { fonts, platform: 'win32' };
 }
 
 /**
@@ -253,9 +248,10 @@ async function computeSystemFonts(timeoutMs: number): Promise<SystemFontsRespons
 export function listSystemFonts(opts: { refresh?: boolean; timeoutMs?: number } = {}): Promise<SystemFontsResponse> {
   if (opts.refresh) cached = null;
   if (!cached) {
-    cached = computeSystemFonts(opts.timeoutMs ?? 15_000).catch((err) => {
+    cached = computeSystemFonts(opts.timeoutMs ?? 120_000).catch((err) => {
       cached = null; // don't cache a hard failure; let the next call retry
-      throw err;
+      console.warn('[system-fonts] enumeration failed:', (err as Error)?.message || err);
+      return { fonts: [], platform: currentPlatform() };
     });
   }
   return cached;

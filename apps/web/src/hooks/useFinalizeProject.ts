@@ -1,6 +1,6 @@
 // Wraps POST /api/projects/:id/finalize/<provider> for the Finalize
 // design package button (#451). The daemon route runs synchronously for
-// 60–120 s, so the hook owns:
+// up to ten minutes, so the hook owns:
 //   - request lifecycle (idle / pending / success / error)
 //   - cancellation via AbortController (best-effort — daemon's
 //     synthesis call may already be in flight when abort fires)
@@ -12,7 +12,7 @@
 //     reason (e.g. account usage cap) is visible to the user instead of
 //     just the daemon's category label (#450 verification commitment).
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   ApiErrorCode,
   FinalizeAnthropicRequest,
@@ -20,9 +20,8 @@ import type {
   FinalizeProviderProtocol,
 } from '@readable-studio/contracts';
 
-// 130 000 ms = daemon timeout (120 s) + 10 s buffer so the daemon's
-// own retry/timeout layer always wins under normal failure modes.
-const FETCH_TIMEOUT_MS = 130_000;
+// Leave two minutes beyond the daemon's ten-minute operation for slow persistence.
+const FETCH_TIMEOUT_MS = 12 * 60_000;
 const FINALIZE_PROTOCOLS = new Set<FinalizeProviderProtocol>([
   'anthropic',
   'openai',
@@ -60,11 +59,11 @@ export function useFinalizeProject(projectId: string): FinalizeProjectState {
   const [error, setError] = useState<FinalizeError | null>(null);
   const [result, setResult] = useState<FinalizeAnthropicResponse | null>(null);
   const abortRef = useRef<AbortController | null>(null);
-  // Tracks whether the in-flight controller's abort came from the
-  // 130 s timeout (true) or the user clicking Cancel (false). The
-  // catch block reads this to surface a TIMEOUT error instead of a
-  // silent idle reset, so users learn the daemon may still be running.
-  const timedOutRef = useRef(false);
+  useEffect(() => () => {
+    const controller = abortRef.current;
+    abortRef.current = null;
+    controller?.abort();
+  }, [projectId]);
 
   const cancel = useCallback(() => {
     abortRef.current?.abort();
@@ -75,11 +74,11 @@ export function useFinalizeProject(projectId: string): FinalizeProjectState {
       // Cancel any in-flight call before starting a new one so a
       // double-clicked button doesn't pile up two daemon requests.
       abortRef.current?.abort();
-      timedOutRef.current = false;
+      let timedOut = false;
       const controller = new AbortController();
       abortRef.current = controller;
       const timeoutId = setTimeout(() => {
-        timedOutRef.current = true;
+        timedOut = true;
         controller.abort();
       }, FETCH_TIMEOUT_MS);
 
@@ -137,7 +136,7 @@ export function useFinalizeProject(projectId: string): FinalizeProjectState {
           (err instanceof DOMException && err.name === 'AbortError') ||
           (err instanceof Error && err.name === 'AbortError');
         if (aborted) {
-          if (timedOutRef.current) {
+          if (timedOut) {
             // Timeout abort — surface as an error so users see the
             // failure signal. The daemon may still be running its
             // synthesis, so the message names that explicitly.
@@ -196,7 +195,7 @@ export function messageForCode(code: ApiErrorCode | 'NETWORK_ERROR' | string): s
     case 'INTERNAL_ERROR':
       return 'Something went wrong while finalizing. Check the daemon logs.';
     case 'TIMEOUT':
-      return 'Finalize timed out after 130 s. The daemon may still be running.';
+      return 'Finalize timed out after 12 minutes. The daemon may still be running.';
     case 'NETWORK_ERROR':
     default:
       return "Couldn't reach the daemon. Make sure it's running.";

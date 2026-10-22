@@ -61,9 +61,25 @@ describe('Databricks scan transport termination', () => {
     const result = phase === 'start' ? startDatabricksScan({ profileId: 'profile' }) : streamDatabricksScanEvents('scan', { onEvent: vi.fn() });
     const rejected = expect(result).rejects.toMatchObject({ status: 504, code: 'DATABRICKS_UPSTREAM_UNAVAILABLE', retryable: true });
     await requested;
-    await vi.advanceTimersByTimeAsync(150_000);
+    await vi.advanceTimersByTimeAsync(phase === 'start' ? 35 * 60_000 : 4 * 60 * 60_000);
     await rejected;
     if (phase === 'body') expect(cancelled).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('accepts discovery completing after the former scan deadline', async () => {
+    vi.useFakeTimers();
+    let finish!: (response: Response) => void;
+    let signal: AbortSignal | undefined;
+    vi.stubGlobal('fetch', vi.fn((_url: unknown, init?: RequestInit) => {
+      signal = init?.signal ?? undefined;
+      return new Promise<Response>(resolve => { finish = resolve; });
+    }));
+    const result = startDatabricksScan({ profileId: 'profile' });
+    await vi.advanceTimersByTimeAsync(180_000);
+    expect(signal?.aborted).toBe(false);
+    finish(Response.json({ scanId: 'slow-scan', state: 'running' }));
+    await expect(result).resolves.toMatchObject({ scanId: 'slow-scan' });
     expect(vi.getTimerCount()).toBe(0);
   });
 

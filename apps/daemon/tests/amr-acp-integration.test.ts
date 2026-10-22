@@ -15,9 +15,9 @@
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -32,9 +32,18 @@ import {
   parseVelaModels,
 } from '../src/runtimes/defs/amr.js';
 import { getAgentDef } from '../src/runtimes/registry.js';
+import { writeExecutableScript } from './helpers/fake-agent.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FAKE_VELA = path.join(HERE, 'fixtures', 'fake-vela.mjs');
+
+async function withModelFixture<T>(run: (bin: string) => Promise<T>): Promise<T> {
+  const dir = mkdtempSync(path.join(tmpdir(), 'readable-amr-models-'));
+  try {
+    const bin = await writeExecutableScript(dir, 'vela', `import(${JSON.stringify(pathToFileURL(FAKE_VELA).href)})`);
+    return await run(bin);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+}
 
 function spawnFakeVela(env: NodeJS.ProcessEnv = {}): ChildProcess {
   return spawn(process.execPath, [FAKE_VELA], {
@@ -157,7 +166,7 @@ describe('AMR runtime def', () => {
   });
 
   it('fetches AMR preset models from `vela model preset --format json`', async () => {
-    const models = await fetchVelaPresetModels(FAKE_VELA, process.env);
+    const models = await withModelFixture(bin => fetchVelaPresetModels(bin, process.env));
     expect(models).toEqual([
       { id: 'deepseek-v4-flash', label: 'deepseek-v4-flash' },
       { id: 'deepseek-v3.2', label: 'deepseek-v3.2' },
@@ -167,7 +176,7 @@ describe('AMR runtime def', () => {
   });
 
   it('fetches AMR authoritative models from `vela model list --format json`', async () => {
-    const models = await amrAgentDef.fetchModels?.(FAKE_VELA, process.env);
+    const models = await withModelFixture(bin => amrAgentDef.fetchModels(bin, process.env));
     expect(models).toEqual([
       { id: 'deepseek-v4-flash', label: 'deepseek-v4-flash' },
       { id: 'deepseek-v3.2', label: 'deepseek-v3.2' },
@@ -188,7 +197,6 @@ describe('AMR runtime def', () => {
   it('retries transient `vela model list --format json` failures before succeeding', async () => {
     const tempDir = mkdtempSync(path.join(tmpdir(), 'readable-amr-retry-'));
     const stateFile = path.join(tempDir, 'retry-state.json');
-    const wrapperPath = path.join(tempDir, 'vela-wrapper');
     const wrapperSource = `#!/usr/bin/env node
 const { existsSync, readFileSync, writeFileSync } = require('node:fs');
 const { spawn } = require('node:child_process');
@@ -220,8 +228,7 @@ child.on('exit', (code) => {
   process.exit(code ?? 0);
 });
 `;
-    writeFileSync(wrapperPath, wrapperSource, 'utf8');
-    chmodSync(wrapperPath, 0o755);
+    const wrapperPath = await writeExecutableScript(tempDir, 'vela-wrapper', wrapperSource);
     try {
       const models = await amrAgentDef.fetchModels?.(
         wrapperPath,

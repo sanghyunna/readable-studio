@@ -40,7 +40,7 @@ const body = Buffer.from(JSON.stringify({ args, input, token }), 'utf8');
 const header = Buffer.allocUnsafe(4);
 header.writeUInt32LE(body.length);
 const response = await new Promise((resolve, reject) => {
-  const deadline = Date.now() + 5_000;
+  const deadline = Date.now() + 120_000;
   const connect = () => {
     const socket = net.createConnection(pipe);
     let buffer = Buffer.alloc(0);

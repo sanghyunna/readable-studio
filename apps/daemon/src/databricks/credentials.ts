@@ -35,7 +35,7 @@ export class DatabricksCredentials {
   }
 
   /** Reuses expiry-aware caching; forced refreshes still share an in-flight acquisition. */
-  async acquireToken(binding: DatabricksConnectionBinding, force = false, beforeRefresh?: () => Promise<void>): Promise<{ token: string; expiresAt: number }> {
+  async acquireToken(binding: DatabricksConnectionBinding, force = false, beforeRefresh?: () => Promise<void>, signal?: AbortSignal): Promise<{ token: string; expiresAt: number }> {
     const key = this.key(binding);
     if (force) this.cached.delete(key);
     const cached = this.cached.get(key);
@@ -44,7 +44,7 @@ export class DatabricksCredentials {
     if (!pending) {
       pending = (async () => {
         await beforeRefresh?.();
-        return this.refresh(binding);
+        return this.refresh(binding, signal);
       })().then((bearer) => {
         if (this.pending.get(key) === pending) this.cached.set(key, bearer);
         return bearer;
@@ -78,7 +78,7 @@ export class DatabricksCredentials {
     if (binding.mode === 'workspace-token') await this.storage?.clear(key);
   }
 
-  private async refresh(binding: DatabricksConnectionBinding): Promise<Bearer> {
+  private async refresh(binding: DatabricksConnectionBinding, signal?: AbortSignal): Promise<Bearer> {
     if (binding.mode === 'workspace-token') {
       const result = await this.storage?.load(this.key(binding)) ?? { state: 'missing' };
       if (result.state === 'loaded') {
@@ -91,7 +91,8 @@ export class DatabricksCredentials {
       }
       throw new DatabricksServiceError('DATABRICKS_AUTH_REQUIRED');
     }
-    const raw = await this.client.json(['auth', 'token', '--profile', binding.profileName]);
+    const args = ['auth', 'token', '--profile', binding.profileName];
+    const raw = await (signal ? this.client.json(args, signal) : this.client.json(args));
     if (!raw || typeof raw !== 'object') throw new DatabricksServiceError('DATABRICKS_AUTH_REQUIRED');
     const payload = raw as Record<string, unknown>;
     const expiry = payload.expiry ?? payload.expires_at ?? payload.expires_on;

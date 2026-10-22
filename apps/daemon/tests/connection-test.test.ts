@@ -476,7 +476,7 @@ describe('POST /api/provider/models', () => {
         apiKey: 'sk-timeout',
       });
 
-      await vi.advanceTimersByTimeAsync(12_000);
+      await vi.advanceTimersByTimeAsync(180_000);
       await expect(pending).resolves.toMatchObject({
         ok: false,
         kind: 'timeout',
@@ -1722,8 +1722,8 @@ describe('POST /api/test/connection provider mode', () => {
       const { close, requestInit } = proxyDispatcherRequestInit();
 
       expect(proxySpy).toHaveBeenCalledWith();
-      expect(requestInit).toEqual({});
-      await expect(close()).resolves.toBeUndefined();
+      expect(requestInit).toMatchObject({ dispatcher: { dispatch: expect.any(Function) } });
+      await close();
     } finally {
       proxySpy.mockRestore();
     }

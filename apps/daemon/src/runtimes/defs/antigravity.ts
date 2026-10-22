@@ -133,7 +133,7 @@ export async function waitForAgyToReadModel(
   expectedModel: string,
   options: WaitForAgyModelOptions = {},
 ): Promise<boolean> {
-  const timeoutMs = options.timeoutMs ?? 15_000;
+  const timeoutMs = options.timeoutMs ?? 180_000;
   const pollIntervalMs = options.pollIntervalMs ?? 250;
   const readFile =
     options.readFile ?? ((path: string) => fsReadFile(path, 'utf8'));

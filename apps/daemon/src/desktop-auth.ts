@@ -3,7 +3,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 let desktopAuthSecret: Buffer | null = null;
 let desktopAuthEverRegistered = process.env.READABLE_REQUIRE_DESKTOP_AUTH === '1';
 export const consumedImportNonces = new Map<string, number>();
-const DESKTOP_IMPORT_TOKEN_TTL_MS = 60_000;
+const DESKTOP_IMPORT_TOKEN_TTL_MS = 15 * 60_000;
 const DESKTOP_IMPORT_TOKEN_FIELD_SEP = '~';
 
 export function setDesktopAuthSecret(secret: Buffer | null): void {

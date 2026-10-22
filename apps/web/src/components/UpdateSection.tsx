@@ -37,27 +37,29 @@ function reasonKey(reason: string): ReasonKey {
   };
   return keys[reason] ?? 'update.reason.unknown';
 }
-async function request<T>(url: string, body?: unknown): Promise<T> {
-  const response = await fetch(url, body === undefined ? {} : {
+async function request<T>(url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+  const init: RequestInit = body === undefined ? {} : {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-  });
+  };
+  if (signal) init.signal = signal;
+  const response = await fetch(url, init);
   const value = await response.json().catch(() => null) as (Record<string, unknown> & { error?: string; unavailable?: string; host?: string }) | null;
   if (!response.ok) throw Object.assign(new Error(value?.error ?? value?.unavailable ?? 'unreachable'), { host: value?.host });
   if (value === null || typeof value !== 'object') throw new Error('invalid-response');
   return value as T;
 }
-async function checkUpdate(automatic = false): Promise<UpdateCheckResult | null> {
+async function checkUpdate(automatic = false, signal?: AbortSignal): Promise<UpdateCheckResult | null> {
   const generation = ++checkGeneration;
   let result: UpdateCheckResult;
-  try { result = await request<UpdateCheckResult>(`/api/update/check${automatic ? '?automatic=1' : ''}`); }
+  try { result = await request<UpdateCheckResult>(`/api/update/check${automatic ? '?automatic=1' : ''}`, undefined, signal); }
   catch { result = { unavailable: 'unreachable' }; }
   // Malformed payloads (null, {}) are treated as a neutral no-op, never rendered.
   if (!result || typeof result !== 'object' || !('unavailable' in result || 'isNewer' in result)) result = { unavailable: 'disabled' };
-  if (generation !== checkGeneration) return null;
+  if (signal?.aborted || generation !== checkGeneration) return null;
   if (!('unavailable' in result && result.unavailable === 'disabled')) {
     let status: UpdateStatus | null = null;
-    try { status = await request<UpdateStatus>('/api/update/status'); } catch {}
-    if (generation !== checkGeneration) return null;
+    try { status = await request<UpdateStatus>('/api/update/status', undefined, signal); } catch {}
+    if (signal?.aborted || generation !== checkGeneration) return null;
     if (status) publishStatus(status);
     lastCheck = result;
     lastCheckedAt = 'checkedAt' in result ? result.checkedAt : new Date().toISOString();
@@ -75,8 +77,6 @@ function acknowledgeConnection() {
 interface LoginSlot {
   renderDatabricksLogin?: (host: string | undefined, onSuccess: () => void) => ReactNode;
 }
-/** The daemon bounds the check; the extra slack only guards a stalled daemon. */
-const CONNECTION_TIMEOUT_MS = 25_000;
 type ConnectionReport = Omit<UpdateConnectionReport, 'failure'> & { failure?: UpdateConnectionFailure | 'daemon-unreachable' };
 type ConnectionView = { state: 'checking' } | { state: 'done'; report: ConnectionReport };
 function normalizeServerUrl(input: string): string | null {
@@ -87,21 +87,19 @@ function normalizeServerUrl(input: string): string | null {
   if (parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error('invalid-url');
   return parsed.href.replace(/\/+$/, '');
 }
-async function requestConnection(serverUrl: string): Promise<ConnectionReport> {
+async function requestConnection(serverUrl: string, signal: AbortSignal): Promise<ConnectionReport> {
   const started = Date.now();
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), CONNECTION_TIMEOUT_MS + 5_000);
   const local = (failure: ConnectionReport['failure']): ConnectionReport =>
-    ({ ok: false, serverUrl, failure, timeoutMs: CONNECTION_TIMEOUT_MS, elapsedMs: Date.now() - started, steps: [] });
+    ({ ok: false, serverUrl, failure, timeoutMs: 0, elapsedMs: Date.now() - started, steps: [] });
   try {
     const response = await fetch('/api/update/connection', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ serverUrl }), signal: controller.signal,
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ serverUrl }), signal,
     });
     const value = await response.json().catch(() => null) as ConnectionReport | null;
     return response.ok && value && typeof value === 'object' && Array.isArray(value.steps) ? value : local('invalid-response');
   } catch {
-    return local(controller.signal.aborted ? 'timeout' : 'daemon-unreachable');
-  } finally { clearTimeout(timer); }
+    return local('daemon-unreachable');
+  }
 }
 function ConnectionLog({ report }: { report: ConnectionReport }) {
   const { t } = useI18n();
@@ -122,7 +120,7 @@ function ConnectionResult({ view, retry, renderDatabricksLogin }: LoginSlot & { 
   if (view.state === 'checking') return <div className={styles.connection} data-update-connection="checking" role="status">
     <div className={styles.progress} aria-busy="true" data-working="true">
       <progress aria-label={t('update.connecting')} />
-      <span>{t('update.connectingHint', { seconds: CONNECTION_TIMEOUT_MS / 1000 })}</span>
+      <span>{t('update.connectingHint')}</span>
     </div>
   </div>;
   const { report } = view;
@@ -138,7 +136,7 @@ function ConnectionResult({ view, retry, renderDatabricksLogin }: LoginSlot & { 
   const failure = report.failure ?? 'invalid-response';
   return <div className={styles.connection} data-update-connection="failed">
     <div role="alert" className={styles.connectionError}>
-      <span data-update-message>{t(`update.connection.failure.${failure}`, { seconds: Math.round(report.timeoutMs / 1000) })}</span>
+      <span data-update-message>{t(failure === 'timeout' && !report.timeoutMs ? 'update.reason.timeout' : `update.connection.failure.${failure}`, { seconds: Math.round(report.timeoutMs / 1000) })}</span>
       {failure === 'not-logged-in' ? renderDatabricksLogin?.(report.host, retry) ?? <DatabricksLoginButton host={report.host} onSuccess={retry} /> : null}
     </div>
     <ConnectionLog report={report} />
@@ -338,71 +336,96 @@ export function UpdateSection({ currentVersion, onApply, renderDatabricksLogin, 
   const [error, setError] = useState<string | null>(null);
   const [host, setHost] = useState<string>();
   const [connection, setConnection] = useState<ConnectionView | null>(null);
+  const settingsRequest = useRef<AbortController | null>(null);
   const [localLog, setLocalLog] = useState<ConnectionReport | null>(null);
   const [superseded, setSuperseded] = useState(false);
   const inputErrorId = useId();
   const inputError = error === 'invalid-url' || error === 'not-https' || error === 'not-configured';
   const clearPrevious = () => {
+    if (settingsRequest.current) {
+      settingsRequest.current.abort(); settingsRequest.current = null; setSaving(null); setBusy(false);
+    }
     setSuperseded(true); setResult(null); setError(null); setConnection(null); setLocalLog(null);
   };
   useEffect(() => {
-    void request<{ config: { autoUpdate?: AutoUpdateConfig } }>('/api/app-config').then((value) => {
+    const controller = new AbortController();
+    void request<{ config: { autoUpdate?: AutoUpdateConfig } }>('/api/app-config', undefined, controller.signal).then((value) => {
+      if (controller.signal.aborted) return;
       const next = value?.config?.autoUpdate ?? { enabled: false, serverUrl: null };
       setConfig(next); setConfigLoaded(true); if (!urlEdited.current) setUrl(next.serverUrl ?? '');
-    }).catch(() => setError('unreachable'));
+    }).catch(() => { if (!controller.signal.aborted) setError('unreachable'); });
     const sync = () => { setResult(lastCheck); setCheckedAt(lastCheckedAt); };
     listeners.add(sync);
-    return () => { listeners.delete(sync); };
+    return () => { controller.abort(); listeners.delete(sync); settingsRequest.current?.abort(); settingsRequest.current = null; };
   }, []);
   const save = async (enabled: boolean, validate: boolean, serverInput = url, optimistic = false) => {
     const previous = config;
     if (optimistic) setConfig({ ...config, enabled });
-    clearPrevious(); setSaving(optimistic ? 'toggle' : 'connection');
+    clearPrevious();
+    const controller = new AbortController();
+    settingsRequest.current = controller;
+    const rollback = () => setConfig(previous);
+    if (optimistic) controller.signal.addEventListener('abort', rollback, { once: true });
+    setSaving(optimistic ? 'toggle' : 'connection');
     try {
       const serverUrl = normalizeServerUrl(serverInput);
       if ((enabled || validate) && !serverUrl) throw new Error('not-configured');
-      if (validate) await request('/api/update/health', { serverUrl });
-      const response = await fetch('/api/app-config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ autoUpdate: { enabled, serverUrl } }) });
+      if (validate) await request('/api/update/health', { serverUrl }, controller.signal);
+      if (controller.signal.aborted) return;
+      const response = await fetch('/api/app-config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ autoUpdate: { enabled, serverUrl } }), signal: controller.signal });
+      if (controller.signal.aborted) return;
       if (!response.ok) throw new Error('invalid-response');
+      controller.signal.removeEventListener('abort', rollback);
       setConfig({ enabled, serverUrl }); setUrl(serverUrl ?? '');
       if (validate || !enabled) acknowledgeConnection();
       if (optimistic && enabled) {
-        const checked = await checkUpdate();
+        const checked = await checkUpdate(false, controller.signal);
         if (checked) setResult(checked);
       }
     } catch (fault) {
+      if (controller.signal.aborted) return;
       if (optimistic) setConfig(previous);
       setError(fault instanceof Error ? fault.message : 'unreachable'); setHost((fault as { host?: string }).host);
     }
-    finally { setSaving(null); }
+    finally { if (settingsRequest.current === controller) { settingsRequest.current = null; setSaving(null); } }
   };
   const check = async () => {
     clearPrevious(); setBusy(true);
-    try { const checked = await checkUpdate(); if (checked) setResult(checked); }
-    finally { setBusy(false); }
+    const controller = new AbortController();
+    settingsRequest.current = controller;
+    try { const checked = await checkUpdate(false, controller.signal); if (checked) setResult(checked); }
+    finally { if (settingsRequest.current === controller) { settingsRequest.current = null; setBusy(false); } }
   };
-  // Connect is an explicit diagnosis: progress shows at once and the bounded report always lands beside the button.
+  // Slow workspace discovery stays pending until it finishes or this input is abandoned.
   const connect = async () => {
     clearPrevious();
     let serverUrl: string | null;
     try { serverUrl = normalizeServerUrl(url); } catch (fault) {
       const failure = fault instanceof Error && fault.message === 'not-https' ? 'not-https' : 'invalid-url';
       setError(failure);
-      setLocalLog({ ok: false, serverUrl: null, failure, timeoutMs: CONNECTION_TIMEOUT_MS, elapsedMs: 0, steps: [{ step: 'url', ok: false, elapsedMs: 0, detail: url.trim() }] });
+      setLocalLog({ ok: false, serverUrl: null, failure, timeoutMs: 0, elapsedMs: 0, steps: [{ step: 'url', ok: false, elapsedMs: 0, detail: url.trim() }] });
       return;
     }
     if (!serverUrl) { setError('not-configured'); return; }
+    const controller = new AbortController();
+    settingsRequest.current = controller;
     setSaving('connection'); setConnection({ state: 'checking' });
-    const report = await requestConnection(serverUrl);
+    const report = await requestConnection(serverUrl, controller.signal);
+    if (controller.signal.aborted) return;
     try {
       if (report.ok) {
-        const response = await fetch('/api/app-config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ autoUpdate: { enabled: config.enabled, serverUrl } }) });
+        const response = await fetch('/api/app-config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ autoUpdate: { enabled: config.enabled, serverUrl } }), signal: controller.signal });
+        if (controller.signal.aborted) return;
         if (!response.ok) throw new Error('invalid-response');
         setConfig({ enabled: config.enabled, serverUrl }); setUrl(serverUrl);
         acknowledgeConnection();
       }
-    } catch (fault) { setError(fault instanceof Error ? fault.message : 'invalid-response'); }
-    finally { setConnection({ state: 'done', report }); setSaving(null); }
+    } catch (fault) { if (!controller.signal.aborted) setError(fault instanceof Error ? fault.message : 'invalid-response'); }
+    finally {
+      if (!controller.signal.aborted) {
+        settingsRequest.current = null; setConnection({ state: 'done', report }); setSaving(null);
+      }
+    }
   };
   return <section className={`settings-section ${styles.section}`} aria-label={t('update.title')}>
     <Switch checked={config.enabled} pending={saving === 'toggle'} disabled={busy || saving === 'connection' || (!url.trim() && !config.enabled)} onCheckedChange={(enabled) => void save(enabled, enabled, enabled ? url : config.serverUrl ?? '', true)}>{t('update.automatic')}</Switch>

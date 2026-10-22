@@ -2269,6 +2269,18 @@ describe('cloudflare pages deploys', () => {
 });
 
 describe('deployment link readiness', () => {
+  it('accepts a successful URL probe delayed beyond eight seconds', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn((_input, init?: RequestInit) => new Promise<Response>((resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+      setTimeout(() => resolve(new Response('ok')), 20_000);
+    })));
+    try {
+      const pending = checkDeploymentUrl('https://deployment.example.com');
+      await vi.advanceTimersByTimeAsync(20_000);
+      await expect(pending).resolves.toMatchObject({ reachable: true });
+    } finally { vi.useRealTimers(); vi.unstubAllGlobals(); }
+  });
   async function withServer(
     handler: (req: IncomingMessage, res: ServerResponse) => void,
     run: (url: string) => Promise<void>,

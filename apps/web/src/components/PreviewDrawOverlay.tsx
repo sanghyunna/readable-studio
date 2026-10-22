@@ -532,14 +532,8 @@ export function PreviewDrawOverlay({
     }
     const iframe = snapshotHostIframe();
     if (!iframe) return null;
-    // Capture mode may still be swapping the srcDoc frame to full content when
-    // the user submits, so retry with growing timeouts before giving up.
-    const timeouts = [1500, 3000, 6000];
-    for (const timeout of timeouts) {
-      const snapshot = await requestPreviewSnapshot(iframe, timeout);
-      if (snapshot) return snapshot;
-    }
-    return null;
+    // One generous wait avoids starting another rasterization while the first runs.
+    return requestPreviewSnapshot(iframe, 120_000);
   }
 
   function drawCaptureTarget(
@@ -667,7 +661,7 @@ export function PreviewDrawOverlay({
         };
         const timeout = window.setTimeout(() => {
           finish({ ok: false, message: t('chat.annotationTimeout') });
-        }, 60000);
+        }, 300_000);
         const detail: AnnotationEventDetail = {
           file,
           note: note.trim(),

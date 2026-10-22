@@ -343,7 +343,7 @@ it('finishes the inventory without durably caching a timed-out probe', async () 
   const settled = Promise.allSettled([run]);
   await started.promise;
   // When the hung agent exceeds its own budget.
-  await vi.advanceTimersByTimeAsync(120_000);
+  await vi.advanceTimersByTimeAsync(15 * 60_000);
   const [outcome] = await settled;
   expect(outcome?.status).toBe('fulfilled');
   if (outcome?.status !== 'fulfilled') return;

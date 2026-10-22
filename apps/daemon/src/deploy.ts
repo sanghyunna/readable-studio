@@ -1677,7 +1677,7 @@ function referenceSuffix(raw: string) {
 
 async function pollVercelDeployment(config: DeployConfig, id: string) {
   let last: JsonObject | null = null;
-  for (let i = 0; i < 30; i += 1) {
+  for (let i = 0; i < 300; i += 1) {
     await new Promise((resolve) => setTimeout(resolve, i < 5 ? 1000 : 2000));
     const resp = await fetch(
       `${VERCEL_API}/v13/deployments/${encodeURIComponent(id)}${vercelTeamQuery(config)}`,
@@ -1693,7 +1693,7 @@ async function pollVercelDeployment(config: DeployConfig, id: string) {
 
 export async function waitForReachableDeploymentUrl(
   urls: unknown[],
-  { timeoutMs = 60_000, intervalMs = 2_000, providerLabel = 'Deployment provider' } = {},
+  { timeoutMs = 10 * 60_000, intervalMs = 2_000, providerLabel = 'Deployment provider' } = {},
 ) {
   const candidates = [...new Set((urls || []).map(normalizeDeploymentUrl).filter(Boolean))];
   const fallbackUrl = candidates[0] || '';
@@ -1739,7 +1739,7 @@ export async function waitForReachableDeploymentUrl(
   };
 }
 
-export async function checkDeploymentUrl(url: unknown, { timeoutMs = 8_000 }: { timeoutMs?: number } = {}): Promise<DeploymentUrlCheck> {
+export async function checkDeploymentUrl(url: unknown, { timeoutMs = 60_000 }: { timeoutMs?: number } = {}): Promise<DeploymentUrlCheck> {
   const normalized = normalizeDeploymentUrl(url);
   if (!normalized) {
     return { reachable: false, statusMessage: 'Deployment URL is empty.' };

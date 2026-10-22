@@ -27,12 +27,12 @@ function parseScanProgress(payload: unknown): ScanProgress | null {
 export async function readDaemonScan(discoverDaemonUrl: () => Promise<string | null>): Promise<ScanProgress | null> {
   const base = await discoverDaemonUrl();
   if (base === null) throw new ScanProgressUnavailable('daemon is not reachable');
-  return requestScan(base, { signal: AbortSignal.timeout(1000) });
+  return requestScan(base, { signal: AbortSignal.timeout(60_000) });
 }
 
 /** Acknowledges shared scan ownership, not completion; progress remains a GET. */
 export function startDaemonScan(base: string, signal: AbortSignal): Promise<ScanProgress | null> {
-  return requestScan(base, { method: 'POST', signal: AbortSignal.any([signal, AbortSignal.timeout(1000)]) });
+  return requestScan(base, { method: 'POST', signal: AbortSignal.any([signal, AbortSignal.timeout(60_000)]) });
 }
 
 function requestScan(base: string, options: RequestOptions): Promise<ScanProgress | null> {

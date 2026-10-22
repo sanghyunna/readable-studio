@@ -31,7 +31,7 @@ async function probeVersionAtPath(
   try {
     const { stdout } = await execAgentFile(resolved, def.versionArgs, {
       env,
-      timeout: def.versionProbeTimeoutMs ?? 3000,
+      timeout: def.versionProbeTimeoutMs ?? 120_000,
     });
     const version = String(stdout).trim().split('\n')[0] ?? null;
     return { kind: 'spawned', version };
@@ -77,7 +77,7 @@ async function probeCapabilities(
   try {
     const { stdout } = await execAgentFile(launchPath, def.helpArgs, {
       env,
-      timeout: 5000,
+      timeout: 120_000,
       maxBuffer: 4 * 1024 * 1024,
     });
     const caps: RuntimeCapabilityMap = {};

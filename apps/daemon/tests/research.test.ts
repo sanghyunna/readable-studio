@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { searchResearch, ResearchError } from '../src/research/index.js';
+import { tavilySearch } from '../src/research/tavily.js';
 
 const TAVILY_ENV_KEYS = ['READABLE_TAVILY_API_KEY', 'TAVILY_API_KEY'];
 type FetchInput = Parameters<typeof fetch>[0];
@@ -16,6 +17,7 @@ describe('research search', () => {
   let projectRoot: string | null = null;
 
   afterEach(async () => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     for (const key of TAVILY_ENV_KEYS) {
       if (originalEnv[key] == null) delete process.env[key];
@@ -24,6 +26,17 @@ describe('research search', () => {
     const dir = projectRoot;
     projectRoot = null;
     if (dir) await rm(dir, { recursive: true, force: true });
+  });
+
+  it('accepts a research response after a slow 45 second round trip', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn((_input: FetchInput, init?: FetchInit) => new Promise<Response>((resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+      setTimeout(() => resolve(new Response(JSON.stringify({ answer: 'Late result', results: [] }))), 45_000);
+    })));
+    const pending = tavilySearch({ apiKey: 'test', query: 'slow VDI' });
+    await vi.advanceTimersByTimeAsync(45_000);
+    await expect(pending).resolves.toMatchObject({ answer: 'Late result' });
   });
 
   async function tempProjectRoot() {

@@ -358,7 +358,7 @@ export async function waitForPrintableContent(window: BrowserWindow): Promise<vo
   );
 }
 
-export async function waitForPrintReadyHandshake(webContents: Electron.WebContents, nonce: string): Promise<void> {
+export async function waitForPrintReadyHandshake(webContents: Pick<Electron.WebContents, 'executeJavaScript'>, nonce: string): Promise<void> {
   // The parent wrapper document caches 'READABLE_STUDIO_PRINT_READY' in
   // window.__readableStudioPrintReady as soon as it arrives (injected by
   // injectParentPrintReadyCache in apps/web/src/runtime/exports.ts).
@@ -385,11 +385,15 @@ export async function waitForPrintReadyHandshake(webContents: Electron.WebConten
 
   // Prevent indefinite hangs if the document is malformed or the
   // injected handshake script was blocked (e.g. by a CSP violation).
-  const timeout = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error('Print handshake timed out')), 30_000),
-  );
-
-  await Promise.race([handshake, timeout]);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('Print handshake timed out')), 180_000);
+  });
+  try {
+    await Promise.race([handshake, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function inferPageSize(window: BrowserWindow): Promise<PageSize> {

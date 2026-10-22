@@ -104,7 +104,7 @@ describe('probe (issue #658) - ghost CLI after the binary is uninstalled', () =>
     expect(codex?.diagnostics).toBeUndefined();
   });
 
-  for (const [id, timeout] of [['trae-cli', 10_000], ['codex', 3000]] as const) {
+  for (const [id, timeout] of [['trae-cli', 120_000], ['codex', 120_000]] as const) {
     it(`honors the ${id} version probe timeout`, async () => {
       execAgentFileMock.mockResolvedValue({ stdout: 'agent 1.2.3\n', stderr: '' });
       const { detectAgents } = await import('../../src/runtimes/detection.js');

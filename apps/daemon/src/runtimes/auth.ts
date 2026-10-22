@@ -320,7 +320,7 @@ export async function probeAgentAuthStatus(
   try {
     const { stdout, stderr } = await execAgentFile(resolvedBin, probe.args, {
       env,
-      timeout: probe.timeoutMs ?? 5000,
+      timeout: probe.timeoutMs ?? 180_000,
       maxBuffer: 1024 * 1024,
     });
     const stdoutText = typeof stdout === 'string' ? stdout : '';

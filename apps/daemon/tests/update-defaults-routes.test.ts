@@ -48,6 +48,7 @@ it('exposes the default over HTTP and CLI, checks it automatically, and preserve
     expect(fixture.requests).toEqual([`${serverUrl}/api/v1/latest`]);
     expect(calls.filter((args) => args[0] === 'apps' && args[1] === 'get')).toEqual([
       ['apps', 'get', 'readable-studio-updates', '--output', 'json'],
+      ['apps', 'get', 'readable-studio-updates', '--profile', 'CURRENT', '--output', 'json'],
     ]);
     expect(JSON.parse((await cli(['config', '--disable'])).stdout)).toEqual({ enabled: false, serverUrl });
     expect(JSON.parse(await readFile(join(dataDir, 'app-config.json'), 'utf8')).autoUpdate).toEqual({ enabled: false, serverUrl });

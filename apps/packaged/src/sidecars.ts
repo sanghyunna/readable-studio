@@ -45,12 +45,13 @@ import {
 
 const require = createRequire(import.meta.url);
 
-export async function checkPackagedDaemonHealth(url: string): Promise<void> {
+export async function checkPackagedDaemonHealth(url: string, signal?: AbortSignal): Promise<void> {
   const target = new URL('/api/health', url);
   const request = target.protocol === 'https:' ? createHttpsRequest : createHttpRequest;
   const health: unknown = await new Promise((resolve, reject) => {
     // Internal health traffic must not inherit an env-aware global agent.
-    const probe = request(target, { agent: false, signal: AbortSignal.timeout(1_500) }, (response) => {
+    const deadline = AbortSignal.timeout(60_000);
+    const probe = request(target, { agent: false, signal: signal ? AbortSignal.any([signal, deadline]) : deadline }, (response) => {
       response.on('error', reject);
       if (response.statusCode == null || response.statusCode < 200 || response.statusCode >= 300) {
         response.resume();
@@ -207,11 +208,11 @@ async function openLog(path: string, append: boolean): Promise<FileHandle> {
   return await open(path, append ? 'a' : 'w');
 }
 
-const DAEMON_STATUS_TIMEOUT_MS = 180_000;
+const DAEMON_STATUS_TIMEOUT_MS = 900_000;
 
 /**
  * Cold extraction/antivirus scans and loaded warm relaunches can delay the
- * daemon before IPC exists. Match the web's bounded three-minute splash budget;
+ * daemon before IPC exists. Allow fifteen minutes on network-booted VDI;
  * an exited child still fails immediately. Invalid overrides use the default.
  */
 export function resolveDaemonStatusTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
@@ -223,16 +224,16 @@ export function resolveDaemonStatusTimeoutMs(env: NodeJS.ProcessEnv = process.en
   return DAEMON_STATUS_TIMEOUT_MS;
 }
 
-const WEB_STATUS_TIMEOUT_MS = 180_000;
+const WEB_STATUS_TIMEOUT_MS = 900_000;
 
 /**
  * Web sidecar status wait budget for the packaged launcher.
  *
  * The web sidecar (apps/web/sidecar/server.ts) has its own internal
- * readiness budget (120s) for cold first-boot standalone Next.js
+ * readiness budget (600s) for cold first-boot standalone Next.js
  * compiles. The launcher must wait strictly longer than that internal
  * budget, otherwise it gives up first and the sidecar's longer budget
- * is wasted. The default 180s leaves headroom above the 120s internal
+ * is wasted. The default 900s leaves headroom above the 600s internal
  * window. `READABLE_WEB_STATUS_TIMEOUT_MS` overrides it for tuning; an
  * absent, non-numeric, or non-positive value falls back to the default.
  */
@@ -262,26 +263,30 @@ export async function waitForStatus<T extends object>(
   ipcPath: string,
   isReady: (status: T) => boolean,
   timeoutMs = DAEMON_STATUS_TIMEOUT_MS,
-  watch: { child: { pid?: number; exitCode: number | null; signalCode: NodeJS.Signals | null; once: (event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void) => void; off: (event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void) => void }; logPath: string; label?: string } | null = null,
+  watch: { child: { pid?: number; exitCode: number | null; signalCode: NodeJS.Signals | null; once: (event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void) => void; off: (event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void) => void }; logPath: string; label?: string; signal?: AbortSignal } | null = null,
 ): Promise<T> {
   const startedAt = Date.now();
   let lastError: unknown;
   let childExited: { code: number | null; signal: NodeJS.Signals | null } | null = null;
+  const childExit = new AbortController();
+  const signal = watch?.signal ? AbortSignal.any([childExit.signal, watch.signal]) : childExit.signal;
 
   // Cover the race between spawn-resolved and now: if the child has
   // already exited by the time we got here, the 'exit' event is gone,
   // so seed childExited from the synchronous status fields.
-  if (watch != null && watch.child.exitCode !== null) {
+  if (watch != null && (watch.child.exitCode !== null || watch.child.signalCode !== null)) {
     childExited = { code: watch.child.exitCode, signal: watch.child.signalCode };
   }
 
   const onChildExit = (code: number | null, signal: NodeJS.Signals | null): void => {
     childExited = { code, signal };
+    childExit.abort();
   };
   watch?.child.once('exit', onChildExit);
 
   try {
     while (Date.now() - startedAt < timeoutMs) {
+      watch?.signal?.throwIfAborted();
       if (childExited !== null) {
         throw new Error(
           `${watch?.label ?? 'daemon'} exited before reporting status (code=${childExited.code}, signal=${childExited.signal ?? 'none'}); see ${watch?.logPath ?? '<no log path>'} for details`,
@@ -291,7 +296,7 @@ export async function waitForStatus<T extends object>(
         const status = await requestJsonIpc<T>(
           ipcPath,
           { type: SIDECAR_MESSAGES.STATUS },
-          { timeoutMs: 800 },
+          { timeoutMs: Math.min(60_000, timeoutMs - (Date.now() - startedAt)), signal },
         );
         normalizeRuntimeDescriptor(Reflect.get(status, "descriptor"));
         if (isReady(status)) {
@@ -304,10 +309,12 @@ export async function waitForStatus<T extends object>(
           return status;
         }
       } catch (error) {
+        watch?.signal?.throwIfAborted();
         if (error instanceof RuntimeDescriptorError || (error instanceof Error && /status pid does not match|exited while reporting ready/.test(error.message))) throw error;
         lastError = error;
       }
-      await sleep(150);
+      try { await sleep(150, undefined, { signal }); }
+      catch { watch?.signal?.throwIfAborted(); }
     }
 
     throw new Error(
@@ -506,18 +513,30 @@ async function closeManagedChild(child: ManagedSidecarChild): Promise<void> {
   };
   await appendLifecycleLog(`[readable-studio packaged] shutdown requested app=${child.app} pid=${child.child.pid ?? "unknown"}`);
   // Start the deadline before IPC, and observe exit before sending shutdown.
+  const stopped = new AbortController();
   const exited = new Promise<boolean>((resolve) => {
-    if (child.child.exitCode !== null || child.child.signalCode !== null) { resolve(true); return; }
-    const deadline = AbortSignal.timeout(2_000);
-    const onTimeout = () => { child.child.off('exit', onExit); resolve(false); };
-    const onExit = () => { deadline.removeEventListener('abort', onTimeout); resolve(true); };
+    if (child.child.exitCode !== null || child.child.signalCode !== null) { stopped.abort(); resolve(true); return; }
+    const deadline = AbortSignal.timeout(420_000);
+    const onTimeout = () => { child.child.off('exit', onExit); stopped.abort(); resolve(false); };
+    const onExit = () => { deadline.removeEventListener('abort', onTimeout); stopped.abort(); resolve(true); };
     deadline.addEventListener('abort', onTimeout, { once: true });
     child.child.once('exit', onExit);
   });
-  try {
-    await requestJsonIpc(child.ipcPath, { type: SIDECAR_MESSAGES.SHUTDOWN }, { timeoutMs: 500 });
-  } catch (error) {
-    await appendLifecycleLog(`[readable-studio packaged] shutdown IPC failed app=${child.app}: ${String(error)}`);
+  while (!stopped.signal.aborted) {
+    try {
+      await requestJsonIpc(child.ipcPath, { type: SIDECAR_MESSAGES.SHUTDOWN }, { timeoutMs: 30_000, signal: stopped.signal });
+      break;
+    } catch (error) {
+      if (stopped.signal.aborted) break;
+      const code = (error as NodeJS.ErrnoException).code;
+      // A peer can fail before this child has opened its shutdown endpoint.
+      if (code === 'ENOENT' || code === 'ECONNREFUSED') {
+        await sleep(150, undefined, { signal: stopped.signal }).catch(() => undefined);
+        continue;
+      }
+      await appendLifecycleLog(`[readable-studio packaged] shutdown IPC failed app=${child.app}: ${String(error)}`);
+      break;
+    }
   }
 
   if (!(await exited)) {
@@ -525,14 +544,14 @@ async function closeManagedChild(child: ManagedSidecarChild): Promise<void> {
     const pid = child.child.pid!;
     if (process.platform === 'win32') {
       await new Promise<void>((resolve, reject) => {
-        execFile('taskkill.exe', ['/PID', String(pid), '/T', '/F'], { windowsHide: true, timeout: 1_000 }, (error) => {
+        execFile('taskkill.exe', ['/PID', String(pid), '/T', '/F'], { windowsHide: true, timeout: 30_000 }, (error) => {
           if (!error || child.child.exitCode !== null || child.child.signalCode !== null) resolve();
           else reject(error);
         });
       });
     } else {
       const listing = await new Promise<string>((resolve, reject) => {
-        execFile('ps', ['-eo', 'pid=,ppid='], { timeout: 1_000 }, (error, stdout) => {
+        execFile('ps', ['-eo', 'pid=,ppid='], { timeout: 30_000 }, (error, stdout) => {
           if (error) reject(error);
           else resolve(stdout);
         });
@@ -678,10 +697,10 @@ export async function startPackagedSidecars(
           (status) => status.url != null,
           resolveWebStatusTimeoutMs(),
           // Race the IPC polling against the web child's exit, mirroring the
-          // daemon wait. The default 180s budget is deliberately longer than
-          // the web sidecar's 120s internal readiness window, so without the
+          // daemon wait. The default 900s budget is deliberately longer than
+          // the web sidecar's 600s internal readiness window, so without the
           // exit race a web child that crashes at startup would hang the
-          // launcher at the splash for the full 180s. The watch surfaces the
+          // launcher at the splash for the full 900s. The watch surfaces the
           // crash immediately and points at the web log for the failure.
           { child: web.child, logPath: logPathFor(paths, APP_KEYS.WEB), label: "web" },
         ).then((status) => {
@@ -771,10 +790,10 @@ export async function startPackagedSidecars(
             if (shutdown.signal.aborted) { await closeManagedChild(currentDaemon); return; }
             const status = await waitForStatus<DaemonStatusSnapshot>(
               currentDaemon.ipcPath, status => status.url != null,
-              Math.min(resolveDaemonStatusTimeoutMs(), 30_000),
-              { child: currentDaemon.child, logPath: currentDaemon.logPath },
+              resolveDaemonStatusTimeoutMs(),
+              { child: currentDaemon.child, logPath: currentDaemon.logPath, signal: shutdown.signal },
             );
-            await checkPackagedDaemonHealth(status.url!);
+            await checkPackagedDaemonHealth(status.url!, shutdown.signal);
             if (shutdown.signal.aborted) return;
             handle.daemon = status;
             readySince = Date.now();

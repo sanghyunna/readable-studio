@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { McpClientSection } from '../../src/components/McpClientSection';
 
@@ -38,7 +38,43 @@ describe('McpClientSection OAuth controls', () => {
 
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it('keeps one slow authorization poll alive past five minutes', async () => {
+    let started = false;
+    let finish!: (response: Response) => void;
+    let pendingPolls = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url === '/api/mcp/servers') return jsonResponse({ servers: [{
+        id: 'remote', label: 'Remote', transport: 'http', enabled: true,
+        authMode: 'oauth', url: 'https://example.test/mcp',
+      }], templates: [] });
+      if (url === '/api/mcp/oauth/start') {
+        started = true;
+        return jsonResponse({ authorizeUrl: 'https://example.test/authorize' });
+      }
+      if (url.startsWith('/api/mcp/oauth/status')) {
+        if (!started) return jsonResponse({ connected: false });
+        pendingPolls += 1;
+        return new Promise<Response>(resolve => { finish = resolve; });
+      }
+      return jsonResponse({});
+    }));
+    vi.spyOn(window, 'open').mockReturnValue(null);
+    render(<McpClientSection />);
+    fireEvent.click(await screen.findByRole('button', { name: /Expand this MCP server/i }));
+    const connect = await screen.findByRole('button', { name: /^Connect$/ });
+    vi.useFakeTimers();
+    await act(async () => { fireEvent.click(connect); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(6 * 60_000); });
+    expect(pendingPolls).toBe(1);
+    expect(screen.getByText('Waiting for authorization…')).toBeTruthy();
+    await act(async () => { finish(jsonResponse({ connected: true })); });
+    expect(screen.getByText('Connected.')).toBeTruthy();
   });
 
   it('uses a switch and persists one enabled-state mutation on save', async () => {

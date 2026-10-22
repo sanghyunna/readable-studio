@@ -49,7 +49,7 @@ export function withCurrentDesktopAuthGate(snapshot: DaemonStatusSnapshot): Daem
 const DAEMON_PORT_ENV = SIDECAR_ENV.DAEMON_PORT;
 const WEB_PORT_ENV = SIDECAR_ENV.WEB_PORT;
 const TOOLS_DEV_PARENT_PID_ENV = SIDECAR_ENV.TOOLS_DEV_PARENT_PID;
-const DESKTOP_IMPORT_TOKEN_TTL_MS = 60_000;
+const DESKTOP_IMPORT_TOKEN_TTL_MS = 15 * 60_000;
 
 export type DaemonSidecarHandle = {
   status(): Promise<DaemonStatusSnapshot>;
@@ -121,7 +121,7 @@ export function mintImportTokenForCli(baseDir: string): MintImportTokenResult {
 
 export async function startDaemonSidecar(runtime: SidecarRuntimeContext<SidecarStamp>): Promise<DaemonSidecarHandle> {
   setUpdateQuitHandler(async () => {
-    await requestJsonIpc(resolveAppIpcPath({ app: APP_KEYS.DESKTOP, contract: SIDECAR_CONTRACT, namespace: runtime.namespace }), { type: SIDECAR_MESSAGES.SHUTDOWN }, { timeoutMs: 5_000 });
+    await requestJsonIpc(resolveAppIpcPath({ app: APP_KEYS.DESKTOP, contract: SIDECAR_CONTRACT, namespace: runtime.namespace }), { type: SIDECAR_MESSAGES.SHUTDOWN }, { timeoutMs: 120_000 });
   });
   const serverHandle: StartedDaemonRuntime = await startDaemonRuntime({
     desktopPdfExporter: async (input: DesktopExportPdfInput): Promise<DesktopExportPdfResult> => {

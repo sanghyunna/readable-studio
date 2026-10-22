@@ -8,6 +8,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createChatRunService } from '../src/runs.js';
 
 describe('chat run service creation', () => {
+  it('aborts in-flight child preparation when the run is canceled before spawn', async () => {
+    const runs = createRuns();
+    const run = runs.create();
+    runs.cancel(run);
+    expect(run.cancelController?.signal.aborted).toBe(true);
+    await runs.wait(run);
+    expect(run.status).toBe('canceled');
+    runs.dispose();
+  });
   it('generates distinct run ids by default', () => {
     const runs = createRuns();
 
@@ -255,6 +264,62 @@ describe('chat run service shutdown', () => {
       event: 'end',
       data: { status: 'canceled', signal: 'SIGTERM' },
     });
+  });
+
+  it('joins preparation cleanup after its canceled run has been retired', async () => {
+    const runs = createRuns();
+    const run = runs.create();
+    let release!: () => void;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    const work = vi.fn(async () => { await held; });
+    const preparing = runs.prepare(run, work);
+    await Promise.resolve();
+    expect(work).toHaveBeenCalledTimes(1);
+    runs.cancel(run);
+    runs.dispose();
+    expect(runs.get(run.id)).toBeNull();
+    const stopped = vi.fn();
+    const shutdown = runs.shutdownActive().then(stopped);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(stopped).not.toHaveBeenCalled();
+    release();
+    await preparing;
+    await shutdown;
+    expect(stopped).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not start a new preparation after shutdown begins', async () => {
+    const runs = createRuns();
+    await runs.shutdownActive();
+    const run = runs.create();
+    const work = vi.fn(async () => undefined);
+    await expect(runs.prepare(run, work)).rejects.toMatchObject({ name: 'AbortError' });
+    expect(work).not.toHaveBeenCalled();
+    expect(run.cancelController.signal.aborted).toBe(true);
+    runs.dispose();
+  });
+
+  it('joins cleanup when shutdown aborts before a registered preparation starts', async () => {
+    const runs = createRuns();
+    const run = runs.create();
+    let release!: () => void;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    const work = vi.fn(async () => undefined);
+    const cleanup = vi.fn(async () => { await held; });
+    const preparing = runs.prepare(run, work, cleanup).catch(error => error);
+    const stopped = vi.fn();
+    const shutdown = runs.shutdownActive().then(stopped);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(work).not.toHaveBeenCalled();
+    expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(stopped).not.toHaveBeenCalled();
+    release();
+    await expect(preparing).resolves.toMatchObject({ name: 'AbortError' });
+    await shutdown;
+    expect(stopped).toHaveBeenCalledTimes(1);
+    runs.dispose();
   });
 
   it('escalates to SIGKILL when a child ignores the shutdown SIGTERM grace window', async () => {

@@ -64,7 +64,7 @@ export function createHtmlThumbnailRenderer(
       // At the readiness deadline capture what has painted. Keep that final
       // capture bounded too, so a wedged compositor cannot hold the queue.
       const remaining = deadline - Date.now();
-      const image = await bounded(window.webContents.capturePage(), remaining > 0 ? remaining : 1000, () => {
+      const image = await bounded(window.webContents.capturePage(), Math.max(remaining, 30_000), () => {
         throw new Error('THUMBNAIL_RENDER_TIMEOUT');
       });
       const resized = image.resize({ width: input.outWidth, height: input.outHeight, quality: 'good' });

@@ -237,7 +237,7 @@ export interface PluginAssetCacheOptions {
   cacheDir: string;
   /** Hard ceiling on a single asset's size. Default 64 MiB. */
   maxBytes?: number;
-  /** Per-fetch timeout. Default 15s. */
+  /** Per-fetch timeout. Default 2 minutes, including body and cache writes. */
   fetchTimeoutMs?: number;
   /** Injectable fetch (tests). Defaults to global fetch. */
   fetchImpl?: typeof fetch;
@@ -255,7 +255,7 @@ export interface PluginAssetCache {
 export function createPluginAssetCache(opts: PluginAssetCacheOptions): PluginAssetCache {
   const cacheDir = opts.cacheDir;
   const maxBytes = opts.maxBytes ?? 64 * 1024 * 1024;
-  const timeoutMs = opts.fetchTimeoutMs ?? 15_000;
+  const timeoutMs = opts.fetchTimeoutMs ?? 120_000;
   const fetchImpl = opts.fetchImpl ?? fetch;
   // Pin SSRF validation to the actual outbound connection: the Agent resolves
   // the host once, and `validatingLookup` rejects the connection if that exact

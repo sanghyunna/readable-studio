@@ -52,7 +52,7 @@ export async function importGitHubDesignSystemProject(
   cloneArgs.push(parsed.cloneUrl, cloneDir);
 
   try {
-    await execGit(gitBin, cloneArgs, undefined, 120_000);
+    await execGit(gitBin, cloneArgs, undefined, 15 * 60_000);
     const [detectedBranch, commit] = await Promise.all([
       readGitStdout(gitBin, ['-C', cloneDir, 'rev-parse', '--abbrev-ref', 'HEAD']),
       readGitStdout(gitBin, ['-C', cloneDir, 'rev-parse', 'HEAD']),
@@ -135,7 +135,7 @@ function isGitHubPathSegment(value: string): boolean {
 }
 
 async function readGitStdout(gitBin: string, args: string[]): Promise<string> {
-  const result = await execGit(gitBin, args, undefined, 20_000);
+  const result = await execGit(gitBin, args, undefined, 120_000);
   return String(result.stdout).trim();
 }
 

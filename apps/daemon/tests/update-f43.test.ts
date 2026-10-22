@@ -71,7 +71,7 @@ it.each(['expiry', '401'] as const)('R13-02 rejects a reassigned workspace befor
   expect(json.mock.calls.filter(([args]) => args[1] === 'token')).toHaveLength(1);
   // A subsequent request rediscovers instead of remaining bound to workspace A.
   await expect(source.request('download/1.3.4')).rejects.toMatchObject({ reason: 'app-not-accessible' });
-  expect(json.mock.calls.filter(([args]) => args[0] === 'apps')).toHaveLength(2);
+  expect(json.mock.calls.filter(([args]) => args[0] === 'apps' && args[1] === 'list')).toHaveLength(2);
 });
 
 it('R13-03 returns the new downloading snapshot in the accepted retry response', async () => {

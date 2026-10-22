@@ -148,8 +148,21 @@ test('kills the waiting CLI and settles discovery when its deadline expires', as
   // When
   const result = fetchModels(claudeAgentDef, 'claude', environment());
   await spawned;
-  await vi.advanceTimersByTimeAsync(10_000);
+  await vi.advanceTimersByTimeAsync(180_000);
   // Then
   expect(await result).toMatchObject({ source: 'fallback', models: [], failure: { kind: 'discovery-failed' } });
   expect(child.kill).toHaveBeenCalled();
+});
+
+test('accepts the model catalogue after ninety seconds of VDI cold startup', async () => {
+  vi.useFakeTimers();
+  const child = cli('hang');
+  const spawned = new Promise<void>((resolve) => spawn.mockImplementationOnce(() => { resolve(); return child; }));
+  const result = fetchModels(claudeAgentDef, 'claude', environment());
+  await spawned;
+  await vi.advanceTimersByTimeAsync(90_000);
+  child.stdout.write(`${JSON.stringify({ type: 'control_response', response: {
+    subtype: 'success', request_id: 'models-capability-check', response: { models: measuredModels },
+  } })}\n`);
+  expect(await result).toMatchObject({ source: 'live', models: measuredModels.slice(1).map((m) => ({ id: m.value, label: m.displayName })) });
 });

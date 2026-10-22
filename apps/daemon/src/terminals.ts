@@ -134,7 +134,7 @@ export function createTerminalService({
   // Drop an exited session from the registry after this idle window so a
   // long-lived daemon doesn't leak terminated sessions.
   ttlMs = 30 * 60 * 1000,
-  shutdownGraceMs = 3_000,
+  shutdownGraceMs = 30_000,
 } = {}) {
   const sessions = new Map<string, any>();
   // Lazily loaded so a missing/uncompiled native addon only fails the first
@@ -262,6 +262,8 @@ export function createTerminalService({
       cwd: meta.cwd,
       env: { ...process.env } as Record<string, string>,
     });
+    let markChildExited!: () => void;
+    const childExited = new Promise<void>((resolve) => { markChildExited = resolve; });
     const session = {
       id,
       projectId: typeof meta.projectId === 'string' && meta.projectId ? meta.projectId : null,
@@ -278,6 +280,8 @@ export function createTerminalService({
       nextEventId: 1,
       clients: new Set<any>(),
       pty: child,
+      childExited,
+      markChildExited,
       // Output coalescing buffer (see flushData / the onData handler below).
       bufferedBytes: 0,
       pendingData: '',
@@ -298,6 +302,7 @@ export function createTerminalService({
       }
     });
     child.onExit(({ exitCode, signal }: { exitCode: number; signal?: number }) => {
+      markChildExited();
       // node-pty hands back a numeric signal; surface a name when we can
       // resolve it (SIGTERM is the only one we send), otherwise null.
       finish(session, exitCode ?? null, signal ? signalName(signal) : null);
@@ -382,12 +387,18 @@ export function createTerminalService({
       (session) => !TERMINAL_SESSION_TERMINAL_STATUSES.has(session.status),
     );
     for (const session of active) {
-      try { session.pty.kill('SIGTERM'); } catch { /* best-effort */ }
+      try { session.pty.kill('SIGTERM'); } catch { session.markChildExited(); }
       finish(session, null, 'SIGTERM');
     }
     // Give children a grace window to actually exit before the daemon goes.
     if (active.length > 0 && graceMs > 0) {
-      await new Promise((resolve) => setTimeout(resolve, Math.min(graceMs, 1000)).unref?.());
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          Promise.all(active.map(session => session.childExited)),
+          new Promise<void>(resolve => { timer = setTimeout(resolve, graceMs); timer.unref?.(); }),
+        ]);
+      } finally { clearTimeout(timer); }
     }
   };
 

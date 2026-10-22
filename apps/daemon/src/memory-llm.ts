@@ -561,11 +561,8 @@ function renderUserPayload({ userMessage, assistantMessage, currentMemory }) {
   return parts.join('\n');
 }
 
-// 30s ceiling. The chat run has long since finished and the user is
-// staring at the settings panel waiting for a green/red pill — leaving
-// a half-dead fetch in flight for two minutes (the default undici
-// connect timeout) makes the failure feel even worse than it is.
-const FETCH_TIMEOUT_MS = 30_000;
+// Memory extraction also needs room for cold proxy/provider startup on VDI.
+const FETCH_TIMEOUT_MS = 5 * 60_000;
 
 // Append `/v1<suffix>` to a base URL only when the URL doesn't already
 // carry an explicit `/vN` segment. Mirrors the same conditional path
@@ -784,7 +781,7 @@ async function callGoogle(provider, system, user) {
   return '';
 }
 
-const LOCAL_CLI_TIMEOUT_MS = 60_000;
+const LOCAL_CLI_TIMEOUT_MS = 30 * 60_000;
 
 function extractJsonEventText(kind, raw, agentName) {
   const events = [];
@@ -932,7 +929,7 @@ async function callLocalCli(provider, system, user, options) {
       child.kill('SIGTERM');
       setTimeout(() => {
         if (!closed) child.kill('SIGKILL');
-      }, 2_000).unref?.();
+      }, 30_000).unref?.();
       finish(new Error(`${def.name} CLI timed out after ${Math.round(LOCAL_CLI_TIMEOUT_MS / 1000)}s`));
     }, LOCAL_CLI_TIMEOUT_MS);
     timeout.unref?.();

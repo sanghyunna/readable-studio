@@ -75,7 +75,7 @@ export function parseDaemonCliStartupArgs(
 
 export async function closeHttpServer(
   server: Server,
-  { closeTimeoutMs = 5_000, idleCloseMs = 1_000 } = {},
+  { closeTimeoutMs = 60_000, idleCloseMs = 1_000 } = {},
 ): Promise<void> {
   if (!server.listening) return;
   await new Promise<void>((resolveClose, rejectClose) => {

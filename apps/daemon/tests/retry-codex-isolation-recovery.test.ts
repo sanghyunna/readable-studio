@@ -1,4 +1,6 @@
 import type { Server } from 'node:http';
+import { spawn } from 'node:child_process';
+import type { spawnIsolatedAgent } from '@readable-studio/platform';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import os from 'node:os';
@@ -97,7 +99,7 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
  }
 }).on('close',()=>process.exit(0));
 `);
-    const isolatedAgentSpawn = vi.fn(async () => {
+    const isolatedAgentSpawn = vi.fn<typeof spawnIsolatedAgent>(async () => {
       throw new Error('Windows AppContainer helper did not become ready');
     });
     started = await startServer({
@@ -153,6 +155,76 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
     expect(messages.filter(message => message.role === 'user')).toHaveLength(1);
     return { status, events, messages };
   }
+
+  it('cancels isolated preparation and terminates a child returned after cancellation', async () => {
+    const { isolatedAgentSpawn } = await prepare();
+    let release: () => void = () => {};
+    const held = new Promise<void>(resolve => { release = resolve; });
+    let startedSpawn: (signal: AbortSignal | undefined) => void = () => {};
+    const pendingSpawn = new Promise<AbortSignal | undefined>(resolve => { startedSpawn = resolve; });
+    let lateClosed: () => void = () => {};
+    const closed = new Promise<void>(resolve => { lateClosed = resolve; });
+    let latePid: number | undefined;
+    isolatedAgentSpawn.mockImplementationOnce(async options => {
+      startedSpawn(options.signal);
+      await held;
+      const child = spawn(process.execPath, ['-e', 'process.stdin.resume()'], { stdio: 'pipe', windowsHide: true });
+      latePid = child.pid;
+      child.once('close', lateClosed);
+      return child;
+    });
+    const run = await launch();
+    try {
+      const signal = await pendingSpawn;
+      const response = await fetch(`${started!.url}/api/runs/${run.runId}/cancel`, { method: 'POST' });
+      expect(response.status).toBe(200);
+      expect(signal?.aborted).toBe(true);
+      release();
+      await closed;
+      expect(latePid).toBeDefined();
+      expect(() => process.kill(latePid!, 0)).toThrow();
+      const status = await fetch(`${started!.url}/api/runs/${run.runId}`).then(response => response.json()) as Status;
+      expect(status.status).toBe('canceled');
+      expect(isolatedAgentSpawn).toHaveBeenCalledTimes(1);
+    } finally { release(); }
+  });
+
+  it.each([false, true])('joins isolated preparation cleanup during daemon shutdown (already canceled: %s)', async (alreadyCanceled) => {
+    const { isolatedAgentSpawn } = await prepare();
+    let release!: () => void;
+    const cleanupHeld = new Promise<void>(resolve => { release = resolve; });
+    let entered!: (signal: AbortSignal | undefined) => void;
+    const preparing = new Promise<AbortSignal | undefined>(resolve => { entered = resolve; });
+    const cleaned = vi.fn();
+    isolatedAgentSpawn.mockImplementationOnce(async options => {
+      entered(options.signal);
+      await cleanupHeld;
+      cleaned();
+      throw new DOMException('Isolated helper cleanup completed', 'AbortError');
+    });
+    const run = await launch();
+    const signal = await preparing;
+    if (alreadyCanceled) {
+      const response = await fetch(`${started!.url}/api/runs/${run.runId}/cancel`, { method: 'POST' });
+      expect(response.status).toBe(200);
+      expect(signal?.aborted).toBe(true);
+      expect(cleaned).not.toHaveBeenCalled();
+    }
+    const shutdown = started!.shutdown();
+    try {
+      await vi.waitFor(() => expect(signal?.aborted).toBe(true));
+      expect(await Promise.race([
+        shutdown.then(() => 'shutdown'),
+        new Promise<string>(resolve => setTimeout(() => resolve('waiting'), 50)),
+      ])).toBe('waiting');
+      expect(cleaned).not.toHaveBeenCalled();
+    } finally {
+      release();
+      await shutdown;
+    }
+    expect(cleaned).toHaveBeenCalledTimes(1);
+    expect(isolatedAgentSpawn).toHaveBeenCalledTimes(1);
+  });
 
   it.each([false, true])('recovers a provider failure after fallback (committed work: %s)', async (committed) => {
     const { counter, requestsPath, isolatedAgentSpawn } = await prepare(1, committed);

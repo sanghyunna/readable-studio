@@ -50,7 +50,7 @@ export async function probeClaudeMessages(name: string, candidates: string[], wo
       throw new DatabricksServiceError('DATABRICKS_UPSTREAM_UNAVAILABLE', true);
     }
     return accepted;
-  }, workspace.requestTimeoutMs ?? 15_000, workspace.signal);
+  }, workspace.requestTimeoutMs ?? 10 * 60_000, workspace.signal);
 }
 
 export async function probeNamed(input: NamedProbeInput): Promise<NamedProbeResult> {
@@ -68,7 +68,7 @@ export async function probeNamed(input: NamedProbeInput): Promise<NamedProbeResu
         if (response.ok) { exists = true; metadata = record(await response.json()); }
         else if (response.status !== 403 && response.status !== 404) throw namedFailure(response.status, await readUpstreamError(response), false);
         else await response.body?.cancel();
-      }, 10_000, signal);
+      }, 120_000, signal);
       const task = servingTask(metadata);
       if (task === 'llm/v1/embeddings' || task === 'llm/v1/completions') throw new NamedProbeError('unsupported-task');
       const resource: DiscoveredResource = { kind, name, metadata };
@@ -93,7 +93,7 @@ export async function probeNamed(input: NamedProbeInput): Promise<NamedProbeResu
         });
         if (!response.ok) return { accepted: false as const, status: response.status, payload: await readUpstreamError(response) };
         return { accepted: true as const, ...await readNamedStream(response, bounded) };
-      }, 15_000, signal);
+      }, 120_000, signal);
       for (let attempt = 0; attempt < 3; attempt++) {
         const result = await invoke();
         if (result.accepted) {
@@ -126,7 +126,7 @@ export async function probeNamed(input: NamedProbeInput): Promise<NamedProbeResu
         throw namedFailure(result.status, result.payload, exists);
       }
       throw new NamedProbeError('request-incompatible');
-    }, 45_000, workspace.signal);
+    }, 15 * 60_000, workspace.signal);
   } catch (error) {
     if (error instanceof NamedProbeError) throw error;
     if (error instanceof Error || error instanceof DatabricksServiceError) throw new NamedProbeError(workspace.signal?.aborted ? 'cancelled' : 'workspace-unreachable');

@@ -12,6 +12,16 @@ vi.mock('node:child_process', async (original) => ({
 
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); _resetAgentDetectionCacheForTests(); });
 
+test('allows a slow VDI discovery to finish after the former two-minute owner budget', async () => {
+  vi.useFakeTimers();
+  const result = cachedSafeProbe(async () => {
+    await new Promise(resolve => setTimeout(resolve, 8 * 60_000));
+    return { ...piAgentDef, available: true, models: [], modelsSource: 'live' as const };
+  }, piAgentDef);
+  await vi.advanceTimersByTimeAsync(8 * 60_000);
+  expect(await result).toMatchObject({ available: true, modelsSource: 'live' });
+});
+
 test.each(['unstarted', 'missing-close', 'pending-probe'] as const)('settles at its deadline with %s lifecycle', async (behavior) => {
   // Given an owned child whose lifecycle cannot complete normally.
   vi.useFakeTimers();

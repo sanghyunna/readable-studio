@@ -113,6 +113,12 @@ afterEach(() => {
 });
 
 describe('session-surface handoff: a request cannot reach the wrong project', () => {
+  it('keeps the addressed one-shot request through a slow project load', () => {
+    queueHubSessionSurface({ projectId: 'p1', kind: 'terminal' });
+    vi.setSystemTime(Date.now() + 60_000);
+    expect(consumeHubSessionSurface('p1')).toMatchObject({ request: { projectId: 'p1', kind: 'terminal' } });
+    expect(consumeHubSessionSurface('p1')).toBeNull();
+  });
   it('refuses a request addressed to another project AND disarms it', async () => {
     // The user asked for a side chat in p1.
     queueHubSessionSurface({ projectId: 'p1', kind: 'side-chat', conversationId: 'c1' });

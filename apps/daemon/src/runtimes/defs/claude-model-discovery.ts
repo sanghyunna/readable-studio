@@ -75,7 +75,7 @@ export async function discoverClaudeCatalog(bin: string, env: RuntimeEnv, option
     };
     const abort = () => finish(options.signal?.reason instanceof Error
       ? options.signal.reason : new DOMException('Model discovery aborted', 'AbortError'));
-    const timer = setTimeout(() => finish(new ClaudeDiscoveryError('timeout', 'Model discovery timed out')), options.timeoutMs ?? 10_000);
+    const timer = setTimeout(() => finish(new ClaudeDiscoveryError('timeout', 'Model discovery timed out')), options.timeoutMs ?? 180_000);
     child.stdin.on('error', (error) => finish(error));
     child.on('error', (error) => finish(error));
     child.stderr.setEncoding('utf8');

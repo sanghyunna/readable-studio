@@ -47,7 +47,7 @@ export class DataIdentityError extends Error {
 
 function assertReadableStudioDatabaseIdentity(file: string): boolean {
   if (!fs.existsSync(file)) return true;
-  const probe = new Database(file, { fileMustExist: true, readonly: true, timeout: 500 });
+  const probe = new Database(file, { fileMustExist: true, readonly: true, timeout: 5_000 });
   try {
     const applicationId = probe.pragma('application_id', { simple: true });
     if (applicationId === READABLE_STUDIO_SQLITE_APPLICATION_ID) return false;
@@ -185,7 +185,7 @@ export function openDatabase(projectRoot: string, { dataDir }: { dataDir?: strin
     let db: SqliteDb | null = null;
     try {
       const shouldStampIdentity = assertReadableStudioDatabaseIdentity(file);
-      db = new Database(file, { timeout: 500 });
+      db = new Database(file, { timeout: 5_000 });
       const fromVersion = assertSupportedSchema(db, file);
       db.pragma('journal_mode = WAL');
       db.pragma('foreign_keys = ON');

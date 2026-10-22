@@ -62,7 +62,7 @@ loop, and technical failures stay in the update logs.
 Completed and rolled-back attempts remove handoff receipts, temporary files and
 the journal backup, while retaining the durable journal and app-ready receipt.
 Helper-driven launcher stubs remain alive until readiness or process exit and
-never open a second failure notice. The 180-second timeout is only the ceiling
+never open a second failure notice. The 2400-second timeout is only the ceiling
 for a process that remains alive without confirming readiness.
 
 Payload processes use `ReadableStudioData\namespaces\<namespace>` as their working

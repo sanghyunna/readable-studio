@@ -7,7 +7,7 @@ export async function listWindowsExecutableProcesses(requiredName: RegExp): Prom
   if (process.platform !== 'win32') throw new Error('Windows process inspection is required');
   const { stdout } = await promisify(execFile)('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
     "$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); Get-CimInstance Win32_Process | Select-Object Name,ExecutablePath,ProcessId | ConvertTo-Json -Compress"],
-  { encoding: 'utf8', windowsHide: true, timeout: 15000, maxBuffer: 8 * 1024 * 1024 });
+  { encoding: 'utf8', windowsHide: true, timeout: 120_000, maxBuffer: 8 * 1024 * 1024 });
   const raw = JSON.parse(stdout) as { Name: string; ExecutablePath: string | null; ProcessId: number }[];
   const rows = Array.isArray(raw) ? raw : [raw];
   if (rows.some(row => requiredName.test(row.Name) && !row.ExecutablePath)) throw new Error('Cannot inspect a running application process');
@@ -27,8 +27,8 @@ async function terminateWindowsProcess(target: ExecutableProcess): Promise<void>
   // redirect Kill to another process. Wait on that handle, not a delay.
   const image = Buffer.from(target.executablePath, 'utf16le').toString('base64');
   await promisify(execFile)('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
-    `$ErrorActionPreference='Stop'; $image=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('${image}')); try { $p=[Diagnostics.Process]::GetProcessById(${target.pid}) } catch [ArgumentException] { exit 0 }; try { $handle=$p.Handle; if ($p.HasExited) { exit 0 }; $row=Get-CimInstance Win32_Process -Filter "ProcessId = ${target.pid}"; if ($null -eq $row) { exit 0 }; if ($row.ExecutablePath -ne $image -or $p.MainModule.FileName -ne $image) { throw 'Process executable changed' }; $p.Kill(); if (!$p.WaitForExit(10000)) { throw 'Process did not exit' } } finally { $p.Dispose() }`],
-  { windowsHide: true, timeout: 15000 });
+    `$ErrorActionPreference='Stop'; $image=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('${image}')); try { $p=[Diagnostics.Process]::GetProcessById(${target.pid}) } catch [ArgumentException] { exit 0 }; try { $handle=$p.Handle; if ($p.HasExited) { exit 0 }; $row=Get-CimInstance Win32_Process -Filter "ProcessId = ${target.pid}"; if ($null -eq $row) { exit 0 }; if ($row.ExecutablePath -ne $image -or $p.MainModule.FileName -ne $image) { throw 'Process executable changed' }; $p.Kill(); if (!$p.WaitForExit(60000)) { throw 'Process did not exit' } } finally { $p.Dispose() }`],
+  { windowsHide: true, timeout: 180_000 });
 }
 
 export async function stopProcessesInsideRoot(root: string, options: {

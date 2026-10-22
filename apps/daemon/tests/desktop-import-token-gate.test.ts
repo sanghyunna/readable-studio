@@ -153,10 +153,8 @@ describe('desktop-import-token gate', () => {
     await writeFile(path.join(folder, 'index.html'), '');
     const secret = randomBytes(32);
     setDesktopAuthSecret(secret);
-    // The daemon caps the permitted exp window at 2× TTL (TTL is 60s);
-    // 30 minutes from now is way beyond that, even though the
-    // signature itself would be valid.
-    const exp = new Date(Date.now() + 30 * 60_000).toISOString();
+    // A valid signature still cannot exceed the 2× fifteen-minute TTL window.
+    const exp = new Date(Date.now() + 31 * 60_000).toISOString();
     const token = signDesktopImportToken(secret, folder, { nonce: 'n', exp });
     const resp = await importFolder(
       { baseDir: folder },
@@ -423,7 +421,7 @@ describe('verifyDesktopImportToken (pure helper)', () => {
 
   it('rejects expiries that exceed the permitted window', () => {
     const consumed = new Map<string, number>();
-    const farExp = '2026-05-08T20:30:00.000Z';
+    const farExp = '2026-05-08T20:31:00.000Z';
     const result = verifyDesktopImportToken(
       SECRET,
       '/p',

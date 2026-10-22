@@ -8,7 +8,7 @@ export { detectAcpModels, parsePiModels, execAgentFile, DEFAULT_MODEL_OPTION };
 
 /** Validate an adapter's non-interactive argv without supplying an inference prompt. */
 export async function probeAdapterCommand(bin: string, args: string[], env: RuntimeEnv): Promise<void> {
-  const pending = execAgentFile(bin, args, { env, timeout: 5000, maxBuffer: 1024 * 1024 });
+  const pending = execAgentFile(bin, args, { env, timeout: 120_000, maxBuffer: 1024 * 1024 });
   pending.child.stdin?.end();
   await pending;
 }
