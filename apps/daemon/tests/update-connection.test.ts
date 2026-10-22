@@ -111,7 +111,7 @@ describe('diagnoseUpdateConnection', () => {
   it('reports not signed in with the workspace host to sign in to', async () => {
     const report = await diagnoseUpdateConnection(serverUrl, { token: provider({ resolveCli: bundled, runner: cli({ apps: { DEFAULT: 'auth' } }) }), fetch: http({}) });
     expect(report).toMatchObject({ ok: false, failure: 'not-logged-in', host: workspace });
-    expect(report.steps).toContainEqual(expect.objectContaining({ step: 'workspace', ok: false, detail: expect.stringContaining('DEFAULT') }));
+    expect(report.steps).toContainEqual(expect.objectContaining({ step: 'workspace', ok: false, detail: expect.stringContaining('cause=auth-config') }));
   });
 
   it('reports not signed in when there are no CLI profiles at all', async () => {

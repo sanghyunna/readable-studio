@@ -162,8 +162,18 @@ export function createUpdateTokenProvider(options: UpdateTokenProviderOptions = 
         return { id: profile.name, profileName: profile.name, host: profile.host, isDefault: profile.name === 'DEFAULT' };
       } catch (error) {
         const fault = tokenFailure(error, profile.host);
-        trace({ step: 'workspace', ok: false, elapsedMs: since(start), detail: `${label}: ${fault.failure === 'not-logged-in' ? 'not signed in or token expired'
-          : fault.failure === 'forbidden' ? 'permission denied' : `failed (${errorCode(error)})`}` });
+        const diagnostic = error instanceof DatabricksServiceError ? error.diagnostic : undefined;
+        const facts = diagnostic ? [
+          `category=${diagnostic.category}`, diagnostic.cause ? `cause=${diagnostic.cause}` : '',
+          diagnostic.exitCode === undefined ? '' : `exit=${diagnostic.exitCode}`,
+          diagnostic.elapsedMs === undefined ? '' : `elapsed=${diagnostic.elapsedMs}ms`,
+          diagnostic.stdoutBytes === undefined ? '' : `stdout=${diagnostic.stdoutBytes}B`,
+          diagnostic.stderrBytes === undefined ? '' : `stderr=${diagnostic.stderrBytes}B`,
+          diagnostic.nativeCode ? `native=${diagnostic.nativeCode}` : '',
+        ].filter(Boolean).join(', ') : '';
+        trace({ step: 'workspace', ok: false, elapsedMs: since(start),
+          ...(diagnostic?.httpStatus ? { httpStatus: diagnostic.httpStatus } : {}),
+          detail: `Workspace lookup failed (${errorCode(error)}${facts ? `; ${facts}` : ''})` });
         if (!failure || fault.reason !== 'not-logged-in') failure = fault;
       }
     }

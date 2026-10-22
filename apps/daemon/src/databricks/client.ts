@@ -6,9 +6,20 @@ import { fileURLToPath } from 'node:url';
 import { wellKnownUserToolchainBins } from '@readable-studio/platform';
 import type { DatabricksCliState, DatabricksErrorCode, DatabricksIssue } from '@readable-studio/contracts';
 
+interface DatabricksCliDiagnostic {
+  category: 'timeout' | 'aborted' | 'spawn' | 'output-limit' | 'cli-exit';
+  cause?: 'connection-closed' | 'tls' | 'http' | 'permission' | 'auth-config' | 'keyring' | 'network' | 'unsupported';
+  elapsedMs?: number;
+  exitCode?: number;
+  stdoutBytes?: number;
+  stderrBytes?: number;
+  httpStatus?: number;
+  nativeCode?: 'EACCES' | 'EPERM' | 'ENOENT' | 'ENOEXEC' | 'ENOMEM' | 'EMFILE' | 'ENFILE' | 'E2BIG' | 'ABORT_ERR' | 'ETIMEDOUT';
+}
+
 /** Deliberately contains no upstream message, cause, stdout, or stderr. */
 export class DatabricksServiceError extends Error {
-  constructor(public readonly code: DatabricksErrorCode, public readonly retryable = false) {
+  constructor(public readonly code: DatabricksErrorCode, public readonly retryable = false, readonly diagnostic?: DatabricksCliDiagnostic) {
     super(code);
     this.name = 'DatabricksServiceError';
   }
@@ -64,6 +75,7 @@ export type DatabricksSubprocessRunner = (executable: string, args: readonly str
 
 /** Native executable only: no cmd.exe, shell quoting, terminal, or stdin. */
 export const runDatabricksProcess: DatabricksSubprocessRunner = (executable, args, options) => new Promise((resolve, reject) => {
+  const started = performance.now();
   const child = spawn(executable, [...args], {
     shell: false, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
     signal: options.signal, timeout: options.timeoutMs,
@@ -72,18 +84,26 @@ export const runDatabricksProcess: DatabricksSubprocessRunner = (executable, arg
   child.stderr.setEncoding('utf8');
   let stdout = '';
   let stderr = '';
+  const failure = (category: DatabricksCliDiagnostic['category'], error?: unknown) => {
+    const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+    const nativeCode = (['EACCES', 'EPERM', 'ENOENT', 'ENOEXEC', 'ENOMEM', 'EMFILE', 'ENFILE', 'E2BIG', 'ABORT_ERR', 'ETIMEDOUT'] as const).find(value => value === code);
+    return new DatabricksServiceError('DATABRICKS_UPSTREAM_UNAVAILABLE', true, {
+      category, elapsedMs: Math.round(performance.now() - started), stdoutBytes: Buffer.byteLength(stdout), stderrBytes: Buffer.byteLength(stderr),
+      ...(nativeCode ? { nativeCode } : {}),
+    });
+  };
   const collect = (which: 'stdout' | 'stderr', chunk: string) => {
     options.onOutput?.(chunk);
     if (which === 'stdout') stdout += chunk;
     else stderr += chunk;
     if (stdout.length + stderr.length > 4 * 1024 * 1024) {
       child.kill();
-      reject(new DatabricksServiceError('DATABRICKS_UPSTREAM_UNAVAILABLE', true));
+      reject(failure('output-limit'));
     }
   };
   child.stdout.on('data', (chunk: string) => collect('stdout', chunk));
   child.stderr.on('data', (chunk: string) => collect('stderr', chunk));
-  child.once('error', () => reject(new DatabricksServiceError('DATABRICKS_UPSTREAM_UNAVAILABLE', true)));
+  child.once('error', (error) => reject(failure(options.signal.aborted ? 'aborted' : 'spawn', error)));
   child.once('close', (code) => resolve({ stdout, stderr, exitCode: code ?? -1 }));
 });
 
@@ -153,7 +173,7 @@ export async function withDeadline<T>(work: (signal: AbortSignal) => Promise<T>,
   try {
     return await Promise.race([
       new Promise<never>((_resolve, reject) => {
-        rejectAbort = () => reject(new DatabricksServiceError('DATABRICKS_UPSTREAM_UNAVAILABLE', true));
+        rejectAbort = () => reject(new DatabricksServiceError('DATABRICKS_UPSTREAM_UNAVAILABLE', true, { category: parent?.aborted ? 'aborted' : 'timeout' }));
         controller.signal.addEventListener('abort', rejectAbort, { once: true });
         if (controller.signal.aborted) rejectAbort();
       }),
@@ -234,9 +254,31 @@ export class DatabricksClient {
   async json(args: readonly string[], signal?: AbortSignal): Promise<unknown> {
     if (this.state.cli !== 'ready') throw new DatabricksServiceError(this.state.cli === 'missing' ? 'DATABRICKS_CLI_MISSING' : 'DATABRICKS_CLI_UNSUPPORTED');
     let result: CliResult;
+    const started = performance.now();
     try { result = await this.run(args, signal); }
-    catch { throw new DatabricksServiceError('DATABRICKS_UPSTREAM_UNAVAILABLE', true); }
-    if (result.exitCode !== 0) throw classifyCliFailure(result.stderr);
+    catch (error) {
+      throw new DatabricksServiceError('DATABRICKS_UPSTREAM_UNAVAILABLE', true, {
+        ...(error instanceof DatabricksServiceError && error.diagnostic ? error.diagnostic : { category: signal?.aborted ? 'aborted' : 'spawn' }),
+        elapsedMs: Math.round(performance.now() - started),
+      });
+    }
+    if (result.exitCode !== 0) {
+      const failure = classifyCliFailure(result.stderr);
+      const http = /(?:\bHTTP(?:\/\d(?:\.\d)?)?|\bstatus(?: code)?)[\s:=]*([45]\d\d)\b/i.exec(result.stderr)?.[1];
+      const cause: DatabricksCliDiagnostic['cause'] = /\bEOF\b|connection (?:closed|reset)|broken pipe/i.test(result.stderr) ? 'connection-closed'
+        : /\bTLS\b|x509|certificate/i.test(result.stderr) ? 'tls'
+          : http ? 'http'
+            : failure.code === 'DATABRICKS_KEYRING_UNAVAILABLE' ? 'keyring'
+              : failure.code === 'DATABRICKS_AUTH_REQUIRED' ? 'auth-config'
+                : failure.code === 'DATABRICKS_PERMISSION_DENIED' ? 'permission'
+                  : failure.code === 'DATABRICKS_CLI_UNSUPPORTED' ? 'unsupported'
+                    : /network|connection|dial tcp|dns|unreachable/i.test(result.stderr) ? 'network' : undefined;
+      throw new DatabricksServiceError(failure.code, failure.retryable, {
+        category: 'cli-exit', ...(cause ? { cause } : {}), ...(http ? { httpStatus: Number(http) } : {}),
+        exitCode: result.exitCode, elapsedMs: Math.round(performance.now() - started),
+        stdoutBytes: Buffer.byteLength(result.stdout), stderrBytes: Buffer.byteLength(result.stderr),
+      });
+    }
     try { return JSON.parse(result.stdout) as unknown; }
     catch { throw new DatabricksServiceError('DATABRICKS_CLI_UNSUPPORTED'); }
   }
