@@ -8088,7 +8088,7 @@ async function runDataImport(args) {
     console.log('Import cancelled.');
     return;
   }
-  const candidatesResponse = await fetch(`${base}/api/data-import/candidates`);
+  const candidatesResponse = await fetch(`${base}/api/data-import/candidates?manual=1`);
   if (!candidatesResponse.ok) return structuredHttpFailure(candidatesResponse);
   const candidates = await candidatesResponse.json();
   let from = flags.from;

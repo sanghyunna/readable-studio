@@ -33,6 +33,7 @@ it('reports the failed source and lets the CLI stop only that source and request
   await writeFile(path.join(f.dataRoot,'data-import.json'),JSON.stringify({state:'failed',error:'SOURCE_RUNNING: blocked',sourceRoot:f.sourceRoot,sourceData:f.sourceData}));
   const status=await(await fetch(`${f.url}/candidates`)).json() as DataImportCandidatesResponse;
   expect(status.runningSource).toEqual({sourceRoot:f.sourceRoot,sourceData:f.sourceData,processes:[rows[0]]});
+  expect(await (await fetch(`${f.url}/candidates?manual=1`)).json()).toEqual(status);
   const post=(from:string)=>fetch(`${f.url}/request`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'stop-source',from})});
   expect((await post(path.join(f.root,'old-other'))).status).toBe(409);
   expect(terminateProcess).not.toHaveBeenCalled();
@@ -52,7 +53,7 @@ it('reports the failed source and lets the CLI stop only that source and request
   expect(rows.map(row=>row.pid)).toEqual([200,process.pid]);
   expect(JSON.parse(await readFile(path.join(f.dataRoot,'data-import.json'),'utf8'))).toMatchObject({state:'pending',sourceRoot:f.sourceRoot,sourceData:f.sourceData});
   expect(JSON.parse(await readFile(path.join(f.dataRoot,'data-import.json'),'utf8'))).not.toHaveProperty('restartRequested');
-  expect(cliFetch.mock.calls.map(([url])=>String(url))).toEqual([`${f.url}/candidates`,`${f.url}/request`]);
+  expect(cliFetch.mock.calls.map(([url])=>String(url))).toEqual([`${f.url}/candidates?manual=1`,`${f.url}/request`]);
 });
 it('refuses to stop a source containing the current application',async()=>{
   const terminateProcess=vi.fn();const f=await fixture({listProcesses:async()=>[],terminateProcess});
@@ -94,7 +95,7 @@ it('returns the running source as structured CLI JSON without requesting restart
   expect(JSON.parse(errors.mock.calls[0]![0])).toMatchObject({error:{code:'SOURCE_RUNNING',data:{runningSource:{sourceRoot:f.sourceRoot,sourceData:f.sourceData,processes:rows}}}});
   expect(cliProcess.exitCode).toBe(1);
   expect(output).not.toHaveBeenCalled();
-  expect(cliFetch.mock.calls.map(([url])=>String(url))).toEqual([`${f.url}/candidates`,`${f.url}/request`]);
+  expect(cliFetch.mock.calls.map(([url])=>String(url))).toEqual([`${f.url}/candidates?manual=1`,`${f.url}/request`]);
   expect(JSON.parse(await readFile(path.join(f.dataRoot,'data-import.json'),'utf8'))).not.toHaveProperty('restartRequested');
 });
 it('lets the CLI cancel pending imports without requesting restart',async()=>{
@@ -149,6 +150,125 @@ it('never reoffers after done or an earlier process offered',async()=>{
     await writeFile(path.join(f.dataRoot,'data-import.json'),JSON.stringify(marker));
     const response=await(await fetch(`${f.url}/candidates`)).json() as DataImportCandidatesResponse;expect(response.candidates).toEqual([]);expect(response.state).not.toBe('offered');
   }
+});
+it.each([
+  { state: 'declined' },
+  { state: 'offered', offeredBy: 'old-process' },
+  { state: 'failed', error: 'A previous copy failed' },
+])('manually discovers previous data after $state without changing the saved decision', async marker => {
+  const f = await fixture({ listProcesses: async () => [] });
+  const markerPath = path.join(f.dataRoot, 'data-import.json');
+  const saved = JSON.stringify(marker);
+  await writeFile(markerPath, saved);
+  const result = await (await fetch(`${f.url}/candidates?manual=1`)).json() as DataImportCandidatesResponse;
+  expect(result.state).toBe('offered');
+  expect(result.candidates.map(item => item.sourceData)).toEqual([f.sourceData]);
+  expect(await readFile(markerPath, 'utf8')).toBe(saved);
+  const automatic = await (await fetch(`${f.url}/candidates`)).json() as DataImportCandidatesResponse;
+  expect(automatic.candidates).toEqual([]);
+  expect(automatic.state).not.toBe('offered');
+});
+it('manual discovery leaves the first automatic offer available', async () => {
+  const f = await fixture();
+  expect((await (await fetch(`${f.url}/candidates?manual=1`)).json() as DataImportCandidatesResponse).state).toBe('offered');
+  await expect(readFile(path.join(f.dataRoot, 'data-import.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+  expect((await (await fetch(`${f.url}/candidates`)).json() as DataImportCandidatesResponse).state).toBe('offered');
+});
+it('queues a manually selected source after decline without copying or modifying either database', async () => {
+  const f = await fixture({ listProcesses: async () => [] });
+  const post = (body: unknown) => fetch(`${f.url}/request`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  await post({ action: 'decline' });
+  const before = await readFile(path.join(f.sourceData, 'app.sqlite'));
+  const manual = await (await fetch(`${f.url}/candidates?manual=1`)).json() as DataImportCandidatesResponse;
+  expect(manual.candidates).toHaveLength(1);
+  expect(await (await post({ action: 'import', from: manual.candidates[0]!.sourceData })).json()).toEqual({ state: 'pending', restartRequired: true });
+  const queued = JSON.parse(await readFile(path.join(f.dataRoot, 'data-import.json'), 'utf8'));
+  expect(queued).toMatchObject({ state: 'pending', sourceRoot: f.sourceRoot, sourceData: f.sourceData });
+  expect(queued).not.toHaveProperty('restartRequested');
+  await expect(readFile(path.join(f.dataRoot, 'app.sqlite'))).rejects.toMatchObject({ code: 'ENOENT' });
+  expect(await readFile(path.join(f.sourceData, 'app.sqlite'))).toEqual(before);
+  expect(await (await post({ action: 'restart' })).json()).toEqual({ state: 'pending', restartRequired: true });
+  expect(JSON.parse(await readFile(path.join(f.dataRoot, 'data-import.json'), 'utf8'))).toEqual({ ...queued, restartRequested: true });
+});
+it.each(['pending', 'done'])('manual discovery preserves the %s guard', async state => {
+  const f = await fixture({ listProcesses: async () => [] });
+  const markerPath = path.join(f.dataRoot, 'data-import.json');
+  const saved = JSON.stringify({ state, sourceRoot: f.sourceRoot, sourceData: f.sourceData });
+  await writeFile(markerPath, saved);
+  expect(await (await fetch(`${f.url}/candidates?manual=1`)).json()).toEqual({ state, candidates: [] });
+  expect(await readFile(markerPath, 'utf8')).toBe(saved);
+  expect((await fetch(`${f.url}/request`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'import', from: f.sourceData }) })).status).toBe(409);
+  expect(await readFile(markerPath, 'utf8')).toBe(saved);
+});
+it('manual discovery reports existing projects and never overwrites them after a previous decline', async () => {
+  const f = await fixture({ listProcesses: async () => [] });
+  const db = openDatabase(f.dataRoot, { dataDir: f.dataRoot });
+  insertProject(db, { id: 'current', name: 'Current work', createdAt: 1, updatedAt: 1 });
+  closeDatabase();
+  const before = await readFile(path.join(f.dataRoot, 'app.sqlite'));
+  const markerPath = path.join(f.dataRoot, 'data-import.json');
+  const saved = JSON.stringify({ state: 'declined' });
+  await writeFile(markerPath, saved);
+  expect(await (await fetch(`${f.url}/candidates?manual=1`)).json()).toMatchObject({ state: 'unavailable', candidates: [], unavailableReason: 'projects-present' });
+  expect((await fetch(`${f.url}/request`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'import', from: f.sourceData }) })).status).toBe(409);
+  expect(await readFile(markerPath, 'utf8')).toBe(saved);
+  expect(await readFile(path.join(f.dataRoot, 'app.sqlite'))).toEqual(before);
+});
+it('lets the CLI manually rediscover declined data through the same HTTP endpoint', async () => {
+  const f = await fixture({ listProcesses: async () => [] });
+  const markerPath = path.join(f.dataRoot, 'data-import.json');
+  const saved = JSON.stringify({ state: 'declined' });
+  await writeFile(markerPath, saved);
+  const source = readFileSync(new URL('../src/cli.ts', import.meta.url), 'utf8');
+  const code = source.slice(source.indexOf('async function runDataImport('), source.indexOf('\nasync function runVersion('));
+  const output = vi.fn(); const cliFetch = vi.fn(fetch);
+  const context = vm.createContext({ fetch: cliFetch, console, process: { stdout: { write: output } },
+    parseFlags: () => ({ json: true }), positionalArgs: () => ['import'],
+    cliDaemonBaseUrl: async () => f.url.replace('/api/data-import', ''),
+    structuredHttpFailure: () => { throw new Error('CLI request failed'); },
+  });
+  await vm.runInContext(code + '\nrunDataImport([])', context);
+  expect(JSON.parse(output.mock.calls[0]![0])).toMatchObject({ state: 'offered', candidates: [{ sourceData: f.sourceData }] });
+  expect(cliFetch.mock.calls.map(([url]) => String(url))).toEqual([`${f.url}/candidates?manual=1`]);
+  expect(await readFile(markerPath, 'utf8')).toBe(saved);
+});
+it('queues an explicit CLI source after decline without requiring a prior automatic offer', async () => {
+  const f = await fixture({ listProcesses: async () => [] });
+  await writeFile(path.join(f.dataRoot, 'data-import.json'), JSON.stringify({ state: 'declined' }));
+  const source = readFileSync(new URL('../src/cli.ts', import.meta.url), 'utf8');
+  const code = source.slice(source.indexOf('async function runDataImport('), source.indexOf('\nasync function runVersion('));
+  const output = vi.fn(); const cliFetch = vi.fn(fetch);
+  const context = vm.createContext({ fetch: cliFetch, console, process: { stdout: { write: output } },
+    parseFlags: () => ({ from: f.sourceData, json: true }), positionalArgs: () => ['import'],
+    cliDaemonBaseUrl: async () => f.url.replace('/api/data-import', ''),
+    structuredHttpFailure: () => { throw new Error('CLI request failed'); },
+  });
+  await vm.runInContext(code + '\nrunDataImport([])', context);
+  expect(JSON.parse(output.mock.calls[0]![0])).toEqual({ state: 'pending', restartRequired: true });
+  expect(cliFetch.mock.calls.map(([url]) => String(url))).toEqual([`${f.url}/candidates?manual=1`, `${f.url}/request`]);
+  expect(JSON.parse(await readFile(path.join(f.dataRoot, 'data-import.json'), 'utf8'))).toMatchObject({ state: 'pending', sourceData: f.sourceData });
+});
+it('reports that manual discovery requires a portable layout without writing a decision', async () => {
+  const f = await fixture();
+  const app = express();
+  registerDataImportRoutes(app, { dataRoot: f.dataRoot, appRoot: '', namespace: 'test' });
+  const server = app.listen(0, '127.0.0.1'); servers.push(server); await once(server, 'listening');
+  const address = server.address(); if (!address || typeof address === 'string') throw new Error('no address');
+  const url = `http://127.0.0.1:${address.port}/api/data-import/candidates`;
+  expect(await (await fetch(`${url}?manual=1`)).json()).toEqual({ state: 'unavailable', candidates: [], unavailableReason: 'unsupported-runtime' });
+  expect(await (await fetch(url)).json()).toEqual({ state: 'unavailable', candidates: [] });
+  await expect(readFile(path.join(f.dataRoot, 'data-import.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+});
+it('manual discovery never authorizes a source outside the discovered candidates', async () => {
+  const f = await fixture({ listProcesses: async () => [] });
+  const markerPath = path.join(f.dataRoot, 'data-import.json');
+  const saved = JSON.stringify({ state: 'declined' });
+  await writeFile(markerPath, saved);
+  await fetch(`${f.url}/candidates?manual=1`);
+  const response = await fetch(`${f.url}/request`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'import', from: f.root }) });
+  expect(response.status).toBe(409);
+  expect(await readFile(markerPath, 'utf8')).toBe(saved);
+  await expect(readFile(path.join(f.dataRoot, 'app.sqlite'))).rejects.toMatchObject({ code: 'ENOENT' });
 });
 // 1.3.3 shipped with namespace au-rel133; the release namespace is rg.
 async function rgFixture(listProcesses: DataImportRouteOptions['listProcesses'] = async()=>[]) {

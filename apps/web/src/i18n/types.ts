@@ -35,6 +35,14 @@ export interface Dict {
   'dataImport.failed': string;
   'dataImport.safeFailure': string;
   'dataImport.unreadable': string;
+  'dataImport.manualTitle': string;
+  'dataImport.manualHint': string;
+  'dataImport.checkFailure': string;
+  'dataImport.checkAgain': string;
+  'dataImport.notFound': string;
+  'dataImport.projectsPresent': string;
+  'dataImport.alreadyImported': string;
+  'dataImport.unsupportedRuntime': string;
   'update.title': string;
   'update.automatic': string;
   'update.setupFailed': string;

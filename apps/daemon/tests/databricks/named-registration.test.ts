@@ -137,27 +137,46 @@ describe('named registration', () => {
     expect(second.inputResults?.[0]?.state).toBe('already-registered');
     expect(requests).toBe(before);
   });
-  it('reuses the tested token field and route through the real relay', async () => {
+  it.each([
+    ['max_completion_tokens', 64, null, 64],
+    ['max_completion_tokens', 1024, null, 1024],
+    ['max_tokens', 64, null, 64],
+    ['max_tokens', 1024, null, 1024],
+    ['max_completion_tokens', 64, 128, 64],
+    ['max_completion_tokens', 1024, 128, 128],
+    ['max_tokens', 64, 128, 64],
+    ['max_tokens', 1024, 128, 128],
+  ] as const)('reuses the tested token field and route through the real relay (%s=%i, ceiling=%s)', async (tokenField, requested, outputLimit, expected) => {
     // Given
+    const probes: Record<string, unknown>[] = [];
     const fixture = await namedFixture(async (_url, init) => {
       if (init.method !== 'POST') return json({}, 403);
       const body = JSON.parse(String(init.body));
-      return body.max_completion_tokens !== undefined ? json({ message: 'Unsupported parameter: "max_completion_tokens"' }, 400) : chatStream(true);
+      probes.push(body);
+      if (body.max_completion_tokens !== undefined) return json({ message: 'Unsupported parameter: "max_completion_tokens"' }, 400);
+      return outputLimit !== null && body.max_tokens > outputLimit
+        ? json({ message: `max_tokens ${body.max_tokens} cannot be greater than max_tokens ${outputLimit}` }, 400) : chatStream(true);
     });
     const scan = await completed(fixture.service, (await fixture.service.startNamedScan({ profileId: fixture.profileId, names: 'system.ai.hidden', allowInference: true })).scanId);
     const endpoint = scan.endpoints[0]; if (!endpoint) throw new Error('Missing endpoint');
     const saved = await fixture.service.enable(endpoint.id, { scanId: scan.scanId, expectedRevision: scan.revision });
     const runtime = await fixture.restart().resolveRuntime(saved.appModelId);
+    expect(probes[0]).toMatchObject({ max_completion_tokens: 256 });
+    expect(runtime.capabilities.maxTokens).toBe(outputLimit);
+    expect(runtime.wireCapabilities?.namedProfile).toMatchObject({ tokenField: 'max_tokens', testedBudget: outputLimit ?? 256 });
+    expect(runtime.wireCapabilities?.namedProfile?.outputLimit).toBe(outputLimit ?? undefined);
     const sent: { path: string; body: unknown }[] = [];
     const relay = await createDatabricksRelay({ runtime, fetch: async (url, init) => { sent.push({ path: new URL(String(url)).pathname, body: JSON.parse(String(init?.body)) }); return chatStream(true); } });
     try {
       // When
-      const response = await fetch(`${relay.baseUrl}/chat/completions`, { method: 'POST', headers: { Authorization: `Bearer ${relay.capabilityKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: relay.modelAlias, stream: true, messages: [{ role: 'user', content: 'test' }], max_completion_tokens: 1024, tools: [{ type: 'function', function: { name: 'readable_probe', parameters: {} } }] }) });
+      const response = await fetch(`${relay.baseUrl}/chat/completions`, { method: 'POST', headers: { Authorization: `Bearer ${relay.capabilityKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: relay.modelAlias, stream: true, messages: [{ role: 'user', content: 'test' }], [tokenField]: requested, tools: [{ type: 'function', function: { name: 'readable_probe', parameters: {} } }] }) });
       await response.text();
       // Then
+      expect(response.status).toBe(200);
       expect(sent).toHaveLength(1);
-      expect(sent[0]).toMatchObject({ path: '/ai-gateway/openai/v1/chat/completions', body: { model: 'system.ai.hidden', max_tokens: 256 } });
-      expect(sent[0]?.body).not.toHaveProperty('max_completion_tokens');
+      expect(sent[0]).toEqual({ path: '/ai-gateway/openai/v1/chat/completions', body: { model: 'system.ai.hidden', stream: true,
+        messages: [{ role: 'user', content: 'test' }], max_tokens: expected,
+        tools: [{ type: 'function', function: { name: 'readable_probe', parameters: {} } }] } });
     } finally { await relay.close(); }
   });
 });

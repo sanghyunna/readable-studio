@@ -9,7 +9,7 @@ import { emptyManualEditStyles, type ManualEditTarget } from '../../src/edit-mod
 import { JSDOM } from '../edit-mode/bridge-dom';
 import type { ProjectFile } from '../../src/types';
 
-const html = '<html><body><p data-readable-id="hero">First\nsecond</p><p data-readable-id="other">Other</p></body></html>';
+const html = '<html><body style="width:800px;height:600px;margin:0"><p data-readable-id="hero" style="width:160px;height:48px">First\nsecond</p><p data-readable-id="other" style="width:160px;height:48px">Other</p></body></html>';
 const file: ProjectFile = { name: 'preview.html', path: 'preview.html', type: 'file', size: 100, mtime: 1, mime: 'text/html', kind: 'html' };
 const target: ManualEditTarget = {
   id: 'hero', kind: 'container', label: 'Hero', tagName: 'p', className: '', text: 'First\nsecond',
@@ -38,6 +38,25 @@ async function setup(raw = false) {
   const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
   const dom = new JSDOM(`${html}${buildManualEditBridge(true)}`, { runScripts: 'dangerously', url: 'http://localhost' });
   await dom.loaded;
+  // jsdom has no layout. Keep the real bridge's width assessment, supplying
+  // only the measured boxes of this fixed, unconstrained block fixture.
+  for (const [element, x, y] of [
+    [dom.window.document.body, 0, 0],
+    [dom.window.document.querySelector('[data-readable-id="hero"]')!, 10, 10],
+    [dom.window.document.querySelector('[data-readable-id="other"]')!, 10, 250],
+  ] as const) {
+    const node = element as HTMLElement;
+    const width = () => Number.parseFloat(node.style.width);
+    const height = () => Number.parseFloat(node.style.height);
+    Object.defineProperties(node, {
+      offsetWidth: { get: width }, clientWidth: { get: width },
+      offsetHeight: { get: height }, clientHeight: { get: height },
+    });
+    vi.spyOn(node, 'getBoundingClientRect').mockImplementation(() => {
+      const [dx = 0, dy = 0] = node.style.translate.split(' ').map(Number.parseFloat);
+      return new dom.window.DOMRect(x + (dx || 0), y + (dy || 0), width(), height());
+    });
+  }
   const messages: unknown[] = [];
   const posts: Array<{ type?: string }> = [];
   dom.window.parent.postMessage = (data: unknown) => { messages.push(data); posts.push(data as { type?: string }); };
@@ -75,6 +94,7 @@ describe.each(['full', 'low'] as const)('Save flushes the real contenteditable b
       fireEvent.pointerUp(surface, { pointerId: 1, clientX: 130, clientY: 140 });
     });
     fireEvent.change(screen.getByLabelText('Width'), { target: { value: '200' } });
+    fireEvent.change(screen.getByLabelText('Radius'), { target: { value: '12' } });
     await harness.select({ ...target, kind: 'text' }, true);
     const el = harness.dom.window.document.querySelector('[data-readable-id="hero"]')!;
     expect(el.getAttribute('data-readable-editing')).toBe('true');
@@ -91,6 +111,7 @@ describe.each(['full', 'low'] as const)('Save flushes the real contenteditable b
     const saved = doc.querySelector('[data-readable-id="hero"]')!;
     expect(saved.textContent).toBe('First second');
     expect((saved as HTMLElement).style.width).toBe('200px');
+    expect((saved as HTMLElement).style.borderRadius).toBe('12px');
     expect((saved as HTMLElement).style.translate).toBe('30px 40px');
     expect(saved.querySelector('strong') !== null).toBe(kind === 'rich');
     expect(el.hasAttribute('contenteditable')).toBe(false);

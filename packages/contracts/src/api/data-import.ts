@@ -9,6 +9,8 @@ export interface DataImportCandidate {
 export interface DataImportCandidatesResponse {
   state: DataImportState;
   candidates: DataImportCandidate[];
+  /** Manual discovery bypasses the one-time offer, never destination safety checks. */
+  unavailableReason?: 'projects-present' | 'unsupported-runtime';
   error?: string;
   runningSource?: {
     sourceRoot: string;

@@ -130,25 +130,27 @@ export function registerDataImportRoutes(app: Express, options: DataImportRouteO
     const result = serial.then(fn, fn); serial = result.catch(() => undefined); return result;
   };
   const listProcesses = options.listProcesses ?? (() => listWindowsExecutableProcesses(/readable.*studio/i));
-  app.get('/api/data-import/candidates', async (_req, res) => {
+  app.get('/api/data-import/candidates', async (req, res) => {
     try {
+      const manual = req.query.manual === '1';
       const result = await locked(async (): Promise<DataImportCandidatesResponse> => {
         const previous = await decision(options.dataRoot);
-        if (previous && (previous.state !== 'offered' || previous.offeredBy !== OFFER_OWNER)) {
+        const manualRetry = manual && (previous?.state === 'declined' || previous?.state === 'offered' || (previous?.state === 'failed' && !previous.error?.startsWith('SOURCE_RUNNING')));
+        if (previous && !manualRetry && (previous.state !== 'offered' || previous.offeredBy !== OFFER_OWNER)) {
           const runningSource = previous.state === 'failed' && previous.error?.startsWith('SOURCE_RUNNING') && previous.sourceRoot && previous.sourceData
             ? { sourceRoot: await realpath(previous.sourceRoot), sourceData: previous.sourceData, processes: processesInsideRoot(await realpath(previous.sourceRoot), await listProcesses()) }
             : undefined;
           const notice = previous.state === 'pending' || previous.state === 'failed' ? [] : await splitNamespaceNotice(options);
           return { state: previous.state === 'offered' ? 'unavailable' : previous.state, candidates: [], ...(previous.error ? { error: previous.error } : {}), ...(runningSource ? { runningSource } : {}), ...(notice.length ? { warnings: notice } : {}) };
         }
-        if (!layout(options)) return { state: 'unavailable', candidates: [] };
+        if (!layout(options)) return { state: 'unavailable', candidates: [], ...(manual ? { unavailableReason: 'unsupported-runtime' } : {}) };
         if (!(await empty(options.dataRoot))) {
           const notice = await splitNamespaceNotice(options);
-          return { state: 'unavailable', candidates: [], ...(notice.length ? { warnings: notice } : {}) };
+          return { state: 'unavailable', candidates: [], ...(manual ? { unavailableReason: 'projects-present' } : {}), ...(notice.length ? { warnings: notice } : {}) };
         }
         const found = await discoverDataImports(options);
         if (!found.candidates.length) return { state: 'unavailable', ...found };
-        await record(options.dataRoot, { state: 'offered', offeredBy: OFFER_OWNER });
+        if (!manual) await record(options.dataRoot, { state: 'offered', offeredBy: OFFER_OWNER });
         return { state: 'offered', ...found };
       });
       res.json(result);

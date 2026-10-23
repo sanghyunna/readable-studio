@@ -893,7 +893,10 @@ test('[P0] manual edit mode preserves preview actions after style edits', async 
 test('[P1] manual edit resize handle drag grows selected element and persists width/height', async ({ page }) => {
   await routeMockAgents(page);
   const projectId = await createEmptyProject(page, 'Manual edit resize smoke');
-  await seedHtmlArtifact(page, projectId, 'manual-edit.html', manualEditHtml());
+  // Ordinary sizing needs room to grow without changing a parent's flex allocation.
+  const baselineSource = '<!doctype html><html><body><main><h1 data-readable-id="hero-title" data-readable-label="Hero title" style="width:200px;height:60px">Original Hero</h1></main></body></html>';
+  await seedHtmlArtifact(page, projectId, 'manual-edit.html', baselineSource);
+  const rendererWrites = captureRendererFileWrites(page, projectId);
   await page.goto(`/projects/${projectId}/files/manual-edit.html`);
   await openDesignFile(page, 'manual-edit.html');
 
@@ -911,20 +914,22 @@ test('[P1] manual edit resize handle drag grows selected element and persists wi
     return { width: rect.width, height: rect.height };
   });
 
-  const handle = page.getByRole('button', { name: 'Resize bottom-right corner' });
-  await expect(handle).toBeVisible();
-  const box = await handle.boundingBox();
-  if (!box) throw new Error('resize handle has no bounding box');
-  const startX = box.x + box.width / 2;
-  const startY = box.y + box.height / 2;
+  const outcome = await dragWidthAndObserveFinal(page, 'hero-title', 80, 'se');
+  expect(outcome.decision).toBe('ordinary');
+  const after = await heroTitle.boundingBox();
+  expect(after!.width).toBeGreaterThan(before.width);
+  expect(after!.height).toBeGreaterThan(before.height);
 
-  await page.mouse.move(startX, startY);
-  await page.mouse.down();
-  await page.mouse.move(startX + 80, startY + 80, { steps: 8 });
-  await expect
-    .poll(async () => heroTitle.evaluate((el) => (el as HTMLElement).style.width))
-    .not.toBe('');
-  await page.mouse.up();
+  const saveButton = page.getByRole('button', { name: 'Save changes', exact: true });
+  await expect(saveButton).toBeEnabled();
+  expect(rendererWrites).toHaveLength(0);
+  const beforeSave = await page.request.get(`/api/projects/${projectId}/files/manual-edit.html`);
+  expect(beforeSave.ok()).toBe(true);
+  expect(await beforeSave.text()).toBe(baselineSource);
+  const save = waitForSaveResponse(page, projectId);
+  await saveButton.click();
+  expect((await save).status()).toBe(200);
+  expect(rendererWrites).toHaveLength(1);
 
   await expect
     .poll(async () => {

@@ -1,7 +1,9 @@
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { pathToFileURL } from 'node:url';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   importGitHubDesignSystemProject,
@@ -37,10 +39,10 @@ describe('importGitHubDesignSystemProject', () => {
   let fixtureRoot: string;
   let tmpRoot: string;
   let userDesignSystemsRoot: string;
-  let fakeGit: string;
+  let commit: string;
 
   beforeEach(() => {
-    tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'readable-ds-github-import-'));
+    tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'readable ds & github import-'));
     fixtureRoot = path.join(tempRoot, 'fixture-repo');
     tmpRoot = path.join(tempRoot, '.tmp');
     userDesignSystemsRoot = path.join(tempRoot, 'user-design-systems');
@@ -58,36 +60,31 @@ describe('importGitHubDesignSystemProject', () => {
     fs.writeFileSync(path.join(fixtureRoot, 'src', 'styles', 'tokens.css'), ':root { --primary: #22c55e; }');
     fs.writeFileSync(path.join(fixtureRoot, 'src', 'components', 'Card.tsx'), 'export function Card() {}');
 
-    fakeGit = path.join(tempRoot, 'fake-git.sh');
-    fs.writeFileSync(
-      fakeGit,
-      `#!/bin/sh
-set -eu
-if [ "$1" = "clone" ]; then
-  target=""
-  for arg in "$@"; do target="$arg"; done
-  mkdir -p "$target"
-  cp -R "$FAKE_GIT_SOURCE"/. "$target"/
-  exit 0
-fi
-if [ "$1" = "-C" ] && [ "$3" = "rev-parse" ] && [ "$4" = "--abbrev-ref" ]; then
-  printf 'main\\n'
-  exit 0
-fi
-if [ "$1" = "-C" ] && [ "$3" = "rev-parse" ] && [ "$4" = "HEAD" ]; then
-  printf 'abc123def456\\n'
-  exit 0
-fi
-echo "unexpected git args: $*" >&2
-exit 1
-`,
-    );
-    fs.chmodSync(fakeGit, 0o755);
-    process.env.FAKE_GIT_SOURCE = fixtureRoot;
+    const gitConfig = path.join(tempRoot, 'gitconfig');
+    const emptyTemplate = path.join(tempRoot, 'empty-template');
+    fs.mkdirSync(emptyTemplate);
+    fs.writeFileSync(gitConfig, '');
+    vi.stubEnv('GIT_CONFIG_GLOBAL', gitConfig);
+    vi.stubEnv('GIT_CONFIG_NOSYSTEM', '1');
+    vi.stubEnv('GIT_TERMINAL_PROMPT', '0');
+    vi.stubEnv('GIT_ALLOW_PROTOCOL', 'file');
+    // Use the real Windows Git executable while keeping clones local and config private.
+    const git = (args: string[]) => execFileSync('git', args, {
+      cwd: fixtureRoot,
+      encoding: 'utf8',
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+    git(['init', '-b', 'main', `--template=${emptyTemplate}`]);
+    git(['add', '.']);
+    git(['-c', 'user.name=Readable Studio Test', '-c', 'user.email=test@example.com', 'commit', '-m', 'fixture']);
+    commit = git(['rev-parse', 'HEAD']);
+    git(['branch', 'feature/tokens']);
+    git(['config', '--file', gitConfig, `url.${pathToFileURL(fixtureRoot).href}.insteadOf`, 'https://github.com/acme/design-kit.git']);
   });
 
   afterEach(() => {
-    delete process.env.FAKE_GIT_SOURCE;
+    vi.unstubAllEnvs();
     fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 
@@ -97,7 +94,6 @@ exit 1
       tmpRoot,
       userDesignSystemsRoot,
       {
-        gitBin: fakeGit,
         now: new Date('2026-05-18T10:00:00.000Z'),
         importMode: 'normalized',
         craftApplies: ['color'],
@@ -105,6 +101,8 @@ exit 1
     );
 
     expect(result.id).toBe('github-design-kit');
+    const cloneDir = path.join(tmpRoot, 'github-design-system-imports', 'acme-design-kit-20260518T100000000Z');
+    expect(fs.readFileSync(path.join(cloneDir, '.git', 'shallow'), 'utf8').trim()).toBe(commit);
     const manifest = JSON.parse(fs.readFileSync(path.join(result.dir, 'manifest.json'), 'utf8')) as Record<string, unknown>;
     expect(manifest).toMatchObject({
       schemaVersion: 'readable.design-system-project/v1',
@@ -113,7 +111,7 @@ exit 1
         type: 'github',
         url: 'https://github.com/acme/design-kit.git',
         branch: 'main',
-        commit: 'abc123def456',
+        commit,
         importedAt: '2026-05-18T10:00:00.000Z',
       },
       files: {
@@ -143,5 +141,29 @@ exit 1
     expect(fs.existsSync(path.join(result.dir, 'source', 'token-contract.report.json'))).toBe(true);
     expect(fs.existsSync(path.join(result.dir, 'preview', 'app.html'))).toBe(true);
     expect(fs.existsSync(path.join(result.dir, 'source', 'snippets', 'card.tsx'))).toBe(true);
+  });
+
+  it('clones an explicitly requested branch with real Git', async () => {
+    const result = await importGitHubDesignSystemProject(
+      'https://github.com/acme/design-kit',
+      tmpRoot,
+      userDesignSystemsRoot,
+      { branch: 'feature/tokens', importMode: 'normalized' },
+    );
+
+    const manifest = JSON.parse(fs.readFileSync(path.join(result.dir, 'manifest.json'), 'utf8'));
+    expect(manifest.source).toMatchObject({ branch: 'feature/tokens', commit });
+  });
+
+  it('reports clone errors and removes the failed checkout', async () => {
+    await expect(importGitHubDesignSystemProject(
+      'https://github.com/acme/design-kit',
+      tmpRoot,
+      userDesignSystemsRoot,
+      { branch: 'missing-branch', now: new Date('2026-05-18T10:00:00.000Z') },
+    )).rejects.toThrow(/could not import public GitHub repository:.*missing-branch/);
+
+    expect(fs.existsSync(path.join(tmpRoot, 'github-design-system-imports', 'acme-design-kit-20260518T100000000Z'))).toBe(false);
+    expect(fs.existsSync(userDesignSystemsRoot)).toBe(false);
   });
 });

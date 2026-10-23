@@ -389,7 +389,8 @@ export function App() {
 function AppInner() {
   const { t } = useI18n();
   const [dataImportResolved, setDataImportResolved] = useState(false);
-  const resolveDataImport = useCallback(() => setDataImportResolved(true), []);
+  const [manualDataImportOpen, setManualDataImportOpen] = useState(false);
+  const resolveDataImport = useCallback(() => { setDataImportResolved(true); setManualDataImportOpen(false); }, []);
   const iframeKeepAlivePool = useIframeKeepAlivePool();
   const clientType = useMemo(() => detectClientType(), []);
   useModalWindowDragGuard();
@@ -2383,6 +2384,8 @@ function AppInner() {
           onAmrLoginStatusChange={handleAmrLoginStatusChange}
           onSkillsRefresh={refreshSkills}
           onProjectsRefresh={refreshProjects}
+          dataImportOpen={manualDataImportOpen}
+          onDataImport={() => setManualDataImportOpen(true)}
           onSkillsChanged={handleSkillsChanged}
           onDesignSystemsChanged={handleDesignSystemsChanged}
           onDesignSystemImportRebuildJob={handleDesignSystemImportRebuildJob}
@@ -2392,7 +2395,7 @@ function AppInner() {
       ) : null}
       </AnimatePresence>
       <MemoryToast onOpenMemory={() => openSettings('memory')} />
-      {!dataImportResolved ? <DataImportModal onResolved={resolveDataImport} /> : <WelcomeModal />}
+      {!dataImportResolved || manualDataImportOpen ? <DataImportModal key={manualDataImportOpen ? 'manual' : 'startup'} manual={manualDataImportOpen} onResolved={resolveDataImport} /> : <WelcomeModal />}
       <OneDriveNotice />
       <UpdateLaunchBanner
         ready={hubSettled}

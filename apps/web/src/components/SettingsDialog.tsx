@@ -218,6 +218,8 @@ interface Props {
   /** Re-fetch functional skills into App state after Settings mutations. */
   onSkillsRefresh?: () => Promise<void> | void;
   onProjectsRefresh?: () => Promise<void> | void;
+  dataImportOpen?: boolean;
+  onDataImport?: () => void;
   /**
    * Notified by Settings → Skills after a successful skill registry
    * mutation (create / edit / delete). App.tsx uses this to drop preview
@@ -916,6 +918,8 @@ export function SettingsDialog({
   onAmrLoginStatusChange,
   onSkillsRefresh,
   onProjectsRefresh,
+  dataImportOpen = false,
+  onDataImport,
   onSkillsChanged,
   onDesignSystemsChanged,
   onDesignSystemImportRebuildJob,
@@ -2187,7 +2191,7 @@ export function SettingsDialog({
   // With no footer button anymore the close affordances are: top-right X ·
   // backdrop click · Escape. The shared overlay contract captures Escape so
   // focused controls cannot strand the modal by stopping the bubbling event.
-  useEscapeDismiss(onClose);
+  useEscapeDismiss(onClose, !dataImportOpen);
 
   const protocolProviders = useMemo(
     () => KNOWN_PROVIDERS.filter((p) => p.protocol === apiProtocol),
@@ -2768,7 +2772,7 @@ export function SettingsDialog({
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" onClick={onClose} aria-hidden={dataImportOpen || undefined} ref={element => { if (element) element.inert = dataImportOpen; }}>
       <div
         className="modal modal-settings"
         role="dialog"
@@ -4154,7 +4158,18 @@ export function SettingsDialog({
           ) : null}
 
           {activeSection === 'projectLocations' ? (
+            <>
             <ProjectLocationsSection cfg={cfg} setCfg={setCfg} onProjectsRefresh={onProjectsRefresh} />
+            <section className="settings-section settings-section-card" aria-labelledby="settings-data-import-title">
+              <div className="section-head">
+                <div>
+                  <h3 id="settings-data-import-title">{t('dataImport.manualTitle')}</h3>
+                  <p className="hint">{t('dataImport.manualHint')}</p>
+                </div>
+              </div>
+              <Button disabled={!onDataImport} onClick={onDataImport}>{t('dataImport.manualTitle')}</Button>
+            </section>
+            </>
           ) : null}
 
           {activeSection === 'databricksModels' ? <DatabricksModelsSection /> : null}
