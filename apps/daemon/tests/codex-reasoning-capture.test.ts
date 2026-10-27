@@ -15,11 +15,14 @@ async function replay(frames: unknown[]) {
   writeFileSync(path, JSON.stringify(frames));
   const peer = `const frames=JSON.parse(require('node:fs').readFileSync(process.argv[1],'utf8'));
     const send=m=>process.stdout.write(JSON.stringify(m)+'\\n');
+    // Answer with the recorded wire identities so replayed thread/turn frames belong to this session.
+    const threadId=frames.find(f=>f.method==='thread/started')?.params.thread.id??'thread';
+    const turnId=frames.find(f=>f.method==='turn/started')?.params.turn.id??'turn';
     require('node:readline').createInterface({input:process.stdin}).on('line',line=>{
       const m=JSON.parse(line);
       if(m.method==='initialize') send({id:m.id,result:{}});
-      if(m.method==='thread/start') send({id:m.id,result:{thread:{id:'thread'}}});
-      if(m.method==='turn/start') {send({id:m.id,result:{turn:{id:'turn'}}});for(const frame of frames)send(frame);send({method:'turn/completed',params:{turn:{status:'completed'}}});}
+      if(m.method==='thread/start') send({id:m.id,result:{thread:{id:threadId}}});
+      if(m.method==='turn/start') {send({id:m.id,result:{turn:{id:turnId}}});for(const frame of frames)send(frame);send({method:'turn/completed',params:{turn:{status:'completed'}}});}
     }).on('close',()=>process.exit(0));`;
   const child = spawn(process.execPath, ['-e', peer, path], { stdio: 'pipe', windowsHide: true });
   const closed = once(child, 'close', { signal: AbortSignal.timeout(10000) });
@@ -32,7 +35,9 @@ async function replay(frames: unknown[]) {
 const thinking = (events: Record<string, unknown>[]) => events.filter(e => e.type === 'thinking_delta').map(e => e.delta).join('');
 
 test('full real-wire replay matches the daemon-event golden consumed by web rendering tests', async () => {
-  const events = await replay(capture.filter(frame => frame.method && frame.method !== 'turn/completed'));
+  // Context-usage snapshots carry their wall-clock capture time; pin it so the golden is stable.
+  const events = (await replay(capture.filter(frame => frame.method && frame.method !== 'turn/completed')))
+    .map(event => event.type === 'context_usage' ? { ...event, snapshot: { ...(event.snapshot as object), updatedAt: 0 } } : event);
   const golden = new URL('../../../mocks/golden/codex-luna-index.events.json', import.meta.url);
   if (process.env.MOCKS_GOLDEN_UPDATE === '1') writeFileSync(golden, JSON.stringify(events, null, 2) + '\n');
   expect(events).toEqual(JSON.parse(readFileSync(golden, 'utf8')));

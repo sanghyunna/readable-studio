@@ -505,6 +505,7 @@ export function EntryShell({
                 onImportFile={onImportFile}
                 promptHandoff={homePromptHandoff}
                 skills={skills}
+                designTemplates={designTemplates}
                 skillsLoading={skillsLoading}
                 onNewProject={() => newSession()}
                 onRenameProject={onRenameProject}

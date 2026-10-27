@@ -86,6 +86,7 @@ vi.mock('../../src/providers/registry', () => ({
   fetchLiveArtifacts: (...args: unknown[]) => fetchLiveArtifacts(...args),
   fetchProjectFiles: (...args: unknown[]) => fetchProjectFiles(...args),
   fetchSkill: (...args: unknown[]) => fetchSkill(...args),
+  fetchDesignTemplate: vi.fn(() => { throw new Error('Unexpected template fetch in run-isolation fixture'); }),
   patchPreviewCommentStatus: (...args: unknown[]) => patchPreviewCommentStatus(...args),
   upsertPreviewComment: vi.fn(),
   writeProjectTextFile: vi.fn(),

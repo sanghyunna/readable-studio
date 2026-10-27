@@ -31,6 +31,13 @@ interface PopoverPos {
   placement: 'above' | 'below';
 }
 
+function visibleHorizontalBounds(boundary: DOMRect | null, viewportWidth: number, margin: number) {
+  const viewportRight = Math.max(margin, viewportWidth - margin);
+  const left = Math.max(margin, boundary ? boundary.left + MARGIN : margin);
+  const right = Math.min(viewportRight, boundary ? boundary.right - MARGIN : viewportRight);
+  return right > left ? { left, right } : { left: margin, right: viewportRight };
+}
+
 // Default ABOVE the caret (composer sits at panel bottom → above never
 // occludes the input line); flip BELOW only when above lacks room. Clamp
 // horizontally into the viewport. Cap height; the list scrolls internally.
@@ -38,18 +45,12 @@ function computePopoverPos(
   caret: CaretRect,
   size: { width: number; height: number } | null,
   boundary: DOMRect | null,
+  preferredWidth: number,
 ): PopoverPos {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
-  const viewportAvailableWidth = vw - MARGIN * 2;
-  const boundaryAvailableWidth = boundary
-    ? boundary.width - MARGIN * 2
-    : viewportAvailableWidth;
-  const availableWidth = Math.max(
-    240,
-    Math.min(viewportAvailableWidth, boundaryAvailableWidth),
-  );
-  const width = Math.min(PREF_W, availableWidth);
+  const bounds = visibleHorizontalBounds(boundary, vw, MARGIN);
+  const width = Math.min(preferredWidth, bounds.right - bounds.left);
 
   const spaceAbove = caret.top - GAP - MARGIN;
   const spaceBelow = vh - caret.bottom - GAP - MARGIN;
@@ -71,13 +72,7 @@ function computePopoverPos(
     top = caret.bottom + GAP;
   }
 
-  const minLeft = boundary ? Math.max(MARGIN, boundary.left + MARGIN) : MARGIN;
-  const maxLeft = boundary
-    ? Math.max(minLeft, Math.min(vw - MARGIN - width, boundary.right - MARGIN - width))
-    : vw - MARGIN - width;
-  let left = caret.left;
-  if (left > maxLeft) left = maxLeft;
-  if (left < minLeft) left = minLeft;
+  const left = Math.min(Math.max(caret.left, bounds.left), bounds.right - width);
 
   return { left, top, width, maxHeight, placement };
 }
@@ -85,10 +80,16 @@ function computePopoverPos(
 function computeControlPopoverPos(
   control: DOMRect,
   size: { width: number; height: number } | null,
+  boundary: DOMRect | null,
+  preferredWidth: number | undefined,
 ): PopoverPos {
   const viewport = { width: window.innerWidth, height: window.innerHeight };
-  const measured = size ?? { width: PREF_W, height: HARD_MAX_H };
-  const width = measured.width || PREF_W;
+  const measured = size ?? { width: preferredWidth ?? PREF_W, height: HARD_MAX_H };
+  const bounds = visibleHorizontalBounds(boundary, viewport.width, POPOVER_VIEWPORT_MARGIN);
+  const width = Math.min(
+    preferredWidth ?? (measured.width || PREF_W),
+    bounds.right - bounds.left,
+  );
   // Home's context control has always start-aligned its panel. Giving the
   // shared end-alignment maths a synthetic anchor as wide as the measured
   // panel preserves that behavior while keeping one placement implementation.
@@ -114,8 +115,9 @@ function computeControlPopoverPos(
   // describe that final geometry, otherwise the enter animation travels from
   // the wrong edge and consumers observe a stale data-placement value.
   const finalPlacement = placed.top < control.top ? 'above' : 'below';
+  const left = Math.min(Math.max(placed.left, bounds.left), bounds.right - width);
 
-  return { ...placed, width, maxHeight, placement: finalPlacement };
+  return { ...placed, left, width, maxHeight, placement: finalPlacement };
 }
 
 export function CaretFloatingLayer({
@@ -123,6 +125,7 @@ export function CaretFloatingLayer({
   open,
   boundaryRef,
   anchorRef,
+  preferredWidth,
   children,
 }: {
   caret: CaretRect | null;
@@ -130,6 +133,7 @@ export function CaretFloatingLayer({
   boundaryRef?: RefObject<HTMLElement | null>;
   /** Optional control anchor. When present it takes precedence over the caret. */
   anchorRef?: RefObject<HTMLElement | null>;
+  preferredWidth?: number;
   children: ReactNode;
 }) {
   const layerRef = useRef<HTMLDivElement | null>(null);
@@ -140,15 +144,15 @@ export function CaretFloatingLayer({
     if (!control && !caret) return;
     const el = layerRef.current;
     const size = el ? { width: el.offsetWidth, height: el.scrollHeight } : null;
+    const boundary = boundaryRef?.current?.getBoundingClientRect() ?? null;
     if (control) {
-      setPos(computeControlPopoverPos(control, size));
+      setPos(computeControlPopoverPos(control, size, boundary, preferredWidth));
       return;
     }
     if (caret) {
-      const boundary = boundaryRef?.current?.getBoundingClientRect() ?? null;
-      setPos(computePopoverPos(caret, size, boundary));
+      setPos(computePopoverPos(caret, size, boundary, preferredWidth ?? PREF_W));
     }
-  }, [anchorRef, boundaryRef, caret]);
+  }, [anchorRef, boundaryRef, caret, preferredWidth]);
 
   // Measured pass on open + every anchor change. useLayoutEffect avoids a
   // wrong-coordinate flash before paint.
@@ -169,9 +173,12 @@ export function CaretFloatingLayer({
         reposition();
       });
     };
+    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(onMove);
+    if (layerRef.current) resizeObserver?.observe(layerRef.current);
     window.addEventListener('resize', onMove);
     window.addEventListener('scroll', onMove, true);
     return () => {
+      resizeObserver?.disconnect();
       if (raf) cancelAnimationFrame(raf);
       window.removeEventListener('resize', onMove);
       window.removeEventListener('scroll', onMove, true);
@@ -199,7 +206,7 @@ export function CaretFloatingLayer({
               position: 'fixed',
               left: '-9999px',
               top: '0px',
-              width: `${PREF_W}px`,
+              width: `${preferredWidth ?? PREF_W}px`,
               visibility: 'hidden',
             }
       }

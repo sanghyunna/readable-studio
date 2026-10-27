@@ -12,6 +12,7 @@ import type { ManualEditMoveFrameProps } from '../../src/components/ManualEditMo
 import * as movementSession from '../../src/edit-mode/movement-session';
 import { emptyManualEditStyles, type ManualEditTarget } from '../../src/edit-mode/types';
 import type { ProjectFile } from '../../src/types';
+import { manualEditCanonicalSource, stampManualEditFrameMessage, trackManualEditCanonicalSource } from './manual-edit-frame-messages';
 
 const manualEditMoveFrameProbe = vi.hoisted(() => ({
   current: null as ManualEditMoveFrameProps | null,
@@ -86,6 +87,7 @@ describe('FileViewer manual edit move frame', () => {
       revision = latest?.revision ?? 0;
     });
     postSpy.mockRestore();
+    trackManualEditCanonicalSource(frame);
     return { frame, revision };
   }
 
@@ -100,7 +102,7 @@ describe('FileViewer manual edit move frame', () => {
   }
 
   function currentSource() {
-    return (screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement).srcdoc;
+    return manualEditCanonicalSource(screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement);
   }
   function fileSaveCalls(fetchMock: ReturnType<typeof vi.fn>) {
     return fetchMock.mock.calls.filter(([input, init]) => (
@@ -209,7 +211,7 @@ describe('FileViewer manual edit move frame', () => {
     );
   });
 
-  it('cancels on press, then forwards selected-id normal activations from both interior and ring', async () => {
+  it('cancels on press, forwards the image interior click and keeps its ring selected', async () => {
     vi.stubGlobal('fetch', vi.fn(async () =>
       new Response(SOURCE, { status: 200, headers: { 'Content-Type': 'text/html' } })));
     render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={SOURCE} />);
@@ -222,15 +224,21 @@ describe('FileViewer manual edit move frame', () => {
     } as DOMRect);
     const postSpy = vi.spyOn(frame.contentWindow as Window, 'postMessage');
 
-    for (const [pointerId, surface] of [[31, interiorSurface()], [32, ringSurface()]] as const) {
+    for (const [pointerId, region, surface] of [[31, 'interior', interiorSurface()], [32, 'ring', ringSurface()]] as const) {
       postSpy.mockClear();
       fireEvent.pointerDown(surface, { pointerId, clientX: 150, clientY: 80 });
       expect(postSpy).toHaveBeenCalledWith({ type: 'readable-edit-click-cancel' }, '*');
       fireEvent.pointerUp(surface, { pointerId, clientX: 150, clientY: 80 });
-      expect(postSpy).toHaveBeenCalledWith(
-        { type: 'readable-edit-click', clientX: 50, clientY: 30, selectedId: 'pic' },
-        '*',
-      );
+      if (region === 'interior') {
+        expect(postSpy).toHaveBeenCalledWith(
+          { type: 'readable-edit-click', clientX: 50, clientY: 30, selectedId: 'pic' },
+          '*',
+        );
+      } else {
+        expect(postSpy).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'readable-edit-click' }), '*');
+        expect(manualEditMoveFrameProbe.current?.mode).toBe('selected');
+        expect(interiorSurface()).not.toBeNull();
+      }
     }
   });
 
@@ -301,7 +309,7 @@ describe('FileViewer manual edit move frame', () => {
     ))).toBe(false);
   });
 
-  it('forwards a selected text click instead of directly beginning text edit', async () => {
+  it('begins caret editing at the selected text interior click', async () => {
     vi.stubGlobal('fetch', vi.fn(async () =>
       new Response(SOURCE, { status: 200, headers: { 'Content-Type': 'text/html' } })));
     render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={SOURCE} />);
@@ -316,10 +324,49 @@ describe('FileViewer manual edit move frame', () => {
     });
     await waitFor(() => expect(interiorSurface()).not.toBeNull());
     const postSpy = vi.spyOn(frame.contentWindow as Window, 'postMessage');
-    fireEvent.pointerDown(interiorSurface(), { pointerId: 41, clientX: 100, clientY: 100 });
-    fireEvent.pointerUp(interiorSurface(), { pointerId: 41, clientX: 100, clientY: 100 });
+    await act(async () => {
+      fireEvent.pointerDown(interiorSurface(), { pointerId: 41, clientX: 100, clientY: 100 });
+      fireEvent.pointerUp(interiorSurface(), { pointerId: 41, clientX: 100, clientY: 100 });
+    });
 
-    expect(postSpy).toHaveBeenCalledWith(expect.objectContaining({ type: 'readable-edit-click', selectedId: 'hero' }), '*');
+    await waitFor(() => expect(postSpy).toHaveBeenCalledWith({
+      type: 'readable-edit-begin-text-edit', id: 'hero', textEditPoint: { clientX: 100, clientY: 100 },
+    }, '*'));
+    expect(postSpy).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'readable-edit-click' }), '*');
+    expect(document.activeElement).toBe(frame);
+    expect(interiorSurface()).toBeNull();
+  });
+
+  it.each(['interior', 'ring'] as const)('forwards a %s click over a nested object of the selected text to the bridge', async (region) => {
+    vi.stubGlobal('fetch', vi.fn(async () =>
+      new Response(SOURCE, { status: 200, headers: { 'Content-Type': 'text/html' } })));
+    render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={SOURCE} />);
+    fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
+    await selectManualEditTarget(textTarget());
+    const frame = await previewFrame();
+    const nested = { ...imageTarget(), id: 'nested', parentId: 'hero', ancestorIds: ['hero'], rect: { x: 26, y: 40, width: 20, height: 20 } };
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { type: 'readable-edit-targets', targets: [textTarget(), nested] },
+        source: frame.contentWindow,
+      }));
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { type: 'readable-edit-selection-state', editing: false, hasSelection: false, bold: false, italic: false, underline: false },
+        source: frame.contentWindow,
+      }));
+    });
+    await waitFor(() => expect(interiorSurface()).not.toBeNull());
+    vi.spyOn(frame, 'getBoundingClientRect').mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, width: 800, height: 600, right: 800, bottom: 600, toJSON: () => ({}),
+    } as DOMRect);
+    const postSpy = vi.spyOn(frame.contentWindow as Window, 'postMessage');
+    const surface = region === 'interior' ? interiorSurface() : ringSurface();
+    await act(async () => {
+      fireEvent.pointerDown(surface, { pointerId: 51, clientX: 30, clientY: 50 });
+      fireEvent.pointerUp(surface, { pointerId: 51, clientX: 30, clientY: 50 });
+    });
+
+    expect(postSpy).toHaveBeenCalledWith({ type: 'readable-edit-click', clientX: 30, clientY: 50, selectedId: 'hero' }, '*');
     expect(postSpy).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'readable-edit-begin-text-edit' }), '*');
   });
 
@@ -396,11 +443,11 @@ describe('FileViewer manual edit move frame', () => {
     const frame = await previewFrame();
     act(() => {
       window.dispatchEvent(new MessageEvent('message', {
-        data: {
+        data: stampManualEditFrameMessage(frame, {
           type: 'readable-edit-html-commit',
           id: 'fancy-title',
           html: 'Edited Headline<div class="glow-underline"></div>',
-        },
+        }),
         source: frame.contentWindow,
       }));
     });
@@ -411,7 +458,7 @@ describe('FileViewer manual edit move frame', () => {
     });
   });
 
-  it('keeps text editing active on border clicks that are not drags', async () => {
+  it('returns text editing to object selection on a border click without dragging', async () => {
     const fetchMock = vi.fn(async () =>
       new Response(SOURCE, { status: 200, headers: { 'Content-Type': 'text/html' } }));
     vi.stubGlobal('fetch', fetchMock);
@@ -430,15 +477,15 @@ describe('FileViewer manual edit move frame', () => {
     fireEvent.pointerDown(ring, { pointerId: 7, clientX: 100, clientY: 100 });
     fireEvent.pointerUp(ring, { pointerId: 7, clientX: 100, clientY: 100 });
 
-    expect(postSpy).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'readable-edit-end-text-edit' }),
-      '*',
-    );
+    expect(postSpy.mock.calls.filter(([message]) => message.type === 'readable-edit-end-text-edit')).toEqual([
+      [{ type: 'readable-edit-end-text-edit' }, '*'],
+    ]);
     expect(postSpy).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: 'readable-edit-click' }),
       '*',
     );
-    expect(interiorSurface()).toBeNull();
+    expect(manualEditMoveFrameProbe.current?.mode).toBe('selected');
+    expect(interiorSurface()).not.toBeNull();
   });
 
   it('preserves Alt selection routing from an editing-mode ring', async () => {

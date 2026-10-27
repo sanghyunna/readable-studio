@@ -1250,7 +1250,7 @@ process.stdin.on('end', () => {
     );
   });
 
-  it('propagates the composed skill mode for ad-hoc-only deck skills', async () => {
+  it('propagates the template mode for ad-hoc-only deck references', async () => {
     await withFakeAgent(
       'opencode',
       `
@@ -1261,7 +1261,7 @@ process.stdin.on('data', (chunk) => {
 });
 process.stdin.on('end', () => {
   const checks = [
-    prompt.includes('## Composed skill — readable-landing-deck') ? 'has-deck-skill-header' : 'missing-deck-skill-header',
+    prompt.includes('<readable-template-reference kind="selected-template"') && prompt.includes('readable-landing-deck') ? 'has-deck-reference' : 'missing-deck-reference',
     prompt.includes('# Slide deck — fixed framework (this is non-negotiable for deck mode)') ? 'has-deck-framework' : 'missing-deck-framework',
   ];
   console.log(JSON.stringify({ type: 'step_start' }));
@@ -1284,9 +1284,9 @@ process.stdin.on('end', () => {
         const body = await response.text();
 
         expect(response.ok).toBe(true);
-        expect(body).toContain('has-deck-skill-header');
+        expect(body).toContain('has-deck-reference');
         expect(body).toContain('has-deck-framework');
-        expect(body).not.toContain('missing-deck-skill-header');
+        expect(body).not.toContain('missing-deck-reference');
         expect(body).not.toContain('missing-deck-framework');
       },
     );

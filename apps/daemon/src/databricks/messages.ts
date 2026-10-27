@@ -34,6 +34,10 @@ export function messagesRequest(body: Json): Json {
     const content = message.role === 'tool'
       ? [{ type: 'tool_result', tool_use_id: message.tool_call_id, content: typeof message.content === 'string' ? message.content : blocks(message.content) }]
       : blocks(message.content);
+    const reasoning = [message.reasoning_content, message.reasoning, message.reasoning_text]
+      .find(value => typeof value === 'string' && value.length > 0);
+    // Chat reasoning has no Anthropic signature; preserve its readable text.
+    if (message.role === 'assistant' && typeof reasoning === 'string') content.unshift({ type: 'text', text: reasoning });
     if (Array.isArray(message.tool_calls)) for (const rawCall of message.tool_calls) {
       const call = object(rawCall); const fn = object(call.function);
       if (typeof fn.arguments !== 'string') throw new Error('Invalid tool arguments');

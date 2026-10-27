@@ -14,6 +14,7 @@ import {
   type ReactNode,
   type SetStateAction,
 } from 'react';
+import { flushSync } from 'react-dom';
 import { useAnalytics } from '../analytics/provider';
 import { scrollQuestionIntoView } from './scrollQuestionIntoView';
 import { trackChatPanelClick, trackMessageQueueClick, trackRunFailedToastSurfaceView } from '../analytics/events';
@@ -29,7 +30,7 @@ import type { Dict } from '../i18n/types';
 import { copyToClipboard } from '../lib/copy-to-clipboard';
 import { projectRawUrl } from '../providers/registry';
 import type { TodoItem } from '../runtime/todos';
-import type { AppliedPluginSnapshot, ChatSessionMode, WorkspaceContextItem } from '@readable-studio/contracts';
+import type { AppliedPluginSnapshot, ChatSessionMode, ContextUsageSnapshot, DesignTemplateSummary, WorkspaceContextItem } from '@readable-studio/contracts';
 import type { TrackingProjectKind } from '@readable-studio/contracts/analytics';
 import {
   DESIGN_SYSTEM_WORKSPACE_DISPLAY_DESCRIPTION,
@@ -326,6 +327,11 @@ interface Props {
   onUpdateQueuedSend?: (id: string, update: QueuedSendUpdate) => void;
   onReorderQueuedSends?: (orderedIds: string[]) => void;
   onSendQueuedNow?: (id: string) => void;
+  // A queued send the owner is already dispatching; it can no longer be edited.
+  startingQueuedSendId?: string | null;
+  // Told synchronously when this pane starts/stops editing a queued send so the
+  // owner holds it instead of dispatching its pre-edit snapshot.
+  onQueuedSendEditingChange?: (id: string, editing: boolean) => void;
   // Names that exist in the project folder. Tool cards and chips use this
   // set to decide whether a path can be opened as a tab.
   projectFileNames?: Set<string>;
@@ -347,6 +353,7 @@ interface Props {
   // Skills available for @-mention assembly. ProjectView filters out the
   // user's disabled set before passing them in here.
   skills?: SkillSummary[];
+  designTemplates?: DesignTemplateSummary[];
   // Click-to-open chain: passes a basename up to ProjectView, which sets
   // FileWorkspace's openRequest. Tool cards, attachment chips, and
   // produced-file chips all call this.
@@ -453,6 +460,7 @@ interface Props {
   // message" without forcing a separate side widget.
   activePluginSnapshot?: AppliedPluginSnapshot | null;
   composerFooterAccessory?: ReactNode;
+  contextUsage?: ContextUsageSnapshot | null;
   // Slot rendered next to the composer's "+" menu for compact project controls.
   composerLeadingAccessory?: ReactNode;
   // Forwarded straight to the chat composer's mid-chat design-system
@@ -571,6 +579,8 @@ export function ChatPane({
   onUpdateQueuedSend,
   onReorderQueuedSends,
   onSendQueuedNow,
+  startingQueuedSendId,
+  onQueuedSendEditingChange,
   onRequestOpenFile,
   onRequestPluginDetails,
   onRequestDesignSystemDetails,
@@ -622,8 +632,10 @@ export function ChatPane({
   researchAvailable,
   activePluginSnapshot,
   skills = [],
+  designTemplates = [],
   composerLeadingAccessory,
   composerFooterAccessory,
+  contextUsage,
   currentDesignSystemId,
   onActiveDesignSystemChange,
   onShowToast,
@@ -739,7 +751,26 @@ export function ChatPane({
   const [scrolledFromBottom, setScrolledFromBottom] = useState(false);
   const [chatLogScrollable, setChatLogScrollable] = useState(false);
   const [chatLogScrolling, setChatLogScrolling] = useState(false);
-  const [editingQueuedSendId, setEditingQueuedSendId] = useState<string | null>(null);
+  const [editingQueuedSendId, setEditingQueuedSendIdState] = useState<string | null>(null);
+  const editingQueuedSendIdRef = useRef<string | null>(null);
+  const onQueuedSendEditingChangeRef = useRef(onQueuedSendEditingChange);
+  onQueuedSendEditingChangeRef.current = onQueuedSendEditingChange;
+  // Every start/commit/cancel/vanish goes through here and reports in the same
+  // tick (not from an effect), so the queue owner never dispatches a send this
+  // pane is showing as being edited.
+  const setEditingQueuedSendId = useCallback((next: string | null) => {
+    const prev = editingQueuedSendIdRef.current;
+    if (prev === next) return;
+    editingQueuedSendIdRef.current = next;
+    setEditingQueuedSendIdState(next);
+    if (prev) onQueuedSendEditingChangeRef.current?.(prev, false);
+    if (next) onQueuedSendEditingChangeRef.current?.(next, true);
+  }, []);
+  // Unmount (conversation switch, closed tab) abandons the edit; release the hold.
+  useEffect(() => () => {
+    const id = editingQueuedSendIdRef.current;
+    if (id) onQueuedSendEditingChangeRef.current?.(id, false);
+  }, []);
   // Reverse scan (no array copy) + memo so this and the maps below don't
   // recompute on every non-`messages` render (scroll, hover, toggles).
   const lastAssistantId = useMemo(() => {
@@ -957,11 +988,23 @@ export function ChatPane({
   useEffect(() => {
     if (!editingQueuedSendId) return;
     if (queuedItems.some((item) => item.id === editingQueuedSendId)) return;
+    // Gone from the queue: drop the restored copy like Cancel, or Enter would
+    // send it as a new turn.
     setEditingQueuedSendId(null);
-  }, [editingQueuedSendId, queuedItems]);
+    composerRef.current?.restoreDraft({ text: '' });
+  }, [editingQueuedSendId, queuedItems, setEditingQueuedSendId]);
+
+  // Drop the restored copy; the queue resumes with the last confirmed content.
+  const cancelQueuedSendEdit = () => {
+    setEditingQueuedSendId(null);
+    composerRef.current?.restoreDraft({ text: '' });
+  };
 
   const restoreQueuedSendToComposer = (item: QueuedSendItem) => {
-    setEditingQueuedSendId(item.id);
+    // Commit first so the composer's draft key is already unset when the
+    // restore writes the editor; otherwise its synchronous draft snapshot is
+    // flushed to storage under the old key.
+    flushSync(() => setEditingQueuedSendId(item.id));
     composerRef.current?.restoreDraft({
       text: item.prompt,
       attachments: item.attachments ?? [],
@@ -1485,12 +1528,17 @@ export function ChatPane({
       sessionMode={sessionMode}
       onSessionModeChange={onSessionModeChange}
       skills={skills}
+      designTemplates={designTemplates}
       streaming={streaming}
       sendDisabled={sendDisabled}
       modelSelectionGuard={modelSelectionGuard}
       modelSelectionLoading={Boolean(config && isModelSelectionLoading(config, agents ?? [], agentsLoading))}
       initialDraft={initialDraft}
-      draftStorageKey={composerDraftStorageKey}
+      // A queued send restored for editing is not a draft: persisting it would
+      // bring it back as one after a reload/remount (the hold is ephemeral),
+      // and Enter would send it a second time.
+      draftStorageKey={editingQueuedSendId ? undefined : composerDraftStorageKey}
+      disabledSkillIds={config?.disabledSkills}
       onEnsureProject={onEnsureProject}
       commentAttachments={commentsToAttachments(attachedComments)}
       onRemoveCommentAttachment={onDetachComment}
@@ -1535,6 +1583,7 @@ export function ChatPane({
       onProjectSkillChange={onProjectSkillChange}
       pinnedPluginId={activePluginSnapshot?.pluginId ?? null}
       footerAccessory={composerFooterAccessory}
+      contextUsage={contextUsage}
       {...(executionSwitcher ? { executionSwitcher } : {})}
       leadingAccessory={composerLeadingAccessory}
       currentDesignSystemId={currentDesignSystemId}
@@ -1985,6 +2034,8 @@ export function ChatPane({
             containerRef={queuedSendStripRef}
             items={queuedItems}
             editingId={editingQueuedSendId}
+            startingId={startingQueuedSendId}
+            onCancelEdit={cancelQueuedSendEdit}
             onEdit={(item) => {
               trackMessageQueueClick(analytics.track, {
                 page_name: 'chat_panel',
@@ -2555,7 +2606,9 @@ function includeVirtualRowByKey<T extends { key: string }>(
 function QueuedSendStrip({
   containerRef,
   editingId,
+  startingId,
   items,
+  onCancelEdit,
   onEdit,
   onRemove,
   onReorder,
@@ -2563,7 +2616,9 @@ function QueuedSendStrip({
 }: {
   containerRef?: MutableRefObject<HTMLDivElement | null>;
   editingId?: string | null;
+  startingId?: string | null;
   items: QueuedSendItem[];
+  onCancelEdit?: () => void;
   onEdit?: (item: QueuedSendItem) => void;
   onRemove?: (id: string) => void;
   onReorder?: (orderedIds: string[]) => void;
@@ -2688,10 +2743,25 @@ function QueuedSendStrip({
               </button>
               <div className="chat-queued-send-main">
                 <span className="chat-queued-send-title">{summarizeQueuedPrompt(item, t)}</span>
+                {editingId === item.id ? (
+                  <span className="chat-queued-send-status">{t('chat.queuedEditingHold')}</span>
+                ) : null}
                 <QueuedSendMetaChips item={item} />
               </div>
               <div className="chat-queued-send-actions">
-                {onEdit ? (
+                {editingId === item.id && onCancelEdit ? (
+                  <button
+                    type="button"
+                    className="chat-queued-send-action chat-queued-send-tooltip readable-tooltip"
+                    title={t('chat.queuedCancel')}
+                    data-tooltip={t('chat.queuedCancel')}
+                    data-tooltip-placement="top"
+                    aria-label={t('chat.queuedCancel')}
+                    onClick={onCancelEdit}
+                  >
+                    <Icon name="close" size={13} />
+                  </button>
+                ) : onEdit ? (
                   <button
                     type="button"
                     className="chat-queued-send-action chat-queued-send-tooltip readable-tooltip"
@@ -2700,6 +2770,7 @@ function QueuedSendStrip({
                     data-tooltip-placement="top"
                     aria-label={t('chat.queuedEdit')}
                     onClick={() => onEdit(item)}
+                    disabled={startingId === item.id}
                   >
                     <Icon name="pencil" size={13} />
                   </button>
@@ -2713,7 +2784,7 @@ function QueuedSendStrip({
                   aria-label={t('chat.send')}
                   data-testid="chat-queued-send-now"
                   onClick={() => onSendNow?.(item.id)}
-                  disabled={!onSendNow}
+                  disabled={!onSendNow || editingId === item.id}
                 >
                   <Icon name="arrow-up" size={13} />
                 </button>

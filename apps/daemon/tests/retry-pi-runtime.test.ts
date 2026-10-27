@@ -174,7 +174,7 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
     expect(await readFile(counter, 'utf8')).toBe('2');
     const requests = (await readFile(requestsPath, 'utf8')).trim().split('\n').map(line => JSON.parse(line) as Request);
     expect(requests.filter(request => request.attempt === 1).map(request => request.type)).toEqual(stalled ? ['prompt', 'abort', 'get_state'] : ['prompt', 'get_state']);
-    expect(requests.filter(request => request.attempt === 2).map(request => request.type)).toEqual(['switch_session', 'prompt', 'get_state']);
+    expect(requests.filter(request => request.attempt === 2).map(request => request.type)).toEqual(['switch_session', 'prompt', 'get_session_stats', 'get_state']);
     const resumed = requests.find(request => request.type === 'switch_session')!;
     expect(resumed.sessionPath).toBe(resumed.sessionFile);
     expect(requests.find(request => request.attempt === 2 && request.type === 'prompt')?.message).toContain('Continue the interrupted response');

@@ -39,7 +39,7 @@ export type ManualEditMoveFrameProps = {
   onMoveCancel: () => void; // Esc / pointercancel mid-drag
   onPressStart: () => void;
   onActivate: (activation: ManualEditMoveActivation) => void;
-  onSurfaceDoubleClick: (region: Region) => void;
+  onSurfaceDoubleClick: (region: Region, point?: { clientX: number; clientY: number }) => void;
   /** Idle pointer coordinates for resolving the iframe target below this overlay. */
   onHoverAt?: (clientX: number, clientY: number) => void;
   /** Fired when the Alt/Option key changes state during an active drag. */
@@ -436,7 +436,8 @@ export function ManualEditMoveFrame({
   const handleDoubleClick = (event: ReactMouseEvent<HTMLDivElement>, region: Region) => {
     event.preventDefault();
     event.stopPropagation();
-    onSurfaceDoubleClick(region);
+    if (event.altKey) return;
+    onSurfaceDoubleClick(region, { clientX: event.clientX, clientY: event.clientY });
   };
 
   const handlePointerEnter = (event: ReactPointerEvent<HTMLDivElement>) => {

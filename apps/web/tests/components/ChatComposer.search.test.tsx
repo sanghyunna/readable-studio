@@ -95,8 +95,9 @@ describe('ChatComposer /search command', () => {
     );
 
     await typeAndSettle('@landing');
-    await waitFor(() => expect(screen.getByText('designs/landing.html')).toBeTruthy());
-    fireEvent.click(screen.getByText('designs/landing.html'));
+    await waitFor(() => expect(screen.getByRole('option', { name: /landing\.html/ })).toBeTruthy());
+    fireEvent.click(screen.getByRole('option', { name: /landing\.html/ }));
+    fireEvent.click(screen.getByTestId('mention-preview-use'));
 
     await waitFor(() => expect(screen.getByTestId('staged-contexts').textContent).toContain('landing.html'));
 
@@ -447,8 +448,9 @@ describe('ChatComposer /search command', () => {
     );
 
     await typeAndSettle('@drawing');
-    await waitFor(() => expect(screen.getByText(`uploads/${longName}`)).toBeTruthy());
-    fireEvent.click(screen.getByText(`uploads/${longName}`));
+    await waitFor(() => expect(screen.getByRole('option', { name: new RegExp(longName) })).toBeTruthy());
+    fireEvent.click(screen.getByRole('option', { name: new RegExp(longName) }));
+    fireEvent.click(screen.getByTestId('mention-preview-use'));
 
     const chip = screen.getByTestId('staged-contexts').querySelector('.staged-chip.staged-image');
     const previewTrigger = screen.getByRole('button', { name: `Preview ${longName}` });

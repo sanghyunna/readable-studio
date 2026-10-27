@@ -12,6 +12,7 @@
 // explicit host/provider too; a missing shell is a wiring error.
 
 import { type ReactNode } from 'react';
+import type { DesignTemplateSummary } from '@readable-studio/contracts';
 
 import { useT } from '../../i18n';
 import type {
@@ -69,6 +70,7 @@ interface Props {
   /** Plugin/authoring selection handed back from a Library destination. */
   promptHandoff?: HomePromptHandoff | null;
   skills?: SkillSummary[];
+  designTemplates?: DesignTemplateSummary[];
   skillsLoading?: boolean;
   /** Navigate to one of the entry destinations (rail footer library menu). */
   onOpenDestination?: (destination: HubDestination) => void;
@@ -115,6 +117,7 @@ export function HubHome({
   onImportFile,
   promptHandoff,
   skills,
+  designTemplates,
   skillsLoading,
   designSystems = EMPTY_DESIGN_SYSTEMS,
   defaultDesignSystemId = null,
@@ -178,6 +181,7 @@ export function HubHome({
             {...(onImportFile ? { onOpenDocument: onImportFile } : {})}
             promptHandoff={promptHandoff}
             skills={skills}
+            designTemplates={designTemplates}
             skillsLoading={skillsLoading}
             commandChip={active ? commandChip : null}
             onCommandChipAccepted={consumeCommandChip}

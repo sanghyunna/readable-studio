@@ -6,6 +6,7 @@ import { emptyManualEditStyles, type ManualEditTarget } from '../../src/edit-mod
 import { getEn } from '../../src/i18n/locales/en';
 import type { ProjectFile } from '../../src/types';
 import * as patches from '../../src/edit-mode/source-patches';
+import { manualEditCanonicalSource, manualEditFrameEpoch } from './manual-edit-frame-messages';
 
 const controls = vi.hoisted(() => ({
   current: null as ComponentProps<typeof import('../../src/components/ManualEditShapeToolbar').ManualEditShapeToolbar> | null,
@@ -62,8 +63,10 @@ async function mount(source = html, selected = target, holdSave = false, portal 
   await act(async () => { fireEvent.click(screen.getByTestId('manual-edit-mode-toggle')); });
   const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
   const post = vi.spyOn(frame.contentWindow!, 'postMessage');
-  const send = (data: object, sender = frame.contentWindow) => window.dispatchEvent(new MessageEvent('message', { source: sender, data }));
+  let documentEpoch = manualEditFrameEpoch(frame);
+  const send = (data: object, sender = frame.contentWindow) => window.dispatchEvent(new MessageEvent('message', { source: sender, data: { documentEpoch, ...data } }));
   const select = async (next = selected, beginTextEdit = false) => {
+    documentEpoch = manualEditFrameEpoch(frame);
     await act(async () => { send({ type: 'readable-edit-select', target: next, beginTextEdit }); });
   };
   await select();
@@ -79,7 +82,7 @@ async function mount(source = html, selected = target, holdSave = false, portal 
     expect(element).not.toBeNull();
     return element!;
   };
-  const parsed = () => new DOMParser().parseFromString(frame.srcdoc, 'text/html');
+  const parsed = () => new DOMParser().parseFromString(manualEditCanonicalSource(frame), 'text/html');
   const text = () => Array.from(parsed().body.children).filter((node) => node.tagName === 'DIV').map((node) => node.textContent);
   const undo = () => act(async () => { send({ type: 'readable-edit-undo', redo: false }); });
   const redo = () => act(async () => { send({ type: 'readable-edit-undo', redo: true }); });
@@ -177,7 +180,7 @@ describe('FileViewer shared delete transaction', () => {
     expect(editor.text()).toEqual(['First', 'Second']);
   });
 
-  it.each([{ isComposing: true }, { ctrlKey: true }, { metaKey: true }, { altKey: true }, { key: 'Backspace' }, { repeat: true }])('ignores non-owned host Delete %j', async (options) => {
+  it.each([{ isComposing: true }, { ctrlKey: true }, { metaKey: true }, { altKey: true }, { repeat: true }])('ignores non-owned host Delete %j', async (options) => {
     const editor = await mount();
     await act(async () => { fireEvent.keyDown(editor.surface(), { key: 'Delete', ...options }); });
     expect(editor.text()).toEqual(['First', 'Second']);
@@ -312,9 +315,9 @@ describe('FileViewer shared delete transaction', () => {
     const apply = vi.spyOn(patches, 'applyManualEditPatch');
     let attempts = 0;
     editor.post.mockImplementation((message) => {
-      if (message.type !== 'readable-edit-selected-target' || message.id !== target.id) return;
+      if (message.type !== 'readable-edit-preview-source' || message.beforeId !== target.id || message.afterId !== target.id) return;
       attempts++;
-      editor.send({ type: 'readable-edit-delete', targetId: target.id, revision: message.revision });
+      editor.send({ type: 'readable-edit-delete', targetId: target.id, revision: editor.revision(), documentEpoch: message.documentEpoch });
     });
     if (redo) await editor.redo();
     else await editor.undo();

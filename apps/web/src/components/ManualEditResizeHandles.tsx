@@ -20,6 +20,7 @@ import styles from './ManualEditResizeHandles.module.css';
 
 type Rect = { left: number; top: number; width: number; height: number };
 type Size = { width: number; height: number };
+type ResizeSize = Size & { fromCenter?: boolean };
 
 export type ManualEditResizeHandlesProps = {
   rect: Rect;
@@ -35,8 +36,8 @@ export type ManualEditResizeHandlesProps = {
   // conversion to CSS width/height (see resizeCssCommitStyles) because it
   // needs the target's computed styles and rectScale, which this component
   // deliberately knows nothing about.
-  onResizePreview: (direction: ResizeHandleDirection, size: Size, startSize: Size) => void;
-  onResizeCommit: (direction: ResizeHandleDirection, size: Size, startSize: Size) => void | Promise<void>;
+  onResizePreview: (direction: ResizeHandleDirection, size: ResizeSize, startSize: Size) => void;
+  onResizeCommit: (direction: ResizeHandleDirection, size: ResizeSize, startSize: Size) => void | Promise<void>;
   flushPendingRef?: MutableRefObject<(() => Promise<void>) | null>;
   onResizeCancel: () => void;
   // Returns true if a burst was in progress and got cancelled. The caller uses
@@ -95,7 +96,7 @@ export function ManualEditResizeHandles({
   // id is assigned to rafRef, so the id alone cannot answer "is a flush still
   // queued" — it would read as queued forever and starve every later frame.
   const flushScheduledRef = useRef(false);
-  const pendingSizeRef = useRef<Size | null>(null);
+  const pendingSizeRef = useRef<ResizeSize | null>(null);
 
   useEffect(() => () => {
     dragRef.current?.shield.remove();
@@ -123,7 +124,7 @@ export function ManualEditResizeHandles({
     onResizePreview(drag.direction, size, drag.startSize);
   };
 
-  const scheduleFlush = (size: Size) => {
+  const scheduleFlush = (size: ResizeSize) => {
     pendingSizeRef.current = size;
     if (flushScheduledRef.current) return;
     flushScheduledRef.current = true;
@@ -196,6 +197,7 @@ export function ManualEditResizeHandles({
       deltaY: event.clientY - drag.startY,
       scale,
       lockAspect: event.shiftKey,
+      fromCenter: event.ctrlKey,
     });
     scheduleFlush(size);
   };
@@ -219,7 +221,9 @@ export function ManualEditResizeHandles({
   }
 
   const handlePointerUp = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (event.pointerId === dragRef.current?.pointerId) void commitPendingResize();
+    if (event.pointerId !== dragRef.current?.pointerId) return;
+    handlePointerMove(event);
+    void commitPendingResize();
   };
 
   const handlePointerCancel = (event: ReactPointerEvent<HTMLButtonElement>) => {

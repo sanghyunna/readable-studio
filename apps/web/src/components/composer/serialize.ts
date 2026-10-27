@@ -9,8 +9,19 @@ import {
 import { $isMentionNode } from './MentionNode';
 import type { InlineMentionEntity } from '../../utils/inlineMentions';
 
-export interface SerializedComposer {
+export interface ComposerMentionSpan {
+  start: number;
+  end: number;
+  entity: InlineMentionEntity;
+}
+
+export interface ComposerMentionSnapshot {
   text: string;
+  /** UTF-16 offsets, with an exclusive end, for actual committed occurrences. */
+  mentions: ComposerMentionSpan[];
+}
+
+export interface SerializedComposer extends ComposerMentionSnapshot {
   /** Entities backed by an actual MentionNode currently in the tree. */
   present: InlineMentionEntity[];
 }
@@ -23,18 +34,26 @@ export interface SerializedComposer {
 export function serializeComposer(state: EditorState): SerializedComposer {
   return state.read(() => {
     const present: InlineMentionEntity[] = [];
+    const mentions: ComposerMentionSpan[] = [];
     const blocks: string[] = [];
+    let blockOffset = 0;
     for (const block of $getRoot().getChildren()) {
       if (!$isParagraphNode(block)) {
         // Stray non-paragraph block (shouldn't happen): fall back to its text.
-        blocks.push(block.getTextContent());
+        const text = block.getTextContent();
+        blocks.push(text);
+        blockOffset += text.length + 1;
         continue;
       }
       let line = '';
       for (const child of block.getChildren()) {
         if ($isMentionNode(child)) {
-          line += child.getToken();
-          present.push(child.getEntity());
+          const token = child.getToken();
+          const entity = child.getEntity();
+          const start = blockOffset + line.length;
+          mentions.push({ start, end: start + token.length, entity });
+          line += token;
+          present.push(entity);
         } else if ($isLineBreakNode(child)) {
           line += '\n';
         } else if ($isTextNode(child)) {
@@ -44,7 +63,8 @@ export function serializeComposer(state: EditorState): SerializedComposer {
         }
       }
       blocks.push(line);
+      blockOffset += line.length + 1;
     }
-    return { text: blocks.join('\n'), present };
+    return { text: blocks.join('\n'), present, mentions };
   });
 }

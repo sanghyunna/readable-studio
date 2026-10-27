@@ -33,7 +33,7 @@ async function setup() {
   const dom = new JSDOM(`${html}${buildManualEditBridge(true)}`, { runScripts: 'dangerously', url: 'http://localhost' });
   doms.push(dom); await dom.loaded;
   const incoming: unknown[] = [];
-  const requests: Array<{ type?: string; requestId?: number }> = [];
+  const requests: Array<{ type?: string; requestId?: number; documentEpoch?: string }> = [];
   let deliver = false;
   dom.window.parent.postMessage = (data: unknown) => incoming.push(data);
   vi.spyOn(frame.contentWindow!, 'postMessage').mockImplementation((data) => {
@@ -42,11 +42,15 @@ async function setup() {
   });
   const dispatch = (data: unknown) => window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, data }));
   const drain = async () => { await act(async () => { while (incoming.length) dispatch(incoming.shift()); }); };
+  await act(async () => { fireEvent.load(frame); });
+  await drain();
+  const documentEpoch = requests.find((request) => request.type === 'readable-edit-mode')?.documentEpoch;
+  if (!documentEpoch) throw new Error('Missing active bridge document epoch');
   await act(async () => { dispatch({ type: 'readable-edit-select', target, beginTextEdit: true }); });
   await drain();
   dom.window.document.querySelector('[data-readable-id="hero"]')!.textContent = 'Unsaved edit';
   vi.useFakeTimers();
-  return { requests, writes, dispatch, drain, resume: () => { deliver = true; } };
+  return { requests, writes, dispatch, drain, documentEpoch, resume: () => { deliver = true; } };
 }
 
 describe('text-flush acknowledgement failures are not file-save failures', () => {
@@ -67,7 +71,9 @@ describe('text-flush acknowledgement failures are not file-save failures', () =>
     const harness = await setup();
     vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
     await act(async () => { harness.dispatch({ type: 'readable-edit-select', target: { ...target, id: 'other' } }); });
-    expect(harness.requests.filter((request) => request.type === 'readable-edit-end-text-edit')).toEqual([{ type: 'readable-edit-end-text-edit', requestId: 1 }]);
+    expect(harness.requests.filter((request) => request.type === 'readable-edit-end-text-edit')).toEqual([
+      { type: 'readable-edit-end-text-edit', requestId: 1, documentEpoch: harness.documentEpoch },
+    ]);
     await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
     expect(harness.writes).toHaveLength(0);
     expect(screen.queryByText(getEn()['manualEdit.error.saveFailed'])).toBeNull();

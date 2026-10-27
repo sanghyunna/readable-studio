@@ -810,6 +810,60 @@ Expected output:
     expect(onRemoveQueuedSend).toHaveBeenCalledWith('queued-2');
   });
 
+  it('reports queued-send edit start, commit, cancel and unmount to the queue owner', () => {
+    const onQueuedSendEditingChange = vi.fn();
+    const onUpdateQueuedSend = vi.fn();
+    const calls: string[] = [];
+    onQueuedSendEditingChange.mockImplementation((id: string, editing: boolean) => calls.push(`${id}:${editing}`));
+    onUpdateQueuedSend.mockImplementation((id: string) => calls.push(`update:${id}`));
+    const { unmount } = render(
+      <ChatPane
+        messages={[]}
+        streaming
+        error={null}
+        projectId="project-1"
+        projectFiles={[]}
+        queuedItems={[
+          { id: 'queued-1', prompt: 'First queued follow-up' },
+          { id: 'queued-2', prompt: 'Second queued follow-up' },
+          { id: 'queued-3', prompt: 'Third queued follow-up' },
+        ]}
+        startingQueuedSendId="queued-3"
+        onQueuedSendEditingChange={onQueuedSendEditingChange}
+        onUpdateQueuedSend={onUpdateQueuedSend}
+        onSendQueuedNow={vi.fn()}
+        onEnsureProject={async () => 'project-1'}
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+        conversations={conversations}
+        activeConversationId="conv-1"
+        onSelectConversation={vi.fn()}
+        onDeleteConversation={vi.fn()}
+        projectMetadata={projectMetadata}
+      />,
+    );
+
+    // A send that is already starting cannot be pulled back into the composer.
+    expect(screen.getAllByRole('button', { name: 'Edit' })[2]).toHaveProperty('disabled', true);
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0]!);
+    fireEvent.click(screen.getByTestId('composer-submit'));
+    // The confirmed content lands before the hold is released.
+    expect(calls).toEqual(['queued-1:true', 'update:queued-1', 'queued-1:false']);
+
+    calls.length = 0;
+    fireEvent.click(screen.getAllByRole('button', { name: 'Edit' })[1]!);
+    composerMocks.restoreDraft.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(composerMocks.restoreDraft).toHaveBeenCalledWith({ text: '' });
+    expect(calls).toEqual(['queued-2:true', 'queued-2:false']);
+
+    calls.length = 0;
+    fireEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0]!);
+    unmount();
+    expect(calls).toEqual(['queued-1:true', 'queued-1:false']);
+  });
+
   it('reorders queued prompts with the drag handle', () => {
     const onReorderQueuedSends = vi.fn();
     const { container } = render(

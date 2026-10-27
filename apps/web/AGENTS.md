@@ -20,8 +20,9 @@ from `FileViewer.tsx` (source-content heuristics like `hasTweaksTemplate` belong
 Skip this and the feature works by luck in dev and silently no-ops on multi-file
 artifacts.
 
-Existing disqualifiers: deck, comment (without a URL bridge), inspect, edit (without
-`urlModeBridge`), palette, draw, tweaks, `forceInline`, focus-guard, sandbox-shim.
+Existing disqualifiers: deck, comment (without a URL bridge), inspect, edit (always
+srcDoc once the edit tool is active), palette, draw, tweaks, `forceInline`, focus-guard,
+sandbox-shim.
 
 Both iframes stay mounted and swap by CSS visibility to avoid a reload flash, so
 `iframeRef.current` must stay aligned with the active iframe. Receive filters use

@@ -2,6 +2,7 @@ import { execFile, type ChildProcess } from 'node:child_process';
 import { missingDocumentArtifact, documentRecoveryPrompt } from '../document-completion.js';
 import { attachCodexAppServerClient, codexRecord, CodexRpcError } from './codex-app-server-client.js';
 import { codexNeedsDangerFullAccessSandbox } from './defs/codex.js';
+import { buildCodexContextUsage, makeUnknownContextUsage } from '../context-usage.js';
 
 /** Marks the one in-thread delivery failure the daemon reports as DOCUMENT_NOT_SAVED. */
 export class CodexDocumentNotSavedError extends CodexRpcError {
@@ -35,6 +36,7 @@ export function attachCodexAppServerSession(options: SessionOptions) {
   let aborted = false;
   let threadId = '';
   let turnId = '';
+  let activeModel = options.model;
   let artifactRecoveryAttempted = false;
   let turnText = '';
   const textByItem = new Map<string, string>();
@@ -178,6 +180,11 @@ export function attachCodexAppServerSession(options: SessionOptions) {
       case 'item/completed': {
         const item = codexRecord(params.item);
         const id = String(item.id ?? '');
+        if (item.type === 'contextCompaction' && params.threadId === threadId) {
+          onEvent({ type: 'context_usage', snapshot: makeUnknownContextUsage(
+            message.method === 'item/started' ? 'compacting' : 'compacted', activeModel, threadId,
+          ) });
+        }
         if (item.type === 'agentMessage' && message.method === 'item/completed' && typeof item.text === 'string') {
           const prior = textByItem.get(id) ?? '';
           if (item.text.startsWith(prior)) emitText(id, item.text.slice(prior.length));
@@ -220,10 +227,21 @@ export function attachCodexAppServerSession(options: SessionOptions) {
         break;
       }
       case 'thread/tokenUsage/updated': {
+        if (params.threadId !== threadId || (turnId && params.turnId !== turnId)) break;
         const usage = codexRecord(codexRecord(params.tokenUsage).last);
         onEvent({ type: 'usage', usage: { input_tokens: usage.inputTokens, output_tokens: usage.outputTokens, cached_read_tokens: usage.cachedInputTokens, thought_tokens: usage.reasoningOutputTokens } });
+        onEvent({ type: 'context_usage', snapshot: buildCodexContextUsage(params.tokenUsage, activeModel, threadId) });
         break;
       }
+      case 'thread/compacted':
+        if (params.threadId === threadId) onEvent({ type: 'context_usage', snapshot: makeUnknownContextUsage('compacted', activeModel, threadId) });
+        break;
+      case 'model/rerouted':
+        if (params.threadId === threadId && typeof params.toModel === 'string') {
+          activeModel = params.toModel;
+          onEvent({ type: 'context_usage', snapshot: makeUnknownContextUsage('model-changed', activeModel, threadId) });
+        }
+        break;
       case 'error':
         if (params.willRetry !== true) fail(new CodexRpcError(String(codexRecord(params.error).message ?? 'Codex turn failed')));
         break;

@@ -28,6 +28,7 @@ import {
   forwardRef,
   useCallback,
   useImperativeHandle,
+  useRef,
   useState,
 } from 'react';
 import type {
@@ -85,7 +86,7 @@ export interface PluginsSectionHandle {
   // does on click but lets ChatComposer drive the apply from the
   // tools-menu Plugins tab and the @-mention popover. Resolves with
   // the ApplyResult on success or null on failure (matching applyPlugin).
-  applyById: (pluginId: string, record?: InstalledPluginRecord | null) => Promise<ApplyResult | null>;
+  applyById: (pluginId: string, record?: InstalledPluginRecord | null, options?: { canApply?: () => boolean }) => Promise<ApplyResult | null>;
   // Imperatively clear the active plugin (drops the context chips +
   // inputs form, fires onCleared). Used by tools-menu's "Replace" /
   // "Clear" affordance and by chip remove paths that bypass the strip.
@@ -101,6 +102,7 @@ export const PluginsSection = forwardRef<PluginsSectionHandle, Props>(
     const { locale } = useI18n();
     const [applied, setApplied] = useState<ApplyResult | null>(null);
     const [activeRecord, setActiveRecord] = useState<InstalledPluginRecord | null>(null);
+    const applyVersion = useRef(0);
 
     const handleApplied = useCallback(
       (record: InstalledPluginRecord | null, result: ApplyResult) => {
@@ -120,6 +122,7 @@ export const PluginsSection = forwardRef<PluginsSectionHandle, Props>(
     );
 
     const clear = useCallback(() => {
+      applyVersion.current += 1;
       setApplied(null);
       setActiveRecord(null);
       props.onCleared?.();
@@ -135,12 +138,13 @@ export const PluginsSection = forwardRef<PluginsSectionHandle, Props>(
     useImperativeHandle(
       ref,
       () => ({
-        applyById: async (pluginId, record = null) => {
+        applyById: async (pluginId, record = null, options) => {
+          const version = ++applyVersion.current;
           const result = await applyPlugin(pluginId, {
             ...(props.projectId ? { projectId: props.projectId } : {}),
             locale,
           });
-          if (!result) return null;
+          if (!result || version !== applyVersion.current || (options?.canApply && !options.canApply())) return null;
           handleApplied(record, result);
           return result;
         },

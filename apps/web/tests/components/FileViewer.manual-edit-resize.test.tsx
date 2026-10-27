@@ -17,6 +17,7 @@ function FileViewer(props: ComponentProps<typeof ActualFileViewer>) {
 }
 import { emptyManualEditStyles, type ManualEditTarget } from '../../src/edit-mode/types';
 import type { ProjectFile } from '../../src/types';
+import { stampManualEditFrameMessage } from './manual-edit-frame-messages';
 
 beforeEach(() => {
   const host = document.createElement('div');
@@ -149,7 +150,7 @@ describe('FileViewer manual edit resize handles', () => {
     await selectManualEditTarget();
     const frame = await previewFrame();
     await act(async () => window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow,
-      data: { type: 'readable-edit-text-commit', id: 'hero', value: 'Changed' } })));
+      data: stampManualEditFrameMessage(frame, { type: 'readable-edit-text-commit', id: 'hero', value: 'Changed' }) })));
     const post = vi.spyOn(frame.contentWindow as Window, 'postMessage').mockImplementation(() => {});
     const handle = seHandle();
     fireEvent.pointerDown(handle, { pointerId: 102, clientX: 300, clientY: 150 });
@@ -579,6 +580,45 @@ describe('FileViewer manual edit resize handles', () => {
       if (acknowledged) act(() => window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, data: { ...cancel.resize, type: 'readable-edit-preview-style-applied', id: 'hero', version: cancel.version, ok: true, rect: heroTarget().rect } })));
       await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
       expect(frame.srcdoc === before).toBe(acknowledged);
+      expect(fileSaveCalls(fetchMock)).toHaveLength(0);
+      if (!acknowledged) {
+        await act(async () => {
+          window.dispatchEvent(new MessageEvent('message', {
+            source: frame.contentWindow,
+            data: { type: 'readable-edit-text-commit', id: 'hero', value: 'Stale cancelled document', documentEpoch: cancel.resize.documentEpoch },
+          }));
+        });
+        expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull();
+        expect(frame.srcdoc).not.toContain('Stale cancelled document');
+      }
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('does not let an unacknowledged cancellation timer recover a clean external replacement', async () => {
+    const fetchMock = vi.fn(async () => new Response(SOURCE));
+    vi.stubGlobal('fetch', fetchMock);
+    const file = htmlPreviewFile();
+    const view = render(<FileViewer projectId="project-1" projectKind="prototype" file={file} liveHtml={SOURCE} />);
+    fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
+    await selectManualEditTarget();
+    const frame = await previewFrame();
+    const post = vi.spyOn(frame.contentWindow as Window, 'postMessage');
+    const se = seHandle();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      fireEvent.pointerDown(se, { pointerId: 98, clientX: 300, clientY: 150 });
+      fireEvent.pointerMove(se, { pointerId: 98, clientX: 340, clientY: 170 });
+      fireEvent.pointerCancel(se, { pointerId: 98, clientX: 340, clientY: 170 });
+      expect(post.mock.calls.map(([message]) => message).some((message) => message.resize?.stage === 'cancel')).toBe(true);
+      const external = SOURCE.replace('Hero', 'Agent replacement');
+      await act(async () => { view.rerender(<FileViewer projectId="project-1" projectKind="prototype" file={file} liveHtml={external} />); });
+      // waitFor polls with the faked setTimeout, so read the active frame synchronously.
+      const activeDocument = () => document.querySelector<HTMLIFrameElement>('iframe[data-readable-active="true"]')?.srcdoc;
+      expect(activeDocument()).toContain('Agent replacement');
+      const acceptedDocument = activeDocument();
+      await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+      expect(activeDocument()).toBe(acceptedDocument);
+      expect(screen.queryByText('Could not update the preview. Your saved edit was not changed.')).toBeNull();
       expect(fileSaveCalls(fetchMock)).toHaveLength(0);
     } finally { vi.useRealTimers(); }
   });

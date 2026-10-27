@@ -137,7 +137,7 @@ describe('Hub context picker design-system swatches', () => {
     // stays out of the accessibility tree rather than announcing hex codes.
     expect(cluster.getAttribute('aria-hidden')).toBe('true');
     const picker = screen.getByTestId('home-hero-plugin-picker');
-    expect(within(picker).getByText('Airtable')).toBeTruthy();
+    expect(within(picker).getByRole('option', { name: /Airtable/ })).toBeTruthy();
   });
 
   it('falls back to the name-only row when a design system ships no usable palette', async () => {
@@ -159,7 +159,7 @@ describe('Hub context picker design-system swatches', () => {
 
     const picker = await screen.findByTestId('home-hero-plugin-picker');
     // The row itself must still be pickable — only the palette preview is gone.
-    await waitFor(() => expect(within(picker).getByText('Blankly')).toBeTruthy());
+    await waitFor(() => expect(within(picker).getByRole('option', { name: /Blankly/ })).toBeTruthy());
     expect(
       screen.queryByTestId('home-hero-option-swatches-plugin-design-system-blankly'),
     ).toBeNull();

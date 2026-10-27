@@ -15,12 +15,15 @@ import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext
 import { mergeRegister } from '@lexical/utils';
 import {
   $getNearestNodeFromDOMNode,
+  $getNodeByKey,
   $getRoot,
   $getSelection,
   $isRangeSelection,
   $isElementNode,
   $isTextNode,
   $isLineBreakNode,
+  $nodesOfType,
+  $setSelection,
   COMMAND_PRIORITY_HIGH,
   COMMAND_PRIORITY_LOW,
   KEY_ENTER_COMMAND,
@@ -35,14 +38,15 @@ import {
   INSERT_LINE_BREAK_COMMAND,
   INSERT_PARAGRAPH_COMMAND,
   PASTE_COMMAND,
+  HISTORY_PUSH_TAG,
   type LexicalEditor,
   type LexicalNode,
   type RangeSelection,
   type TextNode,
 } from 'lexical';
 import { MentionNode, $createMentionNode, $isMentionNode } from './MentionNode';
-import { serializeComposer } from './serialize';
-import { setComposerFromText } from './deserialize';
+import { serializeComposer, type ComposerMentionSnapshot } from './serialize';
+import { rebaseMentionSnapshot, setComposerFromSnapshot, setComposerFromText } from './deserialize';
 import {
   buildInlineMentionParts,
   type InlineMentionEntity,
@@ -137,6 +141,13 @@ export interface MentionInsert {
   entity: InlineMentionEntity;
 }
 
+export interface ComposerSelectionBookmark {
+  readonly selection: RangeSelection;
+  readonly text: string;
+}
+
+type MentionIdentity = Pick<InlineMentionEntity, 'kind' | 'id'>;
+
 export interface LexicalComposerInputProps {
   placeholder: string;
   // = composerMentionEntities; used both to render existing @tokens as pills
@@ -146,6 +157,12 @@ export interface LexicalComposerInputProps {
   // currently referenced by the text (MentionNodes + plain @tokens matched
   // against knownEntities).
   onChange(plainText: string, present: InlineMentionEntity[]): void;
+  onMentionSnapshotChange?: (snapshot: ComposerMentionSnapshot) => void;
+  /** Preview pickers count only confirmed atomic mentions, not matching query text. */
+  committedMentionsOnly?: boolean;
+  /** Confirmed references supplied with the initial draft in committed-only mode. */
+  initialCommittedEntities?: InlineMentionEntity[];
+  initialMentionSnapshot?: ComposerMentionSnapshot;
   // Mention / slash trigger state derived from the caret position. Either side
   // is null when no trigger is active.
   onTrigger(state: {
@@ -165,7 +182,7 @@ export interface LexicalComposerInputProps {
   ): boolean;
   // Optional combobox a11y. When set, the ContentEditable announces the active
   // mention row (id lives in the portaled listbox) without moving DOM focus.
-  comboboxAria?: { activeId: string | null; expanded: boolean };
+  comboboxAria?: { activeId: string | null; expanded: boolean; listboxId?: string };
   /** Locks every editor mutation while the host is submitting an immutable draft. */
   editable?: boolean;
   /** Exposes host-owned validation state on the contenteditable boundary. */
@@ -181,17 +198,31 @@ export interface LexicalComposerInputProps {
 // but expressed in Lexical terms.
 export interface LexicalComposerInputHandle {
   getText(): string;
-  setText(text: string): void;
+  setText(text: string, committed?: InlineMentionEntity[] | ComposerMentionSnapshot): void;
   clear(): void;
   focus(): void;
   insertText(text: string): void;
-  insertMention(insert: MentionInsert): void;
+  captureSelection(): ComposerSelectionBookmark | null;
+  insertMention(insert: MentionInsert, options?: {
+    replace?: MentionIdentity;
+    selection?: ComposerSelectionBookmark;
+  }): boolean;
+  removeMention(entity: MentionIdentity): void;
   replaceActiveTrigger(text: string): void;
 }
 
 const EDITOR_THEME = {
   paragraph: 'composer-editor-paragraph',
 };
+
+const MENTION_TRIGGER = /(^|\s)@([^@\r\n]*)$/;
+
+function removeMatchingMentions(entity: MentionIdentity): void {
+  for (const node of $nodesOfType(MentionNode)) {
+    const current = node.getEntity();
+    if (current.kind === entity.kind && current.id === entity.id) node.remove();
+  }
+}
 
 // Walk back from the caret across the current line to reconstruct the text a
 // trigger regex needs. A completed MentionNode is an atomic boundary for a new
@@ -351,7 +382,7 @@ function TriggerPlugin({
         }
         const before = textBeforeCaretOnLine(node, sel.anchor.offset);
         const mentionBefore = textBeforeCaretOnLine(node, sel.anchor.offset, true);
-        const m = /(^|\s)@([^\s@]*)$/.exec(mentionBefore);
+        const m = MENTION_TRIGGER.exec(mentionBefore);
         const s = /^\/([^\s/]*)$/.exec(before);
         const active = Boolean(m) || Boolean(s);
         // Only pay for the DOM read when a trigger is live; otherwise the rect
@@ -607,18 +638,26 @@ function PastePlugin({
 
 function OnChangePlugin({
   onChange,
+  onMentionSnapshotChange,
   knownEntities,
+  committedMentionsOnly,
   lastEmittedTextRef,
 }: {
   onChange: LexicalComposerInputProps['onChange'];
+  onMentionSnapshotChange: LexicalComposerInputProps['onMentionSnapshotChange'];
   knownEntities: InlineMentionEntity[];
+  committedMentionsOnly: boolean;
   lastEmittedTextRef: React.MutableRefObject<string | null>;
 }) {
   const [editor] = useLexicalComposerContext();
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const onSnapshotRef = useRef(onMentionSnapshotChange);
+  onSnapshotRef.current = onMentionSnapshotChange;
   const entitiesRef = useRef(knownEntities);
   entitiesRef.current = knownEntities;
+  const committedOnlyRef = useRef(committedMentionsOnly);
+  committedOnlyRef.current = committedMentionsOnly;
   useEffect(() => {
     return editor.registerUpdateListener(
       ({ editorState, dirtyElements, dirtyLeaves }) => {
@@ -630,14 +669,17 @@ function OnChangePlugin({
         // safe. (Only OnChangePlugin is guarded this way — TriggerPlugin MUST
         // still run on selection-only updates to drive the @/slash popover.)
         if (dirtyElements.size === 0 && dirtyLeaves.size === 0) return;
-        const { text, present } = serializeComposer(editorState);
-        const folded = foldPresentEntities(text, present, entitiesRef.current);
+        const { text, present, mentions } = serializeComposer(editorState);
+        const folded = committedOnlyRef.current
+          ? present
+          : foldPresentEntities(text, present, entitiesRef.current);
         // Record the text we're about to push up as the draft BEFORE notifying,
         // so SeedingPlugin's effect (which re-runs with this exact `draft`) can
         // fast-path past a second full serialize on the typing hot path. We only
         // update on a real text change, never on the selection-only bail above —
         // that keeps the selection-only no-onChange guarantee intact.
         lastEmittedTextRef.current = text;
+        onSnapshotRef.current?.({ text, mentions });
         onChangeRef.current(text, folded);
       },
     );
@@ -678,15 +720,25 @@ function foldPresentEntities(
 function SeedingPlugin({
   draft,
   entities,
+  committedMentionsOnly,
+  initialCommittedEntities,
+  initialMentionSnapshot,
   lastEmittedTextRef,
 }: {
   draft: string;
   entities: InlineMentionEntity[];
+  committedMentionsOnly: boolean;
+  initialCommittedEntities: InlineMentionEntity[] | undefined;
+  initialMentionSnapshot: ComposerMentionSnapshot | undefined;
   lastEmittedTextRef: React.MutableRefObject<string | null>;
 }) {
   const [editor] = useLexicalComposerContext();
   const entitiesRef = useRef(entities);
   entitiesRef.current = entities;
+  const committedOnlyRef = useRef(committedMentionsOnly);
+  committedOnlyRef.current = committedMentionsOnly;
+  const initialEntitiesRef = useRef(initialCommittedEntities);
+  const initialSnapshotRef = useRef(initialMentionSnapshot);
   useEffect(() => {
     // Hot-path shortcut: when this effect re-runs because OnChangePlugin just
     // pushed the user's keystroke up as `draft`, the editor already holds that
@@ -701,10 +753,20 @@ function SeedingPlugin({
     let cancelled = false;
     queueMicrotask(() => {
       if (cancelled || draft === lastEmittedTextRef.current) return;
-      const current = serializeComposer(editor.getEditorState()).text;
-      if (draft === current) {
+      const current = serializeComposer(editor.getEditorState());
+      if (draft === current.text) {
         lastEmittedTextRef.current = draft;
         return; // Same text: preserve the live nodes and caret.
+      }
+      if (committedOnlyRef.current) {
+        if (lastEmittedTextRef.current === null && initialSnapshotRef.current?.text === draft) {
+          setComposerFromSnapshot(editor, initialSnapshotRef.current);
+        } else if (lastEmittedTextRef.current === null && initialEntitiesRef.current) {
+          setComposerFromText(editor, draft, initialEntitiesRef.current);
+        } else {
+          setComposerFromSnapshot(editor, rebaseMentionSnapshot(current, draft));
+        }
+        return;
       }
       setComposerFromText(editor, draft, entitiesRef.current);
     });
@@ -722,6 +784,9 @@ export const LexicalComposerInput = forwardRef<
   const {
     placeholder,
     knownEntities,
+    committedMentionsOnly = false,
+    initialCommittedEntities,
+    initialMentionSnapshot,
     popoverOpen,
     comboboxAria,
     draft,
@@ -749,7 +814,9 @@ export const LexicalComposerInput = forwardRef<
     <EditorRefPlugin editorRef={editorRef} />
     <OnChangePlugin
       onChange={(text, present) => liveProps.current.onChange(text, present)}
+      onMentionSnapshotChange={(snapshot) => liveProps.current.onMentionSnapshotChange?.(snapshot)}
       knownEntities={knownEntities}
+      committedMentionsOnly={committedMentionsOnly}
       lastEmittedTextRef={lastEmittedTextRef}
     />
     <TriggerPlugin onTrigger={(state) => liveProps.current.onTrigger(state)} />
@@ -758,7 +825,7 @@ export const LexicalComposerInput = forwardRef<
       onEnterSend={() => liveProps.current.onEnterSend()}
       onPopoverKey={(key) => liveProps.current.onPopoverKey(key)} />
     <PastePlugin onPasteFiles={(files) => liveProps.current.onPasteFiles?.(files)} />
-  </>, [knownEntities, popoverOpen]);
+  </>, [knownEntities, popoverOpen, committedMentionsOnly]);
 
   const initialConfig: InitialConfigType = {
     namespace: 'chat-composer',
@@ -786,10 +853,16 @@ export const LexicalComposerInput = forwardRef<
           '\n',
         );
       },
-      setText(text: string) {
+      setText(text, committed) {
         const editor = editorRef.current;
         if (!editor) return;
-        setComposerFromText(editor, text, knownEntitiesRef.current);
+        if (committed && !Array.isArray(committed)) {
+          setComposerFromSnapshot(editor, committed.text === text ? committed : { text, mentions: [] });
+        } else if (committed === undefined && liveProps.current.committedMentionsOnly) {
+          setComposerFromSnapshot(editor, rebaseMentionSnapshot(serializeComposer(editor.getEditorState()), text));
+        } else {
+          setComposerFromText(editor, text, committed ?? knownEntitiesRef.current);
+        }
       },
       clear() {
         const editor = editorRef.current;
@@ -818,17 +891,44 @@ export const LexicalComposerInput = forwardRef<
           if ($isRangeSelection(sel)) sel.insertText(text);
         }, { discrete: true });
       },
-      insertMention(insert: MentionInsert) {
+      captureSelection() {
         const editor = editorRef.current;
-        if (!editor) return;
+        if (!editor) return null;
+        const state = editor.getEditorState();
+        return state.read(() => {
+          const selection = $getSelection();
+          return $isRangeSelection(selection)
+            ? { selection: selection.clone(), text: serializeComposer(state).text }
+            : null;
+        });
+      },
+      insertMention(insert, options) {
+        const editor = editorRef.current;
+        if (!editor) return false;
+        const bookmark = options?.selection;
+        // A delayed catalogue response must never replace text typed since the pick.
+        if (bookmark && serializeComposer(editor.getEditorState()).text !== bookmark.text) return false;
+        let inserted = false;
         editor.update(() => {
+          if (bookmark) {
+            const { anchor, focus } = bookmark.selection;
+            if (![anchor, focus].every((point) => {
+              const node = $getNodeByKey(point.key);
+              return node?.isAttached() && (
+                point.type === 'text' && $isTextNode(node) && point.offset <= node.getTextContentSize()
+                || point.type === 'element' && $isElementNode(node) && point.offset <= node.getChildrenSize()
+              );
+            })) return;
+            $setSelection(bookmark.selection.clone());
+          }
+          if (options?.replace) removeMatchingMentions(options.replace);
           let sel = $getSelection();
           if (!$isRangeSelection(sel)) {
             $getRoot().selectEnd();
             sel = $getSelection();
           }
           if (!$isRangeSelection(sel)) return;
-          deleteActiveTrigger(sel, /(^|\s)@[^\s@]*$/);
+          deleteActiveTrigger(sel, MENTION_TRIGGER);
           const node = $createMentionNode({
             mentionId: insert.entity.id,
             mentionKind:
@@ -841,8 +941,15 @@ export const LexicalComposerInput = forwardRef<
           if ($isRangeSelection(active)) {
             active.insertNodes([node]);
             selectAfterMention(node);
+            inserted = true;
           }
-        }, { discrete: true });
+        }, { discrete: true, tag: HISTORY_PUSH_TAG });
+        return inserted;
+      },
+      removeMention(entity) {
+        editorRef.current?.update(() => removeMatchingMentions(entity), {
+          discrete: true, tag: HISTORY_PUSH_TAG,
+        });
       },
       replaceActiveTrigger(text: string) {
         const editor = editorRef.current;
@@ -855,7 +962,7 @@ export const LexicalComposerInput = forwardRef<
           }
           if (!$isRangeSelection(sel)) return;
           // Drop the active /query or @query, then insert the plain text.
-          deleteActiveTrigger(sel, /(^|\s)[@/][^\s@]*$/);
+          deleteActiveTrigger(sel, /(^|\s)(?:@[^@\r\n]*|\/[^\s@]*)$/);
           const active = $getSelection();
           if ($isRangeSelection(active)) active.insertText(text);
         }, { discrete: true });
@@ -872,6 +979,7 @@ export const LexicalComposerInput = forwardRef<
         title={title}
         expanded={comboboxAria?.expanded ?? false}
         activeId={comboboxAria?.activeId ?? null}
+        listboxId={comboboxAria?.listboxId ?? 'mention-listbox'}
         invalid={invalid}
       />
       {behaviorPlugins}
@@ -879,6 +987,9 @@ export const LexicalComposerInput = forwardRef<
       <SeedingPlugin
         draft={draft}
         entities={knownEntities}
+        committedMentionsOnly={committedMentionsOnly}
+        initialCommittedEntities={initialCommittedEntities}
+        initialMentionSnapshot={initialMentionSnapshot}
         lastEmittedTextRef={lastEmittedTextRef}
       />
     </LexicalComposer>

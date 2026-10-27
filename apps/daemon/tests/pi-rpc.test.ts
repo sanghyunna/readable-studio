@@ -1455,7 +1455,7 @@ test('attachPiRpcSession captures get_state only after agent_end and agent_settl
     assert.equal(readCommands(child).length, 0);
 
     feedStdoutLines(child, [{ type: 'agent_settled' }]);
-    const [getState] = readCommands(child);
+    const getState = readCommands(child).find(command => command.type === 'get_state');
     assert.equal(getState?.type, 'get_state');
     assert.equal(child.stdin.writableEnded, false);
 
@@ -1489,7 +1489,7 @@ test('attachPiRpcSession exposes quiescence only after validated state and child
     readCommands(child);
 
     feedStdoutLines(child, [{ type: 'agent_end' }, { type: 'agent_settled' }]);
-    const [getState] = readCommands(child);
+    const getState = readCommands(child).find(command => command.type === 'get_state');
     feedStdoutLines(child, [{
       type: 'response', id: getState?.id, command: 'get_state', success: true,
       data: { sessionFile: fixture.sessionPath },
@@ -1536,7 +1536,7 @@ test.each([
     assert.equal(child.stdin.writableEnded, false);
 
     feedStdoutLines(child, [{ type: 'agent_end' }, { type: 'agent_settled' }]);
-    const [getState] = readCommands(child);
+    const getState = readCommands(child).find(command => command.type === 'get_state');
     assert.equal(getState?.type, 'get_state');
     feedStdoutLines(child, [{
       type: 'response', id: getState?.id, command: 'get_state', success: true,
@@ -1844,7 +1844,7 @@ test('attachPiRpcSession rejects get_state session files outside the owned root'
     });
     readCommands(child);
     feedStdoutLines(child, [{ type: 'agent_end' }, { type: 'agent_settled' }]);
-    const [getState] = readCommands(child);
+    const getState = readCommands(child).find(command => command.type === 'get_state');
     feedStdoutLines(child, [{
       type: 'response', id: getState?.id, command: 'get_state', success: true,
       data: { sessionFile: outside.sessionPath },
@@ -1874,7 +1874,7 @@ test('attachPiRpcSession rejects malformed JSONL returned by get_state', async (
     readCommands(child);
     await fsp.appendFile(fixture.sessionPath, '{not-json}\n');
     feedStdoutLines(child, [{ type: 'agent_end' }, { type: 'agent_settled' }]);
-    const [getState] = readCommands(child);
+    const getState = readCommands(child).find(command => command.type === 'get_state');
     feedStdoutLines(child, [{
       type: 'response', id: getState?.id, command: 'get_state', success: true,
       data: { sessionFile: fixture.sessionPath },
@@ -1908,7 +1908,7 @@ test('attachPiRpcSession keeps state parsing after abort while suppressing user 
       { type: 'agent_end' },
       { type: 'agent_settled' },
     ]);
-    const [getState] = readCommands(child);
+    const getState = readCommands(child).find(command => command.type === 'get_state');
     assert.equal(getState?.type, 'get_state');
     feedStdoutLines(child, [{
       type: 'response', id: getState?.id, command: 'get_state', success: true,
@@ -1976,7 +1976,7 @@ for (const stopReason of ['length', 'stop']) {
       { type: 'turn_end', message: { role: 'assistant', stopReason: 'stop', content: [{ type: 'text', text: 'OK' }] } },
       { type: 'agent_end' }, { type: 'agent_settled' },
     ]);
-    assert.equal(JSON.parse(String(child.stdin.read())).type, 'get_state');
+    assert.ok(readCommands(child).some(command => command.type === 'get_state'));
     assert.equal(events.filter(event => event.type === 'text_delta').map(event => event.delta).join(''), stopReason === 'length' ? 'PARTOK' : 'OK');
     assert.equal(events.filter(event => event.type === 'error').length, 0);
     session.abort(); child.emit('close', 0, null);

@@ -9,7 +9,7 @@
  * When `options.deck` is set we also inject a `postMessage` listener that
  * lets the host advance / rewind slides without relying on the iframe
  * having keyboard focus. The host posts:
- *   { type: 'readable-studio:slide', action: 'next' | 'prev' | 'first' | 'last' | 'go', index?: number }
+ *   { type: 'readable-studio:slide', action: 'next' | 'prev' | 'first' | 'last' | 'go', index?: number, restore?: boolean }
  * and the iframe responds with:
  *   { type: 'readable-studio:slide-state', active: number, count: number }
  * after every navigation so the host can render its own counter / dots.
@@ -18,9 +18,11 @@ import {
   buildManualEditBridge,
   buildManualEditBridgeStyle,
   isManualEditDiscoveryElement,
+  MANUAL_EDIT_AUTO_ID_SELECTOR,
   MANUAL_EDIT_TARGET_SELECTOR,
   MANUAL_EDIT_SOURCE_PATH_ATTR,
 } from '../edit-mode/bridge';
+import { injectStandaloneDeckKeyDedupe } from './standalone-deck-nav';
 
 export type SrcdocOptions = {
   deck?: boolean;
@@ -81,7 +83,9 @@ export function buildSrcdoc(
   // it to a per-call option would force iframe srcdoc regeneration (and a
   // visible flash) every time the host toggle flips.
   const withTweaks = injectTweaksBridge(withEdit);
-  return injectSrcdocTransportActivationBridge(injectSnapshotBridge(withTweaks));
+  const complete = injectSrcdocTransportActivationBridge(injectSnapshotBridge(withTweaks));
+  // Linked deck scripts need the same listener-identity guard as inline scripts.
+  return options.deck ? injectStandaloneDeckKeyDedupe(complete, true) : complete;
 }
 
 /**
@@ -586,6 +590,15 @@ function annotateManualEditSourcePaths(doc: string): string {
       const path = sourcePathForElement(el);
       if (path) el.setAttribute(MANUAL_EDIT_SOURCE_PATH_ATTR, path);
     });
+    parsed.querySelectorAll('script[src]').forEach((script) => {
+      let path: string;
+      try { path = new URL(script.getAttribute('src') ?? '', 'https://readable.invalid/').pathname; }
+      catch { return; }
+      if (!/(?:^|\/)readable-direct-edit\.js$/i.test(path)) return;
+      // Keep source positions stable while the current host bridge owns editing.
+      script.setAttribute('type', 'application/x-readable-disabled-script');
+      script.setAttribute('data-readable-disabled-edit-bridge', '');
+    });
     return serializeHtmlDocument(parsed);
   } catch {
     return doc;
@@ -623,23 +636,9 @@ function annotateMissingOdIds(doc: string): string {
     // Only target divs that are direct children of semantic containers or body;
     // deeply nested layout divs (e.g. flex/grid wrappers) create noise in the
     // selection bridge without adding meaningful pickable targets.
-    const selector = [
-      'section', 'article', 'header', 'footer', 'nav', 'main', 'aside',
-      'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-      'button', 'a', '[id]',
-      'body > div[class]', 'body > div[id]',
-      'section > div[class]', 'section > div[id]',
-      'article > div[class]', 'article > div[id]',
-      'main > div[class]', 'main > div[id]',
-      'header > div[class]', 'header > div[id]',
-      'footer > div[class]', 'footer > div[id]',
-      'nav > div[class]', 'nav > div[id]',
-      'aside > div[class]', 'aside > div[id]',
-      '[id] > div[class]', '[id] > div[id]',
-    ].join(', ');
     const skipTags = new Set(['script', 'style', 'template', 'noscript', 'iframe', 'object', 'embed']);
     let fallbackIndex = 0;
-    parsed.body.querySelectorAll(selector).forEach((el) => {
+    parsed.body.querySelectorAll(MANUAL_EDIT_AUTO_ID_SELECTOR).forEach((el) => {
       if (el.hasAttribute('data-readable-id') || el.hasAttribute('data-screen-label')) return;
       const tag = el.tagName.toLowerCase();
       if (skipTags.has(tag)) return;
@@ -800,12 +799,13 @@ function injectSandboxShim(doc: string): string {
 
 function injectPreviewFocusGuard(doc: string): string {
   const script = `<script data-readable-preview-focus-guard>(function(){
-  var lastTrustedInputAt = 0;
+  var trustedInput = null;
   function userActivated(){
-    return Date.now() - lastTrustedInputAt < 1000;
+    // Event intent ends with dispatch; current focus ownership outlives it.
+    return document.hasFocus() || !!(trustedInput && trustedInput.eventPhase);
   }
   function markTrustedInput(event){
-    if (event && event.isTrusted) lastTrustedInputAt = Date.now();
+    if (event && event.isTrusted) trustedInput = event;
   }
   document.addEventListener('pointerdown', function(event){
     markTrustedInput(event);
@@ -823,16 +823,45 @@ function injectPreviewFocusGuard(doc: string): string {
       }
     });
   } catch (_) {}
-  try {
-    var nativeElementFocus = HTMLElement.prototype.focus;
-    Object.defineProperty(HTMLElement.prototype, 'focus', {
-      configurable: true,
-      writable: true,
-      value: function(options){
-        if (userActivated()) return nativeElementFocus.call(this, options);
-      }
+  function guardElementFocus(prototype){
+    try {
+      var nativeElementFocus = prototype.focus;
+      if (typeof nativeElementFocus !== 'function') return;
+      Object.defineProperty(prototype, 'focus', {
+        configurable: true,
+        writable: true,
+        value: function(options){
+          if (userActivated()) return nativeElementFocus.call(this, options);
+        }
+      });
+    } catch (_) {}
+  }
+  guardElementFocus(HTMLElement.prototype);
+  if (typeof SVGElement !== 'undefined') guardElementFocus(SVGElement.prototype);
+  if (typeof HTMLDialogElement !== 'undefined') {
+    ['show', 'showModal', 'close'].forEach(function(method){
+      try {
+        var nativeMethod = HTMLDialogElement.prototype[method];
+        if (typeof nativeMethod !== 'function') return;
+        Object.defineProperty(HTMLDialogElement.prototype, method, {
+          configurable: true,
+          writable: true,
+          value: function(){
+            if (userActivated() || !(this instanceof HTMLDialogElement)) return nativeMethod.apply(this, arguments);
+            // Closing restores focus outside the dialog; opening focuses inside it.
+            var target = method === 'close' ? document.documentElement : this;
+            var inert = target.getAttribute('inert');
+            target.setAttribute('inert', '');
+            try { return nativeMethod.apply(this, arguments); }
+            finally {
+              if (inert === null) target.removeAttribute('inert');
+              else target.setAttribute('inert', inert);
+            }
+          }
+        });
+      } catch (_) {}
     });
-  } catch (_) {}
+  }
 })();</script>`;
   if (/<head[^>]*>/i.test(doc))
     return doc.replace(/<head[^>]*>/i, (m) => `${m}${script}`);
@@ -1723,6 +1752,10 @@ function injectDeckBridge(doc: string, initialSlideIndex = 0): string {
   const script = `<script data-readable-deck-bridge>(function(){
   var initialSlideIndex = ${safeInitialSlideIndex};
   var didRestoreInitialSlide = initialSlideIndex <= 0;
+  var initialRestoreRequested = initialSlideIndex > 0;
+  var initialRestoreCancelled = false;
+  var restoringInitialSlide = false;
+  var initialRestoreFrame = null;
   function slides(){
     // Structured selectors first so decorative .slide markup in non-deck
     // pages (icons, badges, code samples) is not counted as deck slides;
@@ -1839,26 +1872,17 @@ function injectDeckBridge(doc: string, initialSlideIndex = 0): string {
     return 0;
   }
   function dispatchKey(key){
-    // Try window first: many deck frameworks listen on both window and
-    // document in capture phase for iframe focus resilience. Dispatching a
-    // bubbling event at document hits the document listener and then the
-    // window listener, turning one host "next" request into two slide moves.
+    // One bubbling event reaches both registration targets; the injected
+    // listener-identity guard invokes each author handler only once.
     var init = { key: key, code: key, bubbles: true, cancelable: true, composed: true };
-    var before = activeIndex(slides());
     // Mark host-driven synthetic keys so the manual-edit bridge ignores them:
     // they are slide navigation, never user nudges, and must not open (or
     // close) an edit burst while an object is selected.
     window.__readableStudioDeckSynthetic = true;
     try {
-      try {
-        window.dispatchEvent(new KeyboardEvent('keydown', init));
-        window.dispatchEvent(new KeyboardEvent('keyup', init));
-      } catch (_) {}
-      if (activeIndex(slides()) !== before) return;
-      try {
-        document.dispatchEvent(new KeyboardEvent('keydown', init));
-        document.dispatchEvent(new KeyboardEvent('keyup', init));
-      } catch (_) {}
+      document.dispatchEvent(new KeyboardEvent('keydown', init));
+      document.dispatchEvent(new KeyboardEvent('keyup', init));
+    } catch (_) {
     } finally {
       window.__readableStudioDeckSynthetic = false;
     }
@@ -1991,19 +2015,20 @@ function injectDeckBridge(doc: string, initialSlideIndex = 0): string {
     report();
     return true;
   }
-  function scrollGo(i){
+  function scrollGo(i, instant){
     var list = slides();
     var next = Math.max(0, Math.min(list.length - 1, i));
     var left = next * window.innerWidth;
     var targets = scrollTargets();
     for (var t=0; t<targets.length; t++) {
       try {
-        targets[t].scrollTo({ left: left, behavior: 'smooth' });
+        targets[t].scrollTo({ left: left, behavior: instant ? 'instant' : 'smooth' });
       } catch (_) {
         try { targets[t].scrollLeft = left; } catch (__) {}
       }
     }
-    setTimeout(report, 380);
+    if (instant) report();
+    else setTimeout(report, 380);
   }
   function targetFor(action, list){
     var i = activeIndex(list);
@@ -2017,35 +2042,28 @@ function injectDeckBridge(doc: string, initialSlideIndex = 0): string {
     var list = slides();
     if (!list.length) return;
     var target = Math.max(0, Math.min(list.length - 1, targetFor(action, list)));
-    if (isScrollDeck()) {
-      scrollGo(target);
-      return;
-    }
-    if (canSetActive(list) && setActive(target)) return;
-    if (transformGo(target)) return;
-    if (action === 'next') dispatchKey('ArrowRight');
-    else if (action === 'prev') dispatchKey('ArrowLeft');
-    else if (action === 'first') dispatchKey('Home');
-    else if (action === 'last') dispatchKey('End');
-    setTimeout(report, 280);
+    gotoIndex(target);
   }
-  function gotoIndex(i){
+  function gotoIndex(i, instant){
     var list = slides();
     if (!list.length) return;
     var target = Math.max(0, Math.min(list.length - 1, i));
-    if (isScrollDeck()) { scrollGo(target); return; }
-    if (canSetActive(list) && setActive(target)) return;
-    if (transformGo(target)) return;
+    if (isScrollDeck()) { scrollGo(target, instant); return; }
     var current = activeIndex(list);
     var diff = target - current;
     if (!diff) { report(); return; }
     var key = diff > 0 ? 'ArrowRight' : 'ArrowLeft';
     var n = Math.abs(diff);
+    // Let the author runtime update its private index before falling back to DOM-only navigation.
     for (var k = 0; k < n; k++) dispatchKey(key);
+    if (activeIndex(slides()) === target) { report(); return; }
+    if (canSetActive(list) && setActive(target)) return;
+    if (transformGo(target)) return;
     setTimeout(report, 320);
   }
   var lastCommentTargetSlideIndex = -1;
   function report(){
+    if (restoringInitialSlide) return;
     try {
       var list = slides();
       var i = activeIndex(list);
@@ -2078,17 +2096,50 @@ function injectDeckBridge(doc: string, initialSlideIndex = 0): string {
     var list = slides();
     return { active: activeIndex(list), count: list.length };
   };
-  function restoreInitialSlide(){
+  function restoreInitialSlide(recheck){
     if (slidesDisposed || document.hidden) return;
-    if (didRestoreInitialSlide) { report(); return; }
+    if (!initialRestoreRequested || initialRestoreCancelled || (didRestoreInitialSlide && !recheck)) { report(); return; }
     var list = slides();
     if (!list.length) return;
-    didRestoreInitialSlide = true;
-    gotoIndex(initialSlideIndex);
+    var style = document.createElement('style');
+    style.textContent = '* { transition: none !important; }';
+    restoringInitialSlide = true;
+    document.head.appendChild(style);
+    try {
+      gotoIndex(initialSlideIndex, true);
+      // Commit the restored layout before authored transitions resume.
+      void document.documentElement.offsetWidth;
+      didRestoreInitialSlide = activeIndex(slides()) === Math.min(list.length - 1, initialSlideIndex);
+    } finally {
+      style.remove();
+      restoringInitialSlide = false;
+    }
+    if (didRestoreInitialSlide) report();
+  }
+  function scheduleInitialSlideRecheck(){
+    if (initialRestoreFrame !== null) window.cancelAnimationFrame(initialRestoreFrame);
+    initialRestoreFrame = window.requestAnimationFrame(function(){
+      initialRestoreFrame = null;
+      restoreInitialSlide(true);
+    });
+  }
+  function restoreAfterBootstrap(){
+    restoreInitialSlide(true);
+    scheduleInitialSlideRecheck();
   }
   window.addEventListener('message', function(ev){
     var data = ev && ev.data;
     if (!data || data.type !== 'readable-studio:slide') return;
+    if (data.restore === true) {
+      if (data.action !== 'go' || !Number.isFinite(data.index) || initialRestoreCancelled) return;
+      initialSlideIndex = Math.max(0, Math.floor(data.index));
+      initialRestoreRequested = true;
+      didRestoreInitialSlide = false;
+      restoreInitialSlide(true);
+      return;
+    }
+    initialRestoreCancelled = true;
+    didRestoreInitialSlide = true;
     if (data.action === 'go' && typeof data.index === 'number') gotoIndex(data.index);
     else go(data.action);
   });
@@ -2099,13 +2150,22 @@ function injectDeckBridge(doc: string, initialSlideIndex = 0): string {
     btn.addEventListener('click', function(e){
       e.preventDefault();
       e.stopImmediatePropagation();
+      initialRestoreCancelled = true;
+      didRestoreInitialSlide = true;
       go(action);
     }, true);
   }
   ownDeckButton('deck-prev', 'prev');
   ownDeckButton('deck-next', 'next');
   // Report once on load and on every scroll-end so the host stays in sync.
-  window.addEventListener('load', function(){ setTimeout(restoreInitialSlide, 200); });
+  window.addEventListener('load', restoreAfterBootstrap);
+  document.addEventListener('DOMContentLoaded', restoreAfterBootstrap);
+  window.addEventListener('keydown', function(event){
+    if (event.isTrusted && !window.__readableStudioDeckSynthetic && /^(Arrow|Page|Home$|End$| $)/.test(event.key)) {
+      initialRestoreCancelled = true;
+      didRestoreInitialSlide = true;
+    }
+  }, true);
   document.addEventListener('scroll', function(){
     clearTimeout(window.__readableStudioReportT);
     window.__readableStudioReportT = setTimeout(report, 120);
@@ -2163,6 +2223,7 @@ function injectDeckBridge(doc: string, initialSlideIndex = 0): string {
   var slideRetryTimer = null;
   var slideRetryAttempts = 0;
   var slideObserver = null;
+  var slideDiscoveryObserver = null;
   var slidesDisposed = false;
   function stopSlideRetry(){
     clearTimeout(slideRetryTimer);
@@ -2173,12 +2234,17 @@ function injectDeckBridge(doc: string, initialSlideIndex = 0): string {
     if (slidesDisposed || document.hidden || slideObserver) return;
     var list = slides();
     if (!list.length) {
+      if (!slideDiscoveryObserver) {
+        slideDiscoveryObserver = new MutationObserver(observeSlides);
+        slideDiscoveryObserver.observe(document.documentElement, { childList: true, subtree: true });
+      }
       if (slideRetryAttempts < 400) {
         slideRetryAttempts += 1;
         slideRetryTimer = setTimeout(observeSlides, 150);
       }
       return;
     }
+    if (slideDiscoveryObserver) { slideDiscoveryObserver.disconnect(); slideDiscoveryObserver = null; }
     try {
       var mo = new MutationObserver(function(){
         clearTimeout(window.__readableStudioReportT2);
@@ -2189,7 +2255,7 @@ function injectDeckBridge(doc: string, initialSlideIndex = 0): string {
       }
       slideObserver = mo;
     } catch (e) {}
-    slideRetryTimer = setTimeout(restoreInitialSlide, 100);
+    restoreInitialSlide();
   }
   document.addEventListener('visibilitychange', function(){
     if (document.hidden) stopSlideRetry();
@@ -2201,8 +2267,11 @@ function injectDeckBridge(doc: string, initialSlideIndex = 0): string {
     stopSlideRetry();
     clearTimeout(window.__readableStudioReportT2);
     if (slideObserver) slideObserver.disconnect();
+    if (slideDiscoveryObserver) slideDiscoveryObserver.disconnect();
+    if (initialRestoreFrame !== null) window.cancelAnimationFrame(initialRestoreFrame);
   });
   observeSlides();
+  scheduleInitialSlideRecheck();
 })();</script>`;
   // Manual-edit arrow yield for EVERY deck, including ones generated before the
   // template-level yield guard existed. A deck's own keyboard handler listens at

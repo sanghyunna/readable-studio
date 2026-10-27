@@ -108,6 +108,8 @@ export interface ManualEditTarget {
   fields: ManualEditFields;
   attributes: Record<string, string>;
   styles: ManualEditStyles;
+  /** False only for lightweight discovery; select the exact target before reading its style fields. */
+  stylesMeasured?: boolean;
   isLayoutContainer: boolean;
   isHidden?: boolean;
   outerHtml: string;
@@ -178,6 +180,13 @@ export interface ManualEditSelectMessage {
   target: ManualEditTarget;
   /** Double-click requests text entry after the normal selection/save funnel. */
   beginTextEdit?: boolean;
+  selectAll?: boolean;
+  textEditPoint?: { clientX: number; clientY: number };
+  selectWord?: boolean;
+  documentEpoch?: string;
+  sequence?: number;
+  actionSeq?: number;
+  requestedId?: string;
 }
 
 export interface ManualEditDeselectMessage {
@@ -251,7 +260,7 @@ export interface ManualEditResizeRequest extends Partial<ManualEditResizeIdentit
   direction?: string;
   startRect?: ManualEditRect;
   axes: ManualEditResizeAxis[];
-  requested: Pick<ManualEditRect, 'width' | 'height'>;
+  requested: Pick<ManualEditRect, 'width' | 'height'> & { fromCenter?: boolean };
   /** Opts the low-frequency final frame into authored constraint diagnosis. */
   includeDetails?: boolean;
 }
@@ -313,6 +322,7 @@ export interface ManualEditPreviewAppliedMessage extends Partial<ManualEditResiz
   authoredSize?: { width: string; height: string };
   /** Requested resize axes whose post-layout rect differs by more than 1px. */
   resize?: ManualEditResizeOutcome;
+  centerStyles?: Pick<ManualEditStyles, 'translate'>;
 }
 
 export interface ManualEditDuplicateCreateMessage {
@@ -364,12 +374,30 @@ export interface ManualEditTextCommitMessage {
   type: 'readable-edit-text-commit';
   id: string;
   value: string;
+  documentEpoch?: string;
+  sequence?: number;
+}
+
+export interface ManualEditPreviewSourceAppliedMessage {
+  type: 'readable-edit-preview-source-applied';
+  documentEpoch: string;
+  requestId: number;
+  ok: boolean;
+}
+
+export interface ManualEditDuplicateMessage {
+  type: 'readable-edit-duplicate';
+  targetId: string;
+  revision: number;
+  documentEpoch: string;
 }
 
 export interface ManualEditHtmlCommitMessage {
   type: 'readable-edit-html-commit';
   id: string;
   html: string;
+  documentEpoch?: string;
+  sequence?: number;
 }
 
 export interface ManualEditUndoMessage {
@@ -384,6 +412,16 @@ export interface ManualEditNudgeMessage {
   targetId: string;
   /** Host preview revision at the time the key was pressed. Stale revisions are ignored. */
   revision: number;
+  screenPixel?: boolean;
+}
+
+export interface ManualEditKeyboardResizeMessage {
+  type: 'readable-edit-keyboard-resize';
+  direction: 'up' | 'down' | 'left' | 'right';
+  key: string;
+  targetId: string;
+  revision: number;
+  documentEpoch: string;
 }
 
 export interface ManualEditDeleteMessage {
@@ -422,6 +460,8 @@ export interface ManualEditNudgeKeyupMessage {
 // typography toolbar can enable + show pressed state for B/I/U.
 export interface ManualEditSelectionStateMessage {
   type: 'readable-edit-selection-state';
+  documentEpoch?: string;
+  sequence?: number;
   editing: boolean;       // an element is in a rich or plain-text edit session
   hasSelection: boolean;  // a non-collapsed selection sits inside that element
   bold: boolean;
@@ -440,6 +480,9 @@ export interface ManualEditRichFormatMessage {
 export interface ManualEditBeginTextEditMessage {
   type: 'readable-edit-begin-text-edit';
   id: string;
+  selectAll?: boolean;
+  textEditPoint?: { clientX: number; clientY: number };
+  selectWord?: boolean;
 }
 
 // host -> iframe: leave the rich-text edit session but keep the element
@@ -450,11 +493,14 @@ export interface ManualEditEndTextEditMessage {
   type: 'readable-edit-end-text-edit';
   /** When present, acknowledge only after posting all text/HTML commits. */
   requestId?: number;
+  documentEpoch?: string;
 }
 
 export interface ManualEditTextFlushedMessage {
   type: 'readable-edit-text-flushed';
   requestId: number;
+  documentEpoch?: string;
+  sequence?: number;
 }
 
 export interface ManualEditClickMessage {
@@ -486,6 +532,8 @@ export type ManualEditBridgeMessage =
   | ManualEditHoverMessage
   | ManualEditBackgroundMessage
   | ManualEditPreviewAppliedMessage
+  | ManualEditPreviewSourceAppliedMessage
+  | ManualEditDuplicateMessage
   | ManualEditDuplicatePreviewMessage
   | ManualEditDuplicateRemovedMessage
   | ManualEditTextCommitMessage
@@ -493,6 +541,7 @@ export type ManualEditBridgeMessage =
   | ManualEditTextFlushedMessage
   | ManualEditUndoMessage
   | ManualEditNudgeMessage
+  | ManualEditKeyboardResizeMessage
   | ManualEditDeleteMessage
   | ManualEditBurstCancelMessage
   | ManualEditNudgeCommitMessage

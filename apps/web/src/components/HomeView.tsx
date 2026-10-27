@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import type {
   ApplyResult,
   ChatSessionMode,
+  DesignTemplateSummary,
   InputFieldSpec,
   McpServerConfig,
   InstalledPluginRecord,
@@ -50,7 +51,7 @@ import type {
   ProjectTemplate,
   SkillSummary,
 } from '../types';
-import { inlineMentionToken, mentionTokenPresent } from '../utils/inlineMentions';
+import { inlineMentionToken, type InlineMentionEntity } from '../utils/inlineMentions';
 import { smoothScrollToTop } from '../utils/smoothScrollToTop';
 import { missingRequiredInputs, pluginInputsAreValid } from '../utils/pluginRequiredInputs';
 import { visualReferenceForPlugin } from '../utils/visualPluginContext';
@@ -248,6 +249,7 @@ interface Props {
   projectImportHandlers?: ProjectImportHandlers;
   promptHandoff?: HomePromptHandoff | null;
   skills?: SkillSummary[];
+  designTemplates?: DesignTemplateSummary[];
   skillsLoading?: boolean;
   executionSwitcher?: ReactNode;
   /** Hub command-palette selection routed through the same chip dispatcher as pointer input. */
@@ -288,6 +290,7 @@ export function HomeView({
   projectImportHandlers = EMPTY_IMPORT_HANDLERS,
   promptHandoff,
   skills = EMPTY_SKILLS,
+  designTemplates,
   skillsLoading = false,
   executionSwitcher,
   commandChip = null,
@@ -334,6 +337,7 @@ export function HomeView({
   const [activeSkill, setActiveSkill] = useState<SkillSummary | null>(null);
   const [selectedPluginContexts, setSelectedPluginContexts] = useState<SelectedPluginContext[]>([]);
   const [selectedMcpContexts, setSelectedMcpContexts] = useState<SelectedMcpContext[]>([]);
+  const mentionEntitiesRef = useRef<InlineMentionEntity[]>([]);
   const [stagedFiles, setStagedFiles] = useState<StagedFileItem[]>([]);
   const stagedFileIdRef = useRef(1);
   const submitInFlightRef = useRef(false);
@@ -1086,6 +1090,32 @@ export function HomeView({
     });
   }
 
+  function handleMentionEntitiesChange(present: InlineMentionEntity[]) {
+    if (submitInFlightRef.current) return;
+    const previous = mentionEntitiesRef.current;
+    mentionEntitiesRef.current = present;
+    const pluginIds = new Set(present.filter((entity) => entity.kind === 'plugin').map((entity) => entity.id));
+    const mcpIds = new Set(present.filter((entity) => entity.kind === 'mcp').map((entity) => entity.id));
+    setSelectedPluginContexts((current) => {
+      const kept = current.filter((item) => !item.inlineBacked || pluginIds.has(item.record.id));
+      const restored = plugins.filter((record) => pluginIds.has(record.id) && !kept.some((item) => item.record.id === record.id) && visualReferenceForPlugin(record))
+        .map((record) => ({ record, inlineBacked: true }));
+      return kept.length === current.length && restored.length === 0 ? current : [...kept, ...restored];
+    });
+    setSelectedMcpContexts((current) => {
+      const kept = current.filter((item) => !item.inlineBacked || mcpIds.has(item.server.id));
+      const restored = enabledMcpServers.filter((server) => mcpIds.has(server.id) && !kept.some((item) => item.server.id === server.id))
+        .map((server) => ({ server, inlineBacked: true }));
+      return kept.length === current.length && restored.length === 0 ? current : [...kept, ...restored];
+    });
+    const lastSkill = present.filter((entity) => entity.kind === 'skill').at(-1);
+    setActiveSkill((current) => {
+      if (current && present.some((entity) => entity.kind === 'skill' && entity.id === current.id)) return current;
+      if (lastSkill) return selectableSkills.find((skill) => skill.id === lastSkill.id) ?? current;
+      return current && previous.some((entity) => entity.kind === 'skill' && entity.id === current.id) ? null : current;
+    });
+  }
+
   function stageFiles(files: File[]) {
     if (files.length === 0 || submitInFlightRef.current) return;
     setStagedFiles((current) => {
@@ -1620,9 +1650,9 @@ export function HomeView({
       };
       setActive(submittedActive);
     }
-    // Reconcile each selected context against the serialized prompt text before
+    // Reconcile each selected context against confirmed editor entities before
     // forwarding it. Inline-backed contexts (inserted as `@mention` pills) are
-    // only sent while their token survives in the prompt — the Lexical composer
+    // only sent while their atomic mention survives in the prompt — the composer
     // lets users delete a mention pill (backspace, edit), and when they do that
     // plugin/MCP should stop being sent. Context-only `Use` selections never
     // carry a token, so they stay selected until explicitly removed.
@@ -1632,7 +1662,7 @@ export function HomeView({
     // catalogue description, skill, example copy, and the visible mention token
     // are intentionally absent from the model-facing request.
     const selectedVisualContexts = selectedPluginContexts.filter(
-      (item) => !item.inlineBacked || mentionTokenPresent(submittedPrompt, item.record.title),
+      (item) => !item.inlineBacked || mentionEntitiesRef.current.some((entity) => entity.kind === 'plugin' && entity.id === item.record.id),
     );
     const visualContextsWithReferences = selectedVisualContexts.flatMap((item) => {
       const reference = visualReferenceForPlugin(item.record);
@@ -1655,7 +1685,7 @@ export function HomeView({
     if (template) submittedPrompt = composeTemplatePrompt(template.text, submittedPrompt);
     if (!submittedActive) submittedPluginInputs = { prompt: submittedPrompt };
     const contextMcpServers = selectedMcpContexts
-      .filter((item) => !item.inlineBacked || mentionTokenPresent(submittedPrompt, item.server.label || item.server.id))
+      .filter((item) => !item.inlineBacked || mentionEntitiesRef.current.some((entity) => entity.kind === 'mcp' && entity.id === item.server.id))
       .map((item) => ({
         id: item.server.id,
         ...(item.server.label ? { label: item.server.label } : {}),
@@ -1769,6 +1799,7 @@ export function HomeView({
         firstRunGuide={projectsLoading ? undefined : projects.length === 0}
         draft={draft}
         onPromptChange={handlePromptChange}
+        onMentionEntitiesChange={handleMentionEntitiesChange}
         onSubmit={() => {
           void submit();
         }}
@@ -1823,6 +1854,7 @@ export function HomeView({
         pluginOptions={plugins}
         pluginsLoading={pluginsLoading}
         skillOptions={selectableSkills}
+        designTemplates={designTemplates}
         skillsLoading={skillsLoading}
         mcpOptions={enabledMcpServers}
         mcpLoading={mcpLoading}

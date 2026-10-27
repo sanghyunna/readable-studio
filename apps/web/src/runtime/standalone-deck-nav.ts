@@ -1,12 +1,13 @@
 const MARKER = 'data-readable-standalone-deck-nav-dedupe';
 
-export function injectStandaloneDeckKeyDedupe(html: string): string {
-  if (!shouldInject(html)) return html;
+export function injectStandaloneDeckKeyDedupe(html: string, force = false): string {
+  if (!shouldInject(html, force)) return html;
   return injectBeforeFirstScript(html, script());
 }
 
-function shouldInject(html: string): boolean {
+function shouldInject(html: string, force: boolean): boolean {
   if (html.includes(MARKER)) return false;
+  if (force) return true;
   if (!/\b(?:class\s*=\s*["'][^"']*\bslide\b|data-screen-label\b)/i.test(html)) return false;
   if (!/\bwindow\s*\.\s*addEventListener\s*\(\s*["']keydown["']/i.test(html)) return false;
   if (!/\bdocument\s*\.\s*addEventListener\s*\(\s*["']keydown["']/i.test(html)) return false;

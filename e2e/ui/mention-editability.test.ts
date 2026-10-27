@@ -5,9 +5,9 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { applyStandardMocks } from '@/playwright/mock-factory';
 
-const EVIDENCE_DIR = fileURLToPath(
-  new URL('../../.omo/evidence/mention-caret-2/', import.meta.url),
-);
+const EVIDENCE_DIR = process.env.READABLE_MENTION_EVIDENCE_DIR
+  ? join(process.env.READABLE_MENTION_EVIDENCE_DIR, 'caret')
+  : fileURLToPath(new URL('../../.omo/evidence/mention-caret-2/', import.meta.url));
 const EDITOR = '[data-testid="home-hero-input"]';
 const PILL = '.composer-inline-mention--plugin';
 const SUFFIX = ' 후속입력';
@@ -90,6 +90,8 @@ test('Hub context mention keeps the caret outside and remains atomically deletab
     .first();
   await expect(option).toBeVisible();
   await option.click();
+  await expect(page.getByTestId('mention-preview-detail')).toBeVisible();
+  await page.getByTestId('mention-preview-use').click();
   await expect(page.locator(PILL)).toHaveCount(1);
   const mentionText = await page.locator(PILL).textContent();
   if (!mentionText) throw new Error('Mention pill has no text');

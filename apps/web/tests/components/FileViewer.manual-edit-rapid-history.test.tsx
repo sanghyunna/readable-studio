@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest';
 import { FileViewer } from '../../src/components/FileViewer';
 import type { ProjectFile } from '../../src/types';
+import { manualEditCanonicalSource, manualEditFrameEpoch } from './manual-edit-frame-messages';
 
 const file: ProjectFile = {
   name: 'preview.html', path: 'preview.html', type: 'file', size: 1024,
@@ -32,11 +33,13 @@ it.each([
   fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
   const frame = screen.getByTestId('artifact-preview-frame');
   if (!(frame instanceof HTMLIFrameElement)) throw new Error('Preview is not an iframe');
-  const send = (data: object) => window.dispatchEvent(new MessageEvent('message', { data, source: frame.contentWindow }));
+  const documentEpoch = manualEditFrameEpoch(frame);
+  const entrySrcDoc = frame.srcdoc;
+  const send = (data: object) => window.dispatchEvent(new MessageEvent('message', { data: { documentEpoch, ...data }, source: frame.contentWindow }));
   for (const value of ['Acceptance Edit 1', 'Acceptance Edit 2', 'Acceptance Edit 3']) {
     await act(async () => { send({ type: 'readable-edit-text-commit', id: 'hero', value }); });
   }
-  expect(new DOMParser().parseFromString(frame.srcdoc, 'text/html').querySelector('h1')?.textContent).toBe('Acceptance Edit 3');
+  expect(new DOMParser().parseFromString(manualEditCanonicalSource(frame), 'text/html').querySelector('h1')?.textContent).toBe('Acceptance Edit 3');
 
   const runBatch = (redo: boolean) => act(async () => {
     for (let index = 0; index < 3; index += 1) {
@@ -50,6 +53,7 @@ it.each([
   await runBatch(batch % 2 === 1);
 
   // Then all three distinct entries apply, including the second undo/redo cycle.
-  expect(new DOMParser().parseFromString(frame.srcdoc, 'text/html').querySelector('h1')?.textContent)
+  expect(new DOMParser().parseFromString(manualEditCanonicalSource(frame), 'text/html').querySelector('h1')?.textContent)
     .toBe(batch % 2 === 1 ? 'Acceptance Edit 3' : 'Acceptance Heading');
+  expect(frame.srcdoc).toBe(entrySrcDoc);
 });

@@ -6,13 +6,23 @@ export const deletePreviewSelector = '[data-testid="artifact-preview-frame"]:vis
 export const deletePreview = (page: Page) => page.locator(deletePreviewSelector).first();
 export const deleteFrame = (page: Page) => page.frameLocator(deletePreviewSelector);
 
-export async function armDeletePreviewLoad(page: Page) {
+// Delete, Undo and Redo replay into the mounted preview document instead of
+// reloading it (no first-slide flash, kept scroll). Call the returned check
+// after the visible change: it proves the same document survived it.
+export async function armDeletePreviewInPlace(page: Page) {
   const marker = `${Date.now()}-${Math.random()}`;
   const preview = deletePreview(page);
-  await preview.evaluate((node, value) => {
-    node.addEventListener('load', () => node.setAttribute('data-delete-qa-load', value), { once: true });
+  await preview.evaluate((node) => {
+    node.removeAttribute('data-delete-qa-reloaded');
+    node.addEventListener('load', () => node.setAttribute('data-delete-qa-reloaded', 'true'), { once: true });
+  });
+  await deleteFrame(page).locator('html').evaluate((_, value) => {
+    (window as typeof window & { __deleteQaDocument?: string }).__deleteQaDocument = value;
   }, marker);
-  return () => expect(preview).toHaveAttribute('data-delete-qa-load', marker, { timeout: T.medium });
+  return async () => {
+    await expect(preview).not.toHaveAttribute('data-delete-qa-reloaded', 'true');
+    expect(await deleteFrame(page).locator('html').evaluate(() => (window as typeof window & { __deleteQaDocument?: string }).__deleteQaDocument)).toBe(marker);
+  };
 }
 
 export type DeleteFixture = {
@@ -49,8 +59,10 @@ export async function focusDeleteOwner(page: Page, owner: DeleteFocusOwner) {
     await deleteFrame(page).locator('body').evaluate(body => {
       const active = body.ownerDocument.activeElement;
       if (active instanceof HTMLElement) active.blur();
-      body.ownerDocument.defaultView?.focus();
     });
+    // Focus the frame from the host like a user would: the preview focus guard
+    // deliberately refuses script-driven focus from inside the preview.
+    await deletePreview(page).focus();
     await expect(deletePreview(page)).toBeFocused();
   }
 }
@@ -141,11 +153,11 @@ export async function runDeleteJourney(input: DeleteJourneyInput) {
     if (input.evidence) input.evidence.scrollBefore = scrollBefore;
     if (input.scroll) expect(scrollBefore.y).toBeGreaterThan(0);
     await input.screenshot?.('selected');
-    const deletedLoad = await armDeletePreviewLoad(page);
+    const deletedInPlace = await armDeletePreviewInPlace(page);
     await pressDeleteBurst(page);
-    await deletedLoad();
     await expect(frame.locator('html[data-readable-edit-mode]')).toHaveCount(1);
     await expect(target).toHaveCount(0, { timeout: T.medium });
+    await deletedInPlace();
     await expect(survivor).toHaveCount(1);
     await expect(page.locator('.manual-edit-error')).toHaveCount(0);
     const scrollAfter = await frame.locator('body').evaluate(() => new Promise<{ x: number; y: number }>(done => {
@@ -165,17 +177,17 @@ export async function runDeleteJourney(input: DeleteJourneyInput) {
     await page.keyboard.press('Delete');
     await expect(survivor).toHaveCount(1);
     await deletePreview(page).focus();
-    const undoneLoad = await armDeletePreviewLoad(page);
+    const undoneInPlace = await armDeletePreviewInPlace(page);
     await page.keyboard.press('Control+z');
-    await undoneLoad();
     await expect(target).toHaveCount(1, { timeout: T.medium });
+    await undoneInPlace();
     if (input.pendingColor) await expect(target).toHaveCSS('color', input.pendingColor);
     await input.screenshot?.('restored');
     await deletePreview(page).focus();
-    const redoneLoad = await armDeletePreviewLoad(page);
+    const redoneInPlace = await armDeletePreviewInPlace(page);
     await page.keyboard.press('Control+Shift+z');
-    await redoneLoad();
     await expect(target).toHaveCount(0, { timeout: T.medium });
+    await redoneInPlace();
     expect(capture.writes).toHaveLength(0);
     const inspector = page.locator('.manual-edit-left-inspector');
     const exited = inspector.waitFor({ state: 'detached', timeout: T.medium });

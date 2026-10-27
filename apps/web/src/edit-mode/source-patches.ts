@@ -1,6 +1,7 @@
 import { editWidthRelease } from '@readable-studio/html-edit';
 import { rewriteClonedWidthReleases } from './duplicate-width-release';
 import { moveCssCommitStyles } from './resize-geometry';
+import { MANUAL_EDIT_RICH_TEXT_FORMAT_CSS } from './rich-text-formatting';
 import { emptyManualEditStyles, MANUAL_EDIT_STYLE_PROPS, type ManualEditDuplicatePlan, type ManualEditFields, type ManualEditPatch, type ManualEditStyles } from './types';
 
 export interface ManualEditPatchResult {
@@ -16,15 +17,15 @@ const INLINE_TEXT_WRAPPER_TAGS = new Set([
   'bdi', 'bdo',
 ]);
 
-// Inline-formatting tags allowed to survive a `set-inner-html` save. This is the
-// inline-text wrapper set plus the handful of formatting tags the rich-text edit
-// bridge can produce (`<a>`, `<br>`). Everything else is light-normalized: tags
+// Text formatting and paragraphs must survive a rich-text save unchanged: tag
+// names and block wrappers can own template typography and line breaks. Other tags
 // outside this allowlist are unwrapped (their text is kept), `<script>`/`<style>`
 // are dropped entirely, and event-handler attributes / `javascript:` URLs are
 // stripped from the survivors.
 const INLINE_HTML_ALLOWED_TAGS = new Set([
   ...INLINE_TEXT_WRAPPER_TAGS,
   'a', 'br',
+  'div', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre', 'ul', 'ol', 'li',
 ]);
 const DECORATIVE_HTML_ALLOWED_TAGS = new Set([
   'div', 'svg', 'g', 'path', 'circle', 'ellipse', 'rect', 'line', 'polyline', 'polygon',
@@ -129,13 +130,35 @@ export function applyManualEditPatch(source: string, patch: ManualEditPatch): Ma
     if (!el) return { ok: false, source, error: 'WIDTH_RELEASE_CONFLICT: target-missing' };
     const targetId = el.getAttribute('data-readable-id');
     const target = targetId ? { targetId, tag: el.tagName.toLowerCase() } : { sourcePath: patch.id, tag: el.tagName.toLowerCase() };
+    let declarations = patch.kind === 'set-width-release' ? patch.declarations : [];
+    let centerTranslate: string | undefined;
+    if (Array.isArray(declarations)) {
+      const translations = declarations.filter((declaration) => declaration?.property === 'translate');
+      if (translations.length) {
+        const translation = translations[0]!;
+        const tokens = typeof translation.value === 'string' ? translation.value.trim().split(/\s+/) : [];
+        if (translations.length !== 1 || translation.priority !== '' || tokens.length !== 2
+          || !isSupportedDuplicateTranslate(translation.value)
+          || tokens.some((token) => !Number.isFinite(Number.parseFloat(token)))) {
+          return { ok: false, source, error: 'WIDTH_RELEASE_CONFLICT: invalid-operation' };
+        }
+        centerTranslate = tokens.join(' ');
+        declarations = declarations.filter((declaration) => declaration?.property !== 'translate');
+      }
+    }
     const result = patch.kind === 'restore-width-release'
       ? editWidthRelease(source, { kind: 'restore', target: { targetId: targetId ?? patch.id }, expectedSource: source })
       : editWidthRelease(source, el.hasAttribute('data-readable-width-release')
-        ? { ...patch, kind: 'update', target: { targetId: targetId ?? patch.id } }
-        : { ...patch, kind: 'apply', target });
-    return result.ok ? { ok: true, source: result.source, selection: result.selection }
-      : { ok: false, source, error: `${result.conflict.code}: ${result.conflict.reason}` };
+        ? { ...patch, declarations, kind: 'update', target: { targetId: targetId ?? patch.id } }
+        : { ...patch, declarations, kind: 'apply', target });
+    if (!result.ok) return { ok: false, source, error: `${result.conflict.code}: ${result.conflict.reason}` };
+    if (centerTranslate === undefined) return { ok: true, source: result.source, selection: result.selection };
+    // Centering is an ordinary move, not sizing ownership. Keep it in the same
+    // canonical transaction without making later moves conflict with Restore.
+    const moved = applyManualEditPatch(result.source, { kind: 'set-style', id: result.selection?.targetId ?? targetId ?? patch.id,
+      styles: { translate: centerTranslate } });
+    return moved.ok ? { ok: true, source: moved.source, selection: result.selection }
+      : { ok: false, source, error: moved.error };
   }
   if (patch.kind === 'set-full-source') {
     const validation = editWidthRelease(patch.source, { kind: 'inspect' });
@@ -207,6 +230,16 @@ export function applyManualEditPatch(source: string, patch: ManualEditPatch): Ma
     setAttributes(el, patch.attributes);
   } else if (patch.kind === 'set-inner-html') {
     el.innerHTML = sanitizeInlineHtml(doc, patch.html);
+    if (el.querySelector('[data-readable-text-format], [data-readable-text-underline="off"]')) {
+      let style = Array.from(doc.querySelectorAll<HTMLStyleElement>('style[data-readable-text-format-style="1"]'))
+        .find((candidate) => candidate.attributes.length === 1 && candidate.textContent === MANUAL_EDIT_RICH_TEXT_FORMAT_CSS);
+      if (!style) {
+        style = doc.createElement('style');
+        style.setAttribute('data-readable-text-format-style', '1');
+        style.textContent = MANUAL_EDIT_RICH_TEXT_FORMAT_CSS;
+      }
+      doc.head.prepend(style);
+    }
   } else if (patch.kind === 'set-outer-html') {
     const replaced = replaceOuterHtml(doc, el, patch.html);
     if (!replaced.ok) {
@@ -672,21 +705,27 @@ export function readManualEditOuterHtml(source: string | Document, id: string): 
 
 function parseSource(source: string | Document): Document | null {
   if (typeof source !== 'string') return source;
+  const fullDocument = isManualEditFullHtmlDocument(source);
+  const markup = fullDocument ? source : `<!doctype html><html><head></head><body>${source}</body></html>`;
   if (typeof DOMParser !== 'undefined') {
-    return new DOMParser().parseFromString(source, 'text/html');
+    return new DOMParser().parseFromString(markup, 'text/html');
   }
   if (typeof document !== 'undefined') {
     const doc = document.implementation.createHTMLDocument('');
-    doc.documentElement.innerHTML = source;
+    doc.documentElement.innerHTML = fullDocument ? source : `<head></head><body>${source}</body>`;
     return doc;
   }
   return null;
 }
 
 function serializeSource(doc: Document, originalSource: string): string {
-  if (!isManualEditFullHtmlDocument(originalSource)) return doc.body.innerHTML;
+  const managedFormatting = Array.from(doc.head.querySelectorAll('style[data-readable-text-format-style="1"]'))
+    .some((style) => style.attributes.length === 1 && style.textContent === MANUAL_EDIT_RICH_TEXT_FORMAT_CSS);
+  if (!isManualEditFullHtmlDocument(originalSource) && !managedFormatting) return doc.body.innerHTML;
   return `<!doctype html>\n${doc.documentElement.outerHTML}`;
 }
+
+export { parseSource as parseManualEditSource };
 
 export function isManualEditFullHtmlDocument(source: string): boolean {
   const normalized = firstSourceToken(source).slice(0, 32).toLowerCase();
@@ -803,13 +842,6 @@ function isSafeUrlValue(value: string): boolean {
   return SAFE_URL_SCHEMES.has((schemeMatch[1] ?? '').toLowerCase());
 }
 
-// Chromium's execCommand('bold'/'italic') (the edit bridge's formatting path;
-// see bridge.ts) produces `<b>`/`<i>`, but this app's canonical inline markup
-// is `<strong>`/`<em>`. Rename on save so the two stay equivalent everywhere
-// else that reads saved source (both tags are already in the allowlist, so
-// this is a rename, not a behavior change).
-const CANONICAL_TAG_RENAMES: Record<string, string> = { b: 'strong', i: 'em' };
-
 // Light, dependency-free normalization for rich-text inner HTML. The goal is
 // clean inline markup; blocking obvious script injection is a bonus rather than a
 // hardened security boundary. We allowlist inline-formatting tags, preserve
@@ -820,7 +852,7 @@ const CANONICAL_TAG_RENAMES: Record<string, string> = { b: 'strong', i: 'em' };
 function sanitizeInlineHtml(doc: Document, html: string): string {
   const template = doc.createElement('template');
   template.innerHTML = html;
-  // Pre-order (parents before children) so unwrapping/renaming a parent still
+  // Pre-order (parents before children) so unwrapping a parent still
   // lets the surviving children get visited in the same static snapshot.
   const elements = Array.from(template.content.querySelectorAll('*'));
   for (const original of elements) {
@@ -830,8 +862,7 @@ function sanitizeInlineHtml(doc: Document, html: string): string {
       continue;
     }
     const textless = !(original.textContent ?? '').trim();
-    const canonicalTag = textless ? undefined : CANONICAL_TAG_RENAMES[tag];
-    const el = canonicalTag ? renameElement(original, canonicalTag) : original;
+    const el = original;
     const finalTag = el.tagName.toLowerCase();
     const textlessDecorative = DECORATIVE_HTML_ALLOWED_TAGS.has(finalTag) && textless;
     if (!INLINE_HTML_ALLOWED_TAGS.has(finalTag) && !textlessDecorative) {
@@ -840,7 +871,7 @@ function sanitizeInlineHtml(doc: Document, html: string): string {
     }
     for (const attr of Array.from(el.attributes)) {
       const name = attr.name.toLowerCase();
-      if (name.startsWith('on')) {
+      if (name.startsWith('on') || isDuplicateRuntimeAttribute(name) || name === 'data-readable-edit-transient') {
         el.removeAttribute(attr.name);
         continue;
       }
@@ -850,18 +881,6 @@ function sanitizeInlineHtml(doc: Document, html: string): string {
     }
   }
   return template.innerHTML;
-}
-
-// Swap an element's tag name in place: create the replacement, move over
-// attributes and children (same nodes, so already-visited descendants in the
-// caller's element snapshot stay attached and correctly parented), then swap
-// it into the original's spot.
-function renameElement(el: Element, tagName: string): Element {
-  const replacement = el.ownerDocument.createElement(tagName);
-  for (const attr of Array.from(el.attributes)) replacement.setAttribute(attr.name, attr.value);
-  while (el.firstChild) replacement.appendChild(el.firstChild);
-  el.replaceWith(replacement);
-  return replacement;
 }
 
 function unwrapElement(el: Element): void {

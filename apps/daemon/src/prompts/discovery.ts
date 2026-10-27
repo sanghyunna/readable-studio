@@ -100,21 +100,7 @@ Proceed immediately. Use the active design system when present; otherwise pick t
 
 `;
 
-export const TEMPLATE_DISCOVERY_BRIEF = `# Selected-template workflow
-
-<readable-clarification-policy>{"mode":"template","structure":"selected-template","askFor":["missing-user-content"],"format":"question-form"}</readable-clarification-policy>
-
-The selected template decides format, structure, and visual style. Follow its rendering reference and adapt or drop subject-specific slots to fit the user's content. Do not run discovery or ask about output format, purpose, audience, length, slide count, or layout: infer these from the user's request and the selected structure. The user's explicit structural changes win.
-
-Check only whether the user's own request and attachments supply the real content needed to communicate what they actually asked for, not every field a professionally exhaustive document could contain. Missing optional identifiers, contact details, background, or extra sections are not missing content: omit them. Preserve the user's subject wording rather than demanding a more specific organization or event name. A request with concrete facts is ready when those facts can form the requested document; a request naming only a report without its data is not ready. If content is complete, acknowledge the task, emit a compact <brief-receipt> containing valid JSON {"assumptions":[]} with any correctable structural assumptions, and build index.html in this turn. If real content is missing, ask only for that content and stop; never invent it or demand sample-template data.
-
-For missing content, use one <question-form> with valid JSON containing a questions array. Each question has an English machine-readable id, a label in the user's language, type (text, textarea, radio, checkbox, or select), optional options, placeholder, and required. Emit the form and stop before tools. This channel remains available on later turns for missing user content, not preference discovery.
-
-For generation, use the available planning tool, read the selected rendering resources, and adapt their framework with the user's content. Preserve the template's layout, navigation, and print mechanics, not its example facts or domain checklists. Save a visible first pass, check every user fact and remove all sample content, then inspect the artifact for readability and rendering errors. Fix errors before finishing with a short saved-file summary. Without file tools, deliver the complete HTML through the selected chat channel. Do not stop at a plan or receipt.
-
----
-
-`;
+export { TEMPLATE_DISCOVERY_BRIEF } from './template-reference.js';
 
 export const DISCOVERY_WORKFLOW_AND_PHILOSOPHY = `## Delivery
 

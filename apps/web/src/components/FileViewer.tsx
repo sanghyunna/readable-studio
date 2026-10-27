@@ -130,7 +130,7 @@ import { ManualEditShapeToolbar } from './ManualEditShapeToolbar';
 import { ManualEditResizeHandles } from './ManualEditResizeHandles';
 import { ManualEditMoveFrame, type ManualEditMoveUpdate } from './ManualEditMoveFrame';
 import { ManualEditSnapGuides } from './ManualEditSnapGuides';
-import { RESIZE_HANDLE_DIRECTIONS, resizeCssCommitStyles, type ResizeHandleDirection } from '../edit-mode/resize-geometry';
+import { RESIZE_HANDLE_DIRECTIONS, moveCssCommitStyles, resizeCssCommitStyles, resizeDragSize, type ResizeHandleDirection } from '../edit-mode/resize-geometry';
 import {
   buildManualEditMovementCandidates,
   createManualEditSnapLatch,
@@ -146,13 +146,14 @@ import {
   applyManualEditPatch,
   isManualEditFullHtmlDocument,
   planManualEditDuplicate,
+  parseManualEditSource,
   readManualEditAttributes,
   readManualEditFields,
   readManualEditOuterHtml,
   readManualEditStyles,
 } from '../edit-mode/source-patches';
 import { appendManualEditHistory } from '../edit-mode/history';
-import { MANUAL_EDIT_STYLE_PROPS, type ManualEditActivationMessage, type ManualEditBeginTextEditMessage, type ManualEditBridgeMessage, type ManualEditDeleteMessage, type ManualEditDuplicatePlan, type ManualEditEndTextEditMessage, type ManualEditHistoryEntry, type ManualEditHoverAtMessage, type ManualEditPatch, type ManualEditRect, type ManualEditResizeConstraint, type ManualEditResizeRequest, type ManualEditStyles, type ManualEditTarget } from '../edit-mode/types';
+import { MANUAL_EDIT_STYLE_PROPS, type ManualEditActivationMessage, type ManualEditBeginTextEditMessage, type ManualEditBridgeMessage, type ManualEditDeleteMessage, type ManualEditDuplicateMessage, type ManualEditDuplicatePlan, type ManualEditEndTextEditMessage, type ManualEditHistoryEntry, type ManualEditHoverAtMessage, type ManualEditPatch, type ManualEditRect, type ManualEditResizeConstraint, type ManualEditResizeRequest, type ManualEditStyles, type ManualEditTarget } from '../edit-mode/types';
 import {
   isManualEditNudgeBlocked,
   isManualEditNudgeKey,
@@ -208,13 +209,22 @@ export type ManualEditPendingStyleSave = {
   version: number;
 };
 type ManualEditPostSaveIntent =
-  | { seq: number; kind: 'select'; target: ManualEditTarget }
+  | { seq: number; kind: 'select'; target: ManualEditTarget; beginTextEdit?: boolean; selectAll?: boolean;
+      textEditPoint?: { clientX: number; clientY: number }; selectWord?: boolean }
   | { seq: number; kind: 'clear'; openPageStyles: boolean }
   | { seq: number; kind: 'exit' };
 type ManualEditPendingDuplicateSelection = {
   id: string;
   ownerId: string;
   seq: number;
+};
+type ManualEditTextEntryOptions = Pick<ManualEditBeginTextEditMessage, 'selectAll' | 'textEditPoint' | 'selectWord'> & { focusPreview?: boolean };
+type ManualEditPendingTargetHydration = {
+  id: string; actionSeq: number; documentEpoch: string; source: string | null;
+  beginTextEdit: boolean; options: ManualEditTextEntryOptions;
+};
+type ManualEditDuplicateQueue = {
+  identity: string; previewDocument: string | null; actionSeq: number; remaining: number; nextId: string | null;
 };
 type KeyboardBurst = {
   targetId: string;
@@ -226,6 +236,17 @@ type KeyboardBurst = {
   netDelta: { x: number; y: number };
   startBaseline: string;
   lastResult: ManualEditMovementResult | null;
+  precise: boolean;
+};
+
+type KeyboardResizeBurst = {
+  target: ManualEditTarget;
+  revision: number;
+  heldKeys: Set<string>;
+  startSize: { width: number; height: number };
+  size: { width: number; height: number; fromCenter: true };
+  direction: 'e' | 's' | 'se';
+  flush: () => Promise<void>;
 };
 // A completed burst result deferred behind an in-flight save, committed when the
 // save drains.
@@ -3935,11 +3956,13 @@ function HtmlViewer({
   const selectedManualEditTargetIdRef = useRef<string | null>(null);
   const selectedManualEditTargetRef = useRef<ManualEditTarget | null>(null);
   const manualEditActionSeqRef = useRef(0);
+  const manualEditPendingTargetHydrationRef = useRef<ManualEditPendingTargetHydration | null>(null);
   const manualEditPostSaveIntentRef = useRef<ManualEditPostSaveIntent | null>(null);
   const [manualEditDraft, setManualEditDraft] = useState<ManualEditDraft>(() => emptyManualEditDraft());
   const [manualEditHistory, setManualEditHistory] = useState<ManualEditHistoryEntry[]>([]);
   const [manualEditUndone, setManualEditUndone] = useState<ManualEditHistoryEntry[]>([]);
   const manualEditHistoryRef = useRef(manualEditHistory);
+  const manualEditHistoryEntrySequenceRef = useRef(0);
   const manualEditUndoneRef = useRef(manualEditUndone);
   manualEditHistoryRef.current = manualEditHistory;
   manualEditUndoneRef.current = manualEditUndone;
@@ -3958,6 +3981,8 @@ function HtmlViewer({
     manualEditHistoryFocusRef.current = null;
   }, [projectId, file.name, manualEditMode]);
   const manualEditHistoryOperationRef = useRef(false);
+  const manualEditHistoryPreviewTargetsRef = useRef(new Map<string, { beforeId: string | null; afterId: string | null }>());
+  const manualEditPreviewSourceRequestRef = useRef(0);
   const manualEditHistoryQueueRef = useRef<Array<'undo' | 'redo'>>([]);
   const undoManualEditRef = useRef<() => Promise<void>>(async () => {});
   const redoManualEditRef = useRef<() => Promise<void>>(async () => {});
@@ -3966,6 +3991,12 @@ function HtmlViewer({
   const manualEditDeleteInFlightRef = useRef(false);
   const manualEditDeleteRef = useRef(deleteManualEditTarget);
   manualEditDeleteRef.current = deleteManualEditTarget;
+  const manualEditDuplicateCommandInFlightRef = useRef<ManualEditDuplicateQueue | null>(null);
+  const manualEditDuplicateQueueRef = useRef<ManualEditDuplicateQueue | null>(null);
+  const manualEditDuplicateCommandRef = useRef(duplicateManualEditTarget);
+  manualEditDuplicateCommandRef.current = duplicateManualEditTarget;
+  const manualEditDuplicateRunRef = useRef(runManualEditDuplicateQueue);
+  manualEditDuplicateRunRef.current = runManualEditDuplicateQueue;
   const manualEditDocumentIdentityRef = useRef('');
   manualEditDocumentIdentityRef.current = `${projectId}\u0000${file.name}`;
   const manualEditPendingStyleRef = useRef<ManualEditPendingStyleSave | null>(null);
@@ -3983,7 +4014,7 @@ function HtmlViewer({
     startRect: ManualEditRect;
     closed?: boolean;
     previewed?: boolean;
-    lastSafeSize?: { width: number; height: number };
+    lastSafeSize?: { width: number; height: number; fromCenter?: boolean };
   } | null>(null);
   const manualEditResizeTransactionRef = useRef(0);
   const manualEditResizeFinalizingRef = useRef<Promise<boolean> | null>(null);
@@ -4010,6 +4041,9 @@ function HtmlViewer({
   const manualEditLastUpdateRef = useRef<ManualEditMoveUpdate | null>(null);
   const manualEditDuplicateGenerationRef = useRef(0);
   const manualEditPendingDuplicateSelectionRef = useRef<ManualEditPendingDuplicateSelection | null>(null);
+  // A selection the bridge may already show while the host still flushes the
+  // previous one. Key commands for it wait instead of being dropped.
+  const manualEditSelectionPendingRef = useRef<{ id: string; actionSeq: number; waiters: Array<() => void> } | null>(null);
   const [manualEditDuplicateRect, setManualEditDuplicateRect] = useState<ManualEditRect | null>(null);
   const [manualEditSnapGuides, setManualEditSnapGuides] = useState<ManualEditMovementResult['guides']>(EMPTY_MANUAL_EDIT_SNAP_GUIDES);
   const manualEditModeRef = useRef(manualEditMode);
@@ -4027,6 +4061,7 @@ function HtmlViewer({
   // never rejected by an off-by-one from an extra re-sync.
   const manualEditPreviewDocRef = useRef<string | null>(null);
   const keyboardBurstRef = useRef<KeyboardBurst | null>(null);
+  const keyboardResizeBurstRef = useRef<KeyboardResizeBurst | null>(null);
   // Arrow keys whose burst Escape cancelled while they were physically held:
   // their browser repeats are swallowed until the real keyup, so a still-held
   // key cannot reopen the burst it just cancelled.
@@ -4419,30 +4454,81 @@ function HtmlViewer({
 
   useEffect(() => {
     let cancelled = false;
+    const sourceFileKey = `${projectId}\0${file.name}`;
+    const fileChanged = sourceFileKeyRef.current !== sourceFileKey;
+    if (fileChanged) {
+      setSource(null);
+      sourceRef.current = null;
+      manualEditInFlightSourceRef.current = null;
+      manualEditOriginalSourceRef.current = null;
+      manualEditTextNeedsFlushRef.current = false;
+      manualEditDirtyRef.current = false;
+      setManualEditDirty(false);
+      manualEditResizeFinalizingRef.current = null;
+      manualEditResizeBaselineRef.current = null;
+      manualEditResizeFlushRef.current = null;
+      keyboardResizeBurstRef.current = null;
+      manualEditResizeRepliesRef.current.clear();
+      if (manualEditResizeCancelTimeoutRef.current !== null) clearTimeout(manualEditResizeCancelTimeoutRef.current);
+      manualEditResizeCancelTimeoutRef.current = null;
+      setManualEditResizeFinalizing(false);
+      manualEditPendingTargetHydrationRef.current = null;
+      manualEditActionSeqRef.current += 1;
+    }
     const acceptSource = async (text: string) => {
-      if (text === sourceRef.current || text === manualEditInFlightSourceRef.current) return;
+      if (text === sourceRef.current || text === manualEditInFlightSourceRef.current) {
+        if (fileChanged && manualEditModeRef.current) manualEditOriginalSourceRef.current = text;
+        return;
+      }
       // A watcher is not a user-requested transition. Keep the document and
       // gesture owned by pointerup/keyup; flushing here would end a resize or
       // split one held-key burst into multiple history entries.
-      if (manualEditModeRef.current && hasActiveManualEditGesture()) return;
-      if (manualEditModeRef.current && hasLiveManualEdits()) {
+      if (!fileChanged && manualEditModeRef.current && hasActiveManualEditGesture()) return;
+      if (!fileChanged && manualEditModeRef.current && hasLiveManualEdits()) {
         if (!(await manualEditSessionFlushRef.current()) || cancelled) return;
       }
       syncManualEditDirty();
       manualEditSourceRefreshPendingRef.current = false;
       if (manualEditModeRef.current && manualEditDirtyRef.current) return;
+      if (manualEditModeRef.current) {
+        manualEditActionSeqRef.current += 1;
+        manualEditResizeFailedRef.current = false;
+        setManualEditError(null);
+        manualEditPostSaveIntentRef.current = null;
+        manualEditPendingTargetHydrationRef.current = null;
+        manualEditPendingDuplicateSelectionRef.current = null;
+        manualEditDuplicateQueueRef.current = null;
+        selectedManualEditTargetIdRef.current = null;
+        selectedManualEditTargetRef.current = null;
+        setSelectedManualEditTarget(null);
+        setManualEditHoverTarget(null);
+        setManualEditMoveMode('selected');
+        setManualEditPageStylesOpen(false);
+        manualEditTextNeedsFlushRef.current = false;
+        setManualEditRichFormat({ editing: false, hasSelection: false, bold: false, italic: false, underline: false });
+        setManualEditDraft(emptyManualEditDraft(text));
+      }
       dropActiveManualEditMovementForSourceRefresh(text);
+      // That refresh captures the outgoing document's scroll for an in-place
+      // restore; a different file must not inherit it.
+      if (fileChanged) previewScrollRestoreRef.current = null;
       setSource(text);
       sourceRef.current = text;
+      if (manualEditModeRef.current) {
+        manualEditOriginalSourceRef.current = text;
+        manualEditHistoryRef.current = [];
+        manualEditUndoneRef.current = [];
+        setManualEditHistory([]);
+        setManualEditUndone([]);
+        syncManualEditDirty();
+      }
     };
-    const sourceFileKey = `${projectId}\0${file.name}\0${liveHtml === undefined ? 'raw' : 'live'}`;
     if (liveHtml !== undefined) {
       sourceFileKeyRef.current = sourceFileKey;
-      manualEditSaveGenerationRef.current = 0;
+      if (fileChanged) manualEditSaveGenerationRef.current = 0;
       void acceptSource(liveHtml);
       return () => { cancelled = true; };
     }
-    const fileChanged = sourceFileKeyRef.current !== sourceFileKey;
     sourceFileKeyRef.current = sourceFileKey;
     if (fileChanged) {
       manualEditSaveGenerationRef.current = 0;
@@ -4505,16 +4591,19 @@ function HtmlViewer({
     };
   }, [projectId, file.name, deployProviderId]);
 
+  const livePreviewSource = inlinedSource ?? source;
+  const previewSource = (manualEditMode && manualEditFrozenSource !== null)
+    ? manualEditFrozenSource
+    : livePreviewSource;
   // Detect deck-shaped HTML even when the project's skill didn't declare
   // `mode: deck`. Freeform projects often produce a deck because the user
   // asked for one in plain prose; without this, prev/next and Present
   // never surface and the deck becomes a static, unnavigable preview.
   const looksLikeDeck = useMemo(() => {
-    if (!source) return false;
-    return /class\s*=\s*['"][^'"]*\bslide\b/i.test(source);
-  }, [source]);
+    if (!previewSource) return false;
+    return /class\s*=\s*['"][^'"]*\bslide\b/i.test(previewSource);
+  }, [previewSource]);
   const effectiveDeck = isDeck || looksLikeDeck;
-  const livePreviewSource = inlinedSource ?? source;
   // Freeze the iframe input on the snapshot taken at Edit-mode entry. Any
   // source rewrite during edit (1.5s debounced set-style patches) stays
   // invisible to the iframe — live updates flow through readable-edit-preview-style
@@ -4532,13 +4621,10 @@ function HtmlViewer({
       setManualEditFrozenSource(livePreviewSource);
     }
   }, [manualEditMode, manualEditFrozenSource, livePreviewSource]);
-  const previewSource = (manualEditMode && manualEditFrozenSource !== null)
-    ? manualEditFrozenSource
-    : livePreviewSource;
   const manualEditPageStylesEnabled = typeof source === 'string' && isManualEditFullHtmlDocument(source);
   const urlModeBridge = hasUrlModeBridge(source);
   const tweaksBridge = hasTweaksTemplate(source);
-  const manualEditRequiresSrcDoc = manualEditSrcDocActive && !urlModeBridge;
+  const manualEditRequiresSrcDoc = manualEditSrcDocActive;
   // When we URL-load the iframe directly, skip every in-host inlining /
   // srcDoc-rebuilding step. The browser does the asset resolution itself,
   // which is the whole point of the URL-load path.
@@ -4629,9 +4715,7 @@ function HtmlViewer({
     selectionBridge: true,
     editBridge: manualEditRequiresSrcDoc,
     paletteBridge: false,
-    // Explicit host-overlay text entry must be able to focus the iframe editor,
-    // even when the iframe itself has not received a recent trusted pointerdown.
-    previewFocusGuard: !manualEditRequiresSrcDoc,
+    previewFocusGuard: true,
   })), [previewSource, effectiveDeck, projectId, file.name, previewStateKey, manualEditRequiresSrcDoc]);
   const srcDoc = useMemo(
     () => (useLazySrcDocTransport ? '' : buildPreviewSrcDoc()),
@@ -4655,6 +4739,20 @@ function HtmlViewer({
     manualEditDuplicateGenerationRef.current += 1;
     manualEditSourceRefreshPendingRef.current = false;
   }, [manualEditMovementOwnerKey]);
+  useEffect(() => {
+    const queue = manualEditDuplicateQueueRef.current;
+    if (!queue) return;
+    if (!manualEditMode || queue.identity !== manualEditDocumentIdentityRef.current
+      || queue.previewDocument !== manualEditPreviewDocRef.current || queue.actionSeq !== manualEditActionSeqRef.current) {
+      manualEditDuplicateQueueRef.current = null;
+      return;
+    }
+    if (queue.nextId !== null) {
+      if (queue.nextId !== selectedManualEditTargetRef.current?.id || queue.nextId !== selectedManualEditTarget?.id) return;
+      queue.nextId = null;
+    }
+    void manualEditDuplicateRunRef.current();
+  }, [manualEditMovementOwnerKey, selectedManualEditTarget, manualEditSaving]);
   const [srcDocTransportResetKey, setSrcDocTransportResetKey] = useState(0);
   const [srcDocShellReady, setSrcDocShellReady] = useState(false);
   const wasUrlLoadPreviewRef = useRef(useUrlLoadPreview);
@@ -4910,16 +5008,19 @@ function HtmlViewer({
   }, [boardMode, boardTool, srcDoc, useUrlLoadPreview]);
 
   useEffect(() => {
-    const win = iframeRef.current?.contentWindow;
-    if (!win) return;
     // Bump the revision only when the preview document actually changes (a
     // different file, an srcDoc reload, or a render-mode flip) — never on a plain
-    // selection re-sync — so the bridge and host never drift out of sync.
+    // selection re-sync — so the bridge and host never drift out of sync. Bump
+    // even while no window is reachable: the replacement document's load sync
+    // must carry the new epoch, or a later selection re-sync would bump it under
+    // a live text edit and drop that edit's commit.
     const docKey = `${file.name}\u0000${useUrlLoadPreview ? 'url' : 'srcdoc'}\u0000${manualEditDocumentRevision}\u0000${srcDoc ?? ''}`;
     if (manualEditPreviewDocRef.current !== docKey) {
       manualEditPreviewRevisionRef.current += 1;
       manualEditPreviewDocRef.current = docKey;
     }
+    const win = iframeRef.current?.contentWindow;
+    if (!win) return;
     win.postMessage({ type: 'readable-edit-mode', enabled: manualEditMode, documentEpoch: manualEditDocumentEpoch() }, '*');
     postSelectedManualEditTargetToIframe(manualEditMode ? selectedManualEditTarget?.id ?? null : null);
   }, [manualEditMode, selectedManualEditTarget?.id, srcDoc, useUrlLoadPreview, file.name, manualEditDocumentRevision]);
@@ -4953,6 +5054,7 @@ function HtmlViewer({
   }, []);
 
   const sendManualEditRichFormat = useCallback((command: 'bold' | 'italic' | 'underline') => {
+    iframeRef.current?.focus({ preventScroll: true });
     const win = iframeRef.current?.contentWindow;
     if (win) win.postMessage({ type: 'readable-edit-rich-format', command }, '*');
   }, []);
@@ -4960,7 +5062,9 @@ function HtmlViewer({
   const sendManualEditTextEdit = useCallback(
     (message: ManualEditBeginTextEditMessage | ManualEditEndTextEditMessage) => {
       const win = iframeRef.current?.contentWindow;
-      if (message.type === 'readable-edit-begin-text-edit') manualEditTextNeedsFlushRef.current = true;
+      if (message.type === 'readable-edit-begin-text-edit') {
+        manualEditTextNeedsFlushRef.current = true;
+      }
       if (win) win.postMessage(message, '*');
     },
     [],
@@ -5070,6 +5174,7 @@ function HtmlViewer({
     selectedManualEditTargetIdRef.current = null;
     selectedManualEditTargetRef.current = null;
     manualEditPostSaveIntentRef.current = null;
+    manualEditPendingTargetHydrationRef.current = null;
     manualEditPendingDuplicateSelectionRef.current = null;
     manualEditActionSeqRef.current += 1;
     setManualEditDraft(emptyManualEditDraft());
@@ -5330,6 +5435,7 @@ function HtmlViewer({
       selectedManualEditTargetIdRef.current = null;
       selectedManualEditTargetRef.current = null;
       manualEditPostSaveIntentRef.current = null;
+      manualEditPendingTargetHydrationRef.current = null;
       manualEditPendingDuplicateSelectionRef.current = null;
       manualEditActionSeqRef.current += 1;
       setManualEditError(null);
@@ -5341,6 +5447,7 @@ function HtmlViewer({
     }
     function onMessage(ev: MessageEvent) {
       if (!isOurPreviewIframeSource(ev.source)) return;
+      if (!isActivePreviewIframeSource(ev.source)) return;
       const data = ev.data as ManualEditBridgeMessage | null;
       if (!data?.type) return;
       if (data.type === 'readable-edit-duplicate-preview') {
@@ -5450,17 +5557,38 @@ function HtmlViewer({
           // Discovery broadcasts intentionally omit the relatively expensive
           // authored-size cascade probe. Preserve the selected target's last
           // full selection/preview metadata while refreshing its geometry.
-          return fresh.authoredSize || !current.authoredSize
-            ? fresh
-            : { ...fresh, authoredSize: current.authoredSize };
+          return {
+            ...fresh,
+            ...(fresh.stylesMeasured === false ? { styles: current.styles, stylesMeasured: current.stylesMeasured } : {}),
+            ...(!fresh.authoredSize && current.authoredSize ? { authoredSize: current.authoredSize } : {}),
+          };
         });
         const selectedId = selectedManualEditTargetIdRef.current;
-        if (selectedId) setTimeout(() => postSelectedManualEditTargetToIframe(selectedId), 0);
+        // Re-asserting the committed selection while a newer one is still being
+        // committed would roll the bridge back to the old object mid-gesture.
+        if (selectedId) setTimeout(() => {
+          if (!liveManualEditSelectionPending()) postSelectedManualEditTargetToIframe(selectedId);
+        }, 0);
         return;
       }
       if (data.type === 'readable-edit-select') {
+        if (data.documentEpoch !== undefined && data.documentEpoch !== manualEditDocumentEpoch()) return;
+        if (data.actionSeq !== undefined || data.requestedId !== undefined) {
+          const pending = manualEditPendingTargetHydrationRef.current;
+          if (!pending || !Number.isSafeInteger(data.actionSeq) || data.actionSeq !== pending.actionSeq
+            || data.actionSeq !== manualEditActionSeqRef.current || data.requestedId !== pending.id
+            || data.target.id !== pending.id || data.target.stylesMeasured === false
+            || data.documentEpoch !== pending.documentEpoch || data.documentEpoch !== manualEditDocumentEpoch()
+            || pending.source !== sourceRef.current) return;
+          manualEditPendingTargetHydrationRef.current = null;
+          setManualEditHoverTarget(null);
+          void selectManualEditTarget(data.target, pending.actionSeq, pending.beginTextEdit, pending.options);
+          return;
+        }
         setManualEditHoverTarget(null);
-        void selectManualEditTarget(data.target, undefined, data.beginTextEdit);
+        void selectManualEditTarget(data.target, undefined, data.beginTextEdit, {
+          selectAll: data.selectAll, textEditPoint: data.textEditPoint, selectWord: data.selectWord,
+        });
         return;
       }
       if (data.type === 'readable-edit-deselect') {
@@ -5487,6 +5615,7 @@ function HtmlViewer({
         return;
       }
       if (data.type === 'readable-edit-text-commit') {
+        if (!isActivePreviewIframeSource(ev.source) || data.documentEpoch !== manualEditDocumentEpoch()) return;
         void applyManualEdit({
           id: String(data.id),
           kind: 'set-text',
@@ -5494,7 +5623,14 @@ function HtmlViewer({
         }, 'Edit text');
         return;
       }
+      if (data.type === 'readable-edit-preview-source-applied') {
+        if (!isActivePreviewIframeSource(ev.source) || data.documentEpoch !== manualEditDocumentEpoch()) return;
+        if (!Number.isInteger(data.requestId) || data.requestId < 1 || data.requestId > manualEditPreviewSourceRequestRef.current) return;
+        if (!data.ok && sourceRef.current !== null) refreshManualEditDocument(sourceRef.current);
+        return;
+      }
       if (data.type === 'readable-edit-html-commit') {
+        if (!isActivePreviewIframeSource(ev.source) || data.documentEpoch !== manualEditDocumentEpoch()) return;
         // Rich inline edits (Ctrl/Cmd+B/U/I, or any element that kept nested
         // markup) commit the element's inner HTML. It flows through the same
         // applyManualEdit history pipeline as set-text, so host Ctrl+Z undo works
@@ -5507,6 +5643,7 @@ function HtmlViewer({
         return;
       }
       if (data.type === 'readable-edit-selection-state') {
+        if (data.documentEpoch !== manualEditDocumentEpoch()) return;
         if (data.editing) manualEditTextNeedsFlushRef.current = true;
         setManualEditRichFormat({
           editing: !!data.editing, hasSelection: !!data.hasSelection,
@@ -5593,35 +5730,55 @@ function HtmlViewer({
         else void undoManualEditRef.current();
         return;
       }
+      if (data.type === 'readable-edit-duplicate') {
+        if (data.documentEpoch !== manualEditDocumentEpoch()) return;
+        void manualEditDuplicateCommandRef.current(data);
+        return;
+      }
       if (data.type === 'readable-edit-delete') {
         if (!isActivePreviewIframeSource(ev.source)) return;
         void manualEditDeleteRef.current(data);
         return;
       }
       if (data.type === 'readable-edit-nudge') {
-        const target = selectedManualEditTargetRef.current;
-        if (!target || target.id !== data.targetId) return;
-        if (data.revision !== manualEditPreviewRevisionRef.current) return;
-        // Nudge any selected object, including text/link targets (overlay mode
-        // 'editing'). The bridge already blocks ACTIVE inline editing, so reaching
-        // here means the object is selected but not being typed into.
-        manualEditAltRef.current = false;
-        const delta = manualEditNudgeDeltaFromDirection(data.direction);
-        handleKeyboardNudge(delta);
+        afterManualEditSelection(data.targetId, () => {
+          const target = selectedManualEditTargetRef.current;
+          if (!target || target.id !== data.targetId) return;
+          if (data.revision !== manualEditPreviewRevisionRef.current) return;
+          // Nudge any selected object, including text/link targets (overlay mode
+          // 'editing'). The bridge already blocks ACTIVE inline editing, so reaching
+          // here means the object is selected but not being typed into.
+          manualEditAltRef.current = false;
+          const delta = manualEditNudgeDeltaFromDirection(data.direction);
+          const scale = data.screenPixel ? overlayPreviewScale : 1;
+          handleKeyboardNudge({ x: delta.x / scale, y: delta.y / scale }, undefined, data.screenPixel);
+        });
+        return;
+      }
+      if (data.type === 'readable-edit-keyboard-resize') {
+        afterManualEditSelection(data.targetId, () => {
+          if (data.documentEpoch !== manualEditDocumentEpoch() || data.revision !== manualEditPreviewRevisionRef.current
+            || data.targetId !== selectedManualEditTargetIdRef.current || !isManualEditNudgeKey(data.key)) return;
+          handleKeyboardResize(data.key);
+        });
         return;
       }
       if (data.type === 'readable-edit-nudge-commit') {
-        handleKeyboardNudgeCommit(data.targetId, data.revision);
+        afterManualEditSelection(data.targetId, () => handleKeyboardNudgeCommit(data.targetId, data.revision));
         return;
       }
       if (data.type === 'readable-edit-nudge-keyup') {
         // The bridge forwards arrow keyups it does not own, so a host-origin
         // burst still ends when the key physically comes up inside the iframe.
         // Identity must match the open burst exactly, like a bridge commit.
-        const burst = keyboardBurstRef.current;
-        if (burst && burst.targetId === data.targetId && burst.revision === data.revision) {
-          handleKeyboardNudgeKeyUp(data.key);
-        }
+        afterManualEditSelection(data.targetId, () => {
+          const burst = keyboardBurstRef.current;
+          const resize = keyboardResizeBurstRef.current;
+          if ((burst && burst.targetId === data.targetId && burst.revision === data.revision)
+            || (resize && resize.target.id === data.targetId && resize.revision === data.revision)) {
+            handleKeyboardNudgeKeyUp(data.key);
+          }
+        });
         return;
       }
       if (data.type === 'readable-edit-burst-cancel') {
@@ -5634,7 +5791,7 @@ function HtmlViewer({
     }
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [isActivePreviewIframeSource, isOurPreviewIframeSource, manualEditMode, source, t]);
+  }, [isActivePreviewIframeSource, isOurPreviewIframeSource, manualEditMode, source, t, overlayPreviewScale]);
 
   function nextManualEditPreviewVersion(): number {
     manualEditPreviewVersionRef.current += 1;
@@ -5656,7 +5813,7 @@ function HtmlViewer({
     savedStyles: Partial<ManualEditStyles>,
     savedSource: string,
   ) {
-    const sourceDocument = new DOMParser().parseFromString(savedSource, 'text/html');
+    const sourceDocument = parseManualEditSource(savedSource) ?? savedSource;
     if (id !== '__body__' && !readManualEditOuterHtml(sourceDocument, id)) {
       setManualEditError(t('manualEdit.error.selectedTargetMissing'));
       selectedManualEditTargetRef.current = null;
@@ -5745,7 +5902,7 @@ function HtmlViewer({
   function manualEditResizeStyles(
     target: ManualEditTarget,
     direction: ResizeHandleDirection,
-    size: { width: number; height: number },
+    size: { width: number; height: number; fromCenter?: boolean },
     startSize: { width: number; height: number },
   ): Partial<ManualEditStyles> {
     let baseline = manualEditResizeBaselineRef.current;
@@ -5757,6 +5914,7 @@ function HtmlViewer({
     return resizeCssCommitStyles({
       direction,
       size,
+      fromCenter: size.fromCenter,
       startSize,
       baseStyles: { width: base.width, height: base.height },
       computedSize: baseline?.cssSize,
@@ -5776,20 +5934,31 @@ function HtmlViewer({
   async function commitManualEditResize(
     target: ManualEditTarget,
     direction: ResizeHandleDirection,
-    size: { width: number; height: number; styles?: Partial<ManualEditStyles> },
+    size: { width: number; height: number; fromCenter?: boolean; styles?: Partial<ManualEditStyles> },
     startSize: { width: number; height: number },
   ) {
     const styles = size.styles ?? manualEditResizeStyles(target, direction, size, startSize);
     const baseline = manualEditResizeBaselineRef.current;
-    if (!baseline || baseline.documentEpoch !== manualEditDocumentEpoch() || baseline.source !== sourceRef.current) {
-      revertManualEditResizePreview(target);
-      return;
-    }
+    if (!baseline || baseline.id !== target.id || baseline.documentEpoch !== manualEditDocumentEpoch()
+      || baseline.source !== sourceRef.current || selectedManualEditTargetIdRef.current !== target.id) return;
     baseline.closed = true;
+    const documentIdentity = manualEditDocumentIdentityRef.current;
     let finish!: (ok: boolean) => void;
     const finalizing = new Promise<boolean>((resolve) => { finish = resolve; });
     manualEditResizeFinalizingRef.current = finalizing;
     setManualEditResizeFinalizing(true);
+    const ownsBaseline = () => manualEditResizeFinalizingRef.current === finalizing
+      && manualEditResizeBaselineRef.current === baseline && manualEditModeRef.current
+      && manualEditDocumentIdentityRef.current === documentIdentity
+      && baseline.documentEpoch === manualEditDocumentEpoch() && baseline.source === sourceRef.current
+      && selectedManualEditTargetIdRef.current === target.id;
+    const settle = (ok: boolean) => {
+      if (manualEditResizeFinalizingRef.current === finalizing) {
+        manualEditResizeFinalizingRef.current = null;
+        setManualEditResizeFinalizing(false);
+      }
+      finish(ok);
+    };
     const version = nextManualEditPreviewVersion();
     const reply = await new Promise<ManualEditPreviewAppliedMessage | null>((resolve) => {
       const settle = (value: ManualEditPreviewAppliedMessage | null) => {
@@ -5814,9 +5983,11 @@ function HtmlViewer({
       }
       if (!previewStyleToIframe(target.id, styles, version, true, request)) settle(null);
     });
+    if (!ownsBaseline()) { settle(false); return; }
     if (reply?.ok && reply.resize?.decision === 'release-own') {
       const fit = reply.resize.preflight && reply.resize.proposedDeclarations?.length
         ? await preflightWidthRelease(reply.resize.preflight) : { ok: false as const, reason: 'missing-release-evidence' };
+      if (!ownsBaseline()) { settle(false); return; }
       if (!fit.ok) {
         reply.resize.decision = 'refused';
         reply.resize.actual = baseline.startRect;
@@ -5828,15 +5999,11 @@ function HtmlViewer({
         setManualEditResizeFeedback({ targetId: target.id, constraints: reply.resize.constraints, outcome: reply.resize, announce: true });
       } else reply.resize.responsiveWidths = fit.widths;
     }
-    setManualEditResizeFinalizing(false);
-    if (!reply?.ok || !reply.resize || baseline.source !== sourceRef.current
-      || manualEditResizeBaselineRef.current !== baseline
-      || baseline.documentEpoch !== manualEditDocumentEpoch() || selectedManualEditTargetIdRef.current !== target.id) {
+    if (!reply?.ok || !reply.resize) {
       manualEditResizeFailedRef.current = true;
       recoverManualEditResizePreview();
       setManualEditError(t('manualEdit.error.previewStyleFailed'));
-      finish(false);
-      if (manualEditResizeFinalizingRef.current === finalizing) manualEditResizeFinalizingRef.current = null;
+      settle(false);
       return;
     }
     if (styles.width !== undefined && (reply.resize.decision === 'parent-owned' || reply.resize.decision === 'refused')) {
@@ -5844,23 +6011,51 @@ function HtmlViewer({
       // history entry, ineffective width, or west/north margin is committed.
       const lastSafe = baseline.lastSafeSize;
       baseline.lastSafeSize = undefined;
+      let ok = true;
       if (lastSafe && (lastSafe.width !== size.width || lastSafe.height !== size.height)) {
-        await commitManualEditResize(target, direction, lastSafe, startSize);
+        const committing = commitManualEditResize(target, direction, lastSafe, startSize);
+        const nestedFinalizing = manualEditResizeFinalizingRef.current;
+        await committing;
+        ok = nestedFinalizing !== finalizing && nestedFinalizing !== null ? await nestedFinalizing : false;
       }
-      finish(!manualEditResizeFailedRef.current);
-      if (manualEditResizeFinalizingRef.current === finalizing) manualEditResizeFinalizingRef.current = null;
+      settle(ok);
       return;
     }
     const outcome = reply.resize;
     const release = outcome.decision === 'release-own';
-    const ok = await applyManualEdit(release ? {
+    if (size.fromCenter && reply.centerStyles !== undefined) {
+      const translate = reply.centerStyles?.translate;
+      const values = typeof translate === 'string' ? /^(-?\d+(?:\.\d+)?)px\s+(-?\d+(?:\.\d+)?)px$/.exec(translate) : null;
+      if (!values || !Number.isFinite(Number(values[1])) || !Number.isFinite(Number(values[2]))
+        || (release && !outcome.proposedDeclarations?.some((declaration) => declaration.property === 'translate' && declaration.value === translate))) {
+        manualEditResizeFailedRef.current = true;
+        recoverManualEditResizePreview();
+        settle(false);
+        return;
+      }
+      styles.translate = translate;
+    }
+    const applying = applyManualEdit(release ? {
       id: target.id, kind: 'set-width-release', expectedSource: baseline.source!,
       preferredCssPx: outcome.preferredCssPx!, declarations: outcome.proposedDeclarations!, mode: outcome.mode,
       causes: (outcome.causes ?? []).filter(cause => cause.code.startsWith('own-')).map(cause => cause.code as WidthReleaseCause),
       provenance: (outcome.causes ?? []).flatMap(cause => cause.declaration ? [{ property: cause.declaration.property, value: cause.declaration.value, priority: cause.declaration.priority, selector: cause.declaration.selector, href: cause.declaration.href, conditions: cause.declaration.conditions, complete: cause.declaration.complete }] : []),
     } : { id: target.id, kind: 'set-style', styles }, `Style: ${target.label}`);
-    finish(ok);
-    if (manualEditResizeFinalizingRef.current === finalizing) manualEditResizeFinalizingRef.current = null;
+    const appliedSource = sourceRef.current;
+    const appliedEpoch = manualEditDocumentEpoch();
+    const appliedSelection = selectedManualEditTargetIdRef.current;
+    const ok = await applying;
+    if (manualEditResizeFinalizingRef.current !== finalizing || manualEditResizeBaselineRef.current !== baseline
+      || !manualEditModeRef.current || manualEditDocumentIdentityRef.current !== documentIdentity
+      || sourceRef.current !== appliedSource || manualEditDocumentEpoch() !== appliedEpoch
+      || selectedManualEditTargetIdRef.current !== appliedSelection) { settle(false); return; }
+    if (ok && selectedManualEditTargetRef.current?.id === target.id) {
+      const selected = selectedManualEditTargetRef.current;
+      selectedManualEditTargetRef.current = { ...selected, styles: { ...selected.styles, ...styles },
+        ...(reply.rect ? { rect: reply.rect } : {}), ...(reply.cssSize ? { cssSize: reply.cssSize } : {}) };
+      if (styles.translate !== undefined) manualEditOptimisticTranslateRef.current = styles.translate;
+    }
+    settle(ok);
     if (!ok) {
       recoverManualEditResizePreview();
       return;
@@ -5901,7 +6096,14 @@ function HtmlViewer({
     // Subscribe before posting: even a synchronous bridge reply must clear this.
     manualEditResizeCancelTimeoutRef.current = setTimeout(() => {
       manualEditResizeCancelTimeoutRef.current = null;
-      if (manualEditResizeBaselineRef.current === baseline) recoverManualEditResizePreview();
+      if (manualEditResizeBaselineRef.current !== baseline) return;
+      // A clean same-file replacement accepted after the cancel owns the preview
+      // now; only the document this cancellation previewed may be rebuilt.
+      if (baseline.documentEpoch !== manualEditDocumentEpoch() || baseline.source !== sourceRef.current) {
+        manualEditResizeBaselineRef.current = null;
+        return;
+      }
+      recoverManualEditResizePreview();
     }, 30_000);
     if (!previewStyleToIframe(target.id, {}, nextManualEditPreviewVersion(), false, {
       axes: [], requested: baseline.startRect, stage: 'cancel',
@@ -5916,8 +6118,7 @@ function HtmlViewer({
     setManualEditError(t('manualEdit.error.previewStyleFailed'));
     // Canonical source was never changed by cancellation. Rebuild from it rather
     // than leaving an unacknowledged transient width visible in the iframe.
-    setManualEditFrozenSource(sourceRef.current);
-    setManualEditDocumentRevision((revision) => revision + 1);
+    if (sourceRef.current !== null) refreshManualEditDocument(sourceRef.current);
   }
 
   function baseTranslateFor(target: ManualEditTarget): string {
@@ -5944,6 +6145,7 @@ function HtmlViewer({
       cancelManualEditDuplicatePreview(movement);
     }
     if (revert) {
+      if (session.source === 'keyboard') manualEditDuplicateQueueRef.current = null;
       previewStyleToIframe(
         session.targetId,
         { translate: session.baselineTranslate ?? '' },
@@ -6069,6 +6271,7 @@ function HtmlViewer({
     error: string,
   ): void {
     if (movement.duplicate !== duplicate) return;
+    if (movement.session.source === 'keyboard') manualEditDuplicateQueueRef.current = null;
     duplicate.status = 'failed';
     duplicate.pendingUpdate = null;
     setManualEditDuplicateRect(null);
@@ -6217,7 +6420,14 @@ function HtmlViewer({
       // the source snapshot. The CAS on the eventual write is the final guard.
       await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
       if (!duplicatePreparationIsCurrent(movement, duplicate)) return;
-      const saveIdle = await waitForManualEditSaveIdle(() => duplicatePreparationIsCurrent(movement, duplicate));
+      if (movement.session.source === 'keyboard' && manualEditSavingRef.current) {
+        const queue = manualEditDuplicateQueueRef.current;
+        if (queue?.actionSeq === manualEditActionSeqRef.current && queue.identity === manualEditDocumentIdentityRef.current) queue.remaining += 1;
+        finalizeOwnedMovement(movement.session, false);
+        return;
+      }
+      const saveIdle = movement.session.source === 'keyboard'
+        || await waitForManualEditSaveIdle(() => duplicatePreparationIsCurrent(movement, duplicate));
       if (!duplicatePreparationIsCurrent(movement, duplicate)) return;
       if (!saveIdle) {
         failManualEditDuplicate(movement, duplicate, t('manualEdit.error.finishBeforeDuplicateFailed'));
@@ -6371,6 +6581,9 @@ function HtmlViewer({
         ownerId: result.targetId,
         seq: manualEditActionSeqRef.current,
       };
+      const queued = manualEditDuplicateQueueRef.current;
+      if (session.source === 'keyboard' && queued?.actionSeq === manualEditActionSeqRef.current
+        && queued.identity === manualEditDocumentIdentityRef.current) queued.nextId = plan.duplicateRootId;
       const ok = await applyManualEdit({
         id: result.targetId,
         kind: 'duplicate-and-move',
@@ -6438,6 +6651,10 @@ function HtmlViewer({
     const movement = activeManualEditMovementRef.current;
     if (!movement || movement.session.targetId !== burst.targetId) return;
     const result = resolveManualEditMovement(movement.session, burst.netDelta);
+    if (burst.precise) {
+      result.styles = moveCssCommitStyles({ deltaRect: result.appliedDelta, baseTranslate: movement.session.baselineTranslate,
+        rectScale: movement.session.rectScale, fractional: { x: true, y: true } });
+    }
     burst.lastResult = result;
     previewStyleToIframe(result.targetId, result.styles, nextManualEditPreviewVersion());
     // The previewed translate is now live in the iframe; record it so a burst
@@ -6453,6 +6670,7 @@ function HtmlViewer({
     revision: number,
     delta: { x: number; y: number },
     keys: string[] = [],
+    precise = false,
   ): void {
     beginManualEditMovement(target, 'keyboard');
     const movement = activeManualEditMovementRef.current;
@@ -6464,6 +6682,7 @@ function HtmlViewer({
       netDelta: delta,
       startBaseline: movement.session.baselineTranslate ?? '',
       lastResult: null,
+      precise,
     };
     keyboardBurstRef.current = burst;
     previewKeyboardBurst(burst);
@@ -6474,11 +6693,13 @@ function HtmlViewer({
   // readable-edit-nudge-commit message. Never auto-commits — the burst stays open
   // (accumulating net delta, one preview per keydown) until keyup/commit, blur,
   // or Escape, so a held key produces exactly one write.
-  function handleKeyboardNudge(delta: { x: number; y: number }, key?: string): void {
+  function handleKeyboardNudge(delta: { x: number; y: number }, key?: string, precise = false): void {
     const target = selectedManualEditTargetRef.current;
     if (!target) return;
     // One movement session at a time: a live pointer drag owns the target.
     if (activeManualEditMovementRef.current?.session.source === 'pointer') return;
+    if (keyboardResizeBurstRef.current) void flushKeyboardBurst();
+    if (manualEditResizeFinalizingRef.current) return;
     const revision = manualEditPreviewRevisionRef.current;
     const burst = keyboardBurstRef.current;
     // Match the open burst on TARGET only. A same-target host re-sync (e.g. the
@@ -6488,6 +6709,7 @@ function HtmlViewer({
     // revision fresh so its identity stays current.
     if (burst && burst.targetId === target.id) {
       burst.revision = revision;
+      burst.precise ||= precise;
       if (key) burst.heldKeys.add(key);
       burst.netDelta = addNudgeDelta(burst.netDelta, delta);
       previewKeyboardBurst(burst);
@@ -6495,13 +6717,50 @@ function HtmlViewer({
       // A burst for a different target: end it (it enqueues/commits itself and
       // leaves the fresh burst below intact) and start clean.
       if (burst) void flushKeyboardBurst();
-      beginKeyboardBurst(target, revision, delta, key ? [key] : []);
+      beginKeyboardBurst(target, revision, delta, key ? [key] : [], precise);
     }
+  }
+
+  function handleKeyboardResize(key: string): void {
+    const target = selectedManualEditTargetRef.current;
+    if (!target || !isManualEditNudgeKey(key) || manualEditSavingRef.current || manualEditHistoryOperationRef.current
+      || manualEditResizeFinalizingRef.current || activeManualEditMovementRef.current?.session.source === 'pointer'
+      || activeManualEditMovementRef.current?.duplicate) return;
+    let burst = keyboardResizeBurstRef.current;
+    if (!burst) {
+      void flushKeyboardBurst();
+      clearManualEditMovement();
+      clearManualEditResizeFeedback();
+      beginManualEditResizeBaseline(target);
+      const flush = async () => { await flushKeyboardBurst(); };
+      const horizontal = key === 'ArrowLeft' || key === 'ArrowRight';
+      burst = { target, revision: manualEditPreviewRevisionRef.current, heldKeys: new Set(),
+        startSize: { width: target.rect.width, height: target.rect.height },
+        size: { width: target.rect.width, height: target.rect.height, fromCenter: true },
+        direction: horizontal ? 'e' : 's', flush };
+      keyboardResizeBurstRef.current = burst;
+      manualEditResizeFlushRef.current = flush;
+    }
+    burst.heldKeys.add(key);
+    const horizontal = key === 'ArrowLeft' || key === 'ArrowRight';
+    const sign = key === 'ArrowLeft' || key === 'ArrowDown' ? -1 : 1;
+    const size = resizeDragSize({ direction: horizontal ? 'e' : 's', startWidth: burst.size.width, startHeight: burst.size.height,
+      deltaX: horizontal ? sign * burst.size.width / 20 : 0, deltaY: horizontal ? 0 : sign * burst.size.height / 20,
+      scale: 1, lockAspect: false, fromCenter: true });
+    burst.size = { ...size, fromCenter: true };
+    if (burst.direction !== (horizontal ? 'e' : 's')) burst.direction = 'se';
+    previewStyleToIframe(target.id, manualEditResizeStyles(burst.target, burst.direction, burst.size, burst.startSize),
+      nextManualEditPreviewVersion(), false, manualEditResizeRequest(burst.direction, burst.size));
   }
 
   // Host-side keyup: drop the released key; when no owned arrow key remains held
   // the host-origin burst is complete and commits.
   function handleKeyboardNudgeKeyUp(key: string): void {
+    const resize = keyboardResizeBurstRef.current;
+    if (resize?.heldKeys.delete(key)) {
+      if (resize.heldKeys.size === 0) void flushKeyboardBurst();
+      return;
+    }
     const burst = keyboardBurstRef.current;
     if (!burst || !burst.heldKeys.delete(key)) return;
     if (burst.heldKeys.size === 0) void flushKeyboardBurst();
@@ -6512,6 +6771,11 @@ function HtmlViewer({
   // current by each keydown and by same-target re-syncs, so a genuinely stale
   // commit from a superseded document is rejected without stranding a live burst.
   function handleKeyboardNudgeCommit(targetId: string, revision: number): void {
+    const resize = keyboardResizeBurstRef.current;
+    if (resize?.target.id === targetId && resize.revision === revision) {
+      void flushKeyboardBurst();
+      return;
+    }
     const burst = keyboardBurstRef.current;
     if (!burst || burst.targetId !== targetId || burst.revision !== revision) return;
     void flushKeyboardBurst();
@@ -6534,6 +6798,14 @@ function HtmlViewer({
   // Escape callers pass latchHeldKeys: the cancelled burst's keys are physically
   // held, so repeats are swallowed until keyup instead of reopening a burst.
   function cancelKeyboardBurst(opts?: { latchHeldKeys?: boolean }): boolean {
+    const resize = keyboardResizeBurstRef.current;
+    if (resize) {
+      if (opts?.latchHeldKeys) for (const key of resize.heldKeys) keyboardBurstCancelledKeysRef.current.add(key);
+      keyboardResizeBurstRef.current = null;
+      if (manualEditResizeFlushRef.current === resize.flush) manualEditResizeFlushRef.current = null;
+      if (manualEditResizeBaselineRef.current?.documentEpoch === manualEditDocumentEpoch()) revertManualEditResizePreview(resize.target);
+      return true;
+    }
     const burst = keyboardBurstRef.current;
     if (!burst) return false;
     if (opts?.latchHeldKeys) {
@@ -6558,6 +6830,13 @@ function HtmlViewer({
   // drains as its own write, in order); otherwise commit it now. Awaitable so
   // transitions can finalize the burst before proceeding.
   async function flushKeyboardBurst(): Promise<boolean> {
+    const resize = keyboardResizeBurstRef.current;
+    if (resize) {
+      keyboardResizeBurstRef.current = null;
+      if (manualEditResizeFlushRef.current === resize.flush) manualEditResizeFlushRef.current = null;
+      await commitManualEditResize(resize.target, resize.direction, resize.size, resize.startSize);
+      return !manualEditResizeFailedRef.current;
+    }
     const burst = keyboardBurstRef.current;
     if (!burst) return false;
     const result = burst.lastResult;
@@ -6670,11 +6949,12 @@ function HtmlViewer({
     if (!pending) return;
     setManualEditPendingStyle(null);
     const base = sourceRef.current ?? '';
-    const target = pending.id === '__body__'
+    const candidate = pending.id === '__body__'
       ? null
       : selectedManualEditTarget?.id === pending.id
         ? selectedManualEditTarget
         : manualEditTargets.find((item) => item.id === pending.id) ?? null;
+    const target = candidate?.stylesMeasured === false ? null : candidate;
     const sourceStyles = target
       ? inspectorManualEditStyles(target, base)
       : readManualEditStyles(base, pending.id);
@@ -6697,7 +6977,9 @@ function HtmlViewer({
     if (intent.seq !== manualEditActionSeqRef.current) return;
     manualEditPendingDuplicateSelectionRef.current = null;
     if (intent.kind === 'select') {
-      void selectManualEditTarget(intent.target, intent.seq);
+      void selectManualEditTarget(intent.target, intent.seq, intent.beginTextEdit, {
+        selectAll: intent.selectAll, textEditPoint: intent.textEditPoint, selectWord: intent.selectWord, focusPreview: false,
+      });
     } else if (intent.kind === 'clear') {
       void clearManualEditTargetSelection({ openPageStyles: intent.openPageStyles }, intent.seq);
     } else {
@@ -6710,6 +6992,8 @@ function HtmlViewer({
     const win = iframeRef.current?.contentWindow;
     if (!win) return false;
     const requestId = ++manualEditTextFlushSequenceRef.current;
+    const documentEpoch = manualEditDocumentEpoch();
+    const documentIdentity = manualEditDocumentIdentityRef.current;
     return new Promise<boolean>((resolve) => {
       let timeout: number | undefined;
       const finish = (ok: boolean) => {
@@ -6722,7 +7006,9 @@ function HtmlViewer({
       };
       const onFlushed = (event: MessageEvent) => {
         if (event.source !== win || event.data?.type !== 'readable-edit-text-flushed'
-          || event.data.requestId !== requestId) return;
+          || event.data.requestId !== requestId || event.data.documentEpoch !== documentEpoch
+          || documentEpoch !== manualEditDocumentEpoch() || documentIdentity !== manualEditDocumentIdentityRef.current
+          || iframeRef.current?.contentWindow !== win) return;
         // Same-sender message ordering puts all source commits before this ack.
         finish(true);
       };
@@ -6734,7 +7020,7 @@ function HtmlViewer({
             if (document.visibilityState !== 'hidden') finish(false);
           }, 30_000);
         }
-        win.postMessage({ type: 'readable-edit-end-text-edit', requestId } satisfies ManualEditEndTextEditMessage, '*');
+        win.postMessage({ type: 'readable-edit-end-text-edit', requestId, documentEpoch } satisfies ManualEditEndTextEditMessage, '*');
       };
       const onVisibilityChange = () => {
         window.clearTimeout(timeout);
@@ -6779,6 +7065,65 @@ function HtmlViewer({
     return flushManualEditStyleSave();
   }
 
+  function duplicateManualEditTarget(command?: Pick<ManualEditDuplicateMessage, 'targetId' | 'revision'>): void {
+    const busy = () => !manualEditModeRef.current || manualEditHistoryOperationRef.current
+      || activeManualEditMovementRef.current?.session.source === 'pointer'
+      || manualEditResizeFlushRef.current !== null;
+    if (busy()) return;
+    const targetId = command?.targetId ?? selectedManualEditTargetIdRef.current;
+    const revision = command?.revision ?? manualEditPreviewRevisionRef.current;
+    if (!targetId || targetId !== selectedManualEditTargetIdRef.current
+      || revision !== manualEditPreviewRevisionRef.current) return;
+    const identity = manualEditDocumentIdentityRef.current;
+    const previewDocument = manualEditPreviewDocRef.current;
+    const intent = manualEditActionSeqRef.current;
+    let queue = manualEditDuplicateQueueRef.current;
+    if (!queue || queue.identity !== identity || queue.previewDocument !== previewDocument || queue.actionSeq !== intent) {
+      queue = { identity, previewDocument, actionSeq: intent, remaining: 0, nextId: null };
+      manualEditDuplicateQueueRef.current = queue;
+    }
+    queue.remaining += 1;
+    void manualEditDuplicateRunRef.current();
+  }
+
+  async function runManualEditDuplicateQueue(): Promise<void> {
+    const queue = manualEditDuplicateQueueRef.current;
+    const targetId = selectedManualEditTargetIdRef.current;
+    if (!queue || queue.remaining < 1 || queue.nextId !== null || !targetId
+      || selectedManualEditTarget?.id !== targetId || manualEditDuplicateCommandInFlightRef.current === queue
+      || manualEditSavingRef.current || manualEditHistoryOperationRef.current || !manualEditModeRef.current
+      || activeManualEditMovementRef.current || manualEditResizeFlushRef.current !== null) return;
+    const isCurrent = () => manualEditDuplicateQueueRef.current === queue && manualEditModeRef.current
+      && queue.identity === manualEditDocumentIdentityRef.current && queue.previewDocument === manualEditPreviewDocRef.current
+      && queue.actionSeq === manualEditActionSeqRef.current && targetId === selectedManualEditTargetIdRef.current;
+    if (!isCurrent()) return;
+    queue.remaining -= 1;
+    manualEditDuplicateCommandInFlightRef.current = queue;
+    let started = false;
+    try {
+      if (!(await flushManualEditSession()) || !isCurrent()) return;
+      const target = selectedManualEditTargetRef.current;
+      if (!target || target.id !== targetId) return;
+      manualEditAltRef.current = false;
+      beginManualEditMovement(target, 'keyboard');
+      manualEditCtrlRef.current = true;
+      // PowerPoint's 12pt duplicate offset is 16 CSS px before the deck transform.
+      const update: ManualEditMoveUpdate = {
+        delta: { x: 16 * (target.rectScale?.x ?? 1), y: 16 * (target.rectScale?.y ?? 1) },
+        shiftKey: false, axis: null,
+      };
+      previewManualEditMovement(update);
+      started = true;
+      void commitManualEditMovement(update);
+    } finally {
+      if (manualEditDuplicateCommandInFlightRef.current === queue) manualEditDuplicateCommandInFlightRef.current = null;
+      if (!started && manualEditDuplicateQueueRef.current === queue) {
+        if (manualEditSavingRef.current) queue.remaining += 1;
+        else manualEditDuplicateQueueRef.current = null;
+      }
+    }
+  }
+
   async function deleteManualEditTarget(command?: Pick<ManualEditDeleteMessage, 'targetId' | 'revision'>): Promise<void> {
     const busy = () => !manualEditModeRef.current || manualEditSavingRef.current
       || manualEditHistoryOperationRef.current
@@ -6800,10 +7145,14 @@ function HtmlViewer({
         && selectionIntent === manualEditActionSeqRef.current
         && targetId === selectedManualEditTargetIdRef.current
         && revision === manualEditPreviewRevisionRef.current;
-      await flushKeyboardBurst();
+      const flushingKeyboard = flushKeyboardBurst();
+      const afterKeyboardSource = sourceRef.current;
+      await flushingKeyboard;
       // Selection intent changes before its own async flush finishes. Check it
       // before touching the session so a new selection's edits are never flushed.
-      if (!isCurrent()) return;
+      if (!isCurrent() || sourceRef.current !== afterKeyboardSource) return;
+      const beforeTextSource = sourceRef.current;
+      if (!(await flushManualEditText()) || !isCurrent() || sourceRef.current !== beforeTextSource) return;
       if (!(await flushManualEditSession())) return;
       if (!isCurrent()) return;
       await applyManualEdit({ id: targetId, kind: 'remove-element' }, t('manualEdit.deleteElement'));
@@ -6813,6 +7162,7 @@ function HtmlViewer({
   }
 
   async function exitManualEditModeAfterFlush(actionSeq = ++manualEditActionSeqRef.current): Promise<boolean> {
+    manualEditPendingTargetHydrationRef.current = null;
     const ok = await flushManualEditSession();
     if (actionSeq !== manualEditActionSeqRef.current) return false;
     if (!ok) return false;
@@ -6929,10 +7279,24 @@ function HtmlViewer({
   }
 
   function discardManualEditChanges() {
+    manualEditActionSeqRef.current += 1;
+    manualEditPendingTargetHydrationRef.current = null;
+    manualEditPostSaveIntentRef.current = null;
+    manualEditPendingDuplicateSelectionRef.current = null;
+    manualEditDuplicateQueueRef.current = null;
+    manualEditResizeFinalizingRef.current = null;
+    manualEditResizeBaselineRef.current = null;
+    manualEditResizeFlushRef.current = null;
+    keyboardResizeBurstRef.current = null;
+    manualEditResizeRepliesRef.current.clear();
+    if (manualEditResizeCancelTimeoutRef.current !== null) clearTimeout(manualEditResizeCancelTimeoutRef.current);
+    manualEditResizeCancelTimeoutRef.current = null;
+    setManualEditResizeFinalizing(false);
     manualEditResizeFailedRef.current = false;
     const originalSource = manualEditOriginalSourceRef.current ?? sourceRef.current ?? '';
     setSource(originalSource);
     sourceRef.current = originalSource;
+    setReloadKey((key) => key + 1);
     setInlinedSource(null);
     setManualEditFrozenSource(originalSource);
     setManualEditDocumentRevision((revision) => revision + 1);
@@ -6962,23 +7326,70 @@ function HtmlViewer({
     if (win) win.postMessage({ type: 'readable-edit-hover-reset' }, '*');
   }
 
-  function beginManualEditTextEditing(target: ManualEditTarget) {
+  function beginManualEditTextEditing(target: ManualEditTarget, options: ManualEditTextEntryOptions = {}) {
     const textTargetId = target.kind === 'text' || target.kind === 'link' ? target.id : target.textEditTargetId;
     if (!textTargetId) return;
-    sendManualEditTextEdit({ type: 'readable-edit-begin-text-edit', id: textTargetId });
+    if (options.focusPreview !== false) {
+      iframeRef.current?.focus({ preventScroll: true });
+      void selectManualEditTarget(target, undefined, true, { ...options, focusPreview: false });
+      return;
+    }
+    if (options.focusPreview === false && document.activeElement !== iframeRef.current) return;
+    sendManualEditTextEdit({ type: 'readable-edit-begin-text-edit', id: textTargetId,
+      ...(options.selectAll ? { selectAll: true } : {}), ...(options.textEditPoint ? { textEditPoint: options.textEditPoint } : {}),
+      ...(options.selectWord ? { selectWord: true } : {}) });
     setManualEditMoveMode('editing');
   }
 
-  async function selectManualEditTarget(target: ManualEditTarget, actionSeq = ++manualEditActionSeqRef.current, beginTextEdit = false) {
+  function liveManualEditSelectionPending() {
+    const pending = manualEditSelectionPendingRef.current;
+    return pending && pending.actionSeq === manualEditActionSeqRef.current ? pending : null;
+  }
+
+  // Bridge key commands name the target the bridge shows. While the host is
+  // still committing that selection, run them right after it in arrival order.
+  function afterManualEditSelection(targetId: unknown, run: () => void) {
+    const pending = liveManualEditSelectionPending();
+    if (pending && pending.id === targetId) pending.waiters.push(run);
+    else run();
+  }
+
+  async function selectManualEditTarget(target: ManualEditTarget, actionSeq = ++manualEditActionSeqRef.current, beginTextEdit = false,
+    options: ManualEditTextEntryOptions = {}) {
+    const current = manualEditSelectionPendingRef.current;
+    const pending = current && current.actionSeq === actionSeq && current.id === target.id
+      ? current : { id: target.id, actionSeq, waiters: [] };
+    manualEditSelectionPendingRef.current = pending;
+    const outcome = await commitManualEditTargetSelection(target, actionSeq, beginTextEdit, options);
+    // Hydration and post-save intents resume this same selection later.
+    if (manualEditSelectionPendingRef.current !== pending || outcome === 'deferred') return;
+    manualEditSelectionPendingRef.current = null;
+    if (outcome === 'selected') for (const run of pending.waiters) run();
+  }
+
+  async function commitManualEditTargetSelection(target: ManualEditTarget, actionSeq: number, beginTextEdit: boolean,
+    options: ManualEditTextEntryOptions): Promise<'selected' | 'deferred' | undefined> {
+    manualEditPendingTargetHydrationRef.current = null;
+    const pendingResize = keyboardResizeBurstRef.current !== null || manualEditResizeFinalizingRef.current !== null;
+    if (beginTextEdit && options.focusPreview !== false) {
+      const active = document.activeElement;
+      if (active === document.body || active === iframeRef.current || active?.closest('[data-readable-edit-selected-surface]')) {
+        iframeRef.current?.focus({ preventScroll: true });
+      }
+    }
     manualEditPendingDuplicateSelectionRef.current = null;
     if (target.id !== selectedManualEditTargetIdRef.current && !(await flushManualEditText())) return;
     await flushKeyboardBurst();
+    if (manualEditResizeFinalizingRef.current && !(await manualEditResizeFinalizingRef.current)) return;
+    if (actionSeq !== manualEditActionSeqRef.current) return;
+    if (pendingResize && selectedManualEditTargetRef.current?.id === target.id) target = selectedManualEditTargetRef.current;
     manualEditPostSaveIntentRef.current = null;
     clearManualEditResizeFeedback();
     clearManualEditMovement();
     if (manualEditSavingRef.current) {
-      manualEditPostSaveIntentRef.current = { seq: actionSeq, kind: 'select', target };
-      return;
+      manualEditPostSaveIntentRef.current = { seq: actionSeq, kind: 'select', target, beginTextEdit,
+        selectAll: options.selectAll, textEditPoint: options.textEditPoint, selectWord: options.selectWord };
+      return 'deferred';
     }
     cancelManualEditMovement();
     if (manualEditPendingStyleRef.current?.id !== target.id) {
@@ -6987,9 +7398,18 @@ function HtmlViewer({
       if (!ok) return;
     }
     if (actionSeq !== manualEditActionSeqRef.current) return;
+    if (target.stylesMeasured === false) {
+      const win = iframeRef.current?.contentWindow;
+      if (!win) return;
+      const documentEpoch = manualEditDocumentEpoch();
+      manualEditPendingTargetHydrationRef.current = { id: target.id, actionSeq, documentEpoch,
+        source: sourceRef.current, beginTextEdit, options: { ...options, focusPreview: false } };
+      win.postMessage({ type: 'readable-edit-select-target', id: target.id, documentEpoch, actionSeq }, '*');
+      return 'deferred';
+    }
     setManualEditPageStylesOpen(false);
     const base = sourceRef.current ?? '';
-    const sourceDocument = new DOMParser().parseFromString(base, 'text/html');
+    const sourceDocument = parseManualEditSource(base) ?? base;
     const fields = readManualEditFields(sourceDocument, target.id);
     selectedManualEditTargetIdRef.current = target.id;
     selectedManualEditTargetRef.current = target;
@@ -6999,7 +7419,7 @@ function HtmlViewer({
     // and the hover-affordance click — none of them call setSelectedManualEditTarget directly.
     // Every kind starts as one movable object; only a double-click opens text.
     setManualEditMoveMode('selected');
-    if (beginTextEdit) beginManualEditTextEditing(target);
+    if (beginTextEdit) beginManualEditTextEditing(target, { ...options, focusPreview: false });
     setManualEditDraft({
       text: fields.text ?? target.fields.text ?? target.text,
       href: fields.href ?? target.fields.href ?? '',
@@ -7011,14 +7431,18 @@ function HtmlViewer({
       fullSource: base,
     });
     setManualEditError(null);
+    return 'selected';
   }
 
   async function clearManualEditTargetSelection(
     options: { openPageStyles?: boolean } = {},
     actionSeq = ++manualEditActionSeqRef.current,
   ): Promise<boolean> {
+    manualEditPendingTargetHydrationRef.current = null;
     manualEditPendingDuplicateSelectionRef.current = null;
     await flushKeyboardBurst();
+    if (manualEditResizeFinalizingRef.current && !(await manualEditResizeFinalizingRef.current)) return false;
+    if (actionSeq !== manualEditActionSeqRef.current) return false;
     clearManualEditResizeFeedback();
     clearManualEditMovement();
     if (manualEditSavingRef.current) {
@@ -7065,7 +7489,7 @@ function HtmlViewer({
       return false;
     }
     const entry: ManualEditHistoryEntry = {
-      id: `${Date.now()}-${manualEditHistory.length}`,
+      id: `${Date.now()}-${++manualEditHistoryEntrySequenceRef.current}`,
       label,
       beforeSource: baseSource,
       afterSource: result.source,
@@ -7076,13 +7500,25 @@ function HtmlViewer({
           ? { selectionIntent: { beforeId: patch.id, afterId: result.selection.targetId } }
           : {}),
     };
+    // Width release/restore only rewrite the target's own attributes (style,
+    // release record, possibly a newly allocated id), so they replay in place
+    // like any other target patch; the replay still falls back to a reload.
+    const previewTargets = patch.kind === 'set-full-source' || patch.kind === 'set-token'
+      ? null
+      : patch.kind === 'duplicate-and-move'
+        ? { beforeId: null, afterId: patch.plan.duplicateRootId }
+        : patch.kind === 'set-width-release' || patch.kind === 'restore-width-release'
+          ? { beforeId: patch.id, afterId: result.selection?.targetId ?? patch.id }
+          : { beforeId: patch.id, afterId: patch.kind === 'remove-element' ? null : patch.id };
+    if (previewTargets) manualEditHistoryPreviewTargetsRef.current.set(entry.id, previewTargets);
     setSource(result.source);
     sourceRef.current = result.source;
     syncManualEditDirty();
     setInlinedSource(null);
     if (patch.kind !== 'set-style') {
-      capturePreviewScrollPosition();
-      setManualEditFrozenSource(result.source);
+      if (!previewTargets || !syncManualEditPreviewSource(baseSource, result.source, previewTargets)) {
+        refreshManualEditDocument(result.source);
+      }
     }
     // Bridge flush acknowledgements can arrive before React renders the commit.
     // Publish the source/history cursor together for a waiting Undo or Redo.
@@ -7090,6 +7526,10 @@ function HtmlViewer({
     manualEditUndoneRef.current = [];
     setManualEditHistory(manualEditHistoryRef.current);
     setManualEditUndone([]);
+    const retainedHistoryIds = new Set(manualEditHistoryRef.current.map((revision) => revision.id));
+    for (const id of manualEditHistoryPreviewTargetsRef.current.keys()) {
+      if (!retainedHistoryIds.has(id)) manualEditHistoryPreviewTargetsRef.current.delete(id);
+    }
     setManualEditDraft((current) => ({ ...current, fullSource: result.source }));
     if (result.selection && 'id' in patch) {
       const nextId = result.selection.targetId;
@@ -7152,8 +7592,25 @@ function HtmlViewer({
     setManualEditError(message);
   }
 
+  function syncManualEditPreviewSource(
+    beforeSource: string,
+    afterSource: string,
+    targets: { beforeId: string | null; afterId: string | null },
+  ): boolean {
+    const win = iframeRef.current?.contentWindow;
+    if (!manualEditModeRef.current || !manualEditRequiresSrcDoc || !win) return false;
+    win.postMessage({
+      type: 'readable-edit-preview-source', documentEpoch: manualEditDocumentEpoch(),
+      requestId: ++manualEditPreviewSourceRequestRef.current,
+      beforeSource, afterSource, ...targets,
+    }, '*');
+    return true;
+  }
+
   function refreshManualEditDocument(snapshot: string) {
     capturePreviewScrollPosition();
+    // Invalidate queued messages from the old document before React replaces it.
+    manualEditPreviewRevisionRef.current += 1;
     const frame = iframeRef.current;
     const restoreFocus = frame && (document.activeElement === frame || manualEditHistoryFocusRef.current !== null);
     manualEditHistoryFocusRef.current?.abort();
@@ -7188,9 +7645,23 @@ function HtmlViewer({
     }, 0);
   }
 
+  // A history step supersedes any selection work of the previous step: a quick
+  // Undo then Redo must not let Undo's late restore select the removed state.
+  // The step is judged against the selection still being restored, if any.
+  function planManualEditHistorySelection(fromId: string | undefined, toId: string | undefined) {
+    const selectedId = selectedManualEditTargetIdRef.current;
+    const restoring = manualEditPendingDuplicateSelectionRef.current;
+    const effectiveId = restoring && restoring.seq === manualEditActionSeqRef.current && restoring.ownerId === selectedId
+      ? restoring.id : selectedId;
+    const seq = ++manualEditActionSeqRef.current;
+    manualEditPendingDuplicateSelectionRef.current = fromId && toId && selectedId && effectiveId === fromId
+      ? { id: toId, ownerId: selectedId, seq } : null;
+  }
+
   async function undoManualEdit() {
     if (manualEditTextNeedsFlushRef.current && !(await flushManualEditText())) return;
     await flushKeyboardBurst();
+    if (manualEditResizeFinalizingRef.current && !(await manualEditResizeFinalizingRef.current)) return;
     if (manualEditSavingRef.current) {
       if (manualEditHistoryOperationRef.current) manualEditHistoryQueueRef.current.push('undo');
       return;
@@ -7214,23 +7685,17 @@ function HtmlViewer({
         );
         return;
       }
-      if (
-        latest.selectionIntent
-        && selectedManualEditTargetIdRef.current === latest.selectionIntent.afterId
-      ) {
-        manualEditPendingDuplicateSelectionRef.current = {
-          id: latest.selectionIntent.beforeId,
-          ownerId: latest.selectionIntent.afterId,
-          seq: manualEditActionSeqRef.current,
-        };
-      }
+      planManualEditHistorySelection(latest.selectionIntent?.afterId, latest.selectionIntent?.beforeId);
       // Publish the history cursor with its source before another shortcut can
       // observe the new source through a callback from the previous render.
       flushSync(() => {
         setSource(latest.beforeSource);
         sourceRef.current = latest.beforeSource;
         setInlinedSource(null);
-        refreshManualEditDocument(latest.beforeSource);
+        const previewTargets = manualEditHistoryPreviewTargetsRef.current.get(latest.id);
+        if (!previewTargets || !syncManualEditPreviewSource(latest.afterSource, latest.beforeSource, {
+          beforeId: previewTargets.afterId, afterId: previewTargets.beforeId,
+        })) refreshManualEditDocument(latest.beforeSource);
         setManualEditHistory(rest);
         setManualEditUndone((current) => [latest, ...current]);
         setManualEditDraft((current) => ({ ...current, fullSource: latest.beforeSource }));
@@ -7246,6 +7711,7 @@ function HtmlViewer({
   async function redoManualEdit() {
     if (manualEditTextNeedsFlushRef.current && !(await flushManualEditText())) return;
     await flushKeyboardBurst();
+    if (manualEditResizeFinalizingRef.current && !(await manualEditResizeFinalizingRef.current)) return;
     if (manualEditSavingRef.current) {
       if (manualEditHistoryOperationRef.current) manualEditHistoryQueueRef.current.push('redo');
       return;
@@ -7269,21 +7735,15 @@ function HtmlViewer({
         );
         return;
       }
-      if (
-        latest.selectionIntent
-        && selectedManualEditTargetIdRef.current === latest.selectionIntent.beforeId
-      ) {
-        manualEditPendingDuplicateSelectionRef.current = {
-          id: latest.selectionIntent.afterId,
-          ownerId: latest.selectionIntent.beforeId,
-          seq: manualEditActionSeqRef.current,
-        };
-      }
+      planManualEditHistorySelection(latest.selectionIntent?.beforeId, latest.selectionIntent?.afterId);
       flushSync(() => {
         setSource(latest.afterSource);
         sourceRef.current = latest.afterSource;
         setInlinedSource(null);
-        refreshManualEditDocument(latest.afterSource);
+        const previewTargets = manualEditHistoryPreviewTargetsRef.current.get(latest.id);
+        if (!previewTargets || !syncManualEditPreviewSource(latest.beforeSource, latest.afterSource, previewTargets)) {
+          refreshManualEditDocument(latest.afterSource);
+        }
         setManualEditUndone(rest);
         setManualEditHistory((current) => [latest, ...current]);
         setManualEditDraft((current) => ({ ...current, fullSource: latest.afterSource }));
@@ -7344,11 +7804,11 @@ function HtmlViewer({
     win.postMessage({ type: 'readable-studio:slide', action }, '*');
   }
 
-  function syncCachedSlideStateToIframe(target: HTMLIFrameElement | null = iframeRef.current) {
+  function syncCachedSlideStateToIframe(target: HTMLIFrameElement | null = iframeRef.current, restore = false) {
     const active = htmlPreviewSlideState.get(previewStateKey)?.active;
     const win = target?.contentWindow;
     if (!win || typeof active !== 'number') return;
-    win.postMessage({ type: 'readable-studio:slide', action: 'go', index: active }, '*');
+    win.postMessage({ type: 'readable-studio:slide', action: 'go', index: active, restore }, '*');
   }
 
   function postInspectSet(elementId: string, selector: string, prop: string, value: string) {
@@ -7546,9 +8006,8 @@ function HtmlViewer({
     };
   }, [manualEditMode]);
 
-  // Host-side arrow-key nudge ownership: when focus is on the selected-object
-  // overlay surface, drive object movement from the host so deck/other host
-  // listeners never see the arrow. Scoped to the surface so arrows elsewhere
+  // Selected-object shortcuts belong to the focused overlay surface. Scoped to
+  // that surface so keyboard input elsewhere
   // (e.g. deck nav with no overlay focus) keep their meaning. Capture phase runs
   // before host buttons/menus. Blocked targets (inputs, contenteditable, ARIA
   // widgets, IME composition) keep native behavior. keyup ends the burst.
@@ -7559,16 +8018,57 @@ function HtmlViewer({
     // — matching the iframe adapter, which nudges any selected object.
     if (manualEditMoveMode !== 'selected' && (manualEditMoveMode !== 'editing' || manualEditRichFormat.editing)) return;
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key !== 'Delete' && !isManualEditNudgeKey(e.key)) return;
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const isDuplicate = (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'd';
+      const isTextEntry = (e.key === 'Enter' || e.key === 'F2') && !e.shiftKey;
+      const isCycle = e.key === 'Tab';
+      const isDelete = e.key === 'Delete' || e.key === 'Backspace';
+      const isCtrlNudge = e.ctrlKey && !e.metaKey && !e.shiftKey && isManualEditNudgeKey(e.key);
+      if (!isDuplicate && !isTextEntry && !isCycle && !isDelete && !isManualEditNudgeKey(e.key)) return;
+      if (e.altKey || ((e.ctrlKey || e.metaKey) && !isDuplicate && !isCtrlNudge)) return;
       const target = e.target as HTMLElement | null;
       if (!target?.closest('[data-readable-edit-selected-surface]')) return;
       if (isManualEditNudgeBlocked(e.target, { isComposing: e.isComposing })) return;
       // Prove ownership BEFORE consuming the event: if a pointer drag owns the
       // movement session (or nothing is selected), leave the arrow untouched.
-      if (!selectedManualEditTargetRef.current) return;
+      const selected = selectedManualEditTargetRef.current;
+      if (!selected) return;
       if (activeManualEditMovementRef.current?.session.source === 'pointer') return;
-      if (e.key === 'Delete') {
+      if (isManualEditNudgeKey(e.key) && keyboardBurstCancelledKeysRef.current.has(e.key)) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return;
+      }
+      if (e.shiftKey && isManualEditNudgeKey(e.key)) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        handleKeyboardResize(e.key);
+        return;
+      }
+      if (isDuplicate) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (!e.repeat) void manualEditDuplicateCommandRef.current();
+        return;
+      }
+      if (isTextEntry) {
+        if (selected.kind !== 'text' && selected.kind !== 'link' && !selected.textEditTargetId) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (!e.repeat) beginManualEditTextEditing(selected, { selectAll: true });
+        return;
+      }
+      if (isCycle) {
+        const win = iframeRef.current?.contentWindow;
+        if (!win) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        win.postMessage({
+          type: 'readable-edit-cycle-target', selectedId: liveManualEditSelectionPending()?.id ?? selected.id,
+          revision: manualEditPreviewRevisionRef.current, documentEpoch: manualEditDocumentEpoch(), backward: e.shiftKey,
+        }, '*');
+        return;
+      }
+      if (isDelete) {
         if (manualEditRichFormat.editing) return;
         e.preventDefault();
         e.stopImmediatePropagation();
@@ -7586,7 +8086,10 @@ function HtmlViewer({
       // stopImmediatePropagation so no other host listener (deck nav, any other
       // capture listener) can also act on an owned arrow key.
       e.stopImmediatePropagation();
-      handleKeyboardNudge(manualEditNudgeDelta(e.key), e.key);
+      if (!isManualEditNudgeKey(e.key)) return;
+      const delta = manualEditNudgeDelta(e.key);
+      const scale = isCtrlNudge ? overlayPreviewScale : 1;
+      handleKeyboardNudge({ x: delta.x / scale, y: delta.y / scale }, e.key, isCtrlNudge);
     }
     function onKeyUp(e: KeyboardEvent) {
       if (!isManualEditNudgeKey(e.key)) return;
@@ -7600,7 +8103,7 @@ function HtmlViewer({
       window.removeEventListener('keydown', onKeyDown, true);
       window.removeEventListener('keyup', onKeyUp, true);
     };
-  }, [manualEditMode, selectedManualEditTarget, manualEditMoveMode, manualEditRichFormat.editing]);
+  }, [manualEditMode, selectedManualEditTarget, manualEditMoveMode, manualEditRichFormat.editing, overlayPreviewScale]);
 
   useEffect(() => () => {
     if (manualEditAnnounceTimerRef.current) window.clearTimeout(manualEditAnnounceTimerRef.current);
@@ -8980,9 +9483,7 @@ function HtmlViewer({
         onClick={() => {
           const target = manualEditHoverTarget;
           setManualEditHoverTarget(null);
-          const win = iframeRef.current?.contentWindow;
-          if (win) win.postMessage({ type: 'readable-edit-select-target', id: target.id }, '*');
-          else void selectManualEditTarget(target);
+          void selectManualEditTarget({ ...target, stylesMeasured: false });
         }}
       >
         <Icon name="sliders" size={15} />
@@ -9156,24 +9657,47 @@ function HtmlViewer({
             '*',
           );
         }}
-        onActivate={({ clientX, clientY, altKey }) => {
-          if (manualEditMoveMode !== 'selected' && !altKey) return;
+        onActivate={({ region, clientX, clientY, altKey }) => {
           const frame = iframeRef.current;
-          const win = frame?.contentWindow;
-          if (!frame || !win) return;
-          const frameRect = frame.getBoundingClientRect();
-          const point = {
+          const frameRect = frame?.getBoundingClientRect();
+          const point = frameRect ? {
             clientX: (clientX - frameRect.left) / overlayPreviewScale,
             clientY: (clientY - frameRect.top) / overlayPreviewScale,
-          };
+          } : null;
+          // Issue 34: a nested object under a plain click owns it, even in the selected
+          // text interior or ring band; the bridge resolves the exact hit stack.
+          const nested = !altKey && manualEditMoveMode === 'selected' && point !== null
+            && manualEditTargets.some((target) => target.id !== selectedManualEditTarget.id && !target.isHidden
+              && !!target.ancestorIds?.includes(selectedManualEditTarget.id)
+              && point.clientX >= target.rect.x && point.clientX <= target.rect.x + target.rect.width
+              && point.clientY >= target.rect.y && point.clientY <= target.rect.y + target.rect.height);
+          if (region === 'ring' && !altKey && !nested) {
+            if (manualEditMoveMode === 'editing') {
+              sendManualEditTextEdit({ type: 'readable-edit-end-text-edit' });
+              setManualEditMoveMode('selected');
+            }
+            return;
+          }
+          if (manualEditMoveMode !== 'selected' && !altKey) return;
+          const win = frame?.contentWindow;
+          if (!win || !point) return;
+          if (!altKey && !nested && (selectedManualEditTarget.kind === 'text' || selectedManualEditTarget.kind === 'link' || selectedManualEditTarget.textEditTargetId)) {
+            beginManualEditTextEditing(selectedManualEditTarget, { textEditPoint: point });
+            return;
+          }
           const message: ManualEditActivationMessage = altKey
             ? { type: 'readable-edit-alt-click', ...point }
             : { type: 'readable-edit-click', ...point, selectedId: selectedManualEditTarget.id };
           win.postMessage(message, '*');
         }}
-        onSurfaceDoubleClick={() => {
-          if (manualEditMoveMode !== 'selected') return;
-          beginManualEditTextEditing(selectedManualEditTarget);
+        onSurfaceDoubleClick={(region, point) => {
+          if (region !== 'interior') return;
+          const frame = iframeRef.current;
+          const frameRect = frame?.getBoundingClientRect();
+          beginManualEditTextEditing(selectedManualEditTarget, point && frameRect ? {
+            textEditPoint: { clientX: (point.clientX - frameRect.left) / overlayPreviewScale,
+              clientY: (point.clientY - frameRect.top) / overlayPreviewScale }, selectWord: true,
+          } : {});
         }}
       />
     ) : null;
@@ -10253,7 +10777,7 @@ function HtmlViewer({
                           }, '*');
                           replayInspectOverridesToIframe(frame);
                           syncBridgeModes(frame);
-                          syncCachedSlideStateToIframe(frame);
+              syncCachedSlideStateToIframe(frame, true);
                           if (!useUrlLoadPreview) restorePreviewScrollPosition();
                         }}
                       />
@@ -11090,6 +11614,9 @@ async function inlineRelativeAssets(
   for (const tag of scripts) {
     const src = readHtmlAttr(tag, 'src');
     if (!src) continue;
+    try {
+      if (new URL(src, 'https://readable.local/').pathname.split('/').at(-1) === 'readable-direct-edit.js') continue;
+    } catch {}
     replacements.push(
       fetchProjectRelativeText(projectId, fileName, src).then((js) => {
         if (js == null) return null;

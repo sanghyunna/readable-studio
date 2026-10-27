@@ -139,6 +139,46 @@ describe('resizeDragSize', () => {
     expect(height).toBe(80);
     expect(width).toBe(160);
   });
+
+  it.each([
+    { direction: 'se', startWidth: 100, startHeight: 50, deltaX: -1000, deltaY: 0, width: 16, height: 8 },
+    { direction: 'nw', startWidth: 100, startHeight: 50, deltaX: 0, deltaY: 1000, width: 16, height: 8 },
+    { direction: 'ne', startWidth: 50, startHeight: 100, deltaX: -1000, deltaY: 0, width: 8, height: 16 },
+    { direction: 'sw', startWidth: 50, startHeight: 100, deltaX: 0, deltaY: -1000, width: 8, height: 16 },
+  ] as const)('preserves the locked aspect at minimum size from $direction ($startWidth × $startHeight)', ({ width, height, ...drag }) => {
+    expect(resizeDragSize({ ...drag, scale: 1, lockAspect: true })).toEqual({ width, height });
+  });
+
+  it('keeps the opposite corner fixed when a locked northwest resize reaches minimum size', () => {
+    const size = resizeDragSize({
+      ...base, direction: 'nw', deltaX: 1000, deltaY: 1000, lockAspect: true,
+    });
+    expect(resizeCssCommitStyles({
+      direction: 'nw',
+      size,
+      startSize: { width: 100, height: 50 },
+      baseStyles: { width: '100px', height: '50px' },
+      baseMargins: { marginLeft: '10px', marginTop: '20px' },
+    })).toEqual({ width: '16px', height: '8px', marginLeft: '94px', marginTop: '62px' });
+  });
+
+  it('resizes both sides of an edge when the center is locked', () => {
+    expect(resizeDragSize({
+      ...base, direction: 'e', deltaX: 20, deltaY: 0, fromCenter: true,
+    })).toEqual({ width: 140, height: 50, fromCenter: true });
+  });
+
+  it('resizes both sides of a northwest corner when the center is locked', () => {
+    expect(resizeDragSize({
+      ...base, direction: 'nw', deltaX: -20, deltaY: -10, fromCenter: true,
+    })).toEqual({ width: 140, height: 70, fromCenter: true });
+  });
+
+  it('preserves both center and proportions when both modifiers are held', () => {
+    expect(resizeDragSize({
+      ...base, direction: 'se', deltaX: 20, deltaY: 2, lockAspect: true, fromCenter: true,
+    })).toEqual({ width: 140, height: 70, fromCenter: true });
+  });
 });
 
 describe('resizeCssCommitStyles', () => {
@@ -252,6 +292,17 @@ describe('resizeCssCommitStyles', () => {
       startSize: { width: 500, height: 100 },
       baseStyles: { width: '2px' },
     })).toEqual({ width: '1px' });
+  });
+
+  it('leaves centered positioning to the measured bridge instead of guessing layout margins', () => {
+    expect(resizeCssCommitStyles({
+      direction: 'nw',
+      size: { width: 140, height: 70 },
+      startSize: { width: 100, height: 50 },
+      baseStyles: { width: '100px', height: '50px' },
+      baseMargins: { marginLeft: '10px', marginTop: '20px' },
+      fromCenter: true,
+    })).toEqual({ width: '140px', height: '70px' });
   });
 });
 

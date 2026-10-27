@@ -47,6 +47,7 @@ const HOME_PLUGINS = [
         kind: 'scenario', taskKind: 'new-generation',
         preview: { type: 'image', poster: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg"/%3E' },
         useCase: { query: 'Build a dashboard for {{brief}}.' }, inputs: REQUIRED_INPUTS,
+        visualReference: { characteristics: ['A restrained dashboard grid with clearly ranked metrics.'] },
       },
     },
   },
@@ -110,7 +111,7 @@ async function choosePrototypePreset(page: Page, pluginId = PRIMARY_PLUGIN.id) {
 
 async function fulfillProject(route: Route, suffix: string): Promise<ProjectPayload> {
   const body = route.request().postDataJSON() as ProjectPayload;
-  await route.fulfill({ json: {
+  const created = {
     project: {
       id: `qa-task-7-${suffix}`, name: body.name, skillId: body.skillId ?? null,
       designSystemId: body.designSystemId ?? null, metadata: body.metadata ?? { kind: 'other' },
@@ -118,7 +119,10 @@ async function fulfillProject(route: Route, suffix: string): Promise<ProjectPayl
     },
     conversationId: `qa-task-7-conversation-${suffix}`,
     ...(body.appliedPluginSnapshotId ? { appliedPluginSnapshotId: body.appliedPluginSnapshotId } : {}),
-  } });
+  };
+  await route.fulfill({ json: new URL(route.request().url()).pathname === '/api/sessions'
+    ? { workspace: created.project, session: { id: created.conversationId, projectId: created.project.id, title: created.project.name, createdAt: 1, updatedAt: 1 }, ...(created.appliedPluginSnapshotId ? { appliedPluginSnapshotId: created.appliedPluginSnapshotId } : {}) }
+    : created });
   return body;
 }
 
@@ -127,6 +131,7 @@ test.beforeEach(async ({ page }) => {
     localStorage.clear();
     sessionStorage.clear();
     localStorage.setItem(key, JSON.stringify(value));
+    localStorage.setItem('readable-studio:welcome-modal-shown', '1');
   }, { key: STORAGE_KEY, value: CONFIG });
   await routeAgents(page, [{
     id: 'codex', name: 'Codex CLI', bin: 'codex', available: true, version: '1', path: 'codex',
@@ -213,7 +218,7 @@ test('plugin details open; replacement cancel is lossless; replace commits; clea
 
 test('skill selection clears plugin routing and forwards skillId', async ({ page }) => {
   let projectPayload: ProjectPayload | null = null;
-  await page.route('**/api/projects', async (route) => {
+  await page.route('**/api/sessions', async (route) => {
     if (route.request().method() !== 'POST') return route.fallback();
     projectPayload = await fulfillProject(route, 'skill');
   });
@@ -224,17 +229,22 @@ test('skill selection clears plugin routing and forwards skillId', async ({ page
   const picker = page.getByTestId('home-hero-plugin-picker');
   await picker.getByRole('tab', { name: /Skills/i }).click();
   await picker.getByRole('option', { name: /QA Layout Skill/i }).click();
+  await picker.getByTestId('mention-preview-use').click();
   await expect(page.getByTestId('home-hero-active-skill')).toContainText('QA Layout Skill');
-  await editor.fill('Route this through the selected skill');
+  await editor.focus();
+  await editor.press('Control+End');
+  await page.keyboard.insertText(' Route this through the selected skill');
+  const prompt = (await editor.innerText()).replace(/\u00a0/g, ' ').trim();
+  await expect(editor.locator('[data-mention-kind="skill"]')).toHaveCount(1);
   await page.getByTestId('home-hero-submit').click();
   await expect.poll(() => projectPayload).not.toBeNull();
-  expect(projectPayload).toMatchObject({ skillId: SKILL.id, pendingPrompt: 'Route this through the selected skill' });
+  expect(projectPayload).toMatchObject({ skillId: SKILL.id, pendingPrompt: prompt });
   expect(projectPayload).not.toHaveProperty('pluginId');
 });
 
 test('mention-picked plugins remain context and never silently become the routed driver', async ({ page }) => {
   let projectPayload: ProjectPayload | null = null;
-  await page.route('**/api/projects', async (route) => {
+  await page.route('**/api/sessions', async (route) => {
     if (route.request().method() !== 'POST') return route.fallback();
     projectPayload = await fulfillProject(route, 'context');
   });
@@ -245,13 +255,16 @@ test('mention-picked plugins remain context and never silently become the routed
   const picker = page.getByTestId('home-hero-plugin-picker');
   await picker.getByRole('tab', { name: /Plugins/i }).click();
   await picker.getByRole('option', { name: /Dashboard Prototype/i }).click();
+  await picker.getByTestId('mention-preview-use').click();
   await expect(editor).toContainText('@Dashboard Prototype');
   await page.getByTestId('home-hero-submit').click();
   await expect.poll(() => projectPayload).not.toBeNull();
   expect(projectPayload).toMatchObject({
     pluginId: DEFAULT_UNSELECTED_SCENARIO_PLUGIN_ID,
-    metadata: { contextPlugins: [expect.objectContaining({ id: REQUIRED_PLUGIN.id })] },
+    metadata: { visualReferences: [{ characteristics: ['A restrained dashboard grid with clearly ranked metrics.'] }] },
   });
+  expect(projectPayload).not.toHaveProperty('metadata.contextPlugins');
+  expect(projectPayload).not.toHaveProperty('appliedPluginSnapshotId');
 });
 
 test('missing required plugin input is named visibly and blocks project creation', async ({ page }) => {

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ComponentProps } from 'react';
 import { emptyManualEditStyles, type ManualEditTarget } from '../../src/edit-mode/types';
 import type { ProjectFile } from '../../src/types';
+import { manualEditCanonicalSource, manualEditFrameEpoch } from './manual-edit-frame-messages';
 
 const toolbarState = vi.hoisted(() => ({
   props: null as ComponentProps<typeof import('../../src/components/ManualEditShapeToolbar').ManualEditShapeToolbar> | null,
@@ -35,8 +36,9 @@ async function previewFrame() {
 
 async function selectHero() {
   const frame = await previewFrame();
+  const documentEpoch = manualEditFrameEpoch(frame);
   act(() => window.dispatchEvent(new MessageEvent('message', {
-    data: { type: 'readable-edit-select', target: heroTarget() },
+    data: { type: 'readable-edit-select', target: heroTarget(), documentEpoch },
     source: frame.contentWindow,
   })));
   await waitFor(() => expect(toolbarState.props).not.toBeNull());
@@ -75,7 +77,7 @@ function dispatchUndo(redo = false) {
 }
 
 async function expectPreviewContains(value: string) {
-  await waitFor(() => expect((screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement).srcdoc).toContain(value));
+  await waitFor(() => expect(manualEditCanonicalSource(screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement)).toContain(value));
 }
 
 afterEach(() => {
@@ -96,7 +98,7 @@ describe('FileViewer manual edit undo keyboard shortcut', () => {
     act(() => toolbarState.props?.onApplyPatch({ id: 'hero', kind: 'set-text', value: 'Edited hero' }, 'Content: Hero'));
     await expectPreviewContains('Edited hero');
     dispatchUndo();
-    await waitFor(() => expect((screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement).srcdoc).not.toContain('Edited hero'));
+    await waitFor(() => expect(manualEditCanonicalSource(screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement)).not.toContain('Edited hero'));
     dispatchUndo(true);
     await expectPreviewContains('Edited hero');
     expect(fileSaveCalls(fetchMock)).toHaveLength(0);
@@ -113,13 +115,13 @@ describe('FileViewer manual edit undo keyboard shortcut', () => {
       id: 'hero', kind: 'set-inner-html', html: '<strong>Plain</strong> copy',
     }, 'Edit text'));
     await waitFor(() => {
-      const previewSource = (screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement).srcdoc;
+      const previewSource = manualEditCanonicalSource(screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement);
       expect(previewSource).toMatch(/<strong(?:\s[^>]*)?>Plain<\/strong> copy/);
     });
     expect(fileSaveCalls(fetchMock)).toHaveLength(0);
     dispatchUndo();
     await waitFor(() => {
-      const previewSource = (screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement).srcdoc
+      const previewSource = manualEditCanonicalSource(screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement)
         .replace(/ data-readable-source-path="[^"]*"/g, '');
       expect(previewSource).toContain('<p data-readable-id="hero">Plain copy</p>');
       expect(previewSource).not.toContain('<strong');
@@ -138,7 +140,7 @@ describe('FileViewer manual edit undo keyboard shortcut', () => {
     const input = document.createElement('input');
     document.body.appendChild(input);
     act(() => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true })));
-    expect((await previewFrame()).srcdoc).toContain('Edited hero');
+    expect(manualEditCanonicalSource(await previewFrame())).toContain('Edited hero');
     expect(fileSaveCalls(fetchMock)).toHaveLength(0);
     input.remove();
   });
@@ -180,7 +182,7 @@ describe('FileViewer manual edit undo keyboard shortcut', () => {
     fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
     await expectPreviewContains('Other hero');
     dispatchUndo();
-    expect((await previewFrame()).srcdoc).toContain('Other hero');
+    expect(manualEditCanonicalSource(await previewFrame())).toContain('Other hero');
     expect(fileSaveCalls(fetchMock)).toHaveLength(1);
   });
 
@@ -195,14 +197,14 @@ describe('FileViewer manual edit undo keyboard shortcut', () => {
     act(() => toolbarState.props?.onApplyPatch({ id: 'hero', kind: 'set-text', value: 'Edited hero' }, 'Content: Hero'));
     await expectPreviewContains('Edited hero');
     act(() => window.dispatchEvent(new MessageEvent('message', { data: { type: 'readable-edit-undo', redo: false }, source: frameWindow })));
-    await waitFor(() => expect(frame.srcdoc).not.toContain('Edited hero'));
+    await waitFor(() => expect(manualEditCanonicalSource(frame)).not.toContain('Edited hero'));
     expect(frame.contentWindow).toBe(frameWindow);
     act(() => window.dispatchEvent(new MessageEvent('message', { data: { type: 'readable-edit-undo', redo: true }, source: frameWindow })));
     await expectPreviewContains('Edited hero');
     expect(fileSaveCalls(fetchMock)).toHaveLength(0);
   });
 
-  it.each([false, true])('keeps shortcuts on the host while history reloads the focused iframe (redo=%s)', async (redo) => {
+  it.each([false, true])('keeps the focused iframe mounted through in-place history (redo=%s)', async (redo) => {
     // Given a focused preview with an available history action.
     vi.stubGlobal('fetch', buildFetchMock());
     render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml={INITIAL_SOURCE} />);
@@ -211,28 +213,29 @@ describe('FileViewer manual edit undo keyboard shortcut', () => {
     await act(async () => { await toolbarState.props?.onApplyPatch({ id: 'hero', kind: 'set-text', value: 'Edited hero' }, 'Content: Hero'); });
     if (redo) await act(async () => { dispatchUndo(); });
     const frame = await previewFrame();
+    const before = frame.srcdoc;
+    const frameWindow = frame.contentWindow;
     frame.focus();
 
-    // When history replaces the iframe document.
+    // When history updates the canonical source without replacing its document.
     await act(async () => { dispatchUndo(redo); });
 
-    // Then load alone cannot return focus to the still-disabled bridge.
-    expect(document.activeElement).toBe(document.body);
+    // Then focus and shortcuts remain in the same preview window.
+    expect(frame.srcdoc).toBe(before);
+    expect(frame.contentWindow).toBe(frameWindow);
+    expect(document.activeElement).toBe(frame);
+    expect(manualEditCanonicalSource(frame)).toContain(redo ? 'Edited hero' : '>Hero</h1>');
     if (!frame.contentWindow) throw new Error('Missing preview window');
-    const messages = vi.spyOn(frame.contentWindow, 'postMessage');
-    fireEvent.load(frame);
-    expect(document.activeElement).toBe(document.body);
-    const activation = messages.mock.calls.map(([message]) => message).find((message: unknown) => (
-      typeof message === 'object' && message !== null && 'type' in message && message.type === 'readable-edit-mode'
-    ));
+    const documentEpoch = manualEditFrameEpoch(frame);
+    expect(document.activeElement).toBe(frame);
     act(() => window.dispatchEvent(new MessageEvent('message', {
       source: frame.contentWindow,
       data: { type: 'readable-edit-targets', targets: [], documentEpoch: 'stale', sequence: 1 },
     })));
-    expect(document.activeElement).toBe(document.body);
+    expect(document.activeElement).toBe(frame);
     act(() => window.dispatchEvent(new MessageEvent('message', {
       source: frame.contentWindow,
-      data: { type: 'readable-edit-targets', targets: [], documentEpoch: activation.documentEpoch, sequence: 1 },
+      data: { type: 'readable-edit-targets', targets: [], documentEpoch, sequence: 1 },
     })));
     expect(document.activeElement).toBe(frame);
   });
@@ -249,7 +252,7 @@ describe('FileViewer manual edit undo keyboard shortcut', () => {
     editable.setAttribute('contenteditable', 'true');
     document.body.appendChild(editable);
     act(() => editable.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true })));
-    expect((await previewFrame()).srcdoc).toContain('Edited hero');
+    expect(manualEditCanonicalSource(await previewFrame())).toContain('Edited hero');
     expect(fileSaveCalls(fetchMock)).toHaveLength(0);
     editable.remove();
   });

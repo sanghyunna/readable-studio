@@ -257,8 +257,8 @@ describe('ManualEditMoveFrame', () => {
 
   it('preserves double-click reporting and selected/editing surface shapes', () => {
     const selected = renderFrame();
-    fireEvent.doubleClick(selected.interior!);
-    expect(selected.onSurfaceDoubleClick).toHaveBeenCalledWith('interior');
+    fireEvent.doubleClick(selected.interior!, { clientX: 210, clientY: 120 });
+    expect(selected.onSurfaceDoubleClick).toHaveBeenCalledWith('interior', { clientX: 210, clientY: 120 });
     expect(selected.interior).not.toBeNull();
     const selectedBand = parseFloat(selected.ring.style.height);
     cleanup();

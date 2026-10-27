@@ -6,6 +6,7 @@ import { FileViewer } from '../../src/components/FileViewer';
 import { emptyManualEditStyles, type ManualEditTarget } from '../../src/edit-mode/types';
 import { applyPerformanceProfileToDocument } from '../../src/state/config';
 import type { ProjectFile } from '../../src/types';
+import { manualEditCanonicalSource, manualEditFrameEpoch } from './manual-edit-frame-messages';
 
 const source = '<html><body><div data-readable-id="hero">Hero</div></body></html>';
 const file: ProjectFile = { name: 'preview.html', path: 'preview.html', type: 'file', size: 100, mtime: 1, mime: 'text/html', kind: 'html' };
@@ -47,9 +48,24 @@ describe.each(['full', 'low'] as const)('gesture continuity with %s performance 
     fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
     const frame = screen.getByTestId('artifact-preview-frame');
     if (!(frame instanceof HTMLIFrameElement)) throw new TypeError('Expected preview iframe');
+    const documentEpoch = manualEditFrameEpoch(frame);
+    // jsdom has no bridge: ACK only the final resize request, echoing its own
+    // transport identity (same contract as FileViewer.manual-edit-resize.test.tsx).
+    const previewWindow = frame.contentWindow!;
+    const forward = previewWindow.postMessage.bind(previewWindow);
+    vi.spyOn(previewWindow, 'postMessage').mockImplementation((message, options) => {
+      forward(message, options);
+      if (message?.resize?.stage !== 'finalize') return;
+      queueMicrotask(() => window.dispatchEvent(new MessageEvent('message', { source: previewWindow, data: {
+        ...message.resize, type: 'readable-edit-preview-style-applied', id: message.id, version: message.version, ok: true,
+        rect: { ...target.rect, ...message.resize.requested },
+        resize: { ...message.resize, constraints: [], causes: [], decision: 'ordinary', announce: true },
+      } })));
+    });
+    await act(async () => {});
     await act(async () => {
       window.dispatchEvent(new MessageEvent('message', {
-        source: frame.contentWindow, data: { type: 'readable-edit-select', target },
+        source: frame.contentWindow, data: { type: 'readable-edit-select', target, documentEpoch },
       }));
     });
     const interior = screen.getByLabelText('Move element').querySelector('[data-region="interior"]');
@@ -88,9 +104,12 @@ describe.each(['full', 'low'] as const)('gesture continuity with %s performance 
     expect(screen.getByRole('button', { name: 'Undo' })).toHaveProperty('disabled', false);
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Undo' })); });
     expect(screen.getByRole('button', { name: 'Undo' })).toHaveProperty('disabled', true);
-    const undone = new DOMParser().parseFromString(frame.srcdoc, 'text/html').querySelector('[data-readable-id="hero"]');
-    expect(undone?.getAttribute('style') ?? '').not.toMatch(/translate|width/);
+    expect(frame.srcdoc).toBe(frozen);
+    const undone = new DOMParser().parseFromString(manualEditCanonicalSource(frame), 'text/html').querySelector('[data-readable-id="hero"]');
+    expect(undone).not.toBeNull();
+    expect(undone!.getAttribute('style') ?? '').not.toMatch(/translate|width/);
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Redo' })); });
+    expect(frame.srcdoc).toBe(frozen);
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save changes' })); });
     expect(writes).toHaveLength(1);
     const saved = new DOMParser().parseFromString(writes[0] ?? '', 'text/html').querySelector('[data-readable-id="hero"]');

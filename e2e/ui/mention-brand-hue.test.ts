@@ -17,9 +17,9 @@ const STORAGE_KEY = 'readable-studio:config';
 const WCAG_AA_NORMAL = 4.5;
 const PILL = '.composer-inline-mention--plugin';
 
-const EVIDENCE_DIR = fileURLToPath(
-  new URL('../../.omo/evidence/fix-e2e-stale-4', import.meta.url),
-);
+const EVIDENCE_DIR = process.env.READABLE_MENTION_EVIDENCE_DIR
+  ? join(process.env.READABLE_MENTION_EVIDENCE_DIR, 'brand-hue')
+  : fileURLToPath(new URL('../../.omo/evidence/fix-e2e-stale-4', import.meta.url));
 
 const DARK_CONFIG = {
   theme: 'dark',
@@ -98,6 +98,7 @@ test.beforeEach(async ({ page }) => {
   await addStorageInitScript(page,
     ({ key, value }) => {
       window.localStorage.setItem(key, JSON.stringify(value));
+      window.localStorage.setItem('readable-studio:welcome-modal-shown', '1');
     },
     { key: STORAGE_KEY, value: DARK_CONFIG },
   );
@@ -286,6 +287,8 @@ test('[P1] plugin mention pill clears WCAG AA contrast in the dark theme', async
   const option = popover.getByRole('option').filter({ hasText: 'Notion' }).first();
   await expect(option).toBeVisible();
   await option.click();
+  await expect(popover.getByTestId('mention-preview-detail')).toBeVisible();
+  await popover.getByTestId('mention-preview-use').click();
 
   const pill = page.locator(PILL).first();
   await expect(pill).toBeVisible();

@@ -2,6 +2,7 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createRef, type ComponentProps } from 'react';
+import { $createTextNode, $getRoot, $isElementNode, KEY_BACKSPACE_COMMAND } from 'lexical';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const trackChatPanelClickMock = vi.hoisted(() => vi.fn());
@@ -20,7 +21,7 @@ import { getKo } from '../../src/i18n/locales/ko';
 const ko = getKo();
 import type { Locale } from '../../src/i18n/types';
 import type { AppliedPluginSnapshot } from '@readable-studio/contracts';
-import { composerText, flushMounts, pressEnter, typeAndSettle } from '../helpers/lexical-composer';
+import { composerText, flushMounts, getComposerEditor, pressEnter, typeAndSettle } from '../helpers/lexical-composer';
 
 const COMMUNITY_PLUGIN = {
   id: 'community-deck',
@@ -164,6 +165,18 @@ function stagedPluginChip(): Element | null {
     ?.querySelector('.staged-chip.staged-context--plugin') ?? null;
 }
 
+function removeLastMention() {
+  act(() => { getComposerEditor().dispatchCommand(KEY_BACKSPACE_COMMAND, new KeyboardEvent('keydown', { key: 'Backspace' })); });
+}
+
+function appendComposerText(text: string) {
+  act(() => { getComposerEditor().update(() => {
+    const paragraph = $getRoot().getFirstChild();
+    if ($isElementNode(paragraph)) paragraph.append($createTextNode(text));
+    $getRoot().selectEnd();
+  }, { discrete: true }); });
+}
+
 // The contenteditable serializes newlines as `<br>`, which jsdom's
 // `.textContent` drops — so use the Lexical-aware `composerText()` helper for
 // every editor-text assertion (it walks the tree and emits real `\n`s).
@@ -268,10 +281,11 @@ describe('ChatComposer context pickers', () => {
     await waitFor(() => expect(screen.getByTestId('mention-popover')).toBeTruthy());
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
       'All',
-      'Design files',
-      'Tabs',
       'Plugins',
       'Skills',
+      'Templates',
+      'Design files',
+      'Tabs',
       'MCP',
     ]);
     expect(screen.getByRole('tab', { name: 'Plugins' })).toBeTruthy();
@@ -279,7 +293,7 @@ describe('ChatComposer context pickers', () => {
     expect(screen.getByRole('tab', { name: 'MCP' })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Design files' })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Tabs' })).toBeTruthy();
-    expect(screen.getByText('Search Design Files, tabs, plugins, skills, and MCP servers.')).toBeTruthy();
+    expect(screen.getByText('Search by resource name or the work you want to do.')).toBeTruthy();
   });
 
   it('localizes @ panel tabs and empty states in Korean mode', async () => {
@@ -294,10 +308,11 @@ describe('ChatComposer context pickers', () => {
     await waitFor(() => expect(screen.getByRole('tab', { name: ko['chat.mentionTabAll'] })).toBeTruthy());
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
       ko['chat.mentionTabAll'],
-      ko['chat.mentionTabFiles'],
-      ko['chat.mentionTabTabs'],
       ko['chat.mentionTabPlugins'],
       ko['chat.mentionTabSkills'],
+      ko['chat.mentionTabTemplates'],
+      ko['chat.mentionTabFiles'],
+      ko['chat.mentionTabTabs'],
       ko['chat.mentionTabMcp'],
     ]);
     expect(screen.getByRole('tab', { name: ko['chat.mentionTabPlugins'] })).toBeTruthy();
@@ -312,7 +327,7 @@ describe('ChatComposer context pickers', () => {
     await waitFor(() => expect(screen.getByText(ko['chat.mentionNoResults'].replace('{query}', 'missing'))).toBeTruthy());
     expect(screen.queryByText('No results for “missing”.')).toBeNull();
   });
-  it('lists Design Files first in All and picks the first file with Enter', async () => {
+  it('previews Design Files in their filter and confirms the first file with Enter', async () => {
     renderComposer({
       projectFiles: [
         {
@@ -339,13 +354,9 @@ describe('ChatComposer context pickers', () => {
 
     await typeAndSettle('@');
 
-    await waitFor(() => expect(screen.getByText('designs/landing.html')).toBeTruthy());
-    const labels = Array.from(
-      screen.getByTestId('mention-popover').querySelectorAll('.mention-section-label'),
-      (node) => node.textContent,
-    );
-    expect(labels[0]).toBe('Design files');
-    expect(labels[1]).toBe('Tabs');
+    await waitFor(() => expect(screen.getByRole('option', { name: /landing\.html/ })).toBeTruthy());
+    fireEvent.click(screen.getByRole('tab', { name: 'Design files' }));
+    expect(screen.getByTestId('mention-preview-detail').getAttribute('data-resource-kind')).toBe('file');
 
     pressEnter();
 
@@ -372,20 +383,16 @@ describe('ChatComposer context pickers', () => {
 
     await typeAndSettle('@drib');
 
-    await waitFor(() => expect(screen.getByText('Dribbble')).toBeTruthy());
-    const labels = Array.from(
-      screen.getByTestId('mention-popover').querySelectorAll('.mention-section-label'),
-      (node) => node.textContent,
-    );
-    expect(labels[0]).toBe('Tabs');
-    fireEvent.click(screen.getByText('Dribbble'));
+    await waitFor(() => expect(screen.getByRole('option', { name: /Dribbble/ })).toBeTruthy());
+    fireEvent.click(screen.getByRole('option', { name: /Dribbble/ }));
+    fireEvent.click(screen.getByTestId('mention-preview-use'));
 
     await waitFor(() => expect(composerText()).toBe('@Dribbble'));
     const pill = screen
       .getByTestId('chat-composer-input')
       .querySelector('.composer-inline-mention');
     expect(pill?.getAttribute('data-mention-kind')).toBe('workspace');
-    expect(screen.getByTestId('staged-contexts').textContent).toContain(`Browser ${browserContext.label}`);
+    expect(screen.queryByTestId('staged-contexts')).toBeNull();
 
     fireEvent.click(screen.getByTestId('chat-send'));
 
@@ -399,8 +406,9 @@ describe('ChatComposer context pickers', () => {
 
     await typeAndSettle('@sl');
 
-    await waitFor(() => expect(screen.getByText('Slack MCP')).toBeTruthy());
-    fireEvent.click(screen.getByText('Slack MCP'));
+    await waitFor(() => expect(screen.getByRole('option', { name: /Slack MCP/ })).toBeTruthy());
+    fireEvent.click(screen.getByRole('option', { name: /Slack MCP/ }));
+    fireEvent.click(screen.getByTestId('mention-preview-use'));
 
     await waitFor(() => expect(composerText()).toBe('@Slack MCP'));
     const pill = screen
@@ -408,33 +416,34 @@ describe('ChatComposer context pickers', () => {
       .querySelector('.composer-inline-mention');
     expect(pill?.textContent).toBe('@Slack MCP');
     expect(pill?.getAttribute('data-mention-kind')).toBe('mcp');
-    expect(screen.getByTestId('staged-contexts').textContent).toContain('@Slack MCP');
+    expect(screen.queryByTestId('staged-contexts')).toBeNull();
 
-    fireEvent.click(screen.getByLabelText('Remove Slack MCP'));
+    removeLastMention();
     await waitFor(() => expect(composerText().trim()).toBe(''));
     expect(screen.queryByTestId('staged-contexts')).toBeNull();
   });
 
-  it('applies a skill from @ search and reports the active project skill', async () => {
+  it('applies a skill for the turn without changing the project default', async () => {
     const onProjectSkillChange = vi.fn();
     renderComposer({ onProjectSkillChange });
     await flushMounts();
 
     await typeAndSettle('@deck');
 
-    await waitFor(() => expect(screen.getByText('Deck Builder')).toBeTruthy());
-    fireEvent.click(screen.getByText('Deck Builder'));
+    await waitFor(() => expect(screen.getByRole('option', { name: /Deck Builder/ })).toBeTruthy());
+    fireEvent.click(screen.getByRole('option', { name: /Deck Builder/ }));
+    fireEvent.click(screen.getByTestId('mention-preview-use'));
 
-    await waitFor(() => expect(onProjectSkillChange).toHaveBeenCalledWith('deck-builder'));
+    expect(onProjectSkillChange).not.toHaveBeenCalled();
     await waitFor(() => expect(composerText()).toBe('@Deck Builder'));
     const pill = screen
       .getByTestId('chat-composer-input')
       .querySelector('.composer-inline-mention');
     expect(pill?.textContent).toBe('@Deck Builder');
     expect(pill?.getAttribute('data-mention-kind')).toBe('skill');
-    expect(screen.getByTestId('staged-contexts').textContent).toContain('@Deck Builder');
+    expect(screen.queryByTestId('staged-contexts')).toBeNull();
 
-    fireEvent.click(screen.getByLabelText('Remove Deck Builder'));
+    removeLastMention();
     await waitFor(() => expect(composerText().trim()).toBe(''));
     expect(screen.queryByTestId('staged-contexts')).toBeNull();
   });
@@ -469,7 +478,7 @@ describe('ChatComposer context pickers', () => {
 
     await waitFor(() => expect(screen.getByText('Audit Helper 9')).toBeTruthy());
     const skillNames = Array.from(
-      screen.getByTestId('mention-popover').querySelectorAll('.mention-item strong'),
+      screen.getByTestId('mention-popover').querySelectorAll('[role=option] strong'),
       (node) => node.textContent,
     );
 
@@ -484,8 +493,9 @@ describe('ChatComposer context pickers', () => {
 
     await typeAndSettle('@export');
 
-    await waitFor(() => expect(screen.getByText('My Export')).toBeTruthy());
-    fireEvent.click(screen.getByText('My Export'));
+    await waitFor(() => expect(screen.getByRole('option', { name: /My Export/ })).toBeTruthy());
+    fireEvent.click(screen.getByRole('option', { name: /My Export/ }));
+    fireEvent.click(screen.getByTestId('mention-preview-use'));
 
     await waitFor(() => expect(composerText()).toBe('@My Export'));
     const pill = screen
@@ -501,11 +511,12 @@ describe('ChatComposer context pickers', () => {
 
     await typeAndSettle('@export');
 
-    await waitFor(() => expect(screen.getByText('My Export')).toBeTruthy());
-    fireEvent.click(screen.getByText('My Export'));
+    await waitFor(() => expect(screen.getByRole('option', { name: /My Export/ })).toBeTruthy());
+    fireEvent.click(screen.getByRole('option', { name: /My Export/ }));
+    fireEvent.click(screen.getByTestId('mention-preview-use'));
 
     await waitFor(() => expect(composerText()).toBe('@My Export'));
-    await waitFor(() => expect(stagedPluginChip()?.textContent).toContain(USER_PLUGIN.id));
+    expect(stagedPluginChip()).toBeNull();
 
     await typeAndSettle('');
 
@@ -583,16 +594,17 @@ describe('ChatComposer context pickers', () => {
 
     await typeAndSettle('@export');
 
-    await waitFor(() => expect(screen.getByText('My Export')).toBeTruthy());
-    fireEvent.click(screen.getByText('My Export'));
+    await waitFor(() => expect(screen.getByRole('option', { name: /My Export/ })).toBeTruthy());
+    fireEvent.click(screen.getByRole('option', { name: /My Export/ }));
+    fireEvent.click(screen.getByTestId('mention-preview-use'));
 
     await waitFor(() => expect(composerText()).toBe('@My Export'));
-    await waitFor(() => expect(stagedPluginChip()?.textContent).toContain(USER_PLUGIN.id));
+    expect(stagedPluginChip()).toBeNull();
 
-    await typeAndSettle('@My Export, refine this export');
+    appendComposerText(', refine this export');
 
     await waitFor(() => expect(composerText()).toBe('@My Export, refine this export'));
-    expect(stagedPluginChip()?.textContent).toContain(USER_PLUGIN.id);
+    expect(stagedPluginChip()).toBeNull();
   });
 
   it('sends the applied plugin snapshot as per-turn context', async () => {
@@ -602,8 +614,9 @@ describe('ChatComposer context pickers', () => {
 
     await typeAndSettle('@export');
 
-    await waitFor(() => expect(screen.getByText('My Export')).toBeTruthy());
-    fireEvent.click(screen.getByText('My Export'));
+    await waitFor(() => expect(screen.getByRole('option', { name: /My Export/ })).toBeTruthy());
+    fireEvent.click(screen.getByRole('option', { name: /My Export/ }));
+    fireEvent.click(screen.getByTestId('mention-preview-use'));
 
     await waitFor(() => expect(composerText()).toBe('@My Export'));
     // The applied-plugin chip now rides the shared staged-context row as a
@@ -611,7 +624,7 @@ describe('ChatComposer context pickers', () => {
     // own ContextChipStrip). It is keyed off the plugin id when no display title
     // is present in the applied snapshot.
     await waitFor(() => {
-      expect(stagedPluginChip()?.textContent).toContain(USER_PLUGIN.id);
+      expect(stagedPluginChip()).toBeNull();
     });
 
     fireEvent.click(screen.getByTestId('chat-send'));
@@ -649,8 +662,9 @@ describe('ChatComposer context pickers', () => {
 
     await typeAndSettle('Use @landing');
 
-    await waitFor(() => expect(screen.getByText('designs/landing.html')).toBeTruthy());
-    fireEvent.click(screen.getByText('designs/landing.html'));
+    await waitFor(() => expect(screen.getByRole('option', { name: /landing\.html/ })).toBeTruthy());
+    fireEvent.click(screen.getByRole('option', { name: /landing\.html/ }));
+    fireEvent.click(screen.getByTestId('mention-preview-use'));
 
     await waitFor(() => expect(composerText()).toBe('Use @designs/landing.html'));
     expect(screen.getByTestId('staged-contexts').textContent).toContain('landing.html');
@@ -684,8 +698,9 @@ describe('ChatComposer context pickers', () => {
     // surrounding `\n\n` runs are preserved as LineBreakNodes.
     await typeAndSettle('Plan:\n\n@landing');
 
-    await waitFor(() => expect(screen.getByText('designs/landing.html')).toBeTruthy());
-    fireEvent.click(screen.getByText('designs/landing.html'));
+    await waitFor(() => expect(screen.getByRole('option', { name: /landing\.html/ })).toBeTruthy());
+    fireEvent.click(screen.getByRole('option', { name: /landing\.html/ }));
+    fireEvent.click(screen.getByTestId('mention-preview-use'));
 
     await waitFor(() =>
       expect(composerText()).toBe('Plan:\n\n@designs/landing.html'),
@@ -725,8 +740,9 @@ describe('ChatComposer context pickers', () => {
 
     await typeAndSettle('Use @landing');
 
-    await waitFor(() => expect(screen.getByText('designs/landing.html')).toBeTruthy());
-    fireEvent.click(screen.getByText('designs/landing.html'));
+    await waitFor(() => expect(screen.getByRole('option', { name: /landing\.html/ })).toBeTruthy());
+    fireEvent.click(screen.getByRole('option', { name: /landing\.html/ }));
+    fireEvent.click(screen.getByTestId('mention-preview-use'));
     await waitFor(() => expect(composerText()).toBe('Use @designs/landing.html'));
 
     await typeAndSettle('Use @designs/landing.html, please');
@@ -757,8 +773,9 @@ describe('ChatComposer context pickers', () => {
 
     await typeAndSettle('@landing');
 
-    await waitFor(() => expect(screen.getByText('designs/landing.html')).toBeTruthy());
-    fireEvent.click(screen.getByText('designs/landing.html'));
+    await waitFor(() => expect(screen.getByRole('option', { name: /landing\.html/ })).toBeTruthy());
+    fireEvent.click(screen.getByRole('option', { name: /landing\.html/ }));
+    fireEvent.click(screen.getByTestId('mention-preview-use'));
     await waitFor(() => expect(composerText()).toBe('@designs/landing.html'));
 
     await typeAndSettle('"@designs/landing.html"');

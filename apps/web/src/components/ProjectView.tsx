@@ -36,6 +36,7 @@ import {
 } from './brief-state';
 import { parsePartialJson } from '../runtime/partial-json';
 import { useDisplayMessages } from './useDisplayMessages';
+import { useContextUsage } from './useContextUsage';
 import { useI18n } from '../i18n';
 import { streamMessage } from '../providers/anthropic';
 import {
@@ -66,6 +67,7 @@ import {
 import { isReadableStudioHostAvailable, pickHostWorkingDir } from '@readable-studio/host';
 import { useProjectFileEvents, type ProjectEvent } from '../providers/project-events';
 import { useCoalescedCallback } from '../hooks/useCoalescedCallback';
+import { resolveTurnSkillPrompt } from '../runtime/turn-skill-prompt';
 import {
   composeSystemPrompt,
   type ComposeInput,
@@ -225,6 +227,9 @@ import {
 
 type ProjectChatSendMeta = ChatSendMeta & {
   queueOnly?: boolean;
+  /** Internal, never stored: the send is a queue dispatch (auto-start or
+   *  "send now"), so a head held for editing must not re-queue it. */
+  fromQueue?: boolean;
   retryOfAssistantId?: string;
   sessionMode?: ChatSessionMode;
   /** Overrides the run_created / run_finished `entry_from` analytics prop for
@@ -1278,8 +1283,29 @@ export function ProjectView({
   const messageSaveFailedTextRef = useRef(t('chat.messageSaveFailed'));
   messageSaveFailedTextRef.current = t('chat.messageSaveFailed');
   const startingQueuedChatSendIdRef = useRef<string | null>(null);
+  // Render mirror of the ref so the queue strip can lock Edit on a send that
+  // is already being dispatched.
+  const [startingQueuedChatSendId, setStartingQueuedChatSendId] = useState<string | null>(null);
+  // The conversation owning the starting send. Kept beside the id (not read
+  // from the queue) so removing the item mid-start cannot end the guard early.
+  const startingQueuedChatSendConversationRef = useRef<string | null>(null);
+  const markStartingQueuedChatSend = useCallback((id: string | null, conversationId: string | null = null) => {
+    // Auto-start re-runs every streaming frame; a same-value setState there
+    // still costs a commit.
+    if (startingQueuedChatSendIdRef.current === id) return;
+    startingQueuedChatSendIdRef.current = id;
+    startingQueuedChatSendConversationRef.current = id === null ? null : conversationId;
+    setStartingQueuedChatSendId(id);
+  }, []);
+  // Queued sends open in a composer for editing (reported synchronously by
+  // ChatPane). Auto-start holds the conversation queue while its head is here,
+  // so neither the pre-edit snapshot nor a later item overtakes the edit.
+  // Ephemeral by design: after a reload the queue simply proceeds. Counted per
+  // id: a side chat tab mirroring the conversation is a second editing pane,
+  // and the hold lasts until the last pane editing the item lets go.
+  const editingQueuedChatSendIdsRef = useRef<Map<string, number>>(new Map());
   const [queuedAutoStartTick, setQueuedAutoStartTick] = useState(0);
-  const skillCache = useRef<Map<string, string>>(new Map());
+  const skillCache = useRef<Map<string, { body: string; isTemplate: boolean }>>(new Map());
   const designCache = useRef<Map<string, string>>(new Map());
   const templateCache = useRef<Map<string, ProjectTemplate>>(new Map());
   // We auto-save the most recent artifact to the project folder. Track the
@@ -2182,6 +2208,17 @@ export function ProjectView({
     () => new Map(agents.map((agent) => [agent.id, agent])),
     [agents],
   );
+  const contextUsageAgentId = config.mode === 'daemon' ? config.agentId : null;
+  const contextUsage = useContextUsage({
+    projectId: project.id,
+    conversationId: activeConversationId,
+    messagesConversationId,
+    agentId: contextUsageAgentId,
+    model: contextUsageAgentId
+      ? effectiveAgentModelChoice(agentsById.get(contextUsageAgentId), config.agentModels?.[contextUsageAgentId])?.model ?? null
+      : null,
+    messages,
+  });
 
   // Keep the @-picker's source of truth fresh: every refreshSignal bump
   // (artifact saved, sketch saved, image uploaded) refetches; on first
@@ -2355,14 +2392,27 @@ export function ProjectView({
     return project.id;
   }, [project.id]);
 
+  const composerDesignTemplates = useMemo(() => designTemplates.filter(item => !(config.disabledSkills ?? []).includes(item.id)), [designTemplates, config.disabledSkills]);
+
   const composedSystemPrompt = useCallback(async (
     sessionModeOverride: ChatSessionMode = activeSessionMode,
+    turnSkillIds: readonly string[] = [],
   ): Promise<string> => {
     let skillBody: string | undefined;
     let skillName: string | undefined;
     let skillMode: ComposeInput['skillMode'];
+    let templateReference = false;
     let designSystemBody: string | undefined;
     let designSystemTitle: string | undefined;
+    const turnSkills = await resolveTurnSkillPrompt({
+      skillIds: turnSkillIds,
+      projectSkillId: project.skillId,
+      skills,
+      designTemplates,
+      cache: skillCache.current,
+      fetchSkill,
+      fetchTemplate: fetchDesignTemplate,
+    });
 
     if (project.skillId) {
       // project.skillId can resolve to either root after the
@@ -2375,14 +2425,16 @@ export function ProjectView({
       skillMode = toComposeSkillMode(summary?.mode);
       const cached = skillCache.current.get(project.skillId);
       if (cached !== undefined) {
-        skillBody = cached;
+        skillBody = cached.body;
+        templateReference = cached.isTemplate;
       } else {
-        const detail =
-          (await fetchSkill(project.skillId)) ??
-          (await fetchDesignTemplate(project.skillId));
+        const skill = await fetchSkill(project.skillId);
+        const template = skill ? null : await fetchDesignTemplate(project.skillId);
+        const detail = skill ?? template;
         if (detail) {
           skillBody = detail.body;
-          skillCache.current.set(project.skillId, detail.body);
+          templateReference = Boolean(template);
+          skillCache.current.set(project.skillId, { body: detail.body, isTemplate: templateReference });
         }
       }
     }
@@ -2433,6 +2485,8 @@ export function ProjectView({
       // Ignore; memory injection is best-effort.
     }
     return composeSystemPrompt({
+      ...turnSkills,
+      templateReference,
       skillBody,
       skillName,
       skillMode,
@@ -3264,6 +3318,16 @@ export function ProjectView({
     commitQueuedChatSends(next);
   }, [commitQueuedChatSends]);
 
+  const handleQueuedSendEditingChange = useCallback((id: string, editing: boolean) => {
+    const holds = editingQueuedChatSendIdsRef.current;
+    const count = holds.get(id) ?? 0;
+    if (editing) holds.set(id, count + 1);
+    else if (count > 1) holds.set(id, count - 1);
+    // Releasing the last hold re-runs auto-start, which reads the item's latest
+    // confirmed content from queuedChatSendsRef.
+    else if (holds.delete(id)) setQueuedAutoStartTick((tick) => tick + 1);
+  }, []);
+
   const prioritizeQueuedChatSend = useCallback((id: string) => {
     const item = queuedChatSendsRef.current.find((candidate) => candidate.id === id);
     if (!item) return;
@@ -3374,7 +3438,26 @@ export function ProjectView({
           chatAttachmentsFromPreviewCommentImages(attachment.imageAttachments),
         ),
       );
-      if ((!retryTarget && meta?.queueOnly) || currentConversationBusy) {
+      // A queue head held for editing occupies the conversation like a run:
+      // any other send (side tab, audit repair, follow-ups) queues behind it
+      // instead of overtaking it while the conversation is idle.
+      const queueHead = queuedChatSendsRef.current.find(
+        (item) => item.conversationId === activeConversationId,
+      );
+      const queueHeldForEdit =
+        !retryTarget &&
+        !meta?.fromQueue &&
+        queueHead !== undefined &&
+        editingQueuedChatSendIdsRef.current.has(queueHead.id);
+      // So does a queued send of this conversation that is starting (still
+      // awaiting inside its own handleSend): it is not busy yet, and a direct
+      // send would overlap it.
+      const queuedSendStarting = !meta?.fromQueue && startingQueuedChatSendIdRef.current !== null
+        && startingQueuedChatSendConversationRef.current === activeConversationId;
+      // A retry replays the failed last turn; queued behind that start it could
+      // never run and would block the queue, so ignore it as when busy.
+      if (retryTarget && queuedSendStarting) return false;
+      if ((!retryTarget && meta?.queueOnly) || currentConversationBusy || queuedSendStarting || queueHeldForEdit) {
         queueChatSendForCurrentConversation({
           conversationId: activeConversationId,
           prompt,
@@ -4038,7 +4121,7 @@ export function ProjectView({
             // on the next event.
           }
         }
-        const systemPrompt = await composedSystemPrompt(runSessionMode);
+        const systemPrompt = await composedSystemPrompt(runSessionMode, meta?.skillIds ?? runContext?.skillIds ?? []);
         const apiHistory = await historyWithApiAttachmentContext(
           historyWithCommentAttachmentContext(
             historyWithWorkspaceContext(nextHistory, userMsg.id, runContext),
@@ -4161,6 +4244,8 @@ export function ProjectView({
 
   const sendQueuedChatSendNow = useCallback((id: string) => {
     if (currentConversationSendDisabled) return;
+    // The composer holds the edit; sending now would ship the stale snapshot.
+    if (editingQueuedChatSendIdsRef.current.has(id)) return;
     const item = queuedChatSendsRef.current.find((candidate) => candidate.id === id);
     if (!item) return;
     if (currentConversationBusy) {
@@ -4213,17 +4298,30 @@ export function ProjectView({
       handleStop();
       return;
     }
+    // Same starting marker as auto-start: the item stays un-editable until it
+    // leaves the queue, and a released held head cannot start alongside it.
+    if (startingQueuedChatSendIdRef.current) return;
+    markStartingQueuedChatSend(id, item.conversationId);
     void (async () => {
       armSlideNavForQueuedSend(item);
       const started = await handleSend(
         item.prompt,
         item.attachments,
         item.commentAttachments,
-        item.meta,
+        { ...item.meta, fromQueue: true },
       );
-      if (started === true) removeQueuedChatSend(id);
+      if (started !== true) {
+        if (startingQueuedChatSendIdRef.current === id) markStartingQueuedChatSend(null);
+        return;
+      }
+      removeQueuedChatSend(id);
+      window.setTimeout(() => {
+        if (startingQueuedChatSendIdRef.current !== id) return;
+        markStartingQueuedChatSend(null);
+        setQueuedAutoStartTick((tick) => tick + 1);
+      }, 0);
     })();
-  }, [armSlideNavForQueuedSend, currentConversationBusy, currentConversationSendDisabled, handleSend, handleStop, prioritizeQueuedChatSend, project.id, removeQueuedChatSend]);
+  }, [armSlideNavForQueuedSend, currentConversationBusy, currentConversationSendDisabled, handleSend, handleStop, markStartingQueuedChatSend, prioritizeQueuedChatSend, project.id, removeQueuedChatSend]);
 
   const handleAgentRollbackConfirm = useCallback(
     (payload: AgentRollbackRequestEvent, accepted: boolean, dismiss: () => void) => {
@@ -4263,10 +4361,10 @@ export function ProjectView({
   );
 
   useEffect(() => {
-    if (currentConversationBusy) {
-      startingQueuedChatSendIdRef.current = null;
-      return;
-    }
+    // The starting marker is cleared only by the dispatch below once its
+    // handleSend settles: API mode turns busy before it returns, and the item
+    // stays queued (and must stay un-editable) until it is removed.
+    if (currentConversationBusy) return;
     if (startingQueuedChatSendIdRef.current) return;
     if (restoringQueuedRuns || !messagesInitialized) return;
     if (!activeConversationId) return;
@@ -4275,25 +4373,28 @@ export function ProjectView({
       (item) => item.conversationId === activeConversationId,
     );
     if (!next) return;
-    startingQueuedChatSendIdRef.current = next.id;
+    // Head is being edited: hold the whole conversation queue (FIFO) until the
+    // edit is confirmed or cancelled; releasing it bumps queuedAutoStartTick.
+    if (editingQueuedChatSendIdsRef.current.has(next.id)) return;
+    markStartingQueuedChatSend(next.id, next.conversationId);
     armSlideNavForQueuedSend(next);
     void (async () => {
       const started = await handleSend(
         next.prompt,
         next.attachments,
         next.commentAttachments,
-        next.meta,
+        { ...next.meta, fromQueue: true },
       );
       if (started !== true) {
         if (startingQueuedChatSendIdRef.current === next.id) {
-          startingQueuedChatSendIdRef.current = null;
+          markStartingQueuedChatSend(null);
         }
         return;
       }
       removeQueuedChatSend(next.id);
       window.setTimeout(() => {
         if (startingQueuedChatSendIdRef.current !== next.id) return;
-        startingQueuedChatSendIdRef.current = null;
+        markStartingQueuedChatSend(null);
         setQueuedAutoStartTick((tick) => tick + 1);
       }, 0);
     })();
@@ -4301,6 +4402,7 @@ export function ProjectView({
     activeConversationId,
     armSlideNavForQueuedSend,
     currentConversationBusy,
+    markStartingQueuedChatSend,
     restoringQueuedRuns,
     messagesInitialized,
     queuedAutoStartTick,
@@ -5168,6 +5270,8 @@ export function ProjectView({
             onUpdateQueuedSend: updateQueuedChatSend,
             onReorderQueuedSends: reorderCurrentConversationQueuedChatSends,
             onSendQueuedNow: currentConversationSendDisabled ? undefined : sendQueuedChatSendNow,
+            startingQueuedSendId: startingQueuedChatSendId,
+            onQueuedSendEditingChange: handleQueuedSendEditingChange,
           }
         : undefined,
     [
@@ -5179,6 +5283,7 @@ export function ProjectView({
 	      currentConversationLoading,
 	      currentConversationStreaming,
       error,
+      handleQueuedSendEditingChange,
       handleRetry,
       handleSend,
       handleStop,
@@ -5186,6 +5291,7 @@ export function ProjectView({
       removeQueuedChatSend,
       reorderCurrentConversationQueuedChatSends,
       sendQueuedChatSendNow,
+      startingQueuedChatSendId,
       updateQueuedChatSend,
     ],
   );
@@ -5977,6 +6083,7 @@ export function ProjectView({
               // resets internal scroll/draft state inside ChatPane and ChatComposer.
               key={`${project.id}:${activeConversationId ?? 'conversation-unavailable'}:${chatSeed?.id ?? 'ready'}`}
               messages={displayMessages}
+              contextUsage={contextUsage}
               hasOlderMessages={olderPosition !== null}
               onLoadOlderMessages={loadOlderMessages}
               streaming={currentConversationStreaming}
@@ -6001,6 +6108,7 @@ export function ProjectView({
               activeDesignSystem={chatDesignSystemSummary}
               projectFileNames={projectFileNames}
               skills={skills}
+              designTemplates={composerDesignTemplates}
               onEnsureProject={handleEnsureProject}
               previewComments={previewComments}
               attachedComments={attachedComments}
@@ -6015,6 +6123,8 @@ export function ProjectView({
               onUpdateQueuedSend={updateQueuedChatSend}
               onReorderQueuedSends={reorderCurrentConversationQueuedChatSends}
               onSendQueuedNow={currentConversationSendDisabled ? undefined : sendQueuedChatSendNow}
+              startingQueuedSendId={startingQueuedChatSendId}
+              onQueuedSendEditingChange={handleQueuedSendEditingChange}
               onRequestOpenFile={requestOpenFile}
               onRequestPluginDetails={handleOpenContextPluginDetails}
               onRequestDesignSystemDetails={setContextDesignSystemDetails}
@@ -6471,9 +6581,9 @@ function isQueuedChatSend(value: unknown): value is QueuedChatSend {
   );
 }
 
-function stripQueueOnlyFromMeta(meta: ChatSendMeta | undefined): ProjectChatSendMeta | undefined {
+function stripQueueOnlyFromMeta(meta: ProjectChatSendMeta | undefined): ProjectChatSendMeta | undefined {
   if (!meta) return undefined;
-  const { queueOnly: _queueOnly, ...rest } = meta;
+  const { queueOnly: _queueOnly, fromQueue: _fromQueue, ...rest } = meta;
   return Object.keys(rest).length > 0 ? rest : undefined;
 }
 

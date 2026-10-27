@@ -291,6 +291,13 @@ describe('htmlNeedsFocusGuard', () => {
     expect(htmlNeedsFocusGuard('<script>document.body .focus()</script>')).toBe(true);
   });
 
+  it.each(['dialog.show()', 'dialog.showModal()', 'dialog . show ( )', 'dialog . showModal ( )'])('guards native dialog focusing from %s without explicit focus or autofocus', (call) => {
+    const source = `<dialog><input></dialog><script>${call}</script>`;
+    const needsFocusGuard = htmlNeedsFocusGuard(source);
+    expect(needsFocusGuard).toBe(true);
+    expect(shouldUrlLoadHtmlPreview({ mode: 'preview', isDeck: false, commentMode: false, forceInline: false, needsFocusGuard })).toBe(false);
+  });
+
   it('detects querySelector(...).focus() and chained focus calls', () => {
     expect(htmlNeedsFocusGuard('<script>document.querySelector("input").focus()</script>')).toBe(true);
     expect(htmlNeedsFocusGuard('<script>document.getElementById("x").focus()</script>')).toBe(true);

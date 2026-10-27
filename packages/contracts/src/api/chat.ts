@@ -29,8 +29,8 @@ export interface ChatRequest {
   assistantMessageId?: string | null;
   clientRequestId?: string | null;
   skillId?: string | null;
-  // Per-turn skill ids picked via the composer's @-mention popover. The
-  // daemon concatenates each skill's body into the system prompt for
+  // Per-turn skill or design-template ids picked via the @-mention popover. The
+  // daemon composes their instructions or template references into the prompt for
   // this run only — they are NOT persisted on the project. Use this to
   // assemble multiple capabilities (e.g. @web-search + @summarize) for
   // a single turn without binding the project to one of them.
@@ -322,6 +322,7 @@ export type PersistedAgentEvent = { /** Daemon-observed epoch milliseconds; abse
   | { kind: 'tool_use'; id: string; name: string; input: unknown }
   | { kind: 'tool_result'; toolUseId: string; content: string; isError: boolean }
   | { kind: 'usage'; inputTokens?: number; outputTokens?: number; costUsd?: number; durationMs?: number }
+  | { kind: 'context_usage'; snapshot: import('./context-usage.js').ContextUsageSnapshot }
   | { kind: 'raw'; line: string }
   | AgentRollbackRequestEvent);
 

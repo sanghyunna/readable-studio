@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -40,7 +41,9 @@ import type { AppConfig, ChatAttachment, ChatCommentAttachment, Project, Project
 import type {
   ContextItem,
   AppliedPluginSnapshot,
+  DesignTemplateSummary,
   ChatSessionMode,
+  ContextUsageSnapshot,
   InstalledPluginRecord,
   PluginSourceKind,
   ResearchOptions,
@@ -73,6 +76,13 @@ import {
   type InlineMentionEntity,
 } from '../utils/inlineMentions';
 import {
+  clearComposerDraftMentions,
+  loadComposerDraft,
+  saveComposerDraft,
+  skillMentionSnapshot,
+} from '../utils/composer-draft-storage';
+import type { ComposerMentionSnapshot } from './composer/serialize';
+import {
   LexicalComposerInput,
   type LexicalComposerInputHandle,
   type CaretRect,
@@ -80,12 +90,14 @@ import {
 import { CaretFloatingLayer } from './composer/CaretFloatingLayer';
 import { ANNOTATION_EVENT, type AnnotationEventDetail } from "./PreviewDrawOverlay";
 import { DesignSystemSwitchPicker } from "./DesignSystemSwitchPicker";
+import { ContextUsageMeter } from './ContextUsageMeter';
+import { MentionPreviewPicker, MentionTemplatePreview, type MentionPreviewItem } from './MentionPreviewPicker';
 
 type TranslateFn = (key: keyof Dict, vars?: Record<string, string | number>) => string;
 
 type ToolsTab = 'plugins' | 'skills' | 'mcp' | 'import';
 
-type MentionTab = 'all' | 'tabs' | 'files' | 'plugins' | 'skills' | 'mcp';
+type MentionTab = 'all' | 'tabs' | 'files' | 'plugins' | 'skills' | 'templates' | 'mcp';
 
 const USER_PLUGIN_SOURCE_KINDS = new Set<PluginSourceKind>([
   'user',
@@ -159,6 +171,7 @@ interface Props {
   modelSelectionGuard?: () => boolean;
   initialDraft?: string;
   draftStorageKey?: string;
+  disabledSkillIds?: readonly string[];
   // Lazy ensure — the composer calls this before its first upload, so the
   // project folder exists on disk before files land in it. Returns the
   // project id when ready.
@@ -171,6 +184,7 @@ interface Props {
   // the composer still works on surfaces that don't show a skills picker
   // (e.g. tests, screenshot harnesses).
   skills?: SkillSummary[];
+  designTemplates?: DesignTemplateSummary[];
   onSend: (
     prompt: string,
     attachments: ChatAttachment[],
@@ -217,6 +231,7 @@ interface Props {
   // re-derives config/agents or forks model selection. Omitted on surfaces
   // that have no execution wiring (tests, screenshot harnesses).
   executionSwitcher?: ReactNode;
+  contextUsage?: ContextUsageSnapshot | null;
   // Slot rendered in the composer's bottom toolbar, immediately right of the
   // "+" menu. ProjectView can use this for compact project-specific controls.
   leadingAccessory?: ReactNode;
@@ -316,10 +331,12 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       modelSelectionGuard,
       initialDraft,
       draftStorageKey,
+      disabledSkillIds,
       onEnsureProject,
       commentAttachments = [],
       onRemoveCommentAttachment,
       skills = [],
+      designTemplates = [],
       onSend,
       onStop,
       onOpenMcpSettings,
@@ -337,6 +354,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       pinnedPluginId = null,
       footerAccessory,
       executionSwitcher,
+      contextUsage,
       leadingAccessory,
       designSystemPicker,
       currentDesignSystemId = null,
@@ -345,14 +363,22 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
     },
     ref
   ) {
-    const t = useT();
+    const { t, locale } = useI18n();
     const analytics = useAnalytics();
     const activeFileContext =
       projectMetadata?.importedFrom === 'folder' && activeProjectFileName
         ? activeProjectFileName
         : null;
     const activeFileDisplayName = activeFileContext ? lastPathSegment(activeFileContext) : null;
-    const [draft, setDraft] = useState(() => initialDraft ?? loadComposerDraft(draftStorageKey) ?? "");
+    const disabledSkillSet = useMemo(() => new Set(disabledSkillIds ?? []), [disabledSkillIds]);
+    const [initialMentionSnapshot] = useState<ComposerMentionSnapshot>(() => {
+      const restored = initialDraft !== undefined ? { text: initialDraft, mentions: [] } : loadComposerDraft(draftStorageKey);
+      return { ...restored, mentions: restored.mentions.filter(span => !disabledSkillSet.has(span.entity.id)) };
+    });
+    const [draft, setDraft] = useState(initialMentionSnapshot.text);
+    const [draftMentionSnapshot, setDraftMentionSnapshot] = useState(initialMentionSnapshot);
+    const draftMentionSnapshotRef = useRef(initialMentionSnapshot);
+    const liveMentionSnapshotRef = useRef(initialMentionSnapshot);
     const composerRootRef = useRef<HTMLDivElement | null>(null);
     // Synchronous mirror of `draft`. Event handlers that mutate the draft off
     // a captured render closure (notably the annotation listener, where two
@@ -374,7 +400,11 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
     // Skills the user has @-mentioned for this turn. We dedupe on id and
     // strip the chip when the user removes the corresponding `@<skill>`
     // token from the draft, keeping draft and chips in sync.
-    const [stagedSkills, setStagedSkills] = useState<SkillSummary[]>([]);
+    const [stagedSkills, setStagedSkills] = useState<SkillSummary[]>(() => {
+      const ids = new Set(initialMentionSnapshot.mentions.map(span => span.entity.id));
+      return [...skills, ...designTemplates.filter(template => !skills.some(skill => skill.id === template.id))].filter(skill => ids.has(skill.id));
+    });
+    const [inlineMentionKeys, setInlineMentionKeys] = useState<Set<string>>(() => new Set(initialMentionSnapshot.mentions.map(span => `skill:${span.entity.id}`)));
     // Legacy standalone design-toolbox popover. The next-step card now renders
     // its own cascading skill menu, so nothing opens this anymore; kept compiling
     // behind `openDesignToolbox` until the panel subsystem is removed wholesale.
@@ -394,6 +424,14 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
     // identity or tab changes; drives the visual highlight + Enter/Tab target.
     const [mentionIndex, setMentionIndex] = useState(0);
     const [mentionTab, setMentionTab] = useState<MentionTab>('all');
+    const mentionListboxId = `${useId()}-mention-listbox`;
+    const dismissedMentionQuery = useRef<string | null>(null);
+    const [mentionApplyBusy, setMentionApplyBusy] = useState(false);
+    const mentionApplyVersion = useRef(0);
+    const [mentionError, setMentionError] = useState<string | null>(null);
+    const [catalogRevision, setCatalogRevision] = useState(0);
+    const [pluginLoadState, setPluginLoadState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+    const [mcpLoadState, setMcpLoadState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
     // Viewport caret box the floating popover anchors against. Sampled by the
     // editor at trigger-detection time; null when no trigger is live.
     const [caretRect, setCaretRect] = useState<CaretRect | null>(null);
@@ -421,6 +459,19 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       useState<AppliedPluginSnapshot | null>(null);
     const pluginsSectionRef = useRef<PluginsSectionHandle | null>(null);
     const inlineBackedPluginRef = useRef<{ id: string; label: string } | null>(null);
+    const appliedPluginHistory = useRef(new Map<string, AppliedPluginSnapshot>());
+    const inlinePluginHistory = useRef(new Set<string>());
+    const templateIds = useMemo(() => new Set(designTemplates.map(item => item.id)), [designTemplates]);
+    const mentionSkills = useMemo(() => [...skills, ...designTemplates.filter(item => !skills.some(skill => skill.id === item.id))].filter(skill => !disabledSkillSet.has(skill.id)), [skills, designTemplates, disabledSkillSet]);
+    useEffect(() => {
+      // A slow catalog can arrive after saved, confirmed nodes have mounted.
+      // Resolve those IDs without inferring a selection from matching text.
+      const ids = new Set(draftMentionSnapshotRef.current.mentions.map(span => span.entity.id));
+      setStagedSkills(previous => {
+        const next = mentionSkills.filter(skill => ids.has(skill.id));
+        return next.length === previous.length && next.every((skill, index) => skill.id === previous[index]?.id) ? previous : next;
+      });
+    }, [mentionSkills]);
     // Consolidated "tools" popover — a single dropdown anchored to the
     // leading sliders icon that hosts project context, MCP, Import actions,
     // and a shortcut to open the full Settings dialog. Replaces the previous
@@ -489,7 +540,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
     // The returned imperative clear is for reset(): the submit path must
     // remove the stored draft synchronously, before React commits the ''
     // draft, or an unmount/pagehide in that gap resurrects the sent prompt.
-    const clearPersistedDraftNow = useDebouncedDraftPersist(draftStorageKey, draft);
+    const { clearNow: clearPersistedDraftNow, updateSnapshot: persistMentionSnapshot } = useDebouncedDraftPersist(draftStorageKey, draft, draftMentionSnapshot);
 
     useEffect(() => {
       if (previousWorkspaceContextIdRef.current === activeWorkspaceContextId) return;
@@ -516,16 +567,19 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
     useEffect(() => {
       if (!composerEngaged) return;
       let cancelled = false;
+      setMcpLoadState('loading');
       void (async () => {
         const data = await fetchMcpServers();
-        if (cancelled || !data) return;
+        if (cancelled) return;
+        if (!data) { setMcpLoadState('error'); return; }
         setMcpServers(data.servers);
         setMcpTemplates(data.templates);
+        setMcpLoadState('ready');
       })();
       return () => {
         cancelled = true;
       };
-    }, [composerEngaged]);
+    }, [composerEngaged, catalogRevision]);
 
     // Skills now come from the parent (App.tsx → ProjectView → ChatPane → ChatComposer)
     // pre-filtered by enabled/disabled state. We no longer fetch a fresh list
@@ -536,24 +590,18 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
     useEffect(() => {
       if (!projectId || !composerEngaged) return;
       let cancelled = false;
-      void listPlugins().then((rows) => {
+      setPluginLoadState('loading');
+      void listPlugins({ throwOnError: true }).then((rows) => {
         if (cancelled) return;
         setInstalledPlugins(rows);
-      });
+        setPluginLoadState('ready');
+      }).catch(() => { if (!cancelled) setPluginLoadState('error'); });
       return () => {
         cancelled = true;
       };
-    }, [projectId, composerEngaged]);
+    }, [projectId, composerEngaged, catalogRevision]);
 
 
-
-    useEffect(() => {
-      const inlinePlugin = inlineBackedPluginRef.current;
-      if (!activeAppliedPlugin || inlinePlugin?.id !== activeAppliedPlugin.pluginId) return;
-      if (mentionTokenPresent(draft, inlinePlugin.label)) return;
-      inlineBackedPluginRef.current = null;
-      pluginsSectionRef.current?.clear();
-    }, [activeAppliedPlugin, draft]);
 
     // Composer-side plugin list: hide bundled atoms (pipeline-only). Keep
     // the full installed list available even when the project was created
@@ -601,12 +649,20 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
           files: projectFiles,
           mcpServers: enabledMcpServers,
           plugins: pluginsForComposer,
-          skills,
+          skills: mentionSkills,
           staged,
           workspaceContexts,
+          locale,
         }),
-      [enabledMcpServers, pluginsForComposer, projectFiles, skills, staged, workspaceContexts],
+      [enabledMcpServers, pluginsForComposer, projectFiles, mentionSkills, staged, workspaceContexts, locale],
     );
+    useEffect(() => {
+      if (!disabledSkillSet.size) return;
+      const current = liveMentionSnapshotRef.current;
+      if (current.text !== draftRef.current) return;
+      const mentions = current.mentions.filter(span => span.entity.kind !== 'skill' || !disabledSkillSet.has(span.entity.id));
+      if (mentions.length !== current.mentions.length) editorRef.current?.setText(current.text, { text: current.text, mentions });
+    }, [disabledSkillSet, inlineMentionKeys, draft]);
     // Resolve which tabs to surface in the consolidated tools popover.
     // Plugins is always visible while a project is active so users can
     // apply context without leaving the composer. MCP shows when wired by
@@ -786,7 +842,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
           seededRef.current = true;
         },
         appendDraft: (text: string) => {
-          replaceEditorDraft(draftRef.current ? `${draftRef.current}\n\n${text}` : text);
+          appendEditorDraft(text, '\n\n');
           editorRef.current?.focus();
           seededRef.current = true;
         },
@@ -807,7 +863,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
           setStagedSkills(
             ctx?.skillIds
               ? ctx.skillIds
-                  .map((id) => skills.find((s) => s.id === id))
+                  .map((id) => mentionSkills.find((s) => s.id === id))
                   .filter((s): s is SkillSummary => Boolean(s))
               : [],
           );
@@ -820,16 +876,29 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
           );
           setStagedWorkspaceContexts(ctx?.workspaceItems ?? []);
           const restoredAppliedPlugin = meta?.appliedPluginSnapshot ?? null;
+          if (restoredAppliedPlugin) appliedPluginHistory.current.set(restoredAppliedPlugin.pluginId, restoredAppliedPlugin);
           setActiveAppliedPlugin(restoredAppliedPlugin);
           inlineBackedPluginRef.current = inlineBackedPluginFromRestoredDraft(
             text,
             restoredAppliedPlugin,
             meta,
           );
+          if (restoredAppliedPlugin) {
+            if (inlineBackedPluginRef.current) inlinePluginHistory.current.add(restoredAppliedPlugin.pluginId);
+            else inlinePluginHistory.current.delete(restoredAppliedPlugin.pluginId);
+          }
           setUploadError(null);
           setMention(null);
           setSlash(null);
-          editorRef.current?.setText(text);
+          const referenceKeys = new Set([
+            ...(ctx?.skillIds ?? meta?.skillIds ?? []).map(id => `skill:${id}`),
+            ...(ctx?.mcpServerIds ?? []).map(id => `mcp:${id}`),
+            ...(ctx?.workspaceItems ?? []).map(item => `workspace:${item.id}`),
+            ...attachments.map(item => `file:${item.path}`),
+          ]);
+          const restoredEntities = composerMentionEntities.filter(entity => referenceKeys.has(`${entity.kind}:${entity.id}`) && (entity.kind !== 'skill' || !disabledSkillSet.has(entity.id)));
+          if (inlineBackedPluginRef.current) restoredEntities.push({ id: inlineBackedPluginRef.current.id, kind: 'plugin', label: inlineBackedPluginRef.current.label });
+          editorRef.current?.setText(text, restoredEntities);
           editorRef.current?.focus();
           seededRef.current = true;
         },
@@ -849,10 +918,13 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
           setDesignToolboxOpen(true);
         },
       }),
-      [mcpServers, pluginsForComposer, skills]
+      [mcpServers, pluginsForComposer, mentionSkills, composerMentionEntities, disabledSkillSet]
     );
 
     function reset() {
+      mentionApplyVersion.current += 1;
+      setMentionApplyBusy(false);
+      setMentionError(null);
       clearPersistedDraftNow();
       setDraft("");
       setStaged([]);
@@ -881,7 +953,9 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
     }
 
     function currentRunContextMeta(): ChatSendMeta | undefined {
-      const skillIds = stagedSkills.map((s) => s.id);
+      const skillIds = [...new Set(draftMentionSnapshotRef.current.text === draftRef.current
+        ? draftMentionSnapshotRef.current.mentions.map(span => span.entity.id)
+        : stagedSkills.map((s) => s.id))].filter(id => !disabledSkillSet.has(id));
       const pluginIds = activeAppliedPlugin ? [activeAppliedPlugin.pluginId] : [];
       const mcpServerIds = stagedMcpServers.map((s) => s.id);
       const workspaceItems = selectedWorkspaceContexts;
@@ -982,27 +1056,33 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       });
     }
 
-    function replaceEditorDraft(text: string) {
+    function replaceEditorDraft(text: string, committedEntities?: InlineMentionEntity[] | ComposerMentionSnapshot) {
       draftRef.current = text;
       setDraft(text);
-      editorRef.current?.setText(text);
+      editorRef.current?.setText(text, committedEntities);
     }
 
-    async function insertSkillMention(skill: SkillSummary) {
-      const applied = await applyProjectSkill(skill);
-      if (!applied) return;
-      // Stage the skill so it rides this turn's skillIds, then insert an
-      // atomic `@<name>` pill carrying the skill's real id. The onChange
-      // prune keys on `skill:<id>` being present in the editor text, so the
-      // chip survives until the user deletes the pill.
-      setStagedSkills((prev) =>
-        prev.some((s) => s.id === skill.id) ? prev : [...prev, skill],
-      );
-      editorRef.current?.insertMention({
-        token: inlineMentionToken(skill.name),
-        entity: { id: skill.id, kind: 'skill', label: skill.name },
+    function appendEditorDraft(text: string, separator: string) {
+      const previousText = draftRef.current;
+      const nextText = previousText ? `${previousText}${separator}${text}` : text;
+      const current = liveMentionSnapshotRef.current;
+      replaceEditorDraft(nextText, {
+        text: nextText,
+        mentions: current.text === previousText ? current.mentions : [],
       });
-      setMention(null);
+    }
+
+    function insertSkillMention(skill: SkillSummary) {
+      if (disabledSkillSet.has(skill.id)) return;
+      const previousTemplate = templateIds.has(skill.id) ? stagedSkills.find(item => templateIds.has(item.id) && item.id !== skill.id) : undefined;
+      const label = localizeSkillName(locale, skill);
+      const inserted = editorRef.current?.insertMention({
+        token: inlineMentionToken(label),
+        entity: { id: skill.id, kind: 'skill', label },
+      }, previousTemplate ? { replace: { kind: 'skill', id: previousTemplate.id } } : undefined);
+      if (inserted === false) return;
+      setStagedSkills(previous => [...previous.filter(item => item.id !== skill.id && item.id !== previousTemplate?.id), skill]);
+      closeMention();
     }
 
     function stageSkillForCurrentTurn(skill: SkillSummary) {
@@ -1019,11 +1099,14 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
         ? `${inlineMentionToken(skill.name)}\n${prompt}`
         : prompt;
       if (skill) stageSkillForCurrentTurn(skill);
-      applyDesignToolboxDraft(nextPrompt);
+      applyDesignToolboxDraft(nextPrompt, skill ? [{ id: skill.id, kind: 'skill', label: skill.name }] : undefined);
     }
 
-    function applyDesignToolboxDraft(prompt: string) {
-      replaceEditorDraft(prompt);
+    function applyDesignToolboxDraft(prompt: string, committedEntities?: InlineMentionEntity[]) {
+      const restoredEntities = committedEntities
+        ? [...composerMentionEntities.filter(entity => inlineMentionKeys.has(`${entity.kind}:${entity.id}`)), ...committedEntities]
+        : undefined;
+      replaceEditorDraft(prompt, restoredEntities);
       editorRef.current?.focus();
     }
 
@@ -1120,8 +1203,9 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
             id: resource.plugin.id,
             label: resource.plugin.title,
           };
+          inlinePluginHistory.current.add(resource.plugin.id);
           await pluginsSectionRef.current?.applyById(resource.plugin.id, resource.plugin);
-          applyDesignToolboxDraft(`${inlineMentionToken(resource.plugin.title)}\n${prompt}`);
+          applyDesignToolboxDraft(`${inlineMentionToken(resource.plugin.title)}\n${prompt}`, [{ id: resource.plugin.id, kind: 'plugin', label: resource.plugin.title }]);
         })();
         return;
       }
@@ -1133,7 +1217,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
             ? current
             : [...current, resource.server],
         );
-        applyDesignToolboxDraft(`${inlineMentionToken(label)}\n${prompt}`);
+        applyDesignToolboxDraft(`${inlineMentionToken(label)}\n${prompt}`, [{ id: resource.server.id, kind: 'mcp', label }]);
         return;
       }
 
@@ -1141,7 +1225,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       if (resource.kind === 'file') {
         const path = resource.file.path ?? resource.file.name;
         appendContextAttachment(path);
-        applyDesignToolboxDraft(`${inlineMentionToken(path)}\n${prompt}`);
+        applyDesignToolboxDraft(`${inlineMentionToken(path)}\n${prompt}`, [{ id: path, kind: 'file', label: path }]);
         return;
       }
 
@@ -1150,10 +1234,8 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
 
     function removeStagedSkill(id: string) {
       trackComposerBar({ element: 'context_remove', resource_kind: 'skill', resource_id: id });
-      const skill = stagedSkills.find((s) => s.id === id) ?? null;
       setStagedSkills((prev) => prev.filter((s) => s.id !== id));
-      const labels = [id, skill?.name ?? ''];
-      replaceEditorDraft(stripInlineMentionLabels(draft, labels));
+      editorRef.current?.removeMention({ kind: 'skill', id });
     }
 
     function removeStagedMcpServer(id: string) {
@@ -1357,12 +1439,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
                 // result into the editor with setText so the now-non-empty
                 // editor does not fire an onChange('') that would clobber the
                 // accumulated draft back to empty.
-                const nextDraft = draftRef.current
-                  ? `${draftRef.current}\n${detail.note}`
-                  : detail.note;
-                draftRef.current = nextDraft;
-                setDraft(nextDraft);
-                editorRef.current?.setText(nextDraft);
+                appendEditorDraft(detail.note, '\n');
               }
               editorRef.current?.focus();
             };
@@ -1499,35 +1576,35 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
     }
 
 
-    // Lexical drives every text change through this callback. `present` is the
-    // entity list the editor's text currently references (MentionNodes plus
-    // plain `@token`s matched against composerMentionEntities, deduped by
-    // Lexical drives every text change through this callback. `present` is the
-    // entity list the editor's text currently references (MentionNodes plus
-    // plain `@token`s matched against composerMentionEntities, deduped by
-    // kind:id). We prune the staged skill/mcp chips to whatever the
-    // text still references — generalizing the old skill-only regex prune so a
-    // hand-deleted token also drops its chip and never leaks into the run
-    // context. `staged` (files) is intentionally NOT pruned: users attach
-    // files via the upload button without leaving an `@<path>` token.
-    // text still references — generalizing the old skill-only regex prune so a
-    // hand-deleted token also drops its chip and never leaks into the run
-    // context. `staged` (files) is intentionally NOT pruned: users attach
-    // files via the upload button without leaving an `@<path>` token.
+    function handleMentionSnapshotChange(snapshot: ComposerMentionSnapshot) {
+      liveMentionSnapshotRef.current = snapshot;
+      const next = skillMentionSnapshot({ ...snapshot, mentions: snapshot.mentions.filter(span => span.entity.kind !== 'skill' || !disabledSkillSet.has(span.entity.id)) });
+      draftMentionSnapshotRef.current = next;
+      // Update pending durability synchronously: Undo may change node identity
+      // without changing text, immediately followed by unmount or pagehide.
+      persistMentionSnapshot(next);
+      setDraftMentionSnapshot(previous => sameMentionSnapshot(previous, next) ? previous : next);
+    }
+
+    // Only committed MentionNodes bind resources. Raw search text never applies
+    // a resource. Files also remain attachable without an inline token.
     function handleEditorChange(text: string, present: InlineMentionEntity[]) {
       draftRef.current = text;
       setDraft(text);
       const set = new Set(present.map((e) => `${e.kind}:${e.id}`));
-      if (
-        activeAppliedPlugin
-        && inlineBackedPluginRef.current?.id === activeAppliedPlugin.pluginId
-        && !set.has(`plugin:${activeAppliedPlugin.pluginId}`)
-        && !mentionTokenPresent(text, inlineBackedPluginRef.current.label)
-      ) {
+      setInlineMentionKeys(previous => previous.size === set.size && [...previous].every(key => set.has(key)) ? previous : set);
+      const restoredPlugin = present.find(entity => entity.kind === 'plugin' && inlinePluginHistory.current.has(entity.id) && appliedPluginHistory.current.has(entity.id));
+      if (restoredPlugin) {
+        inlineBackedPluginRef.current = { id: restoredPlugin.id, label: restoredPlugin.label };
+        setActiveAppliedPlugin(appliedPluginHistory.current.get(restoredPlugin.id)!);
+      } else if (inlineBackedPluginRef.current && !set.has(`plugin:${inlineBackedPluginRef.current.id}`)) {
         inlineBackedPluginRef.current = null;
         pluginsSectionRef.current?.clear();
       }
-      setStagedSkills((prev) => prunedOrSame(prev, (s) => set.has(`skill:${s.id}`)));
+      setStagedSkills(previous => {
+        const next = mentionSkills.filter(skill => set.has(`skill:${skill.id}`));
+        return next.length === previous.length && next.every((item, index) => item.id === previous[index]?.id) ? previous : next;
+      });
       setStagedMcpServers((prev) => prunedOrSame(prev, (m) => set.has(`mcp:${m.id}`)));
       setStagedWorkspaceContexts((prev) =>
         prunedOrSame(prev, (item) => set.has(`workspace:${item.id}`)),
@@ -1547,6 +1624,8 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       slash: { q: string } | null;
       anchorRect: CaretRect | null;
     }) {
+      if (nextMention && dismissedMentionQuery.current === nextMention.q) return;
+      dismissedMentionQuery.current = null;
       setCaretRect(anchorRect);
       if (nextMention && !mention) {
         setMentionTab('all');
@@ -1565,6 +1644,15 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       } else {
         setSlash(null);
       }
+    }
+
+    function closeMention() {
+      mentionApplyVersion.current += 1;
+      setMentionApplyBusy(false);
+      dismissedMentionQuery.current = mention?.q ?? null;
+      setMention(null);
+      setMentionError(null);
+      editorRef.current?.focus();
     }
 
     // Routes popover navigation keys lifted verbatim from the old textarea
@@ -1596,24 +1684,11 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
         }
       }
       if (mention && key === 'Escape') {
-        setMention(null);
+        closeMention();
         return true;
       }
       if (mention) {
-        // Drive a single index over the visible section union. MentionPopover
-        // renders the same files-first section order and highlights the
-        // matching row from activeIndex.
-        const showFiles = mentionTab === 'all' || mentionTab === 'files';
-        const showTabs = mentionTab === 'all' || mentionTab === 'tabs';
-        const showPlugins = mentionTab === 'all' || mentionTab === 'plugins';
-        const showSkills = mentionTab === 'all' || mentionTab === 'skills';
-        const showMcp = mentionTab === 'all' || mentionTab === 'mcp';
-        const total =
-          (showFiles ? filteredFiles.length : 0) +
-          (showTabs ? filteredWorkspaceContexts.length : 0) +
-          (showPlugins ? filteredPlugins.length : 0) +
-          (showSkills ? filteredSkills.length : 0) +
-          (showMcp ? filteredMcpServers.length : 0);
+        const total = mentionItems.length;
         if (total > 0) {
           if (key === 'ArrowDown') {
             setMentionIndex((i) => (i + 1) % total);
@@ -1624,7 +1699,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
             return true;
           }
           if (key === 'Tab' || key === 'Enter') {
-            pickMentionByFlatIndex(Math.min(mentionIndex, total - 1));
+            confirmMention(mentionItems[Math.min(mentionIndex, total - 1)]!);
             return true;
           }
         }
@@ -1632,46 +1707,22 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       return false;
     }
 
-    // Resolve a flat visible-section index to the right insert call. Section
-    // order MUST match MentionPopover's render order (files→tabs→plugins
-    // →skills→mcp); the activeIndex highlight and Enter target stay in
-    // lockstep across "All" and individual tabs.
-    function pickMentionByFlatIndex(flat: number) {
-      let i = flat;
-      if (mentionTab === 'all' || mentionTab === 'files') {
-        if (i < filteredFiles.length) {
-          insertMention(filteredFiles[i]!.path ?? filteredFiles[i]!.name);
-          return;
-        }
-        i -= filteredFiles.length;
-      }
-      if (mentionTab === 'all' || mentionTab === 'tabs') {
-        if (i < filteredWorkspaceContexts.length) {
-          insertWorkspaceMention(filteredWorkspaceContexts[i]!);
-          return;
-        }
-        i -= filteredWorkspaceContexts.length;
-      }
-      if (mentionTab === 'all' || mentionTab === 'plugins') {
-        if (i < filteredPlugins.length) {
-          void insertPluginMention(filteredPlugins[i]!);
-          return;
-        }
-        i -= filteredPlugins.length;
-      }
-      if (mentionTab === 'all' || mentionTab === 'skills') {
-        if (i < filteredSkills.length) {
-          void insertSkillMention(filteredSkills[i]!);
-          return;
-        }
-        i -= filteredSkills.length;
-      }
-      if (mentionTab === 'all' || mentionTab === 'mcp') {
-        if (i < filteredMcpServers.length) {
-          insertMcpMention(filteredMcpServers[i]!);
-          return;
-        }
-        i -= filteredMcpServers.length;
+    function confirmMention(item: MentionPreviewItem) {
+      if (mentionApplyBusy) return;
+      if (item.selected) { editorRef.current?.replaceActiveTrigger(''); closeMention(); return; }
+      if (item.kind === 'plugin') {
+        const record = pluginsForComposer.find(plugin => plugin.id === item.id);
+        if (record) void insertPluginMention(record);
+      } else if (item.kind === 'skill' || item.kind === 'template') {
+        const skill = mentionSkills.find(value => value.id === item.id);
+        if (skill) insertSkillMention(skill);
+      } else if (item.kind === 'file') insertMention(item.id);
+      else if (item.kind === 'workspace') {
+        const context = workspaceContexts.find(value => value.id === item.id);
+        if (context) insertWorkspaceMention(context);
+      } else if (item.kind === 'mcp') {
+        const server = enabledMcpServers.find(value => value.id === item.id);
+        if (server) insertMcpMention(server);
       }
     }
 
@@ -1687,13 +1738,30 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
     }
 
     async function insertPluginMention(record: InstalledPluginRecord) {
-      editorRef.current?.insertMention({
-        token: inlineMentionToken(record.title),
-        entity: { id: record.id, kind: 'plugin', label: record.title },
-      });
-      setMention(null);
-      inlineBackedPluginRef.current = { id: record.id, label: record.title };
-      await pluginsSectionRef.current?.applyById(record.id, record);
+      const selection = editorRef.current?.captureSelection();
+      if (!selection) return;
+      const version = ++mentionApplyVersion.current;
+      const previous = inlineBackedPluginRef.current;
+      const label = localizePluginTitle(locale, record);
+      setMentionApplyBusy(true);
+      setMentionError(null);
+      let draftChanged = false;
+      const result = await pluginsSectionRef.current?.applyById(record.id, record, { canApply: () => {
+        if (version !== mentionApplyVersion.current) return false;
+        inlineBackedPluginRef.current = { id: record.id, label };
+        inlinePluginHistory.current.add(record.id);
+        const inserted = editorRef.current?.insertMention({ token: inlineMentionToken(label), entity: { id: record.id, kind: 'plugin', label } }, {
+          selection,
+          ...(previous ? { replace: { kind: 'plugin' as const, id: previous.id } } : {}),
+        });
+        if (!inserted) { inlineBackedPluginRef.current = previous; draftChanged = true; }
+        return Boolean(inserted);
+      } });
+      if (version !== mentionApplyVersion.current) return;
+      setMentionApplyBusy(false);
+      if (!result) { setMentionError(t(draftChanged ? 'chat.mentionDraftChanged' : 'chat.mentionApplyFailed')); return; }
+      appliedPluginHistory.current.set(record.id, result.appliedPlugin);
+      closeMention();
     }
 
     function insertMcpMention(server: McpServerConfig) {
@@ -1721,14 +1789,6 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       setMention(null);
     }
 
-    async function applyProjectSkill(skill: SkillSummary): Promise<boolean> {
-      if (!projectId) return false;
-      const result = await patchProject(projectId, { skillId: skill.id });
-      if (!result) return false;
-      onProjectSkillChange?.(result.skillId ?? skill.id);
-      return true;
-    }
-
     function removeStaged(p: string) {
       trackComposerBar({ element: 'context_remove', resource_kind: 'attachment', resource_id: p });
       setStaged((s) => s.filter((a) => a.path !== p));
@@ -1747,7 +1807,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
 
     async function submit() {
       const prompt = draft.trim();
-      if (sendDisabled || modelSelectionLoading) return;
+      if (sendDisabled || modelSelectionLoading || mentionApplyBusy) return;
       if (modelSelectionGuard && !modelSelectionGuard()) return;
       // Intercept `/pet …` and `/mcp` before sending so the slash command
       // never hits the agent — these are local UX hooks, not model prompts.
@@ -1787,7 +1847,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
     // servers. Picked
     // entities keep an inline @ token for orientation while richer
     // context is still applied behind the scenes when available.
-    const mentionQuery = mention ? mention.q.toLowerCase() : '';
+    const mentionQuery = mention ? mention.q.toLocaleLowerCase().trim() : '';
     // The suggestion lists below only matter while the @-popover is open
     // (each is `[]` otherwise). Memoize them on `[mention, mentionQuery,
     // <source>]` so the filter/sort passes run only when the query or the
@@ -1802,7 +1862,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
           ? workspaceContexts
               .filter((item) => {
                 if (!mentionQuery) return true;
-                return workspaceContextSearchText(item).toLowerCase().includes(mentionQuery);
+                return mentionMatchesQuery(mentionQuery, workspaceContextSearchText(item));
               })
               .slice(0, 12)
           : [],
@@ -1815,7 +1875,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
               .filter((f) => f.type === undefined || f.type === "file")
               .filter((f) => {
                 const key = f.path ?? f.name;
-                return key.toLowerCase().includes(mentionQuery);
+                return mentionMatchesQuery(mentionQuery, key);
               })
               .slice(0, 12)
           : [],
@@ -1827,16 +1887,11 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
           ? pluginsForComposer
               .filter((p) => {
                 if (!mentionQuery) return true;
-                return (
-                  p.title.toLowerCase().includes(mentionQuery) ||
-                  p.id.toLowerCase().includes(mentionQuery) ||
-                  (p.manifest?.description ?? '').toLowerCase().includes(mentionQuery) ||
-                  (p.manifest?.tags ?? []).join(' ').toLowerCase().includes(mentionQuery)
-                );
+                return mentionMatchesQuery(mentionQuery, p.title, p.id, p.manifest?.description ?? '', (p.manifest?.tags ?? []).join(' '), localizePluginTitle(locale, p), localizePluginDescription(locale, p));
               })
               .slice(0, 8)
           : [],
-      [mention, mentionQuery, pluginsForComposer],
+      [mention, mentionQuery, pluginsForComposer, locale],
     );
     const filteredMcpServers = useMemo(
       () =>
@@ -1844,31 +1899,49 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
           ? enabledMcpServers
               .filter((s) => {
                 if (!mentionQuery) return true;
-                return [
+                return mentionMatchesQuery(mentionQuery, ...[
                   s.id,
                   s.label ?? '',
                   s.transport,
                   s.url ?? '',
                   s.command ?? '',
-                ]
-                  .join(' ')
-                  .toLowerCase()
-                  .includes(mentionQuery);
+                ]);
               })
               .slice(0, 8)
           : [],
       [mention, mentionQuery, enabledMcpServers],
     );
-    // Already-staged skills drop out of the suggestion list (carried over
-    // from main) so the @-popover keeps moving forward as the user picks.
     const filteredSkills = useMemo(() => {
       if (!mention) return [];
-      const stagedSkillIds = new Set(stagedSkills.map((s) => s.id));
       return skills
-        .filter((s) => !stagedSkillIds.has(s.id))
-        .filter((s) => skillMatchesQuery(s, mentionQuery))
+        .filter((s) => !templateIds.has(s.id) && !disabledSkillSet.has(s.id))
+        .filter((s) => mentionMatchesQuery(mentionQuery, s.name, s.id, s.description, ...s.triggers, localizeSkillName(locale, s), localizeSkillDescription(locale, s)))
         .sort((a, b) => skillMentionRank(a, mentionQuery) - skillMentionRank(b, mentionQuery));
-    }, [mention, mentionQuery, skills, stagedSkills]);
+    }, [mention, mentionQuery, skills, templateIds, locale, disabledSkillSet]);
+    const filteredTemplates = useMemo(() => mention ? designTemplates.filter(item => !disabledSkillSet.has(item.id) && mentionMatchesQuery(mentionQuery, item.name, item.id, item.description, ...item.triggers, localizeSkillName(locale, item), localizeSkillDescription(locale, item))) : [], [mention, mentionQuery, designTemplates, locale, disabledSkillSet]);
+    const mentionTabs: Array<{ id: MentionTab; label: string }> = [
+      { id: 'all', label: t('chat.mentionTabAll') },
+      { id: 'plugins', label: t('chat.mentionTabPlugins') },
+      { id: 'skills', label: t('chat.mentionTabSkills') },
+      { id: 'templates', label: t('chat.mentionTabTemplates') },
+      { id: 'files', label: t('chat.mentionTabFiles') },
+      { id: 'tabs', label: t('chat.mentionTabTabs') },
+      { id: 'mcp', label: t('chat.mentionTabMcp') },
+    ];
+    const mentionItems: MentionPreviewItem[] = [];
+    const showMentionKind = (kind: MentionTab) => mentionTab === 'all' || mentionTab === kind;
+    if (showMentionKind('plugins')) for (const plugin of filteredPlugins) mentionItems.push({ key: `plugin:${plugin.id}`, kind: 'plugin', id: plugin.id, title: localizePluginTitle(locale, plugin), description: localizePluginDescription(locale, plugin), source: pluginSourceLabel(plugin, t), kindLabel: t('chat.mentionSectionPlugins'), icon: 'sparkles', selected: activeAppliedPlugin?.pluginId === plugin.id });
+    if (showMentionKind('skills')) for (const skill of filteredSkills) mentionItems.push({ key: `skill:${skill.id}`, kind: 'skill', id: skill.id, title: localizeSkillName(locale, skill), description: localizeSkillDescription(locale, skill), kindLabel: t('chat.mentionSectionSkills'), icon: 'file', selected: stagedSkills.some(item => item.id === skill.id) });
+    if (showMentionKind('templates')) for (const template of filteredTemplates) mentionItems.push({ key: `template:${template.id}`, kind: 'template', id: template.id, title: localizeSkillName(locale, template), description: localizeSkillDescription(locale, template), kindLabel: t('chat.mentionTabTemplates'), icon: 'image', selected: stagedSkills.some(item => item.id === template.id), preview: <MentionTemplatePreview template={template} /> });
+    if (showMentionKind('files')) for (const file of filteredFiles) {
+      const path = file.path ?? file.name;
+      mentionItems.push({ key: `file:${path}`, kind: 'file', id: path, title: projectFileMentionTitle(file, path), description: projectFileMentionDescription(file, path), source: file.size == null ? undefined : prettySize(file.size), kindLabel: t('chat.mentionSectionFiles'), icon: 'file', selected: inlineMentionKeys.has(`file:${path}`) });
+    }
+    if (showMentionKind('tabs')) for (const item of filteredWorkspaceContexts) mentionItems.push({ key: `workspace:${item.id}`, kind: 'workspace', id: item.id, title: item.label, description: workspaceContextDescription(item), source: workspaceContextKindLabel(item.kind), kindLabel: t('chat.mentionSectionTabs'), icon: workspaceContextIcon(item), selected: inlineMentionKeys.has(`workspace:${item.id}`) });
+    if (showMentionKind('mcp')) for (const server of filteredMcpServers) mentionItems.push({ key: `mcp:${server.id}`, kind: 'mcp', id: server.id, title: server.label || server.id, description: server.url || server.command || server.id, source: server.transport, kindLabel: t('chat.mentionSectionMcp'), icon: 'link', selected: stagedMcpServers.some(item => item.id === server.id) });
+    if (mentionQuery) mentionItems.sort((a, b) => Number(!a.title.toLocaleLowerCase().startsWith(mentionQuery)) - Number(!b.title.toLocaleLowerCase().startsWith(mentionQuery)));
+    const mentionLoading = (showMentionKind('plugins') && pluginLoadState === 'loading') || (showMentionKind('mcp') && mcpLoadState === 'loading');
+    const mentionLoadFailed = (showMentionKind('plugins') && pluginLoadState === 'error') || (showMentionKind('mcp') && mcpLoadState === 'error');
     const hasComposerPayload =
       draft.trim().length > 0 || staged.length > 0 || currentCommentAttachments().length > 0;
     const showStopButton = streaming && !hasComposerPayload;
@@ -1907,6 +1980,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
               showRail={false}
               renderActiveChip={false}
               onApplied={(brief, applied) => {
+                appliedPluginHistory.current.set(applied.appliedPlugin.pluginId, applied.appliedPlugin);
                 setActiveAppliedPlugin(applied.appliedPlugin);
                 // Use functional setState so stale closures from the @-mention
                 // flow (which awaits applyById after setDraft) still see the
@@ -1926,16 +2000,16 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
               }}
             />
           ) : null}
-          {designSystemPicker || selectedWorkspaceContexts.length > 0 || stagedSkills.length > 0 || stagedMcpServers.length > 0 || staged.length > 0 || activeAppliedPlugin ? (
+          {designSystemPicker || selectedWorkspaceContexts.some(item => !inlineMentionKeys.has(`workspace:${item.id}`)) || stagedSkills.some(item => !inlineMentionKeys.has(`skill:${item.id}`)) || stagedMcpServers.some(item => !inlineMentionKeys.has(`mcp:${item.id}`)) || staged.length > 0 || (activeAppliedPlugin && !inlineMentionKeys.has(`plugin:${activeAppliedPlugin.pluginId}`)) ? (
             <StagedRunContexts
               designSystemPicker={designSystemPicker}
-              workspaceItems={selectedWorkspaceContexts}
+              workspaceItems={selectedWorkspaceContexts.filter(item => !inlineMentionKeys.has(`workspace:${item.id}`))}
               currentWorkspaceContextId={visibleWorkspaceContext?.id ?? null}
-              skills={stagedSkills}
-              mcpServers={stagedMcpServers}
+              skills={stagedSkills.filter(item => !inlineMentionKeys.has(`skill:${item.id}`))}
+              mcpServers={stagedMcpServers.filter(item => !inlineMentionKeys.has(`mcp:${item.id}`))}
               attachments={staged}
               pluginChip={
-                activeAppliedPlugin
+                activeAppliedPlugin && !inlineMentionKeys.has(`plugin:${activeAppliedPlugin.pluginId}`)
                   ? {
                       id: activeAppliedPlugin.pluginId,
                       title: activeAppliedPlugin.pluginTitle ?? activeAppliedPlugin.pluginId,
@@ -1948,6 +2022,8 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
               onRemoveMcp={removeStagedMcpServer}
               onRemoveAttachment={removeStaged}
               onRemovePlugin={() => {
+                mentionApplyVersion.current += 1;
+                if (activeAppliedPlugin) editorRef.current?.removeMention({ kind: 'plugin', id: activeAppliedPlugin.pluginId });
                 pluginsSectionRef.current?.clear();
                 setActiveAppliedPlugin(null);
               }}
@@ -1978,6 +2054,21 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
           <div
             className="composer-input-wrap"
             onFocus={() => setComposerEngaged(true)}
+            onClick={event => {
+              const pill = (event.target as Element).closest<HTMLElement>('[data-mention-id]');
+              if (!pill) return;
+              const id = pill.dataset.mentionId;
+              const kind = pill.dataset.mentionKind;
+              if (!id || (kind !== 'plugin' && kind !== 'skill')) return;
+              const tab: MentionTab = kind === 'plugin' ? 'plugins' : templateIds.has(id) ? 'templates' : 'skills';
+              const list = kind === 'plugin' ? pluginsForComposer : tab === 'templates' ? designTemplates : skills;
+              const index = list.findIndex(item => item.id === id);
+              if (index < 0) return;
+              const rect = pill.getBoundingClientRect();
+              dismissedMentionQuery.current = null;
+              setMention({ q: '' }); setMentionTab(tab); setMentionIndex(index);
+              setCaretRect({ top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right });
+            }}
           >
             <LexicalComposerInput
               ref={editorRef}
@@ -1989,6 +2080,9 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
               }
               title={activeFileDisplayName ?? t('chat.composerPlaceholder')}
               knownEntities={composerMentionEntities}
+              committedMentionsOnly
+              initialMentionSnapshot={initialMentionSnapshot}
+              onMentionSnapshotChange={handleMentionSnapshotChange}
               onChange={handleEditorChange}
               onTrigger={handleEditorTrigger}
               onEnterSend={() => void submit()}
@@ -1997,7 +2091,8 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
               onPopoverKey={handlePopoverKey}
               comboboxAria={{
                 expanded: Boolean(mention),
-                activeId: mention ? `mention-opt-${mentionIndex}` : null,
+                activeId: mention && mentionItems.length ? `${mentionListboxId}-option-${Math.min(mentionIndex, mentionItems.length - 1)}` : null,
+                listboxId: mentionListboxId,
               }}
             />
           </div>
@@ -2005,26 +2100,27 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
             caret={caretRect}
             open={Boolean(mention)}
             boundaryRef={composerRootRef}
+            preferredWidth={640}
           >
-            <MentionPopover
-              files={filteredFiles}
-              workspaceContexts={filteredWorkspaceContexts}
-              plugins={filteredPlugins}
-              skills={filteredSkills}
-              mcpServers={filteredMcpServers}
+            <MentionPreviewPicker
+              items={mentionItems}
+              tabs={mentionTabs}
               query={mention?.q ?? ''}
               tab={mentionTab}
               onTabChange={(nextTab) => {
-                setMentionTab(nextTab);
+                setMentionTab(nextTab as MentionTab);
                 setMentionIndex(0);
               }}
-              activeIndex={mentionIndex}
-              currentSkillId={currentSkillId}
-              onPickFile={insertMention}
-              onPickWorkspaceContext={insertWorkspaceMention}
-              onPickPlugin={(record) => void insertPluginMention(record)}
-              onPickSkill={(skill) => void insertSkillMention(skill)}
-              onPickMcp={insertMcpMention}
+              activeIndex={Math.min(mentionIndex, Math.max(0, mentionItems.length - 1))}
+              onActiveIndexChange={setMentionIndex}
+              onConfirm={confirmMention}
+              onClose={closeMention}
+              scopeLabel={t('chat.mentionCurrentRequest')}
+              listboxId={mentionListboxId}
+              busy={mentionApplyBusy}
+              loading={mentionLoading}
+              error={mentionError ?? (mentionLoadFailed ? t('chat.mentionLoadFailed') : null)}
+              onRetry={mentionLoadFailed ? () => setCatalogRevision(value => value + 1) : undefined}
             />
           </CaretFloatingLayer>
           <CaretFloatingLayer
@@ -2192,7 +2288,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
               </div>
             ) : null}
             {leadingAccessory}
-            <span className="composer-spacer" />
+            {contextUsage === undefined ? <span className="composer-spacer" /> : <ContextUsageMeter snapshot={contextUsage} />}
             {/* The legacy footer accessory (ProjectView's AvatarMenu) is ALSO an
                 agent picker. When the execution switcher is mounted the footer
                 would render two agent controls side by side — the defect the
@@ -2242,7 +2338,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
                   });
                   void submit();
                 }}
-                disabled={sendDisabled || modelSelectionLoading || !hasComposerPayload}
+                disabled={sendDisabled || modelSelectionLoading || mentionApplyBusy || !hasComposerPayload}
                 aria-busy={modelSelectionLoading ? true : undefined}
                 aria-label={t(modelSelectionLoading ? 'common.loading' : 'chat.send')}
                 title={t(modelSelectionLoading ? 'common.loading' : 'chat.send')}
@@ -2255,6 +2351,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
           </div>
         </div>
         {uploadError ? <span className="composer-hint">{uploadError}</span> : null}
+        {mentionError && !mention ? <span className="composer-hint" role="alert">{mentionError}</span> : null}
         {detailsRecord ? (
           <PluginDetailsModal
             record={detailsRecord}
@@ -2279,6 +2376,7 @@ function buildComposerMentionEntities({
   skills,
   staged,
   workspaceContexts,
+  locale,
 }: {
   files: ProjectFile[];
   mcpServers: McpServerConfig[];
@@ -2286,6 +2384,7 @@ function buildComposerMentionEntities({
   skills: SkillSummary[];
   staged: ChatAttachment[];
   workspaceContexts: WorkspaceContextItem[];
+  locale: Locale;
 }): InlineMentionEntity[] {
   const entities: InlineMentionEntity[] = [];
   const workspaceSeen = new Set<string>();
@@ -2303,22 +2402,26 @@ function buildComposerMentionEntities({
     });
   }
   for (const plugin of plugins) {
+    const label = localizePluginTitle(locale, plugin);
     entities.push({
       id: plugin.id,
       kind: 'plugin',
-      label: plugin.title,
-      token: inlineMentionToken(plugin.title),
-      title: `Plugin: ${plugin.title}`,
+      label,
+      token: inlineMentionToken(label),
+      title: `Plugin: ${label}`,
     });
+    if (label !== plugin.title) entities.push({ id: plugin.id, kind: 'plugin', label: plugin.title, token: inlineMentionToken(plugin.title) });
   }
   for (const skill of skills) {
+    const label = localizeSkillName(locale, skill);
     entities.push({
       id: skill.id,
       kind: 'skill',
-      label: skill.name,
-      token: inlineMentionToken(skill.name),
-      title: `Skill: ${skill.name}`,
+      label,
+      token: inlineMentionToken(label),
+      title: `Skill: ${label}`,
     });
+    if (label !== skill.name) entities.push({ id: skill.id, kind: 'skill', label: skill.name, token: inlineMentionToken(skill.name) });
     if (skill.id !== skill.name) {
       entities.push({
         id: skill.id,
@@ -4132,263 +4235,13 @@ function SlashPopover({
   );
 }
 
-function MentionPopover({
-  files,
-  workspaceContexts,
-  plugins,
-  skills,
-  mcpServers,
-  query,
-  tab,
-  onTabChange,
-  activeIndex,
-  currentSkillId,
-  onPickFile,
-  onPickWorkspaceContext,
-  onPickPlugin,
-  onPickSkill,
-  onPickMcp,
-}: {
-  files: ProjectFile[];
-  workspaceContexts: WorkspaceContextItem[];
-  plugins: InstalledPluginRecord[];
-  skills: SkillSummary[];
-  mcpServers: McpServerConfig[];
-  query: string;
-  tab: MentionTab;
-  onTabChange: (tab: MentionTab) => void;
-  activeIndex: number;
-  currentSkillId: string | null;
-  onPickFile: (path: string) => void;
-  onPickWorkspaceContext: (item: WorkspaceContextItem) => void;
-  onPickPlugin: (record: InstalledPluginRecord) => void;
-  onPickSkill: (skill: SkillSummary) => void;
-  onPickMcp: (server: McpServerConfig) => void;
-}) {
-  const { locale, t } = useI18n();
-  const ref = useRef<HTMLDivElement | null>(null);
-  const tabs: Array<{ id: MentionTab; label: string }> = [
-    { id: 'all', label: t('chat.mentionTabAll') },
-    { id: 'files', label: t('chat.mentionTabFiles') },
-    { id: 'tabs', label: t('chat.mentionTabTabs') },
-    { id: 'plugins', label: t('chat.mentionTabPlugins') },
-    { id: 'skills', label: t('chat.mentionTabSkills') },
-    { id: 'mcp', label: t('chat.mentionTabMcp') },
-  ];
-  const showTabs = tab === 'all' || tab === 'tabs';
-  const showFiles = tab === 'all' || tab === 'files';
-  const showPlugins = tab === 'all' || tab === 'plugins';
-  const showSkills = tab === 'all' || tab === 'skills';
-  const showMcp = tab === 'all' || tab === 'mcp';
-  const hasVisibleResults =
-    (showFiles && files.length > 0) ||
-    (showTabs && workspaceContexts.length > 0) ||
-    (showPlugins && plugins.length > 0) ||
-    (showSkills && skills.length > 0) ||
-    (showMcp && mcpServers.length > 0);
-  useEffect(() => {
-    if (ref.current) ref.current.scrollTop = 0;
-  }, [files, plugins, skills, mcpServers, tab, workspaceContexts]);
-  let optionIndex = 0;
-  return (
-    <div className="mention-popover" data-testid="mention-popover">
-      <div className="mention-tabs" role="tablist" aria-label={t('chat.mentionTabsAria')}>
-        {tabs.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            role="tab"
-            aria-selected={tab === item.id}
-            className={`mention-tab${tab === item.id ? ' active' : ''}`}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => onTabChange(item.id)}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
-      <div className="mention-results" ref={ref} role="listbox" id="mention-listbox">
-        {!hasVisibleResults ? (
-          <div className="mention-empty">
-            {query ? (
-              <>{t('chat.mentionNoResults', { query })}</>
-            ) : (
-              <>{t('chat.mentionSearchPrompt')}</>
-            )}
-          </div>
-        ) : null}
-        {showFiles && files.length > 0 ? (
-          <>
-            <div className="mention-section-label">{t('chat.mentionSectionFiles')}</div>
-            {files.map((f) => {
-              const key = f.path ?? f.name;
-              const flat = optionIndex;
-              optionIndex += 1;
-              const active = flat === activeIndex;
-              return (
-                <button
-                  key={`file-${key}`}
-                  id={`mention-opt-${flat}`}
-                  role="option"
-                  aria-selected={active}
-                  className={`mention-item${active ? ' is-active' : ''}`}
-                  type="button"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => onPickFile(key)}
-                >
-                  <Icon name="file" size={12} />
-                  <span className="mention-item-body">
-                    <strong>{projectFileMentionTitle(f, key)}</strong>
-                    <span className="mention-meta mention-meta--desc mention-meta--path">
-                      {projectFileMentionDescription(f, key)}
-                    </span>
-                  </span>
-                  {f.size != null ? (
-                    <span className="mention-meta mention-item-kind">{prettySize(f.size)}</span>
-                  ) : null}
-                </button>
-              );
-            })}
-          </>
-        ) : null}
-        {showTabs && workspaceContexts.length > 0 ? (
-          <>
-            <div className="mention-section-label">{t('chat.mentionSectionTabs')}</div>
-            {workspaceContexts.map((item) => {
-              const flat = optionIndex;
-              optionIndex += 1;
-              const active = flat === activeIndex;
-              return (
-                <button
-                  key={`workspace-${item.kind}-${item.id}`}
-                  id={`mention-opt-${flat}`}
-                  role="option"
-                  aria-selected={active}
-                  className={`mention-item mention-item--workspace${active ? ' is-active' : ''}`}
-                  type="button"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => onPickWorkspaceContext(item)}
-                  title={workspaceContextTitle(item, t)}
-                >
-                  <Icon name={workspaceContextIcon(item)} size={12} />
-                  <span className="mention-item-body">
-                    <strong>{item.label}</strong>
-                    <span className="mention-meta mention-meta--desc">
-                      {workspaceContextDescription(item)}
-                    </span>
-                  </span>
-                  <span className="mention-meta mention-item-kind">{workspaceContextKindLabel(item.kind)}</span>
-                </button>
-              );
-            })}
-          </>
-        ) : null}
-        {showPlugins && plugins.length > 0 ? (
-          <>
-            <div className="mention-section-label">{t('chat.mentionSectionPlugins')}</div>
-            {plugins.map((p) => {
-              const flat = optionIndex;
-              optionIndex += 1;
-              const active = flat === activeIndex;
-              const pluginTitle = localizePluginTitle(locale, p);
-              const pluginDescription = localizePluginDescription(locale, p);
-              return (
-                <button
-                  key={`plugin-${p.id}`}
-                  id={`mention-opt-${flat}`}
-                  role="option"
-                  aria-selected={active}
-                  className={`mention-item mention-item--plugin${active ? ' is-active' : ''}`}
-                  type="button"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => onPickPlugin(p)}
-                  title={pluginDescription || pluginTitle}
-                >
-                  <Icon name="sparkles" size={12} />
-                  <span className="mention-item-body">
-                    <strong>{pluginTitle}</strong>
-                    <span className="mention-meta mention-meta--desc">
-                      {pluginDescription || p.id}
-                    </span>
-                  </span>
-                  <span className="mention-meta mention-item-kind">{pluginSourceLabel(p, t)}</span>
-                </button>
-              );
-            })}
-          </>
-        ) : null}
-        {showSkills && skills.length > 0 ? (
-          <>
-            <div className="mention-section-label">{t('chat.mentionSectionSkills')}</div>
-            {skills.map((skill) => {
-              const flat = optionIndex;
-              optionIndex += 1;
-              const rowActive = flat === activeIndex;
-              const isCurrent = skill.id === currentSkillId;
-              return (
-                <button
-                  key={`skill-${skill.id}`}
-                  id={`mention-opt-${flat}`}
-                  role="option"
-                  aria-selected={rowActive}
-                  className={`mention-item${rowActive ? ' is-active' : ''}`}
-                  type="button"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => onPickSkill(skill)}
-                  title={localizeSkillDescription(locale, skill)}
-                >
-                  <Icon name={isCurrent ? 'check' : 'file'} size={12} />
-                  <span className="mention-item-body">
-                    <strong>{localizeSkillName(locale, skill)}</strong>
-                    <span className="mention-meta mention-meta--desc">
-                      {localizeSkillDescription(locale, skill) || skill.id}
-                    </span>
-                  </span>
-                  <span className="mention-meta mention-item-kind">{isCurrent ? t('chat.mentionActiveSkill') : skill.mode}</span>
-                </button>
-              );
-            })}
-          </>
-        ) : null}
-        {showMcp && mcpServers.length > 0 ? (
-          <>
-            <div className="mention-section-label">{t('chat.mentionSectionMcp')}</div>
-            {mcpServers.map((server) => {
-              const flat = optionIndex;
-              optionIndex += 1;
-              const active = flat === activeIndex;
-              return (
-                <button
-                  key={`mcp-${server.id}`}
-                  id={`mention-opt-${flat}`}
-                  role="option"
-                  aria-selected={active}
-                  className={`mention-item${active ? ' is-active' : ''}`}
-                  type="button"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => onPickMcp(server)}
-                  title={t('chat.mentionUseMcpTitle', { name: server.label || server.id })}
-                >
-                  <Icon name="link" size={12} />
-                  <span className="mention-item-body">
-                    <strong>{server.label || server.id}</strong>
-                    <span className="mention-meta mention-meta--desc">
-                      {server.url || server.command || server.id}
-                    </span>
-                  </span>
-                  <span className="mention-meta mention-item-kind">{server.transport}</span>
-                </button>
-              );
-            })}
-          </>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function mentionMatchesQuery(query: string, ...parts: string[]): boolean {
+  const text = parts.join(' ').toLocaleLowerCase();
+  return query.split(/\s+/).filter(Boolean).every(term => text.includes(term));
 }
 
 function stripInlineMentionToken(text: string, label: string): string {
@@ -4420,26 +4273,14 @@ function prunedOrSame<T>(prev: T[], keep: (item: T) => boolean): T[] {
   return next.length === prev.length ? prev : next;
 }
 
-function loadComposerDraft(key?: string): string | null {
-  if (!key || typeof window === 'undefined') return null;
-  try {
-    return window.localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function saveComposerDraft(key: string | undefined, draft: string) {
-  if (!key || typeof window === 'undefined') return;
-  try {
-    if (draft) {
-      window.localStorage.setItem(key, draft);
-    } else {
-      window.localStorage.removeItem(key);
-    }
-  } catch {
-    // Storage can be unavailable in privacy modes; the composer should still work.
-  }
+function sameMentionSnapshot(left: ComposerMentionSnapshot, right: ComposerMentionSnapshot): boolean {
+  return left.text === right.text && left.mentions.length === right.mentions.length
+    && left.mentions.every((span, index) => {
+      const other = right.mentions[index];
+      return other && span.start === other.start && span.end === other.end
+        && span.entity.id === other.entity.id && span.entity.label === other.entity.label
+        && span.entity.kind === other.entity.kind && span.entity.token === other.entity.token;
+    });
 }
 
 // How long a non-empty draft sits in memory before we persist it. Kept well
@@ -4458,13 +4299,30 @@ const DRAFT_PERSIST_DEBOUNCE_MS = 300;
 // conversation (§9.2 item 3) and what makes the immediate empty-draft flush
 // after reset()→'' overwrite any stale pending write instead of resurrecting a
 // sent draft (§9.2 item 1).
-function useDebouncedDraftPersist(key: string | undefined, draft: string): () => void {
-  const pendingRef = useRef<{ key: string; draft: string } | null>(null);
+function useDebouncedDraftPersist(key: string | undefined, draft: string, snapshot: ComposerMentionSnapshot): {
+  clearNow(): void;
+  updateSnapshot(snapshot: ComposerMentionSnapshot): void;
+} {
+  const pendingRef = useRef<{ key: string; snapshot: ComposerMentionSnapshot } | null>(null);
+  const storedMentionsRef = useRef<{ key: string; snapshot: ComposerMentionSnapshot } | null>(key && snapshot.mentions.length ? { key, snapshot } : null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Render-time mirror so clearNow — callable from event handlers, before any
   // effect of the same commit has run — always removes under the live key.
   const keyRef = useRef(key);
   keyRef.current = key;
+
+  const updateSnapshot = useCallback((next: ComposerMentionSnapshot) => {
+    const currentKey = keyRef.current;
+    if (!currentKey) return;
+    const stored = storedMentionsRef.current;
+    if (stored?.key === currentKey && !sameMentionSnapshot(stored.snapshot, next)) {
+      // Once per pending burst, invalidate the old companion immediately.
+      // Otherwise a same-text Undo can make old confirmed spans valid again.
+      clearComposerDraftMentions(currentKey);
+      storedMentionsRef.current = null;
+    }
+    pendingRef.current = { key: currentKey, snapshot: next };
+  }, []);
 
   // Stable so the listener/cleanup effects below never re-subscribe: it reads
   // only refs, never render-scope state.
@@ -4476,12 +4334,13 @@ function useDebouncedDraftPersist(key: string | undefined, draft: string): () =>
     const pending = pendingRef.current;
     if (!pending) return;
     pendingRef.current = null;
-    saveComposerDraft(pending.key, pending.draft);
+    saveComposerDraft(pending.key, pending.snapshot);
+    storedMentionsRef.current = pending.snapshot.mentions.length ? pending : null;
   }, []);
 
   useEffect(() => {
     if (!key) return; // No storage key → nothing to persist, mirroring saveComposerDraft's no-op.
-    pendingRef.current = { key, draft };
+    updateSnapshot(snapshot.text === draft ? snapshot : { text: draft, mentions: [] });
     // Clearing the draft (send/reset, manual erase) is a removeItem we want
     // durable immediately: the synchronous flush also cancels any in-flight
     // timer, so a stale "type then send fast" write can't fire afterwards and
@@ -4492,7 +4351,7 @@ function useDebouncedDraftPersist(key: string | undefined, draft: string): () =>
     }
     if (timerRef.current !== null) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(flush, DRAFT_PERSIST_DEBOUNCE_MS);
-  }, [key, draft, flush]);
+  }, [key, draft, snapshot, flush, updateSnapshot]);
 
   // Imperative clear for the submit path. reset() must kill the stored draft
   // the moment the user sends — synchronously, inside the event handler. The
@@ -4508,7 +4367,8 @@ function useDebouncedDraftPersist(key: string | undefined, draft: string): () =>
       timerRef.current = null;
     }
     pendingRef.current = null;
-    saveComposerDraft(keyRef.current, '');
+    storedMentionsRef.current = null;
+    saveComposerDraft(keyRef.current, { text: '', mentions: [] });
   }, []);
 
   // Cleanup-only flush. Keyed on `key` (NOT draft) so it runs exactly on
@@ -4535,7 +4395,7 @@ function useDebouncedDraftPersist(key: string | undefined, draft: string): () =>
     };
   }, [flush]);
 
-  return clearNow;
+  return { clearNow, updateSnapshot };
 }
 
 function looksLikeImage(name: string): boolean {

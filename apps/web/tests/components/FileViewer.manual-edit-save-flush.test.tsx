@@ -58,12 +58,22 @@ async function setup(raw = false) {
     });
   }
   const messages: unknown[] = [];
-  const posts: Array<{ type?: string }> = [];
+  const posts: Array<{ type?: string; afterSource?: string }> = [];
+  let documentEpoch: string | undefined;
   dom.window.parent.postMessage = (data: unknown) => { messages.push(data); posts.push(data as { type?: string }); };
   vi.spyOn(frame.contentWindow!, 'postMessage').mockImplementation((data) => {
-    dom.window.dispatchEvent(new dom.window.MessageEvent('message', { data }));
+    if (data.type === 'readable-edit-mode') documentEpoch = data.documentEpoch;
+    if (data.type === 'readable-edit-preview-source') posts.push(data);
+    dom.window.dispatchEvent(new dom.window.MessageEvent('message', { data, source: dom.window.parent }));
   });
-  const dispatch = (data: unknown) => window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, data }));
+  await act(async () => { fireEvent.load(frame); });
+  const dispatch = (data: unknown) => {
+    if (typeof data === 'object' && data !== null && 'type' in data
+      && /^readable-edit-(?:text|html)-commit$/.test(String(data.type)) && !('documentEpoch' in data)) {
+      data = { ...data, documentEpoch };
+    }
+    window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, data }));
+  };
   const drain = async () => {
     await act(async () => { while (messages.length) dispatch(messages.shift()); });
   };
@@ -113,7 +123,7 @@ describe.each(['full', 'low'] as const)('Save flushes the real contenteditable b
     expect((saved as HTMLElement).style.width).toBe('200px');
     expect((saved as HTMLElement).style.borderRadius).toBe('12px');
     expect((saved as HTMLElement).style.translate).toBe('30px 40px');
-    expect(saved.querySelector('strong') !== null).toBe(kind === 'rich');
+    expect(saved.querySelector('b') !== null).toBe(kind === 'rich');
     expect(el.hasAttribute('contenteditable')).toBe(false);
   });
 
@@ -130,7 +140,7 @@ describe.each(['full', 'low'] as const)('Save flushes the real contenteditable b
     expect(harness.posts.some((post) => post.type === 'readable-edit-text-flushed')).toBe(true);
     if (event === 'source') await act(async () => { fireEvent.click(screen.getByRole('tab', { name: 'Preview' })); });
     const currentFrame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-    expect(currentFrame.srcdoc).toContain('Still typing');
+    expect(harness.dom.window.document.querySelector('[data-readable-id="hero"]')!.textContent).toBe('Still typing');
     expect(currentFrame.srcdoc).not.toContain('Agent');
     expect((screen.getByRole('button', { name: 'Undo' }) as HTMLButtonElement).disabled).toBe(false);
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save changes' })); });
@@ -148,9 +158,16 @@ describe.each(['full', 'low'] as const)('Save flushes the real contenteditable b
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Undo' })); });
     await harness.drain();
     expect(harness.posts.some((post) => post.type === 'readable-edit-text-flushed')).toBe(true);
-    expect(harness.frame.srcdoc).toContain('Committed');
+    expect(harness.dom.window.document.querySelector('[data-readable-id="hero"]')!.textContent).toBe('Committed');
+    const undoSource = harness.posts.filter((post) => post.type === 'readable-edit-preview-source').at(-1)?.afterSource;
+    expect(undoSource).toEqual(expect.any(String));
+    expect(new DOMParser().parseFromString(undoSource!, 'text/html').querySelector('[data-readable-id="hero"]')!.textContent).toBe('Committed');
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Redo' })); });
-    expect(harness.frame.srcdoc).toContain('Still typing');
+    await harness.drain();
+    expect(harness.dom.window.document.querySelector('[data-readable-id="hero"]')!.textContent).toBe('Still typing');
+    const redoSource = harness.posts.filter((post) => post.type === 'readable-edit-preview-source').at(-1)?.afterSource;
+    expect(redoSource).toEqual(expect.any(String));
+    expect(new DOMParser().parseFromString(redoSource!, 'text/html').querySelector('[data-readable-id="hero"]')!.textContent).toBe('Still typing');
   });
 
   it.each(['pointer', 'keyboard', 'resize'] as const)('preserves an open %s movement across a watcher refresh and flushes it before Reload', async (gesture) => {
@@ -224,7 +241,7 @@ describe.each(['full', 'low'] as const)('Save flushes the real contenteditable b
     await harness.select({ ...target, kind: 'text' }, true);
     harness.dom.window.document.querySelector('[data-readable-id="hero"]')!.textContent = 'First second';
     await harness.select({ ...target, id: 'other', text: 'Other' });
-    expect(harness.frame.srcdoc).toContain('First second');
+    expect(harness.dom.window.document.querySelector('[data-readable-id="hero"]')!.textContent).toBe('First second');
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save changes' })); });
     await act(async () => { await harness.saved.promise; });
     const el = new DOMParser().parseFromString(harness.writes[0]!, 'text/html').querySelector('[data-readable-id="hero"]') as HTMLElement;
@@ -232,7 +249,7 @@ describe.each(['full', 'low'] as const)('Save flushes the real contenteditable b
     expect(el.style.width).toBe('200px');
   });
 
-  it.each(['Enter', 'Escape', 'blur'])('%s commits exactly once before Save, even with transport delivery pending', async (gesture) => {
+  it.each(['Enter', 'Escape', 'blur'])('%s preserves text exactly once through Save, even with transport delivery pending', async (gesture) => {
     const harness = await setup();
     await harness.select(target);
     fireEvent.change(screen.getByLabelText('Width'), { target: { value: '200' } });
@@ -241,7 +258,7 @@ describe.each(['full', 'low'] as const)('Save flushes the real contenteditable b
     el.textContent = 'First second';
     if (gesture === 'blur') el.blur();
     else el.dispatchEvent(new harness.dom.window.KeyboardEvent('keydown', { key: gesture, bubbles: true, cancelable: true }));
-    expect(el.hasAttribute('contenteditable')).toBe(false);
+    expect(el.hasAttribute('contenteditable')).toBe(gesture === 'Enter');
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save changes' })); });
     expect(harness.writes).toHaveLength(0);
     await harness.drain();

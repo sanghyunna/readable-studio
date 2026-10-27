@@ -232,14 +232,14 @@ export function TooltipLayer() {
     const observer = new MutationObserver(() => {
       if (!isTooltipTarget(target)) {
         hideTooltip({ restoreTitle: false });
-      }
+      } else updatePosition();
     });
     observer.observe(target, {
       attributes: true,
       attributeFilter: ['aria-expanded', 'class', 'data-tooltip', 'disabled'],
     });
     return () => observer.disconnect();
-  }, [hideTooltip, state?.target]);
+  }, [hideTooltip, updatePosition, state?.target]);
 
   useEffect(() => {
     const shouldShowForFocus = (target: HTMLElement) => {

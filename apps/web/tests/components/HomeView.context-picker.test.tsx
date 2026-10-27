@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { $createTextNode, $getRoot, $isElementNode, REDO_COMMAND, UNDO_COMMAND } from 'lexical';
 import {
   DEFAULT_UNSELECTED_SCENARIO_PLUGIN_ID,
   type InstalledPluginRecord,
@@ -9,7 +10,7 @@ import {
   type SkillSummary,
 } from '@readable-studio/contracts';
 import { HomeView } from '../../src/components/HomeView';
-import { homeHeroPromptText, setHomeHeroPrompt } from '../helpers/home-hero-lexical';
+import { getHomeHeroEditor, homeHeroPromptText, setHomeHeroPrompt } from '../helpers/home-hero-lexical';
 
 // HomeHero's prompt input migrated from a <textarea>+highlight overlay to the
 // same Lexical contenteditable the project composer uses. The `home-hero-input`
@@ -206,6 +207,7 @@ describe('HomeView context picker', () => {
     setHomeHeroPrompt('Build @acreage');
     await settle();
     fireEvent.click(await screen.findByRole('option', { name: /acreage/i }));
+    fireEvent.click(screen.getByTestId('mention-preview-use'));
 
     // Picking inserts an atomic plugin mention pill (`@Chart Plugin`) and stages
     // the plugin as context in HomeView state. The
@@ -216,12 +218,18 @@ describe('HomeView context picker', () => {
       expect(homeHeroPromptText().trim()).toBe('Build @Acreage — Precision Farming');
     });
 
-    // Re-seed the draft with a fresh `@deck` trigger appended after the first
-    // mention (the old test did the equivalent full-value replace). Picking the
-    // second plugin reconstructs both mention pills via the host's draft sync.
-    setHomeHeroPrompt('Build @Acreage — Precision Farming @deck');
+    // Continue typing after the first confirmed pill. Replacing the whole tree
+    // with plain text would correctly discard that confirmed selection.
+    act(() => getHomeHeroEditor().update(() => {
+      const paragraph = $getRoot().getLastChild();
+      if (!$isElementNode(paragraph)) throw new Error('Missing composer paragraph');
+      const text = $createTextNode(' @deck');
+      paragraph.append(text);
+      text.selectEnd();
+    }, { discrete: true }));
     await settle();
     fireEvent.click(await screen.findByRole('option', { name: /deck plugin/i }));
+    fireEvent.click(screen.getByTestId('mention-preview-use'));
 
     await waitFor(() => {
       expect(homeHeroPromptText().trim()).toBe('Build @Acreage — Precision Farming @Deck Plugin');
@@ -247,6 +255,171 @@ describe('HomeView context picker', () => {
     expect(serialized).toContain('statistics grid');
     expect(serialized).not.toMatch(/Acreage|precision.farming|agriculture|agritech|acre|crop|field|soil|yield/i);
     expect(serialized).not.toContain('example-acreage-farming');
+  });
+
+  it.each(['plugin', 'skill', 'mcp'] as const)('reconciles confirmed %s context through Undo and Redo', async (kind) => {
+    const plugin = makePlugin('sample-plugin', 'Sample Plugin');
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (url) => {
+      if (url === '/api/plugins') return new Response(JSON.stringify({ plugins: [plugin] }));
+      if (url === '/api/mcp/servers') return new Response(JSON.stringify({ servers: [MCP_SERVER], templates: [] }));
+      throw new Error(`unexpected fetch ${String(url)}`);
+    }));
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { callback(0); return 0; });
+    const onSubmit = vi.fn(() => false);
+    render(<HomeView projects={[]} skills={[SKILL]} onSubmit={onSubmit} onOpenProject={vi.fn()} onViewAllProjects={vi.fn()} />);
+    await screen.findByTestId('home-hero-input');
+    const name = kind === 'plugin' ? 'Sample Plugin' : kind === 'skill' ? 'Prototype Lab' : 'Linear';
+    setHomeHeroPrompt(`Use @${name}`);
+    await settle();
+    fireEvent.click(await screen.findByRole('option', { name: new RegExp(name) }));
+    fireEvent.click(screen.getByTestId('mention-preview-use'));
+    await settle();
+    expect(screen.getByTestId('home-hero-input').querySelector(`[data-mention-kind="${kind}"]`)).toBeTruthy();
+
+    act(() => { getHomeHeroEditor().dispatchCommand(UNDO_COMMAND, undefined); });
+    await settle();
+    expect(screen.getByTestId('home-hero-input').querySelector(`[data-mention-kind="${kind}"]`)).toBeNull();
+    fireEvent.click(screen.getByTestId('home-hero-submit'));
+    await settle();
+    expect(onSubmit).toHaveBeenLastCalledWith(expect.objectContaining({
+      prompt: `Use @${name}`, skillId: null, visualReferences: [], contextMcpServers: [],
+    }));
+
+    act(() => { getHomeHeroEditor().dispatchCommand(REDO_COMMAND, undefined); });
+    await settle();
+    expect(screen.getByTestId('home-hero-input').querySelector(`[data-mention-kind="${kind}"]`)).toBeTruthy();
+    fireEvent.click(screen.getByTestId('home-hero-submit'));
+    await settle();
+    expect(onSubmit).toHaveBeenLastCalledWith(expect.objectContaining({
+      skillId: kind === 'skill' ? SKILL.id : null,
+      visualReferences: kind === 'plugin' ? [{ characteristics: ['dark and light sections alternate with a fullscreen hero'] }] : [],
+      contextMcpServers: kind === 'mcp' ? [expect.objectContaining({ id: MCP_SERVER.id })] : [],
+    }));
+  });
+
+  it.each(['skill', 'template'] as const)('keeps a newly selected %s before an older skill as the single default after typing', async (kind) => {
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (url) => {
+      if (url === '/api/plugins') return Response.json({ plugins: [] });
+      if (url === '/api/mcp/servers') return Response.json({ servers: [], templates: [] });
+      throw new Error(`unexpected fetch ${String(url)}`);
+    }));
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { callback(0); return 0; });
+    const onSubmit = vi.fn(() => false);
+    render(<HomeView projects={[]} skills={[SKILL, DECK_SKILL]}
+      designTemplates={kind === 'template' ? [DECK_SKILL] : []}
+      onSubmit={onSubmit} onOpenProject={vi.fn()} onViewAllProjects={vi.fn()} />);
+    await screen.findByTestId('home-hero-input');
+    setHomeHeroPrompt('Make this with @Prototype Lab');
+    await settle();
+    fireEvent.click(await screen.findByTestId('mention-preview-use'));
+    await settle();
+
+    act(() => getHomeHeroEditor().update(() => {
+      const paragraph = $getRoot().getFirstChild();
+      if (!$isElementNode(paragraph)) throw new Error('Missing composer paragraph');
+      const query = $createTextNode('@Deck Lab ');
+      paragraph.getFirstChild()!.insertBefore(query);
+      query.select('@Deck Lab'.length, '@Deck Lab'.length);
+    }, { discrete: true }));
+    await settle();
+    fireEvent.click(await screen.findByTestId('mention-preview-use'));
+    await settle();
+    expect(screen.getByTestId('home-hero-active-skill').textContent).toContain('Deck Lab');
+
+    act(() => { getHomeHeroEditor().dispatchCommand(UNDO_COMMAND, undefined); });
+    await settle();
+    expect(screen.getByTestId('home-hero-active-skill').textContent).toContain('Prototype Lab');
+    expect(screen.getByTestId('home-hero-input').querySelectorAll('[data-mention-kind="skill"]')).toHaveLength(1);
+    act(() => { getHomeHeroEditor().dispatchCommand(REDO_COMMAND, undefined); });
+    await settle();
+    expect(screen.getByTestId('home-hero-active-skill').textContent).toContain('Deck Lab');
+    expect(screen.getByTestId('home-hero-input').querySelectorAll('[data-mention-kind="skill"]')).toHaveLength(1);
+
+    act(() => getHomeHeroEditor().update(() => {
+      const paragraph = $getRoot().getLastChild();
+      if (!$isElementNode(paragraph)) throw new Error('Missing composer paragraph');
+      const text = $createTextNode('continue');
+      paragraph.append(text);
+      text.selectEnd();
+    }, { discrete: true }));
+    await settle();
+    fireEvent.click(screen.getByTestId('home-hero-submit'));
+    await settle();
+    expect(onSubmit).toHaveBeenLastCalledWith(expect.objectContaining({ skillId: DECK_SKILL.id }));
+    expect(screen.getByTestId('home-hero-input').querySelectorAll('[data-mention-kind="skill"]')).toHaveLength(1);
+    expect(homeHeroPromptText()).not.toContain('@Prototype Lab');
+  });
+
+  it('removes the confirmed skill atom with the header clear action so typing cannot restore it', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (url) => {
+      if (url === '/api/plugins') return Response.json({ plugins: [] });
+      if (url === '/api/mcp/servers') return Response.json({ servers: [], templates: [] });
+      throw new Error(`unexpected fetch ${String(url)}`);
+    }));
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { callback(0); return 0; });
+    const onSubmit = vi.fn(() => false);
+    render(<HomeView projects={[]} skills={[SKILL]} onSubmit={onSubmit} onOpenProject={vi.fn()} onViewAllProjects={vi.fn()} />);
+    await screen.findByTestId('home-hero-input');
+    setHomeHeroPrompt('Use @Prototype Lab');
+    await settle();
+    fireEvent.click(await screen.findByTestId('mention-preview-use'));
+    await settle();
+    fireEvent.click(within(screen.getByTestId('home-hero-active-skill')).getByRole('button'));
+    await settle();
+    expect(screen.queryByTestId('home-hero-active-skill')).toBeNull();
+    act(() => { getHomeHeroEditor().dispatchCommand(UNDO_COMMAND, undefined); });
+    await settle();
+    expect(screen.getByTestId('home-hero-active-skill')).toBeTruthy();
+    expect(screen.getByTestId('home-hero-input').querySelector('[data-mention-kind="skill"]')).toBeTruthy();
+    act(() => { getHomeHeroEditor().dispatchCommand(REDO_COMMAND, undefined); });
+    await settle();
+    expect(screen.queryByTestId('home-hero-active-skill')).toBeNull();
+    expect(screen.getByTestId('home-hero-input').querySelector('[data-mention-kind="skill"]')).toBeNull();
+    act(() => getHomeHeroEditor().update(() => {
+      const paragraph = $getRoot().getLastChild();
+      if (!$isElementNode(paragraph)) throw new Error('Missing composer paragraph');
+      const text = $createTextNode('continue');
+      paragraph.append(text);
+      text.selectEnd();
+    }, { discrete: true }));
+    await settle();
+    fireEvent.click(screen.getByTestId('home-hero-submit'));
+    await settle();
+    expect(onSubmit).toHaveBeenLastCalledWith(expect.objectContaining({ skillId: null }));
+    expect(screen.queryByTestId('home-hero-active-skill')).toBeNull();
+    expect(screen.getByTestId('home-hero-input').querySelector('[data-mention-kind="skill"]')).toBeNull();
+  });
+
+  it('does not confirm an unfinished skill search when removing a mentioned file', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (url) => {
+      if (url === '/api/plugins') return Response.json({ plugins: [] });
+      if (url === '/api/mcp/servers') return Response.json({ servers: [], templates: [] });
+      throw new Error(`unexpected fetch ${String(url)}`);
+    }));
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { callback(0); return 0; });
+    render(<HomeView projects={[]} skills={[SKILL]} onSubmit={vi.fn()} onOpenProject={vi.fn()} onViewAllProjects={vi.fn()} />);
+    const input = await screen.findByTestId('home-hero-input');
+    const file = new File(['# Brief'], 'brief.md', { type: 'text/markdown' });
+    fireEvent.paste(input, { clipboardData: { files: [file], items: [{ kind: 'file', getAsFile: () => file }] } });
+    await settle();
+    setHomeHeroPrompt('Use @brief.md');
+    await settle();
+    fireEvent.click(await screen.findByTestId('mention-preview-use'));
+    await settle();
+    act(() => getHomeHeroEditor().update(() => {
+      const paragraph = $getRoot().getLastChild();
+      if (!$isElementNode(paragraph)) throw new Error('Missing composer paragraph');
+      const text = $createTextNode(' @Prototype Lab');
+      paragraph.append(text);
+      text.selectEnd();
+    }, { discrete: true }));
+    await settle();
+    expect(screen.queryByTestId('home-hero-active-skill')).toBeNull();
+    fireEvent.click(screen.getByLabelText('Remove brief.md'));
+    await settle();
+    expect(screen.queryByTestId('home-hero-active-skill')).toBeNull();
+    expect(input.querySelector('[data-mention-kind="skill"]')).toBeNull();
+    expect(homeHeroPromptText()).toContain('@Prototype Lab');
   });
 
   it('binds a selected home skill to the created project payload', async () => {
@@ -286,6 +459,7 @@ describe('HomeView context picker', () => {
     setHomeHeroPrompt('@proto');
     await settle();
     fireEvent.click(await screen.findByRole('option', { name: /prototype lab/i }));
+    fireEvent.click(screen.getByTestId('mention-preview-use'));
 
     await waitFor(() => {
       expect(homeHeroPromptText().trim()).toBe('@Prototype Lab');
@@ -344,6 +518,7 @@ describe('HomeView context picker', () => {
     setHomeHeroPrompt('@deck');
     await settle();
     fireEvent.click(await screen.findByRole('option', { name: /deck lab/i }));
+    fireEvent.click(screen.getByTestId('mention-preview-use'));
 
     await waitFor(() => {
       expect(screen.getByTestId('home-hero-active-skill')).toBeTruthy();
@@ -411,6 +586,7 @@ describe('HomeView context picker', () => {
     setHomeHeroPrompt('@proto');
     await settle();
     fireEvent.click(await screen.findByRole('option', { name: /prototype lab/i }));
+    fireEvent.click(screen.getByTestId('mention-preview-use'));
     await waitFor(() => {
       expect(screen.getByTestId('home-hero-active-skill')).toBeTruthy();
     });

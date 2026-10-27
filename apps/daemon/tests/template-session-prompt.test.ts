@@ -3,13 +3,14 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import net from 'node:net';
 import { once } from 'node:events';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { CreateProjectResponse, CreateSessionResponse } from '@readable-studio/contracts';
 import { startServer } from '../src/server.js';
 import { closeDatabase, insertTemplate, openDatabase } from '../src/db.js';
 import { withFakeAgent } from './helpers/fake-agent.js';
+import { invalidateSkillListCache } from '../src/skills.js';
 
 // Background memory extraction also launches the CLI; it must not consume the
 // one-shot prompt capture intended for the document run.
@@ -153,7 +154,7 @@ process.stdin.on('end', () => {
   });
 
   // Runs a real project through /api/runs with a capturing fake agent and returns the composed prompt.
-  async function composedPrompt(projectBody: Record<string, unknown>): Promise<string> {
+  async function composedPrompt(projectBody: Record<string, unknown>, skillIds?: string[]): Promise<string> {
     const captureServer = net.createServer();
     let timeout: ReturnType<typeof setTimeout>;
     const captured = new Promise<string>((resolve, reject) => {
@@ -195,7 +196,7 @@ process.stdin.on('end', () => {
         const created = await post<CreateProjectResponse>('/api/projects', projectBody);
         const message = 'USER_REQUEST_SCOPE: make a deck';
         const run = await post<{ runId: string }>('/api/runs', {
-          agentId: 'opencode', model: 'openai/gpt-5', message, currentPrompt: message, projectId: created.project.id,
+          agentId: 'opencode', model: 'openai/gpt-5', message, currentPrompt: message, projectId: created.project.id, skillIds,
         });
         sent = await captured;
         // Finish at the buffered terminal SSE event, not by timing luck.
@@ -211,6 +212,9 @@ process.stdin.on('end', () => {
           const end = events.match(/event: end\r?\ndata: ([^\n]+)/);
           expect(JSON.parse(end![1]!)).toMatchObject({ code: 0, status: 'succeeded' });
         } finally { await reader.cancel(); }
+        const stored = await (await fetch(`${baseUrl}/api/projects/${created.project.id}`)).json() as CreateProjectResponse;
+        expect(stored.project.skillId).toEqual(created.project.skillId);
+        expect(stored.project.metadata).toEqual(created.project.metadata);
       });
       return sent;
     } finally {
@@ -223,6 +227,49 @@ process.stdin.on('end', () => {
     const sent = await composedPrompt({ id: 'ordinary-simple-deck', name: 'Ordinary deck', skillId: 'simple-deck', metadata: { kind: 'deck' } });
     expect(sent).not.toContain('<readable-template-policy>');
     expect(sent).toContain("Follow this skill's workflow exactly");
+  });
+
+  it.each(['deck', 'prototype'])('treats a per-run %s template as a reference without demoting functional skills', async (mode) => {
+    const templateId = `mention-template-${mode}`;
+    const skillId = `mention-functional-${mode}`;
+    for (const [root, id, body] of [
+      ['design-templates', templateId, 'TEMPLATE_SAMPLE_914'],
+      ['skills', skillId, 'FUNCTIONAL_SKILL_914'],
+    ]) {
+      const dir = path.join(dataDir!, root!, id!);
+      await mkdir(dir, { recursive: true });
+      await writeFile(path.join(dir, 'SKILL.md'), `---\nname: ${id}\nreadable:\n  mode: ${mode}\n---\n${body}\n`, 'utf8');
+    }
+    invalidateSkillListCache();
+    const sent = await composedPrompt({ id: `mention-project-${mode}`, name: 'Mention references', metadata: { kind: 'other' } }, [skillId!, templateId!]);
+    expect(sent).toContain('<readable-template-policy>');
+    const quoted = sent.match(/<readable-template-reference kind="selected-template"[^>]*>\n(.*?)\n<\/readable-template-reference>/s);
+    expect(JSON.parse(quoted![1]!)).toEqual({ name: templateId, body: 'TEMPLATE_SAMPLE_914' });
+    const outside = sent.replace(/<readable-template-reference[^>]*>.*?<\/readable-template-reference>/gs, '');
+    expect(outside).not.toContain('TEMPLATE_SAMPLE_914');
+    expect(outside).toContain('FUNCTIONAL_SKILL_914');
+    expect(outside).toContain("Follow the selected skills' workflows exactly");
+  });
+
+  it('keeps an explicit per-run template boundary when the same template is already the primary skill', async () => {
+    const sent = await composedPrompt({ id: 'mention-primary-template', name: 'Existing deck', skillId: 'simple-deck', metadata: { kind: 'deck' } }, ['simple-deck']);
+    expect(sent).toContain('<readable-template-policy>');
+    expect(sent).toContain('<readable-template-reference kind="selected-template"');
+  });
+
+  it('keeps selected functional skill instructions active in an existing template project', async () => {
+    const skillId = 'mention-template-project-functional';
+    const dir = path.join(dataDir!, 'skills', skillId);
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, 'SKILL.md'), `---\nname: ${skillId}\n---\nFUNCTIONAL_SELECTION_914\n`, 'utf8');
+    invalidateSkillListCache();
+    const sent = await composedPrompt({
+      id: 'mention-existing-template', name: 'Existing template', skillId: 'simple-deck',
+      metadata: { kind: 'deck', templateRef: { id: 'simple-deck', name: 'Simple deck', boundary: 0 } },
+    }, [skillId]);
+    expect(sent).toContain('<readable-template-policy>');
+    const outside = sent.replace(/<readable-template-reference[^>]*>.*?<\/readable-template-reference>/gs, '');
+    expect(outside).toContain('FUNCTIONAL_SELECTION_914');
   });
 
   it.each([

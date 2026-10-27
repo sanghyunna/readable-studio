@@ -58,7 +58,7 @@ describe('ManualEditResizeHandles', () => {
     const handle = getByLabelText(labels.e);
     fireEvent.pointerDown(handle, { pointerId: 21, clientX: 300, clientY: 100 });
     expect(document.querySelectorAll('[data-readable-pointer-drag-shield]')).toHaveLength(1);
-    if (ending === 'up') fireEvent.pointerUp(handle, { pointerId: 21 });
+    if (ending === 'up') fireEvent.pointerUp(handle, { pointerId: 21, clientX: 300, clientY: 100 });
     if (ending === 'cancel') fireEvent.pointerCancel(handle, { pointerId: 21 });
     if (ending === 'lost-capture') fireEvent.lostPointerCapture(handle, { pointerId: 21 });
     if (ending === 'escape') fireEvent.keyDown(handle, { key: 'Escape' });
@@ -115,6 +115,52 @@ describe('ManualEditResizeHandles', () => {
       { width: 200, height: 100 },
     );
     expect(onResizeCancel).not.toHaveBeenCalled();
+  });
+
+  it('commits the authoritative release position rather than the last pointermove', () => {
+    const { getByLabelText, onResizePreview, onResizeCommit } = renderHandles();
+    const e = getByLabelText(labels.e);
+    fireEvent.pointerDown(e, { pointerId: 22, clientX: 300, clientY: 150 });
+    fireEvent.pointerMove(e, { pointerId: 22, clientX: 320, clientY: 150 });
+    fireEvent.pointerUp(e, { pointerId: 22, clientX: 350, clientY: 150 });
+    expect(onResizePreview).toHaveBeenLastCalledWith('e', { width: 250, height: 100 }, { width: 200, height: 100 });
+    expect(onResizeCommit).toHaveBeenCalledWith('e', { width: 250, height: 100 }, { width: 200, height: 100 });
+  });
+
+  it('uses Shift held at release even when the last pointermove did not contain it', () => {
+    const { getByLabelText, onResizeCommit } = renderHandles();
+    const se = getByLabelText(labels.se);
+    fireEvent.pointerDown(se, { pointerId: 23, clientX: 300, clientY: 150 });
+    fireEvent.pointerMove(se, { pointerId: 23, clientX: 340, clientY: 152 });
+    fireEvent.pointerUp(se, { pointerId: 23, clientX: 340, clientY: 152, shiftKey: true });
+    expect(onResizeCommit).toHaveBeenCalledWith('se', { width: 240, height: 120 }, { width: 200, height: 100 });
+  });
+
+  it('cancels when the pointer returns to its starting position at release', () => {
+    const { getByLabelText, onResizeCommit, onResizeCancel } = renderHandles();
+    const e = getByLabelText(labels.e);
+    fireEvent.pointerDown(e, { pointerId: 24, clientX: 300, clientY: 150 });
+    fireEvent.pointerMove(e, { pointerId: 24, clientX: 340, clientY: 150 });
+    fireEvent.pointerUp(e, { pointerId: 24, clientX: 300, clientY: 150 });
+    expect(onResizeCommit).not.toHaveBeenCalled();
+    expect(onResizeCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('streams a centered corner resize while Ctrl is held', () => {
+    const { getByLabelText, onResizePreview } = renderHandles();
+    const se = getByLabelText(labels.se);
+    fireEvent.pointerDown(se, { pointerId: 25, clientX: 300, clientY: 150 });
+    fireEvent.pointerMove(se, { pointerId: 25, clientX: 320, clientY: 160, ctrlKey: true });
+    expect(onResizePreview).toHaveBeenCalledWith('se', { width: 240, height: 120, fromCenter: true }, { width: 200, height: 100 });
+  });
+
+  it('uses Ctrl and Shift held at release for a centered proportional resize', () => {
+    const { getByLabelText, onResizeCommit } = renderHandles();
+    const se = getByLabelText(labels.se);
+    fireEvent.pointerDown(se, { pointerId: 26, clientX: 300, clientY: 150 });
+    fireEvent.pointerMove(se, { pointerId: 26, clientX: 320, clientY: 152 });
+    fireEvent.pointerUp(se, { pointerId: 26, clientX: 320, clientY: 152, ctrlKey: true, shiftKey: true });
+    expect(onResizeCommit).toHaveBeenCalledWith('se', { width: 240, height: 120, fromCenter: true }, { width: 200, height: 100 });
   });
 
   it('cancels instead of committing when pointerup happens with no movement', () => {

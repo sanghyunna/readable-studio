@@ -7,6 +7,16 @@ import { OFFICIAL_DESIGNER_PROMPT } from '../../src/prompts/official-system.js';
 const policyOf = (prompt: string) => JSON.parse(prompt.match(/<readable-template-policy>(.*?)<\/readable-template-policy>/s)![1]!);
 
 describe('template discovery routing', () => {
+  it('uses template content clarification for a template selected only for this run', () => {
+    const prompt = composeSystemPrompt({
+      templateReferences: [{ name: 'Selected template', body: 'TEMPLATE_REFERENCE_914' }],
+      metadata: { examplePrompt: true, examplePromptBrief: { topic: 'EXAMPLE_TOPIC_914' } },
+    });
+    expect(prompt).toContain('<readable-clarification-policy>');
+    expect(prompt).not.toMatch(/<question-form id="(?:report-brief|deck-brief|brand-source)"/);
+    expect(prompt).not.toContain('EXAMPLE_TOPIC_914');
+  });
+
   it.each(['example-html-ppt-weekly-report', 'example-html-ppt-product-launch', 'example-finance-report'])('routes %s to content-only clarification', (id) => {
     const prompt = composeSystemPrompt({ metadata: { templateRef: { id, name: id, boundary: 0 } } });
     const policy = JSON.parse(prompt.match(/<readable-clarification-policy>(.*?)<\/readable-clarification-policy>/s)![1]!);

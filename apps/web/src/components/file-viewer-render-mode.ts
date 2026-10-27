@@ -52,7 +52,7 @@ export interface UrlLoadDecision {
   forceInline: boolean;
   /**
    * The HTML source contains patterns that steal focus on load (e.g.
-   * `window.focus()`, `element.focus()`). When true, forces the srcDoc path
+   * `window.focus()`, `element.focus()`, or dialog opening). Forces the srcDoc path
    * so `injectPreviewFocusGuard` can suppress the focus grab.
    */
   needsFocusGuard?: boolean;
@@ -171,15 +171,15 @@ export function parseForceInline(search: string | URLSearchParams | null | undef
  * negatives are the same blank-preview the user already hits.
  */
 /**
- * Return true when the HTML source may call `.focus()` at load time, which
- * would steal focus from the host page in a URL-loaded iframe. The srcDoc
+ * Return true when the HTML source may invoke native focusing steps at load time,
+ * which would steal focus from the host page in a URL-loaded iframe. The srcDoc
  * path injects `injectPreviewFocusGuard` to suppress this; URL-load has no
  * such guard, so we force the srcDoc path instead.
  *
  * Detection covers two cases:
  *
- *   1. Inline `.focus(` calls and `autofocus` attributes — directly visible
- *      in the document source.
+ *   1. Inline `.focus(` / dialog `.show(` / `.showModal(` calls and `autofocus`
+ *      attributes — directly visible in the document source.
  *   2. External `<script src=...>` references — we cannot inspect the linked
  *      file's content, so we conservatively assume it may call focus.
  *
@@ -187,7 +187,7 @@ export function parseForceInline(search: string | URLSearchParams | null | undef
  * path, which is the safe direction.
  */
 export function htmlNeedsFocusGuard(source: string): boolean {
-  if (/\.\s*focus\s*\(/i.test(source)) return true;
+  if (/\.\s*(?:focus|show|showModal)\s*\(/i.test(source)) return true;
   if (/\bautofocus\b/i.test(source)) return true;
   if (/<script\b[^>]*\bsrc\s*=/i.test(source)) return true;
   return false;

@@ -93,6 +93,7 @@ function deferred<T>() {
 }
 
 beforeEach(() => {
+  HTMLElement.prototype.scrollTo = vi.fn();
   vi.mocked(listActiveChatRuns).mockReset().mockResolvedValue([]);
   vi.mocked(patchProject).mockReset().mockImplementation(async (_id, patch) => ({ id: 'queue-question-project', name: 'Q', skillId: null, designSystemId: null, createdAt: 1, updatedAt: 1, metadata: patch.metadata }));
 });

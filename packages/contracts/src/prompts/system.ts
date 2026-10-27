@@ -35,6 +35,7 @@ import { OFFICIAL_DESIGNER_PROMPT } from './official-system.js';
 import { renderHtmlOutputDirective } from './html-output-policy.js';
 import { DISCOVERY_AND_PHILOSOPHY } from './discovery.js';
 import { DECK_FRAMEWORK_DIRECTIVE } from './deck-framework.js';
+import { isTemplateReferenceProject, renderTemplateReference, TEMPLATE_CONTENT_CONTRACT, TEMPLATE_CONTENT_GATE, TEMPLATE_DISCOVERY_BRIEF } from './template-reference.js';
 
 // @dsp func-3681689d
 export const BASE_SYSTEM_PROMPT = OFFICIAL_DESIGNER_PROMPT;
@@ -235,6 +236,9 @@ Active design system exception: the active design system is the visual direction
 
 export interface ComposeInput {
   skillBody?: string | undefined;
+  additionalSkillBody?: string | undefined;
+  templateReferences?: Array<{ name?: string | undefined; body: string }> | undefined;
+  templateReference?: boolean | undefined;
   skillName?: string | undefined;
   skillMode?:
     | 'prototype'
@@ -292,6 +296,9 @@ export interface ComposeInput {
 // @dsp func-cb0c5cc7
 export function composeSystemPrompt({
   skillBody,
+  additionalSkillBody,
+  templateReferences = [],
+  templateReference,
   skillName,
   skillMode,
   designSystemBody,
@@ -312,6 +319,11 @@ export function composeSystemPrompt({
   // checklist + critique before <artifact>) win precedence over softer
   // wording later in the official base prompt.
   const parts: string[] = [renderHtmlOutputDirective(streamFormat), '\n\n---\n\n'];
+  const templateOnly = templateReference === true || isTemplateReferenceProject(metadata);
+  const selectedTemplates = templateReferences.filter(item => item.body.trim().length > 0);
+  const hasTemplateReference = templateOnly || selectedTemplates.length > 0;
+  if (hasTemplateReference) parts.push(TEMPLATE_CONTENT_CONTRACT, '\n\n---\n\n');
+  if (templateOnly && metadata?.templateRef) parts.push(renderTemplateReference('selection', metadata.templateRef), '\n\n');
   const activeDesignSystemBody = designSystemBody?.trim();
   // API/BYOK mode (streamFormat === 'plain'): no tools are wired through
   // to the model, but the discovery layer + base prompt below still tell
@@ -331,10 +343,10 @@ export function composeSystemPrompt({
     parts.push('\n\n---\n\n');
   }
 
-  if (metadata?.examplePrompt === true) {
+  if (!hasTemplateReference && metadata?.examplePrompt === true) {
     parts.push(buildExamplePromptOverride(metadata.examplePromptTitle, metadata.examplePromptBrief));
     parts.push('\n\n---\n\n');
-  } else if (metadata?.skipDiscoveryBrief === true) {
+  } else if (!hasTemplateReference && metadata?.skipDiscoveryBrief === true) {
     parts.push(SKIP_DISCOVERY_BRIEF_OVERRIDE);
     parts.push('\n\n---\n\n');
   }
@@ -353,9 +365,9 @@ export function composeSystemPrompt({
   parts.push(renderReadabilityPrompt(locale));
   parts.push('\n\n---\n\n');
 
-  parts.push(DISCOVERY_AND_PHILOSOPHY, '\n\n---\n\n');
+  parts.push(hasTemplateReference ? TEMPLATE_DISCOVERY_BRIEF : DISCOVERY_AND_PHILOSOPHY, '\n\n---\n\n');
 
-  parts.push('# Identity and workflow charter (background)\n\n', BASE_SYSTEM_PROMPT);
+  if (!hasTemplateReference) parts.push('# Identity and workflow charter (background)\n\n', BASE_SYSTEM_PROMPT);
 
   // Clarifying questions on any turn reuse the same `<question-form>` flow as
   // the blocking asks in DISCOVERY_AND_PHILOSOPHY so the host keeps ONE
@@ -364,7 +376,7 @@ export function composeSystemPrompt({
   // composer's QUESTION_FORM_CLARIFICATION_SECTION in
   // apps/daemon/src/prompts/system.ts. Keep both byte-identical so a daemon
   // chat and a BYOK/API chat ask through the same surface.
-  parts.push('\n\n---\n\n', QUESTION_FORM_CLARIFICATION_SECTION);
+  if (!hasTemplateReference) parts.push('\n\n---\n\n', QUESTION_FORM_CLARIFICATION_SECTION);
 
   // Mirrors the daemon-side composer in apps/daemon/src/prompts/system.ts —
   // keep both copies of this preamble in sync so a CLI chat and a BYOK
@@ -400,18 +412,23 @@ export function composeSystemPrompt({
   if (skillBody && skillBody.trim().length > 0) {
     const preflight = derivePreflight(skillBody);
     parts.push(
-      `\n\n## Active skill${skillName ? ` — ${skillName}` : ''}\n\nFollow this skill's workflow exactly.${preflight}\n\n${skillBody.trim()}`,
+      templateOnly
+        ? `\n\n## Template rendering reference${preflight}${renderTemplateReference('skill', { name: skillName, body: skillBody.trim() })}`
+        : `\n\n## Active skill${skillName ? ` — ${skillName}` : ''}\n\nFollow this skill's workflow exactly.${preflight}\n\n${skillBody.trim()}`,
     );
   }
 
   if (pluginBlock && pluginBlock.trim().length > 0) {
-    parts.push(pluginBlock);
+    parts.push(templateOnly ? renderTemplateReference('plugin', pluginBlock) : pluginBlock);
   }
+
+  if (additionalSkillBody?.trim()) parts.push(`\n\n## Additional selected skills\n\nFollow the selected skills' workflows exactly.${derivePreflight(additionalSkillBody)}\n\n${additionalSkillBody.trim()}`);
+  for (const reference of selectedTemplates) parts.push(`\n\n## Selected template rendering reference${derivePreflight(reference.body)}${renderTemplateReference('selected-template', reference)}`);
 
   if (Array.isArray(activeStageBlocks) && activeStageBlocks.length > 0) {
     for (const block of activeStageBlocks) {
       if (typeof block === 'string' && block.trim().length > 0) {
-        parts.push(block);
+        parts.push(templateOnly ? renderTemplateReference('stage', block) : block);
       }
     }
   }
@@ -438,7 +455,9 @@ export function composeSystemPrompt({
   const isDeckProject = skillMode === 'deck' || metadata?.kind === 'deck';
   const isFreeformProject = !skillMode && (!metadata || metadata.kind === 'other');
   const hasSkillSeed =
-    !!skillBody && /assets\/template\.html/.test(skillBody);
+    (!!skillBody && /assets\/template\.html/.test(skillBody))
+    || (!!additionalSkillBody && /assets\/template\.html/.test(additionalSkillBody))
+    || selectedTemplates.some(item => /assets\/template\.html/.test(item.body));
 
   if (isDeckProject && !hasSkillSeed) {
     parts.push(`\n\n---\n\n${DECK_FRAMEWORK_DIRECTIVE}`);
@@ -461,6 +480,7 @@ export function composeSystemPrompt({
     parts.push(ACTIVE_DESIGN_SYSTEM_VISUAL_DIRECTION_OVERRIDE);
   }
 
+  if (hasTemplateReference) parts.push('\n\n---\n\n', TEMPLATE_CONTENT_GATE);
   return parts.join('');
 }
 
@@ -656,10 +676,7 @@ function renderMetadataBlock(
           ? `${f.content.slice(0, 12000)}\n<!-- … truncated (${f.content.length - 12000} chars omitted) -->`
           : f.content;
       lines.push('');
-      lines.push(`#### \`${f.name}\``);
-      lines.push('```html');
-      lines.push(truncated);
-      lines.push('```');
+      lines.push(renderTemplateReference('seed-file', { name: f.name, content: truncated }));
     }
   }
 
@@ -670,7 +687,7 @@ function renderMetadataBlock(
  * Detect the seed/references pattern shipped by the upgraded
  * web-prototype / mobile-app / simple-deck / guizang-ppt skills, and
  * inject a hard pre-flight rule that lists which side files to Read
- * before doing anything else. The skill body's own workflow already says
+ * before writing unless their current contents are already available. The skill body's workflow says
  * this — but skills get truncated under context pressure and the agent
  * sometimes skips Step 0. A short up-front directive helps.
  *
@@ -692,5 +709,5 @@ function derivePreflight(skillBody: string): string {
     refs.push('`references/html-in-canvas.md`');
   }
   if (refs.length === 0) return '';
-  return ` **Pre-flight (do this before any other tool):** Read ${refs.join(', ')} via the path written in the skill-root preamble. If the skill asks for daemon wrapper commands, use the runtime tool environment documented below; it provides the daemon URL and whether a run-scoped tool token is available without exposing token internals. The seed template defines the class system you'll paste into; the layouts file is the only acceptable source of section/screen/slide skeletons; the checklist is your validation gate before finishing delivery. Skipping this step is the #1 reason output regresses to generic AI-slop.`;
+  return ` **Pre-flight:** Before writing code, read ${refs.join(', ')} via the path written in the skill-root preamble unless their current contents are already available in the continuing conversation. Reuse completed pre-flight when sufficient and still current; read again when resources may have changed or needed detail is missing. If the skill asks for daemon wrapper commands, use the runtime tool environment documented below; it provides the daemon URL and whether a run-scoped tool token is available without exposing token internals. The seed template defines the class system you'll paste into; the layouts file is the only acceptable source of section/screen/slide skeletons; the checklist is your validation gate before finishing delivery.`;
 }

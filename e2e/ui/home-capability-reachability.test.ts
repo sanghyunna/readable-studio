@@ -232,6 +232,7 @@ const RUNNING_SESSIONS = Array.from({ length: 6 }, (_, index) => ({
 async function seedHome(page: Page) {
   await addStorageInitScript(page, ({ key, value }) => {
     window.localStorage.clear(); window.sessionStorage.clear(); window.localStorage.setItem(key, JSON.stringify(value));
+    window.localStorage.setItem('readable-studio:welcome-modal-shown', '1');
   }, { key: STORAGE_KEY, value: HOME_CONFIG });
   await routeAgents(page, [{ id: 'mock', name: 'Mock Agent', bin: 'mock-agent', available: true, version: 'test', models: [{ id: 'default', label: 'Default' }] }]);
   await page.route('**/api/app-config', async route => {
@@ -240,6 +241,12 @@ async function seedHome(page: Page) {
   await page.route('**/api/projects', async route => {
     if (route.request().method() === 'GET') { await route.fulfill({ json: { projects: PROJECTS } }); return; }
     await route.fulfill({ json: { project: PROJECTS[0], conversationId: 'created-session' } });
+  });
+  await page.route('**/api/sessions', async route => {
+    if (route.request().method() !== 'POST') { await route.continue(); return; }
+    const body = route.request().postDataJSON();
+    const workspace = { ...PROJECTS[0], ...body, id: PROJECTS[0]!.id };
+    await route.fulfill({ json: { workspace, session: { id: 'created-session', projectId: workspace.id, title: workspace.name, sessionMode: body.conversationMode ?? 'design', createdAt: 1, updatedAt: 1 } } });
   });
   await page.route('**/api/projects/*/conversations', async route => {
     const sessions = route.request().url().includes('qa-running') ? RUNNING_SESSIONS : [];
@@ -342,20 +349,19 @@ async function activatePlugin(page: Page, pluginId: string, title: RegExp, id: s
   await openMention(page, '@local');
   const option = page.getByRole('option', { name: title });
   await visible(option, id); await option.hover();
-  const details = page.getByTestId('home-hero-plugin-hover-card').getByRole('button');
+  const details = page.getByTestId('mention-preview-detail').getByRole('button', { name: /Details|자세히 보기/i });
   await visible(details, id);
-  // Moving the pointer from the option to this transient hover card can dismiss
-  // and remount it mid-click under load. Dispatch the button's click directly;
-  // this helper is validating the plugin activation/submission path, not hover geometry.
-  await details.dispatchEvent('click');
+  await details.click();
   await page.getByTestId(`plugin-details-use-${pluginId}`).click();
   await visible(page.getByTestId('home-hero-active-plugin'), id);
 }
 
 async function captureCreation(page: Page) {
-  const request = page.waitForRequest(candidate => candidate.method() === 'POST' && new URL(candidate.url()).pathname === '/api/projects');
-  await page.getByTestId('home-hero-submit').click();
-  return (await request).postDataJSON() as Record<string, unknown>;
+  const [request] = await Promise.all([
+    page.waitForRequest(candidate => candidate.method() === 'POST' && new URL(candidate.url()).pathname === '/api/sessions'),
+    page.getByTestId('home-hero-submit').click(),
+  ]);
+  return request.postDataJSON() as Record<string, unknown>;
 }
 
 async function activateReportPreset(page: Page, id: string) {
@@ -605,15 +611,15 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
     case 'plus-mcp-pick': await openPlus(page); { await page.getByRole('menuitem', { name: /^MCP$/i }).hover(); await page.getByRole('textbox', { name: /^MCP$/i }).fill('QA'); const option = page.getByRole('menuitem', { name: /QA MCP/i }); await visible(option, id); await option.click(); await expect(composer(page)).toContainText(/QA MCP/i); } return;
     case 'plus-add-mcp': await openPlus(page); { const row = page.getByRole('menuitem', { name: /^MCP$/i }); await visible(row, id); await row.hover(); const add = page.getByRole('menuitem', { name: /Add MCP/i }); await visible(add, id); await add.click(); await expect(page).toHaveURL(/\/integrations$/); } return;
     case 'mention-all': case 'mention-files': case 'mention-plugins': case 'mention-skills': case 'mention-mcp': { await openMention(page); const names = { 'mention-all': /^All$/i, 'mention-files': /Files/i, 'mention-plugins': /Plugins/i, 'mention-skills': /Skills/i, 'mention-mcp': /^MCP$/i } as const; const tab = page.getByRole('tab', { name: names[kind] }); await visible(tab, id); await tab.click(); await expect(tab).toHaveAttribute('aria-selected', 'true'); return; }
-    case 'mention-option': case 'mention-keyboard': await openMention(page, '@local'); { const option = page.getByRole('option', { name: /Localized Plugin/i }); await visible(option, id); if (kind === 'mention-keyboard') { await page.getByTestId('home-hero-input').press('ArrowDown'); await page.getByTestId('home-hero-input').press('Enter'); } else await option.click(); await expect(page.getByTestId('home-hero-plugin-picker')).toHaveCount(0); } return;
-    case 'plugin-details': { await openMention(page, '@local'); const option = page.getByRole('option', { name: /Localized Plugin/i }); await option.hover(); const details = page.getByTestId('home-hero-plugin-hover-card').getByRole('button'); await visible(details, id); await details.click(); const dialog = page.getByRole('dialog', { name: /Localized Plugin/i }); await visible(dialog, id); await page.keyboard.press('Escape'); await expect(dialog).toHaveCount(0); return; }
+    case 'mention-option': case 'mention-keyboard': await openMention(page, '@local'); { const option = page.getByRole('option', { name: /Localized Plugin/i }); await visible(option, id); if (kind === 'mention-keyboard') { await page.getByTestId('home-hero-input').press('ArrowDown'); await page.getByTestId('home-hero-input').press('Enter'); } else { await option.click(); await page.getByTestId('mention-preview-use').click(); } await expect(page.getByTestId('home-hero-plugin-picker')).toHaveCount(0); } return;
+    case 'plugin-details': { await openMention(page, '@local'); const option = page.getByRole('option', { name: /Localized Plugin/i }); await option.hover(); const details = page.getByTestId('mention-preview-detail').getByRole('button', { name: /Details|자세히 보기/i }); await visible(details, id); await details.click(); const dialog = page.getByRole('dialog', { name: /Localized Plugin/i }); await visible(dialog, id); await page.keyboard.press('Escape'); await expect(dialog).toHaveCount(0); return; }
     case 'plugin-clear': case 'plugin-route': { await activatePlugin(page, 'localized-plugin', /Localized Plugin/i, id); const chip = page.getByTestId('home-hero-active-plugin'); if (kind === 'plugin-clear') { await chip.getByRole('button', { name: /Clear active plugin/i }).click(); await expect(chip).toHaveCount(0); } else { const topic = page.getByTestId('home-hero-footer-option-topic'); await topic.fill('routing observables'); await composer(page).pressSequentially(' plugin route'); const [applyRequest, creationRequest] = await Promise.all([
       page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/api/plugins/localized-plugin/apply'),
       page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/api/projects'),
       page.getByTestId('home-hero-submit').click(),
     ]); expect(applyRequest.postDataJSON()).toMatchObject({ inputs: { topic: 'routing observables' } }); expect(creationRequest.postDataJSON()).toMatchObject({ pluginId: 'localized-plugin', appliedPluginSnapshotId: 'snap-localized-plugin', pluginInputs: { topic: 'routing observables' } }); } return; }
-    case 'skill-clear': case 'skill-route': { await openMention(page); const tab = page.getByRole('tab', { name: /Skills/i }); await tab.click(); const option = page.getByRole('option', { name: /QA Skill/i }); await option.click(); const chip = page.getByTestId('home-hero-active-skill'); await visible(chip, id); if (kind === 'skill-clear') { await chip.getByRole('button').click(); await expect(chip).toHaveCount(0); } else { await replaceComposerText(page, 'skill routed creation'); const payload = await captureCreation(page); expect(payload).toMatchObject({ skillId: 'qa-skill', pendingPrompt: 'skill routed creation' }); expect(payload).not.toHaveProperty('pluginId'); } return; }
-    case 'context-clear': { await openMention(page, '@local'); const option = page.getByRole('option', { name: /Localized Plugin/i }); await option.hover(); const details = page.getByTestId('home-hero-plugin-hover-card').getByRole('button'); await visible(details, id); await details.click(); await page.getByTestId('plugin-details-use-localized-plugin').click(); const chip = page.getByTestId('home-hero-active-plugin'); await visible(chip, id); const clear = chip.getByRole('button', { name: /Clear active plugin/i }); await visible(clear, id); await clear.click(); await expect(chip).toHaveCount(0); return; }
+    case 'skill-clear': case 'skill-route': { await openMention(page); const tab = page.getByRole('tab', { name: /Skills/i }); await tab.click(); const option = page.getByRole('option', { name: /QA Skill/i }); await option.click(); await page.getByTestId('mention-preview-use').click(); const chip = page.getByTestId('home-hero-active-skill'); await visible(chip, id); if (kind === 'skill-clear') { await chip.getByRole('button').click(); await expect(chip).toHaveCount(0); } else { const input = composer(page); await input.focus(); await input.press('Control+End'); await page.keyboard.insertText(' skill routed creation'); const prompt = (await input.innerText()).replace(/\u00a0/g, ' ').trim(); await expect(input.locator('[data-mention-kind="skill"]')).toHaveCount(1); const payload = await captureCreation(page); expect(payload).toMatchObject({ skillId: 'qa-skill', pendingPrompt: prompt }); expect(payload).not.toHaveProperty('pluginId'); } return; }
+    case 'context-clear': { await openMention(page, '@local'); const option = page.getByRole('option', { name: /Localized Plugin/i }); await option.hover(); const details = page.getByTestId('mention-preview-detail').getByRole('button', { name: /Details|자세히 보기/i }); await visible(details, id); await details.click(); await page.getByTestId('plugin-details-use-localized-plugin').click(); const chip = page.getByTestId('home-hero-active-plugin'); await visible(chip, id); const clear = chip.getByRole('button', { name: /Clear active plugin/i }); await visible(clear, id); await clear.click(); await expect(chip).toHaveCount(0); return; }
     // Session mode is a creation-time choice, so it lives in the New Session
     // flow rather than the Hub composer footer. The capability being pinned is
     // unchanged: picking Ask must reach POST /api/projects as chat mode.
@@ -645,7 +651,7 @@ async function operate(page: Page, kind: AssertionKind, control: Control) {
     case 'attachment-only': await stageFile(page); { const submit = page.getByTestId('home-hero-submit'); await expect(submit).toBeEnabled(); const req = page.waitForRequest(r => r.method() === 'POST' && new URL(r.url()).pathname === '/api/projects'); await submit.click(); await req; } return;
     case 'plugin-validation': { await chooseType(page, 'prototype'); const preset = page.locator('[data-testid="home-hero-plugin-preset"][data-plugin-id="required-input-plugin"]'); await visible(preset, id); await preset.click(); const replacement = page.getByRole('dialog', { name: /Replace current prompt/i }); if (await replacement.isVisible()) await replacement.getByRole('button', { name: /Replace/i }).click(); const brief = page.getByTestId('home-hero-footer-option-brief'); await visible(brief, id); await expect(brief).toHaveValue(''); const posts: string[] = []; page.on('request', request => { if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/projects') posts.push(request.url()); }); await composer(page).press('Control+Enter'); const alert = page.getByTestId('home-hero-error'); await visible(alert, id); await expect(alert).toContainText('Audience brief'); await expect(page.getByTestId('home-hero-submit')).toBeDisabled(); expect(posts).toEqual([]); return; }
     case 'dynamic-input': { await activatePlugin(page, 'localized-plugin', /Localized Plugin/i, id); const input = page.getByTestId('home-hero-footer-option-topic'); await visible(input, id); await expect(input).toBeEnabled(); await input.fill('routing observables'); await expect(input).toHaveValue('routing observables'); const applyRequest = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/api/plugins/localized-plugin/apply'); const creationRequest = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/api/projects'); await page.getByTestId('home-hero-submit').click(); expect((await applyRequest).postDataJSON()).toMatchObject({ inputs: { topic: 'routing observables' } }); expect((await creationRequest).postDataJSON()).toMatchObject({ pluginId: 'localized-plugin', pluginInputs: { topic: 'routing observables' } }); return; }
-    case 'rich-mention': await openMention(page, '@local'); await page.getByRole('option', { name: /Localized Plugin/i }).click(); { const input = page.getByTestId('home-hero-input'); await expect(input).toHaveText(/Localized Plugin/); await input.press('Backspace'); await expect(input).not.toHaveText(/Localized Plugin/); } return;
+    case 'rich-mention': await openMention(page, '@local'); await page.getByRole('option', { name: /Localized Plugin/i }).click(); await page.getByTestId('mention-preview-use').click(); { const input = page.getByTestId('home-hero-input'); await expect(input).toHaveText(/Localized Plugin/); await input.press('Backspace'); await expect(input).not.toHaveText(/Localized Plugin/); } return;
     case 'visible-error': { await page.route('**/api/plugins/localized-plugin/apply', async route => route.fulfill({ status: 500, json: { error: 'forced reachability failure' } })); await chooseType(page, 'prototype'); const presets = page.getByTestId('home-hero-plugin-presets'); await visible(presets, id); await presets.locator('[data-testid="home-hero-plugin-preset"]').first().click(); await visible(page.getByRole('alert'), id); return; }
     case 'rail-toggle': { const rail = page.locator('[data-project-rail]'); const toggle = page.locator('[data-project-rail-toggle]'); await visible(toggle, id); const before = await rail.getAttribute('data-project-rail-state'); await toggle.click(); await expect(rail).toHaveAttribute('data-project-rail-state', before === 'collapsed' ? 'expanded' : 'collapsed'); return; }
     case 'nav-projects': case 'nav-tasks': case 'nav-plugins': case 'nav-design-systems': case 'nav-integrations': { const suffix = kind.replace('nav-', ''); const routeSuffix = suffix === 'tasks' ? 'automations' : suffix; const library = page.getByTestId('hub-library'); await visible(library, id); await library.click(); const nav = page.getByTestId(`hub-library-${suffix}`); await visible(nav, id); await nav.click(); await expect(page).toHaveURL(new RegExp(`/${routeSuffix}$`)); return; }

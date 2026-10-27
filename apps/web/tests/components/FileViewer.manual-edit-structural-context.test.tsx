@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { emptyManualEditStyles, type ManualEditTarget } from '../../src/edit-mode/types';
 import * as movement from '../../src/edit-mode/movement-session';
 import type { ProjectFile } from '../../src/types';
+import { manualEditCanonicalSource, manualEditFrameEpoch } from './manual-edit-frame-messages';
 
 const controls = vi.hoisted(() => ({
   current: null as ComponentProps<typeof import('../../src/components/ManualEditShapeToolbar').ManualEditShapeToolbar> | null,
@@ -53,9 +54,9 @@ async function mount(source = html, deck = false) {
   await act(async () => {});
   await act(async () => { fireEvent.click(screen.getByTestId('manual-edit-mode-toggle')); });
   const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-  await act(async () => { fireEvent.load(frame); });
   const post = vi.spyOn(frame.contentWindow!, 'postMessage');
-  const send = (data: object) => window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, data }));
+  const documentEpoch = manualEditFrameEpoch(frame);
+  const send = (data: object) => window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, data: { documentEpoch, ...data } }));
   const select = async (next = target('parent')) => {
     await act(async () => { send({ type: 'readable-edit-select', target: next }); });
   };
@@ -99,8 +100,9 @@ describe('FileViewer structural edit context', () => {
     expect(candidates.mock.results.at(-1)!.value.candidates.map((item: { id: string }) => item.id)).toEqual(['leaf', 'child', 'parent']);
   });
 
-  it.each(['remove-element', 'set-inner-html'] as const)('captures host/frame/canvas scroll before %s refreeze', async (kind) => {
+  it.each(['remove-element', 'set-inner-html'] as const)('preserves host/frame/canvas scroll through an in-place %s edit', async (kind) => {
     const editor = await mount();
+    const before = editor.frame.srcdoc;
     const doc = editor.frame.contentWindow!.document;
     const scrolling = document.createElement('div');
     scrolling.scrollTo = vi.fn();
@@ -114,17 +116,16 @@ describe('FileViewer structural edit context', () => {
     canvas.scrollTop = 811;
     doc.body.appendChild(canvas);
     await editor.patch(kind);
-    const restoredPost = vi.spyOn(editor.frame.contentWindow!, 'postMessage');
-    editor.host.scrollLeft = editor.host.scrollTop = 0;
     editor.step();
     editor.step();
-    expect(editor.scrollTo).toHaveBeenCalledWith(31, 417);
-    expect(scrolling.scrollTo).toHaveBeenCalledWith(19, 613);
-    expect(canvas.scrollTo).toHaveBeenCalledWith(23, 811);
-    expect(restoredPost.mock.calls.map(([message]) => message)
-      .filter((message) => message.type === 'readable-studio:preview-scroll-restore')).toEqual([{
-      type: 'readable-studio:preview-scroll-restore', frameLeft: 19, frameTop: 613, canvasLeft: 23, canvasTop: 811,
-    }]);
+    expect(editor.frame.srcdoc).toBe(before);
+    expect([editor.host.scrollLeft, editor.host.scrollTop]).toEqual([31, 417]);
+    expect([scrolling.scrollLeft, scrolling.scrollTop]).toEqual([19, 613]);
+    expect([canvas.scrollLeft, canvas.scrollTop]).toEqual([23, 811]);
+    expect(editor.scrollTo).not.toHaveBeenCalled();
+    expect(scrolling.scrollTo).not.toHaveBeenCalled();
+    expect(canvas.scrollTo).not.toHaveBeenCalled();
+    expect(editor.post.mock.calls.some(([message]) => message.type === 'readable-studio:preview-scroll-restore')).toBe(false);
   });
 
   it('removes transitive descendants from snap targets and clears a removed hover before discovery', async () => {
@@ -135,7 +136,7 @@ describe('FileViewer structural edit context', () => {
     await editor.patch('remove-element');
     expect(screen.queryByTestId('manual-edit-hover-open')).toBeNull();
     expect(document.querySelector('[data-readable-edit-selected-surface]')).toBeNull();
-    const parsed = new DOMParser().parseFromString(editor.frame.srcdoc, 'text/html');
+    const parsed = new DOMParser().parseFromString(manualEditCanonicalSource(editor.frame), 'text/html');
     expect(parsed.querySelector('[data-readable-id="leaf"]')).toBeNull();
     await editor.select(target('parent-lookalike'));
     const interior = screen.getByLabelText('Move element').querySelector('[data-region="interior"]')!;
@@ -154,9 +155,10 @@ describe('FileViewer structural edit context', () => {
     await editor.patch('remove-element');
     const hover = screen.getByTestId('manual-edit-hover-open');
     await act(async () => { fireEvent.click(hover); });
-    expect(editor.post.mock.calls.map(([message]) => message)).toContainEqual({
+    expect(editor.post.mock.calls.map(([message]) => message)).toContainEqual(expect.objectContaining({
       type: 'readable-edit-select-target', id: 'parent-lookalike',
-    });
+      documentEpoch: expect.any(String), actionSeq: expect.any(Number),
+    }));
   });
 
   it('does not refreeze or restore scroll for a style patch', async () => {
@@ -205,7 +207,9 @@ describe('FileViewer structural edit context', () => {
   it.each(['remove-element', 'set-inner-html'] as const)('keeps non-first slide after %s', async (kind) => {
     const editor = await mount(html, true);
     await act(async () => { editor.send({ type: 'readable-studio:slide-state', active: 2, count: 4 }); });
+    const before = editor.frame.srcdoc;
     await editor.patch(kind);
-    expect(editor.frame.srcdoc).toMatch(/var initialSlideIndex = 2;/);
+    expect(editor.frame.srcdoc).toBe(before);
+    expect(screen.getByText('3 / 4')).toBeTruthy();
   });
 });

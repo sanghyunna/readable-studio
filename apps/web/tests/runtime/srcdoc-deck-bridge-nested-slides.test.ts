@@ -43,6 +43,9 @@ function setupDeckBridge(bodyHtml: string) {
     configurable: true,
     value: { postMessage: parentPostMessage },
   });
+  const identityGuard = srcdoc.match(/<script data-readable-standalone-deck-nav-dedupe>([\s\S]*?)<\/script>/)?.[1];
+  if (!identityGuard) throw new Error('deck listener identity guard missing');
+  win.eval(identityGuard);
   const evaluate = new win.Function(script);
   evaluate.call(win);
   // jsdom fires `load` during construction, before the bridge IIFE

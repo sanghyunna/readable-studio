@@ -7,6 +7,7 @@ import { renderPluginBlock, type InstalledPluginRecord, type PluginManifest } fr
 import { applyPlugin, pluginPromptBlock } from '../../src/plugins/apply.js';
 import { loadPluginLocalSkill } from '../../src/plugins/local-skill.js';
 import { composeSystemPrompt } from '../../src/prompts/system.js';
+import { DECK_FRAMEWORK_DIRECTIVE } from '../../src/prompts/deck-framework.js';
 import { markTemplateSeedHtml, renderTemplateReference } from '../../src/prompts/template-reference.js';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
@@ -85,6 +86,38 @@ describe('every shipped template is reference-only at daemon composition', () =>
 });
 
 describe('template boundary regressions', () => {
+  it('keeps selected functional skill instructions outside an existing project template boundary', () => {
+    const prompt = composeSystemPrompt({
+      templateReference: true,
+      skillBody: 'PROJECT_TEMPLATE_914',
+      additionalSkillBody: 'FUNCTIONAL_SELECTION_914',
+    });
+    expect(policyOf(prompt)).toEqual(POLICY);
+    expect(referenceOf(prompt, 'skill')).toEqual({ body: 'PROJECT_TEMPLATE_914' });
+    const outside = prompt.replace(/<readable-template-reference[^>]*>.*?<\/readable-template-reference>/gs, '');
+    expect(outside).toContain('FUNCTIONAL_SELECTION_914');
+    expect(outside).not.toContain('PROJECT_TEMPLATE_914');
+  });
+
+  it('isolates per-run templates while preserving functional skill and plugin instructions', () => {
+    const template = { name: 'Selected deck', body: 'TEMPLATE_SAMPLE_914 assets/template.html' };
+    const prompt = composeSystemPrompt({
+      skillBody: 'FUNCTIONAL_SKILL_914', skillMode: 'deck',
+      pluginBlock: 'FUNCTIONAL_PLUGIN_914', activeStageBlocks: ['FUNCTIONAL_STAGE_914'],
+      templateReferences: [template],
+    });
+    expect(policyOf(prompt)).toEqual(POLICY);
+    expect(referenceOf(prompt, 'selected-template')).toEqual(template);
+    const outside = prompt.replace(/<readable-template-reference[^>]*>.*?<\/readable-template-reference>/gs, '');
+    expect(outside).not.toContain('TEMPLATE_SAMPLE_914');
+    expect(outside).toContain("Follow this skill's workflow exactly");
+    expect(outside).toContain('FUNCTIONAL_SKILL_914');
+    expect(outside).toContain('FUNCTIONAL_PLUGIN_914');
+    expect(outside).toContain('FUNCTIONAL_STAGE_914');
+    expect(prompt).toContain('<readable-template-content-gate>');
+    expect(prompt).not.toContain(DECK_FRAMEWORK_DIRECTIVE);
+  });
+
   it('restores the f7459dd contract on the active Acreage path, not only additive @ context', async () => {
     const file = manifests.find((entry) => path.basename(path.dirname(entry)) === 'acreage-farming')!;
     const plugin = record(file);

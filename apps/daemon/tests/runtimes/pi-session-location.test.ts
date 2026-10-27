@@ -28,7 +28,8 @@ test('local Pi capture uses the CLI default encoded-cwd session directory, not c
     child.stdin.read();
     await writeFile(sessionFile, `${JSON.stringify({ type: 'session', version: 3, cwd, id: 'local-pi' })}\n`);
     child.stdout.write(`${JSON.stringify({ type: 'agent_end' })}\n${JSON.stringify({ type: 'agent_settled' })}\n`);
-    const command = JSON.parse(String(child.stdin.read()).trim());
+    const command = String(child.stdin.read()).trim().split('\n').map(line => JSON.parse(line))
+      .find(command => command.type === 'get_state');
     assert.equal(command.type, 'get_state');
     const settled = session.waitForQuiescence();
     child.stdout.write(`${JSON.stringify({ type: 'response', command: 'get_state', id: command.id, success: true, data: { sessionFile } })}\n`);

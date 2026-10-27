@@ -61,13 +61,15 @@ export function resizeDragSize(args: {
   deltaY: number;
   scale: number;
   lockAspect: boolean;
-}): { width: number; height: number } {
+  fromCenter?: boolean;
+}): { width: number; height: number; fromCenter?: boolean } {
   const { direction, startWidth, startHeight, deltaX, deltaY, lockAspect } = args;
   const scale = args.scale > 0 ? args.scale : 1;
   const sign = DELTA_SIGN[direction];
 
-  const scaledDeltaX = (deltaX / scale) * sign.x;
-  const scaledDeltaY = (deltaY / scale) * sign.y;
+  const multiplier = args.fromCenter ? 2 : 1;
+  const scaledDeltaX = (deltaX / scale) * sign.x * multiplier;
+  const scaledDeltaY = (deltaY / scale) * sign.y * multiplier;
 
   let width = startWidth + scaledDeltaX;
   let height = startHeight + scaledDeltaY;
@@ -79,12 +81,14 @@ export function resizeDragSize(args: {
     } else {
       width = height * ratio;
     }
+    width = Math.max(MIN_SIZE, MIN_SIZE * ratio, width);
+    height = width / ratio;
   }
 
   width = Math.max(MIN_SIZE, Math.round(width));
   height = Math.max(MIN_SIZE, Math.round(height));
 
-  return { width, height };
+  return { width, height, ...(args.fromCenter ? { fromCenter: true } : {}) };
 }
 
 const PX_VALUE = /^(-?\d+(?:\.\d+)?)px$/;
@@ -152,8 +156,9 @@ export function resizeCssCommitStyles(args: {
   baseMargins?: { marginLeft?: string; marginRight?: string; marginTop?: string; marginBottom?: string };
   rectScale?: { x: number; y: number };
   flexItemAxis?: 'row' | 'column' | null;
+  fromCenter?: boolean;
 }): Partial<ManualEditStyles> {
-  const { direction, size, startSize, baseStyles, computedSize, baseMargins, rectScale, flexItemAxis } = args;
+  const { direction, size, startSize, baseStyles, computedSize, baseMargins, rectScale, flexItemAxis, fromCenter } = args;
   const styles: Partial<ManualEditStyles> = {};
   if (DELTA_SIGN[direction].x !== 0) {
     styles.width = cssAxisPx(size.width, startSize.width, baseStyles?.width, computedSize?.width, rectScale?.x);
@@ -168,7 +173,7 @@ export function resizeCssCommitStyles(args: {
   // opposite edge stays fixed. When the opposite margin carries a nonzero
   // (auto-centering) used value, pin it too — otherwise the still-auto side
   // absorbs all the slack and the box jumps.
-  if (baseMargins && styles.width !== undefined && DELTA_SIGN[direction].x < 0) {
+  if (!fromCenter && baseMargins && styles.width !== undefined && DELTA_SIGN[direction].x < 0) {
     const marginLeft = marginBasePx(baseMargins.marginLeft);
     if (marginLeft !== undefined) {
       const deltaCss = (size.width - startSize.width) / rectScaleAxis(rectScale?.x);
@@ -177,7 +182,7 @@ export function resizeCssCommitStyles(args: {
       if (marginRight) styles.marginRight = `${Math.round(marginRight)}px`;
     }
   }
-  if (baseMargins && styles.height !== undefined && DELTA_SIGN[direction].y < 0) {
+  if (!fromCenter && baseMargins && styles.height !== undefined && DELTA_SIGN[direction].y < 0) {
     const marginTop = marginBasePx(baseMargins.marginTop);
     if (marginTop !== undefined) {
       const deltaCss = (size.height - startSize.height) / rectScaleAxis(rectScale?.y);

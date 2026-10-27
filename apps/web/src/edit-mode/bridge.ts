@@ -1,6 +1,18 @@
+import { applyManualEditPreviewSource } from './preview-source-sync';
+import { createManualEditRichTextFormatter, MANUAL_EDIT_RICH_TEXT_FORMAT_CSS } from './rich-text-formatting';
+
 export const MANUAL_EDIT_DISCOVERY_SELECTOR = 'main, nav, section, article, header, footer, div, h1, h2, h3, h4, h5, h6, p, li, label, a, button, img, strong, span, small, em, b, i, u, s, mark, code, pre, time, abbr, cite, q, sub, sup, kbd, samp, var, dfn, ins, del, bdi, bdo, figcaption, caption, th, td, dt, dd, summary, output';
 export const MANUAL_EDIT_SEMANTIC_TARGET_SELECTOR = 'svg';
 export const MANUAL_EDIT_TARGET_SELECTOR = `${MANUAL_EDIT_DISCOVERY_SELECTOR}, ${MANUAL_EDIT_SEMANTIC_TARGET_SELECTOR}`;
+export const MANUAL_EDIT_AUTO_ID_SELECTOR = [
+  'section', 'article', 'header', 'footer', 'nav', 'main', 'aside',
+  'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'button', 'a', '[id]',
+  'body > div[class]', 'body > div[id]', 'section > div[class]', 'section > div[id]',
+  'article > div[class]', 'article > div[id]', 'main > div[class]', 'main > div[id]',
+  'header > div[class]', 'header > div[id]', 'footer > div[class]', 'footer > div[id]',
+  'nav > div[class]', 'nav > div[id]', 'aside > div[class]', 'aside > div[id]',
+  '[id] > div[class]', '[id] > div[id]',
+].join(', ');
 export const MANUAL_EDIT_SOURCE_PATH_ATTR = 'data-readable-source-path';
 export const MANUAL_EDIT_TRANSIENT_ATTR = 'data-readable-edit-transient';
 const MANUAL_EDIT_RUNTIME_HOVER_ATTR = 'data-readable-runtime-hovered';
@@ -37,7 +49,7 @@ export function manualEditStableIdForElement(el: Element): string {
   const explicit = el.getAttribute('data-readable-id');
   if (explicit) return explicit;
   const generated = el.getAttribute(MANUAL_EDIT_SOURCE_PATH_ATTR) || el.getAttribute('data-readable-runtime-id') || manualEditDomPathForElement(el);
-  if (generated) el.setAttribute('data-readable-runtime-id', generated);
+  if (generated && el.getAttribute('data-readable-runtime-id') !== generated) el.setAttribute('data-readable-runtime-id', generated);
   return generated || 'unknown';
 }
 
@@ -98,15 +110,22 @@ export function buildManualEditBridge(enabled: boolean): string {
   var layoutSuspended = false;
   var discoverySelector = ${JSON.stringify(MANUAL_EDIT_DISCOVERY_SELECTOR)};
   var targetSelector = ${JSON.stringify(MANUAL_EDIT_TARGET_SELECTOR)};
+  var autoIdSelector = ${JSON.stringify(MANUAL_EDIT_AUTO_ID_SELECTOR)};
   var hostNodeSelector = ${JSON.stringify(MANUAL_EDIT_HOST_NODE_SELECTOR)};
   var sourcePathAttr = ${JSON.stringify(MANUAL_EDIT_SOURCE_PATH_ATTR)};
   var transientAttr = ${JSON.stringify(MANUAL_EDIT_TRANSIENT_ATTR)};
   var runtimeHoverAttr = ${JSON.stringify(MANUAL_EDIT_RUNTIME_HOVER_ATTR)};
   var textPassageSelector = ${JSON.stringify(MANUAL_EDIT_TEXT_PASSAGE_SELECTOR)};
   var styleProps = ['fontFamily','fontSize','fontWeight','color','textAlign','lineHeight','letterSpacing','width','height','minHeight','translate','gap','flexDirection','justifyContent','alignItems','flex','backgroundColor','opacity','padding','paddingTop','paddingRight','paddingBottom','paddingLeft','margin','marginTop','marginRight','marginBottom','marginLeft','border','borderTopWidth','borderRightWidth','borderBottomWidth','borderLeftWidth','borderStyle','borderColor','borderRadius'];
+  var unmeasuredStyles = {};
+  for (var styleIndex = 0; styleIndex < styleProps.length; styleIndex++) unmeasuredStyles[styleProps[styleIndex]] = '';
+  Object.freeze(unmeasuredStyles);
   var authoredSizeProbeSeq = 0;
   var documentEpoch = null;
   var bridgeSequence = 0;
+  var applyPreviewSource = ${applyManualEditPreviewSource.toString()};
+  var createRichTextFormatter = ${createManualEditRichTextFormatter.toString()};
+  var richTextFormatCss = ${JSON.stringify(MANUAL_EDIT_RICH_TEXT_FORMAT_CSS)};
   var duplicateTransaction = null;
   var resizeTransaction = null;
   var resizeClosedSequence = 0;
@@ -141,7 +160,7 @@ export function buildManualEditBridge(enabled: boolean): string {
     var explicit = el.getAttribute('data-readable-id');
     if (explicit) return explicit;
     var generated = el.getAttribute(sourcePathAttr) || el.getAttribute('data-readable-runtime-id') || domPath(el);
-    if (generated) el.setAttribute('data-readable-runtime-id', generated);
+    if (generated && el.getAttribute('data-readable-runtime-id') !== generated) el.setAttribute('data-readable-runtime-id', generated);
     return generated || 'unknown';
   }
   function isCanonicalDeckScaffold(el){
@@ -440,10 +459,23 @@ export function buildManualEditBridge(enabled: boolean): string {
     try {
       el.setAttribute(markerName, markerValue);
       var css = ':where([' + markerName + '=\"' + markerValue + '\"]){' + probeName + ':0;}';
+      var unrelatedTextFormatSheets = [];
+      if (!el.matches('[data-readable-text-format], [data-readable-text-underline="off"]')) {
+        var textFormatStyles = document.querySelectorAll('style[data-readable-text-format-style="1"]');
+        for (var textStyleIndex = 0; textStyleIndex < textFormatStyles.length; textStyleIndex++) {
+          var textStyle = textFormatStyles[textStyleIndex];
+          // The exact owned rule only affects its marker-bearing text nodes.
+          // Other author layers, including all: resets, remain conservative.
+          if (textStyle.attributes.length === 1 && textStyle.textContent === richTextFormatCss && textStyle.sheet) {
+            unrelatedTextFormatSheets.push(textStyle.sheet);
+          }
+        }
+      }
       var sheets = Array.prototype.slice.call(document.styleSheets || []);
       for (var sheetIndex = 0; sheetIndex < sheets.length; sheetIndex++) {
         var sheet = sheets[sheetIndex];
         if (!sheet || sheet.disabled) continue;
+        if (unrelatedTextFormatSheets.indexOf(sheet) >= 0) continue;
         try {
           var sheetMedia = mediaTextFor(sheet.media);
           if (!sheetMedia && sheet.ownerNode && typeof sheet.ownerNode.media === 'string') {
@@ -562,6 +594,40 @@ export function buildManualEditBridge(enabled: boolean): string {
     var width = tracks.slice(start - 1, end - 1).reduce(function(a, b){ return a + b; }, 0) + gap * (end - start - 1);
     return { x: content.x + preceding * scale, width: width * scale };
   }
+  function positionedResizeAreaFor(el){
+    var fixed = window.getComputedStyle(el).position === 'fixed';
+    var block = el.offsetParent;
+    function establishesFixedBlock(c){
+      return (c.transform && c.transform !== 'none') || (c.perspective && c.perspective !== 'none')
+        || (c.filter && c.filter !== 'none') || (c.backdropFilter && c.backdropFilter !== 'none')
+        || /layout|paint|strict|content/.test(c.contain || '')
+        || /transform|perspective|filter|contain/.test(c.willChange || '') || c.contentVisibility === 'auto';
+    }
+    if (fixed) {
+      for (var ancestor = el.parentElement; ancestor; ancestor = ancestor.parentElement) {
+        if (establishesFixedBlock(window.getComputedStyle(ancestor))) return null;
+      }
+      block = null;
+    } else {
+      if (!block) return null;
+      if (block === document.body) {
+        var bodyStyle = window.getComputedStyle(block);
+        if ((!bodyStyle.position || bodyStyle.position === 'static') && !establishesFixedBlock(bodyStyle)) block = null;
+      }
+    }
+    if (!block) {
+      var width = document.documentElement.clientWidth || window.innerWidth;
+      var height = document.documentElement.clientHeight || window.innerHeight;
+      return { cssWidth: width, x: fixed ? 0 : -window.scrollX, y: fixed ? 0 : -window.scrollY, width: width, height: height };
+    }
+    var b = boxFor(block), c = b.computed;
+    if (!b.reliableX || !isFinite(b.x) || b.x <= 0 || /inline|contents|grid/.test(c.display)) return null;
+    var bl = edge(c, 'border-left-width'), bt = edge(c, 'border-top-width');
+    var width = block.clientWidth || b.borderWidth - bl - edge(c, 'border-right-width');
+    var height = block.clientHeight || b.borderHeight - bt - edge(c, 'border-bottom-width');
+    return { cssWidth: width, x: b.rect.x + (bl - block.scrollLeft) * b.x,
+      y: b.rect.y + (bt - block.scrollTop) * b.y, width: width * b.x, height: Math.max(0, height) * b.y };
+  }
   function unsupportedGeometryFor(el){
     if (!el.isConnected || el.namespaceURI !== 'http://www.w3.org/1999/xhtml') return 'disconnected-or-non-html';
     if (el.getClientRects().length > 1) return 'fragmented';
@@ -580,6 +646,54 @@ export function buildManualEditBridge(enabled: boolean): string {
     }
     var position = window.getComputedStyle(el).position;
     return position === 'absolute' || position === 'fixed' ? 'containing-block' : '';
+  }
+  function centerResizeStyles(el, request){
+    if (!resizeTransaction || !request || !request.requested || !request.requested.fromCenter
+      || request.stage === 'begin' || request.stage === 'cancel') return null;
+    var horizontal = Array.isArray(request.axes) && request.axes.indexOf('width') >= 0;
+    var unsupported = unsupportedGeometryFor(el);
+    if (unsupported && unsupported !== 'containing-block') {
+      if (horizontal) return null;
+      throw new Error('Unsupported centered resize geometry');
+    }
+    var box = boxFor(el), before = resizeTransaction.rect, current = box.rect;
+    if (!box.reliableX || !box.reliableY || !isFinite(box.x) || !isFinite(box.y)
+      || box.x <= 0 || box.y <= 0) {
+      if (horizontal && !box.reliableX) return null;
+      throw new Error('Unmeasurable centered resize');
+    }
+    var dx = before.x + before.width / 2 - current.x - current.width / 2;
+    var dy = before.y + before.height / 2 - current.y - current.height / 2;
+    if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) return null;
+    var tokens = (box.computed.translate || 'none').trim().split(/\\s+/);
+    var x = tokens[0] === 'none' ? 0 : px(tokens[0]);
+    var y = tokens.length < 2 ? 0 : px(tokens[1]);
+    if (tokens.length > 2 || x === null || y === null || el.style.getPropertyPriority('translate')) {
+      throw new Error('Unsupported centered resize translate');
+    }
+    var translationScale = resizeTransaction.translationScale;
+    if (!translationScale) {
+      var inline = el.getAttribute('style'), probeX, probeY;
+      try {
+        el.style.setProperty('translate', (x + 1) + 'px ' + y + 'px');
+        probeX = el.getBoundingClientRect().x - current.x;
+        el.style.setProperty('translate', x + 'px ' + (y + 1) + 'px');
+        probeY = el.getBoundingClientRect().y - current.y;
+      } finally { restoreInline(el, inline); }
+      if (!isFinite(probeX) || !isFinite(probeY) || probeX <= 0 || probeY <= 0) {
+        throw new Error('Unmeasurable centered resize translate');
+      }
+      translationScale = resizeTransaction.translationScale = { x: probeX, y: probeY };
+    }
+    var value = Number((x + dx / translationScale.x).toFixed(3)) + 'px '
+      + Number((y + dy / translationScale.y).toFixed(3)) + 'px';
+    el.style.setProperty('translate', value);
+    var actual = el.getBoundingClientRect();
+    if (Math.abs(actual.x + actual.width / 2 - before.x - before.width / 2) > Math.max(1, box.x)
+      || Math.abs(actual.y + actual.height / 2 - before.y - before.height / 2) > Math.max(1, box.y)) {
+      throw new Error('Centered resize anchor did not apply');
+    }
+    return { translate: value };
   }
   function restoreInline(el, inline){
     if (inline === null) el.removeAttribute('style');
@@ -617,6 +731,17 @@ export function buildManualEditBridge(enabled: boolean): string {
     var constraints = [], causes = [], failures = [];
     var parent = layoutParentFor(el), area = contentAreaFor(parent);
     var unsupported = unsupportedGeometryFor(el);
+    if (unsupported === 'containing-block') {
+      area = positionedResizeAreaFor(el);
+      if (area && !request.sizeMode && !el.hasAttribute('data-readable-width-release') && request.axes.length
+        && request.axes.every(function(axis){
+          var scale = axis === 'width' ? box.x : box.y;
+          var reliable = axis === 'width' ? box.reliableX : box.reliableY;
+          var requested = Number(request.requested[axis]), actual = Number(applied[axis]);
+          return reliable && px(el.style.getPropertyValue(axis)) !== null && isFinite(requested)
+            && isFinite(actual) && Math.abs(requested - actual) <= scale;
+        })) unsupported = '';
+    }
     var detailed = request.includeDetails === true || !!request.transactionId;
     function add(code, axis, confidence, declaration, facts){
       var cause = { code: code, axis: axis, confidence: confidence, facts: facts || {} };
@@ -791,7 +916,7 @@ export function buildManualEditBridge(enabled: boolean): string {
     }
     return ids;
   }
-  function targetFrom(el, includeOuterHtml, includeAuthoredSize){
+  function targetFrom(el, includeOuterHtml, includeAuthoredSize, measureStyles){
     var rect = el.getBoundingClientRect();
     var kind = inferKind(el);
     var id = stableId(el);
@@ -824,12 +949,13 @@ export function buildManualEditBridge(enabled: boolean): string {
       textEditTargetId: textEditTarget ? stableId(textEditTarget) : undefined,
       fields: fields,
       attributes: attrsFor(el),
-      styles: stylesFor(el),
+      styles: measureStyles === false ? unmeasuredStyles : stylesFor(el),
       isLayoutContainer: isLayoutContainer(el),
       isHidden: hidden,
       isConnected: el.isConnected,
       outerHtml: includeOuterHtml ? (el.outerHTML || '').replace(/\\sdata-readable-runtime-id="[^"]*"/g, '').replace(/\\sdata-readable-runtime-hovered="[^"]*"/g, '').replace(/\\sdata-readable-source-path="[^"]*"/g, '').replace(/\\sdata-readable-edit-selected="[^"]*"/g, '') : ''
     };
+    if (measureStyles === false) target.stylesMeasured = false;
     // Only selected targets need cascade provenance and full inline declarations;
     // discovery and hover broadcasts intentionally skip this work.
     if (includeAuthoredSize) {
@@ -851,7 +977,7 @@ export function buildManualEditBridge(enabled: boolean): string {
       if (!isDiscoveryTarget(nodes[i])) continue;
       if (targetForInlineText(nodes[i]) !== nodes[i]) continue;
       if (!isHiddenTarget(nodes[i], rect) && (rect.width < 4 || rect.height < 4)) continue;
-      targets.push(targetFrom(nodes[i], false, false));
+      targets.push(targetFrom(nodes[i], false, false, stableId(nodes[i]) === hostSelectedTargetId));
     }
     return targets;
   }
@@ -891,10 +1017,12 @@ export function buildManualEditBridge(enabled: boolean): string {
     for (var i = 0; i < selected.length; i++) selected[i].removeAttribute('data-readable-edit-selected');
   }
   function setSelectedTarget(id){
-    clearSelectedTarget();
-    if (!id) return;
-    var el = findById(id);
-    if (el) el.setAttribute('data-readable-edit-selected', 'true');
+    var el = id ? findById(id) : null;
+    var selected = document.querySelectorAll('[data-readable-edit-selected]');
+    for (var i = 0; i < selected.length; i++) {
+      if (selected[i] !== el) selected[i].removeAttribute('data-readable-edit-selected');
+    }
+    if (el && el.getAttribute('data-readable-edit-selected') !== 'true') el.setAttribute('data-readable-edit-selected', 'true');
   }
   function ancestorTarget(el){
     if (isTransient(el)) return null;
@@ -998,6 +1126,7 @@ export function buildManualEditBridge(enabled: boolean): string {
   }
   function placeCaretFromClick(clickEvent, el){
     var range = caretRangeFromClick(clickEvent);
+    if (range && (!el.contains(range.startContainer) || !el.contains(range.endContainer))) range = null;
     if (!range) {
       range = document.createRange();
       range.selectNodeContents(el);
@@ -1009,6 +1138,38 @@ export function buildManualEditBridge(enabled: boolean): string {
       sel.removeAllRanges();
       sel.addRange(range);
     } catch (e) {}
+  }
+  function textPoint(event){
+    return event && Number.isFinite(event.clientX) && Number.isFinite(event.clientY)
+      ? { clientX: event.clientX, clientY: event.clientY } : null;
+  }
+  function hitsText(el, point){
+    if (!point) return false;
+    try {
+      var caret = caretRangeFromClick(point);
+      if (!caret || caret.startContainer.nodeType !== 3 || !el.contains(caret.startContainer)) return false;
+      var text = document.createRange();
+      text.selectNodeContents(caret.startContainer);
+      return Array.prototype.some.call(text.getClientRects(), function(rect){
+        return point.clientX >= rect.left && point.clientX <= rect.right && point.clientY >= rect.top && point.clientY <= rect.bottom;
+      });
+    } catch (e) { return false; }
+  }
+  function selectWordFromPoint(el, point){
+    placeCaretFromClick(point, el);
+    var selection = window.getSelection();
+    if (!selection || !selection.rangeCount || typeof selection.modify !== 'function') return;
+    var caret = selection.getRangeAt(0).cloneRange();
+    selection.modify('extend', 'backward', 'character');
+    var previous = selection.rangeCount ? selection.getRangeAt(0).cloneRange() : null;
+    var insidePrevious = previous && Array.prototype.some.call(previous.getClientRects(), function(rect){
+      return point.clientX >= rect.left && point.clientX <= rect.right && point.clientY >= rect.top && point.clientY <= rect.bottom;
+    });
+    restoreSelectionRange(caret);
+    if (insidePrevious && el.contains(previous.startContainer)) selection.collapse(previous.startContainer, previous.startOffset);
+    selection.modify('move', 'forward', 'word');
+    selection.modify('extend', 'backward', 'word');
+    if (!selectedRangeWithin(el)) restoreSelectionRange(caret);
   }
   // execCommand is deprecated, but it is the only formatting path integrated
   // with the browser's native undo manager: raw Range/DOM surgery on a live
@@ -1042,9 +1203,12 @@ export function buildManualEditBridge(enabled: boolean): string {
     return (el && el.getAttribute('contenteditable') === 'true') ? el : null;
   }
   var lastSelectionState = null;
+  var activeTextEditEpoch = null;
+  var activeRichTextFormatter = null;
   function postSelectionState(){
     if (!enabled) return;
     var el = document.querySelector('[data-readable-editing="true"]');
+    if (el && activeTextEditEpoch !== documentEpoch) return;
     var range = el ? currentSelectedRange() : null;
     var within = !!(range && el.contains(range.startContainer) && el.contains(range.endContainer));
     function q(cmd){ try { return !!document.queryCommandState(cmd); } catch (e) { return false; } }
@@ -1052,16 +1216,19 @@ export function buildManualEditBridge(enabled: boolean): string {
       bold: !!el && q('bold'), italic: !!el && q('italic'), underline: !!el && q('underline') };
     if (lastSelectionState && state.editing === lastSelectionState.editing
       && state.hasSelection === lastSelectionState.hasSelection && state.bold === lastSelectionState.bold
-      && state.italic === lastSelectionState.italic && state.underline === lastSelectionState.underline) return;
+      && state.italic === lastSelectionState.italic && state.underline === lastSelectionState.underline
+      && (lastSelectionState.documentEpoch || null) === documentEpoch) return;
     lastSelectionState = state;
-    window.parent.postMessage(state, '*');
+    postManualMessage(state);
   }
   function applyRichFormat(command){
     if (command !== 'bold' && command !== 'italic' && command !== 'underline') return;
     var el = richEditingEl();
     if (!el) return;
     try { el.focus(); } catch (e) {}
-    try { document.execCommand(command); } catch (e) {}
+    if (!activeRichTextFormatter || !activeRichTextFormatter.format(command)) {
+      try { document.execCommand(command); } catch (e) {}
+    }
     postSelectionState();
   }
   var activeTextEditFinish = null;
@@ -1080,33 +1247,41 @@ export function buildManualEditBridge(enabled: boolean): string {
     setHoveredTarget(null);
     var originalText = el.textContent || '';
     var originalHtml = el.innerHTML;
+    var textEditEpoch = documentEpoch;
+    activeTextEditEpoch = textEditEpoch;
     var selectedRange = selectedRangeWithin(el);
     clearSelectedTarget();
     resetClickCycle();
     el.setAttribute('contenteditable', rich ? 'true' : 'plaintext-only');
     el.setAttribute('data-readable-editing', 'true');
-    // Chromium's execCommand defaults to inline style spans; turning this off
-    // once per session makes B/I/U emit <b>/<i>/<u> tags instead.
-    if (rich) { try { document.execCommand('styleWithCSS', false, 'false'); } catch (e) {} }
+    if (rich) activeRichTextFormatter = createRichTextFormatter(document, el, richTextFormatCss);
+    // Inline formatting avoids template b/i selectors changing new text's size or weight.
+    if (rich) { try { document.execCommand('styleWithCSS', false, 'true'); } catch (e) {} }
     try { el.focus(); } catch (e) {}
-    if (!restoreSelectionRange(selectedRange)) placeCaretFromClick(clickEvent, el);
+    if (clickEvent) placeCaretFromClick(clickEvent, el);
+    else if (!restoreSelectionRange(selectedRange)) placeCaretFromClick(clickEvent, el);
     if (rich) postSelectionState();
     function finish(commit){
       activeTextEditFinish = null;
+      activeTextEditEpoch = null;
       queuePostTargets();
       // Removing contenteditable can synchronously blur in Chromium. Detach
       // first so a keyboard commit cannot re-enter finish and duplicate history.
       el.removeEventListener('blur', onBlur);
       el.removeEventListener('keydown', onKey);
+      el.removeEventListener('beforeinput', onBeforeInput);
+      if (activeRichTextFormatter) activeRichTextFormatter.dispose();
+      activeRichTextFormatter = null;
       el.removeAttribute('contenteditable');
       el.removeAttribute('data-readable-editing');
       setSelectedTarget(hostSelectedTargetId);
-      postSelectionState();
+      if (textEditEpoch === documentEpoch) postSelectionState();
       if (!commit) {
         if (rich) el.innerHTML = originalHtml;
         else el.textContent = originalText;
         return;
       }
+      if (textEditEpoch !== documentEpoch) return;
       // Rich edits that introduced (or kept) inline markup commit the full inner
       // HTML so nested formatting and sibling markup survive; pure-text edits stay
       // on the lighter text-commit path the source patcher escapes safely.
@@ -1118,39 +1293,45 @@ export function buildManualEditBridge(enabled: boolean): string {
         setHoveredTarget(null);
         var html = el.innerHTML;
         if (html !== originalHtml) {
-          window.parent.postMessage({
+          postManualMessage({
             type: 'readable-edit-html-commit',
             id: stableId(el),
             html: html
-          }, '*');
+          });
         }
         return;
       }
       var value = (el.textContent || '').trim();
       if (value !== originalText.trim()) {
-        window.parent.postMessage({
+        postManualMessage({
           type: 'readable-edit-text-commit',
           id: stableId(el),
           value: value
-        }, '*');
+        });
       }
     }
     function onBlur(){ finish(true); }
+    function onBeforeInput(ev){
+      var tag = el.tagName.toLowerCase();
+      if (!rich || ev.isComposing || ev.inputType !== 'insertParagraph'
+        || !(tag === 'p' || inlineTextWrapperTags[tag] || /^h[1-6]$/.test(tag))) return;
+      // A block paragraph inside phrasing content is reparented on canonical reload.
+      ev.preventDefault();
+      try { document.execCommand('insertLineBreak'); } catch (e) {}
+    }
     function onKey(ev){
+      if (ev.isComposing || ev.keyCode === 229) return;
       if (rich && (ev.ctrlKey || ev.metaKey) && !ev.altKey) {
         var formatCommand = richFormatCommands[(ev.key || '').toLowerCase()];
         if (formatCommand) {
           ev.preventDefault();
-          try { document.execCommand(formatCommand); } catch (e) {}
-          postSelectionState();
+          applyRichFormat(formatCommand);
           return;
         }
       }
-      if (ev.key === 'Enter' && !ev.shiftKey) {
-        ev.preventDefault();
+      if (ev.key === 'Enter') {
         ev.stopPropagation();
-        finish(true);
-        try { el.blur(); } catch (e) {}
+        return;
       }
       if (ev.key === 'Escape') {
         ev.preventDefault();
@@ -1162,6 +1343,7 @@ export function buildManualEditBridge(enabled: boolean): string {
     activeTextEditFinish = finish;
     el.addEventListener('blur', onBlur);
     el.addEventListener('keydown', onKey);
+    el.addEventListener('beforeinput', onBeforeInput);
   }
   function camelToKebab(name){ return String(name).replace(/[A-Z]/g, function(m){ return '-' + m.toLowerCase(); }); }
   function cssEscapeId(value){ if (typeof CSS !== 'undefined' && CSS.escape) return CSS.escape(value); return String(value).replace(/"/g, '\\\\"'); }
@@ -1231,6 +1413,7 @@ export function buildManualEditBridge(enabled: boolean): string {
       // Post-apply measurement: the host renders resize handles from the
       // element's REAL box (flex/grid/min-content can clamp or ignore the
       // requested size), so every ack feeds the applied geometry back.
+      var centerStyles = centerResizeStyles(el, resizeRequest);
       var applied = el.getBoundingClientRect();
       if (resizeRequest && resizeRequest.sizeMode && el.hasAttribute('data-readable-width-release')) {
         resizeRequest = Object.assign({}, resizeRequest, { requested: { width: applied.width, height: resizeRequest.requested.height } });
@@ -1243,6 +1426,7 @@ export function buildManualEditBridge(enabled: boolean): string {
         rect: { x: applied.x, y: applied.y, width: applied.width, height: applied.height },
         cssSize: cssSizeFor(el)
       };
+      if (centerStyles) appliedMessage.centerStyles = centerStyles;
       if (includeAuthoredSize) appliedMessage.authoredSize = authoredSizeFor(el);
       var resize = resizeOutcomeFor(el, applied, resizeRequest);
       if (resize && resizeTransaction && resizeRequest.axes.indexOf('width') >= 0
@@ -1261,6 +1445,12 @@ export function buildManualEditBridge(enabled: boolean): string {
           if (ownCauses.some(function(c){ return c.code === 'own-inline-display'; })) declarations.push({ property: 'display', value: 'inline-block', priority: '' });
           if (ownCauses.some(function(c){ return c.code === 'own-width-cascade' && c.declaration.property === 'inline-size'; })) declarations.push({ property: 'inline-size', value: preferredValue, priority: '' });
           declarations.forEach(function(d){ el.style.setProperty(d.property, d.value); });
+          var releaseCenterStyles = centerResizeStyles(el, resizeRequest);
+          if (releaseCenterStyles) appliedMessage.centerStyles = releaseCenterStyles;
+          if (appliedMessage.centerStyles) {
+            declarations = declarations.filter(function(d){ return d.property !== 'translate'; });
+            declarations.push({ property: 'translate', value: appliedMessage.centerStyles.translate, priority: '' });
+          }
           var candidateRect = el.getBoundingClientRect();
           var accepted = resizeOutcomeFor(el, candidateRect, resizeRequest);
           if (accepted.decision === 'ordinary' && Math.abs(candidateRect.width - resizeRequest.requested.width) <= (resize.conversion.x || 1)) {
@@ -1307,6 +1497,7 @@ export function buildManualEditBridge(enabled: boolean): string {
       // height/margins; no structural or overflowing preview survives a frame.
       if (resize && resizeTransaction && resizeRequest.axes.indexOf('width') >= 0
         && (resize.decision === 'parent-owned' || resize.decision === 'refused')) {
+        delete appliedMessage.centerStyles;
         restoreInline(el, resizeRequest.stage === 'preview' && resizeTransaction.lastSafeInline !== undefined
           ? resizeTransaction.lastSafeInline : resizeTransaction.inline);
         var restored = el.getBoundingClientRect();
@@ -1766,11 +1957,35 @@ export function buildManualEditBridge(enabled: boolean): string {
     }
   }
   var nativeObjectClick = null;
-  function requestTextEdit(el){
+  function requestTextEdit(el, options){
     if (!el) return false;
     var target = targetFrom(el, true, true);
     if (target.kind !== 'text' && target.kind !== 'link' && !target.textEditTargetId) return false;
-    window.parent.postMessage({ type: 'readable-edit-select', target: target, beginTextEdit: true }, '*');
+    var message = { type: 'readable-edit-select', target: target, beginTextEdit: true };
+    if (options && options.selectAll === true) message.selectAll = true;
+    if (options && textPoint(options.textEditPoint)) message.textEditPoint = textPoint(options.textEditPoint);
+    if (options && options.selectWord === true) message.selectWord = true;
+    window.parent.postMessage(message, '*');
+    return true;
+  }
+  function cycleSelectedTarget(backward){
+    var targets = allTargets().filter(function(target){
+      return !target.isHidden && target.rect.width >= 4 && target.rect.height >= 4
+        && target.rect.x < window.innerWidth && target.rect.y < window.innerHeight
+        && target.rect.x + target.rect.width > 0 && target.rect.y + target.rect.height > 0;
+    });
+    if (!targets.length) return false;
+    var current = targets.map(function(target){ return target.id; }).indexOf(hostSelectedTargetId);
+    var next = current < 0 ? (backward ? targets.length - 1 : 0)
+      : (current + (backward ? -1 : 1) + targets.length) % targets.length;
+    var el = findById(targets[next].id);
+    if (!el) return false;
+    clearDeferredOverlayClick();
+    resetClickCycle();
+    postHoverTarget(null);
+    hostSelectedTargetId = targets[next].id;
+    setSelectedTarget(hostSelectedTargetId);
+    postManualMessage({ type: 'readable-edit-select', target: targetFrom(el, true, true) });
     return true;
   }
   function activateClickTarget(el, event, cycled, selectionAware){
@@ -1778,6 +1993,11 @@ export function buildManualEditBridge(enabled: boolean): string {
     var id = stableId(el);
     setSelectedTarget(id);
     hostSelectedTargetId = id;
+    // A native drag already owns its text range. Overlay clicks cannot create
+    // that range and must keep their explicit point ahead of remembered text.
+    var editPoint = selectionAware && selectedRangeWithin(el) ? null : textPoint(event);
+    if (!event.altKey && hitsText(el, textPoint(event))
+      && requestTextEdit(el, { textEditPoint: editPoint })) return;
     window.parent.postMessage({ type: 'readable-edit-select', target: targetFrom(el, true, true) }, '*');
     resolveHoverAtPoint(event.clientX, event.clientY, event.target);
     // Selection never opens a caret. Text entry is an explicit host command.
@@ -1796,6 +2016,23 @@ export function buildManualEditBridge(enabled: boolean): string {
   }
   window.addEventListener('message', function(ev){
     if (!hasLiveLayoutDocument() || !ev.data) return;
+    if (ev.data.type === 'readable-edit-preview-source') {
+      if (ev.source !== window.parent || !enabled || documentEpoch === null || ev.data.documentEpoch !== documentEpoch
+        || !Number.isInteger(ev.data.requestId) || ev.data.requestId <= 0
+        || typeof ev.data.beforeSource !== 'string' || typeof ev.data.afterSource !== 'string'
+        || !(ev.data.beforeId === null || typeof ev.data.beforeId === 'string')
+        || !(ev.data.afterId === null || typeof ev.data.afterId === 'string')) return;
+      var synced = applyPreviewSource(document, ev.data.beforeSource, ev.data.afterSource, ev.data.beforeId, ev.data.afterId, targetSelector, autoIdSelector, richTextFormatCss);
+      postManualMessage({ type: 'readable-edit-preview-source-applied', requestId: ev.data.requestId, ok: synced });
+      if (synced) queuePostTargets();
+      return;
+    }
+    if (ev.data.type === 'readable-edit-cycle-target') {
+      if (!enabled || documentEpoch === null || ev.data.documentEpoch !== documentEpoch
+        || ev.data.selectedId !== hostSelectedTargetId || ev.data.revision !== hostRevision || richEditingEl()) return;
+      cycleSelectedTarget(ev.data.backward === true);
+      return;
+    }
     if (ev.data.type === 'readable-edit-mode') {
       var nextEnabled = !!ev.data.enabled;
       var nextEpoch = typeof ev.data.documentEpoch === 'string' ? ev.data.documentEpoch : null;
@@ -1855,7 +2092,7 @@ export function buildManualEditBridge(enabled: boolean): string {
         && nativeClick.id === hostSelectedTargetId && Date.now() - nativeClick.time <= 350
         && Math.abs(nativeClick.x - clickX) <= clickCycleTolerance
         && Math.abs(nativeClick.y - clickY) <= clickCycleTolerance
-        && requestTextEdit(findById(nativeClick.id))) {
+        && requestTextEdit(findById(nativeClick.id), { textEditPoint: textPoint(overlayEvent), selectWord: true })) {
         return;
       }
       if (overlayEvent.altKey) {
@@ -1871,7 +2108,7 @@ export function buildManualEditBridge(enabled: boolean): string {
       }
       var selectedKind = inferKind(selectedEl);
       if (selectedKind === 'text' || selectedKind === 'link') {
-        activateClickTarget(selectedEl, overlayEvent, false, false);
+        requestTextEdit(selectedEl, { textEditPoint: textPoint(overlayEvent) });
         return;
       }
       if (selectedKind === 'container' && hasStructuredEditableText(selectedEl)) {
@@ -1886,15 +2123,24 @@ export function buildManualEditBridge(enabled: boolean): string {
     }
     if (ev.data.type === 'readable-edit-select-target') {
       if (!enabled) return;
+      var hydration = ev.data.actionSeq !== undefined;
+      if (hydration && (!Number.isSafeInteger(ev.data.actionSeq) || ev.data.actionSeq < 0
+        || documentEpoch === null || ev.data.documentEpoch !== documentEpoch)) return;
       clearDeferredOverlayClick();
       var requestedEl = findById(ev.data.id);
       if (!requestedEl) return;
-      requestedEl = targetForSelection(requestedEl);
       var selectTargetId = stableId(requestedEl);
-      postHoverTarget(null);
-      setSelectedTarget(selectTargetId);
-      hostSelectedTargetId = selectTargetId;
-      window.parent.postMessage({ type: 'readable-edit-select', target: targetFrom(requestedEl, true, true) }, '*');
+      if (!hydration) {
+        postHoverTarget(null);
+        setSelectedTarget(selectTargetId);
+        hostSelectedTargetId = selectTargetId;
+      }
+      var selectionMessage = { type: 'readable-edit-select', target: targetFrom(requestedEl, true, true) };
+      if (hydration) {
+        selectionMessage.actionSeq = ev.data.actionSeq;
+        selectionMessage.requestedId = String(ev.data.id);
+      }
+      postManualMessage(selectionMessage);
       return;
     }
     if (ev.data.type === 'readable-edit-selected-target') {
@@ -1935,15 +2181,28 @@ export function buildManualEditBridge(enabled: boolean): string {
       if (!enabled) return;
       clearDeferredOverlayClick();
       var beginEl = findById(ev.data.id);
-      if (beginEl && beginEl.getAttribute('data-readable-editing') !== 'true') makeEditable(beginEl);
+      var editPoint = textPoint(ev.data.textEditPoint);
+      if (beginEl && beginEl.getAttribute('data-readable-editing') !== 'true') makeEditable(beginEl, editPoint);
+      else if (beginEl && editPoint) placeCaretFromClick(editPoint, beginEl);
+      if (beginEl && ev.data.selectAll === true) {
+        var textRange = document.createRange();
+        textRange.selectNodeContents(beginEl);
+        restoreSelectionRange(textRange);
+        postSelectionState();
+      }
+      if (beginEl && editPoint && ev.data.selectWord === true) {
+        selectWordFromPoint(beginEl, editPoint);
+        postSelectionState();
+      }
       return;
     }
     if (ev.data.type === 'readable-edit-end-text-edit') {
+      if (ev.data.documentEpoch !== undefined && ev.data.documentEpoch !== documentEpoch) return;
       var endEl = document.querySelector('[data-readable-editing="true"]');
       finishActiveTextEdit();
       if (endEl && typeof endEl.blur === 'function') endEl.blur();
       if (typeof ev.data.requestId === 'number') {
-        window.parent.postMessage({ type: 'readable-edit-text-flushed', requestId: ev.data.requestId }, '*');
+        postManualMessage({ type: 'readable-edit-text-flushed', requestId: ev.data.requestId });
       }
       return;
     }
@@ -1967,7 +2226,7 @@ export function buildManualEditBridge(enabled: boolean): string {
     ev.stopPropagation();
     clearDeferredOverlayClick();
     nativeObjectClick = null;
-    requestTextEdit(findById(hostSelectedTargetId));
+    requestTextEdit(findById(hostSelectedTargetId), { textEditPoint: textPoint(ev), selectWord: true });
   }, true);
   document.addEventListener('pointerover', function(ev){
     if (!enabled) return;
@@ -2018,16 +2277,22 @@ export function buildManualEditBridge(enabled: boolean): string {
     var isEditing = !!document.querySelector('[data-readable-editing="true"]');
     // A key still latched from an Escape-cancelled burst: swallow its repeats
     // so artifact/deck handlers never see a half-owned key, but never nudge.
-    if (nudgeDirection && cancelledNudgeKeys[ev.key] && !(ev.ctrlKey || ev.metaKey || ev.altKey)) {
+    if (nudgeDirection && cancelledNudgeKeys[ev.key] && !ev.metaKey && !ev.altKey && !(ev.ctrlKey && ev.shiftKey)) {
       ev.preventDefault();
       ev.stopImmediatePropagation();
       return;
     }
-    if (nudgeDirection && !(ev.ctrlKey || ev.metaKey || ev.altKey) && !isEditing && selectedEl && hostSelectedTargetId && !isNudgeBlocked(ev.target, ev.isComposing)) {
+    if (nudgeDirection && !ev.metaKey && !ev.altKey && !(ev.ctrlKey && ev.shiftKey)
+      && !isEditing && selectedEl && hostSelectedTargetId && !isNudgeBlocked(ev.target, ev.isComposing)) {
       ev.preventDefault();
       ev.stopImmediatePropagation();
       heldNudgeKeys[ev.key] = 1;
-      window.parent.postMessage({ type: 'readable-edit-nudge', direction: nudgeDirection, targetId: hostSelectedTargetId, revision: hostRevision }, '*');
+      if (ev.shiftKey) postManualMessage({ type: 'readable-edit-keyboard-resize', direction: nudgeDirection, key: ev.key, targetId: hostSelectedTargetId, revision: hostRevision });
+      else {
+        var nudgeMessage = { type: 'readable-edit-nudge', direction: nudgeDirection, targetId: hostSelectedTargetId, revision: hostRevision };
+        if (ev.ctrlKey) nudgeMessage.screenPixel = true;
+        window.parent.postMessage(nudgeMessage, '*');
+      }
       return;
     }
     // Escape owns the key ONLY while a nudge burst is physically held; with no
@@ -2041,7 +2306,29 @@ export function buildManualEditBridge(enabled: boolean): string {
       return;
     }
     if (isEditing) return;
-    if (ev.key === 'Delete' && selectedEl && hostSelectedTargetId && !(ev.ctrlKey || ev.metaKey || ev.altKey) && !isNudgeBlocked(ev.target, ev.isComposing)) {
+    if (selectedEl && hostSelectedTargetId && !isNudgeBlocked(ev.target, ev.isComposing)) {
+      if (!(ev.ctrlKey || ev.metaKey || ev.altKey) && !ev.shiftKey && (ev.key === 'Enter' || ev.key === 'F2')) {
+        if (requestTextEdit(selectedEl, { selectAll: true })) {
+          ev.preventDefault();
+          ev.stopImmediatePropagation();
+        }
+        return;
+      }
+      if (ev.key === 'Tab' && !(ev.ctrlKey || ev.metaKey || ev.altKey)) {
+        if (cycleSelectedTarget(ev.shiftKey)) {
+          ev.preventDefault();
+          ev.stopImmediatePropagation();
+        }
+        return;
+      }
+      if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && !ev.shiftKey && (ev.key || '').toLowerCase() === 'd') {
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        if (!ev.repeat) postManualMessage({ type: 'readable-edit-duplicate', targetId: hostSelectedTargetId, revision: hostRevision });
+        return;
+      }
+    }
+    if ((ev.key === 'Delete' || ev.key === 'Backspace') && selectedEl && hostSelectedTargetId && !(ev.ctrlKey || ev.metaKey || ev.altKey) && !isNudgeBlocked(ev.target, ev.isComposing)) {
       ev.preventDefault();
       ev.stopImmediatePropagation();
       if (!ev.repeat) window.parent.postMessage({ type: 'readable-edit-delete', targetId: hostSelectedTargetId, revision: hostRevision }, '*');

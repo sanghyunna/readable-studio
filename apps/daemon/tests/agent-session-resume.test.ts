@@ -13,6 +13,7 @@ import {
 } from '../src/db.js';
 import {
   computeIncludeStable,
+  createAgentSessionQueue,
   hashStableInstructions,
   isClaudeResumeFailure,
   persistCapturedAgentSession,
@@ -20,6 +21,38 @@ import {
 } from '../src/agent-session-resume.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+describe('native session ownership', () => {
+  it('waits for the previous owner while other conversations and agents remain independent', async () => {
+    const withSession = createAgentSessionQueue();
+    let release!: () => void;
+    const previousClosed = new Promise<void>((resolve) => { release = resolve; });
+    let started!: () => void;
+    const previousStarted = new Promise<void>((resolve) => { started = resolve; });
+    const order: string[] = [];
+    const previous = withSession('conversation', 'databricks', async () => {
+      started();
+      await previousClosed;
+      order.push('captured');
+    });
+    await previousStarted;
+    const replacement = withSession('conversation', 'databricks', async () => { order.push('replacement'); });
+    await withSession('another conversation', 'databricks', async () => { order.push('another conversation'); });
+    await withSession('conversation', 'pi', async () => { order.push('another agent'); });
+    expect(order).toEqual(['another conversation', 'another agent']);
+    release();
+    await Promise.all([previous, replacement]);
+    expect(order).toEqual(['another conversation', 'another agent', 'captured', 'replacement']);
+  });
+
+  it('releases ownership after a rejected attempt', async () => {
+    const withSession = createAgentSessionQueue();
+    const failure = withSession('conversation', 'databricks', async () => { throw new Error('invalid capture'); });
+    const replacement = withSession('conversation', 'databricks', async () => 'fresh transcript');
+    await expect(failure).rejects.toThrow('invalid capture');
+    await expect(replacement).resolves.toBe('fresh transcript');
+  });
+});
 
 describe('resolveAgentResumeContext', () => {
   let tempDir: string;

@@ -5,6 +5,7 @@ import { StrictMode, type ComponentProps } from 'react';
 import { KEY_ENTER_COMMAND } from 'lexical';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
+  DesignTemplateSummary,
   InstalledPluginRecord,
   McpServerConfig,
   PluginSourceKind,
@@ -165,7 +166,7 @@ describe('HomeHero plugin picker', () => {
     expect(screen.queryByTestId('home-hero-plugin-picker')).toBeNull();
   });
 
-  it('opens plugin search from an @ token across community and my plugins', async () => {
+  it('previews @ plugin choices before confirming their existing Home context action', async () => {
     const onPromptChange = vi.fn();
     const onPickPlugin = vi.fn();
     render(
@@ -195,9 +196,12 @@ describe('HomeHero plugin picker', () => {
     await settle();
 
     expect(screen.getByTestId('home-hero-plugin-picker')).toBeTruthy();
-    expect(screen.getByText('Official')).toBeTruthy();
-    expect(screen.getByText('My plugin')).toBeTruthy();
+    expect(within(screen.getByTestId('mention-preview-detail')).getByText(/Official/)).toBeTruthy();
     fireEvent.click(screen.getByRole('option', { name: /sample user plugin/i }));
+    expect(onPickPlugin).not.toHaveBeenCalled();
+    expect(within(screen.getByTestId('mention-preview-detail')).getByText('Sample User Plugin')).toBeTruthy();
+    expect(within(screen.getByTestId('mention-preview-detail')).getByText(/My plugin/)).toBeTruthy();
+    fireEvent.click(screen.getByTestId('mention-preview-use'));
 
     // Picking inserts an atomic mention pill (replacing the in-flight `@sam`);
     // the host receives the editor's new serialized text without invented whitespace.
@@ -248,6 +252,7 @@ describe('HomeHero plugin picker', () => {
     expect(within(mentionPicker).queryByText('Ordinary Plugin')).toBeNull();
     expect(within(mentionPicker).queryByText('Empty Contract')).toBeNull();
     fireEvent.click(within(mentionPicker).getByRole('option', { name: /Apple/i }));
+    fireEvent.click(screen.getByTestId('mention-preview-use'));
     expect(onPickPlugin).toHaveBeenLastCalledWith(
       expect.objectContaining({ id: 'design-system-apple' }),
       expect.any(String),
@@ -265,6 +270,58 @@ describe('HomeHero plugin picker', () => {
       expect.objectContaining({ id: 'example-innovation' }),
       expect.any(String),
     );
+  });
+
+  it('classifies templates by registry membership and previews the real ZIP cover before confirming', async () => {
+    const template: DesignTemplateSummary = {
+      ...makeSkill('imported-report', 'Report Template'),
+      mode: 'deck',
+      userImported: true,
+      thumbnail: { status: 'ready', source: 'zip', updatedAt: '2026-10-26T12:00:00Z' },
+      cover: 'cover.html',
+    };
+    const functionalSkill = { ...makeSkill('template-editor', 'Template Editor'), mode: 'template' as const };
+    const onPickSkill = vi.fn();
+    render(<HomeHero prompt="" onPromptChange={vi.fn()} onSubmit={vi.fn()}
+      activePluginTitle={null} activeChipId={null} onClearActivePlugin={vi.fn()}
+      pluginOptions={[]} pluginsLoading={false} skillOptions={[template, functionalSkill]}
+      designTemplates={[template]} pendingPluginId={null} pendingChipId={null}
+      onPickPlugin={vi.fn()} onPickSkill={onPickSkill} onPickChip={vi.fn()}
+      contextItemCount={0} error={null} />);
+
+    await setHomeHeroPrompt('@');
+    fireEvent.click(screen.getByRole('tab', { name: /^Templates/ }));
+    const row = screen.getByRole('option', { name: /Report Template/ });
+    expect(row.getAttribute('data-resource-kind')).toBe('template');
+    expect(screen.queryByRole('option', { name: /Template Editor/ })).toBeNull();
+    fireEvent.click(row);
+    expect(onPickSkill).not.toHaveBeenCalled();
+    expect(screen.getByAltText('Report Template').getAttribute('src')).toBe('/api/design-templates/imported-report/thumbnail?v=2026-10-26T12%3A00%3A00Z');
+    expect(screen.queryByTestId('mention-preview-dimensions')).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: /^Skills/ }));
+    expect(screen.getByRole('option', { name: /Template Editor/ }).getAttribute('data-resource-kind')).toBe('skill');
+    fireEvent.click(screen.getByRole('tab', { name: /^Templates/ }));
+    fireEvent.click(screen.getByTestId('mention-preview-use'));
+    expect(onPickSkill).toHaveBeenCalledExactlyOnceWith(template, '@Report Template');
+  });
+
+  it('keeps a complete multiword resource name as an unconfirmed search until Use', async () => {
+    const onPickPlugin = vi.fn();
+    const onMentionEntitiesChange = vi.fn();
+    render(<HomeHero prompt="" onPromptChange={vi.fn()} onMentionEntitiesChange={onMentionEntitiesChange} onSubmit={vi.fn()}
+      activePluginTitle={null} activeChipId={null} onClearActivePlugin={vi.fn()}
+      pluginOptions={[makePlugin('sample-plugin', 'Sample Plugin')]} pluginsLoading={false}
+      pendingPluginId={null} pendingChipId={null} onPickPlugin={onPickPlugin} onPickChip={vi.fn()}
+      contextItemCount={0} error={null} />);
+
+    await setHomeHeroPrompt('Use @Sample Plugin');
+    expect(screen.getByRole('option', { name: /Sample Plugin/ })).toBeTruthy();
+    expect(onPickPlugin).not.toHaveBeenCalled();
+    expect(onMentionEntitiesChange).toHaveBeenLastCalledWith([]);
+    expect(screen.getByTestId('home-hero-input').querySelector('[data-mention-kind="plugin"]')).toBeNull();
+    fireEvent.click(screen.getByTestId('mention-preview-use'));
+    expect(onMentionEntitiesChange).toHaveBeenLastCalledWith([expect.objectContaining({ id: 'sample-plugin', kind: 'plugin' })]);
+    expect(onPickPlugin).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: 'sample-plugin' }), 'Use @Sample Plugin');
   });
 
   it('does not truncate home @ plugin results to six entries', async () => {
@@ -508,7 +565,7 @@ describe('HomeHero plugin picker', () => {
     expect(screen.getByRole('tab', { name: /plugins/i })).toBeTruthy();
     expect(screen.getByRole('tab', { name: /skills/i })).toBeTruthy();
     expect(screen.getByRole('tab', { name: /mcp/i })).toBeTruthy();
-    expect(screen.getByText('Search files, plugins, skills, and MCP servers.')).toBeTruthy();
+    expect(screen.getByText('Search by resource name or the work you want to do.')).toBeTruthy();
   });
 
   it('can mention staged files from the home @ picker and keeps removal in sync', async () => {
@@ -554,7 +611,10 @@ describe('HomeHero plugin picker', () => {
     await setHomeHeroPrompt('Use @br');
     await settle();
 
-    await act(async () => { fireEvent.click(screen.getByRole('option', { name: /brief\.html/i })); });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('option', { name: /brief\.html/i }));
+      fireEvent.click(screen.getByTestId('mention-preview-use'));
+    });
     // pickFile inserts the atomic file pill; the editor's onChange forwards the
     // new serialized text to the host, replacing the old explicit
     // `onPromptChange('Use @brief.html')` path.
@@ -615,6 +675,9 @@ describe('HomeHero plugin picker', () => {
     await settle();
 
     fireEvent.click(screen.getByRole('option', { name: /prototype lab/i }));
+    expect(onPickSkill).not.toHaveBeenCalled();
+    expect(screen.getByText('Default skill for the new project')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('mention-preview-use'));
     expect(onPickSkill).toHaveBeenCalledWith(skill, 'Make @Prototype Lab');
 
     rerender(
@@ -646,6 +709,8 @@ describe('HomeHero plugin picker', () => {
     await settle();
 
     fireEvent.click(screen.getByRole('option', { name: /linear/i }));
+    expect(onPickMcp).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('mention-preview-use'));
     expect(onPickMcp).toHaveBeenCalledWith(mcp, '@Linear');
   });
 
@@ -734,7 +799,7 @@ describe('HomeHero plugin picker', () => {
     expect(screen.queryByTestId('home-hero-plugin-picker')).toBeNull();
   });
 
-  it('closes the @ picker when opening plugin details from the hover card', async () => {
+  it('closes the @ picker when opening plugin details from the preview', async () => {
     const onOpenPluginDetails = vi.fn();
     const plugin = makePlugin('sample-plugin', 'Sample Plugin');
     render(
@@ -760,11 +825,11 @@ describe('HomeHero plugin picker', () => {
     await setHomeHeroPrompt('@sam');
     await settle();
 
-    const hoverSlot = screen.getByTestId('home-hero-plugin-hover-slot');
+    const preview = screen.getByTestId('mention-preview-detail');
     expect(screen.getByTestId('home-hero-plugin-picker')).toBeTruthy();
     fireEvent.mouseEnter(screen.getByRole('option', { name: /sample plugin/i }));
     await settle();
-    expect(screen.getByTestId('home-hero-plugin-hover-slot')).toBe(hoverSlot);
+    expect(screen.getByTestId('mention-preview-detail')).toBe(preview);
     fireEvent.click(screen.getByRole('button', { name: 'Details' }));
 
     expect(onOpenPluginDetails).toHaveBeenCalledWith(plugin);

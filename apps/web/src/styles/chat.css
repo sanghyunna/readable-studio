@@ -2124,6 +2124,16 @@
   white-space: nowrap;
 }
 
+.chat-queued-send-status {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .chat-queued-send-chips {
   display: flex;
   flex-wrap: nowrap;

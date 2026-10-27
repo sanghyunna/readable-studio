@@ -59,7 +59,9 @@ describe('formatDesignFilesWorkspaceHint', () => {
 
     expect(hint).toContain('## Design Files workspace');
     expect(hint).toContain('If the user did not attach any file, do not assume there are no relevant Design Files.');
-    expect(hint).toContain('inspect/search/read this workspace before answering or editing');
+    expect(hint).toContain('Reuse relevant file contents and tool results already available in the continuing conversation');
+    expect(hint).toContain('Inspect/search/read the needed workspace files when that evidence is missing, the files may have changed, or the request needs additional detail.');
+    expect(hint).toContain('Do not restart completed inspection solely because a follow-up turn arrived.');
     expect(hint).toContain('Folders:\n- `slides` (folder)');
     expect(hint).toContain('Files:\n- `slides/pitch.html` (html, 2 KB)');
     expect(hint).toContain('- `image.png` (image, 192 KB)');

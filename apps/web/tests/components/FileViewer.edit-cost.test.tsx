@@ -63,7 +63,7 @@ async function setup() {
   if (!(frame instanceof HTMLIFrameElement) || !frame.contentWindow) throw new Error('Missing preview frame');
   const frames: FrameRequestCallback[] = [];
   const dom = new JSDOM(`${html}${buildManualEditBridge(true)}`, {
-    runScripts: 'dangerously', url: 'http://localhost',
+    runScripts: 'dangerously', url: window.location.href,
     beforeParse(window) {
       window.requestAnimationFrame = (callback) => { frames.push(callback); return frames.length; };
       window.cancelAnimationFrame = () => { frames.length = 0; };
@@ -84,6 +84,8 @@ async function setup() {
     for (const callback of pending) callback(0);
     await drain();
   };
+  await act(async () => { fireEvent.load(frame); });
+  await drain();
   const parse = vi.spyOn(DOMParser.prototype, 'parseFromString');
   const styles = vi.spyOn(dom.window, 'getComputedStyle');
   return { dom, writes, requestBytes, saved, commits, messages, outgoing, dispatch, drain, flushFrames, parse, styles };
@@ -146,7 +148,8 @@ it('parses a pending style only for its patch and reconciliation when saving', a
   // Given
   const h = await setup();
   await act(async () => { h.dispatch({ type: 'readable-edit-select', target }); });
-  fireEvent.change(screen.getByLabelText('Width'), { target: { value: '200' } });
+  expect(linkedControls.props).not.toBeNull();
+  await act(async () => { linkedControls.props!.onStyleField('color', '#ef4444'); });
   await h.drain();
   h.parse.mockClear();
   h.commits.mockClear();
@@ -157,7 +160,7 @@ it('parses a pending style only for its patch and reconciliation when saving', a
   await act(async () => { await h.saved; });
   // Then
   expect(h.writes).toHaveLength(1);
-  expect(h.writes[0]).toContain('width: 200px');
+  expect(h.writes[0]).toContain('color: rgb(239, 68, 68)');
   // Patch + reconciliation + the existing two preview-annotation parses.
   expect(h.parse).toHaveBeenCalledTimes(4);
 });
@@ -183,7 +186,28 @@ async function setupLinked(schedule: 'resolved' | 'pending', css = linkedCss) {
   await act(async () => { fireEvent.click(screen.getByTestId('manual-edit-mode-toggle')); });
   const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
   const entry = frame.srcdoc;
-  const document = () => new DOMParser().parseFromString(frame.srcdoc, 'text/html');
+  const dom = new JSDOM(entry, {
+    runScripts: 'dangerously', url: window.location.href,
+    beforeParse(window) {
+      // jsdom omits element scrolling; the bridge reads the resulting coordinates.
+      if (!window.Element.prototype.scrollTo) {
+        window.Element.prototype.scrollTo = function (this: Element, position?: number | ScrollToOptions, top?: number) {
+          const options = typeof position === 'number' ? { left: position, top } : position;
+          if (options?.left !== undefined) this.scrollLeft = options.left;
+          if (options?.top !== undefined) this.scrollTop = options.top;
+        };
+      }
+    },
+  });
+  await dom.loaded;
+  dom.window.parent.postMessage = (data: unknown) => {
+    window.dispatchEvent(new MessageEvent('message', { data, source: frame.contentWindow }));
+  };
+  vi.spyOn(frame.contentWindow!, 'postMessage').mockImplementation((data: unknown) => {
+    dom.window.dispatchEvent(new dom.window.MessageEvent('message', { data, source: dom.window.parent }));
+  });
+  await act(async () => { fireEvent.load(frame); });
+  const document = () => frame.srcdoc === entry ? dom.window.document : new DOMParser().parseFromString(frame.srcdoc, 'text/html');
   const select = async () => {
     await act(async () => {
       window.dispatchEvent(new MessageEvent('message', {
@@ -232,7 +256,9 @@ it.each(['resolved', 'pending'] as const)('does no redundant linked inliner fetc
   const afterStyle = h.requests.timeline.filter((event) => event.phase === 'frozen' && event.kind === 'inliner-fetch').length;
   await h.patch('remove');
   expect(h.document().querySelector('[data-readable-id="hero"]')).toBeNull();
-  expect(h.document().querySelector('link[rel="stylesheet"]')?.getAttribute('href')).toBe('assets/css/site.css');
+  if (schedule === 'resolved') expect(h.document().querySelector('style[data-readable-inline-asset]')?.textContent).toContain(linkedInlinedCss);
+  else expect(h.document().querySelector('link[rel="stylesheet"]')?.getAttribute('href')).toBe('assets/css/site.css');
+  expect(h.frame.srcdoc).toBe(h.entry);
   expect(h.document().querySelector('base')?.href).toContain('/api/projects/linked/raw/');
   // Complete every observed request, including work started before entry,
   // without resetting counters or hiding continuation work.

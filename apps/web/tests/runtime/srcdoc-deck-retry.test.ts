@@ -15,6 +15,8 @@ function deckHarness() {
     runScripts: 'outside-only',
   });
   documents.push(dom);
+  const messages: unknown[] = [];
+  Object.defineProperty(dom.window, 'parent', { value: { postMessage: (message: unknown) => messages.push(message) } });
   const pending = new Map<number, { readonly run: () => void; readonly delay: number }>();
   let nextId = 0;
   let retryCount = 0;
@@ -31,6 +33,7 @@ function deckHarness() {
   dom.window.eval(script);
   return {
     dom,
+    messages,
     pending,
     retryCount: () => retryCount,
     runRetries: (count = 500) => {
@@ -60,7 +63,7 @@ it('discovers slides created after the old three-second retry budget', () => {
   harness.dom.window.document.body.innerHTML = '<section class="slide active">Late slide</section>';
   harness.runRetries(1);
   expect([...harness.pending.values()].filter(timer => timer.delay === 150)).toHaveLength(0);
-  expect([...harness.pending.values()].some(timer => timer.delay === 100)).toBe(true);
+  expect(harness.messages).toContainEqual({ type: 'readable-studio:slide-state', active: 0, count: 1 });
 });
 
 it('cancels pending discovery when the document is disposed', () => {
@@ -116,7 +119,7 @@ it('observes slides that arrive within the retry budget', () => {
   harness.dom.window.document.body.append(slide);
   // When the pending discovery runs.
   harness.runRetries();
-  // Then it stops retrying and schedules initial slide restoration.
+  // Then it stops retrying and immediately reports the initialized slide.
   expect([...harness.pending.values()].filter((timer) => timer.delay === 150)).toHaveLength(0);
-  expect([...harness.pending.values()].some((timer) => timer.delay === 100)).toBe(true);
+  expect(harness.messages).toContainEqual({ type: 'readable-studio:slide-state', active: 0, count: 1 });
 });

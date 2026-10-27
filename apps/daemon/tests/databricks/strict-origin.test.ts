@@ -21,10 +21,11 @@ test('actual PowerShell registration does not inherit strict or grammar sampling
     expect(loaded.errors).toEqual([]);
     expect(loaded.extensions).toHaveLength(1);
     const registered = [...loaded.extensions[0]!.tools.values()];
-    expect(registered).toHaveLength(1);
-    const powershell = registered[0]!.definition;
+    expect(registered).toHaveLength(2);
+    const powershell = registered.find(tool => tool.definition.name === 'powershell')!.definition;
+    const read = registered.find(tool => tool.definition.name === 'read')!.definition;
     const bash = createBashToolDefinition(root);
-    for (const tool of [bash, powershell]) {
+    for (const tool of [bash, powershell, read]) {
       expect(tool).not.toHaveProperty('strict');
       expect(tool).not.toHaveProperty('constrainedSampling');
       expect(tool.parameters).not.toHaveProperty('additionalProperties');

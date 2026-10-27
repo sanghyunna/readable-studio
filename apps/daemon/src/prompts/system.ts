@@ -365,6 +365,7 @@ export interface ComposeInput {
   agentId?: string | null | undefined;
   streamFormat?: string | undefined;
   skillBody?: string | undefined;
+  additionalSkillBody?: string | undefined;
   skillName?: string | undefined;
   skillMode?:
     | 'prototype'
@@ -427,6 +428,8 @@ export interface ComposeInput {
   template?: ProjectTemplate | undefined;
   // Set only for explicit template provenance (metadata.templateRef or a saved kind:'template' project).
   templateReference?: boolean | undefined;
+  // Per-run template selections stay separate from functional skill/plugin instructions.
+  templateReferences?: Array<{ name?: string | undefined; body: string }> | undefined;
   // When present and enabled, the Critique Theater protocol addendum is
   // concatenated to the end of the composed prompt. Omitting this field
   // (or passing cfg.enabled === false) preserves legacy behavior unchanged.
@@ -486,6 +489,7 @@ export interface ComposeInput {
 export function composeSystemPrompt({
   agentId,
   skillBody,
+  additionalSkillBody,
   skillName,
   skillMode,
   skillModes,
@@ -503,6 +507,7 @@ export function composeSystemPrompt({
   metadata,
   template,
   templateReference,
+  templateReferences = [],
   critique,
   critiqueBrand,
   critiqueSkill,
@@ -523,7 +528,9 @@ export function composeSystemPrompt({
   const parts: string[] = [PROMPT_INJECTION_RESISTANCE, '\n\n---\n\n', renderHtmlOutputDirective(streamFormat), '\n\n---\n\n'];
   parts.push(FACT_FIDELITY_CONTRACT, '\n\n---\n\n');
   const templateOnly = templateReference === true || isTemplateReferenceProject(metadata);
-  if (templateOnly) {
+  const selectedTemplates = templateReferences.filter(({ body }) => body.trim().length > 0);
+  const hasTemplateReference = templateOnly || selectedTemplates.length > 0;
+  if (hasTemplateReference) {
     parts.push(TEMPLATE_CONTENT_CONTRACT, '\n\n---\n\n');
     if (metadata?.templateRef) {
       parts.push(renderTemplateReference('selection', metadata.templateRef), '\n\n');
@@ -557,10 +564,10 @@ export function composeSystemPrompt({
     parts.push('\n\n---\n\n');
   }
 
-  if (!templateOnly && metadata?.examplePrompt === true) {
+  if (!hasTemplateReference && metadata?.examplePrompt === true) {
     parts.push(buildExamplePromptOverride(metadata.examplePromptTitle, metadata.examplePromptBrief));
     parts.push('\n\n---\n\n');
-  } else if (!templateOnly && metadata?.skipDiscoveryBrief === true) {
+  } else if (!hasTemplateReference && metadata?.skipDiscoveryBrief === true) {
     parts.push(SKIP_DISCOVERY_BRIEF_OVERRIDE);
     parts.push('\n\n---\n\n');
   }
@@ -592,12 +599,12 @@ Whenever generated HTML contains Korean copy, regardless of the UI locale, apply
   // Templates have their own workflow; do not also inject the generic discovery
   // philosophy/charter, even quoted. Preserve every owner-edited body verbatim.
   const discovery = editablePromptBodies?.['discovery-workflow'] ?? DISCOVERY_AND_PHILOSOPHY;
-  parts.push(templateOnly
+  parts.push(hasTemplateReference
     ? TEMPLATE_DISCOVERY_BRIEF + (discovery === DISCOVERY_AND_PHILOSOPHY ? '' : discovery)
     : discovery, '\n\n---\n\n');
 
   const charter = editablePromptBodies?.['designer-charter'] ?? BASE_SYSTEM_PROMPT;
-  if (!templateOnly || charter !== BASE_SYSTEM_PROMPT) {
+  if (!hasTemplateReference || charter !== BASE_SYSTEM_PROMPT) {
     parts.push('# Identity and workflow charter (background)\n\n' + charter);
   }
 
@@ -689,9 +696,17 @@ Whenever generated HTML contains Korean copy, regardless of the UI locale, apply
   if (skillBody && skillBody.trim().length > 0) {
     const preflight = derivePreflight(skillBody);
     parts.push(templateOnly
-      ? `\n\n## Template rendering reference\n\nRead the seed and layout resources for structure, style, and rendering mechanics only.${preflight}${renderTemplateReference('skill', { name: skillName, body: skillBody.trim() })}`
+      ? `\n\n## Template rendering reference\n\nUse seed and layout contents already available in the continuing conversation for structure, style, and rendering mechanics only. Read required resources when not yet inspected, when they may have changed, or when the current evidence is insufficient.${preflight}${renderTemplateReference('skill', { name: skillName, body: skillBody.trim() })}`
       : `\n\n## Active skill${skillName ? ` — ${skillName}` : ''}\n\nFollow this skill's workflow exactly.${preflight}\n\n${skillBody.trim()}`,
     );
+  }
+
+  if (additionalSkillBody && additionalSkillBody.trim().length > 0) {
+    parts.push(`\n\n## Additional selected skills\n\nFollow the selected skills' workflows exactly.${derivePreflight(additionalSkillBody)}\n\n${additionalSkillBody.trim()}`);
+  }
+
+  for (const reference of selectedTemplates) {
+    parts.push(`\n\n## Selected template rendering reference${derivePreflight(reference.body)}${renderTemplateReference('selected-template', reference)}`);
   }
 
   if (pluginBlock && pluginBlock.trim().length > 0) {
@@ -738,7 +753,9 @@ Whenever generated HTML contains Korean copy, regardless of the UI locale, apply
   const isDeckProject = resolvedExclusiveSurface === 'deck';
   const isFreeformProject = activeSkillModes.size === 0 && (!metadata || metadata.kind === 'other');
   const hasSkillSeed =
-    !!skillBody && /assets\/template\.html/.test(skillBody);
+    (!!skillBody && /assets\/template\.html/.test(skillBody))
+    || (!!additionalSkillBody && /assets\/template\.html/.test(additionalSkillBody))
+    || selectedTemplates.some(({ body }) => /assets\/template\.html/.test(body));
 
   if (isDeckProject && !hasSkillSeed) {
     parts.push(`\n\n---\n\n${deckFrameworkDirective}`);
@@ -784,7 +801,7 @@ Whenever generated HTML contains Korean copy, regardless of the UI locale, apply
   // structured ask surface: the form renders inline in the conversation and
   // answers return as the next user message. Applies to every agent:
   // question-form is UI-parsed markup, not a tool.
-  if (!templateOnly) parts.push('\n\n---\n\n', QUESTION_FORM_CLARIFICATION_SECTION);
+  if (!hasTemplateReference) parts.push('\n\n---\n\n', QUESTION_FORM_CLARIFICATION_SECTION);
 
   // Self-rollback request marker. Placed near the runtime tool environment
   // section (appended after this prompt by the daemon) so the model treats it
@@ -812,7 +829,7 @@ Whenever generated HTML contains Korean copy, regardless of the UI locale, apply
 
   // Codex receives this stack inside a user turn, not a separate system role.
   // Repeat the decision after all workflow/reference material, near the request.
-  if (templateOnly) parts.push('\n\n---\n\n', TEMPLATE_CONTENT_GATE);
+  if (hasTemplateReference) parts.push('\n\n---\n\n', TEMPLATE_CONTENT_GATE);
 
   return parts.join('');
 }
@@ -1078,7 +1095,7 @@ function renderMetadataBlock(
  * Detect the seed/references pattern shipped by the upgraded
  * web-prototype / mobile-app / simple-deck / guizang-ppt skills, and
  * inject a hard pre-flight rule that lists which side files to Read
- * before doing anything else. The skill body's own workflow already says
+ * before writing unless their current contents are already available. The skill body's workflow says
  * this — but skills get truncated under context pressure and the agent
  * sometimes skips Step 0. A short up-front directive helps.
  *
@@ -1100,5 +1117,5 @@ function derivePreflight(skillBody: string): string {
     refs.push('`references/html-in-canvas.md`');
   }
   if (refs.length === 0) return '';
-  return ` **Pre-flight (do this before any other tool):** Read ${refs.join(', ')} via the path written in the skill-root preamble. The seed template defines the class system you'll paste into; the layouts file is the only acceptable source of section/screen/slide skeletons; the checklist is your P0/P1/P2 gate before finishing delivery. Skipping this step is the #1 reason output regresses to generic AI-slop.`;
+  return ` **Pre-flight:** Before writing code, read ${refs.join(', ')} via the path written in the skill-root preamble unless their current contents are already available in the continuing conversation. Reuse completed pre-flight when sufficient and still current; read again when resources may have changed or needed detail is missing. The seed template defines the class system you'll paste into; the layouts file is the only acceptable source of section/screen/slide skeletons; the checklist is your P0/P1/P2 gate before finishing delivery.`;
 }

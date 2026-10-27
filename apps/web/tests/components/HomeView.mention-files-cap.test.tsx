@@ -94,7 +94,7 @@ describe('HomeView design-files mention picker', () => {
 
     const picker = screen.getByTestId('home-hero-plugin-picker');
     for (let i = 1; i <= 7; i += 1) {
-      expect(within(picker).getByText(`design-${i}.png`)).toBeTruthy();
+      expect(within(picker).getByRole('option', { name: new RegExp(`design-${i}\\.png`) })).toBeTruthy();
     }
   });
 
@@ -136,7 +136,7 @@ describe('HomeView design-files mention picker', () => {
 
     const picker = screen.getByTestId('home-hero-plugin-picker');
     const shown = Array.from({ length: 7 }, (_, i) => `design-${i + 1}.png`).filter(
-      (name) => within(picker).queryByText(name) !== null,
+      (name) => within(picker).queryByRole('option', { name: new RegExp(name.replace('.', '\\.')) }) !== null,
     );
     expect(shown).toHaveLength(6);
   });

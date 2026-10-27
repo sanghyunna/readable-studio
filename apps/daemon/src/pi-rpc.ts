@@ -22,7 +22,9 @@ import path from 'node:path';
 import { homedir } from 'node:os';
 import type { ChildProcess } from 'node:child_process';
 import type { Writable } from 'node:stream';
+import type { ContextUsageSnapshot } from '@readable-studio/contracts';
 import { createJsonLineStream } from './acp.js';
+import { buildPiContextUsage, makeUnknownContextUsage } from './context-usage.js';
 import { formatStreamFailure } from './stream-failure.js';
 
 type JsonRecord = Record<string, unknown>;
@@ -53,6 +55,7 @@ type PiRpcSessionOptions = {
   /** The actual launch environment when it overrides Pi's config/session home. */
   env?: NodeJS.ProcessEnv;
   model?: string | null;
+  contextLimit?: { tokens: number | null; source: ContextUsageSnapshot['limitSource'] };
   send: SendAgentEvent;
   imagePaths?: string[];
   uploadRoot?: string;
@@ -676,6 +679,7 @@ export function attachPiRpcSession({
   sessionDir,
   env,
   model,
+  contextLimit,
   send,
   imagePaths,
   uploadRoot,
@@ -746,6 +750,28 @@ export function attachPiRpcSession({
   let resumeRpcId: number | null = null;
   let promptRpcId: number | null = null;
   let stateRpcId: number | null = null;
+  let contextStatsRpcId: number | null = null;
+  let contextStats: unknown;
+  let contextSessionId: string | null = null;
+  let contextModel = model && model !== 'default' ? model : null;
+  const emitContextUsage = (): void => {
+    if (aborted || terminal || contextStats === undefined) return;
+    send('agent', { type: 'context_usage', snapshot: buildPiContextUsage(contextStats, {
+      model: contextModel, sessionId: contextSessionId, ...(contextLimit ? { limit: contextLimit } : {}),
+    }) });
+  };
+  const requestContextUsage = (): void => {
+    if (!aborted && !agentFailed && !recoveryReason && contextStatsRpcId === null) {
+      contextStatsRpcId = sendCommand(stdin, 'get_session_stats');
+    }
+  };
+  const resetContextUsage = (reason: 'compacting' | 'compacted'): void => {
+    contextStats = undefined;
+    contextStatsRpcId = null;
+    if (!aborted && !terminal) {
+      send('agent', { type: 'context_usage', snapshot: makeUnknownContextUsage(reason, contextModel, contextSessionId) });
+    }
+  };
 
   const scheduleForceKill = (): void => {
     if (forceKillTimer || childClosed) return;
@@ -898,6 +924,14 @@ export function attachPiRpcSession({
     // RPC responses (prompt accepted, set_model ack, etc.) — not
     // agent events. Log the prompt acceptance, ignore the rest.
     if (raw.type === 'response') {
+      if (contextStatsRpcId !== null && raw.id === contextStatsRpcId) {
+        contextStatsRpcId = null;
+        if (raw.command === 'get_session_stats' && raw.success === true) {
+          contextStats = raw.data;
+          emitContextUsage();
+        }
+        return;
+      }
       if (raw.id === resumeRpcId) {
         const data = getRecord(raw.data);
         if (raw.command !== 'switch_session' || raw.success !== true || data?.cancelled === true) {
@@ -932,6 +966,13 @@ export function attachPiRpcSession({
             throw new Error('Pi switched to an unexpected session file');
           }
           capturedSessionPath = validated;
+          contextSessionId = typeof data.sessionId === 'string' ? data.sessionId : null;
+          const reportedModel = getRecord(data.model);
+          if (!contextModel && typeof reportedModel?.id === 'string') {
+            contextModel = typeof reportedModel.provider === 'string'
+              ? `${reportedModel.provider}/${reportedModel.id}` : reportedModel.id;
+          }
+          emitContextUsage();
         } catch (err: unknown) {
           fail(`invalid Pi session state: ${errorMessage(err)}`, 'PI_SESSION_STATE_FAILED');
           return;
@@ -965,6 +1006,8 @@ export function attachPiRpcSession({
           agentFailed = true;
           send('agent', { type: 'error', message: `Databricks response recovery exhausted: ${recoveryReason}.`, retryable: true });
         }
+        // Occupancy is advisory; only validated get_state gates shutdown.
+        requestContextUsage();
         stateRpcId = sendCommand(stdin, 'get_state');
         if (stateRpcId === null) {
           fail('Pi stdin closed before session state capture', 'PI_SESSION_STATE_FAILED');
@@ -996,6 +1039,11 @@ export function attachPiRpcSession({
     }
 
     // Agent events: delegate to the pure mapper.
+    if (raw.type === 'compaction_start' || raw.type === 'auto_compaction_start') resetContextUsage('compacting');
+    if (raw.type === 'compaction_end' || raw.type === 'auto_compaction_end') {
+      resetContextUsage('compacted');
+      requestContextUsage();
+    }
     const result = mapPiRpcEvent(
       raw,
       (channel, payload) => {
@@ -1014,6 +1062,7 @@ export function attachPiRpcSession({
     if (result === 'agent_end') {
       agentEnded = true;
     }
+    if (raw.type === 'turn_end') requestContextUsage();
   });
 
   stdout.on('data', (chunk: Buffer | string) => {

@@ -17,8 +17,7 @@ describe('buildSrcdoc', () => {
     const doc = buildSrcdoc(deckHtml, { deck: true, initialSlideIndex: 2 });
 
     expect(doc).toContain('var initialSlideIndex = 2;');
-    expect(doc).toContain('setTimeout(restoreInitialSlide, 200)');
-    expect(doc).toContain('setTimeout(restoreInitialSlide, 100)');
+    expect(doc).not.toContain('setTimeout(restoreInitialSlide');
   });
 
   it('clamps invalid initial slide indices before injecting deck bridge script', () => {
@@ -174,7 +173,8 @@ describe('buildSrcdoc', () => {
 
     expect(srcdoc).toContain('data-readable-preview-focus-guard');
     expect(srcdoc).toContain("Object.defineProperty(window, 'focus'");
-    expect(srcdoc).toContain("Object.defineProperty(HTMLElement.prototype, 'focus'");
+    expect(srcdoc).toContain('guardElementFocus(HTMLElement.prototype)');
+    expect(srcdoc).toContain('guardElementFocus(SVGElement.prototype)');
     expect(srcdoc.indexOf('data-readable-preview-focus-guard')).toBeLessThan(
       srcdoc.indexOf('<script>window.focus();document.body.focus();</script>'),
     );

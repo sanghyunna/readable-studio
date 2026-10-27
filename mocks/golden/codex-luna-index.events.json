@@ -2,7 +2,7 @@
   {
     "type": "status",
     "label": "thread_started",
-    "threadId": "thread"
+    "threadId": "01a11ac7-97a4-7793-a1ee-deb09a55100e"
   },
   {
     "type": "status",
@@ -129,6 +129,19 @@
       "output_tokens": 284,
       "cached_read_tokens": 17152,
       "thought_tokens": 188
+    }
+  },
+  {
+    "type": "context_usage",
+    "snapshot": {
+      "state": "measured",
+      "usedTokens": 22368,
+      "limitTokens": 258400,
+      "source": "codex",
+      "limitSource": "runtime",
+      "model": "gpt-6-luna",
+      "sessionId": "01a11ac7-97a4-7793-a1ee-deb09a55100e",
+      "updatedAt": 0
     }
   },
   {
@@ -310,6 +323,19 @@
       "output_tokens": 189,
       "cached_read_tokens": 21248,
       "thought_tokens": 142
+    }
+  },
+  {
+    "type": "context_usage",
+    "snapshot": {
+      "state": "measured",
+      "usedTokens": 22613,
+      "limitTokens": 258400,
+      "source": "codex",
+      "limitSource": "runtime",
+      "model": "gpt-6-luna",
+      "sessionId": "01a11ac7-97a4-7793-a1ee-deb09a55100e",
+      "updatedAt": 0
     }
   }
 ]

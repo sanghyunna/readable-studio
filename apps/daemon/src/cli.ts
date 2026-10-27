@@ -154,6 +154,7 @@ const PROJECT_STRING_FLAGS = new Set([
   'title', 'against', 'seed-from', 'fork-after', 'mode', 'reasoning',
 ]);
 const PROJECT_BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'follow']);
+const RUN_STRING_FLAGS = new Set([...PROJECT_STRING_FLAGS, 'reference']);
 const SESSION_STRING_FLAGS = new Set([
   'daemon-url', 'identity-token-file', 'folder', 'title', 'mode', 'skill',
   'design-system', 'prompt-file', 'limit', 'name', 'sessions', 'query', 'state', 'sort',
@@ -193,6 +194,8 @@ const CHAT_STRING_FLAGS = new Set([
   'identity-token-file',
   'project',
   'conversation',
+  'agent',
+  'model',
   'checkpoint',
   'message',
   'mode',
@@ -4990,6 +4993,7 @@ async function runRun(args) {
     console.log(`Usage:
   readable run start --project <projectId> [--conversation <id>] [--message "<text>"]
                [--plugin <id>] [--inputs <json>] [--grant-caps a,b]
+               [--skill <id>] [--reference <id>] [--prompt-file <path|->]
                [--agent claude|codex|gemini] [--model <id>] [--follow] [--json]
   readable run redesign [--path <folder>] [--message "<text>" | --prompt-file <path|->]
                [--agent claude] [--model <id>] [--follow] [--json]
@@ -4999,6 +5003,7 @@ async function runRun(args) {
   readable run info   <runId>                     One run's status.
 
 Common options:
+  --reference <id>     In run start, add a skill or design template for this run only; repeat to combine.
   --daemon-url <url>   Readable Studio daemon HTTP base.
   --identity-token-file <path|->
                        Hosted identity (or READABLE_HOSTED_IDENTITY_TOKEN_FILE).
@@ -5007,7 +5012,7 @@ Common options:
   }
   const sub = args[0];
   const rest = args.slice(1);
-  const flags = parseFlags(rest, { string: PROJECT_STRING_FLAGS, boolean: PROJECT_BOOLEAN_FLAGS });
+  const flags = parseFlags(rest, { string: sub === 'start' ? RUN_STRING_FLAGS : PROJECT_STRING_FLAGS, boolean: PROJECT_BOOLEAN_FLAGS });
   const base = (await projectDaemonUrl(flags)).replace(/\/$/, '');
   const client = await createContentCliClient(flags);
   switch (sub) {
@@ -5124,6 +5129,17 @@ Common options:
         console.error('--project <projectId> is required');
         process.exit(2);
       }
+      const referenceIds: string[] = [];
+      for (let i = 0; i < rest.length; i++) {
+        const arg = rest[i];
+        if (arg !== '--reference' && !arg.startsWith('--reference=')) {
+          if (arg.startsWith('--') && !arg.includes('=') && RUN_STRING_FLAGS.has(arg.slice(2))) i++;
+          continue;
+        }
+        const id = (arg === '--reference' ? rest[++i] : arg.slice('--reference='.length))?.trim();
+        if (!id || id.startsWith('--')) throw new Error('--reference requires a value');
+        if (!referenceIds.includes(id)) referenceIds.push(id);
+      }
       const message = await readRunMessageFromFlags(flags);
       if (client.hosted) {
         const unsupportedHostedFlag = ['plugin', 'inputs', 'grant-caps', 'snapshot-id']
@@ -5149,7 +5165,7 @@ Common options:
           agentId: flags.agent ?? 'pi',
           message,
           clientRequestId: crypto.randomUUID(),
-          ...(flags.skill ? { skillIds: [flags.skill] } : {}),
+          ...(flags.skill || referenceIds.length > 0 ? { skillIds: [...new Set([flags.skill, ...referenceIds].filter(Boolean))] } : {}),
           ...(flags['design-system'] ? { designSystemId: flags['design-system'] } : {}),
           ...(flags.model ? { model: flags.model } : {}),
         });
@@ -5195,6 +5211,7 @@ Common options:
       if (message) body.message = message;
       if (flags.plugin) body.pluginId = flags.plugin;
       if (flags.skill) body.skillId = flags.skill;
+      if (referenceIds.length > 0) body.skillIds = referenceIds;
       if (flags['design-system']) body.designSystemId = flags['design-system'];
       if (flags.agent) body.agentId = flags.agent;
       if (flags.model) body.model = flags.model;
@@ -6895,6 +6912,12 @@ async function runChat(args) {
                                            context (--seed-from). Use
                                            --fork-after to stop at one source
                                            message.
+  readable chat context-usage --project <id> --conversation <id> --agent <id>
+                             [--model <id>] [--json]
+                                           Read the latest context occupancy.
+                             --prompt-file <path|-> accepts JSON selectors:
+                             projectId, conversationId, agentId, model.
+                                           This only queries state.
   readable chat checkpoints --project <id> --conversation <id> [--json]
                                            List rollback checkpoints for one
                                            conversation.
@@ -6938,8 +6961,40 @@ Common options:
     process.exit(2);
   }
   const base = (await projectDaemonUrl(flags)).replace(/\/$/, '');
-  const client = await createContentCliClient(flags);
+  const client = await createContentCliClient(flags, { stdinInUse: sub === 'context-usage' && flags['prompt-file'] === '-' });
   switch (sub) {
+    case 'context-usage': {
+      const usage = 'Usage: readable chat context-usage --project <id> --conversation <id> --agent <id> [--model <id>] [--prompt-file <path|->] [--json]';
+      let selectors = { projectId: flags.project, conversationId: flags.conversation, agentId: flags.agent, model: flags.model };
+      if (flags['prompt-file'] !== undefined) {
+        if ([flags.project, flags.conversation, flags.agent, flags.model].some(value => value !== undefined)) {
+          console.error('Use either selector flags or --prompt-file JSON selectors');
+          process.exit(2);
+        }
+        try {
+          selectors = JSON.parse(await readPromptFromFlags({ 'prompt-file': flags['prompt-file'] }));
+          if (!selectors || typeof selectors !== 'object' || Array.isArray(selectors)
+            || Object.keys(selectors).some(key => !['projectId', 'conversationId', 'agentId', 'model'].includes(key))) throw new Error(usage);
+        } catch (error) {
+          console.error(error instanceof Error ? error.message : usage);
+          process.exit(2);
+        }
+      }
+      const { projectId, conversationId, agentId, model } = selectors;
+      if ([projectId, conversationId, agentId].some(value => typeof value !== 'string' || !value.trim())
+        || (model !== undefined && (typeof model !== 'string' || !model.trim()))) {
+        console.error(usage);
+        process.exit(2);
+      }
+      const query = new URLSearchParams({ agentId, ...(model === undefined ? {} : { model }) });
+      const response = await client.request(`/api/projects/${encodeURIComponent(projectId)}/conversations/${encodeURIComponent(conversationId)}/context-usage?${query}`);
+      if (!response.ok) return structuredHttpFailure(response, 'project-not-found');
+      const data = await response.json();
+      if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+      const snapshot = data.snapshot;
+      console.log(`[context] ${snapshot?.state ?? 'unknown'}\t${snapshot?.usedTokens ?? '-'}/${snapshot?.limitTokens ?? '-'} tokens`);
+      return;
+    }
     case 'new': {
       // Accept --project for parity with the rest of the project-scoped CLI,
       // or a bare positional id for convenience.

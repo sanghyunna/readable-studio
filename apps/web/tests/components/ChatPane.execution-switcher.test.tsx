@@ -109,6 +109,20 @@ function renderPane(extra: Partial<React.ComponentProps<typeof ChatPane>> = {}) 
 }
 
 describe('workspace chat composer: agent + model execution pair', () => {
+  it('puts measured context usage between the plus menu and the agent without changing execution controls', () => {
+    renderPane({ contextUsage: {
+      state: 'measured', usedTokens: 284_000, limitTokens: 500_000,
+      source: 'codex', limitSource: 'runtime', model: 'fixture-model', sessionId: 's1', updatedAt: 1,
+    } });
+    const plus = screen.getByTestId('chat-plus-trigger');
+    const meter = screen.getByRole('meter');
+    const agent = screen.getByTestId('inline-model-switcher-agent-trigger');
+    expect(meter.getAttribute('data-tooltip')).toBe('284k/500k');
+    expect(screen.getByText('56.8%')).toBeTruthy();
+    expect(plus.compareDocumentPosition(meter) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(meter.compareDocumentPosition(agent) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('shows learned Databricks thinking levels and sends the selected level', () => {
     const onAgentModelChange = vi.fn();
     renderPane({

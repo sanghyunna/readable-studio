@@ -201,7 +201,7 @@ describe('hosted Pi snapshot quiescence', () => {
     });
 
     feed(child, [{ type: 'agent_end' }, { type: 'agent_settled' }]);
-    const [getState] = readCommands(child);
+    const getState = readCommands(child).find(command => command.type === 'get_state');
     feed(child, [{
       command: 'get_state',
       data: { sessionFile: sessionPath },

@@ -190,7 +190,20 @@ export function buildDaemonTranscript(history: ChatMessage[], targetAgentId?: st
         m.role === 'assistant'
           ? sanitizePriorAssistantTurnForTranscript(trimmed)
           : trimmed;
-      return `## ${m.role}\n${escapeTranscriptRoleDelimiters(truncateForTranscript(sanitized))}`;
+      const text = escapeTranscriptRoleDelimiters(truncateForTranscript(sanitized));
+      if (m.role !== 'user' || !m.attachments?.length) return `## ${m.role}\n${text}`;
+      const references = m.attachments
+        .map((attachment, index) => ({
+          name: attachment.name,
+          path: /^\s*(?:data|blob):/i.test(attachment.path) ? null : attachment.path,
+          order: typeof attachment.order === 'number' && Number.isSafeInteger(attachment.order) && attachment.order >= 0 ? attachment.order : index,
+          index,
+        }))
+        .sort((left, right) => left.order - right.order || left.index - right.index)
+        .map(({ name, path, order }) => JSON.stringify({ name, path, order })
+          .replace(/</g, '\\u003c').replace(/>/g, '\\u003e')
+          .replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029'));
+      return `## ${m.role}\n${text}\n\n[historical user attachment references; not new uploads; prior readability and existence have not been revalidated]\n${references.join('\n')}`;
     })
     .join('\n\n');
   const warning = buildPriorRunContextWarning(scopedHistory);
@@ -1207,6 +1220,7 @@ function translateAgentEvent(data: DaemonAgentPayload): AgentEvent | null {
       durationMs: typeof data.durationMs === 'number' ? data.durationMs : undefined,
     };
   }
+  if (t === 'context_usage') return { kind: 'context_usage', snapshot: data.snapshot };
   if (t === 'fabricated_role_marker' && typeof data.marker === 'string') {
     return {
       kind: 'status',

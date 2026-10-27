@@ -14,6 +14,7 @@ import { stubMissingCanvasContext } from '../helpers/canvas';
 import { buildManualEditBridge } from '../../src/edit-mode/bridge';
 import { JSDOM } from '../edit-mode/bridge-dom';
 import { deferred } from '../helpers/deferred';
+import { manualEditCanonicalSource, stampManualEditFrameMessage, trackManualEditCanonicalSource } from './manual-edit-frame-messages';
 
 vi.mock('../../src/providers/registry', async (importOriginal) => ({
   ...await importOriginal<typeof import('../../src/providers/registry')>(),
@@ -189,7 +190,7 @@ describe('workspace tab dismissal', () => {
       fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
       const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
       act(() => window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow,
-        data: { type: 'readable-edit-text-commit', id: 'hero', value: 'Unsaved hero' } })));
+        data: stampManualEditFrameMessage(frame, { type: 'readable-edit-text-commit', id: 'hero', value: 'Unsaved hero' }) })));
       const switchFile = (nonce: number) => {
         if (path === 'tab') fireEvent.click(tab('other.png'));
         else if (path === 'shortcut') fireEvent.keyDown(window, { key: 'Tab', ctrlKey: true });
@@ -204,7 +205,7 @@ describe('workspace tab dismissal', () => {
       expect(tab('preview.html').getAttribute('aria-selected')).toBe('true');
       expect(changed).not.toHaveBeenCalled();
       expect(screen.getByTestId('artifact-preview-frame')).toBe(frame);
-      expect(frame.srcdoc).toContain('Unsaved hero');
+      expect(manualEditCanonicalSource(frame)).toContain('Unsaved hero');
       expect(screen.getByRole('alert')).toBeTruthy();
       fireEvent.click(screen.getByRole('button', { name: en['manualEdit.discardChanges'] }));
       switchFile(2);
@@ -234,10 +235,14 @@ describe('workspace tab dismissal', () => {
     const messages: unknown[] = [];
     dom.window.parent.postMessage = (data: unknown) => { messages.push(data); };
     vi.spyOn(frame.contentWindow!, 'postMessage').mockImplementation((data) => {
-      dom.window.dispatchEvent(new dom.window.MessageEvent('message', { data }));
+      dom.window.dispatchEvent(new dom.window.MessageEvent('message', { data, source: dom.window.parent }));
     });
+    trackManualEditCanonicalSource(frame);
     const dispatch = (data: unknown) => window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, data }));
     const drain = async () => { await act(async () => { while (messages.length) dispatch(messages.shift()); }); };
+    // Shipped load handshake: the bridge learns the document epoch before any text edit begins.
+    await act(async () => { fireEvent.load(frame); });
+    await drain();
     const target: ManualEditTarget = {
       id: 'hero', kind: 'text', label: 'Hero', tagName: 'main', className: '', text: 'Hero',
       rect: { x: 24, y: 24, width: 160, height: 48 }, fields: { text: 'Hero' },
@@ -252,7 +257,7 @@ describe('workspace tab dismissal', () => {
     expect(changed).not.toHaveBeenCalled();
     expect(screen.getByTestId('artifact-preview-frame')).toBe(frame);
     await drain();
-    expect(frame.srcdoc).toContain('Live unsaved text');
+    expect(manualEditCanonicalSource(frame)).toContain('Live unsaved text');
     expect(writes).toHaveLength(0);
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: en['manualEdit.saveChanges'] })); });
     await drain();
@@ -281,9 +286,9 @@ describe('workspace tab dismissal', () => {
     });
     act(() => {
       window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow,
-        data: { type: 'readable-edit-text-commit', id: 'hero', value: 'Unsaved hero' } }));
+        data: stampManualEditFrameMessage(frame, { type: 'readable-edit-text-commit', id: 'hero', value: 'Unsaved hero' }) }));
     });
-    expect(frame.srcdoc).toContain('Unsaved hero');
+    expect(manualEditCanonicalSource(frame)).toContain('Unsaved hero');
     const dismiss = () => {
       if (path === 'button') fireEvent.click(close('preview.html'));
       else if (path === 'middle') middleClick(tab('preview.html'));
@@ -293,12 +298,12 @@ describe('workspace tab dismissal', () => {
     expect(changed).not.toHaveBeenCalled();
     expect(tab('preview.html').getAttribute('aria-selected')).toBe('true');
     expect(screen.getByRole('alert').textContent).toBe(en['workspace.unsavedTabCloseBlocked']);
-    expect(frame.srcdoc).toContain('Unsaved hero');
+    expect(manualEditCanonicalSource(frame)).toContain('Unsaved hero');
     expect(screen.getByTestId('manual-edit-mode-toggle').getAttribute('aria-pressed')).toBe('true');
     // Closing an unrelated tab must not unmount or discard the dirty viewer.
     fireEvent.click(close('other.png'));
     expect(screen.getByTestId('artifact-preview-frame')).toBe(frame);
-    expect(frame.srcdoc).toContain('Unsaved hero');
+    expect(manualEditCanonicalSource(frame)).toContain('Unsaved hero');
     fireEvent.click(screen.getByRole('button', { name: en['manualEdit.discardChanges'] }));
     dismiss();
     await settleLoads();

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -116,7 +116,7 @@ vi.mock('../../src/components/Loading', () => ({
 }));
 
 vi.mock('../../src/components/ChatPane', () => ({
-  ChatPane: () => <div data-testid="chat-pane" />,
+  ChatPane: ({ designTemplates = [] }: { designTemplates?: SkillSummary[] }) => <div data-testid="chat-pane" data-template-ids={designTemplates.map(item => item.id).join(',')} />,
 }));
 
 const mockedUseIframeKeepAlivePool = vi.mocked(useIframeKeepAlivePool);
@@ -178,15 +178,17 @@ const designSystem: DesignSystemSummary = {
 function renderProjectView(props?: {
   skills?: SkillSummary[];
   designSystems?: DesignSystemSummary[];
+  designTemplates?: SkillSummary[];
+  disabledSkills?: string[];
 }) {
   return render(
     <ProjectView
       project={project}
       routeFileName={null}
-      config={config}
+      config={{ ...config, ...(props?.disabledSkills ? { disabledSkills: props.disabledSkills } : {}) }}
       agents={[] as AgentInfo[]}
       skills={props?.skills ?? [skill]}
-      designTemplates={[] as SkillSummary[]}
+      designTemplates={props?.designTemplates ?? []}
       designSystems={props?.designSystems ?? [designSystem]}
       daemonLive
       onModeChange={vi.fn()}
@@ -222,6 +224,11 @@ describe('ProjectView preview keep-alive invalidation', () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+  });
+
+  it('keeps disabled templates out of the composer catalog', async () => {
+    renderProjectView({ designTemplates: [{ ...skill, id: 'enabled-template' }, { ...skill, id: 'disabled-template' }], disabledSkills: ['disabled-template'] });
+    await waitFor(() => expect(screen.getByTestId('chat-pane').getAttribute('data-template-ids')).toBe('enabled-template'));
   });
 
   it('evicts the active preview when registry prompt context changes for the open project', async () => {

@@ -23,6 +23,25 @@ export interface AgentResumeContext {
 
 export type CapturedAgentSessionResult = 'stored' | 'cleared' | 'skipped';
 
+/** Keep each conversation's native agent session owned until its run has settled. */
+export function createAgentSessionQueue() {
+  const pending = new Map<string, Promise<void>>();
+  return async function withAgentSession<T>(conversationId: string, agentId: string, work: () => Promise<T>): Promise<T> {
+    const key = JSON.stringify([conversationId, agentId]);
+    const previous = pending.get(key);
+    let release!: () => void;
+    const settled = new Promise<void>((resolve) => { release = resolve; });
+    pending.set(key, settled);
+    try {
+      await previous;
+      return await work();
+    } finally {
+      release();
+      if (pending.get(key) === settled) pending.delete(key);
+    }
+  };
+}
+
 /**
  * Decide whether a resume-capable adapter should continue its stored CLI
  * session or start a new one for this (conversation, agent). Pure read +
@@ -44,7 +63,7 @@ export function resolveAgentResumeContext(
 }
 
 /**
- * Persist a captured upstream session for a successful run.
+ * Persist a safely captured upstream session, including an interrupted run.
  *
  * A missing captured session on a successful run means the adapter could not
  * safely identify the child session it just created (for example, ambiguous pi

@@ -9,6 +9,7 @@ import { emptyManualEditStyles, type ManualEditTarget } from '../../src/edit-mod
 import { composerText, flushMounts, typeInComposer } from '../helpers/lexical-composer';
 import { I18nProvider } from '../../src/i18n';
 import { getKo } from '../../src/i18n/locales/ko';
+import { manualEditFrameEpoch } from './manual-edit-frame-messages';
 
 const source = '<!doctype html><html><body><main data-readable-id="hero">Hero</main></body></html>';
 const target: ManualEditTarget = { id: 'hero', tagName: 'main', kind: 'text', label: 'Hero', text: 'Hero', className: '', rect: { x: 0, y: 0, width: 160, height: 48 }, styles: emptyManualEditStyles(), fields: {}, attributes: {}, outerHtml: '<main data-readable-id="hero">Hero</main>', isLayoutContainer: false, parentId: 'row' };
@@ -38,7 +39,8 @@ async function prepare(dirty = false) {
   render(<Harness />); await flushMounts(); typeInComposer('Keep my text');
   await act(async () => fireEvent.click(screen.getByTestId('manual-edit-mode-toggle')));
   const frame = document.querySelector<HTMLIFrameElement>('iframe[data-readable-active="true"]')!;
-  const post = (data: unknown) => act(async () => { window.dispatchEvent(new MessageEvent('message', { data, source: frame.contentWindow })); });
+  const documentEpoch = manualEditFrameEpoch(frame);
+  const post = (data: object) => act(async () => { window.dispatchEvent(new MessageEvent('message', { data: { documentEpoch, ...data }, source: frame.contentWindow })); });
   await post({ type: 'readable-edit-select', target });
   if (dirty) await post({ type: 'readable-edit-text-commit', id: 'hero', value: 'Changed' });
   await post({ type: 'readable-edit-preview-style-applied', id: 'hero', version: 1000, ok: true, rect: target.rect,

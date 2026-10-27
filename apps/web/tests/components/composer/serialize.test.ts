@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { createEditor, $getRoot } from 'lexical';
 
 import { MentionNode } from '../../../src/components/composer/MentionNode';
-import { serializeComposer } from '../../../src/components/composer/serialize';
-import { setComposerFromText } from '../../../src/components/composer/deserialize';
+import { serializeComposer, type ComposerMentionSnapshot } from '../../../src/components/composer/serialize';
+import { rebaseMentionSnapshot, setComposerFromSnapshot, setComposerFromText } from '../../../src/components/composer/deserialize';
 import type { InlineMentionEntity } from '../../../src/utils/inlineMentions';
 
 // Headless Lexical editor — no DOM required. `createEditor` runs purely in
@@ -111,6 +111,102 @@ describe('serializeComposer / setComposerFromText round-trip', () => {
       expect($getRoot().getChildrenSize()).toBe(1);
     });
     expect(serializeComposer(editor.getEditorState()).text).toBe('line one\nline two');
+  });
+});
+
+describe('committed mention occurrence snapshots', () => {
+  it('reports UTF-16 offsets across emoji and line breaks', () => {
+    const editor = makeEditor();
+    const text = '🙂\n@Deck Builder\n@Slack MCP';
+    setComposerFromText(editor, text, [SKILL_ENTITY, MCP_ENTITY]);
+
+    expect(serializeComposer(editor.getEditorState())).toEqual({
+      text,
+      present: [SKILL_ENTITY, MCP_ENTITY],
+      mentions: [
+        { start: 3, end: 16, entity: SKILL_ENTITY },
+        { start: 17, end: 27, entity: MCP_ENTITY },
+      ],
+    });
+  });
+
+  it('restores only the second occurrence when the identical first token was plain', () => {
+    const editor = makeEditor();
+    const snapshot: ComposerMentionSnapshot = {
+      text: '@Deck Builder\n@Deck Builder',
+      mentions: [{ start: 14, end: 27, entity: SKILL_ENTITY }],
+    };
+    setComposerFromSnapshot(editor, snapshot);
+
+    expect(serializeComposer(editor.getEditorState())).toEqual({ ...snapshot, present: [SKILL_ENTITY] });
+  });
+
+  it('ignores stale, invalid and overlapping spans without consuming their text', () => {
+    const editor = makeEditor();
+    const text = '@Deck Builder @Slack MCP';
+    setComposerFromSnapshot(editor, {
+      text,
+      mentions: [
+        { start: -1, end: 12, entity: SKILL_ENTITY },
+        { start: 0.5, end: 13, entity: SKILL_ENTITY },
+        { start: 0, end: 13, entity: SKILL_ENTITY },
+        { start: 0, end: 13, entity: SKILL_ENTITY },
+        { start: 14, end: 24, entity: SKILL_ENTITY },
+        { start: 14, end: 25, entity: MCP_ENTITY },
+      ],
+    });
+
+    expect(serializeComposer(editor.getEditorState())).toEqual({
+      text, present: [SKILL_ENTITY], mentions: [{ start: 0, end: 13, entity: SKILL_ENTITY }],
+    });
+  });
+
+  it('preserves the committed occurrence when a plain duplicate is wrapped with other text', () => {
+    const snapshot: ComposerMentionSnapshot = {
+      text: '@Deck Builder @Deck Builder',
+      mentions: [{ start: 14, end: 27, entity: SKILL_ENTITY }],
+    };
+    expect(rebaseMentionSnapshot(snapshot, '🙂 ' + snapshot.text + '\nnotes')).toEqual({
+      text: '🙂 @Deck Builder @Deck Builder\nnotes',
+      mentions: [{ start: 17, end: 30, entity: SKILL_ENTITY }],
+    });
+  });
+
+  it('keeps an untouched binding when a replacement edits through another mention', () => {
+    const snapshot: ComposerMentionSnapshot = {
+      text: '@Deck Builder and @Slack MCP',
+      mentions: [
+        { start: 0, end: 13, entity: SKILL_ENTITY },
+        { start: 18, end: 28, entity: MCP_ENTITY },
+      ],
+    };
+    expect(rebaseMentionSnapshot(snapshot, 'Notes and @Slack MCP')).toEqual({
+      text: 'Notes and @Slack MCP',
+      mentions: [{ start: 10, end: 20, entity: MCP_ENTITY }],
+    });
+  });
+
+  it('does not bind a new plain copy when duplicate insertion has no known direction', () => {
+    const snapshot: ComposerMentionSnapshot = {
+      text: '@Deck Builder',
+      mentions: [{ start: 0, end: 13, entity: SKILL_ENTITY }],
+    };
+    expect(rebaseMentionSnapshot(snapshot, '@Deck Builder @Deck Builder')).toEqual({
+      text: '@Deck Builder @Deck Builder', mentions: [],
+    });
+  });
+
+  it('preserves other bindings when deleting a duplicate with unknown occurrence identity', () => {
+    const snapshot: ComposerMentionSnapshot = {
+      text: '@Slack MCP @Deck Builder @Deck Builder',
+      mentions: [
+        { start: 0, end: 10, entity: MCP_ENTITY },
+        { start: 11, end: 24, entity: SKILL_ENTITY },
+      ],
+    };
+    expect(rebaseMentionSnapshot(snapshot, '@Slack MCP @Deck Builder')).toEqual({
+      text: '@Slack MCP @Deck Builder', mentions: [{ start: 0, end: 10, entity: MCP_ENTITY }],
+    });
   });
 });
 

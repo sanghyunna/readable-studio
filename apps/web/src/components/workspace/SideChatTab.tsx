@@ -53,6 +53,8 @@ export interface ActiveConversationChatState {
   ) => void;
   onReorderQueuedSends?: (orderedIds: string[]) => void;
   onSendQueuedNow?: (id: string) => void;
+  startingQueuedSendId?: string | null;
+  onQueuedSendEditingChange?: (id: string, editing: boolean) => void;
 }
 
 interface Props {
@@ -157,6 +159,10 @@ export function SideChatTab({
           onUpdateQueuedSend={controlledChat?.onUpdateQueuedSend}
           onReorderQueuedSends={controlledChat?.onReorderQueuedSends}
           onSendQueuedNow={controlledChat?.onSendQueuedNow}
+          startingQueuedSendId={controlledChat?.startingQueuedSendId}
+          // Not gated on controlledChat: an edit abandoned when the primary
+          // conversation moves away must still release its queue hold.
+          onQueuedSendEditingChange={activeConversationChat?.onQueuedSendEditingChange}
           error={selectionError ?? (controlledChat ? controlledChat.error : chat.error)}
           projectId={projectId}
           sessionMode={sessionMode}

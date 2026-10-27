@@ -11,6 +11,7 @@ import { emptyManualEditStyles, type ManualEditTarget } from '../../src/edit-mod
 import { getEn } from '../../src/i18n/locales/en';
 const en = getEn();
 import type { ProjectFile } from '../../src/types';
+import { stampManualEditFrameMessage } from './manual-edit-frame-messages';
 
 afterEach(() => {
   cleanup();
@@ -64,10 +65,32 @@ describe('FileViewer manual edit regressions', () => {
     });
   }
 
+  // jsdom has no iframe bridge. Echo the host's final resize transaction identity
+  // (same contract as FileViewer.manual-edit-resize.test.tsx); layout decisions
+  // are covered in Chromium. Installed once per window so spies never nest.
+  const acknowledgedFrames = new WeakSet<Window>();
+  function acknowledgeResizeFinalize(frame: HTMLIFrameElement) {
+    const win = frame.contentWindow as Window;
+    if (acknowledgedFrames.has(win)) return;
+    acknowledgedFrames.add(win);
+    const post = win.postMessage.bind(win);
+    vi.spyOn(win, 'postMessage').mockImplementation((message, targetOrigin) => {
+      post(message, targetOrigin);
+      const resize = message?.resize;
+      if (resize?.stage !== 'finalize') return;
+      queueMicrotask(() => window.dispatchEvent(new MessageEvent('message', { source: win, data: {
+        ...resize, type: 'readable-edit-preview-style-applied', id: message.id, version: message.version, ok: true,
+        rect: { ...resize.startRect, width: resize.requested.width, height: resize.requested.height },
+        resize: { ...resize, constraints: [], causes: [], decision: 'ordinary', announce: true },
+      } })));
+    });
+  }
+
   // Hover only surfaces the "edit params" affordance; selecting a target pins
   // the docked toolbars without mounting the page-styles card.
   async function selectManualEditTarget(target = heroTarget()) {
     const frame = await previewFrame();
+    acknowledgeResizeFinalize(frame);
     act(() => {
       window.dispatchEvent(new MessageEvent('message', {
         data: { type: 'readable-edit-select', target },
@@ -312,10 +335,10 @@ describe('FileViewer manual edit regressions', () => {
     const postSpy = vi.spyOn(frame.contentWindow as Window, 'postMessage');
     act(() => {
       window.dispatchEvent(new MessageEvent('message', {
-        data: {
+        data: stampManualEditFrameMessage(frame, {
           type: 'readable-edit-selection-state',
           editing: true, hasSelection: true, bold: false, italic: false, underline: false,
-        },
+        }),
         source: frame.contentWindow,
       }));
     });

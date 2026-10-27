@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FileViewer } from '../../src/components/FileViewer';
 import { emptyManualEditStyles, type ManualEditTarget } from '../../src/edit-mode/types';
 import type { ProjectFile } from '../../src/types';
+import { manualEditCanonicalSource, stampManualEditFrameMessage } from './manual-edit-frame-messages';
 
 afterEach(() => {
   cleanup();
@@ -36,8 +37,30 @@ async function previewFrame() {
   });
 }
 
+// jsdom has no iframe bridge. Echo the host's final resize transaction identity
+// (same contract as FileViewer.manual-edit-resize.test.tsx); layout decisions
+// are covered in Chromium. Installed once per window so spies never nest.
+const acknowledgedFrames = new WeakSet<Window>();
+function acknowledgeResizeFinalize(frame: HTMLIFrameElement) {
+  const win = frame.contentWindow as Window;
+  if (acknowledgedFrames.has(win)) return;
+  acknowledgedFrames.add(win);
+  const post = win.postMessage.bind(win);
+  vi.spyOn(win, 'postMessage').mockImplementation((message, targetOrigin) => {
+    post(message, targetOrigin);
+    const resize = message?.resize;
+    if (resize?.stage !== 'finalize') return;
+    queueMicrotask(() => window.dispatchEvent(new MessageEvent('message', { source: win, data: {
+      ...resize, type: 'readable-edit-preview-style-applied', id: message.id, version: message.version, ok: true,
+      rect: { ...resize.startRect, width: resize.requested.width, height: resize.requested.height },
+      resize: { ...resize, constraints: [], causes: [], decision: 'ordinary', announce: true },
+    } })));
+  });
+}
+
 async function selectManualEditTarget(target = heroTarget()) {
   const frame = await previewFrame();
+  acknowledgeResizeFinalize(frame);
   act(() => {
     window.dispatchEvent(new MessageEvent('message', {
       data: { type: 'readable-edit-select', target },
@@ -51,6 +74,7 @@ async function selectManualEditTarget(target = heroTarget()) {
 
 async function selectManualEditTargetInInspector(target = heroTarget()) {
   const frame = await previewFrame();
+  acknowledgeResizeFinalize(frame);
   act(() => {
     window.dispatchEvent(new MessageEvent('message', {
       data: { type: 'readable-edit-select', target },
@@ -162,12 +186,12 @@ describe('FileViewer manual edit dirty-state persistence', () => {
     const frame = await previewFrame();
     act(() => {
       window.dispatchEvent(new MessageEvent('message', {
-        data: { type: 'readable-edit-text-commit', id: 'hero', value: 'Updated hero' },
+        data: stampManualEditFrameMessage(frame, { type: 'readable-edit-text-commit', id: 'hero', value: 'Updated hero' }),
         source: frame.contentWindow,
       }));
     });
 
-    await waitFor(() => expect(frame.srcdoc).toContain('Updated hero'));
+    await waitFor(() => expect(manualEditCanonicalSource(frame)).toContain('Updated hero'));
     expect(fileSaveCalls(fetchMock)).toHaveLength(0);
   });
 
@@ -195,6 +219,9 @@ describe('FileViewer manual edit dirty-state persistence', () => {
     clickManualTool('manual-edit-mode-toggle');
     await selectManualEditTarget(containerTarget());
     fireEvent.change(screen.getByLabelText('Width'), { target: { value: '200' } });
+    // Width commits through an async resize finalize ACK; the tool click below
+    // must arrive once the session is actually dirty.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save changes' })).toBeTruthy());
 
     expect(screen.queryByRole('alert')).toBeNull();
 
@@ -260,11 +287,11 @@ describe('FileViewer manual edit dirty-state persistence', () => {
     const frame = await previewFrame();
     act(() => {
       window.dispatchEvent(new MessageEvent('message', {
-        data: { type: 'readable-edit-text-commit', id: 'hero', value: 'Local hero' },
+        data: stampManualEditFrameMessage(frame, { type: 'readable-edit-text-commit', id: 'hero', value: 'Local hero' }),
         source: frame.contentWindow,
       }));
     });
-    await waitFor(() => expect(frame.srcdoc).toContain('Local hero'));
+    await waitFor(() => expect(manualEditCanonicalSource(frame)).toContain('Local hero'));
 
     view.rerender(
       <FileViewer
@@ -277,8 +304,8 @@ describe('FileViewer manual edit dirty-state persistence', () => {
     );
 
     await waitFor(() => {
-      expect(frame.srcdoc).toContain('Local hero');
-      expect(frame.srcdoc).not.toContain('Server hero');
+      expect(manualEditCanonicalSource(frame)).toContain('Local hero');
+      expect(manualEditCanonicalSource(frame)).not.toContain('Server hero');
     });
   });
 
@@ -292,7 +319,7 @@ describe('FileViewer manual edit dirty-state persistence', () => {
     const frame = await previewFrame();
     act(() => {
       window.dispatchEvent(new MessageEvent('message', {
-        data: { type: 'readable-edit-text-commit', id: 'hero', value: 'Edited hero' },
+        data: stampManualEditFrameMessage(frame, { type: 'readable-edit-text-commit', id: 'hero', value: 'Edited hero' }),
         source: frame.contentWindow,
       }));
     });
@@ -332,14 +359,14 @@ describe('FileViewer manual edit dirty-state persistence', () => {
     const frame = await previewFrame();
     act(() => {
       window.dispatchEvent(new MessageEvent('message', {
-        data: { type: 'readable-edit-text-commit', id: 'hero', value: 'Final hero' },
+        data: stampManualEditFrameMessage(frame, { type: 'readable-edit-text-commit', id: 'hero', value: 'Final hero' }),
         source: frame.contentWindow,
       }));
     });
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Save changes' })).toBeTruthy();
-      expect(frame.srcdoc).toContain('Final hero');
+      expect(manualEditCanonicalSource(frame)).toContain('Final hero');
     });
     expect(fileSaveCalls(fetchMock)).toHaveLength(0);
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
@@ -378,7 +405,7 @@ describe('FileViewer manual edit dirty-state persistence', () => {
     const frame = await previewFrame();
     act(() => {
       window.dispatchEvent(new MessageEvent('message', {
-        data: { type: 'readable-edit-text-commit', id: 'hero', value: 'Edited hero' },
+        data: stampManualEditFrameMessage(frame, { type: 'readable-edit-text-commit', id: 'hero', value: 'Edited hero' }),
         source: frame.contentWindow,
       }));
     });
@@ -417,15 +444,15 @@ describe('FileViewer manual edit dirty-state persistence', () => {
     for (const value of ['First edit', 'Second edit']) {
       act(() => {
         window.dispatchEvent(new MessageEvent('message', {
-          data: { type: 'readable-edit-text-commit', id: 'hero', value },
+          data: stampManualEditFrameMessage(frame, { type: 'readable-edit-text-commit', id: 'hero', value }),
           source: frame.contentWindow,
         }));
       });
-      await waitFor(() => expect(frame.srcdoc).toContain(value));
+      await waitFor(() => expect(manualEditCanonicalSource(frame)).toContain(value));
     }
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
     await waitFor(() => {
-      expect(frame.srcdoc).toContain('First edit');
+      expect(manualEditCanonicalSource(frame)).toContain('First edit');
       expect(screen.getByRole('button', { name: 'Redo' }).hasAttribute('disabled')).toBe(false);
       expect(screen.getByRole('button', { name: 'Discard changes' })).toBeTruthy();
     });

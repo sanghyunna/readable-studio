@@ -13,8 +13,9 @@
 //   4. Removing a chip clears the active plugin and invokes onCleared.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { PluginsSection } from '../../src/components/PluginsSection';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { createRef } from 'react';
+import { PluginsSection, type PluginsSectionHandle } from '../../src/components/PluginsSection';
 
 const PLUGIN_ROW = {
   id: 'sample-plugin',
@@ -88,6 +89,26 @@ afterEach(() => {
 });
 
 describe('PluginsSection', () => {
+  it('does not commit a resolved apply after the host rejects a stale draft', async () => {
+    const ref = createRef<PluginsSectionHandle>();
+    const onApplied = vi.fn();
+    render(<PluginsSection ref={ref} showRail={false} onApplied={onApplied} />);
+    await act(async () => { expect(await ref.current?.applyById('sample-plugin', null, { canApply: () => false })).toBeNull(); });
+    expect(onApplied).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('context-chip-strip')).toBeNull();
+  });
+
+  it('invalidates an in-flight apply when the selection is cleared', async () => {
+    let release: ((value: Response) => void) | undefined;
+    fetchMock.mockImplementation(() => new Promise<Response>(resolve => { release = resolve; }));
+    const ref = createRef<PluginsSectionHandle>();
+    const onApplied = vi.fn();
+    render(<PluginsSection ref={ref} showRail={false} onApplied={onApplied} />);
+    let pending: ReturnType<PluginsSectionHandle['applyById']> | undefined;
+    act(() => { pending = ref.current?.applyById('sample-plugin'); ref.current?.clear(); });
+    await act(async () => { release?.(new Response(JSON.stringify(APPLY_RESULT), { status: 200 })); expect(await pending).toBeNull(); });
+    expect(onApplied).not.toHaveBeenCalled();
+  });
   it('renders only the rail when no plugin is applied', async () => {
     render(<PluginsSection />);
     await waitFor(() => screen.getByTitle('A fixture'));

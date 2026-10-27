@@ -9,7 +9,7 @@ import { T } from '@/timeouts';
 import { waitForSaveResponse } from '@/playwright/manual-edit-events';
 import { issue41SelectionPaintHtml, magneticEdgeAlignmentHtml, semanticSvgDeckVisualHtml } from '../resources/manual-edit.ts';
 import {
-  armDeletePreviewLoad, assertNativeDelete, captureDeleteWrites, deleteFrame, deletePreview, enterDeleteEditMode,
+  armDeletePreviewInPlace, assertNativeDelete, captureDeleteWrites, deleteFrame, deletePreview, enterDeleteEditMode,
   focusDeleteOwner, pressDeleteBurst, runDeleteJourney, selectDeleteTarget, type DeleteFixture,
 } from '@/playwright/direct-edit-delete';
 
@@ -318,16 +318,16 @@ for (const owner of ['host', 'iframe'] as const) {
       await page.locator('.manual-edit-left-inspector').getByLabel('Text color value', { exact: true }).fill('#ef4444');
       await expect(target).toHaveCSS('color', 'rgb(239, 68, 68)');
       await focusDeleteOwner(page, owner);
-      const deleted = await armDeletePreviewLoad(page);
+      const deleted = await armDeletePreviewInPlace(page);
       await pressDeleteBurst(page);
-      await deleted();
       await expect(target).toHaveCount(0, { timeout: T.medium });
+      await deleted();
       await expect(deleteFrame(page).locator('.survivor')).toHaveCount(1);
       await deletePreview(page).focus();
-      const undone = await armDeletePreviewLoad(page);
+      const undone = await armDeletePreviewInPlace(page);
       await page.keyboard.press('Control+z');
-      await undone();
       await expect(target).toHaveCount(1, { timeout: T.medium });
+      await undone();
       await expect(target).toHaveCSS('color', 'rgb(239, 68, 68)');
       expect(capture.writes).toHaveLength(0);
       const exited = page.locator('.manual-edit-left-inspector').waitFor({ state: 'detached', timeout: T.medium });
@@ -563,10 +563,10 @@ test('[P0] manual edit Delete of a parent leaves no removed descendant in layers
     await expect(parent).toHaveAttribute('data-readable-edit-selected', 'true');
     await focusDeleteOwner(page, 'host');
     await page.screenshot({ path: testInfo.outputPath('ghost-parent-selected.png') });
-    const deleted = await armDeletePreviewLoad(page);
+    const deleted = await armDeletePreviewInPlace(page);
     await page.keyboard.press('Delete');
-    await deleted();
     await expect(parent).toHaveCount(0, { timeout: T.medium });
+    await deleted();
     await expect(child).toHaveCount(0);
     await expect(mover).toHaveCount(1);
     await previewFrames(page);
@@ -764,23 +764,33 @@ test('[P1] issue 33 manual edit history preserves preview identity and focus', a
   await expect(frame.locator('html[data-readable-edit-mode]')).toHaveCount(1);
 
   const moveSurface = page.getByRole('group', { name: 'Move element' }).locator('[data-region="interior"]');
-  const armFrameLoad = async () => {
-    await artifactPreview(page).evaluate((node) => {
-      const frameNode = node as HTMLIFrameElement & { __readableStudioIssue33NextLoad?: Promise<void> };
-      frameNode.__readableStudioIssue33NextLoad = new Promise((resolve, reject) => {
-        const loaded = () => { clearTimeout(timer); resolve(); };
-        const timer = setTimeout(() => {
-          frameNode.removeEventListener('load', loaded);
-          reject(new Error('Issue 33 preview load timed out'));
-        }, 10_000);
-        frameNode.addEventListener('load', loaded, { once: true });
+  // Text commits, Undo and Redo replay into the mounted preview document
+  // instead of reloading it. Arm before the action; the returned check waits for
+  // the bridge to acknowledge each replay, then proves the same document survived.
+  const armInPlaceReplay = async (replays: number) => {
+    const marker = randomUUID();
+    await page.evaluate(() => {
+      const host = window as typeof window & { __issue33Replays?: boolean[] };
+      const listening = !!host.__issue33Replays;
+      host.__issue33Replays = [];
+      if (!listening) window.addEventListener('message', (event) => {
+        if (event.data?.type === 'readable-edit-preview-source-applied') host.__issue33Replays!.push(event.data.ok === true);
       });
     });
+    await artifactPreview(page).evaluate((node) => {
+      node.removeAttribute('data-issue33-reloaded');
+      node.addEventListener('load', () => node.setAttribute('data-issue33-reloaded', 'true'), { once: true });
+    });
+    await frame.locator('html').evaluate((_, value) => {
+      (window as typeof window & { __issue33Document?: string }).__issue33Document = value;
+    }, marker);
+    return async () => {
+      await expect.poll(() => page.evaluate(() => (window as typeof window & { __issue33Replays?: boolean[] }).__issue33Replays))
+        .toEqual(Array(replays).fill(true));
+      await expect(artifactPreview(page)).not.toHaveAttribute('data-issue33-reloaded', 'true');
+      expect(await frame.locator('html').evaluate(() => (window as typeof window & { __issue33Document?: string }).__issue33Document)).toBe(marker);
+    };
   };
-  const waitForFrameLoad = () => artifactPreview(page).evaluate((node) => {
-    const frameNode = node as HTMLIFrameElement & { __readableStudioIssue33NextLoad?: Promise<void> };
-    return frameNode.__readableStudioIssue33NextLoad;
-  });
   const commitText = async (text: string, beginInlineEdit: () => Promise<void>) => {
     await textOnlyDiv.evaluate(node => Object.defineProperty(node, '__issue33Original', { value: true }));
     await beginInlineEdit();
@@ -789,14 +799,15 @@ test('[P1] issue 33 manual edit history preserves preview identity and focus', a
     await page.keyboard.press('ControlOrMeta+A');
     await page.keyboard.type(text);
     await expect(textOnlyDiv).toHaveText(text);
-    await armFrameLoad();
-    await page.keyboard.press('Enter');
-    await waitForFrameLoad();
+    const replayed = await armInPlaceReplay(1);
+    await page.keyboard.press('Escape');
+    await replayed();
+    await expect(textOnlyDiv).not.toHaveAttribute('contenteditable', 'true');
     await expectFileSource(page, projectId, 'manual-edit.html', ['Left panel']);
     await expect(textOnlyDiv).toHaveText(text);
-    // The old DOM instance carried an expando, not source markup. Rebuilt
-    // content must be a new instance without relying on a destroyed JS handle.
-    expect(await textOnlyDiv.evaluate(node => '__issue33Original' in node)).toBe(false);
+    // The expando lives on the DOM instance, not in source markup: the in-place
+    // replay keeps the edited element instead of rebuilding the document.
+    expect(await textOnlyDiv.evaluate(node => '__issue33Original' in node)).toBe(true);
     await expect(frame.locator('[data-readable-id="pair-a"][data-readable-edit-selected="true"]')).toHaveCount(1);
     await expect(moveSurface).toBeVisible();
   };
@@ -821,16 +832,16 @@ test('[P1] issue 33 manual edit history preserves preview identity and focus', a
 
   await expectHistoryState('Second edit', ['First edit', 'Left panel']);
 
-  await armFrameLoad();
+  const undone = await armInPlaceReplay(2);
   await page.keyboard.press('ControlOrMeta+z');
   await page.keyboard.press('ControlOrMeta+z');
-  await waitForFrameLoad();
+  await undone();
   await expectHistoryState('Left panel', ['First edit', 'Second edit']);
 
-  await armFrameLoad();
+  const redone = await armInPlaceReplay(2);
   await page.keyboard.press('ControlOrMeta+Shift+z');
   await page.keyboard.press('ControlOrMeta+Shift+z');
-  await waitForFrameLoad();
+  await redone();
   await expectHistoryState('Second edit', ['First edit', 'Left panel']);
 
   const beforeNudge = await textOnlyDiv.boundingBox();
@@ -1299,7 +1310,8 @@ test('[P1] issue 34 selects a nested child through the selected parent move surf
   await child.click();
   await expect(child).toHaveAttribute('data-readable-edit-selected', 'true');
   await page.keyboard.press('Escape');
-  await parent.click({ position: { x: 20, y: 20 } });
+  // 1.3.8: a click on rendered text places a caret; pick the object off its glyphs.
+  await parent.click({ position: { x: 300, y: 190 } });
   await expect(parent).toHaveAttribute('data-readable-edit-selected', 'true');
   await expect(parent).not.toHaveAttribute('contenteditable');
   await expect(
@@ -1339,7 +1351,7 @@ test('[P1] issue 34 keeps dragging the selected parent when the drag starts over
   const child = frame.locator('[data-readable-id="issue-34-child"]');
   await page.getByTestId('manual-edit-mode-toggle').click();
   await expect(frame.locator('html[data-readable-edit-mode]')).toHaveCount(1);
-  await parent.click({ position: { x: 40, y: 20 } });
+  await parent.click({ position: { x: 300, y: 190 } });
   await expect(parent).toHaveAttribute('data-readable-edit-selected', 'true');
   await expect(parent).not.toHaveAttribute('contenteditable');
   await expect(
@@ -1360,7 +1372,9 @@ test('[P1] issue 34 keeps dragging the selected parent when the drag starts over
   await expect(child).not.toHaveAttribute('data-readable-edit-selected', 'true');
   await expect.poll(async () => (await parent.boundingBox())?.x ?? 0).toBeGreaterThan(parentBefore.x + 30);
 
+  const save = waitForSaveResponse(page, projectId);
   await page.getByTestId('manual-edit-mode-toggle').click();
+  expect((await save).status()).toBe(200);
   const response = await page.request.get(`/api/projects/${projectId}/files/${fileName}`);
   expect(response.ok()).toBeTruthy();
   const source = await response.text();
@@ -1381,7 +1395,7 @@ test('[P1] issue 34 selects a nested child whose center is inside the selected r
   const ringChild = frame.locator('[data-readable-id="issue-34-ring-child"]');
   await page.getByTestId('manual-edit-mode-toggle').click();
   await expect(frame.locator('html[data-readable-edit-mode]')).toHaveCount(1);
-  await parent.click({ position: { x: 40, y: 20 } });
+  await parent.click({ position: { x: 300, y: 190 } });
   await expect(parent).toHaveAttribute('data-readable-edit-selected', 'true');
   await expect(parent).not.toHaveAttribute('contenteditable');
   await expect(
@@ -1719,6 +1733,13 @@ test('[P1] manual edit resize handles track the selected element through layout 
   await selectPreviewElementThroughBridge(page, frame, '[data-readable-id="hero-title"]', 'Shape');
 
   const heroTitle = frame.locator('[data-readable-id="hero-title"]');
+  // A click on the heading's glyphs places the caret (PowerPoint model), and a
+  // live text edit owns the element until commit. Escape returns to the object
+  // selection whose overlays this layout-reflow contract covers.
+  await expect(heroTitle).toHaveAttribute('contenteditable', 'true');
+  await page.keyboard.press('Escape');
+  await expect(heroTitle).not.toHaveAttribute('contenteditable');
+  await expect(heroTitle).toHaveAttribute('data-readable-edit-selected', 'true');
   // Reflow the selected element WITHOUT a window resize or scroll — the shape
   // of deck slide navigation / transition settle / media-load reflows. The
   // bridge's layout observer must re-broadcast rects or the host overlays
@@ -1997,15 +2018,21 @@ test('[P1] magnetic edge alignment shows a guide while dragging and hides it wit
   await expect(guide).toHaveCount(0);
   await expect.poll(leftEdgeGap, { timeout: 5000 }).toBeLessThanOrEqual(1);
 
-  // A second drag with Alt held should not produce a guide.
-  await selectPreviewElementThroughBridge(page, frame, '[data-readable-id="snap-target"]', 'Shape');
+  // The move commits in place, so the object stays selected without a
+  // re-click (a click on a selected text object's interior now places the
+  // caret). A second drag with Alt held must move without producing a guide.
+  const snapTarget = frame.locator('[data-readable-id="snap-target"]');
+  await expect(snapTarget).toHaveAttribute('data-readable-edit-selected', 'true');
+  await expect(snapTarget).not.toHaveAttribute('contenteditable');
   await expect(moveSurface).toBeVisible();
   const box2 = await moveSurface.boundingBox();
   if (!box2) throw new Error('move surface has no bounding box on second drag');
+  const leftBeforeAltDrag = await snapTarget.evaluate((el) => el.getBoundingClientRect().left);
   await page.mouse.move(box2.x + box2.width / 2, box2.y + box2.height / 2);
   await page.mouse.down();
   await page.keyboard.down('Alt');
   await page.mouse.move(box2.x + box2.width / 2 - 175, box2.y + box2.height / 2, { steps: 8 });
+  await expect.poll(() => snapTarget.evaluate((el) => el.getBoundingClientRect().left)).toBeLessThan(leftBeforeAltDrag - 100);
   await expect(guide).toHaveCount(0);
   await page.keyboard.up('Alt');
   await page.mouse.up();

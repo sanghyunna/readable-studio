@@ -29,6 +29,7 @@ import type {
   RefObject,
 } from 'react';
 import type {
+  DesignTemplateSummary,
   DesignSystemSummary,
   InputFieldSpec,
   InstalledPluginRecord,
@@ -105,6 +106,7 @@ import {
 } from './composer/LexicalComposerInput';
 import type { StagedFileItem } from './composer/stagedFiles';
 import { CaretFloatingLayer } from './composer/CaretFloatingLayer';
+import { MentionPreviewPicker, MentionTemplatePreview, type MentionPreviewItem } from './MentionPreviewPicker';
 import { pluginsWithVisualReferences } from '../utils/visualPluginContext';
 import { isHubEditableDocumentName } from './hub/drop-to-edit';
 import { useUserDeckTemplates } from './home-hero/useUserDeckTemplates';
@@ -147,6 +149,7 @@ interface Props {
   firstRunGuide?: boolean;
   prompt: string;
   onPromptChange: (value: string) => void;
+  onMentionEntitiesChange?: (entities: InlineMentionEntity[]) => void;
   onSubmit: HomeHeroSubmitHandler;
   onContinueWithoutPrompt?: () => void;
   /** Hub-only project starts in the "+" menu (open folder, Claude ZIP, saved
@@ -202,6 +205,7 @@ interface Props {
   pluginOptions: InstalledPluginRecord[];
   pluginsLoading: boolean;
   skillOptions?: SkillSummary[];
+  designTemplates?: DesignTemplateSummary[];
   skillsLoading?: boolean;
   mcpOptions?: McpServerConfig[];
   mcpLoading?: boolean;
@@ -223,7 +227,7 @@ interface Props {
   executionSwitcher?: ReactNode;
 }
 
-type HomeMentionTab = 'all' | 'files' | 'plugins' | 'skills' | 'mcp';
+type HomeMentionTab = 'all' | 'files' | 'plugins' | 'templates' | 'skills' | 'mcp';
 
 // In the combined "All" overview, every surface is capped to a handful of top
 // matches so no single section floods the picker. The dedicated "Design files"
@@ -232,20 +236,7 @@ type HomeMentionTab = 'all' | 'files' | 'plugins' | 'skills' | 'mcp';
 // total rather than the truncated preview.
 const HOME_MENTION_ALL_TAB_PREVIEW = 6;
 
-interface HomeMentionOption {
-  id: string;
-  icon: IconName;
-  title: string;
-  description: string;
-  meta: string;
-  pluginRecord?: InstalledPluginRecord;
-  /**
-   * Design-system identity colors for the row's palette preview. Absent for
-   * every non-design-system row and for systems with no usable palette, which
-   * keeps the name-only layout as the graceful fallback.
-   */
-  swatches?: readonly string[];
-  disabled?: boolean;
+interface HomeMentionOption extends MentionPreviewItem {
   onPick: () => void;
 }
 
@@ -269,6 +260,7 @@ const EMPTY_DESIGN_SYSTEMS: DesignSystemSummary[] = [];
 const EMPTY_STAGED_FILES: StagedFileItem[] = [];
 const NOOP_PREVIEW_URLS_CHANGE = () => undefined;
 const EMPTY_SKILLS: SkillSummary[] = [];
+const EMPTY_DESIGN_TEMPLATES: DesignTemplateSummary[] = [];
 const EMPTY_MCP_OPTIONS: McpServerConfig[] = [];
 
 export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
@@ -278,6 +270,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     submitting = false,
     prompt,
     onPromptChange,
+    onMentionEntitiesChange,
     onSubmit,
     onContinueWithoutPrompt = () => undefined,
     firstRunGuide,
@@ -295,6 +288,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     onClearFolderChip,
     onClearActiveSkill = () => undefined,
     selectedPluginContexts = EMPTY_PLUGIN_CONTEXTS,
+    selectedMcpContexts = EMPTY_MCP_OPTIONS,
     contextOnlyPlugins = EMPTY_PLUGIN_CONTEXTS,
     contextOnlyMcpServers = EMPTY_MCP_OPTIONS,
     onRemovePluginContext = () => undefined,
@@ -319,6 +313,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     pluginOptions,
     pluginsLoading,
     skillOptions = EMPTY_SKILLS,
+    designTemplates = EMPTY_DESIGN_TEMPLATES,
     skillsLoading = false,
     mcpOptions = EMPTY_MCP_OPTIONS,
     mcpLoading = false,
@@ -348,7 +343,6 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   trackRef.current = analytics.track;
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [mentionTab, setMentionTab] = useState<HomeMentionTab>('all');
-  const [hoveredPlugin, setHoveredPlugin] = useState<InstalledPluginRecord | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   // Two-flash attention pulse on the send button; armed via the
@@ -430,12 +424,19 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     () => buildDesignSystemPalettes(designSystems),
     [designSystems],
   );
+  const designTemplateIds = useMemo(() => new Set(designTemplates.map((template) => template.id)), [designTemplates]);
   const skillMatches = useMemo(
     () =>
       mentionActive
-        ? skillOptions.filter((skill) => skillMatchesQuery(skill, mentionQuery, locale))
+        ? skillOptions.filter((skill) => !designTemplateIds.has(skill.id) && skillMatchesQuery(skill, mentionQuery, locale))
         : [],
-    [locale, mentionActive, mentionQuery, skillOptions],
+    [designTemplateIds, locale, mentionActive, mentionQuery, skillOptions],
+  );
+  const templateMatches = useMemo(
+    () => mentionActive
+      ? designTemplates.filter((template) => !template.aggregatesExamples && skillMatchesQuery(template, mentionQuery, locale))
+      : [],
+    [designTemplates, locale, mentionActive, mentionQuery],
   );
   const mcpMatches = useMemo(
     () =>
@@ -450,27 +451,32 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     // its badge counts the previewed slice — not the full staged total — to keep
     // the count aligned with what that tab actually renders. The dedicated files
     // tab below lists every match and reports the true total.
-    { id: 'all', label: t('common.all'), count: Math.min(fileMatches.length, HOME_MENTION_ALL_TAB_PREVIEW) + pluginMatches.length + skillMatches.length + mcpMatches.length },
+    { id: 'all', label: t('common.all'), count: Math.min(fileMatches.length, HOME_MENTION_ALL_TAB_PREVIEW) + pluginMatches.length + templateMatches.length + skillMatches.length + mcpMatches.length },
     { id: 'files', label: t('chat.mentionTabFiles'), count: fileMatches.length },
     { id: 'plugins', label: t('entry.navPlugins'), count: pluginMatches.length },
+    { id: 'templates', label: t('chat.mentionTabTemplates'), count: templateMatches.length },
     { id: 'skills', label: t('homeHero.skills'), count: skillMatches.length },
     { id: 'mcp', label: 'MCP', count: mcpMatches.length },
   ];
   const showFiles = mentionTab === 'all' || mentionTab === 'files';
   const showPlugins = mentionTab === 'all' || mentionTab === 'plugins';
+  const showTemplates = mentionTab === 'all' || mentionTab === 'templates';
   const showSkills = mentionTab === 'all' || mentionTab === 'skills';
   const showMcp = mentionTab === 'all' || mentionTab === 'mcp';
-  const visibleSections: HomeMentionSection[] = [
+  const mentionSections: Array<HomeMentionSection | null> = [
     showFiles
       ? {
           id: 'files',
           label: t('chat.mentionSectionFiles'),
           options: (mentionTab === 'files' ? fileMatches : fileMatches.slice(0, HOME_MENTION_ALL_TAB_PREVIEW)).map(({ item }) => ({
-            id: `file-${item.id}`,
+            key: `file-${item.id}`,
+            id: item.id,
+            kind: 'file',
+            kindLabel: t('chat.mentionTabFiles'),
             icon: isImageFile(item.file) ? 'image' : 'file',
             title: item.uploadName,
             description: item.file.type || t('chat.mentionTabFiles'),
-            meta: formatFileSize(item.file.size),
+            source: formatFileSize(item.file.size),
             onPick: () => pickFile(item),
           })),
         }
@@ -482,17 +488,40 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
           options: pluginMatches.map((plugin) => {
             const swatches = pluginSwatches(plugin, designSystemPalettes);
             return {
-              id: `plugin-${plugin.id}`,
+              key: `plugin-${plugin.id}`,
+              id: plugin.id,
+              kind: 'plugin',
+              kindLabel: t('entry.navPlugins'),
               icon: 'sparkles' as IconName,
               title: localizePluginTitle(locale, plugin),
               description: localizePluginDescription(locale, plugin) || plugin.id,
-              meta: pendingPluginId === plugin.id ? t('homeHero.applying') : getPluginSourceLabel(plugin),
-              pluginRecord: plugin,
-              ...(swatches ? { swatches } : {}),
+              source: `${t(plugin.sourceKind === 'bundled' ? 'chat.mentionPluginOfficial' : 'chat.mentionPluginMine')} · ${plugin.id}`,
+              selected: selectedPluginContexts.some((selected) => selected.id === plugin.id),
+              ...(swatches ? { rowDecoration: <span className="home-hero__plugin-option-swatches" data-testid={`home-hero-option-swatches-plugin-${plugin.id}`} aria-hidden>{swatches.map((color, index) => <span key={`${plugin.id}-${index}`} className="home-hero__plugin-option-swatch" style={{ background: color }} />)}</span> } : {}),
+              preview: <><PreviewSurface pluginId={plugin.id} pluginTitle={localizePluginTitle(locale, plugin)} preview={inferPluginPreview(plugin, { preferBaked: true })} eager /><Button variant="ghost" onMouseDown={(event) => event.preventDefault()} onClick={() => { dismissMentionPicker(); onOpenPluginDetails(plugin); }}>{t('homeHero.details')}</Button></>,
               disabled: pendingPluginId !== null,
               onPick: () => pickPlugin(plugin),
             };
           }),
+        }
+      : null,
+    showTemplates
+      ? {
+          id: 'templates',
+          label: t('chat.mentionTabTemplates'),
+          options: templateMatches.map((template) => ({
+            key: `skill-${template.id}`,
+            id: template.id,
+            kind: 'template',
+            kindLabel: t('chat.mentionTabTemplates'),
+            icon: 'file',
+            title: localizeSkillName(locale, template),
+            description: localizeSkillDescription(locale, template) || template.id,
+            source: template.id,
+            selected: template.id === activeSkillId,
+            preview: <MentionTemplatePreview template={template} />,
+            onPick: () => pickSkill(template),
+          })),
         }
       : null,
     showSkills
@@ -500,11 +529,15 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
           id: 'skills',
           label: t('homeHero.skills'),
           options: skillMatches.map((skill) => ({
-            id: `skill-${skill.id}`,
+            key: `skill-${skill.id}`,
+            id: skill.id,
+            kind: 'skill',
+            kindLabel: t('homeHero.skills'),
             icon: skill.id === activeSkillId ? 'check' : 'file',
             title: localizeSkillName(locale, skill),
             description: localizeSkillDescription(locale, skill) || skill.id,
-            meta: skill.id === activeSkillId ? t('common.active') : skill.mode,
+            source: skill.id,
+            selected: skill.id === activeSkillId,
             onPick: () => pickSkill(skill),
           })),
         }
@@ -514,22 +547,33 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
           id: 'mcp',
           label: 'MCP',
           options: mcpMatches.map((server) => ({
-            id: `mcp-${server.id}`,
+            key: `mcp-${server.id}`,
+            id: server.id,
+            kind: 'mcp',
+            kindLabel: 'MCP',
             icon: 'link',
             title: server.label || server.id,
             description: server.url || server.command || server.id,
-            meta: server.transport,
+            source: `${server.transport} · ${server.id}`,
+            selected: selectedMcpContexts.some((selected) => selected.id === server.id),
             onPick: () => pickMcp(server),
           })),
         }
       : null,
-  ].filter((section): section is HomeMentionSection => Boolean(section?.options.length));
+  ];
+  const visibleSections = mentionSections.filter((section): section is HomeMentionSection => Boolean(section?.options.length));
   const visiblePickerOptions = visibleSections.flatMap((section) => section.options);
   const visibleLoading =
     (mentionTab === 'all' && (pluginsLoading || skillsLoading || mcpLoading)) ||
     (mentionTab === 'plugins' && pluginsLoading) ||
-    (mentionTab === 'skills' && skillsLoading) ||
+    ((mentionTab === 'skills' || mentionTab === 'templates') && skillsLoading) ||
     (mentionTab === 'mcp' && mcpLoading);
+  const activeMentionOption = visiblePickerOptions[selectedIndex] ?? visiblePickerOptions[0];
+  const mentionScopeLabel = t(activeMentionOption?.kind === 'plugin'
+    ? 'chat.mentionVisualReference'
+    : activeMentionOption?.kind === 'skill' || activeMentionOption?.kind === 'template'
+      ? 'chat.mentionNewProjectSkill'
+      : 'chat.mentionCurrentRequest');
   const promptMentionEntities = useMemo(
     () =>
       buildHomeMentionEntities({
@@ -553,6 +597,17 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
       skillOptions,
     ],
   );
+  const initialCommittedMentions = useMemo(() => {
+    const pluginIds = new Set(selectedPluginContexts
+      .filter((plugin) => !contextOnlyPlugins.some((context) => context.id === plugin.id))
+      .map((plugin) => plugin.id));
+    const mcpIds = new Set(selectedMcpContexts
+      .filter((server) => !contextOnlyMcpServers.some((context) => context.id === server.id))
+      .map((server) => server.id));
+    return promptMentionEntities.filter((entity) =>
+      entity.kind === 'plugin' && pluginIds.has(entity.id)
+      || entity.kind === 'mcp' && mcpIds.has(entity.id));
+  }, [contextOnlyMcpServers, contextOnlyPlugins, promptMentionEntities, selectedMcpContexts, selectedPluginContexts]);
   const fieldByName = useMemo(
     () => new Map(pluginInputFields.map((field) => [field.name, field])),
     [pluginInputFields],
@@ -676,10 +731,6 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   useEffect(() => {
     if (selectedIndex >= visiblePickerOptions.length) setSelectedIndex(0);
   }, [selectedIndex, visiblePickerOptions.length]);
-
-  useEffect(() => {
-    if (!pickerOpen) setHoveredPlugin(null);
-  }, [pickerOpen]);
 
   useEffect(() => {
     if (!pickerOpen) return;
@@ -814,8 +865,8 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   // editor's new serialized text. The pill replaces the in-flight `@query`
   // (Lexical's insertMention handles the range), so callers can forward the
   // resulting text to the host pick handler without computing offsets.
-  function insertHomeMention(token: string, entity: InlineMentionEntity): string {
-    editorRef.current?.insertMention({ token, entity });
+  function insertHomeMention(token: string, entity: InlineMentionEntity, replace?: Pick<InlineMentionEntity, 'kind' | 'id'>): string {
+    editorRef.current?.insertMention({ token, entity }, { replace });
     return editorRef.current?.getText() ?? prompt;
   }
 
@@ -845,8 +896,15 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
       kind: 'skill',
       label: skill.name,
       token,
-    });
+    }, activeSkillId ? { kind: 'skill', id: activeSkillId } : undefined);
     onPickSkill(skill, next);
+  }
+
+  function clearSkillChip() {
+    if (interactionLocked) return;
+    if (activeSkillId) editorRef.current?.removeMention({ kind: 'skill', id: activeSkillId });
+    onClearActiveSkill();
+    editorRef.current?.focus();
   }
 
   function pickMcp(server: McpServerConfig) {
@@ -889,7 +947,6 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     setMentionTrigger(null);
     setContextControlAnchored(false);
     setMentionTab('all');
-    setHoveredPlugin(null);
     setSelectedIndex(0);
   }
 
@@ -940,8 +997,8 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   }
 
   function removeFileChip(item: StagedFileItem) {
-    const nextPrompt = stripHomeMentionToken(prompt, item.uploadName);
-    if (nextPrompt !== prompt) onPromptChange(nextPrompt);
+    if (interactionLocked) return;
+    editorRef.current?.removeMention({ kind: 'file', id: item.id });
     onRemoveFile(item.id);
   }
 
@@ -1050,7 +1107,6 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     activeSkillTitle ||
     stagedFiles.length > 0;
 
-  let optionRenderIndex = 0;
 
   return (
     <section className="home-hero" data-testid="home-hero">
@@ -1278,7 +1334,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
                 <button
                   type="button"
                   className="home-hero__active-clear readable-tooltip"
-                  onClick={onClearActiveSkill}
+                  onClick={clearSkillChip}
                   disabled={interactionLocked}
                   aria-label={t('homeHero.clearActiveSkill')}
                   title={t('homeHero.clearActiveSkill')}
@@ -1349,7 +1405,10 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
               invalid={Boolean(error)}
               placeholder={placeholder}
               knownEntities={promptMentionEntities}
-              onChange={(plainText) => {
+              committedMentionsOnly
+              initialCommittedEntities={initialCommittedMentions}
+              onChange={(plainText, present) => {
+                onMentionEntitiesChange?.(present);
                 // A programmatic seed (host setPrompt → draft prop →
                 // SeedingPlugin) echoes back through Lexical's onChange. The
                 // old <textarea> never fired onChange for a controlled-value
@@ -1374,154 +1433,43 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
               onPopoverKey={handlePopoverKey}
               comboboxAria={{
                 expanded: pickerOpen,
-                activeId: pickerOpen && visiblePickerOptions.length > 0 ? `home-hero-option-${selectedIndex}` : null,
+                listboxId: 'home-hero-context-picker',
+                activeId: pickerOpen && visiblePickerOptions.length > 0 ? `home-hero-context-picker-option-${selectedIndex}` : null,
               }}
             />
           </div>
         </div>
         <CaretFloatingLayer
           caret={caretRect}
+          boundaryRef={promptEditorRef}
           anchorRef={contextControlAnchored ? contextControlRef : undefined}
           open={pickerOpen}
+          preferredWidth={640}
         >
           <div
             ref={mentionPickerRef}
-            id="home-hero-context-picker"
-            className="home-hero__plugin-picker home-hero__plugin-picker--floating"
-            role="listbox"
-            aria-label={t('homeHero.contextSearchResults')}
             data-testid="home-hero-plugin-picker"
           >
-            <div className="home-hero__mention-tabs" role="tablist" aria-label={t('homeHero.contextSurfaces')}>
-              {tabs.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  role="tab"
-                  aria-label={item.label}
-                  aria-selected={mentionTab === item.id}
-                  className={`home-hero__mention-tab${mentionTab === item.id ? ' is-active' : ''}`}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => {
-                    setMentionTab(item.id);
-                    setSelectedIndex(0);
-                  }}
-                >
-                  <span>{item.label}</span>
-                  {item.count > 0 ? <span>{item.count}</span> : null}
-                </button>
-              ))}
-            </div>
-            <div className="home-hero__plugin-picker-results">
-              {visibleLoading && visiblePickerOptions.length === 0 ? (
-                <div className="home-hero__plugin-picker-empty">{t('homeHero.loadingContext')}</div>
-              ) : null}
-              {!visibleLoading && visiblePickerOptions.length === 0 ? (
-                <div className="home-hero__plugin-picker-empty">
-                  {mentionQuery ? (
-                    <>{t('homeHero.noResults', { query: mentionQuery })}</>
-                  ) : (
-                    <>{t('homeHero.searchPrompt')}</>
-                  )}
-                </div>
-              ) : null}
-              {visibleSections.map((section) => (
-                <div key={section.id} className="home-hero__mention-section">
-                  <div className="home-hero__mention-section-label">{section.label}</div>
-                  {section.options.map((item) => {
-                    const optionIndex = optionRenderIndex;
-                    optionRenderIndex += 1;
-                    return (
-                      <button
-                        key={item.id}
-                        id={`home-hero-option-${optionIndex}`}
-                        type="button"
-                        role="option"
-                        aria-selected={optionIndex === selectedIndex}
-                        className={`home-hero__plugin-option${
-                          optionIndex === selectedIndex ? ' is-active' : ''
-                        }`}
-                        onMouseEnter={() => {
-                          setSelectedIndex(optionIndex);
-                          setHoveredPlugin(item.pluginRecord ?? null);
-                        }}
-                        onMouseDown={(event) => event.preventDefault()}
-                        onClick={() => {
-                          if (!item.disabled) item.onPick();
-                        }}
-                        disabled={item.disabled}
-                      >
-                        <span className="home-hero__plugin-option-icon" aria-hidden>
-                          <Icon name={item.icon} size={13} />
-                        </span>
-                        <span className="home-hero__plugin-option-main">
-                          <span>{item.title}</span>
-                          <span>{item.description}</span>
-                        </span>
-                        {item.swatches ? (
-                          // Supplementary only — the name above already
-                          // identifies the row, so the cluster stays out of the
-                          // accessibility tree instead of reading hex codes.
-                          <span
-                            className="home-hero__plugin-option-swatches"
-                            data-testid={`home-hero-option-swatches-${item.id}`}
-                            aria-hidden
-                          >
-                            {item.swatches.map((color, colorIndex) => (
-                              <span
-                                key={`${item.id}-sw-${colorIndex}`}
-                                className="home-hero__plugin-option-swatch"
-                                style={{ background: color }}
-                              />
-                            ))}
-                          </span>
-                        ) : null}
-                        <span className="home-hero__plugin-option-meta">
-                          {item.meta}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              ))}
-              {visiblePickerOptions.some((item) => item.pluginRecord) ? (
-                <div
-                  className="home-hero__plugin-hover-slot"
-                  data-testid="home-hero-plugin-hover-slot"
-                >
-                  {hoveredPlugin ? (
-                    <div
-                      className="home-hero__plugin-hover-card"
-                      data-testid="home-hero-plugin-hover-card"
-                    >
-                      <div>
-                        <span className="home-hero__plugin-hover-kicker">
-                          {getPluginSourceLabel(hoveredPlugin)}
-                        </span>
-                        <strong>{localizePluginTitle(locale, hoveredPlugin)}</strong>
-                        <p>{localizePluginDescription(locale, hoveredPlugin) || hoveredPlugin.id}</p>
-                      </div>
-                      <div className="home-hero__plugin-hover-meta">
-                        <span>{t('homeHero.parameters', { n: (hoveredPlugin.manifest?.readable?.inputs ?? []).length })}</span>
-                        {getPluginQueryPreview(hoveredPlugin) ? (
-                          <span>{getPluginQueryPreview(hoveredPlugin)}</span>
-                        ) : null}
-                      </div>
-                      <button
-                        type="button"
-                        onMouseDown={(event) => event.preventDefault()}
-                        onClick={() => {
-                          dismissMentionPicker();
-                          onOpenPluginDetails(hoveredPlugin);
-                        }}
-                      >
-                        {t('homeHero.details')}
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
+            <MentionPreviewPicker
+              items={visiblePickerOptions}
+              tabs={tabs.map((item) => ({ id: item.id, label: `${item.label}${item.count > 0 ? ` ${item.count}` : ''}` }))}
+              tab={mentionTab}
+              onTabChange={(tab) => {
+                setMentionTab(tab as HomeMentionTab);
+                setSelectedIndex(0);
+              }}
+              activeIndex={selectedIndex}
+              onActiveIndexChange={setSelectedIndex}
+              onConfirm={(item) => {
+                const option = visiblePickerOptions.find((candidate) => candidate.key === item.key);
+                if (option && !option.disabled) option.onPick();
+              }}
+              onClose={dismissMentionPicker}
+              query={mentionQuery}
+              scopeLabel={mentionScopeLabel}
+              listboxId="home-hero-context-picker"
+              loading={visibleLoading}
+            />
           </div>
         </CaretFloatingLayer>
         <div className="home-hero__input-foot">
@@ -3200,14 +3148,6 @@ function optionLabelMap(field: InputFieldSpec): Record<string, string> {
     : {};
 }
 
-function stripHomeMentionToken(value: string, label: string): string {
-  const token = inlineMentionToken(label);
-  return value.replace(
-    new RegExp(`(^|[\\s([{"'])${escapeRegExp(token)}(?=$|\\s|[.,;:!?)}\\]"'])([^\\S\\r\\n])?`, 'g'),
-    '$1',
-  );
-}
-
 function fileMatchesQuery(file: File, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
@@ -3265,28 +3205,6 @@ function mcpServerMatchesQuery(server: McpServerConfig, query: string): boolean 
     .join(' ')
     .toLowerCase()
     .includes(q);
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function getPluginSourceLabel(plugin: InstalledPluginRecord): string {
-  return plugin.sourceKind === 'bundled' ? 'Official' : 'My plugin';
-}
-
-function getPluginQueryPreview(plugin: InstalledPluginRecord): string {
-  const raw = plugin.manifest?.readable?.useCase?.query;
-  const value =
-    typeof raw === 'string'
-      ? raw
-      : raw && typeof raw === 'object' && !Array.isArray(raw)
-        ? raw.en ?? raw['zh-CN'] ?? Object.values(raw).find((entry): entry is string => (
-            typeof entry === 'string' && entry.length > 0
-          )) ?? ''
-        : '';
-  const trimmed = value.replace(/\s+/g, ' ').trim();
-  return trimmed.length > 96 ? `${trimmed.slice(0, 96)}…` : trimmed;
 }
 
 interface RailGroupProps {

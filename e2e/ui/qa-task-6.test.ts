@@ -55,7 +55,10 @@ function createdProject(body: Record<string, unknown>, suffix: string) {
 
 async function fulfillProject(route: Route, suffix: string) {
   const body = route.request().postDataJSON() as Record<string, unknown>;
-  await route.fulfill({ status: 200, json: createdProject(body, suffix) });
+  const created = createdProject(body, suffix);
+  await route.fulfill({ status: 200, json: new URL(route.request().url()).pathname === '/api/sessions'
+    ? { workspace: created.project, session: { id: created.conversationId, projectId: created.project.id, title: created.project.name, createdAt: 1, updatedAt: 1 } }
+    : created });
   return body;
 }
 
@@ -84,6 +87,7 @@ test.beforeEach(async ({ page }) => {
     localStorage.clear();
     sessionStorage.clear();
     localStorage.setItem(key, JSON.stringify(value));
+    localStorage.setItem('readable-studio:welcome-modal-shown', '1');
   }, { key: STORAGE_KEY, value: CONFIG });
   await routeAgents(page, [{
     id: 'codex', name: 'Codex CLI', bin: 'codex', available: true, version: '1', path: 'codex',
@@ -143,7 +147,7 @@ test('file-only submission creates a project with an empty prompt and uploads th
 
 test('selected skill routes without the hidden scenario plugin', async ({ page }) => {
   let projectPayload: Record<string, unknown> | null = null;
-  await page.route('**/api/projects', async (route) => {
+  await page.route('**/api/sessions', async (route) => {
     if (route.request().method() !== 'POST') return route.fallback();
     projectPayload = await fulfillProject(route, 'skill');
   });
@@ -154,12 +158,17 @@ test('selected skill routes without the hidden scenario plugin', async ({ page }
   const picker = page.getByTestId('home-hero-plugin-picker');
   await picker.getByRole('tab', { name: /Skills/i }).click();
   await picker.getByRole('option', { name: /QA Skill/i }).click();
+  await picker.getByTestId('mention-preview-use').click();
   await expect(page.getByTestId('home-hero-active-skill')).toContainText('QA Skill');
-  await editor.fill('Use the selected skill');
+  await editor.focus();
+  await editor.press('Control+End');
+  await page.keyboard.insertText(' Use the selected skill');
+  const prompt = (await editor.innerText()).replace(/\u00a0/g, ' ').trim();
+  await expect(editor.locator('[data-mention-kind="skill"]')).toHaveCount(1);
   await page.getByTestId('home-hero-submit').click();
   await expect.poll(() => projectPayload).not.toBeNull();
 
-  expect(projectPayload).toMatchObject({ skillId: 'qa-skill', pendingPrompt: 'Use the selected skill' });
+  expect(projectPayload).toMatchObject({ skillId: 'qa-skill', pendingPrompt: prompt });
   expect(projectPayload).not.toHaveProperty('pluginId');
 });
 

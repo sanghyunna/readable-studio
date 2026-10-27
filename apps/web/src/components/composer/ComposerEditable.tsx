@@ -8,12 +8,13 @@ type Props = {
   readonly title: string | undefined;
   readonly expanded: boolean;
   readonly activeId: string | null;
+  readonly listboxId: string;
   readonly invalid: boolean;
 };
 
 // Lexical owns the text DOM and empty/non-empty placeholder subscriptions.
 export function ComposerEditable({
-  testId, placeholder, title, expanded, activeId, invalid,
+  testId, placeholder, title, expanded, activeId, listboxId, invalid,
 }: Props) {
   return (
     <div className="composer-input-editor">
@@ -27,7 +28,7 @@ export function ComposerEditable({
             role="combobox"
             aria-expanded={expanded ? 'true' : 'false'}
             aria-invalid={invalid ? 'true' : undefined}
-            aria-controls="mention-listbox"
+            aria-controls={listboxId}
             {...(activeId ? { 'aria-activedescendant': activeId } : {})}
             placeholder={<div className="composer-input-placeholder">{placeholder}</div>}
           />

@@ -34,6 +34,7 @@ async function mount() {
   const hostPosts = vi.spyOn(frame.contentWindow!, 'postMessage').mockImplementation((message) => {
     dom.window.dispatchEvent(new dom.window.MessageEvent('message', { data: message }));
   });
+  await act(async () => { fireEvent.load(frame); });
   const interior = () => screen.getByLabelText('Move element').querySelector('[data-region="interior"]');
   return { dom, posts, hostPosts, interior };
 }
@@ -52,7 +53,9 @@ it.each(['text', 'link', 'structured'])('selects %s, double-clicks its real elem
     el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true, detail: 2 }));
     el.dispatchEvent(new dom.window.MouseEvent('dblclick', { bubbles: true, cancelable: true, detail: 2 }));
   });
-  expect(hostPosts).toHaveBeenCalledWith({ type: 'readable-edit-begin-text-edit', id }, '*');
+  expect(hostPosts).toHaveBeenCalledWith({
+    type: 'readable-edit-begin-text-edit', id, selectWord: true, textEditPoint: { clientX: 0, clientY: 0 },
+  }, '*');
   expect(el.getAttribute('contenteditable')).toBe(id === 'link' ? 'plaintext-only' : 'true');
   expect(interior()).toBeNull();
   await act(async () => {
@@ -75,11 +78,13 @@ it.each(['text', 'structured'])('double-clicks the selected %s move surface thro
   const el = dom.window.document.querySelector(`[data-readable-id="${id}"]`)!;
   await act(async () => { el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true })); });
   await act(async () => { fireEvent.doubleClick(interior()!); });
-  expect(hostPosts).toHaveBeenCalledWith({ type: 'readable-edit-begin-text-edit', id }, '*');
+  expect(hostPosts).toHaveBeenCalledWith({
+    type: 'readable-edit-begin-text-edit', id, selectWord: true, textEditPoint: { clientX: 0, clientY: 0 },
+  }, '*');
   expect(el.getAttribute('contenteditable')).toBe('true');
 });
 
-it('carries the first native click across the newly mounted overlay and Enter commits text', async () => {
+it('carries the first native click across the newly mounted overlay and Escape commits text', async () => {
   const { dom, posts, interior } = await mount();
   const el = dom.window.document.querySelector('[data-readable-id="text"]')!;
   // Time is part of cross-document double-click recognition; freeze it rather than racing it.
@@ -94,9 +99,9 @@ it('carries the first native click across the newly mounted overlay and Enter co
   expect(el.getAttribute('contenteditable')).toBe('true');
   await act(async () => {
     el.textContent = 'Committed';
-    el.dispatchEvent(new dom.window.KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Enter' }));
+    el.dispatchEvent(new dom.window.KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Escape' }));
   });
-  expect(posts).toContainEqual({ type: 'readable-edit-text-commit', id: 'text', value: 'Committed' });
+  expect(posts).toContainEqual(expect.objectContaining({ type: 'readable-edit-text-commit', id: 'text', value: 'Committed' }));
   expect(el.hasAttribute('contenteditable')).toBe(false);
   expect(interior()).not.toBeNull();
   expect(screen.getByRole('button', { name: 'Undo' }).hasAttribute('disabled')).toBe(false);

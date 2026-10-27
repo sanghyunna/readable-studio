@@ -34,7 +34,7 @@ test("every shipped JSON resource parses", () => {
   );
   const resourcePaths = output.trim().split(/\r?\n/u).filter(Boolean);
 
-  assert.equal(resourcePaths.length, 1_241, "shipped JSON resource inventory changed");
+  assert.equal(resourcePaths.length, 1_242, "shipped JSON resource inventory changed");
   for (const resourcePath of resourcePaths) {
     assert.doesNotThrow(
       () => JSON.parse(readFileSync(path.join(repoRoot, resourcePath), "utf8")),

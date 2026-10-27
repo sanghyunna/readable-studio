@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { JSDOM } from 'jsdom';
+import { MANUAL_EDIT_RICH_TEXT_FORMAT_CSS } from '../../src/edit-mode/rich-text-formatting';
 import {
   applyManualEditPatch,
   isManualEditFullHtmlDocument,
@@ -331,7 +332,7 @@ describe('manual edit source patches', () => {
     expect(html).toContain('href="#anchor"');
   });
 
-  it('normalizes execCommand-produced <b>/<i> tags to canonical <strong>/<em> in set-inner-html', () => {
+  it('preserves b/i/u tag selectors in set-inner-html', () => {
     const result = applyManualEditPatch(baseSource, {
       kind: 'set-inner-html',
       id: 'hero-title',
@@ -340,14 +341,112 @@ describe('manual edit source patches', () => {
 
     expect(result.ok).toBe(true);
     const html = readManualEditOuterHtml(result.source, 'hero-title');
-    expect(html).toContain('<strong>bold</strong>');
-    expect(html).toContain('<em>italic</em>');
+    expect(html).toContain('<b>bold</b>');
+    expect(html).toContain('<i>italic</i>');
     expect(html).toContain('<u>under</u>');
-    expect(html).not.toContain('<b>');
-    expect(html).not.toContain('<i>');
+    expect(html).not.toContain('<strong>');
+    expect(html).not.toContain('<em>');
   });
 
-  it('normalizes nested <b><i> tags to nested <strong><em>', () => {
+  it('preserves authored b and i typography selectors when committing edited shape text', () => {
+    const source = '<style>.shape{font-size:64px;font-weight:700}.shape b{font-size:24px;font-weight:400}.shape i{font-size:20px;font-style:normal}</style><h1 class="shape" data-readable-id="shape"><b>제 1막, OO를 OO합니다.</b><i>설명</i></h1><p data-readable-id="sibling">Keep</p>';
+    const result = applyManualEditPatch(source, {
+      kind: 'set-inner-html', id: 'shape',
+      html: '<b>제 1막, OO를 OO합니다.<br>다음 줄</b><i>설명 수정</i>',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(readManualEditOuterHtml(result.source, 'shape')).toContain('<b>제 1막, OO를 OO합니다.<br>다음 줄</b><i>설명 수정</i>');
+    expect(readManualEditFields(result.source, 'sibling').text).toBe('Keep');
+  });
+
+  it('preserves authored paragraph wrappers and their font styles in a mixed-text shape', () => {
+    const source = '<section data-readable-id="shape" style="font-size:64px;font-weight:700"><div class="copy" style="font-size:24px;font-weight:400">제 1막, OO를 OO합니다.</div><p class="detail">상세</p></section>';
+    const result = applyManualEditPatch(source, {
+      kind: 'set-inner-html', id: 'shape',
+      html: '<div class="copy" style="font-size:24px;font-weight:400">제 1막, OO를 OO합니다.<br>다음 줄</div><p class="detail">상세 수정</p>',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(readManualEditOuterHtml(result.source, 'shape')).toContain('<div class="copy" style="font-size:24px;font-weight:400">');
+    expect(readManualEditOuterHtml(result.source, 'shape')).toContain('<p class="detail">상세 수정</p>');
+  });
+
+  it('keeps authored rich text attributes but removes injected preview annotations from canonical source', () => {
+    const result = applyManualEditPatch(baseSource, {
+      kind: 'set-inner-html', id: 'hero-title',
+      html: '<b data-readable-id="authored-run" class="copy" data-keep="yes" data-readable-source-path="path-0-0" data-readable-runtime-id="path-0-0" data-readable-runtime-hovered="true" data-readable-edit-selected="true" data-readable-editing="true" data-readable-edit-transient="true" data-readable-authored-size-probe="p1">제 1막<br>다음 줄</b>',
+    });
+
+    expect(result.ok).toBe(true);
+    const saved = readManualEditOuterHtml(result.source, 'hero-title');
+    expect(saved).toContain('<b data-readable-id="authored-run" class="copy" data-keep="yes">제 1막<br>다음 줄</b>');
+    expect(saved).not.toMatch(/data-readable-(?:source-path|runtime-|edit-|authored-size-probe)/);
+  });
+
+  it.each(['document', 'fragment'])('persists the exact scoped rich formatting stylesheet in a %s without shifting the text target', (kind) => {
+    const body = '<p data-readable-id="copy"><b>Original</b></p><p data-keep="sibling">Keep</p>';
+    const source = kind === 'document' ? `<!doctype html><html><head><style>.copy{color:red}</style></head><body>${body}</body></html>` : body;
+    const result = applyManualEditPatch(source, {
+      kind: 'set-inner-html', id: 'copy', html: '<b><span data-readable-text-format style="font-weight:700!important">Changed</span></b>',
+    });
+    expect(result.ok).toBe(true);
+    const doc = new DOMParser().parseFromString(result.source, 'text/html');
+    const owned = doc.querySelectorAll('style[data-readable-text-format-style="1"]');
+    expect(owned).toHaveLength(1);
+    expect(owned[0]!.textContent).toBe(MANUAL_EDIT_RICH_TEXT_FORMAT_CSS);
+    expect(owned[0]!.parentElement).toBe(doc.head);
+    expect(doc.head.firstElementChild).toBe(owned[0]);
+    expect(result.source).toMatch(/^<!doctype html>/);
+    expect(doc.body.firstElementChild?.getAttribute('data-readable-id')).toBe('copy');
+    expect(doc.querySelector('[data-keep="sibling"]')?.textContent).toBe('Keep');
+
+    const next = applyManualEditPatch(result.source, { kind: 'set-inner-html', id: 'copy', html: '<u data-readable-text-underline="off">Changed again</u>' });
+    const repeated = new DOMParser().parseFromString(next.source, 'text/html');
+    expect(repeated.querySelectorAll('style[data-readable-text-format-style="1"]')).toHaveLength(1);
+    expect(repeated.querySelector('[data-readable-id="copy"] u')?.textContent).toBe('Changed again');
+  });
+
+  it('does not count managed formatting CSS as authored content when removing the last fragment object', () => {
+    const formatted = applyManualEditPatch('<main data-readable-id="only">Original</main>', {
+      kind: 'set-inner-html', id: 'only', html: '<span data-readable-text-format style="font-weight:700!important">Changed</span>',
+    });
+    expect(formatted.ok).toBe(true);
+
+    const removed = applyManualEditPatch(formatted.source, { kind: 'remove-element', id: 'only' });
+    expect(removed.ok).toBe(false);
+    expect(removed.source).toBe(formatted.source);
+    expect(removed.error).toContain('last element');
+  });
+
+  it('preserves leading authored fragment styles and path IDs through managed promotion and a second ordinary edit', () => {
+    const source = '<style>@layer author{div{color:blue}}</style><div>Original</div><p data-keep="sibling">Keep</p>';
+    const formatted = applyManualEditPatch(source, {
+      kind: 'set-inner-html', id: 'path-1', html: '<b><span data-readable-text-format style="font-weight:700!important">Changed</span></b>',
+    });
+    expect(formatted.ok).toBe(true);
+    const doc = new DOMParser().parseFromString(formatted.source, 'text/html');
+    expect(doc.head.firstElementChild?.getAttribute('data-readable-text-format-style')).toBe('1');
+    expect(doc.body.children[0]?.textContent).toBe('@layer author{div{color:blue}}');
+    expect(doc.body.children[1]?.textContent).toBe('Changed');
+    expect(doc.body.children[2]?.textContent).toBe('Keep');
+    const next = applyManualEditPatch(formatted.source, { kind: 'set-text', id: 'path-1', value: 'Changed again' });
+    expect(next.ok).toBe(true);
+    expect(readManualEditOuterHtml(next.source, 'path-1')).toContain('Changed again');
+    expect(next.source).toContain(MANUAL_EDIT_RICH_TEXT_FORMAT_CSS);
+    const restored = applyManualEditPatch(next.source, { kind: 'set-full-source', source });
+    expect(restored.source).toBe(source);
+  });
+
+  it('keeps an ordinary leading-style fragment a fragment while editing the runtime path ID', () => {
+    const source = '<style>div{color:blue}</style><div>Original</div><p>Keep</p>';
+    const result = applyManualEditPatch(source, { kind: 'set-text', id: 'path-1', value: 'Changed' });
+    expect(result.ok).toBe(true);
+    expect(result.source).toBe('<style>div{color:blue}</style><div>Changed</div><p>Keep</p>');
+    expect(result.source).not.toContain('<html');
+  });
+
+  it('preserves nested b/i typography selectors', () => {
     const result = applyManualEditPatch(baseSource, {
       kind: 'set-inner-html',
       id: 'hero-title',
@@ -356,7 +455,7 @@ describe('manual edit source patches', () => {
 
     expect(result.ok).toBe(true);
     const html = readManualEditOuterHtml(result.source, 'hero-title');
-    expect(html).toContain('<strong><em>both</em></strong>');
+    expect(html).toContain('<b><i>both</i></b>');
   });
 
   it('preserves textless decorative structure in structured rich text saves', () => {
@@ -387,7 +486,7 @@ describe('manual edit source patches', () => {
     const result = applyManualEditPatch(baseSource, {
       kind: 'set-inner-html',
       id: 'hero-title',
-      html: '<u>Underlined</u> <div>blocky</div> <em>emph</em>',
+      html: '<u>Underlined</u> <section>blocky</section> <em>emph</em>',
     });
 
     expect(result.ok).toBe(true);
@@ -395,7 +494,7 @@ describe('manual edit source patches', () => {
     expect(html).toContain('<u>Underlined</u>');
     expect(html).toContain('<em>emph</em>');
     expect(html).toContain('blocky');
-    expect(html).not.toContain('<div>');
+    expect(html).not.toContain('<section>');
   });
 
   it('plans and applies a source-backed duplicate with remapped ids and references', () => {

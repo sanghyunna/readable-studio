@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ComponentProps } from 'react';
 import { emptyManualEditStyles, type ManualEditTarget } from '../../src/edit-mode/types';
 import type { ProjectFile } from '../../src/types';
+import { manualEditCanonicalSource, trackManualEditCanonicalSource } from './manual-edit-frame-messages';
 
 const toolbarState = vi.hoisted(() => ({
   props: null as ComponentProps<typeof import('../../src/components/ManualEditShapeToolbar').ManualEditShapeToolbar> | null,
@@ -45,6 +46,7 @@ async function selectManualEditTarget(target = heroTarget()) {
     if (!node.contentWindow) throw new Error('Preview frame not ready');
     return node;
   });
+  trackManualEditCanonicalSource(frame);
   act(() => {
     window.dispatchEvent(new MessageEvent('message', {
       data: { type: 'readable-edit-select', target },
@@ -201,8 +203,8 @@ describe('FileViewer manual edit history regressions', () => {
       const frameAfterUndo = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
       expect(toolbarState.props?.canRedo).toBe(true);
       expect(frameAfterUndo).toBe(frameBeforeUndo);
-      expect(frameAfterUndo.srcdoc).not.toBe(srcDocBeforeUndo);
-      expect(frameAfterUndo.srcdoc).not.toContain('rgb(239, 68, 68)');
+      expect(frameAfterUndo.srcdoc).toBe(srcDocBeforeUndo);
+      expect(manualEditCanonicalSource(frameAfterUndo)).not.toContain('rgb(239, 68, 68)');
     });
 
     act(() => {
@@ -235,7 +237,7 @@ describe('FileViewer manual edit history regressions', () => {
     expect(payload.expectedContentSha256).toBe('660752fd51414ab8668473e6a9b54616762478727f1acf72432806874f95cb61');
   });
 
-  it('refreshes the manual edit canvas after non-style source patches', async () => {
+  it('updates canonical content after non-style patches without reloading the canvas', async () => {
     const initialSource = '<!doctype html><html><body><h1 data-readable-id="hero">Hero</h1></body></html>';
     const savedSources: string[] = [];
     const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -276,6 +278,7 @@ describe('FileViewer manual edit history regressions', () => {
       expect(frame.getAttribute('data-readable-active')).toBe('true');
       expect(frame.getAttribute('data-readable-render-mode')).toBe('srcdoc');
     });
+    const entrySrcDoc = getActivePreviewFrame().srcdoc;
     act(() => {
       toolbarState.props?.onApplyPatch(
         { id: 'hero', kind: 'set-text', value: 'Updated hero' },
@@ -284,7 +287,8 @@ describe('FileViewer manual edit history regressions', () => {
     });
 
     await waitFor(() => {
-      expect(getActivePreviewFrame().srcdoc).toContain('Updated hero');
+      expect(getActivePreviewFrame().srcdoc).toBe(entrySrcDoc);
+      expect(manualEditCanonicalSource(getActivePreviewFrame())).toContain('Updated hero');
     });
     expect(savedSources).toHaveLength(0);
   });
@@ -346,7 +350,7 @@ describe('FileViewer manual edit history regressions', () => {
       '*',
     );
     await waitFor(() => {
-      const source = (screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement).srcdoc;
+      const source = manualEditCanonicalSource(screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement);
       expect(source).not.toContain('data-readable-id="hero"');
       expect(source).toContain('data-readable-id="body"');
     });

@@ -34,12 +34,25 @@ export interface DatabricksPiInvocation {
   env: NodeJS.ProcessEnv;
   agentDir: string;
   sessionDir: string;
+  contextLimit: ReturnType<typeof getDatabricksContextLimit>;
 }
 
 export interface DatabricksPiRuntime {
   invocation: DatabricksPiInvocation;
   /** Revoke relay capability and remove run config after child quiescence; retain sessions. */
   close(): Promise<void>;
+}
+
+/** Planning fallbacks and advertised prose are not confirmed display capacities. */
+export function getDatabricksContextLimit(
+  capabilities: Pick<DatabricksRuntimeResolution['capabilities'], 'contextWindow' | 'limitSources'>,
+) {
+  const source = capabilities.limitSources?.contextWindow ?? 'unknown';
+  const tokens = capabilities.contextWindow;
+  return {
+    tokens: (source === 'metadata' || source === 'model-table') && tokens !== null && Number.isSafeInteger(tokens) && tokens > 0 ? tokens : null,
+    source,
+  };
 }
 
 /** Provider configuration contains only the local capability and opaque selector. */
@@ -149,7 +162,7 @@ export async function createDatabricksPiRuntime(options: DatabricksPiRuntimeOpti
         HOME: home, USERPROFILE: home, APPDATA: home, LOCALAPPDATA: home,
         PI_OFFLINE: '1', PI_CODING_AGENT_DIR: agentDir, PI_CODING_AGENT_SESSION_DIR: sessionDir,
       },
-      agentDir, sessionDir,
+      agentDir, sessionDir, contextLimit: getDatabricksContextLimit(runtime.capabilities),
     };
     let closing: Promise<void> | undefined;
     const ownedRelay = relay;

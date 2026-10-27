@@ -30,5 +30,6 @@ contenteditable plus selection state.
   Positional selectors are not acceptable.
 - Host↔iframe messages use the `readable-edit-*` namespace (`readable-edit-targets`,
   `readable-edit-select`, `readable-edit-preview-style-applied`, …).
-- Editing requires the srcDoc path unless the artifact ships `readable-direct-edit.js`
-  — see `../components/file-viewer-render-mode.ts`.
+- Editing always uses the srcDoc path. An artifact's own legacy `readable-direct-edit.js`
+  is neutralized in the edit preview only and stays untouched in source and standalone
+  output — see `../components/file-viewer-render-mode.ts` and `../runtime/srcdoc.ts`.

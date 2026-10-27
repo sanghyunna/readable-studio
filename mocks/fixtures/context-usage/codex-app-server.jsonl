@@ -1,0 +1,5 @@
+{"method":"thread/tokenUsage/updated","params":{"threadId":"thread","turnId":"turn","tokenUsage":{"total":{"totalTokens":999999},"last":{"totalTokens":284000,"inputTokens":280000,"cachedInputTokens":200000,"outputTokens":4000,"reasoningOutputTokens":2000},"modelContextWindow":500000}}}
+{"method":"item/started","params":{"threadId":"thread","turnId":"turn","item":{"type":"contextCompaction","id":"compact"}}}
+{"method":"item/completed","params":{"threadId":"thread","turnId":"turn","item":{"type":"contextCompaction","id":"compact"}}}
+{"method":"thread/tokenUsage/updated","params":{"threadId":"other-thread","turnId":"other-turn","tokenUsage":{"last":{"totalTokens":450000},"modelContextWindow":500000}}}
+{"method":"thread/tokenUsage/updated","params":{"threadId":"thread","turnId":"turn","tokenUsage":{"last":{"totalTokens":20000,"inputTokens":18000,"outputTokens":2000},"modelContextWindow":500000}}}

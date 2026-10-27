@@ -12,6 +12,7 @@ const ko = getKo();
 import { buildManualEditBridge } from '../../src/edit-mode/bridge';
 import { buildSrcdoc } from '../../src/runtime/srcdoc';
 import type { PreviewComment, ProjectFile } from '../../src/types';
+import { manualEditCanonicalSource, manualEditFrameEpoch } from './manual-edit-frame-messages';
 
 const html = '<html><body><main data-readable-id="hero">Hero</main></body></html>';
 const file: ProjectFile = {
@@ -111,8 +112,8 @@ describe('FileViewer tool exit ordering', () => {
         });
         fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
         const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-        message(frame, 'readable-edit-text-commit', { id: 'hero', value: 'changed-hero' });
-        expect(frame.srcdoc).toContain('changed-hero');
+        message(frame, 'readable-edit-text-commit', { id: 'hero', value: 'changed-hero', documentEpoch: manualEditFrameEpoch(frame) });
+        expect(manualEditCanonicalSource(frame)).toContain('changed-hero');
         expect(inspector.childElementCount).toBeGreaterThan(0);
         modeChanged.mockClear();
         if (tool === 'manual-edit-mode-toggle') {

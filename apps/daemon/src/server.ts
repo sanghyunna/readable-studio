@@ -487,6 +487,7 @@ import {
   hashStableInstructions,
   isClaudeResumeFailure,
   persistCapturedAgentSession,
+  createAgentSessionQueue,
   resolveAgentResumeContext,
 } from './agent-session-resume.js';
 import { registerActiveContextRoutes } from './routes/active-context.js';
@@ -495,6 +496,8 @@ import { registerRuntimeUserRoute } from './routes/runtime-user.js';
 import { registerMcpRoutes } from './mcp-routes.js';
 import { registerXaiRoutes } from './routes/xai.js';
 import { registerDatabricksRoutes, databricksFailure, DatabricksInputError } from './databricks-routes.js';
+import { makeUnknownContextUsage, readContextUsageSnapshot } from './context-usage.js';
+import { registerContextUsageRoutes } from './context-usage-routes.js';
 import { createDatabricksService } from './databricks/service.js';
 import { configureDatabricksRuntime, registeredDatabricksModels } from './runtimes/defs/databricks.js';
 import { createDatabricksPiRuntime, type DatabricksPiRuntime } from './runtimes/pi-databricks.js';
@@ -1019,7 +1022,7 @@ export function formatDesignFilesWorkspaceHint(
     '## Design Files workspace',
     `The Design Files panel is backed by your current working directory: \`${cwd}\`. Write project files relative to this directory (for example \`index.html\` or \`assets/x.png\`). The user can browse these files in real time.`,
     'The selected/attached files for a turn are only a shortcut for priority and ordering. If the user did not attach any file, do not assume there are no relevant Design Files.',
-    'When the request refers to existing files, asks you to choose a file, says "current", "this design", "the deck", "the image", "the folder", or depends on project state, inspect/search/read this workspace before answering or editing. Prefer project-relative paths, use the active workspace context as the default target, and ask only if multiple plausible targets remain after inspection.',
+    'When the request refers to existing files, asks you to choose a file, says "current", "this design", "the deck", "the image", "the folder", or depends on project state, ground the answer or edit in this workspace. Reuse relevant file contents and tool results already available in the continuing conversation when they are sufficient and still current. Inspect/search/read the needed workspace files when that evidence is missing, the files may have changed, or the request needs additional detail. Do not restart completed inspection solely because a follow-up turn arrived. Prefer project-relative paths, use the active workspace context as the default target, and ask only if multiple plausible targets remain after inspection.',
     'For non-trivial inspection or edits, surface progress through visible planning/status/tool events instead of silently guessing.',
     '',
     `Current Design Files snapshot: ${totalFolders} folder${totalFolders === 1 ? '' : 's'}, ${totalFiles} file${totalFiles === 1 ? '' : 's'}.`,
@@ -2446,6 +2449,10 @@ export function runSseEventToPersistedAgentEvent(event, data) {
 
 export function daemonAgentPayloadToPersistedAgentEvent(data) {
   const type = data?.type;
+  if (type === 'context_usage') {
+    const snapshot = readContextUsageSnapshot(data.snapshot);
+    return snapshot ? { kind: 'context_usage', snapshot } : null;
+  }
   if (type === 'status' && typeof data.label === 'string') {
     const detail =
       typeof data.detail === 'string'
@@ -5341,6 +5348,7 @@ async function startServerWithProbeLifetime({
     appConfig: appConfigDeps,
     createWorkspaceWithSeed: projectRoutes.createWorkspaceWithSeed,
   });
+  registerContextUsageRoutes(app, { db, design, http: httpDeps });
   registerFolderRoutes(app, { db, http: httpDeps, ids: idDeps, paths: pathDeps, projectStore: projectStoreDeps });
   registerRailRoutes(app, { db, design, http: httpDeps, paths: pathDeps });
   registerDesktopApprovalRoutes(app, desktopApprovalBroker, sendDesktopApprovalError);
@@ -9247,9 +9255,8 @@ async function startServerWithProbeLifetime({
       return await allSkillsPromise;
     };
 
-    // Per-turn skills picked via the composer's @-mention popover. They
-    // never persist on the project — we just append their bodies after the
-    // primary skill so the agent sees one combined block this turn.
+    // Per-turn references never persist on the project. Keep template
+    // bodies separate so functional skills retain their workflow instructions.
     const effectiveCanonicalSkillId =
       typeof effectiveSkillId === 'string' && effectiveSkillId
         ? resolveSkillId(effectiveSkillId)
@@ -9258,10 +9265,13 @@ async function startServerWithProbeLifetime({
       ? skillIds
           .map((s) => (typeof s === 'string' ? s.trim() : ''))
           .filter(Boolean)
-          .filter((id) => resolveSkillId(id) !== effectiveCanonicalSkillId)
       : [];
 
-    let templateReference = isTemplateReferenceProject(metadata);
+    const templateReference = isTemplateReferenceProject(metadata);
+    const templateReferences: NonNullable<Parameters<typeof composeSystemPrompt>[0]['templateReferences']> = [];
+    const templateDirs = new Set(adHocSkillIds.length > 0
+      ? (await listAllDesignTemplates()).map(({ dir }) => dir)
+      : []);
     let skillBody;
     let skillName;
     let skillMode;
@@ -9311,7 +9321,11 @@ async function startServerWithProbeLifetime({
       const allSkills = await loadAllSkills();
       const skill = findSkillById(allSkills, effectiveSkillId);
       if (skill) {
-        skillBody = skill.body;
+        if (templateDirs.has(skill.dir) && adHocSkillIds.some((id) => resolveSkillId(id) === effectiveCanonicalSkillId)) {
+          templateReferences.push({ name: skill.name, body: skill.body.trim() });
+        } else {
+          skillBody = skill.body;
+        }
         skillName = skill.name;
         registerPrimarySkillMode(skill.mode);
         registerSkillDir(skill.dir);
@@ -9330,7 +9344,6 @@ async function startServerWithProbeLifetime({
         effectiveCanonicalSkillId ? [String(effectiveCanonicalSkillId)] : [],
       );
       const blocks = [];
-      const baseBody = skillBody && skillBody.trim().length > 0 ? skillBody : '';
       for (const id of adHocSkillIds) {
         const canonicalId = resolveSkillId(id);
         if (typeof canonicalId !== 'string' || canonicalId.length === 0) continue;
@@ -9353,13 +9366,16 @@ async function startServerWithProbeLifetime({
             if (!skillCraftRequires.includes(craft)) skillCraftRequires.push(craft);
           }
         }
-        blocks.push(
-          `\n\n---\n\n## Composed skill — ${extra.name || id}\n\n${(extra.body || '').trim()}`,
-        );
+        if (templateDirs.has(extra.dir)) {
+          templateReferences.push({ name: extra.name, body: (extra.body || '').trim() });
+        } else {
+          blocks.push(
+            `\n\n---\n\n## Composed skill — ${extra.name || id}\n\n${(extra.body || '').trim()}`,
+          );
+        }
       }
       if (blocks.length > 0) {
         composedSkillBlocks = blocks.join('');
-        skillBody = baseBody + composedSkillBlocks;
         if (!skillName) {
           skillName = adHocSkillIds.length === 1
             ? findSkillById(allSkills, adHocSkillIds[0])?.name ?? null
@@ -9391,7 +9407,7 @@ async function startServerWithProbeLifetime({
             const { loadPluginLocalSkill } = await import('./plugins/local-skill.js');
             const local = await loadPluginLocalSkill(plugin);
             if (local) {
-              skillBody = local.body + composedSkillBlocks;
+              skillBody = local.body;
               skillName = local.name;
               activeSkillDir = local.dir;
               registerSkillDir(local.dir);
@@ -9628,6 +9644,7 @@ async function startServerWithProbeLifetime({
       editablePromptBodies,
       agentId,
       skillBody,
+      additionalSkillBody: composedSkillBlocks,
       skillName,
       skillMode,
       skillModes: skillModes.size > 0 ? Array.from(skillModes) : undefined,
@@ -9645,6 +9662,7 @@ async function startServerWithProbeLifetime({
       metadata,
       template,
       templateReference,
+      templateReferences,
       // critiqueCfg.enabled is loaded from READABLE_CRITIQUE_ENABLED only, so a
       // run that the resolver enabled via phase / project / skill (env
       // unset) would have critiqueShouldRun = true while critiqueCfg.enabled
@@ -9680,7 +9698,7 @@ async function startServerWithProbeLifetime({
       activeSkillDirs,
       critiqueShouldRun,
       promptTelemetryParts: {
-        skillPrompt: skillBody ?? '',
+        skillPrompt: [skillBody, composedSkillBlocks, ...templateReferences.map(({ body }) => body)].filter(Boolean).join('\n\n'),
         designSystemPrompt: designSystemBody ?? '',
         pluginStagePrompt: [pluginBlock, ...(activeStageBlocks ?? [])]
           .filter((part) => typeof part === 'string' && part.trim().length > 0)
@@ -9762,7 +9780,22 @@ async function startServerWithProbeLifetime({
     });
   };
 
+  const withAgentSession = createAgentSessionQueue();
   const startChatRun = async (chatBody, run) => {
+    const agentId = chatBody?.agentId ?? run.agentId;
+    const conversationId = chatBody?.conversationId ?? run.conversationId;
+    if (!conversationId || getAgentDef(agentId)?.streamFormat !== 'pi-rpc') {
+      return startChatRunAttempt(chatBody, run);
+    }
+    return withAgentSession(conversationId, agentId, async () => {
+      if (run.cancelRequested || design.runs.isTerminal(run.status)) return;
+      await startChatRunAttempt(chatBody, run);
+      await design.runs.wait(run);
+      // Terminal state may precede child-close persistence (watchdogs/status reads).
+      await run.piSessionClosed;
+    });
+  };
+  const startChatRunAttempt = async (chatBody, run) => {
     const attemptStartEventId = run.nextEventId;
     run.analyticsTelemetry = {
       ...(run.analyticsTelemetry ?? {}),
@@ -10604,7 +10637,7 @@ async function startServerWithProbeLifetime({
           cleanupPromptFile();
           if (run.cancelRequested || design.runs.isTerminal(run.status)) return;
         }
-        await startChatRun(chatBody, run);
+        await startChatRunAttempt(chatBody, run);
       })().catch((err) => {
         const message = err instanceof Error ? err.message : String(err);
         if (run.cancelRequested || design.runs.isTerminal(run.status)) return;
@@ -12320,6 +12353,7 @@ async function startServerWithProbeLifetime({
       send('agent', ev);
     };
 
+    sendAgentEvent({ type: 'context_usage', snapshot: makeUnknownContextUsage('run-started', safeModel) });
     // Both RPC resume and child-close persistence must use the same owner root.
     const piSessionRoot = def.id === 'databricks'
       ? managedPiHandle.invocation.sessionDir
@@ -12436,6 +12470,7 @@ async function startServerWithProbeLifetime({
           ? { sessionDir: managedPiHandle.invocation.sessionDir }
           : {}),
         model: safeModel,
+        ...(managedPiHandle?.invocation.contextLimit ? { contextLimit: managedPiHandle.invocation.contextLimit } : {}),
         ...(agentResumeCtx.isResuming && agentResumeCtx.resumeSessionId
           ? {
               resumeSession: {
@@ -12589,6 +12624,10 @@ async function startServerWithProbeLifetime({
       emitVisibleAgentStderr(chunk);
     });
 
+    let resolvePiSessionClosed: (() => void) | undefined;
+    if (def.streamFormat === 'pi-rpc') {
+      run.piSessionClosed = new Promise<void>((resolve) => { resolvePiSessionClosed = resolve; });
+    }
     child.on('error', (err) => {
       clearInactivityWatchdog();
       flushAgentRollbackTail();
@@ -13021,7 +13060,8 @@ async function startServerWithProbeLifetime({
       // accepted on read.
       if (acpSession && typeof acpSession.getLastSessionPath === 'function') {
         const sessionPath = acpSession.getLastSessionPath();
-        if (status === 'succeeded' && def.streamFormat === 'pi-rpc') {
+        const safelyInterrupted = status === 'canceled' && sessionPath && !acpSession.hasFatalError();
+        if (def.streamFormat === 'pi-rpc' && (status === 'succeeded' || safelyInterrupted)) {
           persistCapturedAgentSession(db, {
             conversationId: run.conversationId,
             agentId: def.id,
@@ -13044,9 +13084,13 @@ async function startServerWithProbeLifetime({
         if (agentLogFilePath) {
           fs.promises.unlink(agentLogFilePath).catch(() => {});
         }
-        await isolatedToolBroker?.close();
-        await closeManagedPi();
-        cleanupPromptFile();
+        try {
+          await isolatedToolBroker?.close();
+          await closeManagedPi();
+        } finally {
+          cleanupPromptFile();
+          resolvePiSessionClosed?.();
+        }
       }
     });
     if (writePromptToChildStdin && child.stdin) {

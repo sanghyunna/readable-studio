@@ -9,11 +9,13 @@ import {
   $isElementNode,
   $isRangeSelection,
   $isTextNode,
+  $setSelection,
   KEY_ARROW_LEFT_COMMAND,
   KEY_ARROW_RIGHT_COMMAND,
   KEY_BACKSPACE_COMMAND,
   KEY_DELETE_COMMAND,
   KEY_ENTER_COMMAND,
+  UNDO_COMMAND,
   type LexicalEditor,
   type LexicalNode,
 } from 'lexical';
@@ -146,6 +148,127 @@ describe('LexicalComposerInput', () => {
       expect(pill?.textContent).toBe('@Deck Builder');
     });
     expect(ref.current?.getText()).toBe('@Deck Builder');
+  });
+
+  it('keeps a multiword mention search active while typing spaces', () => {
+    const { ref, onTrigger } = setup();
+    act(() => ref.current?.insertText('Use @Deck Builder'));
+
+    expect(onTrigger.mock.calls.at(-1)?.[0].mention).toEqual({ q: 'Deck Builder' });
+  });
+
+  it('replaces the whole multiword query at the caret and preserves surrounding text', async () => {
+    const { ref, getByTestId } = setup({ draft: 'Before @New skill after' });
+    await waitFor(() => expect(ref.current?.getText()).toBe('Before @New skill after'));
+    const editor = liveEditor(getByTestId('chat-composer-input'));
+    act(() => editor.update(() => {
+      const text = $getRoot().getFirstDescendant();
+      if ($isTextNode(text)) text.select(17, 17);
+    }, { discrete: true }));
+
+    act(() => ref.current?.insertMention({ token: '@Deck Builder', entity: KNOWN[0]! }));
+    act(() => ref.current?.insertText('!'));
+
+    expect(ref.current?.getText()).toBe('Before @Deck Builder! after');
+    expect(selectionAnchor(editor).insideMention).toBe(false);
+  });
+
+  it('commits at a captured caret after focus moves into a preview', async () => {
+    const { ref, getByTestId } = setup({ draft: 'Before @De after' });
+    await waitFor(() => expect(ref.current?.getText()).toBe('Before @De after'));
+    const editor = liveEditor(getByTestId('chat-composer-input'));
+    act(() => editor.update(() => {
+      const text = $getRoot().getFirstDescendant();
+      if ($isTextNode(text)) text.select(10, 10);
+    }, { discrete: true }));
+    const selection = ref.current!.captureSelection();
+    expect(selection).not.toBeNull();
+    act(() => editor.update(() => $setSelection(null), { discrete: true }));
+
+    act(() => {
+      expect(ref.current?.insertMention(
+        { token: '@Deck Builder', entity: KNOWN[0]! },
+        { selection: selection! },
+      )).toBe(true);
+    });
+    act(() => ref.current?.insertText('!'));
+
+    expect(ref.current?.getText()).toBe('Before @Deck Builder! after');
+  });
+
+  it('rejects a delayed selection after the draft changes without overwriting new text', async () => {
+    const { ref } = setup({ draft: 'Before @De' });
+    await waitFor(() => expect(ref.current?.getText()).toBe('Before @De'));
+    const selection = ref.current!.captureSelection();
+    act(() => ref.current?.insertText(' new words'));
+
+    act(() => {
+      expect(ref.current?.insertMention(
+        { token: '@Deck Builder', entity: KNOWN[0]! },
+        { selection: selection! },
+      )).toBe(false);
+    });
+
+    expect(ref.current?.getText()).toBe('Before @De new words');
+  });
+
+  it('replaces only the requested entity and undoes removal and insertion together', async () => {
+    const oldPlugin: InlineMentionEntity = { id: 'same-id', kind: 'plugin', label: 'Old plugin', token: '@Old plugin' };
+    const file: InlineMentionEntity = { id: 'same-id', kind: 'file', label: 'same-id', token: '@same-id' };
+    const { ref, getByTestId } = setup({
+      draft: '@Old plugin @same-id before @New', knownEntities: [oldPlugin, file],
+    });
+    await waitFor(() => expect(ref.current?.getText()).toBe('@Old plugin @same-id before @New'));
+    act(() => {
+      expect(ref.current?.insertMention({
+        token: '@New plugin', entity: { id: 'new-plugin', kind: 'plugin', label: 'New plugin' },
+      }, { replace: oldPlugin })).toBe(true);
+    });
+    expect(ref.current?.getText()).toBe(' @same-id before @New plugin');
+    const host = getByTestId('chat-composer-input');
+    expect(host.querySelectorAll('[data-mention-kind="file"]')).toHaveLength(1);
+
+    act(() => liveEditor(host).dispatchCommand(UNDO_COMMAND, undefined));
+    await waitFor(() => expect(ref.current?.getText()).toBe('@Old plugin @same-id before @New'));
+    expect(host.querySelector('[data-mention-kind="plugin"]')?.getAttribute('data-mention-id')).toBe('same-id');
+  });
+
+  it('removes only atomic mentions matching both kind and id and preserves neighboring text', async () => {
+    const plugin: InlineMentionEntity = { id: 'same-id', kind: 'plugin', label: 'Plugin', token: '@Plugin' };
+    const file: InlineMentionEntity = { id: 'same-id', kind: 'file', label: 'same-id', token: '@same-id' };
+    const draft = 'Before @Plugin between @same-id and @Plugin after';
+    const { ref, getByTestId } = setup({ draft, knownEntities: [plugin, file] });
+    await waitFor(() => expect(ref.current?.getText()).toBe(draft));
+    act(() => ref.current?.removeMention(plugin));
+
+    expect(ref.current?.getText()).toBe('Before  between @same-id and  after');
+    const host = getByTestId('chat-composer-input');
+    expect(host.querySelectorAll('[data-mention-kind="file"]')).toHaveLength(1);
+    expect(host.querySelectorAll('[data-mention-kind="plugin"]')).toHaveLength(0);
+
+    act(() => liveEditor(host).dispatchCommand(UNDO_COMMAND, undefined));
+    await waitFor(() => expect(ref.current?.getText()).toBe(draft));
+  });
+
+  it('uses the host listbox id for the combobox relationship', () => {
+    const { getByTestId } = setup({
+      comboboxAria: { expanded: true, activeId: 'preview-option-1', listboxId: 'preview-listbox' },
+    });
+    expect(getByTestId('chat-composer-input').getAttribute('aria-controls')).toBe('preview-listbox');
+  });
+
+  it('reports only committed choices when requested, including undo back to plain query text', async () => {
+    const { ref, onChange, getByTestId } = setup({ committedMentionsOnly: true });
+    await waitFor(() => expect(ref.current).not.toBeNull());
+    act(() => ref.current?.insertText('@Deck Builder'));
+    expect(onChange.mock.calls.at(-1)).toEqual(['@Deck Builder', []]);
+
+    act(() => ref.current?.insertMention({ token: '@Deck Builder', entity: KNOWN[0]! }));
+    expect(onChange.mock.calls.at(-1)).toEqual(['@Deck Builder', [KNOWN[0]]]);
+
+    act(() => liveEditor(getByTestId('chat-composer-input')).dispatchCommand(UNDO_COMMAND, undefined));
+    await waitFor(() => expect(onChange.mock.calls.at(-1)).toEqual(['@Deck Builder', []]));
+    expect(getByTestId('chat-composer-input').querySelector('[data-mention]')).toBeNull();
   });
 
   it('keeps live typing after an inserted mention while retaining editor focus', async () => {

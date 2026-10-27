@@ -8,7 +8,7 @@ import { createDatabricksAgentDef } from '../../src/runtimes/defs/databricks.js'
 import { safeProbe } from '../../src/runtimes/detection-probe.js';
 import { cachedSafeProbe } from '../../src/runtimes/detection-cache.js';
 import { resolveModelForAgent } from '../../src/runtimes/models.js';
-import { createDatabricksPiRuntime, renderDatabricksPiProvider, startDatabricksPiSession } from '../../src/runtimes/pi-databricks.js';
+import { createDatabricksPiRuntime, getDatabricksContextLimit, renderDatabricksPiProvider, startDatabricksPiSession } from '../../src/runtimes/pi-databricks.js';
 import { spawnEnvForAgent } from '../../src/runtimes/env.js';
 import { getAgentDef } from '../../src/runtimes/registry.js';
 import { piAgentDef } from '../../src/runtimes/defs/pi.js';
@@ -91,6 +91,7 @@ for (const api of ['openai-completions', 'anthropic-messages'] as const) {
   test(`managed ${api} provider is parsed by embedded Pi and contains only relay material`, async () => {
     const temporary = await temporaryRoot();
     const resolution = runtimeFixture(api);
+    resolution.capabilities.limitSources = { contextWindow: 'metadata', maxTokens: 'metadata' };
     const { service } = runtimeServiceFixture(resolution);
     const handle = await createDatabricksPiRuntime({ dataRoot: temporary.root, cwd: temporary.cwd, sessionKey: 'conversation', model: resolution.appModelId, service, reasoning: 'high' });
     try {
@@ -114,6 +115,7 @@ for (const api of ['openai-completions', 'anthropic-messages'] as const) {
       assert.ok(invocation.args[0]?.endsWith('rpc-entry.js'));
       assert.equal(invocation.args[invocation.args.indexOf('--session-dir') + 1], invocation.sessionDir);
       assert.equal(invocation.env.PI_CODING_AGENT_DIR, invocation.agentDir);
+      assert.deepEqual(invocation.contextLimit, { tokens: 128000, source: 'metadata' });
       const pi = await ModelRuntime.create({ modelsPath: path.join(invocation.agentDir, 'models.json'), authPath: path.join(invocation.agentDir, 'auth.json'), modelsStorePath: path.join(invocation.agentDir, 'cache.json'), allowModelNetwork: false });
       assert.equal(pi.getError(), undefined);
       const model = pi.getModel('databricks', resolution.appModelId);
@@ -233,6 +235,19 @@ test('managed provider renders registered limits exactly and uses the disclosed 
   assert.equal(model.maxTokens, 128_000);
   assert.notEqual(model.contextWindow, 32_768);
   assert.notEqual(model.maxTokens, 4_096);
+});
+
+test('Databricks context capacity exposes only confirmed metadata or model table limits', () => {
+  for (const source of ['metadata', 'model-table'] as const) {
+    assert.deepEqual(getDatabricksContextLimit({ contextWindow: 200000, limitSources: { contextWindow: source, maxTokens: source } }), { tokens: 200000, source });
+  }
+  for (const source of ['advertised', 'default', 'unknown'] as const) {
+    assert.deepEqual(getDatabricksContextLimit({ contextWindow: 1000000, limitSources: { contextWindow: source, maxTokens: 'unknown' } }), { tokens: null, source });
+  }
+  assert.deepEqual(getDatabricksContextLimit({ contextWindow: 1000000 }), { tokens: null, source: 'unknown' });
+  for (const contextWindow of [null, 0, -1, 1.5, Infinity, NaN]) {
+    assert.deepEqual(getDatabricksContextLimit({ contextWindow, limitSources: { contextWindow: 'metadata', maxTokens: 'metadata' } }), { tokens: null, source: 'metadata' });
+  }
 });
 
 test('Anthropic provider never maps rejected minimal or budget thinking to a launch', () => {

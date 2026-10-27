@@ -341,7 +341,7 @@ describe('manual edit bridge target normalization', () => {
   it('omits selected outerHTML from bulk target posts but includes it for selected targets', () => {
     const bridge = buildManualEditBridge(true);
 
-    expect(bridge).toContain('targets.push(targetFrom(nodes[i], false, false))');
+    expect(bridge).toContain('targets.push(targetFrom(nodes[i], false, false, stableId(nodes[i]) === hostSelectedTargetId))');
     expect(bridge).toContain("target: el ? targetFrom(el, true, false) : null");
     expect(bridge).toContain("type: 'readable-edit-select', target: targetFrom(el, true, true)");
     expect(bridge).toContain('if (!isSourceMappable(nodes[i])) continue;');
@@ -2991,7 +2991,7 @@ describe('manual edit bridge rich-text editing', () => {
     dom.window.close();
   });
 
-  it('enables styleWithCSS-off once per rich edit session so toggles emit tags, not style spans', () => {
+  it('enables inline formatting styles so template b/i selectors cannot change new formatting', () => {
     const dom = new JSDOM(
       `<main><p data-readable-id="copy">Hello world</p></main>${buildManualEditBridge(true)}`,
       { runScripts: 'dangerously', url: 'http://localhost' },
@@ -3005,7 +3005,7 @@ describe('manual edit bridge rich-text editing', () => {
       data: { type: 'readable-edit-begin-text-edit', id: 'copy' },
     }));
 
-    expect(execCommand).toHaveBeenCalledWith('styleWithCSS', false, 'false');
+    expect(execCommand).toHaveBeenCalledWith('styleWithCSS', false, 'true');
     expect(execCommand).toHaveBeenCalledTimes(1);
 
     dom.window.close();
@@ -3402,8 +3402,7 @@ describe('manual edit bridge Delete forwarding', () => {
     ['Meta', { metaKey: true }],
     ['Alt', { altKey: true }],
     ['IME', { isComposing: true }],
-    ['Backspace', { key: 'Backspace' }],
-    ['other key', { key: 'Enter' }],
+    ['other key', { key: 'Home' }],
   ] as const)('leaves %s keys native without posting Delete', (state, options) => {
     const dom = new JSDOM(
       `<main><p data-readable-id="selected">Text</p></main>${buildManualEditBridge(true)}`,
