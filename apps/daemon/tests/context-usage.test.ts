@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCodexContextUsage, buildPiContextUsage, makeUnknownContextUsage, readContextUsageSnapshot, selectContextUsage } from '../src/context-usage.js';
+import { buildCodexContextUsage, buildPiContextUsage, contextUsageAtRunEnd, makeUnknownContextUsage, readContextUsageSnapshot, selectContextUsage } from '../src/context-usage.js';
 
 describe('context occupancy', () => {
   it('uses Codex last request occupancy, never accumulated totals or double-counted cache/reasoning', () => {
@@ -23,12 +23,42 @@ describe('context occupancy', () => {
       { model: 'opus', sessionId: 'pi-a', now: 1 })).toMatchObject({ state: 'unknown', usedTokens: null });
   });
 
-  it('rejects invalid token units and unconfirmed advertised limits', () => {
+  it('rejects invalid token units and planning defaults, but shows advertised limits', () => {
     expect(buildCodexContextUsage({ modelContextWindow: -1, last: { totalTokens: 2.5 } }, 'm', 's', 1))
       .toMatchObject({ state: 'unknown', usedTokens: null, limitTokens: null });
     expect(buildPiContextUsage({ contextUsage: { tokens: 12, contextWindow: 1_000_000 } },
-      { model: 'm', sessionId: 's', limit: { tokens: 1_000_000, source: 'advertised' }, now: 1 }))
+      { model: 'm', sessionId: 's', limit: { tokens: 128_000, source: 'advertised' }, now: 1 }))
+      .toMatchObject({ state: 'estimated', usedTokens: 12, limitTokens: 128_000, limitSource: 'advertised' });
+    expect(buildPiContextUsage({ contextUsage: { tokens: 12, contextWindow: 1_000_000 } },
+      { model: 'm', sessionId: 's', limit: { tokens: 1_000_000, source: 'default' }, now: 1 }))
       .toMatchObject({ state: 'estimated', usedTokens: 12, limitTokens: null });
+  });
+
+  it('keeps an unknown snapshot reason when the selected model differs', () => {
+    const response = selectContextUsage({ projectId: 'p', conversationId: 'c', agentId: 'cursor-agent', model: 'default', now: 5,
+      runs: [{ id: 'r', agentId: 'cursor-agent', createdAt: 1, status: 'running',
+        events: [{ event: 'agent', data: { type: 'context_usage', snapshot: makeUnknownContextUsage('not-reported', null, null, 1) } }] }] });
+    expect(response.snapshot).toMatchObject({ state: 'unknown', reason: 'not-reported' });
+  });
+
+  it.each(['run-started', 'compacting', 'compacted', 'model-changed'] as const)('ends a transient %s marker once its run is over', (reason) => {
+    // The child-close rule server.ts applies to the last emitted reason.
+    expect(contextUsageAtRunEnd(reason, 'm')).toMatchObject({ state: 'unknown', reason: 'not-reported', model: 'm' });
+    const events = [{ kind: 'context_usage', snapshot: makeUnknownContextUsage(reason, 'm', null, 1) }];
+    const args = { projectId: 'p', conversationId: 'c', agentId: 'pi', model: 'm', now: 5 };
+    // A persisted 1.3.8 row with no live run (daemon restarted or run retired).
+    expect(selectContextUsage({ ...args, runs: [], persisted: { id: 'r', agentId: 'pi', createdAt: 1, events } }).snapshot)
+      .toMatchObject({ state: 'unknown', reason: 'not-reported' });
+    for (const status of ['succeeded', 'failed', 'canceled']) {
+      expect(selectContextUsage({ ...args, runs: [{ id: 'r', agentId: 'pi', createdAt: 1, status, events }] }).snapshot)
+        .toMatchObject({ state: 'unknown', reason: 'not-reported' });
+    }
+    expect(selectContextUsage({ ...args, runs: [{ id: 'r', agentId: 'pi', createdAt: 1, status: 'running', events }] }).snapshot)
+      .toMatchObject({ state: 'unknown', reason });
+  });
+
+  it('leaves a final measurement or not-reported marker alone at run end', () => {
+    for (const reason of [undefined, 'not-reported', 'session-changed', 'invalid-data']) expect(contextUsageAtRunEnd(reason, 'm')).toBeNull();
   });
 
   it('does not restore malformed or unidentified persisted measurements as confirmed usage', () => {
@@ -59,6 +89,7 @@ describe('context occupancy', () => {
     expect(selectContextUsage({ ...args, model: 'other' }).snapshot).toMatchObject({ state: 'unknown', reason: 'model-changed' });
     expect(selectContextUsage({ ...args, agentId: 'codex' }).snapshot).toMatchObject({ state: 'unknown', reason: 'session-changed' });
     args.persisted.events.push({ kind: 'context_usage', snapshot: makeUnknownContextUsage('compacted', 'm', 's', 2) });
-    expect(selectContextUsage(args).snapshot).toMatchObject({ state: 'unknown', reason: 'compacted' });
+    const live = { ...args.persisted, status: 'running', events: [] };
+    expect(selectContextUsage({ ...args, runs: [live] }).snapshot).toMatchObject({ state: 'unknown', reason: 'compacted' });
   });
 });

@@ -145,7 +145,8 @@ test('[P1] context usage restores real persisted snapshots, keeps the A footer g
       }
     }
     await meter.hover();
-    await expect(page.getByRole('tooltip')).toContainText('compacted');
+    // The seeded compaction marker belongs to a finished run, so nothing can replace it.
+    await expect(page.getByRole('tooltip')).toContainText('not been reported');
     for (const status of ['canceled', 'failed']) {
       const messageId = `context-${status}`;
       const saved = await request.put(`/api/projects/${id}/conversations/${conversationId}/messages/${messageId}`, { data: {

@@ -126,8 +126,6 @@ it('does not upload a ZIP until the user continues from the file step', async ()
   hub();
   await screen.findByText('Sample deck');
   fireEvent.click(screen.getByTestId('user-deck-add'));
-  fireEvent.click(screen.getByRole('button', { name: '슬라이드덱' }));
-  fireEvent.click(screen.getByRole('button', { name: '다음' }));
   fireEvent.change(screen.getByTestId('template-upload-file'), { target: { files: [new File(['zip'], 'deck.zip')] } });
   expect(await screen.findByText('deck.zip')).toBeTruthy();
   expect(calls.some((call) => call.url.includes('/analyse'))).toBe(false);
@@ -136,10 +134,66 @@ it('rejects non-ZIP files in the wizard', async () => {
   hub();
   await screen.findByText('Sample deck');
   fireEvent.click(screen.getByTestId('user-deck-add'));
-  fireEvent.click(screen.getByRole('button', { name: '보고서' }));
-  fireEvent.click(screen.getByRole('button', { name: '다음' }));
   fireEvent.change(screen.getByTestId('template-upload-file'), { target: { files: [new File(['html'], 'page.html')] } });
   expect(screen.getByRole('alert')).toBeTruthy();
+});
+it('adds every template saved from a bundle, opens the first one’s tab and closes the wizard once', async () => {
+  // The first is a report, the second a deck saved later (finalize stamps importedAt).
+  const saved = [
+    null,
+    { name: 'Bundle first', type: 'report', importedAt: '2026-10-28T10:00:00.000Z' },
+    { name: 'Bundle second', type: 'deck', importedAt: '2026-10-28T10:00:05.000Z' },
+  ] as const;
+  const child = (n: 1 | 2) => ({
+    kind: 'single', sessionId: `child-${n}`, bundleId: 'bundle-1', expiresAt: '2099-01-01T00:00:00Z',
+    originalFileName: `t${n}.zip`, prompt: { file: 'PROMPT.md' }, suggestedName: saved[n].name, suggestedCoverPageId: 'p0',
+    detectedType: saved[n].type, detection: { type: saved[n].type, confidence: 'high', ambiguous: false, signals: [] },
+    pages: [{ id: 'p0', file: 'index.html', previewUrl: '/x', thumbnailUrl: '/y', thumbnail: { status: 'ready', source: null, updatedAt: '' } }],
+  });
+  // jsdom has no layout: give each card a distinct position so the rail's scroll target is visible.
+  const positions: Record<string, number> = { 'user-sample': 0, 'user-bundle-1': 240, 'user-bundle-2': 480 };
+  vi.spyOn(HTMLElement.prototype, 'offsetLeft', 'get').mockImplementation(function (this: HTMLElement) {
+    return positions[this.dataset.pluginId ?? ''] ?? 0;
+  });
+  hub();
+  await screen.findByText('Sample deck');
+  const list = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (url, init) => {
+    if (!String(url).startsWith('/api/design-template-uploads/')) return list(url, init);
+    calls.push({ url: String(url), init });
+    const n = /child-(\d)\/finalize$/.exec(String(url))?.[1] as '1' | '2' | undefined;
+    return { ok: true, status: 201, json: async () => n
+      ? { template: { ...template, id: `user-bundle-${n}`, name: saved[n].name, templateType: saved[n].type, mode: saved[n].type, importedAt: saved[n].importedAt } }
+      : { ok: true, cancelledSessionIds: [] } } as Response;
+  });
+  fireEvent.click(screen.getByTestId('user-deck-add'));
+  fireEvent.change(screen.getByTestId('template-upload-file'), { target: { files: [new File(['zip'], 'pack.zip')] } });
+  await screen.findByText('pack.zip');
+  fireEvent.click(screen.getByRole('button', { name: '다음' }));
+  upload.responseText = JSON.stringify({
+    kind: 'bundle', bundleId: 'bundle-1', expiresAt: '2099-01-01T00:00:00Z', originalFileName: 'pack.zip',
+    templates: [
+      { index: 0, entryName: 'first.zip', ok: true, analysis: child(1) },
+      { index: 1, entryName: 'second.zip', ok: true, analysis: child(2) },
+    ],
+  });
+  upload.status = 201;
+  await act(async () => { upload.onload(); });
+  for (const primary of ['다음', '저장 후 다음', '다음', '완료', '완료']) {
+    fireEvent.click(screen.getByRole('button', { name: primary }));
+    await act(async () => {});
+  }
+  expect(screen.queryByRole('dialog')).toBeNull();
+  // The first saved template's tab (report) opened and the rail scrolled to its card.
+  expect(screen.getByText('Bundle first')).toBeTruthy();
+  expect(screen.queryByText('Bundle second')).toBeNull();
+  expect(screen.queryByText('Sample deck')).toBeNull();
+  const rail = screen.getByTestId('hub-template-carousel-rail');
+  expect(rail.scrollLeft).toBe(240);
+  // Both were added: the deck one sits in the deck tab.
+  fireEvent.click(screen.getAllByTestId('hub-template-carousel-tab').find((node) => node.getAttribute('data-tab-id') === 'deck')!);
+  expect(screen.getByText('Bundle second')).toBeTruthy();
+  expect(screen.getByText('Sample deck')).toBeTruthy();
 });
 
 it('keeps the rail at the far left after cards load until the user scrolls', async () => {

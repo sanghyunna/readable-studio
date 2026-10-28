@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { lstat, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { DISPLAYABLE_CONTEXT_LIMIT_SOURCES } from '@readable-studio/contracts';
 import type { DatabricksRuntimeResolution } from '../databricks/service.js';
 import { effectiveDatabricksLimits } from '../databricks/capabilities.js';
 import { createDatabricksRelay, type DatabricksRelay } from '../databricks/relay.js';
@@ -43,14 +44,14 @@ export interface DatabricksPiRuntime {
   close(): Promise<void>;
 }
 
-/** Planning fallbacks and advertised prose are not confirmed display capacities. */
+/** Metadata, model-table and advertised windows are display capacities; planning fallbacks never are. */
 export function getDatabricksContextLimit(
   capabilities: Pick<DatabricksRuntimeResolution['capabilities'], 'contextWindow' | 'limitSources'>,
 ) {
   const source = capabilities.limitSources?.contextWindow ?? 'unknown';
   const tokens = capabilities.contextWindow;
   return {
-    tokens: (source === 'metadata' || source === 'model-table') && tokens !== null && Number.isSafeInteger(tokens) && tokens > 0 ? tokens : null,
+    tokens: DISPLAYABLE_CONTEXT_LIMIT_SOURCES.includes(source) && tokens !== null && Number.isSafeInteger(tokens) && tokens > 0 ? tokens : null,
     source,
   };
 }

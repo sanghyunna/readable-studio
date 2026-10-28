@@ -1,4 +1,6 @@
-import type { ContextUsageResponse, ContextUsageSnapshot } from '@readable-studio/contracts';
+import {
+  DISPLAYABLE_CONTEXT_LIMIT_SOURCES, TRANSIENT_CONTEXT_USAGE_REASONS, type ContextUsageResponse, type ContextUsageSnapshot,
+} from '@readable-studio/contracts';
 
 type ContextLimit = { tokens: number | null; source: ContextUsageSnapshot['limitSource'] };
 type ContextIdentity = { model: string | null; sessionId: string | null; now?: number };
@@ -7,6 +9,23 @@ export interface ContextUsageRun {
   agentId: string | null;
   createdAt: number;
   events: unknown[];
+  /** Live registry status; persisted rows carry none. */
+  status?: string;
+}
+
+export const isTransientContextUsageReason = (reason: unknown): boolean =>
+  (TRANSIENT_CONTEXT_USAGE_REASONS as readonly unknown[]).includes(reason);
+// ponytail: mirrors runs.ts TERMINAL_RUN_STATUSES; importing runs.js would drag project watchers into the Pi/Codex adapters.
+const TERMINAL_RUN_STATUSES = new Set(['succeeded', 'failed', 'canceled']);
+
+/** At child close nothing can replace a waiting marker, so the run's last word becomes not-reported. */
+export function contextUsageAtRunEnd(lastReason: unknown, model: string | null): ContextUsageSnapshot | null {
+  return isTransientContextUsageReason(lastReason) ? makeUnknownContextUsage('not-reported', model) : null;
+}
+
+/** Only Pi RPC and Codex app-server produce occupancy; every other stream ends where it starts. */
+export function contextUsageStartReason(streamFormat?: string): 'run-started' | 'not-reported' {
+  return streamFormat === 'pi-rpc' || streamFormat === 'codex-app-server' ? 'run-started' : 'not-reported';
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -19,8 +38,7 @@ function tokens(value: unknown, minimum = 0): number | null {
 }
 
 function confirmedLimit(limit: ContextLimit): number | null {
-  return limit.source === 'runtime' || limit.source === 'metadata' || limit.source === 'model-table'
-    ? tokens(limit.tokens, 1) : null;
+  return DISPLAYABLE_CONTEXT_LIMIT_SOURCES.includes(limit.source) ? tokens(limit.tokens, 1) : null;
 }
 
 export function makeUnknownContextUsage(
@@ -98,7 +116,12 @@ export function selectContextUsage(options: {
       snapshot = readContextUsageSnapshot(payload.snapshot) ?? unknown('invalid-data');
       break;
     }
-    if (model && snapshot.model !== model) snapshot = unknown('model-changed');
+    // A run absent from the live registry (retired, or before a daemon restart) is over too.
+    const live = options.runs.find(run => run.id === latest.id);
+    if (isTransientContextUsageReason(snapshot.reason) && (!live || TERMINAL_RUN_STATUSES.has(live.status ?? ''))) {
+      snapshot = unknown('not-reported');
+    }
+    if (model && snapshot.state !== 'unknown' && snapshot.model !== model) snapshot = unknown('model-changed');
   }
   return { projectId, conversationId, agentId, runId: latest?.id ?? null, snapshot };
 }

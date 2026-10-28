@@ -1,4 +1,4 @@
-import type { ContextUsageSnapshot } from '@readable-studio/contracts';
+import { DISPLAYABLE_CONTEXT_LIMIT_SOURCES, type ContextUsageSnapshot } from '@readable-studio/contracts';
 import { useT } from '../i18n';
 import styles from './ContextUsageMeter.module.css';
 
@@ -9,14 +9,17 @@ export function ContextUsageMeter({ snapshot }: { snapshot: ContextUsageSnapshot
   const t = useT();
   const used = snapshot?.usedTokens;
   const limit = snapshot?.limitTokens;
-  const known = (snapshot?.state === 'measured' || snapshot?.state === 'estimated')
-    && ['runtime', 'metadata', 'model-table'].includes(snapshot.limitSource)
-    && typeof used === 'number' && Number.isSafeInteger(used) && used >= 0
+  const usageKnown = (snapshot?.state === 'measured' || snapshot?.state === 'estimated')
+    && typeof used === 'number' && Number.isSafeInteger(used) && used >= 0;
+  const known = usageKnown && DISPLAYABLE_CONTEXT_LIMIT_SOURCES.includes(snapshot.limitSource)
     && typeof limit === 'number' && Number.isSafeInteger(limit) && limit > 0;
   const percent = known ? used / limit * 100 : null;
-  const label = percent === null ? '—' : `${percentage.format(percent)}%`;
-  const usage = known ? `${number.format(used / 1000)}k/${number.format(limit / 1000)}k` : '';
-  const tooltip = known
+  const usedLabel = usageKnown ? `${number.format(used / 1000)}k` : '';
+  // Reported usage without a displayable limit stays visible, never as a percentage.
+  const label = percent !== null ? `${percentage.format(percent)}%` : usageKnown ? `${percentage.format(used / 1000)}k` : '—';
+  const usage = known ? `${usedLabel}/${number.format(limit / 1000)}k`
+    : usageKnown ? t('chat.contextUsage.usageOnly', { used: usedLabel }) : '';
+  const tooltip = usage
     ? snapshot?.state === 'estimated' ? t('chat.contextUsage.estimated', { usage }) : usage
     : snapshot?.reason === 'compacting'
       ? t('chat.contextUsage.compacting')

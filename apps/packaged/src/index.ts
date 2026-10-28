@@ -23,7 +23,7 @@ import { join } from "node:path";
 import { app, dialog, session } from "electron";
 
 import { readPackagedConfig, resolveEarlyPackagedElectronPaths, resolvePortableTopFolder } from "./config.js";
-import { acquireDataLock, PackagedDataLockAccessError, PackagedDataLockError } from './data-lock.js';
+import { acquireDataLockAsync, PackagedDataLockAccessError, PackagedDataLockError } from './data-lock.js';
 import { runPendingDataImport } from './data-import.js';
 import { createStartupNoticeState, detectOneDriveLocation, readOneDriveKnownFolder } from './onedrive.js';
 import { writePackagedDesktopIdentity } from "./identity.js";
@@ -106,13 +106,20 @@ async function main(): Promise<void> {
   const paths = resolvePackagedNamespacePaths(activeConfig, namespace, process.env);
   if (earlyElectronPaths == null) applyPackagedElectronPathOverrides(paths);
   await ensurePackagedNamespacePaths(paths);
-  const dataLock = acquireDataLock(paths.dataRoot, {
+  // Both lookups launch powershell.exe. They run concurrently and off the main
+  // thread; each result is still consumed at its original point, the OneDrive
+  // one only once the lock is held.
+  const pendingDataLock = acquireDataLockAsync(paths.dataRoot, {
     pid: process.pid, appVersion: activeConfig.appVersion, exePath: process.execPath, startedAt: new Date().toISOString(),
   });
-  app.once('quit', dataLock.release);
   let oneDrive = detectOneDriveLocation(process.execPath, process.env);
+  const knownFolder = oneDrive ? null : readOneDriveKnownFolder();
+  // Awaited below; a failure that lands before a refused lock must not go unhandled.
+  knownFolder?.catch(() => {});
+  const dataLock = await pendingDataLock;
+  app.once('quit', dataLock.release);
   if (!oneDrive) {
-    try { oneDrive = detectOneDriveLocation(process.execPath, process.env, readOneDriveKnownFolder()); }
+    try { oneDrive = detectOneDriveLocation(process.execPath, process.env, await knownFolder); }
     catch (error) { console.warn('OneDrive known-folder detection failed; startup will continue', error); }
   }
   if (oneDrive) console.info(`OneDrive startup detection: source=${oneDrive.source} root=${oneDrive.root}`);

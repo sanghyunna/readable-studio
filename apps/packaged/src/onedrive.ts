@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { join, win32 } from 'node:path';
@@ -16,7 +16,9 @@ export class OneDriveDetectionError extends Error {
 
 // FOLDERID_SkyDrive's registered path is the known-folder fallback when the
 // shell did not populate OneDrive environment variables. No name heuristic.
-export function readOneDriveKnownFolder(env: NodeJS.ProcessEnv = process.env): string | null {
+// Awaited rather than execFileSync so the Electron main thread stays free;
+// ending stdin at once matches the ignored stdin of the synchronous form.
+export async function readOneDriveKnownFolder(env: NodeJS.ProcessEnv = process.env): Promise<string | null> {
   if (process.platform !== 'win32') return null;
   let output: string;
   try {
@@ -28,7 +30,11 @@ export function readOneDriveKnownFolder(env: NodeJS.ProcessEnv = process.env): s
         $path = $key.GetValue('${SKYDRIVE_FOLDER_ID}', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames);
         if ($null -ne $path) { [Console]::Out.Write($path) }
       } finally { $key.Dispose() } }`;
-    output = execFileSync('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    output = await new Promise<string>((done, fail) => {
+      execFile('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { encoding: 'utf8', windowsHide: true }, (error, stdout, stderr) => {
+        if (error) fail(Object.assign(error, { stdout, stderr })); else done(stdout);
+      }).stdin?.end();
+    });
   } catch (error) {
     throw new OneDriveDetectionError(error);
   }

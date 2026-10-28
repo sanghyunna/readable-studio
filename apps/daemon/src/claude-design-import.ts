@@ -1,11 +1,25 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { inflateRawSync } from 'node:zlib';
+import { crc32, inflateRawSync } from 'node:zlib';
 import { validateProjectPath } from './projects.js';
 
 const EOCD_SIG = 0x06054b50;
 const CENTRAL_SIG = 0x02014b50;
 const LOCAL_SIG = 0x04034b50;
+const ZIP64_LOCATOR_SIG = 0x07064b50;
+const ZIP64_EXTRA_ID = 0x0001;
+const UNICODE_PATH_EXTRA_ID = 0x7075;
+const UTF8_NAME_FLAG = 0x800;
+const MAX_PATH_LENGTH = 200;
+const MAX_SEGMENT_LENGTH = 120;
+// Tested against the base name (up to the first '.', trailing spaces cut), the
+// way Win32 device detection reads it: `nul .txt` and `com¹.css` are devices too.
+const WINDOWS_RESERVED_NAME = /^(con|prn|aux|nul|conin\$|conout\$|com[1-9¹²³]|lpt[1-9¹²³])$/i;
+const WINDOWS_INVALID_CHAR = /[<>"|?*\x01-\x1f]/;
+const strictUtf8 = new TextDecoder('utf-8', { fatal: true });
+// Created on first use: a runtime without the euc-kr table then only fails
+// the (non-UTF-8) archives that need it instead of the whole module.
+let cp949: InstanceType<typeof TextDecoder> | undefined;
 
 export const MAX_FILES = 5000;
 export const MAX_TOTAL_BYTES = 100 * 1024 * 1024;
@@ -26,12 +40,19 @@ export async function importClaudeDesignZip(zipPath: string, projectDir: string)
   const zip = await readFile(zipPath);
   const entries = readCentralDirectory(zip);
   const files: ImportedFile[] = [];
+  const seen = new Map<string, string>();
   let totalBytes = 0;
 
   for (const entry of entries) {
     if (entry.isDirectory) continue;
     if (files.length >= MAX_FILES) throw new Error('zip contains too many files');
-    const relPath = sanitizeZipPath(entry.name);
+    let relPath: string;
+    try {
+      relPath = sanitizeZipPath(entry.name);
+    } catch (err) {
+      throw new Error(`unsafe zip path: ${entry.name} (${err instanceof Error ? err.message : String(err)})`);
+    }
+    assertUniqueZipPath(seen, relPath);
     if (entry.uncompressedSize > MAX_FILE_BYTES) {
       throw new Error(`zip file too large: ${relPath}`);
     }
@@ -180,11 +201,20 @@ function normalizeDesignCanvasWheelHandling(source: string): {
   return { result, wheelMatched, gestureMatched };
 }
 
+const zip64Error = () => new Error('ZIP64 archives are not supported');
+
 export function readCentralDirectory(zip: Buffer): ZipEntry[] {
   const eocdOffset = findEndOfCentralDirectory(zip);
   const entryCount = zip.readUInt16LE(eocdOffset + 10);
   const centralSize = zip.readUInt32LE(eocdOffset + 12);
   const centralOffset = zip.readUInt32LE(eocdOffset + 16);
+  if (
+    zip.readUInt16LE(eocdOffset + 8) === 0xffff || entryCount === 0xffff
+    || centralSize === 0xffffffff || centralOffset === 0xffffffff
+    || (eocdOffset >= 20 && zip.readUInt32LE(eocdOffset - 20) === ZIP64_LOCATOR_SIG)
+  ) {
+    throw zip64Error();
+  }
   if (centralOffset + centralSize > zip.length) {
     throw new Error('invalid zip central directory');
   }
@@ -203,7 +233,16 @@ export function readCentralDirectory(zip: Buffer): ZipEntry[] {
     const extraLen = zip.readUInt16LE(offset + 30);
     const commentLen = zip.readUInt16LE(offset + 32);
     const localOffset = zip.readUInt32LE(offset + 42);
-    const name = zip.slice(offset + 46, offset + 46 + nameLen).toString('utf8');
+    if (compressedSize === 0xffffffff || uncompressedSize === 0xffffffff || localOffset === 0xffffffff) {
+      throw zip64Error();
+    }
+    const nameStart = offset + 46;
+    const name = decodeEntryName(
+      zip.subarray(nameStart, nameStart + nameLen),
+      flags,
+      zip.subarray(nameStart + nameLen, nameStart + nameLen + extraLen),
+      i,
+    );
     if ((flags & 1) !== 0) throw new Error('encrypted zip entries are not supported');
     if (method !== 0 && method !== 8) {
       throw new Error(`unsupported zip compression method: ${method}`);
@@ -221,6 +260,40 @@ export function readCentralDirectory(zip: Buffer): ZipEntry[] {
   return entries;
 }
 
+// Entry names: flag 0x800 means UTF-8; otherwise an Info-ZIP Unicode Path
+// field that still matches the raw name wins, then UTF-8, then CP949 (what
+// Korean Windows tools write without the flag). A name that only decodes
+// with replacement characters is rejected; its raw bytes are never echoed.
+// A ZIP64 extra field is rejected here too, since every walk ends up here.
+function decodeEntryName(raw: Buffer, flags: number, extra: Buffer, index: number): string {
+  let unicodePath: string | undefined;
+  for (let p = 0; p + 4 <= extra.length;) {
+    const id = extra.readUInt16LE(p);
+    const end = p + 4 + extra.readUInt16LE(p + 2);
+    if (end > extra.length) break;
+    if (id === ZIP64_EXTRA_ID) throw zip64Error();
+    if (id === UNICODE_PATH_EXTRA_ID && end - p >= 9 && extra[p + 4] === 1 && extra.readUInt32LE(p + 5) === crc32(raw)) {
+      unicodePath = tryUtf8(extra.subarray(p + 9, end));
+    }
+    p = end;
+  }
+  const name = (flags & UTF8_NAME_FLAG) !== 0
+    ? tryUtf8(raw)
+    : unicodePath ?? tryUtf8(raw) ?? (cp949 ??= new TextDecoder('euc-kr')).decode(raw);
+  if (name === undefined || name.includes('\uFFFD')) {
+    throw new Error(`zip entry #${index + 1} has an undecodable file name`);
+  }
+  return name;
+}
+
+function tryUtf8(bytes: Uint8Array): string | undefined {
+  try {
+    return strictUtf8.decode(bytes);
+  } catch {
+    return undefined;
+  }
+}
+
 function findEndOfCentralDirectory(zip: Buffer): number {
   const min = Math.max(0, zip.length - 0xffff - 22);
   for (let i = zip.length - 22; i >= min; i -= 1) {
@@ -229,7 +302,7 @@ function findEndOfCentralDirectory(zip: Buffer): number {
   throw new Error('invalid zip: missing central directory');
 }
 
-export function readEntryBody(zip: Buffer, entry: ZipEntry): Buffer {
+export function readEntryBody(zip: Buffer, entry: ZipEntry, maxBytes = MAX_FILE_BYTES): Buffer {
   const offset = entry.localOffset;
   if (zip.readUInt32LE(offset) !== LOCAL_SIG) {
     throw new Error(`invalid zip local header: ${entry.name}`);
@@ -246,19 +319,50 @@ export function readEntryBody(zip: Buffer, entry: ZipEntry): Buffer {
   // empty rather than handing a zero-length buffer to zlib.
   if (compressed.length === 0) return Buffer.alloc(0);
   // When the central directory advertises 0 (streaming zips with data
-  // descriptors), fall back to the per-file ceiling so legitimate non-empty
-  // payloads decode instead of being silently truncated. The post-decode
-  // checks in the caller enforce MAX_FILE_BYTES and total-bytes limits.
-  const cap = entry.uncompressedSize > 0 ? entry.uncompressedSize : MAX_FILE_BYTES;
+  // descriptors), fall back to the caller's ceiling (per-file by default) so
+  // legitimate non-empty payloads decode instead of being silently
+  // truncated. The post-decode checks in the caller enforce the size limits.
+  const cap = entry.uncompressedSize > 0 ? Math.min(entry.uncompressedSize, maxBytes) : maxBytes;
   return inflateRawSync(compressed, { maxOutputLength: cap });
 }
 
 export function sanitizeZipPath(name: string): string {
+  return assertWindowsSafeZipPath(normalizeZipPath(name));
+}
+
+// Traversal and absolute-path checks only. Callers that drop junk entries
+// test the result first and run assertWindowsSafeZipPath on what they keep.
+export function normalizeZipPath(name: string): string {
   if (name.includes('\0')) throw new Error('invalid zip file name');
   if (/^[A-Za-z]:/.test(name) || name.startsWith('/')) {
     throw new Error('absolute zip paths are not allowed');
   }
   return validateProjectPath(name);
+}
+
+export function assertWindowsSafeZipPath(relPath: string): string {
+  // Names Windows would refuse or silently alter (alternate data streams,
+  // device names, stripped trailing dots/spaces) must not reach the disk.
+  for (const segment of relPath.split('/')) {
+    if (segment.includes(':')) throw new Error("':' is not allowed");
+    if (WINDOWS_RESERVED_NAME.test(segment.split('.')[0]!.replace(/ +$/, ''))) throw new Error('reserved Windows name');
+    if (/[. ]$/.test(segment)) throw new Error('trailing dot or space');
+    if (WINDOWS_INVALID_CHAR.test(segment)) throw new Error('invalid character');
+    if (segment.length > MAX_SEGMENT_LENGTH) throw new Error(`path segment longer than ${MAX_SEGMENT_LENGTH} characters`);
+  }
+  if (relPath.length > MAX_PATH_LENGTH) throw new Error(`path longer than ${MAX_PATH_LENGTH} characters`);
+  return relPath;
+}
+
+// NTFS is case-insensitive: two entries that differ only in case would
+// overwrite each other. Keyed without a locale so the check is stable.
+// ponytail: file-vs-directory prefix collisions (`a` vs `A/b`) are not
+// caught here; the later write fails and that error is reported instead.
+export function assertUniqueZipPath(seen: Map<string, string>, relPath: string): void {
+  const key = relPath.toUpperCase();
+  const first = seen.get(key);
+  if (first !== undefined) throw new Error(`zip contains duplicate or case-colliding entries: ${first} and ${relPath}`);
+  seen.set(key, relPath);
 }
 
 function chooseEntryFile(paths: string[]): string | null {

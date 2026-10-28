@@ -5,6 +5,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { DesignTemplateUploadAnalysisResponse } from '@readable-studio/contracts';
 
 vi.mock('../src/design-template-thumbnails.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/design-template-thumbnails.js')>()),
@@ -15,7 +16,7 @@ import {
   configureTemplateThumbnails,
   requestTemplateThumbnails,
 } from '../src/design-template-thumbnails.js';
-import { DesignTemplateImportError, renameUserDesignTemplate } from '../src/design-template-import.js';
+import { DesignTemplateImportError, finalizeDesignTemplateDir, renameUserDesignTemplate } from '../src/design-template-import.js';
 import { DesignTemplateUploadSessions } from '../src/design-template-uploads.js';
 import { invalidateSkillListCache, listSkills } from '../src/skills.js';
 import { PNG_1PX, buildTemplateZip, kitTemplateEntries } from './helpers/template-zip.js';
@@ -41,8 +42,8 @@ afterEach(async () => {
   rmSync(root, { recursive: true, force: true });
 });
 
-const analyse = (entries: { name: string; body: string | Buffer }[] = kitTemplateEntries(), originalFileName = 'kit.zip') =>
-  sessions.analyse({ zip: buildTemplateZip(entries), originalFileName });
+const analyse = async (entries: { name: string; body: string | Buffer }[] = kitTemplateEntries(), originalFileName = 'kit.zip') =>
+  await sessions.analyse({ zip: buildTemplateZip(entries), originalFileName }) as DesignTemplateUploadAnalysisResponse;
 const pageId = (analysis: { pages: { id: string; file: string }[] }, file: string) =>
   analysis.pages.find((p) => p.file === file)!.id;
 const uploadsDir = () => path.join(root, '.uploads');
@@ -177,16 +178,24 @@ describe('design template upload finalize', () => {
     expect(readFileSync(path.join(result.dir, 'SKILL.md'), 'utf8')).toContain('hubType: report');
   });
 
-  it('maps a website to prototype mode and website hub type', async () => {
+  it('no longer uploads websites, but an existing website template keeps its profile on rename', async () => {
     const analysis = await analyse();
     await sessions.whenIdle(analysis.sessionId);
-    const result = await sessions.finalize(analysis.sessionId, {
+    await expectStatus(sessions.finalize(analysis.sessionId, {
       type: 'website', name: 'Kit Site', coverPageId: analysis.suggestedCoverPageId,
+    }), 400);
+    // A pre-1.3.9 website template, written the way the wizard used to.
+    const pagesDir = await sessions.pagesDir(analysis.sessionId);
+    const result = await finalizeDesignTemplateDir({
+      root, stagingDir: path.dirname(pagesDir), type: 'website', name: 'Kit Site', cover: 'kit/cover.html',
+      pages: analysis.pages.map(({ file }) => ({ file })), originalFileName: 'kit.zip', sha256: '0'.repeat(64),
+      thumbnail: { status: 'ready', source: 'zip', updatedAt: analysis.expiresAt },
     });
+    await renameUserDesignTemplate(result.dir, result.manifest, 'Kit Website');
     const skillMd = readFileSync(path.join(result.dir, 'SKILL.md'), 'utf8');
     expect(skillMd).toContain('mode: prototype');
     expect(skillMd).toContain('hubType: website');
-    expect(result.manifest.type).toBe('website');
+    expect(JSON.parse(readFileSync(path.join(result.dir, 'import.json'), 'utf8'))).toMatchObject({ type: 'website', name: 'Kit Website' });
     const [listed] = await listSkills([root]);
     expect(listed).toMatchObject({ id: 'user-kit-site', mode: 'prototype' });
   });
@@ -273,6 +282,24 @@ describe('design template upload lifecycle', () => {
     await expect(sessions.get(analysis.sessionId)).resolves.toMatchObject({ sessionId: analysis.sessionId });
     clock += 2 * 60_000;
     await expectStatus(sessions.get(analysis.sessionId), 404);
+    await sessions.sweepExpired();
+    expect(existsSync(path.join(uploadsDir(), analysis.sessionId))).toBe(false);
+  });
+
+  // The sweep runs unawaited on a timer, and an unhandled rejection is fatal
+  // to the daemon: a dir that cannot be removed yet must only be retried.
+  it('keeps sweeping when an expired session dir cannot be removed yet', async () => {
+    const analysis = await analyse();
+    await sessions.whenIdle(analysis.sessionId);
+    clock += 61 * 60_000;
+    const cwd = process.cwd();
+    // Windows refuses to remove a process's working directory (EBUSY).
+    process.chdir(path.join(uploadsDir(), analysis.sessionId, 'template'));
+    try {
+      await expect(sessions.sweepExpired()).resolves.toBeUndefined();
+    } finally {
+      process.chdir(cwd);
+    }
     await sessions.sweepExpired();
     expect(existsSync(path.join(uploadsDir(), analysis.sessionId))).toBe(false);
   });

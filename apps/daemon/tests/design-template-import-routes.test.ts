@@ -10,7 +10,7 @@ import type {
 } from '@readable-studio/contracts';
 import { startServer } from '../src/server.js';
 import { closeDatabase } from '../src/db.js';
-import { PNG_1PX, buildTemplateZip, validTemplateEntries } from './helpers/template-zip.js';
+import { PNG_1PX, buildBundleZip, buildTemplateZip, kitTemplateEntries, validTemplateEntries } from './helpers/template-zip.js';
 
 const dataDir = process.env.READABLE_DATA_DIR;
 if (!dataDir) throw new Error('isolated READABLE_DATA_DIR required');
@@ -94,6 +94,21 @@ describe('design template import routes', () => {
     expect(cover.status).toBe(200);
     expect(await cover.text()).toContain('<h1>Opening</h1>');
     await fetch(`${baseUrl}/api/design-templates/${template.id}`, { method: 'DELETE' });
+  });
+
+  it('registers the detected type and rejects a bundle zip', async () => {
+    const res = await upload(kitTemplateEntries(), 'kit.zip');
+    expect(res.status).toBe(201);
+    const { template } = await res.json() as DesignTemplateImportResponse;
+    expect(template).toMatchObject({ templateType: 'report', mode: 'prototype' });
+    await fetch(`${baseUrl}/api/design-templates/${template.id}`, { method: 'DELETE' });
+
+    const form = new FormData();
+    form.append('file', new Blob([buildBundleZip([{ name: 'a.zip', entries: validTemplateEntries() }, { name: 'b.zip', entries: kitTemplateEntries() }])]), 'pack.zip');
+    const bundle = await fetch(`${baseUrl}/api/design-templates/import`, { method: 'POST', body: form });
+    expect(bundle.status).toBe(400);
+    expect((await bundle.json() as { error: { message: string } }).error.message)
+      .toBe('zip is a template bundle (2 templates); use the template upload wizard or "readable design-templates import <zip> --all"');
   });
 
   it('rejects invalid zips with 400', async () => {

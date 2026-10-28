@@ -237,11 +237,11 @@ test('managed provider renders registered limits exactly and uses the disclosed 
   assert.notEqual(model.maxTokens, 4_096);
 });
 
-test('Databricks context capacity exposes only confirmed metadata or model table limits', () => {
-  for (const source of ['metadata', 'model-table'] as const) {
-    assert.deepEqual(getDatabricksContextLimit({ contextWindow: 200000, limitSources: { contextWindow: source, maxTokens: source } }), { tokens: 200000, source });
+test('Databricks context capacity exposes metadata, model table and advertised limits, never planning fallbacks', () => {
+  for (const source of ['metadata', 'model-table', 'advertised'] as const) {
+    assert.deepEqual(getDatabricksContextLimit({ contextWindow: 200000, limitSources: { contextWindow: source, maxTokens: 'metadata' } }), { tokens: 200000, source });
   }
-  for (const source of ['advertised', 'default', 'unknown'] as const) {
+  for (const source of ['default', 'unknown'] as const) {
     assert.deepEqual(getDatabricksContextLimit({ contextWindow: 1000000, limitSources: { contextWindow: source, maxTokens: 'unknown' } }), { tokens: null, source });
   }
   assert.deepEqual(getDatabricksContextLimit({ contextWindow: 1000000 }), { tokens: null, source: 'unknown' });

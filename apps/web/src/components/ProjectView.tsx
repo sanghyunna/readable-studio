@@ -928,6 +928,10 @@ function applySplitChatPanelWidth(
     `${width}px ${SPLIT_RESIZE_HANDLE_WIDTH}px ${workspacePanelTrack}`;
 }
 
+// Stable fallback so the memoized workspace header element below keeps its
+// identity when no theme handler is wired.
+function ignoreThemeChange(_theme: AppConfig['theme']): void {}
+
 // @dsp func-82c4ae87
 export function ProjectView({
   project,
@@ -964,7 +968,7 @@ export function ProjectView({
   const { locale, t } = useI18n();
   const analytics = useAnalytics();
   const iframeKeepAlivePool = useIframeKeepAlivePool();
-  const handleThemeChange = onThemeChange ?? (() => {});
+  const handleThemeChange = onThemeChange ?? ignoreThemeChange;
   // P0 page_view page_name=chat_panel — fire once per project mount.
   // ProjectView outlives conversation switches (ChatPane is keyed by
   // activeConversationId so it remounts when the user switches chats,
@@ -5992,6 +5996,36 @@ export function ProjectView({
     />
   );
 
+  // Memoized on exactly what they render. Neither renders anything from the
+  // streamed messages, so a streamed frame hands the composer and the
+  // workspace header the same element and React skips these subtrees.
+  const composerDesignSystemPicker = useMemo(() => (
+    <DesignSystemPicker
+      designSystems={designSystems}
+      selectedId={project.designSystemId ?? null}
+      onChange={handleChangeDesignSystemId}
+    />
+  ), [designSystems, project.designSystemId, handleChangeDesignSystemId]);
+  const workspaceHeaderActions = useMemo(() => (
+    <EntrySettingsMenu
+      config={config}
+      onThemeChange={handleThemeChange}
+      onOpenSettings={onOpenSettings}
+      trackingPageName="artifact"
+      onTrackTriggerClick={() => {
+        // Spec row 52: the settings gear in the artifact header.
+        // Carry the active artifact so settings slices line up with
+        // the rest of the artifact_header funnel.
+        trackArtifactHeaderClick(analytics.track, {
+          page_name: 'artifact',
+          area: 'artifact_header',
+          element: 'settings',
+          ...headerArtifact,
+        });
+      }}
+    />
+  ), [config, handleThemeChange, onOpenSettings, analytics.track, headerArtifact]);
+
   const questionCard: InlineQuestionCardState = {
     messageId: questionFormOwnerMessageId,
     formKey: questionFormKey,
@@ -6223,13 +6257,7 @@ export function ProjectView({
                   ) : null}
                 </div>
               )}
-              designSystemPicker={(
-                <DesignSystemPicker
-                  designSystems={designSystems}
-                  selectedId={project.designSystemId ?? null}
-                  onChange={handleChangeDesignSystemId}
-                />
-              )}
+              designSystemPicker={composerDesignSystemPicker}
             />
           ) : (
             <div className="pane" data-testid="chat-pane-loading">
@@ -6331,25 +6359,7 @@ export function ProjectView({
           onAuthorizeAndRetry={handleSwitchToAmrAndRetry}
           onLaunchTerminalAuth={handleLaunchAntigravityOauth}
           conversationId={activeConversationId}
-          headerActions={(
-              <EntrySettingsMenu
-              config={config}
-              onThemeChange={handleThemeChange}
-              onOpenSettings={onOpenSettings}
-              trackingPageName="artifact"
-              onTrackTriggerClick={() => {
-                // Spec row 52: the settings gear in the artifact header.
-                // Carry the active artifact so settings slices line up with
-                // the rest of the artifact_header funnel.
-                trackArtifactHeaderClick(analytics.track, {
-                  page_name: 'artifact',
-                  area: 'artifact_header',
-                  element: 'settings',
-                  ...headerArtifact,
-                });
-              }}
-            />
-          )}
+          headerActions={workspaceHeaderActions}
         />
       </div>
       {contextPluginDetails ? (

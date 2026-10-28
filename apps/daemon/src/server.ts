@@ -433,6 +433,7 @@ import { readCurrentAppVersionInfo } from './app-version.js';
 import {
   appendMessageAgentEvent,
   appendMessageStatusEvent,
+  batchMessageAgentEvents,
   deleteConversation,
   deletePreviewComment,
   deleteProject as dbDeleteProject,
@@ -496,7 +497,7 @@ import { registerRuntimeUserRoute } from './routes/runtime-user.js';
 import { registerMcpRoutes } from './mcp-routes.js';
 import { registerXaiRoutes } from './routes/xai.js';
 import { registerDatabricksRoutes, databricksFailure, DatabricksInputError } from './databricks-routes.js';
-import { makeUnknownContextUsage, readContextUsageSnapshot } from './context-usage.js';
+import { contextUsageAtRunEnd, contextUsageStartReason, makeUnknownContextUsage, readContextUsageSnapshot } from './context-usage.js';
 import { registerContextUsageRoutes } from './context-usage-routes.js';
 import { createDatabricksService } from './databricks/service.js';
 import { configureDatabricksRuntime, registeredDatabricksModels } from './runtimes/defs/databricks.js';
@@ -2402,6 +2403,10 @@ function assistantMessageEmittedQuestionForm(db, assistantMessageId) {
   return emittedRenderableQuestionForm(row?.content);
 }
 
+function warnRunEventPersistenceFailure(err) {
+  console.warn('[runs] message event persistence failed', err);
+}
+
 function persistRunEventToAssistantMessage(db, run, event, data) {
   if (!run.assistantMessageId) return;
   const persisted = runSseEventToPersistedAgentEvent(event, data);
@@ -2409,8 +2414,21 @@ function persistRunEventToAssistantMessage(db, run, event, data) {
   try {
     appendMessageAgentEvent(db, run.assistantMessageId, persisted);
   } catch (err) {
-    console.warn('[runs] message event persistence failed', err);
+    warnRunEventPersistenceFailure(err);
   }
+}
+
+// Every parser and runtime (stream-json, json-event-stream, plain, pi-rpc,
+// ACP, codex app-server) consumes agent stdout from 'data' listeners that run
+// synchronously inside one emit. Committing the events persisted during that
+// emit once, before it returns, costs one commit per chunk instead of one per
+// token while no other callback can observe an in-between state.
+export function persistRunEventsPerStdoutChunk(db, stdout) {
+  const emit = stdout.emit;
+  stdout.emit = function emitWithBatchedEventPersistence(name, ...args) {
+    if (name !== 'data') return emit.call(this, name, ...args);
+    return batchMessageAgentEvents(db, () => emit.call(this, name, ...args), warnRunEventPersistenceFailure);
+  };
 }
 
 export function runSseEventToPersistedAgentEvent(event, data) {
@@ -11931,6 +11949,7 @@ async function startServerWithProbeLifetime({
 
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
+    persistRunEventsPerStdoutChunk(db, child.stdout);
 
     // Reset the inactivity watchdog on every raw stdout byte so that
     // structured adapters that buffer partial lines (Codex item.completed,
@@ -12287,6 +12306,7 @@ async function startServerWithProbeLifetime({
       scheduleForcedChildShutdown();
     }
 
+    let contextUsageReason: unknown;
     const sendAgentEvent = (ev) => {
       if (ev?.type === 'error') {
         if (agentStreamError) return;
@@ -12350,10 +12370,11 @@ async function startServerWithProbeLifetime({
         emitGuardedTextDelta(ev.delta);
         return;
       }
+      if (ev?.type === 'context_usage') contextUsageReason = ev.snapshot?.reason;
       send('agent', ev);
     };
 
-    sendAgentEvent({ type: 'context_usage', snapshot: makeUnknownContextUsage('run-started', safeModel) });
+    sendAgentEvent({ type: 'context_usage', snapshot: makeUnknownContextUsage(contextUsageStartReason(def.streamFormat), safeModel) });
     // Both RPC resume and child-close persistence must use the same owner root.
     const piSessionRoot = def.id === 'databricks'
       ? managedPiHandle.invocation.sessionDir
@@ -12656,6 +12677,10 @@ async function startServerWithProbeLifetime({
         revokeToolToken('child_exit');
         return;
       }
+      // Nothing can replace a waiting marker once the child is gone. `send`, not
+      // sendAgentEvent, so the cleared inactivity watchdog stays cleared.
+      const runEndContextUsage = contextUsageAtRunEnd(contextUsageReason, safeModel);
+      if (runEndContextUsage) send('agent', { type: 'context_usage', snapshot: runEndContextUsage });
       revokeToolToken('child_exit');
       unregisterChatAgentEventSink();
       const isolationFailure = agentRollbackIsolationEnabled && !agentStreamError
@@ -13181,8 +13206,15 @@ async function startServerWithProbeLifetime({
         const hasPin =
           typeof projectRow?.appliedPluginSnapshotId === 'string'
           && projectRow.appliedPluginSnapshotId.length > 0;
-        if (!hasPin && !selectsUserImportedTemplate(projectRow?.skillId, projectRow?.metadata)) {
-          const fallbackPluginId = defaultScenarioPluginIdForProjectMetadata(projectRow?.metadata);
+        if (!hasPin) {
+          // An explicit skill (run body first, then project, like
+          // composeDaemonSystemPrompt) owns the run; no kind default.
+          const fallbackPluginId = defaultScenarioPluginIdForProjectMetadata(
+            projectRow?.metadata,
+            typeof requestBody.skillId === 'string' && requestBody.skillId.trim()
+              ? requestBody.skillId
+              : projectRow?.skillId,
+          );
           if (fallbackPluginId && getInstalledPlugin(db, fallbackPluginId)) {
             runResolveBody = { ...requestBody, pluginId: fallbackPluginId };
           }

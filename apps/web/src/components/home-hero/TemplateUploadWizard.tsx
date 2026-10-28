@@ -1,18 +1,36 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Button, Input, ToggleCard, VisuallyHidden } from '@readable-studio/components';
-import type { DesignTemplateUploadPage, UserDesignTemplateSummary } from '@readable-studio/contracts';
-import { useT } from '../../i18n';
+import type {
+  DesignTemplateUploadPage, UploadableDesignTemplateType, UserDesignTemplateSummary,
+} from '@readable-studio/contracts';
+import { useI18n, useT } from '../../i18n';
+import { localizeSkillName } from '../../i18n/content';
+import type { Dict } from '../../i18n/types';
 import { useEscapeDismiss } from '../../hooks/useEscapeDismiss';
 import { Icon } from '../Icon';
-import { useTemplateUpload } from './useTemplateUpload';
+import { useTemplateUpload, type UploadError } from './useTemplateUpload';
 import styles from './TemplateUploadWizard.module.css';
 
+const ERROR_KEYS: Record<UploadError, keyof Dict> = {
+  invalidFile: 'homeHero.uploadInvalidFile',
+  expired: 'homeHero.uploadExpired',
+  networkError: 'homeHero.uploadNetworkError',
+  saveError: 'homeHero.uploadSaveError',
+  analyseError: 'homeHero.uploadAnalyseError',
+};
+// The summary's action is Retry, not Finish.
+const SUMMARY_ERROR_KEYS: Record<UploadError, keyof Dict> = { ...ERROR_KEYS, saveError: 'homeHero.uploadSummarySaveError' };
+const TYPE_KEYS: Record<UploadableDesignTemplateType, keyof Dict> = {
+  deck: 'homeHero.templateTabDeck',
+  report: 'homeHero.templateTabReport',
+};
+
 export function TemplateUploadWizard({ onComplete, onClose }: {
-  onComplete: (template: UserDesignTemplateSummary) => void;
+  onComplete: (templates: UserDesignTemplateSummary[]) => void;
   onClose: () => void;
 }) {
-  const t = useT();
+  const { t, locale } = useI18n();
   const upload = useTemplateUpload(onComplete);
   const dialog = useRef<HTMLDivElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -20,15 +38,22 @@ export function TemplateUploadWizard({ onComplete, onClose }: {
   const [closing, setClosing] = useState(false);
   const [dragging, setDragging] = useState(false);
   const id = useId();
-  const stepNames = [
-    t('homeHero.uploadStepType'), t('homeHero.uploadStepFile'),
-    t('homeHero.uploadStepPages'), t('homeHero.uploadStepFinish'),
-  ];
+  const stepNames = [t('homeHero.uploadStepFile'), t('homeHero.uploadStepPages'), t('homeHero.uploadStepFinish')];
   const isSaving = upload.busy === 'finalizing';
   async function close() {
     if (isSaving || closing) return;
     setClosing(true);
-    try { await upload.cancel(); onClose(); } catch {
+    try {
+      if (upload.saved.length) {
+        // Saved templates are committed, so cleanup is best effort here: the
+        // daemon's sliding expiry sweeps any unfinalized children left behind.
+        await upload.cancel().catch(() => {});
+        onComplete(upload.saved);
+      } else {
+        await upload.cancel();
+        onClose();
+      }
+    } catch {
       upload.setError('networkError');
       setClosing(false);
     }
@@ -48,14 +73,36 @@ export function TemplateUploadWizard({ onComplete, onClose }: {
       previous?.focus();
     };
   }, []);
-  useEffect(() => { heading.current?.focus(); }, [upload.step]);
-  const canContinue = upload.step === 1 ? upload.type !== null
-    : upload.step === 2 ? upload.file !== null
-    : upload.analysis !== null && upload.name.trim().length > 0 && upload.name.trim().length <= 120
-      && upload.analysis.pages.some((page) => page.id === upload.coverPageId);
-  const cover = upload.analysis?.pages.find((page) => page.id === upload.coverPageId);
-  const typeLabel = upload.type === 'deck' ? t('homeHero.templateTabDeck')
-    : upload.type === 'report' ? t('homeHero.templateTabReport') : t('homeHero.templateTabPrototype');
+  useEffect(() => { heading.current?.focus(); }, [upload.step, upload.index, upload.summary]);
+  // The outcome of the last summary retry: announced politely, and it moves focus
+  // because a saved row (with the focused Retry button) leaves the list.
+  const [retried, setRetried] = useState<{ position: number; text: string } | null>(null);
+  async function retry(position: number, entryName: string) {
+    setRetried(null);
+    const result = await upload.retry(position);
+    if (!result) return;
+    setRetried({ position, text: typeof result === 'string'
+      ? `${entryName}: ${t(SUMMARY_ERROR_KEYS[result])}` : t('homeHero.uploadRetrySaved', { name: entryName }) });
+  }
+  useEffect(() => {
+    if (!retried) return;
+    // Its own Retry when it failed again, else the next one left, else the heading.
+    const buttons = Array.from(dialog.current?.querySelectorAll<HTMLElement>('[data-retry]') ?? []);
+    (buttons.find((node) => Number(node.dataset.retry) >= retried.position) ?? buttons.at(-1) ?? heading.current)?.focus();
+  }, [retried]);
+  const item = upload.current;
+  const isBundle = upload.bundle !== null;
+  const isLast = upload.index === upload.items.length - 1;
+  const canContinue = upload.step === 1 ? upload.file !== null
+    : item !== undefined && item.name.trim().length > 0 && item.name.trim().length <= 120
+      && item.analysis.pages.some((page) => page.id === item.coverPageId);
+  const cover = item?.analysis.pages.find((page) => page.id === item.coverPageId);
+  // Older daemons send no detection; finalize then falls back to deck as well.
+  const resolvedType = item?.type ?? item?.analysis.detection?.type ?? item?.analysis.detectedType ?? 'deck';
+  const reached = upload.summary ? 4 : upload.step;
+  const skipped = upload.items.filter((entry) => entry.status === 'skipped');
+  const failed = upload.items.flatMap((entry, position) => entry.status === 'failed' ? [{ entry, position }] : []);
+  const invalid = upload.bundle?.invalid ?? [];
 
   return createPortal(<div className={styles.backdrop} onMouseDown={(event) => {
     if (event.target === event.currentTarget) void close();
@@ -80,9 +127,9 @@ export function TemplateUploadWizard({ onComplete, onClose }: {
         <p id={`${id}-description`} className={styles.intro}>{t('homeHero.uploadIntro')}</p>
         <ol className={styles.steps}>
           {stepNames.map((label, index) => <li key={label}
-            aria-current={upload.step === index + 1 ? 'step' : undefined}
-            className={upload.step === index + 1 ? styles.currentStep : undefined}>
-            <span className={styles.stepNumber} aria-hidden="true">{index < upload.step - 1 ? <Icon name="check" size={14} /> : index + 1}</span>
+            aria-current={reached === index + 1 ? 'step' : undefined}
+            className={reached === index + 1 ? styles.currentStep : undefined}>
+            <span className={styles.stepNumber} aria-hidden="true">{index < reached - 1 ? <Icon name="check" size={14} /> : index + 1}</span>
             <span>{label}</span>
           </li>)}
         </ol>
@@ -91,27 +138,25 @@ export function TemplateUploadWizard({ onComplete, onClose }: {
       <div className={styles.workspace}>
         <header className={styles.header}>
           <div>
-            <p className={styles.eyebrow} aria-live="polite">{t('homeHero.uploadStepCount', { step: upload.step })}</p>
-            <h2 id={`${id}-title`} ref={heading} tabIndex={-1}>{stepNames[upload.step - 1]}</h2>
+            {!upload.summary && <p className={styles.eyebrow} aria-live="polite">{t('homeHero.uploadStepCount', { step: upload.step })}</p>}
+            {/* Mounted empty before the analysis lands: screen readers skip a live
+                region that is inserted together with its text. */}
+            {!upload.summary && upload.step > 1 && <p className={styles.progress} aria-live="polite"
+              data-testid="template-upload-progress">
+              {isBundle && item && <>
+                {t('homeHero.uploadTemplateProgress', { current: upload.index + 1, total: upload.items.length })}
+                <span className={styles.entryName}>{item.entryName}</span>
+              </>}
+            </p>}
+            <h2 id={`${id}-title`} ref={heading} tabIndex={-1}>
+              {upload.summary ? t('homeHero.uploadSummaryTitle') : stepNames[upload.step - 1]}
+            </h2>
           </div>
           <Button variant="ghost" size="icon" aria-label={t('homeHero.uploadClose')}
             disabled={isSaving || closing} onClick={() => void close()}><Icon name="close" size={18} /></Button>
         </header>
         <div className={styles.content}>
-          {upload.step === 1 && <>
-            <p className={styles.description}>{t('homeHero.uploadTypeHint')}</p>
-            <div className={styles.types}>
-              {(['deck', 'report', 'website'] as const).map((type) => <ToggleCard key={type}
-                pressed={upload.type === type} onPressedChange={() => upload.setType(type)}
-                className={styles.typeCard}
-                aria-label={t(type === 'deck' ? 'homeHero.templateTabDeck' : type === 'report' ? 'homeHero.templateTabReport' : 'homeHero.templateTabPrototype')}>
-                <Icon name={type === 'deck' ? 'present' : type === 'report' ? 'file' : 'palette'} size={28} />
-                <strong>{t(type === 'deck' ? 'homeHero.templateTabDeck' : type === 'report' ? 'homeHero.templateTabReport' : 'homeHero.templateTabPrototype')}</strong>
-                <span>{t(type === 'deck' ? 'homeHero.uploadDeckHint' : type === 'report' ? 'homeHero.uploadReportHint' : 'homeHero.uploadWebsiteHint')}</span>
-              </ToggleCard>)}
-            </div>
-          </>}
-          {upload.step === 2 && <>
+          {upload.step === 1 && !upload.summary && <>
             <p className={styles.description}>{t('homeHero.uploadFileHint')}</p>
             <div className={`${styles.dropzone}${dragging ? ` ${styles.dragging}` : ''}`}
               onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
@@ -133,26 +178,26 @@ export function TemplateUploadWizard({ onComplete, onClose }: {
             </div>
             <p className={styles.note}>{t('homeHero.uploadStructureHint')}</p>
           </>}
-          {upload.step === 3 && (upload.analysis ? <>
+          {upload.step === 2 && !upload.summary && (item ? <>
             <div className={styles.nameField}>
               <label htmlFor={`${id}-name`}>{t('homeHero.userTemplateName')}</label>
-              <Input id={`${id}-name`} value={upload.name} maxLength={120}
-                onChange={(event) => upload.setName(event.target.value)} />
+              <Input id={`${id}-name`} value={item.name} maxLength={120}
+                onChange={(event) => upload.update({ name: event.target.value })} />
             </div>
             <div className={styles.pagesHeading}>
               <div><h3>{t('homeHero.uploadCoverTitle')}</h3><p>{t('homeHero.uploadCoverHint')}</p></div>
-              <span>{t('homeHero.uploadPageCount', { count: upload.analysis.pages.length })}</span>
+              <span>{t('homeHero.uploadPageCount', { count: item.analysis.pages.length })}</span>
             </div>
-            <p className={styles.detected}><Icon name="check" size={14} />{upload.analysis.prompt.file}</p>
+            <p className={styles.detected}><Icon name="check" size={14} />{item.analysis.prompt.file}</p>
             <div className={styles.pages}>
-              {upload.analysis.pages.map((page) => <ToggleCard key={page.id}
-                className={styles.pageCard} pressed={upload.coverPageId === page.id}
-                onPressedChange={() => upload.setCoverPageId(page.id)}
-                aria-label={`${page.file}${upload.coverPageId === page.id ? ` · ${t('homeHero.uploadSelectedCover')}` : ''}`}
+              {item.analysis.pages.map((page) => <ToggleCard key={page.id}
+                className={styles.pageCard} pressed={item.coverPageId === page.id}
+                onPressedChange={() => upload.update({ coverPageId: page.id })}
+                aria-label={`${page.file}${item.coverPageId === page.id ? ` · ${t('homeHero.uploadSelectedCover')}` : ''}`}
                 data-testid="template-upload-page">
                 <UploadPagePreview page={page} />
                 <span className={styles.pageName}>{page.file}</span>
-                {upload.coverPageId === page.id && <span className={styles.coverBadge}>{t('homeHero.uploadSelectedCover')}</span>}
+                {item.coverPageId === page.id && <span className={styles.coverBadge}>{t('homeHero.uploadSelectedCover')}</span>}
               </ToggleCard>)}
             </div>
           </> : <div className={styles.loading} role="status" aria-live="polite">
@@ -161,43 +206,111 @@ export function TemplateUploadWizard({ onComplete, onClose }: {
             {upload.busy === 'uploading' && <><progress max={100} value={upload.progress} aria-label={t('homeHero.uploadUploading')} /><span>{upload.progress}%</span></>}
             <p>{t('homeHero.uploadAnalyseHint')}</p>
           </div>)}
-          {upload.step === 4 && <>
+          {upload.step === 3 && item && <>
             <p className={styles.description}>{t('homeHero.uploadFinishHint')}</p>
             <div className={styles.summary}>
               {cover && <div className={styles.summaryPreview}><UploadPagePreview page={cover} /></div>}
-              <h3>{upload.name.trim()}</h3>
+              <h3>{item.name.trim()}</h3>
               <dl>
-                <dt>{t('homeHero.uploadStepType')}</dt><dd>{typeLabel}</dd>
+                <dt>{t('homeHero.uploadDetectedType')}</dt>
+                <dd data-testid="template-upload-detected-type">{t(TYPE_KEYS[resolvedType])}</dd>
                 <dt>{t('homeHero.uploadCoverTitle')}</dt><dd>{cover?.file}</dd>
-                <dt>{t('homeHero.uploadStepPages')}</dt><dd>{t('homeHero.uploadPageCount', { count: upload.analysis?.pages.length ?? 0 })}</dd>
+                <dt>{t('homeHero.uploadStepPages')}</dt><dd>{t('homeHero.uploadPageCount', { count: item.analysis.pages.length })}</dd>
               </dl>
+              {item.analysis.detection?.ambiguous && <TypeChoice key={item.analysis.sessionId}
+                value={resolvedType} chosen={item.type !== undefined} onChange={(type) => upload.update({ type })} />}
             </div>
           </>}
-          {upload.error && <p className={styles.error} role="alert">{t(
-            upload.error === 'invalidFile' ? 'homeHero.uploadInvalidFile'
-              : upload.error === 'expired' ? 'homeHero.uploadExpired'
-                : upload.error === 'networkError' ? 'homeHero.uploadNetworkError'
-                  : upload.error === 'saveError' ? 'homeHero.uploadSaveError' : 'homeHero.uploadAnalyseError',
-          )}</p>}
+          {upload.summary && <div className={styles.results} data-testid="template-upload-summary">
+            {upload.saved.length > 0 && <section>
+              <h3>{t('homeHero.uploadSummarySaved', { count: upload.saved.length })}</h3>
+              <ul>{upload.saved.map((template) => <li key={template.id}><strong>{localizeSkillName(locale, template)}</strong></li>)}</ul>
+            </section>}
+            {skipped.length > 0 && <section>
+              <h3>{t('homeHero.uploadSummarySkipped', { count: skipped.length })}</h3>
+              <ul>{skipped.map((entry) => <li key={entry.analysis.sessionId}><strong>{entry.entryName}</strong></li>)}</ul>
+            </section>}
+            {failed.length > 0 && <section>
+              <h3>{t('homeHero.uploadSummaryFailed', { count: failed.length })}</h3>
+              <ul>{failed.map(({ entry, position }) => <li key={entry.analysis.sessionId}>
+                <div><strong>{entry.name.trim()}</strong> <span>{entry.entryName}</span>
+                  <p>{t(SUMMARY_ERROR_KEYS[entry.error ?? 'saveError'])}</p></div>
+                <Button disabled={upload.busy !== null || closing} data-retry={position}
+                  aria-label={`${t('homeHero.uploadRetry')}: ${entry.entryName}`}
+                  onClick={() => void retry(position, entry.entryName)}>{t('homeHero.uploadRetry')}</Button>
+              </li>)}</ul>
+            </section>}
+            {invalid.length > 0 && <section>
+              <h3>{t('homeHero.uploadSummaryInvalid', { count: invalid.length })}</h3>
+              <ul>{invalid.map((entry) => <li key={entry.entryName}>
+                <div><strong>{entry.entryName}</strong><p>{entry.reason}</p></div>
+              </li>)}</ul>
+            </section>}
+            <VisuallyHidden role="status">{retried?.text}</VisuallyHidden>
+          </div>}
+          {upload.error && <p className={styles.error} role="alert">
+            {t(ERROR_KEYS[upload.error])}
+            {upload.errorDetail && <span className={styles.errorDetail}>{upload.errorDetail}</span>}
+          </p>}
         </div>
         <footer className={styles.footer}>
-          <Button variant="ghost" disabled={isSaving || closing} onClick={() => void close()}>{t('homeHero.uploadCancel')}</Button>
+          {!upload.summary && <Button variant="ghost" disabled={isSaving || closing} onClick={() => void close()}>{t('homeHero.uploadCancel')}</Button>}
           <div>
-            {upload.step > 1 && <Button disabled={isSaving || closing} onClick={() => {
-              if (upload.busy) void upload.cancel().then(() => { upload.setStep(2); });
-              else upload.setStep((upload.step - 1) as 1 | 2 | 3);
-            }}>{t('homeHero.uploadBack')}</Button>}
-            <Button variant="primary" disabled={isSaving || closing || upload.busy !== null || !canContinue}
+            {!upload.summary && upload.step > 1 && !(isBundle && upload.step === 2 && upload.index > 0)
+              && <Button disabled={isSaving || closing} onClick={() => {
+                if (upload.busy) void upload.cancel().then(() => { upload.setStep(1); });
+                else upload.setStep((upload.step - 1) as 1 | 2);
+              }}>{t('homeHero.uploadBack')}</Button>}
+            {isBundle && !upload.summary && upload.step > 1 && <Button disabled={upload.busy !== null || closing}
+              onClick={upload.skip}>{t('homeHero.uploadSkip')}</Button>}
+            <Button variant="primary"
+              disabled={isSaving || closing || (!upload.summary && (upload.busy !== null || !canContinue))}
               onClick={() => {
-                if (upload.step === 4) void upload.finish();
-                else if (upload.step === 2) upload.analyse();
-                else upload.setStep((upload.step + 1) as 2 | 4);
-              }}>{t(isSaving ? 'homeHero.uploadSaving' : upload.step === 4 ? 'homeHero.uploadComplete' : 'homeHero.uploadNext')}</Button>
+                if (upload.summary) void close();
+                else if (upload.step === 3) void upload.finish();
+                else if (upload.step === 1) upload.analyse();
+                else upload.setStep(3);
+              }}>{t(upload.summary ? 'homeHero.uploadDone'
+                : isSaving ? 'homeHero.uploadSaving'
+                  : upload.step < 3 ? 'homeHero.uploadNext'
+                    : isBundle && !isLast ? 'homeHero.uploadSaveNext' : 'homeHero.uploadComplete')}</Button>
           </div>
         </footer>
       </div>
     </div>
   </div>, document.body);
+}
+
+// Shown only for an ambiguous detection: a two-option radio group that
+// overrides the detected type, announcing the choice politely.
+function TypeChoice({ value, chosen, onChange }: {
+  value: UploadableDesignTemplateType;
+  chosen: boolean;
+  onChange: (type: UploadableDesignTemplateType) => void;
+}) {
+  const t = useT();
+  const [open, setOpen] = useState(chosen);
+  const options = useRef<Array<HTMLButtonElement | null>>([]);
+  const types = ['deck', 'report'] as const;
+  return <div className={styles.typeChoice}>
+    <p>{t('homeHero.uploadTypeAmbiguous')}</p>
+    {open ? <div role="radiogroup" aria-label={t('homeHero.uploadDetectedType')} className={styles.typeOptions}>
+      {types.map((type, position) => <button key={type} type="button" role="radio"
+        ref={(node) => { options.current[position] = node; }}
+        aria-checked={value === type} tabIndex={value === type ? 0 : -1} autoFocus={value === type}
+        className={styles.typeOption} onClick={() => onChange(type)}
+        onKeyDown={(event) => {
+          if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+          event.preventDefault();
+          // Two options: every arrow key moves to the other one.
+          onChange(types[1 - position]!);
+          options.current[1 - position]?.focus();
+        }}>{t(TYPE_KEYS[type])}</button>)}
+    </div> : <Button onClick={() => setOpen(true)}>{t('homeHero.uploadChangeType')}</Button>}
+    {open && <p role="status" className={styles.typeStatus}>
+      {chosen ? t('homeHero.uploadTypeChanged', { type: t(TYPE_KEYS[value]) }) : ''}
+    </p>}
+  </div>;
 }
 
 function UploadPagePreview({ page }: { page: DesignTemplateUploadPage }) {

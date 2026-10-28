@@ -76,6 +76,19 @@ describe('useContextUsage', () => {
     expect(view.result.current).toEqual(unknown);
   });
 
+  it.each([
+    ['succeeded', 'run-started'], ['failed', 'compacting'], ['canceled', 'compacted'], ['failed', 'model-changed'],
+  ] as const)('ends a live waiting marker when the run turns %s, without refetching (%s)', async (status, reason) => {
+    // The daemon's close-time not-reported event is dropped when the run is already terminal.
+    const waiting: ContextUsageSnapshot = { ...snapshot, state: 'unknown', usedTokens: null, reason, updatedAt: 2 };
+    vi.mocked(fetchContextUsage).mockResolvedValue({ ...response, snapshot: waiting });
+    const view = renderHook(useContextUsage, { initialProps: { ...input, messages: [assistant('a1', 'r1', [waiting])] } });
+    await waitFor(() => expect(view.result.current).toEqual(waiting));
+    view.rerender({ ...input, messages: [assistant('a1', 'r1', [waiting], status)] });
+    expect(view.result.current).toEqual({ ...waiting, reason: 'not-reported' });
+    expect(fetchContextUsage).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects a mismatched reported model and never reads another conversation message set', async () => {
     vi.mocked(fetchContextUsage).mockResolvedValue({ ...response, snapshot: { ...snapshot, model: 'old-model' } });
     const view = renderHook(useContextUsage, { initialProps: input });

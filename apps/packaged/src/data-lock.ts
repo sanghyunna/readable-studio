@@ -1,6 +1,6 @@
 import { existsSync, linkSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 
 export type DataLockMetadata = { pid: number; appVersion: string | null; exePath: string; startedAt: string };
@@ -79,53 +79,73 @@ try {
   $mutex.Dispose()
 }
 `;
-function acquireWindowsLock(path: string, temporary: string): void {
+function windowsLockCommand(path: string, temporary: string) {
   const mutex = 'Global\\ReadableStudioData-' + createHash('sha256').update(resolve(path).toLowerCase()).digest('hex');
+  return {
+    args: ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(WINDOWS_ACQUIRE_SCRIPT, 'utf16le').toString('base64')],
+    env: { ...process.env, READABLE_LOCK_MUTEX: mutex, READABLE_LOCK_PATH: path, READABLE_LOCK_TEMP: temporary },
+  };
+}
+function windowsLockError(error: unknown, exitCode: unknown, stdout: string | undefined): Error {
+  if (exitCode === 3 && stdout) {
+    const owner = JSON.parse(stdout) as DataLockMetadata;
+    return new PackagedDataLockError(owner);
+  }
+  return new PackagedDataLockAccessError(error);
+}
+function acquireWindowsLock(path: string, temporary: string): void {
+  const { args, env } = windowsLockCommand(path, temporary);
   try {
-    execFileSync('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(WINDOWS_ACQUIRE_SCRIPT, 'utf16le').toString('base64')], {
-      windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, READABLE_LOCK_MUTEX: mutex, READABLE_LOCK_PATH: path, READABLE_LOCK_TEMP: temporary },
-    });
+    execFileSync('powershell.exe', args, { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env });
   } catch (error) {
     const failure = error as { status?: number; stdout?: string };
-    if (failure.status === 3 && failure.stdout) {
-      const owner = JSON.parse(failure.stdout) as DataLockMetadata;
-      throw new PackagedDataLockError(owner);
-    }
-    throw new PackagedDataLockAccessError(error);
+    throw windowsLockError(error, failure.status, failure.stdout);
+  }
+}
+// The same worker awaited instead of blocking the caller's thread through
+// PowerShell start-up and the mutex wait. Ending stdin at once matches the
+// synchronous call's ignored stdin; execFile reports the exit code as `code`.
+async function acquireWindowsLockAsync(path: string, temporary: string): Promise<void> {
+  const { args, env } = windowsLockCommand(path, temporary);
+  try {
+    await new Promise<void>((done, fail) => {
+      execFile('powershell.exe', args, { windowsHide: true, encoding: 'utf8', env }, (error, stdout, stderr) => {
+        if (error) fail(Object.assign(error, { stdout, stderr })); else done();
+      }).stdin?.end();
+    });
+  } catch (error) {
+    const failure = error as { code?: unknown; stdout?: string };
+    throw windowsLockError(error, failure.code, failure.stdout);
   }
 }
 
-// Publish fully written metadata atomically; PID liveness, never age, decides
-// whether an existing lock is stale. Windows is the supported product target.
-export function acquireDataLock(
-  dataRoot: string,
-  metadata: DataLockMetadata,
-  lifecycle: {
-    once(event: 'exit', listener: () => void): unknown;
-    removeListener(event: 'exit', listener: () => void): unknown;
-  } = process,
-): { release(): void } {
+type DataLockLifecycle = {
+  once(event: 'exit', listener: () => void): unknown;
+  removeListener(event: 'exit', listener: () => void): unknown;
+};
+function writeLockCandidate(dataRoot: string, metadata: DataLockMetadata): { path: string; temporary: string } {
   mkdirSync(dataRoot, { recursive: true });
   const path = join(dataRoot, 'data.lock');
   const temporary = join(dataRoot, `.data-lock-${randomUUID()}`);
   writeFileSync(temporary, JSON.stringify(metadata), { flag: 'wx' });
-  try {
-    if (process.platform === 'win32') acquireWindowsLock(path, temporary);
-    else for (;;) {
-      try { linkSync(temporary, path); break; }
-      catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-        const owner = readOwner(path);
-        if (owner && isAlive(owner.pid)) throw new PackagedDataLockError(owner);
-        // Re-read before deletion so a competing recovery's live owner wins.
-        const current = readOwner(path);
-        if (current && isAlive(current.pid)) throw new PackagedDataLockError(current);
-        try { unlinkSync(path); }
-        catch (unlinkError) { if ((unlinkError as NodeJS.ErrnoException).code !== 'ENOENT') throw unlinkError; }
-      }
+  return { path, temporary };
+}
+function acquirePosixLock(path: string, temporary: string): void {
+  for (;;) {
+    try { linkSync(temporary, path); return; }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      const owner = readOwner(path);
+      if (owner && isAlive(owner.pid)) throw new PackagedDataLockError(owner);
+      // Re-read before deletion so a competing recovery's live owner wins.
+      const current = readOwner(path);
+      if (current && isAlive(current.pid)) throw new PackagedDataLockError(current);
+      try { unlinkSync(path); }
+      catch (unlinkError) { if ((unlinkError as NodeJS.ErrnoException).code !== 'ENOENT') throw unlinkError; }
     }
-  } finally { if (existsSync(temporary)) unlinkSync(temporary); }
+  }
+}
+function holdDataLock(path: string, metadata: DataLockMetadata, lifecycle: DataLockLifecycle): { release(): void } {
   let released = false;
   const release = () => {
     if (released) return;
@@ -138,4 +158,25 @@ export function acquireDataLock(
   };
   lifecycle.once('exit', release);
   return { release };
+}
+
+// Publish fully written metadata atomically; PID liveness, never age, decides
+// whether an existing lock is stale. Windows is the supported product target.
+export function acquireDataLock(dataRoot: string, metadata: DataLockMetadata, lifecycle: DataLockLifecycle = process): { release(): void } {
+  const { path, temporary } = writeLockCandidate(dataRoot, metadata);
+  try {
+    if (process.platform === 'win32') acquireWindowsLock(path, temporary);
+    else acquirePosixLock(path, temporary);
+  } finally { if (existsSync(temporary)) unlinkSync(temporary); }
+  return holdDataLock(path, metadata, lifecycle);
+}
+// acquireDataLock for the Electron main thread: identical protocol and errors,
+// but the caller's event loop keeps running while the PowerShell worker does.
+export async function acquireDataLockAsync(dataRoot: string, metadata: DataLockMetadata, lifecycle: DataLockLifecycle = process): Promise<{ release(): void }> {
+  const { path, temporary } = writeLockCandidate(dataRoot, metadata);
+  try {
+    if (process.platform === 'win32') await acquireWindowsLockAsync(path, temporary);
+    else acquirePosixLock(path, temporary);
+  } finally { if (existsSync(temporary)) unlinkSync(temporary); }
+  return holdDataLock(path, metadata, lifecycle);
 }

@@ -106,7 +106,7 @@ import {
 } from './composer/LexicalComposerInput';
 import type { StagedFileItem } from './composer/stagedFiles';
 import { CaretFloatingLayer } from './composer/CaretFloatingLayer';
-import { MentionPreviewPicker, MentionTemplatePreview, type MentionPreviewItem } from './MentionPreviewPicker';
+import { MentionPreviewPicker, MentionTemplatePreview, stepMentionIndex, type MentionPreviewItem } from './MentionPreviewPicker';
 import { pluginsWithVisualReferences } from '../utils/visualPluginContext';
 import { isHubEditableDocumentName } from './hub/drop-to-edit';
 import { useUserDeckTemplates } from './home-hero/useUserDeckTemplates';
@@ -568,7 +568,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     (mentionTab === 'plugins' && pluginsLoading) ||
     ((mentionTab === 'skills' || mentionTab === 'templates') && skillsLoading) ||
     (mentionTab === 'mcp' && mcpLoading);
-  const activeMentionOption = visiblePickerOptions[selectedIndex] ?? visiblePickerOptions[0];
+  const activeMentionOption = selectedIndex < 0 ? undefined : visiblePickerOptions[selectedIndex] ?? visiblePickerOptions[0];
   const mentionScopeLabel = t(activeMentionOption?.kind === 'plugin'
     ? 'chat.mentionVisualReference'
     : activeMentionOption?.kind === 'skill' || activeMentionOption?.kind === 'template'
@@ -933,10 +933,12 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     setCaretRect(anchorRect);
     if (nextMention?.q) setContextControlAnchored(false);
     if (nextMention) {
-      setMentionTrigger((prev) => {
-        if (!prev || prev.query !== nextMention.q) setSelectedIndex(0);
-        return { query: nextMention.q };
-      });
+      // A bare or whitespace-only `@` query (the filter ignores whitespace)
+      // starts with no active row, so Enter cannot apply row 0.
+      // Reset outside the state updater: a setState inside an updater can run
+      // during render and lose to an earlier queued index update.
+      if (!mentionTrigger || mentionTrigger.query !== nextMention.q) setSelectedIndex(nextMention.q.trim() ? 0 : -1);
+      setMentionTrigger({ query: nextMention.q });
     } else {
       setMentionTrigger(null);
       setMentionTab('all');
@@ -965,17 +967,18 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
       setMentionTrigger(null);
       return true;
     }
+    // Nothing highlighted yet (bare `@`): Enter/Tab apply nothing. Close the
+    // picker and let Enter submit exactly as it would with the picker closed.
+    if ((key === 'Tab' || key === 'Enter') && selectedIndex < 0) {
+      dismissMentionPicker();
+      if (key === 'Enter' && canAttemptSubmit) onSubmit();
+      return true;
+    }
     // An empty/loading picker still owns navigation, especially Enter: it
     // must not submit the unfinished @query while the catalogue is resolving.
     if (visiblePickerOptions.length === 0) return true;
-    if (key === 'ArrowDown') {
-      setSelectedIndex((idx) => (idx + 1) % visiblePickerOptions.length);
-      return true;
-    }
-    if (key === 'ArrowUp') {
-      setSelectedIndex(
-        (idx) => (idx - 1 + visiblePickerOptions.length) % visiblePickerOptions.length,
-      );
+    if (key === 'ArrowDown' || key === 'ArrowUp') {
+      setSelectedIndex((idx) => stepMentionIndex(idx, visiblePickerOptions.length, key === 'ArrowDown' ? 1 : -1));
       return true;
     }
     if (key === 'Tab' || key === 'Enter') {
@@ -1434,7 +1437,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
               comboboxAria={{
                 expanded: pickerOpen,
                 listboxId: 'home-hero-context-picker',
-                activeId: pickerOpen && visiblePickerOptions.length > 0 ? `home-hero-context-picker-option-${selectedIndex}` : null,
+                activeId: pickerOpen && visiblePickerOptions.length > 0 && selectedIndex >= 0 ? `home-hero-context-picker-option-${selectedIndex}` : null,
               }}
             />
           </div>
@@ -2280,12 +2283,17 @@ const HubTemplateCarousel = memo(function HubTemplateCarousel({
       {userDecks.error ? <p role="alert" className="home-hero__user-template-error">
         {t('homeHero.userTemplateImportError', { message: userDecks.error })}
       </p> : null}
-      {uploadOpen && <TemplateUploadWizard onClose={() => setUploadOpen(false)} onComplete={(template) => {
-        userDecks.upsert(template);
-        onTabChange(userTemplateTab(template));
-        writeTemplateCarouselCollapsed(false);
-        setCollapsed(false);
-        setNewTemplateId(template.id);
+      {uploadOpen && <TemplateUploadWizard onClose={() => setUploadOpen(false)} onComplete={(templates) => {
+        // The carousel orders cards itself (newest first); the first saved template
+        // picks the tab and is scrolled into view.
+        for (const template of templates) userDecks.upsert(template);
+        const [first] = templates;
+        if (first) {
+          onTabChange(userTemplateTab(first));
+          writeTemplateCarouselCollapsed(false);
+          setCollapsed(false);
+          setNewTemplateId(first.id);
+        }
         setUploadOpen(false);
       }} />}
     </section>

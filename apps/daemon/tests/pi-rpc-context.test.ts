@@ -1,18 +1,25 @@
 import assert from 'node:assert/strict';
 import type { ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
-import { afterEach, test } from 'vitest';
+import { afterEach, test, vi } from 'vitest';
+import { readContextUsageSnapshot, selectContextUsage } from '../src/context-usage.js';
+import { normalizeResource } from '../src/databricks/catalogue.js';
+import { servingTask } from '../src/databricks/serving-task.js';
 import { attachPiRpcSession } from '../src/pi-rpc.js';
+import { getDatabricksContextLimit } from '../src/runtimes/pi-databricks.js';
 
 type Record = { [key: string]: unknown };
 const roots: string[] = [];
-afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
+afterEach(async () => {
+  vi.restoreAllMocks();
+  await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })));
+});
 
-async function fixture(contextLimit?: { tokens: number | null; source: 'metadata' | 'default' }) {
+async function fixture(contextLimit?: ReturnType<typeof getDatabricksContextLimit>) {
   const root = await mkdtemp(path.join(tmpdir(), 'pi-context-'));
   roots.push(root);
   const cwd = path.join(root, 'project');
@@ -59,6 +66,33 @@ test.each([
   assert.equal(f.snapshots().at(-1)?.state, 'estimated');
   f.child.emit('close', 0, null);
   await f.session.waitForQuiescence();
+});
+
+// Unmodified captured Foundation endpoints: prose-advertised windows and endpoints with only a planning default.
+const { observedDetails } = JSON.parse(await readFile(new URL('./databricks/fixtures/serving-wire.json', import.meta.url), 'utf8')) as { observedDetails: Record[] };
+const capabilities = (metadata: Record) => normalizeResource('test-secret', `dbc_${'a'.repeat(32)}`,
+  { kind: 'serving-endpoint', name: String(metadata.name), metadata }).endpoint.capabilities;
+
+test.each([
+  { source: 'advertised', piWindow: 128_000, expected: { limitTokens: 128_000, limitSource: 'advertised' } },
+  // Pi's models.json carries the 1,000,000 planning fallback here; it must never be displayed.
+  { source: 'default', piWindow: 1_000_000, expected: { limitTokens: null, limitSource: 'default' } },
+])('a captured Databricks $source endpoint reaches the restored snapshot through Pi', async ({ source, piWindow, expected }) => {
+  vi.spyOn(console, 'warn').mockImplementation(() => {});
+  const endpoint = observedDetails.find(row => servingTask(row) === 'llm/v1/chat' && capabilities(row).limitSources?.contextWindow === source);
+  assert.ok(endpoint, `the captured wire has a ${source} chat endpoint`);
+  const f = await fixture(getDatabricksContextLimit(capabilities(endpoint)));
+  f.feed({ type: 'turn_end', message: { stopReason: 'stop', content: [{ type: 'text', text: 'done' }] } });
+  const stats = f.commands().find(command => command.type === 'get_session_stats');
+  assert.ok(stats);
+  f.feed({ type: 'response', id: stats.id, command: 'get_session_stats', success: true,
+    data: { contextUsage: { tokens: 5, contextWindow: piWindow } } });
+  const snapshot = readContextUsageSnapshot(f.snapshots().at(-1));
+  const restored = selectContextUsage({ projectId: 'p', conversationId: 'c', agentId: 'databricks', model: 'dbm_canonical', runs: [],
+    persisted: { id: 'r', agentId: 'databricks', createdAt: 1, events: [{ kind: 'context_usage', snapshot }] } }).snapshot;
+  assert.deepEqual({ state: restored.state, usedTokens: restored.usedTokens, limitTokens: restored.limitTokens, limitSource: restored.limitSource },
+    { state: 'estimated', usedTokens: 5, ...expected });
+  f.session.abort(); f.child.emit('close', 0, null);
 });
 
 test('compaction invalidates old estimates and ignores the outstanding pre-compaction response', async () => {

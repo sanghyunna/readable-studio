@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { ContextUsageResponse, ContextUsageSnapshot } from '@readable-studio/contracts';
+import { TRANSIENT_CONTEXT_USAGE_REASONS, type ContextUsageResponse, type ContextUsageSnapshot } from '@readable-studio/contracts';
 import type { ChatMessage } from '../types';
 import { fetchContextUsage } from '../providers/context-usage';
 
@@ -49,6 +49,10 @@ export function useContextUsage({ projectId, conversationId, messagesConversatio
       if (!live || snapshot.updatedAt >= live.updatedAt) live = snapshot;
     }
   }
+  // An ended run cannot replace its waiting marker, and the daemon's close-time event is lost once
+  // the run is already terminal; the daemon selector applies the same rule on the next fetch.
+  const ended = latest?.runStatus === 'succeeded' || latest?.runStatus === 'failed' || latest?.runStatus === 'canceled';
+  if (live && ended && TRANSIENT_CONTEXT_USAGE_REASONS.includes(live.reason)) live = { ...live, reason: 'not-reported' };
   if (latest && !latest.runId && (latest.runStatus === 'queued' || latest.runStatus === 'running')) return null;
   if (loaded.response && latestRunId && loaded.response.runId !== latestRunId) return null;
   if (!loaded.response) return live && live.updatedAt >= loaded.requestedAt ? live : null;

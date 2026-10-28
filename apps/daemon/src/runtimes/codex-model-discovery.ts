@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { attachCodexAppServerClient, codexRecord } from './codex-app-server-client.js';
+import { attachCodexAppServerClient, codexAccountReady, codexRecord } from './codex-app-server-client.js';
 import { createAgentCommandInvocation } from './invocation.js';
 import type { RuntimeEnv } from './types.js';
 
@@ -13,7 +13,7 @@ export async function discoverCodexCatalog(bin: string, env: RuntimeEnv): Promis
       windowsVerbatimArguments: invocation.windowsVerbatimArguments,
     });
     let expectedId = 1;
-    let phase: 'initialize' | 'account' | 'models' = 'initialize';
+    let phase: 'initialize' | 'account' | 'config' | 'models' = 'initialize';
     let outcome: string | Error | undefined;
     let stderr = '';
     const models: unknown[] = [];
@@ -38,6 +38,19 @@ export async function discoverCodexCatalog(bin: string, env: RuntimeEnv): Promis
     });
     const client = attachCodexAppServerClient(child, (message) => {
       if (outcome !== undefined || message.id !== expectedId) return;
+      if (phase === 'config') {
+        // model/list holds only built-in OpenAI presets for a non-OpenAI provider;
+        // its configured model (an Azure deployment) is the one it can run.
+        // An unreadable config is not fatal: keep the model/list catalogue.
+        const model = codexRecord(codexRecord(message.result).config).model;
+        if (typeof model === 'string' && model.trim()) {
+          finish(JSON.stringify({ data: [{ id: model, displayName: model, isDefault: true }] }));
+          return;
+        }
+        phase = 'models';
+        request('model/list', { includeHidden: false });
+        return;
+      }
       if (message.error) { finish(new Error(String(codexRecord(message.error).message ?? 'App-server request rejected'))); return; }
       const result = codexRecord(message.result);
       if (!message.result) { finish(new Error('Invalid app-server response')); return; }
@@ -46,7 +59,12 @@ export async function discoverCodexCatalog(bin: string, env: RuntimeEnv): Promis
         phase = 'account';
         request('account/read', { refreshToken: false });
       } else if (phase === 'account') {
-        if (!result.account) { finish(new Error('Authentication required')); return; }
+        if (!codexAccountReady(result)) { finish(new Error('Authentication required')); return; }
+        if (result.requiresOpenaiAuth === false) {
+          phase = 'config';
+          request('config/read', { includeLayers: false });
+          return;
+        }
         phase = 'models';
         request('model/list', { includeHidden: false });
       } else {

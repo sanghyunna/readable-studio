@@ -1011,10 +1011,17 @@ otherwise a minimal \`readable mcp --daemon-url <url>\` command is used.`);
 // code + a JSON envelope on stderr. Code agents read these to decide
 // whether the failure is recoverable (re-grant capabilities, prompt
 // the user, retry with --grant-caps, etc.).
-function exitWithStructuredError({ code, message, data }) {
+// `soft` sets the exit code and returns instead, for callers that return
+// right after several requests: a hard process.exit() there can abort Node
+// on Windows (libuv UV_HANDLE_CLOSING assertion, exit 0xC0000409).
+function exitWithStructuredError({ code, message, data }, { soft = false } = {}) {
   const exit = RECOVERABLE_EXIT_CODES[code] ?? 1;
   const envelope = { error: { code, message, data: data ?? {} } };
   process.stderr.write(JSON.stringify(envelope) + '\n');
+  if (soft) {
+    process.exitCode = exit;
+    return;
+  }
   process.exit(exit);
 }
 
@@ -1030,7 +1037,7 @@ function exitWithStructuredError({ code, message, data }) {
 // structured envelope instead of collapsing to `HTTP <status>: `, which
 // would drop the only diagnostic the daemon actually returned to a
 // headless caller.
-async function structuredHttpFailure(resp, fallbackCode = 'daemon-not-running') {
+async function structuredHttpFailure(resp, fallbackCode = 'daemon-not-running', options) {
   let parsed;
   try { parsed = await resp.json(); } catch { parsed = {}; }
   const errorObj =
@@ -1039,17 +1046,17 @@ async function structuredHttpFailure(resp, fallbackCode = 'daemon-not-running') 
       : parsed?.error;
   const errCode = normalizeRecoverableErrorCode(errorObj?.code, errorObj?.message);
   if (errCode && errCode in RECOVERABLE_EXIT_CODES) {
-    exitWithStructuredError({
+    return exitWithStructuredError({
       code:    errCode,
       message: errorObj?.message ?? `HTTP ${resp.status}`,
       data:    structuredErrorData(errorObj),
-    });
+    }, options);
   }
   exitWithStructuredError({
     code:    fallbackCode,
     message: errorObj?.message ?? `HTTP ${resp.status}: ${await resp.text().catch(() => '')}`,
     data:    structuredErrorData(errorObj),
-  });
+  }, options);
 }
 
 function normalizeRecoverableErrorCode(code, message) {
@@ -7824,10 +7831,10 @@ Renames an editable (user-created) design system. Built-in systems are read-only
   console.log(`Renamed ${parsed.id} -> ${renamed.title ?? parsed.title}`);
 }
 
-// readable design-templates import <zip> [--type] [--name] [--cover] | list [--user]
-//   | rename <id> <name> | remove <id> | thumbnails <id>
-//   | analyse <zip> | inspect-upload <sessionId> | cancel-upload <sessionId>
-//   | finalize <sessionId> --type --name --cover-page   [--json] [--daemon-url <url>]
+// readable design-templates import <zip> [--type] [--name] [--cover] | import <zip> --all [--type]
+//   | list [--user] | rename <id> <name> | remove <id> | thumbnails <id>
+//   | analyse <zip> | inspect-upload <sessionId> | cancel-upload <sessionId> | cancel-bundle <bundleId>
+//   | finalize <sessionId> [--type] --name --cover-page   [--json] [--daemon-url <url>]
 //
 // CLI mirror of the Hub's user-imported templates and its upload wizard.
 // Calls the same /api/design-templates and /api/design-template-uploads
@@ -7845,7 +7852,7 @@ async function runDesignTemplates(args) {
   try {
     flags = parseFlags(rest, {
       string: stringFlags,
-      boolean: new Set([...LIBRARY_BOOLEAN_FLAGS, 'user']),
+      boolean: new Set([...LIBRARY_BOOLEAN_FLAGS, 'user', 'all']),
     });
   } catch (err) {
     console.error(err.message);
@@ -7860,12 +7867,13 @@ async function runDesignTemplates(args) {
     }
     positional.push(value);
   }
-  const TEMPLATE_TYPES = ['deck', 'report', 'website'];
+  // Uploadable types only; existing website templates stay listable/renamable.
+  const TEMPLATE_TYPES = ['deck', 'report'];
   const failUsage = (message) => {
     console.error(message);
     process.exit(2);
   };
-  // finalize: {type,name,coverPageId}; import: {type?,name?,cover?}. Flags and
+  // finalize: {type?,name,coverPageId}; import: {type?,name?,cover?}. Flags and
   // --prompt-file are alternatives; the same field from both is a usage error.
   const readSelection = async (fieldFlags) => {
     const fromFlags = {};
@@ -7890,8 +7898,12 @@ async function runDesignTemplates(args) {
     return { ...out, ...fromFlags };
   };
   const checkType = (type) => {
+    if (type === 'website') failUsage('--type website: website templates can no longer be uploaded (use deck or report)');
     if (type !== undefined && !TEMPLATE_TYPES.includes(type)) failUsage(`--type must be one of ${TEMPLATE_TYPES.join(', ')}`);
   };
+  // Finalize body: `type` only when the user overrides the daemon's detection.
+  const finalizeBody = (type, name, coverPageId) =>
+    JSON.stringify({ ...(type !== undefined ? { type } : {}), name, coverPageId });
   const readZipForm = (zipPath) => {
     const resolved = path.resolve(zipPath);
     let buf;
@@ -7906,12 +7918,28 @@ async function runDesignTemplates(args) {
     return form;
   };
   const uploadPath = (sessionId) => `/api/design-template-uploads/${encodeURIComponent(sessionId)}`;
+  const bundlePath = (bundleId) => `/api/design-template-uploads/bundles/${encodeURIComponent(bundleId)}`;
+  // Names and reasons come from the uploaded zip; escape C0/C1 controls so a
+  // crafted entry cannot drive the terminal (VT/OSC sequences, \r overwrites).
+  const plain = (s) => String(s).replace(/[\u0000-\u001f\u007f-\u009f]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
+  const describeType = (a, ambiguousNote) =>
+    `${a?.detectedType ?? a?.detection?.type} (${a?.detection?.confidence}${a?.detection?.ambiguous ? ambiguousNote : ''})`;
   const describeAnalysis = (a) => [
     `session ${a?.sessionId} (expires ${a?.expiresAt})`,
-    `name: ${a?.suggestedName}`,
+    `name: ${plain(a?.suggestedName)}`,
+    ...(a?.detection ? [`type: ${describeType(a, ', ambiguous: pass --type to override')}`] : []),
     ...(Array.isArray(a?.pages) ? a.pages : []).map((p) =>
-      `${p.id === a.suggestedCoverPageId ? '*' : ' '} ${p.id}\t${p.file}\tthumbnail:${p.thumbnail?.status}`),
+      `${p.id === a.suggestedCoverPageId ? '*' : ' '} ${p.id}\t${plain(p.file)}\tthumbnail:${p.thumbnail?.status}`),
   ].join('\n');
+  const describeBundle = (b) => {
+    const items = Array.isArray(b?.templates) ? b.templates : [];
+    return [
+      `bundle ${b?.bundleId} (expires ${b?.expiresAt}): ${items.filter((t) => t.ok).length}/${items.length} templates`,
+      ...items.map((t, i) => `[${i + 1}/${items.length}] ${plain(t.entryName)}\t${t.ok
+        ? `session ${t.analysis?.sessionId}\ttype ${describeType(t.analysis, ', ambiguous')}\tpages ${t.analysis?.pages?.length ?? 0}\tname: ${plain(t.analysis?.suggestedName)}`
+        : `FAILED: ${plain(t.reason)}`}`),
+    ].join('\n');
+  };
   const base = (await libraryDaemonUrl(flags)).replace(/\/$/, '');
   const usage = (line) => {
     console.error(`Usage: readable design-templates ${line}`);
@@ -7922,22 +7950,90 @@ async function runDesignTemplates(args) {
     if (!resp.ok) return structuredHttpFailure(resp, 'design-template-request-failed');
     return resp.json();
   };
+  // Usage failure after network I/O: set the code and let the caller return.
+  // A hard process.exit() right after a few requests can abort Node on
+  // Windows (libuv UV_HANDLE_CLOSING assertion, exit 0xC0000409).
+  const failUsageAfterRequest = (message) => {
+    console.error(message);
+    process.exitCode = 2;
+  };
   const templatePath = (id) => `/api/design-templates/${encodeURIComponent(id)}`;
   const describe = (t) =>
-    `${t?.id}\t${t?.displayName?.en ?? t?.name ?? t?.title ?? t?.id}${t?.thumbnail ? `\tthumbnail:${t.thumbnail.status}` : ''}`;
+    `${t?.id}\t${plain(t?.displayName?.en ?? t?.name ?? t?.title ?? t?.id)}${t?.thumbnail ? `\tthumbnail:${t.thumbnail.status}` : ''}`;
   switch (sub) {
     case 'import': {
       const zipPath = positional[0];
-      if (!zipPath) return usage('import <zip> [--type deck|report|website] [--name <name>] [--cover <zip-relative-html>]');
+      if (!zipPath) return usage('import <zip> [--type deck|report] [--name <name>] [--cover <zip-relative-html>] | import <zip> --all [--type deck|report]');
+      if (flags.all) {
+        for (const flag of ['name', 'cover', 'prompt-file']) {
+          if (flags[flag] !== undefined) return failUsage(`--${flag} cannot be combined with --all (each template uses its suggested name and cover)`);
+        }
+      }
       const options = await readSelection({ type: 'type', name: 'name', cover: 'cover' });
       checkType(options.type);
       const form = readZipForm(zipPath);
+      if (flags.all) {
+        // A single-template zip counts as one item. Templates are finalized one
+        // at a time; a failed one is cancelled so its session does not linger.
+        const analysis = await send('/api/design-template-uploads/analyse', { method: 'POST', body: form });
+        const items = analysis?.kind === 'bundle'
+          ? analysis.templates
+          : [{ entryName: path.basename(zipPath), ok: true, analysis }];
+        const imported = [];
+        const failed = [];
+        try {
+          for (const item of items) {
+            if (!item.ok) {
+              failed.push({ entry: item.entryName, error: item.reason });
+              continue;
+            }
+            const a = item.analysis;
+            let error;
+            try {
+              const resp = await fetch(`${base}${uploadPath(a.sessionId)}/finalize`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: finalizeBody(options.type, a.suggestedName, a.suggestedCoverPageId),
+              });
+              if (resp.ok) {
+                imported.push({ entry: item.entryName, template: (await resp.json())?.template });
+                continue;
+              }
+              const body = await resp.json().catch(() => undefined);
+              const message = typeof body?.error === 'string' ? body.error : body?.error?.message;
+              error = message ?? `HTTP ${resp.status}`;
+            } catch (err) {
+              // A dropped connection or unreadable reply is still this item's
+              // failure; the remaining templates are attempted and reported.
+              error = err?.message ?? String(err);
+            }
+            failed.push({ entry: item.entryName, error });
+            await fetch(`${base}${uploadPath(a.sessionId)}`, { method: 'DELETE' }).catch(() => undefined);
+          }
+        } finally {
+          // Release the bundle dir and any child left unfinalized (also when the
+          // loop throws) instead of waiting for the sliding expiry. Finalized
+          // templates are kept by the daemon.
+          if (analysis?.kind === 'bundle') {
+            await fetch(`${base}${bundlePath(analysis.bundleId)}`, { method: 'DELETE' }).catch(() => undefined);
+          }
+        }
+        if (failed.length > 0) process.exitCode = 1;
+        if (flags.json) return process.stdout.write(JSON.stringify({ imported, failed }, null, 2) + '\n');
+        for (const i of imported) console.log(`Imported ${describe(i.template)}`);
+        for (const f of failed) console.error(`Failed ${plain(f.entry)}: ${plain(f.error)}`);
+        return;
+      }
       let data;
       if (Object.keys(options).length === 0) {
-        // Compatibility path: suggested name/cover, deck type.
+        // One-shot path: suggested name/cover, type detected by the daemon.
         data = await send('/api/design-templates/import', { method: 'POST', body: form });
       } else {
         const analysis = await send(`/api/design-template-uploads/analyse`, { method: 'POST', body: form });
+        if (analysis?.kind === 'bundle') {
+          await fetch(`${base}${bundlePath(analysis.bundleId)}`, { method: 'DELETE' }).catch(() => undefined);
+          return failUsageAfterRequest(`${zipPath} is a bundle of ${analysis.templates?.length ?? 0} templates; use --all`);
+        }
         const cancel = () => fetch(`${base}${uploadPath(analysis.sessionId)}`, { method: 'DELETE' }).catch(() => undefined);
         let coverPageId = analysis.suggestedCoverPageId;
         if (options.cover !== undefined) {
@@ -7945,18 +8041,18 @@ async function runDesignTemplates(args) {
           const page = (analysis.pages ?? []).find((p) => p.file === wanted);
           if (!page) {
             await cancel();
-            return failUsage(`--cover ${options.cover} is not an HTML page of the zip (pages: ${(analysis.pages ?? []).map((p) => p.file).join(', ')})`);
+            return failUsageAfterRequest(`--cover ${options.cover} is not an HTML page of the zip (pages: ${(analysis.pages ?? []).map((p) => p.file).join(', ')})`);
           }
           coverPageId = page.id;
         }
         const resp = await fetch(`${base}${uploadPath(analysis.sessionId)}/finalize`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: options.type ?? 'deck', name: options.name ?? analysis.suggestedName, coverPageId }),
+          body: finalizeBody(options.type, options.name ?? analysis.suggestedName, coverPageId),
         });
         if (!resp.ok) {
           await cancel();
-          return structuredHttpFailure(resp, 'design-template-request-failed');
+          return structuredHttpFailure(resp, 'design-template-request-failed', { soft: true });
         }
         data = await resp.json();
       }
@@ -7969,7 +8065,7 @@ async function runDesignTemplates(args) {
       if (!zipPath) return usage('analyse <zip>');
       const data = await send('/api/design-template-uploads/analyse', { method: 'POST', body: readZipForm(zipPath) });
       if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
-      console.log(describeAnalysis(data));
+      console.log(data?.kind === 'bundle' ? describeBundle(data) : describeAnalysis(data));
       return;
     }
     case 'inspect-upload': {
@@ -7982,15 +8078,15 @@ async function runDesignTemplates(args) {
     }
     case 'finalize': {
       const sessionId = positional[0];
-      const line = 'finalize <sessionId> --type deck|report|website --name <name> --cover-page <pageId> | --prompt-file <path|->';
+      const line = 'finalize <sessionId> [--type deck|report] --name <name> --cover-page <pageId> | --prompt-file <path|->';
       if (!sessionId) return usage(line);
       const selection = await readSelection({ type: 'type', name: 'name', coverPageId: 'cover-page' });
-      if (!selection.type || !selection.name || !selection.coverPageId) return usage(line);
       checkType(selection.type);
+      if (!selection.name || !selection.coverPageId) return usage(line);
       const data = await send(`${uploadPath(sessionId)}/finalize`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: selection.type, name: selection.name, coverPageId: selection.coverPageId }),
+        body: finalizeBody(selection.type, selection.name, selection.coverPageId),
       });
       if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
       console.log(`Imported ${describe(data?.template)}`);
@@ -8002,6 +8098,14 @@ async function runDesignTemplates(args) {
       const data = await send(uploadPath(sessionId), { method: 'DELETE' });
       if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
       console.log(`Cancelled upload ${sessionId}`);
+      return;
+    }
+    case 'cancel-bundle': {
+      const bundleId = positional[0];
+      if (!bundleId) return usage('cancel-bundle <bundleId>');
+      const data = await send(bundlePath(bundleId), { method: 'DELETE' });
+      if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+      console.log(`Cancelled ${data?.cancelledSessionIds?.length ?? 0} unsaved template(s) of bundle ${bundleId}`);
       return;
     }
     case 'list': {

@@ -1489,7 +1489,7 @@ function AppInner() {
       template,
       `${t('hubImport.templateProjectName')} \u00b7 ${new Date().toLocaleDateString()}`,
     );
-    const pluginId = defaultScenarioPluginIdForProjectMetadata(input.metadata);
+    const pluginId = defaultScenarioPluginIdForProjectMetadata(input.metadata, input.skillId);
     const pluginInputs = defaultPluginInputsForCreate(input, pluginId);
     return handleCreateProject({
       ...input,

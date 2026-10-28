@@ -38,10 +38,18 @@ describe('defaultScenarioPluginIdForKind', () => {
     expect(defaultScenarioPluginIdForProjectMetadata({
       kind: 'prototype',
       intent: 'report',
-    })).toBe('example-report');
-    expect(defaultScenarioPluginIdForProjectMetadata({ kind: 'prototype' }))
+    }, null)).toBe('example-report');
+    expect(defaultScenarioPluginIdForProjectMetadata({ kind: 'prototype' }, null))
       .toBe('example-web-prototype');
-    expect(defaultScenarioPluginIdForProjectMetadata(undefined)).toBeNull();
+    expect(defaultScenarioPluginIdForProjectMetadata(undefined, null)).toBeNull();
+  });
+
+  it('yields to an explicit skill or template pick so its SKILL.md is not replaced', () => {
+    expect(defaultScenarioPluginIdForProjectMetadata({ kind: 'prototype' }, 'design-taste-frontend')).toBeNull();
+    expect(defaultScenarioPluginIdForProjectMetadata({ kind: 'deck' }, 'deck-swiss-international')).toBeNull();
+    expect(defaultScenarioPluginIdForProjectMetadata({ kind: 'prototype', intent: 'report' }, 'user-q3-report')).toBeNull();
+    expect(defaultScenarioPluginIdForProjectMetadata({ kind: 'deck' }, null)).toBe('example-simple-deck');
+    expect(defaultScenarioPluginIdForProjectMetadata({ kind: 'deck' }, '  ')).toBe('example-simple-deck');
   });
 
   it('exposes the hidden free-form Home fallback plugin separately from kind defaults', () => {

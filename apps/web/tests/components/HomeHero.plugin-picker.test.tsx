@@ -2,7 +2,7 @@
 
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { StrictMode, type ComponentProps } from 'react';
-import { KEY_ENTER_COMMAND } from 'lexical';
+import { KEY_ARROW_DOWN_COMMAND, KEY_ENTER_COMMAND, KEY_TAB_COMMAND } from 'lexical';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   DesignTemplateSummary,
@@ -799,6 +799,73 @@ describe('HomeHero plugin picker', () => {
     expect(screen.queryByTestId('home-hero-plugin-picker')).toBeNull();
   });
 
+  describe('keyboard default on an empty @ query', () => {
+    const plugins = [makePlugin('sample-plugin', 'Sample Plugin'), makePlugin('second-plugin', 'Second Plugin')];
+    function renderSeeded(prompt: string) {
+      const onPickPlugin = vi.fn();
+      const onSubmit = vi.fn();
+      render(<HomeHero prompt={prompt} onPromptChange={vi.fn()} onSubmit={onSubmit}
+        activePluginTitle={null} activeChipId={null} onClearActivePlugin={vi.fn()}
+        pluginOptions={plugins} pluginsLoading={false} pendingPluginId={null}
+        pendingChipId={null} onPickPlugin={onPickPlugin} onPickChip={vi.fn()}
+        contextItemCount={0} error={null} />);
+      return { onPickPlugin, onSubmit };
+    }
+    function press(key: 'Enter' | 'Tab' | 'ArrowDown') {
+      const command = key === 'Enter' ? KEY_ENTER_COMMAND : key === 'Tab' ? KEY_TAB_COMMAND : KEY_ARROW_DOWN_COMMAND;
+      act(() => { getHomeHeroEditor().dispatchCommand(command, new KeyboardEvent('keydown', { key })); });
+    }
+    const input = () => screen.getByTestId('home-hero-input');
+
+    it.each(['Enter', 'Tab'] as const)('bare @ + %s applies nothing and leaves no row active', async (key) => {
+      const { onPickPlugin, onSubmit } = renderSeeded('Make @');
+      await settle();
+      expect(screen.getByRole('option', { name: /sample plugin/i })).toBeTruthy();
+      expect(input().getAttribute('aria-activedescendant')).toBeNull();
+      expect(screen.queryByRole('option', { selected: true })).toBeNull();
+      expect(screen.queryByTestId('mention-preview-use')).toBeNull();
+      press(key); await settle();
+      expect(onPickPlugin).not.toHaveBeenCalled();
+      expect(input().querySelector('[data-mention-kind]')).toBeNull();
+      expect(screen.queryByTestId('home-hero-plugin-picker')).toBeNull();
+      // Enter falls through to the normal submit; Tab never submits.
+      expect(onSubmit).toHaveBeenCalledTimes(key === 'Enter' ? 1 : 0);
+    });
+
+    it.each(['Enter', 'Tab'] as const)('a whitespace-only "@ " query + %s applies nothing and leaves no row active', async (key) => {
+      // The filter ignores whitespace, so "@ " still lists the whole catalogue.
+      const { onPickPlugin, onSubmit } = renderSeeded('Make @ ');
+      await settle();
+      expect(screen.getByRole('option', { name: /sample plugin/i })).toBeTruthy();
+      expect(input().getAttribute('aria-activedescendant')).toBeNull();
+      expect(screen.queryByRole('option', { selected: true })).toBeNull();
+      press(key); await settle();
+      expect(onPickPlugin).not.toHaveBeenCalled();
+      expect(input().querySelector('[data-mention-kind]')).toBeNull();
+      expect(screen.queryByTestId('home-hero-plugin-picker')).toBeNull();
+      expect(onSubmit).toHaveBeenCalledTimes(key === 'Enter' ? 1 : 0);
+    });
+
+    it.each(['Enter', 'Tab'] as const)('bare @ + ArrowDown + %s applies the first row', async (key) => {
+      const { onPickPlugin, onSubmit } = renderSeeded('Make @');
+      await settle();
+      press('ArrowDown'); await settle();
+      expect(input().getAttribute('aria-activedescendant')).toBe('home-hero-context-picker-option-0');
+      press(key); await settle();
+      expect(onPickPlugin).toHaveBeenCalledExactlyOnceWith(plugins[0], 'Make @Sample Plugin');
+      expect(onSubmit).not.toHaveBeenCalled();
+    });
+
+    it.each(['Enter', 'Tab'] as const)('a typed filter + %s applies the first match', async (key) => {
+      const { onPickPlugin, onSubmit } = renderSeeded('Make @s');
+      await settle();
+      expect(input().getAttribute('aria-activedescendant')).toBe('home-hero-context-picker-option-0');
+      press(key); await settle();
+      expect(onPickPlugin).toHaveBeenCalledExactlyOnceWith(plugins[0], 'Make @Sample Plugin');
+      expect(onSubmit).not.toHaveBeenCalled();
+    });
+  });
+
   it('closes the @ picker when opening plugin details from the preview', async () => {
     const onOpenPluginDetails = vi.fn();
     const plugin = makePlugin('sample-plugin', 'Sample Plugin');
@@ -827,7 +894,9 @@ describe('HomeHero plugin picker', () => {
 
     const preview = screen.getByTestId('mention-preview-detail');
     expect(screen.getByTestId('home-hero-plugin-picker')).toBeTruthy();
-    fireEvent.mouseEnter(screen.getByRole('option', { name: /sample plugin/i }));
+    const option = screen.getByRole('option', { name: /sample plugin/i });
+    fireEvent.mouseMove(option, { clientX: 10, clientY: 10 });
+    fireEvent.mouseMove(option, { clientX: 12, clientY: 11 });
     await settle();
     expect(screen.getByTestId('mention-preview-detail')).toBe(preview);
     fireEvent.click(screen.getByRole('button', { name: 'Details' }));

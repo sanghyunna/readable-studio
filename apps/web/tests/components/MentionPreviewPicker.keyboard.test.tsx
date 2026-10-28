@@ -11,12 +11,13 @@ const ITEMS: MentionPreviewItem[] = [
   { key: 'beta', id: 'beta', kind: 'skill', title: 'Beta', description: 'Second skill', kindLabel: 'Skill', icon: 'file' },
 ];
 
-function Picker({ onConfirm, busy = false, disabled = false }: {
+function Picker({ onConfirm, busy = false, disabled = false, initialIndex = 0 }: {
   onConfirm(item: MentionPreviewItem): void;
   busy?: boolean;
   disabled?: boolean;
+  initialIndex?: number;
 }) {
-  const [activeIndex, setActiveIndex] = useState(0);
+  const [activeIndex, setActiveIndex] = useState(initialIndex);
   return <I18nProvider initial="en"><MentionPreviewPicker
     items={ITEMS.map((item) => ({ ...item, disabled: disabled && item.id === 'beta' }))}
     tabs={[{ id: 'all', label: 'All' }]} tab="all" onTabChange={() => undefined}
@@ -52,6 +53,17 @@ describe('MentionPreviewPicker keyboard confirmation', () => {
     fireEvent.keyDown(first, { key: 'ArrowDown' });
     expect(screen.getByTestId('mention-preview-detail').getAttribute('data-resource-id')).toBe('beta');
     fireEvent.keyDown(document.activeElement!, { key: 'Enter', isComposing: state === 'composing' });
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it.each([['ArrowDown', 'alpha'], ['ArrowUp', 'beta']] as const)('shows a hint with no active row and %s enters at %s', (key, expected) => {
+    const onConfirm = vi.fn();
+    render(<Picker onConfirm={onConfirm} initialIndex={-1} />);
+    expect(screen.queryByRole('option', { selected: true })).toBeNull();
+    expect(screen.queryByTestId('mention-preview-use')).toBeNull();
+    expect(screen.getByTestId('mention-preview-detail').textContent).toBe('Choose a resource to see its details.');
+    fireEvent.keyDown(screen.getByTestId('mention-popover'), { key });
+    expect(screen.getByTestId('mention-preview-detail').getAttribute('data-resource-id')).toBe(expected);
     expect(onConfirm).not.toHaveBeenCalled();
   });
 

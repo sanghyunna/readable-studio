@@ -91,7 +91,7 @@ import { CaretFloatingLayer } from './composer/CaretFloatingLayer';
 import { ANNOTATION_EVENT, type AnnotationEventDetail } from "./PreviewDrawOverlay";
 import { DesignSystemSwitchPicker } from "./DesignSystemSwitchPicker";
 import { ContextUsageMeter } from './ContextUsageMeter';
-import { MentionPreviewPicker, MentionTemplatePreview, type MentionPreviewItem } from './MentionPreviewPicker';
+import { MentionPreviewPicker, MentionTemplatePreview, stepMentionIndex, type MentionPreviewItem } from './MentionPreviewPicker';
 
 type TranslateFn = (key: keyof Dict, vars?: Record<string, string | number>) => string;
 
@@ -1632,12 +1632,14 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       } else if (!nextMention) {
         setMentionTab('all');
       }
-      setMention((prev) => {
-        // Reset the active row only when the query identity changes (mirror of
-        // the slash reset) so re-renders from unrelated state don't snap it.
-        if (nextMention && (!prev || prev.q !== nextMention.q)) setMentionIndex(0);
-        return nextMention;
-      });
+      // Reset the active row only when the query identity changes (mirror of
+      // the slash reset) so re-renders from unrelated state don't snap it.
+      // A bare or whitespace-only `@` query (the filter ignores whitespace)
+      // starts with no active row, so Enter cannot apply row 0.
+      // Kept outside the setMention updater: a setState inside an updater can
+      // run during render and lose to an earlier queued index update.
+      if (nextMention && (!mention || mention.q !== nextMention.q)) setMentionIndex(nextMention.q.trim() ? 0 : -1);
+      setMention(nextMention);
       if (nextSlash) {
         setSlash(nextSlash);
         setSlashIndex(0);
@@ -1689,13 +1691,16 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       }
       if (mention) {
         const total = mentionItems.length;
+        // Nothing highlighted yet: Enter/Tab apply nothing. Close the picker
+        // and let Enter send exactly as it would with the picker closed.
+        if ((key === 'Tab' || key === 'Enter') && mentionIndex < 0) {
+          closeMention();
+          if (key === 'Enter') void submit();
+          return true;
+        }
         if (total > 0) {
-          if (key === 'ArrowDown') {
-            setMentionIndex((i) => (i + 1) % total);
-            return true;
-          }
-          if (key === 'ArrowUp') {
-            setMentionIndex((i) => (i - 1 + total) % total);
+          if (key === 'ArrowDown' || key === 'ArrowUp') {
+            setMentionIndex((i) => stepMentionIndex(i, total, key === 'ArrowDown' ? 1 : -1));
             return true;
           }
           if (key === 'Tab' || key === 'Enter') {
@@ -2091,7 +2096,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
               onPopoverKey={handlePopoverKey}
               comboboxAria={{
                 expanded: Boolean(mention),
-                activeId: mention && mentionItems.length ? `${mentionListboxId}-option-${Math.min(mentionIndex, mentionItems.length - 1)}` : null,
+                activeId: mention && mentionItems.length && mentionIndex >= 0 ? `${mentionListboxId}-option-${Math.min(mentionIndex, mentionItems.length - 1)}` : null,
                 listboxId: mentionListboxId,
               }}
             />

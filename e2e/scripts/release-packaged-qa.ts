@@ -430,8 +430,6 @@ export async function runReleaseQa(options: Options) {
       r.boundary = 'upload wizard native page dimensions';
       await page.getByRole('button', { name: 'Upload a template', exact: true }).first().click();
       const upload = page.getByRole('dialog');
-      await upload.getByRole('button', { name: 'Slide decks', exact: true }).click();
-      await upload.getByRole('button', { name: 'Next', exact: true }).click();
       await upload.getByTestId('template-upload-file').setInputFiles({
         name: 'release-qa-dimensions.zip', mimeType: 'application/zip', buffer: templateZip(),
       });

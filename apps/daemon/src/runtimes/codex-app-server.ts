@@ -1,6 +1,6 @@
 import { execFile, type ChildProcess } from 'node:child_process';
 import { missingDocumentArtifact, documentRecoveryPrompt } from '../document-completion.js';
-import { attachCodexAppServerClient, codexRecord, CodexRpcError } from './codex-app-server-client.js';
+import { attachCodexAppServerClient, codexAccountReady, codexRecord, CodexRpcError } from './codex-app-server-client.js';
 import { codexNeedsDangerFullAccessSandbox } from './defs/codex.js';
 import { buildCodexContextUsage, makeUnknownContextUsage } from '../context-usage.js';
 
@@ -143,7 +143,7 @@ export function attachCodexAppServerSession(options: SessionOptions) {
           } else startThread();
           return;
         case 'account':
-          if (!result.account && result.requiresOpenaiAuth !== false) { fail(new CodexRpcError('Authentication required')); return; }
+          if (!codexAccountReady(result)) { fail(new CodexRpcError('Authentication required')); return; }
           startThread();
           return;
         case 'thread': {

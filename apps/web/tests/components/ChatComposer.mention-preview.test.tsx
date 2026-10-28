@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { $createTextNode, $getRoot, $isElementNode, UNDO_COMMAND } from 'lexical';
+import { $createTextNode, $getRoot, $isElementNode, KEY_ARROW_DOWN_COMMAND, KEY_TAB_COMMAND, UNDO_COMMAND } from 'lexical';
 import { createRef } from 'react';
 import { ChatComposer, type ChatComposerHandle } from '../../src/components/ChatComposer';
 import { composerText, flushMounts, getComposerEditor, pressEnter, typeAndSettle } from '../helpers/lexical-composer';
@@ -134,5 +134,109 @@ describe('Project mention preview confirmation', () => {
     fireEvent.click(screen.getByTestId('chat-send'));
     await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1));
     expect(onSend.mock.calls[0]?.[3]?.skillIds ?? []).toEqual([]);
+  });
+});
+
+// jsdom does not route keydown into Lexical commands; dispatch them directly
+// so the real KeyboardPlugin -> handlePopoverKey path runs.
+function press(key: 'Enter' | 'Tab' | 'ArrowDown') {
+  if (key === 'Enter') { pressEnter(); return; }
+  act(() => { getComposerEditor().dispatchCommand(key === 'Tab' ? KEY_TAB_COMMAND : KEY_ARROW_DOWN_COMMAND, new KeyboardEvent('keydown', { key })); });
+}
+
+describe('Project mention picker keyboard default', () => {
+  const second = { ...skill, id: 'pitch-outline', name: 'Pitch Outline', description: 'Outline a pitch.', triggers: ['pitch'] };
+  function setupTwo() {
+    const onSend = vi.fn();
+    render(<ChatComposer projectId="p" projectFiles={[]} skills={[skill, second]} streaming={false} onEnsureProject={async () => 'p'} onSend={onSend} onStop={vi.fn()} />);
+    return onSend;
+  }
+  const input = () => screen.getByTestId('chat-composer-input');
+
+  it.each(['Enter', 'Tab'] as const)('bare @ + %s applies nothing and leaves no row active', async (key) => {
+    const onSend = setupTwo(); await typeAndSettle('@');
+    await screen.findByRole('option', { name: /Deck Notes/ });
+    expect(input().getAttribute('aria-activedescendant')).toBeNull();
+    expect(screen.queryByRole('option', { selected: true })).toBeNull();
+    expect(screen.queryByTestId('mention-preview-use')).toBeNull();
+    press(key); await flushMounts();
+    expect(input().querySelector('[data-mention-kind]')).toBeNull();
+    expect(screen.queryByTestId('mention-popover')).toBeNull();
+    if (key === 'Enter') {
+      // Enter falls through to the composer's normal send.
+      await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1));
+      expect(onSend.mock.calls[0]?.[0]).toBe('@');
+      expect(onSend.mock.calls[0]?.[3]?.skillIds ?? []).toEqual([]);
+    } else {
+      expect(composerText()).toBe('@');
+      expect(onSend).not.toHaveBeenCalled();
+    }
+  });
+
+  it.each(['Enter', 'Tab'] as const)('a whitespace-only "@ " query + %s applies nothing and leaves no row active', async (key) => {
+    // The filter ignores whitespace, so "@ " still lists the whole catalogue.
+    const onSend = setupTwo(); await typeAndSettle('@ ');
+    await screen.findByRole('option', { name: /Deck Notes/ });
+    expect(input().getAttribute('aria-activedescendant')).toBeNull();
+    expect(screen.queryByRole('option', { selected: true })).toBeNull();
+    press(key); await flushMounts();
+    expect(input().querySelector('[data-mention-kind]')).toBeNull();
+    expect(screen.queryByTestId('mention-popover')).toBeNull();
+    if (key === 'Enter') {
+      await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1));
+      expect(onSend.mock.calls[0]?.[3]?.skillIds ?? []).toEqual([]);
+    } else {
+      expect(onSend).not.toHaveBeenCalled();
+    }
+  });
+
+  it.each(['Enter', 'Tab'] as const)('bare @ + ArrowDown + %s applies the first row', async (key) => {
+    const onSend = setupTwo(); await typeAndSettle('@');
+    await screen.findByRole('option', { name: /Deck Notes/ });
+    press('ArrowDown'); await flushMounts();
+    expect(input().getAttribute('aria-activedescendant')).toBeTruthy();
+    expect(screen.getByTestId('mention-preview-detail').getAttribute('data-resource-id')).toBe(skill.id);
+    press(key); await flushMounts();
+    expect(input().querySelector('[data-mention-kind="skill"]')?.getAttribute('data-mention-id')).toBe(skill.id);
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('a row that opens under a resting pointer stays unselected, so Enter applies nothing', async () => {
+    const onSend = setupTwo(); await typeAndSettle('@');
+    const row = await screen.findByRole('option', { name: /Deck Notes/ });
+    // The browser re-hovers whatever lands under a still pointer: boundary events plus,
+    // on some engines, a synthetic mousemove at the same coordinates.
+    fireEvent.mouseEnter(row, { clientX: 40, clientY: 20 });
+    fireEvent.mouseMove(row, { clientX: 40, clientY: 20 });
+    fireEvent.mouseMove(row, { clientX: 40, clientY: 20 });
+    await flushMounts();
+    expect(screen.queryByRole('option', { selected: true })).toBeNull();
+    expect(input().getAttribute('aria-activedescendant')).toBeNull();
+    press('Enter'); await flushMounts();
+    expect(input().querySelector('[data-mention-kind]')).toBeNull();
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1));
+    expect(onSend.mock.calls[0]?.[3]?.skillIds ?? []).toEqual([]);
+  });
+
+  it('a real pointer move highlights the row under it and Enter applies that row', async () => {
+    const onSend = setupTwo(); await typeAndSettle('@');
+    const row = await screen.findByRole('option', { name: /Pitch Outline/ });
+    fireEvent.mouseMove(row, { clientX: 40, clientY: 60 });
+    fireEvent.mouseMove(row, { clientX: 42, clientY: 61 });
+    await flushMounts();
+    expect(screen.getByTestId('mention-preview-detail').getAttribute('data-resource-id')).toBe(second.id);
+    press('Enter'); await flushMounts();
+    expect(input().querySelector('[data-mention-kind="skill"]')?.getAttribute('data-mention-id')).toBe(second.id);
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it.each(['Enter', 'Tab'] as const)('a typed filter + %s applies the first match', async (key) => {
+    const onSend = setupTwo(); await typeAndSettle('@De');
+    await screen.findByRole('option', { name: /Deck Notes/ });
+    expect(input().getAttribute('aria-activedescendant')).toBeTruthy();
+    press(key); await flushMounts();
+    expect(composerText()).toContain('@Deck Notes');
+    expect(input().querySelector('[data-mention-kind="skill"]')?.getAttribute('data-mention-id')).toBe(skill.id);
+    expect(onSend).not.toHaveBeenCalled();
   });
 });

@@ -1819,16 +1819,54 @@ function isLiveCodeToolName(name: string): boolean {
 // at the tail is dropped rather than throwing. Returns null when the field /
 // its opening quote hasn't arrived yet. Good enough for a live preview; the
 // authoritative value comes from the parsed `tool_use.input` once complete.
-function extractStreamingJsonString(raw: string, field: string): string | null {
+//
+// The scan is resumable: live tool input only ever grows by appended
+// `tool_input_delta`s, so when `raw` extends the previously scanned string the
+// walk continues from where it stopped instead of re-decoding the whole value
+// on every delta (O(n) per stream rather than O(n^2)). Any other `raw` starts
+// over. Either way the result equals a fresh scan of `raw`.
+type StreamingJsonStringScan = {
+  raw: string;
+  // "marker": looking for `"field"` (search resumes at `i`); "quote": marker
+  // seen, looking for the value's opening quote; "value": decoding at `i`
+  // (an unterminated tail escape leaves `i` on its backslash); "done": the
+  // closing quote was seen, so `out` is final.
+  phase: "marker" | "quote" | "value" | "done";
+  i: number;
+  out: string;
+};
+
+function scanStreamingJsonString(
+  raw: string,
+  field: string,
+  prev?: StreamingJsonStringScan,
+): StreamingJsonStringScan {
+  if (prev && prev.raw === raw) return prev;
+  // Same test as `raw.startsWith(prev.raw)`, but slice + === takes V8's bulk
+  // string comparison instead of a per-character loop (several times faster on
+  // a 100 KB tool input, and it runs once per field per delta).
+  const resume =
+    prev && raw.length >= prev.raw.length && raw.slice(0, prev.raw.length) === prev.raw ? prev : null;
+  if (resume?.phase === "done") return { ...resume, raw };
   const marker = `"${field}"`;
-  const mi = raw.indexOf(marker);
-  if (mi === -1) return null;
-  let i = mi + marker.length;
-  // Advance to the value's opening quote, past the `:` and any whitespace.
-  while (i < raw.length && raw[i] !== '"') i++;
-  if (i >= raw.length) return null;
-  i++; // step past the opening quote
-  let out = "";
+  let phase = resume?.phase ?? "marker";
+  let i = resume?.i ?? 0;
+  let out = resume?.out ?? "";
+  if (phase === "marker") {
+    const mi = raw.indexOf(marker, i);
+    // The marker was absent from the scanned prefix, so the next search only
+    // needs to cover a match that straddles the old end.
+    if (mi === -1) return { raw, phase, i: Math.max(0, raw.length - marker.length + 1), out };
+    phase = "quote";
+    i = mi + marker.length;
+  }
+  if (phase === "quote") {
+    // Advance to the value's opening quote, past the `:` and any whitespace.
+    while (i < raw.length && raw[i] !== '"') i++;
+    if (i >= raw.length) return { raw, phase, i, out };
+    i++; // step past the opening quote
+    phase = "value";
+  }
   while (i < raw.length) {
     const ch = raw[i]!;
     if (ch === "\\") {
@@ -1845,7 +1883,7 @@ function extractStreamingJsonString(raw: string, field: string): string | null {
         case "f": out += "\f"; break;
         case "u": {
           const hex = raw.slice(i + 2, i + 6);
-          if (hex.length < 4) return out; // incomplete \u escape at the tail
+          if (hex.length < 4) return { raw, phase, i, out }; // incomplete \u escape at the tail
           out += String.fromCharCode(parseInt(hex, 16));
           i += 6;
           continue;
@@ -1855,11 +1893,15 @@ function extractStreamingJsonString(raw: string, field: string): string | null {
       i += 2;
       continue;
     }
-    if (ch === '"') break; // closing quote → value complete
+    if (ch === '"') return { raw, phase: "done", i, out }; // closing quote → value complete
     out += ch;
     i++;
   }
-  return out;
+  return { raw, phase, i, out };
+}
+
+function streamingJsonStringValue(scan: StreamingJsonStringScan): string | null {
+  return scan.phase === "value" || scan.phase === "done" ? scan.out : null;
 }
 
 // Presentational in-flight code panel: a boxed header (spinner + shimmer
@@ -1909,15 +1951,23 @@ function StreamingCodeCard({
 // `tool_use` lands.
 function LiveCodeBox({ name, raw }: { name: string; raw: string }) {
   const t = useT();
+  // Per-field resumable scans of this tool call's growing input. A pure cache:
+  // each entry is keyed by the exact `raw` it describes.
+  const scansRef = useRef<Record<string, StreamingJsonStringScan>>({});
+  const extract = (field: string): string | null => {
+    const scan = scanStreamingJsonString(raw, field, scansRef.current[field]);
+    scansRef.current[field] = scan;
+    return streamingJsonStringValue(scan);
+  };
   const file =
-    extractStreamingJsonString(raw, "file_path") ??
-    extractStreamingJsonString(raw, "filePath") ??
-    extractStreamingJsonString(raw, "path") ??
+    extract("file_path") ??
+    extract("filePath") ??
+    extract("path") ??
     "";
   const baseName = file ? file.split("/").pop() ?? file : "";
   const code =
-    extractStreamingJsonString(raw, "content") ??
-    extractStreamingJsonString(raw, "new_string") ??
+    extract("content") ??
+    extract("new_string") ??
     "";
   const isEdit = /edit/i.test(name);
   return (

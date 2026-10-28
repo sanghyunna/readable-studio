@@ -5,6 +5,10 @@ export type CodexRpcMessage = Record<string, unknown>;
 export function codexRecord(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? Object.fromEntries(Object.entries(value)) : {};
 }
+/** account/read verdict shared by discovery and runs: a provider such as Azure needs no OpenAI account. */
+export function codexAccountReady(result: Record<string, unknown>): boolean {
+  return Boolean(result.account) || result.requiresOpenaiAuth === false;
+}
 export class CodexRpcError extends Error {
   constructor(message: string) { super(message); this.name = 'CodexRpcError'; }
 }

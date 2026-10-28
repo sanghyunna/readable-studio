@@ -291,6 +291,22 @@ export interface DesignTemplateThumbnailState {
 // upload wizard carry no type and are read as 'deck'.
 export type DesignTemplateType = 'deck' | 'report' | 'website';
 
+// Types a new upload can register. Website templates can no longer be
+// uploaded; existing ones keep listing, applying, renaming and deleting.
+export type UploadableDesignTemplateType = 'deck' | 'report';
+
+// Deterministic static classification of an uploaded template (daemon-side:
+// no LLM, rendering, network, clock or locale). `type` is always the best
+// guess, also when `ambiguous`.
+export interface DesignTemplateTypeDetection {
+  type: UploadableDesignTemplateType;
+  confidence: 'high' | 'medium' | 'low';
+  /** Mixed or missing evidence; the wizard then offers a change control. */
+  ambiguous: boolean;
+  /** Short, stable, non-localised evidence tags for CLI/logs, not UI copy. */
+  signals: string[];
+}
+
 export interface DesignTemplateUserFields {
   userImported?: boolean;
   thumbnail?: DesignTemplateThumbnailState;
@@ -334,9 +350,11 @@ export interface DesignTemplateImportResponse {
 
 // Upload wizard: POST /api/design-template-uploads/analyse (multipart `file`)
 // extracts the ZIP into a 60-minute session without registering anything;
-// GET /api/design-template-uploads/:sessionId re-reads it with live page
-// thumbnail states; POST .../:sessionId/finalize registers the template;
-// DELETE .../:sessionId cancels (idempotent).
+// a bundle ZIP (only template ZIPs at its top level) yields one child session
+// per inner template. GET /api/design-template-uploads/:sessionId re-reads a
+// session with live page thumbnail states; POST .../:sessionId/finalize
+// registers the template; DELETE .../:sessionId cancels (idempotent) and
+// DELETE .../bundles/:bundleId cancels every unfinalized child.
 export interface DesignTemplateUploadPage {
   /** Opaque id, stable within the session; not a file path. */
   id: string;
@@ -354,8 +372,10 @@ export interface DesignTemplateUploadPage {
 }
 
 export interface DesignTemplateUploadAnalysisResponse {
+  /** Always 'single' from bundle-aware daemons; absent on older payloads. */
+  kind?: 'single';
   sessionId: string;
-  /** ISO time, 60 minutes after analyse. */
+  /** ISO time, 60 minutes after analyse (bundle children: the bundle's sliding expiry). */
   expiresAt: string;
   originalFileName: string;
   /** Path of the PROMPT.md actually found (after wrapper-folder removal). */
@@ -364,10 +384,38 @@ export interface DesignTemplateUploadAnalysisResponse {
   suggestedCoverPageId: string;
   /** Every HTML page, in ZIP order. */
   pages: DesignTemplateUploadPage[];
+  /** Same as detection.type; finalize uses it when the request omits `type`. */
+  detectedType?: UploadableDesignTemplateType;
+  detection?: DesignTemplateTypeDetection;
+  /** Parent bundle of a child session. */
+  bundleId?: string;
 }
 
+// One inner template ZIP of a bundle, in bundle order. A template that fails
+// validation is reported here and does not block the valid ones.
+export type DesignTemplateUploadBundleItem =
+  | { index: number; entryName: string; ok: true; analysis: DesignTemplateUploadAnalysisResponse }
+  | { index: number; entryName: string; ok: false; reason: string };
+
+export interface DesignTemplateUploadBundleAnalysisResponse {
+  kind: 'bundle';
+  bundleId: string;
+  /** ISO time; slides to 60 minutes after the last request touching the bundle or a child. */
+  expiresAt: string;
+  originalFileName: string;
+  /** At least one item is ok (otherwise analyse answers 400). */
+  templates: DesignTemplateUploadBundleItem[];
+}
+
+// 201 body of POST /api/design-template-uploads/analyse; narrow on
+// `kind === 'bundle'`.
+export type DesignTemplateUploadAnalyseResponse =
+  | DesignTemplateUploadAnalysisResponse
+  | DesignTemplateUploadBundleAnalysisResponse;
+
 export interface DesignTemplateUploadFinalizeRequest {
-  type: DesignTemplateType;
+  /** Override of the detected type; omitted = detection, falling back to deck. */
+  type?: UploadableDesignTemplateType;
   name: string;
   coverPageId: string;
 }
@@ -376,6 +424,14 @@ export type DesignTemplateUploadFinalizeResponse = DesignTemplateImportResponse;
 
 export interface DesignTemplateUploadCancelResponse {
   ok: true;
+}
+
+// DELETE /api/design-template-uploads/bundles/:bundleId (idempotent).
+// Already finalized templates stay registered.
+export interface DesignTemplateUploadBundleCancelResponse {
+  ok: true;
+  /** Child sessions discarded by this call. */
+  cancelledSessionIds: string[];
 }
 
 // PATCH /api/design-templates/:id — rename keeps the id.

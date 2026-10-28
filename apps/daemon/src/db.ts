@@ -1603,6 +1603,8 @@ export function clearAgentSession(
   conversationId: string,
   agentId: string,
 ): void {
+  // Can run inside an agent stdout chunk (Pi resume error): keep it its own autocommit.
+  commitMessageAgentEventBatch(db);
   db.prepare(
     `DELETE FROM agent_sessions WHERE conversation_id = ? AND agent_id = ?`,
   ).run(conversationId, agentId);
@@ -1838,15 +1840,119 @@ export function appendMessageStatusEvent(db: SqliteDb, messageId: string, event:
     : { kind: 'status', label });
 }
 
+type MessageEventStatements = Record<'last' | 'insert' | 'begin' | 'commit' | 'rollback', Database.Statement>;
+// Appends run once per streamed token, so their statements are prepared once per connection.
+const messageEventStatements = new WeakMap<SqliteDb, MessageEventStatements>();
+
+function messageEventStatementsFor(db: SqliteDb): MessageEventStatements {
+  let statements = messageEventStatements.get(db);
+  if (!statements) {
+    statements = {
+      // Only the last event crosses the JS boundary. The snapshot fallback runs
+      // once, before the first delta, rather than scanning the accumulated stream.
+      last: db.prepare(`SELECT COALESCE(
+    (SELECT event_json FROM message_event_deltas WHERE message_id = ? ORDER BY sequence DESC LIMIT 1),
+    CASE WHEN json_valid(events_json) THEN json_extract(events_json, '$[#-1]') END
+    ) AS eventJson FROM message_snapshots WHERE id = ?`),
+      insert: db.prepare('INSERT INTO message_event_deltas (message_id, event_json) VALUES (?, ?)'),
+      begin: db.prepare('BEGIN'),
+      commit: db.prepare('COMMIT'),
+      rollback: db.prepare('ROLLBACK'),
+    };
+    messageEventStatements.set(db, statements);
+  }
+  return statements;
+}
+
+type MessageEventBatch = {
+  began: boolean;
+  rows: Array<[messageId: string, eventJson: string]>;
+  onLostEventError: (error: unknown) => void;
+};
+const messageEventBatches = new WeakMap<SqliteDb, MessageEventBatch>();
+
+/**
+ * Runs one synchronous unit of work (one agent stdout chunk) with its
+ * appendMessageAgentEvent inserts grouped into a single commit. BEGIN is lazy
+ * (first insert) and COMMIT runs before this returns, also when `unit` throws,
+ * so no other callback can observe a partial unit while reads on this
+ * connection inside it already see its rows. If SQLite loses the batch (failed
+ * COMMIT, or an I/O error that rolled it back) its rows are re-inserted one
+ * autocommit each, exactly as the unbatched path writes them; each failed
+ * re-insert goes to `onLostEventError`.
+ *
+ * Only event inserts may sit in the open transaction, or a failed COMMIT would
+ * take other writes down with it. Any other write that can run inside a unit
+ * calls commitMessageAgentEventBatch first, so it stays its own autocommit
+ * (today only clearAgentSession, on a Pi resume error). For the same reason
+ * appends must not run in a db.transaction() opened after the batch began: a
+ * rolled-back savepoint's rows would be replayed if the COMMIT then failed.
+ */
+export function batchMessageAgentEvents<T>(
+  db: SqliteDb,
+  unit: () => T,
+  onLostEventError: (error: unknown) => void,
+): T {
+  if (messageEventBatches.has(db)) return unit();
+  const batch: MessageEventBatch = { began: false, rows: [], onLostEventError };
+  messageEventBatches.set(db, batch);
+  try {
+    return unit();
+  } finally {
+    messageEventBatches.delete(db);
+    settleMessageEventBatch(db, batch);
+  }
+}
+
+/** Commits the open batch now; later appends in the same unit open a new one. */
+export function commitMessageAgentEventBatch(db: SqliteDb): void {
+  const batch = messageEventBatches.get(db);
+  if (batch) settleMessageEventBatch(db, batch);
+}
+
+function settleMessageEventBatch(db: SqliteDb, batch: MessageEventBatch) {
+  if (!batch.began) return;
+  const statements = messageEventStatementsFor(db);
+  if (db.inTransaction) {
+    try {
+      statements.commit.run();
+      batch.began = false;
+      batch.rows = [];
+      return;
+    } catch {
+      // Like the per-event path, a persistence failure never escapes the unit.
+      try {
+        if (db.inTransaction) statements.rollback.run();
+      } catch (error) {
+        batch.onLostEventError(error);
+      }
+    }
+  }
+  // The rows are lost only once SQLite has dropped the transaction.
+  if (!db.inTransaction) replayMessageEventBatch(batch, statements);
+}
+
+function replayMessageEventBatch(batch: MessageEventBatch, statements: MessageEventStatements) {
+  const rows = batch.rows;
+  batch.rows = [];
+  batch.began = false;
+  for (const [messageId, eventJson] of rows) {
+    try {
+      statements.insert.run(messageId, eventJson);
+    } catch (error) {
+      batch.onLostEventError(error);
+    }
+  }
+}
+
 export function appendMessageAgentEvent(db: SqliteDb, messageId: string, event: DbRow) {
   if (!event || typeof event.kind !== 'string' || !event.kind) return null;
   const encoded = JSON.stringify(event);
-  // Only the last event crosses the JS boundary. The snapshot fallback runs
-  // once, before the first delta, rather than scanning the accumulated stream.
-  const last = db.prepare(`SELECT COALESCE(
-    (SELECT event_json FROM message_event_deltas WHERE message_id = ? ORDER BY sequence DESC LIMIT 1),
-    CASE WHEN json_valid(events_json) THEN json_extract(events_json, '$[#-1]') END
-    ) AS eventJson FROM message_snapshots WHERE id = ?`).get(messageId, messageId) as { eventJson: string | null } | undefined;
+  const statements = messageEventStatementsFor(db);
+  const batch = messageEventBatches.get(db);
+  // SQLite rolled the open batch back: restore its rows before deduping against them.
+  if (batch?.began && !db.inTransaction) replayMessageEventBatch(batch, statements);
+  const last = statements.last.get(messageId, messageId) as { eventJson: string | null } | undefined;
   if (!last) return null;
   if (last.eventJson) {
     const previous = JSON.parse(last.eventJson);
@@ -1857,7 +1963,13 @@ export function appendMessageAgentEvent(db: SqliteDb, messageId: string, event: 
   const timedEvent = event.kind === 'thinking' || event.kind === 'text' || event.kind === 'tool_use'
     ? { ...event, timestamp: event.timestamp ?? Date.now() }
     : event;
-  db.prepare('INSERT INTO message_event_deltas (message_id, event_json) VALUES (?, ?)').run(messageId, JSON.stringify(timedEvent));
+  const eventJson = JSON.stringify(timedEvent);
+  if (batch && !db.inTransaction) {
+    statements.begin.run();
+    batch.began = true;
+  }
+  statements.insert.run(messageId, eventJson);
+  if (batch?.began) batch.rows.push([messageId, eventJson]);
   return true;
 }
 

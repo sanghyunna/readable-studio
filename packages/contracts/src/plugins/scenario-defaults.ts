@@ -76,9 +76,14 @@ export function defaultScenarioPluginIdForKind(
   return DEFAULT_SCENARIO_PLUGIN_BY_KIND[kind] ?? null;
 }
 
+// `skillId` is the project's explicit skill / design-template pick. It owns
+// the session, so no kind default is bound: the default plugin's SKILL.md
+// would replace the chosen skill. Required so no caller can forget it.
 export function defaultScenarioPluginIdForProjectMetadata(
   metadata: Pick<ProjectMetadata, 'kind' | 'intent'> | null | undefined,
+  skillId: string | null | undefined,
 ): DefaultScenarioPluginId | null {
+  if (typeof skillId === 'string' && skillId.trim()) return null;
   if (metadata?.intent === 'report') return 'example-report';
   return defaultScenarioPluginIdForKind(metadata?.kind);
 }

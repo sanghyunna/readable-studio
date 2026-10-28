@@ -1,4 +1,6 @@
 import { afterAll, expect, test } from 'vitest';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -7,6 +9,7 @@ import { fetchModels } from '../../src/runtimes/detection-model-fetch.js';
 import { geminiAgentDef } from '../../src/runtimes/defs/gemini.js';
 import { kimiAgentDef } from '../../src/runtimes/defs/kimi.js';
 import { codexAgentDef } from '../../src/runtimes/defs/codex.js';
+import { attachCodexAppServerSession } from '../../src/runtimes/codex-app-server.js';
 import { detectAcpModels } from '../../src/acp.js';
 import { AGENT_DEFS } from '../../src/runtimes/registry.js';
 import { resolveAgentExecutable, resolveOnPath } from '../../src/runtimes/executables.js';
@@ -28,7 +31,22 @@ lines.on('line', (line) => {
   if (req.id === undefined) return;
   let result = {};
   if (req.method === 'initialize') result = { protocolVersion: 1 };
-  if (req.method === 'account/read') result = { account: { type: 'apiKey' } };
+  // Codex reports a provider needing no OpenAI sign-in (Azure, local) as
+  // { account: null, requiresOpenaiAuth: false }; 'missing' is a real sign-out.
+  if (req.method === 'account/read') result = process.env.FIXTURE_AUTH === 'unmanaged' || process.env.FIXTURE_AUTH === 'missing'
+    ? { account: null, requiresOpenaiAuth: process.env.FIXTURE_AUTH === 'missing' }
+    : { account: { type: 'apiKey' } };
+  if (req.method === 'config/read') {
+    if (process.env.FIXTURE_CONFIG === 'error') {
+      console.log(JSON.stringify({ jsonrpc: '2.0', id: req.id, error: { code: -32603, message: 'config unavailable' } })); return;
+    }
+    result = { config: { model: 'my-deployment', model_provider: 'azure' }, origins: {}, layers: null };
+  }
+  if (req.method === 'thread/start') result = { thread: { id: 'fixture-thread' } };
+  if (req.method === 'turn/start') {
+    console.log(JSON.stringify({ jsonrpc: '2.0', id: req.id, result: { turn: { id: 'fixture-turn' } } }));
+    console.log(JSON.stringify({ jsonrpc: '2.0', method: 'turn/completed', params: { turn: { status: 'completed' } } })); return;
+  }
   if (req.method === 'model/list') result = req.params.cursor
     ? { data: [{ id: 'live-second', displayName: 'Second' }], nextCursor: null }
     : { data: [{ id: 'live-first', displayName: 'First' }], nextCursor: 'page2' };
@@ -98,6 +116,44 @@ test('Codex gets fresh paginated model/list through its real stdio protocol', as
   expect(result.modelsSource).toBe('live');
   expect(result.models.map((model) => model.id)).toEqual(['live-first', 'live-second']);
   expect(codexAgentDef.fallbackModels).toEqual([]);
+});
+
+test('Codex provider that needs no OpenAI sign-in lists its configured model', async () => {
+  // model/list only knows built-in OpenAI presets; config/read names the deployment.
+  const result = await safeProbe(codexAgentDef, { ...baseEnv, CODEX_BIN: bin, CODEX_HOME: home, FIXTURE_AUTH: 'unmanaged' });
+  expect(result.available).toBe(true);
+  expect(result.authStatus).toBeUndefined();
+  expect(result.diagnostics).toBeUndefined();
+  expect(result.models.map((model) => model.id)).toEqual(['my-deployment']);
+});
+
+test('Codex keeps model/list when config/read fails for an unmanaged provider', async () => {
+  const result = await safeProbe(codexAgentDef, { ...baseEnv, CODEX_BIN: bin, CODEX_HOME: home, FIXTURE_AUTH: 'unmanaged', FIXTURE_CONFIG: 'error' });
+  expect(result.available).toBe(true);
+  expect(result.models.map((model) => model.id)).toEqual(['live-first', 'live-second']);
+});
+
+test('Codex without an account while OpenAI auth is required reaches sign-in-required state', async () => {
+  const result = await safeProbe(codexAgentDef, { ...baseEnv, CODEX_BIN: bin, CODEX_HOME: home, FIXTURE_AUTH: 'missing' });
+  expect(result.available).toBe(false);
+  expect(result.models).toEqual([]);
+  expect(result.authStatus).toBe('missing');
+  expect(result.diagnostics?.[0]?.reason).toBe('auth-missing');
+});
+
+test.each(['managed', 'unmanaged', 'missing'])('Codex run admits a %s account/read exactly when discovery does', async (auth) => {
+  // Given one peer answering both the detection probe and a chat run.
+  const env = { ...baseEnv, CODEX_BIN: bin, CODEX_HOME: home, FIXTURE_AUTH: auth };
+  const detected = await safeProbe(codexAgentDef, env);
+  // When the run re-reads the account before starting its thread.
+  const child = spawn(process.execPath, [runner], { env: { ...process.env, ...env }, stdio: 'pipe', windowsHide: true });
+  const closed = once(child, 'close', { signal: AbortSignal.timeout(10_000) });
+  const session = attachCodexAppServerSession({
+    child, prompt: 'Hello', cwd: home, model: 'my-deployment', refreshAuth: true, onEvent: () => {},
+  });
+  try { await closed; } finally { if (child.exitCode === null) child.kill(); }
+  // Then both consumers apply the same readiness verdict.
+  expect(session.completedSuccessfully()).toBe(detected.available);
 });
 
 test('catalogue alone and offline mode do not establish usability', async () => {

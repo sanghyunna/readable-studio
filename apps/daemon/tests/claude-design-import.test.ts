@@ -3,7 +3,16 @@ import path from 'node:path';
 import os from 'node:os';
 import { deflateRawSync } from 'node:zlib';
 import { describe, expect, it, vi } from 'vitest';
-import { importClaudeDesignZip } from '../src/claude-design-import.js';
+import {
+  assertUniqueZipPath,
+  assertWindowsSafeZipPath,
+  importClaudeDesignZip,
+  normalizeZipPath,
+  readCentralDirectory,
+  readEntryBody,
+  sanitizeZipPath,
+} from '../src/claude-design-import.js';
+import { buildZip as buildRawZip, centralOffsets, cp949Name } from './helpers/template-zip.js';
 
 function buildZip(
   entries: { name: string; body: Buffer; method?: 0 | 8; falsifyCentralUncompressed?: boolean }[],
@@ -359,5 +368,221 @@ function DCViewport() {
       warn.mockRestore();
       rmSync(tmp, { recursive: true, force: true });
     }
+  });
+});
+
+const page = (name: string | Buffer, extra: Partial<Parameters<typeof buildRawZip>[0][number]> = {}) =>
+  ({ name, body: '<html></html>', ...extra });
+
+async function importToTemp(zip: Buffer, check: (projectDir: string) => void = () => {}) {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), 'cd-import-hardening-'));
+  const zipPath = path.join(tmp, 'in.zip');
+  const projectDir = path.join(tmp, 'proj');
+  writeFileSync(zipPath, zip);
+  try {
+    const result = await importClaudeDesignZip(zipPath, projectDir);
+    check(projectDir);
+    return result;
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+describe('zip parser hardening', () => {
+  describe('entry name decoding', () => {
+    it('decodes a CP949 name when flag 0x800 is cleared', () => {
+      const [entry] = readCentralDirectory(buildRawZip([page(cp949Name('한글/가나.html'))]));
+      expect(entry!.name).toBe('한글/가나.html');
+    });
+
+    it('decodes UTF-8 names with and without flag 0x800', () => {
+      const entries = readCentralDirectory(buildRawZip([
+        page('보고서.html', { utf8Flag: true }),
+        page('표지.html'),
+      ]));
+      expect(entries.map((e) => e.name)).toEqual(['보고서.html', '표지.html']);
+    });
+
+    it('rejects a flag-0x800 name that is not valid UTF-8 without echoing the bytes', () => {
+      const zip = buildRawZip([page('index.html'), page(cp949Name('가나.html'), { utf8Flag: true })]);
+      expect(() => readCentralDirectory(zip)).toThrow(/^zip entry #2 has an undecodable file name$/);
+    });
+
+    it('prefers the Info-ZIP Unicode Path extra field when its name CRC matches', () => {
+      const [entry] = readCentralDirectory(buildRawZip([
+        page(Buffer.from('legacy.html'), { unicodePathExtra: '발표/표지.html' }),
+      ]));
+      expect(entry!.name).toBe('발표/표지.html');
+    });
+
+    it('lets flag 0x800 win over a matching Unicode Path extra field', () => {
+      const [entry] = readCentralDirectory(buildRawZip([
+        page('보고서.html', { utf8Flag: true, unicodePathExtra: '다른.html' }),
+      ]));
+      expect(entry!.name).toBe('보고서.html');
+    });
+
+    it('ignores a Unicode Path extra field whose CRC no longer matches the raw name', () => {
+      const zip = buildRawZip([page(Buffer.from('legacy.html'), { unicodePathExtra: '표지.html' })]);
+      // Corrupt the stored name CRC in the central directory copy of the field.
+      const central = centralOffsets(zip)[0]!;
+      const extraStart = central + 46 + zip.readUInt16LE(central + 28);
+      zip.writeUInt32LE((zip.readUInt32LE(extraStart + 5) ^ 1) >>> 0, extraStart + 5);
+      expect(readCentralDirectory(zip)[0]!.name).toBe('legacy.html');
+    });
+
+    it('ignores a Unicode Path extra field with an unknown version, even when its CRC matches', () => {
+      const zip = buildRawZip([page(Buffer.from('legacy.html'), { unicodePathExtra: '표지.html' })]);
+      const central = centralOffsets(zip)[0]!;
+      const extraStart = central + 46 + zip.readUInt16LE(central + 28);
+      expect(zip.readUInt16LE(extraStart)).toBe(0x7075);
+      zip.writeUInt8(2, extraStart + 4);
+      expect(readCentralDirectory(zip)[0]!.name).toBe('legacy.html');
+    });
+
+    it('rejects names that still decode to U+FFFD', () => {
+      expect(() => readCentralDirectory(buildRawZip([page('bad�.html')]))).toThrow(/zip entry #1 has an undecodable file name/);
+      // 0xFF is neither UTF-8 nor CP949.
+      expect(() => readCentralDirectory(buildRawZip([page(Buffer.from([0x61, 0xff, 0x2e, 0x68]))])))
+        .toThrow(/zip entry #1 has an undecodable file name/);
+    });
+  });
+
+  describe('ZIP64', () => {
+    const zip64 = /ZIP64 archives are not supported/;
+
+    it.each([
+      ['entry count', 8, 'u16'],
+      ['total entry count', 10, 'u16'],
+      ['central size', 12, 'u32'],
+      ['central offset', 16, 'u32'],
+    ] as const)('rejects an EOCD whose %s is saturated', (_label, field, width) => {
+      const zip = buildRawZip([page('index.html')]);
+      const eocd = zip.length - 22;
+      if (width === 'u16') zip.writeUInt16LE(0xffff, eocd + field);
+      else zip.writeUInt32LE(0xffffffff, eocd + field);
+      expect(() => readCentralDirectory(zip)).toThrow(zip64);
+    });
+
+    it('rejects a ZIP64 end-of-central-directory locator', () => {
+      const plain = buildRawZip([page('index.html')]);
+      const locator = Buffer.alloc(20);
+      locator.writeUInt32LE(0x07064b50, 0);
+      const zip = Buffer.concat([plain.subarray(0, plain.length - 22), locator, plain.subarray(plain.length - 22)]);
+      expect(() => readCentralDirectory(zip)).toThrow(zip64);
+    });
+
+    it.each([['compressed size', 20], ['uncompressed size', 24], ['local offset', 42]] as const)(
+      'rejects a central entry whose %s is saturated',
+      (_label, field) => {
+        const zip = buildRawZip([page('index.html')]);
+        zip.writeUInt32LE(0xffffffff, centralOffsets(zip)[0]! + field);
+        expect(() => readCentralDirectory(zip)).toThrow(zip64);
+      },
+    );
+
+    it('rejects a central entry carrying a ZIP64 extra field', () => {
+      const extra = Buffer.alloc(4 + 8);
+      extra.writeUInt16LE(0x0001, 0);
+      extra.writeUInt16LE(8, 2);
+      expect(() => readCentralDirectory(buildRawZip([page('index.html', { extra })]))).toThrow(zip64);
+    });
+  });
+
+  describe('Windows path checks', () => {
+    it.each([
+      // `x:y.html` is caught earlier as a drive-qualified path.
+      ['x:y.html', 'absolute zip paths are not allowed'],
+      ['page.html:stream', "':' is not allowed"],
+      ['dir/a:b/c.html', "':' is not allowed"],
+      ['con.html', 'reserved Windows name'],
+      ['CON', 'reserved Windows name'],
+      ['assets/Lpt1.txt.css', 'reserved Windows name'],
+      ['nul/x.html', 'reserved Windows name'],
+      ['com9.js', 'reserved Windows name'],
+      ['con .html', 'reserved Windows name'],
+      ['pages/nul  .txt', 'reserved Windows name'],
+      ['assets/com¹.css', 'reserved Windows name'],
+      ['CONOUT$.txt', 'reserved Windows name'],
+      ['CONIN$', 'reserved Windows name'],
+      ['lpt³', 'reserved Windows name'],
+      ['a./b.html', 'trailing dot or space'],
+      ['a /b.html', 'trailing dot or space'],
+      ['page.html.', 'trailing dot or space'],
+      ['a?.html', 'invalid character'],
+      ['a*.html', 'invalid character'],
+      ['a<b>.html', 'invalid character'],
+      ['a"b.html', 'invalid character'],
+      ['a|b.html', 'invalid character'],
+      ['tab\there.html', 'invalid character'],
+      [`${'s'.repeat(121)}.html`, 'path segment longer than 120 characters'],
+      [`${'d'.repeat(100)}/${'e'.repeat(95)}.html`, 'path longer than 200 characters'],
+    ])('rejects %j (%s)', (name, reason) => {
+      expect(() => sanitizeZipPath(name)).toThrow(reason);
+    });
+
+    it.each([
+      'console.html', 'contents.html', 'com10.html', 'lpt.css', 'com⁴.css', 'auxiliary/nulls.html', 'a.b/c.html', '한글/표지.html',
+      `${'s'.repeat(115)}.html`, `${'d'.repeat(100)}/${'e'.repeat(94)}.html`,
+    ])('keeps %j', (name) => {
+      expect(sanitizeZipPath(name)).toBe(name);
+    });
+
+    it('still normalises backslashes and rejects traversal', () => {
+      expect(sanitizeZipPath('assets\\deck.css')).toBe('assets/deck.css');
+      expect(() => sanitizeZipPath('../evil.html')).toThrow();
+    });
+
+    it('Claude Design import rejects Windows-unsafe names, naming the file', async () => {
+      await expect(importToTemp(buildRawZip([page('index.html'), page('aux.html')])))
+        .rejects.toThrow('unsafe zip path: aux.html (reserved Windows name)');
+    });
+
+    it('splits into a traversal part and a Windows part that sanitizeZipPath composes', () => {
+      const long = `__MACOSX/${'d'.repeat(100)}/._${'e'.repeat(90)}.html`;
+      expect(normalizeZipPath(long)).toBe(long);
+      expect(() => normalizeZipPath('../evil.html')).toThrow();
+      expect(() => assertWindowsSafeZipPath(long)).toThrow('path longer than 200 characters');
+      expect(() => sanitizeZipPath(long)).toThrow('path longer than 200 characters');
+    });
+  });
+
+  describe('duplicates', () => {
+    it('rejects exact and case-colliding paths, naming both', () => {
+      const seen = new Map<string, string>();
+      assertUniqueZipPath(seen, 'Pages/A.html');
+      assertUniqueZipPath(seen, 'pages/b.html');
+      expect(() => assertUniqueZipPath(seen, 'pages/a.html'))
+        .toThrow('zip contains duplicate or case-colliding entries: Pages/A.html and pages/a.html');
+      expect(() => assertUniqueZipPath(seen, 'pages/b.html')).toThrow(/duplicate or case-colliding/);
+    });
+
+    it('Claude Design import rejects case-colliding entries', async () => {
+      await expect(importToTemp(buildRawZip([page('index.html'), page('A.html'), page('a.html')])))
+        .rejects.toThrow(/duplicate or case-colliding/);
+    });
+  });
+
+  it('Claude Design import writes CP949-named files under their Hangul names', async () => {
+    const zip = buildRawZip([page('index.html'), { name: cp949Name('자료/한글.css'), body: 'h1{}' }]);
+    const result = await importToTemp(zip, (projectDir) => {
+      expect(readFileSync(path.join(projectDir, '자료', '한글.css'), 'utf8')).toBe('h1{}');
+    });
+    expect(result.files).toContain('자료/한글.css');
+  });
+
+  describe('readEntryBody cap', () => {
+    it('uses maxBytes as the inflate ceiling when the central size is 0', () => {
+      const zip = buildRawZip([{ name: 'big.bin', body: Buffer.alloc(4096, 0x61) }]);
+      const [entry] = readCentralDirectory(zip);
+      const streamed = { ...entry!, uncompressedSize: 0 };
+      expect(readEntryBody(zip, streamed).length).toBe(4096);
+      expect(() => readEntryBody(zip, streamed, 1024)).toThrow(/larger than 1024 bytes/);
+    });
+
+    it('reads stored entries', () => {
+      const zip = buildRawZip([{ name: 'a.txt', body: 'stored body', method: 0 }]);
+      expect(readEntryBody(zip, readCentralDirectory(zip)[0]!).toString('utf8')).toBe('stored body');
+    });
   });
 });

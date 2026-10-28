@@ -49,14 +49,19 @@ export function registerDesignTemplateUploadRoutes(app: Express, deps: DesignTem
           originalFileName: file.originalname,
         });
         // The client went away (upload aborted / wizard closed) before it
-        // could learn the session id: nobody can cancel it, so do it here.
+        // could learn the session (or bundle) id: nobody can cancel it, so do
+        // it here, a bundle as a whole.
         // (req.destroyed is no signal: a fully read request auto-destroys.)
+        const cancel = () => (analysis.kind === 'bundle'
+          ? sessions.cancelBundle(analysis.bundleId)
+          : sessions.cancel(analysis.sessionId));
         if (res.destroyed) {
-          await sessions.cancel(analysis.sessionId);
+          await cancel();
           return;
         }
         res.on('close', () => {
-          if (!res.writableFinished) void sessions.cancel(analysis.sessionId);
+          // Unawaited: a failed cleanup must not become a fatal unhandled rejection.
+          if (!res.writableFinished) cancel().catch((err) => console.warn('[design-template-uploads] abort cleanup failed', err));
         });
         res.status(201).json(analysis);
       } catch (err) {
@@ -103,6 +108,17 @@ export function registerDesignTemplateUploadRoutes(app: Express, deps: DesignTem
     try {
       const result = await sessions.finalize(sessionParam(req), req.body);
       res.status(201).json({ template: await deps.userTemplateSummary(result.id) });
+    } catch (err) {
+      sendTemplateError(res, err);
+    }
+  });
+
+  // Cancels every unfinalized child of a bundle; saved templates stay.
+  app.delete('/api/design-template-uploads/bundles/:bundleId', async (req, res) => {
+    if (!requireLocalOrigin(req, res)) return;
+    try {
+      const { cancelledSessionIds } = await sessions.cancelBundle(String(req.params.bundleId ?? ''));
+      res.json({ ok: true, cancelledSessionIds });
     } catch (err) {
       sendTemplateError(res, err);
     }
